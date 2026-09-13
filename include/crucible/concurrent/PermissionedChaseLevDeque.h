@@ -154,9 +154,12 @@ namespace crucible::concurrent {
 
 namespace deque_tag {
 
-template <typename UserTag> struct Whole {};
-template <typename UserTag> struct Owner {};
-template <typename UserTag> struct Thief {};
+template <typename UserTag>
+struct Whole {};
+template <typename UserTag>
+struct Owner {};
+template <typename UserTag>
+struct Thief {};
 
 }  // namespace deque_tag
 
@@ -167,14 +170,13 @@ template <typename UserTag> struct Thief {};
 // ── PermissionedChaseLevDeque<T, Capacity, UserTag> ────────────────
 
 template <DequeValue T, std::size_t Capacity, typename UserTag = void>
-class PermissionedChaseLevDeque
-    : public safety::Pinned<PermissionedChaseLevDeque<T, Capacity, UserTag>> {
+class PermissionedChaseLevDeque : public safety::Pinned<PermissionedChaseLevDeque<T, Capacity, UserTag>> {
 public:
     using value_type = T;
-    using user_tag   = UserTag;
-    using whole_tag  = deque_tag::Whole<UserTag>;
-    using owner_tag  = deque_tag::Owner<UserTag>;
-    using thief_tag  = deque_tag::Thief<UserTag>;
+    using user_tag = UserTag;
+    using whole_tag = deque_tag::Whole<UserTag>;
+    using owner_tag = deque_tag::Owner<UserTag>;
+    using thief_tag = deque_tag::Thief<UserTag>;
 
     static constexpr std::size_t deque_capacity = Capacity;
 
@@ -184,8 +186,7 @@ public:
     // PermissionedSnapshot's reader pool convention.  User mints +
     // hands the Owner Permission to owner() factory.
 
-    PermissionedChaseLevDeque() noexcept
-        : thief_pool_{safety::mint_permission_root<thief_tag>()} {}
+    PermissionedChaseLevDeque() noexcept : thief_pool_{safety::mint_permission_root<thief_tag>()} {}
 
     // ── OwnerHandle ───────────────────────────────────────────────
     //
@@ -202,47 +203,35 @@ public:
         PermissionedChaseLevDeque& deque_;
         [[no_unique_address]] safety::Permission<owner_tag> perm_;
 
-        constexpr OwnerHandle(PermissionedChaseLevDeque& d,
-                              safety::Permission<owner_tag>&& p) noexcept
+        constexpr OwnerHandle(PermissionedChaseLevDeque& d, safety::Permission<owner_tag>&& p) noexcept
             : deque_{d}, perm_{std::move(p)} {}
         friend class PermissionedChaseLevDeque;
 
     public:
         using value_type = T;
-        using tag_type   = owner_tag;
-        static constexpr std::size_t per_call_working_set =
-            lines_plus_cell_working_set_v<2, T>;
+        using tag_type = owner_tag;
+        static constexpr std::size_t per_call_working_set = lines_plus_cell_working_set_v<2, T>;
 
-        OwnerHandle(const OwnerHandle&)
-            = delete("OwnerHandle owns the linear Owner Permission — copy would duplicate the token, allowing two threads to race on push_bottom/pop_bottom (data race on bottom_)");
-        OwnerHandle& operator=(const OwnerHandle&)
-            = delete("OwnerHandle owns the linear Owner Permission — assignment would overwrite the linear token");
+        OwnerHandle(const OwnerHandle&) = delete(
+            "OwnerHandle owns the linear Owner Permission — copy would duplicate the token, allowing two threads to race on push_bottom/pop_bottom (data race on bottom_)");
+        OwnerHandle& operator=(const OwnerHandle&) =
+            delete("OwnerHandle owns the linear Owner Permission — assignment would overwrite the linear token");
         constexpr OwnerHandle(OwnerHandle&&) noexcept = default;
-        OwnerHandle& operator=(OwnerHandle&&)
-            = delete("OwnerHandle binds to ONE deque for life — rebinding would orphan the original Permission and silently allow a second owner to coexist (CL's push_bottom/pop_bottom is single-owner-only)");
+        OwnerHandle& operator=(OwnerHandle&&) = delete(
+            "OwnerHandle binds to ONE deque for life — rebinding would orphan the original Permission and silently allow a second owner to coexist (CL's push_bottom/pop_bottom is single-owner-only)");
 
         // Push to bottom — owner only.  ~3-5 ns uncontended.
         // Returns false on capacity overflow.
-        [[nodiscard, gnu::hot]] bool try_push(T item) noexcept {
-            return deque_.deque_.push_bottom(item);
-        }
+        [[nodiscard, gnu::hot]] bool try_push(T item) noexcept { return deque_.deque_.push_bottom(item); }
 
         // Pop from bottom — owner only.  ~5-10 ns uncontended.
         // May race with thieves on the LAST element; CL resolves via
         // CAS on top_.  Returns nullopt iff empty after the race.
-        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept {
-            return deque_.deque_.pop_bottom();
-        }
+        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept { return deque_.deque_.pop_bottom(); }
 
-        [[nodiscard]] std::size_t size_approx() const noexcept {
-            return deque_.deque_.size_approx();
-        }
-        [[nodiscard]] bool empty_approx() const noexcept {
-            return deque_.deque_.empty_approx();
-        }
-        [[nodiscard]] static constexpr std::size_t capacity() noexcept {
-            return Capacity;
-        }
+        [[nodiscard]] std::size_t size_approx() const noexcept { return deque_.deque_.size_approx(); }
+        [[nodiscard]] bool empty_approx() const noexcept { return deque_.deque_.empty_approx(); }
+        [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
     };
 
     // ── ThiefHandle ───────────────────────────────────────────────
@@ -256,45 +245,32 @@ public:
         PermissionedChaseLevDeque* deque_ = nullptr;
         safety::SharedPermissionGuard<thief_tag> guard_;
 
-        constexpr ThiefHandle(PermissionedChaseLevDeque& d,
-                              safety::SharedPermissionGuard<thief_tag>&& g) noexcept
+        constexpr ThiefHandle(PermissionedChaseLevDeque& d, safety::SharedPermissionGuard<thief_tag>&& g) noexcept
             : deque_{&d}, guard_{std::move(g)} {}
         friend class PermissionedChaseLevDeque;
 
     public:
         using value_type = T;
-        using tag_type   = thief_tag;
-        static constexpr std::size_t per_call_working_set =
-            lines_plus_cell_working_set_v<2, T>;
+        using tag_type = thief_tag;
+        static constexpr std::size_t per_call_working_set = lines_plus_cell_working_set_v<2, T>;
 
-        ThiefHandle(const ThiefHandle&)
-            = delete("ThiefHandle owns a thief-pool refcount share — copy would double-count");
-        ThiefHandle& operator=(const ThiefHandle&)
-            = delete("ThiefHandle owns a thief-pool refcount share — assignment would double-count");
+        ThiefHandle(const ThiefHandle&) =
+            delete("ThiefHandle owns a thief-pool refcount share — copy would double-count");
+        ThiefHandle& operator=(const ThiefHandle&) =
+            delete("ThiefHandle owns a thief-pool refcount share — assignment would double-count");
         constexpr ThiefHandle(ThiefHandle&&) noexcept = default;
         // Move-assign deleted (Guard's lifetime fixed at construction).
 
         // Steal from top — many thieves may call concurrently.
         // ~10-30 ns under contention.  Returns nullopt iff the deque
         // is empty OR the CAS race for top was lost (caller may retry).
-        [[nodiscard, gnu::hot]] std::optional<T> try_steal() noexcept {
-            return deque_->deque_.steal_top();
-        }
+        [[nodiscard, gnu::hot]] std::optional<T> try_steal() noexcept { return deque_->deque_.steal_top(); }
 
-        [[nodiscard]] std::size_t size_approx() const noexcept {
-            return deque_->deque_.size_approx();
-        }
-        [[nodiscard]] bool empty_approx() const noexcept {
-            return deque_->deque_.empty_approx();
-        }
-        [[nodiscard]] static constexpr std::size_t capacity() noexcept {
-            return Capacity;
-        }
+        [[nodiscard]] std::size_t size_approx() const noexcept { return deque_->deque_.size_approx(); }
+        [[nodiscard]] bool empty_approx() const noexcept { return deque_->deque_.empty_approx(); }
+        [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
-        [[nodiscard]] constexpr safety::SharedPermission<thief_tag>
-        token() const noexcept {
-            return guard_.token();
-        }
+        [[nodiscard]] constexpr safety::SharedPermission<thief_tag> token() const noexcept { return guard_.token(); }
     };
 
     // ── Factories ─────────────────────────────────────────────────
@@ -333,9 +309,7 @@ public:
     // rest.  Subsequent thief() calls succeed once body returns.
     template <typename Body>
         requires std::is_invocable_v<Body>
-    bool with_drained_access(Body&& body)
-        noexcept(std::is_nothrow_invocable_v<Body>)
-    {
+    bool with_drained_access(Body&& body) noexcept(std::is_nothrow_invocable_v<Body>) {
         auto upgrade = thief_pool_.try_upgrade();
         if (!upgrade) return false;
         std::forward<Body>(body)();
@@ -345,25 +319,15 @@ public:
 
     // ── Diagnostics ───────────────────────────────────────────────
 
-    [[nodiscard]] std::uint64_t outstanding_thieves() const noexcept {
-        return thief_pool_.outstanding();
-    }
-    [[nodiscard]] bool is_exclusive_active() const noexcept {
-        return thief_pool_.is_exclusive_out();
-    }
-    [[nodiscard]] std::size_t size_approx() const noexcept {
-        return deque_.size_approx();
-    }
-    [[nodiscard]] bool empty_approx() const noexcept {
-        return deque_.empty_approx();
-    }
-    [[nodiscard]] static constexpr std::size_t capacity() noexcept {
-        return Capacity;
-    }
+    [[nodiscard]] std::uint64_t outstanding_thieves() const noexcept { return thief_pool_.outstanding(); }
+    [[nodiscard]] bool is_exclusive_active() const noexcept { return thief_pool_.is_exclusive_out(); }
+    [[nodiscard]] std::size_t size_approx() const noexcept { return deque_.size_approx(); }
+    [[nodiscard]] bool empty_approx() const noexcept { return deque_.empty_approx(); }
+    [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
 private:
-    ChaseLevDeque<T, Capacity>                 deque_;
-    safety::SharedPermissionPool<thief_tag>    thief_pool_;
+    ChaseLevDeque<T, Capacity> deque_;
+    safety::SharedPermissionPool<thief_tag> thief_pool_;
 };
 
 }  // namespace crucible::concurrent
@@ -373,31 +337,21 @@ private:
 namespace crucible::safety {
 
 template <typename UserTag>
-struct splits_into<concurrent::deque_tag::Whole<UserTag>,
-                   concurrent::deque_tag::Owner<UserTag>,
-                   concurrent::deque_tag::Thief<UserTag>>
-    : std::true_type {};
+struct splits_into<concurrent::deque_tag::Whole<UserTag>, concurrent::deque_tag::Owner<UserTag>,
+                   concurrent::deque_tag::Thief<UserTag>> : std::true_type {};
 
 // fixy-M-29 authoring witnesses (paired with the splits_into and
 // splits_into_pack specs above and below).
 template <typename UserTag>
-struct splits_into_authoring_witness<
-    concurrent::deque_tag::Whole<UserTag>,
-    concurrent::deque_tag::Owner<UserTag>,
-    concurrent::deque_tag::Thief<UserTag>>
-    : std::true_type {};
+struct splits_into_authoring_witness<concurrent::deque_tag::Whole<UserTag>, concurrent::deque_tag::Owner<UserTag>,
+                                     concurrent::deque_tag::Thief<UserTag>> : std::true_type {};
 
 template <typename UserTag>
-struct splits_into_pack_authoring_witness<
-    concurrent::deque_tag::Whole<UserTag>,
-    concurrent::deque_tag::Owner<UserTag>,
-    concurrent::deque_tag::Thief<UserTag>>
-    : std::true_type {};
+struct splits_into_pack_authoring_witness<concurrent::deque_tag::Whole<UserTag>, concurrent::deque_tag::Owner<UserTag>,
+                                          concurrent::deque_tag::Thief<UserTag>> : std::true_type {};
 
 template <typename UserTag>
-struct splits_into_pack<concurrent::deque_tag::Whole<UserTag>,
-                        concurrent::deque_tag::Owner<UserTag>,
-                        concurrent::deque_tag::Thief<UserTag>>
-    : std::true_type {};
+struct splits_into_pack<concurrent::deque_tag::Whole<UserTag>, concurrent::deque_tag::Owner<UserTag>,
+                        concurrent::deque_tag::Thief<UserTag>> : std::true_type {};
 
 }  // namespace crucible::safety

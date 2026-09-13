@@ -139,19 +139,16 @@ namespace crucible::safety::extract {
 namespace detail {
 
 template <auto FnPtr, std::size_t I>
-inline constexpr bool stage_param_rvalue_nonconst_v =
-    std::is_rvalue_reference_v<param_type_t<FnPtr, I>>
- && !std::is_const_v<std::remove_reference_t<param_type_t<FnPtr, I>>>;
+inline constexpr bool stage_param_rvalue_nonconst_v = std::is_rvalue_reference_v<param_type_t<FnPtr, I>>
+                                                   && !std::is_const_v<std::remove_reference_t<param_type_t<FnPtr, I>>>;
 
 template <auto FnPtr, std::size_t I>
 inline constexpr bool stage_input_param_v =
-    stage_param_rvalue_nonconst_v<FnPtr, I>
- && is_consumer_handle_v<param_type_t<FnPtr, I>>;
+    stage_param_rvalue_nonconst_v<FnPtr, I> && is_consumer_handle_v<param_type_t<FnPtr, I>>;
 
 template <auto FnPtr, std::size_t I>
 inline constexpr bool stage_output_param_v =
-    stage_param_rvalue_nonconst_v<FnPtr, I>
- && is_producer_handle_v<param_type_t<FnPtr, I>>;
+    stage_param_rvalue_nonconst_v<FnPtr, I> && is_producer_handle_v<param_type_t<FnPtr, I>>;
 
 struct stage_arity_counts {
     std::size_t input_count = 0;
@@ -160,8 +157,7 @@ struct stage_arity_counts {
 };
 
 template <auto FnPtr, std::size_t I>
-consteval void consume_stage_param(stage_arity_counts& counts,
-                                   bool& seen_output) noexcept {
+consteval void consume_stage_param(stage_arity_counts& counts, bool& seen_output) noexcept {
     if constexpr (stage_input_param_v<FnPtr, I>) {
         if (seen_output) counts.ordered = false;
         ++counts.input_count;
@@ -174,8 +170,7 @@ consteval void consume_stage_param(stage_arity_counts& counts,
 }
 
 template <auto FnPtr, std::size_t... Is>
-consteval stage_arity_counts
-compute_stage_arity(std::index_sequence<Is...>) noexcept {
+consteval stage_arity_counts compute_stage_arity(std::index_sequence<Is...>) noexcept {
     stage_arity_counts counts{};
     bool seen_output = false;
     (consume_stage_param<FnPtr, Is>(counts, seen_output), ...);
@@ -188,8 +183,7 @@ template <auto FnPtr>
 struct StageArity {
 private:
     static constexpr detail::stage_arity_counts counts =
-        detail::compute_stage_arity<FnPtr>(
-            std::make_index_sequence<arity_v<FnPtr>>{});
+        detail::compute_stage_arity<FnPtr>(std::make_index_sequence<arity_v<FnPtr>>{});
 
 public:
     static constexpr std::size_t input_count = counts.input_count;
@@ -199,19 +193,13 @@ public:
 
 template <auto FnPtr>
 concept VariadicPipelineStage =
-    arity_v<FnPtr> >= 2
- && std::is_void_v<return_type_t<FnPtr>>
- && StageArity<FnPtr>::ordered
- && StageArity<FnPtr>::input_count > 0
- && StageArity<FnPtr>::output_count > 0
- && StageArity<FnPtr>::input_count + StageArity<FnPtr>::output_count
-        == arity_v<FnPtr>;
+    arity_v<FnPtr> >= 2 && std::is_void_v<return_type_t<FnPtr>> && StageArity<FnPtr>::ordered
+    && StageArity<FnPtr>::input_count > 0 && StageArity<FnPtr>::output_count > 0
+    && StageArity<FnPtr>::input_count + StageArity<FnPtr>::output_count == arity_v<FnPtr>;
 
 template <auto FnPtr>
 concept PipelineStage =
-    VariadicPipelineStage<FnPtr>
- && StageArity<FnPtr>::input_count == 1
- && StageArity<FnPtr>::output_count == 1;
+    VariadicPipelineStage<FnPtr> && StageArity<FnPtr>::input_count == 1 && StageArity<FnPtr>::output_count == 1;
 
 template <auto FnPtr>
 inline constexpr bool is_pipeline_stage_v = PipelineStage<FnPtr>;
@@ -222,31 +210,24 @@ inline constexpr bool is_pipeline_stage_v = PipelineStage<FnPtr>;
 
 // Input-side payload type (consumer handle's try_pop yields this).
 template <auto FnPtr, std::size_t I>
-    requires VariadicPipelineStage<FnPtr>
-          && (I < StageArity<FnPtr>::input_count)
-using pipeline_stage_input_value_at_t =
-    consumer_handle_value_t<param_type_t<FnPtr, I>>;
+    requires VariadicPipelineStage<FnPtr> && (I < StageArity<FnPtr>::input_count)
+using pipeline_stage_input_value_at_t = consumer_handle_value_t<param_type_t<FnPtr, I>>;
 
 // Output-side payload type (producer handle's try_push accepts this).
 template <auto FnPtr, std::size_t I>
-    requires VariadicPipelineStage<FnPtr>
-          && (I < StageArity<FnPtr>::output_count)
+    requires VariadicPipelineStage<FnPtr> && (I < StageArity<FnPtr>::output_count)
 using pipeline_stage_output_value_at_t =
-    producer_handle_value_t<param_type_t<
-        FnPtr,
-        StageArity<FnPtr>::input_count + I>>;
+    producer_handle_value_t<param_type_t<FnPtr, StageArity<FnPtr>::input_count + I>>;
 
 // Legacy 1x1 aliases retained for Stage / Pipeline.
 template <auto FnPtr>
     requires PipelineStage<FnPtr>
-using pipeline_stage_input_value_t =
-    pipeline_stage_input_value_at_t<FnPtr, 0>;
+using pipeline_stage_input_value_t = pipeline_stage_input_value_at_t<FnPtr, 0>;
 
 // Output-side payload type (producer handle's try_push accepts this).
 template <auto FnPtr>
     requires PipelineStage<FnPtr>
-using pipeline_stage_output_value_t =
-    pipeline_stage_output_value_at_t<FnPtr, 0>;
+using pipeline_stage_output_value_t = pipeline_stage_output_value_at_t<FnPtr, 0>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Value-preservation predicate ───────────────────────────────────
@@ -262,8 +243,7 @@ using pipeline_stage_output_value_t =
 template <auto FnPtr>
     requires PipelineStage<FnPtr>
 inline constexpr bool pipeline_stage_is_value_preserving_v =
-    std::is_same_v<pipeline_stage_input_value_t<FnPtr>,
-                   pipeline_stage_output_value_t<FnPtr>>;
+    std::is_same_v<pipeline_stage_input_value_t<FnPtr>, pipeline_stage_output_value_t<FnPtr>>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Self-test block ────────────────────────────────────────────────
@@ -293,42 +273,29 @@ static_assert(!PipelineStage<&f_two_ints>);
 inline void f_three_params(int, int, int) noexcept {}
 static_assert(!PipelineStage<&f_three_params>);
 
-inline void f_one_to_one(fake_consumer<int>&&,
-                         fake_producer<int>&&) noexcept {}
+inline void f_one_to_one(fake_consumer<int>&&, fake_producer<int>&&) noexcept {}
 static_assert(VariadicPipelineStage<&f_one_to_one>);
 static_assert(PipelineStage<&f_one_to_one>);
 static_assert(StageArity<&f_one_to_one>::input_count == 1);
 static_assert(StageArity<&f_one_to_one>::output_count == 1);
 
-inline void f_three_to_one(fake_consumer<int>&&,
-                           fake_consumer<int>&&,
-                           fake_consumer<float>&&,
+inline void f_three_to_one(fake_consumer<int>&&, fake_consumer<int>&&, fake_consumer<float>&&,
                            fake_producer<int>&&) noexcept {}
 static_assert(VariadicPipelineStage<&f_three_to_one>);
 static_assert(!PipelineStage<&f_three_to_one>);
 static_assert(StageArity<&f_three_to_one>::input_count == 3);
 static_assert(StageArity<&f_three_to_one>::output_count == 1);
-static_assert(std::is_same_v<
-    pipeline_stage_input_value_at_t<&f_three_to_one, 2>,
-    float>);
-static_assert(std::is_same_v<
-    pipeline_stage_output_value_at_t<&f_three_to_one, 0>,
-    int>);
+static_assert(std::is_same_v<pipeline_stage_input_value_at_t<&f_three_to_one, 2>, float>);
+static_assert(std::is_same_v<pipeline_stage_output_value_at_t<&f_three_to_one, 0>, int>);
 
-inline void f_one_to_two(fake_consumer<int>&&,
-                         fake_producer<int>&&,
-                         fake_producer<float>&&) noexcept {}
+inline void f_one_to_two(fake_consumer<int>&&, fake_producer<int>&&, fake_producer<float>&&) noexcept {}
 static_assert(VariadicPipelineStage<&f_one_to_two>);
 static_assert(!PipelineStage<&f_one_to_two>);
 static_assert(StageArity<&f_one_to_two>::input_count == 1);
 static_assert(StageArity<&f_one_to_two>::output_count == 2);
-static_assert(std::is_same_v<
-    pipeline_stage_output_value_at_t<&f_one_to_two, 1>,
-    float>);
+static_assert(std::is_same_v<pipeline_stage_output_value_at_t<&f_one_to_two, 1>, float>);
 
-inline void f_interleaved(fake_consumer<int>&&,
-                          fake_producer<int>&&,
-                          fake_consumer<int>&&) noexcept {}
+inline void f_interleaved(fake_consumer<int>&&, fake_producer<int>&&, fake_consumer<int>&&) noexcept {}
 static_assert(!VariadicPipelineStage<&f_interleaved>);
 static_assert(!PipelineStage<&f_interleaved>);
 

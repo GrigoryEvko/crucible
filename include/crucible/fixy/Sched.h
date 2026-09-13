@@ -43,19 +43,19 @@
 //  its HS14 fixtures live with that mint.)
 
 #include <crucible/Platform.h>
-#include <crucible/fixy/Grant.h>                            // grant_base, which_dim, IsGrantTag
-#include <crucible/fixy/Dim.h>                              // dim::DimensionAxis
+#include <crucible/fixy/Grant.h>  // grant_base, which_dim, IsGrantTag
+#include <crucible/fixy/Dim.h>  // dim::DimensionAxis
 
-#include <crucible/safety/CpuPinned.h>                      // CpuPinned, PinningPosture, AffinityMask, mint_cpu_pinned
-#include <crucible/safety/SchedClass.h>                     // SchedClass, SchedulerPolicy_v, mint_sched_class
-#include <crucible/safety/ThreadName.h>                     // mint_thread_name (V-189 re-export)
+#include <crucible/safety/CpuPinned.h>  // CpuPinned, PinningPosture, AffinityMask, mint_cpu_pinned
+#include <crucible/safety/SchedClass.h>  // SchedClass, SchedulerPolicy_v, mint_sched_class
+#include <crucible/safety/ThreadName.h>  // mint_thread_name (V-189 re-export)
 
-#include <crucible/effects/ExecCtx.h>                       // effects::IsExecCtx
+#include <crucible/effects/ExecCtx.h>  // effects::IsExecCtx
 
-#include <sched.h>                                          // sched_setaffinity/setscheduler, sched_param, SCHED_*, cpu_set_t
-#include <sys/resource.h>                                   // setpriority, PRIO_PROCESS
-#include <sys/syscall.h>                                    // SYS_sched_setattr
-#include <unistd.h>                                         // syscall
+#include <sched.h>  // sched_setaffinity/setscheduler, sched_param, SCHED_*, cpu_set_t
+#include <sys/resource.h>  // setpriority, PRIO_PROCESS
+#include <sys/syscall.h>  // SYS_sched_setattr
+#include <unistd.h>  // syscall
 
 #include <cerrno>
 #include <cstdint>
@@ -65,9 +65,9 @@
 
 namespace crucible::fixy::sched {
 
-namespace sf  = ::crucible::safety;
+namespace sf = ::crucible::safety;
 namespace eff = ::crucible::effects;
-namespace ml  = ::crucible::algebra::lattices;
+namespace ml = ::crucible::algebra::lattices;
 
 using sf::PinningPosture;
 using sf::SchedulerPolicy_v;
@@ -83,7 +83,7 @@ using ProofUnit = int;
 // flat [-20, 19] integer, not a lattice), so the sched surface owns this
 // small phantom proof.
 template <int Nice>
-    requires (Nice >= -20 && Nice <= 19)
+    requires(Nice >= -20 && Nice <= 19)
 struct SchedPriority final {
     static constexpr int nice = Nice;
 };
@@ -93,13 +93,20 @@ namespace detail {
 // Map the lattice policy onto its SCHED_* kernel constant.
 [[nodiscard]] consteval int sched_policy_constant(SchedulerPolicy_v policy) noexcept {
     switch (policy) {
-        case SchedulerPolicy_v::Idle:       return SCHED_IDLE;
-        case SchedulerPolicy_v::Batch:      return SCHED_BATCH;
-        case SchedulerPolicy_v::Other:      return SCHED_OTHER;
-        case SchedulerPolicy_v::RoundRobin: return SCHED_RR;
-        case SchedulerPolicy_v::Fifo:       return SCHED_FIFO;
-        case SchedulerPolicy_v::Deadline:   return SCHED_DEADLINE;
-        default:                            return -1;
+        case SchedulerPolicy_v::Idle:
+            return SCHED_IDLE;
+        case SchedulerPolicy_v::Batch:
+            return SCHED_BATCH;
+        case SchedulerPolicy_v::Other:
+            return SCHED_OTHER;
+        case SchedulerPolicy_v::RoundRobin:
+            return SCHED_RR;
+        case SchedulerPolicy_v::Fifo:
+            return SCHED_FIFO;
+        case SchedulerPolicy_v::Deadline:
+            return SCHED_DEADLINE;
+        default:
+            return -1;
     }
 }
 
@@ -115,25 +122,26 @@ CRUCIBLE_INLINE void fill_cpu_set(AffinityMask mask, cpu_set_t& set) noexcept {
 
 // Minimal sched_attr ABI for SCHED_DEADLINE (glibc ships no wrapper).
 struct sched_attr_abi {
-    std::uint32_t size         = sizeof(sched_attr_abi);
+    std::uint32_t size = sizeof(sched_attr_abi);
     std::uint32_t sched_policy = 0;
-    std::uint64_t sched_flags  = 0;
-    std::int32_t  sched_nice   = 0;
-    std::uint32_t sched_prio   = 0;
-    std::uint64_t sched_runtime  = 0;
+    std::uint64_t sched_flags = 0;
+    std::int32_t sched_nice = 0;
+    std::uint32_t sched_prio = 0;
+    std::uint64_t sched_runtime = 0;
     std::uint64_t sched_deadline = 0;
-    std::uint64_t sched_period   = 0;
+    std::uint64_t sched_period = 0;
 };
 
-[[nodiscard]] CRUCIBLE_INLINE int apply_deadline(std::uint64_t runtime_ns,
-                                                 std::uint64_t deadline_ns,
+[[nodiscard]] CRUCIBLE_INLINE int apply_deadline(std::uint64_t runtime_ns, std::uint64_t deadline_ns,
                                                  std::uint64_t period_ns) noexcept {
     sched_attr_abi attr{};
-    attr.sched_policy   = static_cast<std::uint32_t>(SCHED_DEADLINE);
-    attr.sched_runtime  = runtime_ns;
+    attr.sched_policy = static_cast<std::uint32_t>(SCHED_DEADLINE);
+    attr.sched_runtime = runtime_ns;
     attr.sched_deadline = deadline_ns;
-    attr.sched_period   = period_ns;
-    return static_cast<int>(::syscall(SYS_sched_setattr, 0, &attr, 0u));  // SYSCALL-CAP-OK: detail helper for mint_scheduler_policy ctx-gate (CtxFitsSchedPolicyMint, effects::Init)
+    attr.sched_period = period_ns;
+    return static_cast<int>(::syscall(
+        SYS_sched_setattr, 0, &attr,
+        0u));  // SYSCALL-CAP-OK: detail helper for mint_scheduler_policy ctx-gate (CtxFitsSchedPolicyMint, effects::Init)
 }
 
 // Apply a scheduler policy to the calling thread, returning the syscall rc.
@@ -141,10 +149,8 @@ struct sched_attr_abi {
 // sched_setscheduler.  Holding the dispatch HERE keeps the mint body free
 // of `if constexpr` so its §XXI compliance reads cleanly in the inventory.
 template <SchedulerPolicy_v Policy>
-[[nodiscard]] CRUCIBLE_INLINE int apply_scheduler_policy(int rt_priority,
-                                                         std::uint64_t runtime_ns,
-                                                         std::uint64_t deadline_ns,
-                                                         std::uint64_t period_ns) noexcept {
+[[nodiscard]] CRUCIBLE_INLINE int apply_scheduler_policy(int rt_priority, std::uint64_t runtime_ns,
+                                                         std::uint64_t deadline_ns, std::uint64_t period_ns) noexcept {
     if constexpr (Policy == SchedulerPolicy_v::Deadline) {
         return apply_deadline(runtime_ns, deadline_ns, period_ns);
     } else {
@@ -189,8 +195,7 @@ namespace crucible::fixy::grant {
 namespace fsc = ::crucible::fixy::sched;
 
 template <>
-struct which_dim<sched::affinity>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::SyscallSurface> {};
+struct which_dim<sched::affinity> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::SyscallSurface> {};
 
 template <fsc::SchedulerPolicy_v Policy>
 struct which_dim<sched::scheduler_policy<Policy>>
@@ -201,8 +206,8 @@ struct which_dim<sched::priority<Nice>>
     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::SyscallSurface> {};
 
 template <>
-struct which_dim<sched::thread_name>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::SyscallSurface> {};
+struct which_dim<sched::thread_name> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::SyscallSurface> {
+};
 
 }  // namespace crucible::fixy::grant
 
@@ -229,14 +234,13 @@ concept CtxFitsPriorityMint = eff::IsExecCtx<Ctx> && (Nice >= -20 && Nice <= 19)
 // §XXI carve-out: cx=alloc — drops compile-time evaluation (performs a
 // kernel side effect).  On success returns the move-only CpuPinned proof
 // that fixy/Time.h's mint_tsc_reader requires.
-template <AffinityMask Mask, PinningPosture Posture = PinningPosture::PinnedExplicit,
-          eff::IsExecCtx Ctx>
+template <AffinityMask Mask, PinningPosture Posture = PinningPosture::PinnedExplicit, eff::IsExecCtx Ctx>
     requires CtxFitsAffinityMint<Ctx, Posture>
-[[nodiscard]] std::expected<sf::CpuPinned<Mask, Posture, ProofUnit>, int>
-mint_affinity(Ctx const&) noexcept {
+[[nodiscard]] std::expected<sf::CpuPinned<Mask, Posture, ProofUnit>, int> mint_affinity(Ctx const&) noexcept {
     cpu_set_t set;
     detail::fill_cpu_set(Mask, set);
-    if (::sched_setaffinity(0, sizeof(set), &set) != 0) [[unlikely]] {  // SYSCALL-CAP-OK: mint_affinity body, CtxFitsAffinityMint ctx-gate (effects::Init)
+    if (::sched_setaffinity(0, sizeof(set), &set) != 0)
+        [[unlikely]] {  // SYSCALL-CAP-OK: mint_affinity body, CtxFitsAffinityMint ctx-gate (effects::Init)
         return std::unexpected(errno);
     }
     return sf::mint_cpu_pinned<Mask, Posture, ProofUnit>(0);
@@ -248,14 +252,12 @@ mint_affinity(Ctx const&) noexcept {
 // syscall).  Non-Deadline policies route through sched_setscheduler;
 // Deadline through sched_setattr with the (R, D, P) budget.  The
 // SchedClass<Policy, int, R, D, P> return type enforces CBS admission.
-template <SchedulerPolicy_v Policy, std::uint64_t RuntimeNs = 0,
-          std::uint64_t DeadlineNs = 0, std::uint64_t PeriodNs = 0,
-          eff::IsExecCtx Ctx>
+template <SchedulerPolicy_v Policy, std::uint64_t RuntimeNs = 0, std::uint64_t DeadlineNs = 0,
+          std::uint64_t PeriodNs = 0, eff::IsExecCtx Ctx>
     requires CtxFitsSchedPolicyMint<Ctx, Policy>
 [[nodiscard]] std::expected<sf::SchedClass<Policy, ProofUnit, RuntimeNs, DeadlineNs, PeriodNs>, int>
 mint_scheduler_policy(Ctx const&, int rt_priority = 0) noexcept {
-    if (detail::apply_scheduler_policy<Policy>(rt_priority, RuntimeNs, DeadlineNs, PeriodNs) != 0)
-        [[unlikely]] {
+    if (detail::apply_scheduler_policy<Policy>(rt_priority, RuntimeNs, DeadlineNs, PeriodNs) != 0) [[unlikely]] {
         return std::unexpected(errno);
     }
     return sf::mint_sched_class<Policy, ProofUnit, RuntimeNs, DeadlineNs, PeriodNs>(rt_priority);
@@ -268,8 +270,7 @@ mint_scheduler_policy(Ctx const&, int rt_priority = 0) noexcept {
 // value on Linux.
 template <int Nice, eff::IsExecCtx Ctx>
     requires CtxFitsPriorityMint<Ctx, Nice>
-[[nodiscard]] std::expected<SchedPriority<Nice>, int>
-mint_priority(Ctx const&) noexcept {
+[[nodiscard]] std::expected<SchedPriority<Nice>, int> mint_priority(Ctx const&) noexcept {
     errno = 0;
     if (::setpriority(PRIO_PROCESS, 0, Nice) != 0 && errno != 0) [[unlikely]] {
         return std::unexpected(errno);
@@ -293,8 +294,7 @@ using ::crucible::safety::mint_thread_name;
 // cpu_set_t capacity is EINVAL.
 template <typename Ctx>
 concept CtxFitsRuntimeAffinity =
-    ::crucible::effects::CtxOwnsAnyOf<Ctx, ::crucible::effects::Effect::Bg,
-                                            ::crucible::effects::Effect::Init>;
+    ::crucible::effects::CtxOwnsAnyOf<Ctx, ::crucible::effects::Effect::Bg, ::crucible::effects::Effect::Init>;
 
 template <eff::IsExecCtx Ctx>
     requires CtxFitsRuntimeAffinity<Ctx>
@@ -306,7 +306,8 @@ template <eff::IsExecCtx Ctx>
     cpu_set_t set;
     CPU_ZERO(&set);
     CPU_SET(static_cast<std::size_t>(cpu), &set);
-    if (::sched_setaffinity(0, sizeof(set), &set) != 0) [[unlikely]] {  // SYSCALL-CAP-OK: apply_affinity_to_cpu CtxFitsRuntimeAffinity ctx-gate (Bg|Init)
+    if (::sched_setaffinity(0, sizeof(set), &set) != 0)
+        [[unlikely]] {  // SYSCALL-CAP-OK: apply_affinity_to_cpu CtxFitsRuntimeAffinity ctx-gate (Bg|Init)
         return std::unexpected(errno);
     }
     return {};
@@ -330,35 +331,34 @@ static_assert(IsGrantTag<gs::affinity>);
 static_assert(IsGrantTag<gs::scheduler_policy<SchedulerPolicy_v::Fifo>>);
 static_assert(IsGrantTag<gs::priority<-10>>);
 static_assert(IsGrantTag<gs::thread_name>);
-static_assert(sizeof(gs::affinity)                                   == 1);
+static_assert(sizeof(gs::affinity) == 1);
 static_assert(sizeof(gs::scheduler_policy<SchedulerPolicy_v::Other>) == 1);
-static_assert(sizeof(gs::priority<5>)                                == 1);
-static_assert(which_dim_v<gs::affinity>                                   == D::SyscallSurface);
-static_assert(which_dim_v<gs::scheduler_policy<SchedulerPolicy_v::Fifo>>  == D::SyscallSurface);
-static_assert(which_dim_v<gs::priority<-10>>                              == D::SyscallSurface);
-static_assert(which_dim_v<gs::thread_name>                                == D::SyscallSurface);
+static_assert(sizeof(gs::priority<5>) == 1);
+static_assert(which_dim_v<gs::affinity> == D::SyscallSurface);
+static_assert(which_dim_v<gs::scheduler_policy<SchedulerPolicy_v::Fifo>> == D::SyscallSurface);
+static_assert(which_dim_v<gs::priority<-10>> == D::SyscallSurface);
+static_assert(which_dim_v<gs::thread_name> == D::SyscallSurface);
 
 // ── policy → SCHED_* mapping is total over the lattice ──────────────
-static_assert(detail::sched_policy_constant(SchedulerPolicy_v::Other)    == SCHED_OTHER);
-static_assert(detail::sched_policy_constant(SchedulerPolicy_v::Fifo)     == SCHED_FIFO);
+static_assert(detail::sched_policy_constant(SchedulerPolicy_v::Other) == SCHED_OTHER);
+static_assert(detail::sched_policy_constant(SchedulerPolicy_v::Fifo) == SCHED_FIFO);
 static_assert(detail::sched_policy_constant(SchedulerPolicy_v::Deadline) == SCHED_DEADLINE);
 
 // ── SchedPriority witness ───────────────────────────────────────────
 static_assert(SchedPriority<-20>::nice == -20);
-static_assert(SchedPriority<19>::nice  == 19);
+static_assert(SchedPriority<19>::nice == 19);
 static_assert(!std::is_same_v<SchedPriority<-10>, SchedPriority<10>>);
 
 // ── mint return types are concrete expected<Proof, int> ─────────────
-static_assert(std::is_same_v<
-    decltype(mint_priority<5>(std::declval<eff::BgDrainCtx const&>())),
-    std::expected<SchedPriority<5>, int>>);
+static_assert(std::is_same_v<decltype(mint_priority<5>(std::declval<eff::BgDrainCtx const&>())),
+                             std::expected<SchedPriority<5>, int>>);
 
 // ── apply_affinity_to_cpu gate (V-192): bg/init pin, NOT the Fg hot path ─
-static_assert( CtxFitsRuntimeAffinity<eff::BgDrainCtx>);
-static_assert( CtxFitsRuntimeAffinity<eff::ColdInitCtx>);
+static_assert(CtxFitsRuntimeAffinity<eff::BgDrainCtx>);
+static_assert(CtxFitsRuntimeAffinity<eff::ColdInitCtx>);
 static_assert(!CtxFitsRuntimeAffinity<eff::HotFgCtx>,
-    "FIXY-V-192: the Fg hot path owns no Bg/Init effect — it must not be "
-    "able to re-pin a thread.");
+              "FIXY-V-192: the Fg hot path owns no Bg/Init effect — it must not be "
+              "able to re-pin a thread.");
 
 // ── Runtime smoke: unprivileged-safe policy + nice + best-effort pin ─
 inline bool runtime_smoke_test() {

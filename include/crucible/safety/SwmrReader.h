@@ -121,20 +121,18 @@ namespace crucible::safety::extract {
 // ═════════════════════════════════════════════════════════════════════
 
 template <auto FnPtr>
-concept SwmrReader =
-    arity_v<FnPtr> == 1
-    // Parameter 0: non-const rvalue reference to a SWMR reader
-    // handle (D07 IsSwmrReader on the underlying type).
-    && std::is_rvalue_reference_v<param_type_t<FnPtr, 0>>
-    && !std::is_const_v<std::remove_reference_t<param_type_t<FnPtr, 0>>>
-    && is_swmr_reader_v<std::remove_cvref_t<param_type_t<FnPtr, 0>>>
-    // Return — non-void, non-reference, non-OwnedRegion.  The
-    // load() yields a by-value snapshot; reference returns would
-    // expose torn state and OwnedRegion returns would mean a
-    // different (region-loading) shape.
-    && !std::is_void_v<return_type_t<FnPtr>>
-    && !std::is_reference_v<return_type_t<FnPtr>>
-    && !is_owned_region_v<return_type_t<FnPtr>>;
+concept SwmrReader = arity_v<FnPtr> == 1
+                  // Parameter 0: non-const rvalue reference to a SWMR reader
+                  // handle (D07 IsSwmrReader on the underlying type).
+                  && std::is_rvalue_reference_v<param_type_t<FnPtr, 0>>
+                  && !std::is_const_v<std::remove_reference_t<param_type_t<FnPtr, 0>>>
+                  && is_swmr_reader_v<std::remove_cvref_t<param_type_t<FnPtr, 0>>>
+                  // Return — non-void, non-reference, non-OwnedRegion.  The
+                  // load() yields a by-value snapshot; reference returns would
+                  // expose torn state and OwnedRegion returns would mean a
+                  // different (region-loading) shape.
+                  && !std::is_void_v<return_type_t<FnPtr>> && !std::is_reference_v<return_type_t<FnPtr>>
+                  && !is_owned_region_v<return_type_t<FnPtr>>;
 
 template <auto FnPtr>
 inline constexpr bool is_swmr_reader_function_v = SwmrReader<FnPtr>;
@@ -146,14 +144,12 @@ inline constexpr bool is_swmr_reader_function_v = SwmrReader<FnPtr>;
 // SWMR reader handle's payload type (the type load() returns).
 template <auto FnPtr>
     requires SwmrReader<FnPtr>
-using swmr_reader_handle_value_t =
-    swmr_reader_value_t<std::remove_cvref_t<param_type_t<FnPtr, 0>>>;
+using swmr_reader_handle_value_t = swmr_reader_value_t<std::remove_cvref_t<param_type_t<FnPtr, 0>>>;
 
 // The function's return type after cv-strip.
 template <auto FnPtr>
     requires SwmrReader<FnPtr>
-using swmr_reader_returned_value_t =
-    std::remove_cv_t<return_type_t<FnPtr>>;
+using swmr_reader_returned_value_t = std::remove_cv_t<return_type_t<FnPtr>>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Value-consistency predicate ────────────────────────────────────
@@ -162,8 +158,7 @@ using swmr_reader_returned_value_t =
 template <auto FnPtr>
     requires SwmrReader<FnPtr>
 inline constexpr bool swmr_reader_value_consistent_v =
-    std::is_same_v<swmr_reader_handle_value_t<FnPtr>,
-                   swmr_reader_returned_value_t<FnPtr>>;
+    std::is_same_v<swmr_reader_handle_value_t<FnPtr>, swmr_reader_returned_value_t<FnPtr>>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Self-test block ────────────────────────────────────────────────

@@ -125,22 +125,24 @@ namespace crucible::algebra::lattices {
 // matching the DetSafe/Tolerance/Consistency project convention
 // (bottom=0, strongest constraint at top).
 enum class SuspendBehavior : std::uint8_t {
-    Unknown         = 0,    // bottom: suspend behavior undeclared
-    PausesOnSuspend = 1,    // CLOCK_MONOTONIC — stops while suspended
-    KeepsTicking    = 2,    // top: CLOCK_BOOTTIME — suspend-inclusive
+    Unknown = 0,  // bottom: suspend behavior undeclared
+    PausesOnSuspend = 1,  // CLOCK_MONOTONIC — stops while suspended
+    KeepsTicking = 2,  // top: CLOCK_BOOTTIME — suspend-inclusive
 };
 
 // Cardinality + diagnostic name via reflection.
-inline constexpr std::size_t suspend_behavior_count =
-    std::meta::enumerators_of(^^SuspendBehavior).size();
+inline constexpr std::size_t suspend_behavior_count = std::meta::enumerators_of(^^SuspendBehavior).size();
 
-[[nodiscard]] consteval std::string_view
-suspend_behavior_name(SuspendBehavior b) noexcept {
+[[nodiscard]] consteval std::string_view suspend_behavior_name(SuspendBehavior b) noexcept {
     switch (b) {
-        case SuspendBehavior::Unknown:         return "Unknown";
-        case SuspendBehavior::PausesOnSuspend: return "PausesOnSuspend";
-        case SuspendBehavior::KeepsTicking:    return "KeepsTicking";
-        default: return std::string_view{"<unknown SuspendBehavior>"};
+        case SuspendBehavior::Unknown:
+            return "Unknown";
+        case SuspendBehavior::PausesOnSuspend:
+            return "PausesOnSuspend";
+        case SuspendBehavior::KeepsTicking:
+            return "KeepsTicking";
+        default:
+            return std::string_view{"<unknown SuspendBehavior>"};
     }
 }
 
@@ -149,16 +151,10 @@ suspend_behavior_name(SuspendBehavior b) noexcept {
 // Inherits leq/join/meet from ChainLatticeOps<SuspendBehavior> — see
 // ChainLattice.h for the rationale.
 struct SuspendBehaviorLattice : ChainLatticeOps<SuspendBehavior> {
-    [[nodiscard]] static constexpr element_type bottom() noexcept {
-        return SuspendBehavior::Unknown;
-    }
-    [[nodiscard]] static constexpr element_type top() noexcept {
-        return SuspendBehavior::KeepsTicking;
-    }
+    [[nodiscard]] static constexpr element_type bottom() noexcept { return SuspendBehavior::Unknown; }
+    [[nodiscard]] static constexpr element_type top() noexcept { return SuspendBehavior::KeepsTicking; }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return "SuspendBehaviorLattice";
-    }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "SuspendBehaviorLattice"; }
 
     // ── At<B>: singleton sub-lattice at a fixed type-level behavior ──
     //
@@ -169,19 +165,15 @@ struct SuspendBehaviorLattice : ChainLatticeOps<SuspendBehavior> {
     struct At {
         struct element_type {
             using suspend_behavior_value_type = SuspendBehavior;
-            [[nodiscard]] constexpr operator suspend_behavior_value_type() const noexcept {
-                return B;
-            }
-            [[nodiscard]] constexpr bool operator==(element_type) const noexcept {
-                return true;
-            }
+            [[nodiscard]] constexpr operator suspend_behavior_value_type() const noexcept { return B; }
+            [[nodiscard]] constexpr bool operator==(element_type) const noexcept { return true; }
         };
 
         static constexpr SuspendBehavior behavior = B;
 
         [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-        [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
         [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
 
@@ -202,39 +194,35 @@ struct SuspendBehaviorLattice : ChainLatticeOps<SuspendBehavior> {
 
 // ── Convenience aliases ─────────────────────────────────────────────
 namespace suspend_behavior {
-    using UnknownBehavior      = SuspendBehaviorLattice::At<SuspendBehavior::Unknown>;
-    using PausesOnSuspendClock = SuspendBehaviorLattice::At<SuspendBehavior::PausesOnSuspend>;
-    using KeepsTickingClock    = SuspendBehaviorLattice::At<SuspendBehavior::KeepsTicking>;
+using UnknownBehavior = SuspendBehaviorLattice::At<SuspendBehavior::Unknown>;
+using PausesOnSuspendClock = SuspendBehaviorLattice::At<SuspendBehavior::PausesOnSuspend>;
+using KeepsTickingClock = SuspendBehaviorLattice::At<SuspendBehavior::KeepsTicking>;
 }  // namespace suspend_behavior
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::suspend_behavior_lattice_self_test {
 
 // Cardinality + reflection-based name coverage.
-static_assert(suspend_behavior_count == 3,
-    "SuspendBehavior catalog diverged from {Unknown, PausesOnSuspend, "
-    "KeepsTicking}; adding a behavior requires extending both name "
-    "switches AND bumping the V-184 ClockSourceLattice composition + "
-    "V-188 SuspendBehavior wrapper satisfies<> gate.");
+static_assert(suspend_behavior_count == 3, "SuspendBehavior catalog diverged from {Unknown, PausesOnSuspend, "
+                                           "KeepsTicking}; adding a behavior requires extending both name "
+                                           "switches AND bumping the V-184 ClockSourceLattice composition + "
+                                           "V-188 SuspendBehavior wrapper satisfies<> gate.");
 
 [[nodiscard]] consteval bool every_suspend_behavior_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^SuspendBehavior));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^SuspendBehavior));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
-        if (suspend_behavior_name([:en:]) ==
-            std::string_view{"<unknown SuspendBehavior>"}) {
+        if (suspend_behavior_name([:en:]) == std::string_view{"<unknown SuspendBehavior>"}) {
             return false;
         }
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_suspend_behavior_has_name(),
-    "suspend_behavior_name() switch missing arm for at least one "
-    "behavior — add the arm or the new behavior leaks the "
-    "'<unknown SuspendBehavior>' sentinel into observer debug output.");
+static_assert(every_suspend_behavior_has_name(), "suspend_behavior_name() switch missing arm for at least one "
+                                                 "behavior — add the arm or the new behavior leaks the "
+                                                 "'<unknown SuspendBehavior>' sentinel into observer debug output.");
 
 // Concept conformance — full lattice + each At<B> sub-lattice.
 static_assert(Lattice<SuspendBehaviorLattice>);
@@ -256,33 +244,34 @@ static_assert(std::is_empty_v<suspend_behavior::KeepsTickingClock::element_type>
 // (SuspendBehavior)³ = 27 triples each.  Both verifiers extracted into
 // ChainLattice.h — adding a new behavior auto-extends coverage.
 static_assert(verify_chain_lattice_exhaustive<SuspendBehaviorLattice>(),
-    "SuspendBehaviorLattice's chain-order lattice axioms must hold at "
-    "every (SuspendBehavior)³ triple — failure indicates a defect in "
-    "leq/join/meet or in the underlying enum encoding.");
+              "SuspendBehaviorLattice's chain-order lattice axioms must hold at "
+              "every (SuspendBehavior)³ triple — failure indicates a defect in "
+              "leq/join/meet or in the underlying enum encoding.");
 static_assert(verify_chain_lattice_distributive_exhaustive<SuspendBehaviorLattice>(),
-    "SuspendBehaviorLattice's chain order must satisfy distributivity at "
-    "every (SuspendBehavior)³ triple — a chain order always does, so "
-    "failure would indicate a defect in join or meet.");
+              "SuspendBehaviorLattice's chain order must satisfy distributivity at "
+              "every (SuspendBehavior)³ triple — a chain order always does, so "
+              "failure would indicate a defect in join or meet.");
 
 // Direct order witnesses — the entire chain is increasing, with
 // KeepsTicking at the top (strongest suspend resilience).
-static_assert( SuspendBehaviorLattice::leq(SuspendBehavior::Unknown,         SuspendBehavior::PausesOnSuspend));
-static_assert( SuspendBehaviorLattice::leq(SuspendBehavior::PausesOnSuspend, SuspendBehavior::KeepsTicking));
-static_assert( SuspendBehaviorLattice::leq(SuspendBehavior::Unknown,         SuspendBehavior::KeepsTicking));  // transitive endpoints
+static_assert(SuspendBehaviorLattice::leq(SuspendBehavior::Unknown, SuspendBehavior::PausesOnSuspend));
+static_assert(SuspendBehaviorLattice::leq(SuspendBehavior::PausesOnSuspend, SuspendBehavior::KeepsTicking));
+static_assert(SuspendBehaviorLattice::leq(SuspendBehavior::Unknown,
+                                          SuspendBehavior::KeepsTicking));  // transitive endpoints
 // The load-bearing subsumption: KeepsTicking satisfies a PausesOnSuspend
 // requirement; PausesOnSuspend does NOT satisfy a KeepsTicking one.
-static_assert( SuspendBehaviorLattice::leq(SuspendBehavior::PausesOnSuspend, SuspendBehavior::KeepsTicking),
-    "SuspendBehaviorLattice: KeepsTicking ⊒ PausesOnSuspend — a boot-clock "
-    "provider serves a monotonic-clock requirement.");
-static_assert(!SuspendBehaviorLattice::leq(SuspendBehavior::KeepsTicking,    SuspendBehavior::PausesOnSuspend),
-    "SuspendBehaviorLattice: PausesOnSuspend ⋣ KeepsTicking — a monotonic "
-    "clock does NOT satisfy a suspend-inclusive requirement; this is the "
-    "DeadlineWatchdog false-Healthy bug forbidden at the type level.");
-static_assert(!SuspendBehaviorLattice::leq(SuspendBehavior::KeepsTicking,    SuspendBehavior::Unknown));
+static_assert(SuspendBehaviorLattice::leq(SuspendBehavior::PausesOnSuspend, SuspendBehavior::KeepsTicking),
+              "SuspendBehaviorLattice: KeepsTicking ⊒ PausesOnSuspend — a boot-clock "
+              "provider serves a monotonic-clock requirement.");
+static_assert(!SuspendBehaviorLattice::leq(SuspendBehavior::KeepsTicking, SuspendBehavior::PausesOnSuspend),
+              "SuspendBehaviorLattice: PausesOnSuspend ⋣ KeepsTicking — a monotonic "
+              "clock does NOT satisfy a suspend-inclusive requirement; this is the "
+              "DeadlineWatchdog false-Healthy bug forbidden at the type level.");
+static_assert(!SuspendBehaviorLattice::leq(SuspendBehavior::KeepsTicking, SuspendBehavior::Unknown));
 
 // Pin bottom / top to the chain endpoints.
 static_assert(SuspendBehaviorLattice::bottom() == SuspendBehavior::Unknown);
-static_assert(SuspendBehaviorLattice::top()    == SuspendBehavior::KeepsTicking);
+static_assert(SuspendBehaviorLattice::top() == SuspendBehavior::KeepsTicking);
 
 // Join strengthens (max); meet weakens (min).
 static_assert(SuspendBehaviorLattice::join(SuspendBehavior::Unknown, SuspendBehavior::KeepsTicking)
@@ -296,19 +285,17 @@ static_assert(SuspendBehaviorLattice::meet(SuspendBehavior::PausesOnSuspend, Sus
 
 // Diagnostic names.
 static_assert(SuspendBehaviorLattice::name() == "SuspendBehaviorLattice");
-static_assert(suspend_behavior::UnknownBehavior::name()      == "SuspendBehaviorLattice::At<Unknown>");
+static_assert(suspend_behavior::UnknownBehavior::name() == "SuspendBehaviorLattice::At<Unknown>");
 static_assert(suspend_behavior::PausesOnSuspendClock::name() == "SuspendBehaviorLattice::At<PausesOnSuspend>");
-static_assert(suspend_behavior::KeepsTickingClock::name()    == "SuspendBehaviorLattice::At<KeepsTicking>");
+static_assert(suspend_behavior::KeepsTickingClock::name() == "SuspendBehaviorLattice::At<KeepsTicking>");
 
 // Reflection-driven coverage check on At<B>::name().
 [[nodiscard]] consteval bool every_at_suspend_behavior_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^SuspendBehavior));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^SuspendBehavior));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
-        if (SuspendBehaviorLattice::At<([:en:])>::name() ==
-            std::string_view{"SuspendBehaviorLattice::At<?>"}) {
+        if (SuspendBehaviorLattice::At<([:en:])>::name() == std::string_view{"SuspendBehaviorLattice::At<?>"}) {
             return false;
         }
     }
@@ -316,18 +303,22 @@ static_assert(suspend_behavior::KeepsTickingClock::name()    == "SuspendBehavior
     return true;
 }
 static_assert(every_at_suspend_behavior_has_name(),
-    "SuspendBehaviorLattice::At<B>::name() switch missing an arm for at "
-    "least one behavior — add the arm or the new behavior leaks the "
-    "'SuspendBehaviorLattice::At<?>' sentinel.");
+              "SuspendBehaviorLattice::At<B>::name() switch missing an arm for at "
+              "least one behavior — add the arm or the new behavior leaks the "
+              "'SuspendBehaviorLattice::At<?>' sentinel.");
 
 // Convenience aliases resolve correctly.
-static_assert(suspend_behavior::UnknownBehavior::behavior      == SuspendBehavior::Unknown);
+static_assert(suspend_behavior::UnknownBehavior::behavior == SuspendBehavior::Unknown);
 static_assert(suspend_behavior::PausesOnSuspendClock::behavior == SuspendBehavior::PausesOnSuspend);
-static_assert(suspend_behavior::KeepsTickingClock::behavior    == SuspendBehavior::KeepsTicking);
+static_assert(suspend_behavior::KeepsTickingClock::behavior == SuspendBehavior::KeepsTicking);
 
 // ── Layout invariants on Graded<...,At<B>,T_> ───────────────────────
-struct OneByteValue   { char c{0}; };
-struct EightByteValue { unsigned long long v{0}; };
+struct OneByteValue {
+    char c{0};
+};
+struct EightByteValue {
+    unsigned long long v{0};
+};
 
 // KeepsTickingClock — the most semantically-loaded behavior (the boot-
 // clock gate the DeadlineWatchdog migration needs).  Witnessed against
@@ -353,9 +344,9 @@ inline void runtime_smoke_test() {
     // Full SuspendBehaviorLattice ops at runtime.
     SuspendBehavior a = SuspendBehavior::Unknown;
     SuspendBehavior b = SuspendBehavior::KeepsTicking;
-    [[maybe_unused]] bool            l1  = SuspendBehaviorLattice::leq(a, b);
-    [[maybe_unused]] SuspendBehavior j1  = SuspendBehaviorLattice::join(a, b);
-    [[maybe_unused]] SuspendBehavior m1  = SuspendBehaviorLattice::meet(a, b);
+    [[maybe_unused]] bool l1 = SuspendBehaviorLattice::leq(a, b);
+    [[maybe_unused]] SuspendBehavior j1 = SuspendBehaviorLattice::join(a, b);
+    [[maybe_unused]] SuspendBehavior m1 = SuspendBehaviorLattice::meet(a, b);
     [[maybe_unused]] SuspendBehavior bot = SuspendBehaviorLattice::bottom();
     [[maybe_unused]] SuspendBehavior top = SuspendBehaviorLattice::top();
 
@@ -368,11 +359,11 @@ inline void runtime_smoke_test() {
     // Graded<Absolute, KeepsTickingClock, T> at runtime.
     OneByteValue v{42};
     BootClockGraded<OneByteValue> initial{v, suspend_behavior::KeepsTickingClock::bottom()};
-    auto widened  = initial.weaken(suspend_behavior::KeepsTickingClock::top());
+    auto widened = initial.weaken(suspend_behavior::KeepsTickingClock::top());
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(suspend_behavior::KeepsTickingClock::top());
 
-    [[maybe_unused]] auto g  = rv_widen.grade();
+    [[maybe_unused]] auto g = rv_widen.grade();
     [[maybe_unused]] auto vc = composed.peek().c;
 
     // Conversion: At<SuspendBehavior>::element_type → SuspendBehavior at runtime.

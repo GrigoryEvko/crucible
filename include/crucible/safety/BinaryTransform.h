@@ -107,22 +107,20 @@ namespace crucible::safety::extract {
 // ═════════════════════════════════════════════════════════════════════
 
 template <auto FnPtr>
-concept BinaryTransform =
-    arity_v<FnPtr> == 2
-    // Parameter 0: non-const rvalue reference to OwnedRegion.
-    && std::is_rvalue_reference_v<param_type_t<FnPtr, 0>>
-    && !std::is_const_v<std::remove_reference_t<param_type_t<FnPtr, 0>>>
-    && is_owned_region_v<param_type_t<FnPtr, 0>>
-    // Parameter 1: non-const rvalue reference to OwnedRegion.
-    // (Same constraint shape as parameter 0; two distinct OwnedRegions
-    // may share a tag or differ.)
-    && std::is_rvalue_reference_v<param_type_t<FnPtr, 1>>
-    && !std::is_const_v<std::remove_reference_t<param_type_t<FnPtr, 1>>>
-    && is_owned_region_v<param_type_t<FnPtr, 1>>
-    // Return type — void (in-place against lhs) OR OwnedRegion
-    // (out-of-place output).
-    && (std::is_void_v<return_type_t<FnPtr>>
-        || is_owned_region_v<return_type_t<FnPtr>>);
+concept BinaryTransform = arity_v<FnPtr> == 2
+                       // Parameter 0: non-const rvalue reference to OwnedRegion.
+                       && std::is_rvalue_reference_v<param_type_t<FnPtr, 0>>
+                       && !std::is_const_v<std::remove_reference_t<param_type_t<FnPtr, 0>>>
+                       && is_owned_region_v<param_type_t<FnPtr, 0>>
+                       // Parameter 1: non-const rvalue reference to OwnedRegion.
+                       // (Same constraint shape as parameter 0; two distinct OwnedRegions
+                       // may share a tag or differ.)
+                       && std::is_rvalue_reference_v<param_type_t<FnPtr, 1>>
+                       && !std::is_const_v<std::remove_reference_t<param_type_t<FnPtr, 1>>>
+                       && is_owned_region_v<param_type_t<FnPtr, 1>>
+                       // Return type — void (in-place against lhs) OR OwnedRegion
+                       // (out-of-place output).
+                       && (std::is_void_v<return_type_t<FnPtr>> || is_owned_region_v<return_type_t<FnPtr>>);
 
 template <auto FnPtr>
 inline constexpr bool is_binary_transform_v = BinaryTransform<FnPtr>;
@@ -132,30 +130,25 @@ inline constexpr bool is_binary_transform_v = BinaryTransform<FnPtr>;
 // ═════════════════════════════════════════════════════════════════════
 
 template <auto FnPtr>
-inline constexpr bool is_in_place_binary_transform_v =
-    BinaryTransform<FnPtr> && std::is_void_v<return_type_t<FnPtr>>;
+inline constexpr bool is_in_place_binary_transform_v = BinaryTransform<FnPtr> && std::is_void_v<return_type_t<FnPtr>>;
 
 // LHS / RHS region tags — constrained on BinaryTransform.
 template <auto FnPtr>
     requires BinaryTransform<FnPtr>
-using binary_transform_lhs_tag_t =
-    owned_region_tag_t<param_type_t<FnPtr, 0>>;
+using binary_transform_lhs_tag_t = owned_region_tag_t<param_type_t<FnPtr, 0>>;
 
 template <auto FnPtr>
     requires BinaryTransform<FnPtr>
-using binary_transform_rhs_tag_t =
-    owned_region_tag_t<param_type_t<FnPtr, 1>>;
+using binary_transform_rhs_tag_t = owned_region_tag_t<param_type_t<FnPtr, 1>>;
 
 // LHS / RHS element types.
 template <auto FnPtr>
     requires BinaryTransform<FnPtr>
-using binary_transform_lhs_value_t =
-    owned_region_value_t<param_type_t<FnPtr, 0>>;
+using binary_transform_lhs_value_t = owned_region_value_t<param_type_t<FnPtr, 0>>;
 
 template <auto FnPtr>
     requires BinaryTransform<FnPtr>
-using binary_transform_rhs_value_t =
-    owned_region_value_t<param_type_t<FnPtr, 1>>;
+using binary_transform_rhs_value_t = owned_region_value_t<param_type_t<FnPtr, 1>>;
 
 // Output region's Tag, or `void` when in-place.  Same dispatcher
 // pattern as UnaryTransform — discriminate the void case to avoid
@@ -179,9 +172,8 @@ struct binary_transform_output_tag_select<FnPtr, /*IsInPlace=*/false> {
 
 template <auto FnPtr>
     requires BinaryTransform<FnPtr>
-using binary_transform_output_tag_t = typename
-    detail::binary_transform_output_tag_select<
-        FnPtr, std::is_void_v<return_type_t<FnPtr>>>::type;
+using binary_transform_output_tag_t =
+    typename detail::binary_transform_output_tag_select<FnPtr, std::is_void_v<return_type_t<FnPtr>>>::type;
 
 // Same-tag predicate.  Constrained on BinaryTransform so non-
 // matching signatures are rejected at the variable-template's
@@ -189,8 +181,7 @@ using binary_transform_output_tag_t = typename
 template <auto FnPtr>
     requires BinaryTransform<FnPtr>
 inline constexpr bool binary_transform_has_same_tag_v =
-    std::is_same_v<binary_transform_lhs_tag_t<FnPtr>,
-                   binary_transform_rhs_tag_t<FnPtr>>;
+    std::is_same_v<binary_transform_lhs_tag_t<FnPtr>, binary_transform_rhs_tag_t<FnPtr>>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Self-test block ────────────────────────────────────────────────

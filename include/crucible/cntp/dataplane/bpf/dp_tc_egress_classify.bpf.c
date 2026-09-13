@@ -28,8 +28,7 @@ struct {
 } dp_tc_flow_classes SEC(".maps");
 
 SEC("tc")
-int crucible_dp_tc_egress_classify(struct __sk_buff *skb)
-{
+int crucible_dp_tc_egress_classify(struct __sk_buff* skb) {
     (void)skb;
     return TC_ACT_OK;
 }

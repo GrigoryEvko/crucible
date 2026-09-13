@@ -91,9 +91,9 @@ namespace crucible::safety {
 // is purely cache-driven — see concurrent/ParallelismRule.h.
 
 struct WorkBudget {
-    std::size_t read_bytes  = 0;
+    std::size_t read_bytes = 0;
     std::size_t write_bytes = 0;
-    std::size_t item_count  = 0;  // informational; not consulted by the rule
+    std::size_t item_count = 0;  // informational; not consulted by the rule
 
     // ── Convenience constructors for the 95% case ──────────────────
     //
@@ -102,26 +102,24 @@ struct WorkBudget {
     // read_bytes / write_bytes after if access is read-only or
     // write-only.
     template <typename T>
-    [[nodiscard]] static constexpr WorkBudget
-    for_span(std::span<T const> data) noexcept {
+    [[nodiscard]] static constexpr WorkBudget for_span(std::span<T const> data) noexcept {
         const std::size_t n = data.size();
         const std::size_t bytes = n * sizeof(T);
         return WorkBudget{
-            .read_bytes  = bytes,
+            .read_bytes = bytes,
             .write_bytes = bytes,
-            .item_count  = n,
+            .item_count = n,
         };
     }
 
     // Read-only variant — for when the body only reads (parallel_reduce).
     template <typename T>
-    [[nodiscard]] static constexpr WorkBudget
-    for_span_read_only(std::span<T const> data) noexcept {
+    [[nodiscard]] static constexpr WorkBudget for_span_read_only(std::span<T const> data) noexcept {
         const std::size_t n = data.size();
         return WorkBudget{
-            .read_bytes  = n * sizeof(T),
+            .read_bytes = n * sizeof(T),
             .write_bytes = 0,
-            .item_count  = n,
+            .item_count = n,
         };
     }
 };
@@ -133,12 +131,11 @@ struct WorkBudget {
 // Returns true iff the recommendation is Parallel.  For finer-
 // grained decisions (factor + NUMA policy), call
 // concurrent::recommend_parallelism(budget) directly.
-[[nodiscard]] inline bool
-should_parallelize(WorkBudget budget) noexcept {
+[[nodiscard]] inline bool should_parallelize(WorkBudget budget) noexcept {
     const crucible::concurrent::WorkBudget cost_budget{
-        .read_bytes  = budget.read_bytes,
+        .read_bytes = budget.read_bytes,
         .write_bytes = budget.write_bytes,
-        .item_count  = budget.item_count,
+        .item_count = budget.item_count,
     };
     return crucible::concurrent::recommend_parallelism(cost_budget).is_parallel();
 }
@@ -153,53 +150,33 @@ namespace detail {
 // Body is required to be noexcept-invocable with each shard's
 // sub-region type.  jthread's stop_token argument is unused.
 template <typename Tup, typename Body, std::size_t... Is>
-void spawn_workers_(Tup&& subs, Body body, std::index_sequence<Is...>) noexcept
-{
+void spawn_workers_(Tup&& subs, Body body, std::index_sequence<Is...>) noexcept {
     [[maybe_unused]] std::array<std::jthread, sizeof...(Is)> threads = {
-        std::jthread{
-            [sub = std::move(std::get<Is>(std::forward<Tup>(subs))),
-             body](std::stop_token) mutable noexcept {
-                body(std::move(sub));
-            }
-        }...
-    };
+        std::jthread{[sub = std::move(std::get<Is>(std::forward<Tup>(subs))), body](std::stop_token) mutable noexcept {
+            body(std::move(sub));
+        }}...};
     // ~std::array runs at scope exit, joining every jthread.
 }
 
 // Map-reduce variant: each worker writes its partial result into the
 // I-th slot of partials_array.  After join, caller folds the array.
 template <typename Tup, typename Mapper, typename PartialArray, std::size_t... Is>
-void spawn_workers_with_partials_(Tup&& subs, Mapper mapper,
-                                    PartialArray& partials,
-                                    std::index_sequence<Is...>) noexcept
-{
+void spawn_workers_with_partials_(Tup&& subs, Mapper mapper, PartialArray& partials,
+                                  std::index_sequence<Is...>) noexcept {
     [[maybe_unused]] std::array<std::jthread, sizeof...(Is)> threads = {
-        std::jthread{
-            [sub = std::move(std::get<Is>(std::forward<Tup>(subs))),
-             mapper, &slot = partials[Is]]
-            (std::stop_token) mutable noexcept {
-                slot = mapper(std::move(sub));
-            }
-        }...
-    };
+        std::jthread{[sub = std::move(std::get<Is>(std::forward<Tup>(subs))), mapper,
+                      &slot = partials[Is]](std::stop_token) mutable noexcept { slot = mapper(std::move(sub)); }}...};
 }
 
 // Pair variant: each worker captures sub_a_I and sub_b_I (BOTH by
 // move, one shard per region), plus body by copy.  Body is called
 // with both sub-regions for the I-th shard.
 template <typename TupA, typename TupB, typename Body, std::size_t... Is>
-void spawn_workers_pair_(TupA&& subs_a, TupB&& subs_b, Body body,
-                          std::index_sequence<Is...>) noexcept
-{
+void spawn_workers_pair_(TupA&& subs_a, TupB&& subs_b, Body body, std::index_sequence<Is...>) noexcept {
     [[maybe_unused]] std::array<std::jthread, sizeof...(Is)> threads = {
-        std::jthread{
-            [sub_a = std::move(std::get<Is>(std::forward<TupA>(subs_a))),
-             sub_b = std::move(std::get<Is>(std::forward<TupB>(subs_b))),
-             body](std::stop_token) mutable noexcept {
-                body(std::move(sub_a), std::move(sub_b));
-            }
-        }...
-    };
+        std::jthread{[sub_a = std::move(std::get<Is>(std::forward<TupA>(subs_a))),
+                      sub_b = std::move(std::get<Is>(std::forward<TupB>(subs_b))),
+                      body](std::stop_token) mutable noexcept { body(std::move(sub_a), std::move(sub_b)); }}...};
 }
 
 }  // namespace detail
@@ -240,19 +217,15 @@ void spawn_workers_pair_(TupA&& subs_a, TupB&& subs_b, Body body,
 // parallel_for_views / parallel_reduce_views chaining.
 
 template <std::size_t N, typename T, typename Whole, typename Body>
-[[nodiscard]] OwnedRegion<T, Whole>
-parallel_for_views(OwnedRegion<T, Whole>&& region, Body body) noexcept
-{
+[[nodiscard]] OwnedRegion<T, Whole> parallel_for_views(OwnedRegion<T, Whole>&& region, Body body) noexcept {
     static_assert(N > 0, "parallel_for_views<N> requires N > 0");
-    static_assert(
-        std::is_nothrow_invocable_v<Body&,
-                                    OwnedRegion<T, Slice<Whole, 0>>&&>,
-        "parallel_for_views body must be noexcept-invocable as "
-        "void(OwnedRegion<T, Slice<Whole, I>>&&) — typically a generic lambda."
-        "  Required by Crucible's -fno-exceptions rule.");
+    static_assert(std::is_nothrow_invocable_v<Body&, OwnedRegion<T, Slice<Whole, 0>>&&>,
+                  "parallel_for_views body must be noexcept-invocable as "
+                  "void(OwnedRegion<T, Slice<Whole, I>>&&) — typically a generic lambda."
+                  "  Required by Crucible's -fno-exceptions rule.");
 
     // Snapshot base+count BEFORE moving the region (split_into consumes it).
-    T*                base  = region.data();
+    T* base = region.data();
     const std::size_t count = region.size();
 
     if constexpr (N == 1) {
@@ -268,15 +241,13 @@ parallel_for_views(OwnedRegion<T, Whole>&& region, Body body) noexcept
         // boundary so a move-only body (capturing unique_ptr, Linear<T>,
         // etc.) yields a clean diagnostic naming the contract instead
         // of a deep std::__invoke_impl / std::jthread error.
-        static_assert(std::is_copy_constructible_v<Body>,
-            "parallel_for_views<N> body must be CopyConstructible when "
-            "N >= 2 — captured by value into each per-worker jthread "
-            "lambda.  Move-only callables (capturing unique_ptr, "
-            "Linear<T>, etc.) are rejected by this gate.");
+        static_assert(std::is_copy_constructible_v<Body>, "parallel_for_views<N> body must be CopyConstructible when "
+                                                          "N >= 2 — captured by value into each per-worker jthread "
+                                                          "lambda.  Move-only callables (capturing unique_ptr, "
+                                                          "Linear<T>, etc.) are rejected by this gate.");
 
         auto subs = std::move(region).template split_into<N>();
-        detail::spawn_workers_(std::move(subs), body,
-                                std::make_index_sequence<N>{});
+        detail::spawn_workers_(std::move(subs), body, std::make_index_sequence<N>{});
         // ~std::array<jthread, N> joins all workers above; control
         // reaches here only after every worker has completed.
     }
@@ -365,22 +336,15 @@ parallel_for_views(OwnedRegion<T, Whole>&& region, Body body) noexcept
 // (init, mapper, reducer) shape is sufficient and stable for
 // existing call sites.
 
-template <std::size_t N, typename R, typename T, typename Whole,
-          typename Mapper, typename Reducer>
-[[nodiscard]] std::pair<R, OwnedRegion<T, Whole>>
-parallel_reduce_views(OwnedRegion<T, Whole>&& region, R init,
-                      Mapper mapper, Reducer reducer) noexcept
-{
+template <std::size_t N, typename R, typename T, typename Whole, typename Mapper, typename Reducer>
+[[nodiscard]] std::pair<R, OwnedRegion<T, Whole>> parallel_reduce_views(OwnedRegion<T, Whole>&& region, R init,
+                                                                        Mapper mapper, Reducer reducer) noexcept {
     static_assert(N > 0, "parallel_reduce_views<N, R> requires N > 0");
-    static_assert(
-        std::is_nothrow_invocable_r_v<R, Mapper&,
-                                       OwnedRegion<T, Slice<Whole, 0>>&&>,
-        "Mapper must be noexcept-invocable as R(OwnedRegion<T, Slice<Whole, I>>&&).");
-    static_assert(
-        std::is_nothrow_invocable_r_v<R, Reducer&, R, R>,
-        "Reducer must be noexcept-invocable as R(R, R).");
+    static_assert(std::is_nothrow_invocable_r_v<R, Mapper&, OwnedRegion<T, Slice<Whole, 0>>&&>,
+                  "Mapper must be noexcept-invocable as R(OwnedRegion<T, Slice<Whole, I>>&&).");
+    static_assert(std::is_nothrow_invocable_r_v<R, Reducer&, R, R>, "Reducer must be noexcept-invocable as R(R, R).");
 
-    T*                base  = region.data();
+    T* base = region.data();
     const std::size_t count = region.size();
 
     R result = init;
@@ -401,19 +365,19 @@ parallel_reduce_views(OwnedRegion<T, Whole>&& region, R init,
         // error.  Reducer is used by reference in the post-join fold,
         // so it does NOT require copy-constructibility.
         static_assert(std::is_copy_constructible_v<Mapper>,
-            "parallel_reduce_views<N, R> mapper must be CopyConstructible "
-            "when N >= 2 — captured by value into each per-worker "
-            "jthread lambda.  Move-only callables are rejected by this "
-            "gate.");
+                      "parallel_reduce_views<N, R> mapper must be CopyConstructible "
+                      "when N >= 2 — captured by value into each per-worker "
+                      "jthread lambda.  Move-only callables are rejected by this "
+                      "gate.");
 
         // Stack-allocated partials.  Each worker writes its slot;
         // no atomic needed (workers write disjoint slots).
         std::array<R, N> partials{};
-        for (auto& p : partials) p = init;  // initialise in case mapper fails
+        for (auto& p : partials)
+            p = init;  // initialise in case mapper fails
 
         auto subs = std::move(region).template split_into<N>();
-        detail::spawn_workers_with_partials_(std::move(subs), mapper, partials,
-                                              std::make_index_sequence<N>{});
+        detail::spawn_workers_with_partials_(std::move(subs), mapper, partials, std::make_index_sequence<N>{});
         // ~std::array<jthread, N> joins all workers.
 
         // Fold the partials on the main thread.  Plain reads —
@@ -425,10 +389,8 @@ parallel_reduce_views(OwnedRegion<T, Whole>&& region, R init,
         }
     }
 
-    return std::pair<R, OwnedRegion<T, Whole>>{
-        std::move(result),
-        OwnedRegion<T, Whole>::template rebuild_parent_<Whole>(base, count)
-    };
+    return std::pair<R, OwnedRegion<T, Whole>>{std::move(result),
+                                               OwnedRegion<T, Whole>::template rebuild_parent_<Whole>(base, count)};
 }
 
 // ── parallel_apply_pair<N, T1, W1, T2, W2, Body> ─────────────────────
@@ -488,22 +450,15 @@ parallel_reduce_views(OwnedRegion<T, Whole>&& region, R init,
 //   void f(OwnedRegion<T1, W1>&&, OwnedRegion<T2, W2>&&)
 // to this primitive when the cost model picks parallel.
 
-template <std::size_t N, typename T1, typename W1, typename T2, typename W2,
-          typename Body>
+template <std::size_t N, typename T1, typename W1, typename T2, typename W2, typename Body>
 [[nodiscard]] std::pair<OwnedRegion<T1, W1>, OwnedRegion<T2, W2>>
-parallel_apply_pair(OwnedRegion<T1, W1>&& region_a,
-                    OwnedRegion<T2, W2>&& region_b,
-                    Body body) noexcept
-{
+parallel_apply_pair(OwnedRegion<T1, W1>&& region_a, OwnedRegion<T2, W2>&& region_b, Body body) noexcept {
     static_assert(N > 0, "parallel_apply_pair<N> requires N > 0");
-    static_assert(
-        std::is_nothrow_invocable_v<Body&,
-                                    OwnedRegion<T1, Slice<W1, 0>>&&,
-                                    OwnedRegion<T2, Slice<W2, 0>>&&>,
-        "parallel_apply_pair body must be noexcept-invocable as "
-        "void(OwnedRegion<T1, Slice<W1, I>>&&, OwnedRegion<T2, Slice<W2, I>>&&) "
-        "— typically a generic lambda.  Required by Crucible's "
-        "-fno-exceptions rule.");
+    static_assert(std::is_nothrow_invocable_v<Body&, OwnedRegion<T1, Slice<W1, 0>>&&, OwnedRegion<T2, Slice<W2, 0>>&&>,
+                  "parallel_apply_pair body must be noexcept-invocable as "
+                  "void(OwnedRegion<T1, Slice<W1, I>>&&, OwnedRegion<T2, Slice<W2, I>>&&) "
+                  "— typically a generic lambda.  Required by Crucible's "
+                  "-fno-exceptions rule.");
 
     // Element-count match per FOUND-F02 / 27_04 §3.2 — body sees
     // both shards simultaneously and a mismatch would mean shards
@@ -513,9 +468,9 @@ parallel_apply_pair(OwnedRegion<T1, W1>&& region_a,
     CRUCIBLE_ASSERT(region_a.size() == region_b.size());
 
     // Snapshot base+count BEFORE moving (split_into consumes each).
-    T1*               base_a  = region_a.data();
+    T1* base_a = region_a.data();
     const std::size_t count_a = region_a.size();
-    T2*               base_b  = region_b.data();
+    T2* base_b = region_b.data();
     const std::size_t count_b = region_b.size();
 
     if constexpr (N == 1) {
@@ -524,24 +479,21 @@ parallel_apply_pair(OwnedRegion<T1, W1>&& region_a,
         // direct call; copy-constructibility is NOT required here.
         auto subs_a = std::move(region_a).template split_into<1>();
         auto subs_b = std::move(region_b).template split_into<1>();
-        body(std::move(std::get<0>(subs_a)),
-             std::move(std::get<0>(subs_b)));
+        body(std::move(std::get<0>(subs_a)), std::move(std::get<0>(subs_b)));
     } else {
         // Parallel path: spawn_workers_pair_ captures body BY VALUE
         // into each per-worker jthread lambda (one copy per worker).
         // Lift the contract from the spawn_workers_pair_ depths to
         // the API boundary so move-only bodies yield a clean
         // diagnostic naming the contract.  Mirrors F01 / F04 fences.
-        static_assert(std::is_copy_constructible_v<Body>,
-            "parallel_apply_pair<N> body must be CopyConstructible "
-            "when N >= 2 — captured by value into each per-worker "
-            "jthread lambda.  Move-only callables are rejected by "
-            "this gate.");
+        static_assert(std::is_copy_constructible_v<Body>, "parallel_apply_pair<N> body must be CopyConstructible "
+                                                          "when N >= 2 — captured by value into each per-worker "
+                                                          "jthread lambda.  Move-only callables are rejected by "
+                                                          "this gate.");
 
         auto subs_a = std::move(region_a).template split_into<N>();
         auto subs_b = std::move(region_b).template split_into<N>();
-        detail::spawn_workers_pair_(std::move(subs_a), std::move(subs_b),
-                                     body, std::make_index_sequence<N>{});
+        detail::spawn_workers_pair_(std::move(subs_a), std::move(subs_b), body, std::make_index_sequence<N>{});
         // ~std::array<jthread, N> joins all workers above.
     }
 
@@ -550,8 +502,7 @@ parallel_apply_pair(OwnedRegion<T1, W1>&& region_a,
     // parallel_for_views.  Caller receives both regions as a pair.
     return std::pair<OwnedRegion<T1, W1>, OwnedRegion<T2, W2>>{
         OwnedRegion<T1, W1>::template rebuild_parent_<W1>(base_a, count_a),
-        OwnedRegion<T2, W2>::template rebuild_parent_<W2>(base_b, count_b)
-    };
+        OwnedRegion<T2, W2>::template rebuild_parent_<W2>(base_b, count_b)};
 }
 
 // ── parallel_for_views_adaptive<N> ───────────────────────────────────
@@ -564,11 +515,8 @@ parallel_apply_pair(OwnedRegion<T1, W1>&& region_a,
 // parallelise it if it's worth parallelising; never regress."
 
 template <std::size_t N, typename T, typename Whole, typename Body>
-[[nodiscard]] OwnedRegion<T, Whole>
-parallel_for_views_adaptive(OwnedRegion<T, Whole>&& region,
-                            Body body,
-                            WorkBudget budget) noexcept
-{
+[[nodiscard]] OwnedRegion<T, Whole> parallel_for_views_adaptive(OwnedRegion<T, Whole>&& region, Body body,
+                                                                WorkBudget budget) noexcept {
     if (should_parallelize(budget)) {
         return parallel_for_views<N>(std::move(region), std::move(body));
     }
@@ -597,28 +545,29 @@ parallel_for_views_adaptive(OwnedRegion<T, Whole>&& region,
 // purely cache-driven; no per-item ns hint accepted.
 
 template <typename T, typename Whole, typename Body>
-[[nodiscard]] OwnedRegion<T, Whole>
-parallel_for_smart(OwnedRegion<T, Whole>&& region,
-                   Body body) noexcept
-{
+[[nodiscard]] OwnedRegion<T, Whole> parallel_for_smart(OwnedRegion<T, Whole>&& region, Body body) noexcept {
     const auto data = region.cspan();
     const crucible::concurrent::WorkBudget cost_budget{
-        .read_bytes  = data.size() * sizeof(T),
+        .read_bytes = data.size() * sizeof(T),
         .write_bytes = data.size() * sizeof(T),
-        .item_count  = data.size(),
+        .item_count = data.size(),
     };
 
-    const auto decision =
-        crucible::concurrent::recommend_parallelism(cost_budget);
+    const auto decision = crucible::concurrent::recommend_parallelism(cost_budget);
 
     // Dispatch on the snapped factor.  decision.kind == Sequential
     // iff factor == 1 (per CostModel rounding rule).
     switch (decision.factor) {
-        case 16: return parallel_for_views<16>(std::move(region), std::move(body));
-        case 8:  return parallel_for_views<8>(std::move(region), std::move(body));
-        case 4:  return parallel_for_views<4>(std::move(region), std::move(body));
-        case 2:  return parallel_for_views<2>(std::move(region), std::move(body));
-        default: return parallel_for_views<1>(std::move(region), std::move(body));
+        case 16:
+            return parallel_for_views<16>(std::move(region), std::move(body));
+        case 8:
+            return parallel_for_views<8>(std::move(region), std::move(body));
+        case 4:
+            return parallel_for_views<4>(std::move(region), std::move(body));
+        case 2:
+            return parallel_for_views<2>(std::move(region), std::move(body));
+        default:
+            return parallel_for_views<1>(std::move(region), std::move(body));
     }
 }
 

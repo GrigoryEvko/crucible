@@ -190,7 +190,9 @@ struct is_terminal_state<Stop_g<C>> : std::true_type {};
 // dual of a crashed participant is itself crashed.
 
 template <CrashClass C>
-struct dual_of<Stop_g<C>> { using type = Stop_g<C>; };
+struct dual_of<Stop_g<C>> {
+    using type = Stop_g<C>;
+};
 
 // ═════════════════════════════════════════════════════════════════════
 // ── fixy-A2-003: is_dual_involutive<Stop_g<C>> ═════════════════════
@@ -221,14 +223,15 @@ struct is_dual_involutive<Stop_g<C>> : std::true_type {};
 // = Q (normal termination DOES advance into Q).
 
 template <CrashClass C, typename Q>
-struct compose<Stop_g<C>, Q> { using type = Stop_g<C>; };
+struct compose<Stop_g<C>, Q> {
+    using type = Stop_g<C>;
+};
 
 template <CrashClass C1, CrashClass C2>
 struct compose<Stop_g<C1>, Stop_g<C2>> {
-    static_assert(CrashLattice::leq(C2, C1),
-        "crucible::session::diagnostic "
-        "[CrashLattice_Composition_Incompatible]: "
-        "CrashLattice composition rejects: Abort x NoThrow incompatible.");
+    static_assert(CrashLattice::leq(C2, C1), "crucible::session::diagnostic "
+                                             "[CrashLattice_Composition_Incompatible]: "
+                                             "CrashLattice composition rejects: Abort x NoThrow incompatible.");
     using type = Stop_g<C1>;
 };
 
@@ -265,8 +268,7 @@ template <CrashClass C, typename U>
 struct is_subtype_sync_structural<Stop_g<C>, U> : std::true_type {};
 
 template <CrashClass C1, CrashClass C2>
-struct is_subtype_sync_structural<Stop_g<C1>, Stop_g<C2>>
-    : std::bool_constant<CrashLattice::leq(C1, C2)> {};
+struct is_subtype_sync_structural<Stop_g<C1>, Stop_g<C2>> : std::bool_constant<CrashLattice::leq(C1, C2)> {};
 
 namespace detail::subtype {
 
@@ -274,8 +276,7 @@ template <CrashClass C, typename U>
 struct protocol_grade_satisfies<Stop_g<C>, U> : std::true_type {};
 
 template <CrashClass C1, CrashClass C2>
-struct protocol_grade_satisfies<Stop_g<C1>, Stop_g<C2>>
-    : std::bool_constant<CrashLattice::leq(C1, C2)> {};
+struct protocol_grade_satisfies<Stop_g<C1>, Stop_g<C2>> : std::bool_constant<CrashLattice::leq(C1, C2)> {};
 
 }  // namespace detail::subtype
 
@@ -295,9 +296,7 @@ struct protocol_grade_satisfies<Stop_g<C1>, Stop_g<C2>>
 
 template <CrashClass C, typename Resource, typename LoopCtx>
 class [[nodiscard]] SessionHandle<Stop_g<C>, Resource, LoopCtx>
-    : public SessionHandleBase<Stop_g<C>,
-                               SessionHandle<Stop_g<C>, Resource, LoopCtx>>
-{
+    : public SessionHandleBase<Stop_g<C>, SessionHandle<Stop_g<C>, Resource, LoopCtx>> {
     Resource resource_;
 
     template <typename P, typename R, typename L>
@@ -308,28 +307,24 @@ class [[nodiscard]] SessionHandle<Stop_g<C>, Resource, LoopCtx>
     // Ctx>{res}` is rejected ("is private"), so mint_session_handle /
     // step_to_next gates cannot be bypassed.
     template <typename FProto, typename FRes, typename FLoop>
-    friend constexpr auto detail::make_session_handle(FRes, std::source_location)
-        noexcept(std::is_nothrow_move_constructible_v<FRes>)
-        -> SessionHandle<FProto, FRes, FLoop>;
+    friend constexpr auto
+        detail::make_session_handle(FRes, std::source_location) noexcept(std::is_nothrow_move_constructible_v<FRes>)
+            -> SessionHandle<FProto, FRes, FLoop>;
 
     // ── Construction (used by detail::make_session_handle only) ────
-    constexpr explicit SessionHandle(
-        Resource r,
-        std::source_location loc = std::source_location::current())
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : SessionHandleBase<Stop_g<C>,
-                            SessionHandle<Stop_g<C>, Resource, LoopCtx>>{loc}
-        , resource_{std::move(r)} {}
+    constexpr explicit SessionHandle(Resource r, std::source_location loc = std::source_location::current()) noexcept(
+        std::is_nothrow_move_constructible_v<Resource>)
+        : SessionHandleBase<Stop_g<C>, SessionHandle<Stop_g<C>, Resource, LoopCtx>>{loc}, resource_{std::move(r)} {}
 
 public:
-    using protocol      = Stop_g<C>;
+    using protocol = Stop_g<C>;
     using resource_type = Resource;
-    using loop_ctx      = LoopCtx;
+    using loop_ctx = LoopCtx;
     static constexpr CrashClass crash_class = C;
 
-    constexpr SessionHandle(SessionHandle&&) noexcept            = default;
+    constexpr SessionHandle(SessionHandle&&) noexcept = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
-    ~SessionHandle()                                             = default;
+    ~SessionHandle() = default;
 
     // Consume the handle and yield the Resource.  Same shape as End's
     // close(); the semantic difference (crash vs normal) is carried
@@ -338,15 +333,13 @@ public:
     // inherited destructor skips the abandoned-protocol check even
     // without a close() call — but close() remains the correct way
     // to release the Resource in callers that need it back.
-    [[nodiscard]] constexpr Resource close() &&
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-    {
+    [[nodiscard]] constexpr Resource close() && noexcept(std::is_nothrow_move_constructible_v<Resource>) {
         this->mark_consumed_();
         return std::move(resource_);
     }
 
-    [[nodiscard]] constexpr Resource&       resource() &        noexcept { return resource_; }
-    [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return resource_; }
+    [[nodiscard]] constexpr Resource& resource() & noexcept { return resource_; }
+    [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -422,8 +415,7 @@ template <typename R, typename RoleTag>
 struct is_reliable;
 
 template <typename... Roles, typename RoleTag>
-struct is_reliable<ReliableSet<Roles...>, RoleTag>
-    : std::bool_constant<(std::is_same_v<Roles, RoleTag> || ...)> {};
+struct is_reliable<ReliableSet<Roles...>, RoleTag> : std::bool_constant<(std::is_same_v<Roles, RoleTag> || ...)> {};
 
 template <typename R, typename RoleTag>
 inline constexpr bool is_reliable_v = is_reliable<R, RoleTag>::value;
@@ -461,8 +453,7 @@ struct is_crash_branch_for : std::false_type {};
 // A crash branch is any Recv whose payload is Crash<PeerTag> for the
 // requested peer.  The continuation K is arbitrary.
 template <typename PeerTag, typename K>
-struct is_crash_branch_for<Recv<Crash<PeerTag>, K>, PeerTag>
-    : std::true_type {};
+struct is_crash_branch_for<Recv<Crash<PeerTag>, K>, PeerTag> : std::true_type {};
 
 }  // namespace detail::crash
 
@@ -471,9 +462,7 @@ struct has_crash_branch_for_peer : std::false_type {};
 
 template <typename... Branches, typename PeerTag>
 struct has_crash_branch_for_peer<Offer<Branches...>, PeerTag>
-    : std::bool_constant<
-          (detail::crash::is_crash_branch_for<Branches, PeerTag>::value || ...)
-      > {};
+    : std::bool_constant<(detail::crash::is_crash_branch_for<Branches, PeerTag>::value || ...)> {};
 
 // Sender-annotated Offer (#367): the Crash<PeerTag> branch is only
 // REQUIRED when the Offer's declared sender equals PeerTag.  An
@@ -486,14 +475,11 @@ struct has_crash_branch_for_peer<Offer<Branches...>, PeerTag>
 // per-branch fold, excluding the Sender<Role> tag from the search.
 template <typename Role, typename... Branches, typename PeerTag>
 struct has_crash_branch_for_peer<Offer<Sender<Role>, Branches...>, PeerTag>
-    : std::bool_constant<
-          !std::is_same_v<Role, PeerTag> ||
-          (detail::crash::is_crash_branch_for<Branches, PeerTag>::value || ...)
-      > {};
+    : std::bool_constant<!std::is_same_v<Role, PeerTag>
+                         || (detail::crash::is_crash_branch_for<Branches, PeerTag>::value || ...)> {};
 
 template <typename OfferType, typename PeerTag>
-inline constexpr bool has_crash_branch_for_peer_v =
-    has_crash_branch_for_peer<OfferType, PeerTag>::value;
+inline constexpr bool has_crash_branch_for_peer_v = has_crash_branch_for_peer<OfferType, PeerTag>::value;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── assert_has_crash_branch_for<Offer, Peer>() ─────────────────────
@@ -506,14 +492,14 @@ inline constexpr bool has_crash_branch_for_peer_v =
 template <typename OfferType, typename PeerTag>
 consteval void assert_has_crash_branch_for() noexcept {
     static_assert(has_crash_branch_for_peer_v<OfferType, PeerTag>,
-        "crucible::session::diagnostic [CrashBranch_Missing]: "
-        "assert_has_crash_branch_for: OfferType lacks a "
-        "Recv<Crash<PeerTag>, _> branch for the specified unreliable "
-        "peer.  A session receiving from an unreliable peer MUST "
-        "handle that peer's crash — add a Recv<Crash<Peer>, "
-        "RecoveryBody> branch to the Offer<>.  If the peer IS "
-        "reliable, add its role to ReliableSet<> and skip the crash "
-        "branch.");
+                  "crucible::session::diagnostic [CrashBranch_Missing]: "
+                  "assert_has_crash_branch_for: OfferType lacks a "
+                  "Recv<Crash<PeerTag>, _> branch for the specified unreliable "
+                  "peer.  A session receiving from an unreliable peer MUST "
+                  "handle that peer's crash — add a Recv<Crash<Peer>, "
+                  "RecoveryBody> branch to the Offer<>.  If the peer IS "
+                  "reliable, add its role to ReliableSet<> and skip the crash "
+                  "branch.");
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -575,20 +561,16 @@ struct all_offers_have_crash_branch<Continue, PeerTag> : std::true_type {};
 
 // Send / Recv — recurse into the continuation.
 template <typename T, typename K, typename PeerTag>
-struct all_offers_have_crash_branch<Send<T, K>, PeerTag>
-    : all_offers_have_crash_branch<K, PeerTag> {};
+struct all_offers_have_crash_branch<Send<T, K>, PeerTag> : all_offers_have_crash_branch<K, PeerTag> {};
 
 template <typename T, typename K, typename PeerTag>
-struct all_offers_have_crash_branch<Recv<T, K>, PeerTag>
-    : all_offers_have_crash_branch<K, PeerTag> {};
+struct all_offers_have_crash_branch<Recv<T, K>, PeerTag> : all_offers_have_crash_branch<K, PeerTag> {};
 
 // Select — recurse into every branch.  The branches are OUR choice,
 // no crash-branch obligation on Select itself.
 template <typename... Bs, typename PeerTag>
 struct all_offers_have_crash_branch<Select<Bs...>, PeerTag>
-    : std::bool_constant<
-          (all_offers_have_crash_branch<Bs, PeerTag>::value && ...)
-      > {};
+    : std::bool_constant<(all_offers_have_crash_branch<Bs, PeerTag>::value && ...)> {};
 
 // Offer — THE load-bearing case.  This Offer must itself have a
 // Crash<PeerTag> branch AND every downstream continuation must be
@@ -596,10 +578,8 @@ struct all_offers_have_crash_branch<Select<Bs...>, PeerTag>
 // into K checks crash-safety of the continuation.
 template <typename... Bs, typename PeerTag>
 struct all_offers_have_crash_branch<Offer<Bs...>, PeerTag>
-    : std::bool_constant<
-          has_crash_branch_for_peer_v<Offer<Bs...>, PeerTag> &&
-          (all_offers_have_crash_branch<Bs, PeerTag>::value && ...)
-      > {};
+    : std::bool_constant<has_crash_branch_for_peer_v<Offer<Bs...>, PeerTag>
+                         && (all_offers_have_crash_branch<Bs, PeerTag>::value && ...)> {};
 
 // Sender-annotated Offer (#367): the per-Offer crash-branch check
 // is delegated to `has_crash_branch_for_peer_v`, which returns true
@@ -610,16 +590,13 @@ struct all_offers_have_crash_branch<Offer<Bs...>, PeerTag>
 // metadata, not a combinator).
 template <typename Role, typename... Bs, typename PeerTag>
 struct all_offers_have_crash_branch<Offer<Sender<Role>, Bs...>, PeerTag>
-    : std::bool_constant<
-          has_crash_branch_for_peer_v<Offer<Sender<Role>, Bs...>, PeerTag> &&
-          (all_offers_have_crash_branch<Bs, PeerTag>::value && ...)
-      > {};
+    : std::bool_constant<has_crash_branch_for_peer_v<Offer<Sender<Role>, Bs...>, PeerTag>
+                         && (all_offers_have_crash_branch<Bs, PeerTag>::value && ...)> {};
 
 // Loop — recurse into body.  The same body runs every iteration; one
 // walk is sufficient (no need to unroll).
 template <typename B, typename PeerTag>
-struct all_offers_have_crash_branch<Loop<B>, PeerTag>
-    : all_offers_have_crash_branch<B, PeerTag> {};
+struct all_offers_have_crash_branch<Loop<B>, PeerTag> : all_offers_have_crash_branch<B, PeerTag> {};
 
 // VendorPinned (fixy-A2-012) — transparent wrapper.  Pre-fix, the
 // primary forward-declared template at line 553 had no body, so any
@@ -635,8 +612,7 @@ struct all_offers_have_crash_branch<Loop<B>, PeerTag>
 // follows (is_send / is_recv / is_offer / is_empty_choice /
 // is_well_formed / dual_of / compose — lines 432-1067).
 template <VendorBackend V, typename P, typename PeerTag>
-struct all_offers_have_crash_branch<VendorPinned<V, P>, PeerTag>
-    : all_offers_have_crash_branch<P, PeerTag> {};
+struct all_offers_have_crash_branch<VendorPinned<V, P>, PeerTag> : all_offers_have_crash_branch<P, PeerTag> {};
 
 }  // namespace detail::crash
 
@@ -648,15 +624,15 @@ inline constexpr bool every_offer_has_crash_branch_for_peer_v =
 template <typename Proto, typename PeerTag>
 consteval void assert_every_offer_has_crash_branch_for() noexcept {
     static_assert(every_offer_has_crash_branch_for_peer_v<Proto, PeerTag>,
-        "crucible::session::diagnostic [CrashBranch_Missing_In_Tree]: "
-        "assert_every_offer_has_crash_branch_for: at least one Offer<> "
-        "in the protocol tree lacks a Recv<Crash<PeerTag>, _> branch "
-        "for the specified unreliable peer.  Every Offer reachable "
-        "from an unreliable-peer session MUST handle that peer's "
-        "crash — add a Recv<Crash<Peer>, RecoveryBody> branch to the "
-        "offending Offer<>.  If the peer IS reliable along this path, "
-        "add its role to ReliableSet<> so the static check knows to "
-        "skip crash-branch enforcement.");
+                  "crucible::session::diagnostic [CrashBranch_Missing_In_Tree]: "
+                  "assert_every_offer_has_crash_branch_for: at least one Offer<> "
+                  "in the protocol tree lacks a Recv<Crash<PeerTag>, _> branch "
+                  "for the specified unreliable peer.  Every Offer reachable "
+                  "from an unreliable-peer session MUST handle that peer's "
+                  "crash — add a Recv<Crash<Peer>, RecoveryBody> branch to the "
+                  "offending Offer<>.  If the peer IS reliable along this path, "
+                  "add its role to ReliableSet<> so the static check knows to "
+                  "skip crash-branch enforcement.");
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -672,27 +648,26 @@ namespace detail::crash::crash_self_test {
 
 // Fixture tags
 struct Alice {};
-struct Bob   {};
+struct Bob {};
 struct Carol {};
 
 // Fixture payloads
-struct Msg  {};
-struct Ack  {};
+struct Msg {};
+struct Ack {};
 
 // ─── Stop shape traits ────────────────────────────────────────────
 
-static_assert( is_stop_v<Stop>);
-static_assert( is_stop_v<Stop_g<CrashClass::Throw>>);
+static_assert(is_stop_v<Stop>);
+static_assert(is_stop_v<Stop_g<CrashClass::Throw>>);
 static_assert(Stop::crash_class == CrashClass::Abort);
-static_assert(Stop_g<CrashClass::NoThrow>::crash_class
-              == CrashClass::NoThrow);
+static_assert(Stop_g<CrashClass::NoThrow>::crash_class == CrashClass::NoThrow);
 static_assert(!is_stop_v<End>);
 static_assert(!is_stop_v<Send<int, End>>);
 static_assert(!is_stop_v<Loop<Send<int, Continue>>>);
 
-static_assert( is_terminal_state_v<End>);
-static_assert( is_terminal_state_v<Stop>);
-static_assert( is_terminal_state_v<Stop_g<CrashClass::NoThrow>>);
+static_assert(is_terminal_state_v<End>);
+static_assert(is_terminal_state_v<Stop>);
+static_assert(is_terminal_state_v<Stop_g<CrashClass::NoThrow>>);
 static_assert(!is_terminal_state_v<Send<int, End>>);
 static_assert(!is_terminal_state_v<Loop<Send<int, Continue>>>);
 static_assert(!is_terminal_state_v<Continue>);
@@ -705,9 +680,7 @@ static_assert(is_head_v<End>);
 // ─── dual(Stop) = Stop (self-dual) ────────────────────────────────
 
 static_assert(std::is_same_v<dual_of_t<Stop>, Stop>);
-static_assert(std::is_same_v<
-    dual_of_t<Stop_g<CrashClass::ErrorReturn>>,
-    Stop_g<CrashClass::ErrorReturn>>);
+static_assert(std::is_same_v<dual_of_t<Stop_g<CrashClass::ErrorReturn>>, Stop_g<CrashClass::ErrorReturn>>);
 // Involution under dual.
 static_assert(std::is_same_v<dual_of_t<dual_of_t<Stop>>, Stop>);
 
@@ -715,27 +688,19 @@ static_assert(std::is_same_v<dual_of_t<dual_of_t<Stop>>, Stop>);
 
 static_assert(std::is_same_v<compose_t<Stop, End>, Stop>);
 static_assert(std::is_same_v<compose_t<Stop, Send<int, End>>, Stop>);
-static_assert(std::is_same_v<
-    compose_t<Stop, Loop<Send<int, Continue>>>,
-    Stop>);
-static_assert(std::is_same_v<
-    compose_t<Stop_g<CrashClass::Throw>, Send<int, End>>,
-    Stop_g<CrashClass::Throw>>);
-static_assert(std::is_same_v<
-    compose_t<Stop_g<CrashClass::NoThrow>, Stop_g<CrashClass::Abort>>,
-    Stop_g<CrashClass::NoThrow>>);
+static_assert(std::is_same_v<compose_t<Stop, Loop<Send<int, Continue>>>, Stop>);
+static_assert(std::is_same_v<compose_t<Stop_g<CrashClass::Throw>, Send<int, End>>, Stop_g<CrashClass::Throw>>);
+static_assert(
+    std::is_same_v<compose_t<Stop_g<CrashClass::NoThrow>, Stop_g<CrashClass::Abort>>, Stop_g<CrashClass::NoThrow>>);
 
 // Compose does NOT reach through Send's continuation when that
 // continuation is End — End is replaced, not preserved.  But when the
 // continuation is Stop, Stop survives:
-static_assert(std::is_same_v<
-    compose_t<Send<int, Stop>, Recv<bool, End>>,
-    Send<int, Stop>>);
+static_assert(std::is_same_v<compose_t<Send<int, Stop>, Recv<bool, End>>, Send<int, Stop>>);
 
 // Same for Offer/Select branches that end in Stop.
-static_assert(std::is_same_v<
-    compose_t<Offer<Recv<int, Stop>, Recv<bool, End>>, Send<int, End>>,
-    Offer<Recv<int, Stop>, Recv<bool, Send<int, End>>>>);
+static_assert(std::is_same_v<compose_t<Offer<Recv<int, Stop>, Recv<bool, End>>, Send<int, End>>,
+                             Offer<Recv<int, Stop>, Recv<bool, Send<int, End>>>>);
 
 // ─── Well-formedness ──────────────────────────────────────────────
 
@@ -764,14 +729,10 @@ static_assert(is_subtype_sync_v<Stop, Loop<Send<int, Continue>>>);
 
 // Stop_g participates in CrashLattice order when compared to another
 // Stop_g.  Bare Stop is the Abort-grade alias.
-static_assert(is_subtype_sync_v<
-    Stop_g<CrashClass::Abort>, Stop_g<CrashClass::NoThrow>>);
-static_assert(is_subtype_sync_v<
-    Stop_g<CrashClass::Throw>, Stop_g<CrashClass::ErrorReturn>>);
-static_assert(!is_subtype_sync_v<
-    Stop_g<CrashClass::NoThrow>, Stop_g<CrashClass::Abort>>);
-static_assert(!is_subtype_sync_v<
-    Stop_g<CrashClass::ErrorReturn>, Stop_g<CrashClass::Throw>>);
+static_assert(is_subtype_sync_v<Stop_g<CrashClass::Abort>, Stop_g<CrashClass::NoThrow>>);
+static_assert(is_subtype_sync_v<Stop_g<CrashClass::Throw>, Stop_g<CrashClass::ErrorReturn>>);
+static_assert(!is_subtype_sync_v<Stop_g<CrashClass::NoThrow>, Stop_g<CrashClass::Abort>>);
+static_assert(!is_subtype_sync_v<Stop_g<CrashClass::ErrorReturn>, Stop_g<CrashClass::Throw>>);
 
 // Reverse direction: T ⩽ Stop is FALSE for T ≠ Stop.
 static_assert(!is_subtype_sync_v<End, Stop>);
@@ -779,47 +740,47 @@ static_assert(!is_subtype_sync_v<Send<int, End>, Stop>);
 static_assert(!is_subtype_sync_v<Loop<Send<int, Continue>>, Stop>);
 
 // Stop is equivalent only to itself.
-static_assert( equivalent_sync_v<Stop, Stop>);
+static_assert(equivalent_sync_v<Stop, Stop>);
 static_assert(!equivalent_sync_v<Stop, End>);
-static_assert(!equivalent_sync_v<End,  Stop>);
+static_assert(!equivalent_sync_v<End, Stop>);
 
 // Strict subtype: Stop < T for any T ≠ Stop.
-static_assert( is_strict_subtype_sync_v<Stop, End>);
-static_assert( is_strict_subtype_sync_v<Stop, Send<int, End>>);
+static_assert(is_strict_subtype_sync_v<Stop, End>);
+static_assert(is_strict_subtype_sync_v<Stop, Send<int, End>>);
 static_assert(!is_strict_subtype_sync_v<Stop, Stop>);  // not strict vs itself
 
 // ─── Crash<PeerTag> ───────────────────────────────────────────────
 
-static_assert( is_crash_v<Crash<Alice>>);
+static_assert(is_crash_v<Crash<Alice>>);
 static_assert(!is_crash_v<Msg>);
 static_assert(!is_crash_v<Stop>);
 static_assert(!is_crash_v<End>);
 
 // Peer tag extraction.
 static_assert(std::is_same_v<typename Crash<Alice>::peer, Alice>);
-static_assert(std::is_same_v<typename Crash<Bob>::peer,   Bob>);
+static_assert(std::is_same_v<typename Crash<Bob>::peer, Bob>);
 
 // ─── ReliableSet ──────────────────────────────────────────────────
 
 using NoneReliable = ReliableSet<>;
 using AliceReliable = ReliableSet<Alice>;
-using AliceAndBob   = ReliableSet<Alice, Bob>;
-using Everyone      = ReliableSet<Alice, Bob, Carol>;
+using AliceAndBob = ReliableSet<Alice, Bob>;
+using Everyone = ReliableSet<Alice, Bob, Carol>;
 
-static_assert(NoneReliable::size   == 0);
-static_assert(AliceReliable::size  == 1);
-static_assert(AliceAndBob::size    == 2);
-static_assert(Everyone::size       == 3);
+static_assert(NoneReliable::size == 0);
+static_assert(AliceReliable::size == 1);
+static_assert(AliceAndBob::size == 2);
+static_assert(Everyone::size == 3);
 
 static_assert(std::is_same_v<UnreliableAll, NoneReliable>);
 
-static_assert(!is_reliable_v<NoneReliable,  Alice>);
-static_assert( is_reliable_v<AliceReliable, Alice>);
+static_assert(!is_reliable_v<NoneReliable, Alice>);
+static_assert(is_reliable_v<AliceReliable, Alice>);
 static_assert(!is_reliable_v<AliceReliable, Bob>);
-static_assert( is_reliable_v<AliceAndBob,   Alice>);
-static_assert( is_reliable_v<AliceAndBob,   Bob>);
-static_assert(!is_reliable_v<AliceAndBob,   Carol>);
-static_assert( is_reliable_v<Everyone,      Carol>);
+static_assert(is_reliable_v<AliceAndBob, Alice>);
+static_assert(is_reliable_v<AliceAndBob, Bob>);
+static_assert(!is_reliable_v<AliceAndBob, Carol>);
+static_assert(is_reliable_v<Everyone, Carol>);
 
 // ─── has_crash_branch_for_peer_v ──────────────────────────────────
 
@@ -829,19 +790,14 @@ static_assert(!has_crash_branch_for_peer_v<NormalOffer, Alice>);
 static_assert(!has_crash_branch_for_peer_v<NormalOffer, Bob>);
 
 // Offer with a crash branch for Alice.
-using AliceCrashOffer = Offer<
-    Recv<Msg,          End>,
-    Recv<Crash<Alice>, End>>;
-static_assert( has_crash_branch_for_peer_v<AliceCrashOffer, Alice>);
+using AliceCrashOffer = Offer<Recv<Msg, End>, Recv<Crash<Alice>, End>>;
+static_assert(has_crash_branch_for_peer_v<AliceCrashOffer, Alice>);
 static_assert(!has_crash_branch_for_peer_v<AliceCrashOffer, Bob>);
 
 // Offer with crash branches for both Alice and Bob.
-using BothCrashOffer = Offer<
-    Recv<Msg,          End>,
-    Recv<Crash<Alice>, End>,
-    Recv<Crash<Bob>,   End>>;
-static_assert( has_crash_branch_for_peer_v<BothCrashOffer, Alice>);
-static_assert( has_crash_branch_for_peer_v<BothCrashOffer, Bob>);
+using BothCrashOffer = Offer<Recv<Msg, End>, Recv<Crash<Alice>, End>, Recv<Crash<Bob>, End>>;
+static_assert(has_crash_branch_for_peer_v<BothCrashOffer, Alice>);
+static_assert(has_crash_branch_for_peer_v<BothCrashOffer, Bob>);
 static_assert(!has_crash_branch_for_peer_v<BothCrashOffer, Carol>);
 
 // Empty Offer has no crash branches.
@@ -860,7 +816,7 @@ static_assert(!has_crash_branch_for_peer_v<Select<Recv<Crash<Alice>, End>>, Alic
 
 consteval bool check_assert_crash_branch() {
     assert_has_crash_branch_for<AliceCrashOffer, Alice>();
-    assert_has_crash_branch_for<BothCrashOffer,  Bob>();
+    assert_has_crash_branch_for<BothCrashOffer, Bob>();
     return true;
 }
 static_assert(check_assert_crash_branch());
@@ -873,24 +829,16 @@ static_assert(check_assert_crash_branch());
 //       receive Resp → End (success)
 //       receive Crash<Server> → End (recover)
 
-using CrashHandledClient = Send<Msg, Offer<
-    Recv<Ack,            End>,
-    Recv<Crash<Alice>,   End>>>;
+using CrashHandledClient = Send<Msg, Offer<Recv<Ack, End>, Recv<Crash<Alice>, End>>>;
 
 using CrashHandledServer = dual_of_t<CrashHandledClient>;
 
 // Dual correctly flips Send→Recv and Offer→Select; Crash<Alice>
 // payload is NOT dualised (it's a value type, not a session type).
-static_assert(std::is_same_v<
-    CrashHandledServer,
-    Recv<Msg, Select<
-        Send<Ack,            End>,
-        Send<Crash<Alice>,   End>>>>);
+static_assert(std::is_same_v<CrashHandledServer, Recv<Msg, Select<Send<Ack, End>, Send<Crash<Alice>, End>>>>);
 
 // Involution.
-static_assert(std::is_same_v<
-    dual_of_t<dual_of_t<CrashHandledClient>>,
-    CrashHandledClient>);
+static_assert(std::is_same_v<dual_of_t<dual_of_t<CrashHandledClient>>, CrashHandledClient>);
 
 // Well-formed.
 static_assert(is_well_formed_v<CrashHandledClient>);

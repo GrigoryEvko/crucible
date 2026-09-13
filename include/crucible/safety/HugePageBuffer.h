@@ -51,19 +51,17 @@ namespace crucible::safety {
 // include HugePageBuffer.h; the helper has no template parameters
 // because the diagnostic is fixed.
 
-[[noreturn]] CRUCIBLE_COLD
-inline void huge_page_allocation_failed_abort_(std::size_t alloc_bytes,
-                                               std::size_t alignment) noexcept {
+[[noreturn]] CRUCIBLE_COLD inline void huge_page_allocation_failed_abort_(std::size_t alloc_bytes,
+                                                                          std::size_t alignment) noexcept {
     using Tag = diag::HugePageAllocationFailed;
     std::fprintf(stderr,
-        "crucible: fatal contract violation: %.*s\n"
-        "  description: %.*s\n"
-        "  remediation: %.*s\n"
-        "  context: aligned_alloc(alignment=%zu, bytes=%zu) returned nullptr\n",
-        static_cast<int>(Tag::name.size()),         Tag::name.data(),
-        static_cast<int>(Tag::description.size()),  Tag::description.data(),
-        static_cast<int>(Tag::remediation.size()),  Tag::remediation.data(),
-        alignment, alloc_bytes);
+                 "crucible: fatal contract violation: %.*s\n"
+                 "  description: %.*s\n"
+                 "  remediation: %.*s\n"
+                 "  context: aligned_alloc(alignment=%zu, bytes=%zu) returned nullptr\n",
+                 static_cast<int>(Tag::name.size()), Tag::name.data(), static_cast<int>(Tag::description.size()),
+                 Tag::description.data(), static_cast<int>(Tag::remediation.size()), Tag::remediation.data(), alignment,
+                 alloc_bytes);
     std::abort();
 }
 
@@ -71,13 +69,11 @@ template <typename T>
 class [[nodiscard]] HugePageBuffer {
 public:
     using value_type = T;
-    using size_type  = std::size_t;
+    using size_type = std::size_t;
 
     static constexpr size_type huge_page_bytes = ::crucible::warden::kHugePageBytes;
 
-    static constexpr std::string_view wrapper_kind() noexcept {
-        return "structural::HugePageBuffer";
-    }
+    static constexpr std::string_view wrapper_kind() noexcept { return "structural::HugePageBuffer"; }
 
     constexpr HugePageBuffer() noexcept = default;
 
@@ -85,7 +81,8 @@ public:
     // returned buffer's bytes() reports the rounded allocation size
     // — needed by the caller for register_hot_region / madvise.
     [[nodiscard]] static HugePageBuffer allocate(size_type count) {
-        if (count == 0) [[unlikely]] return HugePageBuffer{};
+        if (count == 0) [[unlikely]]
+            return HugePageBuffer{};
         // TypeSafe/MemSafe (CLAUDE.md §II): overflow-check the byte math.
         // A bare `count * sizeof(T)` wraps silently for large `count`,
         // under-provisioning the buffer that the caller then overruns.
@@ -99,8 +96,7 @@ public:
         if (__builtin_mul_overflow(count, sizeof(T), &raw_bytes)) [[unlikely]]
             std::abort();
         size_type round_probe = 0;
-        if (__builtin_add_overflow(raw_bytes, huge_page_bytes - 1,
-                                   &round_probe)) [[unlikely]]
+        if (__builtin_add_overflow(raw_bytes, huge_page_bytes - 1, &round_probe)) [[unlikely]]
             std::abort();
         const size_type alloc_bytes = ::crucible::warden::round_up_huge(raw_bytes);
         void* raw = std::aligned_alloc(huge_page_bytes, alloc_bytes);
@@ -148,30 +144,25 @@ public:
         }
     }
 
-    [[nodiscard]] T*       data() noexcept       { return data_; }
+    [[nodiscard]] T* data() noexcept { return data_; }
     [[nodiscard]] const T* data() const noexcept { return data_; }
 
-    [[nodiscard]] size_type size()  const noexcept { return size_; }
+    [[nodiscard]] size_type size() const noexcept { return size_; }
     [[nodiscard]] size_type bytes() const noexcept { return alloc_bytes_; }
-    [[nodiscard]] bool empty() const noexcept      { return size_ == 0; }
+    [[nodiscard]] bool empty() const noexcept { return size_ == 0; }
     [[nodiscard]] explicit operator bool() const noexcept { return data_ != nullptr; }
 
-    [[nodiscard]] std::span<T> span() noexcept {
-        return std::span<T>{data_, size_};
-    }
-    [[nodiscard]] std::span<const T> span() const noexcept {
-        return std::span<const T>{data_, size_};
-    }
+    [[nodiscard]] std::span<T> span() noexcept { return std::span<T>{data_, size_}; }
+    [[nodiscard]] std::span<const T> span() const noexcept { return std::span<const T>{data_, size_}; }
 
-    [[nodiscard]] T&       operator[](size_type i) noexcept       { return data_[i]; }
+    [[nodiscard]] T& operator[](size_type i) noexcept { return data_[i]; }
     [[nodiscard]] const T& operator[](size_type i) const noexcept { return data_[i]; }
 
 private:
-    explicit HugePageBuffer(T* p, size_type n, size_type b) noexcept
-        : data_{p}, size_{n}, alloc_bytes_{b} {}
+    explicit HugePageBuffer(T* p, size_type n, size_type b) noexcept : data_{p}, size_{n}, alloc_bytes_{b} {}
 
-    T*        data_        = nullptr;
-    size_type size_        = 0;
+    T* data_ = nullptr;
+    size_type size_ = 0;
     size_type alloc_bytes_ = 0;
 };
 

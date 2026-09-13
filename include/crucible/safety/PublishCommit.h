@@ -107,51 +107,40 @@ class PublishCommitCell {
     // No witness object: the friend list IS the witness.  Adding a
     // second authorized writer requires adding a second friend
     // declaration (and is therefore visible in review).
-    uint64_t bump_by(uint64_t delta) noexcept {
-        return value_.fetch_add(delta, std::memory_order_acq_rel);
-    }
+    uint64_t bump_by(uint64_t delta) noexcept { return value_.fetch_add(delta, std::memory_order_acq_rel); }
 
-    uint64_t bump() noexcept {
-        return bump_by(1);
-    }
+    uint64_t bump() noexcept { return bump_by(1); }
 
 public:
-    using tag_type        = Tag;
+    using tag_type = Tag;
     using write_auth_type = WriteAuth;
 
     constexpr PublishCommitCell() noexcept = default;
 
-    PublishCommitCell(const PublishCommitCell&)            = delete("PublishCommitCell owns the channel identity; not copyable");
-    PublishCommitCell& operator=(const PublishCommitCell&) = delete("PublishCommitCell owns the channel identity; not copyable");
-    PublishCommitCell(PublishCommitCell&&)                 = delete("interior atomic crosses thread boundary; cannot move");
-    PublishCommitCell& operator=(PublishCommitCell&&)      = delete("interior atomic crosses thread boundary; cannot move");
+    PublishCommitCell(const PublishCommitCell&) = delete("PublishCommitCell owns the channel identity; not copyable");
+    PublishCommitCell&
+    operator=(const PublishCommitCell&) = delete("PublishCommitCell owns the channel identity; not copyable");
+    PublishCommitCell(PublishCommitCell&&) = delete("interior atomic crosses thread boundary; cannot move");
+    PublishCommitCell& operator=(PublishCommitCell&&) = delete("interior atomic crosses thread boundary; cannot move");
 
     // Foreground-visible acquire load.  Pairs with the release store
     // performed inside bump_by (visible to friend code).  Any prior
     // publish-side write the bg performed before that bump_by becomes
     // visible to the fg under this load.
-    [[nodiscard, gnu::pure]] uint64_t load_acquire() const noexcept {
-        return value_.load(std::memory_order_acquire);
-    }
+    [[nodiscard, gnu::pure]] uint64_t load_acquire() const noexcept { return value_.load(std::memory_order_acquire); }
 
     // Relaxed peek, for diagnostics only — no synchronization.
-    [[nodiscard, gnu::pure]] uint64_t peek_relaxed() const noexcept {
-        return value_.load(std::memory_order_relaxed);
-    }
+    [[nodiscard, gnu::pure]] uint64_t peek_relaxed() const noexcept { return value_.load(std::memory_order_relaxed); }
 
     // Convenience matching AtomicMonotonic<uint64_t>::get's contract
     // (acquire-load semantics) for callsite-by-callsite migration.
-    [[nodiscard, gnu::pure]] uint64_t get() const noexcept {
-        return load_acquire();
-    }
+    [[nodiscard, gnu::pure]] uint64_t get() const noexcept { return load_acquire(); }
 
     // Explicit memory-order surface — matches AtomicMonotonic::load.
     // Default is acquire (the safe choice for cross-thread reads
     // pairing with bump_by's release).  Diagnostic / introspection
     // sites that don't need synchronization may pass relaxed.
-    [[nodiscard, gnu::pure]] uint64_t load(
-        std::memory_order order = std::memory_order_acquire) const noexcept
-    {
+    [[nodiscard, gnu::pure]] uint64_t load(std::memory_order order = std::memory_order_acquire) const noexcept {
         return value_.load(order);
     }
 };
@@ -164,15 +153,12 @@ namespace publish_commit_detail {
 struct ProbeTag {};
 struct ProbeAuth {};
 
-static_assert(std::is_trivially_destructible_v<
-              PublishCommitCell<ProbeTag, ProbeAuth>>);
-static_assert(!std::is_move_constructible_v<
-              PublishCommitCell<ProbeTag, ProbeAuth>>);
-static_assert(!std::is_copy_constructible_v<
-              PublishCommitCell<ProbeTag, ProbeAuth>>);
+static_assert(std::is_trivially_destructible_v<PublishCommitCell<ProbeTag, ProbeAuth>>);
+static_assert(!std::is_move_constructible_v<PublishCommitCell<ProbeTag, ProbeAuth>>);
+static_assert(!std::is_copy_constructible_v<PublishCommitCell<ProbeTag, ProbeAuth>>);
 // Cache-line alignment preserved.
 static_assert(alignof(PublishCommitCell<ProbeTag, ProbeAuth>) == 64);
 
-} // namespace publish_commit_detail
+}  // namespace publish_commit_detail
 
-} // namespace crucible::safety
+}  // namespace crucible::safety

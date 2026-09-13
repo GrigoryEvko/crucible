@@ -125,8 +125,7 @@ template <typename T>
 struct is_content_addressed<ContentAddressed<T>> : std::true_type {};
 
 template <typename T>
-inline constexpr bool is_content_addressed_v =
-    is_content_addressed<T>::value;
+inline constexpr bool is_content_addressed_v = is_content_addressed<T>::value;
 
 // Concept form for require-clauses.
 template <typename T>
@@ -154,8 +153,7 @@ struct content_addressed_underlying<ContentAddressed<T>> {
 };
 
 template <typename T>
-using content_addressed_underlying_t =
-    typename content_addressed_underlying<T>::type;
+using content_addressed_underlying_t = typename content_addressed_underlying<T>::type;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── unwrap_content_addressed_t<T> (recursive) ──────────────────────
@@ -176,12 +174,10 @@ struct unwrap_content_addressed {
 };
 
 template <typename T>
-struct unwrap_content_addressed<ContentAddressed<T>>
-    : unwrap_content_addressed<T> {};
+struct unwrap_content_addressed<ContentAddressed<T>> : unwrap_content_addressed<T> {};
 
 template <typename T>
-using unwrap_content_addressed_t =
-    typename unwrap_content_addressed<T>::type;
+using unwrap_content_addressed_t = typename unwrap_content_addressed<T>::type;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── content_addressed_depth_v<T> ───────────────────────────────────
@@ -197,14 +193,12 @@ template <typename T>
 struct depth : std::integral_constant<std::size_t, 0> {};
 
 template <typename T>
-struct depth<ContentAddressed<T>>
-    : std::integral_constant<std::size_t, 1 + depth<T>::value> {};
+struct depth<ContentAddressed<T>> : std::integral_constant<std::size_t, 1 + depth<T>::value> {};
 
 }  // namespace detail::ca
 
 template <typename T>
-inline constexpr std::size_t content_addressed_depth_v =
-    detail::ca::depth<T>::value;
+inline constexpr std::size_t content_addressed_depth_v = detail::ca::depth<T>::value;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── is_subsort integration: mutual interchangeability ──────────────
@@ -278,15 +272,11 @@ struct is_subsort<T, ContentAddressed<T>> : std::true_type {};
 // which the primary already handles.
 
 template <typename T, typename U>
-    requires (is_content_addressed_v<T>
-              && std::is_same_v<unwrap_content_addressed_t<T>, U>
-              && !std::is_same_v<T, U>)
+    requires(is_content_addressed_v<T> && std::is_same_v<unwrap_content_addressed_t<T>, U> && !std::is_same_v<T, U>)
 struct is_subsort<T, U> : std::true_type {};
 
 template <typename T, typename U>
-    requires (is_content_addressed_v<U>
-              && std::is_same_v<T, unwrap_content_addressed_t<U>>
-              && !std::is_same_v<T, U>)
+    requires(is_content_addressed_v<U> && std::is_same_v<T, unwrap_content_addressed_t<U>> && !std::is_same_v<T, U>)
 struct is_subsort<T, U> : std::true_type {};
 
 // ═════════════════════════════════════════════════════════════════════
@@ -302,62 +292,52 @@ struct Ack {};
 
 // ─── Shape traits ─────────────────────────────────────────────────
 
-static_assert( is_content_addressed_v<ContentAddressed<Msg>>);
+static_assert(is_content_addressed_v<ContentAddressed<Msg>>);
 static_assert(!is_content_addressed_v<Msg>);
 static_assert(!is_content_addressed_v<int>);
 static_assert(!is_content_addressed_v<End>);
 
 // Concept form.
 template <ContentAddressedType T>
-consteval bool requires_content_addressed() { return true; }
+consteval bool requires_content_addressed() {
+    return true;
+}
 static_assert(requires_content_addressed<ContentAddressed<Msg>>());
 
 // ─── content_addressed_underlying_t (single-layer strip) ──────────
 
-static_assert(std::is_same_v<
-    content_addressed_underlying_t<ContentAddressed<Msg>>, Msg>);
-static_assert(std::is_same_v<
-    content_addressed_underlying_t<Msg>, Msg>);
-static_assert(std::is_same_v<
-    content_addressed_underlying_t<int>, int>);
+static_assert(std::is_same_v<content_addressed_underlying_t<ContentAddressed<Msg>>, Msg>);
+static_assert(std::is_same_v<content_addressed_underlying_t<Msg>, Msg>);
+static_assert(std::is_same_v<content_addressed_underlying_t<int>, int>);
 
 // Nested: strips only the OUTER wrapper, leaves inner intact.
-static_assert(std::is_same_v<
-    content_addressed_underlying_t<ContentAddressed<ContentAddressed<Msg>>>,
-    ContentAddressed<Msg>>);
+static_assert(
+    std::is_same_v<content_addressed_underlying_t<ContentAddressed<ContentAddressed<Msg>>>, ContentAddressed<Msg>>);
 
 // ─── unwrap_content_addressed_t (recursive strip) ─────────────────
 
-static_assert(std::is_same_v<
-    unwrap_content_addressed_t<Msg>, Msg>);
-static_assert(std::is_same_v<
-    unwrap_content_addressed_t<ContentAddressed<Msg>>, Msg>);
-static_assert(std::is_same_v<
-    unwrap_content_addressed_t<ContentAddressed<ContentAddressed<Msg>>>,
-    Msg>);
-static_assert(std::is_same_v<
-    unwrap_content_addressed_t<
-        ContentAddressed<ContentAddressed<ContentAddressed<Msg>>>>,
-    Msg>);
+static_assert(std::is_same_v<unwrap_content_addressed_t<Msg>, Msg>);
+static_assert(std::is_same_v<unwrap_content_addressed_t<ContentAddressed<Msg>>, Msg>);
+static_assert(std::is_same_v<unwrap_content_addressed_t<ContentAddressed<ContentAddressed<Msg>>>, Msg>);
+static_assert(
+    std::is_same_v<unwrap_content_addressed_t<ContentAddressed<ContentAddressed<ContentAddressed<Msg>>>>, Msg>);
 
 // ─── content_addressed_depth_v ────────────────────────────────────
 
 static_assert(content_addressed_depth_v<Msg> == 0);
 static_assert(content_addressed_depth_v<int> == 0);
 static_assert(content_addressed_depth_v<ContentAddressed<Msg>> == 1);
-static_assert(content_addressed_depth_v<
-    ContentAddressed<ContentAddressed<Msg>>> == 2);
-static_assert(content_addressed_depth_v<
-    ContentAddressed<ContentAddressed<ContentAddressed<Msg>>>> == 3);
+static_assert(content_addressed_depth_v<ContentAddressed<ContentAddressed<Msg>>> == 2);
+static_assert(content_addressed_depth_v<ContentAddressed<ContentAddressed<ContentAddressed<Msg>>>> == 3);
 
 // ─── is_subsort: mutual interchangeability ────────────────────────
 
-static_assert( is_subsort_v<ContentAddressed<Msg>, Msg>);
-static_assert( is_subsort_v<Msg, ContentAddressed<Msg>>);
+static_assert(is_subsort_v<ContentAddressed<Msg>, Msg>);
+static_assert(is_subsort_v<Msg, ContentAddressed<Msg>>);
 
 // Reflexivity via the primary is_subsort<T, T>.
-static_assert( is_subsort_v<ContentAddressed<Msg>, ContentAddressed<Msg>>);
-static_assert( is_subsort_v<Msg, Msg>);
+static_assert(is_subsort_v<ContentAddressed<Msg>, ContentAddressed<Msg>>);
+static_assert(is_subsort_v<Msg, Msg>);
 
 // Unrelated pairs are NOT subsortable (primary returns false).
 static_assert(!is_subsort_v<ContentAddressed<Msg>, Ack>);
@@ -370,27 +350,26 @@ static_assert(!is_subsort_v<ContentAddressed<Msg>, ContentAddressed<Ack>>);
 // values are mutually substitutable with the raw payload, in BOTH
 // directions, via the constrained-spec rules above.
 
-using CaCa  = ContentAddressed<ContentAddressed<Msg>>;
+using CaCa = ContentAddressed<ContentAddressed<Msg>>;
 using CaCaCa = ContentAddressed<ContentAddressed<ContentAddressed<Msg>>>;
 
 // Depth 2 ↔ raw.
-static_assert( is_subsort_v<CaCa, Msg>);
-static_assert( is_subsort_v<Msg,  CaCa>);
+static_assert(is_subsort_v<CaCa, Msg>);
+static_assert(is_subsort_v<Msg, CaCa>);
 
 // Depth 3 ↔ raw.
-static_assert( is_subsort_v<CaCaCa, Msg>);
-static_assert( is_subsort_v<Msg,    CaCaCa>);
+static_assert(is_subsort_v<CaCaCa, Msg>);
+static_assert(is_subsort_v<Msg, CaCaCa>);
 
 // Depth 5 ↔ raw — confirms unbounded depth via the recursive trait.
-using CaDepth5 = ContentAddressed<ContentAddressed<ContentAddressed<
-                  ContentAddressed<ContentAddressed<Msg>>>>>;
-static_assert( is_subsort_v<CaDepth5, Msg>);
-static_assert( is_subsort_v<Msg,      CaDepth5>);
+using CaDepth5 = ContentAddressed<ContentAddressed<ContentAddressed<ContentAddressed<ContentAddressed<Msg>>>>>;
+static_assert(is_subsort_v<CaDepth5, Msg>);
+static_assert(is_subsort_v<Msg, CaDepth5>);
 
 // Reflexivity at every depth (primary is_subsort<T, T>).
-static_assert( is_subsort_v<CaCa,    CaCa>);
-static_assert( is_subsort_v<CaCaCa,  CaCaCa>);
-static_assert( is_subsort_v<CaDepth5, CaDepth5>);
+static_assert(is_subsort_v<CaCa, CaCa>);
+static_assert(is_subsort_v<CaCaCa, CaCaCa>);
+static_assert(is_subsort_v<CaDepth5, CaDepth5>);
 
 // Cross-depth (depth N ↔ depth N+1) is also true — but via the
 // EXISTING depth-1 specs, not the new depth-N-to-raw specs.  The
@@ -399,8 +378,8 @@ static_assert( is_subsort_v<CaDepth5, CaDepth5>);
 // matches via `is_subsort<T, ContentAddressed<T>>` with T = CaCa.
 // So adjacent depths are mutually subsortable already.
 
-static_assert( is_subsort_v<CaCaCa, CaCa>);   // depth-1 spec, X = CaCa
-static_assert( is_subsort_v<CaCa,   CaCaCa>); // depth-1 spec, T = CaCa
+static_assert(is_subsort_v<CaCaCa, CaCa>);  // depth-1 spec, X = CaCa
+static_assert(is_subsort_v<CaCa, CaCaCa>);  // depth-1 spec, T = CaCa
 
 // Cross-depth (depth N ↔ depth N+2) WOULD need transitive closure
 // — neither the depth-1 specs nor the new depth-N-to-raw specs
@@ -412,72 +391,47 @@ static_assert( is_subsort_v<CaCa,   CaCaCa>); // depth-1 spec, T = CaCa
 // payload — so cross-depth-2 hops at the protocol level work
 // even when the value-level subsort doesn't.
 
-using CaDepth4 = ContentAddressed<ContentAddressed<
-                  ContentAddressed<ContentAddressed<Msg>>>>;
+using CaDepth4 = ContentAddressed<ContentAddressed<ContentAddressed<ContentAddressed<Msg>>>>;
 static_assert(!is_subsort_v<CaDepth4, CaCa>);
-static_assert(!is_subsort_v<CaCa,     CaDepth4>);
+static_assert(!is_subsort_v<CaCa, CaDepth4>);
 
 // Unrelated pairs at higher depth are still not subsortable.
-static_assert(!is_subsort_v<CaCa,     Ack>);
-static_assert(!is_subsort_v<Ack,      CaCa>);
+static_assert(!is_subsort_v<CaCa, Ack>);
+static_assert(!is_subsort_v<Ack, CaCa>);
 static_assert(!is_subsort_v<CaDepth5, Ack>);
 
 // Different inner payloads at any depth are unrelated.
-static_assert(!is_subsort_v<
-    ContentAddressed<ContentAddressed<Msg>>,
-    ContentAddressed<ContentAddressed<Ack>>>);
+static_assert(!is_subsort_v<ContentAddressed<ContentAddressed<Msg>>, ContentAddressed<ContentAddressed<Ack>>>);
 
 // ─── Session-type protocol-level integration ─────────────────────
 
 // Send is covariant in payload — so Send<ContentAddressed<Msg>, K>
 // and Send<Msg, K> are mutual subtypes.
-static_assert(is_subtype_sync_v<
-    Send<ContentAddressed<Msg>, End>,
-    Send<Msg, End>>);
-static_assert(is_subtype_sync_v<
-    Send<Msg, End>,
-    Send<ContentAddressed<Msg>, End>>);
+static_assert(is_subtype_sync_v<Send<ContentAddressed<Msg>, End>, Send<Msg, End>>);
+static_assert(is_subtype_sync_v<Send<Msg, End>, Send<ContentAddressed<Msg>, End>>);
 
 // Equivalence (sync): both directions hold.
-static_assert(equivalent_sync_v<
-    Send<ContentAddressed<Msg>, End>,
-    Send<Msg, End>>);
+static_assert(equivalent_sync_v<Send<ContentAddressed<Msg>, End>, Send<Msg, End>>);
 
 // Recv is contravariant in payload.  Mutual interchangeability
 // means both directions hold for Recv too.
-static_assert(is_subtype_sync_v<
-    Recv<ContentAddressed<Msg>, End>,
-    Recv<Msg, End>>);
-static_assert(is_subtype_sync_v<
-    Recv<Msg, End>,
-    Recv<ContentAddressed<Msg>, End>>);
+static_assert(is_subtype_sync_v<Recv<ContentAddressed<Msg>, End>, Recv<Msg, End>>);
+static_assert(is_subtype_sync_v<Recv<Msg, End>, Recv<ContentAddressed<Msg>, End>>);
 
-static_assert(equivalent_sync_v<
-    Recv<ContentAddressed<Msg>, End>,
-    Recv<Msg, End>>);
+static_assert(equivalent_sync_v<Recv<ContentAddressed<Msg>, End>, Recv<Msg, End>>);
 
 // Depth ≥ 2 also flows through Send / Recv via the constrained spec
 // from #370 — a doubly-wrapped payload is interchangeable with raw
 // at the protocol level.
 
-static_assert(is_subtype_sync_v<
-    Send<ContentAddressed<ContentAddressed<Msg>>, End>,
-    Send<Msg, End>>);
-static_assert(is_subtype_sync_v<
-    Send<Msg, End>,
-    Send<ContentAddressed<ContentAddressed<Msg>>, End>>);
+static_assert(is_subtype_sync_v<Send<ContentAddressed<ContentAddressed<Msg>>, End>, Send<Msg, End>>);
+static_assert(is_subtype_sync_v<Send<Msg, End>, Send<ContentAddressed<ContentAddressed<Msg>>, End>>);
 
-static_assert(equivalent_sync_v<
-    Send<ContentAddressed<ContentAddressed<Msg>>, End>,
-    Send<Msg, End>>);
+static_assert(equivalent_sync_v<Send<ContentAddressed<ContentAddressed<Msg>>, End>, Send<Msg, End>>);
 
 // Recv contravariance through depth ≥ 2.
-static_assert(is_subtype_sync_v<
-    Recv<ContentAddressed<ContentAddressed<Msg>>, End>,
-    Recv<Msg, End>>);
-static_assert(is_subtype_sync_v<
-    Recv<Msg, End>,
-    Recv<ContentAddressed<ContentAddressed<Msg>>, End>>);
+static_assert(is_subtype_sync_v<Recv<ContentAddressed<ContentAddressed<Msg>>, End>, Recv<Msg, End>>);
+static_assert(is_subtype_sync_v<Recv<Msg, End>, Recv<ContentAddressed<ContentAddressed<Msg>>, End>>);
 
 // ─── Composition: wrapping inside Loop/Select/Offer ──────────────
 
@@ -492,12 +446,8 @@ static_assert(equivalent_sync_v<CaLoopSend, RawLoopSend>);
 
 // Select with mixed branches — a content-addressed branch is
 // interchangeable with its raw counterpart.
-using SelectMixed = Select<
-    Send<ContentAddressed<Msg>, End>,
-    Send<Ack, End>>;
-using SelectRaw = Select<
-    Send<Msg, End>,
-    Send<Ack, End>>;
+using SelectMixed = Select<Send<ContentAddressed<Msg>, End>, Send<Ack, End>>;
+using SelectRaw = Select<Send<Msg, End>, Send<Ack, End>>;
 
 static_assert(is_subtype_sync_v<SelectMixed, SelectRaw>);
 static_assert(is_subtype_sync_v<SelectRaw, SelectMixed>);
@@ -508,7 +458,7 @@ static_assert(is_subtype_sync_v<SelectRaw, SelectMixed>);
 // it's NOT dualised by dual_of.  The wrapper passes through duality
 // unchanged — peers see the same wrapper or lack-of-wrapper.
 
-using CaProto    = Send<ContentAddressed<Msg>, End>;
+using CaProto = Send<ContentAddressed<Msg>, End>;
 using CaProtoDual = dual_of_t<CaProto>;
 static_assert(std::is_same_v<CaProtoDual, Recv<ContentAddressed<Msg>, End>>);
 
@@ -546,9 +496,7 @@ struct CipherSnapshot {};
 using CipherPublisher_CA = Loop<Send<ContentAddressed<CipherSnapshot>, Continue>>;
 using CipherSubscriber_CA = dual_of_t<CipherPublisher_CA>;
 
-static_assert(std::is_same_v<
-    CipherSubscriber_CA,
-    Loop<Recv<ContentAddressed<CipherSnapshot>, Continue>>>);
+static_assert(std::is_same_v<CipherSubscriber_CA, Loop<Recv<ContentAddressed<CipherSnapshot>, Continue>>>);
 static_assert(is_well_formed_v<CipherPublisher_CA>);
 static_assert(is_well_formed_v<CipherSubscriber_CA>);
 

@@ -74,24 +74,19 @@ class [[nodiscard]] Fd {
 public:
     constexpr Fd() noexcept = default;  // sentinel: closed/invalid
 
-    explicit constexpr Fd(int value) noexcept : value_{value} {
-        CRUCIBLE_PRE(value == -1 || value >= 0);
-    }
+    explicit constexpr Fd(int value) noexcept : value_{value} { CRUCIBLE_PRE(value == -1 || value >= 0); }
 
-    [[nodiscard]] constexpr int  raw()      const noexcept { return value_; }
+    [[nodiscard]] constexpr int raw() const noexcept { return value_; }
     [[nodiscard]] constexpr bool is_valid() const noexcept { return value_ >= 0; }
 
     [[nodiscard]] static constexpr Fd invalid() noexcept { return Fd{}; }
 
-    [[nodiscard]] static constexpr bool is_valid_pattern(int v) noexcept {
-        return v == -1 || v >= 0;
-    }
+    [[nodiscard]] static constexpr bool is_valid_pattern(int v) noexcept { return v == -1 || v >= 0; }
 
     constexpr auto operator<=>(const Fd&) const noexcept = default;
 };
 
-static_assert(sizeof(Fd) == sizeof(int),
-              "Fd must be a zero-cost int wrapper");
+static_assert(sizeof(Fd) == sizeof(int), "Fd must be a zero-cost int wrapper");
 
 class [[nodiscard]] FileHandle {
     int fd_ = -1;
@@ -107,10 +102,12 @@ public:
     explicit FileHandle(Fd fd) noexcept : fd_{fd.raw()} {}
 
     ~FileHandle() noexcept {
-        if (fd_ >= 0) { (void)::close(fd_); }
+        if (fd_ >= 0) {
+            (void)::close(fd_);
+        }
     }
 
-    FileHandle(const FileHandle&)            = delete("fd is unique; copy would double-close on destruction");
+    FileHandle(const FileHandle&) = delete("fd is unique; copy would double-close on destruction");
     FileHandle& operator=(const FileHandle&) = delete("fd is unique; copy would double-close on destruction");
 
     FileHandle(FileHandle&& other) noexcept : fd_{std::exchange(other.fd_, -1)} {}
@@ -124,7 +121,7 @@ public:
     }
 
     [[nodiscard]] bool is_open() const noexcept { return fd_ >= 0; }
-    [[nodiscard]] int  get()     const noexcept { return fd_; }
+    [[nodiscard]] int get() const noexcept { return fd_; }
 
     // fixy-A1-012: typed accessor for new code.  `get()` survives for
     // backward compatibility with read_full/write_full and external
@@ -146,8 +143,7 @@ public:
     }
 };
 
-static_assert(sizeof(FileHandle) == sizeof(int),
-              "FileHandle must be a zero-cost int wrapper");
+static_assert(sizeof(FileHandle) == sizeof(int), "FileHandle must be a zero-cost int wrapper");
 
 // ── Factories ───────────────────────────────────────────────────────
 //
@@ -164,8 +160,7 @@ static_assert(sizeof(FileHandle) == sizeof(int),
 // EMFILE.  Now the error_code carries the POSIX errno via
 // `std::system_category()`, callable-on-the-spot via `.message()`.
 
-[[nodiscard]] inline std::expected<FileHandle, std::error_code>
-open_read(const char* path) noexcept {
+[[nodiscard]] inline std::expected<FileHandle, std::error_code> open_read(const char* path) noexcept {
     const int fd = ::open(path, O_RDONLY | O_CLOEXEC);
     if (fd < 0) {
         return std::unexpected{std::error_code{errno, std::system_category()}};
@@ -173,8 +168,8 @@ open_read(const char* path) noexcept {
     return FileHandle{fd};
 }
 
-[[nodiscard]] inline std::expected<FileHandle, std::error_code>
-open_write_truncate(const char* path, mode_t mode = 0644) noexcept {
+[[nodiscard]] inline std::expected<FileHandle, std::error_code> open_write_truncate(const char* path,
+                                                                                    mode_t mode = 0644) noexcept {
     const int fd = ::open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, mode);
     if (fd < 0) {
         return std::unexpected{std::error_code{errno, std::system_category()}};
@@ -182,8 +177,8 @@ open_write_truncate(const char* path, mode_t mode = 0644) noexcept {
     return FileHandle{fd};
 }
 
-[[nodiscard]] inline std::expected<FileHandle, std::error_code>
-open_write_append(const char* path, mode_t mode = 0644) noexcept {
+[[nodiscard]] inline std::expected<FileHandle, std::error_code> open_write_append(const char* path,
+                                                                                  mode_t mode = 0644) noexcept {
     const int fd = ::open(path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, mode);
     if (fd < 0) {
         return std::unexpected{std::error_code{errno, std::system_category()}};
@@ -209,61 +204,50 @@ open_write_append(const char* path, mode_t mode = 0644) noexcept {
 // overhead.  Cost: one branch on .has_value() at the call site
 // (~1 ns, predictable on the success path).
 
-[[nodiscard]] inline std::expected<std::size_t, std::error_code>
-read_full(const FileHandle& h, std::span<std::byte> buf) noexcept {
+[[nodiscard]] inline std::expected<std::size_t, std::error_code> read_full(const FileHandle& h,
+                                                                           std::span<std::byte> buf) noexcept {
     if (!h.is_open()) {
-        return std::unexpected{
-            std::error_code{EBADF, std::system_category()}};
+        return std::unexpected{std::error_code{EBADF, std::system_category()}};
     }
     std::size_t total = 0;
     while (total < buf.size()) {
-        const ssize_t n = ::read(h.get(),
-                                 buf.data() + total,
-                                 buf.size() - total);
-        if (n == 0) break;            // EOF
+        const ssize_t n = ::read(h.get(), buf.data() + total, buf.size() - total);
+        if (n == 0) break;  // EOF
         if (n < 0) {
             if (errno == EINTR) continue;
-            return std::unexpected{
-                std::error_code{errno, std::system_category()}};
+            return std::unexpected{std::error_code{errno, std::system_category()}};
         }
         total += static_cast<std::size_t>(n);
     }
     return total;
 }
 
-[[nodiscard]] inline std::expected<void, std::error_code>
-write_full(const FileHandle& h, std::span<const std::byte> buf) noexcept {
+[[nodiscard]] inline std::expected<void, std::error_code> write_full(const FileHandle& h,
+                                                                     std::span<const std::byte> buf) noexcept {
     if (!h.is_open()) {
-        return std::unexpected{
-            std::error_code{EBADF, std::system_category()}};
+        return std::unexpected{std::error_code{EBADF, std::system_category()}};
     }
     std::size_t total = 0;
     while (total < buf.size()) {
-        const ssize_t n = ::write(h.get(),
-                                  buf.data() + total,
-                                  buf.size() - total);
+        const ssize_t n = ::write(h.get(), buf.data() + total, buf.size() - total);
         if (n < 0) {
             if (errno == EINTR) continue;
-            return std::unexpected{
-                std::error_code{errno, std::system_category()}};
+            return std::unexpected{std::error_code{errno, std::system_category()}};
         }
         total += static_cast<std::size_t>(n);
     }
     return {};
 }
 
-[[nodiscard]] inline std::expected<off_t, std::error_code>
-file_size(const FileHandle& h) noexcept {
+[[nodiscard]] inline std::expected<off_t, std::error_code> file_size(const FileHandle& h) noexcept {
     if (!h.is_open()) {
-        return std::unexpected{
-            std::error_code{EBADF, std::system_category()}};
+        return std::unexpected{std::error_code{EBADF, std::system_category()}};
     }
     struct stat st;
     if (::fstat(h.get(), &st) < 0) {
-        return std::unexpected{
-            std::error_code{errno, std::system_category()}};
+        return std::unexpected{std::error_code{errno, std::system_category()}};
     }
     return st.st_size;
 }
 
-} // namespace crucible::safety
+}  // namespace crucible::safety

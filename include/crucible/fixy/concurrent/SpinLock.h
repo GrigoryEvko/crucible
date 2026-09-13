@@ -114,7 +114,7 @@
 #include <crucible/effects/ExecCtx.h>
 #include <crucible/permissions/Permission.h>
 
-#include <mutex>         // std::try_to_lock_t (SpinGuard try-acquire ctor tag)
+#include <mutex>  // std::try_to_lock_t (SpinGuard try-acquire ctor tag)
 #include <type_traits>
 
 namespace crucible::fixy::concurrent {
@@ -131,17 +131,16 @@ inline constexpr cache_tier_t cache_tier_hot = cache_tier_t::Hot;
 
 template <typename Tag>
 class alignas(64) SpinLock {
-    static_assert(::crucible::safety::PermissionTag<Tag>,
-        "fixy::concurrent::SpinLock<Tag>: Tag must satisfy the "
-        "PermissionTag concept (empty non-union class type).  See "
-        "permissions::PermissionTag in Permission.h — typically an "
-        "empty struct in a `tag::` namespace, e.g. nested "
-        "`struct GateTag {};` inside the owning class.");
+    static_assert(::crucible::safety::PermissionTag<Tag>, "fixy::concurrent::SpinLock<Tag>: Tag must satisfy the "
+                                                          "PermissionTag concept (empty non-union class type).  See "
+                                                          "permissions::PermissionTag in Permission.h — typically an "
+                                                          "empty struct in a `tag::` namespace, e.g. nested "
+                                                          "`struct GateTag {};` inside the owning class.");
 
 public:
     // ── Public type aliases ─────────────────────────────────────────
-    using tag_type     = Tag;
-    using substrate_t  = ::crucible::concurrent::SpinLock;
+    using tag_type = Tag;
+    using substrate_t = ::crucible::concurrent::SpinLock;
     using permission_t = ::crucible::safety::Permission<Tag>;
 
     // ── cache_tier — Hot path annotation ────────────────────────────
@@ -165,14 +164,10 @@ public:
     // ownership token; passing a Permission<OtherTag>& fails to
     // compile.  The Permission is borrowed, not consumed — the same
     // Permission can be used to acquire the gate repeatedly.
-    void lock(permission_t& /*proof*/) noexcept {
-        substrate_.lock();
-    }
+    void lock(permission_t& /*proof*/) noexcept { substrate_.lock(); }
 
     // BasicLockable + try_lock completion (matches substrate surface).
-    [[nodiscard]] bool try_lock(permission_t& /*proof*/) noexcept {
-        return substrate_.try_lock();
-    }
+    [[nodiscard]] bool try_lock(permission_t& /*proof*/) noexcept { return substrate_.try_lock(); }
 
     // ── lock_in<Ctx> — ctx-gated acquire (hot-foreground rail) ──────
     //
@@ -190,18 +185,15 @@ public:
     // adopters that want the additional static check.
     template <class Ctx>
         requires ::crucible::effects::IsExecCtx<Ctx>
-              && (!::crucible::effects::CtxOwnsCapability<
-                     Ctx, ::crucible::effects::Effect::Bg>)
+              && (!::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Bg>)
     void lock_in(Ctx const& /*ctx*/, permission_t& proof) noexcept {
         lock(proof);
     }
 
     template <class Ctx>
         requires ::crucible::effects::IsExecCtx<Ctx>
-              && (!::crucible::effects::CtxOwnsCapability<
-                     Ctx, ::crucible::effects::Effect::Bg>)
-    [[nodiscard]] bool try_lock_in(Ctx const& /*ctx*/,
-                                   permission_t& proof) noexcept {
+              && (!::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Bg>)
+    [[nodiscard]] bool try_lock_in(Ctx const& /*ctx*/, permission_t& proof) noexcept {
         return try_lock(proof);
     }
 
@@ -209,9 +201,7 @@ public:
     // the caller must already have acquired the gate (which itself
     // required the witness), and the SpinGuard RAII pattern is the
     // recommended way to call unlock().
-    void unlock() noexcept {
-        substrate_.unlock();
-    }
+    void unlock() noexcept { substrate_.unlock(); }
 
     // ── Substrate accessor ──────────────────────────────────────────
     //
@@ -221,9 +211,7 @@ public:
     // permitted to use this; the recommended path is the
     // fixy::concurrent::SpinGuard<Tag> RAII wrapper below.
     [[nodiscard]] substrate_t& substrate() noexcept { return substrate_; }
-    [[nodiscard]] substrate_t const& substrate() const noexcept {
-        return substrate_;
-    }
+    [[nodiscard]] substrate_t const& substrate() const noexcept { return substrate_; }
 
 private:
     [[no_unique_address]] substrate_t substrate_{};
@@ -235,15 +223,15 @@ private:
 // to satisfy PermissionTag's `is_empty_v` requirement (incomplete
 // types are not introspectable by either is_class_v's full form or
 // is_empty_v's underlying intrinsic).
-namespace spinlock_size_probe_ { struct SizeProbe {}; }
-static_assert(alignof(SpinLock<spinlock_size_probe_::SizeProbe>) ==
-                  alignof(::crucible::concurrent::SpinLock),
+namespace spinlock_size_probe_ {
+struct SizeProbe {};
+}  // namespace spinlock_size_probe_
+static_assert(alignof(SpinLock<spinlock_size_probe_::SizeProbe>) == alignof(::crucible::concurrent::SpinLock),
               "fixy::concurrent::SpinLock<Tag> must inherit substrate "
               "alignment (64 bytes); cross-thread spin gates rely on "
               "cache-line isolation to avoid the false-sharing trap "
               "documented in CLAUDE.md §VIII / §IX.");
-static_assert(sizeof(SpinLock<spinlock_size_probe_::SizeProbe>) ==
-                  sizeof(::crucible::concurrent::SpinLock),
+static_assert(sizeof(SpinLock<spinlock_size_probe_::SizeProbe>) == sizeof(::crucible::concurrent::SpinLock),
               "fixy::concurrent::SpinLock<Tag> must be zero-overhead "
               "over the substrate — the Tag is phantom and must EBO-"
               "collapse to zero bytes.");
@@ -257,19 +245,14 @@ static_assert(sizeof(SpinLock<spinlock_size_probe_::SizeProbe>) ==
 template <typename Tag>
 class SpinGuard {
 public:
-    using lock_type    = SpinLock<Tag>;
+    using lock_type = SpinLock<Tag>;
     using permission_t = typename lock_type::permission_t;
 
     // Construction acquires; Permission borrowed (lvalue ref).
-    explicit SpinGuard(lock_type& lock, permission_t& proof) noexcept
-        : lock_{lock} {
-        lock_.lock(proof);
-    }
+    explicit SpinGuard(lock_type& lock, permission_t& proof) noexcept : lock_{lock} { lock_.lock(proof); }
 
     // Try-acquire variant.  Reports acquisition success via was_acquired().
-    explicit SpinGuard(std::try_to_lock_t,
-                       lock_type& lock,
-                       permission_t& proof) noexcept
+    explicit SpinGuard(std::try_to_lock_t, lock_type& lock, permission_t& proof) noexcept
         : lock_{lock}, acquired_{lock.try_lock(proof)} {}
 
     SpinGuard(const SpinGuard&) = delete;
@@ -287,7 +270,7 @@ public:
 
 private:
     lock_type& lock_;
-    bool       acquired_ = true;  // construction-acquired by default
+    bool acquired_ = true;  // construction-acquired by default
 };
 
 // ── Runtime smoke test ────────────────────────────────────────────
@@ -334,24 +317,20 @@ namespace crucible::fixy::concurrent::self_test {
 
 struct SpinLockProbeTag {};
 
-static_assert(std::is_same_v<
-    SpinLock<SpinLockProbeTag>::substrate_t,
-    ::crucible::concurrent::SpinLock>,
-    "fixy::concurrent::SpinLock<Tag>::substrate_t must alias "
-    "::crucible::concurrent::SpinLock — substrate identity drift "
-    "would break the alignas(64) + acquire/release contract.");
+static_assert(std::is_same_v<SpinLock<SpinLockProbeTag>::substrate_t, ::crucible::concurrent::SpinLock>,
+              "fixy::concurrent::SpinLock<Tag>::substrate_t must alias "
+              "::crucible::concurrent::SpinLock — substrate identity drift "
+              "would break the alignas(64) + acquire/release contract.");
 
-static_assert(std::is_same_v<
-    SpinLock<SpinLockProbeTag>::permission_t,
-    ::crucible::safety::Permission<SpinLockProbeTag>>,
+static_assert(
+    std::is_same_v<SpinLock<SpinLockProbeTag>::permission_t, ::crucible::safety::Permission<SpinLockProbeTag>>,
     "fixy::concurrent::SpinLock<Tag>::permission_t must alias "
     "::crucible::safety::Permission<Tag> — drift would break the "
     "Permission-witness-at-acquire discipline.");
 
-static_assert(SpinLock<SpinLockProbeTag>::cache_tier ==
-                  ::crucible::algebra::lattices::HotPathTier::Hot,
-    "fixy::concurrent::SpinLock<Tag>::cache_tier must be Hot — the "
-    "annotation is the load-bearing hot-path documentation grep "
-    "target (FIXY-V-071).");
+static_assert(SpinLock<SpinLockProbeTag>::cache_tier == ::crucible::algebra::lattices::HotPathTier::Hot,
+              "fixy::concurrent::SpinLock<Tag>::cache_tier must be Hot — the "
+              "annotation is the load-bearing hot-path documentation grep "
+              "target (FIXY-V-071).");
 
 }  // namespace crucible::fixy::concurrent::self_test

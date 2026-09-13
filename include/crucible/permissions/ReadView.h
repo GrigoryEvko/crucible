@@ -85,8 +85,7 @@ namespace crucible::safety {
 template <typename Tag>
 class ReadView;
 template <typename Tag>
-[[nodiscard]] constexpr ReadView<Tag>
-mint_read_view(Permission<Tag> const& p CRUCIBLE_LIFETIMEBOUND) noexcept;
+[[nodiscard]] constexpr ReadView<Tag> mint_read_view(Permission<Tag> const& p CRUCIBLE_LIFETIMEBOUND) noexcept;
 
 }  // namespace crucible::safety
 
@@ -110,16 +109,15 @@ public:
     using tag_type = Tag;
 
     // Copyable: multiple borrowers OK, all referencing the same source.
-    constexpr ReadView(const ReadView&) noexcept            = default;
-    constexpr ReadView(ReadView&&) noexcept                 = default;
+    constexpr ReadView(const ReadView&) noexcept = default;
+    constexpr ReadView(ReadView&&) noexcept = default;
 
     // Assignment deleted with reason: reassigning would silently swap
     // the underlying source identity, hiding the lifetime relationship
     // from review.  Construct a fresh ReadView via mint_read_view instead.
-    ReadView& operator=(const ReadView&)
-        = delete("ReadView is single-binding; rebinding hides lifetime relationships — construct a fresh view via mint_read_view");
-    ReadView& operator=(ReadView&&)
-        = delete("ReadView is single-binding; rebinding hides lifetime relationships");
+    ReadView& operator=(const ReadView&) = delete(
+        "ReadView is single-binding; rebinding hides lifetime relationships — construct a fresh view via mint_read_view");
+    ReadView& operator=(ReadView&&) = delete("ReadView is single-binding; rebinding hides lifetime relationships");
 
     ~ReadView() = default;
 
@@ -127,17 +125,15 @@ public:
     // ReadView is meant to live on the stack or as a function/lambda
     // parameter; storing it in a long-lived collection would let it
     // outlive the source Permission.
-    static void* operator new(std::size_t)
-        = delete("ReadView must live on the stack; heap allocation defeats the lifetime contract");
-    static void* operator new[](std::size_t)
-        = delete("ReadView arrays on the heap defeat the lifetime contract");
-    static void* operator new(std::size_t, std::align_val_t)
-        = delete("ReadView must live on the stack");
-    static void* operator new[](std::size_t, std::align_val_t)
-        = delete("ReadView arrays on the heap defeat the lifetime contract");
-    static void operator delete(void*)                     = delete;
-    static void operator delete[](void*)                   = delete;
-    static void operator delete(void*, std::align_val_t)   = delete;
+    static void* operator new(std::size_t) =
+        delete("ReadView must live on the stack; heap allocation defeats the lifetime contract");
+    static void* operator new[](std::size_t) = delete("ReadView arrays on the heap defeat the lifetime contract");
+    static void* operator new(std::size_t, std::align_val_t) = delete("ReadView must live on the stack");
+    static void* operator new[](std::size_t,
+                                std::align_val_t) = delete("ReadView arrays on the heap defeat the lifetime contract");
+    static void operator delete(void*) = delete;
+    static void operator delete[](void*) = delete;
+    static void operator delete(void*, std::align_val_t) = delete;
     static void operator delete[](void*, std::align_val_t) = delete;
 
 private:
@@ -158,8 +154,7 @@ private:
 
     // The single chokepoint factory.  Derives a fresh view from a held
     // parent Permission<Tag> whose lifetime bounds the view.
-    friend constexpr ReadView<Tag>
-    mint_read_view<Tag>(Permission<Tag> const& p CRUCIBLE_LIFETIMEBOUND) noexcept;
+    friend constexpr ReadView<Tag> mint_read_view<Tag>(Permission<Tag> const& p CRUCIBLE_LIFETIMEBOUND) noexcept;
 
     // Session-layer borrow carrier.  `proto::Borrowed<T, Tag>` embeds a
     // ReadView<Tag> as the recipient's read proof for one protocol step;
@@ -190,8 +185,7 @@ private:
 // to nothing).  Discipline + review fill the gap until parity lands.
 
 template <typename Tag>
-[[nodiscard]] constexpr ReadView<Tag>
-mint_read_view(Permission<Tag> const& p CRUCIBLE_LIFETIMEBOUND) noexcept {
+[[nodiscard]] constexpr ReadView<Tag> mint_read_view(Permission<Tag> const& p CRUCIBLE_LIFETIMEBOUND) noexcept {
     (void)p;  // observed; ReadView is proof-only
     return ReadView<Tag>{};
 }
@@ -212,23 +206,20 @@ mint_read_view(Permission<Tag> const& p CRUCIBLE_LIFETIMEBOUND) noexcept {
 
 template <typename Tag, typename Body>
     requires std::is_invocable_v<Body, ReadView<Tag>>
-[[nodiscard]] constexpr auto
-with_read_view(Permission<Tag> const& p CRUCIBLE_LIFETIMEBOUND, Body&& body)
-    noexcept(std::is_nothrow_invocable_v<Body, ReadView<Tag>>)
-    -> std::invoke_result_t<Body, ReadView<Tag>>
-{
+[[nodiscard]] constexpr auto with_read_view(Permission<Tag> const& p CRUCIBLE_LIFETIMEBOUND,
+                                            Body&& body) noexcept(std::is_nothrow_invocable_v<Body, ReadView<Tag>>)
+    -> std::invoke_result_t<Body, ReadView<Tag>> {
     return body(mint_read_view(p));
 }
 
 // ── Zero-cost guarantees ────────────────────────────────────────────
 
 namespace detail {
-    struct read_view_test_tag {};
-}
+struct read_view_test_tag {};
+}  // namespace detail
 
 // Empty class: 1 byte minimum.  EBO-collapses to 0 in containing types.
-static_assert(sizeof(ReadView<detail::read_view_test_tag>) == 1,
-              "ReadView<Tag> must be a 1-byte empty class");
+static_assert(sizeof(ReadView<detail::read_view_test_tag>) == 1, "ReadView<Tag> must be a 1-byte empty class");
 
 // Trivially copyable / destructible.
 static_assert(std::is_trivially_copyable_v<ReadView<detail::read_view_test_tag>>,

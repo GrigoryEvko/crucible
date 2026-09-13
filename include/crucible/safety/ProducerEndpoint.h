@@ -126,18 +126,17 @@ namespace crucible::safety::extract {
 // ═════════════════════════════════════════════════════════════════════
 
 template <auto FnPtr>
-concept ProducerEndpoint =
-    arity_v<FnPtr> == 2
-    // Parameter 0: non-const rvalue reference to a producer handle.
-    && std::is_rvalue_reference_v<param_type_t<FnPtr, 0>>
-    && !std::is_const_v<std::remove_reference_t<param_type_t<FnPtr, 0>>>
-    && is_producer_handle_v<param_type_t<FnPtr, 0>>
-    // Parameter 1: non-const rvalue reference to an OwnedRegion.
-    && std::is_rvalue_reference_v<param_type_t<FnPtr, 1>>
-    && !std::is_const_v<std::remove_reference_t<param_type_t<FnPtr, 1>>>
-    && is_owned_region_v<param_type_t<FnPtr, 1>>
-    // Return type — void (canonical "push and forget" per §3.4).
-    && std::is_void_v<return_type_t<FnPtr>>;
+concept ProducerEndpoint = arity_v<FnPtr> == 2
+                        // Parameter 0: non-const rvalue reference to a producer handle.
+                        && std::is_rvalue_reference_v<param_type_t<FnPtr, 0>>
+                        && !std::is_const_v<std::remove_reference_t<param_type_t<FnPtr, 0>>>
+                        && is_producer_handle_v<param_type_t<FnPtr, 0>>
+                        // Parameter 1: non-const rvalue reference to an OwnedRegion.
+                        && std::is_rvalue_reference_v<param_type_t<FnPtr, 1>>
+                        && !std::is_const_v<std::remove_reference_t<param_type_t<FnPtr, 1>>>
+                        && is_owned_region_v<param_type_t<FnPtr, 1>>
+                        // Return type — void (canonical "push and forget" per §3.4).
+                        && std::is_void_v<return_type_t<FnPtr>>;
 
 template <auto FnPtr>
 inline constexpr bool is_producer_endpoint_v = ProducerEndpoint<FnPtr>;
@@ -151,21 +150,18 @@ inline constexpr bool is_producer_endpoint_v = ProducerEndpoint<FnPtr>;
 // returning some void-ish nonsense.
 template <auto FnPtr>
     requires ProducerEndpoint<FnPtr>
-using producer_endpoint_handle_value_t =
-    producer_handle_value_t<param_type_t<FnPtr, 0>>;
+using producer_endpoint_handle_value_t = producer_handle_value_t<param_type_t<FnPtr, 0>>;
 
 // Input region's Tag — the source-side permission tag.
 template <auto FnPtr>
     requires ProducerEndpoint<FnPtr>
-using producer_endpoint_region_tag_t =
-    owned_region_tag_t<param_type_t<FnPtr, 1>>;
+using producer_endpoint_region_tag_t = owned_region_tag_t<param_type_t<FnPtr, 1>>;
 
 // Input region's element type.  Should equal handle_value_t for a
 // well-formed dispatch.
 template <auto FnPtr>
     requires ProducerEndpoint<FnPtr>
-using producer_endpoint_region_value_t =
-    owned_region_value_t<param_type_t<FnPtr, 1>>;
+using producer_endpoint_region_value_t = owned_region_value_t<param_type_t<FnPtr, 1>>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Value-consistency predicate ────────────────────────────────────
@@ -186,8 +182,7 @@ using producer_endpoint_region_value_t =
 template <auto FnPtr>
     requires ProducerEndpoint<FnPtr>
 inline constexpr bool producer_endpoint_value_consistent_v =
-    std::is_same_v<producer_endpoint_handle_value_t<FnPtr>,
-                   producer_endpoint_region_value_t<FnPtr>>;
+    std::is_same_v<producer_endpoint_handle_value_t<FnPtr>, producer_endpoint_region_value_t<FnPtr>>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Self-test block ────────────────────────────────────────────────

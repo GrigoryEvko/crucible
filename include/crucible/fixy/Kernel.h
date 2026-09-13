@@ -103,15 +103,15 @@
 //                hidden state; reduce_into folds via Op which is
 //                deterministic by contract.
 
-#include <crucible/safety/BinaryTransform.h>   // FOUND-D13 arity-2 shape
-#include <crucible/safety/CanonicalShape.h>    // FOUND-D20 umbrella + dispatch
-#include <crucible/safety/Fusion.h>            // FOUND-F06/F07 fusion composability
-#include <crucible/safety/IsReduceInto.h>      // FOUND-D07 wrapper detector
-#include <crucible/safety/Reduction.h>         // FOUND-D14 shape concept
-#include <crucible/safety/UnaryTransform.h>    // FOUND-D12 arity-1 shape
-#include <crucible/safety/reduce_into.h>       // accumulator-into-place
+#include <crucible/safety/BinaryTransform.h>  // FOUND-D13 arity-2 shape
+#include <crucible/safety/CanonicalShape.h>  // FOUND-D20 umbrella + dispatch
+#include <crucible/safety/Fusion.h>  // FOUND-F06/F07 fusion composability
+#include <crucible/safety/IsReduceInto.h>  // FOUND-D07 wrapper detector
+#include <crucible/safety/Reduction.h>  // FOUND-D14 shape concept
+#include <crucible/safety/UnaryTransform.h>  // FOUND-D12 arity-1 shape
+#include <crucible/safety/reduce_into.h>  // accumulator-into-place
 
-#include <type_traits>   // dual-export sentinel uses std::is_same_v
+#include <type_traits>  // dual-export sentinel uses std::is_same_v
 
 namespace crucible::fixy::kernel {
 
@@ -254,9 +254,7 @@ namespace crucible::fixy::kernel::self_test {
 // detail:: name.  Instead the probe defines its own.
 
 struct KernelProbePlus {
-    constexpr int operator()(int const& a, int const& b) const noexcept {
-        return a + b;
-    }
+    constexpr int operator()(int const& a, int const& b) const noexcept { return a + b; }
 };
 
 // ── 1. Class-template identity ─────────────────────────────────────
@@ -264,32 +262,29 @@ struct KernelProbePlus {
 // fixy::kernel::reduce_into<R, Op> MUST alias safety::reduce_into;
 // drift would mean two distinct accumulator wrappers carrying the
 // same name, breaking move-only linearity guarantees across TUs.
-static_assert(std::is_same_v<
-    ::crucible::fixy::kernel::reduce_into<int, KernelProbePlus>,
-    ::crucible::safety::reduce_into<int, KernelProbePlus>>,
-    "fixy::kernel::reduce_into<R, Op> must alias safety::reduce_into<R, Op> "
-    "— substrate identity drift would orphan the move-only accumulator "
-    "linearity discipline (BorrowSafe).");
+static_assert(std::is_same_v<::crucible::fixy::kernel::reduce_into<int, KernelProbePlus>,
+                             ::crucible::safety::reduce_into<int, KernelProbePlus>>,
+              "fixy::kernel::reduce_into<R, Op> must alias safety::reduce_into<R, Op> "
+              "— substrate identity drift would orphan the move-only accumulator "
+              "linearity discipline (BorrowSafe).");
 
 // ── 2. is_reduction_op_v concept reaches through ───────────────────
 //
 // The concept is a templated bool; identity-check via the truth table
 // (positive case admitted, negative case rejected) gives the same
 // witness without needing decltype-of-a-concept (which is non-trivial).
-static_assert(
-    ::crucible::fixy::kernel::is_reduction_op_v<KernelProbePlus, int> ==
-    ::crucible::safety::is_reduction_op_v<KernelProbePlus, int>,
-    "fixy::kernel::is_reduction_op_v must agree with the substrate on "
-    "PlusOp/int — concept admission set drift would silently accept or "
-    "reject reducers differently across the two reach paths.");
+static_assert(::crucible::fixy::kernel::is_reduction_op_v<KernelProbePlus, int>
+                  == ::crucible::safety::is_reduction_op_v<KernelProbePlus, int>,
+              "fixy::kernel::is_reduction_op_v must agree with the substrate on "
+              "PlusOp/int — concept admission set drift would silently accept or "
+              "reject reducers differently across the two reach paths.");
 
 // Negative agreement — non-invocable type fails both.
 struct KernelProbeNonInvocable {};
-static_assert(
-    ::crucible::fixy::kernel::is_reduction_op_v<KernelProbeNonInvocable, int> ==
-    ::crucible::safety::is_reduction_op_v<KernelProbeNonInvocable, int>,
-    "fixy::kernel::is_reduction_op_v must agree with the substrate on "
-    "NON-invocable types (both reject).");
+static_assert(::crucible::fixy::kernel::is_reduction_op_v<KernelProbeNonInvocable, int>
+                  == ::crucible::safety::is_reduction_op_v<KernelProbeNonInvocable, int>,
+              "fixy::kernel::is_reduction_op_v must agree with the substrate on "
+              "NON-invocable types (both reject).");
 
 // ── 3. Reduction shape concept identity (function-ptr witness) ─────
 //
@@ -305,55 +300,48 @@ static_assert(
 // project warning matrix.
 
 inline void kp_f_nullary() noexcept {}
-static_assert(
-    ::crucible::fixy::kernel::Reduction<&kp_f_nullary>
-    == ::crucible::safety::extract::Reduction<&kp_f_nullary>,
-    "fixy::kernel::Reduction must agree with the substrate on the "
-    "nullary witness (both reject; arity != 2).");
+static_assert(::crucible::fixy::kernel::Reduction<&kp_f_nullary>
+                  == ::crucible::safety::extract::Reduction<&kp_f_nullary>,
+              "fixy::kernel::Reduction must agree with the substrate on the "
+              "nullary witness (both reject; arity != 2).");
 static_assert(!::crucible::fixy::kernel::Reduction<&kp_f_nullary>);
 
 inline void kp_f_unary(int) noexcept {}
-static_assert(
-    ::crucible::fixy::kernel::Reduction<&kp_f_unary>
-    == ::crucible::safety::extract::Reduction<&kp_f_unary>,
-    "fixy::kernel::Reduction must agree with the substrate on the "
-    "unary witness (both reject; arity != 2).");
+static_assert(::crucible::fixy::kernel::Reduction<&kp_f_unary> == ::crucible::safety::extract::Reduction<&kp_f_unary>,
+              "fixy::kernel::Reduction must agree with the substrate on the "
+              "unary witness (both reject; arity != 2).");
 static_assert(!::crucible::fixy::kernel::Reduction<&kp_f_unary>);
 
 inline void kp_f_ternary(int, int, int) noexcept {}
-static_assert(
-    ::crucible::fixy::kernel::Reduction<&kp_f_ternary>
-    == ::crucible::safety::extract::Reduction<&kp_f_ternary>,
-    "fixy::kernel::Reduction must agree with the substrate on the "
-    "ternary witness (both reject; arity != 2).");
+static_assert(::crucible::fixy::kernel::Reduction<&kp_f_ternary>
+                  == ::crucible::safety::extract::Reduction<&kp_f_ternary>,
+              "fixy::kernel::Reduction must agree with the substrate on the "
+              "ternary witness (both reject; arity != 2).");
 static_assert(!::crucible::fixy::kernel::Reduction<&kp_f_ternary>);
 
 inline void kp_f_two_ints(int, int) noexcept {}
-static_assert(
-    ::crucible::fixy::kernel::Reduction<&kp_f_two_ints>
-    == ::crucible::safety::extract::Reduction<&kp_f_two_ints>,
-    "fixy::kernel::Reduction must agree with the substrate on the "
-    "two-ints witness (both reject; param 0 is not OwnedRegion, "
-    "param 1 is not reduce_into).");
+static_assert(::crucible::fixy::kernel::Reduction<&kp_f_two_ints>
+                  == ::crucible::safety::extract::Reduction<&kp_f_two_ints>,
+              "fixy::kernel::Reduction must agree with the substrate on the "
+              "two-ints witness (both reject; param 0 is not OwnedRegion, "
+              "param 1 is not reduce_into).");
 static_assert(!::crucible::fixy::kernel::Reduction<&kp_f_two_ints>);
 
 inline int kp_f_returns_int(int, int) noexcept { return 0; }
-static_assert(
-    ::crucible::fixy::kernel::Reduction<&kp_f_returns_int>
-    == ::crucible::safety::extract::Reduction<&kp_f_returns_int>,
-    "fixy::kernel::Reduction must agree with the substrate on the "
-    "non-void-return witness (both reject; return type != void).");
+static_assert(::crucible::fixy::kernel::Reduction<&kp_f_returns_int>
+                  == ::crucible::safety::extract::Reduction<&kp_f_returns_int>,
+              "fixy::kernel::Reduction must agree with the substrate on the "
+              "non-void-return witness (both reject; return type != void).");
 static_assert(!::crucible::fixy::kernel::Reduction<&kp_f_returns_int>);
 
 // is_reduction_v variable-template form agrees with the concept form
 // on every witness.  This catches the "alias re-exported the concept
 // but the variable template forgot to update" drift class.
-static_assert(
-    ::crucible::fixy::kernel::is_reduction_v<&kp_f_nullary>
-    == ::crucible::fixy::kernel::Reduction<&kp_f_nullary>,
-    "fixy::kernel::is_reduction_v must mirror the Reduction concept "
-    "result on every input (variable-template form vs concept form "
-    "must stay in lockstep).");
+static_assert(::crucible::fixy::kernel::is_reduction_v<&kp_f_nullary>
+                  == ::crucible::fixy::kernel::Reduction<&kp_f_nullary>,
+              "fixy::kernel::is_reduction_v must mirror the Reduction concept "
+              "result on every input (variable-template form vs concept form "
+              "must stay in lockstep).");
 
 // ── 4. IsReduceInto wrapper-detection identity ─────────────────────
 //
@@ -361,31 +349,26 @@ static_assert(
 // reduce_into<int, KernelProbePlus> (positive) and int (negative) as
 // the two-witness anchor.
 
-using KP_RI_int_plus =
-    ::crucible::fixy::kernel::reduce_into<int, KernelProbePlus>;
+using KP_RI_int_plus = ::crucible::fixy::kernel::reduce_into<int, KernelProbePlus>;
 
-static_assert(
-    ::crucible::fixy::kernel::is_reduce_into_v<KP_RI_int_plus>
-    == ::crucible::safety::extract::is_reduce_into_v<KP_RI_int_plus>,
-    "fixy::kernel::is_reduce_into_v must agree with the substrate on "
-    "the positive witness — drift would mean the dispatcher sees a "
-    "different reduce_into-shape membership through the two reach "
-    "paths.");
-static_assert( ::crucible::fixy::kernel::is_reduce_into_v<KP_RI_int_plus>);
+static_assert(::crucible::fixy::kernel::is_reduce_into_v<KP_RI_int_plus>
+                  == ::crucible::safety::extract::is_reduce_into_v<KP_RI_int_plus>,
+              "fixy::kernel::is_reduce_into_v must agree with the substrate on "
+              "the positive witness — drift would mean the dispatcher sees a "
+              "different reduce_into-shape membership through the two reach "
+              "paths.");
+static_assert(::crucible::fixy::kernel::is_reduce_into_v<KP_RI_int_plus>);
 
-static_assert(
-    ::crucible::fixy::kernel::is_reduce_into_v<int>
-    == ::crucible::safety::extract::is_reduce_into_v<int>,
-    "fixy::kernel::is_reduce_into_v must agree with the substrate on "
-    "the negative witness (bare int).");
+static_assert(::crucible::fixy::kernel::is_reduce_into_v<int> == ::crucible::safety::extract::is_reduce_into_v<int>,
+              "fixy::kernel::is_reduce_into_v must agree with the substrate on "
+              "the negative witness (bare int).");
 static_assert(!::crucible::fixy::kernel::is_reduce_into_v<int>);
 
 // Concept form agrees with the variable template form.
-static_assert(
-    ::crucible::fixy::kernel::IsReduceInto<KP_RI_int_plus>
-    == ::crucible::fixy::kernel::is_reduce_into_v<KP_RI_int_plus>,
-    "fixy::kernel::IsReduceInto concept must agree with "
-    "is_reduce_into_v variable template form.");
+static_assert(::crucible::fixy::kernel::IsReduceInto<KP_RI_int_plus>
+                  == ::crucible::fixy::kernel::is_reduce_into_v<KP_RI_int_plus>,
+              "fixy::kernel::IsReduceInto concept must agree with "
+              "is_reduce_into_v variable template form.");
 
 // ── 5. reduce_into accumulator/reducer extractors ─────────────────
 //
@@ -393,22 +376,17 @@ static_assert(
 // would mean callers reading R/Op through the alias would see a
 // different type from callers reading them through the substrate.
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::kernel::reduce_into_accumulator_t<KP_RI_int_plus>,
-    ::crucible::safety::extract::reduce_into_accumulator_t<KP_RI_int_plus>>,
-    "fixy::kernel::reduce_into_accumulator_t must alias the substrate.");
-static_assert(std::is_same_v<
-    ::crucible::fixy::kernel::reduce_into_accumulator_t<KP_RI_int_plus>, int>,
-    "reduce_into_accumulator_t<reduce_into<int, _>> must yield int.");
+static_assert(std::is_same_v<::crucible::fixy::kernel::reduce_into_accumulator_t<KP_RI_int_plus>,
+                             ::crucible::safety::extract::reduce_into_accumulator_t<KP_RI_int_plus>>,
+              "fixy::kernel::reduce_into_accumulator_t must alias the substrate.");
+static_assert(std::is_same_v<::crucible::fixy::kernel::reduce_into_accumulator_t<KP_RI_int_plus>, int>,
+              "reduce_into_accumulator_t<reduce_into<int, _>> must yield int.");
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::kernel::reduce_into_reducer_t<KP_RI_int_plus>,
-    ::crucible::safety::extract::reduce_into_reducer_t<KP_RI_int_plus>>,
-    "fixy::kernel::reduce_into_reducer_t must alias the substrate.");
-static_assert(std::is_same_v<
-    ::crucible::fixy::kernel::reduce_into_reducer_t<KP_RI_int_plus>,
-    KernelProbePlus>,
-    "reduce_into_reducer_t<reduce_into<_, PlusOp>> must yield PlusOp.");
+static_assert(std::is_same_v<::crucible::fixy::kernel::reduce_into_reducer_t<KP_RI_int_plus>,
+                             ::crucible::safety::extract::reduce_into_reducer_t<KP_RI_int_plus>>,
+              "fixy::kernel::reduce_into_reducer_t must alias the substrate.");
+static_assert(std::is_same_v<::crucible::fixy::kernel::reduce_into_reducer_t<KP_RI_int_plus>, KernelProbePlus>,
+              "reduce_into_reducer_t<reduce_into<_, PlusOp>> must yield PlusOp.");
 
 // ── 6. LOAD-BEARING structural contracts on reduce_into ───────────
 //
@@ -424,30 +402,25 @@ static_assert(std::is_same_v<
 // if a future refactor accidentally re-introduces copy via composition
 // or default-generation, this sentinel fires at the alias path before
 // any caller depends on the broken invariant.
-static_assert(
-    !std::is_copy_constructible_v<KP_RI_int_plus>,
-    "fixy::kernel::reduce_into<R, Op> must not be copy-constructible — "
-    "the accumulator is unique state; copy would duplicate it and break "
-    "parallel_reduce_views's per-worker partial discipline (BorrowSafe).");
+static_assert(!std::is_copy_constructible_v<KP_RI_int_plus>,
+              "fixy::kernel::reduce_into<R, Op> must not be copy-constructible — "
+              "the accumulator is unique state; copy would duplicate it and break "
+              "parallel_reduce_views's per-worker partial discipline (BorrowSafe).");
 
-static_assert(
-    !std::is_copy_assignable_v<KP_RI_int_plus>,
-    "fixy::kernel::reduce_into<R, Op> must not be copy-assignable — "
-    "copy-assign would leak the LHS's old accumulator AND alias the "
-    "RHS's, breaking single-owner linearity (BorrowSafe).");
+static_assert(!std::is_copy_assignable_v<KP_RI_int_plus>,
+              "fixy::kernel::reduce_into<R, Op> must not be copy-assignable — "
+              "copy-assign would leak the LHS's old accumulator AND alias the "
+              "RHS's, breaking single-owner linearity (BorrowSafe).");
 
 // Contract 2 — move-constructible + move-assignable.  Move is the
 // transfer mechanism that lets the dispatcher hand the accumulator
 // from the planner's stack frame into the per-worker per-shard frames.
-static_assert(
-    std::is_move_constructible_v<KP_RI_int_plus>,
-    "fixy::kernel::reduce_into<R, Op> must be move-constructible — "
-    "transfer of ownership between dispatcher and worker requires it.");
+static_assert(std::is_move_constructible_v<KP_RI_int_plus>,
+              "fixy::kernel::reduce_into<R, Op> must be move-constructible — "
+              "transfer of ownership between dispatcher and worker requires it.");
 
-static_assert(
-    std::is_move_assignable_v<KP_RI_int_plus>,
-    "fixy::kernel::reduce_into<R, Op> must be move-assignable — "
-    "symmetric to the move-construct guarantee.");
+static_assert(std::is_move_assignable_v<KP_RI_int_plus>, "fixy::kernel::reduce_into<R, Op> must be move-assignable — "
+                                                         "symmetric to the move-construct guarantee.");
 
 // Contract 3 — Op constraint is enforced at construction.  This is
 // the LOAD-BEARING type-system check that rejects non-reducer Ops at
@@ -467,36 +440,32 @@ static_assert(
 // `test/test_fixy_kernel.cpp` positively witnesses the shape against
 // OwnedRegion-typed fixtures under the project warning matrix.
 
-static_assert(
-    ::crucible::fixy::kernel::UnaryTransform<&kp_f_nullary>
-    == ::crucible::safety::extract::UnaryTransform<&kp_f_nullary>,
-    "fixy::kernel::UnaryTransform must agree with the substrate on "
-    "the nullary witness (both reject; arity != 1).");
+static_assert(::crucible::fixy::kernel::UnaryTransform<&kp_f_nullary>
+                  == ::crucible::safety::extract::UnaryTransform<&kp_f_nullary>,
+              "fixy::kernel::UnaryTransform must agree with the substrate on "
+              "the nullary witness (both reject; arity != 1).");
 static_assert(!::crucible::fixy::kernel::UnaryTransform<&kp_f_nullary>);
 
-static_assert(
-    ::crucible::fixy::kernel::UnaryTransform<&kp_f_unary>
-    == ::crucible::safety::extract::UnaryTransform<&kp_f_unary>,
-    "fixy::kernel::UnaryTransform must agree with the substrate on "
-    "the int-unary witness (both reject; parameter 0 is not an "
-    "OwnedRegion rvalue ref).");
+static_assert(::crucible::fixy::kernel::UnaryTransform<&kp_f_unary>
+                  == ::crucible::safety::extract::UnaryTransform<&kp_f_unary>,
+              "fixy::kernel::UnaryTransform must agree with the substrate on "
+              "the int-unary witness (both reject; parameter 0 is not an "
+              "OwnedRegion rvalue ref).");
 static_assert(!::crucible::fixy::kernel::UnaryTransform<&kp_f_unary>);
 
-static_assert(
-    ::crucible::fixy::kernel::UnaryTransform<&kp_f_two_ints>
-    == ::crucible::safety::extract::UnaryTransform<&kp_f_two_ints>,
-    "fixy::kernel::UnaryTransform must agree with the substrate on "
-    "the two-ints witness (both reject; arity != 1).");
+static_assert(::crucible::fixy::kernel::UnaryTransform<&kp_f_two_ints>
+                  == ::crucible::safety::extract::UnaryTransform<&kp_f_two_ints>,
+              "fixy::kernel::UnaryTransform must agree with the substrate on "
+              "the two-ints witness (both reject; arity != 1).");
 static_assert(!::crucible::fixy::kernel::UnaryTransform<&kp_f_two_ints>);
 
 // Variable-template / concept lockstep — catches the "alias re-
 // exported the concept but the variable template forgot to update"
 // drift class (same shape as the section-3 is_reduction_v check).
-static_assert(
-    ::crucible::fixy::kernel::is_unary_transform_v<&kp_f_nullary>
-    == ::crucible::fixy::kernel::UnaryTransform<&kp_f_nullary>,
-    "fixy::kernel::is_unary_transform_v must mirror the UnaryTransform "
-    "concept on every input (variable-template vs concept lockstep).");
+static_assert(::crucible::fixy::kernel::is_unary_transform_v<&kp_f_nullary>
+                  == ::crucible::fixy::kernel::UnaryTransform<&kp_f_nullary>,
+              "fixy::kernel::is_unary_transform_v must mirror the UnaryTransform "
+              "concept on every input (variable-template vs concept lockstep).");
 
 // ── 8. BinaryTransform identity + agreement (V-039) ───────────────
 //
@@ -504,26 +473,23 @@ static_assert(
 // arity == 2 with BOTH params being OwnedRegion&& — distinct from
 // Reduction (param 1 is reduce_into&) and UnaryTransform (arity == 1).
 
-static_assert(
-    ::crucible::fixy::kernel::BinaryTransform<&kp_f_nullary>
-    == ::crucible::safety::extract::BinaryTransform<&kp_f_nullary>,
-    "fixy::kernel::BinaryTransform must agree with the substrate on "
-    "the nullary witness (both reject; arity != 2).");
+static_assert(::crucible::fixy::kernel::BinaryTransform<&kp_f_nullary>
+                  == ::crucible::safety::extract::BinaryTransform<&kp_f_nullary>,
+              "fixy::kernel::BinaryTransform must agree with the substrate on "
+              "the nullary witness (both reject; arity != 2).");
 static_assert(!::crucible::fixy::kernel::BinaryTransform<&kp_f_nullary>);
 
-static_assert(
-    ::crucible::fixy::kernel::BinaryTransform<&kp_f_two_ints>
-    == ::crucible::safety::extract::BinaryTransform<&kp_f_two_ints>,
-    "fixy::kernel::BinaryTransform must agree with the substrate on "
-    "the two-ints witness (both reject; parameters are not "
-    "OwnedRegion rvalue refs).");
+static_assert(::crucible::fixy::kernel::BinaryTransform<&kp_f_two_ints>
+                  == ::crucible::safety::extract::BinaryTransform<&kp_f_two_ints>,
+              "fixy::kernel::BinaryTransform must agree with the substrate on "
+              "the two-ints witness (both reject; parameters are not "
+              "OwnedRegion rvalue refs).");
 static_assert(!::crucible::fixy::kernel::BinaryTransform<&kp_f_two_ints>);
 
-static_assert(
-    ::crucible::fixy::kernel::is_binary_transform_v<&kp_f_two_ints>
-    == ::crucible::fixy::kernel::BinaryTransform<&kp_f_two_ints>,
-    "fixy::kernel::is_binary_transform_v must mirror the "
-    "BinaryTransform concept (variable-template / concept lockstep).");
+static_assert(::crucible::fixy::kernel::is_binary_transform_v<&kp_f_two_ints>
+                  == ::crucible::fixy::kernel::BinaryTransform<&kp_f_two_ints>,
+              "fixy::kernel::is_binary_transform_v must mirror the "
+              "BinaryTransform concept (variable-template / concept lockstep).");
 
 // ── 9. CanonicalShape umbrella + enum identity (V-039) ────────────
 //
@@ -536,9 +502,7 @@ static_assert(
 // drift class at the alias path.
 
 static_assert(
-    std::is_same_v<
-        ::crucible::fixy::kernel::CanonicalShapeKind,
-        ::crucible::safety::extract::CanonicalShapeKind>,
+    std::is_same_v<::crucible::fixy::kernel::CanonicalShapeKind, ::crucible::safety::extract::CanonicalShapeKind>,
     "fixy::kernel::CanonicalShapeKind must BE the substrate enum, "
     "not a redeclaration — identity drift here would silently break "
     "every enumerator comparison across the two reach paths.");
@@ -548,81 +512,68 @@ static_assert(
 // witnesses act as defense-in-depth + structurally pin the 9 expected
 // shape labels so future appends to CanonicalShapeKind ripple here.
 static_assert(::crucible::fixy::kernel::CanonicalShapeKind::NonCanonical
-           == ::crucible::safety::extract::CanonicalShapeKind::NonCanonical);
+              == ::crucible::safety::extract::CanonicalShapeKind::NonCanonical);
 static_assert(::crucible::fixy::kernel::CanonicalShapeKind::UnaryTransform
-           == ::crucible::safety::extract::CanonicalShapeKind::UnaryTransform);
+              == ::crucible::safety::extract::CanonicalShapeKind::UnaryTransform);
 static_assert(::crucible::fixy::kernel::CanonicalShapeKind::BinaryTransform
-           == ::crucible::safety::extract::CanonicalShapeKind::BinaryTransform);
+              == ::crucible::safety::extract::CanonicalShapeKind::BinaryTransform);
 static_assert(::crucible::fixy::kernel::CanonicalShapeKind::Reduction
-           == ::crucible::safety::extract::CanonicalShapeKind::Reduction);
+              == ::crucible::safety::extract::CanonicalShapeKind::Reduction);
 static_assert(::crucible::fixy::kernel::CanonicalShapeKind::ProducerEndpoint
-           == ::crucible::safety::extract::CanonicalShapeKind::ProducerEndpoint);
+              == ::crucible::safety::extract::CanonicalShapeKind::ProducerEndpoint);
 static_assert(::crucible::fixy::kernel::CanonicalShapeKind::ConsumerEndpoint
-           == ::crucible::safety::extract::CanonicalShapeKind::ConsumerEndpoint);
+              == ::crucible::safety::extract::CanonicalShapeKind::ConsumerEndpoint);
 static_assert(::crucible::fixy::kernel::CanonicalShapeKind::SwmrWriter
-           == ::crucible::safety::extract::CanonicalShapeKind::SwmrWriter);
+              == ::crucible::safety::extract::CanonicalShapeKind::SwmrWriter);
 static_assert(::crucible::fixy::kernel::CanonicalShapeKind::SwmrReader
-           == ::crucible::safety::extract::CanonicalShapeKind::SwmrReader);
+              == ::crucible::safety::extract::CanonicalShapeKind::SwmrReader);
 static_assert(::crucible::fixy::kernel::CanonicalShapeKind::PipelineStage
-           == ::crucible::safety::extract::CanonicalShapeKind::PipelineStage);
+              == ::crucible::safety::extract::CanonicalShapeKind::PipelineStage);
 
 // CanonicalShape umbrella + NonCanonical complement agree with the
 // substrate on the function-pointer witnesses defined in section 3.
 // kp_f_two_ints (void(int,int)) matches NONE of the 8 canonical
 // shapes → CanonicalShape = false, NonCanonical = true.
 
-static_assert(
-    ::crucible::fixy::kernel::CanonicalShape<&kp_f_two_ints>
-    == ::crucible::safety::extract::CanonicalShape<&kp_f_two_ints>);
+static_assert(::crucible::fixy::kernel::CanonicalShape<&kp_f_two_ints>
+              == ::crucible::safety::extract::CanonicalShape<&kp_f_two_ints>);
 static_assert(!::crucible::fixy::kernel::CanonicalShape<&kp_f_two_ints>);
 
-static_assert(
-    ::crucible::fixy::kernel::NonCanonical<&kp_f_two_ints>
-    == ::crucible::safety::extract::NonCanonical<&kp_f_two_ints>);
+static_assert(::crucible::fixy::kernel::NonCanonical<&kp_f_two_ints>
+              == ::crucible::safety::extract::NonCanonical<&kp_f_two_ints>);
 static_assert(::crucible::fixy::kernel::NonCanonical<&kp_f_two_ints>);
 
 // Variable-template forms agree with their concept forms.
-static_assert(
-    ::crucible::fixy::kernel::is_canonical_shape_v<&kp_f_two_ints>
-    == ::crucible::fixy::kernel::CanonicalShape<&kp_f_two_ints>);
-static_assert(
-    ::crucible::fixy::kernel::is_non_canonical_v<&kp_f_two_ints>
-    == ::crucible::fixy::kernel::NonCanonical<&kp_f_two_ints>);
+static_assert(::crucible::fixy::kernel::is_canonical_shape_v<&kp_f_two_ints>
+              == ::crucible::fixy::kernel::CanonicalShape<&kp_f_two_ints>);
+static_assert(::crucible::fixy::kernel::is_non_canonical_v<&kp_f_two_ints>
+              == ::crucible::fixy::kernel::NonCanonical<&kp_f_two_ints>);
 
 // Dispatch — canonical_shape_kind_v routes kp_f_two_ints to
 // NonCanonical (none of the 8 shapes match).
-static_assert(
-    ::crucible::fixy::kernel::canonical_shape_kind_v<&kp_f_two_ints>
-    == ::crucible::fixy::kernel::CanonicalShapeKind::NonCanonical,
-    "kp_f_two_ints (void(int,int)) matches no canonical shape — "
-    "dispatch must resolve to NonCanonical.");
+static_assert(::crucible::fixy::kernel::canonical_shape_kind_v<&kp_f_two_ints>
+                  == ::crucible::fixy::kernel::CanonicalShapeKind::NonCanonical,
+              "kp_f_two_ints (void(int,int)) matches no canonical shape — "
+              "dispatch must resolve to NonCanonical.");
 
 // canonical_shape_name lookup — string_view round-trip across the
 // 4 most-critical shapes (Reduction-shape is V-038, Unary/Binary are
 // V-039, NonCanonical is the fallback).
+static_assert(::crucible::fixy::kernel::canonical_shape_name(::crucible::fixy::kernel::CanonicalShapeKind::NonCanonical)
+              == std::string_view{"NonCanonical"});
+static_assert(::crucible::fixy::kernel::canonical_shape_name(::crucible::fixy::kernel::CanonicalShapeKind::Reduction)
+              == std::string_view{"Reduction"});
 static_assert(
-    ::crucible::fixy::kernel::canonical_shape_name(
-        ::crucible::fixy::kernel::CanonicalShapeKind::NonCanonical)
-    == std::string_view{"NonCanonical"});
-static_assert(
-    ::crucible::fixy::kernel::canonical_shape_name(
-        ::crucible::fixy::kernel::CanonicalShapeKind::Reduction)
-    == std::string_view{"Reduction"});
-static_assert(
-    ::crucible::fixy::kernel::canonical_shape_name(
-        ::crucible::fixy::kernel::CanonicalShapeKind::UnaryTransform)
+    ::crucible::fixy::kernel::canonical_shape_name(::crucible::fixy::kernel::CanonicalShapeKind::UnaryTransform)
     == std::string_view{"UnaryTransform"});
 static_assert(
-    ::crucible::fixy::kernel::canonical_shape_name(
-        ::crucible::fixy::kernel::CanonicalShapeKind::BinaryTransform)
+    ::crucible::fixy::kernel::canonical_shape_name(::crucible::fixy::kernel::CanonicalShapeKind::BinaryTransform)
     == std::string_view{"BinaryTransform"});
 
 // canonical_shape_name_of_v — pre-dispatched name variable for the
 // non-canonical witness.  Composition of canonical_shape_kind_v +
 // canonical_shape_name verified through the alias.
-static_assert(
-    ::crucible::fixy::kernel::canonical_shape_name_of_v<&kp_f_two_ints>
-    == std::string_view{"NonCanonical"});
+static_assert(::crucible::fixy::kernel::canonical_shape_name_of_v<&kp_f_two_ints> == std::string_view{"NonCanonical"});
 
 // ── 10. Fusion composability (V-039) ──────────────────────────────
 //
@@ -633,58 +584,48 @@ static_assert(
 // shape recognizers in sections 7-9 whose positives ship in the TU).
 
 inline int kp_p_double(int x) noexcept { return x * 2; }
-inline int kp_p_inc(int x)    noexcept { return x + 1; }
+inline int kp_p_inc(int x) noexcept { return x + 1; }
 
 // Positive: matching types (int → int → int), both pure + noexcept,
 // arity 1 — all five F06 clauses hold.
-static_assert(
-    ::crucible::fixy::kernel::can_fuse_v<&kp_p_double, &kp_p_inc>
-    == ::crucible::safety::can_fuse_v<&kp_p_double, &kp_p_inc>,
-    "fixy::kernel::can_fuse_v must agree with the substrate on the "
-    "canonical positive witness (matching int(int) types).");
+static_assert(::crucible::fixy::kernel::can_fuse_v<&kp_p_double, &kp_p_inc>
+                  == ::crucible::safety::can_fuse_v<&kp_p_double, &kp_p_inc>,
+              "fixy::kernel::can_fuse_v must agree with the substrate on the "
+              "canonical positive witness (matching int(int) types).");
 static_assert(::crucible::fixy::kernel::can_fuse_v<&kp_p_double, &kp_p_inc>);
 
 // IsFusable concept form agrees with can_fuse_v variable-template form.
 static_assert(::crucible::fixy::kernel::IsFusable<&kp_p_double, &kp_p_inc>);
-static_assert(
-    ::crucible::fixy::kernel::IsFusable<&kp_p_double, &kp_p_inc>
-    == ::crucible::fixy::kernel::can_fuse_v<&kp_p_double, &kp_p_inc>);
+static_assert(::crucible::fixy::kernel::IsFusable<&kp_p_double, &kp_p_inc>
+              == ::crucible::fixy::kernel::can_fuse_v<&kp_p_double, &kp_p_inc>);
 
 // Negative: arity mismatch — kp_f_nullary takes 0 args, can't pipe
 // kp_p_double's int return into it (arity_v<Fn2> != 1).
-static_assert(
-    !::crucible::fixy::kernel::can_fuse_v<&kp_p_double, &kp_f_nullary>);
+static_assert(!::crucible::fixy::kernel::can_fuse_v<&kp_p_double, &kp_f_nullary>);
 
 // Negative: arity mismatch the other direction — kp_f_two_ints takes
 // (int, int), Fn2 arity != 1.
-static_assert(
-    !::crucible::fixy::kernel::can_fuse_v<&kp_p_double, &kp_f_two_ints>);
+static_assert(!::crucible::fixy::kernel::can_fuse_v<&kp_p_double, &kp_f_two_ints>);
 
 // fuse() — LOAD-BEARING runtime contract.  The returned stateless
 // lambda must compute Fn2(Fn1(x)) AND propagate noexcept.  Compile-
 // time evaluation proves both at the alias path; if `fuse` ever drifts
 // from `[](auto x){ return Fn2(Fn1(x)); }` to something else (e.g.
 // reversed order, captured state), these sentinels fire.
-constexpr auto kp_fused = ::crucible::fixy::kernel::fuse<
-    &kp_p_double, &kp_p_inc>();
-static_assert(kp_fused(7) == 15,
-    "fuse<&double, &inc>()(7) must compute inc(double(7)) = 14+1 = 15.");
-static_assert(kp_fused(0) == 1,
-    "fuse<&double, &inc>()(0) must compute inc(0*2) = 1.");
-static_assert(noexcept(kp_fused(7)),
-    "fuse() must produce a noexcept callable when both inputs are "
-    "noexcept (substrate inherits the noexcept-ness via the lambda's "
-    "noexcept(noexcept(Fn2(Fn1(x)))) computed exception specifier).");
+constexpr auto kp_fused = ::crucible::fixy::kernel::fuse<&kp_p_double, &kp_p_inc>();
+static_assert(kp_fused(7) == 15, "fuse<&double, &inc>()(7) must compute inc(double(7)) = 14+1 = 15.");
+static_assert(kp_fused(0) == 1, "fuse<&double, &inc>()(0) must compute inc(0*2) = 1.");
+static_assert(noexcept(kp_fused(7)), "fuse() must produce a noexcept callable when both inputs are "
+                                     "noexcept (substrate inherits the noexcept-ness via the lambda's "
+                                     "noexcept(noexcept(Fn2(Fn1(x)))) computed exception specifier).");
 
 // Empty + trivially copyable — load-bearing for ICF and the F08 bench
 // pair-0 "indistinguishable" claim.  Mirrors Fusion.h section 249-272.
-static_assert(std::is_empty_v<decltype(kp_fused)>,
-    "fuse() must produce a stateless empty closure — non-empty would "
-    "break ICF folding under the linker's identical-code-collapse pass "
-    "(and silently bloat the fused-callable layout).");
-static_assert(sizeof(decltype(kp_fused)) == 1,
-    "Empty closure has the standard-mandated 1-byte size — larger "
-    "implies hidden capture state contradicting the F07 promise.");
+static_assert(std::is_empty_v<decltype(kp_fused)>, "fuse() must produce a stateless empty closure — non-empty would "
+                                                   "break ICF folding under the linker's identical-code-collapse pass "
+                                                   "(and silently bloat the fused-callable layout).");
+static_assert(sizeof(decltype(kp_fused)) == 1, "Empty closure has the standard-mandated 1-byte size — larger "
+                                               "implies hidden capture state contradicting the F07 promise.");
 
 // ── 11. Cross-shape exclusivity (V-039) ───────────────────────────
 //
@@ -701,7 +642,7 @@ static_assert(sizeof(decltype(kp_fused)) == 1,
 static_assert(!::crucible::fixy::kernel::UnaryTransform<&kp_f_two_ints>);
 static_assert(!::crucible::fixy::kernel::BinaryTransform<&kp_f_two_ints>);
 static_assert(!::crucible::fixy::kernel::Reduction<&kp_f_two_ints>);
-static_assert( ::crucible::fixy::kernel::NonCanonical<&kp_f_two_ints>);
+static_assert(::crucible::fixy::kernel::NonCanonical<&kp_f_two_ints>);
 
 // kp_p_double matches NO canonical shape (arity 1, parameter is int
 // — not an OwnedRegion rvalue ref).  Same conclusion across the
@@ -711,7 +652,7 @@ static_assert( ::crucible::fixy::kernel::NonCanonical<&kp_f_two_ints>);
 static_assert(!::crucible::fixy::kernel::UnaryTransform<&kp_p_double>);
 static_assert(!::crucible::fixy::kernel::BinaryTransform<&kp_p_double>);
 static_assert(!::crucible::fixy::kernel::Reduction<&kp_p_double>);
-static_assert( ::crucible::fixy::kernel::NonCanonical<&kp_p_double>);
+static_assert(::crucible::fixy::kernel::NonCanonical<&kp_p_double>);
 
 // ── 12. Cardinality witness ───────────────────────────────────────
 //
@@ -779,8 +720,7 @@ static_assert( ::crucible::fixy::kernel::NonCanonical<&kp_p_double>);
 // this block + bump the constant + add a sentinel above.
 
 constexpr int kernel_alias_cardinality = 38;
-static_assert(kernel_alias_cardinality == 38,
-    "fixy::kernel:: cardinality changed — update Kernel.h sentinel "
-    "block to track the substrate kernel-shape recognizer surface.");
+static_assert(kernel_alias_cardinality == 38, "fixy::kernel:: cardinality changed — update Kernel.h sentinel "
+                                              "block to track the substrate kernel-shape recognizer surface.");
 
 }  // namespace crucible::fixy::kernel::self_test

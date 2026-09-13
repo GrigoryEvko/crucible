@@ -13,18 +13,16 @@
 // specialization and flip `has_emit_path` in the shared header.
 
 namespace crucible::mimic::_wip::broadcom::network {
-inline constexpr auto vendor =
-    ::crucible::mimic::_wip::network::NetworkBackendVendor::Broadcom;
+inline constexpr auto vendor = ::crucible::mimic::_wip::network::NetworkBackendVendor::Broadcom;
 template <::crucible::cog::CogKind Kind>
 using Backend = ::crucible::mimic::_wip::network::NetworkBackend<vendor, Kind>;
 using Kernel = ::crucible::mimic::_wip::network::DeclaredNetworkKernel<vendor>;
 
-static_assert(
-    !::crucible::mimic::_wip::network::network_backend_has_emit_path_v<vendor>,
-    "fixy-A5-037: NetworkBackendTraits<Broadcom>::has_emit_path was "
-    "flipped to true but this per-vendor `_wip` header has not "
-    "shipped real emit logic.  Either ship a vendor-specific "
-    "Backend specialization here or revert the shared trait flip.  "
-    "See MIMIC.md M2-M9.");
+static_assert(!::crucible::mimic::_wip::network::network_backend_has_emit_path_v<vendor>,
+              "fixy-A5-037: NetworkBackendTraits<Broadcom>::has_emit_path was "
+              "flipped to true but this per-vendor `_wip` header has not "
+              "shipped real emit logic.  Either ship a vendor-specific "
+              "Backend specialization here or revert the shared trait flip.  "
+              "See MIMIC.md M2-M9.");
 
 }  // namespace crucible::mimic::_wip::broadcom::network

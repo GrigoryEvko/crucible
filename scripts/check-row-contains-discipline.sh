@@ -257,10 +257,36 @@ while IFS= read -r match; do
         '//'*|'///'*|'*'*|'/*'*) continue ;;
     esac
 
-    # Inline suppression.
-    case "$text" in
-        *'ROW-CONTAINS-OK'*) continue ;;
-    esac
+    # Inline suppression.  The marker scopes to the STATEMENT, not the line:
+    # a reformat may wrap the expression so the trailing comment lands several
+    # lines below the token that triggered the match.  Scan from the candidate
+    # line to the end of its statement (first line containing a semicolon),
+    # bounded so a missing semicolon cannot run away.
+    # Continuation lines are those that do not yet close the construct, so the
+    # scan stops at the first line bearing ';', '{' or '}' — that line is still
+    # checked, because a wrapped expression carries its marker on the line that
+    # ends it.  A requires-clause or a brace-only body terminates immediately,
+    # which keeps a later declaration's marker from leaking backwards.
+    suppressed=0
+    probe=$line
+    probe_limit=$((line + 12))
+    while (( probe <= probe_limit )); do
+        probe_text="$(sed -n "${probe}p" "$file" 2>/dev/null)"
+        case "$probe_text" in
+            *'ROW-CONTAINS-OK'*) suppressed=1; break ;;
+        esac
+        # A ';' ends the statement.  A line ENDING in '}' closes a body
+        # (`void f() {}`), which means the next construct has begun.  A '{'
+        # merely opening a braced initializer does not terminate anything.
+        case "$probe_text" in
+            *';'*) break ;;
+        esac
+        case "${probe_text%"${probe_text##*[![:space:]]}"}" in
+            *'}') break ;;
+        esac
+        probe=$((probe + 1))
+    done
+    (( suppressed )) && continue
 
     rel="${file#"$scan_root"/}"
 

@@ -110,7 +110,7 @@
 //      correctly into the resolved Fn<>
 
 #include <crucible/effects/Capabilities.h>
-#include <crucible/effects/Capability.h>      // FOUND-043 witness — effects::Capability<E, S>
+#include <crucible/effects/Capability.h>  // FOUND-043 witness — effects::Capability<E, S>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/fixy/Default.h>
 #include <crucible/fixy/Dim.h>
@@ -173,26 +173,26 @@ namespace detail::resolve {
 template <typename G>
 struct project {
     static_assert(::crucible::fixy::detail::diagnose::always_false_v<G>,
-        "fixy::fn<Type, Grants...>: project<G> reached for a grant tag "
-        "with no specialization.  The G template parameter on this "
-        "project<...> instantiation names the offending tag.  Two ways "
-        "to repair:\n"
-        "  (a) Per-domain tag routed to a substrate axis — if G is a "
-        "downstream-defined grant tag (final, derives grant_base, has a "
-        "which_dim<G> specialization on a non-Type DimensionAxis), "
-        "specialize ::crucible::fixy::detail::resolve::project<G> in the "
-        "downstream domain to expose ::type (type-valued axes: "
-        "Refinement / Effect / Protocol / Lifetime / Provenance / Trust "
-        "/ Complexity / Precision / Space / Size / Staleness) or ::value "
-        "+ ::value_type (enum/integer-valued axes: Usage / Security / "
-        "Representation / Overflow / Mutation / Reentrancy / Version).\n"
-        "  (b) Non-grant type leaked through IsGrantTag — if G is NOT a "
-        "grant tag, ensure `fixy::grant::IsGrantTag_v<G>` returns false "
-        "at the grant-validation tier (Reject.h §AllGrantsWellFormed) so "
-        "the type never reaches project<G> in the first place.  A "
-        "per-domain extension should never reach this template — the "
-        "wrapper-tier diagnostic FixyMalformedGrant is the correct "
-        "catch-point for non-grant inputs.");
+                  "fixy::fn<Type, Grants...>: project<G> reached for a grant tag "
+                  "with no specialization.  The G template parameter on this "
+                  "project<...> instantiation names the offending tag.  Two ways "
+                  "to repair:\n"
+                  "  (a) Per-domain tag routed to a substrate axis — if G is a "
+                  "downstream-defined grant tag (final, derives grant_base, has a "
+                  "which_dim<G> specialization on a non-Type DimensionAxis), "
+                  "specialize ::crucible::fixy::detail::resolve::project<G> in the "
+                  "downstream domain to expose ::type (type-valued axes: "
+                  "Refinement / Effect / Protocol / Lifetime / Provenance / Trust "
+                  "/ Complexity / Precision / Space / Size / Staleness) or ::value "
+                  "+ ::value_type (enum/integer-valued axes: Usage / Security / "
+                  "Representation / Overflow / Mutation / Reentrancy / Version).\n"
+                  "  (b) Non-grant type leaked through IsGrantTag — if G is NOT a "
+                  "grant tag, ensure `fixy::grant::IsGrantTag_v<G>` returns false "
+                  "at the grant-validation tier (Reject.h §AllGrantsWellFormed) so "
+                  "the type never reaches project<G> in the first place.  A "
+                  "per-domain extension should never reach this template — the "
+                  "wrapper-tier diagnostic FixyMalformedGrant is the correct "
+                  "catch-point for non-grant inputs.");
 };
 
 // Acceptance markers delegate to strict_default_for<D>
@@ -201,33 +201,42 @@ struct project<grant::accept_default_strict_for<D>> : strict_default_for<D> {};
 
 // ── DimensionAxis::Refinement = 1 (type-valued) ───────────────────
 template <typename Pred>
-struct project<grant::refined_with<Pred>> { using type = Pred; };
+struct project<grant::refined_with<Pred>> {
+    using type = Pred;
+};
 
 // ── DimensionAxis::Usage = 2 (enum-valued) ────────────────────────
-template <> struct project<grant::affine> {
+template <>
+struct project<grant::affine> {
     using value_type = safety::fn::UsageMode;
     static constexpr value_type value = safety::fn::UsageMode::Affine;
 };
-template <> struct project<grant::copy> {
+template <>
+struct project<grant::copy> {
     using value_type = safety::fn::UsageMode;
     static constexpr value_type value = safety::fn::UsageMode::Copy;
 };
-template <> struct project<grant::ghost> {
+template <>
+struct project<grant::ghost> {
     using value_type = safety::fn::UsageMode;
     static constexpr value_type value = safety::fn::UsageMode::Ghost;
 };
-template <> struct project<grant::borrow> {
+template <>
+struct project<grant::borrow> {
     using value_type = safety::fn::UsageMode;
     static constexpr value_type value = safety::fn::UsageMode::Borrow;
 };
-template <> struct project<grant::capability_usage> {
+template <>
+struct project<grant::capability_usage> {
     using value_type = safety::fn::UsageMode;
     static constexpr value_type value = safety::fn::UsageMode::Capability;
 };
 
 // ── DimensionAxis::Effect = 3 (type-valued) ───────────────────────
 template <effects::Effect... Es>
-struct project<grant::with<Es...>> { using type = effects::Row<Es...>; };
+struct project<grant::with<Es...>> {
+    using type = effects::Row<Es...>;
+};
 
 // ── DimensionAxis::Security = 4 (enum-valued via declassify) ──────
 //
@@ -259,8 +268,7 @@ struct declassify_target {
 };
 
 template <typename Policy>
-inline constexpr safety::fn::SecLevel declassify_target_v =
-    declassify_target<Policy>::value;
+inline constexpr safety::fn::SecLevel declassify_target_v = declassify_target<Policy>::value;
 
 template <typename Policy>
 struct project<grant::declassify<Policy>> {
@@ -290,8 +298,7 @@ struct LatticeNonCollapseProofPolicy {};
 }  // namespace detail::resolve
 
 template <>
-struct detail::resolve::declassify_target<
-    detail::resolve::found_032_witness::LatticeNonCollapseProofPolicy> {
+struct detail::resolve::declassify_target<detail::resolve::found_032_witness::LatticeNonCollapseProofPolicy> {
     using value_type = safety::fn::SecLevel;
     static constexpr value_type value = safety::fn::SecLevel::Classified;
 };
@@ -299,46 +306,52 @@ struct detail::resolve::declassify_target<
 namespace detail::resolve {
 
 static_assert(declassify_target_v<int> == safety::fn::SecLevel::Public,
-    "FOUND-032: declassify_target<>'s default-Public path is broken "
-    "— an un-specialized Policy (here a bare `int` type-token) must "
-    "fall through to SecLevel::Public to preserve prior behavior on "
-    "all currently-deployed declassify<Policy> grants.");
+              "FOUND-032: declassify_target<>'s default-Public path is broken "
+              "— an un-specialized Policy (here a bare `int` type-token) must "
+              "fall through to SecLevel::Public to preserve prior behavior on "
+              "all currently-deployed declassify<Policy> grants.");
 
-static_assert(declassify_target_v<found_032_witness::LatticeNonCollapseProofPolicy>
-        == safety::fn::SecLevel::Classified,
-    "FOUND-032: declassify_target<> customization point is broken — "
-    "the per-Policy specialization for LatticeNonCollapseProofPolicy "
-    "fails to override the default Public target.  This sentinel "
-    "proves the Security lattice no longer collapses to Public for "
-    "every declassify<>: per-Policy specializations can land at any "
-    "SecLevel the IFC discipline of the downstream domain authorizes.");
+static_assert(declassify_target_v<found_032_witness::LatticeNonCollapseProofPolicy> == safety::fn::SecLevel::Classified,
+              "FOUND-032: declassify_target<> customization point is broken — "
+              "the per-Policy specialization for LatticeNonCollapseProofPolicy "
+              "fails to override the default Public target.  This sentinel "
+              "proves the Security lattice no longer collapses to Public for "
+              "every declassify<>: per-Policy specializations can land at any "
+              "SecLevel the IFC discipline of the downstream domain authorizes.");
 
 // FIXY-LAT-Security: explicit Security lattice point projections —
 // every SecLevel enumerator reachable through a named grant tag.
-template <> struct project<grant::as_unclassified> {
+template <>
+struct project<grant::as_unclassified> {
     using value_type = safety::fn::SecLevel;
     static constexpr value_type value = safety::fn::SecLevel::Unclassified;
 };
-template <> struct project<grant::as_public> {
+template <>
+struct project<grant::as_public> {
     using value_type = safety::fn::SecLevel;
     static constexpr value_type value = safety::fn::SecLevel::Public;
 };
-template <> struct project<grant::as_internal> {
+template <>
+struct project<grant::as_internal> {
     using value_type = safety::fn::SecLevel;
     static constexpr value_type value = safety::fn::SecLevel::Internal;
 };
-template <> struct project<grant::as_classified> {
+template <>
+struct project<grant::as_classified> {
     using value_type = safety::fn::SecLevel;
     static constexpr value_type value = safety::fn::SecLevel::Classified;
 };
-template <> struct project<grant::as_secret> {
+template <>
+struct project<grant::as_secret> {
     using value_type = safety::fn::SecLevel;
     static constexpr value_type value = safety::fn::SecLevel::Secret;
 };
 
 // ── DimensionAxis::Protocol = 5 (type-valued) ─────────────────────
 template <typename Proto>
-struct project<grant::protocol<Proto>> { using type = Proto; };
+struct project<grant::protocol<Proto>> {
+    using type = Proto;
+};
 
 // ── DimensionAxis::Lifetime = 6 (type-valued) ─────────────────────
 template <auto RegionTag>
@@ -348,7 +361,9 @@ struct project<grant::in_region<RegionTag>> {
 
 // ── DimensionAxis::Provenance = 7 (type-valued) ───────────────────
 template <typename Source>
-struct project<grant::from_source<Source>> { using type = Source; };
+struct project<grant::from_source<Source>> {
+    using type = Source;
+};
 
 // ── DimensionAxis::Trust = 8 (type-valued) ────────────────────────
 template <auto Rationale>
@@ -358,10 +373,22 @@ struct project<grant::trust_assumed<Rationale>> {
 
 // FIXY-LAT-Trust: explicit Trust lattice point projections — every
 // safety::trust::* tag reachable through a named grant tag.
-template <> struct project<grant::trust_verified>   { using type = safety::trust::Verified; };
-template <> struct project<grant::trust_tested>     { using type = safety::trust::Tested; };
-template <> struct project<grant::trust_unverified> { using type = safety::trust::Unverified; };
-template <> struct project<grant::trust_external>   { using type = safety::trust::External; };
+template <>
+struct project<grant::trust_verified> {
+    using type = safety::trust::Verified;
+};
+template <>
+struct project<grant::trust_tested> {
+    using type = safety::trust::Tested;
+};
+template <>
+struct project<grant::trust_unverified> {
+    using type = safety::trust::Unverified;
+};
+template <>
+struct project<grant::trust_external> {
+    using type = safety::trust::External;
+};
 
 // ── DimensionAxis::Representation = 9 (enum-valued) ───────────────
 template <safety::fn::ReprKind Kind>
@@ -371,80 +398,113 @@ struct project<grant::repr<Kind>> {
 };
 
 // ── DimensionAxis::Complexity = 11 (type-valued) ──────────────────
-template <> struct project<grant::cost_constant>  { using type = safety::fn::cost::Constant; };
-template <auto N> struct project<grant::cost_linear<N>> {
+template <>
+struct project<grant::cost_constant> {
+    using type = safety::fn::cost::Constant;
+};
+template <auto N>
+struct project<grant::cost_linear<N>> {
     using type = safety::fn::cost::Linear<N>;
 };
-template <auto N> struct project<grant::cost_quadratic<N>> {
+template <auto N>
+struct project<grant::cost_quadratic<N>> {
     using type = safety::fn::cost::Quadratic<N>;
 };
-template <> struct project<grant::cost_unbounded> { using type = safety::fn::cost::Unbounded; };
+template <>
+struct project<grant::cost_unbounded> {
+    using type = safety::fn::cost::Unbounded;
+};
 
 // ── DimensionAxis::Precision = 12 (type-valued) ───────────────────
-template <> struct project<grant::precision_f32> { using type = safety::fn::precision::F32; };
-template <> struct project<grant::precision_f64> { using type = safety::fn::precision::F64; };
-template <auto Bound> struct project<grant::precision_higham<Bound>> {
+template <>
+struct project<grant::precision_f32> {
+    using type = safety::fn::precision::F32;
+};
+template <>
+struct project<grant::precision_f64> {
+    using type = safety::fn::precision::F64;
+};
+template <auto Bound>
+struct project<grant::precision_higham<Bound>> {
     using type = safety::fn::precision::Higham<Bound>;
 };
 
 // ── DimensionAxis::Space = 13 (type-valued) ───────────────────────
-template <auto N> struct project<grant::space_bounded<N>> {
+template <auto N>
+struct project<grant::space_bounded<N>> {
     using type = safety::fn::space::Bounded<N>;
 };
-template <> struct project<grant::space_unbounded> { using type = safety::fn::space::Unbounded; };
+template <>
+struct project<grant::space_unbounded> {
+    using type = safety::fn::space::Unbounded;
+};
 
 // ── DimensionAxis::Overflow = 14 (enum-valued) ────────────────────
-template <> struct project<grant::overflow_wrap> {
+template <>
+struct project<grant::overflow_wrap> {
     using value_type = safety::fn::OverflowMode;
     static constexpr value_type value = safety::fn::OverflowMode::Wrap;
 };
-template <> struct project<grant::overflow_saturate> {
+template <>
+struct project<grant::overflow_saturate> {
     using value_type = safety::fn::OverflowMode;
     static constexpr value_type value = safety::fn::OverflowMode::Saturate;
 };
-template <> struct project<grant::overflow_widen> {
+template <>
+struct project<grant::overflow_widen> {
     using value_type = safety::fn::OverflowMode;
     static constexpr value_type value = safety::fn::OverflowMode::Widen;
 };
 
 // ── DimensionAxis::Mutation = 15 (enum-valued) ────────────────────
-template <> struct project<grant::mut_mutable> {
+template <>
+struct project<grant::mut_mutable> {
     using value_type = safety::fn::MutationMode;
     static constexpr value_type value = safety::fn::MutationMode::Mutable;
 };
-template <> struct project<grant::mut_append> {
+template <>
+struct project<grant::mut_append> {
     using value_type = safety::fn::MutationMode;
     static constexpr value_type value = safety::fn::MutationMode::Append;
 };
-template <> struct project<grant::mut_monotonic> {
+template <>
+struct project<grant::mut_monotonic> {
     using value_type = safety::fn::MutationMode;
     static constexpr value_type value = safety::fn::MutationMode::Monotonic;
 };
 
 // ── DimensionAxis::Reentrancy = 16 (enum-valued) ──────────────────
-template <> struct project<grant::reentrant> {
+template <>
+struct project<grant::reentrant> {
     using value_type = safety::fn::ReentrancyMode;
     static constexpr value_type value = safety::fn::ReentrancyMode::Reentrant;
 };
-template <> struct project<grant::coroutine> {
+template <>
+struct project<grant::coroutine> {
     using value_type = safety::fn::ReentrancyMode;
     static constexpr value_type value = safety::fn::ReentrancyMode::Coroutine;
 };
 
 // ── DimensionAxis::Size = 17 (type-valued) ────────────────────────
-template <auto Depth> struct project<grant::sized_at<Depth>> {
+template <auto Depth>
+struct project<grant::sized_at<Depth>> {
     using type = safety::fn::size_pol::Sized<Depth>;
 };
-template <> struct project<grant::productive> { using type = safety::fn::size_pol::Productive; };
+template <>
+struct project<grant::productive> {
+    using type = safety::fn::size_pol::Productive;
+};
 
 // ── DimensionAxis::Version = 18 (integer-valued) ──────────────────
-template <std::uint32_t V> struct project<grant::version<V>> {
+template <std::uint32_t V>
+struct project<grant::version<V>> {
     using value_type = std::uint32_t;
     static constexpr value_type value = V;
 };
 
 // ── DimensionAxis::Staleness = 19 (type-valued) ───────────────────
-template <auto TauMax> struct project<grant::stale_to<TauMax>> {
+template <auto TauMax>
+struct project<grant::stale_to<TauMax>> {
     using type = safety::fn::stale::Stale<TauMax>;
 };
 
@@ -496,8 +556,7 @@ template <auto TauMax> struct project<grant::stale_to<TauMax>> {
 
 namespace audit {
 
-inline constexpr std::array<dim::DimensionAxis, 13>
-    kAxesWithoutNonDefaultGrants = {
+inline constexpr std::array<dim::DimensionAxis, 13> kAxesWithoutNonDefaultGrants = {
     // Synchronization (added 2026-05-18, fixy-A3-008) — Tier S.
     // Will gain grants when the Wait + MemOrder wrappers gain
     // user-facing per-strategy / per-order grant tags beyond the
@@ -575,15 +634,15 @@ inline constexpr std::array<dim::DimensionAxis, 13>
 };
 
 static_assert(kAxesWithoutNonDefaultGrants.size() == 13,
-    "FIXY-FOUND-027: cardinality pin.  When the first non-default "
-    "grant ships for one of the 13 listed axes, (a) drop that axis "
-    "from `kAxesWithoutNonDefaultGrants` AND (b) decrement this "
-    "assertion's RHS.  If the assertion fires after a grant ships, "
-    "the gap-list and the cardinality have drifted out of sync — "
-    "fix by aligning both sides.  When a NEW axis lacking a grant "
-    "family lands (i.e., a new FIXY-V-* introduces another "
-    "extension axis), (a) append the new axis to the list AND (b) "
-    "increment this assertion's RHS.");
+              "FIXY-FOUND-027: cardinality pin.  When the first non-default "
+              "grant ships for one of the 13 listed axes, (a) drop that axis "
+              "from `kAxesWithoutNonDefaultGrants` AND (b) decrement this "
+              "assertion's RHS.  If the assertion fires after a grant ships, "
+              "the gap-list and the cardinality have drifted out of sync — "
+              "fix by aligning both sides.  When a NEW axis lacking a grant "
+              "family lands (i.e., a new FIXY-V-* introduces another "
+              "extension axis), (a) append the new axis to the list AND (b) "
+              "increment this assertion's RHS.");
 
 // FIXY-FOUND-027: programmatic predicate — `axis_has_grant_family`
 // returns true iff axis D has at least one non-default grant tag
@@ -612,10 +671,10 @@ static_assert(kAxesWithoutNonDefaultGrants.size() == 13,
 // The pin below holds when the gap list size is exactly the count
 // of Crucible-extension axes (20-32) lacking grants.
 static_assert(safety::DIMENSION_AXIS_COUNT - kAxesWithoutNonDefaultGrants.size() == 20,
-    "FIXY-FOUND-027: 20 axes (0-19) ship grant families OR are "
-    "structurally derived (Observability).  When this assertion "
-    "fires the maintainer has either added/removed a DimensionAxis "
-    "or updated the gap list out of sync with the axis enumeration.");
+              "FIXY-FOUND-027: 20 axes (0-19) ship grant families OR are "
+              "structurally derived (Observability).  When this assertion "
+              "fires the maintainer has either added/removed a DimensionAxis "
+              "or updated the gap list out of sync with the axis enumeration.");
 
 }  // namespace audit
 
@@ -655,7 +714,7 @@ struct find_grant_impl<D, G, Rest...> {
 };
 
 template <dim::DimensionAxis D, typename G, typename... Rest>
-    requires (grant::IsGrantTag_v<G> && grant::which_dim_v<G> == D)
+    requires(grant::IsGrantTag_v<G> && grant::which_dim_v<G> == D)
 struct find_grant_impl<D, G, Rest...> {
     using type = G;
 };
@@ -677,7 +736,8 @@ using find_grant_t = typename find_grant_impl<D, Grants...>::type;
 // grant appears (Security defaulted, or pinned via `as_*` tag), it
 // returns `void`.  Pattern-match — no `IsGrantTag_v` gate needed since
 // the only matching shape is `grant::declassify<P>` itself.
-template <typename... Grants> struct find_declassify_policy {
+template <typename... Grants>
+struct find_declassify_policy {
     using type = void;
 };
 template <typename Policy, typename... Rest>
@@ -685,49 +745,36 @@ struct find_declassify_policy<grant::declassify<Policy>, Rest...> {
     using type = Policy;
 };
 template <typename G, typename... Rest>
-struct find_declassify_policy<G, Rest...>
-    : find_declassify_policy<Rest...> {};
+struct find_declassify_policy<G, Rest...> : find_declassify_policy<Rest...> {};
 
 template <typename... Grants>
-using find_declassify_policy_t =
-    typename find_declassify_policy<Grants...>::type;
+using find_declassify_policy_t = typename find_declassify_policy<Grants...>::type;
 
 // ─── Per-axis resolvers ────────────────────────────────────────────
 
 // Type-valued axes
 template <typename... Grants>
-using resolve_refinement_t =
-    typename project<find_grant_t<dim::DimensionAxis::Refinement, Grants...>>::type;
+using resolve_refinement_t = typename project<find_grant_t<dim::DimensionAxis::Refinement, Grants...>>::type;
 template <typename... Grants>
-using resolve_effect_t =
-    typename project<find_grant_t<dim::DimensionAxis::Effect, Grants...>>::type;
+using resolve_effect_t = typename project<find_grant_t<dim::DimensionAxis::Effect, Grants...>>::type;
 template <typename... Grants>
-using resolve_protocol_t =
-    typename project<find_grant_t<dim::DimensionAxis::Protocol, Grants...>>::type;
+using resolve_protocol_t = typename project<find_grant_t<dim::DimensionAxis::Protocol, Grants...>>::type;
 template <typename... Grants>
-using resolve_lifetime_t =
-    typename project<find_grant_t<dim::DimensionAxis::Lifetime, Grants...>>::type;
+using resolve_lifetime_t = typename project<find_grant_t<dim::DimensionAxis::Lifetime, Grants...>>::type;
 template <typename... Grants>
-using resolve_source_t =
-    typename project<find_grant_t<dim::DimensionAxis::Provenance, Grants...>>::type;
+using resolve_source_t = typename project<find_grant_t<dim::DimensionAxis::Provenance, Grants...>>::type;
 template <typename... Grants>
-using resolve_trust_t =
-    typename project<find_grant_t<dim::DimensionAxis::Trust, Grants...>>::type;
+using resolve_trust_t = typename project<find_grant_t<dim::DimensionAxis::Trust, Grants...>>::type;
 template <typename... Grants>
-using resolve_cost_t =
-    typename project<find_grant_t<dim::DimensionAxis::Complexity, Grants...>>::type;
+using resolve_cost_t = typename project<find_grant_t<dim::DimensionAxis::Complexity, Grants...>>::type;
 template <typename... Grants>
-using resolve_precision_t =
-    typename project<find_grant_t<dim::DimensionAxis::Precision, Grants...>>::type;
+using resolve_precision_t = typename project<find_grant_t<dim::DimensionAxis::Precision, Grants...>>::type;
 template <typename... Grants>
-using resolve_space_t =
-    typename project<find_grant_t<dim::DimensionAxis::Space, Grants...>>::type;
+using resolve_space_t = typename project<find_grant_t<dim::DimensionAxis::Space, Grants...>>::type;
 template <typename... Grants>
-using resolve_size_t =
-    typename project<find_grant_t<dim::DimensionAxis::Size, Grants...>>::type;
+using resolve_size_t = typename project<find_grant_t<dim::DimensionAxis::Size, Grants...>>::type;
 template <typename... Grants>
-using resolve_staleness_t =
-    typename project<find_grant_t<dim::DimensionAxis::Staleness, Grants...>>::type;
+using resolve_staleness_t = typename project<find_grant_t<dim::DimensionAxis::Staleness, Grants...>>::type;
 
 // Enum/integer-valued axes
 template <typename... Grants>
@@ -749,38 +796,23 @@ template <typename... Grants>
 inline constexpr safety::fn::ReentrancyMode resolve_reentrancy_v =
     project<find_grant_t<dim::DimensionAxis::Reentrancy, Grants...>>::value;
 template <typename... Grants>
-inline constexpr std::uint32_t resolve_version_v =
-    project<find_grant_t<dim::DimensionAxis::Version, Grants...>>::value;
+inline constexpr std::uint32_t resolve_version_v = project<find_grant_t<dim::DimensionAxis::Version, Grants...>>::value;
 
 // ─── resolved_fn_t<Type, Grants...> — substrate Fn instantiation ──
 
 template <typename Type, typename... Grants>
-using resolved_fn_t = safety::fn::Fn<
-    Type,
-    resolve_refinement_t<Grants...>,
-    resolve_usage_v<Grants...>,
-    resolve_effect_t<Grants...>,
-    resolve_security_v<Grants...>,
-    resolve_protocol_t<Grants...>,
-    resolve_lifetime_t<Grants...>,
-    resolve_source_t<Grants...>,
-    resolve_trust_t<Grants...>,
-    resolve_repr_v<Grants...>,
-    resolve_cost_t<Grants...>,
-    resolve_precision_t<Grants...>,
-    resolve_space_t<Grants...>,
-    resolve_overflow_v<Grants...>,
-    resolve_mutation_v<Grants...>,
-    resolve_reentrancy_v<Grants...>,
-    resolve_size_t<Grants...>,
-    resolve_version_v<Grants...>,
-    resolve_staleness_t<Grants...>>;
+using resolved_fn_t =
+    safety::fn::Fn<Type, resolve_refinement_t<Grants...>, resolve_usage_v<Grants...>, resolve_effect_t<Grants...>,
+                   resolve_security_v<Grants...>, resolve_protocol_t<Grants...>, resolve_lifetime_t<Grants...>,
+                   resolve_source_t<Grants...>, resolve_trust_t<Grants...>, resolve_repr_v<Grants...>,
+                   resolve_cost_t<Grants...>, resolve_precision_t<Grants...>, resolve_space_t<Grants...>,
+                   resolve_overflow_v<Grants...>, resolve_mutation_v<Grants...>, resolve_reentrancy_v<Grants...>,
+                   resolve_size_t<Grants...>, resolve_version_v<Grants...>, resolve_staleness_t<Grants...>>;
 
 // Implicit Type engagement marker injected at fixy::fn instantiation
 // (per Grant.h's DimensionAxis::Type = 0 discipline: callers do not write the
 // marker — the wrapper supplies it).
-using ImplicitTypeMarker =
-    grant::accept_default_strict_for<dim::DimensionAxis::Type>;
+using ImplicitTypeMarker = grant::accept_default_strict_for<dim::DimensionAxis::Type>;
 
 // FIXY-FOUND-041 cross-namespace identity pin: Reject.h owns the
 // canonical definition (detail::accept::ImplicitTypeMarker) so the
@@ -791,15 +823,14 @@ using ImplicitTypeMarker =
 // silently diverges the two definitions (e.g., one switched to a
 // different axis without the other) would silently break every
 // fixy::fn binding's Type-axis injection path.
-static_assert(std::is_same_v<ImplicitTypeMarker,
-                             ::crucible::fixy::detail::accept::ImplicitTypeMarker>,
-    "FIXY-FOUND-041: Fn.h's detail::resolve::ImplicitTypeMarker MUST "
-    "be structurally identical to Reject.h's detail::accept::"
-    "ImplicitTypeMarker.  The two aliases denote the same canonical "
-    "Type-axis injection marker; if they diverge, the wrapper "
-    "(which uses Reject.h's form via the IsAccepted concept) and "
-    "Fn.h's internal projection helpers (which use the resolve "
-    "alias) would inject DIFFERENT markers at different paths.");
+static_assert(std::is_same_v<ImplicitTypeMarker, ::crucible::fixy::detail::accept::ImplicitTypeMarker>,
+              "FIXY-FOUND-041: Fn.h's detail::resolve::ImplicitTypeMarker MUST "
+              "be structurally identical to Reject.h's detail::accept::"
+              "ImplicitTypeMarker.  The two aliases denote the same canonical "
+              "Type-axis injection marker; if they diverge, the wrapper "
+              "(which uses Reject.h's form via the IsAccepted concept) and "
+              "Fn.h's internal projection helpers (which use the resolve "
+              "alias) would inject DIFFERENT markers at different paths.");
 
 }  // namespace detail::resolve
 
@@ -866,17 +897,12 @@ static_assert(std::is_same_v<ImplicitTypeMarker,
 namespace detail {
 
 template <typename T>
-concept TypeIsStanceCompatible =
-       !std::is_void_v<T>
-    && !std::is_array_v<T>
-    && !std::is_reference_v<T>
-    && !std::is_const_v<T>
-    && !std::is_volatile_v<T>
-    && !std::is_function_v<T>;
+concept TypeIsStanceCompatible = !std::is_void_v<T> && !std::is_array_v<T> && !std::is_reference_v<T>
+                              && !std::is_const_v<T> && !std::is_volatile_v<T> && !std::is_function_v<T>;
 
 }  // namespace detail
 
-template <template<typename> class Stance, typename Type>
+template <template <typename> class Stance, typename Type>
 concept StanceForUnary = detail::TypeIsStanceCompatible<Type>;
 
 // fixy-A4-019: `StanceForBinary` historically gated only the Type axis
@@ -891,11 +917,8 @@ concept StanceForUnary = detail::TypeIsStanceCompatible<Type>;
 // for tag identity.  Substrate-side `safety::secret_policy::*` tags
 // (Source.h) and the substrate self-test `IsGrantTag<declassify<int>>`
 // (Grant.h:555) both confirm fundamental object types remain accepted.
-template <template<typename, typename> class Stance,
-          typename Type, typename Policy>
-concept StanceForBinary =
-       detail::TypeIsStanceCompatible<Type>
-    && detail::TypeIsStanceCompatible<Policy>;
+template <template <typename, typename> class Stance, typename Type, typename Policy>
+concept StanceForBinary = detail::TypeIsStanceCompatible<Type> && detail::TypeIsStanceCompatible<Policy>;
 
 // ─────────────────────────────────────────────────────────────────────
 // ── fixy-A4-025: CTAD-blocker sentinel ────────────────────────────
@@ -926,8 +949,8 @@ concept StanceForBinary =
 // see the sentinel's name in the error chain.
 
 namespace detail::ctad {
-    struct fn_ctad_blocked_use_mint_fn_or_mint_fn_for final {};
-}
+struct fn_ctad_blocked_use_mint_fn_or_mint_fn_for final {};
+}  // namespace detail::ctad
 
 template <typename Type, typename... Grants>
 class fn {
@@ -942,22 +965,20 @@ class fn {
     // so a sentinel-typed instantiation only fires THIS message (not
     // also tier-3 "missing axis" or tier-1 "non-payload type").
     static constexpr bool fixy_a4_025_tier0_not_ctad_sentinel =
-        !std::is_same_v<Type,
-            detail::ctad::fn_ctad_blocked_use_mint_fn_or_mint_fn_for>;
-    static_assert(
-        fixy_a4_025_tier0_not_ctad_sentinel,
-        "fixy::fn<Type, Grants...> [tier 0: §XXI Universal Mint Pattern]: "
-        "CTAD (`fixy::fn{value}` / `fixy::fn(value)`) is NOT supported. "
-        "Every value-carrying fixy::fn must be born via a mint_* factory "
-        "so `grep \"mint_\"` finds every binding (CLAUDE.md §XXI). "
-        "Use one of:\n"
-        "  fixy::mint_fn<Type, Grants...>(value)         — explicit grants\n"
-        "  fixy::mint_fn_for<UnaryStance>(value)         — unary stance\n"
-        "  fixy::mint_fn_for<BinaryStance, Policy>(value) — binary stance\n"
-        "See fixy::stance:: for the canonical 11-stance catalog "
-        "(PureLinear/PureCopy/IoFunction/BgWorker/CtCrypto/SecretConsumer/"
-        "NamedSession/SyncBlocking/RealtimeHot/InternalRead/"
-        "TestOnly) and CLAUDE.md §XXI for the mint pattern rationale.");
+        !std::is_same_v<Type, detail::ctad::fn_ctad_blocked_use_mint_fn_or_mint_fn_for>;
+    static_assert(fixy_a4_025_tier0_not_ctad_sentinel,
+                  "fixy::fn<Type, Grants...> [tier 0: §XXI Universal Mint Pattern]: "
+                  "CTAD (`fixy::fn{value}` / `fixy::fn(value)`) is NOT supported. "
+                  "Every value-carrying fixy::fn must be born via a mint_* factory "
+                  "so `grep \"mint_\"` finds every binding (CLAUDE.md §XXI). "
+                  "Use one of:\n"
+                  "  fixy::mint_fn<Type, Grants...>(value)         — explicit grants\n"
+                  "  fixy::mint_fn_for<UnaryStance>(value)         — unary stance\n"
+                  "  fixy::mint_fn_for<BinaryStance, Policy>(value) — binary stance\n"
+                  "See fixy::stance:: for the canonical 11-stance catalog "
+                  "(PureLinear/PureCopy/IoFunction/BgWorker/CtCrypto/SecretConsumer/"
+                  "NamedSession/SyncBlocking/RealtimeHot/InternalRead/"
+                  "TestOnly) and CLAUDE.md §XXI for the mint pattern rationale.");
 
     // fixy-H-03: surface the per-axis FixyNotEngaged_<Axis>,
     // FixyDuplicate_<Axis>, and FixyMalformedGrant diagnostic tag
@@ -986,25 +1007,16 @@ class fn {
     // specialization is selected, no inner static_assert fires, and the
     // user sees ONLY the tier-0 CTAD message above (clean single
     // diagnostic instead of tier-0 + tier-3 + H-03 wall-of-errors).
-    using fixy_h03_tier2_diag_tag = std::conditional_t<
-        fixy_a4_025_tier0_not_ctad_sentinel,
-        malformed_grant_or_void_t<ImplicitTypeMarker, Grants...>,
-        void>;
-    using fixy_h03_tier3_diag_tag = std::conditional_t<
-        fixy_a4_025_tier0_not_ctad_sentinel,
-        missing_tag_or_void_t<ImplicitTypeMarker, Grants...>,
-        void>;
-    using fixy_h03_tier4_diag_tag = std::conditional_t<
-        fixy_a4_025_tier0_not_ctad_sentinel,
-        duplicate_tag_or_void_t<ImplicitTypeMarker, Grants...>,
-        void>;
+    using fixy_h03_tier2_diag_tag = std::conditional_t<fixy_a4_025_tier0_not_ctad_sentinel,
+                                                       malformed_grant_or_void_t<ImplicitTypeMarker, Grants...>, void>;
+    using fixy_h03_tier3_diag_tag = std::conditional_t<fixy_a4_025_tier0_not_ctad_sentinel,
+                                                       missing_tag_or_void_t<ImplicitTypeMarker, Grants...>, void>;
+    using fixy_h03_tier4_diag_tag = std::conditional_t<fixy_a4_025_tier0_not_ctad_sentinel,
+                                                       duplicate_tag_or_void_t<ImplicitTypeMarker, Grants...>, void>;
 
-    struct fixy_h03_tier2_diagnose
-        : DiagnoseMalformedGrant<fixy_h03_tier2_diag_tag> {};
-    struct fixy_h03_tier3_diagnose
-        : DiagnoseAxisNotEngaged<fixy_h03_tier3_diag_tag> {};
-    struct fixy_h03_tier4_diagnose
-        : DiagnoseAxisDuplicate<fixy_h03_tier4_diag_tag> {};
+    struct fixy_h03_tier2_diagnose : DiagnoseMalformedGrant<fixy_h03_tier2_diag_tag> {};
+    struct fixy_h03_tier3_diagnose : DiagnoseAxisNotEngaged<fixy_h03_tier3_diag_tag> {};
+    struct fixy_h03_tier4_diagnose : DiagnoseAxisDuplicate<fixy_h03_tier4_diag_tag> {};
 
     // [temp.inst]/9: member classes of a class template are NOT
     // implicitly instantiated even if their enclosing template is.
@@ -1014,11 +1026,11 @@ class fn {
     // the H-02 tier static_assert halts class-body processing.
 
     static_assert(sizeof(fixy_h03_tier2_diagnose) >= 1,
-        "fixy-H-03: force tier-2 DiagnoseMalformedGrant<Tag> instantiation");
+                  "fixy-H-03: force tier-2 DiagnoseMalformedGrant<Tag> instantiation");
     static_assert(sizeof(fixy_h03_tier3_diagnose) >= 1,
-        "fixy-H-03: force tier-3 DiagnoseAxisNotEngaged<Tag> instantiation");
+                  "fixy-H-03: force tier-3 DiagnoseAxisNotEngaged<Tag> instantiation");
     static_assert(sizeof(fixy_h03_tier4_diagnose) >= 1,
-        "fixy-H-03: force tier-4 DiagnoseAxisDuplicate<Tag> instantiation");
+                  "fixy-H-03: force tier-4 DiagnoseAxisDuplicate<Tag> instantiation");
 
     // fixy-H-02: branched static_assert chain.  Each tier guards the
     // next via `!prior_failed || this_check`, so only the FIRST failing
@@ -1037,20 +1049,17 @@ class fn {
     // fire on the empty Grants pack — adding the gate keeps the
     // diagnostic stream clean (tier-0 alone).
     static constexpr bool fixy_h02_tier1_type_ok =
-        !fixy_a4_025_tier0_not_ctad_sentinel
-        || detail::accept::type_is_accepted_payload<Type>();
-    static_assert(fixy_h02_tier1_type_ok,
-        "fixy::fn<Type, Grants...> [tier 1: IsAccepted gate]: Type must be "
-        "a non-cv, non-array, non-reference, non-function, non-void "
-        "object type. "
-        "Cite: fixy::detail::accept::type_is_accepted_payload.  "
-        "Wrap bare function types as pointers or callables "
-        "(std::function_ref) before instantiating fixy::fn.");
+        !fixy_a4_025_tier0_not_ctad_sentinel || detail::accept::type_is_accepted_payload<Type>();
+    static_assert(fixy_h02_tier1_type_ok, "fixy::fn<Type, Grants...> [tier 1: IsAccepted gate]: Type must be "
+                                          "a non-cv, non-array, non-reference, non-function, non-void "
+                                          "object type. "
+                                          "Cite: fixy::detail::accept::type_is_accepted_payload.  "
+                                          "Wrap bare function types as pointers or callables "
+                                          "(std::function_ref) before instantiating fixy::fn.");
 
-    static constexpr bool fixy_h02_tier2_grants_well_formed =
-        !fixy_a4_025_tier0_not_ctad_sentinel
-        || !fixy_h02_tier1_type_ok
-        || AllGrantsWellFormed<ImplicitTypeMarker, Grants...>;
+    static constexpr bool fixy_h02_tier2_grants_well_formed = !fixy_a4_025_tier0_not_ctad_sentinel
+                                                           || !fixy_h02_tier1_type_ok
+                                                           || AllGrantsWellFormed<ImplicitTypeMarker, Grants...>;
     // FIXY-FOUND-130: route through P2741R3 dynamic message so the
     // 0-based position of the FIRST malformed grant in the pack
     // appears literally in the diagnostic text (e.g. "Malformed-grant
@@ -1069,8 +1078,7 @@ class fn {
     // first_duplicate_axis_v needs to see the marker's Type-axis
     // engagement to surface FixyDuplicate_Type when a user explicitly
     // re-engages Type (FIXY-AUDIT-A7).
-    static_assert(fixy_h02_tier2_grants_well_formed,
-        tier2_malformed_grant_message_v<Grants...>);
+    static_assert(fixy_h02_tier2_grants_well_formed, tier2_malformed_grant_message_v<Grants...>);
 
     // Sketch mode (CRUCIBLE_FIXY_STRICT=0) relaxes the engagement
     // axis per Profile.h's contract: "sketch mode permissivity applies
@@ -1082,11 +1090,8 @@ class fn {
     // modes — sketch mode does NOT bypass correctness, only relaxes
     // the "every axis must be engaged" rule for in-progress migrations.
     static constexpr bool fixy_h02_tier3_all_dims_engaged =
-        !fixy_a4_025_tier0_not_ctad_sentinel
-        || !fixy_h02_tier1_type_ok
-        || !fixy_h02_tier2_grants_well_formed
-        || AllDimsEngaged<ImplicitTypeMarker, Grants...>
-        || !fixy_is_strict;
+        !fixy_a4_025_tier0_not_ctad_sentinel || !fixy_h02_tier1_type_ok || !fixy_h02_tier2_grants_well_formed
+        || AllDimsEngaged<ImplicitTypeMarker, Grants...> || !fixy_is_strict;
     // fixy-H-15: route through P2741R3 dynamic message so the resolved
     // FixyNotEngaged_<Axis> tag NAME appears literally in the diagnostic
     // text (e.g. "Missing-axis diagnostic tag: FixyNotEngaged_Effect").
@@ -1098,15 +1103,11 @@ class fn {
     // and the message is unused; the helper's `if constexpr
     // (AllDimsEngaged<...>)` guard sidesteps the
     // `requires (!AllDimsEngaged<...>)` clause on `first_missing_tag_t`.
-    static_assert(fixy_h02_tier3_all_dims_engaged,
-        tier3_missing_tag_message_v<ImplicitTypeMarker, Grants...>);
+    static_assert(fixy_h02_tier3_all_dims_engaged, tier3_missing_tag_message_v<ImplicitTypeMarker, Grants...>);
 
     static constexpr bool fixy_h02_tier4_unique_engagement =
-        !fixy_a4_025_tier0_not_ctad_sentinel
-        || !fixy_h02_tier1_type_ok
-        || !fixy_h02_tier2_grants_well_formed
-        || !fixy_h02_tier3_all_dims_engaged
-        || UniqueEngagementPerAxis<ImplicitTypeMarker, Grants...>;
+        !fixy_a4_025_tier0_not_ctad_sentinel || !fixy_h02_tier1_type_ok || !fixy_h02_tier2_grants_well_formed
+        || !fixy_h02_tier3_all_dims_engaged || UniqueEngagementPerAxis<ImplicitTypeMarker, Grants...>;
     // FIXY-FOUND-130: route through P2741R3 dynamic message so the
     // FixyDuplicate_<Axis> tag name (e.g. "FixyDuplicate_Effect")
     // appears literally in the diagnostic text — symmetric with
@@ -1115,8 +1116,7 @@ class fn {
     // would only see "see first_duplicate_tag_t<Grants...>" and have
     // to manually instantiate the trait to discover WHICH axis;
     // dynamic routing surfaces the axis directly in the error.
-    static_assert(fixy_h02_tier4_unique_engagement,
-        tier4_duplicate_tag_message_v<ImplicitTypeMarker, Grants...>);
+    static_assert(fixy_h02_tier4_unique_engagement, tier4_duplicate_tag_message_v<ImplicitTypeMarker, Grants...>);
 
     // Tier 5 is the §30.14 corpus check.  Profile.h documents the
     // sketch-mode relaxation as "engagement axis + theory-corpus
@@ -1125,13 +1125,9 @@ class fn {
     // rules (a non-negotiable correctness floor) and basic input
     // shape (Type validity, grant well-formedness).
     static constexpr bool fixy_h02_tier5_not_in_corpus =
-        !fixy_a4_025_tier0_not_ctad_sentinel
-        || !fixy_h02_tier1_type_ok
-        || !fixy_h02_tier2_grants_well_formed
-        || !fixy_h02_tier3_all_dims_engaged
-        || !fixy_h02_tier4_unique_engagement
-        || theory::NotInTheoryCorpus<Type, ImplicitTypeMarker, Grants...>
-        || !fixy_is_strict;
+        !fixy_a4_025_tier0_not_ctad_sentinel || !fixy_h02_tier1_type_ok || !fixy_h02_tier2_grants_well_formed
+        || !fixy_h02_tier3_all_dims_engaged || !fixy_h02_tier4_unique_engagement
+        || theory::NotInTheoryCorpus<Type, ImplicitTypeMarker, Grants...> || !fixy_is_strict;
     // fixy-H-13 + fixy-H-16: surface BOTH the matched corpus entry's
     // struct name AND its `cite()` text in the rejection diagnostic
     // via P2741R3 (user-generated static_assert messages).
@@ -1148,11 +1144,10 @@ class fn {
     // paper + year + remediation prose.  When tier 5 succeeds (no
     // corpus match), corpus_full_diagnostic_v returns an empty
     // string_view; the static_assert message is unused in that case.
-    static_assert(fixy_h02_tier5_not_in_corpus,
-        theory::corpus_full_diagnostic_v<Type, ImplicitTypeMarker, Grants...>);
+    static_assert(fixy_h02_tier5_not_in_corpus, theory::corpus_full_diagnostic_v<Type, ImplicitTypeMarker, Grants...>);
 
 public:
-    using value_type  = Type;
+    using value_type = Type;
     using safety_fn_t = detail::resolve::resolved_fn_t<Type, Grants...>;
 
     // ── Declassify policy accessor (FIXY-AUDIT-A2) ────────────────
@@ -1165,23 +1160,23 @@ public:
     // ── Per-axis introspection — passthroughs into safety_fn_t ────
     using refinement_t = typename safety_fn_t::refinement_t;
     using effect_row_t = typename safety_fn_t::effect_row_t;
-    using protocol_t   = typename safety_fn_t::protocol_t;
-    using lifetime_t   = typename safety_fn_t::lifetime_t;
-    using source_t     = typename safety_fn_t::source_t;
-    using trust_t      = typename safety_fn_t::trust_t;
-    using cost_t       = typename safety_fn_t::cost_t;
-    using precision_t  = typename safety_fn_t::precision_t;
-    using space_t      = typename safety_fn_t::space_t;
-    using size_t_      = typename safety_fn_t::size_t_;
-    using staleness_t  = typename safety_fn_t::staleness_t;
+    using protocol_t = typename safety_fn_t::protocol_t;
+    using lifetime_t = typename safety_fn_t::lifetime_t;
+    using source_t = typename safety_fn_t::source_t;
+    using trust_t = typename safety_fn_t::trust_t;
+    using cost_t = typename safety_fn_t::cost_t;
+    using precision_t = typename safety_fn_t::precision_t;
+    using space_t = typename safety_fn_t::space_t;
+    using size_t_ = typename safety_fn_t::size_t_;
+    using staleness_t = typename safety_fn_t::staleness_t;
 
-    static constexpr safety::fn::UsageMode      usage_v      = safety_fn_t::usage_v;
-    static constexpr safety::fn::SecLevel       security_v   = safety_fn_t::security_v;
-    static constexpr safety::fn::ReprKind       repr_v       = safety_fn_t::repr_v;
-    static constexpr safety::fn::OverflowMode   overflow_v   = safety_fn_t::overflow_v;
-    static constexpr safety::fn::MutationMode   mutation_v   = safety_fn_t::mutation_v;
+    static constexpr safety::fn::UsageMode usage_v = safety_fn_t::usage_v;
+    static constexpr safety::fn::SecLevel security_v = safety_fn_t::security_v;
+    static constexpr safety::fn::ReprKind repr_v = safety_fn_t::repr_v;
+    static constexpr safety::fn::OverflowMode overflow_v = safety_fn_t::overflow_v;
+    static constexpr safety::fn::MutationMode mutation_v = safety_fn_t::mutation_v;
     static constexpr safety::fn::ReentrancyMode reentrancy_v = safety_fn_t::reentrancy_v;
-    static constexpr std::uint32_t              version_v    = safety_fn_t::version_v;
+    static constexpr std::uint32_t version_v = safety_fn_t::version_v;
 
     // ── Construction + copy/move discipline (FIXY-AUDIT-A6) ───────
     //
@@ -1249,9 +1244,7 @@ private:
     // binding.  Direct construction
     // (`fixy::fn<int, ...>{42}` / `fixy::stance::PureLinear<int>{42}`)
     // fails with an "inaccessible" diagnostic at the call site.
-    explicit constexpr fn(Type v)
-        noexcept(std::is_nothrow_move_constructible_v<Type>)
-        : value_{std::move(v)} {}
+    explicit constexpr fn(Type v) noexcept(std::is_nothrow_move_constructible_v<Type>) : value_{std::move(v)} {}
 
     // Befriend `mint_fn<T, G...>(T)` — the §XXI token-mint factory.
     // The friend declaration also forward-declares mint_fn at the
@@ -1259,24 +1252,18 @@ private:
     // definition below matches this declaration.
     template <typename T, typename... G>
         requires IsAcceptedActive<T, G...>
-    friend constexpr auto mint_fn(T)
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-        -> fn<T, G...>;
+    friend constexpr auto mint_fn(T) noexcept(std::is_nothrow_move_constructible_v<T>) -> fn<T, G...>;
 
     // Befriend `mint_fn_for<UnaryStance>(T)` — unary-stance convenience.
-    template <template<typename> class S, typename T>
+    template <template <typename> class S, typename T>
         requires StanceForUnary<S, T>
-    friend constexpr auto mint_fn_for(T)
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-        -> S<T>;
+    friend constexpr auto mint_fn_for(T) noexcept(std::is_nothrow_move_constructible_v<T>) -> S<T>;
 
     // Befriend `mint_fn_for<BinaryStance, Policy>(T)` — binary stance
     // (declassify-policy-bearing) convenience.
-    template <template<typename, typename> class S, typename P, typename T>
+    template <template <typename, typename> class S, typename P, typename T>
         requires StanceForBinary<S, T, P>
-    friend constexpr auto mint_fn_for(T)
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-        -> S<T, P>;
+    friend constexpr auto mint_fn_for(T) noexcept(std::is_nothrow_move_constructible_v<T>) -> S<T, P>;
 
     Type value_{};
 };
@@ -1317,10 +1304,8 @@ fn(T) -> fn<detail::ctad::fn_ctad_blocked_use_mint_fn_or_mint_fn_for>;
 
 template <typename Type, typename... Grants>
     requires IsAcceptedActive<Type, Grants...>
-[[nodiscard]] constexpr auto mint_fn(Type v)
-    noexcept(std::is_nothrow_move_constructible_v<Type>)
-    -> fn<Type, Grants...>
-{
+[[nodiscard]] constexpr auto mint_fn(Type v) noexcept(std::is_nothrow_move_constructible_v<Type>)
+    -> fn<Type, Grants...> {
     return fn<Type, Grants...>{std::move(v)};
 }
 
@@ -1367,12 +1352,9 @@ template <typename Type, typename... Grants>
 // for friend-declaration visibility.  See header preamble at line ~529.
 
 // ── mint_fn_for — unary stance overload (Type deduced from arg) ──
-template <template<typename> class Stance, typename Type>
+template <template <typename> class Stance, typename Type>
     requires StanceForUnary<Stance, Type>
-[[nodiscard]] constexpr auto mint_fn_for(Type v)
-    noexcept(std::is_nothrow_move_constructible_v<Type>)
-    -> Stance<Type>
-{
+[[nodiscard]] constexpr auto mint_fn_for(Type v) noexcept(std::is_nothrow_move_constructible_v<Type>) -> Stance<Type> {
     return Stance<Type>{std::move(v)};
 }
 
@@ -1382,13 +1364,10 @@ template <template<typename> class Stance, typename Type>
 // `mint_fn_for<stance::SecretConsumer, MyPolicy>(42)` lets the compiler
 // deduce Type from the runtime argument while Policy stays explicit
 // (it is a phantom tag with no runtime carrier).
-template <template<typename, typename> class Stance,
-          typename Policy, typename Type>
+template <template <typename, typename> class Stance, typename Policy, typename Type>
     requires StanceForBinary<Stance, Type, Policy>
-[[nodiscard]] constexpr auto mint_fn_for(Type v)
-    noexcept(std::is_nothrow_move_constructible_v<Type>)
-    -> Stance<Type, Policy>
-{
+[[nodiscard]] constexpr auto mint_fn_for(Type v) noexcept(std::is_nothrow_move_constructible_v<Type>)
+    -> Stance<Type, Policy> {
     return Stance<Type, Policy>{std::move(v)};
 }
 
@@ -1417,61 +1396,49 @@ namespace stance {
 namespace detail_stance {
 template <dim::DimensionAxis D>
 using strict = grant::accept_default_strict_for<D>;
-}
+}  // namespace detail_stance
 
 // ── PureLinear — all-strict, exhaustive engagement ────────────────
 template <typename Type>
-using PureLinear = ::crucible::fixy::fn<Type,
-    detail_stance::strict<dim::DimensionAxis::Refinement>,
-    detail_stance::strict<dim::DimensionAxis::Usage>,
-    detail_stance::strict<dim::DimensionAxis::Effect>,
-    detail_stance::strict<dim::DimensionAxis::Security>,
-    detail_stance::strict<dim::DimensionAxis::Protocol>,
-    detail_stance::strict<dim::DimensionAxis::Lifetime>,
-    detail_stance::strict<dim::DimensionAxis::Provenance>,
-    detail_stance::strict<dim::DimensionAxis::Trust>,
-    detail_stance::strict<dim::DimensionAxis::Representation>,
-    detail_stance::strict<dim::DimensionAxis::Observability>,
-    detail_stance::strict<dim::DimensionAxis::Complexity>,
-    detail_stance::strict<dim::DimensionAxis::Precision>,
-    detail_stance::strict<dim::DimensionAxis::Space>,
-    detail_stance::strict<dim::DimensionAxis::Overflow>,
-    detail_stance::strict<dim::DimensionAxis::Mutation>,
-    detail_stance::strict<dim::DimensionAxis::Reentrancy>,
-    detail_stance::strict<dim::DimensionAxis::Size>,
-    detail_stance::strict<dim::DimensionAxis::Version>,
-    detail_stance::strict<dim::DimensionAxis::Staleness>,
-    detail_stance::strict<dim::DimensionAxis::Synchronization>,
-    detail_stance::strict<dim::DimensionAxis::Regime>,
-    detail_stance::strict<dim::DimensionAxis::FpMode>,
-    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>, detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>, detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
+using PureLinear = ::crucible::fixy::fn<
+    Type, detail_stance::strict<dim::DimensionAxis::Refinement>, detail_stance::strict<dim::DimensionAxis::Usage>,
+    detail_stance::strict<dim::DimensionAxis::Effect>, detail_stance::strict<dim::DimensionAxis::Security>,
+    detail_stance::strict<dim::DimensionAxis::Protocol>, detail_stance::strict<dim::DimensionAxis::Lifetime>,
+    detail_stance::strict<dim::DimensionAxis::Provenance>, detail_stance::strict<dim::DimensionAxis::Trust>,
+    detail_stance::strict<dim::DimensionAxis::Representation>, detail_stance::strict<dim::DimensionAxis::Observability>,
+    detail_stance::strict<dim::DimensionAxis::Complexity>, detail_stance::strict<dim::DimensionAxis::Precision>,
+    detail_stance::strict<dim::DimensionAxis::Space>, detail_stance::strict<dim::DimensionAxis::Overflow>,
+    detail_stance::strict<dim::DimensionAxis::Mutation>, detail_stance::strict<dim::DimensionAxis::Reentrancy>,
+    detail_stance::strict<dim::DimensionAxis::Size>, detail_stance::strict<dim::DimensionAxis::Version>,
+    detail_stance::strict<dim::DimensionAxis::Staleness>, detail_stance::strict<dim::DimensionAxis::Synchronization>,
+    detail_stance::strict<dim::DimensionAxis::Regime>, detail_stance::strict<dim::DimensionAxis::FpMode>,
+    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>,
+    detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>,
+    detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>,
+    detail_stance::strict<dim::DimensionAxis::HwInstruction>,
+    detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>,
+    detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
 
 // ── PureCopy — copy usage, strict elsewhere ───────────────────────
 template <typename Type>
-using PureCopy = ::crucible::fixy::fn<Type,
-    detail_stance::strict<dim::DimensionAxis::Refinement>,
-    grant::copy,
-    detail_stance::strict<dim::DimensionAxis::Effect>,
-    detail_stance::strict<dim::DimensionAxis::Security>,
-    detail_stance::strict<dim::DimensionAxis::Protocol>,
-    detail_stance::strict<dim::DimensionAxis::Lifetime>,
-    detail_stance::strict<dim::DimensionAxis::Provenance>,
-    detail_stance::strict<dim::DimensionAxis::Trust>,
-    detail_stance::strict<dim::DimensionAxis::Representation>,
-    detail_stance::strict<dim::DimensionAxis::Observability>,
-    detail_stance::strict<dim::DimensionAxis::Complexity>,
-    detail_stance::strict<dim::DimensionAxis::Precision>,
-    detail_stance::strict<dim::DimensionAxis::Space>,
-    detail_stance::strict<dim::DimensionAxis::Overflow>,
-    detail_stance::strict<dim::DimensionAxis::Mutation>,
-    detail_stance::strict<dim::DimensionAxis::Reentrancy>,
-    detail_stance::strict<dim::DimensionAxis::Size>,
-    detail_stance::strict<dim::DimensionAxis::Version>,
-    detail_stance::strict<dim::DimensionAxis::Staleness>,
-    detail_stance::strict<dim::DimensionAxis::Synchronization>,
-    detail_stance::strict<dim::DimensionAxis::Regime>,
-    detail_stance::strict<dim::DimensionAxis::FpMode>,
-    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>, detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>, detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
+using PureCopy = ::crucible::fixy::fn<
+    Type, detail_stance::strict<dim::DimensionAxis::Refinement>, grant::copy,
+    detail_stance::strict<dim::DimensionAxis::Effect>, detail_stance::strict<dim::DimensionAxis::Security>,
+    detail_stance::strict<dim::DimensionAxis::Protocol>, detail_stance::strict<dim::DimensionAxis::Lifetime>,
+    detail_stance::strict<dim::DimensionAxis::Provenance>, detail_stance::strict<dim::DimensionAxis::Trust>,
+    detail_stance::strict<dim::DimensionAxis::Representation>, detail_stance::strict<dim::DimensionAxis::Observability>,
+    detail_stance::strict<dim::DimensionAxis::Complexity>, detail_stance::strict<dim::DimensionAxis::Precision>,
+    detail_stance::strict<dim::DimensionAxis::Space>, detail_stance::strict<dim::DimensionAxis::Overflow>,
+    detail_stance::strict<dim::DimensionAxis::Mutation>, detail_stance::strict<dim::DimensionAxis::Reentrancy>,
+    detail_stance::strict<dim::DimensionAxis::Size>, detail_stance::strict<dim::DimensionAxis::Version>,
+    detail_stance::strict<dim::DimensionAxis::Staleness>, detail_stance::strict<dim::DimensionAxis::Synchronization>,
+    detail_stance::strict<dim::DimensionAxis::Regime>, detail_stance::strict<dim::DimensionAxis::FpMode>,
+    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>,
+    detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>,
+    detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>,
+    detail_stance::strict<dim::DimensionAxis::HwInstruction>,
+    detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>,
+    detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
 
 // ── IoFunction — IO effect, public-emit Security, strict elsewhere ─
 //
@@ -1489,30 +1456,23 @@ using PureCopy = ::crucible::fixy::fn<Type,
 // projection.  The fix pins `as_public` explicitly so the stance
 // matches its documented semantics.
 template <typename Type>
-using IoFunction = ::crucible::fixy::fn<Type,
-    detail_stance::strict<dim::DimensionAxis::Refinement>,
-    detail_stance::strict<dim::DimensionAxis::Usage>,
-    grant::with_io,
-    grant::as_public,
-    detail_stance::strict<dim::DimensionAxis::Protocol>,
-    detail_stance::strict<dim::DimensionAxis::Lifetime>,
-    detail_stance::strict<dim::DimensionAxis::Provenance>,
-    detail_stance::strict<dim::DimensionAxis::Trust>,
-    detail_stance::strict<dim::DimensionAxis::Representation>,
-    detail_stance::strict<dim::DimensionAxis::Observability>,
-    detail_stance::strict<dim::DimensionAxis::Complexity>,
-    detail_stance::strict<dim::DimensionAxis::Precision>,
-    detail_stance::strict<dim::DimensionAxis::Space>,
-    detail_stance::strict<dim::DimensionAxis::Overflow>,
-    detail_stance::strict<dim::DimensionAxis::Mutation>,
-    detail_stance::strict<dim::DimensionAxis::Reentrancy>,
-    detail_stance::strict<dim::DimensionAxis::Size>,
-    detail_stance::strict<dim::DimensionAxis::Version>,
-    detail_stance::strict<dim::DimensionAxis::Staleness>,
-    detail_stance::strict<dim::DimensionAxis::Synchronization>,
-    detail_stance::strict<dim::DimensionAxis::Regime>,
-    detail_stance::strict<dim::DimensionAxis::FpMode>,
-    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>, detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>, detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
+using IoFunction = ::crucible::fixy::fn<
+    Type, detail_stance::strict<dim::DimensionAxis::Refinement>, detail_stance::strict<dim::DimensionAxis::Usage>,
+    grant::with_io, grant::as_public, detail_stance::strict<dim::DimensionAxis::Protocol>,
+    detail_stance::strict<dim::DimensionAxis::Lifetime>, detail_stance::strict<dim::DimensionAxis::Provenance>,
+    detail_stance::strict<dim::DimensionAxis::Trust>, detail_stance::strict<dim::DimensionAxis::Representation>,
+    detail_stance::strict<dim::DimensionAxis::Observability>, detail_stance::strict<dim::DimensionAxis::Complexity>,
+    detail_stance::strict<dim::DimensionAxis::Precision>, detail_stance::strict<dim::DimensionAxis::Space>,
+    detail_stance::strict<dim::DimensionAxis::Overflow>, detail_stance::strict<dim::DimensionAxis::Mutation>,
+    detail_stance::strict<dim::DimensionAxis::Reentrancy>, detail_stance::strict<dim::DimensionAxis::Size>,
+    detail_stance::strict<dim::DimensionAxis::Version>, detail_stance::strict<dim::DimensionAxis::Staleness>,
+    detail_stance::strict<dim::DimensionAxis::Synchronization>, detail_stance::strict<dim::DimensionAxis::Regime>,
+    detail_stance::strict<dim::DimensionAxis::FpMode>, detail_stance::strict<dim::DimensionAxis::SyscallSurface>,
+    detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>,
+    detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>,
+    detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>,
+    detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>,
+    detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
 
 // ── BgWorker — Bg + Alloc effects, public Security, strict else ───
 //
@@ -1528,30 +1488,24 @@ using IoFunction = ::crucible::fixy::fn<Type,
 // Pre-fixy-CR-01 BgWorker shipped `strict<Security>`, silently
 // bypassing the corpus.  The fix pins `as_public` explicitly.
 template <typename Type>
-using BgWorker = ::crucible::fixy::fn<Type,
-    detail_stance::strict<dim::DimensionAxis::Refinement>,
-    detail_stance::strict<dim::DimensionAxis::Usage>,
-    grant::with<effects::Effect::Bg, effects::Effect::Alloc>,
-    grant::as_public,
-    detail_stance::strict<dim::DimensionAxis::Protocol>,
-    detail_stance::strict<dim::DimensionAxis::Lifetime>,
-    detail_stance::strict<dim::DimensionAxis::Provenance>,
-    detail_stance::strict<dim::DimensionAxis::Trust>,
-    detail_stance::strict<dim::DimensionAxis::Representation>,
-    detail_stance::strict<dim::DimensionAxis::Observability>,
-    detail_stance::strict<dim::DimensionAxis::Complexity>,
-    detail_stance::strict<dim::DimensionAxis::Precision>,
-    detail_stance::strict<dim::DimensionAxis::Space>,
-    detail_stance::strict<dim::DimensionAxis::Overflow>,
-    detail_stance::strict<dim::DimensionAxis::Mutation>,
-    detail_stance::strict<dim::DimensionAxis::Reentrancy>,
-    detail_stance::strict<dim::DimensionAxis::Size>,
-    detail_stance::strict<dim::DimensionAxis::Version>,
-    detail_stance::strict<dim::DimensionAxis::Staleness>,
-    detail_stance::strict<dim::DimensionAxis::Synchronization>,
-    detail_stance::strict<dim::DimensionAxis::Regime>,
-    detail_stance::strict<dim::DimensionAxis::FpMode>,
-    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>, detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>, detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
+using BgWorker = ::crucible::fixy::fn<
+    Type, detail_stance::strict<dim::DimensionAxis::Refinement>, detail_stance::strict<dim::DimensionAxis::Usage>,
+    grant::with<effects::Effect::Bg, effects::Effect::Alloc>, grant::as_public,
+    detail_stance::strict<dim::DimensionAxis::Protocol>, detail_stance::strict<dim::DimensionAxis::Lifetime>,
+    detail_stance::strict<dim::DimensionAxis::Provenance>, detail_stance::strict<dim::DimensionAxis::Trust>,
+    detail_stance::strict<dim::DimensionAxis::Representation>, detail_stance::strict<dim::DimensionAxis::Observability>,
+    detail_stance::strict<dim::DimensionAxis::Complexity>, detail_stance::strict<dim::DimensionAxis::Precision>,
+    detail_stance::strict<dim::DimensionAxis::Space>, detail_stance::strict<dim::DimensionAxis::Overflow>,
+    detail_stance::strict<dim::DimensionAxis::Mutation>, detail_stance::strict<dim::DimensionAxis::Reentrancy>,
+    detail_stance::strict<dim::DimensionAxis::Size>, detail_stance::strict<dim::DimensionAxis::Version>,
+    detail_stance::strict<dim::DimensionAxis::Staleness>, detail_stance::strict<dim::DimensionAxis::Synchronization>,
+    detail_stance::strict<dim::DimensionAxis::Regime>, detail_stance::strict<dim::DimensionAxis::FpMode>,
+    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>,
+    detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>,
+    detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>,
+    detail_stance::strict<dim::DimensionAxis::HwInstruction>,
+    detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>,
+    detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
 
 // ── SecretConsumer — declassifies a secret value ──────────────────
 //
@@ -1560,30 +1514,24 @@ using BgWorker = ::crucible::fixy::fn<Type,
 // declassify projection.
 
 template <typename Type, typename Policy>
-using SecretConsumer = ::crucible::fixy::fn<Type,
-    detail_stance::strict<dim::DimensionAxis::Refinement>,
-    detail_stance::strict<dim::DimensionAxis::Usage>,
-    detail_stance::strict<dim::DimensionAxis::Effect>,
-    grant::declassify<Policy>,
-    detail_stance::strict<dim::DimensionAxis::Protocol>,
-    detail_stance::strict<dim::DimensionAxis::Lifetime>,
-    detail_stance::strict<dim::DimensionAxis::Provenance>,
-    detail_stance::strict<dim::DimensionAxis::Trust>,
-    detail_stance::strict<dim::DimensionAxis::Representation>,
-    detail_stance::strict<dim::DimensionAxis::Observability>,
-    detail_stance::strict<dim::DimensionAxis::Complexity>,
-    detail_stance::strict<dim::DimensionAxis::Precision>,
-    detail_stance::strict<dim::DimensionAxis::Space>,
-    detail_stance::strict<dim::DimensionAxis::Overflow>,
-    detail_stance::strict<dim::DimensionAxis::Mutation>,
-    detail_stance::strict<dim::DimensionAxis::Reentrancy>,
-    detail_stance::strict<dim::DimensionAxis::Size>,
-    detail_stance::strict<dim::DimensionAxis::Version>,
-    detail_stance::strict<dim::DimensionAxis::Staleness>,
-    detail_stance::strict<dim::DimensionAxis::Synchronization>,
-    detail_stance::strict<dim::DimensionAxis::Regime>,
-    detail_stance::strict<dim::DimensionAxis::FpMode>,
-    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>, detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>, detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
+using SecretConsumer = ::crucible::fixy::fn<
+    Type, detail_stance::strict<dim::DimensionAxis::Refinement>, detail_stance::strict<dim::DimensionAxis::Usage>,
+    detail_stance::strict<dim::DimensionAxis::Effect>, grant::declassify<Policy>,
+    detail_stance::strict<dim::DimensionAxis::Protocol>, detail_stance::strict<dim::DimensionAxis::Lifetime>,
+    detail_stance::strict<dim::DimensionAxis::Provenance>, detail_stance::strict<dim::DimensionAxis::Trust>,
+    detail_stance::strict<dim::DimensionAxis::Representation>, detail_stance::strict<dim::DimensionAxis::Observability>,
+    detail_stance::strict<dim::DimensionAxis::Complexity>, detail_stance::strict<dim::DimensionAxis::Precision>,
+    detail_stance::strict<dim::DimensionAxis::Space>, detail_stance::strict<dim::DimensionAxis::Overflow>,
+    detail_stance::strict<dim::DimensionAxis::Mutation>, detail_stance::strict<dim::DimensionAxis::Reentrancy>,
+    detail_stance::strict<dim::DimensionAxis::Size>, detail_stance::strict<dim::DimensionAxis::Version>,
+    detail_stance::strict<dim::DimensionAxis::Staleness>, detail_stance::strict<dim::DimensionAxis::Synchronization>,
+    detail_stance::strict<dim::DimensionAxis::Regime>, detail_stance::strict<dim::DimensionAxis::FpMode>,
+    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>,
+    detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>,
+    detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>,
+    detail_stance::strict<dim::DimensionAxis::HwInstruction>,
+    detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>,
+    detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
 
 // ── CtCrypto — constant-time crypto path (FIXY-AUDIT-B3) ──────────
 //
@@ -1612,30 +1560,23 @@ using SecretConsumer = ::crucible::fixy::fn<Type,
 //     NonReentrant.
 
 template <typename Type>
-using CtCrypto = ::crucible::fixy::fn<Type,
-    detail_stance::strict<dim::DimensionAxis::Refinement>,
-    detail_stance::strict<dim::DimensionAxis::Usage>,
-    grant::with<>,
-    grant::as_secret,
-    detail_stance::strict<dim::DimensionAxis::Protocol>,
-    detail_stance::strict<dim::DimensionAxis::Lifetime>,
-    detail_stance::strict<dim::DimensionAxis::Provenance>,
-    detail_stance::strict<dim::DimensionAxis::Trust>,
-    detail_stance::strict<dim::DimensionAxis::Representation>,
-    detail_stance::strict<dim::DimensionAxis::Observability>,
-    detail_stance::strict<dim::DimensionAxis::Complexity>,
-    detail_stance::strict<dim::DimensionAxis::Precision>,
-    detail_stance::strict<dim::DimensionAxis::Space>,
-    detail_stance::strict<dim::DimensionAxis::Overflow>,
-    detail_stance::strict<dim::DimensionAxis::Mutation>,
-    detail_stance::strict<dim::DimensionAxis::Reentrancy>,
-    detail_stance::strict<dim::DimensionAxis::Size>,
-    detail_stance::strict<dim::DimensionAxis::Version>,
-    detail_stance::strict<dim::DimensionAxis::Staleness>,
-    detail_stance::strict<dim::DimensionAxis::Synchronization>,
-    detail_stance::strict<dim::DimensionAxis::Regime>,
-    detail_stance::strict<dim::DimensionAxis::FpMode>,
-    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>, detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>, detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
+using CtCrypto = ::crucible::fixy::fn<
+    Type, detail_stance::strict<dim::DimensionAxis::Refinement>, detail_stance::strict<dim::DimensionAxis::Usage>,
+    grant::with<>, grant::as_secret, detail_stance::strict<dim::DimensionAxis::Protocol>,
+    detail_stance::strict<dim::DimensionAxis::Lifetime>, detail_stance::strict<dim::DimensionAxis::Provenance>,
+    detail_stance::strict<dim::DimensionAxis::Trust>, detail_stance::strict<dim::DimensionAxis::Representation>,
+    detail_stance::strict<dim::DimensionAxis::Observability>, detail_stance::strict<dim::DimensionAxis::Complexity>,
+    detail_stance::strict<dim::DimensionAxis::Precision>, detail_stance::strict<dim::DimensionAxis::Space>,
+    detail_stance::strict<dim::DimensionAxis::Overflow>, detail_stance::strict<dim::DimensionAxis::Mutation>,
+    detail_stance::strict<dim::DimensionAxis::Reentrancy>, detail_stance::strict<dim::DimensionAxis::Size>,
+    detail_stance::strict<dim::DimensionAxis::Version>, detail_stance::strict<dim::DimensionAxis::Staleness>,
+    detail_stance::strict<dim::DimensionAxis::Synchronization>, detail_stance::strict<dim::DimensionAxis::Regime>,
+    detail_stance::strict<dim::DimensionAxis::FpMode>, detail_stance::strict<dim::DimensionAxis::SyscallSurface>,
+    detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>,
+    detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>,
+    detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>,
+    detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>,
+    detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
 
 // ── PublicEmit<Policy> — publicly-observable emission (FIXY-AUDIT-B3) ─
 //
@@ -1660,30 +1601,23 @@ using CtCrypto = ::crucible::fixy::fn<Type,
 // IO grant.
 
 template <typename Type, typename Policy>
-using PublicEmit = ::crucible::fixy::fn<Type,
-    detail_stance::strict<dim::DimensionAxis::Refinement>,
-    detail_stance::strict<dim::DimensionAxis::Usage>,
-    grant::with_io,
-    grant::declassify<Policy>,
-    detail_stance::strict<dim::DimensionAxis::Protocol>,
-    detail_stance::strict<dim::DimensionAxis::Lifetime>,
-    detail_stance::strict<dim::DimensionAxis::Provenance>,
-    detail_stance::strict<dim::DimensionAxis::Trust>,
-    detail_stance::strict<dim::DimensionAxis::Representation>,
-    detail_stance::strict<dim::DimensionAxis::Observability>,
-    detail_stance::strict<dim::DimensionAxis::Complexity>,
-    detail_stance::strict<dim::DimensionAxis::Precision>,
-    detail_stance::strict<dim::DimensionAxis::Space>,
-    detail_stance::strict<dim::DimensionAxis::Overflow>,
-    detail_stance::strict<dim::DimensionAxis::Mutation>,
-    detail_stance::strict<dim::DimensionAxis::Reentrancy>,
-    detail_stance::strict<dim::DimensionAxis::Size>,
-    detail_stance::strict<dim::DimensionAxis::Version>,
-    detail_stance::strict<dim::DimensionAxis::Staleness>,
-    detail_stance::strict<dim::DimensionAxis::Synchronization>,
-    detail_stance::strict<dim::DimensionAxis::Regime>,
-    detail_stance::strict<dim::DimensionAxis::FpMode>,
-    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>, detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>, detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
+using PublicEmit = ::crucible::fixy::fn<
+    Type, detail_stance::strict<dim::DimensionAxis::Refinement>, detail_stance::strict<dim::DimensionAxis::Usage>,
+    grant::with_io, grant::declassify<Policy>, detail_stance::strict<dim::DimensionAxis::Protocol>,
+    detail_stance::strict<dim::DimensionAxis::Lifetime>, detail_stance::strict<dim::DimensionAxis::Provenance>,
+    detail_stance::strict<dim::DimensionAxis::Trust>, detail_stance::strict<dim::DimensionAxis::Representation>,
+    detail_stance::strict<dim::DimensionAxis::Observability>, detail_stance::strict<dim::DimensionAxis::Complexity>,
+    detail_stance::strict<dim::DimensionAxis::Precision>, detail_stance::strict<dim::DimensionAxis::Space>,
+    detail_stance::strict<dim::DimensionAxis::Overflow>, detail_stance::strict<dim::DimensionAxis::Mutation>,
+    detail_stance::strict<dim::DimensionAxis::Reentrancy>, detail_stance::strict<dim::DimensionAxis::Size>,
+    detail_stance::strict<dim::DimensionAxis::Version>, detail_stance::strict<dim::DimensionAxis::Staleness>,
+    detail_stance::strict<dim::DimensionAxis::Synchronization>, detail_stance::strict<dim::DimensionAxis::Regime>,
+    detail_stance::strict<dim::DimensionAxis::FpMode>, detail_stance::strict<dim::DimensionAxis::SyscallSurface>,
+    detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>,
+    detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>,
+    detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>,
+    detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>,
+    detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
 
 // ── AsyncEndpoint — coroutine + IO + public Security ──────────────
 //
@@ -1696,30 +1630,23 @@ using PublicEmit = ::crucible::fixy::fn<Type,
 // Pre-fixy-CR-01 AsyncEndpoint shipped `strict<Security>`, silently
 // bypassing the corpus.  The fix pins `as_public` explicitly.
 template <typename Type>
-using AsyncEndpoint = ::crucible::fixy::fn<Type,
-    detail_stance::strict<dim::DimensionAxis::Refinement>,
-    detail_stance::strict<dim::DimensionAxis::Usage>,
-    grant::with_io,
-    grant::as_public,
-    detail_stance::strict<dim::DimensionAxis::Protocol>,
-    detail_stance::strict<dim::DimensionAxis::Lifetime>,
-    detail_stance::strict<dim::DimensionAxis::Provenance>,
-    detail_stance::strict<dim::DimensionAxis::Trust>,
-    detail_stance::strict<dim::DimensionAxis::Representation>,
-    detail_stance::strict<dim::DimensionAxis::Observability>,
-    detail_stance::strict<dim::DimensionAxis::Complexity>,
-    detail_stance::strict<dim::DimensionAxis::Precision>,
-    detail_stance::strict<dim::DimensionAxis::Space>,
-    detail_stance::strict<dim::DimensionAxis::Overflow>,
-    detail_stance::strict<dim::DimensionAxis::Mutation>,
-    grant::coroutine,
-    detail_stance::strict<dim::DimensionAxis::Size>,
-    detail_stance::strict<dim::DimensionAxis::Version>,
-    detail_stance::strict<dim::DimensionAxis::Staleness>,
-    detail_stance::strict<dim::DimensionAxis::Synchronization>,
-    detail_stance::strict<dim::DimensionAxis::Regime>,
-    detail_stance::strict<dim::DimensionAxis::FpMode>,
-    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>, detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>, detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
+using AsyncEndpoint = ::crucible::fixy::fn<
+    Type, detail_stance::strict<dim::DimensionAxis::Refinement>, detail_stance::strict<dim::DimensionAxis::Usage>,
+    grant::with_io, grant::as_public, detail_stance::strict<dim::DimensionAxis::Protocol>,
+    detail_stance::strict<dim::DimensionAxis::Lifetime>, detail_stance::strict<dim::DimensionAxis::Provenance>,
+    detail_stance::strict<dim::DimensionAxis::Trust>, detail_stance::strict<dim::DimensionAxis::Representation>,
+    detail_stance::strict<dim::DimensionAxis::Observability>, detail_stance::strict<dim::DimensionAxis::Complexity>,
+    detail_stance::strict<dim::DimensionAxis::Precision>, detail_stance::strict<dim::DimensionAxis::Space>,
+    detail_stance::strict<dim::DimensionAxis::Overflow>, detail_stance::strict<dim::DimensionAxis::Mutation>,
+    grant::coroutine, detail_stance::strict<dim::DimensionAxis::Size>,
+    detail_stance::strict<dim::DimensionAxis::Version>, detail_stance::strict<dim::DimensionAxis::Staleness>,
+    detail_stance::strict<dim::DimensionAxis::Synchronization>, detail_stance::strict<dim::DimensionAxis::Regime>,
+    detail_stance::strict<dim::DimensionAxis::FpMode>, detail_stance::strict<dim::DimensionAxis::SyscallSurface>,
+    detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>,
+    detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>,
+    detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>,
+    detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>,
+    detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── FIXY-U-041 stance extension — 4 additional canonical aliases ─
@@ -1753,30 +1680,24 @@ using AsyncEndpoint = ::crucible::fixy::fn<Type,
 // `grant::protocol<Proto>` to `safety::fn::Protocol<Proto>`.
 
 template <typename Type, typename Proto>
-using NamedSession = ::crucible::fixy::fn<Type,
-    detail_stance::strict<dim::DimensionAxis::Refinement>,
-    detail_stance::strict<dim::DimensionAxis::Usage>,
-    detail_stance::strict<dim::DimensionAxis::Effect>,
-    detail_stance::strict<dim::DimensionAxis::Security>,
-    grant::protocol<Proto>,
-    detail_stance::strict<dim::DimensionAxis::Lifetime>,
-    detail_stance::strict<dim::DimensionAxis::Provenance>,
-    detail_stance::strict<dim::DimensionAxis::Trust>,
-    detail_stance::strict<dim::DimensionAxis::Representation>,
-    detail_stance::strict<dim::DimensionAxis::Observability>,
-    detail_stance::strict<dim::DimensionAxis::Complexity>,
-    detail_stance::strict<dim::DimensionAxis::Precision>,
-    detail_stance::strict<dim::DimensionAxis::Space>,
-    detail_stance::strict<dim::DimensionAxis::Overflow>,
-    detail_stance::strict<dim::DimensionAxis::Mutation>,
-    detail_stance::strict<dim::DimensionAxis::Reentrancy>,
-    detail_stance::strict<dim::DimensionAxis::Size>,
-    detail_stance::strict<dim::DimensionAxis::Version>,
-    detail_stance::strict<dim::DimensionAxis::Staleness>,
-    detail_stance::strict<dim::DimensionAxis::Synchronization>,
-    detail_stance::strict<dim::DimensionAxis::Regime>,
-    detail_stance::strict<dim::DimensionAxis::FpMode>,
-    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>, detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>, detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
+using NamedSession = ::crucible::fixy::fn<
+    Type, detail_stance::strict<dim::DimensionAxis::Refinement>, detail_stance::strict<dim::DimensionAxis::Usage>,
+    detail_stance::strict<dim::DimensionAxis::Effect>, detail_stance::strict<dim::DimensionAxis::Security>,
+    grant::protocol<Proto>, detail_stance::strict<dim::DimensionAxis::Lifetime>,
+    detail_stance::strict<dim::DimensionAxis::Provenance>, detail_stance::strict<dim::DimensionAxis::Trust>,
+    detail_stance::strict<dim::DimensionAxis::Representation>, detail_stance::strict<dim::DimensionAxis::Observability>,
+    detail_stance::strict<dim::DimensionAxis::Complexity>, detail_stance::strict<dim::DimensionAxis::Precision>,
+    detail_stance::strict<dim::DimensionAxis::Space>, detail_stance::strict<dim::DimensionAxis::Overflow>,
+    detail_stance::strict<dim::DimensionAxis::Mutation>, detail_stance::strict<dim::DimensionAxis::Reentrancy>,
+    detail_stance::strict<dim::DimensionAxis::Size>, detail_stance::strict<dim::DimensionAxis::Version>,
+    detail_stance::strict<dim::DimensionAxis::Staleness>, detail_stance::strict<dim::DimensionAxis::Synchronization>,
+    detail_stance::strict<dim::DimensionAxis::Regime>, detail_stance::strict<dim::DimensionAxis::FpMode>,
+    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>,
+    detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>,
+    detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>,
+    detail_stance::strict<dim::DimensionAxis::HwInstruction>,
+    detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>,
+    detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
 
 // ── (CooperativeBg removed — FIXY-FOUND-071 R003) ─────────────────
 //
@@ -1804,30 +1725,24 @@ using NamedSession = ::crucible::fixy::fn<Type,
 // blocking calls cannot interleave at the same stack frame.
 
 template <typename Type>
-using SyncBlocking = ::crucible::fixy::fn<Type,
-    detail_stance::strict<dim::DimensionAxis::Refinement>,
-    detail_stance::strict<dim::DimensionAxis::Usage>,
-    grant::with<effects::Effect::IO, effects::Effect::Block>,
-    grant::as_public,
-    detail_stance::strict<dim::DimensionAxis::Protocol>,
-    detail_stance::strict<dim::DimensionAxis::Lifetime>,
-    detail_stance::strict<dim::DimensionAxis::Provenance>,
-    detail_stance::strict<dim::DimensionAxis::Trust>,
-    detail_stance::strict<dim::DimensionAxis::Representation>,
-    detail_stance::strict<dim::DimensionAxis::Observability>,
-    detail_stance::strict<dim::DimensionAxis::Complexity>,
-    detail_stance::strict<dim::DimensionAxis::Precision>,
-    detail_stance::strict<dim::DimensionAxis::Space>,
-    detail_stance::strict<dim::DimensionAxis::Overflow>,
-    detail_stance::strict<dim::DimensionAxis::Mutation>,
-    detail_stance::strict<dim::DimensionAxis::Reentrancy>,
-    detail_stance::strict<dim::DimensionAxis::Size>,
-    detail_stance::strict<dim::DimensionAxis::Version>,
-    detail_stance::strict<dim::DimensionAxis::Staleness>,
-    detail_stance::strict<dim::DimensionAxis::Synchronization>,
-    detail_stance::strict<dim::DimensionAxis::Regime>,
-    detail_stance::strict<dim::DimensionAxis::FpMode>,
-    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>, detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>, detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
+using SyncBlocking = ::crucible::fixy::fn<
+    Type, detail_stance::strict<dim::DimensionAxis::Refinement>, detail_stance::strict<dim::DimensionAxis::Usage>,
+    grant::with<effects::Effect::IO, effects::Effect::Block>, grant::as_public,
+    detail_stance::strict<dim::DimensionAxis::Protocol>, detail_stance::strict<dim::DimensionAxis::Lifetime>,
+    detail_stance::strict<dim::DimensionAxis::Provenance>, detail_stance::strict<dim::DimensionAxis::Trust>,
+    detail_stance::strict<dim::DimensionAxis::Representation>, detail_stance::strict<dim::DimensionAxis::Observability>,
+    detail_stance::strict<dim::DimensionAxis::Complexity>, detail_stance::strict<dim::DimensionAxis::Precision>,
+    detail_stance::strict<dim::DimensionAxis::Space>, detail_stance::strict<dim::DimensionAxis::Overflow>,
+    detail_stance::strict<dim::DimensionAxis::Mutation>, detail_stance::strict<dim::DimensionAxis::Reentrancy>,
+    detail_stance::strict<dim::DimensionAxis::Size>, detail_stance::strict<dim::DimensionAxis::Version>,
+    detail_stance::strict<dim::DimensionAxis::Staleness>, detail_stance::strict<dim::DimensionAxis::Synchronization>,
+    detail_stance::strict<dim::DimensionAxis::Regime>, detail_stance::strict<dim::DimensionAxis::FpMode>,
+    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>,
+    detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>,
+    detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>,
+    detail_stance::strict<dim::DimensionAxis::HwInstruction>,
+    detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>,
+    detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
 
 // ── RealtimeHot<Type> — empty Effect row + as_public + strict ─────
 //
@@ -1843,30 +1758,23 @@ using SyncBlocking = ::crucible::fixy::fn<Type,
 // relax the discipline.
 
 template <typename Type>
-using RealtimeHot = ::crucible::fixy::fn<Type,
-    detail_stance::strict<dim::DimensionAxis::Refinement>,
-    detail_stance::strict<dim::DimensionAxis::Usage>,
-    grant::with<>,
-    grant::as_public,
-    detail_stance::strict<dim::DimensionAxis::Protocol>,
-    detail_stance::strict<dim::DimensionAxis::Lifetime>,
-    detail_stance::strict<dim::DimensionAxis::Provenance>,
-    detail_stance::strict<dim::DimensionAxis::Trust>,
-    detail_stance::strict<dim::DimensionAxis::Representation>,
-    detail_stance::strict<dim::DimensionAxis::Observability>,
-    detail_stance::strict<dim::DimensionAxis::Complexity>,
-    detail_stance::strict<dim::DimensionAxis::Precision>,
-    detail_stance::strict<dim::DimensionAxis::Space>,
-    detail_stance::strict<dim::DimensionAxis::Overflow>,
-    detail_stance::strict<dim::DimensionAxis::Mutation>,
-    detail_stance::strict<dim::DimensionAxis::Reentrancy>,
-    detail_stance::strict<dim::DimensionAxis::Size>,
-    detail_stance::strict<dim::DimensionAxis::Version>,
-    detail_stance::strict<dim::DimensionAxis::Staleness>,
-    detail_stance::strict<dim::DimensionAxis::Synchronization>,
-    detail_stance::strict<dim::DimensionAxis::Regime>,
-    detail_stance::strict<dim::DimensionAxis::FpMode>,
-    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>, detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>, detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
+using RealtimeHot = ::crucible::fixy::fn<
+    Type, detail_stance::strict<dim::DimensionAxis::Refinement>, detail_stance::strict<dim::DimensionAxis::Usage>,
+    grant::with<>, grant::as_public, detail_stance::strict<dim::DimensionAxis::Protocol>,
+    detail_stance::strict<dim::DimensionAxis::Lifetime>, detail_stance::strict<dim::DimensionAxis::Provenance>,
+    detail_stance::strict<dim::DimensionAxis::Trust>, detail_stance::strict<dim::DimensionAxis::Representation>,
+    detail_stance::strict<dim::DimensionAxis::Observability>, detail_stance::strict<dim::DimensionAxis::Complexity>,
+    detail_stance::strict<dim::DimensionAxis::Precision>, detail_stance::strict<dim::DimensionAxis::Space>,
+    detail_stance::strict<dim::DimensionAxis::Overflow>, detail_stance::strict<dim::DimensionAxis::Mutation>,
+    detail_stance::strict<dim::DimensionAxis::Reentrancy>, detail_stance::strict<dim::DimensionAxis::Size>,
+    detail_stance::strict<dim::DimensionAxis::Version>, detail_stance::strict<dim::DimensionAxis::Staleness>,
+    detail_stance::strict<dim::DimensionAxis::Synchronization>, detail_stance::strict<dim::DimensionAxis::Regime>,
+    detail_stance::strict<dim::DimensionAxis::FpMode>, detail_stance::strict<dim::DimensionAxis::SyscallSurface>,
+    detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>,
+    detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>,
+    detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>,
+    detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>,
+    detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── FIXY-FOUND-033 stance extension — Internal + Unclassified ─────
@@ -1918,58 +1826,46 @@ using RealtimeHot = ::crucible::fixy::fn<Type,
 // ── InternalApi<Type> — as_internal (= SecLevel::Internal), strict else ─
 
 template <typename Type>
-using InternalApi = ::crucible::fixy::fn<Type,
-    detail_stance::strict<dim::DimensionAxis::Refinement>,
-    detail_stance::strict<dim::DimensionAxis::Usage>,
-    detail_stance::strict<dim::DimensionAxis::Effect>,
-    grant::as_internal,
-    detail_stance::strict<dim::DimensionAxis::Protocol>,
-    detail_stance::strict<dim::DimensionAxis::Lifetime>,
-    detail_stance::strict<dim::DimensionAxis::Provenance>,
-    detail_stance::strict<dim::DimensionAxis::Trust>,
-    detail_stance::strict<dim::DimensionAxis::Representation>,
-    detail_stance::strict<dim::DimensionAxis::Observability>,
-    detail_stance::strict<dim::DimensionAxis::Complexity>,
-    detail_stance::strict<dim::DimensionAxis::Precision>,
-    detail_stance::strict<dim::DimensionAxis::Space>,
-    detail_stance::strict<dim::DimensionAxis::Overflow>,
-    detail_stance::strict<dim::DimensionAxis::Mutation>,
-    detail_stance::strict<dim::DimensionAxis::Reentrancy>,
-    detail_stance::strict<dim::DimensionAxis::Size>,
-    detail_stance::strict<dim::DimensionAxis::Version>,
-    detail_stance::strict<dim::DimensionAxis::Staleness>,
-    detail_stance::strict<dim::DimensionAxis::Synchronization>,
-    detail_stance::strict<dim::DimensionAxis::Regime>,
-    detail_stance::strict<dim::DimensionAxis::FpMode>,
-    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>, detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>, detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
+using InternalApi = ::crucible::fixy::fn<
+    Type, detail_stance::strict<dim::DimensionAxis::Refinement>, detail_stance::strict<dim::DimensionAxis::Usage>,
+    detail_stance::strict<dim::DimensionAxis::Effect>, grant::as_internal,
+    detail_stance::strict<dim::DimensionAxis::Protocol>, detail_stance::strict<dim::DimensionAxis::Lifetime>,
+    detail_stance::strict<dim::DimensionAxis::Provenance>, detail_stance::strict<dim::DimensionAxis::Trust>,
+    detail_stance::strict<dim::DimensionAxis::Representation>, detail_stance::strict<dim::DimensionAxis::Observability>,
+    detail_stance::strict<dim::DimensionAxis::Complexity>, detail_stance::strict<dim::DimensionAxis::Precision>,
+    detail_stance::strict<dim::DimensionAxis::Space>, detail_stance::strict<dim::DimensionAxis::Overflow>,
+    detail_stance::strict<dim::DimensionAxis::Mutation>, detail_stance::strict<dim::DimensionAxis::Reentrancy>,
+    detail_stance::strict<dim::DimensionAxis::Size>, detail_stance::strict<dim::DimensionAxis::Version>,
+    detail_stance::strict<dim::DimensionAxis::Staleness>, detail_stance::strict<dim::DimensionAxis::Synchronization>,
+    detail_stance::strict<dim::DimensionAxis::Regime>, detail_stance::strict<dim::DimensionAxis::FpMode>,
+    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>,
+    detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>,
+    detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>,
+    detail_stance::strict<dim::DimensionAxis::HwInstruction>,
+    detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>,
+    detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
 
 // ── UnclassifiedScratch<Type> — as_unclassified, strict else ──────
 
 template <typename Type>
-using UnclassifiedScratch = ::crucible::fixy::fn<Type,
-    detail_stance::strict<dim::DimensionAxis::Refinement>,
-    detail_stance::strict<dim::DimensionAxis::Usage>,
-    detail_stance::strict<dim::DimensionAxis::Effect>,
-    grant::as_unclassified,
-    detail_stance::strict<dim::DimensionAxis::Protocol>,
-    detail_stance::strict<dim::DimensionAxis::Lifetime>,
-    detail_stance::strict<dim::DimensionAxis::Provenance>,
-    detail_stance::strict<dim::DimensionAxis::Trust>,
-    detail_stance::strict<dim::DimensionAxis::Representation>,
-    detail_stance::strict<dim::DimensionAxis::Observability>,
-    detail_stance::strict<dim::DimensionAxis::Complexity>,
-    detail_stance::strict<dim::DimensionAxis::Precision>,
-    detail_stance::strict<dim::DimensionAxis::Space>,
-    detail_stance::strict<dim::DimensionAxis::Overflow>,
-    detail_stance::strict<dim::DimensionAxis::Mutation>,
-    detail_stance::strict<dim::DimensionAxis::Reentrancy>,
-    detail_stance::strict<dim::DimensionAxis::Size>,
-    detail_stance::strict<dim::DimensionAxis::Version>,
-    detail_stance::strict<dim::DimensionAxis::Staleness>,
-    detail_stance::strict<dim::DimensionAxis::Synchronization>,
-    detail_stance::strict<dim::DimensionAxis::Regime>,
-    detail_stance::strict<dim::DimensionAxis::FpMode>,
-    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>, detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>, detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>, detail_stance::strict<dim::DimensionAxis::HwInstruction>, detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>, detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
+using UnclassifiedScratch = ::crucible::fixy::fn<
+    Type, detail_stance::strict<dim::DimensionAxis::Refinement>, detail_stance::strict<dim::DimensionAxis::Usage>,
+    detail_stance::strict<dim::DimensionAxis::Effect>, grant::as_unclassified,
+    detail_stance::strict<dim::DimensionAxis::Protocol>, detail_stance::strict<dim::DimensionAxis::Lifetime>,
+    detail_stance::strict<dim::DimensionAxis::Provenance>, detail_stance::strict<dim::DimensionAxis::Trust>,
+    detail_stance::strict<dim::DimensionAxis::Representation>, detail_stance::strict<dim::DimensionAxis::Observability>,
+    detail_stance::strict<dim::DimensionAxis::Complexity>, detail_stance::strict<dim::DimensionAxis::Precision>,
+    detail_stance::strict<dim::DimensionAxis::Space>, detail_stance::strict<dim::DimensionAxis::Overflow>,
+    detail_stance::strict<dim::DimensionAxis::Mutation>, detail_stance::strict<dim::DimensionAxis::Reentrancy>,
+    detail_stance::strict<dim::DimensionAxis::Size>, detail_stance::strict<dim::DimensionAxis::Version>,
+    detail_stance::strict<dim::DimensionAxis::Staleness>, detail_stance::strict<dim::DimensionAxis::Synchronization>,
+    detail_stance::strict<dim::DimensionAxis::Regime>, detail_stance::strict<dim::DimensionAxis::FpMode>,
+    detail_stance::strict<dim::DimensionAxis::SyscallSurface>, detail_stance::strict<dim::DimensionAxis::ControlFlow>,
+    detail_stance::strict<dim::DimensionAxis::CallShape>, detail_stance::strict<dim::DimensionAxis::StackUse>,
+    detail_stance::strict<dim::DimensionAxis::GlobalState>, detail_stance::strict<dim::DimensionAxis::Stdio>,
+    detail_stance::strict<dim::DimensionAxis::HwInstruction>,
+    detail_stance::strict<dim::DimensionAxis::BarrierStrength>, detail_stance::strict<dim::DimensionAxis::SimdIsa>,
+    detail_stance::strict<dim::DimensionAxis::MemoryScope>>;
 
 }  // namespace stance
 
@@ -1981,149 +1877,124 @@ namespace detail::fn_self_test {
 
 // 1. Round-trip witness — fixy::fn<int>::safety_fn_t IS
 //    the all-default safety::fn::Fn<int>.
-static_assert(std::is_same_v<
-    typename stance::PureLinear<int>::safety_fn_t,
-    safety::fn::Fn<int>>,
-    "stance::PureLinear<int>::safety_fn_t must round-trip to "
-    "safety::fn::Fn<int>'s all-default instantiation.");
+static_assert(std::is_same_v<typename stance::PureLinear<int>::safety_fn_t, safety::fn::Fn<int>>,
+              "stance::PureLinear<int>::safety_fn_t must round-trip to "
+              "safety::fn::Fn<int>'s all-default instantiation.");
 
 // 2. EBO collapse — sizeof(fixy::fn<int, all-strict>) == sizeof(int).
 //    Each grant tag is empty + final + grant_base; the 18-axis
 //    type-level pack carries no runtime state.
-static_assert(sizeof(stance::PureLinear<int>)    == sizeof(int),
-    "stance::PureLinear<int> must EBO-collapse to sizeof(int) — the "
-    "18-axis type-level pack carries no runtime state.");
-static_assert(sizeof(stance::PureLinear<char>)   == sizeof(char),
-    "stance::PureLinear<char> must EBO-collapse to sizeof(char).");
+static_assert(sizeof(stance::PureLinear<int>) == sizeof(int),
+              "stance::PureLinear<int> must EBO-collapse to sizeof(int) — the "
+              "18-axis type-level pack carries no runtime state.");
+static_assert(sizeof(stance::PureLinear<char>) == sizeof(char),
+              "stance::PureLinear<char> must EBO-collapse to sizeof(char).");
 static_assert(sizeof(stance::PureLinear<double>) == sizeof(double),
-    "stance::PureLinear<double> must EBO-collapse to sizeof(double).");
+              "stance::PureLinear<double> must EBO-collapse to sizeof(double).");
 
 // 3. Per-axis projection — `grant::affine` resolves to
 //    UsageMode::Affine on the substrate Fn<...>.
-static_assert(detail::resolve::resolve_usage_v<
-    grant::accept_default_strict_for<dim::DimensionAxis::Refinement>,
-    grant::affine> == safety::fn::UsageMode::Affine,
+static_assert(
+    detail::resolve::resolve_usage_v<grant::accept_default_strict_for<dim::DimensionAxis::Refinement>, grant::affine>
+        == safety::fn::UsageMode::Affine,
     "grant::affine must project to UsageMode::Affine.");
 
 // 4. Strict-default propagation — under accept-strict, the
 //    Refinement axis resolves to pred::True.
-static_assert(std::is_same_v<
-    detail::resolve::resolve_refinement_t<
-        grant::accept_default_strict_for<dim::DimensionAxis::Refinement>>,
-    safety::fn::pred::True>,
+static_assert(
+    std::is_same_v<
+        detail::resolve::resolve_refinement_t<grant::accept_default_strict_for<dim::DimensionAxis::Refinement>>,
+        safety::fn::pred::True>,
     "accept_default_strict_for<Refinement> must project to "
     "pred::True (the substrate's Refinement default).");
 
 // 5. PureCopy resolves Usage to Copy while keeping Refinement strict.
-static_assert(stance::PureCopy<int>::usage_v
-    == safety::fn::UsageMode::Copy,
-    "stance::PureCopy must resolve Usage to Copy.");
-static_assert(std::is_same_v<
-    typename stance::PureCopy<int>::refinement_t,
-    safety::fn::pred::True>,
-    "stance::PureCopy must keep Refinement at the strict default.");
+static_assert(stance::PureCopy<int>::usage_v == safety::fn::UsageMode::Copy,
+              "stance::PureCopy must resolve Usage to Copy.");
+static_assert(std::is_same_v<typename stance::PureCopy<int>::refinement_t, safety::fn::pred::True>,
+              "stance::PureCopy must keep Refinement at the strict default.");
 
 // 6. IoFunction's Effect row contains Effect::IO.
-static_assert(std::is_same_v<
-    typename stance::IoFunction<int>::effect_row_t,
-    effects::Row<effects::Effect::IO>>,
-    "stance::IoFunction's Effect row must contain exactly Effect::IO.");
+static_assert(std::is_same_v<typename stance::IoFunction<int>::effect_row_t, effects::Row<effects::Effect::IO>>,
+              "stance::IoFunction's Effect row must contain exactly Effect::IO.");
 
 // 7. AsyncEndpoint resolves Reentrancy to Coroutine.
-static_assert(stance::AsyncEndpoint<int>::reentrancy_v
-    == safety::fn::ReentrancyMode::Coroutine,
-    "stance::AsyncEndpoint must resolve Reentrancy to Coroutine.");
+static_assert(stance::AsyncEndpoint<int>::reentrancy_v == safety::fn::ReentrancyMode::Coroutine,
+              "stance::AsyncEndpoint must resolve Reentrancy to Coroutine.");
 
 // 8. Direct (non-stance) round-trip — a user-spelled fixy::fn with
 //    one relaxation matches the directly-spelled safety::fn::Fn.
 namespace round_trip_2 {
-using direct_fixy = ::crucible::fixy::fn<int,
-    grant::accept_default_strict_for<dim::DimensionAxis::Refinement>,
-    grant::affine,  // Usage = Affine
-    grant::accept_default_strict_for<dim::DimensionAxis::Effect>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Security>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Protocol>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Lifetime>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Provenance>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Trust>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Representation>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Observability>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Complexity>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Precision>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Space>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Overflow>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Mutation>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Reentrancy>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Size>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Version>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Staleness>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Synchronization>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Regime>,
-    grant::accept_default_strict_for<dim::DimensionAxis::FpMode>,
-    grant::accept_default_strict_for<dim::DimensionAxis::SyscallSurface>, grant::accept_default_strict_for<dim::DimensionAxis::ControlFlow>, grant::accept_default_strict_for<dim::DimensionAxis::CallShape>, grant::accept_default_strict_for<dim::DimensionAxis::StackUse>, grant::accept_default_strict_for<dim::DimensionAxis::GlobalState>, grant::accept_default_strict_for<dim::DimensionAxis::Stdio>, grant::accept_default_strict_for<dim::DimensionAxis::HwInstruction>, grant::accept_default_strict_for<dim::DimensionAxis::BarrierStrength>, grant::accept_default_strict_for<dim::DimensionAxis::SimdIsa>, grant::accept_default_strict_for<dim::DimensionAxis::MemoryScope>>;
+using direct_fixy = ::crucible::fixy::fn<int, grant::accept_default_strict_for<dim::DimensionAxis::Refinement>,
+                                         grant::affine,  // Usage = Affine
+                                         grant::accept_default_strict_for<dim::DimensionAxis::Effect>,
+                                         grant::accept_default_strict_for<dim::DimensionAxis::Security>,
+                                         grant::accept_default_strict_for<dim::DimensionAxis::Protocol>,
+                                         grant::accept_default_strict_for<dim::DimensionAxis::Lifetime>,
+                                         grant::accept_default_strict_for<dim::DimensionAxis::Provenance>,
+                                         grant::accept_default_strict_for<dim::DimensionAxis::Trust>,
+                                         grant::accept_default_strict_for<dim::DimensionAxis::Representation>,
+                                         grant::accept_default_strict_for<dim::DimensionAxis::Observability>,
+                                         grant::accept_default_strict_for<dim::DimensionAxis::Complexity>,
+                                         grant::accept_default_strict_for<dim::DimensionAxis::Precision>,
+                                         grant::accept_default_strict_for<dim::DimensionAxis::Space>,
+                                         grant::accept_default_strict_for<dim::DimensionAxis::Overflow>,
+                                         grant::accept_default_strict_for<dim::DimensionAxis::Mutation>,
+                                         grant::accept_default_strict_for<dim::DimensionAxis::Reentrancy>,
+                                         grant::accept_default_strict_for<dim::DimensionAxis::Size>,
+                                         grant::accept_default_strict_for<dim::DimensionAxis::Version>,
+                                         grant::accept_default_strict_for<dim::DimensionAxis::Staleness>,
+                                         grant::accept_default_strict_for<dim::DimensionAxis::Synchronization>,
+                                         grant::accept_default_strict_for<dim::DimensionAxis::Regime>,
+                                         grant::accept_default_strict_for<dim::DimensionAxis::FpMode>,
+                                         grant::accept_default_strict_for<dim::DimensionAxis::SyscallSurface>,
+                                         grant::accept_default_strict_for<dim::DimensionAxis::ControlFlow>,
+                                         grant::accept_default_strict_for<dim::DimensionAxis::CallShape>,
+                                         grant::accept_default_strict_for<dim::DimensionAxis::StackUse>,
+                                         grant::accept_default_strict_for<dim::DimensionAxis::GlobalState>,
+                                         grant::accept_default_strict_for<dim::DimensionAxis::Stdio>,
+                                         grant::accept_default_strict_for<dim::DimensionAxis::HwInstruction>,
+                                         grant::accept_default_strict_for<dim::DimensionAxis::BarrierStrength>,
+                                         grant::accept_default_strict_for<dim::DimensionAxis::SimdIsa>,
+                                         grant::accept_default_strict_for<dim::DimensionAxis::MemoryScope>>;
 
-using direct_substrate = safety::fn::Fn<int,
-    safety::fn::pred::True,
-    safety::fn::UsageMode::Affine,
-    effects::Row<>,
-    safety::fn::SecLevel::Classified,
-    safety::fn::proto::None,
-    safety::fn::lifetime::Static,
-    safety::source::FromInternal,
-    safety::trust::Unverified,                  // FIXY-FOUND-034: mirror substrate default flip
-    safety::fn::ReprKind::Opaque,
-    safety::fn::cost::Unstated,
-    safety::fn::precision::Exact,
-    safety::fn::space::Zero,
-    safety::fn::OverflowMode::Trap,
-    safety::fn::MutationMode::Immutable,
-    safety::fn::ReentrancyMode::NonReentrant,
-    safety::fn::size_pol::Unstated,
-    1u,
-    safety::fn::stale::Fresh>;
+using direct_substrate = safety::fn::Fn<
+    int, safety::fn::pred::True, safety::fn::UsageMode::Affine, effects::Row<>, safety::fn::SecLevel::Classified,
+    safety::fn::proto::None, safety::fn::lifetime::Static, safety::source::FromInternal,
+    safety::trust::Unverified,  // FIXY-FOUND-034: mirror substrate default flip
+    safety::fn::ReprKind::Opaque, safety::fn::cost::Unstated, safety::fn::precision::Exact, safety::fn::space::Zero,
+    safety::fn::OverflowMode::Trap, safety::fn::MutationMode::Immutable, safety::fn::ReentrancyMode::NonReentrant,
+    safety::fn::size_pol::Unstated, 1u, safety::fn::stale::Fresh>;
 
 static_assert(std::is_same_v<direct_fixy::safety_fn_t, direct_substrate>,
-    "Single-relaxation round-trip: fixy::fn's safety_fn_t with "
-    "Usage=affine must match the directly-spelled substrate Fn<...> "
-    "with UsageMode::Affine.");
+              "Single-relaxation round-trip: fixy::fn's safety_fn_t with "
+              "Usage=affine must match the directly-spelled substrate Fn<...> "
+              "with UsageMode::Affine.");
 }  // namespace round_trip_2
 
 // FIXY-LAT-Security: every Security lattice point resolves to the
 // matching substrate SecLevel.
-static_assert(detail::resolve::project<grant::as_unclassified>::value
-    == safety::fn::SecLevel::Unclassified,
-    "grant::as_unclassified must project to SecLevel::Unclassified.");
-static_assert(detail::resolve::project<grant::as_public>::value
-    == safety::fn::SecLevel::Public,
-    "grant::as_public must project to SecLevel::Public.");
-static_assert(detail::resolve::project<grant::as_internal>::value
-    == safety::fn::SecLevel::Internal,
-    "grant::as_internal must project to SecLevel::Internal.");
-static_assert(detail::resolve::project<grant::as_classified>::value
-    == safety::fn::SecLevel::Classified,
-    "grant::as_classified must project to SecLevel::Classified.");
-static_assert(detail::resolve::project<grant::as_secret>::value
-    == safety::fn::SecLevel::Secret,
-    "grant::as_secret must project to SecLevel::Secret.");
+static_assert(detail::resolve::project<grant::as_unclassified>::value == safety::fn::SecLevel::Unclassified,
+              "grant::as_unclassified must project to SecLevel::Unclassified.");
+static_assert(detail::resolve::project<grant::as_public>::value == safety::fn::SecLevel::Public,
+              "grant::as_public must project to SecLevel::Public.");
+static_assert(detail::resolve::project<grant::as_internal>::value == safety::fn::SecLevel::Internal,
+              "grant::as_internal must project to SecLevel::Internal.");
+static_assert(detail::resolve::project<grant::as_classified>::value == safety::fn::SecLevel::Classified,
+              "grant::as_classified must project to SecLevel::Classified.");
+static_assert(detail::resolve::project<grant::as_secret>::value == safety::fn::SecLevel::Secret,
+              "grant::as_secret must project to SecLevel::Secret.");
 
 // FIXY-LAT-Trust: every Trust lattice point resolves to the matching
 // safety::trust::* tag.
-static_assert(std::is_same_v<
-    detail::resolve::project<grant::trust_verified>::type,
-    safety::trust::Verified>,
-    "grant::trust_verified must project to safety::trust::Verified.");
-static_assert(std::is_same_v<
-    detail::resolve::project<grant::trust_tested>::type,
-    safety::trust::Tested>,
-    "grant::trust_tested must project to safety::trust::Tested.");
-static_assert(std::is_same_v<
-    detail::resolve::project<grant::trust_unverified>::type,
-    safety::trust::Unverified>,
-    "grant::trust_unverified must project to safety::trust::Unverified.");
-static_assert(std::is_same_v<
-    detail::resolve::project<grant::trust_external>::type,
-    safety::trust::External>,
-    "grant::trust_external must project to safety::trust::External.");
+static_assert(std::is_same_v<detail::resolve::project<grant::trust_verified>::type, safety::trust::Verified>,
+              "grant::trust_verified must project to safety::trust::Verified.");
+static_assert(std::is_same_v<detail::resolve::project<grant::trust_tested>::type, safety::trust::Tested>,
+              "grant::trust_tested must project to safety::trust::Tested.");
+static_assert(std::is_same_v<detail::resolve::project<grant::trust_unverified>::type, safety::trust::Unverified>,
+              "grant::trust_unverified must project to safety::trust::Unverified.");
+static_assert(std::is_same_v<detail::resolve::project<grant::trust_external>::type, safety::trust::External>,
+              "grant::trust_external must project to safety::trust::External.");
 
 // FIXY-LAT-Usage: every Usage lattice point resolves to the matching
 // substrate UsageMode.  Previously only grant::affine had an explicit
@@ -2132,23 +2003,18 @@ static_assert(std::is_same_v<
 // expressed via accept_default_strict_for<Usage> not a relaxation
 // grant).  See FIXY-FOUND-043 for the naming-asymmetry rationale
 // behind `grant::capability_usage`.
-static_assert(detail::resolve::project<grant::affine>::value
-    == safety::fn::UsageMode::Affine,
-    "grant::affine must project to UsageMode::Affine.");
-static_assert(detail::resolve::project<grant::copy>::value
-    == safety::fn::UsageMode::Copy,
-    "grant::copy must project to UsageMode::Copy.");
-static_assert(detail::resolve::project<grant::ghost>::value
-    == safety::fn::UsageMode::Ghost,
-    "grant::ghost must project to UsageMode::Ghost.");
-static_assert(detail::resolve::project<grant::borrow>::value
-    == safety::fn::UsageMode::Borrow,
-    "grant::borrow must project to UsageMode::Borrow.");
-static_assert(detail::resolve::project<grant::capability_usage>::value
-    == safety::fn::UsageMode::Capability,
-    "grant::capability_usage must project to UsageMode::Capability "
-    "(FIXY-FOUND-043 — asymmetric `_usage` suffix is mandatory to "
-    "avoid clash with effects::Capability<E, S>; see Grant.h:339).");
+static_assert(detail::resolve::project<grant::affine>::value == safety::fn::UsageMode::Affine,
+              "grant::affine must project to UsageMode::Affine.");
+static_assert(detail::resolve::project<grant::copy>::value == safety::fn::UsageMode::Copy,
+              "grant::copy must project to UsageMode::Copy.");
+static_assert(detail::resolve::project<grant::ghost>::value == safety::fn::UsageMode::Ghost,
+              "grant::ghost must project to UsageMode::Ghost.");
+static_assert(detail::resolve::project<grant::borrow>::value == safety::fn::UsageMode::Borrow,
+              "grant::borrow must project to UsageMode::Borrow.");
+static_assert(detail::resolve::project<grant::capability_usage>::value == safety::fn::UsageMode::Capability,
+              "grant::capability_usage must project to UsageMode::Capability "
+              "(FIXY-FOUND-043 — asymmetric `_usage` suffix is mandatory to "
+              "avoid clash with effects::Capability<E, S>; see Grant.h:339).");
 
 // ═════════════════════════════════════════════════════════════════════
 // ── FIXY-FOUND-043 — capability_usage naming-asymmetry pin ────────
@@ -2179,38 +2045,34 @@ namespace found_043_witness {
 // the strict default — expressed via accept_default_strict_for<Usage>
 // at call sites, never via a relaxation grant — so it's not in the
 // roster.
-using AllUsageGrants = std::tuple<
-    grant::affine,            // UsageMode::Affine
-    grant::copy,              // UsageMode::Copy
-    grant::ghost,             // UsageMode::Ghost
-    grant::borrow,            // UsageMode::Borrow
-    grant::capability_usage>; // UsageMode::Capability — ASYMMETRIC SUFFIX
+using AllUsageGrants = std::tuple<grant::affine,  // UsageMode::Affine
+                                  grant::copy,  // UsageMode::Copy
+                                  grant::ghost,  // UsageMode::Ghost
+                                  grant::borrow,  // UsageMode::Borrow
+                                  grant::capability_usage>;  // UsageMode::Capability — ASYMMETRIC SUFFIX
 
 // (1) Cardinality pin — adding a 6th Usage grant requires extending
 // AllUsageGrants AND bumping this literal.  Drift fires here.
-inline constexpr std::size_t kUsageGrantCount =
-    std::tuple_size_v<AllUsageGrants>;
-static_assert(kUsageGrantCount == 5,
-    "FIXY-FOUND-043 cardinality pin: 5 non-default Usage-axis grants "
-    "(UsageMode has 6 enumerators; Linear is the implicit strict "
-    "default with no relaxation grant).  Bumping requires (a) "
-    "appending the new grant to AllUsageGrants AND (b) incrementing "
-    "this literal.  Drift fires here.");
+inline constexpr std::size_t kUsageGrantCount = std::tuple_size_v<AllUsageGrants>;
+static_assert(kUsageGrantCount == 5, "FIXY-FOUND-043 cardinality pin: 5 non-default Usage-axis grants "
+                                     "(UsageMode has 6 enumerators; Linear is the implicit strict "
+                                     "default with no relaxation grant).  Bumping requires (a) "
+                                     "appending the new grant to AllUsageGrants AND (b) incrementing "
+                                     "this literal.  Drift fires here.");
 
 // (2) Every Usage grant routes to DimensionAxis::Usage.  Folded over
 // the roster for compactness.
 template <typename Tuple>
 [[nodiscard]] consteval bool all_route_to_usage_axis() noexcept {
     return [&]<std::size_t... Is>(std::index_sequence<Is...>) consteval {
-        return ((grant::which_dim_v<std::tuple_element_t<Is, Tuple>>
-                 == dim::DimensionAxis::Usage) && ...);
+        return ((grant::which_dim_v<std::tuple_element_t<Is, Tuple>> == dim::DimensionAxis::Usage) && ...);
     }(std::make_index_sequence<std::tuple_size_v<Tuple>>{});
 }
 static_assert(all_route_to_usage_axis<AllUsageGrants>(),
-    "FIXY-FOUND-043: every Usage-axis grant in AllUsageGrants MUST "
-    "specialize which_dim to DimensionAxis::Usage.  An unspecialized "
-    "grant routes to Type by default (Grant.h:223 primary template), "
-    "which would silently re-classify the grant into the wrong axis.");
+              "FIXY-FOUND-043: every Usage-axis grant in AllUsageGrants MUST "
+              "specialize which_dim to DimensionAxis::Usage.  An unspecialized "
+              "grant routes to Type by default (Grant.h:223 primary template), "
+              "which would silently re-classify the grant into the wrong axis.");
 
 // (3) Cross-namespace clash witness — effects::Capability<E, S> is a
 // class template, NOT a grant_base.  The structural distinction
@@ -2224,22 +2086,19 @@ static_assert(all_route_to_usage_axis<AllUsageGrants>(),
 // (E, S) that satisfies CanMintCap.  Bg is the canonical
 // fully-rowed context whose permitted_row contains Alloc, IO, Block.
 using EffectAxisCapability =
-    ::crucible::effects::Capability<::crucible::effects::Effect::Alloc,
-                                    ::crucible::effects::Bg>;
+    ::crucible::effects::Capability<::crucible::effects::Effect::Alloc, ::crucible::effects::Bg>;
 
-static_assert(grant::IsGrantTag<grant::capability_usage>,
-    "FIXY-FOUND-043: grant::capability_usage MUST satisfy "
-    "IsGrantTag (inherits grant_base + final).");
-static_assert(!grant::IsGrantTag<EffectAxisCapability>,
-    "FIXY-FOUND-043: effects::Capability<E, S> MUST NOT satisfy "
-    "IsGrantTag — the Effect-axis Capability class template is "
-    "the linear proof-token carrier (effects/Capability.h:107), "
-    "structurally distinct from the Usage-axis "
-    "grant::capability_usage relaxation tag.  This negative "
-    "witness pins that the clash between the two `Capability` "
-    "spellings is RESOLVABLE precisely because the substrate "
-    "name (effects::Capability) is a class template and the "
-    "grant name (capability_usage) is suffixed.");
+static_assert(grant::IsGrantTag<grant::capability_usage>, "FIXY-FOUND-043: grant::capability_usage MUST satisfy "
+                                                          "IsGrantTag (inherits grant_base + final).");
+static_assert(!grant::IsGrantTag<EffectAxisCapability>, "FIXY-FOUND-043: effects::Capability<E, S> MUST NOT satisfy "
+                                                        "IsGrantTag — the Effect-axis Capability class template is "
+                                                        "the linear proof-token carrier (effects/Capability.h:107), "
+                                                        "structurally distinct from the Usage-axis "
+                                                        "grant::capability_usage relaxation tag.  This negative "
+                                                        "witness pins that the clash between the two `Capability` "
+                                                        "spellings is RESOLVABLE precisely because the substrate "
+                                                        "name (effects::Capability) is a class template and the "
+                                                        "grant name (capability_usage) is suffixed.");
 
 // (4) The three substrate-level Capability re-exports are all the
 // SAME template — pinned by Cap.h:316-323 (fixy::cap::Capability is
@@ -2251,32 +2110,39 @@ static_assert(!grant::IsGrantTag<EffectAxisCapability>,
 }  // namespace found_043_witness
 
 // 9. mint_fn factory returns the correct concrete type.
-constexpr auto minted = mint_fn<int,
-    grant::accept_default_strict_for<dim::DimensionAxis::Refinement>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Usage>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Effect>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Security>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Protocol>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Lifetime>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Provenance>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Trust>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Representation>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Observability>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Complexity>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Precision>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Space>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Overflow>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Mutation>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Reentrancy>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Size>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Version>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Staleness>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Synchronization>,
-    grant::accept_default_strict_for<dim::DimensionAxis::Regime>,
-    grant::accept_default_strict_for<dim::DimensionAxis::FpMode>,
-    grant::accept_default_strict_for<dim::DimensionAxis::SyscallSurface>, grant::accept_default_strict_for<dim::DimensionAxis::ControlFlow>, grant::accept_default_strict_for<dim::DimensionAxis::CallShape>, grant::accept_default_strict_for<dim::DimensionAxis::StackUse>, grant::accept_default_strict_for<dim::DimensionAxis::GlobalState>, grant::accept_default_strict_for<dim::DimensionAxis::Stdio>, grant::accept_default_strict_for<dim::DimensionAxis::HwInstruction>, grant::accept_default_strict_for<dim::DimensionAxis::BarrierStrength>, grant::accept_default_strict_for<dim::DimensionAxis::SimdIsa>, grant::accept_default_strict_for<dim::DimensionAxis::MemoryScope>>(42);
-static_assert(minted.value() == 42,
-    "mint_fn must construct fixy::fn carrying the supplied value.");
+constexpr auto minted = mint_fn<int, grant::accept_default_strict_for<dim::DimensionAxis::Refinement>,
+                                grant::accept_default_strict_for<dim::DimensionAxis::Usage>,
+                                grant::accept_default_strict_for<dim::DimensionAxis::Effect>,
+                                grant::accept_default_strict_for<dim::DimensionAxis::Security>,
+                                grant::accept_default_strict_for<dim::DimensionAxis::Protocol>,
+                                grant::accept_default_strict_for<dim::DimensionAxis::Lifetime>,
+                                grant::accept_default_strict_for<dim::DimensionAxis::Provenance>,
+                                grant::accept_default_strict_for<dim::DimensionAxis::Trust>,
+                                grant::accept_default_strict_for<dim::DimensionAxis::Representation>,
+                                grant::accept_default_strict_for<dim::DimensionAxis::Observability>,
+                                grant::accept_default_strict_for<dim::DimensionAxis::Complexity>,
+                                grant::accept_default_strict_for<dim::DimensionAxis::Precision>,
+                                grant::accept_default_strict_for<dim::DimensionAxis::Space>,
+                                grant::accept_default_strict_for<dim::DimensionAxis::Overflow>,
+                                grant::accept_default_strict_for<dim::DimensionAxis::Mutation>,
+                                grant::accept_default_strict_for<dim::DimensionAxis::Reentrancy>,
+                                grant::accept_default_strict_for<dim::DimensionAxis::Size>,
+                                grant::accept_default_strict_for<dim::DimensionAxis::Version>,
+                                grant::accept_default_strict_for<dim::DimensionAxis::Staleness>,
+                                grant::accept_default_strict_for<dim::DimensionAxis::Synchronization>,
+                                grant::accept_default_strict_for<dim::DimensionAxis::Regime>,
+                                grant::accept_default_strict_for<dim::DimensionAxis::FpMode>,
+                                grant::accept_default_strict_for<dim::DimensionAxis::SyscallSurface>,
+                                grant::accept_default_strict_for<dim::DimensionAxis::ControlFlow>,
+                                grant::accept_default_strict_for<dim::DimensionAxis::CallShape>,
+                                grant::accept_default_strict_for<dim::DimensionAxis::StackUse>,
+                                grant::accept_default_strict_for<dim::DimensionAxis::GlobalState>,
+                                grant::accept_default_strict_for<dim::DimensionAxis::Stdio>,
+                                grant::accept_default_strict_for<dim::DimensionAxis::HwInstruction>,
+                                grant::accept_default_strict_for<dim::DimensionAxis::BarrierStrength>,
+                                grant::accept_default_strict_for<dim::DimensionAxis::SimdIsa>,
+                                grant::accept_default_strict_for<dim::DimensionAxis::MemoryScope>>(42);
+static_assert(minted.value() == 42, "mint_fn must construct fixy::fn carrying the supplied value.");
 
 // ── FIXY-U-041 positive self-test witnesses ──────────────────────
 //
@@ -2289,20 +2155,18 @@ static_assert(minted.value() == 42,
 // 10a. NamedSession pins the Protocol axis to the supplied proto.
 namespace fixy_u_041 {
 struct FakeProto {};  // local witness — protocol value is type-level
-                       // here; resolution must thread it through to
-                       // safety_fn_t::protocol_t verbatim.
+// here; resolution must thread it through to
+// safety_fn_t::protocol_t verbatim.
 }  // namespace fixy_u_041
 
-static_assert(std::is_same_v<
-    typename stance::NamedSession<int, fixy_u_041::FakeProto>::protocol_t,
-    fixy_u_041::FakeProto>,
+static_assert(
+    std::is_same_v<typename stance::NamedSession<int, fixy_u_041::FakeProto>::protocol_t, fixy_u_041::FakeProto>,
     "stance::NamedSession<int, Proto>::protocol_t must thread Proto "
     "through to the substrate's protocol_t.");
 
-static_assert(sizeof(stance::NamedSession<int, fixy_u_041::FakeProto>)
-    == sizeof(int),
-    "stance::NamedSession<int, Proto> must EBO-collapse to sizeof(int) "
-    "— grant::protocol<Proto> is an empty type-level tag.");
+static_assert(sizeof(stance::NamedSession<int, fixy_u_041::FakeProto>) == sizeof(int),
+              "stance::NamedSession<int, Proto> must EBO-collapse to sizeof(int) "
+              "— grant::protocol<Proto> is an empty type-level tag.");
 
 // 10b. (CooperativeBg removed — FIXY-FOUND-071 R003 proves Coroutine×Bg
 //      structurally unsafe; the de-coroutined remnant was a verbatim
@@ -2311,36 +2175,31 @@ static_assert(sizeof(stance::NamedSession<int, fixy_u_041::FakeProto>)
 //      note at the CooperativeBg deletion site.)
 
 // 10c. SyncBlocking pins Effect={IO, Block} + Security=Public.
-static_assert(std::is_same_v<
-    typename stance::SyncBlocking<int>::effect_row_t,
-    effects::Row<effects::Effect::IO, effects::Effect::Block>>,
-    "stance::SyncBlocking's Effect row must contain IO and Block.");
+static_assert(std::is_same_v<typename stance::SyncBlocking<int>::effect_row_t,
+                             effects::Row<effects::Effect::IO, effects::Effect::Block>>,
+              "stance::SyncBlocking's Effect row must contain IO and Block.");
 
-static_assert(stance::SyncBlocking<int>::security_v
-    == safety::fn::SecLevel::Public,
-    "stance::SyncBlocking must resolve Security to Public via "
-    "grant::as_public.");
+static_assert(stance::SyncBlocking<int>::security_v == safety::fn::SecLevel::Public,
+              "stance::SyncBlocking must resolve Security to Public via "
+              "grant::as_public.");
 
 static_assert(sizeof(stance::SyncBlocking<int>) == sizeof(int),
-    "stance::SyncBlocking<int> must EBO-collapse to sizeof(int).");
+              "stance::SyncBlocking<int> must EBO-collapse to sizeof(int).");
 
 // 10d. RealtimeHot pins Effect=<empty> + Security=Public.
 //      Distinguishing from PureLinear: RealtimeHot uses an
 //      EXPLICIT grant::with<> rather than the strict-default
 //      marker, so a future widening of the strict default cannot
 //      silently relax the discipline.
-static_assert(std::is_same_v<
-    typename stance::RealtimeHot<int>::effect_row_t,
-    effects::Row<>>,
-    "stance::RealtimeHot's Effect row must be empty — hot-loop "
-    "discipline forbids IO/Alloc/Block at the signature.");
+static_assert(std::is_same_v<typename stance::RealtimeHot<int>::effect_row_t, effects::Row<>>,
+              "stance::RealtimeHot's Effect row must be empty — hot-loop "
+              "discipline forbids IO/Alloc/Block at the signature.");
 
-static_assert(stance::RealtimeHot<int>::security_v
-    == safety::fn::SecLevel::Public,
-    "stance::RealtimeHot must resolve Security to Public.");
+static_assert(stance::RealtimeHot<int>::security_v == safety::fn::SecLevel::Public,
+              "stance::RealtimeHot must resolve Security to Public.");
 
 static_assert(sizeof(stance::RealtimeHot<int>) == sizeof(int),
-    "stance::RealtimeHot<int> must EBO-collapse to sizeof(int).");
+              "stance::RealtimeHot<int> must EBO-collapse to sizeof(int).");
 
 }  // namespace detail::fn_self_test
 
@@ -2440,8 +2299,7 @@ namespace crucible::safety::diag {
 namespace detail {
 
 template <typename... Grants>
-[[nodiscard]] consteval std::uint64_t
-fold_canonicalized_grants_hash(std::uint64_t seed) noexcept {
+[[nodiscard]] consteval std::uint64_t fold_canonicalized_grants_hash(std::uint64_t seed) noexcept {
     std::uint64_t h = seed;
     // Iterate the FIXY-ONLY DimensionAxis enumerators (Synchronization
     // .. MemoryScope) in numeric order.  For each such axis K, any
@@ -2488,18 +2346,12 @@ fold_canonicalized_grants_hash(std::uint64_t seed) noexcept {
     // DROPPED from the fold — two kernels differing only in that grant
     // would collide to the same federation cache slot, which is precisely
     // the kernel-substitution attack this fold exists to prevent.
-    constexpr int kAxisCount =
-        static_cast<int>(::crucible::fixy::dim::DIMENSION_AXIS_COUNT);
-    constexpr int kFirstFixyOnly =
-        static_cast<int>(::crucible::fixy::dim::DimensionAxis::Synchronization);
+    constexpr int kAxisCount = static_cast<int>(::crucible::fixy::dim::DIMENSION_AXIS_COUNT);
+    constexpr int kFirstFixyOnly = static_cast<int>(::crucible::fixy::dim::DimensionAxis::Synchronization);
     for (int axis = kFirstFixyOnly; axis < kAxisCount; ++axis) {
         ((::crucible::fixy::grant::IsGrantTag_v<Grants>
-              && static_cast<int>(
-                     ::crucible::fixy::grant::which_dim_v<Grants>)
-                     == axis
-              ? (h = detail::combine_ids(
-                     h, ::crucible::safety::diag::stable_type_id<Grants>),
-                 true)
+                  && static_cast<int>(::crucible::fixy::grant::which_dim_v<Grants>) == axis
+              ? (h = detail::combine_ids(h, ::crucible::safety::diag::stable_type_id<Grants>), true)
               : false),
          ...);
     }
@@ -2511,10 +2363,9 @@ fold_canonicalized_grants_hash(std::uint64_t seed) noexcept {
 template <typename Type, typename... Grants>
 struct row_hash_contribution<::crucible::fixy::fn<Type, Grants...>> {
     static constexpr std::uint64_t value = []() consteval -> std::uint64_t {
-        std::uint64_t h = detail::combine_ids(
-            detail::WRAPPER_FIXY_FN_TAG,
-            row_hash_contribution_v<
-                typename ::crucible::fixy::fn<Type, Grants...>::safety_fn_t>);
+        std::uint64_t h =
+            detail::combine_ids(detail::WRAPPER_FIXY_FN_TAG,
+                                row_hash_contribution_v<typename ::crucible::fixy::fn<Type, Grants...>::safety_fn_t>);
         // FIXY-FOUND-004: fold per-grant identity so the 13 fixy-only
         // axes (which never project onto safety_fn_t) discriminate at
         // the federation cache layer.
@@ -2546,38 +2397,34 @@ using crucible::fixy::stance::CtCrypto;
 //   row_hash_contribution_v<IoFunction<int>>  != 0
 //   row_hash_contribution_v<PureCopy<int>>   != row_hash_contribution_v<IoFunction<int>>
 
-static_assert(row_hash_contribution_v<PureCopy<int>>    != 0,
-    "FIXY-V-001 / Agent 4 T1-A: PureCopy<int> must contribute non-zero "
-    "to the federation cache RowHash.");
-static_assert(row_hash_contribution_v<IoFunction<int>>  != 0,
-    "FIXY-V-001 / Agent 4 T1-A: IoFunction<int> must contribute non-zero "
-    "to the federation cache RowHash.");
+static_assert(row_hash_contribution_v<PureCopy<int>> != 0,
+              "FIXY-V-001 / Agent 4 T1-A: PureCopy<int> must contribute non-zero "
+              "to the federation cache RowHash.");
+static_assert(row_hash_contribution_v<IoFunction<int>> != 0,
+              "FIXY-V-001 / Agent 4 T1-A: IoFunction<int> must contribute non-zero "
+              "to the federation cache RowHash.");
 
 // The principal cache-divergence claim — capability-distinct stances
 // over the SAME payload Type produce DISTINCT row hashes.
-static_assert(row_hash_contribution_v<PureCopy<int>>
-           != row_hash_contribution_v<IoFunction<int>>,
-    "FIXY-V-001 / Agent 4 T1-A: PureCopy<int> and IoFunction<int> must "
-    "produce distinct RowHash so the federation cache (KernelCacheKey "
-    "{ContentHash, RowHash}) routes them to disjoint slots. Spec §7(b) "
-    "federation discharge depends on this discrimination.");
+static_assert(row_hash_contribution_v<PureCopy<int>> != row_hash_contribution_v<IoFunction<int>>,
+              "FIXY-V-001 / Agent 4 T1-A: PureCopy<int> and IoFunction<int> must "
+              "produce distinct RowHash so the federation cache (KernelCacheKey "
+              "{ContentHash, RowHash}) routes them to disjoint slots. Spec §7(b) "
+              "federation discharge depends on this discrimination.");
 
 // Additional stance-divergence pinning — covers Usage, EffectRow,
 // Security, Reentrancy axes from the 12-stance catalog.
-static_assert(row_hash_contribution_v<PureLinear<int>>
-           != row_hash_contribution_v<PureCopy<int>>,
-    "PureLinear (Usage=Linear) vs PureCopy (Usage=Copy) differ on "
-    "the Usage axis — distinct row hashes required.");
+static_assert(row_hash_contribution_v<PureLinear<int>> != row_hash_contribution_v<PureCopy<int>>,
+              "PureLinear (Usage=Linear) vs PureCopy (Usage=Copy) differ on "
+              "the Usage axis — distinct row hashes required.");
 
-static_assert(row_hash_contribution_v<BgWorker<int>>
-           != row_hash_contribution_v<IoFunction<int>>,
-    "BgWorker (Effect={Bg,Alloc}) vs IoFunction (Effect={IO}) differ "
-    "on the EffectRow axis — distinct row hashes required.");
+static_assert(row_hash_contribution_v<BgWorker<int>> != row_hash_contribution_v<IoFunction<int>>,
+              "BgWorker (Effect={Bg,Alloc}) vs IoFunction (Effect={IO}) differ "
+              "on the EffectRow axis — distinct row hashes required.");
 
-static_assert(row_hash_contribution_v<CtCrypto<int>>
-           != row_hash_contribution_v<PureLinear<int>>,
-    "CtCrypto (constant-time discipline + Security tier) vs "
-    "PureLinear differ on multiple axes — distinct row hashes required.");
+static_assert(row_hash_contribution_v<CtCrypto<int>> != row_hash_contribution_v<PureLinear<int>>,
+              "CtCrypto (constant-time discipline + Security tier) vs "
+              "PureLinear differ on multiple axes — distinct row hashes required.");
 
 // Cross-surface separation — fixy::fn and safety::fn::Fn route to
 // DISTINCT cache slots even when the underlying capability projection
@@ -2586,14 +2433,14 @@ static_assert(row_hash_contribution_v<CtCrypto<int>>
 // `using safety_fn_t = ...` alias directly because the alias resolves
 // inside fixy::fn — but the salt guarantees it.)
 static_assert(row_hash_contribution_v<PureLinear<int>>
-           != row_hash_contribution_v<typename PureLinear<int>::safety_fn_t>,
-    "fixy::fn<T, ...> and the directly-spelled safety::fn::Fn<T, ...> "
-    "MUST route to distinct cache slots so the audit trail "
-    "'published-through-fixy' is preserved at federation-cache "
-    "lookup tier (WRAPPER_FIXY_FN_TAG vs WRAPPER_SAFETY_FN_TAG salt).");
+                  != row_hash_contribution_v<typename PureLinear<int>::safety_fn_t>,
+              "fixy::fn<T, ...> and the directly-spelled safety::fn::Fn<T, ...> "
+              "MUST route to distinct cache slots so the audit trail "
+              "'published-through-fixy' is preserved at federation-cache "
+              "lookup tier (WRAPPER_FIXY_FN_TAG vs WRAPPER_SAFETY_FN_TAG salt).");
 
 // Bare payload contributes 0; fixy::fn<T, ...> with the salt does NOT.
-static_assert(row_hash_contribution_v<int>             == 0);
+static_assert(row_hash_contribution_v<int> == 0);
 static_assert(row_hash_contribution_v<PureLinear<int>> != 0);
 
 // RowHash sentinel discipline — fixy::fn's hash is NOT the cache's
@@ -2615,35 +2462,28 @@ static_assert(!row_hash_of_v<PureLinear<int>>.is_sentinel());
 // different model-specific registers) on the same axis must produce
 // distinct folded hashes — defeats `hw::msr<0x10>` vs `hw::msr<0x20>`
 // federation slot collision.
-static_assert(
-    detail::fold_canonicalized_grants_hash<
-        ::crucible::fixy::grant::hw::msr<0x10u>>(0ULL)
-    != detail::fold_canonicalized_grants_hash<
-        ::crucible::fixy::grant::hw::msr<0x20u>>(0ULL),
-    "FIXY-FOUND-004: distinct MSR IDs on HwInstruction axis must "
-    "produce distinct grant-fold contributions.  Kernel-substitution "
-    "exploit if equal.");
+static_assert(detail::fold_canonicalized_grants_hash<::crucible::fixy::grant::hw::msr<0x10u>>(0ULL)
+                  != detail::fold_canonicalized_grants_hash<::crucible::fixy::grant::hw::msr<0x20u>>(0ULL),
+              "FIXY-FOUND-004: distinct MSR IDs on HwInstruction axis must "
+              "produce distinct grant-fold contributions.  Kernel-substitution "
+              "exploit if equal.");
 
 // (2) HwInstruction axis: privileged `hw::msr<...>` vs the strict
 // default `accept_default_strict_for<HwInstruction>` (kernel uses
 // default safe-ISA only) must produce DISTINCT row_hashes.  This is
 // the principal Org A vs Org B exploit from the task description.
-static_assert(
-    detail::fold_canonicalized_grants_hash<
-        ::crucible::fixy::grant::hw::msr<0x10u>>(0ULL)
-    != detail::fold_canonicalized_grants_hash<
-        ::crucible::fixy::grant::accept_default_strict_for<
-            ::crucible::fixy::dim::DimensionAxis::HwInstruction>>(0ULL),
-    "FIXY-FOUND-004: privileged hw::msr<...> grant vs strict default "
-    "MUST route to distinct federation cache slots.  Without this, "
-    "peer downloading default-safe kernel could silently execute "
-    "WRMSR bytes from privileged-msr kernel publisher.");
+static_assert(detail::fold_canonicalized_grants_hash<::crucible::fixy::grant::hw::msr<0x10u>>(0ULL)
+                  != detail::fold_canonicalized_grants_hash<::crucible::fixy::grant::accept_default_strict_for<
+                      ::crucible::fixy::dim::DimensionAxis::HwInstruction>>(0ULL),
+              "FIXY-FOUND-004: privileged hw::msr<...> grant vs strict default "
+              "MUST route to distinct federation cache slots.  Without this, "
+              "peer downloading default-safe kernel could silently execute "
+              "WRMSR bytes from privileged-msr kernel publisher.");
 
 // (3) Empty Grants pack collapses to identity fold (h == seed).
-static_assert(
-    detail::fold_canonicalized_grants_hash<>(0xDEADBEEFULL) == 0xDEADBEEFULL,
-    "FIXY-FOUND-004: empty Grants pack must fold to identity (seed "
-    "unchanged).");
+static_assert(detail::fold_canonicalized_grants_hash<>(0xDEADBEEFULL) == 0xDEADBEEFULL,
+              "FIXY-FOUND-004: empty Grants pack must fold to identity (seed "
+              "unchanged).");
 
 // (4) Permutation invariance: same grants in different source order
 // must produce the same canonical fold.  Canonical-axis ordering is
@@ -2652,12 +2492,10 @@ static_assert(
 static_assert(
     detail::fold_canonicalized_grants_hash<
         ::crucible::fixy::grant::hw::msr<0x10u>,
-        ::crucible::fixy::grant::accept_default_strict_for<
-            ::crucible::fixy::dim::DimensionAxis::SimdIsa>>(0ULL)
-    == detail::fold_canonicalized_grants_hash<
-        ::crucible::fixy::grant::accept_default_strict_for<
-            ::crucible::fixy::dim::DimensionAxis::SimdIsa>,
-        ::crucible::fixy::grant::hw::msr<0x10u>>(0ULL),
+        ::crucible::fixy::grant::accept_default_strict_for<::crucible::fixy::dim::DimensionAxis::SimdIsa>>(0ULL)
+        == detail::fold_canonicalized_grants_hash<
+            ::crucible::fixy::grant::accept_default_strict_for<::crucible::fixy::dim::DimensionAxis::SimdIsa>,
+            ::crucible::fixy::grant::hw::msr<0x10u>>(0ULL),
     "FIXY-FOUND-004: grant fold MUST be canonical-axis-ordered so "
     "source-order permutations of the same Grants pack collapse to "
     "the same federation cache slot.");
@@ -2702,72 +2540,40 @@ namespace found_045_witness {
 // route both to the same slot.  Fully-qualified `detail_stance` and
 // `grant` because we are inside `crucible::safety::diag` namespace.
 template <typename Type>
-using BgWorker_AllocBg = ::crucible::fixy::fn<Type,
-    ::crucible::fixy::stance::detail_stance::strict<
-        ::crucible::fixy::dim::DimensionAxis::Refinement>,
-    ::crucible::fixy::stance::detail_stance::strict<
-        ::crucible::fixy::dim::DimensionAxis::Usage>,
+using BgWorker_AllocBg = ::crucible::fixy::fn<
+    Type, ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::Refinement>,
+    ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::Usage>,
     // ← Effect pack REVERSED: <Alloc, Bg> instead of BgWorker's <Bg, Alloc>
-    ::crucible::fixy::grant::with<
-        ::crucible::effects::Effect::Alloc,
-        ::crucible::effects::Effect::Bg>,
+    ::crucible::fixy::grant::with<::crucible::effects::Effect::Alloc, ::crucible::effects::Effect::Bg>,
     ::crucible::fixy::grant::as_public,
-    ::crucible::fixy::stance::detail_stance::strict<
-        ::crucible::fixy::dim::DimensionAxis::Protocol>,
-    ::crucible::fixy::stance::detail_stance::strict<
-        ::crucible::fixy::dim::DimensionAxis::Lifetime>,
-    ::crucible::fixy::stance::detail_stance::strict<
-        ::crucible::fixy::dim::DimensionAxis::Provenance>,
-    ::crucible::fixy::stance::detail_stance::strict<
-        ::crucible::fixy::dim::DimensionAxis::Trust>,
-    ::crucible::fixy::stance::detail_stance::strict<
-        ::crucible::fixy::dim::DimensionAxis::Representation>,
-    ::crucible::fixy::stance::detail_stance::strict<
-        ::crucible::fixy::dim::DimensionAxis::Observability>,
-    ::crucible::fixy::stance::detail_stance::strict<
-        ::crucible::fixy::dim::DimensionAxis::Complexity>,
-    ::crucible::fixy::stance::detail_stance::strict<
-        ::crucible::fixy::dim::DimensionAxis::Precision>,
-    ::crucible::fixy::stance::detail_stance::strict<
-        ::crucible::fixy::dim::DimensionAxis::Space>,
-    ::crucible::fixy::stance::detail_stance::strict<
-        ::crucible::fixy::dim::DimensionAxis::Overflow>,
-    ::crucible::fixy::stance::detail_stance::strict<
-        ::crucible::fixy::dim::DimensionAxis::Mutation>,
-    ::crucible::fixy::stance::detail_stance::strict<
-        ::crucible::fixy::dim::DimensionAxis::Reentrancy>,
-    ::crucible::fixy::stance::detail_stance::strict<
-        ::crucible::fixy::dim::DimensionAxis::Size>,
-    ::crucible::fixy::stance::detail_stance::strict<
-        ::crucible::fixy::dim::DimensionAxis::Version>,
-    ::crucible::fixy::stance::detail_stance::strict<
-        ::crucible::fixy::dim::DimensionAxis::Staleness>,
-    ::crucible::fixy::stance::detail_stance::strict<
-        ::crucible::fixy::dim::DimensionAxis::Synchronization>,
-    ::crucible::fixy::stance::detail_stance::strict<
-        ::crucible::fixy::dim::DimensionAxis::Regime>,
-    ::crucible::fixy::stance::detail_stance::strict<
-        ::crucible::fixy::dim::DimensionAxis::FpMode>,
-    ::crucible::fixy::stance::detail_stance::strict<
-        ::crucible::fixy::dim::DimensionAxis::SyscallSurface>,
-    ::crucible::fixy::stance::detail_stance::strict<
-        ::crucible::fixy::dim::DimensionAxis::ControlFlow>,
-    ::crucible::fixy::stance::detail_stance::strict<
-        ::crucible::fixy::dim::DimensionAxis::CallShape>,
-    ::crucible::fixy::stance::detail_stance::strict<
-        ::crucible::fixy::dim::DimensionAxis::StackUse>,
-    ::crucible::fixy::stance::detail_stance::strict<
-        ::crucible::fixy::dim::DimensionAxis::GlobalState>,
-    ::crucible::fixy::stance::detail_stance::strict<
-        ::crucible::fixy::dim::DimensionAxis::Stdio>,
-    ::crucible::fixy::stance::detail_stance::strict<
-        ::crucible::fixy::dim::DimensionAxis::HwInstruction>,
-    ::crucible::fixy::stance::detail_stance::strict<
-        ::crucible::fixy::dim::DimensionAxis::BarrierStrength>,
-    ::crucible::fixy::stance::detail_stance::strict<
-        ::crucible::fixy::dim::DimensionAxis::SimdIsa>,
-    ::crucible::fixy::stance::detail_stance::strict<
-        ::crucible::fixy::dim::DimensionAxis::MemoryScope>>;
+    ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::Protocol>,
+    ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::Lifetime>,
+    ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::Provenance>,
+    ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::Trust>,
+    ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::Representation>,
+    ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::Observability>,
+    ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::Complexity>,
+    ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::Precision>,
+    ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::Space>,
+    ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::Overflow>,
+    ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::Mutation>,
+    ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::Reentrancy>,
+    ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::Size>,
+    ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::Version>,
+    ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::Staleness>,
+    ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::Synchronization>,
+    ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::Regime>,
+    ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::FpMode>,
+    ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::SyscallSurface>,
+    ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::ControlFlow>,
+    ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::CallShape>,
+    ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::StackUse>,
+    ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::GlobalState>,
+    ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::Stdio>,
+    ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::HwInstruction>,
+    ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::BarrierStrength>,
+    ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::SimdIsa>,
+    ::crucible::fixy::stance::detail_stance::strict<::crucible::fixy::dim::DimensionAxis::MemoryScope>>;
 
 // The headline assertion — BgWorker (Effect={Bg, Alloc}) and
 // BgWorker_AllocBg (Effect={Alloc, Bg}) MUST hash identically at
@@ -2778,32 +2584,30 @@ using BgWorker_AllocBg = ::crucible::fixy::fn<Type,
 // UniqueEngagementPerAxis) — an ill-formed instantiation would
 // fail to materialize as a complete type, and row_hash_contribution
 // _v could not be evaluated on it.
-static_assert(row_hash_contribution_v<BgWorker<int>>
-           == row_hash_contribution_v<BgWorker_AllocBg<int>>,
-    "FIXY-FOUND-045: fixy::fn with permuted `with<Es...>` Effect "
-    "pack MUST produce identical row_hash_contribution.  Federation "
-    "cache slot identity depends on this: `with<Bg, Alloc>` and "
-    "`with<Alloc, Bg>` are semantically the same Effect row "
-    "(Row<>-level invariance pinned at RowHashFold.h:1208).  If "
-    "this assertion fires, the WRAPPER_FIXY_FN_TAG salt is being "
-    "mixed in BEFORE row canonicalization — flip the order so the "
-    "salt rides on the canonicalized Row.");
+static_assert(row_hash_contribution_v<BgWorker<int>> == row_hash_contribution_v<BgWorker_AllocBg<int>>,
+              "FIXY-FOUND-045: fixy::fn with permuted `with<Es...>` Effect "
+              "pack MUST produce identical row_hash_contribution.  Federation "
+              "cache slot identity depends on this: `with<Bg, Alloc>` and "
+              "`with<Alloc, Bg>` are semantically the same Effect row "
+              "(Row<>-level invariance pinned at RowHashFold.h:1208).  If "
+              "this assertion fires, the WRAPPER_FIXY_FN_TAG salt is being "
+              "mixed in BEFORE row canonicalization — flip the order so the "
+              "salt rides on the canonicalized Row.");
 
 // The cache slot ID must be non-zero — both forms must contribute
 // the same NON-TRIVIAL hash, not zero on both sides (which would
 // silently satisfy the equality assertion above).
 static_assert(row_hash_contribution_v<BgWorker_AllocBg<int>> != 0,
-    "FIXY-FOUND-045: BgWorker_AllocBg<int> must contribute "
-    "non-zero row_hash (permutation witness must be load-bearing).");
+              "FIXY-FOUND-045: BgWorker_AllocBg<int> must contribute "
+              "non-zero row_hash (permutation witness must be load-bearing).");
 
 // (2) Cross-stance pin — BgWorker_AllocBg<int> hashes the SAME as
 // the canonical BgWorker<int>, not the same as IoFunction<int>.
 // Proves the equality witness above is not vacuously satisfied by
 // some "always-the-same" bug.
-static_assert(row_hash_contribution_v<BgWorker_AllocBg<int>>
-           != row_hash_contribution_v<IoFunction<int>>,
-    "FIXY-FOUND-045: permuted BgWorker MUST still differ from "
-    "IoFunction (different Effect rows: {Bg, Alloc} vs {IO}).");
+static_assert(row_hash_contribution_v<BgWorker_AllocBg<int>> != row_hash_contribution_v<IoFunction<int>>,
+              "FIXY-FOUND-045: permuted BgWorker MUST still differ from "
+              "IoFunction (different Effect rows: {Bg, Alloc} vs {IO}).");
 
 // (3) UniqueEngagementPerAxis interaction — well-formedness of
 // BOTH forms is implicit in the using-alias compilation above.
@@ -2820,4 +2624,3 @@ static_assert(row_hash_contribution_v<BgWorker_AllocBg<int>>
 }  // namespace detail::fixy_fn_row_hash_self_test
 
 }  // namespace crucible::safety::diag
-

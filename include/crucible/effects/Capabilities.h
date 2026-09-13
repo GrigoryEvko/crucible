@@ -132,19 +132,18 @@ namespace crucible::effects {
 // ── Effect atom ─────────────────────────────────────────────────────
 enum class Effect : std::uint8_t {
     Alloc = 0,
-    IO    = 1,
+    IO = 1,
     Block = 2,
-    Bg    = 3,
-    Init  = 4,
-    Test  = 5,
+    Bg = 3,
+    Init = 4,
+    Test = 5,
 };
 
 // Cardinality derived via reflection (P2996R13).  Adding a new atom
 // auto-bumps this constant — no manual maintenance.  The name-
 // coverage assertion in detail::capabilities_self_test then catches
 // any new atom that lacks an `effect_name()` switch arm.
-inline constexpr std::size_t effect_count =
-    std::meta::enumerators_of(^^Effect).size();
+inline constexpr std::size_t effect_count = std::meta::enumerators_of(^^Effect).size();
 
 // ── Underlying-value distinctness (FIXY-FOUND-051) ─────────────────
 //
@@ -174,8 +173,7 @@ inline constexpr std::size_t effect_count =
 namespace detail {
 
 [[nodiscard]] consteval bool every_effect_underlying_distinct_() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^Effect));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Effect));
     using U = std::underlying_type_t<Effect>;
     std::uint64_t seen = 0;
 #pragma GCC diagnostic push
@@ -185,8 +183,7 @@ namespace detail {
         if constexpr (static_cast<unsigned>(u) >= 64u) {
             return false;  // would shift past uint64_t row-mask carrier
         } else {
-            const std::uint64_t bit =
-                std::uint64_t{1} << static_cast<unsigned>(u);
+            const std::uint64_t bit = std::uint64_t{1} << static_cast<unsigned>(u);
             if (seen & bit) {
                 return false;  // duplicate underlying value detected
             }
@@ -200,16 +197,16 @@ namespace detail {
 }  // namespace detail
 
 static_assert(detail::every_effect_underlying_distinct_(),
-    "FIXY-FOUND-051: two Effect enumerators share an underlying value "
-    "(or one is >= 64, exceeding the uint64_t row-mask carrier).  Each "
-    "atom MUST occupy a distinct bit position [0, 64) — duplicates "
-    "collapse rows in EffectRowLattice, federation row_hash slots "
-    "collide, and kernel substitution across the federation cache "
-    "becomes silent.  Defense-in-depth on top of `effect_count` "
-    "(name-cardinality pin) and `OsUniverse::cardinality <= 64` "
-    "(count-overflow pin) — this gate closes the value-aliasing gap "
-    "that neither catches.  Fix: assign the new atom the next free "
-    "underlying value (currently 6) explicitly in the enum.");
+              "FIXY-FOUND-051: two Effect enumerators share an underlying value "
+              "(or one is >= 64, exceeding the uint64_t row-mask carrier).  Each "
+              "atom MUST occupy a distinct bit position [0, 64) — duplicates "
+              "collapse rows in EffectRowLattice, federation row_hash slots "
+              "collide, and kernel substitution across the federation cache "
+              "becomes silent.  Defense-in-depth on top of `effect_count` "
+              "(name-cardinality pin) and `OsUniverse::cardinality <= 64` "
+              "(count-overflow pin) — this gate closes the value-aliasing gap "
+              "that neither catches.  Fix: assign the new atom the next free "
+              "underlying value (currently 6) explicitly in the enum.");
 
 // ── Diagnostic name emitter ─────────────────────────────────────────
 //
@@ -221,13 +218,20 @@ static_assert(detail::every_effect_underlying_distinct_(),
 // compile time and unblocks runtime probing.
 [[nodiscard]] constexpr std::string_view effect_name(Effect e) noexcept {
     switch (e) {
-        case Effect::Alloc: return "Alloc";
-        case Effect::IO:    return "IO";
-        case Effect::Block: return "Block";
-        case Effect::Bg:    return "Bg";
-        case Effect::Init:  return "Init";
-        case Effect::Test:  return "Test";
-        default:            return std::string_view{"<unknown Effect>"};
+        case Effect::Alloc:
+            return "Alloc";
+        case Effect::IO:
+            return "IO";
+        case Effect::Block:
+            return "Block";
+        case Effect::Bg:
+            return "Bg";
+        case Effect::Init:
+            return "Init";
+        case Effect::Test:
+            return "Test";
+        default:
+            return std::string_view{"<unknown Effect>"};
     }
 }
 
@@ -248,8 +252,7 @@ namespace detail {
 
 template <Effect E>
 [[nodiscard]] consteval bool is_effect_atom_() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^Effect));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Effect));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
@@ -294,11 +297,10 @@ namespace detail {
 // here so adding a new enumerator reddens the build with a structured
 // message; the contributor then lands a deliberate IN/OUT classification
 // in the switch + bumps this assertion to the new count.
-static_assert(effect_count == 6,
-    "FIXY-FOUND-133: when adding a new Effect enumerator, classify it "
-    "IN/OUT under is_observable_effect_atom_'s switch below AND bump "
-    "this cardinality pin.  Forward-compat trap closes FIXY-FOUND-017 "
-    "(\"Effect::Crash/Network forward-compat cliff\").");
+static_assert(effect_count == 6, "FIXY-FOUND-133: when adding a new Effect enumerator, classify it "
+                                 "IN/OUT under is_observable_effect_atom_'s switch below AND bump "
+                                 "this cardinality pin.  Forward-compat trap closes FIXY-FOUND-017 "
+                                 "(\"Effect::Crash/Network forward-compat cliff\").");
 
 template <Effect E>
 [[nodiscard]] consteval bool is_observable_effect_atom_() noexcept {
@@ -331,20 +333,16 @@ template <Effect E>
 // classifier (catches a future contributor adding partial-coverage
 // case arms with disjoint default semantics).
 consteval bool every_effect_observability_classified_() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^Effect));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Effect));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto en : enumerators) {
-        (void)is_observable_effect_atom_<([:en:])>();
-    }
+    template for (constexpr auto en : enumerators) { (void)is_observable_effect_atom_<([:en:])>(); }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_effect_observability_classified_(),
-    "FIXY-FOUND-133: every Effect atom must be CLASSIFIED in "
-    "is_observable_effect_atom_ — adding a new enumerator without "
-    "extending the switch reddens the build via -Werror=switch.");
+static_assert(every_effect_observability_classified_(), "FIXY-FOUND-133: every Effect atom must be CLASSIFIED in "
+                                                        "is_observable_effect_atom_ — adding a new enumerator without "
+                                                        "extending the switch reddens the build via -Werror=switch.");
 
 }  // namespace detail
 
@@ -380,30 +378,30 @@ template <Effect E>
 namespace cap {
 
 struct Alloc {
-    constexpr Alloc()                          noexcept = default;
-    constexpr Alloc(const Alloc&)              noexcept = default;
-    constexpr Alloc(Alloc&&)                   noexcept = default;
-    constexpr Alloc& operator=(const Alloc&)   noexcept = default;
-    constexpr Alloc& operator=(Alloc&&)        noexcept = default;
-    ~Alloc()                                            = default;
+    constexpr Alloc() noexcept = default;
+    constexpr Alloc(const Alloc&) noexcept = default;
+    constexpr Alloc(Alloc&&) noexcept = default;
+    constexpr Alloc& operator=(const Alloc&) noexcept = default;
+    constexpr Alloc& operator=(Alloc&&) noexcept = default;
+    ~Alloc() = default;
 };
 
 struct IO {
-    constexpr IO()                             noexcept = default;
-    constexpr IO(const IO&)                    noexcept = default;
-    constexpr IO(IO&&)                         noexcept = default;
-    constexpr IO& operator=(const IO&)         noexcept = default;
-    constexpr IO& operator=(IO&&)              noexcept = default;
-    ~IO()                                               = default;
+    constexpr IO() noexcept = default;
+    constexpr IO(const IO&) noexcept = default;
+    constexpr IO(IO&&) noexcept = default;
+    constexpr IO& operator=(const IO&) noexcept = default;
+    constexpr IO& operator=(IO&&) noexcept = default;
+    ~IO() = default;
 };
 
 struct Block {
-    constexpr Block()                          noexcept = default;
-    constexpr Block(const Block&)              noexcept = default;
-    constexpr Block(Block&&)                   noexcept = default;
-    constexpr Block& operator=(const Block&)   noexcept = default;
-    constexpr Block& operator=(Block&&)        noexcept = default;
-    ~Block()                                            = default;
+    constexpr Block() noexcept = default;
+    constexpr Block(const Block&) noexcept = default;
+    constexpr Block(Block&&) noexcept = default;
+    constexpr Block& operator=(const Block&) noexcept = default;
+    constexpr Block& operator=(Block&&) noexcept = default;
+    ~Block() = default;
 };
 
 }  // namespace cap
@@ -436,27 +434,24 @@ struct Block {
 // below are the regression tripwire: a cap atom gaining state reds
 // the build with the FOUND-104 tag and the exact remediation:
 // privatize the Bg/Init/Test field whose type just became stateful.
-static_assert(std::is_empty_v<cap::Alloc>,
-    "FIXY-FOUND-104: cap::Alloc must remain a stateless empty struct.  "
-    "Bg / Init / Test below carry public NSDMI fields of this type "
-    "(`[[no_unique_address]] cap::Alloc alloc{};`); the public surface "
-    "is sound ONLY because copies out of those fields are observationally "
-    "indistinguishable from `cap::Alloc{}` direct construction.  Adding "
-    "state to cap::Alloc makes `bg.alloc` carry that state, and a "
-    "caller can `cap::Alloc a = bg.alloc;` to capture a freestanding "
-    "stateful capability — bypassing the ctx-scoped lifetime intent.  "
-    "Fix: either (a) privatize the corresponding fields on Bg/Init/Test "
-    "and gate access through a passkey-friended accessor, OR (b) keep "
-    "the state out of cap::Alloc and add it to Capability<Alloc, S> "
-    "instead (the linear-proof surface where lifecycle is structurally "
-    "enforced).");
-static_assert(std::is_empty_v<cap::IO>,
-    "FIXY-FOUND-104: cap::IO must remain stateless — see cap::Alloc "
-    "diagnostic.  Bg / Init / Test below carry `cap::IO io{};`.");
-static_assert(std::is_empty_v<cap::Block>,
-    "FIXY-FOUND-104: cap::Block must remain stateless — see cap::Alloc "
-    "diagnostic.  Bg / Test below carry `cap::Block block{};` (Init "
-    "omits Block per its non-blocking context contract).");
+static_assert(std::is_empty_v<cap::Alloc>, "FIXY-FOUND-104: cap::Alloc must remain a stateless empty struct.  "
+                                           "Bg / Init / Test below carry public NSDMI fields of this type "
+                                           "(`[[no_unique_address]] cap::Alloc alloc{};`); the public surface "
+                                           "is sound ONLY because copies out of those fields are observationally "
+                                           "indistinguishable from `cap::Alloc{}` direct construction.  Adding "
+                                           "state to cap::Alloc makes `bg.alloc` carry that state, and a "
+                                           "caller can `cap::Alloc a = bg.alloc;` to capture a freestanding "
+                                           "stateful capability — bypassing the ctx-scoped lifetime intent.  "
+                                           "Fix: either (a) privatize the corresponding fields on Bg/Init/Test "
+                                           "and gate access through a passkey-friended accessor, OR (b) keep "
+                                           "the state out of cap::Alloc and add it to Capability<Alloc, S> "
+                                           "instead (the linear-proof surface where lifecycle is structurally "
+                                           "enforced).");
+static_assert(std::is_empty_v<cap::IO>, "FIXY-FOUND-104: cap::IO must remain stateless — see cap::Alloc "
+                                        "diagnostic.  Bg / Init / Test below carry `cap::IO io{};`.");
+static_assert(std::is_empty_v<cap::Block>, "FIXY-FOUND-104: cap::Block must remain stateless — see cap::Alloc "
+                                           "diagnostic.  Bg / Test below carry `cap::Block block{};` (Init "
+                                           "omits Block per its non-blocking context contract).");
 
 // ── Top-level effects:: aliases for the cap tags ────────────────────
 //
@@ -464,7 +459,7 @@ static_assert(std::is_empty_v<cap::Block>,
 // `cap::` namespace exists for diagnostic clarity when the surrounding
 // code is doing something unusual with the tags directly.
 using Alloc = cap::Alloc;
-using IO    = cap::IO;
+using IO = cap::IO;
 using Block = cap::Block;
 
 // ── Context types — Bg / Init / Test ────────────────────────────────
@@ -527,18 +522,19 @@ using Block = cap::Block;
 namespace crucible {
 class Vigil;
 struct BackgroundThread;
-}
+}  // namespace crucible
 
 namespace crucible::effects {
 
-namespace testing { struct TestWitness; }
+namespace testing {
+struct TestWitness;
+}  // namespace testing
 
 // Forward-declare ExecCtx so the contexts can friend it (ExecCtx
 // aggregate-inits its Cap member via NSDMI, which requires access to
 // the Cap's default ctor — friending ExecCtx grants that access
 // without leaking the default ctor to user TUs).
-template <class Cap, class Numa, class Alloc, class Heat,
-          class Resid, class Row, class Workload, class Progress>
+template <class Cap, class Numa, class Alloc, class Heat, class Resid, class Row, class Workload, class Progress>
 class ExecCtx;  // FIXY-FOUND-103: class-not-struct hides cap_ etc. as private.
 
 namespace detail::ctx_mint {
@@ -625,13 +621,12 @@ private:
     // [class.base.init]/9, so friending the ExecCtx template grants
     // ExecCtx's class body access to Bg's private default ctor while
     // keeping it private from every other TU.
-    template <class Cap, class Numa, class Alloc, class Heat,
-              class Resid, class Row, class Workload>
+    template <class Cap, class Numa, class Alloc, class Heat, class Resid, class Row, class Workload>
     friend class ::crucible::effects::ExecCtx;
 
 public:
     [[no_unique_address]] cap::Alloc alloc{};
-    [[no_unique_address]] cap::IO    io{};
+    [[no_unique_address]] cap::IO io{};
     [[no_unique_address]] cap::Block block{};
 };
 
@@ -643,13 +638,12 @@ private:
         requires CanMintInitContext<Key>
     friend constexpr Init mint_init_context(Key) noexcept;
 
-    template <class Cap, class Numa, class Alloc, class Heat,
-              class Resid, class Row, class Workload>
+    template <class Cap, class Numa, class Alloc, class Heat, class Resid, class Row, class Workload>
     friend class ::crucible::effects::ExecCtx;
 
 public:
     [[no_unique_address]] cap::Alloc alloc{};
-    [[no_unique_address]] cap::IO    io{};
+    [[no_unique_address]] cap::IO io{};
 };
 
 class Test {
@@ -660,13 +654,12 @@ private:
         requires CanMintTestContext<Key>
     friend constexpr Test mint_test_context(Key) noexcept;
 
-    template <class Cap, class Numa, class Alloc, class Heat,
-              class Resid, class Row, class Workload>
+    template <class Cap, class Numa, class Alloc, class Heat, class Resid, class Row, class Workload>
     friend class ::crucible::effects::ExecCtx;
 
 public:
     [[no_unique_address]] cap::Alloc alloc{};
-    [[no_unique_address]] cap::IO    io{};
+    [[no_unique_address]] cap::IO io{};
     [[no_unique_address]] cap::Block block{};
 };
 
@@ -701,31 +694,25 @@ public:
 
 template <class Key>
     requires CanMintBgContext<Key>
-[[nodiscard]] inline constexpr Bg
-mint_bg_context(Key) noexcept {
-    static_assert(noexcept(Bg{}),
-        "fixy-A3-015: Bg default ctor MUST be noexcept — a cap::* "
-        "token's NSDMI must never throw.");
+[[nodiscard]] inline constexpr Bg mint_bg_context(Key) noexcept {
+    static_assert(noexcept(Bg{}), "fixy-A3-015: Bg default ctor MUST be noexcept — a cap::* "
+                                  "token's NSDMI must never throw.");
     return Bg{};
 }
 
 template <class Key>
     requires CanMintInitContext<Key>
-[[nodiscard]] inline constexpr Init
-mint_init_context(Key) noexcept {
-    static_assert(noexcept(Init{}),
-        "fixy-A3-015: Init default ctor MUST be noexcept — a cap::* "
-        "token's NSDMI must never throw.");
+[[nodiscard]] inline constexpr Init mint_init_context(Key) noexcept {
+    static_assert(noexcept(Init{}), "fixy-A3-015: Init default ctor MUST be noexcept — a cap::* "
+                                    "token's NSDMI must never throw.");
     return Init{};
 }
 
 template <class Key>
     requires CanMintTestContext<Key>
-[[nodiscard]] inline constexpr Test
-mint_test_context(Key) noexcept {
-    static_assert(noexcept(Test{}),
-        "fixy-A3-015: Test default ctor MUST be noexcept — a cap::* "
-        "token's NSDMI must never throw.");
+[[nodiscard]] inline constexpr Test mint_test_context(Key) noexcept {
+    static_assert(noexcept(Test{}), "fixy-A3-015: Test default ctor MUST be noexcept — a cap::* "
+                                    "token's NSDMI must never throw.");
     return Test{};
 }
 
@@ -744,29 +731,23 @@ mint_test_context(Key) noexcept {
 namespace testing {
 
 struct TestWitness {
-    [[nodiscard]] static constexpr Bg bg() noexcept {
-        return mint_bg_context(detail::ctx_mint::bg_key{});
-    }
-    [[nodiscard]] static constexpr Init init() noexcept {
-        return mint_init_context(detail::ctx_mint::init_key{});
-    }
-    [[nodiscard]] static constexpr Test test() noexcept {
-        return mint_test_context(detail::ctx_mint::test_key{});
-    }
+    [[nodiscard]] static constexpr Bg bg() noexcept { return mint_bg_context(detail::ctx_mint::bg_key{}); }
+    [[nodiscard]] static constexpr Init init() noexcept { return mint_init_context(detail::ctx_mint::init_key{}); }
+    [[nodiscard]] static constexpr Test test() noexcept { return mint_test_context(detail::ctx_mint::test_key{}); }
 };
 
 // Free-function aliases for terse call sites.
-[[nodiscard]] inline constexpr Bg   bg()   noexcept { return TestWitness::bg(); }
+[[nodiscard]] inline constexpr Bg bg() noexcept { return TestWitness::bg(); }
 [[nodiscard]] inline constexpr Init init() noexcept { return TestWitness::init(); }
 [[nodiscard]] inline constexpr Test test() noexcept { return TestWitness::test(); }
 
 }  // namespace testing
 
-static_assert(sizeof(Bg)   == 1, "Bg context must be 1 byte (EBO over empty cap::* members)");
+static_assert(sizeof(Bg) == 1, "Bg context must be 1 byte (EBO over empty cap::* members)");
 static_assert(sizeof(Init) == 1, "Init context must be 1 byte");
 static_assert(sizeof(Test) == 1, "Test context must be 1 byte");
 static_assert(sizeof(cap::Alloc) == 1);
-static_assert(sizeof(cap::IO)    == 1);
+static_assert(sizeof(cap::IO) == 1);
 static_assert(sizeof(cap::Block) == 1);
 
 // ── Self-test block ─────────────────────────────────────────────────
@@ -777,17 +758,15 @@ namespace detail::capabilities_self_test {
 // fires AND the name-coverage assertion below independently fires
 // (the latter is the load-bearing one because it pinpoints the
 // missing switch arm in effect_name()).
-static_assert(effect_count == 6,
-    "Effect catalog diverged from the original sextet — confirm the "
-    "addition is intentional and the name-coverage assertion below "
-    "still fires for the new atom.");
+static_assert(effect_count == 6, "Effect catalog diverged from the original sextet — confirm the "
+                                 "addition is intentional and the name-coverage assertion below "
+                                 "still fires for the new atom.");
 
 // Name coverage via reflection — every Effect atom MUST have a
 // non-sentinel name from effect_name().  Adding a new atom without
 // updating the switch fires this assertion at header-inclusion time.
 [[nodiscard]] consteval bool every_effect_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^Effect));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Effect));
     // -Wshadow on `template for` body's induction variable is the
     // canonical false-positive across iterations; suppress locally.
     // See feedback_gcc16_c26_reflection_gotchas memory rule.
@@ -801,10 +780,9 @@ static_assert(effect_count == 6,
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_effect_has_name(),
-    "effect_name() switch is missing an arm for at least one Effect "
-    "atom — add the arm or the new atom leaks the '<unknown Effect>' "
-    "sentinel into diagnostics.");
+static_assert(every_effect_has_name(), "effect_name() switch is missing an arm for at least one Effect "
+                                       "atom — add the arm or the new atom leaks the '<unknown Effect>' "
+                                       "sentinel into diagnostics.");
 
 // ── Append-only Universe pin (FOUND-I04) ────────────────────────────
 //
@@ -818,19 +796,19 @@ static_assert(every_effect_has_name(),
 // new `static_assert(... == 6)` line below this block at the same
 // time keeps the pin set complete.
 static_assert(static_cast<std::uint8_t>(Effect::Alloc) == 0,
-    "Effect::Alloc value drifted — federation row_hash invalidated.  "
-    "Restore Alloc=0 or follow the major-version migration ceremony "
-    "documented at file head.");
-static_assert(static_cast<std::uint8_t>(Effect::IO)    == 1,
-    "Effect::IO value drifted — federation row_hash invalidated.");
+              "Effect::Alloc value drifted — federation row_hash invalidated.  "
+              "Restore Alloc=0 or follow the major-version migration ceremony "
+              "documented at file head.");
+static_assert(static_cast<std::uint8_t>(Effect::IO) == 1,
+              "Effect::IO value drifted — federation row_hash invalidated.");
 static_assert(static_cast<std::uint8_t>(Effect::Block) == 2,
-    "Effect::Block value drifted — federation row_hash invalidated.");
-static_assert(static_cast<std::uint8_t>(Effect::Bg)    == 3,
-    "Effect::Bg value drifted — federation row_hash invalidated.");
-static_assert(static_cast<std::uint8_t>(Effect::Init)  == 4,
-    "Effect::Init value drifted — federation row_hash invalidated.");
-static_assert(static_cast<std::uint8_t>(Effect::Test)  == 5,
-    "Effect::Test value drifted — federation row_hash invalidated.");
+              "Effect::Block value drifted — federation row_hash invalidated.");
+static_assert(static_cast<std::uint8_t>(Effect::Bg) == 3,
+              "Effect::Bg value drifted — federation row_hash invalidated.");
+static_assert(static_cast<std::uint8_t>(Effect::Init) == 4,
+              "Effect::Init value drifted — federation row_hash invalidated.");
+static_assert(static_cast<std::uint8_t>(Effect::Test) == 5,
+              "Effect::Test value drifted — federation row_hash invalidated.");
 
 // Underlying type pinned at uint8_t — a future widen to uint16_t or
 // uint32_t silently changes ABI of any struct that uses Effect by
@@ -838,7 +816,7 @@ static_assert(static_cast<std::uint8_t>(Effect::Test)  == 5,
 // to uint64_t inside fmix64_fold) so type widening is invisible to
 // the hash, but still ABI-breaking for transport structs.
 static_assert(std::is_same_v<std::underlying_type_t<Effect>, std::uint8_t>,
-    "Effect underlying type drifted from uint8_t — ABI change.");
+              "Effect underlying type drifted from uint8_t — ABI change.");
 
 // Every atom satisfies the concept gate.
 static_assert(IsEffect<Effect::Alloc>);
@@ -859,8 +837,7 @@ static_assert(IsEffect<Effect::Test>);
 // failing this assertion at the source of truth.  Post-fix the
 // assertion is structural and tautological by design.
 [[nodiscard]] consteval std::size_t count_accepted_effects_() noexcept {
-    static constexpr auto enums =
-        std::define_static_array(std::meta::enumerators_of(^^Effect));
+    static constexpr auto enums = std::define_static_array(std::meta::enumerators_of(^^Effect));
     std::size_t n = 0;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
@@ -871,8 +848,7 @@ static_assert(IsEffect<Effect::Test>);
 #pragma GCC diagnostic pop
     return n;
 }
-static_assert(count_accepted_effects_() == effect_count,
-    "IsEffect rejects an Effect-catalog atom — reflection drift.");
+static_assert(count_accepted_effects_() == effect_count, "IsEffect rejects an Effect-catalog atom — reflection drift.");
 
 // ── Out-of-range rejection ─────────────────────────────────────────
 //
@@ -884,7 +860,7 @@ static_assert(count_accepted_effects_() == effect_count,
 // enumerators_of result).
 static_assert(!IsEffect<static_cast<Effect>(99)>);
 static_assert(!IsEffect<static_cast<Effect>(255)>);  // boundary
-static_assert(!IsEffect<static_cast<Effect>(6)>);    // immediately past last named (Test=5)
+static_assert(!IsEffect<static_cast<Effect>(6)>);  // immediately past last named (Test=5)
 
 // Diagnostic names are non-empty AND distinct AND none falls through
 // to the "<unknown Effect>" sentinel.
@@ -896,11 +872,11 @@ static_assert(!effect_name(Effect::Init).empty());
 static_assert(!effect_name(Effect::Test).empty());
 
 static_assert(effect_name(Effect::Alloc) != "<unknown Effect>");
-static_assert(effect_name(Effect::IO)    != "<unknown Effect>");
+static_assert(effect_name(Effect::IO) != "<unknown Effect>");
 static_assert(effect_name(Effect::Block) != "<unknown Effect>");
-static_assert(effect_name(Effect::Bg)    != "<unknown Effect>");
-static_assert(effect_name(Effect::Init)  != "<unknown Effect>");
-static_assert(effect_name(Effect::Test)  != "<unknown Effect>");
+static_assert(effect_name(Effect::Bg) != "<unknown Effect>");
+static_assert(effect_name(Effect::Init) != "<unknown Effect>");
+static_assert(effect_name(Effect::Test) != "<unknown Effect>");
 
 // Pairwise distinctness — every atom has a unique name.
 static_assert(effect_name(Effect::Alloc) != effect_name(Effect::IO));
@@ -908,9 +884,9 @@ static_assert(effect_name(Effect::Alloc) != effect_name(Effect::Block));
 static_assert(effect_name(Effect::Alloc) != effect_name(Effect::Bg));
 static_assert(effect_name(Effect::Alloc) != effect_name(Effect::Init));
 static_assert(effect_name(Effect::Alloc) != effect_name(Effect::Test));
-static_assert(effect_name(Effect::IO)    != effect_name(Effect::Block));
-static_assert(effect_name(Effect::Bg)    != effect_name(Effect::Init));
-static_assert(effect_name(Effect::Init)  != effect_name(Effect::Test));
+static_assert(effect_name(Effect::IO) != effect_name(Effect::Block));
+static_assert(effect_name(Effect::Bg) != effect_name(Effect::Init));
+static_assert(effect_name(Effect::Init) != effect_name(Effect::Test));
 
 // ── Cap-tag layout invariants ───────────────────────────────────────
 //
@@ -945,7 +921,7 @@ static_assert(std::is_nothrow_default_constructible_v<cap::Block>);
 
 // Top-level aliases really do refer to the cap::* originals.
 static_assert(std::is_same_v<Alloc, cap::Alloc>);
-static_assert(std::is_same_v<IO,    cap::IO>);
+static_assert(std::is_same_v<IO, cap::IO>);
 static_assert(std::is_same_v<Block, cap::Block>);
 
 // fixy-A3-005: Bg / Init / Test contexts default-construct without
@@ -966,17 +942,14 @@ static_assert(noexcept(::crucible::effects::testing::test()));
 // context.  Use the negation here so the property is visible in the
 // header self-tests; the load-bearing reject lives in the HS14
 // neg-compile fixtures at test/effects_neg/.
-static_assert(!std::is_default_constructible_v<Bg>,
-    "fixy-A3-005: Bg default ctor must be private — use "
-    "effects::testing::TestWitness::bg() in tests or the friended "
-    "production entry point (BackgroundThread).");
-static_assert(!std::is_default_constructible_v<Init>,
-    "fixy-A3-005: Init default ctor must be private — use "
-    "effects::testing::TestWitness::init() in tests or the friended "
-    "production entry point (Vigil, BackgroundThread).");
-static_assert(!std::is_default_constructible_v<Test>,
-    "fixy-A3-005: Test default ctor must be private — use "
-    "effects::testing::TestWitness::test().");
+static_assert(!std::is_default_constructible_v<Bg>, "fixy-A3-005: Bg default ctor must be private — use "
+                                                    "effects::testing::TestWitness::bg() in tests or the friended "
+                                                    "production entry point (BackgroundThread).");
+static_assert(!std::is_default_constructible_v<Init>, "fixy-A3-005: Init default ctor must be private — use "
+                                                      "effects::testing::TestWitness::init() in tests or the friended "
+                                                      "production entry point (Vigil, BackgroundThread).");
+static_assert(!std::is_default_constructible_v<Test>, "fixy-A3-005: Test default ctor must be private — use "
+                                                      "effects::testing::TestWitness::test().");
 
 // ── Runtime smoke test (fixy-A3-021) ────────────────────────────────
 //
@@ -991,22 +964,27 @@ inline void runtime_smoke_test() {
     // that the discipline comment at file head asserts (line 151).
     Effect e = Effect::Alloc;
     [[maybe_unused]] std::string_view n1 = effect_name(e);
-    e = Effect::IO;     [[maybe_unused]] std::string_view n2 = effect_name(e);
-    e = Effect::Block;  [[maybe_unused]] std::string_view n3 = effect_name(e);
-    e = Effect::Bg;     [[maybe_unused]] std::string_view n4 = effect_name(e);
-    e = Effect::Init;   [[maybe_unused]] std::string_view n5 = effect_name(e);
-    e = Effect::Test;   [[maybe_unused]] std::string_view n6 = effect_name(e);
+    e = Effect::IO;
+    [[maybe_unused]] std::string_view n2 = effect_name(e);
+    e = Effect::Block;
+    [[maybe_unused]] std::string_view n3 = effect_name(e);
+    e = Effect::Bg;
+    [[maybe_unused]] std::string_view n4 = effect_name(e);
+    e = Effect::Init;
+    [[maybe_unused]] std::string_view n5 = effect_name(e);
+    e = Effect::Test;
+    [[maybe_unused]] std::string_view n6 = effect_name(e);
 
     // cap::* tag default construction at runtime — the [[no_unique_address]]
     // EBO discipline only holds if these ctors are runtime-callable.
     [[maybe_unused]] cap::Alloc a_tag{};
-    [[maybe_unused]] cap::IO    i_tag{};
+    [[maybe_unused]] cap::IO i_tag{};
     [[maybe_unused]] cap::Block b_tag{};
 
     // Bg/Init/Test mint through the testing-witness facade at runtime
     // — fixy-A3-005 made the direct default ctor private; the witness
     // is the only sanctioned path and MUST be runtime-callable.
-    [[maybe_unused]] auto bg_ctx   = ::crucible::effects::testing::bg();
+    [[maybe_unused]] auto bg_ctx = ::crucible::effects::testing::bg();
     [[maybe_unused]] auto init_ctx = ::crucible::effects::testing::init();
     [[maybe_unused]] auto test_ctx = ::crucible::effects::testing::test();
 }

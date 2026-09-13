@@ -16,8 +16,8 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
 #include <crucible/PoolAllocator.h>  // kMaxPoolBytes: the init() pre this load gate mirrors
-#include <crucible/fixy/Source.h>   // FIXY-U-096t: tags::source::* provenance
-#include <crucible/fixy/Wrap.h>     // FIXY-U-096t: Tagged via the fixy umbrella
+#include <crucible/fixy/Source.h>  // FIXY-U-096t: tags::source::* provenance
+#include <crucible/fixy/Wrap.h>  // FIXY-U-096t: Tagged via the fixy umbrella
 
 #include <concepts>
 #include <cstdint>
@@ -29,17 +29,16 @@
 
 namespace crucible {
 
-static constexpr uint32_t CDAG_MAGIC   = 0x43444147u; // 'GDAG' LE
+static constexpr uint32_t CDAG_MAGIC = 0x43444147u;  // 'GDAG' LE
 using CdagFormatVersion = fixy::wrap::Tagged<uint32_t, fixy::tags::source::FormatVersion>;
 using ExternalCdagVersion = fixy::wrap::Tagged<uint32_t, fixy::tags::source::External>;
 using LoadedRegionNode = fixy::wrap::Tagged<RegionNode*, fixy::tags::source::Loaded>;
 static_assert(sizeof(LoadedRegionNode) == sizeof(RegionNode*));
 static_assert(std::is_trivially_copy_constructible_v<LoadedRegionNode>);
-static constexpr CdagFormatVersion CDAG_VERSION{9u};   // v9 (FOUND-057): ContentHash folds num_scalar_args + iterates all scalars (no 5-clamp); v8 hashes invalid
+static constexpr CdagFormatVersion CDAG_VERSION{
+    9u};  // v9 (FOUND-057): ContentHash folds num_scalar_args + iterates all scalars (no 5-clamp); v8 hashes invalid
 
-[[nodiscard]] constexpr bool cdag_version_matches(
-    ExternalCdagVersion disk_version) noexcept
-{
+[[nodiscard]] constexpr bool cdag_version_matches(ExternalCdagVersion disk_version) noexcept {
     return disk_version.value() == CDAG_VERSION.value();
 }
 
@@ -47,7 +46,7 @@ static constexpr CdagFormatVersion CDAG_VERSION{9u};   // v9 (FOUND-057): Conten
 // 10^5 ops / 10 inputs per op; the extra order of magnitude is slack.
 // Reject adversarial headers up front so we don't attempt TB-scale
 // allocations before discovering the body is truncated.
-static constexpr uint32_t CDAG_MAX_OPS          = 1u << 22;   // 4 M ops
+static constexpr uint32_t CDAG_MAX_OPS = 1u << 22;  // 4 M ops
 // SLOTS tracks the allocator's runtime cap, NOT the family's 4 M slack: a
 // loaded plan materializes the replay pool via PoolAllocator::init(), whose
 // pre(in_range(num_slots, 0, kMaxNumSlots)) is `[[assume]]` under release
@@ -55,11 +54,11 @@ static constexpr uint32_t CDAG_MAX_OPS          = 1u << 22;   // 4 M ops
 // it here) means "deserializes ⇒ safe to init" holds by construction — a
 // looser wire cap (formerly 4 M) let num_slots in (kMaxNumSlots, 4 M] pass
 // deserialize yet `[[assume]]`-violate init on a large enough corrupt Cipher.
-static constexpr uint32_t CDAG_MAX_SLOTS        = ::crucible::PoolAllocator::kMaxNumSlots;
-static constexpr uint16_t CDAG_MAX_INPUTS       = 1024;
-static constexpr uint16_t CDAG_MAX_OUTPUTS      = 1024;
-static constexpr uint16_t CDAG_MAX_SCALAR_ARGS  = 256;
-static constexpr uint32_t CDAG_MAX_BRANCH_ARMS  = 1u << 16;   // 64 K arms
+static constexpr uint32_t CDAG_MAX_SLOTS = ::crucible::PoolAllocator::kMaxNumSlots;
+static constexpr uint16_t CDAG_MAX_INPUTS = 1024;
+static constexpr uint16_t CDAG_MAX_OUTPUTS = 1024;
+static constexpr uint16_t CDAG_MAX_SCALAR_ARGS = 256;
+static constexpr uint32_t CDAG_MAX_BRANCH_ARMS = 1u << 16;  // 64 K arms
 
 // ═══════════════════════════════════════════════════════════════════
 // Internal Writer/Reader — linear cursor with overflow detection.
@@ -69,34 +68,46 @@ namespace detail_ser {
 
 struct Writer {
     uint8_t* buf = nullptr;
-    size_t   pos = 0;
-    size_t   max = 0;
-    bool     ok = true;
+    size_t pos = 0;
+    size_t max = 0;
+    bool ok = true;
 
     void write_bytes(const void* src, size_t n) {
-        if (pos + n > max) { ok = false; return; }
+        if (pos + n > max) {
+            ok = false;
+            return;
+        }
         std::memcpy(buf + pos, src, n);
         pos += n;
     }
 
     template <typename T>
-    void w(const T& v) { write_bytes(&v, sizeof(T)); }
+    void w(const T& v) {
+        write_bytes(&v, sizeof(T));
+    }
 };
 
 struct Reader {
     const uint8_t* buf = nullptr;
-    size_t         pos = 0;
-    size_t         len = 0;
-    bool           ok = true;
+    size_t pos = 0;
+    size_t len = 0;
+    bool ok = true;
 
     void read_bytes(void* dst, size_t n) {
-        if (pos + n > len) { ok = false; return; }
+        if (pos + n > len) {
+            ok = false;
+            return;
+        }
         std::memcpy(dst, buf + pos, n);
         pos += n;
     }
 
     template <typename T>
-    [[nodiscard]] T r() { T v{}; read_bytes(&v, sizeof(T)); return v; }
+    [[nodiscard]] T r() {
+        T v{};
+        read_bytes(&v, sizeof(T));
+        return v;
+    }
 
     // Read a T and HARD-gate it against a deserialize predicate, failing
     // closed (sets `ok = false`) on a malformed value.
@@ -139,14 +150,15 @@ struct Reader {
         const T v = r<T>();
         // Only judge bytes we actually read; a prior truncation already
         // set ok=false and v is the zero default — don't double-report.
-        if (ok && !pred(v)) [[unlikely]] { ok = false; return valid_substitute; }
+        if (ok && !pred(v)) [[unlikely]] {
+            ok = false;
+            return valid_substitute;
+        }
         return v;
     }
 
     // Bytes remaining from the cursor.
-    [[nodiscard]] size_t remaining() const noexcept {
-        return (pos <= len) ? (len - pos) : 0;
-    }
+    [[nodiscard]] size_t remaining() const noexcept { return (pos <= len) ? (len - pos) : 0; }
 
     // Pre-flight check for array-of-T deserialization: returns true iff
     // the reader has at least n * sizeof(T) bytes remaining AND the
@@ -186,11 +198,10 @@ struct Reader {
 // DetSafe bit-stable replay.  Regime-1 EBO collapses the wrapper to
 // sizeof(uint64_t), so write_meta still emits exactly the same 8 bytes.
 inline void write_meta(Writer& w, const TensorMeta& m) {
-    w.write_bytes(m.sizes.raw_data(),   sizeof(m.sizes));
+    w.write_bytes(m.sizes.raw_data(), sizeof(m.sizes));
     w.write_bytes(m.strides.raw_data(), sizeof(m.strides));
     // data_ptr → always 0 on disk (runtime address, meaningless persisted).
-    const fixy::wrap::Refined<fixy::wrap::is_zero, std::uint64_t> zero_ptr{
-        std::uint64_t{0}};
+    const fixy::wrap::Refined<fixy::wrap::is_zero, std::uint64_t> zero_ptr{std::uint64_t{0}};
     w.w(zero_ptr.value());
     w.w(m.ndim);
     w.w(m.dtype);
@@ -204,8 +215,7 @@ inline void write_meta(Writer& w, const TensorMeta& m) {
     w.w(m.version);
     w.w(m.storage_nbytes);
     // grad_fn_hash → always 0 on disk (Family-B process-local identity).
-    const fixy::wrap::Refined<fixy::wrap::is_zero, std::uint64_t> zero_grad_fn_hash{
-        std::uint64_t{0}};
+    const fixy::wrap::Refined<fixy::wrap::is_zero, std::uint64_t> zero_grad_fn_hash{std::uint64_t{0}};
     w.w(zero_grad_fn_hash.value());
 }
 
@@ -219,8 +229,8 @@ inline TensorMeta read_meta(Reader& r) {
     for (uint8_t d = 0; d < kMaxTensorNDim; ++d) {
         m.strides[d] = tensor_dim(r.r<int64_t>());
     }
-    (void)r.r<uint64_t>(); // data_ptr (discarded)
-    m.data_ptr   = external_data_ptr(nullptr);
+    (void)r.r<uint64_t>();  // data_ptr (discarded)
+    m.data_ptr = external_data_ptr(nullptr);
     // ── PROD-WRAP-5 (#534) — typed widening at deserialize boundary ──
     // The byte on disk could be in [9, 255] under corruption or
     // version skew (a uint8_t carries no inherent bound, but ndim is
@@ -234,45 +244,40 @@ inline TensorMeta read_meta(Reader& r) {
     // re-check — its pre clause holds by construction because read_gated
     // already established the bound.  TraceLoader's ndim > 8 guard is a
     // further independent layer.
-    m.ndim       = make_ndim(ValidNDim{r.read_gated<uint8_t>(
-                       ::crucible::fixy::wrap::bounded_above<kMaxTensorNDim>)});
+    m.ndim = make_ndim(ValidNDim{r.read_gated<uint8_t>(::crucible::fixy::wrap::bounded_above<kMaxTensorNDim>)});
     // dtype gate (sibling of #534/#892): a corrupt or skewed byte outside
     // ScalarType's sparse enumerator set (e.g. 14) would otherwise reach
     // element_size()'s `default: std::unreachable()` as UB.  read_gated
     // rejects it at deserialize entry in release too (the ValidScalarType
     // ctor's pre clause is `[[assume]]`-only under -DNDEBUG).
-    m.dtype      = make_scalar_type(ValidScalarType{
-                       r.read_gated<int8_t>(valid_scalar_type)});
+    m.dtype = make_scalar_type(ValidScalarType{r.read_gated<int8_t>(valid_scalar_type)});
     // device_type gate (sibling of the dtype gate): boundary-validate the
     // untrusted byte — device_type feeds the content hash (node identity),
     // so a corrupt/skewed value silently corrupts it.  Fail-closed rather
     // than admit a node with a corrupted hash.  (Not a UB fix — DeviceType
     // has no std::unreachable consumer, unlike ScalarType.)  Hard-gated via
     // read_gated so release rejects it (ctor pre is `[[assume]]`-only).
-    m.device_type = make_device_type(ValidDeviceType{
-                        r.read_gated<int8_t>(valid_device_type)});
-    m.device_idx  = r.r<int8_t>();
+    m.device_type = make_device_type(ValidDeviceType{r.read_gated<int8_t>(valid_device_type)});
+    m.device_idx = r.r<int8_t>();
     // layout gate (last read_meta enum): boundary-validate the untrusted
     // byte — layout feeds the content hash (node identity), so a corrupt
     // value silently corrupts it.  Fail-closed.  (Not a UB fix — Layout
     // has no std::unreachable consumer.)  Hard-gated via read_gated so
     // release rejects it (ctor pre is `[[assume]]`-only).
-    m.layout          = make_layout(ValidLayout{
-                            r.read_gated<int8_t>(valid_layout)});
-    m.requires_grad   = r.r<bool>();
-    m.flags           = r.r<uint8_t>();
-    m.output_nr       = r.r<uint8_t>();
-    m.storage_offset  = r.r<int64_t>();
-    m.version         = r.r<uint32_t>();
-    m.storage_nbytes  = r.r<uint32_t>();
-    (void)r.r<uint64_t>(); // grad_fn_hash (Family-B, discarded)
-    m.grad_fn_hash    = grad_fn_hash(0);
+    m.layout = make_layout(ValidLayout{r.read_gated<int8_t>(valid_layout)});
+    m.requires_grad = r.r<bool>();
+    m.flags = r.r<uint8_t>();
+    m.output_nr = r.r<uint8_t>();
+    m.storage_offset = r.r<int64_t>();
+    m.version = r.r<uint32_t>();
+    m.storage_nbytes = r.r<uint32_t>();
+    (void)r.r<uint64_t>();  // grad_fn_hash (Family-B, discarded)
+    m.grad_fn_hash = grad_fn_hash(0);
     return m;
 }
 
 // Write the common CDAG header (32B).
-inline void write_header(Writer& w, TraceNodeKind kind,
-                         MerkleHash merkle_hash, ContentHash content_hash) {
+inline void write_header(Writer& w, TraceNodeKind kind, MerkleHash merkle_hash, ContentHash content_hash) {
     w.w(CDAG_MAGIC);
     w.w(CDAG_VERSION.value());
     w.w(std::to_underlying(kind));
@@ -283,16 +288,16 @@ inline void write_header(Writer& w, TraceNodeKind kind,
 }
 
 struct Header {
-    uint32_t      magic = 0;
+    uint32_t magic = 0;
     ExternalCdagVersion version{0};
-    TraceNodeKind kind{};            // strong-typed (was raw uint8_t)
-    MerkleHash    merkle_hash;
-    ContentHash   content_hash;
+    TraceNodeKind kind{};  // strong-typed (was raw uint8_t)
+    MerkleHash merkle_hash;
+    ContentHash content_hash;
 };
 
 inline Header read_header(Reader& r) {
     Header h{};
-    h.magic   = r.r<uint32_t>();
+    h.magic = r.r<uint32_t>();
     h.version = ExternalCdagVersion{r.r<uint32_t>()};
     // ── WRAP-Serialize-6 (#1015) — typed widening at deserialize boundary ──
     // The byte on disk could be in [4, 255] under corruption or version
@@ -303,18 +308,16 @@ inline Header read_header(Reader& r) {
     // preset (-DNDEBUG, semantic=ignore) and cannot reject a corrupt byte
     // there.  The Refined ctor still runs as a typed defense-in-depth
     // re-check (its pre clause holds by construction).
-    h.kind    = make_trace_node_kind(
-                    ValidTraceNodeKindRaw{r.read_gated<uint8_t>(
-                        ::crucible::fixy::wrap::bounded_above<
-                            static_cast<uint8_t>(TraceNodeKind::TERMINAL)>)});
+    h.kind = make_trace_node_kind(ValidTraceNodeKindRaw{
+        r.read_gated<uint8_t>(::crucible::fixy::wrap::bounded_above<static_cast<uint8_t>(TraceNodeKind::TERMINAL)>)});
     uint8_t pad7[7]{};
     r.read_bytes(pad7, 7);
-    h.merkle_hash  = MerkleHash{r.r<uint64_t>()};
+    h.merkle_hash = MerkleHash{r.r<uint64_t>()};
     h.content_hash = ContentHash{r.r<uint64_t>()};
     return h;
 }
 
-} // namespace detail_ser
+}  // namespace detail_ser
 
 // ═══════════════════════════════════════════════════════════════════
 // serialize_region
@@ -322,16 +325,12 @@ inline Header read_header(Reader& r) {
 // meta_log is reserved for future use (metas already inlined in TraceEntry).
 // ═══════════════════════════════════════════════════════════════════
 
-[[nodiscard]] inline size_t serialize_region(
-    const RegionNode* region,
-    const MetaLog*    /*meta_log*/,
-    std::span<uint8_t> buf)
-{
+[[nodiscard]] inline size_t serialize_region(const RegionNode* region, const MetaLog* /*meta_log*/,
+                                             std::span<uint8_t> buf) {
     using namespace detail_ser;
     Writer w{.buf = buf.data(), .pos = 0, .max = buf.size()};
 
-    write_header(w, TraceNodeKind::REGION,
-                 region->merkle_hash, region->content_hash);
+    write_header(w, TraceNodeKind::REGION, region->merkle_hash, region->content_hash);
 
     // Region fixed fields
     w.w(region->num_ops);
@@ -379,9 +378,8 @@ inline Header read_header(Reader& r) {
         {
             uint8_t flags = 0;
             if (te.inference_mode) flags |= op_flag::INFERENCE_MODE;
-            if (te.is_mutable)     flags |= op_flag::IS_MUTABLE;
-            flags |= (static_cast<uint8_t>(te.training_phase) & 0x3)
-                     << op_flag::PHASE_SHIFT;
+            if (te.is_mutable) flags |= op_flag::IS_MUTABLE;
+            flags |= (static_cast<uint8_t>(te.training_phase) & 0x3) << op_flag::PHASE_SHIFT;
             if (te.torch_function) flags |= op_flag::TORCH_FUNCTION;
             w.w(flags);
         }
@@ -398,18 +396,15 @@ inline Header read_header(Reader& r) {
             w.w(val);
         }
         for (uint16_t j = 0; j < te.num_inputs; j++) {
-            const uint32_t idx = te.input_trace_indices
-                ? te.input_trace_indices[j].raw() : UINT32_MAX;
+            const uint32_t idx = te.input_trace_indices ? te.input_trace_indices[j].raw() : UINT32_MAX;
             w.w(idx);
         }
         for (uint16_t j = 0; j < te.num_inputs; j++) {
-            const uint32_t sid = te.input_slot_ids
-                ? te.input_slot_ids[j].raw() : UINT32_MAX;
+            const uint32_t sid = te.input_slot_ids ? te.input_slot_ids[j].raw() : UINT32_MAX;
             w.w(sid);
         }
         for (uint16_t j = 0; j < te.num_outputs; j++) {
-            const uint32_t sid = te.output_slot_ids
-                ? te.output_slot_ids[j].raw() : UINT32_MAX;
+            const uint32_t sid = te.output_slot_ids ? te.output_slot_ids[j].raw() : UINT32_MAX;
             w.w(sid);
         }
     }
@@ -423,34 +418,27 @@ inline Header read_header(Reader& r) {
 // All structures are arena-allocated; data_ptr is always null.
 // ═══════════════════════════════════════════════════════════════════
 
-[[nodiscard]] inline LoadedRegionNode deserialize_region(
-    effects::Alloc                a,
-    std::span<const uint8_t> buf,
-    Arena&                   arena)
-{
+[[nodiscard]] inline LoadedRegionNode deserialize_region(effects::Alloc a, std::span<const uint8_t> buf, Arena& arena) {
     using namespace detail_ser;
     Reader r{.buf = buf.data(), .pos = 0, .len = buf.size()};
 
     const Header hdr = read_header(r);
-    if (!r.ok
-        || hdr.magic   != CDAG_MAGIC
-        || !cdag_version_matches(hdr.version)
-        || hdr.kind    != TraceNodeKind::REGION) {
+    if (!r.ok || hdr.magic != CDAG_MAGIC || !cdag_version_matches(hdr.version) || hdr.kind != TraceNodeKind::REGION) {
         return LoadedRegionNode{nullptr};
     }
 
-    const uint32_t   num_ops         = r.r<uint32_t>();
+    const uint32_t num_ops = r.r<uint32_t>();
     if (num_ops > CDAG_MAX_OPS) return LoadedRegionNode{nullptr};
     const SchemaHash first_op_schema = SchemaHash{r.r<uint64_t>()};
-    const float      measured_ms     = r.r<float>();
-    const uint32_t   variant_id      = r.r<uint32_t>();
+    const float measured_ms = r.r<float>();
+    const uint32_t variant_id = r.r<uint32_t>();
 
     // MemoryPlan
-    MemoryPlan* plan    = nullptr;
+    MemoryPlan* plan = nullptr;
     const bool has_plan = r.r<bool>();
     if (has_plan) {
-        plan                   = arena.alloc_obj<MemoryPlan>(a);
-        plan->pool_bytes        = r.r<uint64_t>();
+        plan = arena.alloc_obj<MemoryPlan>(a);
+        plan->pool_bytes = r.r<uint64_t>();
         // pool_bytes feeds PoolAllocator::init()'s
         // pre(in_range(pool_bytes, 0, kMaxPoolBytes)).  Under release
         // semantic=ignore that clause is `[[assume]]`, so a corrupt or
@@ -464,9 +452,9 @@ inline Header read_header(Reader& r) {
         if (plan->pool_bytes > ::crucible::PoolAllocator::kMaxPoolBytes) [[unlikely]] {
             return LoadedRegionNode{nullptr};
         }
-        plan->num_slots         = r.r<uint32_t>();
+        plan->num_slots = r.r<uint32_t>();
         if (plan->num_slots > CDAG_MAX_SLOTS) return LoadedRegionNode{nullptr};
-        plan->num_external      = r.r<uint32_t>();
+        plan->num_external = r.r<uint32_t>();
         // External slots are a subset of total slots (num_external counts
         // how many of num_slots are external), so num_external <= num_slots
         // is a structural invariant — and it is PoolAllocator::init()'s
@@ -484,13 +472,12 @@ inline Header read_header(Reader& r) {
         // read_gated so release rejects it too (the ValidDeviceType ctor
         // pre is `[[assume]]`-only under -DNDEBUG); r.ok=false on a
         // malformed byte propagates to the `if (!r.ok)` return below.
-        plan->device_type       = make_device_type(ValidDeviceType{
-                                      r.read_gated<int8_t>(valid_device_type)});
-        plan->device_idx        = r.r<int8_t>();
+        plan->device_type = make_device_type(ValidDeviceType{r.read_gated<int8_t>(valid_device_type)});
+        plan->device_idx = r.r<int8_t>();
         r.read_bytes(plan->pad0, sizeof(plan->pad0));
         plan->device_capability = r.r<uint64_t>();
-        plan->rank              = r.r<int32_t>();
-        plan->world_size        = r.r<int32_t>();
+        plan->rank = r.r<int32_t>();
+        plan->world_size = r.r<int32_t>();
         if (plan->num_slots > 0) {
             // Pre-flight size check: before allocating num_slots * sizeof
             // TensorSlot bytes in the arena, verify the reader has that
@@ -501,8 +488,7 @@ inline Header read_header(Reader& r) {
             // Multiplication bound: num_slots ≤ CDAG_MAX_SLOTS; sizeof
             // TensorSlot is a small compile-time constant; product fits
             // uint64_t.
-            const uint64_t slot_bytes =
-                static_cast<uint64_t>(plan->num_slots) * sizeof(TensorSlot);
+            const uint64_t slot_bytes = static_cast<uint64_t>(plan->num_slots) * sizeof(TensorSlot);
             if (r.pos + slot_bytes > r.len) return LoadedRegionNode{nullptr};
             plan->slots = arena.alloc_array<TensorSlot>(a, plan->num_slots);
             for (uint32_t s = 0; s < plan->num_slots; s++) {
@@ -520,35 +506,31 @@ inline Header read_header(Reader& r) {
     // truncated body would otherwise grow the arena by 4M *
     // sizeof(TraceEntry) (~2 GB) before the first read_meta failure.
     constexpr size_t kTraceEntryMinWireBytes = 40;
-    if (num_ops > 0 &&
-        r.remaining() < static_cast<size_t>(num_ops) * kTraceEntryMinWireBytes)
-    {
+    if (num_ops > 0 && r.remaining() < static_cast<size_t>(num_ops) * kTraceEntryMinWireBytes) {
         return LoadedRegionNode{nullptr};
     }
-    TraceEntry* ops = (num_ops > 0)
-        ? arena.alloc_array<TraceEntry>(a, num_ops) : nullptr;
+    TraceEntry* ops = (num_ops > 0) ? arena.alloc_array<TraceEntry>(a, num_ops) : nullptr;
 
     for (uint32_t i = 0; i < num_ops; i++) {
-        TraceEntry& te      = ops[i];
-        te.schema_hash      = SchemaHash{r.r<uint64_t>()};
-        te.shape_hash       = ShapeHash{r.r<uint64_t>()};
-        te.scope_hash       = ScopeHash{r.r<uint64_t>()};
-        te.callsite_hash    = CallsiteHash{r.r<uint64_t>()};
-        te.num_inputs       = r.r<uint16_t>();
-        te.num_outputs      = r.r<uint16_t>();
-        te.num_scalar_args  = r.r<uint16_t>();
-        if (te.num_inputs       > CDAG_MAX_INPUTS)      return LoadedRegionNode{nullptr};
-        if (te.num_outputs      > CDAG_MAX_OUTPUTS)     return LoadedRegionNode{nullptr};
-        if (te.num_scalar_args  > CDAG_MAX_SCALAR_ARGS) return LoadedRegionNode{nullptr};
-        te.grad_enabled     = r.r<bool>();
+        TraceEntry& te = ops[i];
+        te.schema_hash = SchemaHash{r.r<uint64_t>()};
+        te.shape_hash = ShapeHash{r.r<uint64_t>()};
+        te.scope_hash = ScopeHash{r.r<uint64_t>()};
+        te.callsite_hash = CallsiteHash{r.r<uint64_t>()};
+        te.num_inputs = r.r<uint16_t>();
+        te.num_outputs = r.r<uint16_t>();
+        te.num_scalar_args = r.r<uint16_t>();
+        if (te.num_inputs > CDAG_MAX_INPUTS) return LoadedRegionNode{nullptr};
+        if (te.num_outputs > CDAG_MAX_OUTPUTS) return LoadedRegionNode{nullptr};
+        if (te.num_scalar_args > CDAG_MAX_SCALAR_ARGS) return LoadedRegionNode{nullptr};
+        te.grad_enabled = r.r<bool>();
         // Unpack op_flags byte (same layout as TraceRing::Entry::op_flags).
         {
             const uint8_t flags = r.r<uint8_t>();
-            te.inference_mode  = (flags & op_flag::INFERENCE_MODE) != 0;
-            te.is_mutable      = (flags & op_flag::IS_MUTABLE) != 0;
-            te.training_phase  = static_cast<TrainingPhase>(
-                (flags & op_flag::PHASE_MASK) >> op_flag::PHASE_SHIFT);
-            te.torch_function  = (flags & op_flag::TORCH_FUNCTION) != 0;
+            te.inference_mode = (flags & op_flag::INFERENCE_MODE) != 0;
+            te.is_mutable = (flags & op_flag::IS_MUTABLE) != 0;
+            te.training_phase = static_cast<TrainingPhase>((flags & op_flag::PHASE_MASK) >> op_flag::PHASE_SHIFT);
+            te.torch_function = (flags & op_flag::TORCH_FUNCTION) != 0;
         }
         // Validated uint8_t → CKernelId widening (#892 WRAP-CKernel-4).
         // A corrupted Cipher file or version-skew can deliver a byte
@@ -563,40 +545,33 @@ inline Header read_header(Reader& r) {
         // ill-formed regardless of what callers do.
         {
             const uint8_t raw_kernel_id = r.r<uint8_t>();
-            if (raw_kernel_id >= static_cast<uint8_t>(
-                    CKernelId::NUM_KERNELS)) [[unlikely]] {
+            if (raw_kernel_id >= static_cast<uint8_t>(CKernelId::NUM_KERNELS)) [[unlikely]] {
                 return LoadedRegionNode{nullptr};
             }
-            te.kernel_id = make_ckernel_id(
-                ValidCKernelIdRaw{raw_kernel_id});
+            te.kernel_id = make_ckernel_id(ValidCKernelIdRaw{raw_kernel_id});
         }
 
-        te.input_metas = (te.num_inputs > 0)
-            ? arena.alloc_array<TensorMeta>(a, te.num_inputs) : nullptr;
+        te.input_metas = (te.num_inputs > 0) ? arena.alloc_array<TensorMeta>(a, te.num_inputs) : nullptr;
         for (uint16_t j = 0; j < te.num_inputs; j++) {
             te.input_metas[j] = read_meta(r);
         }
 
-        te.output_metas = (te.num_outputs > 0)
-            ? arena.alloc_array<TensorMeta>(a, te.num_outputs) : nullptr;
+        te.output_metas = (te.num_outputs > 0) ? arena.alloc_array<TensorMeta>(a, te.num_outputs) : nullptr;
         for (uint16_t j = 0; j < te.num_outputs; j++) {
             te.output_metas[j] = read_meta(r);
         }
 
-        te.scalar_args = (te.num_scalar_args > 0)
-            ? arena.alloc_array<int64_t>(a, te.num_scalar_args) : nullptr;
+        te.scalar_args = (te.num_scalar_args > 0) ? arena.alloc_array<int64_t>(a, te.num_scalar_args) : nullptr;
         for (uint16_t j = 0; j < te.num_scalar_args; j++) {
             te.scalar_args[j] = r.r<int64_t>();
         }
 
-        te.input_trace_indices = (te.num_inputs > 0)
-            ? arena.alloc_array<OpIndex>(a, te.num_inputs) : nullptr;
+        te.input_trace_indices = (te.num_inputs > 0) ? arena.alloc_array<OpIndex>(a, te.num_inputs) : nullptr;
         for (uint16_t j = 0; j < te.num_inputs; j++) {
             te.input_trace_indices[j] = OpIndex{r.r<uint32_t>()};
         }
 
-        te.input_slot_ids = (te.num_inputs > 0)
-            ? arena.alloc_array<SlotId>(a, te.num_inputs) : nullptr;
+        te.input_slot_ids = (te.num_inputs > 0) ? arena.alloc_array<SlotId>(a, te.num_inputs) : nullptr;
         for (uint16_t j = 0; j < te.num_inputs; j++) {
             const SlotId sid = SlotId{r.r<uint32_t>()};
             // A loaded slot_id indexes ReplayEngine::slot_table_, which
@@ -618,23 +593,20 @@ inline Header read_header(Reader& r) {
             // LESS region carries opaque slot_ids that bind no pool until
             // one is supplied elsewhere, so it has no bound to enforce
             // here (and is not executable without that pool).
-            if (plan != nullptr && sid.is_valid()
-                && sid.raw() >= plan->num_slots) [[unlikely]] {
+            if (plan != nullptr && sid.is_valid() && sid.raw() >= plan->num_slots) [[unlikely]] {
                 return LoadedRegionNode{nullptr};
             }
             te.input_slot_ids[j] = sid;
         }
 
-        te.output_slot_ids = (te.num_outputs > 0)
-            ? arena.alloc_array<SlotId>(a, te.num_outputs) : nullptr;
+        te.output_slot_ids = (te.num_outputs > 0) ? arena.alloc_array<SlotId>(a, te.num_outputs) : nullptr;
         for (uint16_t j = 0; j < te.num_outputs; j++) {
             const SlotId sid = SlotId{r.r<uint32_t>()};
             // Same plan-bearing OOB-index guard as input_slot_ids above:
             // an untrusted out-of-range slot_id would reach ReplayEngine
             // output_ptr's slot_table_[sid.raw()] OOB read.  Plan-less
             // regions are exempt (no pool to bound against).
-            if (plan != nullptr && sid.is_valid()
-                && sid.raw() >= plan->num_slots) [[unlikely]] {
+            if (plan != nullptr && sid.is_valid() && sid.raw() >= plan->num_slots) [[unlikely]] {
                 return LoadedRegionNode{nullptr};
             }
             te.output_slot_ids[j] = sid;
@@ -644,15 +616,15 @@ inline Header read_header(Reader& r) {
     if (!r.ok) return LoadedRegionNode{nullptr};
 
     // Construct RegionNode in arena (atomic field requires placement new).
-    auto* node = new (arena.alloc_obj<RegionNode>(a)) RegionNode{};
-    node->kind            = TraceNodeKind::REGION;
-    node->merkle_hash     = hdr.merkle_hash;
-    node->content_hash    = hdr.content_hash;
-    node->next            = nullptr;
-    node->ops             = ops;
-    node->num_ops         = num_ops;
+    auto* node = new(arena.alloc_obj<RegionNode>(a)) RegionNode{};
+    node->kind = TraceNodeKind::REGION;
+    node->merkle_hash = hdr.merkle_hash;
+    node->content_hash = hdr.content_hash;
+    node->next = nullptr;
+    node->ops = ops;
+    node->num_ops = num_ops;
     node->first_op_schema = first_op_schema;
-    node->measured_ms     = measured_ms;
+    node->measured_ms = measured_ms;
     // #942 WRAP-MerkleDag-6: variant_id is fixy::wrap::Monotonic<uint32_t>.
     // The field was already default-constructed to {0u} by the
     // RegionNode{} placement-new above; re-establish the invariant
@@ -664,9 +636,8 @@ inline Header read_header(Reader& r) {
     // Same construct_at re-anchor pattern as CKernelTable::clear() and
     // IterationDetector::reset() — load from a known floor on the
     // wrapper's terms.
-    std::construct_at(&node->variant_id,
-                      RegionNode::VariantCounter{variant_id});
-    node->plan            = plan;
+    std::construct_at(&node->variant_id, RegionNode::VariantCounter{variant_id});
+    node->plan = plan;
     // node->compiled is a PublishOnce<CompiledKernel> — default-
     // constructed nullptr is the correct "not yet published" state.
     // No explicit store needed.
@@ -679,10 +650,7 @@ inline Header read_header(Reader& r) {
 // Returns bytes written, or 0 on overflow.
 // ═══════════════════════════════════════════════════════════════════
 
-[[nodiscard]] inline size_t serialize_branch(
-    const BranchNode* branch,
-    std::span<uint8_t> buf)
-{
+[[nodiscard]] inline size_t serialize_branch(const BranchNode* branch, std::span<uint8_t> buf) {
     using namespace detail_ser;
     Writer w{.buf = buf.data(), .pos = 0, .max = buf.size()};
 
@@ -690,8 +658,7 @@ inline Header read_header(Reader& r) {
     // continuation's merkle_hash (shared suffix after all arms merge).
     // Note: content_hash slot is repurposed for continuation merkle_hash.
     const MerkleHash cont_hash = branch->next ? branch->next->merkle_hash : MerkleHash{};
-    write_header(w, TraceNodeKind::BRANCH, branch->merkle_hash,
-                 ContentHash{cont_hash.raw()});
+    write_header(w, TraceNodeKind::BRANCH, branch->merkle_hash, ContentHash{cont_hash.raw()});
 
     // Guard (12B verbatim — no pointers)
     w.write_bytes(&branch->guard, sizeof(Guard));
@@ -700,8 +667,7 @@ inline Header read_header(Reader& r) {
     w.w(branch->num_arms);
     for (uint32_t i = 0; i < branch->num_arms; i++) {
         w.w(branch->arms[i].value);
-        const uint64_t target_hash = branch->arms[i].target
-            ? branch->arms[i].target->merkle_hash.raw() : uint64_t{0};
+        const uint64_t target_hash = branch->arms[i].target ? branch->arms[i].target->merkle_hash.raw() : uint64_t{0};
         w.w(target_hash);
     }
 
@@ -716,21 +682,14 @@ inline Header read_header(Reader& r) {
 
 template <typename Resolve>
     requires std::is_invocable_r_v<TraceNode*, Resolve&, MerkleHash>
-[[nodiscard]] inline BranchNode* deserialize_branch(
-    effects::Alloc                                 a,
-    std::span<const uint8_t>                  buf,
-    Arena&                                    arena CRUCIBLE_LIFETIMEBOUND,
-    Resolve&&                                 resolve)
-{
+[[nodiscard]] inline BranchNode* deserialize_branch(effects::Alloc a, std::span<const uint8_t> buf,
+                                                    Arena& arena CRUCIBLE_LIFETIMEBOUND, Resolve&& resolve) {
     Resolve resolver = std::forward<Resolve>(resolve);
     using namespace detail_ser;
     Reader r{.buf = buf.data(), .pos = 0, .len = buf.size()};
 
     const Header hdr = read_header(r);
-    if (!r.ok
-        || hdr.magic   != CDAG_MAGIC
-        || !cdag_version_matches(hdr.version)
-        || hdr.kind    != TraceNodeKind::BRANCH) {
+    if (!r.ok || hdr.magic != CDAG_MAGIC || !cdag_version_matches(hdr.version) || hdr.kind != TraceNodeKind::BRANCH) {
         return nullptr;
     }
     // hdr.content_hash holds the continuation's merkle_hash (see serialize_branch)
@@ -751,27 +710,25 @@ template <typename Resolve>
     // storing a TraceNode* (not a MerkleHash) post-resolve, so tying
     // the check to the wire cost decouples from struct changes.
     constexpr size_t kArmWireBytes = sizeof(int64_t) + sizeof(uint64_t);
-    if (num_arms > 0 &&
-        r.remaining() < static_cast<size_t>(num_arms) * kArmWireBytes)
-    {
+    if (num_arms > 0 && r.remaining() < static_cast<size_t>(num_arms) * kArmWireBytes) {
         return nullptr;
     }
 
     auto* node = arena.alloc_obj<BranchNode>(a);
-    ::new (node) BranchNode{};
-    node->kind        = TraceNodeKind::BRANCH;
+    ::new(node) BranchNode{};
+    node->kind = TraceNodeKind::BRANCH;
     node->merkle_hash = hdr.merkle_hash;
-    node->next        = nullptr; // caller resolves continuation separately
-    node->guard       = guard;
-    node->num_arms    = num_arms;
-    node->pad1        = 0;
+    node->next = nullptr;  // caller resolves continuation separately
+    node->guard = guard;
+    node->num_arms = num_arms;
+    node->pad1 = 0;
 
     if (num_arms > 0) {
         node->arms = arena.alloc_array<BranchNode::Arm>(a, num_arms);
         for (uint32_t i = 0; i < num_arms; i++) {
-            node->arms[i].value          = r.r<int64_t>();
-            const MerkleHash target_h    = MerkleHash{r.r<uint64_t>()};
-            node->arms[i].target         = resolver(target_h);
+            node->arms[i].value = r.r<int64_t>();
+            const MerkleHash target_h = MerkleHash{r.r<uint64_t>()};
+            node->arms[i].target = resolver(target_h);
         }
     } else {
         node->arms = nullptr;
@@ -780,15 +737,9 @@ template <typename Resolve>
     return r.ok ? node : nullptr;
 }
 
-[[nodiscard]] inline BranchNode* deserialize_branch(
-    effects::Alloc                            a,
-    std::span<const uint8_t>                  buf,
-    Arena&                                    arena CRUCIBLE_LIFETIMEBOUND,
-    std::nullptr_t) {
-    return deserialize_branch(
-        a, buf, arena, [](MerkleHash) noexcept -> TraceNode* {
-            return nullptr;
-        });
+[[nodiscard]] inline BranchNode* deserialize_branch(effects::Alloc a, std::span<const uint8_t> buf,
+                                                    Arena& arena CRUCIBLE_LIFETIMEBOUND, std::nullptr_t) {
+    return deserialize_branch(a, buf, arena, [](MerkleHash) noexcept -> TraceNode* { return nullptr; });
 }
 
-} // namespace crucible
+}  // namespace crucible

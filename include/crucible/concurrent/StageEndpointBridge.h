@@ -159,13 +159,11 @@ concept IsEndpoint = detail::is_endpoint<std::remove_cvref_t<E>>::value;
 
 template <class E>
 concept IsConsumerEndpoint =
-    IsEndpoint<E>
- && (detail::is_endpoint<std::remove_cvref_t<E>>::direction == Direction::Consumer);
+    IsEndpoint<E> && (detail::is_endpoint<std::remove_cvref_t<E>>::direction == Direction::Consumer);
 
 template <class E>
 concept IsProducerEndpoint =
-    IsEndpoint<E>
- && (detail::is_endpoint<std::remove_cvref_t<E>>::direction == Direction::Producer);
+    IsEndpoint<E> && (detail::is_endpoint<std::remove_cvref_t<E>>::direction == Direction::Producer);
 
 // ═════════════════════════════════════════════════════════════════════
 // ── StageHandlesMatchEndpoints<FnPtr, ConsumerEp, ProducerEp> ──────
@@ -183,14 +181,10 @@ concept IsProducerEndpoint =
 template <auto FnPtr, class ConsumerEp, class ProducerEp>
 concept StageHandlesMatchEndpoints =
     ::crucible::safety::extract::PipelineStage<FnPtr>
- && std::is_same_v<
-        typename std::remove_cvref_t<ConsumerEp>::handle_type,
-        std::remove_reference_t<
-            ::crucible::safety::extract::param_type_t<FnPtr, 0>>>
- && std::is_same_v<
-        typename std::remove_cvref_t<ProducerEp>::handle_type,
-        std::remove_reference_t<
-            ::crucible::safety::extract::param_type_t<FnPtr, 1>>>;
+    && std::is_same_v<typename std::remove_cvref_t<ConsumerEp>::handle_type,
+                      std::remove_reference_t<::crucible::safety::extract::param_type_t<FnPtr, 0>>>
+    && std::is_same_v<typename std::remove_cvref_t<ProducerEp>::handle_type,
+                      std::remove_reference_t<::crucible::safety::extract::param_type_t<FnPtr, 1>>>;
 
 template <class... Endpoints>
 struct EndpointPack {};
@@ -200,13 +194,8 @@ namespace detail {
 template <auto FnPtr, class Inputs, class Outputs>
 struct stage_handles_match_endpoints_extended : std::false_type {};
 
-template <auto FnPtr,
-          class... ConsumerEps,
-          class... ProducerEps>
-struct stage_handles_match_endpoints_extended<
-    FnPtr,
-    EndpointPack<ConsumerEps...>,
-    EndpointPack<ProducerEps...>> {
+template <auto FnPtr, class... ConsumerEps, class... ProducerEps>
+struct stage_handles_match_endpoints_extended<FnPtr, EndpointPack<ConsumerEps...>, EndpointPack<ProducerEps...>> {
 private:
     using extract = ::crucible::safety::extract::StageArity<FnPtr>;
     using consumer_tuple = std::tuple<ConsumerEps...>;
@@ -219,15 +208,11 @@ private:
             return false;
         } else if constexpr (!IsEndpoint<endpoint>) {
             return false;
-        } else if constexpr (is_endpoint<endpoint>::direction
-                             != Direction::Consumer) {
+        } else if constexpr (is_endpoint<endpoint>::direction != Direction::Consumer) {
             return false;
         } else {
-            return std::is_same_v<
-                typename endpoint::handle_type,
-                std::remove_reference_t<
-                    ::crucible::safety::extract::param_type_t<
-                        FnPtr, I>>>;
+            return std::is_same_v<typename endpoint::handle_type,
+                                  std::remove_reference_t<::crucible::safety::extract::param_type_t<FnPtr, I>>>;
         }
     }
 
@@ -238,43 +223,34 @@ private:
             return false;
         } else if constexpr (!IsEndpoint<endpoint>) {
             return false;
-        } else if constexpr (is_endpoint<endpoint>::direction
-                             != Direction::Producer) {
+        } else if constexpr (is_endpoint<endpoint>::direction != Direction::Producer) {
             return false;
         } else {
-            return std::is_same_v<
-                typename endpoint::handle_type,
-                std::remove_reference_t<
-                    ::crucible::safety::extract::param_type_t<
-                        FnPtr, I>>>;
+            return std::is_same_v<typename endpoint::handle_type,
+                                  std::remove_reference_t<::crucible::safety::extract::param_type_t<FnPtr, I>>>;
         }
     }
 
     template <std::size_t... Is>
     static consteval bool input_types_match(std::index_sequence<Is...>) noexcept {
-        return (consumer_endpoint_matches_param<
-            std::tuple_element_t<Is, consumer_tuple>, Is>() && ...);
+        return (consumer_endpoint_matches_param<std::tuple_element_t<Is, consumer_tuple>, Is>() && ...);
     }
 
     template <std::size_t... Is>
     static consteval bool output_types_match(std::index_sequence<Is...>) noexcept {
         constexpr std::size_t offset = extract::input_count;
-        return (producer_endpoint_matches_param<
-            std::tuple_element_t<Is, producer_tuple>, offset + Is>() && ...);
+        return (producer_endpoint_matches_param<std::tuple_element_t<Is, producer_tuple>, offset + Is>() && ...);
     }
 
     static consteval bool compute() noexcept {
-        if constexpr (!::crucible::safety::extract::VariadicPipelineStage<
-                          FnPtr>) {
+        if constexpr (!::crucible::safety::extract::VariadicPipelineStage<FnPtr>) {
             return false;
         } else if constexpr (extract::input_count != sizeof...(ConsumerEps)
-                          || extract::output_count != sizeof...(ProducerEps)) {
+                             || extract::output_count != sizeof...(ProducerEps)) {
             return false;
         } else {
-            return input_types_match(
-                       std::make_index_sequence<sizeof...(ConsumerEps)>{})
-                && output_types_match(
-                       std::make_index_sequence<sizeof...(ProducerEps)>{});
+            return input_types_match(std::make_index_sequence<sizeof...(ConsumerEps)>{})
+                && output_types_match(std::make_index_sequence<sizeof...(ProducerEps)>{});
         }
     }
 
@@ -286,8 +262,7 @@ public:
 
 template <auto FnPtr, class Inputs, class Outputs>
 concept StageHandlesMatchEndpointsExtended =
-    detail::stage_handles_match_endpoints_extended<
-        FnPtr, Inputs, Outputs>::value;
+    detail::stage_handles_match_endpoints_extended<FnPtr, Inputs, Outputs>::value;
 
 namespace detail {
 
@@ -303,25 +278,18 @@ template <std::size_t Offset, class Tuple, class Seq>
 struct endpoint_pack_from_tuple_offset_indices;
 
 template <std::size_t Offset, class Tuple, std::size_t... Is>
-struct endpoint_pack_from_tuple_offset_indices<
-    Offset,
-    Tuple,
-    std::index_sequence<Is...>> {
+struct endpoint_pack_from_tuple_offset_indices<Offset, Tuple, std::index_sequence<Is...>> {
     using type = EndpointPack<std::tuple_element_t<Offset + Is, Tuple>...>;
 };
 
 template <std::size_t N, class... Endpoints>
 using endpoint_take_pack_t =
-    typename endpoint_pack_from_tuple_indices<
-        std::tuple<Endpoints...>,
-        std::make_index_sequence<N>>::type;
+    typename endpoint_pack_from_tuple_indices<std::tuple<Endpoints...>, std::make_index_sequence<N>>::type;
 
 template <std::size_t N, class... Endpoints>
 using endpoint_drop_pack_t =
-    typename endpoint_pack_from_tuple_offset_indices<
-        N,
-        std::tuple<Endpoints...>,
-        std::make_index_sequence<sizeof...(Endpoints) - N>>::type;
+    typename endpoint_pack_from_tuple_offset_indices<N, std::tuple<Endpoints...>,
+                                                     std::make_index_sequence<sizeof...(Endpoints) - N>>::type;
 
 template <auto FnPtr, class Ctx, class... Endpoints>
 struct mpmc_stage_from_endpoints_gate {
@@ -329,21 +297,13 @@ private:
     using arity = ::crucible::safety::extract::StageArity<FnPtr>;
 
     static consteval bool compute() noexcept {
-        if constexpr (!::crucible::safety::extract::VariadicPipelineStage<
-                          FnPtr>
-                   || !::crucible::effects::IsExecCtx<Ctx>
-                   || sizeof...(Endpoints)
-                        != ::crucible::safety::extract::arity_v<FnPtr>) {
+        if constexpr (!::crucible::safety::extract::VariadicPipelineStage<FnPtr> || !::crucible::effects::IsExecCtx<Ctx>
+                      || sizeof...(Endpoints) != ::crucible::safety::extract::arity_v<FnPtr>) {
             return false;
         } else {
-            using inputs = endpoint_take_pack_t<
-                arity::input_count,
-                Endpoints...>;
-            using outputs = endpoint_drop_pack_t<
-                arity::input_count,
-                Endpoints...>;
-            return CtxFitsVariadicStage<FnPtr, Ctx>
-                && StageHandlesMatchEndpointsExtended<FnPtr, inputs, outputs>;
+            using inputs = endpoint_take_pack_t<arity::input_count, Endpoints...>;
+            using outputs = endpoint_drop_pack_t<arity::input_count, Endpoints...>;
+            return CtxFitsVariadicStage<FnPtr, Ctx> && StageHandlesMatchEndpointsExtended<FnPtr, inputs, outputs>;
         }
     }
 
@@ -352,41 +312,26 @@ public:
 };
 
 template <auto FnPtr, class Ctx, class Tuple, std::size_t... Is>
-[[nodiscard]] constexpr auto
-move_input_handles_from_endpoint_tuple(Tuple& endpoints,
-                                       std::index_sequence<Is...>) noexcept {
-    return std::tuple{
-        std::move(std::get<Is>(endpoints)).into_handle()...
-    };
+[[nodiscard]] constexpr auto move_input_handles_from_endpoint_tuple(Tuple& endpoints,
+                                                                    std::index_sequence<Is...>) noexcept {
+    return std::tuple{std::move(std::get<Is>(endpoints)).into_handle()...};
 }
 
 template <auto FnPtr, class Ctx, class Tuple, std::size_t... Is>
-[[nodiscard]] constexpr auto
-move_output_handles_from_endpoint_tuple(Tuple& endpoints,
-                                        std::index_sequence<Is...>) noexcept {
-    constexpr std::size_t offset =
-        ::crucible::safety::extract::StageArity<FnPtr>::input_count;
-    return std::tuple{
-        std::move(std::get<offset + Is>(endpoints)).into_handle()...
-    };
+[[nodiscard]] constexpr auto move_output_handles_from_endpoint_tuple(Tuple& endpoints,
+                                                                     std::index_sequence<Is...>) noexcept {
+    constexpr std::size_t offset = ::crucible::safety::extract::StageArity<FnPtr>::input_count;
+    return std::tuple{std::move(std::get<offset + Is>(endpoints)).into_handle()...};
 }
 
 template <auto FnPtr, class Ctx, class Tuple>
-[[nodiscard]] constexpr auto
-make_mpmc_stage_from_endpoint_tuple(Ctx const& ctx,
-                                    Tuple& endpoints) noexcept {
+[[nodiscard]] constexpr auto make_mpmc_stage_from_endpoint_tuple(Ctx const& ctx, Tuple& endpoints) noexcept {
     using arity = ::crucible::safety::extract::StageArity<FnPtr>;
-    auto inputs = move_input_handles_from_endpoint_tuple<FnPtr, Ctx>(
-        endpoints,
-        std::make_index_sequence<arity::input_count>{});
-    auto outputs = move_output_handles_from_endpoint_tuple<FnPtr, Ctx>(
-        endpoints,
-        std::make_index_sequence<arity::output_count>{});
-    using stage_type = MpmcStage<
-        FnPtr,
-        Ctx,
-        decltype(inputs),
-        decltype(outputs)>;
+    auto inputs =
+        move_input_handles_from_endpoint_tuple<FnPtr, Ctx>(endpoints, std::make_index_sequence<arity::input_count>{});
+    auto outputs =
+        move_output_handles_from_endpoint_tuple<FnPtr, Ctx>(endpoints, std::make_index_sequence<arity::output_count>{});
+    using stage_type = MpmcStage<FnPtr, Ctx, decltype(inputs), decltype(outputs)>;
     return stage_type{ctx, std::move(inputs), std::move(outputs)};
 }
 
@@ -397,12 +342,8 @@ make_mpmc_stage_from_endpoint_tuple(Ctx const& ctx,
 // the row-admission gate runs in mint_swmr_stage BEFORE this is called.
 template <auto FnPtr, class Ctx>
 [[nodiscard]] constexpr auto
-make_swmr_stage(Ctx const& ctx,
-                std::remove_reference_t<
-                    ::crucible::safety::extract::param_type_t<FnPtr, 0>>&& in,
-                std::remove_reference_t<
-                    ::crucible::safety::extract::param_type_t<FnPtr, 1>>&& writer)
-    noexcept {
+make_swmr_stage(Ctx const& ctx, std::remove_reference_t<::crucible::safety::extract::param_type_t<FnPtr, 0>>&& in,
+                std::remove_reference_t<::crucible::safety::extract::param_type_t<FnPtr, 1>>&& writer) noexcept {
     return SwmrStage<FnPtr, Ctx>{ctx, std::move(in), std::move(writer)};
 }
 
@@ -415,22 +356,13 @@ private:
     static consteval bool compute() noexcept {
         using consumer_ep = std::remove_cvref_t<ConsumerEp>;
         using writer = std::remove_cvref_t<Writer>;
-        if constexpr (!CtxFitsSwmrPublishStage<FnPtr, Ctx>
-                   || !IsConsumerEndpoint<consumer_ep>
-                   || !::crucible::safety::extract::is_swmr_writer_v<
-                          writer>) {
+        if constexpr (!CtxFitsSwmrPublishStage<FnPtr, Ctx> || !IsConsumerEndpoint<consumer_ep>
+                      || !::crucible::safety::extract::is_swmr_writer_v<writer>) {
             return false;
         } else {
-            return std::is_same_v<
-                    typename consumer_ep::handle_type,
-                    std::remove_reference_t<
-                        ::crucible::safety::extract::param_type_t<
-                            FnPtr, 0>>>
-                && std::is_same_v<
-                    writer,
-                    std::remove_reference_t<
-                        ::crucible::safety::extract::param_type_t<
-                            FnPtr, 1>>>;
+            return std::is_same_v<typename consumer_ep::handle_type,
+                                  std::remove_reference_t<::crucible::safety::extract::param_type_t<FnPtr, 0>>>
+                && std::is_same_v<writer, std::remove_reference_t<::crucible::safety::extract::param_type_t<FnPtr, 1>>>;
         }
     }
 
@@ -442,18 +374,10 @@ public:
 
 template <auto FnPtr, class Ctx, class... Endpoints>
 concept CtxFitsMpmcStageFromEndpoints =
-    detail::mpmc_stage_from_endpoints_gate<
-        FnPtr,
-        Ctx,
-        std::remove_cvref_t<Endpoints>...>::value;
+    detail::mpmc_stage_from_endpoints_gate<FnPtr, Ctx, std::remove_cvref_t<Endpoints>...>::value;
 
 template <auto FnPtr, class Ctx, class ConsumerEp, class Writer>
-concept CtxFitsSwmrStageFromEndpoint =
-    detail::swmr_stage_from_endpoint_gate<
-        FnPtr,
-        Ctx,
-        ConsumerEp,
-        Writer>::value;
+concept CtxFitsSwmrStageFromEndpoint = detail::swmr_stage_from_endpoint_gate<FnPtr, Ctx, ConsumerEp, Writer>::value;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── CtxFitsStageFromEndpoints — full soundness gate ────────────────
@@ -461,10 +385,8 @@ concept CtxFitsSwmrStageFromEndpoint =
 
 template <auto FnPtr, class Ctx, class ConsumerEp, class ProducerEp>
 concept CtxFitsStageFromEndpoints =
-    CtxFitsStage<FnPtr, Ctx>
- && IsConsumerEndpoint<ConsumerEp>
- && IsProducerEndpoint<ProducerEp>
- && StageHandlesMatchEndpoints<FnPtr, ConsumerEp, ProducerEp>;
+    CtxFitsStage<FnPtr, Ctx> && IsConsumerEndpoint<ConsumerEp> && IsProducerEndpoint<ProducerEp>
+    && StageHandlesMatchEndpoints<FnPtr, ConsumerEp, ProducerEp>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── mint_stage_from_endpoints<auto FnPtr>(ctx, in_ep, out_ep) ──────
@@ -518,85 +440,47 @@ concept CtxFitsStageFromEndpoints =
 //              no data flow.  Determinism is the responsibility of
 //              the FnPtr body and the substrate's recipe pinning.
 
-template <auto FnPtr,
-          ::crucible::effects::IsExecCtx Ctx,
-          class ConsumerEp,
-          class ProducerEp>
+template <auto FnPtr, ::crucible::effects::IsExecCtx Ctx, class ConsumerEp, class ProducerEp>
     requires CtxFitsStageFromEndpoints<FnPtr, Ctx, ConsumerEp, ProducerEp>
-[[nodiscard]] constexpr auto mint_stage_from_endpoints(
-    Ctx const&    ctx,
-    ConsumerEp&&  in_ep,
-    ProducerEp&&  out_ep) noexcept
-{
-    return mint_stage<FnPtr>(
-        ctx,
-        std::move(in_ep).into_handle(),
-        std::move(out_ep).into_handle());
+[[nodiscard]] constexpr auto mint_stage_from_endpoints(Ctx const& ctx, ConsumerEp&& in_ep,
+                                                       ProducerEp&& out_ep) noexcept {
+    return mint_stage<FnPtr>(ctx, std::move(in_ep).into_handle(), std::move(out_ep).into_handle());
 }
 
 // ═════════════════════════════════════════════════════════════════════
 // ── mint_mpmc_stage_from_endpoints<auto FnPtr>(ctx, endpoints...) ──
 // ═════════════════════════════════════════════════════════════════════
 
-template <auto FnPtr,
-          ::crucible::effects::IsExecCtx Ctx,
-          class... Endpoints>
+template <auto FnPtr, ::crucible::effects::IsExecCtx Ctx, class... Endpoints>
     requires CtxFitsMpmcStageFromEndpoints<FnPtr, Ctx, Endpoints...>
-[[nodiscard]] constexpr auto mint_mpmc_stage_from_endpoints(
-    Ctx const& ctx,
-    Endpoints&&... endpoints) noexcept
-{
+[[nodiscard]] constexpr auto mint_mpmc_stage_from_endpoints(Ctx const& ctx, Endpoints&&... endpoints) noexcept {
     using ctx_row = typename Ctx::row_type;
     using required_row = variadic_stage_row_union_t<FnPtr>;
-    using offending_row =
-        ::crucible::effects::row_difference_t<required_row, ctx_row>;
+    using offending_row = ::crucible::effects::row_difference_t<required_row, ctx_row>;
 
-    CRUCIBLE_ROW_MISMATCH_ASSERT(
-        (::crucible::decide::row_subset<required_row, ctx_row>()),
-        EffectRowMismatch,
-        &::crucible::concurrent::detail::mpmc_stage_row_admission_anchor_,
-        ctx_row,
-        required_row,
-        offending_row);
+    CRUCIBLE_ROW_MISMATCH_ASSERT((::crucible::decide::row_subset<required_row, ctx_row>()), EffectRowMismatch,
+                                 &::crucible::concurrent::detail::mpmc_stage_row_admission_anchor_, ctx_row,
+                                 required_row, offending_row);
 
-    std::tuple<std::remove_cvref_t<Endpoints>...> endpoint_tuple{
-        std::forward<Endpoints>(endpoints)...
-    };
-    return detail::make_mpmc_stage_from_endpoint_tuple<FnPtr>(
-        ctx,
-        endpoint_tuple);
+    std::tuple<std::remove_cvref_t<Endpoints>...> endpoint_tuple{std::forward<Endpoints>(endpoints)...};
+    return detail::make_mpmc_stage_from_endpoint_tuple<FnPtr>(ctx, endpoint_tuple);
 }
 
-template <auto FnPtr,
-          ::crucible::effects::IsExecCtx Ctx,
-          class ConsumerEp,
-          class Writer>
+template <auto FnPtr, ::crucible::effects::IsExecCtx Ctx, class ConsumerEp, class Writer>
     requires CtxFitsSwmrStageFromEndpoint<FnPtr, Ctx, ConsumerEp, Writer>
-[[nodiscard]] constexpr auto mint_swmr_stage(
-    Ctx const& ctx,
-    ConsumerEp&& in_ep,
-    Writer&& writer) noexcept
-{
+[[nodiscard]] constexpr auto mint_swmr_stage(Ctx const& ctx, ConsumerEp&& in_ep, Writer&& writer) noexcept {
     using ctx_row = typename Ctx::row_type;
     using required_row = swmr_stage_row_union_t<FnPtr>;
-    using offending_row =
-        ::crucible::effects::row_difference_t<required_row, ctx_row>;
+    using offending_row = ::crucible::effects::row_difference_t<required_row, ctx_row>;
 
-    CRUCIBLE_ROW_MISMATCH_ASSERT(
-        (::crucible::decide::row_subset<required_row, ctx_row>()),
-        EffectRowMismatch,
-        &::crucible::concurrent::detail::swmr_stage_row_admission_anchor_,
-        ctx_row,
-        required_row,
-        offending_row);
+    CRUCIBLE_ROW_MISMATCH_ASSERT((::crucible::decide::row_subset<required_row, ctx_row>()), EffectRowMismatch,
+                                 &::crucible::concurrent::detail::swmr_stage_row_admission_anchor_, ctx_row,
+                                 required_row, offending_row);
 
     // fix-03: construct via the friended detail factory (SwmrStage's ctor
     // is now private).  The row admission above is the load-bearing §XXI
     // gate; direct `SwmrStage<FnPtr, Ctx>{...}` construction is rejected.
-    return detail::make_swmr_stage<FnPtr>(
-        ctx,
-        std::move(in_ep).into_handle(),
-        std::forward<Writer>(writer));
+    return detail::make_swmr_stage<FnPtr>(ctx, std::move(in_ep).into_handle(), std::forward<Writer>(writer));
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -618,21 +502,20 @@ using ConsEp = Endpoint<Ch1, Direction::Consumer, eff::HotFgCtx>;
 using ProdEp = Endpoint<Ch2, Direction::Producer, eff::HotFgCtx>;
 
 // IsConsumerEndpoint / IsProducerEndpoint admit / reject correctly.
-static_assert( IsEndpoint<ConsEp>);
-static_assert( IsEndpoint<ProdEp>);
+static_assert(IsEndpoint<ConsEp>);
+static_assert(IsEndpoint<ProdEp>);
 static_assert(!IsEndpoint<int>);
 
-static_assert( IsConsumerEndpoint<ConsEp>);
+static_assert(IsConsumerEndpoint<ConsEp>);
 static_assert(!IsConsumerEndpoint<ProdEp>);
 static_assert(!IsConsumerEndpoint<int>);
 
-static_assert( IsProducerEndpoint<ProdEp>);
+static_assert(IsProducerEndpoint<ProdEp>);
 static_assert(!IsProducerEndpoint<ConsEp>);
 static_assert(!IsProducerEndpoint<int>);
 
 // Stage body matching the Endpoint pair's handle types.
-inline void int_stage_body(typename Ch1::ConsumerHandle&&,
-                           typename Ch2::ProducerHandle&&) noexcept {}
+inline void int_stage_body(typename Ch1::ConsumerHandle&&, typename Ch2::ProducerHandle&&) noexcept {}
 
 static_assert(saf::extract::PipelineStage<&int_stage_body>);
 
@@ -644,12 +527,12 @@ static_assert(CtxFitsStageFromEndpoints<&int_stage_body, eff::HotFgCtx, ConsEp, 
 
 // Negative cases:
 //   * Non-Endpoint argument
-static_assert(!CtxFitsStageFromEndpoints<&int_stage_body, eff::HotFgCtx, int,    ProdEp>);
+static_assert(!CtxFitsStageFromEndpoints<&int_stage_body, eff::HotFgCtx, int, ProdEp>);
 static_assert(!CtxFitsStageFromEndpoints<&int_stage_body, eff::HotFgCtx, ConsEp, int>);
 //   * Direction-swapped endpoints
 static_assert(!CtxFitsStageFromEndpoints<&int_stage_body, eff::HotFgCtx, ProdEp, ConsEp>);
 //   * Non-IsExecCtx
-static_assert(!CtxFitsStageFromEndpoints<&int_stage_body, int,           ConsEp, ProdEp>);
+static_assert(!CtxFitsStageFromEndpoints<&int_stage_body, int, ConsEp, ProdEp>);
 
 // ── Payload-type mismatch coverage (StageHandlesMatchEndpoints axis) ──
 // Belt-and-suspenders: static_assert proof of payload-mismatch
@@ -660,7 +543,7 @@ static_assert(!CtxFitsStageFromEndpoints<&int_stage_body, int,           ConsEp,
 // would fail the header's own consistency check, NOT just the test).
 
 struct UTagFloat {};
-using ChFloat   = PermissionedSpscChannel<float, 64, UTagFloat>;
+using ChFloat = PermissionedSpscChannel<float, 64, UTagFloat>;
 using FloatConsEp = Endpoint<ChFloat, Direction::Consumer, eff::HotFgCtx>;
 using FloatProdEp = Endpoint<ChFloat, Direction::Producer, eff::HotFgCtx>;
 
@@ -668,8 +551,8 @@ using FloatProdEp = Endpoint<ChFloat, Direction::Producer, eff::HotFgCtx>;
 // int_stage_body expects Channel<int>::ConsumerHandle on slot 0.
 // Direction matches; FnPtr shape matches; Ctx fits — only the
 // handle-payload-type axis disagrees.  Bridge must reject.
-static_assert( IsConsumerEndpoint<FloatConsEp>);
-static_assert( IsProducerEndpoint<FloatProdEp>);
+static_assert(IsConsumerEndpoint<FloatConsEp>);
+static_assert(IsProducerEndpoint<FloatProdEp>);
 static_assert(!StageHandlesMatchEndpoints<&int_stage_body, FloatConsEp, ProdEp>);
 static_assert(!StageHandlesMatchEndpoints<&int_stage_body, ConsEp, FloatProdEp>);
 static_assert(!CtxFitsStageFromEndpoints<&int_stage_body, eff::HotFgCtx, FloatConsEp, ProdEp>);
@@ -678,48 +561,27 @@ static_assert(!CtxFitsStageFromEndpoints<&int_stage_body, eff::HotFgCtx, ConsEp,
 // Conversely: the matching int pair MUST satisfy
 // StageHandlesMatchEndpoints (positive control to avoid a false
 // "everything rejects" pathology).
-static_assert( StageHandlesMatchEndpoints<&int_stage_body, ConsEp, ProdEp>);
+static_assert(StageHandlesMatchEndpoints<&int_stage_body, ConsEp, ProdEp>);
 
-inline void fan_in_body(typename Ch1::ConsumerHandle&&,
-                        typename Ch1::ConsumerHandle&&,
+inline void fan_in_body(typename Ch1::ConsumerHandle&&, typename Ch1::ConsumerHandle&&,
                         typename Ch2::ProducerHandle&&) noexcept {}
-inline void fan_out_body(typename Ch1::ConsumerHandle&&,
-                         typename Ch2::ProducerHandle&&,
+inline void fan_out_body(typename Ch1::ConsumerHandle&&, typename Ch2::ProducerHandle&&,
                          typename Ch2::ProducerHandle&&) noexcept {}
 
 static_assert(saf::extract::VariadicPipelineStage<&fan_in_body>);
 static_assert(!saf::extract::PipelineStage<&fan_in_body>);
-static_assert(StageHandlesMatchEndpointsExtended<
-    &fan_in_body,
-    EndpointPack<ConsEp, ConsEp>,
-    EndpointPack<ProdEp>>);
-static_assert(!StageHandlesMatchEndpointsExtended<
-    &fan_in_body,
-    EndpointPack<ConsEp>,
-    EndpointPack<ProdEp>>);
-static_assert(!StageHandlesMatchEndpointsExtended<
-    &fan_in_body,
-    EndpointPack<ConsEp, ConsEp, ConsEp>,
-    EndpointPack<ProdEp>>);
-static_assert(!StageHandlesMatchEndpointsExtended<
-    &fan_in_body,
-    EndpointPack<ConsEp, int>,
-    EndpointPack<ProdEp>>);
+static_assert(StageHandlesMatchEndpointsExtended<&fan_in_body, EndpointPack<ConsEp, ConsEp>, EndpointPack<ProdEp>>);
+static_assert(!StageHandlesMatchEndpointsExtended<&fan_in_body, EndpointPack<ConsEp>, EndpointPack<ProdEp>>);
+static_assert(
+    !StageHandlesMatchEndpointsExtended<&fan_in_body, EndpointPack<ConsEp, ConsEp, ConsEp>, EndpointPack<ProdEp>>);
+static_assert(!StageHandlesMatchEndpointsExtended<&fan_in_body, EndpointPack<ConsEp, int>, EndpointPack<ProdEp>>);
 
 static_assert(saf::extract::VariadicPipelineStage<&fan_out_body>);
 static_assert(!saf::extract::PipelineStage<&fan_out_body>);
-static_assert(StageHandlesMatchEndpointsExtended<
-    &fan_out_body,
-    EndpointPack<ConsEp>,
-    EndpointPack<ProdEp, ProdEp>>);
-static_assert(!StageHandlesMatchEndpointsExtended<
-    &fan_out_body,
-    EndpointPack<ConsEp, ProdEp>,
-    EndpointPack<ProdEp>>);
-static_assert(!StageHandlesMatchEndpointsExtended<
-    &fan_out_body,
-    EndpointPack<ConsEp>,
-    EndpointPack<ProdEp, ProdEp, ProdEp>>);
+static_assert(StageHandlesMatchEndpointsExtended<&fan_out_body, EndpointPack<ConsEp>, EndpointPack<ProdEp, ProdEp>>);
+static_assert(!StageHandlesMatchEndpointsExtended<&fan_out_body, EndpointPack<ConsEp, ProdEp>, EndpointPack<ProdEp>>);
+static_assert(
+    !StageHandlesMatchEndpointsExtended<&fan_out_body, EndpointPack<ConsEp>, EndpointPack<ProdEp, ProdEp, ProdEp>>);
 
 }  // namespace detail::stage_endpoint_bridge_self_test
 

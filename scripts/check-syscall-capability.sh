@@ -216,10 +216,28 @@ while IFS= read -r match; do
         '//'*|'///'*|'*'*|'/*'*) continue ;;
     esac
 
-    # Inline suppression — `// SYSCALL-CAP-OK: <reason>` on the same line.
-    case "$text" in
-        *'SYSCALL-CAP-OK'*) continue ;;
-    esac
+    # Inline suppression — `// SYSCALL-CAP-OK: <reason>`.  The marker scopes to
+    # the call statement, not the line: a reformat may wrap a long argument
+    # list so the trailing comment lands below the syscall token.  Scan to the
+    # first line bearing ';' or ending in '}' (that line included), so a later
+    # statement's marker cannot leak backwards.
+    sc_suppressed=0
+    sc_probe=$line
+    sc_limit=$((line + 12))
+    while (( sc_probe <= sc_limit )); do
+        sc_text="$(sed -n "${sc_probe}p" "$file" 2>/dev/null)"
+        case "$sc_text" in
+            *'SYSCALL-CAP-OK'*) sc_suppressed=1; break ;;
+        esac
+        case "$sc_text" in
+            *';'*) break ;;
+        esac
+        case "${sc_text%"${sc_text##*[![:space:]]}"}" in
+            *'}') break ;;
+        esac
+        sc_probe=$((sc_probe + 1))
+    done
+    (( sc_suppressed )) && continue
 
     # Trailing-comment strip — the regex can match a syscall token that
     # lives only inside a `//` comment (a tag-struct or enumerator

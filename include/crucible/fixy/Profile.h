@@ -155,8 +155,7 @@ inline constexpr bool fixy_is_strict = (CRUCIBLE_FIXY_STRICT != 0);
 // before strict-mode CI passes.
 
 template <typename Type, typename... Grants>
-concept IsAcceptedSketch =
-    detail::accept::type_is_accepted_payload<Type>();
+concept IsAcceptedSketch = detail::accept::type_is_accepted_payload<Type>();
 
 // ═════════════════════════════════════════════════════════════════════
 // ── IsAcceptedActive — the toggle-bound active gate ────────────────
@@ -192,13 +191,11 @@ namespace detail::profile_self_test {
 // 1. fixy_is_strict reflects the CMake toggle.
 //    Under default preset, CRUCIBLE_FIXY_STRICT=1 → fixy_is_strict==true.
 #if CRUCIBLE_FIXY_STRICT
-static_assert(fixy_is_strict,
-    "Profile.h: fixy_is_strict must be true when "
-    "CRUCIBLE_FIXY_STRICT=1.");
+static_assert(fixy_is_strict, "Profile.h: fixy_is_strict must be true when "
+                              "CRUCIBLE_FIXY_STRICT=1.");
 #else
-static_assert(!fixy_is_strict,
-    "Profile.h: fixy_is_strict must be false when "
-    "CRUCIBLE_FIXY_STRICT=0.");
+static_assert(!fixy_is_strict, "Profile.h: fixy_is_strict must be false when "
+                               "CRUCIBLE_FIXY_STRICT=0.");
 #endif
 
 // 2. IsAcceptedSketch is permissive on the Grants axis but strict on
@@ -209,54 +206,46 @@ static_assert(!fixy_is_strict,
 // ── Type-axis ACCEPT witnesses ────────────────────────────────────
 // Scalars, object pointers, and function pointers are accepted
 // payloads regardless of Grants pack content.
-static_assert(IsAcceptedSketch<int>,
-    "IsAcceptedSketch<int> must accept the empty Grants pack — sketch "
-    "mode is permissive on the Grants axis.");
-static_assert(IsAcceptedSketch<int*>,
-    "IsAcceptedSketch<int*> must accept — object pointers are accepted "
-    "payloads.");
-static_assert(IsAcceptedSketch<int(*)(int)>,
-    "IsAcceptedSketch<int(*)(int)> must accept — function POINTERS are "
-    "object types, hence accepted payloads.");
+static_assert(IsAcceptedSketch<int>, "IsAcceptedSketch<int> must accept the empty Grants pack — sketch "
+                                     "mode is permissive on the Grants axis.");
+static_assert(IsAcceptedSketch<int*>, "IsAcceptedSketch<int*> must accept — object pointers are accepted "
+                                      "payloads.");
+static_assert(IsAcceptedSketch<int (*)(int)>, "IsAcceptedSketch<int(*)(int)> must accept — function POINTERS are "
+                                              "object types, hence accepted payloads.");
 
 // ── Type-axis REJECT witnesses (fixy-A4-031) ──────────────────────
 // Sketch mode does NOT relax Type-axis structural validity.  Each
 // of these would otherwise produce a far less actionable diagnostic
 // deep inside the substrate's `Fn<Type, ...>` class body.
-static_assert(!IsAcceptedSketch<void>,
-    "fixy-A4-031: IsAcceptedSketch<void> must reject — Fn<void, ...> "
-    "has no value-category semantics; sketch mode does not bypass the "
-    "Type-axis floor.");
-static_assert(!IsAcceptedSketch<const int>,
-    "fixy-A4-031: top-level const-qualified Type must reject — silently "
-    "deletes Fn's defaulted assignment ops.");
-static_assert(!IsAcceptedSketch<volatile int>,
-    "fixy-A4-031: top-level volatile-qualified Type must reject for "
-    "the same reason as const.");
-static_assert(!IsAcceptedSketch<int&>,
-    "fixy-A4-031: lvalue-reference Type must reject — Fn<int&, ...> "
-    "has no clear copy/move semantics.");
-static_assert(!IsAcceptedSketch<int&&>,
-    "fixy-A4-031: rvalue-reference Type must reject for the same "
-    "reason as lvalue-reference.");
-static_assert(!IsAcceptedSketch<int[5]>,
-    "fixy-A4-031: array Type must reject — Fn(Type) would silently "
-    "decay to pointer instead of copy by value.");
-static_assert(!IsAcceptedSketch<int(int)>,
-    "fixy-A4-031: bare function-type Type must reject — wrap as "
-    "function pointer or callable before instantiating fixy::fn.");
+static_assert(!IsAcceptedSketch<void>, "fixy-A4-031: IsAcceptedSketch<void> must reject — Fn<void, ...> "
+                                       "has no value-category semantics; sketch mode does not bypass the "
+                                       "Type-axis floor.");
+static_assert(!IsAcceptedSketch<const int>, "fixy-A4-031: top-level const-qualified Type must reject — silently "
+                                            "deletes Fn's defaulted assignment ops.");
+static_assert(!IsAcceptedSketch<volatile int>, "fixy-A4-031: top-level volatile-qualified Type must reject for "
+                                               "the same reason as const.");
+static_assert(!IsAcceptedSketch<int&>, "fixy-A4-031: lvalue-reference Type must reject — Fn<int&, ...> "
+                                       "has no clear copy/move semantics.");
+static_assert(!IsAcceptedSketch<int&&>, "fixy-A4-031: rvalue-reference Type must reject for the same "
+                                        "reason as lvalue-reference.");
+static_assert(!IsAcceptedSketch<int[5]>, "fixy-A4-031: array Type must reject — Fn(Type) would silently "
+                                         "decay to pointer instead of copy by value.");
+static_assert(!IsAcceptedSketch<int(int)>, "fixy-A4-031: bare function-type Type must reject — wrap as "
+                                           "function pointer or callable before instantiating fixy::fn.");
 
 // ── Grant-axis permissivity preserved ─────────────────────────────
 // A partially-specified or even empty Grants pack still accepts so
 // long as the Type axis is structurally valid.  Sketch mode's whole
 // purpose is to let migrating TUs compile while their Grants pack is
 // still being filled in.
-namespace not_a_grant_tag { struct Tag {}; }
+namespace not_a_grant_tag {
+struct Tag {};
+}  // namespace not_a_grant_tag
 static_assert(IsAcceptedSketch<int, not_a_grant_tag::Tag>,
-    "IsAcceptedSketch ignores Grants-pack shape — even a non-grant "
-    "type in the pack accepts as long as Type is structurally valid. "
-    "(Tier-2 AllGrantsWellFormed in Fn's class body still rejects the "
-    "binding downstream, but THIS concept does not.)");
+              "IsAcceptedSketch ignores Grants-pack shape — even a non-grant "
+              "type in the pack accepts as long as Type is structurally valid. "
+              "(Tier-2 AllGrantsWellFormed in Fn's class body still rejects the "
+              "binding downstream, but THIS concept does not.)");
 
 }  // namespace detail::profile_self_test
 

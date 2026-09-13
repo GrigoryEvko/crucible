@@ -99,65 +99,58 @@ namespace crucible::detail {
 // BOTH this function AND compute_storage_nbytes_simd in lockstep,
 // AND update the equivalence fuzzer.
 
-[[nodiscard, gnu::const]] CRUCIBLE_INLINE
-fixy::wrap::Saturated<uint64_t> compute_storage_nbytes_scalar(ExternalTensorMeta meta) noexcept {
-  using Sat = fixy::wrap::Saturated<uint64_t>;
-  const TensorMeta& raw = meta.value();
-  if (raw.ndim == 0) {
-    return Sat{element_size(raw.dtype).raw()};
-  }
-  int64_t max_offset = 0;
-  int64_t min_offset = 0;
-  for (uint8_t d = 0; d < raw.ndim; ++d) {
-    const int64_t size = raw_tensor_dim(raw.sizes[d]);
-    const int64_t stride = raw_tensor_dim(raw.strides[d]);
-    if (size == 0) return Sat{uint64_t{0}};  // zero-size tensor
-    int64_t dim_extent_bytes;
-    // (sizes[d] - 1) * strides[d] can overflow int64 for huge dims.
-    // sizes[d] is positive, so the subtraction never underflows.
-    if (__builtin_mul_overflow(size - 1, stride,
-                               &dim_extent_bytes)) [[unlikely]] {
-      return Sat{UINT64_MAX, true};
+[[nodiscard, gnu::const]] CRUCIBLE_INLINE fixy::wrap::Saturated<uint64_t>
+compute_storage_nbytes_scalar(ExternalTensorMeta meta) noexcept {
+    using Sat = fixy::wrap::Saturated<uint64_t>;
+    const TensorMeta& raw = meta.value();
+    if (raw.ndim == 0) {
+        return Sat{element_size(raw.dtype).raw()};
     }
-    if (dim_extent_bytes > 0) {
-      if (__builtin_add_overflow(max_offset, dim_extent_bytes,
-                                 &max_offset)) [[unlikely]] {
-        return Sat{UINT64_MAX, true};
-      }
-    } else {
-      if (__builtin_add_overflow(min_offset, dim_extent_bytes,
-                                 &min_offset)) [[unlikely]] {
-        return Sat{UINT64_MAX, true};
-      }
+    int64_t max_offset = 0;
+    int64_t min_offset = 0;
+    for (uint8_t d = 0; d < raw.ndim; ++d) {
+        const int64_t size = raw_tensor_dim(raw.sizes[d]);
+        const int64_t stride = raw_tensor_dim(raw.strides[d]);
+        if (size == 0) return Sat{uint64_t{0}};  // zero-size tensor
+        int64_t dim_extent_bytes;
+        // (sizes[d] - 1) * strides[d] can overflow int64 for huge dims.
+        // sizes[d] is positive, so the subtraction never underflows.
+        if (__builtin_mul_overflow(size - 1, stride, &dim_extent_bytes)) [[unlikely]] {
+            return Sat{UINT64_MAX, true};
+        }
+        if (dim_extent_bytes > 0) {
+            if (__builtin_add_overflow(max_offset, dim_extent_bytes, &max_offset)) [[unlikely]] {
+                return Sat{UINT64_MAX, true};
+            }
+        } else {
+            if (__builtin_add_overflow(min_offset, dim_extent_bytes, &min_offset)) [[unlikely]] {
+                return Sat{UINT64_MAX, true};
+            }
+        }
     }
-  }
-  // span = max_offset - min_offset + 1; subtractions can overflow
-  // when max and min straddle int64 limits.
-  int64_t span_signed;
-  if (__builtin_sub_overflow(max_offset, min_offset,
-                             &span_signed)) [[unlikely]] {
-    return Sat{UINT64_MAX, true};
-  }
-  if (__builtin_add_overflow(span_signed, int64_t{1},
-                             &span_signed)) [[unlikely]] {
-    return Sat{UINT64_MAX, true};
-  }
-  // span is non-negative (max >= 0 >= min, so max - min >= 0).
-  uint64_t total_bytes;
-  if (__builtin_mul_overflow(static_cast<uint64_t>(span_signed),
-                             static_cast<uint64_t>(element_size(raw.dtype).raw()),
-                             &total_bytes)) [[unlikely]] {
-    return Sat{UINT64_MAX, true};
-  }
-  return Sat{total_bytes};
+    // span = max_offset - min_offset + 1; subtractions can overflow
+    // when max and min straddle int64 limits.
+    int64_t span_signed;
+    if (__builtin_sub_overflow(max_offset, min_offset, &span_signed)) [[unlikely]] {
+        return Sat{UINT64_MAX, true};
+    }
+    if (__builtin_add_overflow(span_signed, int64_t{1}, &span_signed)) [[unlikely]] {
+        return Sat{UINT64_MAX, true};
+    }
+    // span is non-negative (max >= 0 >= min, so max - min >= 0).
+    uint64_t total_bytes;
+    if (__builtin_mul_overflow(static_cast<uint64_t>(span_signed), static_cast<uint64_t>(element_size(raw.dtype).raw()),
+                               &total_bytes)) [[unlikely]] {
+        return Sat{UINT64_MAX, true};
+    }
+    return Sat{total_bytes};
 }
 
-[[nodiscard, gnu::const]] CRUCIBLE_INLINE
-fixy::wrap::DetSafe<fixy::wrap::DetSafeTier_v::Pure, fixy::wrap::Saturated<uint64_t>>
+[[nodiscard, gnu::const]]
+CRUCIBLE_INLINE fixy::wrap::DetSafe<fixy::wrap::DetSafeTier_v::Pure, fixy::wrap::Saturated<uint64_t>>
 compute_storage_nbytes_scalar_det(ExternalTensorMeta meta) noexcept {
-  return fixy::wrap::DetSafe<
-      fixy::wrap::DetSafeTier_v::Pure,
-      fixy::wrap::Saturated<uint64_t>>{compute_storage_nbytes_scalar(meta)};
+    return fixy::wrap::DetSafe<fixy::wrap::DetSafeTier_v::Pure, fixy::wrap::Saturated<uint64_t>>{
+        compute_storage_nbytes_scalar(meta)};
 }
 
 // ── Helper: pre-screen safety check ──────────────────────────────
@@ -177,51 +170,47 @@ compute_storage_nbytes_scalar_det(ExternalTensorMeta meta) noexcept {
 //
 // so the per-lane SIMD multiply cannot overflow.
 
-[[nodiscard, gnu::pure]] CRUCIBLE_INLINE
-bool storage_nbytes_simd_safe_(ExternalTensorMeta meta) noexcept {
-  using simd::i64x8;
-  const TensorMeta& raw = meta.value();
+[[nodiscard, gnu::pure]] CRUCIBLE_INLINE bool storage_nbytes_simd_safe_(ExternalTensorMeta meta) noexcept {
+    using simd::i64x8;
+    const TensorMeta& raw = meta.value();
 
-  // TensorMeta is naturally aligned, not guaranteed vector-aligned.
-  // Use element-aligned loads so trace-loader vectors and MetaLog
-  // buffers are valid inputs.
-  auto sizes = simd::load<i64x8>(raw.sizes.raw_data());
-  auto strides = simd::load<i64x8>(raw.strides.raw_data());
+    // TensorMeta is naturally aligned, not guaranteed vector-aligned.
+    // Use element-aligned loads so trace-loader vectors and MetaLog
+    // buffers are valid inputs.
+    auto sizes = simd::load<i64x8>(raw.sizes.raw_data());
+    auto strides = simd::load<i64x8>(raw.strides.raw_data());
 
-  auto valid_mask = simd::prefix_mask<i64x8>(static_cast<int>(raw.ndim));
+    auto valid_mask = simd::prefix_mask<i64x8>(static_cast<int>(raw.ndim));
 
-  // sizes[d] - 1 for valid lanes, 0 for invalid.  Sizes are
-  // non-negative by TensorMeta invariant; (size - 1) for size == 0
-  // would be -1, but the zero-size short-circuit catches that
-  // before this function runs (callers check first).  For safety
-  // we mask and clamp negative results to 0.
-  auto sizes_minus_one = simd::select(valid_mask,
-      sizes - i64x8(1), i64x8(0));
+    // sizes[d] - 1 for valid lanes, 0 for invalid.  Sizes are
+    // non-negative by TensorMeta invariant; (size - 1) for size == 0
+    // would be -1, but the zero-size short-circuit catches that
+    // before this function runs (callers check first).  For safety
+    // we mask and clamp negative results to 0.
+    auto sizes_minus_one = simd::select(valid_mask, sizes - i64x8(1), i64x8(0));
 
-  // strides absolute value, masked.  Avoid -INT64_MIN UB by
-  // computing via select-and-negate which is well-defined for
-  // every value except INT64_MIN itself; if a stride IS
-  // INT64_MIN we mask to INT64_MAX (forces fallback).
-  auto strides_neg = -strides;
-  auto strides_abs_raw = simd::select(strides >= i64x8(0),
-                                           strides, strides_neg);
-  // INT64_MIN → -INT64_MIN wraps to INT64_MIN; treat as "unsafe"
-  // by mapping to INT64_MAX so reduce_max returns INT64_MAX.
-  auto is_int64_min = (strides == i64x8(INT64_MIN));
-  auto strides_abs = simd::select(is_int64_min,
-      i64x8(INT64_MAX), strides_abs_raw);
-  strides_abs = simd::select(valid_mask, strides_abs, i64x8(0));
+    // strides absolute value, masked.  Avoid -INT64_MIN UB by
+    // computing via select-and-negate which is well-defined for
+    // every value except INT64_MIN itself; if a stride IS
+    // INT64_MIN we mask to INT64_MAX (forces fallback).
+    auto strides_neg = -strides;
+    auto strides_abs_raw = simd::select(strides >= i64x8(0), strides, strides_neg);
+    // INT64_MIN → -INT64_MIN wraps to INT64_MIN; treat as "unsafe"
+    // by mapping to INT64_MAX so reduce_max returns INT64_MAX.
+    auto is_int64_min = (strides == i64x8(INT64_MIN));
+    auto strides_abs = simd::select(is_int64_min, i64x8(INT64_MAX), strides_abs_raw);
+    strides_abs = simd::select(valid_mask, strides_abs, i64x8(0));
 
-  // Reduce max over valid lanes.  Both vectors have invalid lanes
-  // zeroed; the reduce_max picks the largest valid value (or 0 if
-  // no valid lanes).
-  const int64_t max_smo = simd::reduce_max(sizes_minus_one);
-  const int64_t max_str = simd::reduce_max(strides_abs);
+    // Reduce max over valid lanes.  Both vectors have invalid lanes
+    // zeroed; the reduce_max picks the largest valid value (or 0 if
+    // no valid lanes).
+    const int64_t max_smo = simd::reduce_max(sizes_minus_one);
+    const int64_t max_str = simd::reduce_max(strides_abs);
 
-  // Safe iff max_smo × max_str fits in int64.  __builtin_mul_overflow
-  // returns true on overflow (NOT what we want); negate to get safe.
-  int64_t bound;
-  return !__builtin_mul_overflow(max_smo, max_str, &bound);
+    // Safe iff max_smo × max_str fits in int64.  __builtin_mul_overflow
+    // returns true on overflow (NOT what we want); negate to get safe.
+    int64_t bound;
+    return !__builtin_mul_overflow(max_smo, max_str, &bound);
 }
 
 // ── compute_storage_nbytes_simd ──────────────────────────────────
@@ -233,107 +222,101 @@ bool storage_nbytes_simd_safe_(ExternalTensorMeta meta) noexcept {
 // Both paths return UINT64_MAX on detected overflow at any
 // arithmetic step.
 
-[[nodiscard, gnu::pure]] CRUCIBLE_INLINE
-fixy::wrap::Saturated<uint64_t> compute_storage_nbytes_simd(ExternalTensorMeta meta) noexcept {
-  using Sat = fixy::wrap::Saturated<uint64_t>;
-  const TensorMeta& raw = meta.value();
-  // Edge case: scalar tensor.  Same as scalar path.
-  if (raw.ndim == 0) {
-    return Sat{element_size(raw.dtype).raw()};
-  }
-
-  using simd::i64x8;
-
-  // Load sizes and strides via element-aligned SIMD load.  TensorMeta
-  // arrays are 64 bytes wide but not guaranteed 64-byte aligned.
-  auto sizes = simd::load<i64x8>(raw.sizes.raw_data());
-  auto strides = simd::load<i64x8>(raw.strides.raw_data());
-
-  auto valid_mask = simd::prefix_mask<i64x8>(static_cast<int>(raw.ndim));
-
-  // Zero-size short-circuit: if any valid dim has size 0, total
-  // is 0.  Cheap SIMD check via masked equality + any_of.
-  auto zero_size_mask = (sizes == i64x8(0)) && valid_mask;
-  if (any_of(zero_size_mask)) [[unlikely]] {
-    return Sat{uint64_t{0}};
-  }
-
-  // Pre-screen for overflow safety.  If any per-lane multiply
-  // could overflow, fall back to scalar (which detects + returns
-  // a clamped Saturated<uint64_t> cleanly).
-  if (!storage_nbytes_simd_safe_(meta)) [[unlikely]] {
-    return compute_storage_nbytes_scalar(meta);
-  }
-
-  // SIMD path: pre-screen guarantees no per-lane multiply overflow.
-  // Compute extents = (sizes - 1) * strides via SIMD; mask invalid
-  // lanes to 0 so they don't contribute to max/min accumulation.
-  auto sizes_minus_one = sizes - i64x8(1);
-  auto extents = sizes_minus_one * strides;
-  extents = simd::select(valid_mask, extents, i64x8(0));
-
-  // Spill to stack for the scalar fold.
-  // FixedArray<int64_t, 8> (#1019 production migration of #1081):
-  //   - Carries alignas(64) propagation as a member-level alignment
-  //     (the wrapping `alignas(64)` aligns the entire FixedArray
-  //     struct to 64, which means data_[0] sits at offset 0 = 64B
-  //     aligned — matching the SIMD-aligned discipline the bare
-  //     C array used to enforce structurally).
-  //   - NSDMI zero-init replaces the bare-array uninit-before-store
-  //     window (the std::simd::unchecked_store overwrites all 8
-  //     lanes immediately, so this is defense-in-depth, not a
-  //     correctness fix).
-  //   - .data() returns int64_t* — drop-in replacement for the
-  //     bare-array pointer the SIMD store and operator[] expect.
-  alignas(64) fixy::wrap::FixedArray<int64_t, 8> extents_buf{};
-  simd::store_aligned(extents, extents_buf.data());
-
-  // Scalar fold: per-lane sign-based dispatch into max_offset /
-  // min_offset, with __builtin_add_overflow check.  Multiplication
-  // overflow CANNOT occur here (pre-screened), so no per-lane
-  // mul_overflow re-check needed.
-  int64_t max_offset = 0;
-  int64_t min_offset = 0;
-  for (uint8_t d = 0; d < raw.ndim; ++d) {
-    const int64_t e = extents_buf[d];
-    if (e > 0) {
-      if (__builtin_add_overflow(max_offset, e,
-                                 &max_offset)) [[unlikely]] {
-        return Sat{UINT64_MAX, true};
-      }
-    } else {
-      if (__builtin_add_overflow(min_offset, e,
-                                 &min_offset)) [[unlikely]] {
-        return Sat{UINT64_MAX, true};
-      }
+[[nodiscard, gnu::pure]] CRUCIBLE_INLINE fixy::wrap::Saturated<uint64_t>
+compute_storage_nbytes_simd(ExternalTensorMeta meta) noexcept {
+    using Sat = fixy::wrap::Saturated<uint64_t>;
+    const TensorMeta& raw = meta.value();
+    // Edge case: scalar tensor.  Same as scalar path.
+    if (raw.ndim == 0) {
+        return Sat{element_size(raw.dtype).raw()};
     }
-  }
 
-  // Final span and total bytes (scalar, identical to reference).
-  int64_t span_signed;
-  if (__builtin_sub_overflow(max_offset, min_offset,
-                             &span_signed)) [[unlikely]] {
-    return Sat{UINT64_MAX, true};
-  }
-  if (__builtin_add_overflow(span_signed, int64_t{1},
-                             &span_signed)) [[unlikely]] {
-    return Sat{UINT64_MAX, true};
-  }
-  uint64_t total_bytes;
-  if (__builtin_mul_overflow(static_cast<uint64_t>(span_signed),
-                             static_cast<uint64_t>(element_size(raw.dtype).raw()),
-                             &total_bytes)) [[unlikely]] {
-    return Sat{UINT64_MAX, true};
-  }
-  return Sat{total_bytes};
+    using simd::i64x8;
+
+    // Load sizes and strides via element-aligned SIMD load.  TensorMeta
+    // arrays are 64 bytes wide but not guaranteed 64-byte aligned.
+    auto sizes = simd::load<i64x8>(raw.sizes.raw_data());
+    auto strides = simd::load<i64x8>(raw.strides.raw_data());
+
+    auto valid_mask = simd::prefix_mask<i64x8>(static_cast<int>(raw.ndim));
+
+    // Zero-size short-circuit: if any valid dim has size 0, total
+    // is 0.  Cheap SIMD check via masked equality + any_of.
+    auto zero_size_mask = (sizes == i64x8(0)) && valid_mask;
+    if (any_of(zero_size_mask)) [[unlikely]] {
+        return Sat{uint64_t{0}};
+    }
+
+    // Pre-screen for overflow safety.  If any per-lane multiply
+    // could overflow, fall back to scalar (which detects + returns
+    // a clamped Saturated<uint64_t> cleanly).
+    if (!storage_nbytes_simd_safe_(meta)) [[unlikely]] {
+        return compute_storage_nbytes_scalar(meta);
+    }
+
+    // SIMD path: pre-screen guarantees no per-lane multiply overflow.
+    // Compute extents = (sizes - 1) * strides via SIMD; mask invalid
+    // lanes to 0 so they don't contribute to max/min accumulation.
+    auto sizes_minus_one = sizes - i64x8(1);
+    auto extents = sizes_minus_one * strides;
+    extents = simd::select(valid_mask, extents, i64x8(0));
+
+    // Spill to stack for the scalar fold.
+    // FixedArray<int64_t, 8> (#1019 production migration of #1081):
+    //   - Carries alignas(64) propagation as a member-level alignment
+    //     (the wrapping `alignas(64)` aligns the entire FixedArray
+    //     struct to 64, which means data_[0] sits at offset 0 = 64B
+    //     aligned — matching the SIMD-aligned discipline the bare
+    //     C array used to enforce structurally).
+    //   - NSDMI zero-init replaces the bare-array uninit-before-store
+    //     window (the std::simd::unchecked_store overwrites all 8
+    //     lanes immediately, so this is defense-in-depth, not a
+    //     correctness fix).
+    //   - .data() returns int64_t* — drop-in replacement for the
+    //     bare-array pointer the SIMD store and operator[] expect.
+    alignas(64) fixy::wrap::FixedArray<int64_t, 8> extents_buf{};
+    simd::store_aligned(extents, extents_buf.data());
+
+    // Scalar fold: per-lane sign-based dispatch into max_offset /
+    // min_offset, with __builtin_add_overflow check.  Multiplication
+    // overflow CANNOT occur here (pre-screened), so no per-lane
+    // mul_overflow re-check needed.
+    int64_t max_offset = 0;
+    int64_t min_offset = 0;
+    for (uint8_t d = 0; d < raw.ndim; ++d) {
+        const int64_t e = extents_buf[d];
+        if (e > 0) {
+            if (__builtin_add_overflow(max_offset, e, &max_offset)) [[unlikely]] {
+                return Sat{UINT64_MAX, true};
+            }
+        } else {
+            if (__builtin_add_overflow(min_offset, e, &min_offset)) [[unlikely]] {
+                return Sat{UINT64_MAX, true};
+            }
+        }
+    }
+
+    // Final span and total bytes (scalar, identical to reference).
+    int64_t span_signed;
+    if (__builtin_sub_overflow(max_offset, min_offset, &span_signed)) [[unlikely]] {
+        return Sat{UINT64_MAX, true};
+    }
+    if (__builtin_add_overflow(span_signed, int64_t{1}, &span_signed)) [[unlikely]] {
+        return Sat{UINT64_MAX, true};
+    }
+    uint64_t total_bytes;
+    if (__builtin_mul_overflow(static_cast<uint64_t>(span_signed), static_cast<uint64_t>(element_size(raw.dtype).raw()),
+                               &total_bytes)) [[unlikely]] {
+        return Sat{UINT64_MAX, true};
+    }
+    return Sat{total_bytes};
 }
 
-[[nodiscard, gnu::pure]] CRUCIBLE_INLINE
-fixy::wrap::DetSafe<fixy::wrap::DetSafeTier_v::Pure, fixy::wrap::Saturated<uint64_t>>
+[[nodiscard, gnu::pure]]
+CRUCIBLE_INLINE fixy::wrap::DetSafe<fixy::wrap::DetSafeTier_v::Pure, fixy::wrap::Saturated<uint64_t>>
 compute_storage_nbytes_simd_det(ExternalTensorMeta meta) noexcept {
-  return fixy::wrap::DetSafe<
-      fixy::wrap::DetSafeTier_v::Pure,
-      fixy::wrap::Saturated<uint64_t>>{compute_storage_nbytes_simd(meta)};
+    return fixy::wrap::DetSafe<fixy::wrap::DetSafeTier_v::Pure, fixy::wrap::Saturated<uint64_t>>{
+        compute_storage_nbytes_simd(meta)};
 }
 
 }  // namespace crucible::detail

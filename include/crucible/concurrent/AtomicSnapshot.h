@@ -163,9 +163,9 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>           // std::abort (FIXY-FOUND-011 release-time check)
+#include <cstdlib>  // std::abort (FIXY-FOUND-011 release-time check)
 #include <cstring>
-#include <memory>            // std::start_lifetime_as
+#include <memory>  // std::start_lifetime_as
 #include <optional>
 #include <type_traits>
 
@@ -181,10 +181,7 @@ namespace crucible::concurrent {
 
 template <typename T>
 concept SnapshotValue =
-    std::is_trivially_copyable_v<T> &&
-    std::is_trivially_destructible_v<T> &&
-    sizeof(T) <= 256 &&
-    sizeof(T) > 0;
+    std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T> && sizeof(T) <= 256 && sizeof(T) > 0;
 
 // ── AtomicSnapshot<T> ─────────────────────────────────────────────
 
@@ -201,8 +198,7 @@ public:
 
     // Initial-value ctor: publish `initial` synchronously, no
     // races possible (no other thread has the address yet).
-    explicit AtomicSnapshot(const T& initial) noexcept
-        : seq_{0} {
+    explicit AtomicSnapshot(const T& initial) noexcept : seq_{0} {
         std::memcpy(storage_, &initial, sizeof(T));
         // No concurrent readers possible (no other thread has the
         // address yet) so reset_under_quiescence is the right tool —
@@ -440,8 +436,7 @@ public:
     // start_lifetime_as machinery runs.
 
     // Hot-path-classified load — returns Wait<SpinPause, T>.
-    [[nodiscard]] safety::Wait<safety::WaitStrategy_v::SpinPause, T>
-    load_pinned() const noexcept {
+    [[nodiscard]] safety::Wait<safety::WaitStrategy_v::SpinPause, T> load_pinned() const noexcept {
         return safety::Wait<safety::WaitStrategy_v::SpinPause, T>{load()};
     }
 
@@ -481,28 +476,23 @@ public:
     // at the consumer fence.
 
     // Acquire-classified load — returns MemOrder<Acquire, T>.
-    [[nodiscard]] safety::MemOrder<safety::MemOrderTag_v::Acquire, T>
-    load_mo_pinned() const noexcept {
+    [[nodiscard]] safety::MemOrder<safety::MemOrderTag_v::Acquire, T> load_mo_pinned() const noexcept {
         return safety::MemOrder<safety::MemOrderTag_v::Acquire, T>{load()};
     }
 
     // Acquire-classified try_load — returns optional<MemOrder<Acquire, T>>.
-    [[nodiscard]] std::optional<
-        safety::MemOrder<safety::MemOrderTag_v::Acquire, T>>
+    [[nodiscard]] std::optional<safety::MemOrder<safety::MemOrderTag_v::Acquire, T>>
     try_load_mo_pinned() const noexcept {
         auto opt = try_load();
         if (!opt) return std::nullopt;
-        return safety::MemOrder<safety::MemOrderTag_v::Acquire, T>{
-            std::move(*opt)};
+        return safety::MemOrder<safety::MemOrderTag_v::Acquire, T>{std::move(*opt)};
     }
 
     // Acquire-classified version — returns MemOrder<Acquire, uint64_t>.
     // The seq_.get() is acquire-load on the seqlock counter; the
     // returned epoch number is an Acquire-tier observation.
-    [[nodiscard]] safety::MemOrder<safety::MemOrderTag_v::Acquire, uint64_t>
-    version_mo_pinned() const noexcept {
-        return safety::MemOrder<safety::MemOrderTag_v::Acquire, uint64_t>{
-            version()};
+    [[nodiscard]] safety::MemOrder<safety::MemOrderTag_v::Acquire, uint64_t> version_mo_pinned() const noexcept {
+        return safety::MemOrder<safety::MemOrderTag_v::Acquire, uint64_t>{version()};
     }
 
     // ── version (number of completed publishes) ───────────────────

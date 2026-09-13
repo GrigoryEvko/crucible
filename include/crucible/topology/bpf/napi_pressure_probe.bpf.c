@@ -9,8 +9,7 @@
 #include "common.h"
 
 SEC("tracepoint/napi/napi_poll")
-int crucible_topology_napi_pressure_probe(void *ctx)
-{
+int crucible_topology_napi_pressure_probe(void* ctx) {
     (void)ctx;
     return 0;
 }

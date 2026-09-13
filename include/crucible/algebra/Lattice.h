@@ -86,10 +86,8 @@ using LatticeElement = typename L::element_type;
 // WITNESS; `LatticeShape` is internal scaffolding so the witness
 // predicate can name the members without recursing through `Lattice`.
 template <typename L>
-concept LatticeShape = requires {
-    typename L::element_type;
-} && requires (LatticeElement<L> a, LatticeElement<L> b) {
-    { L::leq(a, b)  } -> std::convertible_to<bool>;
+concept LatticeShape = requires { typename L::element_type; } && requires(LatticeElement<L> a, LatticeElement<L> b) {
+    { L::leq(a, b) } -> std::convertible_to<bool>;
     { L::join(a, b) } -> std::same_as<LatticeElement<L>>;
     { L::meet(a, b) } -> std::same_as<LatticeElement<L>>;
 };
@@ -149,14 +147,12 @@ namespace detail::lattice_laws {
 // mirror the public verify_* helpers below but stay on the LatticeShape
 // signature probe so the concept can call them without recursion.
 template <LatticeShape L>
-[[nodiscard]] consteval bool raw_equivalent(
-    LatticeElement<L> a, LatticeElement<L> b) noexcept {
+[[nodiscard]] consteval bool raw_equivalent(LatticeElement<L> a, LatticeElement<L> b) noexcept {
     return L::leq(a, b) && L::leq(b, a);
 }
 
 template <LatticeShape L>
-[[nodiscard]] consteval bool raw_axioms_at(
-    LatticeElement<L> a, LatticeElement<L> b, LatticeElement<L> c) noexcept {
+[[nodiscard]] consteval bool raw_axioms_at(LatticeElement<L> a, LatticeElement<L> b, LatticeElement<L> c) noexcept {
     // Idempotence (join, meet).
     const bool idem_join = raw_equivalent<L>(L::join(a, a), a);
     const bool idem_meet = raw_equivalent<L>(L::meet(a, a), a);
@@ -164,22 +160,18 @@ template <LatticeShape L>
     const bool comm_join = raw_equivalent<L>(L::join(a, b), L::join(b, a));
     const bool comm_meet = raw_equivalent<L>(L::meet(a, b), L::meet(b, a));
     // Associativity (join, meet).
-    const bool assoc_join =
-        raw_equivalent<L>(L::join(L::join(a, b), c), L::join(a, L::join(b, c)));
-    const bool assoc_meet =
-        raw_equivalent<L>(L::meet(L::meet(a, b), c), L::meet(a, L::meet(b, c)));
+    const bool assoc_join = raw_equivalent<L>(L::join(L::join(a, b), c), L::join(a, L::join(b, c)));
+    const bool assoc_meet = raw_equivalent<L>(L::meet(L::meet(a, b), c), L::meet(a, L::meet(b, c)));
     // Absorption (the lattice-defining law).
-    const bool absorb = raw_equivalent<L>(L::join(a, L::meet(a, b)), a)
-                     && raw_equivalent<L>(L::meet(a, L::join(a, b)), a);
+    const bool absorb =
+        raw_equivalent<L>(L::join(a, L::meet(a, b)), a) && raw_equivalent<L>(L::meet(a, L::join(a, b)), a);
     // Partial-order: reflexive on each witness, antisymmetric,
     // transitive on the (a, b, c) chain.
-    const bool reflexive    = L::leq(a, a) && L::leq(b, b) && L::leq(c, c);
-    const bool antisymmetric =
-        !(L::leq(a, b) && L::leq(b, a)) || raw_equivalent<L>(a, b);
-    const bool transitive   = !(L::leq(a, b) && L::leq(b, c)) || L::leq(a, c);
-    return idem_join && idem_meet && comm_join && comm_meet
-        && assoc_join && assoc_meet && absorb
-        && reflexive && antisymmetric && transitive;
+    const bool reflexive = L::leq(a, a) && L::leq(b, b) && L::leq(c, c);
+    const bool antisymmetric = !(L::leq(a, b) && L::leq(b, a)) || raw_equivalent<L>(a, b);
+    const bool transitive = !(L::leq(a, b) && L::leq(b, c)) || L::leq(a, c);
+    return idem_join && idem_meet && comm_join && comm_meet && assoc_join && assoc_meet && absorb && reflexive
+        && antisymmetric && transitive;
 }
 
 // Canonical-witness law check.  Picks the lattice's own representative
@@ -200,14 +192,9 @@ template <LatticeShape L>
     if constexpr (HasBottom<L> && HasTop<L>) {
         const LatticeElement<L> lo = L::bottom();
         const LatticeElement<L> hi = L::top();
-        return raw_axioms_at<L>(lo, lo, lo)
-            && raw_axioms_at<L>(hi, hi, hi)
-            && raw_axioms_at<L>(lo, hi, lo)
-            && raw_axioms_at<L>(hi, lo, hi)
-            && raw_axioms_at<L>(lo, lo, hi)
-            && raw_axioms_at<L>(hi, hi, lo)
-            && raw_axioms_at<L>(lo, hi, hi)
-            && raw_axioms_at<L>(hi, lo, lo);
+        return raw_axioms_at<L>(lo, lo, lo) && raw_axioms_at<L>(hi, hi, hi) && raw_axioms_at<L>(lo, hi, lo)
+            && raw_axioms_at<L>(hi, lo, hi) && raw_axioms_at<L>(lo, lo, hi) && raw_axioms_at<L>(hi, hi, lo)
+            && raw_axioms_at<L>(lo, hi, hi) && raw_axioms_at<L>(hi, lo, lo);
     } else if constexpr (HasBottom<L>) {
         const LatticeElement<L> lo = L::bottom();
         return raw_axioms_at<L>(lo, lo, lo);
@@ -238,8 +225,7 @@ template <LatticeShape L>
 // cannot be used as a `Graded<M, L, T>` grade.  Bounded variants below
 // add bottom() / top() requirements over this strengthened base.
 template <typename L>
-concept Lattice = LatticeShape<L>
-               && detail::lattice_laws::laws_hold<L>();
+concept Lattice = LatticeShape<L> && detail::lattice_laws::laws_hold<L>();
 
 template <typename L>
 concept BoundedBelowLattice = Lattice<L> && requires {
@@ -252,12 +238,10 @@ concept BoundedAboveLattice = Lattice<L> && requires {
 };
 
 template <typename L>
-concept BoundedLattice  = BoundedBelowLattice<L> && BoundedAboveLattice<L>;
+concept BoundedLattice = BoundedBelowLattice<L> && BoundedAboveLattice<L>;
 
 template <typename L>
-concept UnboundedLattice = Lattice<L>
-                        && !BoundedBelowLattice<L>
-                        && !BoundedAboveLattice<L>;
+concept UnboundedLattice = Lattice<L> && !BoundedBelowLattice<L> && !BoundedAboveLattice<L>;
 
 // ── Semiring concept ────────────────────────────────────────────────
 //
@@ -265,15 +249,13 @@ concept UnboundedLattice = Lattice<L>
 // algebraic-law verifiers (a Semiring without equality has no testable
 // distributivity law and would not be useful in practice).
 template <typename S>
-concept Semiring = requires {
-    typename S::element_type;
-} && requires (LatticeElement<S> a, LatticeElement<S> b) {
+concept Semiring = requires { typename S::element_type; } && requires(LatticeElement<S> a, LatticeElement<S> b) {
     { S::add(a, b) } -> std::same_as<LatticeElement<S>>;
     { S::mul(a, b) } -> std::same_as<LatticeElement<S>>;
-    { a == b       } -> std::convertible_to<bool>;
+    { a == b } -> std::convertible_to<bool>;
 } && requires {
     { S::zero() } -> std::same_as<LatticeElement<S>>;
-    { S::one()  } -> std::same_as<LatticeElement<S>>;
+    { S::one() } -> std::same_as<LatticeElement<S>>;
 };
 
 // ── Diagnostic name probe ───────────────────────────────────────────
@@ -284,8 +266,10 @@ concept HasLatticeName = requires {
 
 template <typename L>
 [[nodiscard]] consteval std::string_view lattice_name() noexcept {
-    if constexpr (HasLatticeName<L>) return L::name();
-    else                              return std::string_view{"<unnamed lattice>"};
+    if constexpr (HasLatticeName<L>)
+        return L::name();
+    else
+        return std::string_view{"<unnamed lattice>"};
 }
 
 // ── Subsumption helpers ─────────────────────────────────────────────
@@ -327,26 +311,24 @@ template <Lattice L>
 }
 
 template <Lattice L>
-[[nodiscard]] consteval bool verify_commutative_join(
-    LatticeElement<L> a, LatticeElement<L> b) noexcept {
+[[nodiscard]] consteval bool verify_commutative_join(LatticeElement<L> a, LatticeElement<L> b) noexcept {
     return equivalent<L>(L::join(a, b), L::join(b, a));
 }
 
 template <Lattice L>
-[[nodiscard]] consteval bool verify_commutative_meet(
-    LatticeElement<L> a, LatticeElement<L> b) noexcept {
+[[nodiscard]] consteval bool verify_commutative_meet(LatticeElement<L> a, LatticeElement<L> b) noexcept {
     return equivalent<L>(L::meet(a, b), L::meet(b, a));
 }
 
 template <Lattice L>
-[[nodiscard]] consteval bool verify_associative_join(
-    LatticeElement<L> a, LatticeElement<L> b, LatticeElement<L> c) noexcept {
+[[nodiscard]] consteval bool verify_associative_join(LatticeElement<L> a, LatticeElement<L> b,
+                                                     LatticeElement<L> c) noexcept {
     return equivalent<L>(L::join(L::join(a, b), c), L::join(a, L::join(b, c)));
 }
 
 template <Lattice L>
-[[nodiscard]] consteval bool verify_associative_meet(
-    LatticeElement<L> a, LatticeElement<L> b, LatticeElement<L> c) noexcept {
+[[nodiscard]] consteval bool verify_associative_meet(LatticeElement<L> a, LatticeElement<L> b,
+                                                     LatticeElement<L> c) noexcept {
     return equivalent<L>(L::meet(L::meet(a, b), c), L::meet(a, L::meet(b, c)));
 }
 
@@ -354,23 +336,21 @@ template <Lattice L>
 // commutative idempotent monoid pairs):
 //   a ⊕ (a ⊗ b) = a    AND    a ⊗ (a ⊕ b) = a
 template <Lattice L>
-[[nodiscard]] consteval bool verify_absorption(
-    LatticeElement<L> a, LatticeElement<L> b) noexcept {
-    return equivalent<L>(L::join(a, L::meet(a, b)), a)
-        && equivalent<L>(L::meet(a, L::join(a, b)), a);
+[[nodiscard]] consteval bool verify_absorption(LatticeElement<L> a, LatticeElement<L> b) noexcept {
+    return equivalent<L>(L::join(a, L::meet(a, b)), a) && equivalent<L>(L::meet(a, L::join(a, b)), a);
 }
 
 // Partial-order laws on three witnesses: reflexive, antisymmetric,
 // transitive.  Reflexivity is tested on all three witnesses to catch
 // lattices that accidentally make leq depend on the wrong operand.
 template <Lattice L>
-[[nodiscard]] consteval bool verify_partial_order(
-    LatticeElement<L> a, LatticeElement<L> b, LatticeElement<L> c) noexcept {
-    const bool reflexive_a   =  L::leq(a, a);
-    const bool reflexive_b   =  L::leq(b, b);
-    const bool reflexive_c   =  L::leq(c, c);
+[[nodiscard]] consteval bool verify_partial_order(LatticeElement<L> a, LatticeElement<L> b,
+                                                  LatticeElement<L> c) noexcept {
+    const bool reflexive_a = L::leq(a, a);
+    const bool reflexive_b = L::leq(b, b);
+    const bool reflexive_c = L::leq(c, c);
     const bool antisymmetric = !(L::leq(a, b) && L::leq(b, a)) || equivalent<L>(a, b);
-    const bool transitive    = !(L::leq(a, b) && L::leq(b, c)) || L::leq(a, c);
+    const bool transitive = !(L::leq(a, b) && L::leq(b, c)) || L::leq(a, c);
     return reflexive_a && reflexive_b && reflexive_c && antisymmetric && transitive;
 }
 
@@ -388,30 +368,21 @@ template <BoundedAboveLattice L>
 // at one call site.  Per-lattice headers wrap their representative
 // witnesses inside this helper for a single-line static_assert.
 template <Lattice L>
-[[nodiscard]] consteval bool verify_lattice_axioms_at(
-    LatticeElement<L> a, LatticeElement<L> b, LatticeElement<L> c) noexcept {
-    return verify_idempotent_join<L>(a)
-        && verify_idempotent_meet<L>(a)
-        && verify_commutative_join<L>(a, b)
-        && verify_commutative_meet<L>(a, b)
-        && verify_associative_join<L>(a, b, c)
-        && verify_associative_meet<L>(a, b, c)
-        && verify_absorption<L>(a, b)
-        && verify_partial_order<L>(a, b, c);
+[[nodiscard]] consteval bool verify_lattice_axioms_at(LatticeElement<L> a, LatticeElement<L> b,
+                                                      LatticeElement<L> c) noexcept {
+    return verify_idempotent_join<L>(a) && verify_idempotent_meet<L>(a) && verify_commutative_join<L>(a, b)
+        && verify_commutative_meet<L>(a, b) && verify_associative_join<L>(a, b, c)
+        && verify_associative_meet<L>(a, b, c) && verify_absorption<L>(a, b) && verify_partial_order<L>(a, b, c);
 }
 
 // Bounded-lattice rollup: every law from verify_lattice_axioms_at PLUS
 // bottom/top identity.  Use this in per-lattice self-tests for any
 // lattice that satisfies BoundedLattice.
 template <BoundedLattice L>
-[[nodiscard]] consteval bool verify_bounded_lattice_axioms_at(
-    LatticeElement<L> a, LatticeElement<L> b, LatticeElement<L> c) noexcept {
-    return verify_lattice_axioms_at<L>(a, b, c)
-        && verify_bottom_identity<L>(a)
-        && verify_bottom_identity<L>(b)
-        && verify_bottom_identity<L>(c)
-        && verify_top_identity<L>(a)
-        && verify_top_identity<L>(b)
+[[nodiscard]] consteval bool verify_bounded_lattice_axioms_at(LatticeElement<L> a, LatticeElement<L> b,
+                                                              LatticeElement<L> c) noexcept {
+    return verify_lattice_axioms_at<L>(a, b, c) && verify_bottom_identity<L>(a) && verify_bottom_identity<L>(b)
+        && verify_bottom_identity<L>(c) && verify_top_identity<L>(a) && verify_top_identity<L>(b)
         && verify_top_identity<L>(c);
 }
 
@@ -444,12 +415,10 @@ template <BoundedLattice L>
 // lattice is distributive.  General Lattice / BoundedLattice rollups
 // do NOT include it — non-distributive lattices are valid lattices.
 template <Lattice L>
-[[nodiscard]] consteval bool verify_distributive_lattice(
-    LatticeElement<L> a, LatticeElement<L> b, LatticeElement<L> c) noexcept {
-    return equivalent<L>(L::meet(a, L::join(b, c)),
-                         L::join(L::meet(a, b), L::meet(a, c)))
-        && equivalent<L>(L::join(a, L::meet(b, c)),
-                         L::meet(L::join(a, b), L::join(a, c)));
+[[nodiscard]] consteval bool verify_distributive_lattice(LatticeElement<L> a, LatticeElement<L> b,
+                                                         LatticeElement<L> c) noexcept {
+    return equivalent<L>(L::meet(a, L::join(b, c)), L::join(L::meet(a, b), L::meet(a, c)))
+        && equivalent<L>(L::join(a, L::meet(b, c)), L::meet(L::join(a, b), L::join(a, c)));
 }
 
 // ── Semiring-law verifiers ──────────────────────────────────────────
@@ -466,31 +435,29 @@ template <Semiring S>
 
 template <Semiring S>
 [[nodiscard]] consteval bool verify_multiplicative_zero(LatticeElement<S> a) noexcept {
-    return S::mul(S::zero(), a) == S::zero()
-        && S::mul(a, S::zero()) == S::zero();
+    return S::mul(S::zero(), a) == S::zero() && S::mul(a, S::zero()) == S::zero();
 }
 
 template <Semiring S>
-[[nodiscard]] consteval bool verify_additive_commutative(
-    LatticeElement<S> a, LatticeElement<S> b) noexcept {
+[[nodiscard]] consteval bool verify_additive_commutative(LatticeElement<S> a, LatticeElement<S> b) noexcept {
     return S::add(a, b) == S::add(b, a);
 }
 
 template <Semiring S>
-[[nodiscard]] consteval bool verify_additive_associative(
-    LatticeElement<S> a, LatticeElement<S> b, LatticeElement<S> c) noexcept {
+[[nodiscard]] consteval bool verify_additive_associative(LatticeElement<S> a, LatticeElement<S> b,
+                                                         LatticeElement<S> c) noexcept {
     return S::add(S::add(a, b), c) == S::add(a, S::add(b, c));
 }
 
 template <Semiring S>
-[[nodiscard]] consteval bool verify_multiplicative_associative(
-    LatticeElement<S> a, LatticeElement<S> b, LatticeElement<S> c) noexcept {
+[[nodiscard]] consteval bool verify_multiplicative_associative(LatticeElement<S> a, LatticeElement<S> b,
+                                                               LatticeElement<S> c) noexcept {
     return S::mul(S::mul(a, b), c) == S::mul(a, S::mul(b, c));
 }
 
 template <Semiring S>
-[[nodiscard]] consteval bool verify_distributivity(
-    LatticeElement<S> a, LatticeElement<S> b, LatticeElement<S> c) noexcept {
+[[nodiscard]] consteval bool verify_distributivity(LatticeElement<S> a, LatticeElement<S> b,
+                                                   LatticeElement<S> c) noexcept {
     // a · (b + c) = (a · b) + (a · c)        (left)
     // (a + b) · c = (a · c) + (b · c)        (right)
     return S::mul(a, S::add(b, c)) == S::add(S::mul(a, b), S::mul(a, c))
@@ -498,15 +465,11 @@ template <Semiring S>
 }
 
 template <Semiring S>
-[[nodiscard]] consteval bool verify_semiring_axioms_at(
-    LatticeElement<S> a, LatticeElement<S> b, LatticeElement<S> c) noexcept {
-    return verify_additive_identity<S>(a)
-        && verify_multiplicative_identity<S>(a)
-        && verify_multiplicative_zero<S>(a)
-        && verify_additive_commutative<S>(a, b)
-        && verify_additive_associative<S>(a, b, c)
-        && verify_multiplicative_associative<S>(a, b, c)
-        && verify_distributivity<S>(a, b, c);
+[[nodiscard]] consteval bool verify_semiring_axioms_at(LatticeElement<S> a, LatticeElement<S> b,
+                                                       LatticeElement<S> c) noexcept {
+    return verify_additive_identity<S>(a) && verify_multiplicative_identity<S>(a) && verify_multiplicative_zero<S>(a)
+        && verify_additive_commutative<S>(a, b) && verify_additive_associative<S>(a, b, c)
+        && verify_multiplicative_associative<S>(a, b, c) && verify_distributivity<S>(a, b, c);
 }
 
 // ── Self-test conformance witness ───────────────────────────────────
@@ -526,10 +489,10 @@ namespace detail::lattice_self_test {
 struct TrivialBoolLattice {
     using element_type = bool;
     [[nodiscard]] static constexpr element_type bottom() noexcept { return false; }
-    [[nodiscard]] static constexpr element_type top()    noexcept { return true;  }
-    [[nodiscard]] static constexpr bool         leq(bool a, bool b) noexcept { return !a || b; }
-    [[nodiscard]] static constexpr bool         join(bool a, bool b) noexcept { return a || b; }
-    [[nodiscard]] static constexpr bool         meet(bool a, bool b) noexcept { return a && b; }
+    [[nodiscard]] static constexpr element_type top() noexcept { return true; }
+    [[nodiscard]] static constexpr bool leq(bool a, bool b) noexcept { return !a || b; }
+    [[nodiscard]] static constexpr bool join(bool a, bool b) noexcept { return a || b; }
+    [[nodiscard]] static constexpr bool meet(bool a, bool b) noexcept { return a && b; }
     [[nodiscard]] static consteval std::string_view name() noexcept { return "TrivialBool"; }
 };
 
@@ -543,19 +506,19 @@ static_assert(!UnboundedLattice<TrivialBoolLattice>);
 // lattice axioms and the bottom/top identity laws in one shot.
 static_assert(verify_bounded_lattice_axioms_at<TrivialBoolLattice>(false, false, false));
 static_assert(verify_bounded_lattice_axioms_at<TrivialBoolLattice>(false, false, true));
-static_assert(verify_bounded_lattice_axioms_at<TrivialBoolLattice>(false, true,  false));
-static_assert(verify_bounded_lattice_axioms_at<TrivialBoolLattice>(false, true,  true));
-static_assert(verify_bounded_lattice_axioms_at<TrivialBoolLattice>(true,  false, false));
-static_assert(verify_bounded_lattice_axioms_at<TrivialBoolLattice>(true,  false, true));
-static_assert(verify_bounded_lattice_axioms_at<TrivialBoolLattice>(true,  true,  false));
-static_assert(verify_bounded_lattice_axioms_at<TrivialBoolLattice>(true,  true,  true));
+static_assert(verify_bounded_lattice_axioms_at<TrivialBoolLattice>(false, true, false));
+static_assert(verify_bounded_lattice_axioms_at<TrivialBoolLattice>(false, true, true));
+static_assert(verify_bounded_lattice_axioms_at<TrivialBoolLattice>(true, false, false));
+static_assert(verify_bounded_lattice_axioms_at<TrivialBoolLattice>(true, false, true));
+static_assert(verify_bounded_lattice_axioms_at<TrivialBoolLattice>(true, true, false));
+static_assert(verify_bounded_lattice_axioms_at<TrivialBoolLattice>(true, true, true));
 
-static_assert( subsumes<TrivialBoolLattice>(false, true));
-static_assert(!subsumes<TrivialBoolLattice>(true,  false));
-static_assert( equivalent<TrivialBoolLattice>(true, true));
+static_assert(subsumes<TrivialBoolLattice>(false, true));
+static_assert(!subsumes<TrivialBoolLattice>(true, false));
+static_assert(equivalent<TrivialBoolLattice>(true, true));
 static_assert(!equivalent<TrivialBoolLattice>(false, true));
-static_assert( strictly_less<TrivialBoolLattice>(false, true));
-static_assert(!strictly_less<TrivialBoolLattice>(true,  true));
+static_assert(strictly_less<TrivialBoolLattice>(false, true));
+static_assert(!strictly_less<TrivialBoolLattice>(true, true));
 
 static_assert(lattice_name<TrivialBoolLattice>() == "TrivialBool");
 
@@ -565,16 +528,16 @@ static_assert(lattice_name<TrivialBoolLattice>() == "TrivialBool");
 struct TrivialBoolSemiring {
     using element_type = bool;
     [[nodiscard]] static constexpr element_type zero() noexcept { return false; }
-    [[nodiscard]] static constexpr element_type one()  noexcept { return true;  }
+    [[nodiscard]] static constexpr element_type one() noexcept { return true; }
     [[nodiscard]] static constexpr element_type add(bool a, bool b) noexcept { return a || b; }
     [[nodiscard]] static constexpr element_type mul(bool a, bool b) noexcept { return a && b; }
 };
 
 static_assert(Semiring<TrivialBoolSemiring>);
 static_assert(verify_semiring_axioms_at<TrivialBoolSemiring>(false, false, false));
-static_assert(verify_semiring_axioms_at<TrivialBoolSemiring>(false, true,  true));
-static_assert(verify_semiring_axioms_at<TrivialBoolSemiring>(true,  false, true));
-static_assert(verify_semiring_axioms_at<TrivialBoolSemiring>(true,  true,  true));
+static_assert(verify_semiring_axioms_at<TrivialBoolSemiring>(false, true, true));
+static_assert(verify_semiring_axioms_at<TrivialBoolSemiring>(true, false, true));
+static_assert(verify_semiring_axioms_at<TrivialBoolSemiring>(true, true, true));
 
 // ── Runtime smoke test (fixy-A3-021) ────────────────────────────────
 //
@@ -586,18 +549,18 @@ static_assert(verify_semiring_axioms_at<TrivialBoolSemiring>(true,  true,  true)
 // consteval branch; this smoke test pins the runtime branch.
 inline void runtime_smoke_test() {
     // Drive bottom/top/leq/join/meet through non-constant args.
-    bool x = true;   // NOT constexpr — runtime value
+    bool x = true;  // NOT constexpr — runtime value
     bool y = false;  // NOT constexpr — runtime value
     [[maybe_unused]] bool bot = TrivialBoolLattice::bottom();
     [[maybe_unused]] bool top = TrivialBoolLattice::top();
-    [[maybe_unused]] bool le  = TrivialBoolLattice::leq(x, y);
-    [[maybe_unused]] bool jo  = TrivialBoolLattice::join(x, y);
-    [[maybe_unused]] bool me  = TrivialBoolLattice::meet(x, y);
+    [[maybe_unused]] bool le = TrivialBoolLattice::leq(x, y);
+    [[maybe_unused]] bool jo = TrivialBoolLattice::join(x, y);
+    [[maybe_unused]] bool me = TrivialBoolLattice::meet(x, y);
 
     // Drive the lattice-relation helpers through non-constant args.
     [[maybe_unused]] bool sub = subsumes<TrivialBoolLattice>(y, x);
-    [[maybe_unused]] bool eq  = equivalent<TrivialBoolLattice>(x, x);
-    [[maybe_unused]] bool sl  = strictly_less<TrivialBoolLattice>(y, x);
+    [[maybe_unused]] bool eq = equivalent<TrivialBoolLattice>(x, x);
+    [[maybe_unused]] bool sl = strictly_less<TrivialBoolLattice>(y, x);
 
     // Same for the semiring side.
     [[maybe_unused]] bool zer = TrivialBoolSemiring::zero();

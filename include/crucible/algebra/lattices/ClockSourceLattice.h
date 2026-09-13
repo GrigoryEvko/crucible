@@ -158,35 +158,45 @@ namespace crucible::algebra::lattices {
 // uint8_t underlying.  FIXY-V-201 appended `PtpHwClock` at the next
 // free ordinal (append-only — existing positions never change).
 enum class ClockSource : std::uint8_t {
-    Realtime      = 0,    // CLOCK_REALTIME — settable wall clock
-    Monotonic     = 1,    // CLOCK_MONOTONIC — NTP-slewed, pauses on suspend
-    MonotonicRaw  = 2,    // CLOCK_MONOTONIC_RAW — un-slewed, pauses on suspend
-    Boot          = 3,    // CLOCK_BOOTTIME — monotonic, suspend-inclusive
-    ThreadCpu     = 4,    // CLOCK_THREAD_CPUTIME_ID — per-thread CPU time
-    ProcessCpu    = 5,    // CLOCK_PROCESS_CPUTIME_ID — per-process CPU time
-    TscRaw        = 6,    // RDTSC — raw per-core cycle counter
-    TscSerialized = 7,    // RDTSCP / LFENCE;RDTSC — serialized per-core read
-    PmuCounter    = 8,    // perf_event cycles — per-core PMU counter
-    PtpHwClock    = 9,    // /dev/ptpN PHC — per-NIC hardware clock (V-201)
+    Realtime = 0,  // CLOCK_REALTIME — settable wall clock
+    Monotonic = 1,  // CLOCK_MONOTONIC — NTP-slewed, pauses on suspend
+    MonotonicRaw = 2,  // CLOCK_MONOTONIC_RAW — un-slewed, pauses on suspend
+    Boot = 3,  // CLOCK_BOOTTIME — monotonic, suspend-inclusive
+    ThreadCpu = 4,  // CLOCK_THREAD_CPUTIME_ID — per-thread CPU time
+    ProcessCpu = 5,  // CLOCK_PROCESS_CPUTIME_ID — per-process CPU time
+    TscRaw = 6,  // RDTSC — raw per-core cycle counter
+    TscSerialized = 7,  // RDTSCP / LFENCE;RDTSC — serialized per-core read
+    PmuCounter = 8,  // perf_event cycles — per-core PMU counter
+    PtpHwClock = 9,  // /dev/ptpN PHC — per-NIC hardware clock (V-201)
 };
 
 // Cardinality + diagnostic name via reflection.
-inline constexpr std::size_t clock_source_count =
-    std::meta::enumerators_of(^^ClockSource).size();
+inline constexpr std::size_t clock_source_count = std::meta::enumerators_of(^^ClockSource).size();
 
 [[nodiscard]] consteval std::string_view clock_source_name(ClockSource s) noexcept {
     switch (s) {
-        case ClockSource::Realtime:      return "Realtime";
-        case ClockSource::Monotonic:     return "Monotonic";
-        case ClockSource::MonotonicRaw:  return "MonotonicRaw";
-        case ClockSource::Boot:          return "Boot";
-        case ClockSource::ThreadCpu:     return "ThreadCpu";
-        case ClockSource::ProcessCpu:    return "ProcessCpu";
-        case ClockSource::TscRaw:        return "TscRaw";
-        case ClockSource::TscSerialized: return "TscSerialized";
-        case ClockSource::PmuCounter:    return "PmuCounter";
-        case ClockSource::PtpHwClock:    return "PtpHwClock";
-        default: return std::string_view{"<unknown ClockSource>"};
+        case ClockSource::Realtime:
+            return "Realtime";
+        case ClockSource::Monotonic:
+            return "Monotonic";
+        case ClockSource::MonotonicRaw:
+            return "MonotonicRaw";
+        case ClockSource::Boot:
+            return "Boot";
+        case ClockSource::ThreadCpu:
+            return "ThreadCpu";
+        case ClockSource::ProcessCpu:
+            return "ProcessCpu";
+        case ClockSource::TscRaw:
+            return "TscRaw";
+        case ClockSource::TscSerialized:
+            return "TscSerialized";
+        case ClockSource::PmuCounter:
+            return "PmuCounter";
+        case ClockSource::PtpHwClock:
+            return "PtpHwClock";
+        default:
+            return std::string_view{"<unknown ClockSource>"};
     }
 }
 
@@ -198,27 +208,22 @@ inline constexpr std::size_t clock_source_count =
 // nth_lattice<I> / arity for free.  Only `name()` is shadowed to give
 // diagnostics the composite's real name instead of the generic
 // "Product<L1x...xLn>".
-struct ClockSourceLattice
-    : ProductLattice<DetSafeLattice, SuspendBehaviorLattice, PinningRequirementLattice> {
-
+struct ClockSourceLattice : ProductLattice<DetSafeLattice, SuspendBehaviorLattice, PinningRequirementLattice> {
     // Named axis projections — mirror first_lattice/second_lattice on
     // the binary case, but spelled for the three clock-quality axes so
     // downstream code (V-185 wrapper) reads intent, not get<0/1/2>.
     using det_safe_axis = DetSafeLattice;
-    using suspend_axis  = SuspendBehaviorLattice;
-    using pinning_axis  = PinningRequirementLattice;
+    using suspend_axis = SuspendBehaviorLattice;
+    using pinning_axis = PinningRequirementLattice;
 
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return "ClockSourceLattice";
-    }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "ClockSourceLattice"; }
 
     // Build a product point from the three axis enums.  The inherited
     // get<I> returns a reference into the I-th slot whose type IS the
     // component's element_type (each component is a ChainLatticeOps
     // whose element_type is the enum itself).
-    [[nodiscard]] static constexpr element_type make_point(
-        DetSafeTier det, SuspendBehavior suspend, PinningRequirement pin) noexcept
-    {
+    [[nodiscard]] static constexpr element_type make_point(DetSafeTier det, SuspendBehavior suspend,
+                                                           PinningRequirement pin) noexcept {
         element_type point{};
         ClockSourceLattice::get<0>(point) = det;
         ClockSourceLattice::get<1>(point) = suspend;
@@ -245,35 +250,42 @@ struct ClockSourceLattice
     struct At {
         struct element_type {
             using clock_source_value_type = ClockSource;
-            [[nodiscard]] constexpr operator clock_source_value_type() const noexcept {
-                return Source;
-            }
-            [[nodiscard]] constexpr bool operator==(element_type) const noexcept {
-                return true;
-            }
+            [[nodiscard]] constexpr operator clock_source_value_type() const noexcept { return Source; }
+            [[nodiscard]] constexpr bool operator==(element_type) const noexcept { return true; }
         };
 
         static constexpr ClockSource source = Source;
 
         [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-        [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
         [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
 
         [[nodiscard]] static consteval std::string_view name() noexcept {
             switch (Source) {
-                case ClockSource::Realtime:      return "ClockSourceLattice::At<Realtime>";
-                case ClockSource::Monotonic:     return "ClockSourceLattice::At<Monotonic>";
-                case ClockSource::MonotonicRaw:  return "ClockSourceLattice::At<MonotonicRaw>";
-                case ClockSource::Boot:          return "ClockSourceLattice::At<Boot>";
-                case ClockSource::ThreadCpu:     return "ClockSourceLattice::At<ThreadCpu>";
-                case ClockSource::ProcessCpu:    return "ClockSourceLattice::At<ProcessCpu>";
-                case ClockSource::TscRaw:        return "ClockSourceLattice::At<TscRaw>";
-                case ClockSource::TscSerialized: return "ClockSourceLattice::At<TscSerialized>";
-                case ClockSource::PmuCounter:    return "ClockSourceLattice::At<PmuCounter>";
-                case ClockSource::PtpHwClock:    return "ClockSourceLattice::At<PtpHwClock>";
-                default:                         return "ClockSourceLattice::At<?>";
+                case ClockSource::Realtime:
+                    return "ClockSourceLattice::At<Realtime>";
+                case ClockSource::Monotonic:
+                    return "ClockSourceLattice::At<Monotonic>";
+                case ClockSource::MonotonicRaw:
+                    return "ClockSourceLattice::At<MonotonicRaw>";
+                case ClockSource::Boot:
+                    return "ClockSourceLattice::At<Boot>";
+                case ClockSource::ThreadCpu:
+                    return "ClockSourceLattice::At<ThreadCpu>";
+                case ClockSource::ProcessCpu:
+                    return "ClockSourceLattice::At<ProcessCpu>";
+                case ClockSource::TscRaw:
+                    return "ClockSourceLattice::At<TscRaw>";
+                case ClockSource::TscSerialized:
+                    return "ClockSourceLattice::At<TscSerialized>";
+                case ClockSource::PmuCounter:
+                    return "ClockSourceLattice::At<PmuCounter>";
+                case ClockSource::PtpHwClock:
+                    return "ClockSourceLattice::At<PtpHwClock>";
+                default:
+                    return "ClockSourceLattice::At<?>";
             }
         }
     };
@@ -287,20 +299,17 @@ struct ClockSourceLattice
 // non-constant ClockSource.  Honors the three task-FIXED rows exactly;
 // the derived rows follow the projection-table rationale in the
 // docblock.
-[[nodiscard]] constexpr ClockSourceLattice::element_type
-clock_source_project(ClockSource source) noexcept {
+[[nodiscard]] constexpr ClockSourceLattice::element_type clock_source_project(ClockSource source) noexcept {
     switch (source) {
         case ClockSource::Realtime:
-            return ClockSourceLattice::make_point(
-                DetSafeTier::WallClockRead, SuspendBehavior::PausesOnSuspend,
-                PinningRequirement::NotRequired);
+            return ClockSourceLattice::make_point(DetSafeTier::WallClockRead, SuspendBehavior::PausesOnSuspend,
+                                                  PinningRequirement::NotRequired);
         case ClockSource::Monotonic:
         case ClockSource::MonotonicRaw:
         case ClockSource::ThreadCpu:
         case ClockSource::ProcessCpu:
-            return ClockSourceLattice::make_point(
-                DetSafeTier::MonotonicClockRead, SuspendBehavior::PausesOnSuspend,
-                PinningRequirement::NotRequired);
+            return ClockSourceLattice::make_point(DetSafeTier::MonotonicClockRead, SuspendBehavior::PausesOnSuspend,
+                                                  PinningRequirement::NotRequired);
         case ClockSource::Boot:
         case ClockSource::PtpHwClock:
             // PHC is per-NIC silicon: monotonic counter (MonotonicClockRead),
@@ -309,15 +318,13 @@ clock_source_project(ClockSource source) noexcept {
             // — no CPU pin needed (NotRequired).  Lands on the same tuple
             // as Boot; the V-185 wrapper keeps the source identities
             // distinct at the federation-cache key.
-            return ClockSourceLattice::make_point(
-                DetSafeTier::MonotonicClockRead, SuspendBehavior::KeepsTicking,
-                PinningRequirement::NotRequired);
+            return ClockSourceLattice::make_point(DetSafeTier::MonotonicClockRead, SuspendBehavior::KeepsTicking,
+                                                  PinningRequirement::NotRequired);
         case ClockSource::TscRaw:
         case ClockSource::TscSerialized:
         case ClockSource::PmuCounter:
-            return ClockSourceLattice::make_point(
-                DetSafeTier::MonotonicClockRead, SuspendBehavior::KeepsTicking,
-                PinningRequirement::PerCore);
+            return ClockSourceLattice::make_point(DetSafeTier::MonotonicClockRead, SuspendBehavior::KeepsTicking,
+                                                  PinningRequirement::PerCore);
         default:
             // Unreachable for a well-formed ClockSource; bottom is the
             // safe sentinel (weakest on every axis — admits no consumer
@@ -330,46 +337,39 @@ clock_source_project(ClockSource source) noexcept {
 namespace detail::clock_source_lattice_self_test {
 
 // Cardinality + reflection-based name coverage on the value vocabulary.
-static_assert(clock_source_count == 10,
-    "ClockSource catalog diverged from the ten documented sources; "
-    "FIXY-V-201 added PtpHwClock at ordinal 9 (append-only — never "
-    "renumber existing positions).  Adding another source requires "
-    "extending the clock_source_name() switch AND the "
-    "clock_source_project() switch AND bumping this count.");
+static_assert(clock_source_count == 10, "ClockSource catalog diverged from the ten documented sources; "
+                                        "FIXY-V-201 added PtpHwClock at ordinal 9 (append-only — never "
+                                        "renumber existing positions).  Adding another source requires "
+                                        "extending the clock_source_name() switch AND the "
+                                        "clock_source_project() switch AND bumping this count.");
 
 [[nodiscard]] consteval bool every_clock_source_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^ClockSource));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^ClockSource));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
-        if (clock_source_name([:en:]) ==
-            std::string_view{"<unknown ClockSource>"}) {
+        if (clock_source_name([:en:]) == std::string_view{"<unknown ClockSource>"}) {
             return false;
         }
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_clock_source_has_name(),
-    "clock_source_name() switch missing an arm for at least one source — "
-    "add the arm or the new source leaks the '<unknown ClockSource>' "
-    "sentinel into observer debug output.");
+static_assert(every_clock_source_has_name(), "clock_source_name() switch missing an arm for at least one source — "
+                                             "add the arm or the new source leaks the '<unknown ClockSource>' "
+                                             "sentinel into observer debug output.");
 
 // ── Concept conformance — the composite IS a bounded lattice ────────
-static_assert(Lattice<ClockSourceLattice>,
-    "FIXY-V-184: ClockSourceLattice must satisfy the Lattice concept "
-    "(element_type + leq + join + meet) — inherited from the 3-ary "
-    "ProductLattice primary.");
-static_assert(BoundedLattice<ClockSourceLattice>,
-    "FIXY-V-184: every component (DetSafe/Suspend/Pinning) is a bounded "
-    "chain, so the product has bottom() and top().");
+static_assert(Lattice<ClockSourceLattice>, "FIXY-V-184: ClockSourceLattice must satisfy the Lattice concept "
+                                           "(element_type + leq + join + meet) — inherited from the 3-ary "
+                                           "ProductLattice primary.");
+static_assert(BoundedLattice<ClockSourceLattice>, "FIXY-V-184: every component (DetSafe/Suspend/Pinning) is a bounded "
+                                                  "chain, so the product has bottom() and top().");
 static_assert(BoundedBelowLattice<ClockSourceLattice>);
 static_assert(BoundedAboveLattice<ClockSourceLattice>);
 static_assert(!UnboundedLattice<ClockSourceLattice>);
-static_assert(!Semiring<ClockSourceLattice>,
-    "FIXY-V-184: ClockSourceLattice carries only order-theoretic ops, "
-    "not the equality+add+mul of a semiring.");
+static_assert(!Semiring<ClockSourceLattice>, "FIXY-V-184: ClockSourceLattice carries only order-theoretic ops, "
+                                             "not the equality+add+mul of a semiring.");
 
 // ── Arity / axis projections ────────────────────────────────────────
 static_assert(ClockSourceLattice::arity == 3);
@@ -377,22 +377,16 @@ static_assert(std::is_same_v<ClockSourceLattice::nth_lattice<0>, DetSafeLattice>
 static_assert(std::is_same_v<ClockSourceLattice::nth_lattice<1>, SuspendBehaviorLattice>);
 static_assert(std::is_same_v<ClockSourceLattice::nth_lattice<2>, PinningRequirementLattice>);
 static_assert(std::is_same_v<ClockSourceLattice::det_safe_axis, DetSafeLattice>);
-static_assert(std::is_same_v<ClockSourceLattice::suspend_axis,  SuspendBehaviorLattice>);
-static_assert(std::is_same_v<ClockSourceLattice::pinning_axis,  PinningRequirementLattice>);
+static_assert(std::is_same_v<ClockSourceLattice::suspend_axis, SuspendBehaviorLattice>);
+static_assert(std::is_same_v<ClockSourceLattice::pinning_axis, PinningRequirementLattice>);
 
 // ── Bounds — pointwise lifts of the three component bottoms/tops ────
-static_assert(ClockSourceLattice::get<0>(ClockSourceLattice::bottom())
-              == DetSafeTier::NonDeterministicSyscall);
-static_assert(ClockSourceLattice::get<1>(ClockSourceLattice::bottom())
-              == SuspendBehavior::Unknown);
-static_assert(ClockSourceLattice::get<2>(ClockSourceLattice::bottom())
-              == PinningRequirement::NotRequired);
-static_assert(ClockSourceLattice::get<0>(ClockSourceLattice::top())
-              == DetSafeTier::Pure);
-static_assert(ClockSourceLattice::get<1>(ClockSourceLattice::top())
-              == SuspendBehavior::KeepsTicking);
-static_assert(ClockSourceLattice::get<2>(ClockSourceLattice::top())
-              == PinningRequirement::CrossSocketSafe);
+static_assert(ClockSourceLattice::get<0>(ClockSourceLattice::bottom()) == DetSafeTier::NonDeterministicSyscall);
+static_assert(ClockSourceLattice::get<1>(ClockSourceLattice::bottom()) == SuspendBehavior::Unknown);
+static_assert(ClockSourceLattice::get<2>(ClockSourceLattice::bottom()) == PinningRequirement::NotRequired);
+static_assert(ClockSourceLattice::get<0>(ClockSourceLattice::top()) == DetSafeTier::Pure);
+static_assert(ClockSourceLattice::get<1>(ClockSourceLattice::top()) == SuspendBehavior::KeepsTicking);
+static_assert(ClockSourceLattice::get<2>(ClockSourceLattice::top()) == PinningRequirement::CrossSocketSafe);
 
 // ════════════════════════════════════════════════════════════════════
 // PROJECTION MATRIX — the load-bearing correctness surface (9 × 3)
@@ -403,92 +397,73 @@ static_assert(ClockSourceLattice::get<2>(ClockSourceLattice::top())
 // the whole reason this lattice exists.
 
 // Tiny per-cell helper keeps the matrix readable.
-[[nodiscard]] consteval bool projects_to(
-    ClockSource source, DetSafeTier det, SuspendBehavior suspend,
-    PinningRequirement pin) noexcept
-{
+[[nodiscard]] consteval bool projects_to(ClockSource source, DetSafeTier det, SuspendBehavior suspend,
+                                         PinningRequirement pin) noexcept {
     auto point = clock_source_project(source);
-    return ClockSourceLattice::get<0>(point) == det
-        && ClockSourceLattice::get<1>(point) == suspend
+    return ClockSourceLattice::get<0>(point) == det && ClockSourceLattice::get<1>(point) == suspend
         && ClockSourceLattice::get<2>(point) == pin;
 }
 
 // Row 0 — Realtime [task-FIXED].
-static_assert(projects_to(ClockSource::Realtime,
-    DetSafeTier::WallClockRead, SuspendBehavior::PausesOnSuspend,
-    PinningRequirement::NotRequired),
-    "FIXY-V-184: Realtime must project to (WallClockRead, PausesOnSuspend, "
-    "NotRequired) — the task-fixed wall-clock row.");
+static_assert(projects_to(ClockSource::Realtime, DetSafeTier::WallClockRead, SuspendBehavior::PausesOnSuspend,
+                          PinningRequirement::NotRequired),
+              "FIXY-V-184: Realtime must project to (WallClockRead, PausesOnSuspend, "
+              "NotRequired) — the task-fixed wall-clock row.");
 // Rows 1,2 — Monotonic / MonotonicRaw.
-static_assert(projects_to(ClockSource::Monotonic,
-    DetSafeTier::MonotonicClockRead, SuspendBehavior::PausesOnSuspend,
-    PinningRequirement::NotRequired));
-static_assert(projects_to(ClockSource::MonotonicRaw,
-    DetSafeTier::MonotonicClockRead, SuspendBehavior::PausesOnSuspend,
-    PinningRequirement::NotRequired));
+static_assert(projects_to(ClockSource::Monotonic, DetSafeTier::MonotonicClockRead, SuspendBehavior::PausesOnSuspend,
+                          PinningRequirement::NotRequired));
+static_assert(projects_to(ClockSource::MonotonicRaw, DetSafeTier::MonotonicClockRead, SuspendBehavior::PausesOnSuspend,
+                          PinningRequirement::NotRequired));
 // Row 3 — Boot [task-FIXED].
-static_assert(projects_to(ClockSource::Boot,
-    DetSafeTier::MonotonicClockRead, SuspendBehavior::KeepsTicking,
-    PinningRequirement::NotRequired),
-    "FIXY-V-184: Boot must project to (MonotonicClockRead, KeepsTicking, "
-    "NotRequired) — the task-fixed suspend-inclusive row.");
+static_assert(projects_to(ClockSource::Boot, DetSafeTier::MonotonicClockRead, SuspendBehavior::KeepsTicking,
+                          PinningRequirement::NotRequired),
+              "FIXY-V-184: Boot must project to (MonotonicClockRead, KeepsTicking, "
+              "NotRequired) — the task-fixed suspend-inclusive row.");
 // Rows 4,5 — ThreadCpu / ProcessCpu.
-static_assert(projects_to(ClockSource::ThreadCpu,
-    DetSafeTier::MonotonicClockRead, SuspendBehavior::PausesOnSuspend,
-    PinningRequirement::NotRequired));
-static_assert(projects_to(ClockSource::ProcessCpu,
-    DetSafeTier::MonotonicClockRead, SuspendBehavior::PausesOnSuspend,
-    PinningRequirement::NotRequired));
+static_assert(projects_to(ClockSource::ThreadCpu, DetSafeTier::MonotonicClockRead, SuspendBehavior::PausesOnSuspend,
+                          PinningRequirement::NotRequired));
+static_assert(projects_to(ClockSource::ProcessCpu, DetSafeTier::MonotonicClockRead, SuspendBehavior::PausesOnSuspend,
+                          PinningRequirement::NotRequired));
 // Row 6 — TscRaw [task-FIXED].
-static_assert(projects_to(ClockSource::TscRaw,
-    DetSafeTier::MonotonicClockRead, SuspendBehavior::KeepsTicking,
-    PinningRequirement::PerCore),
-    "FIXY-V-184: TscRaw must project to (MonotonicClockRead, KeepsTicking, "
-    "PerCore) — the task-fixed per-core cycle-counter row.");
+static_assert(projects_to(ClockSource::TscRaw, DetSafeTier::MonotonicClockRead, SuspendBehavior::KeepsTicking,
+                          PinningRequirement::PerCore),
+              "FIXY-V-184: TscRaw must project to (MonotonicClockRead, KeepsTicking, "
+              "PerCore) — the task-fixed per-core cycle-counter row.");
 // Rows 7,8 — TscSerialized / PmuCounter (share TscRaw's per-core domain).
-static_assert(projects_to(ClockSource::TscSerialized,
-    DetSafeTier::MonotonicClockRead, SuspendBehavior::KeepsTicking,
-    PinningRequirement::PerCore));
-static_assert(projects_to(ClockSource::PmuCounter,
-    DetSafeTier::MonotonicClockRead, SuspendBehavior::KeepsTicking,
-    PinningRequirement::PerCore));
+static_assert(projects_to(ClockSource::TscSerialized, DetSafeTier::MonotonicClockRead, SuspendBehavior::KeepsTicking,
+                          PinningRequirement::PerCore));
+static_assert(projects_to(ClockSource::PmuCounter, DetSafeTier::MonotonicClockRead, SuspendBehavior::KeepsTicking,
+                          PinningRequirement::PerCore));
 // Row 9 — PtpHwClock (FIXY-V-201, shares Boot's projected tuple: per-NIC
 // silicon clock, suspend-independent, fd/ioctl read needs no CPU pin).
-static_assert(projects_to(ClockSource::PtpHwClock,
-    DetSafeTier::MonotonicClockRead, SuspendBehavior::KeepsTicking,
-    PinningRequirement::NotRequired),
-    "FIXY-V-201: PtpHwClock must project to (MonotonicClockRead, "
-    "KeepsTicking, NotRequired) — same tuple as Boot, distinct source "
-    "identity at the V-185 wrapper.");
+static_assert(projects_to(ClockSource::PtpHwClock, DetSafeTier::MonotonicClockRead, SuspendBehavior::KeepsTicking,
+                          PinningRequirement::NotRequired),
+              "FIXY-V-201: PtpHwClock must project to (MonotonicClockRead, "
+              "KeepsTicking, NotRequired) — same tuple as Boot, distinct source "
+              "identity at the V-185 wrapper.");
 
 // ── Order witnesses over projected points ───────────────────────────
 //
 // Boot ⊑ TscRaw: equal on DetSafe + Suspend; NotRequired ⊑ PerCore on
 // the pinning axis.  TscRaw strictly dominates Boot.
-static_assert(ClockSourceLattice::leq(
-    clock_source_project(ClockSource::Boot),
-    clock_source_project(ClockSource::TscRaw)),
-    "FIXY-V-184: Boot ⊑ TscRaw — TscRaw's PerCore pinning subsumes "
-    "Boot's NotRequired on the only differing axis.");
-static_assert(!ClockSourceLattice::leq(
-    clock_source_project(ClockSource::TscRaw),
-    clock_source_project(ClockSource::Boot)),
-    "FIXY-V-184: TscRaw ⋣ Boot — PerCore ⋣ NotRequired; the descending "
-    "direction is FALSE.");
+static_assert(ClockSourceLattice::leq(clock_source_project(ClockSource::Boot),
+                                      clock_source_project(ClockSource::TscRaw)),
+              "FIXY-V-184: Boot ⊑ TscRaw — TscRaw's PerCore pinning subsumes "
+              "Boot's NotRequired on the only differing axis.");
+static_assert(!ClockSourceLattice::leq(clock_source_project(ClockSource::TscRaw),
+                                       clock_source_project(ClockSource::Boot)),
+              "FIXY-V-184: TscRaw ⋣ Boot — PerCore ⋣ NotRequired; the descending "
+              "direction is FALSE.");
 // Realtime is weaker on every axis than Boot ⇒ strictly below it.
-static_assert(ClockSourceLattice::leq(
-    clock_source_project(ClockSource::Realtime),
-    clock_source_project(ClockSource::Boot)));
-static_assert(!ClockSourceLattice::leq(
-    clock_source_project(ClockSource::Boot),
-    clock_source_project(ClockSource::Realtime)));
+static_assert(ClockSourceLattice::leq(clock_source_project(ClockSource::Realtime),
+                                      clock_source_project(ClockSource::Boot)));
+static_assert(!ClockSourceLattice::leq(clock_source_project(ClockSource::Boot),
+                                       clock_source_project(ClockSource::Realtime)));
 // Monotonic ⊑ Boot (equal DetSafe+Pin; PausesOnSuspend ⊑ KeepsTicking).
-static_assert(ClockSourceLattice::leq(
-    clock_source_project(ClockSource::Monotonic),
-    clock_source_project(ClockSource::Boot)));
-static_assert(!ClockSourceLattice::leq(
-    clock_source_project(ClockSource::Boot),
-    clock_source_project(ClockSource::Monotonic)));
+static_assert(ClockSourceLattice::leq(clock_source_project(ClockSource::Monotonic),
+                                      clock_source_project(ClockSource::Boot)));
+static_assert(!ClockSourceLattice::leq(clock_source_project(ClockSource::Boot),
+                                       clock_source_project(ClockSource::Monotonic)));
 
 // ── INCOMPARABILITY — proves it's a genuine PRODUCT, not a chain ────
 //
@@ -497,35 +472,32 @@ static_assert(!ClockSourceLattice::leq(
 //   right = (NonDeterministicSyscall, KeepsTicking, NotRequired) — max Suspend, min else
 // Neither ⊑ the other: left wins axes 0+2, right wins axis 1.  A chain
 // could never produce an incomparable pair.
+static_assert(!ClockSourceLattice::leq(ClockSourceLattice::make_point(DetSafeTier::Pure, SuspendBehavior::Unknown,
+                                                                      PinningRequirement::CrossSocketSafe),
+                                       ClockSourceLattice::make_point(DetSafeTier::NonDeterministicSyscall,
+                                                                      SuspendBehavior::KeepsTicking,
+                                                                      PinningRequirement::NotRequired)),
+              "FIXY-V-184: the product is NOT a chain — these two points are "
+              "incomparable (left dominates DetSafe+Pinning, right dominates Suspend).");
 static_assert(!ClockSourceLattice::leq(
-    ClockSourceLattice::make_point(
-        DetSafeTier::Pure, SuspendBehavior::Unknown, PinningRequirement::CrossSocketSafe),
-    ClockSourceLattice::make_point(
-        DetSafeTier::NonDeterministicSyscall, SuspendBehavior::KeepsTicking,
-        PinningRequirement::NotRequired)),
-    "FIXY-V-184: the product is NOT a chain — these two points are "
-    "incomparable (left dominates DetSafe+Pinning, right dominates Suspend).");
-static_assert(!ClockSourceLattice::leq(
-    ClockSourceLattice::make_point(
-        DetSafeTier::NonDeterministicSyscall, SuspendBehavior::KeepsTicking,
-        PinningRequirement::NotRequired),
-    ClockSourceLattice::make_point(
-        DetSafeTier::Pure, SuspendBehavior::Unknown, PinningRequirement::CrossSocketSafe)));
+    ClockSourceLattice::make_point(DetSafeTier::NonDeterministicSyscall, SuspendBehavior::KeepsTicking,
+                                   PinningRequirement::NotRequired),
+    ClockSourceLattice::make_point(DetSafeTier::Pure, SuspendBehavior::Unknown, PinningRequirement::CrossSocketSafe)));
 
 // ── join / meet pointwise across the three axes ─────────────────────
 //
 // join(Boot, Realtime): max per axis = (max(Mono,Wall)=Mono,
 // max(Keeps,Pauses)=Keeps, max(NotReq,NotReq)=NotReq) = Boot's point.
-static_assert(ClockSourceLattice::get<0>(ClockSourceLattice::join(
-    clock_source_project(ClockSource::Boot),
-    clock_source_project(ClockSource::Realtime))) == DetSafeTier::MonotonicClockRead);
-static_assert(ClockSourceLattice::get<1>(ClockSourceLattice::join(
-    clock_source_project(ClockSource::Boot),
-    clock_source_project(ClockSource::Realtime))) == SuspendBehavior::KeepsTicking);
+static_assert(ClockSourceLattice::get<0>(ClockSourceLattice::join(clock_source_project(ClockSource::Boot),
+                                                                  clock_source_project(ClockSource::Realtime)))
+              == DetSafeTier::MonotonicClockRead);
+static_assert(ClockSourceLattice::get<1>(ClockSourceLattice::join(clock_source_project(ClockSource::Boot),
+                                                                  clock_source_project(ClockSource::Realtime)))
+              == SuspendBehavior::KeepsTicking);
 // meet(TscRaw, Boot): min per axis = (Mono, Keeps, min(PerCore,NotReq)=NotReq).
-static_assert(ClockSourceLattice::get<2>(ClockSourceLattice::meet(
-    clock_source_project(ClockSource::TscRaw),
-    clock_source_project(ClockSource::Boot))) == PinningRequirement::NotRequired);
+static_assert(ClockSourceLattice::get<2>(ClockSourceLattice::meet(clock_source_project(ClockSource::TscRaw),
+                                                                  clock_source_project(ClockSource::Boot)))
+              == PinningRequirement::NotRequired);
 
 // ── Lattice-axiom + distributivity rollups at projected witnesses ───
 //
@@ -534,39 +506,33 @@ static_assert(ClockSourceLattice::get<2>(ClockSourceLattice::meet(
 // shadowed name() and concrete component chains) also satisfies them at
 // representative clock-source points.  Birkhoff guarantees
 // distributivity (product of distributive chains).
-static_assert(verify_bounded_lattice_axioms_at<ClockSourceLattice>(
-    clock_source_project(ClockSource::Realtime),
-    clock_source_project(ClockSource::Boot),
-    clock_source_project(ClockSource::TscRaw)));
-static_assert(verify_bounded_lattice_axioms_at<ClockSourceLattice>(
-    ClockSourceLattice::bottom(),
-    clock_source_project(ClockSource::Monotonic),
-    ClockSourceLattice::top()));
-static_assert(verify_distributive_lattice<ClockSourceLattice>(
-    clock_source_project(ClockSource::Realtime),
-    clock_source_project(ClockSource::Boot),
-    clock_source_project(ClockSource::TscRaw)));
+static_assert(verify_bounded_lattice_axioms_at<ClockSourceLattice>(clock_source_project(ClockSource::Realtime),
+                                                                   clock_source_project(ClockSource::Boot),
+                                                                   clock_source_project(ClockSource::TscRaw)));
+static_assert(verify_bounded_lattice_axioms_at<ClockSourceLattice>(ClockSourceLattice::bottom(),
+                                                                   clock_source_project(ClockSource::Monotonic),
+                                                                   ClockSourceLattice::top()));
+static_assert(verify_distributive_lattice<ClockSourceLattice>(clock_source_project(ClockSource::Realtime),
+                                                              clock_source_project(ClockSource::Boot),
+                                                              clock_source_project(ClockSource::TscRaw)));
 
 // ── Partial-order sugar from Lattice.h composes with the product ────
-static_assert( subsumes<ClockSourceLattice>(
-    clock_source_project(ClockSource::Boot),
-    clock_source_project(ClockSource::TscRaw)));
-static_assert( strictly_less<ClockSourceLattice>(
-    clock_source_project(ClockSource::Boot),
-    clock_source_project(ClockSource::TscRaw)));
-static_assert( equivalent<ClockSourceLattice>(
-    clock_source_project(ClockSource::Monotonic),
-    clock_source_project(ClockSource::MonotonicRaw)),
-    "FIXY-V-184: Monotonic and MonotonicRaw project to the SAME tuple — "
-    "they differ only in NTP-slew, which this lattice does not model; "
-    "the V-185 wrapper keeps them distinct at the federation-cache key.");
+static_assert(subsumes<ClockSourceLattice>(clock_source_project(ClockSource::Boot),
+                                           clock_source_project(ClockSource::TscRaw)));
+static_assert(strictly_less<ClockSourceLattice>(clock_source_project(ClockSource::Boot),
+                                                clock_source_project(ClockSource::TscRaw)));
+static_assert(equivalent<ClockSourceLattice>(clock_source_project(ClockSource::Monotonic),
+                                             clock_source_project(ClockSource::MonotonicRaw)),
+              "FIXY-V-184: Monotonic and MonotonicRaw project to the SAME tuple — "
+              "they differ only in NTP-slew, which this lattice does not model; "
+              "the V-185 wrapper keeps them distinct at the federation-cache key.");
 
 // ── Diagnostic names ────────────────────────────────────────────────
 static_assert(ClockSourceLattice::name() == std::string_view{"ClockSourceLattice"},
-    "FIXY-V-184: name() must be the composite's own name, not the "
-    "inherited generic 'Product<L1x...xLn>'.");
-static_assert(clock_source_name(ClockSource::TscRaw)        == std::string_view{"TscRaw"});
-static_assert(clock_source_name(ClockSource::Boot)          == std::string_view{"Boot"});
+              "FIXY-V-184: name() must be the composite's own name, not the "
+              "inherited generic 'Product<L1x...xLn>'.");
+static_assert(clock_source_name(ClockSource::TscRaw) == std::string_view{"TscRaw"});
+static_assert(clock_source_name(ClockSource::Boot) == std::string_view{"Boot"});
 static_assert(clock_source_name(ClockSource::TscSerialized) == std::string_view{"TscSerialized"});
 
 // ── Graded composition — the V-185 use case (bounded-shape) ─────────
@@ -576,20 +542,22 @@ static_assert(clock_source_name(ClockSource::TscSerialized) == std::string_view{
 // by the grade + alignment padding — the EBO-collapse macro does NOT
 // apply.  Assert the bounded shape instead (mirrors ProductLattice.h's
 // BudgetU8U8 / Budgeted3U8 witnesses).
-struct EightByteValue { unsigned long long v{0}; };
+struct EightByteValue {
+    unsigned long long v{0};
+};
 
 template <typename T_>
 using ClockGraded = Graded<ModalityKind::Absolute, ClockSourceLattice, T_>;
 
 static_assert(sizeof(ClockGraded<int>) <= sizeof(int) + 4,
-    "FIXY-V-184: ClockGraded<int> exceeded sizeof(int) + 4 — the 3-byte "
-    "(DetSafe×Suspend×Pin) grade plus ≤ 1 byte alignment padding must fit "
-    "in 4 trailing bytes; if this fires, investigate Graded grade placement "
-    "or the per-slot inheritance-EBO discipline in ProductLattice.h.");
+              "FIXY-V-184: ClockGraded<int> exceeded sizeof(int) + 4 — the 3-byte "
+              "(DetSafe×Suspend×Pin) grade plus ≤ 1 byte alignment padding must fit "
+              "in 4 trailing bytes; if this fires, investigate Graded grade placement "
+              "or the per-slot inheritance-EBO discipline in ProductLattice.h.");
 static_assert(sizeof(ClockGraded<EightByteValue>) <= sizeof(EightByteValue) + 8,
-    "FIXY-V-184: ClockGraded<EightByteValue> exceeded sizeof + 8 — the "
-    "3-byte grade plus ≤ 5 bytes alignment padding must fit in 8 trailing "
-    "bytes.");
+              "FIXY-V-184: ClockGraded<EightByteValue> exceeded sizeof + 8 — the "
+              "3-byte grade plus ≤ 5 bytes alignment padding must fit in 8 trailing "
+              "bytes.");
 
 // ── At<Source> singleton grade — regime-1 EBO (FIXY-V-185 dependency) ─
 //
@@ -601,39 +569,34 @@ static_assert(sizeof(ClockGraded<EightByteValue>) <= sizeof(EightByteValue) + 8,
 static_assert(crucible::algebra::Lattice<ClockSourceLattice::At<ClockSource::Boot>>);
 static_assert(crucible::algebra::BoundedLattice<ClockSourceLattice::At<ClockSource::TscRaw>>);
 static_assert(std::is_empty_v<ClockSourceLattice::At<ClockSource::Boot>::element_type>,
-    "FIXY-V-185 dependency: At<Source>::element_type must be empty so the "
-    "ClockSource wrapper EBO-collapses to sizeof(T).");
+              "FIXY-V-185 dependency: At<Source>::element_type must be empty so the "
+              "ClockSource wrapper EBO-collapses to sizeof(T).");
 static_assert(ClockSourceLattice::At<ClockSource::Boot>::source == ClockSource::Boot);
 static_assert(ClockSourceLattice::At<ClockSource::Realtime>::source == ClockSource::Realtime);
 static_assert(ClockSourceLattice::At<ClockSource::TscRaw>::name()
               == std::string_view{"ClockSourceLattice::At<TscRaw>"});
 
 [[nodiscard]] consteval bool every_at_clock_source_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^ClockSource));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^ClockSource));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
-        if (ClockSourceLattice::At<([:en:])>::name() ==
-            std::string_view{"ClockSourceLattice::At<?>"}) {
+        if (ClockSourceLattice::At<([:en:])>::name() == std::string_view{"ClockSourceLattice::At<?>"}) {
             return false;
         }
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_at_clock_source_has_name(),
-    "ClockSourceLattice::At<Source>::name() switch missing an arm for at "
-    "least one source — add the arm or the new source leaks the "
-    "'ClockSourceLattice::At<?>' sentinel.");
+static_assert(every_at_clock_source_has_name(), "ClockSourceLattice::At<Source>::name() switch missing an arm for at "
+                                                "least one source — add the arm or the new source leaks the "
+                                                "'ClockSourceLattice::At<?>' sentinel.");
 
-static_assert(
-    sizeof(crucible::algebra::Graded<crucible::algebra::ModalityKind::Absolute,
-                                     ClockSourceLattice::At<ClockSource::Boot>,
-                                     EightByteValue>)
-    == sizeof(EightByteValue),
-    "FIXY-V-185 dependency: At<Boot> regime-1 EBO collapse adds zero bytes "
-    "to an 8-byte payload.");
+static_assert(sizeof(crucible::algebra::Graded<crucible::algebra::ModalityKind::Absolute,
+                                               ClockSourceLattice::At<ClockSource::Boot>, EightByteValue>)
+                  == sizeof(EightByteValue),
+              "FIXY-V-185 dependency: At<Boot> regime-1 EBO collapse adds zero bytes "
+              "to an 8-byte payload.");
 
 // ── Runtime smoke test ──────────────────────────────────────────────
 //
@@ -645,9 +608,9 @@ inline void runtime_smoke_test() {
     // Projection at runtime over a non-constant source.
     ClockSource source = ClockSource::TscRaw;
     auto tsc_point = clock_source_project(source);
-    [[maybe_unused]] DetSafeTier        det     = ClockSourceLattice::get<0>(tsc_point);
-    [[maybe_unused]] SuspendBehavior    suspend = ClockSourceLattice::get<1>(tsc_point);
-    [[maybe_unused]] PinningRequirement pin     = ClockSourceLattice::get<2>(tsc_point);
+    [[maybe_unused]] DetSafeTier det = ClockSourceLattice::get<0>(tsc_point);
+    [[maybe_unused]] SuspendBehavior suspend = ClockSourceLattice::get<1>(tsc_point);
+    [[maybe_unused]] PinningRequirement pin = ClockSourceLattice::get<2>(tsc_point);
 
     // Composite lattice ops at runtime.
     auto boot_point = clock_source_project(ClockSource::Boot);
@@ -664,7 +627,7 @@ inline void runtime_smoke_test() {
     // pinning axis (Boot ⊑ TscRaw), compose, consume.
     EightByteValue payload{42};
     ClockGraded<EightByteValue> initial{payload, boot_point};
-    auto widened  = initial.weaken(tsc_point);              // boot_point ⊑ tsc_point
+    auto widened = initial.weaken(tsc_point);  // boot_point ⊑ tsc_point
     auto composed = initial.compose(widened);
     auto rv_widen = std::move(widened).weaken(ClockSourceLattice::top());
 

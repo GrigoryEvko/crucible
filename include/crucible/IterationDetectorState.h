@@ -97,9 +97,9 @@ struct Building {};
 // sequential matcher is running.  signature_len.get() == K.
 // Reaching this state requires K successful build_signature_
 // writes; once entered, the only way back to Building is reset().
-struct Steady   {};
+struct Steady {};
 
-} // namespace iter_det_state
+}  // namespace iter_det_state
 
 // ── view_ok ADL hooks ──────────────────────────────────────────────
 //
@@ -111,15 +111,13 @@ struct Steady   {};
 // constant evaluation is ill-formed (P1494R5 — pre violation in
 // constexpr context makes the result non-constant).
 
-[[nodiscard]] constexpr bool
-view_ok(IterationDetector const& detector,
-        std::type_identity<iter_det_state::Building>) noexcept {
+[[nodiscard]] constexpr bool view_ok(IterationDetector const& detector,
+                                     std::type_identity<iter_det_state::Building>) noexcept {
     return detector.signature_len.get() < IterationDetector::K;
 }
 
-[[nodiscard]] constexpr bool
-view_ok(IterationDetector const& detector,
-        std::type_identity<iter_det_state::Steady>) noexcept {
+[[nodiscard]] constexpr bool view_ok(IterationDetector const& detector,
+                                     std::type_identity<iter_det_state::Steady>) noexcept {
     return detector.signature_len.get() == IterationDetector::K;
 }
 
@@ -135,9 +133,9 @@ view_ok(IterationDetector const& detector,
 // safety/ScopedView.h's contains_scoped_view recursion.
 
 static_assert(::crucible::safety::no_scoped_view_field_check<IterationDetector>(),
-    "IterationDetector must not contain a safety::ScopedView field "
-    "— views are non-owning lifetime-bounded witnesses; storing one "
-    "as a member defeats the lifetime contract.  See "
-    "include/crucible/safety/ScopedView.h discipline (Tier 2).");
+              "IterationDetector must not contain a safety::ScopedView field "
+              "— views are non-owning lifetime-bounded witnesses; storing one "
+              "as a member defeats the lifetime contract.  See "
+              "include/crucible/safety/ScopedView.h discipline (Tier 2).");
 
-} // namespace crucible
+}  // namespace crucible

@@ -40,8 +40,7 @@ namespace detail {
     return k;
 }
 
-[[nodiscard]] constexpr std::uint64_t hash_mix(std::uint64_t h,
-                                               std::uint64_t v) noexcept {
+[[nodiscard]] constexpr std::uint64_t hash_mix(std::uint64_t h, std::uint64_t v) noexcept {
     return fmix64(h ^ (v + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2)));
 }
 }  // namespace detail
@@ -93,66 +92,79 @@ struct FusedCommDecision {
     ContentHash producer_hash{};
     ContentHash comm_hash{};
     ContentHash fused_hash{};
-    net::NetworkCollectiveAlgorithm algorithm =
-        net::NetworkCollectiveAlgorithm::Ring;
-    net::NetworkEquivalenceClass equivalence =
-        net::NetworkEquivalenceClass::OrderedTolerance;
+    net::NetworkCollectiveAlgorithm algorithm = net::NetworkCollectiveAlgorithm::Ring;
+    net::NetworkEquivalenceClass equivalence = net::NetworkEquivalenceClass::OrderedTolerance;
     std::uint16_t participants = 1;
 };
 
-using DeclaredFusedCommDecision =
-    safety::Tagged<FusedCommDecision, source::ForgeFused>;
+using DeclaredFusedCommDecision = safety::Tagged<FusedCommDecision, source::ForgeFused>;
 
-[[nodiscard]] constexpr std::string_view
-comm_phase_kind_name(CommPhaseKind phase) noexcept {
+[[nodiscard]] constexpr std::string_view comm_phase_kind_name(CommPhaseKind phase) noexcept {
     switch (phase) {
-        case CommPhaseKind::Ingest: return "Ingest";
-        case CommPhaseKind::Analyze: return "Analyze";
-        case CommPhaseKind::Rewrite: return "Rewrite";
-        case CommPhaseKind::Fuse: return "Fuse";
-        case CommPhaseKind::LowerToKernels: return "LowerToKernels";
-        case CommPhaseKind::Tile: return "Tile";
-        case CommPhaseKind::Memplan: return "Memplan";
-        case CommPhaseKind::Compile: return "Compile";
-        case CommPhaseKind::Schedule: return "Schedule";
-        case CommPhaseKind::Emit: return "Emit";
-        case CommPhaseKind::Distribute: return "Distribute";
-        case CommPhaseKind::Validate: return "Validate";
-        default: return "<unknown CommPhaseKind>";
+        case CommPhaseKind::Ingest:
+            return "Ingest";
+        case CommPhaseKind::Analyze:
+            return "Analyze";
+        case CommPhaseKind::Rewrite:
+            return "Rewrite";
+        case CommPhaseKind::Fuse:
+            return "Fuse";
+        case CommPhaseKind::LowerToKernels:
+            return "LowerToKernels";
+        case CommPhaseKind::Tile:
+            return "Tile";
+        case CommPhaseKind::Memplan:
+            return "Memplan";
+        case CommPhaseKind::Compile:
+            return "Compile";
+        case CommPhaseKind::Schedule:
+            return "Schedule";
+        case CommPhaseKind::Emit:
+            return "Emit";
+        case CommPhaseKind::Distribute:
+            return "Distribute";
+        case CommPhaseKind::Validate:
+            return "Validate";
+        default:
+            return "<unknown CommPhaseKind>";
     }
 }
 
-[[nodiscard]] constexpr std::string_view
-comm_fusion_pattern_name(CommFusionPattern pattern) noexcept {
+[[nodiscard]] constexpr std::string_view comm_fusion_pattern_name(CommFusionPattern pattern) noexcept {
     switch (pattern) {
-        case CommFusionPattern::SendFromEpilogue: return "SendFromEpilogue";
-        case CommFusionPattern::ReduceOnRecv: return "ReduceOnRecv";
+        case CommFusionPattern::SendFromEpilogue:
+            return "SendFromEpilogue";
+        case CommFusionPattern::ReduceOnRecv:
+            return "ReduceOnRecv";
         case CommFusionPattern::CompressBeforeSend:
             return "CompressBeforeSend";
         case CommFusionPattern::DecompressAfterRecv:
             return "DecompressAfterRecv";
         case CommFusionPattern::ScatterFromAttention:
             return "ScatterFromAttention";
-        case CommFusionPattern::PrefetchReceive: return "PrefetchReceive";
-        default: return "<unknown CommFusionPattern>";
+        case CommFusionPattern::PrefetchReceive:
+            return "PrefetchReceive";
+        default:
+            return "<unknown CommFusionPattern>";
     }
 }
 
-[[nodiscard]] constexpr std::string_view
-comm_phase_error_name(CommPhaseError error) noexcept {
+[[nodiscard]] constexpr std::string_view comm_phase_error_name(CommPhaseError error) noexcept {
     switch (error) {
-        case CommPhaseError::None: return "None";
-        case CommPhaseError::PatternDisabled: return "PatternDisabled";
+        case CommPhaseError::None:
+            return "None";
+        case CommPhaseError::PatternDisabled:
+            return "PatternDisabled";
         case CommPhaseError::RecipeForbidsPattern:
             return "RecipeForbidsPattern";
         case CommPhaseError::RecipeForbidsAlgorithm:
             return "RecipeForbidsAlgorithm";
-        default: return "<unknown CommPhaseError>";
+        default:
+            return "<unknown CommPhaseError>";
     }
 }
 
-[[nodiscard]] constexpr bool pattern_enabled(
-    CommPhasePolicy policy, CommFusionPattern pattern) noexcept {
+[[nodiscard]] constexpr bool pattern_enabled(CommPhasePolicy policy, CommFusionPattern pattern) noexcept {
     switch (pattern) {
         case CommFusionPattern::SendFromEpilogue:
             return policy.send_from_epilogue;
@@ -229,23 +241,18 @@ struct PatternTraits<CommFusionPattern::PrefetchReceive> {
 };
 
 template <ir::Ir001OpKind Kind>
-inline constexpr bool ir001_compute_kind_v =
-    ir::ir001_op_category(Kind) == ir::Ir001OpCategory::Compute;
+inline constexpr bool ir001_compute_kind_v = ir::ir001_op_category(Kind) == ir::Ir001OpCategory::Compute;
 
-template <CommFusionPattern Pattern, ir::Ir001OpKind ComputeKind,
-          ir::Ir001OpKind CommKind>
+template <CommFusionPattern Pattern, ir::Ir001OpKind ComputeKind, ir::Ir001OpKind CommKind>
 [[nodiscard]] consteval bool pattern_accepts_kind_pair() noexcept {
     using traits = PatternTraits<Pattern>;
-    if constexpr (traits::requires_compute_producer
-                  && !ir001_compute_kind_v<ComputeKind>) {
+    if constexpr (traits::requires_compute_producer && !ir001_compute_kind_v<ComputeKind>) {
         return false;
     }
-    if constexpr (traits::requires_collective_comm
-                  && !ir::Ir001CollectiveKind<CommKind>) {
+    if constexpr (traits::requires_collective_comm && !ir::Ir001CollectiveKind<CommKind>) {
         return false;
     }
-    if constexpr (traits::requires_point_to_point_comm
-                  && !ir::Ir001PointToPointKind<CommKind>) {
+    if constexpr (traits::requires_point_to_point_comm && !ir::Ir001PointToPointKind<CommKind>) {
         return false;
     }
     return true;
@@ -253,31 +260,21 @@ template <CommFusionPattern Pattern, ir::Ir001OpKind ComputeKind,
 
 template <class Recipe, CommFusionPattern Pattern>
 concept CommFusionRecipeAllowed =
-    net::DeclaresNetworkRecipe<Recipe> &&
-    !(PatternTraits<Pattern>::lossy
-      && Recipe::determinism != ReductionDeterminism::UNORDERED
-      && Recipe::determinism != ReductionDeterminism::ORDERED) &&
-    !(PatternTraits<Pattern>::order_relaxing
-      && Recipe::determinism == ReductionDeterminism::BITEXACT_STRICT);
+    net::DeclaresNetworkRecipe<Recipe>
+    && !(PatternTraits<Pattern>::lossy && Recipe::determinism != ReductionDeterminism::UNORDERED
+         && Recipe::determinism != ReductionDeterminism::ORDERED)
+    && !(PatternTraits<Pattern>::order_relaxing && Recipe::determinism == ReductionDeterminism::BITEXACT_STRICT);
 
-template <class ComputeNode, class CommNode, CommFusionPattern Pattern,
-          cog::CogKind Cog>
+template <class ComputeNode, class CommNode, CommFusionPattern Pattern, cog::CogKind Cog>
 concept CommFusionEligible =
-    ir::Ir001NodeLike<ComputeNode> &&
-    ir::Ir001NodeLike<CommNode> &&
-    effects::IsConcurrentRow<typename ComputeNode::row_type> &&
-    effects::IsConcurrentRow<typename CommNode::row_type> &&
-    effects::ConcurrentlySchedulable<typename ComputeNode::row_type,
-                                     typename CommNode::row_type> &&
-    pattern_accepts_kind_pair<Pattern, ComputeNode::kind, CommNode::kind>() &&
-    cog::FitsCog<effects::concurrent_row_sum_t<
-                     typename ComputeNode::row_type,
-                     typename CommNode::row_type>,
-                 Cog>;
+    ir::Ir001NodeLike<ComputeNode> && ir::Ir001NodeLike<CommNode>
+    && effects::IsConcurrentRow<typename ComputeNode::row_type> && effects::IsConcurrentRow<typename CommNode::row_type>
+    && effects::ConcurrentlySchedulable<typename ComputeNode::row_type, typename CommNode::row_type>
+    && pattern_accepts_kind_pair<Pattern, ComputeNode::kind, CommNode::kind>()
+    && cog::FitsCog<effects::concurrent_row_sum_t<typename ComputeNode::row_type, typename CommNode::row_type>, Cog>;
 
-[[nodiscard]] constexpr bool runtime_recipe_allows_pattern(
-    net::DeclaredNetworkRecipeConstraints constraints,
-    CommFusionPattern pattern) noexcept {
+[[nodiscard]] constexpr bool runtime_recipe_allows_pattern(net::DeclaredNetworkRecipeConstraints constraints,
+                                                           CommFusionPattern pattern) noexcept {
     auto const& raw = constraints.value();
     if (pattern == CommFusionPattern::CompressBeforeSend) {
         return raw.lossy_compression_allowed;
@@ -288,16 +285,11 @@ concept CommFusionEligible =
     return true;
 }
 
-template <CommFusionPattern Pattern, cog::CogKind Cog, class ComputeNode,
-          class CommNode>
+template <CommFusionPattern Pattern, cog::CogKind Cog, class ComputeNode, class CommNode>
     requires CommFusionEligible<ComputeNode, CommNode, Pattern, Cog>
-[[nodiscard]] constexpr std::expected<DeclaredFusedCommDecision,
-                                      CommPhaseError>
-admit_comm_fusion(
-    ir::DeclaredIr001Node<ComputeNode> producer,
-    ir::DeclaredIr001Node<CommNode> comm,
-    net::DeclaredNetworkRecipeConstraints constraints,
-    CommPhasePolicy policy = {}) noexcept {
+[[nodiscard]] constexpr std::expected<DeclaredFusedCommDecision, CommPhaseError>
+admit_comm_fusion(ir::DeclaredIr001Node<ComputeNode> producer, ir::DeclaredIr001Node<CommNode> comm,
+                  net::DeclaredNetworkRecipeConstraints constraints, CommPhasePolicy policy = {}) noexcept {
     if (!pattern_enabled(policy, Pattern)) {
         return std::unexpected(CommPhaseError::PatternDisabled);
     }
@@ -307,8 +299,7 @@ admit_comm_fusion(
 
     auto const& comm_node = comm.value();
     auto const participants = []<class Node>(Node const& node) constexpr {
-        if constexpr (std::same_as<typename Node::attrs_type,
-                                   ir::CollectiveAttrs>) {
+        if constexpr (std::same_as<typename Node::attrs_type, ir::CollectiveAttrs>) {
             return node.attrs.participants.count.value();
         } else {
             return std::uint16_t{1};
@@ -318,11 +309,8 @@ admit_comm_fusion(
     if (!count.has_value()) {
         return std::unexpected(CommPhaseError::RecipeForbidsAlgorithm);
     }
-    if constexpr (std::same_as<typename CommNode::attrs_type,
-                               ir::CollectiveAttrs>) {
-        if (auto ok = net::algorithm_eligible(
-                constraints, comm_node.attrs.algorithm, *count);
-            !ok.has_value()) {
+    if constexpr (std::same_as<typename CommNode::attrs_type, ir::CollectiveAttrs>) {
+        if (auto ok = net::algorithm_eligible(constraints, comm_node.attrs.algorithm, *count); !ok.has_value()) {
             return std::unexpected(CommPhaseError::RecipeForbidsAlgorithm);
         }
     }
@@ -330,9 +318,7 @@ admit_comm_fusion(
     auto const producer_hash = producer.value().content_hash;
     auto const comm_hash = comm.value().content_hash;
     auto const fused_raw =
-        detail::hash_mix(
-            detail::hash_mix(producer_hash.raw(), comm_hash.raw()),
-            std::to_underlying(Pattern));
+        detail::hash_mix(detail::hash_mix(producer_hash.raw(), comm_hash.raw()), std::to_underlying(Pattern));
 
     return DeclaredFusedCommDecision{FusedCommDecision{
         .pattern = Pattern,
@@ -341,14 +327,14 @@ admit_comm_fusion(
         .producer_hash = producer_hash,
         .comm_hash = comm_hash,
         .fused_hash = ContentHash::from_raw(fused_raw == 0 ? 1 : fused_raw),
-        .algorithm = [&] constexpr {
-            if constexpr (std::same_as<typename CommNode::attrs_type,
-                                       ir::CollectiveAttrs>) {
-                return comm_node.attrs.algorithm;
-            } else {
-                return net::NetworkCollectiveAlgorithm::Ring;
-            }
-        }(),
+        .algorithm =
+            [&] constexpr {
+                if constexpr (std::same_as<typename CommNode::attrs_type, ir::CollectiveAttrs>) {
+                    return comm_node.attrs.algorithm;
+                } else {
+                    return net::NetworkCollectiveAlgorithm::Ring;
+                }
+            }(),
         .equivalence = constraints.value().equivalence,
         .participants = participants,
     }};

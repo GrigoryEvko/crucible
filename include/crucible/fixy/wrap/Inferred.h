@@ -96,92 +96,68 @@ namespace crucible::fixy::wrap::self_test_inferred {
 inline void f_pure(int, double) noexcept {}
 inline void f_alloc(::crucible::effects::Alloc, std::size_t) noexcept {}
 inline void f_bg(::crucible::effects::Bg, int) noexcept {}
-inline void f_alloc_io(::crucible::effects::Alloc,
-                       ::crucible::effects::IO,
-                       int) noexcept {}
-inline void f_alloc_dup(::crucible::effects::Alloc,
-                        ::crucible::effects::Alloc,
-                        int) noexcept {}
+inline void f_alloc_io(::crucible::effects::Alloc, ::crucible::effects::IO, int) noexcept {}
+inline void f_alloc_dup(::crucible::effects::Alloc, ::crucible::effects::Alloc, int) noexcept {}
 
 inline void f_no_tags(int, double, char*) noexcept {}
 inline void f_nullary() noexcept {}
 
 // ── 1. InferredRow — type-alias identity ─────────────────────────
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::wrap::inferred_row_t<&f_pure>,
-    ::crucible::safety::extract::inferred_row_t<&f_pure>>);
-static_assert(std::is_same_v<
-    ::crucible::fixy::wrap::inferred_row_t<&f_pure>,
-    ::crucible::effects::EmptyRow>);
-static_assert(std::is_same_v<
-    ::crucible::fixy::wrap::inferred_row_t<&f_alloc>,
-    ::crucible::effects::Row<::crucible::effects::Effect::Alloc>>);
-static_assert(std::is_same_v<
-    ::crucible::fixy::wrap::inferred_row_t<&f_alloc_io>,
-    ::crucible::effects::Row<::crucible::effects::Effect::Alloc,
-                             ::crucible::effects::Effect::IO>>);
+static_assert(std::is_same_v<::crucible::fixy::wrap::inferred_row_t<&f_pure>,
+                             ::crucible::safety::extract::inferred_row_t<&f_pure>>);
+static_assert(std::is_same_v<::crucible::fixy::wrap::inferred_row_t<&f_pure>, ::crucible::effects::EmptyRow>);
+static_assert(std::is_same_v<::crucible::fixy::wrap::inferred_row_t<&f_alloc>,
+                             ::crucible::effects::Row<::crucible::effects::Effect::Alloc>>);
+static_assert(
+    std::is_same_v<::crucible::fixy::wrap::inferred_row_t<&f_alloc_io>,
+                   ::crucible::effects::Row<::crucible::effects::Effect::Alloc, ::crucible::effects::Effect::IO>>);
 
 // ── 2. InferredRow — inferred_row_count_v ────────────────────────
 
-static_assert(
-    ::crucible::fixy::wrap::inferred_row_count_v<&f_pure> ==
-    ::crucible::safety::extract::inferred_row_count_v<&f_pure>);
-static_assert(::crucible::fixy::wrap::inferred_row_count_v<&f_pure>     == 0);
-static_assert(::crucible::fixy::wrap::inferred_row_count_v<&f_alloc>    == 1);
+static_assert(::crucible::fixy::wrap::inferred_row_count_v<&f_pure>
+              == ::crucible::safety::extract::inferred_row_count_v<&f_pure>);
+static_assert(::crucible::fixy::wrap::inferred_row_count_v<&f_pure> == 0);
+static_assert(::crucible::fixy::wrap::inferred_row_count_v<&f_alloc> == 1);
 static_assert(::crucible::fixy::wrap::inferred_row_count_v<&f_alloc_io> == 2);
 // Duplicate cap collapsed via insert-unique → still 1.
 static_assert(::crucible::fixy::wrap::inferred_row_count_v<&f_alloc_dup> == 1);
 
 // ── 3. InferredRow — function_has_effect_v ───────────────────────
 
-static_assert(
-    ::crucible::fixy::wrap::function_has_effect_v<
-        &f_alloc, ::crucible::effects::Effect::Alloc> ==
-    ::crucible::safety::extract::function_has_effect_v<
-        &f_alloc, ::crucible::effects::Effect::Alloc>);
-static_assert( ::crucible::fixy::wrap::function_has_effect_v<
-                  &f_alloc,    ::crucible::effects::Effect::Alloc>);
-static_assert(!::crucible::fixy::wrap::function_has_effect_v<
-                  &f_alloc,    ::crucible::effects::Effect::IO>);
-static_assert( ::crucible::fixy::wrap::function_has_effect_v<
-                  &f_alloc_io, ::crucible::effects::Effect::IO>);
-static_assert( ::crucible::fixy::wrap::function_has_effect_v<
-                  &f_bg,       ::crucible::effects::Effect::Bg>);
-static_assert(!::crucible::fixy::wrap::function_has_effect_v<
-                  &f_bg,       ::crucible::effects::Effect::Alloc>);
+static_assert(::crucible::fixy::wrap::function_has_effect_v<&f_alloc, ::crucible::effects::Effect::Alloc>
+              == ::crucible::safety::extract::function_has_effect_v<&f_alloc, ::crucible::effects::Effect::Alloc>);
+static_assert(::crucible::fixy::wrap::function_has_effect_v<&f_alloc, ::crucible::effects::Effect::Alloc>);
+static_assert(!::crucible::fixy::wrap::function_has_effect_v<&f_alloc, ::crucible::effects::Effect::IO>);
+static_assert(::crucible::fixy::wrap::function_has_effect_v<&f_alloc_io, ::crucible::effects::Effect::IO>);
+static_assert(::crucible::fixy::wrap::function_has_effect_v<&f_bg, ::crucible::effects::Effect::Bg>);
+static_assert(!::crucible::fixy::wrap::function_has_effect_v<&f_bg, ::crucible::effects::Effect::Alloc>);
 
 // ── 4. InferredRow — is_pure_function_v + IsPureFunction concept ─
 
-static_assert( ::crucible::fixy::wrap::is_pure_function_v<&f_pure>);
+static_assert(::crucible::fixy::wrap::is_pure_function_v<&f_pure>);
 static_assert(!::crucible::fixy::wrap::is_pure_function_v<&f_alloc>);
 static_assert(!::crucible::fixy::wrap::is_pure_function_v<&f_bg>);
 
-static_assert( ::crucible::fixy::wrap::IsPureFunction<&f_pure>);
+static_assert(::crucible::fixy::wrap::IsPureFunction<&f_pure>);
 static_assert(!::crucible::fixy::wrap::IsPureFunction<&f_alloc>);
 
 // Cross-path agreement on admission.
-static_assert(
-    ::crucible::fixy::wrap::IsPureFunction<&f_pure> ==
-    ::crucible::safety::extract::IsPureFunction<&f_pure>);
+static_assert(::crucible::fixy::wrap::IsPureFunction<&f_pure> == ::crucible::safety::extract::IsPureFunction<&f_pure>);
 
 // ── 5. InferredPermissionTags — type-alias identity ──────────────
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::wrap::inferred_permission_tags_t<&f_no_tags>,
-    ::crucible::safety::extract::inferred_permission_tags_t<&f_no_tags>>);
-static_assert(std::is_same_v<
-    ::crucible::fixy::wrap::inferred_permission_tags_t<&f_no_tags>,
-    ::crucible::safety::proto::EmptyPermSet>);
-static_assert(std::is_same_v<
-    ::crucible::fixy::wrap::inferred_permission_tags_raw_t<&f_no_tags>,
-    ::crucible::safety::proto::EmptyPermSet>);
+static_assert(std::is_same_v<::crucible::fixy::wrap::inferred_permission_tags_t<&f_no_tags>,
+                             ::crucible::safety::extract::inferred_permission_tags_t<&f_no_tags>>);
+static_assert(std::is_same_v<::crucible::fixy::wrap::inferred_permission_tags_t<&f_no_tags>,
+                             ::crucible::safety::proto::EmptyPermSet>);
+static_assert(std::is_same_v<::crucible::fixy::wrap::inferred_permission_tags_raw_t<&f_no_tags>,
+                             ::crucible::safety::proto::EmptyPermSet>);
 
 // ── 6. InferredPermissionTags — inferred_permission_tags_count_v ─
 
-static_assert(
-    ::crucible::fixy::wrap::inferred_permission_tags_count_v<&f_no_tags> ==
-    ::crucible::safety::extract::inferred_permission_tags_count_v<&f_no_tags>);
+static_assert(::crucible::fixy::wrap::inferred_permission_tags_count_v<&f_no_tags>
+              == ::crucible::safety::extract::inferred_permission_tags_count_v<&f_no_tags>);
 static_assert(::crucible::fixy::wrap::inferred_permission_tags_count_v<&f_no_tags> == 0);
 static_assert(::crucible::fixy::wrap::inferred_permission_tags_count_v<&f_nullary> == 0);
 // f_alloc carries cap-tags but NO permission tags — count stays 0
@@ -191,18 +167,16 @@ static_assert(::crucible::fixy::wrap::inferred_permission_tags_count_v<&f_alloc>
 // ── 7. InferredPermissionTags — is_tag_free_function_v +
 //     IsTagFreeFunction concept ─────────────────────────────────
 
-static_assert(
-    ::crucible::fixy::wrap::is_tag_free_function_v<&f_no_tags> ==
-    ::crucible::safety::extract::is_tag_free_function_v<&f_no_tags>);
+static_assert(::crucible::fixy::wrap::is_tag_free_function_v<&f_no_tags>
+              == ::crucible::safety::extract::is_tag_free_function_v<&f_no_tags>);
 static_assert(::crucible::fixy::wrap::is_tag_free_function_v<&f_no_tags>);
 static_assert(::crucible::fixy::wrap::is_tag_free_function_v<&f_nullary>);
 // Cap-tagged-but-permission-free function is still tag-free.
 static_assert(::crucible::fixy::wrap::is_tag_free_function_v<&f_alloc>);
 
 static_assert(::crucible::fixy::wrap::IsTagFreeFunction<&f_no_tags>);
-static_assert(
-    ::crucible::fixy::wrap::IsTagFreeFunction<&f_no_tags> ==
-    ::crucible::safety::extract::IsTagFreeFunction<&f_no_tags>);
+static_assert(::crucible::fixy::wrap::IsTagFreeFunction<&f_no_tags>
+              == ::crucible::safety::extract::IsTagFreeFunction<&f_no_tags>);
 
 // ── 8. Axes orthogonality — Inferred row and permission tags
 //     never reach into each other's signals ────────────────────
@@ -235,9 +209,8 @@ static_assert(::crucible::fixy::wrap::is_tag_free_function_v<&f_alloc_io>);
 // the constant + add a sentinel above.
 
 constexpr int inferred_alias_cardinality = 11;
-static_assert(inferred_alias_cardinality == 11,
-    "fixy::wrap::Inferred cardinality changed — update Inferred.h "
-    "sentinel block to track the two parameter-introspection "
-    "substrates' public surface.");
+static_assert(inferred_alias_cardinality == 11, "fixy::wrap::Inferred cardinality changed — update Inferred.h "
+                                                "sentinel block to track the two parameter-introspection "
+                                                "substrates' public surface.");
 
 }  // namespace crucible::fixy::wrap::self_test_inferred

@@ -69,357 +69,359 @@
 namespace crucible::safety {
 
 namespace source {
-    struct FromUser     {};
-    struct FromDb       {};
-    struct FromConfig   {};
-    struct FromInternal {};
-    struct External     {};  // raw untrusted input (network, FFI)
-    struct ABIBoundary  {};  // opaque value crossing a C ABI / FFI boundary
-    struct Sanitized    {};  // validated, safe to pass to sanitized-only APIs
-    struct FormatVersion {}; // in-process format/version constant
-    struct Loaded       {};  // loaded from validated serialized state
-    struct Interned     {};  // canonicalized by an interning owner
-    struct Arena        {};  // arena-owned object pointer/reference
-    struct Singleton    {};  // process-global singleton accessor result
-    struct Recorded     {};  // produced from live RECORD-mode tracing
-    struct Replayed     {};  // reconstructed from replay/Cipher state
-    // Durable: loaded from on-disk state (Cipher, config, snapshots).
-    // Computed: derived at startup / runtime from Durable + inputs.
-    // The pair lets a reader distinguish "this came from disk" from "this
-    // is a computation result" at the type level — useful when init code
-    // mixes both and a reviewer needs to see which is load-bearing.
-    struct Durable      {};
-    struct Computed     {};
-    // Vendor: hardware-vendor-supplied attributes — model strings,
-    // firmware/BIOS revisions, microarchitecture identifiers reported
-    // by the device itself (PCIe config space, BMC, SMBIOS, vendor
-    // ioctl).  Distinct from FromConfig (operator-supplied) and
-    // FromInternal (computed locally) because vendor truth needs its
-    // own provenance lane: it can be wrong (vendor bug, counterfeit
-    // hardware), it lags the wire (firmware updates change behavior
-    // before the metadata advertises it), and it crosses a real trust
-    // boundary (driver / firmware code path Crucible doesn't own).
-    // Cog identity (cog/CogIdentity.h, GAPS-185) is the canonical
-    // consumer.
-    struct Vendor       {};
-    // Calibrated: measured at startup or runtime by Crucible's own
-    // calibration pass against real silicon — cross-checked against
-    // Vendor truth and used as the authoritative source when the two
-    // disagree (e.g. Vendor reports tflops_fp16 from datasheet,
-    // Calibrated reports the actual achieved number on this die at
-    // this thermal headroom).  Per-Cog TargetCaps (GAPS-186) split
-    // into Vendor-tagged vs Calibrated-tagged subsets so the planner
-    // can refuse to schedule against unverified vendor claims.
-    struct Calibrated   {};
-    // Hlc: timestamps minted by canopy/Hybrid Logical Clock state.
-    // Distinct from External timestamps received from peers: received
-    // bytes must be admitted explicitly before they can drive CRDT /
-    // Cipher ordering decisions.
-    struct Hlc          {};
-    // Local / Gossiped: CRDT provenance lanes.  Local marks writes
-    // authored by this replica; Gossiped marks state received from
-    // anti-entropy / Scuttlebutt exchange and admitted at the CRDT
-    // merge boundary.
-    struct Local        {};
-    struct Gossiped     {};
-    // SwimMember: CogIdentity admitted into the SWIM membership view.
-    // Raw discovery output must be admitted explicitly before it can
-    // drive peer-health or gossip fanout decisions.
-    struct SwimMember   {};
-    // HyParView: CogIdentity admitted into the bounded active/passive
-    // Canopy overlay. Raw discovery output and foreign membership tags
-    // cannot directly drive overlay repair or Plumtree fanout.
-    struct HyParView    {};
-    // Plumtree: broadcast messages and repair summaries admitted through
-    // canopy/Plumtree.h. Raw message IDs and HyParView peer identities
-    // cannot directly drive eager/lazy tree state transitions.
-    struct Plumtree     {};
-    // IntegrityVerified: CNT-P payload whose end-to-end xxHash64 trailer
-    // has been recomputed and matched at the receiver.  Raw wire bytes
-    // and merely gossiped payloads cannot substitute for this tag.
-    struct IntegrityVerified {};
-    // JsonRegistry: recipe/catalog rows admitted from Crucible's
-    // embedded or loaded JSON registry. Distinct from FromConfig
-    // because registry-origin values drive deterministic recipe
-    // selection and must not be substituted by arbitrary user strings
-    // or ad-hoc diagnostic spans.
-    struct JsonRegistry {};
-    // NetworkRecipeRegistry: Forge network-kernel recipe constraints
-    // admitted through forge/recipes/Network.h. Raw booleans or
-    // ad-hoc policy tables cannot directly choose collective
-    // algorithms at RecipeSelect boundaries.
-    struct NetworkRecipeRegistry {};
-    // Ir001: Forge IR001 op nodes admitted by forge/Ir001/* substrate.
-    // Raw op descriptors cannot cross into Forge phase visitors or
-    // serialization boundaries without this provenance tag.
-    struct Ir001 {};
-    // CcAlgorithm: CNT-P congestion-control selection admitted through
-    // cntp/CongestionControl.h. Raw enum values and raw kernel strings
-    // cannot directly drive per-socket TCP_CONGESTION changes.
-    struct CcAlgorithm {};
-    // QdiscConfig: CNT-P queueing-discipline and pacing configuration
-    // admitted through cntp/Pacing.h. Raw interface strings / qdisc
-    // names cannot directly drive pacing policy.
-    struct QdiscConfig {};
-    // Ring: pointer borrowed from a fixed-capacity ring's inline slot
-    // storage (WRAP-Transaction-6 #1065). The pointee lives inside the
-    // ring buffer's own array and is valid for the ring's lifetime —
-    // the ring is move/copy-deleted so the interior pointer never
-    // dangles via relocation. Distinct from Arena (arena-owned region
-    // pointer) and Borrowed<T, Owner> (lifetime-scoped borrow): Ring
-    // additionally encodes the ring-slot identity, useful for asserts
-    // and audit ("this Transaction* came from THIS log's slot pool,
-    // not some other log instance or fresh heap allocation").
-    struct Ring         {};
-    // Vigil: pointer borrowed from Vigil's BackgroundThread region-
-    // publishing pipeline (WRAP-CCtx-2 #904, Tagged half).  The
-    // CrucibleContext::active_region_ field receives a RegionNode*
-    // published by the bg worker's atomic active_region store(release);
-    // the pointer is valid for the BackgroundThread's lifetime (Vigil
-    // holds the bg thread, so as long as Vigil lives, the pointee
-    // lives).  Distinct from Arena (arena-owned region pointer) and
-    // Ring (fixed-capacity-ring-slot pointer): Vigil encodes "this
-    // RegionNode* came from THIS Vigil's bg publish path, not from
-    // a freshly-built local region or a borrowed alternate-region
-    // pointer".  Production sites that hold a Vigil-tagged pointer
-    // can rely on the bg-published ordering invariants (active_region
-    // store(release) happens-before any data-pointer dereference).
-    struct Vigil        {};
-    // Meridian: hardware-capability value measured by the Meridian
-    // startup calibration pass (WRAP-BgThread-4 #875).  device_capability
-    // is an opaque vendor-encoded value (NVIDIA SM version sm_50..sm_120,
-    // AMD gfx target, Intel XMX tier, etc.) populated by the Vessel
-    // adapter at Vigil init from `cudaGetDeviceProperties` / equivalent
-    // probe; a downstream consumer that holds a Meridian-tagged value
-    // can rely on "this was measured from real silicon at startup, not
-    // synthesized from a config file or defaulted to 0".  Distinct
-    // from source::Calibrated (general-purpose calibration result from
-    // any measurement source) and source::WorkloadProfiler (per-call
-    // parallelism recommendation from runtime profiler state): Meridian
-    // specifically marks STARTUP-MEASURED hardware-identity values.
-    // Phantom-only — zero storage, EBO-collapses in
-    // Tagged<uint64_t, source::Meridian>.  The "+ Refined" half of
-    // WRAP-BgThread-4 (a value-range predicate) is deferred — the
-    // canonical predicate would require knowing the vendor-specific
-    // encoded-value range, which is opaque at this layer (the Vessel
-    // adapter knows the encoding but the BgThread layer does not).
-    // A future task can tighten with vendor-specific Refined predicates
-    // routed through the source::Calibrated/source::VendorSpec axis.
-    struct Meridian     {};
-    // RegionOps: pointer to a RegionNode's TraceEntry array (region->ops),
-    // cached in RegionCache for fast divergence-time alternate-region
-    // matching (WRAP-RegionCache-2 #987).  The ops pointer is valid as
-    // long as the cached RegionNode itself is alive — RegionCache holds
-    // a WeakRef<const RegionNode> alongside the cached ops pointer; the
-    // WeakRef's try_get() controls the slot's lifetime envelope.
-    // source::RegionOps encodes "this TraceEntry* was extracted from
-    // RegionNode.ops at cache-insertion time" — distinct from Vigil
-    // (bg-published active region pointer) and Arena (arena-allocated
-    // throwaway region for tests/speculative branches).  A future
-    // RegionNode lifecycle bug that retires the RegionNode without
-    // evicting the cache entry would leave a dangling RegionOps
-    // pointer; the Tag itself doesn't prevent that — the WeakRef does
-    // — but the Tag makes the provenance grep-discoverable so audit
-    // can reason "every RegionOps pointer in this struct is paired
-    // with a WeakRef slot at the same index".  Phantom-only.
-    struct RegionOps    {};
-    // IncastConfig: CNT-P fan-in mitigation configuration admitted through
-    // cntp/IncastControl.h. Raw booleans / byte counts cannot directly
-    // tune socket RTO or receiver-issued credit pacing.
-    struct IncastConfig {};
-    // RoceConfig: CNT-P RoCEv2 fabric configuration admitted through
-    // cntp/RoceConfig.h. Raw PFC masks, DSCP values, and DCQCN knobs
-    // cannot directly drive privileged NIC/fabric policy.
-    struct RoceConfig {};
-    // Mtls: CNT-P mutual-TLS policy and authenticated peer identity
-    // admitted through cntp/MtlsTransport.h. Raw certificate bytes,
-    // DNS names, cipher selections, and peer fingerprints cannot
-    // directly drive federation transport identity.
-    struct Mtls {};
-    // AdmissionDecision: CNT-P backpressure/admission-control decisions
-    // minted by cntp/BackpressureRuntime.h. Raw accept/reject structs cannot
-    // cross runtime boundaries as operator-visible admission outcomes.
-    struct AdmissionDecision {};
-    // ConnectionPool: CNT-P connection lease/reuse events minted by
-    // cntp/ConnectionPoolRuntime.h. Raw pool events cannot substitute for the
-    // runtime-owned lease audit surface.
-    struct ConnectionPool {};
-    // Pingmesh: topology latency measurements admitted by
-    // topology/Pingmesh.h. Raw UDP/probe outcomes cannot directly
-    // update fleet latency histograms or anomaly reports.
-    struct Pingmesh {};
-    // Ptp: timestamp / clock-status facts admitted by topology/Ptp.h.
-    // Raw clock_gettime values, packet timestamps, and integer file
-    // descriptors cannot directly seed PTP-sensitive consumers.
-    struct Ptp {};
-    // PathSwap: CNT-P application-level path-swap plan admitted through
-    // cntp/PathSwap.h. Raw path IDs cannot directly drive a live
-    // SessionHandle resource transition.
-    struct PathSwap {};
-    // TcpInfo: congestion telemetry admitted from Linux TCP_INFO /
-    // TCP_CC_INFO or an explicitly tagged synthetic test source.
-    // Raw counters cannot directly drive topology congestion policy.
-    struct TcpInfo {};
-    // KernelTelemetry: NIC telemetry admitted from Linux kernel-visible
-    // counters such as sysfs netdev stats, qdisc backlog, sysctl snapshots,
-    // and hwmon temperature readings. Raw text cannot directly drive
-    // topology capacity, health, or routing decisions.
-    struct KernelTelemetry {};
-    // AfXdp: CNT-P AF_XDP socket / UMEM configuration admitted through
-    // cntp/AfXdp.h. Raw ring sizes, frame sizes, queue IDs, and interface
-    // names cannot directly mint a zero-copy transport surface.
-    struct AfXdp {};
-    // Xdp / BpfMap: CNT-P dataplane BPF/XDP plans admitted through
-    // cntp/dataplane/Xdp.h.
-    // Raw program descriptors or map dimensions cannot directly attach a
-    // NIC dataplane program or allocate a userspace-visible map surface.
-    struct Xdp {};
-    struct BpfMap {};
-    // GossipMulticast: CNT-P XDP_TX multicast plans admitted through
-    // cntp/GossipMulticast.h. Raw topic hashes, neighbor arrays, and XDP
-    // descriptors cannot directly drive kernel-side gossip replication.
-    struct GossipMulticast {};
-    // TcEbpf: CNT-P dataplane TC direct-action eBPF plans admitted through
-    // cntp/dataplane/TcEbpf.h. Raw skb action descriptors, DSCP values, and map specs
-    // cannot directly attach an egress/ingress TC dataplane program.
-    struct TcEbpf {};
-    // OverlayMulticast: CNT-P application-layer multicast plans admitted
-    // through cntp/OverlayMulticast.h. Raw CogIdentity values and unbounded
-    // stripe/tree plans cannot directly drive cross-peer fanout.
-    struct OverlayMulticast {};
-    // SdcVerified: observe/SdcDetect.h result value that survived redundant
-    // execution comparison. Raw operation results and externally-tagged
-    // values cannot substitute for the post-comparison evidence.
-    struct SdcVerified {};
-    // NicConfig: cog/NicConfig.h ethtool/sysctl/qdisc configuration intent
-    // admitted at the hardware-Cog boundary. Raw ring sizes, queue counts,
-    // qdisc kinds, sysctl byte counts, and TCP congestion strings cannot
-    // directly drive privileged NIC mutation.
-    struct NicConfig {};
-    // SrIov: cog/SrIov.h virtual-function partitioning intent admitted at
-    // the physical NIC boundary. Raw VF counts, MACs, VLAN ids, and QoS
-    // knobs cannot directly drive privileged SR-IOV mutation.
-    struct SrIov {};
-    // TcamTable: CNT-P hardware ACL / flow-steering table intent admitted
-    // through cntp/Tcam.h. Raw Cog identities and unbounded capacity
-    // requests cannot directly allocate hardware TCAM state.
-    struct TcamTable {};
-    // TcamFlowRule: CNT-P hardware ACL / flow-steering rules admitted
-    // through cntp/Tcam.h. Raw five-tuples and actions cannot directly
-    // program NIC or switch TCAM tables.
-    struct TcamFlowRule {};
+struct FromUser {};
+struct FromDb {};
+struct FromConfig {};
+struct FromInternal {};
+struct External {};  // raw untrusted input (network, FFI)
+struct ABIBoundary {};  // opaque value crossing a C ABI / FFI boundary
+struct Sanitized {};  // validated, safe to pass to sanitized-only APIs
+struct FormatVersion {};  // in-process format/version constant
+struct Loaded {};  // loaded from validated serialized state
+struct Interned {};  // canonicalized by an interning owner
+struct Arena {};  // arena-owned object pointer/reference
+struct Singleton {};  // process-global singleton accessor result
+struct Recorded {};  // produced from live RECORD-mode tracing
+struct Replayed {};  // reconstructed from replay/Cipher state
+// Durable: loaded from on-disk state (Cipher, config, snapshots).
+// Computed: derived at startup / runtime from Durable + inputs.
+// The pair lets a reader distinguish "this came from disk" from "this
+// is a computation result" at the type level — useful when init code
+// mixes both and a reviewer needs to see which is load-bearing.
+struct Durable {};
+struct Computed {};
+// Vendor: hardware-vendor-supplied attributes — model strings,
+// firmware/BIOS revisions, microarchitecture identifiers reported
+// by the device itself (PCIe config space, BMC, SMBIOS, vendor
+// ioctl).  Distinct from FromConfig (operator-supplied) and
+// FromInternal (computed locally) because vendor truth needs its
+// own provenance lane: it can be wrong (vendor bug, counterfeit
+// hardware), it lags the wire (firmware updates change behavior
+// before the metadata advertises it), and it crosses a real trust
+// boundary (driver / firmware code path Crucible doesn't own).
+// Cog identity (cog/CogIdentity.h, GAPS-185) is the canonical
+// consumer.
+struct Vendor {};
+// Calibrated: measured at startup or runtime by Crucible's own
+// calibration pass against real silicon — cross-checked against
+// Vendor truth and used as the authoritative source when the two
+// disagree (e.g. Vendor reports tflops_fp16 from datasheet,
+// Calibrated reports the actual achieved number on this die at
+// this thermal headroom).  Per-Cog TargetCaps (GAPS-186) split
+// into Vendor-tagged vs Calibrated-tagged subsets so the planner
+// can refuse to schedule against unverified vendor claims.
+struct Calibrated {};
+// Hlc: timestamps minted by canopy/Hybrid Logical Clock state.
+// Distinct from External timestamps received from peers: received
+// bytes must be admitted explicitly before they can drive CRDT /
+// Cipher ordering decisions.
+struct Hlc {};
+// Local / Gossiped: CRDT provenance lanes.  Local marks writes
+// authored by this replica; Gossiped marks state received from
+// anti-entropy / Scuttlebutt exchange and admitted at the CRDT
+// merge boundary.
+struct Local {};
+struct Gossiped {};
+// SwimMember: CogIdentity admitted into the SWIM membership view.
+// Raw discovery output must be admitted explicitly before it can
+// drive peer-health or gossip fanout decisions.
+struct SwimMember {};
+// HyParView: CogIdentity admitted into the bounded active/passive
+// Canopy overlay. Raw discovery output and foreign membership tags
+// cannot directly drive overlay repair or Plumtree fanout.
+struct HyParView {};
+// Plumtree: broadcast messages and repair summaries admitted through
+// canopy/Plumtree.h. Raw message IDs and HyParView peer identities
+// cannot directly drive eager/lazy tree state transitions.
+struct Plumtree {};
+// IntegrityVerified: CNT-P payload whose end-to-end xxHash64 trailer
+// has been recomputed and matched at the receiver.  Raw wire bytes
+// and merely gossiped payloads cannot substitute for this tag.
+struct IntegrityVerified {};
+// JsonRegistry: recipe/catalog rows admitted from Crucible's
+// embedded or loaded JSON registry. Distinct from FromConfig
+// because registry-origin values drive deterministic recipe
+// selection and must not be substituted by arbitrary user strings
+// or ad-hoc diagnostic spans.
+struct JsonRegistry {};
+// NetworkRecipeRegistry: Forge network-kernel recipe constraints
+// admitted through forge/recipes/Network.h. Raw booleans or
+// ad-hoc policy tables cannot directly choose collective
+// algorithms at RecipeSelect boundaries.
+struct NetworkRecipeRegistry {};
+// Ir001: Forge IR001 op nodes admitted by forge/Ir001/* substrate.
+// Raw op descriptors cannot cross into Forge phase visitors or
+// serialization boundaries without this provenance tag.
+struct Ir001 {};
+// CcAlgorithm: CNT-P congestion-control selection admitted through
+// cntp/CongestionControl.h. Raw enum values and raw kernel strings
+// cannot directly drive per-socket TCP_CONGESTION changes.
+struct CcAlgorithm {};
+// QdiscConfig: CNT-P queueing-discipline and pacing configuration
+// admitted through cntp/Pacing.h. Raw interface strings / qdisc
+// names cannot directly drive pacing policy.
+struct QdiscConfig {};
+// Ring: pointer borrowed from a fixed-capacity ring's inline slot
+// storage (WRAP-Transaction-6 #1065). The pointee lives inside the
+// ring buffer's own array and is valid for the ring's lifetime —
+// the ring is move/copy-deleted so the interior pointer never
+// dangles via relocation. Distinct from Arena (arena-owned region
+// pointer) and Borrowed<T, Owner> (lifetime-scoped borrow): Ring
+// additionally encodes the ring-slot identity, useful for asserts
+// and audit ("this Transaction* came from THIS log's slot pool,
+// not some other log instance or fresh heap allocation").
+struct Ring {};
+// Vigil: pointer borrowed from Vigil's BackgroundThread region-
+// publishing pipeline (WRAP-CCtx-2 #904, Tagged half).  The
+// CrucibleContext::active_region_ field receives a RegionNode*
+// published by the bg worker's atomic active_region store(release);
+// the pointer is valid for the BackgroundThread's lifetime (Vigil
+// holds the bg thread, so as long as Vigil lives, the pointee
+// lives).  Distinct from Arena (arena-owned region pointer) and
+// Ring (fixed-capacity-ring-slot pointer): Vigil encodes "this
+// RegionNode* came from THIS Vigil's bg publish path, not from
+// a freshly-built local region or a borrowed alternate-region
+// pointer".  Production sites that hold a Vigil-tagged pointer
+// can rely on the bg-published ordering invariants (active_region
+// store(release) happens-before any data-pointer dereference).
+struct Vigil {};
+// Meridian: hardware-capability value measured by the Meridian
+// startup calibration pass (WRAP-BgThread-4 #875).  device_capability
+// is an opaque vendor-encoded value (NVIDIA SM version sm_50..sm_120,
+// AMD gfx target, Intel XMX tier, etc.) populated by the Vessel
+// adapter at Vigil init from `cudaGetDeviceProperties` / equivalent
+// probe; a downstream consumer that holds a Meridian-tagged value
+// can rely on "this was measured from real silicon at startup, not
+// synthesized from a config file or defaulted to 0".  Distinct
+// from source::Calibrated (general-purpose calibration result from
+// any measurement source) and source::WorkloadProfiler (per-call
+// parallelism recommendation from runtime profiler state): Meridian
+// specifically marks STARTUP-MEASURED hardware-identity values.
+// Phantom-only — zero storage, EBO-collapses in
+// Tagged<uint64_t, source::Meridian>.  The "+ Refined" half of
+// WRAP-BgThread-4 (a value-range predicate) is deferred — the
+// canonical predicate would require knowing the vendor-specific
+// encoded-value range, which is opaque at this layer (the Vessel
+// adapter knows the encoding but the BgThread layer does not).
+// A future task can tighten with vendor-specific Refined predicates
+// routed through the source::Calibrated/source::VendorSpec axis.
+struct Meridian {};
+// RegionOps: pointer to a RegionNode's TraceEntry array (region->ops),
+// cached in RegionCache for fast divergence-time alternate-region
+// matching (WRAP-RegionCache-2 #987).  The ops pointer is valid as
+// long as the cached RegionNode itself is alive — RegionCache holds
+// a WeakRef<const RegionNode> alongside the cached ops pointer; the
+// WeakRef's try_get() controls the slot's lifetime envelope.
+// source::RegionOps encodes "this TraceEntry* was extracted from
+// RegionNode.ops at cache-insertion time" — distinct from Vigil
+// (bg-published active region pointer) and Arena (arena-allocated
+// throwaway region for tests/speculative branches).  A future
+// RegionNode lifecycle bug that retires the RegionNode without
+// evicting the cache entry would leave a dangling RegionOps
+// pointer; the Tag itself doesn't prevent that — the WeakRef does
+// — but the Tag makes the provenance grep-discoverable so audit
+// can reason "every RegionOps pointer in this struct is paired
+// with a WeakRef slot at the same index".  Phantom-only.
+struct RegionOps {};
+// IncastConfig: CNT-P fan-in mitigation configuration admitted through
+// cntp/IncastControl.h. Raw booleans / byte counts cannot directly
+// tune socket RTO or receiver-issued credit pacing.
+struct IncastConfig {};
+// RoceConfig: CNT-P RoCEv2 fabric configuration admitted through
+// cntp/RoceConfig.h. Raw PFC masks, DSCP values, and DCQCN knobs
+// cannot directly drive privileged NIC/fabric policy.
+struct RoceConfig {};
+// Mtls: CNT-P mutual-TLS policy and authenticated peer identity
+// admitted through cntp/MtlsTransport.h. Raw certificate bytes,
+// DNS names, cipher selections, and peer fingerprints cannot
+// directly drive federation transport identity.
+struct Mtls {};
+// AdmissionDecision: CNT-P backpressure/admission-control decisions
+// minted by cntp/BackpressureRuntime.h. Raw accept/reject structs cannot
+// cross runtime boundaries as operator-visible admission outcomes.
+struct AdmissionDecision {};
+// ConnectionPool: CNT-P connection lease/reuse events minted by
+// cntp/ConnectionPoolRuntime.h. Raw pool events cannot substitute for the
+// runtime-owned lease audit surface.
+struct ConnectionPool {};
+// Pingmesh: topology latency measurements admitted by
+// topology/Pingmesh.h. Raw UDP/probe outcomes cannot directly
+// update fleet latency histograms or anomaly reports.
+struct Pingmesh {};
+// Ptp: timestamp / clock-status facts admitted by topology/Ptp.h.
+// Raw clock_gettime values, packet timestamps, and integer file
+// descriptors cannot directly seed PTP-sensitive consumers.
+struct Ptp {};
+// PathSwap: CNT-P application-level path-swap plan admitted through
+// cntp/PathSwap.h. Raw path IDs cannot directly drive a live
+// SessionHandle resource transition.
+struct PathSwap {};
+// TcpInfo: congestion telemetry admitted from Linux TCP_INFO /
+// TCP_CC_INFO or an explicitly tagged synthetic test source.
+// Raw counters cannot directly drive topology congestion policy.
+struct TcpInfo {};
+// KernelTelemetry: NIC telemetry admitted from Linux kernel-visible
+// counters such as sysfs netdev stats, qdisc backlog, sysctl snapshots,
+// and hwmon temperature readings. Raw text cannot directly drive
+// topology capacity, health, or routing decisions.
+struct KernelTelemetry {};
+// AfXdp: CNT-P AF_XDP socket / UMEM configuration admitted through
+// cntp/AfXdp.h. Raw ring sizes, frame sizes, queue IDs, and interface
+// names cannot directly mint a zero-copy transport surface.
+struct AfXdp {};
+// Xdp / BpfMap: CNT-P dataplane BPF/XDP plans admitted through
+// cntp/dataplane/Xdp.h.
+// Raw program descriptors or map dimensions cannot directly attach a
+// NIC dataplane program or allocate a userspace-visible map surface.
+struct Xdp {};
+struct BpfMap {};
+// GossipMulticast: CNT-P XDP_TX multicast plans admitted through
+// cntp/GossipMulticast.h. Raw topic hashes, neighbor arrays, and XDP
+// descriptors cannot directly drive kernel-side gossip replication.
+struct GossipMulticast {};
+// TcEbpf: CNT-P dataplane TC direct-action eBPF plans admitted through
+// cntp/dataplane/TcEbpf.h. Raw skb action descriptors, DSCP values, and map specs
+// cannot directly attach an egress/ingress TC dataplane program.
+struct TcEbpf {};
+// OverlayMulticast: CNT-P application-layer multicast plans admitted
+// through cntp/OverlayMulticast.h. Raw CogIdentity values and unbounded
+// stripe/tree plans cannot directly drive cross-peer fanout.
+struct OverlayMulticast {};
+// SdcVerified: observe/SdcDetect.h result value that survived redundant
+// execution comparison. Raw operation results and externally-tagged
+// values cannot substitute for the post-comparison evidence.
+struct SdcVerified {};
+// NicConfig: cog/NicConfig.h ethtool/sysctl/qdisc configuration intent
+// admitted at the hardware-Cog boundary. Raw ring sizes, queue counts,
+// qdisc kinds, sysctl byte counts, and TCP congestion strings cannot
+// directly drive privileged NIC mutation.
+struct NicConfig {};
+// SrIov: cog/SrIov.h virtual-function partitioning intent admitted at
+// the physical NIC boundary. Raw VF counts, MACs, VLAN ids, and QoS
+// knobs cannot directly drive privileged SR-IOV mutation.
+struct SrIov {};
+// TcamTable: CNT-P hardware ACL / flow-steering table intent admitted
+// through cntp/Tcam.h. Raw Cog identities and unbounded capacity
+// requests cannot directly allocate hardware TCAM state.
+struct TcamTable {};
+// TcamFlowRule: CNT-P hardware ACL / flow-steering rules admitted
+// through cntp/Tcam.h. Raw five-tuples and actions cannot directly
+// program NIC or switch TCAM tables.
+struct TcamFlowRule {};
 
-    // ── FIXY-V-058 enrichments ────────────────────────────────────
-    //
-    // ForgePhase<P>: Forge 12-phase pipeline provenance per FORGE.md
-    // §5.  Phase letter P encodes which phase produced the value:
-    //
-    //   A=INGEST  B=ANALYZE  C=REWRITE  D=FUSE
-    //   E=LOWER_TO_KERNELS    F=TILE    G=MEMPLAN  H=COMPILE
-    //   I=SCHEDULE           J=EMIT    K=DISTRIBUTE  L=VALIDATE
-    //
-    // Used by Forge phase composition to verify cross-phase
-    // provenance flow at the type level — a function taking
-    // Tagged<KernelGraph, source::ForgePhase<'F'>> (post-TILE)
-    // rejects a Tagged<KernelGraph, source::ForgePhase<'A'>> (pre-
-    // INGEST) at compile time; cross-phase retag is mediated by the
-    // FIXY-V-023 retag_policy catalog (forward edges admitted, back-
-    // edges rejected by default).  Phantom-only — sizeof(ForgePhase
-    // <P>) is 1 but EBO-collapses in Tagged<T, ForgePhase<P>> per
-    // the standard Graded regime-1 storage rule.
-    //
-    // Distinct from Ir001 / NetworkRecipeRegistry which are entry-
-    // boundary admission tags (raw → typed at the boundary).
-    // ForgePhase is the in-pipeline provenance lane that flows
-    // along the topological phase chain.
-    template <char Phase>
-    struct ForgePhase {
-        static_assert(Phase >= 'A' && Phase <= 'L',
-            "source::ForgePhase<P>: P must be one of A..L "
-            "(Forge 12-phase pipeline: A=INGEST, B=ANALYZE, "
-            "C=REWRITE, D=FUSE, E=LOWER_TO_KERNELS, F=TILE, "
-            "G=MEMPLAN, H=COMPILE, I=SCHEDULE, J=EMIT, "
-            "K=DISTRIBUTE, L=VALIDATE).");
-    };
+// ── FIXY-V-058 enrichments ────────────────────────────────────
+//
+// ForgePhase<P>: Forge 12-phase pipeline provenance per FORGE.md
+// §5.  Phase letter P encodes which phase produced the value:
+//
+//   A=INGEST  B=ANALYZE  C=REWRITE  D=FUSE
+//   E=LOWER_TO_KERNELS    F=TILE    G=MEMPLAN  H=COMPILE
+//   I=SCHEDULE           J=EMIT    K=DISTRIBUTE  L=VALIDATE
+//
+// Used by Forge phase composition to verify cross-phase
+// provenance flow at the type level — a function taking
+// Tagged<KernelGraph, source::ForgePhase<'F'>> (post-TILE)
+// rejects a Tagged<KernelGraph, source::ForgePhase<'A'>> (pre-
+// INGEST) at compile time; cross-phase retag is mediated by the
+// FIXY-V-023 retag_policy catalog (forward edges admitted, back-
+// edges rejected by default).  Phantom-only — sizeof(ForgePhase
+// <P>) is 1 but EBO-collapses in Tagged<T, ForgePhase<P>> per
+// the standard Graded regime-1 storage rule.
+//
+// Distinct from Ir001 / NetworkRecipeRegistry which are entry-
+// boundary admission tags (raw → typed at the boundary).
+// ForgePhase is the in-pipeline provenance lane that flows
+// along the topological phase chain.
+template <char Phase>
+struct ForgePhase {
+    static_assert(Phase >= 'A' && Phase <= 'L', "source::ForgePhase<P>: P must be one of A..L "
+                                                "(Forge 12-phase pipeline: A=INGEST, B=ANALYZE, "
+                                                "C=REWRITE, D=FUSE, E=LOWER_TO_KERNELS, F=TILE, "
+                                                "G=MEMPLAN, H=COMPILE, I=SCHEDULE, J=EMIT, "
+                                                "K=DISTRIBUTE, L=VALIDATE).");
+};
 
-    // TransportPosture<T>: CNT-P transport family posture tag for
-    // values that crossed a TransportPosture-T transport boundary
-    // (AfXdp / Mtls / Quic / Wireguard family per cntp/).
-    //
-    //   LowLatency:           ultra-low-latency oneshot RPC / control
-    //                         plane (sub-microsecond budget)
-    //   BulkData:             throughput-optimized large transfer
-    //                         (training-step gradient sync)
-    //   Reliable:             ordered delivery with retransmission
-    //                         (RPC, federation control)
-    //   UnreliableMulticast:  gossip-style fanout (SWIM, HyParView,
-    //                         Plumtree, GossipMulticast)
-    //
-    // Used by CNT-P composition to verify posture-compatible flow:
-    // a sink expecting Tagged<Payload, TransportPosture<Reliable>>
-    // rejects Tagged<Payload, TransportPosture<UnreliableMulticast>>
-    // at compile time.  The TransportPostureTag enum is the type-
-    // level parameter (one enum class for grep-discoverability).
-    // Phantom-only — TransportPosture<T> has 0 storage and EBO-
-    // collapses in Tagged<U, TransportPosture<T>>.
-    //
-    // Distinct from CcAlgorithm / QdiscConfig / Mtls / AfXdp /
-    // QuicTransport / WireguardTransport which are admission tags
-    // for raw transport CONFIGURATION.  TransportPosture is the
-    // value-flow tag once a payload has actually transited a
-    // posture-T transport.
-    enum class TransportPostureTag : unsigned char {
-        LowLatency           = 0,
-        BulkData             = 1,
-        Reliable             = 2,
-        UnreliableMulticast  = 3,
-    };
-    template <TransportPostureTag Posture>
-    struct TransportPosture {};
+// TransportPosture<T>: CNT-P transport family posture tag for
+// values that crossed a TransportPosture-T transport boundary
+// (AfXdp / Mtls / Quic / Wireguard family per cntp/).
+//
+//   LowLatency:           ultra-low-latency oneshot RPC / control
+//                         plane (sub-microsecond budget)
+//   BulkData:             throughput-optimized large transfer
+//                         (training-step gradient sync)
+//   Reliable:             ordered delivery with retransmission
+//                         (RPC, federation control)
+//   UnreliableMulticast:  gossip-style fanout (SWIM, HyParView,
+//                         Plumtree, GossipMulticast)
+//
+// Used by CNT-P composition to verify posture-compatible flow:
+// a sink expecting Tagged<Payload, TransportPosture<Reliable>>
+// rejects Tagged<Payload, TransportPosture<UnreliableMulticast>>
+// at compile time.  The TransportPostureTag enum is the type-
+// level parameter (one enum class for grep-discoverability).
+// Phantom-only — TransportPosture<T> has 0 storage and EBO-
+// collapses in Tagged<U, TransportPosture<T>>.
+//
+// Distinct from CcAlgorithm / QdiscConfig / Mtls / AfXdp /
+// QuicTransport / WireguardTransport which are admission tags
+// for raw transport CONFIGURATION.  TransportPosture is the
+// value-flow tag once a payload has actually transited a
+// posture-T transport.
+enum class TransportPostureTag : unsigned char {
+    LowLatency = 0,
+    BulkData = 1,
+    Reliable = 2,
+    UnreliableMulticast = 3,
+};
+template <TransportPostureTag Posture>
+struct TransportPosture {};
 
-    // FIXY-V-074: WorkloadProfiler provenance tag.  A value carrying
-    // this tag was minted by perf::WorkloadProfiler::recommend() —
-    // the profiler is the AUTHORITY on parallelism decisions and the
-    // tag is the proof-of-origin that a downstream dispatch routine
-    // needs to admit the value.  Without this tag a caller could
-    // synthesize a free-standing ParallelismDecision and route it
-    // through dispatch_workload_decision, bypassing the profiler's
-    // cache-tier reasoning entirely.
-    //
-    // Phantom-only — zero storage, EBO-collapses in
-    // Tagged<ParallelismDecision, source::WorkloadProfiler>.
-    //
-    // Distinct from source::Calibrated (general-purpose calibration
-    // result) and source::Meridian (startup measurement): the
-    // WorkloadProfiler tag specifically marks PER-CALL parallelism
-    // recommendations driven by a sampled hardware-profiler state.
-    struct WorkloadProfiler {};
-}
+// FIXY-V-074: WorkloadProfiler provenance tag.  A value carrying
+// this tag was minted by perf::WorkloadProfiler::recommend() —
+// the profiler is the AUTHORITY on parallelism decisions and the
+// tag is the proof-of-origin that a downstream dispatch routine
+// needs to admit the value.  Without this tag a caller could
+// synthesize a free-standing ParallelismDecision and route it
+// through dispatch_workload_decision, bypassing the profiler's
+// cache-tier reasoning entirely.
+//
+// Phantom-only — zero storage, EBO-collapses in
+// Tagged<ParallelismDecision, source::WorkloadProfiler>.
+//
+// Distinct from source::Calibrated (general-purpose calibration
+// result) and source::Meridian (startup measurement): the
+// WorkloadProfiler tag specifically marks PER-CALL parallelism
+// recommendations driven by a sampled hardware-profiler state.
+struct WorkloadProfiler {};
+}  // namespace source
 
 namespace trust {
-    struct Verified   {};  // proved by SMT / type system / test
-    struct Tested     {};  // covered by tests but not formally verified
-    struct Unverified {};  // no formal coverage
-    struct Assumed    {};  // axiom / mathematical assumption
-    struct External   {};  // trust delegated to outside source
-}
+struct Verified {};  // proved by SMT / type system / test
+struct Tested {};  // covered by tests but not formally verified
+struct Unverified {};  // no formal coverage
+struct Assumed {};  // axiom / mathematical assumption
+struct External {};  // trust delegated to outside source
+}  // namespace trust
 
 namespace access {
-    struct RW            {};  // unrestricted
-    struct RO            {};  // read-only (writes rejected)
-    struct WO            {};  // write-only (reads rejected)
-    struct W1C           {};  // write-1-to-clear (HW registers)
-    struct W1S           {};  // write-1-to-set (HW registers)
-    struct WriteOnce     {};  // written exactly once, then read-only
-    struct AppendOnly    {};  // add only, never remove
-    struct Unique        {};  // globally unique across instances
-    struct AutoIncrement {};  // system-assigned (DB columns)
-    struct Deprecated    {};  // accessible but warns about removal
-}
+struct RW {};  // unrestricted
+struct RO {};  // read-only (writes rejected)
+struct WO {};  // write-only (reads rejected)
+struct W1C {};  // write-1-to-clear (HW registers)
+struct W1S {};  // write-1-to-set (HW registers)
+struct WriteOnce {};  // written exactly once, then read-only
+struct AppendOnly {};  // add only, never remove
+struct Unique {};  // globally unique across instances
+struct AutoIncrement {};  // system-assigned (DB columns)
+struct Deprecated {};  // accessible but warns about removal
+}  // namespace access
 
 namespace version {
-    template <unsigned N> struct V { static constexpr unsigned number = N; };
-}
+template <unsigned N>
+struct V {
+    static constexpr unsigned number = N;
+};
+}  // namespace version
 
 // Vessel-boundary provenance: values crossing from Python / PyTorch /
 // any foreign runtime carry FromPytorch until validated by Vessel-side
@@ -433,9 +435,9 @@ namespace version {
 // grep for `vessel_trust::Validated` — anything outside of validator
 // functions or known-trusted internal constructors is a review concern.
 namespace vessel_trust {
-    struct FromPytorch {};  // raw uint64_t / pointer / scalar from the FFI
-    struct Validated   {};  // Vessel-side validation produced a well-formed value
-}
+struct FromPytorch {};  // raw uint64_t / pointer / scalar from the FFI
+struct Validated {};  // Vessel-side validation produced a well-formed value
+}  // namespace vessel_trust
 
 // ── retag_policy<From, To> — phantom-transition opt-in (FIXY-V-022) ─
 //
@@ -496,16 +498,14 @@ template <typename T, typename Tag>
 class [[nodiscard]] Tagged {
 public:
     using value_type = T;
-    using tag_type   = Tag;
+    using tag_type = Tag;
     using lattice_type = ::crucible::algebra::lattices::TrustLattice<Tag>;
     // Modality declaration — Round-4 CHEAT-5; see Linear.h for the
     // rationale.  Tagged is RelativeMonad — provenance flows
     // monadically with the inner T (retag is a relative-monad map).
-    static constexpr ::crucible::algebra::ModalityKind modality =
-        ::crucible::algebra::ModalityKind::RelativeMonad;
+    static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::RelativeMonad;
     // Public per GRADED-TRAIT-1 — see Linear.h for the rationale.
-    using graded_type  = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::RelativeMonad, lattice_type, T>;
+    using graded_type = ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::RelativeMonad, lattice_type, T>;
 
 private:
     // Empty-lattice grade_type collapses via [[no_unique_address]] in
@@ -513,9 +513,7 @@ private:
     graded_type impl_;
 
 public:
-
-    constexpr explicit Tagged(T v)
-        noexcept(std::is_nothrow_move_constructible_v<T>)
+    constexpr explicit Tagged(T v) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(v), typename lattice_type::element_type{}} {}
 
     // Default ctor — value-initialises the wrapped T (`nullptr` for
@@ -531,13 +529,13 @@ public:
     // construction sites still require a deliberate call.
     constexpr Tagged() noexcept(std::is_nothrow_default_constructible_v<T>)
         requires std::default_initializable<T>
-                                     = default;
+    = default;
 
-    Tagged(const Tagged&)            = default;
-    Tagged(Tagged&&)                 = default;
+    Tagged(const Tagged&) = default;
+    Tagged(Tagged&&) = default;
     Tagged& operator=(const Tagged&) = default;
-    Tagged& operator=(Tagged&&)      = default;
-    ~Tagged()                        = default;
+    Tagged& operator=(Tagged&&) = default;
+    ~Tagged() = default;
 
     // Read-only access — forwards through Graded::peek().
     [[nodiscard]] constexpr const T& value() const noexcept { return impl_.peek(); }
@@ -564,18 +562,14 @@ public:
     // existing tag does not trip the gate.
     template <typename NewTag>
         requires RetagAllowed<Tag, NewTag>
-    [[nodiscard]] constexpr Tagged<T, NewTag> retag() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr Tagged<T, NewTag> retag() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return Tagged<T, NewTag>{std::move(impl_).consume()};
     }
 
     // Underlying-value extraction.  Use for re-wrapping or for known
     // trusted internal paths.  Forwards through Graded::consume() —
     // rvalue-this consumes the inner value.
-    [[nodiscard]] constexpr T into() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr T into() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return std::move(impl_).consume();
     }
 
@@ -591,15 +585,13 @@ public:
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return graded_type::lattice_name();
-    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 };
 
 // Zero-cost guarantee: phantom Tag is template parameter, not a member.
-static_assert(sizeof(Tagged<int,   source::FromUser>)  == sizeof(int));
-static_assert(sizeof(Tagged<void*, trust::Verified>)   == sizeof(void*));
-static_assert(sizeof(Tagged<long,  access::AppendOnly>) == sizeof(long));
+static_assert(sizeof(Tagged<int, source::FromUser>) == sizeof(int));
+static_assert(sizeof(Tagged<void*, trust::Verified>) == sizeof(void*));
+static_assert(sizeof(Tagged<long, access::AppendOnly>) == sizeof(long));
 
 // ── Sentinel tag pair for fail-closed witness ───────────────────────
 //
@@ -615,10 +607,10 @@ static_assert(sizeof(Tagged<long,  access::AppendOnly>) == sizeof(long));
 // never in `detail::`.  Reviewers can grep this namespace and
 // confirm no specialization escapes.
 namespace detail::retag_policy_test {
-    // Sentinel tag pair — fail-closed witness for V-022 + HS14 fixtures.
-    // Never specialize.
-    struct NeverFrom {};
-    struct NeverTo   {};
+// Sentinel tag pair — fail-closed witness for V-022 + HS14 fixtures.
+// Never specialize.
+struct NeverFrom {};
+struct NeverTo {};
 }  // namespace detail::retag_policy_test
 
 // Self-test that the primary template is fail-closed AND identity is
@@ -631,16 +623,13 @@ namespace detail::retag_policy_test {
 // template is fail-closed" rather than the transient property "this
 // specific pair is not yet in the catalog".
 static_assert(retag_policy<source::FromUser, source::FromUser>::allowed,
-    "retag_policy identity specialization must admit (X → X)");
-static_assert(!retag_policy<detail::retag_policy_test::NeverFrom,
-                            detail::retag_policy_test::NeverTo>::allowed,
-    "retag_policy primary template MUST be fail-closed for any "
-    "(From → To) pair without an explicit specialization");
-static_assert(RetagAllowed<source::FromUser, source::FromUser>,
-    "RetagAllowed concept must admit identity");
-static_assert(!RetagAllowed<detail::retag_policy_test::NeverFrom,
-                             detail::retag_policy_test::NeverTo>,
-    "RetagAllowed concept must reject unspecialized transitions");
+              "retag_policy identity specialization must admit (X → X)");
+static_assert(!retag_policy<detail::retag_policy_test::NeverFrom, detail::retag_policy_test::NeverTo>::allowed,
+              "retag_policy primary template MUST be fail-closed for any "
+              "(From → To) pair without an explicit specialization");
+static_assert(RetagAllowed<source::FromUser, source::FromUser>, "RetagAllowed concept must admit identity");
+static_assert(!RetagAllowed<detail::retag_policy_test::NeverFrom, detail::retag_policy_test::NeverTo>,
+              "RetagAllowed concept must reject unspecialized transitions");
 
 // ── V-023 safe-transition catalog ──────────────────────────────────
 //
@@ -678,19 +667,23 @@ static_assert(!RetagAllowed<detail::retag_policy_test::NeverFrom,
 // verification — IS the safety-bearing component; the retag is the
 // type-level record that it ran.
 
-template <> struct retag_policy<trust::Unverified, trust::Tested> {
+template <>
+struct retag_policy<trust::Unverified, trust::Tested> {
     // Discharge: test suite ran and passed against this value.
     static constexpr bool allowed = true;
 };
-template <> struct retag_policy<trust::Unverified, trust::Verified> {
+template <>
+struct retag_policy<trust::Unverified, trust::Verified> {
     // Discharge: formal proof / cryptographic verification completed.
     static constexpr bool allowed = true;
 };
-template <> struct retag_policy<trust::Tested, trust::Verified> {
+template <>
+struct retag_policy<trust::Tested, trust::Verified> {
     // Discharge: proof obligation discharged on top of test coverage.
     static constexpr bool allowed = true;
 };
-template <> struct retag_policy<trust::Assumed, trust::Verified> {
+template <>
+struct retag_policy<trust::Assumed, trust::Verified> {
     // Discharge: previously-assumed pre-condition was checked.
     static constexpr bool allowed = true;
 };
@@ -699,7 +692,8 @@ template <> struct retag_policy<trust::Assumed, trust::Verified> {
 // (adding test coverage); both promote "no claim" to a specific positive
 // claim.  The discharge is the AXIOM-WRITER taking responsibility — the
 // retag site is the type-level audit trail for that responsibility.
-template <> struct retag_policy<trust::Unverified, trust::Assumed> {
+template <>
+struct retag_policy<trust::Unverified, trust::Assumed> {
     // Discharge: an axiom statement was authored about this value;
     // the retag site grep-locates the responsibility holder.
     static constexpr bool allowed = true;
@@ -714,25 +708,30 @@ template <> struct retag_policy<trust::Unverified, trust::Assumed> {
 // the recording pipeline finished and the value was admitted to
 // persistent state.
 
-template <> struct retag_policy<source::External, source::Sanitized> {
+template <>
+struct retag_policy<source::External, source::Sanitized> {
     // Discharge: input sanitizer at the trust boundary accepted bytes.
     static constexpr bool allowed = true;
 };
-template <> struct retag_policy<source::External, source::IntegrityVerified> {
+template <>
+struct retag_policy<source::External, source::IntegrityVerified> {
     // Discharge: end-to-end integrity check (xxHash64 trailer, etc.)
     // recomputed at receiver and matched the wire value.
     static constexpr bool allowed = true;
 };
-template <> struct retag_policy<source::Sanitized, source::IntegrityVerified> {
+template <>
+struct retag_policy<source::Sanitized, source::IntegrityVerified> {
     // Discharge: sanitized value additionally passes integrity check.
     // The two predicates compose (sanitized AND integrity-verified).
     static constexpr bool allowed = true;
 };
-template <> struct retag_policy<source::FromUser, source::Sanitized> {
+template <>
+struct retag_policy<source::FromUser, source::Sanitized> {
     // Discharge: user-supplied value passed the input sanitizer.
     static constexpr bool allowed = true;
 };
-template <> struct retag_policy<source::Recorded, source::Loaded> {
+template <>
+struct retag_policy<source::Recorded, source::Loaded> {
     // Discharge: recording pipeline closed the trace; value is now
     // admitted into validated persistent state (Cipher load path).
     static constexpr bool allowed = true;
@@ -748,27 +747,31 @@ template <> struct retag_policy<source::Recorded, source::Loaded> {
 // addition here closes one of the higher-confidence gaps where the
 // discharge story is already established by an analogous edge.
 
-template <> struct retag_policy<source::FromDb, source::Sanitized> {
+template <>
+struct retag_policy<source::FromDb, source::Sanitized> {
     // Discharge: DB row passed schema validation (analogous to the
     // FromUser → Sanitized edge — same validator pattern, different
     // upstream provenance).  Schema check enforces well-formedness
     // of every field before the row is admitted to internal paths.
     static constexpr bool allowed = true;
 };
-template <> struct retag_policy<source::FromConfig, source::Sanitized> {
+template <>
+struct retag_policy<source::FromConfig, source::Sanitized> {
     // Discharge: config value passed schema/range validation
     // (analogous to FromUser → Sanitized).  Config-file parsers run
     // the schema check at load time; this retag records that step.
     static constexpr bool allowed = true;
 };
-template <> struct retag_policy<source::ABIBoundary, source::Sanitized> {
+template <>
+struct retag_policy<source::ABIBoundary, source::Sanitized> {
     // Discharge: opaque ABI value validated on the receiving side
     // (analogous to External → Sanitized — same trust-boundary
     // pattern, different transport).  Vessel-side adapters that
     // marshal C ABI / FFI calls run sanitizer before admitting.
     static constexpr bool allowed = true;
 };
-template <> struct retag_policy<source::Loaded, source::IntegrityVerified> {
+template <>
+struct retag_policy<source::Loaded, source::IntegrityVerified> {
     // Discharge: Loaded value (admitted to persistent state)
     // additionally passed the integrity-check predicate
     // (xxHash64 trailer, CRC, etc.).  Composes the loaded-from-
@@ -776,7 +779,8 @@ template <> struct retag_policy<source::Loaded, source::IntegrityVerified> {
     // the Sanitized → IntegrityVerified pattern at the storage tier.
     static constexpr bool allowed = true;
 };
-template <> struct retag_policy<source::Replayed, source::Loaded> {
+template <>
+struct retag_policy<source::Replayed, source::Loaded> {
     // Discharge: Cipher replay produced a deterministic value that
     // matches the recorded checkpoint.  Symmetric with the
     // Recorded → Loaded edge — both promote a transient pipeline
@@ -785,7 +789,8 @@ template <> struct retag_policy<source::Replayed, source::Loaded> {
     // the write side.
     static constexpr bool allowed = true;
 };
-template <> struct retag_policy<source::Recorded, source::IntegrityVerified> {
+template <>
+struct retag_policy<source::Recorded, source::IntegrityVerified> {
     // Discharge: recorded value additionally passed the integrity
     // check at trace-close (xxHash64 of the trace tail).  Composes
     // the recording provenance with the bit-integrity claim, the
@@ -801,7 +806,8 @@ template <> struct retag_policy<source::Recorded, source::IntegrityVerified> {
 // demand Validated at entry; the type system rejects the
 // `FromPytorch → record` shortcut at the call site.
 
-template <> struct retag_policy<vessel_trust::FromPytorch, vessel_trust::Validated> {
+template <>
+struct retag_policy<vessel_trust::FromPytorch, vessel_trust::Validated> {
     // Discharge: Vessel adapter's well-formedness checks ran on input.
     static constexpr bool allowed = true;
 };
@@ -815,119 +821,117 @@ template <> struct retag_policy<vessel_trust::FromPytorch, vessel_trust::Validat
 
 // trust:: positives — catalog admits forward escalation
 static_assert(retag_policy<trust::Unverified, trust::Tested>::allowed,
-    "trust::Unverified → trust::Tested must be admitted");
+              "trust::Unverified → trust::Tested must be admitted");
 static_assert(retag_policy<trust::Unverified, trust::Verified>::allowed,
-    "trust::Unverified → trust::Verified must be admitted");
+              "trust::Unverified → trust::Verified must be admitted");
 static_assert(retag_policy<trust::Tested, trust::Verified>::allowed,
-    "trust::Tested → trust::Verified must be admitted");
+              "trust::Tested → trust::Verified must be admitted");
 static_assert(retag_policy<trust::Assumed, trust::Verified>::allowed,
-    "trust::Assumed → trust::Verified must be admitted");
+              "trust::Assumed → trust::Verified must be admitted");
 static_assert(retag_policy<trust::Unverified, trust::Assumed>::allowed,
-    "FIXY-FOUND-035: trust::Unverified → trust::Assumed must be admitted "
-    "(axiom-level claim promotion, analogous to Unverified → Tested)");
+              "FIXY-FOUND-035: trust::Unverified → trust::Assumed must be admitted "
+              "(axiom-level claim promotion, analogous to Unverified → Tested)");
 
 // trust:: inverse rejected — verification strip is NEVER safe.
 // Pair each forward specialization with its inverse witness so a
 // future reviewer adding "by symmetry" cannot accidentally admit a
 // downgrade direction.
 static_assert(!retag_policy<trust::Verified, trust::Unverified>::allowed,
-    "trust::Verified → trust::Unverified would erase the proof");
+              "trust::Verified → trust::Unverified would erase the proof");
 static_assert(!retag_policy<trust::Verified, trust::Tested>::allowed,
-    "trust:: catalog is one-way; Verified → Tested is a downgrade");
+              "trust:: catalog is one-way; Verified → Tested is a downgrade");
 static_assert(!retag_policy<trust::Tested, trust::Unverified>::allowed,
-    "trust::Tested → trust::Unverified would erase test coverage");
+              "trust::Tested → trust::Unverified would erase test coverage");
 static_assert(!retag_policy<trust::Verified, trust::Assumed>::allowed,
-    "trust::Verified → trust::Assumed would downgrade discharged proof "
-    "back to a mere assumption");
+              "trust::Verified → trust::Assumed would downgrade discharged proof "
+              "back to a mere assumption");
 // FIXY-FOUND-035: paired inverse for the new Unverified → Assumed edge.
 // Assumed → Unverified would erase the axiom-author's responsibility
 // claim; the value cannot retreat from "an axiom was authored" back to
 // "no claim".
 static_assert(!retag_policy<trust::Assumed, trust::Unverified>::allowed,
-    "FIXY-FOUND-035: trust::Assumed → trust::Unverified would erase the "
-    "axiom-author responsibility claim recorded at the Unverified → "
-    "Assumed retag site");
+              "FIXY-FOUND-035: trust::Assumed → trust::Unverified would erase the "
+              "axiom-author responsibility claim recorded at the Unverified → "
+              "Assumed retag site");
 
 // source:: positives — catalog admits forward laundering
 static_assert(retag_policy<source::External, source::Sanitized>::allowed,
-    "source::External → source::Sanitized must be admitted");
+              "source::External → source::Sanitized must be admitted");
 static_assert(retag_policy<source::External, source::IntegrityVerified>::allowed,
-    "source::External → source::IntegrityVerified must be admitted");
+              "source::External → source::IntegrityVerified must be admitted");
 static_assert(retag_policy<source::Sanitized, source::IntegrityVerified>::allowed,
-    "source::Sanitized → source::IntegrityVerified must be admitted");
+              "source::Sanitized → source::IntegrityVerified must be admitted");
 static_assert(retag_policy<source::FromUser, source::Sanitized>::allowed,
-    "source::FromUser → source::Sanitized must be admitted");
+              "source::FromUser → source::Sanitized must be admitted");
 static_assert(retag_policy<source::Recorded, source::Loaded>::allowed,
-    "source::Recorded → source::Loaded must be admitted");
+              "source::Recorded → source::Loaded must be admitted");
 // FIXY-FOUND-035 positive sentinels — 6 new forward edges.
 static_assert(retag_policy<source::FromDb, source::Sanitized>::allowed,
-    "FIXY-FOUND-035: source::FromDb → source::Sanitized must be admitted");
+              "FIXY-FOUND-035: source::FromDb → source::Sanitized must be admitted");
 static_assert(retag_policy<source::FromConfig, source::Sanitized>::allowed,
-    "FIXY-FOUND-035: source::FromConfig → source::Sanitized must be admitted");
+              "FIXY-FOUND-035: source::FromConfig → source::Sanitized must be admitted");
 static_assert(retag_policy<source::ABIBoundary, source::Sanitized>::allowed,
-    "FIXY-FOUND-035: source::ABIBoundary → source::Sanitized must be admitted");
+              "FIXY-FOUND-035: source::ABIBoundary → source::Sanitized must be admitted");
 static_assert(retag_policy<source::Loaded, source::IntegrityVerified>::allowed,
-    "FIXY-FOUND-035: source::Loaded → source::IntegrityVerified must be admitted");
+              "FIXY-FOUND-035: source::Loaded → source::IntegrityVerified must be admitted");
 static_assert(retag_policy<source::Replayed, source::Loaded>::allowed,
-    "FIXY-FOUND-035: source::Replayed → source::Loaded must be admitted");
+              "FIXY-FOUND-035: source::Replayed → source::Loaded must be admitted");
 static_assert(retag_policy<source::Recorded, source::IntegrityVerified>::allowed,
-    "FIXY-FOUND-035: source::Recorded → source::IntegrityVerified must be admitted");
+              "FIXY-FOUND-035: source::Recorded → source::IntegrityVerified must be admitted");
 
 // source:: inverse rejected — taint cannot be reintroduced.
 // One inverse witness per forward cell above so the 1:1 matrix is
 // complete (a missing inverse-reject is the easier oversight when
 // adding a forward specialization "by symmetry").
 static_assert(!retag_policy<source::Sanitized, source::External>::allowed,
-    "source::Sanitized → source::External would reintroduce taint");
+              "source::Sanitized → source::External would reintroduce taint");
 static_assert(!retag_policy<source::IntegrityVerified, source::External>::allowed,
-    "source::IntegrityVerified → source::External would erase integrity");
+              "source::IntegrityVerified → source::External would erase integrity");
 static_assert(!retag_policy<source::Loaded, source::Recorded>::allowed,
-    "source::Loaded → source::Recorded would unwind admitted state");
+              "source::Loaded → source::Recorded would unwind admitted state");
 static_assert(!retag_policy<source::IntegrityVerified, source::Sanitized>::allowed,
-    "source::IntegrityVerified → source::Sanitized would erase the "
-    "additional integrity-check guarantee, downgrading to merely sanitized");
+              "source::IntegrityVerified → source::Sanitized would erase the "
+              "additional integrity-check guarantee, downgrading to merely sanitized");
 static_assert(!retag_policy<source::Sanitized, source::FromUser>::allowed,
-    "source::Sanitized → source::FromUser would re-introduce taint by "
-    "regressing a validated value to raw user-supplied provenance");
+              "source::Sanitized → source::FromUser would re-introduce taint by "
+              "regressing a validated value to raw user-supplied provenance");
 // FIXY-FOUND-035 inverse sentinels — 6 new forward edges, 6 paired
 // inverse-rejects.  Each closes the same "by symmetry" oversight risk
 // captured by the original V-023 inverse-witness discipline at line
 // 786-801.
 static_assert(!retag_policy<source::Sanitized, source::FromDb>::allowed,
-    "FIXY-FOUND-035: source::Sanitized → source::FromDb would re-introduce "
-    "taint by regressing a validated value to raw DB-row provenance");
+              "FIXY-FOUND-035: source::Sanitized → source::FromDb would re-introduce "
+              "taint by regressing a validated value to raw DB-row provenance");
 static_assert(!retag_policy<source::Sanitized, source::FromConfig>::allowed,
-    "FIXY-FOUND-035: source::Sanitized → source::FromConfig would re-introduce "
-    "taint by regressing a validated value to raw config-file provenance");
+              "FIXY-FOUND-035: source::Sanitized → source::FromConfig would re-introduce "
+              "taint by regressing a validated value to raw config-file provenance");
 static_assert(!retag_policy<source::Sanitized, source::ABIBoundary>::allowed,
-    "FIXY-FOUND-035: source::Sanitized → source::ABIBoundary would re-introduce "
-    "taint by regressing a validated value to raw FFI-boundary provenance");
+              "FIXY-FOUND-035: source::Sanitized → source::ABIBoundary would re-introduce "
+              "taint by regressing a validated value to raw FFI-boundary provenance");
 static_assert(!retag_policy<source::IntegrityVerified, source::Loaded>::allowed,
-    "FIXY-FOUND-035: source::IntegrityVerified → source::Loaded would erase "
-    "the additional integrity-check guarantee");
+              "FIXY-FOUND-035: source::IntegrityVerified → source::Loaded would erase "
+              "the additional integrity-check guarantee");
 static_assert(!retag_policy<source::Loaded, source::Replayed>::allowed,
-    "FIXY-FOUND-035: source::Loaded → source::Replayed would unwind admitted "
-    "state back to a Cipher-replay transient");
+              "FIXY-FOUND-035: source::Loaded → source::Replayed would unwind admitted "
+              "state back to a Cipher-replay transient");
 static_assert(!retag_policy<source::IntegrityVerified, source::Recorded>::allowed,
-    "FIXY-FOUND-035: source::IntegrityVerified → source::Recorded would erase "
-    "the integrity-check guarantee, downgrading to merely-recorded state");
+              "FIXY-FOUND-035: source::IntegrityVerified → source::Recorded would erase "
+              "the integrity-check guarantee, downgrading to merely-recorded state");
 
 // vessel_trust:: positive + inverse
 static_assert(retag_policy<vessel_trust::FromPytorch, vessel_trust::Validated>::allowed,
-    "vessel_trust::FromPytorch → vessel_trust::Validated must be admitted");
+              "vessel_trust::FromPytorch → vessel_trust::Validated must be admitted");
 static_assert(!retag_policy<vessel_trust::Validated, vessel_trust::FromPytorch>::allowed,
-    "vessel_trust::Validated → FromPytorch would erase well-formedness");
+              "vessel_trust::Validated → FromPytorch would erase well-formedness");
 
 // Concept-form positives + cross-axis rejection survives V-023
-static_assert(RetagAllowed<source::External, source::Sanitized>,
-    "RetagAllowed concept admits catalog transitions");
-static_assert(RetagAllowed<trust::Unverified, trust::Verified>,
-    "RetagAllowed concept admits trust escalation");
+static_assert(RetagAllowed<source::External, source::Sanitized>, "RetagAllowed concept admits catalog transitions");
+static_assert(RetagAllowed<trust::Unverified, trust::Verified>, "RetagAllowed concept admits trust escalation");
 static_assert(!RetagAllowed<source::External, trust::Verified>,
-    "Cross-axis transition (source::* to trust::*) stays rejected — "
-    "laundering across orthogonal axes is never safe");
+              "Cross-axis transition (source::* to trust::*) stays rejected — "
+              "laundering across orthogonal axes is never safe");
 static_assert(!RetagAllowed<source::FromUser, access::WriteOnce>,
-    "Cross-axis transition (source::* to access::*) stays rejected");
+              "Cross-axis transition (source::* to access::*) stays rejected");
 
 // ── FIXY-FOUND-035 catalog cardinality dashboard ───────────────────
 //
@@ -965,32 +969,27 @@ inline constexpr std::size_t kAdmittedForwardEdgeCount = 17;
 // in the fold IS the canonical roster of admitted forward edges.
 inline constexpr bool kCatalogRosterMatchesCount =
     // 5 trust:: edges (FIXY-FOUND-035 added 1)
-    RetagAllowed<trust::Unverified,  trust::Tested>     &&
-    RetagAllowed<trust::Unverified,  trust::Verified>   &&
-    RetagAllowed<trust::Tested,      trust::Verified>   &&
-    RetagAllowed<trust::Assumed,     trust::Verified>   &&
-    RetagAllowed<trust::Unverified,  trust::Assumed>    &&  // FOUND-035
+    RetagAllowed<trust::Unverified, trust::Tested> && RetagAllowed<trust::Unverified, trust::Verified>
+    && RetagAllowed<trust::Tested, trust::Verified> && RetagAllowed<trust::Assumed, trust::Verified>
+    && RetagAllowed<trust::Unverified, trust::Assumed> &&  // FOUND-035
     // 11 source:: edges (FIXY-FOUND-035 added 6)
-    RetagAllowed<source::External,   source::Sanitized>         &&
-    RetagAllowed<source::External,   source::IntegrityVerified> &&
-    RetagAllowed<source::Sanitized,  source::IntegrityVerified> &&
-    RetagAllowed<source::FromUser,   source::Sanitized>         &&
-    RetagAllowed<source::Recorded,   source::Loaded>            &&
-    RetagAllowed<source::FromDb,     source::Sanitized>         &&  // FOUND-035
-    RetagAllowed<source::FromConfig, source::Sanitized>         &&  // FOUND-035
-    RetagAllowed<source::ABIBoundary, source::Sanitized>        &&  // FOUND-035
-    RetagAllowed<source::Loaded,     source::IntegrityVerified> &&  // FOUND-035
-    RetagAllowed<source::Replayed,   source::Loaded>            &&  // FOUND-035
-    RetagAllowed<source::Recorded,   source::IntegrityVerified> &&  // FOUND-035
+    RetagAllowed<source::External, source::Sanitized> && RetagAllowed<source::External, source::IntegrityVerified>
+    && RetagAllowed<source::Sanitized, source::IntegrityVerified> && RetagAllowed<source::FromUser, source::Sanitized>
+    && RetagAllowed<source::Recorded, source::Loaded> && RetagAllowed<source::FromDb, source::Sanitized>
+    &&  // FOUND-035
+    RetagAllowed<source::FromConfig, source::Sanitized> &&  // FOUND-035
+    RetagAllowed<source::ABIBoundary, source::Sanitized> &&  // FOUND-035
+    RetagAllowed<source::Loaded, source::IntegrityVerified> &&  // FOUND-035
+    RetagAllowed<source::Replayed, source::Loaded> &&  // FOUND-035
+    RetagAllowed<source::Recorded, source::IntegrityVerified> &&  // FOUND-035
     // 1 vessel_trust:: edge
     RetagAllowed<vessel_trust::FromPytorch, vessel_trust::Validated>;
 
-static_assert(kCatalogRosterMatchesCount,
-    "FIXY-FOUND-035: retag_policy catalog roster check failed.  Either "
-    "a specialization was deleted from this file (and the corresponding "
-    "RetagAllowed<> entry in kCatalogRosterMatchesCount above must be "
-    "removed plus kAdmittedForwardEdgeCount decremented), or one of the "
-    "named edges is mis-spelled / its specialization is missing.");
+static_assert(kCatalogRosterMatchesCount, "FIXY-FOUND-035: retag_policy catalog roster check failed.  Either "
+                                          "a specialization was deleted from this file (and the corresponding "
+                                          "RetagAllowed<> entry in kCatalogRosterMatchesCount above must be "
+                                          "removed plus kAdmittedForwardEdgeCount decremented), or one of the "
+                                          "named edges is mis-spelled / its specialization is missing.");
 
 // FIXY-FOUND-035 corrective: structural cardinality pin.  Counts the
 // `&&` separators in the roster expression via a sibling tuple-shaped
@@ -1001,33 +1000,24 @@ static_assert(kCatalogRosterMatchesCount,
 // roster (caught on initial FOUND-035 ship: pinned 16, actual 17).
 using kCatalogRosterTuple = std::tuple<
     // 5 trust:: edges
-    std::pair<trust::Unverified,  trust::Tested>,
-    std::pair<trust::Unverified,  trust::Verified>,
-    std::pair<trust::Tested,      trust::Verified>,
-    std::pair<trust::Assumed,     trust::Verified>,
-    std::pair<trust::Unverified,  trust::Assumed>,
+    std::pair<trust::Unverified, trust::Tested>, std::pair<trust::Unverified, trust::Verified>,
+    std::pair<trust::Tested, trust::Verified>, std::pair<trust::Assumed, trust::Verified>,
+    std::pair<trust::Unverified, trust::Assumed>,
     // 11 source:: edges
-    std::pair<source::External,   source::Sanitized>,
-    std::pair<source::External,   source::IntegrityVerified>,
-    std::pair<source::Sanitized,  source::IntegrityVerified>,
-    std::pair<source::FromUser,   source::Sanitized>,
-    std::pair<source::Recorded,   source::Loaded>,
-    std::pair<source::FromDb,     source::Sanitized>,
-    std::pair<source::FromConfig, source::Sanitized>,
-    std::pair<source::ABIBoundary, source::Sanitized>,
-    std::pair<source::Loaded,     source::IntegrityVerified>,
-    std::pair<source::Replayed,   source::Loaded>,
-    std::pair<source::Recorded,   source::IntegrityVerified>,
+    std::pair<source::External, source::Sanitized>, std::pair<source::External, source::IntegrityVerified>,
+    std::pair<source::Sanitized, source::IntegrityVerified>, std::pair<source::FromUser, source::Sanitized>,
+    std::pair<source::Recorded, source::Loaded>, std::pair<source::FromDb, source::Sanitized>,
+    std::pair<source::FromConfig, source::Sanitized>, std::pair<source::ABIBoundary, source::Sanitized>,
+    std::pair<source::Loaded, source::IntegrityVerified>, std::pair<source::Replayed, source::Loaded>,
+    std::pair<source::Recorded, source::IntegrityVerified>,
     // 1 vessel_trust:: edge
-    std::pair<vessel_trust::FromPytorch, vessel_trust::Validated>
->;
-static_assert(std::tuple_size_v<kCatalogRosterTuple>
-              == kAdmittedForwardEdgeCount,
-    "FIXY-FOUND-035 corrective: kAdmittedForwardEdgeCount must match "
-    "the kCatalogRosterTuple cardinality.  Drift between the named "
-    "count and the structured roster fires here — bump the count, "
-    "extend the tuple, and extend kCatalogRosterMatchesCount in "
-    "lockstep.");
+    std::pair<vessel_trust::FromPytorch, vessel_trust::Validated>>;
+static_assert(std::tuple_size_v<kCatalogRosterTuple> == kAdmittedForwardEdgeCount,
+              "FIXY-FOUND-035 corrective: kAdmittedForwardEdgeCount must match "
+              "the kCatalogRosterTuple cardinality.  Drift between the named "
+              "count and the structured roster fires here — bump the count, "
+              "extend the tuple, and extend kCatalogRosterMatchesCount in "
+              "lockstep.");
 
 // ── §XXI Universal Mint factory — fixy-A1-005 (#1547) ──────────────
 //
@@ -1063,9 +1053,7 @@ concept ValidTaggedTag = std::is_class_v<Tag>;
 
 template <typename Tag, typename T>
     requires ValidTaggedTag<Tag>
-[[nodiscard]] constexpr Tagged<T, Tag> mint_tagged(T value)
-    noexcept(std::is_nothrow_move_constructible_v<T>)
-{
+[[nodiscard]] constexpr Tagged<T, Tag> mint_tagged(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
     return Tagged<T, Tag>{std::move(value)};
 }
 
@@ -1079,7 +1067,7 @@ namespace detail::tagged_self_test {
 // regressions on the RelativeMonad-modality path that pure
 // static_asserts miss.
 inline void runtime_smoke_test() {
-    int seed = 7;                                            // non-constant
+    int seed = 7;  // non-constant
 
     // Construct via direct ctor + mint forwarder.
     Tagged<int, source::FromUser> u{seed * 6};
@@ -1101,8 +1089,8 @@ inline void runtime_smoke_test() {
     if (extracted != 100) std::abort();
 
     // Verified vs Unverified trust tags — distinct types.
-    Tagged<long, trust::Verified>    v{seed * seed};
-    Tagged<long, trust::Unverified>  uv{seed * seed};
+    Tagged<long, trust::Verified> v{seed * seed};
+    Tagged<long, trust::Unverified> uv{seed * seed};
     if (v.value() != uv.value()) std::abort();
 
     // Version tag with NTTP.
@@ -1117,4 +1105,4 @@ inline void runtime_smoke_test() {
 
 }  // namespace detail::tagged_self_test
 
-} // namespace crucible::safety
+}  // namespace crucible::safety

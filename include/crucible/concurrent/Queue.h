@@ -149,9 +149,12 @@ namespace crucible::concurrent {
 
 namespace queue_tag {
 
-template <typename UserTag> struct Whole    {};
-template <typename UserTag> struct Producer {};
-template <typename UserTag> struct Consumer {};
+template <typename UserTag>
+struct Whole {};
+template <typename UserTag>
+struct Producer {};
+template <typename UserTag>
+struct Consumer {};
 
 }  // namespace queue_tag
 
@@ -177,14 +180,11 @@ struct mpsc {
 // per-cell SPSC, no inter-shard contention.  Maps to
 // ShardedSpscGrid<T, M, N, Cap, Routing>.  Use when the producer set
 // and consumer set are both bounded and known at compile time.
-template <std::size_t M,
-          std::size_t N,
-          std::size_t Capacity,
-          typename Routing = RoundRobinRouting>
+template <std::size_t M, std::size_t N, std::size_t Capacity, typename Routing = RoundRobinRouting>
 struct sharded {
     static constexpr std::size_t producers = M;
     static constexpr std::size_t consumers = N;
-    static constexpr std::size_t capacity  = Capacity;
+    static constexpr std::size_t capacity = Capacity;
     using routing_type = Routing;
 };
 
@@ -201,23 +201,34 @@ struct work_stealing {
 
 // ── Type traits — Kind detection ─────────────────────────────────
 
-template <typename K> struct is_spsc_kind          : std::false_type {};
-template <std::size_t Cap> struct is_spsc_kind<kind::spsc<Cap>> : std::true_type {};
+template <typename K>
+struct is_spsc_kind : std::false_type {};
+template <std::size_t Cap>
+struct is_spsc_kind<kind::spsc<Cap>> : std::true_type {};
 
-template <typename K> struct is_mpsc_kind          : std::false_type {};
-template <std::size_t Cap> struct is_mpsc_kind<kind::mpsc<Cap>> : std::true_type {};
+template <typename K>
+struct is_mpsc_kind : std::false_type {};
+template <std::size_t Cap>
+struct is_mpsc_kind<kind::mpsc<Cap>> : std::true_type {};
 
-template <typename K> struct is_sharded_kind       : std::false_type {};
+template <typename K>
+struct is_sharded_kind : std::false_type {};
 template <std::size_t M, std::size_t N, std::size_t Cap, typename R>
 struct is_sharded_kind<kind::sharded<M, N, Cap, R>> : std::true_type {};
 
-template <typename K> struct is_work_stealing_kind : std::false_type {};
-template <std::size_t Cap> struct is_work_stealing_kind<kind::work_stealing<Cap>> : std::true_type {};
+template <typename K>
+struct is_work_stealing_kind : std::false_type {};
+template <std::size_t Cap>
+struct is_work_stealing_kind<kind::work_stealing<Cap>> : std::true_type {};
 
-template <typename K> inline constexpr bool is_spsc_kind_v          = is_spsc_kind<K>::value;
-template <typename K> inline constexpr bool is_mpsc_kind_v          = is_mpsc_kind<K>::value;
-template <typename K> inline constexpr bool is_sharded_kind_v       = is_sharded_kind<K>::value;
-template <typename K> inline constexpr bool is_work_stealing_kind_v = is_work_stealing_kind<K>::value;
+template <typename K>
+inline constexpr bool is_spsc_kind_v = is_spsc_kind<K>::value;
+template <typename K>
+inline constexpr bool is_mpsc_kind_v = is_mpsc_kind<K>::value;
+template <typename K>
+inline constexpr bool is_sharded_kind_v = is_sharded_kind<K>::value;
+template <typename K>
+inline constexpr bool is_work_stealing_kind_v = is_work_stealing_kind<K>::value;
 
 // ── Concepts — uniform shape across Kinds ────────────────────────
 //
@@ -251,12 +262,11 @@ class Queue;
 // ── Specialization: kind::spsc<Cap> → SpscRing<T, Cap> ───────────
 
 template <SpscValue T, std::size_t Capacity>
-class Queue<T, kind::spsc<Capacity>>
-    : public safety::Pinned<Queue<T, kind::spsc<Capacity>>> {
+class Queue<T, kind::spsc<Capacity>> : public safety::Pinned<Queue<T, kind::spsc<Capacity>>> {
 public:
     using value_type = T;
-    using kind_type  = kind::spsc<Capacity>;
-    using impl_type  = SpscRing<T, Capacity>;
+    using kind_type = kind::spsc<Capacity>;
+    using impl_type = SpscRing<T, Capacity>;
 
     Queue() noexcept = default;
 
@@ -280,9 +290,7 @@ public:
     public:
         using value_type = T;
 
-        [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept {
-            return q_->ring_.try_push(item);
-        }
+        [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept { return q_->ring_.try_push(item); }
     };
 
     // ── ConsumerHandle ───────────────────────────────────────────
@@ -294,9 +302,7 @@ public:
     public:
         using value_type = T;
 
-        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept {
-            return q_->ring_.try_pop();
-        }
+        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept { return q_->ring_.try_pop(); }
     };
 
     // ── PermissionedProducerHandle<UserTag> ──────────────────────
@@ -318,29 +324,25 @@ public:
         Queue* q_ = nullptr;
         [[no_unique_address]] safety::Permission<queue_tag::Producer<UserTag>> perm_;
 
-        constexpr PermissionedProducerHandle(
-            Queue& q,
-            safety::Permission<queue_tag::Producer<UserTag>>&& p) noexcept
+        constexpr PermissionedProducerHandle(Queue& q, safety::Permission<queue_tag::Producer<UserTag>>&& p) noexcept
             : q_{&q}, perm_{std::move(p)} {}
         friend class Queue;
 
     public:
         using value_type = T;
-        using user_tag   = UserTag;
+        using user_tag = UserTag;
 
         // Move-only by virtue of the Permission member.  -Werror=use-
         // after-move catches double-use; deleted copy catches accidental
         // duplication.
-        PermissionedProducerHandle(const PermissionedProducerHandle&)
-            = delete("PermissionedProducerHandle owns a Permission — copy would duplicate the linear token");
-        PermissionedProducerHandle& operator=(const PermissionedProducerHandle&)
-            = delete("PermissionedProducerHandle owns a Permission — assignment would overwrite the linear token");
+        PermissionedProducerHandle(const PermissionedProducerHandle&) =
+            delete("PermissionedProducerHandle owns a Permission — copy would duplicate the linear token");
+        PermissionedProducerHandle& operator=(const PermissionedProducerHandle&) =
+            delete("PermissionedProducerHandle owns a Permission — assignment would overwrite the linear token");
         constexpr PermissionedProducerHandle(PermissionedProducerHandle&&) noexcept = default;
         constexpr PermissionedProducerHandle& operator=(PermissionedProducerHandle&&) noexcept = default;
 
-        [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept {
-            return q_->ring_.try_push(item);
-        }
+        [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept { return q_->ring_.try_push(item); }
     };
 
     // ── PermissionedConsumerHandle<UserTag> ──────────────────────
@@ -349,26 +351,22 @@ public:
         Queue* q_ = nullptr;
         [[no_unique_address]] safety::Permission<queue_tag::Consumer<UserTag>> perm_;
 
-        constexpr PermissionedConsumerHandle(
-            Queue& q,
-            safety::Permission<queue_tag::Consumer<UserTag>>&& c) noexcept
+        constexpr PermissionedConsumerHandle(Queue& q, safety::Permission<queue_tag::Consumer<UserTag>>&& c) noexcept
             : q_{&q}, perm_{std::move(c)} {}
         friend class Queue;
 
     public:
         using value_type = T;
-        using user_tag   = UserTag;
+        using user_tag = UserTag;
 
-        PermissionedConsumerHandle(const PermissionedConsumerHandle&)
-            = delete("PermissionedConsumerHandle owns a Permission — copy would duplicate the linear token");
-        PermissionedConsumerHandle& operator=(const PermissionedConsumerHandle&)
-            = delete("PermissionedConsumerHandle owns a Permission — assignment would overwrite the linear token");
+        PermissionedConsumerHandle(const PermissionedConsumerHandle&) =
+            delete("PermissionedConsumerHandle owns a Permission — copy would duplicate the linear token");
+        PermissionedConsumerHandle& operator=(const PermissionedConsumerHandle&) =
+            delete("PermissionedConsumerHandle owns a Permission — assignment would overwrite the linear token");
         constexpr PermissionedConsumerHandle(PermissionedConsumerHandle&&) noexcept = default;
         constexpr PermissionedConsumerHandle& operator=(PermissionedConsumerHandle&&) noexcept = default;
 
-        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept {
-            return q_->ring_.try_pop();
-        }
+        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept { return q_->ring_.try_pop(); }
     };
 
     // Bare factories (no Permission) — caller-responsibility discipline.
@@ -381,21 +379,19 @@ public:
     // parent-rebuild structurally sound.  Pair with mint_permission_split /
     // mint_permission_fork; see safety/PermissionFork.h.
     template <typename UserTag>
-    [[nodiscard]] PermissionedProducerHandle<UserTag> producer_handle(
-        safety::Permission<queue_tag::Producer<UserTag>>&& perm) noexcept
-    {
+    [[nodiscard]] PermissionedProducerHandle<UserTag>
+    producer_handle(safety::Permission<queue_tag::Producer<UserTag>>&& perm) noexcept {
         return PermissionedProducerHandle<UserTag>{*this, std::move(perm)};
     }
 
     template <typename UserTag>
-    [[nodiscard]] PermissionedConsumerHandle<UserTag> consumer_handle(
-        safety::Permission<queue_tag::Consumer<UserTag>>&& perm) noexcept
-    {
+    [[nodiscard]] PermissionedConsumerHandle<UserTag>
+    consumer_handle(safety::Permission<queue_tag::Consumer<UserTag>>&& perm) noexcept {
         return PermissionedConsumerHandle<UserTag>{*this, std::move(perm)};
     }
 
-    [[nodiscard]] std::size_t        size_approx()  const noexcept { return ring_.size_approx(); }
-    [[nodiscard]] bool               empty_approx() const noexcept { return ring_.empty_approx(); }
+    [[nodiscard]] std::size_t size_approx() const noexcept { return ring_.size_approx(); }
+    [[nodiscard]] bool empty_approx() const noexcept { return ring_.empty_approx(); }
     [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
 private:
@@ -405,12 +401,11 @@ private:
 // ── Specialization: kind::mpsc<Cap> → MpscRing<T, Cap> ───────────
 
 template <RingValue T, std::size_t Capacity>
-class Queue<T, kind::mpsc<Capacity>>
-    : public safety::Pinned<Queue<T, kind::mpsc<Capacity>>> {
+class Queue<T, kind::mpsc<Capacity>> : public safety::Pinned<Queue<T, kind::mpsc<Capacity>>> {
 public:
     using value_type = T;
-    using kind_type  = kind::mpsc<Capacity>;
-    using impl_type  = MpscRing<T, Capacity>;
+    using kind_type = kind::mpsc<Capacity>;
+    using impl_type = MpscRing<T, Capacity>;
 
     Queue() noexcept = default;
 
@@ -429,9 +424,7 @@ public:
         using value_type = T;
 
         // MpscRing::try_push takes by value (consumes); facade matches.
-        [[nodiscard, gnu::hot]] bool try_push(T item) noexcept {
-            return q_->ring_.try_push(item);
-        }
+        [[nodiscard, gnu::hot]] bool try_push(T item) noexcept { return q_->ring_.try_push(item); }
     };
 
     // ── ConsumerHandle ───────────────────────────────────────────
@@ -446,9 +439,7 @@ public:
     public:
         using value_type = T;
 
-        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept {
-            return q_->ring_.try_pop();
-        }
+        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept { return q_->ring_.try_pop(); }
     };
 
     // PermissionedProducerHandle owns the Permission token.  For MPSC,
@@ -462,26 +453,22 @@ public:
         Queue* q_ = nullptr;
         [[no_unique_address]] safety::Permission<queue_tag::Producer<UserTag>> perm_;
 
-        constexpr PermissionedProducerHandle(
-            Queue& q,
-            safety::Permission<queue_tag::Producer<UserTag>>&& p) noexcept
+        constexpr PermissionedProducerHandle(Queue& q, safety::Permission<queue_tag::Producer<UserTag>>&& p) noexcept
             : q_{&q}, perm_{std::move(p)} {}
         friend class Queue;
 
     public:
         using value_type = T;
-        using user_tag   = UserTag;
+        using user_tag = UserTag;
 
-        PermissionedProducerHandle(const PermissionedProducerHandle&)
-            = delete("PermissionedProducerHandle owns a Permission — copy would duplicate the linear token");
-        PermissionedProducerHandle& operator=(const PermissionedProducerHandle&)
-            = delete("PermissionedProducerHandle owns a Permission — assignment would overwrite the linear token");
+        PermissionedProducerHandle(const PermissionedProducerHandle&) =
+            delete("PermissionedProducerHandle owns a Permission — copy would duplicate the linear token");
+        PermissionedProducerHandle& operator=(const PermissionedProducerHandle&) =
+            delete("PermissionedProducerHandle owns a Permission — assignment would overwrite the linear token");
         constexpr PermissionedProducerHandle(PermissionedProducerHandle&&) noexcept = default;
         constexpr PermissionedProducerHandle& operator=(PermissionedProducerHandle&&) noexcept = default;
 
-        [[nodiscard, gnu::hot]] bool try_push(T item) noexcept {
-            return q_->ring_.try_push(item);
-        }
+        [[nodiscard, gnu::hot]] bool try_push(T item) noexcept { return q_->ring_.try_push(item); }
     };
 
     template <typename UserTag>
@@ -489,42 +476,36 @@ public:
         Queue* q_ = nullptr;
         [[no_unique_address]] safety::Permission<queue_tag::Consumer<UserTag>> perm_;
 
-        constexpr PermissionedConsumerHandle(
-            Queue& q,
-            safety::Permission<queue_tag::Consumer<UserTag>>&& c) noexcept
+        constexpr PermissionedConsumerHandle(Queue& q, safety::Permission<queue_tag::Consumer<UserTag>>&& c) noexcept
             : q_{&q}, perm_{std::move(c)} {}
         friend class Queue;
 
     public:
         using value_type = T;
-        using user_tag   = UserTag;
+        using user_tag = UserTag;
 
-        PermissionedConsumerHandle(const PermissionedConsumerHandle&)
-            = delete("PermissionedConsumerHandle owns a Permission — copy would duplicate the linear token");
-        PermissionedConsumerHandle& operator=(const PermissionedConsumerHandle&)
-            = delete("PermissionedConsumerHandle owns a Permission — assignment would overwrite the linear token");
+        PermissionedConsumerHandle(const PermissionedConsumerHandle&) =
+            delete("PermissionedConsumerHandle owns a Permission — copy would duplicate the linear token");
+        PermissionedConsumerHandle& operator=(const PermissionedConsumerHandle&) =
+            delete("PermissionedConsumerHandle owns a Permission — assignment would overwrite the linear token");
         constexpr PermissionedConsumerHandle(PermissionedConsumerHandle&&) noexcept = default;
         constexpr PermissionedConsumerHandle& operator=(PermissionedConsumerHandle&&) noexcept = default;
 
-        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept {
-            return q_->ring_.try_pop();
-        }
+        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept { return q_->ring_.try_pop(); }
     };
 
     [[nodiscard]] ProducerHandle producer_handle() noexcept { return ProducerHandle{*this}; }
     [[nodiscard]] ConsumerHandle consumer_handle() noexcept { return ConsumerHandle{*this}; }
 
     template <typename UserTag>
-    [[nodiscard]] PermissionedProducerHandle<UserTag> producer_handle(
-        safety::Permission<queue_tag::Producer<UserTag>>&& perm) noexcept
-    {
+    [[nodiscard]] PermissionedProducerHandle<UserTag>
+    producer_handle(safety::Permission<queue_tag::Producer<UserTag>>&& perm) noexcept {
         return PermissionedProducerHandle<UserTag>{*this, std::move(perm)};
     }
 
     template <typename UserTag>
-    [[nodiscard]] PermissionedConsumerHandle<UserTag> consumer_handle(
-        safety::Permission<queue_tag::Consumer<UserTag>>&& perm) noexcept
-    {
+    [[nodiscard]] PermissionedConsumerHandle<UserTag>
+    consumer_handle(safety::Permission<queue_tag::Consumer<UserTag>>&& perm) noexcept {
         return PermissionedConsumerHandle<UserTag>{*this, std::move(perm)};
     }
 
@@ -537,14 +518,13 @@ private:
 
 // ── Specialization: kind::sharded<M, N, Cap, R> ──────────────────
 
-template <SpscValue T, std::size_t M, std::size_t N,
-          std::size_t Capacity, typename Routing>
+template <SpscValue T, std::size_t M, std::size_t N, std::size_t Capacity, typename Routing>
 class Queue<T, kind::sharded<M, N, Capacity, Routing>>
     : public safety::Pinned<Queue<T, kind::sharded<M, N, Capacity, Routing>>> {
 public:
     using value_type = T;
-    using kind_type  = kind::sharded<M, N, Capacity, Routing>;
-    using impl_type  = ShardedSpscGrid<T, M, N, Capacity, Routing>;
+    using kind_type = kind::sharded<M, N, Capacity, Routing>;
+    using impl_type = ShardedSpscGrid<T, M, N, Capacity, Routing>;
 
     Queue() noexcept = default;
 
@@ -555,7 +535,7 @@ public:
     // pushes into that producer's row of the grid; the underlying
     // grid's Routing policy picks the destination consumer column.
     class ProducerHandle {
-        Queue*      q_     = nullptr;
+        Queue* q_ = nullptr;
         std::size_t shard_ = 0;
         constexpr ProducerHandle(Queue& q, std::size_t s) noexcept : q_{&q}, shard_{s} {}
         friend class Queue;
@@ -566,14 +546,12 @@ public:
 
         [[nodiscard]] std::size_t shard_id() const noexcept { return shard_; }
 
-        [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept {
-            return q_->grid_.try_push(shard_, item);
-        }
+        [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept { return q_->grid_.try_push(shard_, item); }
     };
 
     // ── ConsumerHandle (bound to a specific shard at construction) ──
     class ConsumerHandle {
-        Queue*      q_     = nullptr;
+        Queue* q_ = nullptr;
         std::size_t shard_ = 0;
         constexpr ConsumerHandle(Queue& q, std::size_t s) noexcept : q_{&q}, shard_{s} {}
         friend class Queue;
@@ -584,26 +562,20 @@ public:
 
         [[nodiscard]] std::size_t shard_id() const noexcept { return shard_; }
 
-        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept {
-            return q_->grid_.try_pop(shard_);
-        }
+        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept { return q_->grid_.try_pop(shard_); }
     };
 
-    [[nodiscard]] ProducerHandle producer_handle(std::size_t shard) noexcept
-        pre (shard < M)
-    {
+    [[nodiscard]] ProducerHandle producer_handle(std::size_t shard) noexcept pre(shard < M) {
         return ProducerHandle{*this, shard};
     }
 
-    [[nodiscard]] ConsumerHandle consumer_handle(std::size_t shard) noexcept
-        pre (shard < N)
-    {
+    [[nodiscard]] ConsumerHandle consumer_handle(std::size_t shard) noexcept pre(shard < N) {
         return ConsumerHandle{*this, shard};
     }
 
     [[nodiscard]] static constexpr std::size_t producer_count() noexcept { return M; }
     [[nodiscard]] static constexpr std::size_t consumer_count() noexcept { return N; }
-    [[nodiscard]] static constexpr std::size_t capacity()       noexcept { return Capacity; }
+    [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
 private:
     impl_type grid_{};
@@ -612,12 +584,11 @@ private:
 // ── Specialization: kind::work_stealing<Cap> → ChaseLevDeque<T, Cap> ──
 
 template <DequeValue T, std::size_t Capacity>
-class Queue<T, kind::work_stealing<Capacity>>
-    : public safety::Pinned<Queue<T, kind::work_stealing<Capacity>>> {
+class Queue<T, kind::work_stealing<Capacity>> : public safety::Pinned<Queue<T, kind::work_stealing<Capacity>>> {
 public:
     using value_type = T;
-    using kind_type  = kind::work_stealing<Capacity>;
-    using impl_type  = ChaseLevDeque<T, Capacity>;
+    using kind_type = kind::work_stealing<Capacity>;
+    using impl_type = ChaseLevDeque<T, Capacity>;
 
     Queue() noexcept = default;
 
@@ -634,13 +605,9 @@ public:
     public:
         using value_type = T;
 
-        [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept {
-            return q_->deque_.push_bottom(item);
-        }
+        [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept { return q_->deque_.push_bottom(item); }
 
-        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept {
-            return q_->deque_.pop_bottom();
-        }
+        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept { return q_->deque_.pop_bottom(); }
     };
 
     // ── ThiefHandle ──────────────────────────────────────────────
@@ -656,9 +623,7 @@ public:
     public:
         using value_type = T;
 
-        [[nodiscard, gnu::hot]] std::optional<T> try_steal() noexcept {
-            return q_->deque_.steal_top();
-        }
+        [[nodiscard, gnu::hot]] std::optional<T> try_steal() noexcept { return q_->deque_.steal_top(); }
     };
 
     [[nodiscard]] OwnerHandle owner_handle() noexcept { return OwnerHandle{*this}; }
@@ -720,17 +685,14 @@ template <WorkloadHint Hint>
         return kind::work_stealing<Hint.capacity>{};
     } else if constexpr (Hint.producer_count == 1 && Hint.consumer_count == 1) {
         return kind::spsc<Hint.capacity>{};
-    } else if constexpr (Hint.producer_count >  1 && Hint.consumer_count == 1) {
+    } else if constexpr (Hint.producer_count > 1 && Hint.consumer_count == 1) {
         return kind::mpsc<Hint.capacity>{};
     } else {
         // Both sides > 1 (sharded) OR single producer with many
         // consumers (also sharded with M=1).  RoundRobinRouting is
         // the safe default; users wanting per-key ordering supply
         // kind::sharded<...> directly with HashKeyRouting<KeyFn>.
-        return kind::sharded<Hint.producer_count,
-                             Hint.consumer_count,
-                             Hint.capacity,
-                             RoundRobinRouting>{};
+        return kind::sharded<Hint.producer_count, Hint.consumer_count, Hint.capacity, RoundRobinRouting>{};
     }
 }
 
@@ -745,43 +707,33 @@ using auto_queue_t = Queue<T, decltype(pick_kind<Hint>())>;
 // generated assembly to confirm no extra indirection.
 
 namespace detail {
-    using SpscQueue4096 = Queue<std::uint64_t, kind::spsc<4096>>;
-    using MpscQueue4096 = Queue<std::uint64_t, kind::mpsc<4096>>;
-    using ShardedQueue22 = Queue<std::uint64_t, kind::sharded<2, 2, 256>>;
-    using WsQueue1024 = Queue<std::uint64_t, kind::work_stealing<1024>>;
+using SpscQueue4096 = Queue<std::uint64_t, kind::spsc<4096>>;
+using MpscQueue4096 = Queue<std::uint64_t, kind::mpsc<4096>>;
+using ShardedQueue22 = Queue<std::uint64_t, kind::sharded<2, 2, 256>>;
+using WsQueue1024 = Queue<std::uint64_t, kind::work_stealing<1024>>;
 
-    static_assert(sizeof(SpscQueue4096) == sizeof(SpscRing<std::uint64_t, 4096>),
-                  "Queue<T, spsc<N>> must be exactly its underlying SpscRing");
-    static_assert(sizeof(MpscQueue4096) == sizeof(MpscRing<std::uint64_t, 4096>),
-                  "Queue<T, mpsc<N>> must be exactly its underlying MpscRing");
-    static_assert(sizeof(ShardedQueue22) == sizeof(ShardedSpscGrid<std::uint64_t, 2, 2, 256>),
-                  "Queue<T, sharded<...>> must be exactly its underlying ShardedSpscGrid");
-    static_assert(sizeof(WsQueue1024) == sizeof(ChaseLevDeque<std::uint64_t, 1024>),
-                  "Queue<T, work_stealing<N>> must be exactly its underlying ChaseLevDeque");
+static_assert(sizeof(SpscQueue4096) == sizeof(SpscRing<std::uint64_t, 4096>),
+              "Queue<T, spsc<N>> must be exactly its underlying SpscRing");
+static_assert(sizeof(MpscQueue4096) == sizeof(MpscRing<std::uint64_t, 4096>),
+              "Queue<T, mpsc<N>> must be exactly its underlying MpscRing");
+static_assert(sizeof(ShardedQueue22) == sizeof(ShardedSpscGrid<std::uint64_t, 2, 2, 256>),
+              "Queue<T, sharded<...>> must be exactly its underlying ShardedSpscGrid");
+static_assert(sizeof(WsQueue1024) == sizeof(ChaseLevDeque<std::uint64_t, 1024>),
+              "Queue<T, work_stealing<N>> must be exactly its underlying ChaseLevDeque");
 
-    // Handles are at most a Queue pointer + index (sharded only).
-    static_assert(sizeof(SpscQueue4096::ProducerHandle) == sizeof(void*),
-                  "SPSC ProducerHandle is a single pointer");
-    static_assert(sizeof(MpscQueue4096::ProducerHandle) == sizeof(void*),
-                  "MPSC ProducerHandle is a single pointer");
-    static_assert(sizeof(ShardedQueue22::ProducerHandle) == sizeof(void*) + sizeof(std::size_t),
-                  "Sharded ProducerHandle is a pointer plus shard index");
-    static_assert(sizeof(WsQueue1024::OwnerHandle) == sizeof(void*),
-                  "WS OwnerHandle is a single pointer");
+// Handles are at most a Queue pointer + index (sharded only).
+static_assert(sizeof(SpscQueue4096::ProducerHandle) == sizeof(void*), "SPSC ProducerHandle is a single pointer");
+static_assert(sizeof(MpscQueue4096::ProducerHandle) == sizeof(void*), "MPSC ProducerHandle is a single pointer");
+static_assert(sizeof(ShardedQueue22::ProducerHandle) == sizeof(void*) + sizeof(std::size_t),
+              "Sharded ProducerHandle is a pointer plus shard index");
+static_assert(sizeof(WsQueue1024::OwnerHandle) == sizeof(void*), "WS OwnerHandle is a single pointer");
 
-    // pick_kind dispatch sanity.
-    static_assert(std::is_same_v<
-                      decltype(pick_kind<WorkloadHint{1, 1, 1024, false}>()),
-                      kind::spsc<1024>>);
-    static_assert(std::is_same_v<
-                      decltype(pick_kind<WorkloadHint{4, 1, 1024, false}>()),
-                      kind::mpsc<1024>>);
-    static_assert(std::is_same_v<
-                      decltype(pick_kind<WorkloadHint{4, 4, 1024, false}>()),
-                      kind::sharded<4, 4, 1024, RoundRobinRouting>>);
-    static_assert(std::is_same_v<
-                      decltype(pick_kind<WorkloadHint{1, 1, 256, true}>()),
-                      kind::work_stealing<256>>);
+// pick_kind dispatch sanity.
+static_assert(std::is_same_v<decltype(pick_kind<WorkloadHint{1, 1, 1024, false}>()), kind::spsc<1024>>);
+static_assert(std::is_same_v<decltype(pick_kind<WorkloadHint{4, 1, 1024, false}>()), kind::mpsc<1024>>);
+static_assert(std::is_same_v<decltype(pick_kind<WorkloadHint{4, 4, 1024, false}>()),
+                             kind::sharded<4, 4, 1024, RoundRobinRouting>>);
+static_assert(std::is_same_v<decltype(pick_kind<WorkloadHint{1, 1, 256, true}>()), kind::work_stealing<256>>);
 }  // namespace detail
 
 }  // namespace crucible::concurrent
@@ -800,33 +752,24 @@ namespace detail {
 namespace crucible::safety {
 
 template <typename UserTag>
-struct splits_into<concurrent::queue_tag::Whole<UserTag>,
-                   concurrent::queue_tag::Producer<UserTag>,
-                   concurrent::queue_tag::Consumer<UserTag>>
-    : std::true_type {};
+struct splits_into<concurrent::queue_tag::Whole<UserTag>, concurrent::queue_tag::Producer<UserTag>,
+                   concurrent::queue_tag::Consumer<UserTag>> : std::true_type {};
 
 // And the n-ary form (used by mint_permission_fork — it always invokes
 // splits_into_pack regardless of arity).  Same Whole → (Producer,
 // Consumer) split, just spelled in the variadic trait.
 template <typename UserTag>
-struct splits_into_pack<concurrent::queue_tag::Whole<UserTag>,
-                        concurrent::queue_tag::Producer<UserTag>,
-                        concurrent::queue_tag::Consumer<UserTag>>
-    : std::true_type {};
+struct splits_into_pack<concurrent::queue_tag::Whole<UserTag>, concurrent::queue_tag::Producer<UserTag>,
+                        concurrent::queue_tag::Consumer<UserTag>> : std::true_type {};
 
 // fixy-M-29 authoring witnesses.
 template <typename UserTag>
-struct splits_into_authoring_witness<
-    concurrent::queue_tag::Whole<UserTag>,
-    concurrent::queue_tag::Producer<UserTag>,
-    concurrent::queue_tag::Consumer<UserTag>>
-    : std::true_type {};
+struct splits_into_authoring_witness<concurrent::queue_tag::Whole<UserTag>, concurrent::queue_tag::Producer<UserTag>,
+                                     concurrent::queue_tag::Consumer<UserTag>> : std::true_type {};
 
 template <typename UserTag>
-struct splits_into_pack_authoring_witness<
-    concurrent::queue_tag::Whole<UserTag>,
-    concurrent::queue_tag::Producer<UserTag>,
-    concurrent::queue_tag::Consumer<UserTag>>
-    : std::true_type {};
+struct splits_into_pack_authoring_witness<concurrent::queue_tag::Whole<UserTag>,
+                                          concurrent::queue_tag::Producer<UserTag>,
+                                          concurrent::queue_tag::Consumer<UserTag>> : std::true_type {};
 
 }  // namespace crucible::safety

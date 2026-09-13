@@ -100,12 +100,10 @@ concept NotInherited = std::is_final_v<T>;
 // constraint by its diagnostic tag.
 template <typename T>
 consteval void assert_not_inherited() noexcept {
-    static_assert(
-        std::is_final_v<T>,
-        "[NotInherited_Not_Final] crucible::safety::assert_not_inherited<T>: "
-        "T is not marked `final`. Either mark T `final` at its declaration, "
-        "or inherit virtually from crucible::safety::FinalBy<T> to prevent "
-        "extension structurally. See include/crucible/safety/NotInherited.h.");
+    static_assert(std::is_final_v<T>, "[NotInherited_Not_Final] crucible::safety::assert_not_inherited<T>: "
+                                      "T is not marked `final`. Either mark T `final` at its declaration, "
+                                      "or inherit virtually from crucible::safety::FinalBy<T> to prevent "
+                                      "extension structurally. See include/crucible/safety/NotInherited.h.");
 }
 
 // ── FinalBy<Derived> — CRTP enforcement ─────────────────────────────
@@ -152,15 +150,19 @@ private:
     // hierarchy, must construct FinalBy<Derived> themselves — but
     // cannot, because they are not friends.
     constexpr FinalBy() noexcept = default;
-    ~FinalBy()                   = default;
+    ~FinalBy() = default;
 
     // Copy/move deleted with named reason.  A subclass's implicit
     // copy/move would attempt to invoke these, surfacing our tag in
     // any diagnostic chain that reaches them.
-    FinalBy(const FinalBy&)            = delete("[FinalBy_Subclass_Forbidden] FinalBy<Derived>: copy of the CRTP base is forbidden; subclassing a FinalBy-protected type is not allowed. Mark Derived final, or stop trying to extend it.");
-    FinalBy(FinalBy&&)                 = delete("[FinalBy_Subclass_Forbidden] FinalBy<Derived>: move of the CRTP base is forbidden; subclassing a FinalBy-protected type is not allowed. Mark Derived final, or stop trying to extend it.");
-    FinalBy& operator=(const FinalBy&) = delete("[FinalBy_Subclass_Forbidden] FinalBy<Derived>: copy-assignment of the CRTP base is forbidden; subclassing a FinalBy-protected type is not allowed. Mark Derived final, or stop trying to extend it.");
-    FinalBy& operator=(FinalBy&&)      = delete("[FinalBy_Subclass_Forbidden] FinalBy<Derived>: move-assignment of the CRTP base is forbidden; subclassing a FinalBy-protected type is not allowed. Mark Derived final, or stop trying to extend it.");
+    FinalBy(const FinalBy&) = delete(
+        "[FinalBy_Subclass_Forbidden] FinalBy<Derived>: copy of the CRTP base is forbidden; subclassing a FinalBy-protected type is not allowed. Mark Derived final, or stop trying to extend it.");
+    FinalBy(FinalBy&&) = delete(
+        "[FinalBy_Subclass_Forbidden] FinalBy<Derived>: move of the CRTP base is forbidden; subclassing a FinalBy-protected type is not allowed. Mark Derived final, or stop trying to extend it.");
+    FinalBy& operator=(const FinalBy&) = delete(
+        "[FinalBy_Subclass_Forbidden] FinalBy<Derived>: copy-assignment of the CRTP base is forbidden; subclassing a FinalBy-protected type is not allowed. Mark Derived final, or stop trying to extend it.");
+    FinalBy& operator=(FinalBy&&) = delete(
+        "[FinalBy_Subclass_Forbidden] FinalBy<Derived>: move-assignment of the CRTP base is forbidden; subclassing a FinalBy-protected type is not allowed. Mark Derived final, or stop trying to extend it.");
 
     // Allow Derived — and only Derived — to instantiate us.
     friend Derived;
@@ -177,7 +179,6 @@ struct FinalByEboTag {};
 static_assert(sizeof(FinalBy<detail::FinalByEboTag>) == sizeof(char),
               "FinalBy<T> must be an empty class — "
               "otherwise it would add direct bytes to Derived.");
-static_assert(std::is_empty_v<FinalBy<detail::FinalByEboTag>>,
-              "FinalBy<T> must satisfy std::is_empty_v.");
+static_assert(std::is_empty_v<FinalBy<detail::FinalByEboTag>>, "FinalBy<T> must satisfy std::is_empty_v.");
 
 }  // namespace crucible::safety

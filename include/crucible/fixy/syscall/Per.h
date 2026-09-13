@@ -73,10 +73,10 @@
 // caller writing `family_tier_v<per<SyscallId::futex>>` materializes
 // `SyscallFamily::ThreadSync` with zero runtime cost.
 
-#include <crucible/fixy/syscall/Family.h>   // family_tier primary + syscall ns
-#include <crucible/fixy/Grant.h>            // grant_base + which_dim primary
-#include <crucible/safety/DimensionTraits.h>// DimensionAxis::SyscallSurface
-#include <crucible/algebra/lattices/SyscallFamilyLattice.h> // SyscallFamily
+#include <crucible/fixy/syscall/Family.h>  // family_tier primary + syscall ns
+#include <crucible/fixy/Grant.h>  // grant_base + which_dim primary
+#include <crucible/safety/DimensionTraits.h>  // DimensionAxis::SyscallSurface
+#include <crucible/algebra/lattices/SyscallFamilyLattice.h>  // SyscallFamily
 
 #include <cstdint>
 #include <type_traits>
@@ -97,66 +97,66 @@ namespace crucible::fixy::grant::syscall {
 // authoritative key, the grouping is mnemonic only.
 enum class SyscallId : std::uint16_t {
     // ── VdsoOnly (vDSO-resolved, no kernel transition) ─────────────
-    clock_gettime    = 0,   // CLOCK_MONOTONIC/REALTIME read via vDSO
-    clock_getres     = 1,   // resolution query, vDSO path
-    getcpu_vdso      = 2,   // CPU+NUMA-node, vDSO path
-    gettimeofday     = 3,   // legacy clock read, vDSO path
+    clock_gettime = 0,  // CLOCK_MONOTONIC/REALTIME read via vDSO
+    clock_getres = 1,  // resolution query, vDSO path
+    getcpu_vdso = 2,  // CPU+NUMA-node, vDSO path
+    gettimeofday = 3,  // legacy clock read, vDSO path
 
     // ── ReadOnlyState (read-only kernel queries) ───────────────────
-    getpid           = 4,   // process ID query
-    getppid          = 5,   // parent process ID query
-    getuid           = 6,   // user ID query
-    geteuid          = 7,   // effective user ID query
-    getgid           = 8,   // group ID query
-    gettid           = 9,   // thread ID query
-    uname            = 10,  // system info query
-    sysinfo          = 11,  // memory + load query
+    getpid = 4,  // process ID query
+    getppid = 5,  // parent process ID query
+    getuid = 6,  // user ID query
+    geteuid = 7,  // effective user ID query
+    getgid = 8,  // group ID query
+    gettid = 9,  // thread ID query
+    uname = 10,  // system info query
+    sysinfo = 11,  // memory + load query
 
     // ── FileMutation (file-handle CRUD) ────────────────────────────
-    open             = 12,  // legacy file open
-    openat           = 13,  // dirfd-relative open (preferred)
-    close            = 14,  // file close
-    read             = 15,  // sequential read
-    write            = 16,  // sequential write
-    pread            = 17,  // positioned read
-    pwrite           = 18,  // positioned write (Cipher cold-tier hot path)
-    fsync            = 19,  // full sync (data + metadata)
-    fdatasync        = 20,  // data-only sync (Cipher durability path)
+    open = 12,  // legacy file open
+    openat = 13,  // dirfd-relative open (preferred)
+    close = 14,  // file close
+    read = 15,  // sequential read
+    write = 16,  // sequential write
+    pread = 17,  // positioned read
+    pwrite = 18,  // positioned write (Cipher cold-tier hot path)
+    fsync = 19,  // full sync (data + metadata)
+    fdatasync = 20,  // data-only sync (Cipher durability path)
 
     // ── MemoryMapping (mmap-family) ────────────────────────────────
-    mmap             = 21,  // virtual mapping create
-    munmap           = 22,  // virtual mapping release
-    mprotect         = 23,  // permission change on mapped region
-    madvise          = 24,  // kernel advice on mapped region
+    mmap = 21,  // virtual mapping create
+    munmap = 22,  // virtual mapping release
+    mprotect = 23,  // permission change on mapped region
+    madvise = 24,  // kernel advice on mapped region
 
     // ── ThreadSync (sync primitives) ───────────────────────────────
-    futex            = 25,  // userspace mutex backing
-    sched_yield      = 26,  // voluntary preemption
-    sched_setaffinity = 27, // CPU pinning
+    futex = 25,  // userspace mutex backing
+    sched_yield = 26,  // voluntary preemption
+    sched_setaffinity = 27,  // CPU pinning
 
     // ── NetworkIo (socket-family) ──────────────────────────────────
-    socket           = 28,  // socket create
-    connect          = 29,  // outbound connection establish
-    sendmsg          = 30,  // scatter-gather send
-    recvmsg          = 31,  // scatter-gather receive
+    socket = 28,  // socket create
+    connect = 29,  // outbound connection establish
+    sendmsg = 30,  // scatter-gather send
+    recvmsg = 31,  // scatter-gather receive
 
     // ── ProcessControl (fork/exec/wait) ────────────────────────────
-    clone            = 32,  // process/thread spawn (CLONE_THREAD vs PROC)
-    execve           = 33,  // exec replacement
+    clone = 32,  // process/thread spawn (CLONE_THREAD vs PROC)
+    execve = 33,  // exec replacement
 
     // ── Privilege (top — capset, mount, ptrace) ────────────────────
-    ptrace           = 34,  // process trace (mutating)
-    capset           = 35,  // capability set (drop or grant)
+    ptrace = 34,  // process trace (mutating)
+    capset = 35,  // capability set (drop or grant)
 
     // ── Append-only V-180 extensions (warden/Hardening.h surface) ──
     // Five additional syscalls the warden hardening path issues.
     // Ordinals 36-40 frozen forever per the V-098 federation-cache
     // stability invariant.
-    sched_setattr    = 36,  // scheduler attribute change (SCHED_FIFO etc., ThreadSync)
-    mlock2           = 37,  // page locking with flags (MemoryMapping)
-    mlock            = 38,  // page locking (MemoryMapping)
-    munlock          = 39,  // page unlocking (MemoryMapping)
-    prctl            = 40,  // process control (PR_SET_THP_DISABLE etc., Privilege)
+    sched_setattr = 36,  // scheduler attribute change (SCHED_FIFO etc., ThreadSync)
+    mlock2 = 37,  // page locking with flags (MemoryMapping)
+    mlock = 38,  // page locking (MemoryMapping)
+    munlock = 39,  // page unlocking (MemoryMapping)
+    prctl = 40,  // process control (PR_SET_THP_DISABLE etc., Privilege)
 
     // ── Append-only V-179 extensions (perf/* hub surface) ──────────
     // Two BPF-loader syscalls the 7 perf hubs share (SenseHub /
@@ -164,8 +164,8 @@ enum class SyscallId : std::uint16_t {
     // SyscallTpBtf / SyscallLatency).  Both are PRIVILEGED — bpf(2)
     // requires CAP_BPF, perf_event_open(2) requires CAP_PERFMON (kernel
     // ≥5.8) or CAP_SYS_ADMIN.  Ordinals 41-42 frozen forever.
-    bpf              = 41,  // BPF program load + map ops (Privilege)
-    perf_event_open  = 42,  // perf event fd open + ringbuf map (Privilege)
+    bpf = 41,  // BPF program load + map ops (Privilege)
+    perf_event_open = 42,  // perf event fd open + ringbuf map (Privilege)
 };
 
 // ── family_of(SyscallId) — the load-bearing classifier ─────────────
@@ -178,73 +178,115 @@ enum class SyscallId : std::uint16_t {
 // V-100's bridge will read this through `family_tier_v<per<Id>>`; the
 // reading is consteval-eligible so the bridge's effect-row lift is
 // zero-cost at the call site.
-[[nodiscard]] constexpr ::crucible::algebra::lattices::SyscallFamily
-family_of(SyscallId id) noexcept {
+[[nodiscard]] constexpr ::crucible::algebra::lattices::SyscallFamily family_of(SyscallId id) noexcept {
     using SF = ::crucible::algebra::lattices::SyscallFamily;
     switch (id) {
         // VdsoOnly
-        case SyscallId::clock_gettime:     return SF::VdsoOnly;
-        case SyscallId::clock_getres:      return SF::VdsoOnly;
-        case SyscallId::getcpu_vdso:       return SF::VdsoOnly;
-        case SyscallId::gettimeofday:      return SF::VdsoOnly;
+        case SyscallId::clock_gettime:
+            return SF::VdsoOnly;
+        case SyscallId::clock_getres:
+            return SF::VdsoOnly;
+        case SyscallId::getcpu_vdso:
+            return SF::VdsoOnly;
+        case SyscallId::gettimeofday:
+            return SF::VdsoOnly;
 
         // ReadOnlyState
-        case SyscallId::getpid:            return SF::ReadOnlyState;
-        case SyscallId::getppid:           return SF::ReadOnlyState;
-        case SyscallId::getuid:            return SF::ReadOnlyState;
-        case SyscallId::geteuid:           return SF::ReadOnlyState;
-        case SyscallId::getgid:            return SF::ReadOnlyState;
-        case SyscallId::gettid:            return SF::ReadOnlyState;
-        case SyscallId::uname:             return SF::ReadOnlyState;
-        case SyscallId::sysinfo:           return SF::ReadOnlyState;
+        case SyscallId::getpid:
+            return SF::ReadOnlyState;
+        case SyscallId::getppid:
+            return SF::ReadOnlyState;
+        case SyscallId::getuid:
+            return SF::ReadOnlyState;
+        case SyscallId::geteuid:
+            return SF::ReadOnlyState;
+        case SyscallId::getgid:
+            return SF::ReadOnlyState;
+        case SyscallId::gettid:
+            return SF::ReadOnlyState;
+        case SyscallId::uname:
+            return SF::ReadOnlyState;
+        case SyscallId::sysinfo:
+            return SF::ReadOnlyState;
 
         // FileMutation
-        case SyscallId::open:              return SF::FileMutation;
-        case SyscallId::openat:            return SF::FileMutation;
-        case SyscallId::close:             return SF::FileMutation;
-        case SyscallId::read:              return SF::FileMutation;
-        case SyscallId::write:             return SF::FileMutation;
-        case SyscallId::pread:             return SF::FileMutation;
-        case SyscallId::pwrite:            return SF::FileMutation;
-        case SyscallId::fsync:             return SF::FileMutation;
-        case SyscallId::fdatasync:         return SF::FileMutation;
+        case SyscallId::open:
+            return SF::FileMutation;
+        case SyscallId::openat:
+            return SF::FileMutation;
+        case SyscallId::close:
+            return SF::FileMutation;
+        case SyscallId::read:
+            return SF::FileMutation;
+        case SyscallId::write:
+            return SF::FileMutation;
+        case SyscallId::pread:
+            return SF::FileMutation;
+        case SyscallId::pwrite:
+            return SF::FileMutation;
+        case SyscallId::fsync:
+            return SF::FileMutation;
+        case SyscallId::fdatasync:
+            return SF::FileMutation;
 
         // MemoryMapping
-        case SyscallId::mmap:              return SF::MemoryMapping;
-        case SyscallId::munmap:            return SF::MemoryMapping;
-        case SyscallId::mprotect:          return SF::MemoryMapping;
-        case SyscallId::madvise:           return SF::MemoryMapping;
+        case SyscallId::mmap:
+            return SF::MemoryMapping;
+        case SyscallId::munmap:
+            return SF::MemoryMapping;
+        case SyscallId::mprotect:
+            return SF::MemoryMapping;
+        case SyscallId::madvise:
+            return SF::MemoryMapping;
 
         // ThreadSync
-        case SyscallId::futex:             return SF::ThreadSync;
-        case SyscallId::sched_yield:       return SF::ThreadSync;
-        case SyscallId::sched_setaffinity: return SF::ThreadSync;
-        case SyscallId::sched_setattr:     return SF::ThreadSync;
+        case SyscallId::futex:
+            return SF::ThreadSync;
+        case SyscallId::sched_yield:
+            return SF::ThreadSync;
+        case SyscallId::sched_setaffinity:
+            return SF::ThreadSync;
+        case SyscallId::sched_setattr:
+            return SF::ThreadSync;
 
         // NetworkIo
-        case SyscallId::socket:            return SF::NetworkIo;
-        case SyscallId::connect:           return SF::NetworkIo;
-        case SyscallId::sendmsg:           return SF::NetworkIo;
-        case SyscallId::recvmsg:           return SF::NetworkIo;
+        case SyscallId::socket:
+            return SF::NetworkIo;
+        case SyscallId::connect:
+            return SF::NetworkIo;
+        case SyscallId::sendmsg:
+            return SF::NetworkIo;
+        case SyscallId::recvmsg:
+            return SF::NetworkIo;
 
         // ProcessControl
-        case SyscallId::clone:             return SF::ProcessControl;
-        case SyscallId::execve:            return SF::ProcessControl;
+        case SyscallId::clone:
+            return SF::ProcessControl;
+        case SyscallId::execve:
+            return SF::ProcessControl;
 
         // Privilege
-        case SyscallId::ptrace:            return SF::Privilege;
-        case SyscallId::capset:            return SF::Privilege;
-        case SyscallId::prctl:             return SF::Privilege;
+        case SyscallId::ptrace:
+            return SF::Privilege;
+        case SyscallId::capset:
+            return SF::Privilege;
+        case SyscallId::prctl:
+            return SF::Privilege;
         // V-179: BPF + perf_event_open both require capabilities
         // (CAP_BPF / CAP_PERFMON).  Privilege tier per the V-097 chain.
-        case SyscallId::bpf:               return SF::Privilege;
-        case SyscallId::perf_event_open:   return SF::Privilege;
+        case SyscallId::bpf:
+            return SF::Privilege;
+        case SyscallId::perf_event_open:
+            return SF::Privilege;
 
         // V-180 MemoryMapping additions — mem-locking is a mapping-state
         // modifier (locks pages into RAM, attribute of an existing mapping).
-        case SyscallId::mlock2:            return SF::MemoryMapping;
-        case SyscallId::mlock:             return SF::MemoryMapping;
-        case SyscallId::munlock:           return SF::MemoryMapping;
+        case SyscallId::mlock2:
+            return SF::MemoryMapping;
+        case SyscallId::mlock:
+            return SF::MemoryMapping;
+        case SyscallId::munlock:
+            return SF::MemoryMapping;
 
         // Default — returned only if the switch is non-exhaustive,
         // which the self-test below witnesses cannot occur for any
@@ -256,7 +298,8 @@ family_of(SyscallId id) noexcept {
         // forgotten enumerator, but at least it errs toward over-
         // restriction.  The `default:` arm is required by the project
         // `-Werror=switch-default` policy.
-        default:                           return SF::Privilege;
+        default:
+            return SF::Privilege;
     }
 }
 
@@ -287,9 +330,7 @@ namespace crucible::fixy::grant {
 // ── which_dim<per<Id>> — every per<> instantiation → SyscallSurface ──
 // ═════════════════════════════════════════════════════════════════════
 template <syscall::SyscallId Id>
-struct which_dim<syscall::per<Id>>
-    : std::integral_constant<dim::DimensionAxis,
-                             dim::DimensionAxis::SyscallSurface> {};
+struct which_dim<syscall::per<Id>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::SyscallSurface> {};
 
 // ═════════════════════════════════════════════════════════════════════
 // ── family_tier<per<Id>> — derive family via family_of(Id) ───────────
@@ -302,9 +343,7 @@ struct which_dim<syscall::per<Id>>
 // `SyscallFamily::ThreadSync` at compile time with zero runtime cost.
 template <syscall::SyscallId Id>
 struct family_tier<syscall::per<Id>>
-    : std::integral_constant<
-          ::crucible::algebra::lattices::SyscallFamily,
-          syscall::family_of(Id)> {};
+    : std::integral_constant<::crucible::algebra::lattices::SyscallFamily, syscall::family_of(Id)> {};
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Self-test (compile-time) ─────────────────────────────────────────
@@ -319,101 +358,101 @@ namespace detail::syscall_per_grant_self_test {
 
 namespace sc = syscall;
 namespace al = ::crucible::algebra::lattices;
-using D      = dim::DimensionAxis;
-using SF     = al::SyscallFamily;
-using SI     = sc::SyscallId;
+using D = dim::DimensionAxis;
+using SF = al::SyscallFamily;
+using SI = sc::SyscallId;
 
 // ── Layer 1: IsGrantTag — sampled at every family-tier ──────────────
-static_assert(IsGrantTag<sc::per<SI::clock_gettime>>);   // VdsoOnly
-static_assert(IsGrantTag<sc::per<SI::getpid>>);          // ReadOnlyState
-static_assert(IsGrantTag<sc::per<SI::write>>);           // FileMutation
-static_assert(IsGrantTag<sc::per<SI::mmap>>);            // MemoryMapping
-static_assert(IsGrantTag<sc::per<SI::futex>>);           // ThreadSync
-static_assert(IsGrantTag<sc::per<SI::socket>>);          // NetworkIo
-static_assert(IsGrantTag<sc::per<SI::clone>>);           // ProcessControl
-static_assert(IsGrantTag<sc::per<SI::ptrace>>);          // Privilege
+static_assert(IsGrantTag<sc::per<SI::clock_gettime>>);  // VdsoOnly
+static_assert(IsGrantTag<sc::per<SI::getpid>>);  // ReadOnlyState
+static_assert(IsGrantTag<sc::per<SI::write>>);  // FileMutation
+static_assert(IsGrantTag<sc::per<SI::mmap>>);  // MemoryMapping
+static_assert(IsGrantTag<sc::per<SI::futex>>);  // ThreadSync
+static_assert(IsGrantTag<sc::per<SI::socket>>);  // NetworkIo
+static_assert(IsGrantTag<sc::per<SI::clone>>);  // ProcessControl
+static_assert(IsGrantTag<sc::per<SI::ptrace>>);  // Privilege
 
 // ── Layer 2: sizeof — 1 byte standalone, EBO-collapsible ─────────────
-static_assert(sizeof(sc::per<SI::clock_gettime>)   == 1);
-static_assert(sizeof(sc::per<SI::getpid>)          == 1);
-static_assert(sizeof(sc::per<SI::write>)           == 1);
-static_assert(sizeof(sc::per<SI::mmap>)            == 1);
-static_assert(sizeof(sc::per<SI::futex>)           == 1);
-static_assert(sizeof(sc::per<SI::socket>)          == 1);
-static_assert(sizeof(sc::per<SI::clone>)           == 1);
-static_assert(sizeof(sc::per<SI::ptrace>)          == 1);
+static_assert(sizeof(sc::per<SI::clock_gettime>) == 1);
+static_assert(sizeof(sc::per<SI::getpid>) == 1);
+static_assert(sizeof(sc::per<SI::write>) == 1);
+static_assert(sizeof(sc::per<SI::mmap>) == 1);
+static_assert(sizeof(sc::per<SI::futex>) == 1);
+static_assert(sizeof(sc::per<SI::socket>) == 1);
+static_assert(sizeof(sc::per<SI::clone>) == 1);
+static_assert(sizeof(sc::per<SI::ptrace>) == 1);
 
 // ── Layer 3: which_dim routing — every per<> → SyscallSurface ────────
-static_assert(which_dim_v<sc::per<SI::clock_gettime>>   == D::SyscallSurface);
-static_assert(which_dim_v<sc::per<SI::getpid>>          == D::SyscallSurface);
-static_assert(which_dim_v<sc::per<SI::write>>           == D::SyscallSurface);
-static_assert(which_dim_v<sc::per<SI::mmap>>            == D::SyscallSurface);
-static_assert(which_dim_v<sc::per<SI::futex>>           == D::SyscallSurface);
-static_assert(which_dim_v<sc::per<SI::socket>>          == D::SyscallSurface);
-static_assert(which_dim_v<sc::per<SI::clone>>           == D::SyscallSurface);
-static_assert(which_dim_v<sc::per<SI::ptrace>>          == D::SyscallSurface);
+static_assert(which_dim_v<sc::per<SI::clock_gettime>> == D::SyscallSurface);
+static_assert(which_dim_v<sc::per<SI::getpid>> == D::SyscallSurface);
+static_assert(which_dim_v<sc::per<SI::write>> == D::SyscallSurface);
+static_assert(which_dim_v<sc::per<SI::mmap>> == D::SyscallSurface);
+static_assert(which_dim_v<sc::per<SI::futex>> == D::SyscallSurface);
+static_assert(which_dim_v<sc::per<SI::socket>> == D::SyscallSurface);
+static_assert(which_dim_v<sc::per<SI::clone>> == D::SyscallSurface);
+static_assert(which_dim_v<sc::per<SI::ptrace>> == D::SyscallSurface);
 
 // ── Layer 4: family_tier — matches family_of(Id) at every tier ──────
-static_assert(family_tier_v<sc::per<SI::clock_gettime>>     == SF::VdsoOnly);
-static_assert(family_tier_v<sc::per<SI::clock_getres>>      == SF::VdsoOnly);
-static_assert(family_tier_v<sc::per<SI::gettimeofday>>      == SF::VdsoOnly);
-static_assert(family_tier_v<sc::per<SI::getpid>>            == SF::ReadOnlyState);
-static_assert(family_tier_v<sc::per<SI::geteuid>>           == SF::ReadOnlyState);
-static_assert(family_tier_v<sc::per<SI::sysinfo>>           == SF::ReadOnlyState);
-static_assert(family_tier_v<sc::per<SI::open>>              == SF::FileMutation);
-static_assert(family_tier_v<sc::per<SI::write>>             == SF::FileMutation);
-static_assert(family_tier_v<sc::per<SI::pwrite>>            == SF::FileMutation);
-static_assert(family_tier_v<sc::per<SI::fdatasync>>         == SF::FileMutation);
-static_assert(family_tier_v<sc::per<SI::mmap>>              == SF::MemoryMapping);
-static_assert(family_tier_v<sc::per<SI::mprotect>>          == SF::MemoryMapping);
-static_assert(family_tier_v<sc::per<SI::madvise>>           == SF::MemoryMapping);
-static_assert(family_tier_v<sc::per<SI::futex>>             == SF::ThreadSync);
-static_assert(family_tier_v<sc::per<SI::sched_yield>>       == SF::ThreadSync);
+static_assert(family_tier_v<sc::per<SI::clock_gettime>> == SF::VdsoOnly);
+static_assert(family_tier_v<sc::per<SI::clock_getres>> == SF::VdsoOnly);
+static_assert(family_tier_v<sc::per<SI::gettimeofday>> == SF::VdsoOnly);
+static_assert(family_tier_v<sc::per<SI::getpid>> == SF::ReadOnlyState);
+static_assert(family_tier_v<sc::per<SI::geteuid>> == SF::ReadOnlyState);
+static_assert(family_tier_v<sc::per<SI::sysinfo>> == SF::ReadOnlyState);
+static_assert(family_tier_v<sc::per<SI::open>> == SF::FileMutation);
+static_assert(family_tier_v<sc::per<SI::write>> == SF::FileMutation);
+static_assert(family_tier_v<sc::per<SI::pwrite>> == SF::FileMutation);
+static_assert(family_tier_v<sc::per<SI::fdatasync>> == SF::FileMutation);
+static_assert(family_tier_v<sc::per<SI::mmap>> == SF::MemoryMapping);
+static_assert(family_tier_v<sc::per<SI::mprotect>> == SF::MemoryMapping);
+static_assert(family_tier_v<sc::per<SI::madvise>> == SF::MemoryMapping);
+static_assert(family_tier_v<sc::per<SI::futex>> == SF::ThreadSync);
+static_assert(family_tier_v<sc::per<SI::sched_yield>> == SF::ThreadSync);
 static_assert(family_tier_v<sc::per<SI::sched_setaffinity>> == SF::ThreadSync);
-static_assert(family_tier_v<sc::per<SI::socket>>            == SF::NetworkIo);
-static_assert(family_tier_v<sc::per<SI::connect>>           == SF::NetworkIo);
-static_assert(family_tier_v<sc::per<SI::sendmsg>>           == SF::NetworkIo);
-static_assert(family_tier_v<sc::per<SI::clone>>             == SF::ProcessControl);
-static_assert(family_tier_v<sc::per<SI::execve>>            == SF::ProcessControl);
-static_assert(family_tier_v<sc::per<SI::ptrace>>            == SF::Privilege);
-static_assert(family_tier_v<sc::per<SI::capset>>            == SF::Privilege);
+static_assert(family_tier_v<sc::per<SI::socket>> == SF::NetworkIo);
+static_assert(family_tier_v<sc::per<SI::connect>> == SF::NetworkIo);
+static_assert(family_tier_v<sc::per<SI::sendmsg>> == SF::NetworkIo);
+static_assert(family_tier_v<sc::per<SI::clone>> == SF::ProcessControl);
+static_assert(family_tier_v<sc::per<SI::execve>> == SF::ProcessControl);
+static_assert(family_tier_v<sc::per<SI::ptrace>> == SF::Privilege);
+static_assert(family_tier_v<sc::per<SI::capset>> == SF::Privilege);
 
 // V-180: warden/Hardening.h surface additions — exercise each new ordinal.
-static_assert(family_tier_v<sc::per<SI::sched_setattr>>     == SF::ThreadSync);
-static_assert(family_tier_v<sc::per<SI::mlock>>             == SF::MemoryMapping);
-static_assert(family_tier_v<sc::per<SI::mlock2>>            == SF::MemoryMapping);
-static_assert(family_tier_v<sc::per<SI::munlock>>           == SF::MemoryMapping);
-static_assert(family_tier_v<sc::per<SI::prctl>>             == SF::Privilege);
+static_assert(family_tier_v<sc::per<SI::sched_setattr>> == SF::ThreadSync);
+static_assert(family_tier_v<sc::per<SI::mlock>> == SF::MemoryMapping);
+static_assert(family_tier_v<sc::per<SI::mlock2>> == SF::MemoryMapping);
+static_assert(family_tier_v<sc::per<SI::munlock>> == SF::MemoryMapping);
+static_assert(family_tier_v<sc::per<SI::prctl>> == SF::Privilege);
 
 // V-179: perf/* hub surface additions — BPF + perf_event_open.
-static_assert(family_tier_v<sc::per<SI::bpf>>               == SF::Privilege);
-static_assert(family_tier_v<sc::per<SI::perf_event_open>>   == SF::Privilege);
+static_assert(family_tier_v<sc::per<SI::bpf>> == SF::Privilege);
+static_assert(family_tier_v<sc::per<SI::perf_event_open>> == SF::Privilege);
 
 // ── Layer 5: NTTP-distinctness — distinct Ids → distinct types ──────
 // Sampled across every tier boundary; sentinel TU runs the full
 // 36×35/2 = 630-cell distinctness matrix.
-static_assert(!std::is_same_v<sc::per<SI::clock_gettime>,   sc::per<SI::getpid>>);
-static_assert(!std::is_same_v<sc::per<SI::getpid>,          sc::per<SI::write>>);
-static_assert(!std::is_same_v<sc::per<SI::write>,           sc::per<SI::mmap>>);
-static_assert(!std::is_same_v<sc::per<SI::mmap>,            sc::per<SI::futex>>);
-static_assert(!std::is_same_v<sc::per<SI::futex>,           sc::per<SI::socket>>);
-static_assert(!std::is_same_v<sc::per<SI::socket>,          sc::per<SI::clone>>);
-static_assert(!std::is_same_v<sc::per<SI::clone>,           sc::per<SI::ptrace>>);
+static_assert(!std::is_same_v<sc::per<SI::clock_gettime>, sc::per<SI::getpid>>);
+static_assert(!std::is_same_v<sc::per<SI::getpid>, sc::per<SI::write>>);
+static_assert(!std::is_same_v<sc::per<SI::write>, sc::per<SI::mmap>>);
+static_assert(!std::is_same_v<sc::per<SI::mmap>, sc::per<SI::futex>>);
+static_assert(!std::is_same_v<sc::per<SI::futex>, sc::per<SI::socket>>);
+static_assert(!std::is_same_v<sc::per<SI::socket>, sc::per<SI::clone>>);
+static_assert(!std::is_same_v<sc::per<SI::clone>, sc::per<SI::ptrace>>);
 // Same-family pair — distinct Ids on the same tier must still be
 // distinct types (so a binding can engage at most ONE specific syscall
 // per binding without collapsing).
-static_assert(!std::is_same_v<sc::per<SI::write>,           sc::per<SI::pwrite>>);
-static_assert(!std::is_same_v<sc::per<SI::clock_gettime>,   sc::per<SI::clock_getres>>);
+static_assert(!std::is_same_v<sc::per<SI::write>, sc::per<SI::pwrite>>);
+static_assert(!std::is_same_v<sc::per<SI::clock_gettime>, sc::per<SI::clock_getres>>);
 
 // ── Layer 6: cross-axis distinctness — per<> ≠ family_* ─────────────
 // per<SyscallId::Id> and family_<tier> both route to SyscallSurface but
 // are STRUCTURALLY distinct types so the duplicate-engagement gate
 // rejects the (per + family_*) combination via FixyDuplicate_SyscallSurface
 // rather than silent collapse.
-static_assert(!std::is_same_v<sc::per<SI::write>,           sc::family_file_mutation>);
-static_assert(!std::is_same_v<sc::per<SI::mmap>,            sc::family_memory_mapping>);
-static_assert(!std::is_same_v<sc::per<SI::futex>,           sc::family_thread_sync>);
-static_assert(!std::is_same_v<sc::per<SI::clock_gettime>,   sc::family_vdso_only>);
+static_assert(!std::is_same_v<sc::per<SI::write>, sc::family_file_mutation>);
+static_assert(!std::is_same_v<sc::per<SI::mmap>, sc::family_memory_mapping>);
+static_assert(!std::is_same_v<sc::per<SI::futex>, sc::family_thread_sync>);
+static_assert(!std::is_same_v<sc::per<SI::clock_gettime>, sc::family_vdso_only>);
 
 // ── Layer 7: family_of() coverage — exhaustive sentinel check ───────
 // The constexpr classifier never falls through to the Privilege
@@ -422,65 +461,65 @@ static_assert(!std::is_same_v<sc::per<SI::clock_gettime>,   sc::family_vdso_only
 // this proves family_of() is total on the SyscallId domain.
 [[nodiscard]] consteval bool every_syscall_id_classified_correctly() noexcept {
     // VdsoOnly tier — 4 enumerators
-    if (sc::family_of(SI::clock_gettime)     != SF::VdsoOnly)       return false;
-    if (sc::family_of(SI::clock_getres)      != SF::VdsoOnly)       return false;
-    if (sc::family_of(SI::getcpu_vdso)       != SF::VdsoOnly)       return false;
-    if (sc::family_of(SI::gettimeofday)      != SF::VdsoOnly)       return false;
+    if (sc::family_of(SI::clock_gettime) != SF::VdsoOnly) return false;
+    if (sc::family_of(SI::clock_getres) != SF::VdsoOnly) return false;
+    if (sc::family_of(SI::getcpu_vdso) != SF::VdsoOnly) return false;
+    if (sc::family_of(SI::gettimeofday) != SF::VdsoOnly) return false;
     // ReadOnlyState tier — 8 enumerators
-    if (sc::family_of(SI::getpid)            != SF::ReadOnlyState)  return false;
-    if (sc::family_of(SI::getppid)           != SF::ReadOnlyState)  return false;
-    if (sc::family_of(SI::getuid)            != SF::ReadOnlyState)  return false;
-    if (sc::family_of(SI::geteuid)           != SF::ReadOnlyState)  return false;
-    if (sc::family_of(SI::getgid)            != SF::ReadOnlyState)  return false;
-    if (sc::family_of(SI::gettid)            != SF::ReadOnlyState)  return false;
-    if (sc::family_of(SI::uname)             != SF::ReadOnlyState)  return false;
-    if (sc::family_of(SI::sysinfo)           != SF::ReadOnlyState)  return false;
+    if (sc::family_of(SI::getpid) != SF::ReadOnlyState) return false;
+    if (sc::family_of(SI::getppid) != SF::ReadOnlyState) return false;
+    if (sc::family_of(SI::getuid) != SF::ReadOnlyState) return false;
+    if (sc::family_of(SI::geteuid) != SF::ReadOnlyState) return false;
+    if (sc::family_of(SI::getgid) != SF::ReadOnlyState) return false;
+    if (sc::family_of(SI::gettid) != SF::ReadOnlyState) return false;
+    if (sc::family_of(SI::uname) != SF::ReadOnlyState) return false;
+    if (sc::family_of(SI::sysinfo) != SF::ReadOnlyState) return false;
     // FileMutation tier — 9 enumerators
-    if (sc::family_of(SI::open)              != SF::FileMutation)   return false;
-    if (sc::family_of(SI::openat)            != SF::FileMutation)   return false;
-    if (sc::family_of(SI::close)             != SF::FileMutation)   return false;
-    if (sc::family_of(SI::read)              != SF::FileMutation)   return false;
-    if (sc::family_of(SI::write)             != SF::FileMutation)   return false;
-    if (sc::family_of(SI::pread)             != SF::FileMutation)   return false;
-    if (sc::family_of(SI::pwrite)            != SF::FileMutation)   return false;
-    if (sc::family_of(SI::fsync)             != SF::FileMutation)   return false;
-    if (sc::family_of(SI::fdatasync)         != SF::FileMutation)   return false;
+    if (sc::family_of(SI::open) != SF::FileMutation) return false;
+    if (sc::family_of(SI::openat) != SF::FileMutation) return false;
+    if (sc::family_of(SI::close) != SF::FileMutation) return false;
+    if (sc::family_of(SI::read) != SF::FileMutation) return false;
+    if (sc::family_of(SI::write) != SF::FileMutation) return false;
+    if (sc::family_of(SI::pread) != SF::FileMutation) return false;
+    if (sc::family_of(SI::pwrite) != SF::FileMutation) return false;
+    if (sc::family_of(SI::fsync) != SF::FileMutation) return false;
+    if (sc::family_of(SI::fdatasync) != SF::FileMutation) return false;
     // MemoryMapping tier — 4 enumerators
-    if (sc::family_of(SI::mmap)              != SF::MemoryMapping)  return false;
-    if (sc::family_of(SI::munmap)            != SF::MemoryMapping)  return false;
-    if (sc::family_of(SI::mprotect)          != SF::MemoryMapping)  return false;
-    if (sc::family_of(SI::madvise)           != SF::MemoryMapping)  return false;
+    if (sc::family_of(SI::mmap) != SF::MemoryMapping) return false;
+    if (sc::family_of(SI::munmap) != SF::MemoryMapping) return false;
+    if (sc::family_of(SI::mprotect) != SF::MemoryMapping) return false;
+    if (sc::family_of(SI::madvise) != SF::MemoryMapping) return false;
     // ThreadSync tier — 4 enumerators (V-180 added sched_setattr)
-    if (sc::family_of(SI::futex)             != SF::ThreadSync)     return false;
-    if (sc::family_of(SI::sched_yield)       != SF::ThreadSync)     return false;
-    if (sc::family_of(SI::sched_setaffinity) != SF::ThreadSync)     return false;
-    if (sc::family_of(SI::sched_setattr)     != SF::ThreadSync)     return false;
+    if (sc::family_of(SI::futex) != SF::ThreadSync) return false;
+    if (sc::family_of(SI::sched_yield) != SF::ThreadSync) return false;
+    if (sc::family_of(SI::sched_setaffinity) != SF::ThreadSync) return false;
+    if (sc::family_of(SI::sched_setattr) != SF::ThreadSync) return false;
     // NetworkIo tier — 4 enumerators
-    if (sc::family_of(SI::socket)            != SF::NetworkIo)      return false;
-    if (sc::family_of(SI::connect)           != SF::NetworkIo)      return false;
-    if (sc::family_of(SI::sendmsg)           != SF::NetworkIo)      return false;
-    if (sc::family_of(SI::recvmsg)           != SF::NetworkIo)      return false;
+    if (sc::family_of(SI::socket) != SF::NetworkIo) return false;
+    if (sc::family_of(SI::connect) != SF::NetworkIo) return false;
+    if (sc::family_of(SI::sendmsg) != SF::NetworkIo) return false;
+    if (sc::family_of(SI::recvmsg) != SF::NetworkIo) return false;
     // ProcessControl tier — 2 enumerators
-    if (sc::family_of(SI::clone)             != SF::ProcessControl) return false;
-    if (sc::family_of(SI::execve)            != SF::ProcessControl) return false;
+    if (sc::family_of(SI::clone) != SF::ProcessControl) return false;
+    if (sc::family_of(SI::execve) != SF::ProcessControl) return false;
     // Privilege tier — 5 enumerators (V-180 added prctl; V-179 added bpf, perf_event_open)
-    if (sc::family_of(SI::ptrace)            != SF::Privilege)      return false;
-    if (sc::family_of(SI::capset)            != SF::Privilege)      return false;
-    if (sc::family_of(SI::prctl)             != SF::Privilege)      return false;
-    if (sc::family_of(SI::bpf)               != SF::Privilege)      return false;
-    if (sc::family_of(SI::perf_event_open)   != SF::Privilege)      return false;
+    if (sc::family_of(SI::ptrace) != SF::Privilege) return false;
+    if (sc::family_of(SI::capset) != SF::Privilege) return false;
+    if (sc::family_of(SI::prctl) != SF::Privilege) return false;
+    if (sc::family_of(SI::bpf) != SF::Privilege) return false;
+    if (sc::family_of(SI::perf_event_open) != SF::Privilege) return false;
     // V-180 MemoryMapping additions — mem-locking syscalls
-    if (sc::family_of(SI::mlock2)            != SF::MemoryMapping)  return false;
-    if (sc::family_of(SI::mlock)             != SF::MemoryMapping)  return false;
-    if (sc::family_of(SI::munlock)           != SF::MemoryMapping)  return false;
+    if (sc::family_of(SI::mlock2) != SF::MemoryMapping) return false;
+    if (sc::family_of(SI::mlock) != SF::MemoryMapping) return false;
+    if (sc::family_of(SI::munlock) != SF::MemoryMapping) return false;
     return true;
 }
 static_assert(every_syscall_id_classified_correctly(),
-    "FIXY-V-098: family_of(SyscallId) classifier disagrees with the "
-    "doc-block tier assignment for at least one enumerator.  Add the "
-    "matching `case` arm or the classifier silently returns the "
-    "Privilege fallback (top-of-chain — over-restrictive but never "
-    "under-restrictive).");
+              "FIXY-V-098: family_of(SyscallId) classifier disagrees with the "
+              "doc-block tier assignment for at least one enumerator.  Add the "
+              "matching `case` arm or the classifier silently returns the "
+              "Privilege fallback (top-of-chain — over-restrictive but never "
+              "under-restrictive).");
 
 // ── Cardinality pin — SyscallId catalog size ────────────────────────
 // V-098 shipped 36 enumerators.  V-180 appended 5 (sched_setattr /
@@ -490,24 +529,21 @@ static_assert(every_syscall_id_classified_correctly(),
 // + (3+1) + 4 + 2 + (2+1+2).  Growing the catalog is fine (append-
 // only); shrinking or reordering is a federation-cache silent
 // invalidation.
-static constexpr std::size_t syscall_id_count =
-    std::meta::enumerators_of(^^SI).size();
-static_assert(syscall_id_count == 43,
-    "FIXY-V-179/V-180: SyscallId catalog drifted from the 43-enumerator "
-    "shipped surface (V-098's 36 + V-180's 5 warden + V-179's 2 perf "
-    "additions).  If you're adding a new syscall, append it at the next "
-    "free ordinal AND extend the family_of() switch arm AND add an arm "
-    "to every_syscall_id_classified_correctly().  Reordering / shrinking "
-    "the enum silently invalidates every stored row_hash (federation "
-    "cache key).");
+static constexpr std::size_t syscall_id_count = std::meta::enumerators_of(^^SI).size();
+static_assert(syscall_id_count == 43, "FIXY-V-179/V-180: SyscallId catalog drifted from the 43-enumerator "
+                                      "shipped surface (V-098's 36 + V-180's 5 warden + V-179's 2 perf "
+                                      "additions).  If you're adding a new syscall, append it at the next "
+                                      "free ordinal AND extend the family_of() switch arm AND add an arm "
+                                      "to every_syscall_id_classified_correctly().  Reordering / shrinking "
+                                      "the enum silently invalidates every stored row_hash (federation "
+                                      "cache key).");
 
 // Cross-check against V-097's lattice cardinality (9 tiers — Family.h's
 // 9 tags + Per.h's 36 SyscallIds collectively cover the same axis).
-static_assert(
-    ::crucible::algebra::lattices::detail::syscall_family_lattice_self_test::family_count == 9,
-    "FIXY-V-098: Per.h depends on V-097's 9-tier chain.  If the lattice "
-    "grew an enumerator, family_of() above is incomplete and some "
-    "SyscallId would silently fall through to the Privilege fallback.");
+static_assert(::crucible::algebra::lattices::detail::syscall_family_lattice_self_test::family_count == 9,
+              "FIXY-V-098: Per.h depends on V-097's 9-tier chain.  If the lattice "
+              "grew an enumerator, family_of() above is incomplete and some "
+              "SyscallId would silently fall through to the Privilege fallback.");
 
 }  // namespace detail::syscall_per_grant_self_test
 

@@ -46,13 +46,15 @@ namespace crucible::safety {
 template <typename T>
 class Pinned {
 public:
-    Pinned()  = default;
+    Pinned() = default;
     ~Pinned() = default;
 
-    Pinned(const Pinned&)            = delete("Pinned<T>: stable address — address-as-identity or interior pointers into own storage");
-    Pinned(Pinned&&)                 = delete("Pinned<T>: stable address — move would invalidate references held by another thread or by self");
+    Pinned(const Pinned&) =
+        delete("Pinned<T>: stable address — address-as-identity or interior pointers into own storage");
+    Pinned(Pinned&&) =
+        delete("Pinned<T>: stable address — move would invalidate references held by another thread or by self");
     Pinned& operator=(const Pinned&) = delete("Pinned<T>: stable address");
-    Pinned& operator=(Pinned&&)      = delete("Pinned<T>: stable address");
+    Pinned& operator=(Pinned&&) = delete("Pinned<T>: stable address");
 };
 
 // NonMovable<T>: no copy, no move. Distinct from Pinned only in
@@ -65,17 +67,19 @@ public:
 template <typename T>
 class NonMovable {
 public:
-    NonMovable()  = default;
+    NonMovable() = default;
     ~NonMovable() = default;
 
-    NonMovable(const NonMovable&)            = delete("NonMovable<T>: exclusive ownership — copy would duplicate a singleton resource");
-    NonMovable(NonMovable&&)                 = delete("NonMovable<T>: exclusive ownership — move would leave a moved-from shell that callers may mistake for valid");
+    NonMovable(const NonMovable&) =
+        delete("NonMovable<T>: exclusive ownership — copy would duplicate a singleton resource");
+    NonMovable(NonMovable&&) = delete(
+        "NonMovable<T>: exclusive ownership — move would leave a moved-from shell that callers may mistake for valid");
     NonMovable& operator=(const NonMovable&) = delete("NonMovable<T>: exclusive ownership");
-    NonMovable& operator=(NonMovable&&)      = delete("NonMovable<T>: exclusive ownership");
+    NonMovable& operator=(NonMovable&&) = delete("NonMovable<T>: exclusive ownership");
 };
 
 // Zero-cost: Empty-base optimization guarantees the mixin adds no
 // bytes when the derived class has other members.  Verified by the
 // consumer types' own sizeof static_asserts.
 
-} // namespace crucible::safety
+}  // namespace crucible::safety

@@ -140,7 +140,7 @@ namespace crucible::safety::source {
 // policy (V-233) must apply the full predicate stack: no_dotdot,
 // no_embedded_nul, no_oversize, absolute_root_locked (where
 // applicable).
-struct FromUserPath   {};
+struct FromUserPath {};
 
 // ── source::FromEnvPath ────────────────────────────────────────────
 //
@@ -152,7 +152,7 @@ struct FromUserPath   {};
 // process Crucible doesn't own.  Sanitize policy may relax
 // absolute_root_locked when the deployment manifest pre-declares
 // the env value's expected root.
-struct FromEnvPath    {};
+struct FromEnvPath {};
 
 // ── source::FromConfigPath ─────────────────────────────────────────
 //
@@ -194,7 +194,7 @@ struct FromConfigPath {};
 //     manufactured from external bytes.
 //   CipherPath → FromUserPath/FromEnvPath/FromConfigPath/External:
 //     REJECTED.  Cipher-emitted bytes are not external input.
-struct CipherPath     {};
+struct CipherPath {};
 
 }  // namespace crucible::safety::source
 
@@ -215,20 +215,23 @@ namespace crucible::safety {
 // be relabeled as coming from env without re-running the sanitize
 // boundary.  The fail-closed primary handles those automatically.
 
-template <> struct retag_policy<source::FromUserPath,   source::Sanitized> {
+template <>
+struct retag_policy<source::FromUserPath, source::Sanitized> {
     // Discharge: V-233's sanitize_path<FromUserPath> overload ran
     // and the path passed the full predicate stack.
     static constexpr bool allowed = true;
 };
 
-template <> struct retag_policy<source::FromEnvPath,    source::Sanitized> {
+template <>
+struct retag_policy<source::FromEnvPath, source::Sanitized> {
     // Discharge: V-233's sanitize_path<FromEnvPath> overload ran
     // and the env-sourced path passed the deployment-scoped
     // sanitize predicate.
     static constexpr bool allowed = true;
 };
 
-template <> struct retag_policy<source::FromConfigPath, source::Sanitized> {
+template <>
+struct retag_policy<source::FromConfigPath, source::Sanitized> {
     // Discharge: V-233's sanitize_path<FromConfigPath> overload
     // ran and the config-sourced path passed the parser-scoped
     // sanitize predicate.
@@ -252,22 +255,21 @@ namespace crucible::safety::source::detail::v232_self_test {
 
 // ── (1) Tag distinctness ───────────────────────────────────────────
 static_assert(!std::is_same_v<FromUserPath, FromEnvPath>,
-    "FIXY-V-232: FromUserPath and FromEnvPath must be distinct types "
-    "(different provenance lanes carry different per-source policy).");
+              "FIXY-V-232: FromUserPath and FromEnvPath must be distinct types "
+              "(different provenance lanes carry different per-source policy).");
 static_assert(!std::is_same_v<FromUserPath, FromConfigPath>,
-    "FIXY-V-232: FromUserPath and FromConfigPath must be distinct types.");
-static_assert(!std::is_same_v<FromEnvPath,  FromConfigPath>,
-    "FIXY-V-232: FromEnvPath and FromConfigPath must be distinct types.");
+              "FIXY-V-232: FromUserPath and FromConfigPath must be distinct types.");
+static_assert(!std::is_same_v<FromEnvPath, FromConfigPath>,
+              "FIXY-V-232: FromEnvPath and FromConfigPath must be distinct types.");
 
 // The three new tags must also be distinct from the existing
 // source::External — they are SIBLINGS of External, not aliases.
-static_assert(!std::is_same_v<FromUserPath,   External>,
-    "FIXY-V-232: FromUserPath must be a distinct type from External "
-    "— widening would erase the audit trail of where the path came from.");
-static_assert(!std::is_same_v<FromEnvPath,    External>,
-    "FIXY-V-232: FromEnvPath must be a distinct type from External.");
+static_assert(!std::is_same_v<FromUserPath, External>,
+              "FIXY-V-232: FromUserPath must be a distinct type from External "
+              "— widening would erase the audit trail of where the path came from.");
+static_assert(!std::is_same_v<FromEnvPath, External>, "FIXY-V-232: FromEnvPath must be a distinct type from External.");
 static_assert(!std::is_same_v<FromConfigPath, External>,
-    "FIXY-V-232: FromConfigPath must be a distinct type from External.");
+              "FIXY-V-232: FromConfigPath must be a distinct type from External.");
 
 // ── WRAP-Cipher-3 #886: CipherPath lane distinctness ───────────────
 //
@@ -279,49 +281,43 @@ static_assert(!std::is_same_v<FromConfigPath, External>,
 // as Cipher-emitted paths or vice versa — and Cipher's openat
 // helpers trust CipherPath inputs.
 static_assert(!std::is_same_v<CipherPath, FromUserPath>,
-    "WRAP-Cipher-3 #886: CipherPath must be distinct from FromUserPath "
-    "— Cipher-emitted paths are not user-typed.");
+              "WRAP-Cipher-3 #886: CipherPath must be distinct from FromUserPath "
+              "— Cipher-emitted paths are not user-typed.");
 static_assert(!std::is_same_v<CipherPath, FromEnvPath>,
-    "WRAP-Cipher-3 #886: CipherPath must be distinct from FromEnvPath.");
+              "WRAP-Cipher-3 #886: CipherPath must be distinct from FromEnvPath.");
 static_assert(!std::is_same_v<CipherPath, FromConfigPath>,
-    "WRAP-Cipher-3 #886: CipherPath must be distinct from FromConfigPath.");
-static_assert(!std::is_same_v<CipherPath, External>,
-    "WRAP-Cipher-3 #886: CipherPath must be distinct from External — "
-    "Cipher-emitted bytes never traversed an untrusted boundary.");
-static_assert(!std::is_same_v<CipherPath, Sanitized>,
-    "WRAP-Cipher-3 #886: CipherPath must be distinct from Sanitized "
-    "— Sanitized is the post-sanitize lane, CipherPath is the "
-    "internally-constructed lane (orthogonal provenance).");
+              "WRAP-Cipher-3 #886: CipherPath must be distinct from FromConfigPath.");
+static_assert(!std::is_same_v<CipherPath, External>, "WRAP-Cipher-3 #886: CipherPath must be distinct from External — "
+                                                     "Cipher-emitted bytes never traversed an untrusted boundary.");
+static_assert(!std::is_same_v<CipherPath, Sanitized>, "WRAP-Cipher-3 #886: CipherPath must be distinct from Sanitized "
+                                                      "— Sanitized is the post-sanitize lane, CipherPath is the "
+                                                      "internally-constructed lane (orthogonal provenance).");
 
 // ── (2) Forward admittance reachable through policy + concept ──────
-static_assert(retag_policy<FromUserPath,   Sanitized>::allowed,
-    "FIXY-V-232: source::FromUserPath → source::Sanitized must be "
-    "admitted by the V-232 retag_policy catalog so V-233's "
-    "sanitize_path<FromUserPath> overload can discharge.");
-static_assert(retag_policy<FromEnvPath,    Sanitized>::allowed,
-    "FIXY-V-232: source::FromEnvPath → source::Sanitized must be "
-    "admitted by the V-232 retag_policy catalog.");
+static_assert(retag_policy<FromUserPath, Sanitized>::allowed,
+              "FIXY-V-232: source::FromUserPath → source::Sanitized must be "
+              "admitted by the V-232 retag_policy catalog so V-233's "
+              "sanitize_path<FromUserPath> overload can discharge.");
+static_assert(retag_policy<FromEnvPath, Sanitized>::allowed,
+              "FIXY-V-232: source::FromEnvPath → source::Sanitized must be "
+              "admitted by the V-232 retag_policy catalog.");
 static_assert(retag_policy<FromConfigPath, Sanitized>::allowed,
-    "FIXY-V-232: source::FromConfigPath → source::Sanitized must be "
-    "admitted by the V-232 retag_policy catalog.");
+              "FIXY-V-232: source::FromConfigPath → source::Sanitized must be "
+              "admitted by the V-232 retag_policy catalog.");
 
 // Same reach via the V-024 RetagAllowed concept — pins that the
 // using-declaration / concept form sees the new specializations.
-static_assert(RetagAllowed<FromUserPath,   Sanitized>,
-    "FIXY-V-232: RetagAllowed concept must admit FromUserPath → "
-    "Sanitized via the V-232 catalog through the V-024 wire-up.");
-static_assert(RetagAllowed<FromEnvPath,    Sanitized>,
-    "FIXY-V-232: RetagAllowed concept must admit FromEnvPath → "
-    "Sanitized.");
-static_assert(RetagAllowed<FromConfigPath, Sanitized>,
-    "FIXY-V-232: RetagAllowed concept must admit FromConfigPath → "
-    "Sanitized.");
+static_assert(RetagAllowed<FromUserPath, Sanitized>, "FIXY-V-232: RetagAllowed concept must admit FromUserPath → "
+                                                     "Sanitized via the V-232 catalog through the V-024 wire-up.");
+static_assert(RetagAllowed<FromEnvPath, Sanitized>, "FIXY-V-232: RetagAllowed concept must admit FromEnvPath → "
+                                                    "Sanitized.");
+static_assert(RetagAllowed<FromConfigPath, Sanitized>, "FIXY-V-232: RetagAllowed concept must admit FromConfigPath → "
+                                                       "Sanitized.");
 
 // V-023's pre-existing External → Sanitized admittance must still
 // reach — V-232 does not collide with the catalog already shipped.
-static_assert(retag_policy<External, Sanitized>::allowed,
-    "FIXY-V-232: V-023's source::External → source::Sanitized "
-    "must remain admitted after V-232 catalog additions.");
+static_assert(retag_policy<External, Sanitized>::allowed, "FIXY-V-232: V-023's source::External → source::Sanitized "
+                                                          "must remain admitted after V-232 catalog additions.");
 
 // ── (3) Inverse rejection — fail-closed for narrowing-from-Sanitized
 //
@@ -330,12 +326,12 @@ static_assert(retag_policy<External, Sanitized>::allowed,
 // shipped for any of these directions, so the V-022 primary
 // template's fail-closed default fires).
 static_assert(!retag_policy<Sanitized, FromUserPath>::allowed,
-    "FIXY-V-232: Sanitized → FromUserPath must stay rejected — "
-    "re-introducing taint defeats the sanitize boundary.");
+              "FIXY-V-232: Sanitized → FromUserPath must stay rejected — "
+              "re-introducing taint defeats the sanitize boundary.");
 static_assert(!retag_policy<Sanitized, FromEnvPath>::allowed,
-    "FIXY-V-232: Sanitized → FromEnvPath must stay rejected.");
+              "FIXY-V-232: Sanitized → FromEnvPath must stay rejected.");
 static_assert(!retag_policy<Sanitized, FromConfigPath>::allowed,
-    "FIXY-V-232: Sanitized → FromConfigPath must stay rejected.");
+              "FIXY-V-232: Sanitized → FromConfigPath must stay rejected.");
 
 // ── (3b) Inverse rejection — fail-closed for cross-narrowing ───────
 //
@@ -344,13 +340,13 @@ static_assert(!retag_policy<Sanitized, FromConfigPath>::allowed,
 // The V-022 fail-closed primary handles all six cross-narrowing
 // pairs; witness three representative ones.
 static_assert(!retag_policy<FromUserPath, FromEnvPath>::allowed,
-    "FIXY-V-232: FromUserPath → FromEnvPath must stay rejected — "
-    "provenance lanes are orthogonal, cross-narrowing would lie "
-    "about origin.");
-static_assert(!retag_policy<FromEnvPath,  FromConfigPath>::allowed,
-    "FIXY-V-232: FromEnvPath → FromConfigPath must stay rejected.");
+              "FIXY-V-232: FromUserPath → FromEnvPath must stay rejected — "
+              "provenance lanes are orthogonal, cross-narrowing would lie "
+              "about origin.");
+static_assert(!retag_policy<FromEnvPath, FromConfigPath>::allowed,
+              "FIXY-V-232: FromEnvPath → FromConfigPath must stay rejected.");
 static_assert(!retag_policy<FromConfigPath, FromUserPath>::allowed,
-    "FIXY-V-232: FromConfigPath → FromUserPath must stay rejected.");
+              "FIXY-V-232: FromConfigPath → FromUserPath must stay rejected.");
 
 // ── (3c) External re-tightening rejection ──────────────────────────
 //
@@ -359,23 +355,21 @@ static_assert(!retag_policy<FromConfigPath, FromUserPath>::allowed,
 // (claiming a narrower lineage retroactively); reject in both
 // directions for the same reason as (3b).
 static_assert(!retag_policy<External, FromUserPath>::allowed,
-    "FIXY-V-232: External → FromUserPath must stay rejected — "
-    "back-filling narrower provenance retroactively is a lie about "
-    "the audit trail.");
-static_assert(!retag_policy<External, FromEnvPath>::allowed,
-    "FIXY-V-232: External → FromEnvPath must stay rejected.");
+              "FIXY-V-232: External → FromUserPath must stay rejected — "
+              "back-filling narrower provenance retroactively is a lie about "
+              "the audit trail.");
+static_assert(!retag_policy<External, FromEnvPath>::allowed, "FIXY-V-232: External → FromEnvPath must stay rejected.");
 static_assert(!retag_policy<External, FromConfigPath>::allowed,
-    "FIXY-V-232: External → FromConfigPath must stay rejected.");
+              "FIXY-V-232: External → FromConfigPath must stay rejected.");
 
 // Narrowing → External (widening) also stays rejected — the
 // narrower audit trail must not be erased upward.
-static_assert(!retag_policy<FromUserPath,   External>::allowed,
-    "FIXY-V-232: FromUserPath → External must stay rejected — "
-    "widening would erase the narrower audit trail.");
-static_assert(!retag_policy<FromEnvPath,    External>::allowed,
-    "FIXY-V-232: FromEnvPath → External must stay rejected.");
+static_assert(!retag_policy<FromUserPath, External>::allowed,
+              "FIXY-V-232: FromUserPath → External must stay rejected — "
+              "widening would erase the narrower audit trail.");
+static_assert(!retag_policy<FromEnvPath, External>::allowed, "FIXY-V-232: FromEnvPath → External must stay rejected.");
 static_assert(!retag_policy<FromConfigPath, External>::allowed,
-    "FIXY-V-232: FromConfigPath → External must stay rejected.");
+              "FIXY-V-232: FromConfigPath → External must stay rejected.");
 
 // ── (4) Identity admitted by V-022's identity specialization ───────
 //
@@ -383,12 +377,12 @@ static_assert(!retag_policy<FromConfigPath, External>::allowed,
 // `retag_policy<Tag, Tag>` specialization at Tagged.h:423.  Witness
 // for each new tag — pins that the V-022 identity rule survives
 // the V-232 catalog additions.
-static_assert(retag_policy<FromUserPath,   FromUserPath>::allowed,
-    "FIXY-V-232: V-022 identity (FromUserPath → FromUserPath) must "
-    "stay admitted after the V-232 catalog additions.");
-static_assert(retag_policy<FromEnvPath,    FromEnvPath>::allowed,
-    "FIXY-V-232: V-022 identity (FromEnvPath → FromEnvPath) admitted.");
+static_assert(retag_policy<FromUserPath, FromUserPath>::allowed,
+              "FIXY-V-232: V-022 identity (FromUserPath → FromUserPath) must "
+              "stay admitted after the V-232 catalog additions.");
+static_assert(retag_policy<FromEnvPath, FromEnvPath>::allowed,
+              "FIXY-V-232: V-022 identity (FromEnvPath → FromEnvPath) admitted.");
 static_assert(retag_policy<FromConfigPath, FromConfigPath>::allowed,
-    "FIXY-V-232: V-022 identity (FromConfigPath → FromConfigPath) admitted.");
+              "FIXY-V-232: V-022 identity (FromConfigPath → FromConfigPath) admitted.");
 
 }  // namespace crucible::safety::source::detail::v232_self_test

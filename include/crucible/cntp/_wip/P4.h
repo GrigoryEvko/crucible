@@ -65,20 +65,15 @@ using P4StageCount = safety::Positive<std::uint16_t>;
 using P4RegisterWidthBits = safety::Positive<std::uint16_t>;
 
 struct P4ResourceBudget {
-    P4TcamEntries tcam_entries{std::uint32_t{1},
-                               typename P4TcamEntries::Trusted{}};
-    P4StageCount pipeline_stages{std::uint16_t{1},
-                                 typename P4StageCount::Trusted{}};
-    P4RegisterWidthBits register_width_bits{
-        std::uint16_t{1}, typename P4RegisterWidthBits::Trusted{}};
+    P4TcamEntries tcam_entries{std::uint32_t{1}, typename P4TcamEntries::Trusted{}};
+    P4StageCount pipeline_stages{std::uint16_t{1}, typename P4StageCount::Trusted{}};
+    P4RegisterWidthBits register_width_bits{std::uint16_t{1}, typename P4RegisterWidthBits::Trusted{}};
 };
 
 struct P4ProgramSpec {
-    P4ProgramId program_id{std::uint64_t{1},
-                           typename P4ProgramId::Trusted{}};
+    P4ProgramId program_id{std::uint64_t{1}, typename P4ProgramId::Trusted{}};
     P4ProgramKind kind = P4ProgramKind::IntTelemetry;
-    P4SourceBytes source_bytes{std::uint64_t{1},
-                               typename P4SourceBytes::Trusted{}};
+    P4SourceBytes source_bytes{std::uint64_t{1}, typename P4SourceBytes::Trusted{}};
     P4ResourceBudget budget{};
     bool compiler_available = false;
     bool allow_backend_compile = false;
@@ -87,47 +82,39 @@ struct P4ProgramSpec {
 
 struct P4DeploymentHandle {
     cog::Uuid switch_uuid{};
-    P4ProgramId program_id{std::uint64_t{1},
-                           typename P4ProgramId::Trusted{}};
+    P4ProgramId program_id{std::uint64_t{1}, typename P4ProgramId::Trusted{}};
     P4ProgramKind kind = P4ProgramKind::IntTelemetry;
     P4ResourceBudget budget{};
 };
 
-using DeclaredP4Program =
-    safety::Tagged<P4ProgramSpec, wip_source::P4Compiled>;
+using DeclaredP4Program = safety::Tagged<P4ProgramSpec, wip_source::P4Compiled>;
 using OwnedP4Deployment = safety::Linear<P4DeploymentHandle>;
 
 template <class Ctx>
-concept CtxFitsP4Mint =
-    effects::IsExecCtx<Ctx>
-    && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Init>>;
+concept CtxFitsP4Mint = effects::IsExecCtx<Ctx> && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Init>>;
 
-[[nodiscard]] constexpr std::expected<P4ProgramId, P4Error>
-admit_p4_program_id(std::uint64_t id) noexcept {
+[[nodiscard]] constexpr std::expected<P4ProgramId, P4Error> admit_p4_program_id(std::uint64_t id) noexcept {
     if (id == 0u) {
         return std::unexpected(P4Error::InvalidProgramId);
     }
     return P4ProgramId{id, typename P4ProgramId::Trusted{}};
 }
 
-[[nodiscard]] constexpr std::expected<P4SourceBytes, P4Error>
-admit_p4_source_bytes(std::uint64_t bytes) noexcept {
+[[nodiscard]] constexpr std::expected<P4SourceBytes, P4Error> admit_p4_source_bytes(std::uint64_t bytes) noexcept {
     if (bytes == 0u) {
         return std::unexpected(P4Error::InvalidSourceBytes);
     }
     return P4SourceBytes{bytes, typename P4SourceBytes::Trusted{}};
 }
 
-[[nodiscard]] constexpr std::expected<P4TcamEntries, P4Error>
-admit_p4_tcam_entries(std::uint32_t entries) noexcept {
+[[nodiscard]] constexpr std::expected<P4TcamEntries, P4Error> admit_p4_tcam_entries(std::uint32_t entries) noexcept {
     if (entries == 0u) {
         return std::unexpected(P4Error::InvalidTcamEntries);
     }
     return P4TcamEntries{entries, typename P4TcamEntries::Trusted{}};
 }
 
-[[nodiscard]] constexpr std::expected<P4StageCount, P4Error>
-admit_p4_stage_count(std::uint16_t stages) noexcept {
+[[nodiscard]] constexpr std::expected<P4StageCount, P4Error> admit_p4_stage_count(std::uint16_t stages) noexcept {
     if (stages == 0u) {
         return std::unexpected(P4Error::InvalidStageCount);
     }
@@ -139,13 +126,11 @@ admit_p4_register_width_bits(std::uint16_t bits) noexcept {
     if (bits == 0u) {
         return std::unexpected(P4Error::InvalidRegisterWidthBits);
     }
-    return P4RegisterWidthBits{
-        bits, typename P4RegisterWidthBits::Trusted{}};
+    return P4RegisterWidthBits{bits, typename P4RegisterWidthBits::Trusted{}};
 }
 
 [[nodiscard]] constexpr std::expected<P4ResourceBudget, P4Error>
-admit_p4_resource_budget(std::uint32_t tcam_entries,
-                         std::uint16_t pipeline_stages,
+admit_p4_resource_budget(std::uint32_t tcam_entries, std::uint16_t pipeline_stages,
                          std::uint16_t register_width_bits) noexcept {
     auto tcam = admit_p4_tcam_entries(tcam_entries);
     if (!tcam.has_value()) {
@@ -166,9 +151,8 @@ admit_p4_resource_budget(std::uint32_t tcam_entries,
     };
 }
 
-[[nodiscard]] constexpr std::expected<void, P4Error>
-validate_p4_switch(cog::CogIdentity sw,
-                   cog::NvSwitchTargetCaps const& caps) noexcept {
+[[nodiscard]] constexpr std::expected<void, P4Error> validate_p4_switch(cog::CogIdentity sw,
+                                                                        cog::NvSwitchTargetCaps const& caps) noexcept {
     if (sw.uuid.is_zero()) {
         return std::unexpected(P4Error::ZeroSwitchCog);
     }
@@ -181,8 +165,7 @@ validate_p4_switch(cog::CogIdentity sw,
     return {};
 }
 
-[[nodiscard]] constexpr std::expected<void, P4Error>
-validate_p4_spec(P4ProgramSpec const& spec) noexcept {
+[[nodiscard]] constexpr std::expected<void, P4Error> validate_p4_spec(P4ProgramSpec const& spec) noexcept {
     if (spec.program_id.value() == 0u) {
         return std::unexpected(P4Error::InvalidProgramId);
     }
@@ -201,9 +184,8 @@ validate_p4_spec(P4ProgramSpec const& spec) noexcept {
     return {};
 }
 
-[[nodiscard]] constexpr std::expected<void, P4Error>
-validate_p4_budget(P4ResourceBudget budget,
-                   cog::NvSwitchTargetCaps const& caps) noexcept {
+[[nodiscard]] constexpr std::expected<void, P4Error> validate_p4_budget(P4ResourceBudget budget,
+                                                                        cog::NvSwitchTargetCaps const& caps) noexcept {
     if (budget.tcam_entries.value() > caps.tcam_entries.value()) {
         return std::unexpected(P4Error::TcamBudgetExceeded);
     }
@@ -213,10 +195,7 @@ validate_p4_budget(P4ResourceBudget budget,
 template <class Ctx>
     requires CtxFitsP4Mint<Ctx>
 [[nodiscard]] constexpr std::expected<DeclaredP4Program, P4Error>
-mint_p4_program(Ctx const&,
-                cog::CogIdentity sw,
-                cog::NvSwitchTargetCaps caps,
-                P4ProgramSpec spec) noexcept {
+mint_p4_program(Ctx const&, cog::CogIdentity sw, cog::NvSwitchTargetCaps caps, P4ProgramSpec spec) noexcept {
     auto switch_valid = validate_p4_switch(sw, caps);
     if (!switch_valid.has_value()) {
         return std::unexpected(switch_valid.error());
@@ -233,9 +212,7 @@ mint_p4_program(Ctx const&,
 }
 
 [[nodiscard]] constexpr std::expected<OwnedP4Deployment, P4Error>
-deploy_p4_program(cog::CogIdentity sw,
-                  cog::NvSwitchTargetCaps caps,
-                  DeclaredP4Program program) noexcept {
+deploy_p4_program(cog::CogIdentity sw, cog::NvSwitchTargetCaps caps, DeclaredP4Program program) noexcept {
     auto switch_valid = validate_p4_switch(sw, caps);
     if (!switch_valid.has_value()) {
         return std::unexpected(switch_valid.error());
@@ -261,18 +238,13 @@ class P4DeploymentSession : public safety::Pinned<P4DeploymentSession> {
     OwnedP4Deployment deployment_;
 
 public:
-    explicit P4DeploymentSession(OwnedP4Deployment deployment) noexcept
-        : deployment_{std::move(deployment)} {}
+    explicit P4DeploymentSession(OwnedP4Deployment deployment) noexcept : deployment_{std::move(deployment)} {}
 
-    [[nodiscard]] constexpr P4DeploymentHandle const& handle() const noexcept {
-        return deployment_.peek();
-    }
+    [[nodiscard]] constexpr P4DeploymentHandle const& handle() const noexcept { return deployment_.peek(); }
 };
 
 [[nodiscard]] std::expected<OwnedP4Deployment, P4Error>
-force_p4_vendor_boundary(cog::CogIdentity sw,
-                         cog::NvSwitchTargetCaps caps,
-                         DeclaredP4Program program) noexcept;
+force_p4_vendor_boundary(cog::CogIdentity sw, cog::NvSwitchTargetCaps caps, DeclaredP4Program program) noexcept;
 
 static_assert(sizeof(P4ProgramId) == sizeof(std::uint64_t));
 static_assert(sizeof(P4SourceBytes) == sizeof(std::uint64_t));

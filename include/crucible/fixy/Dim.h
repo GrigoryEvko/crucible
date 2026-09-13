@@ -160,26 +160,24 @@ using safety::wrapper_for_v;
 // to a using-declaration."  Reach through to the substrate enum
 // directly via the fully-qualified `safety::DimensionAxis` path.
 
-static_assert(DIMENSION_AXIS_COUNT
-              == std::meta::enumerators_of(^^safety::DimensionAxis).size(),
-    "fixy::dim — substrate DIMENSION_AXIS_COUNT has drifted from the "
-    "reflection-derived enumerator count of safety::DimensionAxis.  "
-    "Either the substrate constant was manually maintained (and forgot "
-    "to bump on enumerator addition) or reflection is reporting a "
-    "different enum than the substrate exposes.  Investigate "
-    "safety/DimensionTraits.h's DIMENSION_AXIS_COUNT definition.");
+static_assert(DIMENSION_AXIS_COUNT == std::meta::enumerators_of(^^safety::DimensionAxis).size(),
+              "fixy::dim — substrate DIMENSION_AXIS_COUNT has drifted from the "
+              "reflection-derived enumerator count of safety::DimensionAxis.  "
+              "Either the substrate constant was manually maintained (and forgot "
+              "to bump on enumerator addition) or reflection is reporting a "
+              "different enum than the substrate exposes.  Investigate "
+              "safety/DimensionTraits.h's DIMENSION_AXIS_COUNT definition.");
 
-static_assert(TIER_KIND_COUNT
-              == std::meta::enumerators_of(^^safety::TierKind).size(),
-    "fixy::dim — substrate TIER_KIND_COUNT has drifted from the "
-    "reflection-derived enumerator count of safety::TierKind.  Same "
-    "diagnosis as DIMENSION_AXIS_COUNT above.  Note: there is no "
-    "fixy-side per-tier dispatch (Reject.h dispatches per-axis, NOT "
-    "per-tier — verified via grep); this assertion exists for "
-    "substrate-contract consistency only.  Adding a new TierKind "
-    "requires updating safety/DimensionTraits.h's tier_of_axis switch "
-    "arms (substrate's own static_assert at DimensionTraits.h:616 "
-    "fires first).");
+static_assert(TIER_KIND_COUNT == std::meta::enumerators_of(^^safety::TierKind).size(),
+              "fixy::dim — substrate TIER_KIND_COUNT has drifted from the "
+              "reflection-derived enumerator count of safety::TierKind.  Same "
+              "diagnosis as DIMENSION_AXIS_COUNT above.  Note: there is no "
+              "fixy-side per-tier dispatch (Reject.h dispatches per-axis, NOT "
+              "per-tier — verified via grep); this assertion exists for "
+              "substrate-contract consistency only.  Adding a new TierKind "
+              "requires updating safety/DimensionTraits.h's tier_of_axis switch "
+              "arms (substrate's own static_assert at DimensionTraits.h:616 "
+              "fires first).");
 
 // ─── Per-dim Tier sanity — covered by substrate guard ──────────────
 //

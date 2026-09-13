@@ -126,51 +126,40 @@ struct ProbeU {};
 
 // ── B. Re-export type-identity witnesses ───────────────────────────
 
-static_assert(std::is_same_v<
-    ContentAddressed<ProbeT>,
-    ::crucible::safety::proto::ContentAddressed<ProbeT>>,
-    "fixy::sess::contentaddr::ContentAddressed must alias "
-    "safety::proto::ContentAddressed.");
+static_assert(std::is_same_v<ContentAddressed<ProbeT>, ::crucible::safety::proto::ContentAddressed<ProbeT>>,
+              "fixy::sess::contentaddr::ContentAddressed must alias "
+              "safety::proto::ContentAddressed.");
 
-static_assert(std::is_same_v<
-    is_content_addressed<ProbeT>,
-    ::crucible::safety::proto::is_content_addressed<ProbeT>>,
-    "fixy::sess::contentaddr::is_content_addressed must alias "
-    "safety::proto::is_content_addressed.");
+static_assert(std::is_same_v<is_content_addressed<ProbeT>, ::crucible::safety::proto::is_content_addressed<ProbeT>>,
+              "fixy::sess::contentaddr::is_content_addressed must alias "
+              "safety::proto::is_content_addressed.");
 
 // ── C. is_content_addressed_v discriminates wrapped vs bare ────────
 
-static_assert( is_content_addressed_v<ContentAddressed<ProbeT>>);
+static_assert(is_content_addressed_v<ContentAddressed<ProbeT>>);
 static_assert(!is_content_addressed_v<ProbeT>);
 static_assert(!is_content_addressed_v<int>);
 
-static_assert( ContentAddressedType<ContentAddressed<ProbeT>>);
+static_assert(ContentAddressedType<ContentAddressed<ProbeT>>);
 static_assert(!ContentAddressedType<ProbeT>);
 
 // ── D. content_addressed_underlying_t strips ONE layer ─────────────
 
-static_assert(std::is_same_v<
-    content_addressed_underlying_t<ContentAddressed<ProbeT>>, ProbeT>);
+static_assert(std::is_same_v<content_addressed_underlying_t<ContentAddressed<ProbeT>>, ProbeT>);
 
 // Passthrough fallback — non-wrapped types unchanged.
-static_assert(std::is_same_v<
-    content_addressed_underlying_t<ProbeT>, ProbeT>);
+static_assert(std::is_same_v<content_addressed_underlying_t<ProbeT>, ProbeT>);
 
 // Nested wrapper — strip-one peels ONE layer (substrate spec).
-static_assert(std::is_same_v<
-    content_addressed_underlying_t<
-        ContentAddressed<ContentAddressed<ProbeT>>>,
-    ContentAddressed<ProbeT>>);
+static_assert(std::is_same_v<content_addressed_underlying_t<ContentAddressed<ContentAddressed<ProbeT>>>,
+                             ContentAddressed<ProbeT>>);
 
 // ── E. unwrap_content_addressed_t strips ALL layers ────────────────
 
-static_assert(std::is_same_v<
-    unwrap_content_addressed_t<ContentAddressed<ProbeT>>, ProbeT>);
+static_assert(std::is_same_v<unwrap_content_addressed_t<ContentAddressed<ProbeT>>, ProbeT>);
 
-static_assert(std::is_same_v<
-    unwrap_content_addressed_t<
-        ContentAddressed<ContentAddressed<ContentAddressed<ProbeT>>>>,
-    ProbeT>);
+static_assert(
+    std::is_same_v<unwrap_content_addressed_t<ContentAddressed<ContentAddressed<ContentAddressed<ProbeT>>>>, ProbeT>);
 
 // Passthrough fallback — non-wrapped types unchanged.
 static_assert(std::is_same_v<unwrap_content_addressed_t<int>, int>);
@@ -179,10 +168,8 @@ static_assert(std::is_same_v<unwrap_content_addressed_t<int>, int>);
 
 static_assert(content_addressed_depth_v<ProbeT> == 0);
 static_assert(content_addressed_depth_v<ContentAddressed<ProbeT>> == 1);
-static_assert(content_addressed_depth_v<
-    ContentAddressed<ContentAddressed<ProbeT>>> == 2);
-static_assert(content_addressed_depth_v<
-    ContentAddressed<ContentAddressed<ContentAddressed<ProbeT>>>> == 3);
+static_assert(content_addressed_depth_v<ContentAddressed<ContentAddressed<ProbeT>>> == 2);
+static_assert(content_addressed_depth_v<ContentAddressed<ContentAddressed<ContentAddressed<ProbeT>>>> == 3);
 
 // ── G. Distinct-T wrapper distinctness ─────────────────────────────
 //
@@ -192,8 +179,7 @@ static_assert(content_addressed_depth_v<
 // breaks at the type level instead of silently corrupting the
 // content-hash quotient.
 
-static_assert(!std::is_same_v<
-    ContentAddressed<ProbeT>, ContentAddressed<ProbeU>>);
+static_assert(!std::is_same_v<ContentAddressed<ProbeT>, ContentAddressed<ProbeU>>);
 
 // ── H. Cardinality witness — count of items U-052c surfaces ────────
 //
@@ -210,9 +196,8 @@ static_assert(!std::is_same_v<
 //                                                       ────
 //                                                         9
 constexpr int u052c_surface_cardinality = 9;
-static_assert(u052c_surface_cardinality == 9,
-    "fixy::sess::contentaddr:: U-052c surface cardinality drifted — "
-    "update SessContentAddr.h using-decls AND this sentinel in lockstep.");
+static_assert(u052c_surface_cardinality == 9, "fixy::sess::contentaddr:: U-052c surface cardinality drifted — "
+                                              "update SessContentAddr.h using-decls AND this sentinel in lockstep.");
 
 }  // namespace crucible::fixy::sess::contentaddr::u052c_self_test
 
@@ -231,26 +216,30 @@ namespace crucible::fixy::sess::contentaddr {
 
 inline void runtime_smoke_test() noexcept {
     using ::crucible::fixy::sess::contentaddr::u052c_self_test::ProbeT;
-    using CA  = ContentAddressed<ProbeT>;
+    using CA = ContentAddressed<ProbeT>;
     using CA2 = ContentAddressed<CA>;
 
     [[maybe_unused]] constexpr bool wrapped = is_content_addressed_v<CA>;
-    [[maybe_unused]] constexpr bool bare    = is_content_addressed_v<ProbeT>;
-    [[maybe_unused]] constexpr bool concpt  = ContentAddressedType<CA>;
+    [[maybe_unused]] constexpr bool bare = is_content_addressed_v<ProbeT>;
+    [[maybe_unused]] constexpr bool concpt = ContentAddressedType<CA>;
 
-    using StripOne  = content_addressed_underlying_t<CA>;
-    using StripAll  = unwrap_content_addressed_t<CA2>;
+    using StripOne = content_addressed_underlying_t<CA>;
+    using StripAll = unwrap_content_addressed_t<CA2>;
     using Passthrough = content_addressed_underlying_t<int>;
 
     [[maybe_unused]] constexpr std::size_t d0 = content_addressed_depth_v<ProbeT>;
     [[maybe_unused]] constexpr std::size_t d1 = content_addressed_depth_v<CA>;
     [[maybe_unused]] constexpr std::size_t d2 = content_addressed_depth_v<CA2>;
 
-    (void) wrapped; (void) bare; (void) concpt;
-    (void) static_cast<StripOne*>(nullptr);
-    (void) static_cast<StripAll*>(nullptr);
-    (void) static_cast<Passthrough*>(nullptr);
-    (void) d0; (void) d1; (void) d2;
+    (void)wrapped;
+    (void)bare;
+    (void)concpt;
+    (void)static_cast<StripOne*>(nullptr);
+    (void)static_cast<StripAll*>(nullptr);
+    (void)static_cast<Passthrough*>(nullptr);
+    (void)d0;
+    (void)d1;
+    (void)d2;
 }
 
 }  // namespace crucible::fixy::sess::contentaddr

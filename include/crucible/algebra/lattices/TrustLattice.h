@@ -74,9 +74,7 @@ struct TrustLattice {
     // one possible value per Source type).
     struct element_type {
         using source_type = Source;
-        [[nodiscard]] constexpr bool operator==(element_type) const noexcept {
-            return true;
-        }
+        [[nodiscard]] constexpr bool operator==(element_type) const noexcept { return true; }
     };
 
     // Lattice-level introspection: external code can recover Source
@@ -86,8 +84,8 @@ struct TrustLattice {
     using source_type = Source;
 
     [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-    [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-    [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+    [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+    [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
     [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
     [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
 
@@ -98,9 +96,7 @@ struct TrustLattice {
     // static_assert below).  Used by SessionDiagnostic / Cipher
     // serialize / debug print to identify which Source the
     // TrustLattice carries.
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return std::meta::display_string_of(^^Source);
-    }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return std::meta::display_string_of(^^Source); }
 };
 
 // ── Self-test ───────────────────────────────────────────────────────
@@ -111,28 +107,29 @@ namespace detail::trust_lattice_self_test {
 // Each namespace is independent — TrustLattice<S> works uniformly
 // for any Source in any namespace.
 namespace source {
-    struct FromUser     {};
-    struct FromDb       {};
-    struct FromConfig   {};
-    struct FromInternal {};
-    struct External     {};
-    struct Sanitized    {};
-}
+struct FromUser {};
+struct FromDb {};
+struct FromConfig {};
+struct FromInternal {};
+struct External {};
+struct Sanitized {};
+}  // namespace source
 namespace trust {
-    struct Verified   {};
-    struct Tested     {};
-    struct Unverified {};
-}
+struct Verified {};
+struct Tested {};
+struct Unverified {};
+}  // namespace trust
 namespace access {
-    struct RW {};
-    struct RO {};
-    struct WO {};
-}
+struct RW {};
+struct RO {};
+struct WO {};
+}  // namespace access
 namespace version {
-    struct V1 {};
-    struct V2 {};
-    template <int N> struct V {};  // templated source witness
-}
+struct V1 {};
+struct V2 {};
+template <int N>
+struct V {};  // templated source witness
+}  // namespace version
 
 // Concept conformance — each Source instantiates a valid Lattice
 // with bounded structure.  Covers all four tag namespaces + a
@@ -160,25 +157,17 @@ static_assert(std::is_empty_v<TrustLattice<access::RW>::element_type>);
 static_assert(std::is_empty_v<TrustLattice<version::V<2>>::element_type>);
 
 // Lattice axioms hold (trivially — single-element lattice).
-static_assert(verify_bounded_lattice_axioms_at<TrustLattice<source::FromUser>>(
-    {}, {}, {}));
-static_assert(verify_bounded_lattice_axioms_at<TrustLattice<trust::Verified>>(
-    {}, {}, {}));
-static_assert(verify_bounded_lattice_axioms_at<TrustLattice<access::RW>>(
-    {}, {}, {}));
-static_assert(verify_bounded_lattice_axioms_at<TrustLattice<version::V1>>(
-    {}, {}, {}));
-static_assert(verify_bounded_lattice_axioms_at<TrustLattice<version::V<3>>>(
-    {}, {}, {}));
+static_assert(verify_bounded_lattice_axioms_at<TrustLattice<source::FromUser>>({}, {}, {}));
+static_assert(verify_bounded_lattice_axioms_at<TrustLattice<trust::Verified>>({}, {}, {}));
+static_assert(verify_bounded_lattice_axioms_at<TrustLattice<access::RW>>({}, {}, {}));
+static_assert(verify_bounded_lattice_axioms_at<TrustLattice<version::V1>>({}, {}, {}));
+static_assert(verify_bounded_lattice_axioms_at<TrustLattice<version::V<3>>>({}, {}, {}));
 
 // source_type alias is correct at BOTH lattice level AND element
 // level — symmetric introspection.
-static_assert(std::is_same_v<TrustLattice<source::FromUser>::source_type,
-                              source::FromUser>);
-static_assert(std::is_same_v<TrustLattice<source::FromUser>::element_type::source_type,
-                              source::FromUser>);
-static_assert(std::is_same_v<TrustLattice<version::V<5>>::source_type,
-                              version::V<5>>);
+static_assert(std::is_same_v<TrustLattice<source::FromUser>::source_type, source::FromUser>);
+static_assert(std::is_same_v<TrustLattice<source::FromUser>::element_type::source_type, source::FromUser>);
+static_assert(std::is_same_v<TrustLattice<version::V<5>>::source_type, version::V<5>>);
 
 // CRITICAL: cross-source distinctness — TrustLattice<A> and
 // TrustLattice<B> for A != B must be DIFFERENT types so Graded::
@@ -188,16 +177,13 @@ static_assert(std::is_same_v<TrustLattice<version::V<5>>::source_type,
 // composing with Tagged<T, source::Sanitized> at the Graded level —
 // the only allowed transitions go through the SessionPayloadSubsort
 // is_subsort axioms.
+static_assert(!std::is_same_v<TrustLattice<source::FromUser>, TrustLattice<source::FromDb>>);
+static_assert(!std::is_same_v<TrustLattice<source::External>, TrustLattice<source::Sanitized>>);
+static_assert(!std::is_same_v<TrustLattice<trust::Verified>, TrustLattice<trust::Unverified>>);
 static_assert(!std::is_same_v<TrustLattice<source::FromUser>,
-                               TrustLattice<source::FromDb>>);
-static_assert(!std::is_same_v<TrustLattice<source::External>,
-                               TrustLattice<source::Sanitized>>);
-static_assert(!std::is_same_v<TrustLattice<trust::Verified>,
-                               TrustLattice<trust::Unverified>>);
-static_assert(!std::is_same_v<TrustLattice<source::FromUser>,
-                               TrustLattice<trust::Verified>>);  // cross-namespace
+                              TrustLattice<trust::Verified>>);  // cross-namespace
 static_assert(!std::is_same_v<TrustLattice<version::V<1>>,
-                               TrustLattice<version::V<2>>>);   // templated source
+                              TrustLattice<version::V<2>>>);  // templated source
 
 // Diagnostic name comes from reflection.  For sources defined at
 // nested-namespace scope inside the self-test, display_string_of
@@ -208,41 +194,41 @@ static_assert(!std::is_same_v<TrustLattice<version::V<1>>,
 // header_only_static_assert_blind_spot rule).  Use ends_with()
 // rather than == so the assertions are robust across the
 // algebra-only TU and the safety/* migration TUs.
-static_assert(TrustLattice<source::FromUser>::name() .ends_with("FromUser"));
+static_assert(TrustLattice<source::FromUser>::name().ends_with("FromUser"));
 static_assert(TrustLattice<source::Sanitized>::name().ends_with("Sanitized"));
-static_assert(TrustLattice<trust::Verified>::name()  .ends_with("Verified"));
-static_assert(TrustLattice<access::RW>::name()       .ends_with("RW"));
-static_assert(TrustLattice<version::V1>::name()      .ends_with("V1"));
+static_assert(TrustLattice<trust::Verified>::name().ends_with("Verified"));
+static_assert(TrustLattice<access::RW>::name().ends_with("RW"));
+static_assert(TrustLattice<version::V1>::name().ends_with("V1"));
 // Templated source — display_string_of includes the template argument.
-static_assert(TrustLattice<version::V<7>>::name()    .ends_with("V<7>"));
+static_assert(TrustLattice<version::V<7>>::name().ends_with("V<7>"));
 
 // ── Layout invariants on Graded<...,TrustLattice<S>,T> ─────────────
-struct OneByteValue { char c{0}; };
-struct EightByteValue { unsigned long long v{0}; };
+struct OneByteValue {
+    char c{0};
+};
+struct EightByteValue {
+    unsigned long long v{0};
+};
 
 template <typename T>
-using TaggedFromUser =
-    Graded<ModalityKind::RelativeMonad, TrustLattice<source::FromUser>, T>;
+using TaggedFromUser = Graded<ModalityKind::RelativeMonad, TrustLattice<source::FromUser>, T>;
 template <typename T>
-using TaggedSanitized =
-    Graded<ModalityKind::RelativeMonad, TrustLattice<source::Sanitized>, T>;
+using TaggedSanitized = Graded<ModalityKind::RelativeMonad, TrustLattice<source::Sanitized>, T>;
 template <typename T>
-using TaggedVerified =
-    Graded<ModalityKind::RelativeMonad, TrustLattice<trust::Verified>, T>;
+using TaggedVerified = Graded<ModalityKind::RelativeMonad, TrustLattice<trust::Verified>, T>;
 template <typename T>
-using TaggedV2 =
-    Graded<ModalityKind::RelativeMonad, TrustLattice<version::V<2>>, T>;
+using TaggedV2 = Graded<ModalityKind::RelativeMonad, TrustLattice<version::V<2>>, T>;
 
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(TaggedFromUser,  OneByteValue);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(TaggedFromUser,  EightByteValue);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(TaggedFromUser, OneByteValue);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(TaggedFromUser, EightByteValue);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(TaggedSanitized, OneByteValue);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(TaggedVerified,  EightByteValue);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(TaggedV2,        EightByteValue);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(TaggedVerified, EightByteValue);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(TaggedV2, EightByteValue);
 // Arithmetic T witnesses — pin macro correctness across the
 // trivially-default-constructible-T axis (AUDIT-FOUNDATION dropped
 // tdc parity).  Critical for MIGRATE-4 (Tagged<int, source::FromUser>
 // for shape-bound integers from the Vessel boundary).
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(TaggedFromUser,  int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(TaggedFromUser, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(TaggedSanitized, double);
 
 // ── Runtime smoke test ──────────────────────────────────────────────
@@ -255,22 +241,21 @@ inline void runtime_smoke_test() {
     using L = TrustLattice<source::Sanitized>;
     L::element_type a{};
     L::element_type b{};
-    [[maybe_unused]] bool             l = L::leq(a, b);
-    [[maybe_unused]] L::element_type  j = L::join(a, b);
-    [[maybe_unused]] L::element_type  m = L::meet(a, b);
+    [[maybe_unused]] bool l = L::leq(a, b);
+    [[maybe_unused]] L::element_type j = L::join(a, b);
+    [[maybe_unused]] L::element_type m = L::meet(a, b);
 
     OneByteValue v{42};
     TaggedSanitized<OneByteValue> initial{v, L::bottom()};
-    auto widened   = initial.weaken(L::top());
-    auto composed  = initial.compose(widened);
-    auto rv_widen  = std::move(widened).weaken(L::top());
+    auto widened = initial.weaken(L::top());
+    auto composed = initial.compose(widened);
+    auto rv_widen = std::move(widened).weaken(L::top());
 
     // RelativeMonad inject — only available because modality is
     // RelativeMonad (gated by Graded's requires-clause).
-    auto injected = TaggedSanitized<OneByteValue>::inject(
-        OneByteValue{99}, L::bottom());
+    auto injected = TaggedSanitized<OneByteValue>::inject(OneByteValue{99}, L::bottom());
 
-    [[maybe_unused]] auto g  = composed.grade();
+    [[maybe_unused]] auto g = composed.grade();
     [[maybe_unused]] auto v1 = composed.peek().c;
     [[maybe_unused]] auto v2 = std::move(injected).consume().c;
 }

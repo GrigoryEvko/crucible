@@ -83,7 +83,7 @@
 
 #include <compare>
 #include <cstdint>
-#include <cstdlib>      // std::abort in the runtime smoke test
+#include <cstdlib>  // std::abort in the runtime smoke test
 #include <limits>
 #include <string_view>
 #include <type_traits>
@@ -117,15 +117,11 @@ struct BitsBudget {
 struct BitsBudgetLattice {
     using element_type = BitsBudget;
 
-    [[nodiscard]] static constexpr element_type bottom() noexcept {
-        return element_type{0};
-    }
+    [[nodiscard]] static constexpr element_type bottom() noexcept { return element_type{0}; }
     [[nodiscard]] static constexpr element_type top() noexcept {
         return element_type{std::numeric_limits<std::uint64_t>::max()};
     }
-    [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept {
-        return a.value <= b.value;
-    }
+    [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept { return a.value <= b.value; }
     [[nodiscard]] static constexpr element_type join(element_type a, element_type b) noexcept {
         return element_type{a.value >= b.value ? a.value : b.value};
     }
@@ -133,9 +129,7 @@ struct BitsBudgetLattice {
         return element_type{a.value <= b.value ? a.value : b.value};
     }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return "BitsBudgetLattice";
-    }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "BitsBudgetLattice"; }
 };
 
 // ── Self-test ───────────────────────────────────────────────────────
@@ -151,38 +145,33 @@ static_assert(std::is_trivially_copyable_v<BitsBudget>);
 static_assert(std::is_standard_layout_v<BitsBudget>);
 
 // Ordering witnesses.
-static_assert( BitsBudgetLattice::leq(BitsBudget{0},   BitsBudget{1}));
-static_assert( BitsBudgetLattice::leq(BitsBudget{1},   BitsBudget{1}));   // reflexive
-static_assert(!BitsBudgetLattice::leq(BitsBudget{2},   BitsBudget{1}));
-static_assert( BitsBudgetLattice::leq(BitsBudgetLattice::bottom(),
-                                       BitsBudgetLattice::top()));
+static_assert(BitsBudgetLattice::leq(BitsBudget{0}, BitsBudget{1}));
+static_assert(BitsBudgetLattice::leq(BitsBudget{1}, BitsBudget{1}));  // reflexive
+static_assert(!BitsBudgetLattice::leq(BitsBudget{2}, BitsBudget{1}));
+static_assert(BitsBudgetLattice::leq(BitsBudgetLattice::bottom(), BitsBudgetLattice::top()));
 
 // Bounds.
 static_assert(BitsBudgetLattice::bottom().value == 0);
-static_assert(BitsBudgetLattice::top().value    == std::numeric_limits<std::uint64_t>::max());
+static_assert(BitsBudgetLattice::top().value == std::numeric_limits<std::uint64_t>::max());
 
 // Join / meet.
 static_assert(BitsBudgetLattice::join(BitsBudget{3}, BitsBudget{7}).value == 7);
-static_assert(BitsBudgetLattice::join(BitsBudget{7}, BitsBudget{3}).value == 7);   // commutative
+static_assert(BitsBudgetLattice::join(BitsBudget{7}, BitsBudget{3}).value == 7);  // commutative
 static_assert(BitsBudgetLattice::meet(BitsBudget{3}, BitsBudget{7}).value == 3);
 static_assert(BitsBudgetLattice::meet(BitsBudget{7}, BitsBudget{3}).value == 3);
 
 // Bound identities.
-static_assert(BitsBudgetLattice::join(BitsBudget{42}, BitsBudgetLattice::bottom())
-              == BitsBudget{42});
-static_assert(BitsBudgetLattice::meet(BitsBudget{42}, BitsBudgetLattice::top())
-              == BitsBudget{42});
-static_assert(BitsBudgetLattice::join(BitsBudgetLattice::top(), BitsBudget{42})
-              == BitsBudgetLattice::top());
-static_assert(BitsBudgetLattice::meet(BitsBudgetLattice::bottom(), BitsBudget{42})
-              == BitsBudgetLattice::bottom());
+static_assert(BitsBudgetLattice::join(BitsBudget{42}, BitsBudgetLattice::bottom()) == BitsBudget{42});
+static_assert(BitsBudgetLattice::meet(BitsBudget{42}, BitsBudgetLattice::top()) == BitsBudget{42});
+static_assert(BitsBudgetLattice::join(BitsBudgetLattice::top(), BitsBudget{42}) == BitsBudgetLattice::top());
+static_assert(BitsBudgetLattice::meet(BitsBudgetLattice::bottom(), BitsBudget{42}) == BitsBudgetLattice::bottom());
 
 // Idempotence.
 static_assert(BitsBudgetLattice::join(BitsBudget{99}, BitsBudget{99}).value == 99);
 static_assert(BitsBudgetLattice::meet(BitsBudget{99}, BitsBudget{99}).value == 99);
 
 // Antisymmetry witnesses.
-static_assert( BitsBudgetLattice::leq(BitsBudget{5}, BitsBudget{5}));
+static_assert(BitsBudgetLattice::leq(BitsBudget{5}, BitsBudget{5}));
 static_assert(!(BitsBudget{5} != BitsBudget{5}));
 
 // Distributivity at three witnesses (full chain order is distributive,
@@ -191,27 +180,22 @@ static_assert(!(BitsBudget{5} != BitsBudget{5}));
     BitsBudget a{2};
     BitsBudget b{5};
     BitsBudget c{8};
-    auto       lhs = BitsBudgetLattice::meet(a, BitsBudgetLattice::join(b, c));
-    auto       rhs = BitsBudgetLattice::join(BitsBudgetLattice::meet(a, b),
-                                             BitsBudgetLattice::meet(a, c));
+    auto lhs = BitsBudgetLattice::meet(a, BitsBudgetLattice::join(b, c));
+    auto rhs = BitsBudgetLattice::join(BitsBudgetLattice::meet(a, b), BitsBudgetLattice::meet(a, c));
     return lhs == rhs;
 }
 static_assert(distributive_witness());
 
 // fixy-H-20: invoke central Lattice.h verifier on representative
 // witnesses.  Chain lattice ⇒ distributive.
-static_assert(verify_bounded_lattice_axioms_at<BitsBudgetLattice>(
-    BitsBudgetLattice::bottom(), BitsBudget{1024}, BitsBudgetLattice::top()));
-static_assert(verify_bounded_lattice_axioms_at<BitsBudgetLattice>(
-    BitsBudget{0}, BitsBudget{42}, BitsBudget{99}));
-static_assert(verify_bounded_lattice_axioms_at<BitsBudgetLattice>(
-    BitsBudget{1}, BitsBudget{2}, BitsBudget{3}));
-static_assert(verify_distributive_lattice<BitsBudgetLattice>(
-    BitsBudgetLattice::bottom(), BitsBudget{1024}, BitsBudgetLattice::top()));
-static_assert(verify_distributive_lattice<BitsBudgetLattice>(
-    BitsBudget{2}, BitsBudget{5}, BitsBudget{8}));
-static_assert(verify_distributive_lattice<BitsBudgetLattice>(
-    BitsBudget{99}, BitsBudget{99}, BitsBudget{99}));
+static_assert(verify_bounded_lattice_axioms_at<BitsBudgetLattice>(BitsBudgetLattice::bottom(), BitsBudget{1024},
+                                                                  BitsBudgetLattice::top()));
+static_assert(verify_bounded_lattice_axioms_at<BitsBudgetLattice>(BitsBudget{0}, BitsBudget{42}, BitsBudget{99}));
+static_assert(verify_bounded_lattice_axioms_at<BitsBudgetLattice>(BitsBudget{1}, BitsBudget{2}, BitsBudget{3}));
+static_assert(verify_distributive_lattice<BitsBudgetLattice>(BitsBudgetLattice::bottom(), BitsBudget{1024},
+                                                             BitsBudgetLattice::top()));
+static_assert(verify_distributive_lattice<BitsBudgetLattice>(BitsBudget{2}, BitsBudget{5}, BitsBudget{8}));
+static_assert(verify_distributive_lattice<BitsBudgetLattice>(BitsBudget{99}, BitsBudget{99}, BitsBudget{99}));
 
 // Strong-typing rejection — BitsBudget != raw uint64_t at the
 // element_type level (the leq signature would fail to bind a
@@ -223,8 +207,8 @@ static_assert(!std::is_same_v<BitsBudget, std::uint64_t>);
 
 // Implicit conversion DOWN to uint64_t works for arithmetic helpers.
 static_assert([] consteval {
-    BitsBudget        b{42};
-    std::uint64_t     n = b;     // implicit one-way conversion
+    BitsBudget b{42};
+    std::uint64_t n = b;  // implicit one-way conversion
     return n == 42;
 }());
 
@@ -233,28 +217,28 @@ static_assert([] consteval {
 // witness is possible without instantiating the rejection.
 
 inline void runtime_smoke_test() {
-    BitsBudget                    bot   = BitsBudgetLattice::bottom();
-    BitsBudget                    topv  = BitsBudgetLattice::top();
-    BitsBudget                    mid   {1024};
-    [[maybe_unused]] bool         l     = BitsBudgetLattice::leq(bot, topv);
-    [[maybe_unused]] BitsBudget   j     = BitsBudgetLattice::join(mid, topv);
-    [[maybe_unused]] BitsBudget   m     = BitsBudgetLattice::meet(mid, bot);
+    BitsBudget bot = BitsBudgetLattice::bottom();
+    BitsBudget topv = BitsBudgetLattice::top();
+    BitsBudget mid{1024};
+    [[maybe_unused]] bool l = BitsBudgetLattice::leq(bot, topv);
+    [[maybe_unused]] BitsBudget j = BitsBudgetLattice::join(mid, topv);
+    [[maybe_unused]] BitsBudget m = BitsBudgetLattice::meet(mid, bot);
 
     // Chain progression: each step's budget grows.
-    BitsBudget                    step1{4};
-    BitsBudget                    step2{8};
-    BitsBudget                    composed = BitsBudgetLattice::join(step1, step2);
+    BitsBudget step1{4};
+    BitsBudget step2{8};
+    BitsBudget composed = BitsBudgetLattice::join(step1, step2);
     if (composed.value != 8u) std::abort();
 
     // Implicit unwrap for accumulator-style math.
-    std::uint64_t                 total = mid;
+    std::uint64_t total = mid;
     if (total != 1024u) std::abort();
 
     // Lattice over Graded substrate.
     using BitsBudgetGraded = Graded<ModalityKind::Absolute, BitsBudgetLattice, int>;
-    BitsBudgetGraded              v{42, BitsBudget{16}};
-    [[maybe_unused]] auto         g  = v.grade();
-    [[maybe_unused]] auto         vp = v.peek();
+    BitsBudgetGraded v{42, BitsBudget{16}};
+    [[maybe_unused]] auto g = v.grade();
+    [[maybe_unused]] auto vp = v.peek();
 }
 
 }  // namespace detail::bits_budget_lattice_self_test

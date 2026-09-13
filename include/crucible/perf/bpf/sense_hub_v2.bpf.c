@@ -138,55 +138,53 @@
  *                      → 256 counters, 64 gauges, ~1-2 % CPU
  */
 #ifdef CRUCIBLE_SENSE_HUB_EXTENDED
-#  define SENSE_HUB_NUM_COUNTERS   256
-#  define SENSE_HUB_NUM_GAUGES     64
-#  define SENSE_HUB_BUILD_TAG      0xDEB6  /* "DEBUG" */
+#define SENSE_HUB_NUM_COUNTERS 256
+#define SENSE_HUB_NUM_GAUGES 64
+#define SENSE_HUB_BUILD_TAG 0xDEB6 /* "DEBUG" */
 #else
-#  define SENSE_HUB_NUM_COUNTERS   128
-#  define SENSE_HUB_NUM_GAUGES     32
-#  define SENSE_HUB_BUILD_TAG      0xBA51  /* "BASIC" */
+#define SENSE_HUB_NUM_COUNTERS 128
+#define SENSE_HUB_NUM_GAUGES 32
+#define SENSE_HUB_BUILD_TAG 0xBA51 /* "BASIC" */
 #endif
 
-#define SENSE_HUB_VERSION          2
-#define SENSE_HUB_MAGIC            0x4352424CU /* 'CRBL' */
+#define SENSE_HUB_VERSION 2
+#define SENSE_HUB_MAGIC 0x4352424CU /* 'CRBL' */
 
 /* LAYOUT_HASH — gates ABI mismatch at userspace load() time.
  * Same formula must be computed in SenseHubV2.h.  Differing builds
  * produce differing hashes; userspace refuses load() on mismatch. */
-#define SENSE_HUB_LAYOUT_HASH \
-    (((unsigned long long)SENSE_HUB_NUM_COUNTERS << 48) | \
-     ((unsigned long long)SENSE_HUB_NUM_GAUGES   << 32) | \
-     ((unsigned long long)SENSE_HUB_VERSION      << 16) | \
-     (unsigned long long)SENSE_HUB_BUILD_TAG)
+#define SENSE_HUB_LAYOUT_HASH                                                                              \
+    (((unsigned long long)SENSE_HUB_NUM_COUNTERS << 48) | ((unsigned long long)SENSE_HUB_NUM_GAUGES << 32) \
+     | ((unsigned long long)SENSE_HUB_VERSION << 16) | (unsigned long long)SENSE_HUB_BUILD_TAG)
 
 /* Constants from FUTEX cmd field, kernel includes */
-#define FUTEX_WAIT          0
-#define FUTEX_WAIT_BITSET   9
-#define FUTEX_LOCK_PI       6
-#define FUTEX_CMD_MASK      127
+#define FUTEX_WAIT 0
+#define FUTEX_WAIT_BITSET 9
+#define FUTEX_LOCK_PI 6
+#define FUTEX_CMD_MASK 127
 
 /* skb_drop_reason buckets we care about (extended only) — derived from
  * include/net/dropreason-core.h.  ~80 reasons exist; we bucket into the
  * load-bearing ones plus OTHER. */
-#define SKB_DROP_NEIGH_FAILED_BUCKET        0
-#define SKB_DROP_NETFILTER_DROP_BUCKET      1
-#define SKB_DROP_TCP_INVALID_BUCKET         2
-#define SKB_DROP_TCP_RESET_BUCKET           3
-#define SKB_DROP_TCP_OFOMERGE_BUCKET        4
-#define SKB_DROP_PROTO_MEM_BUCKET           5
-#define SKB_DROP_NO_SOCKET_BUCKET           6
-#define SKB_DROP_RX_NO_NETDEV_BUCKET        7
-#define SKB_DROP_OTHER_BUCKET               8
+#define SKB_DROP_NEIGH_FAILED_BUCKET 0
+#define SKB_DROP_NETFILTER_DROP_BUCKET 1
+#define SKB_DROP_TCP_INVALID_BUCKET 2
+#define SKB_DROP_TCP_RESET_BUCKET 3
+#define SKB_DROP_TCP_OFOMERGE_BUCKET 4
+#define SKB_DROP_PROTO_MEM_BUCKET 5
+#define SKB_DROP_NO_SOCKET_BUCKET 6
+#define SKB_DROP_RX_NO_NETDEV_BUCKET 7
+#define SKB_DROP_OTHER_BUCKET 8
 
 /* IPI reason buckets (extended only) — see arch/x86/include/asm/irq_vectors.h.
  * Mirrored from linux/sched.h and arch IPI definitions. */
-#define IPI_REASON_RESCHEDULE_BUCKET        0
-#define IPI_REASON_CALL_FUNCTION_BUCKET     1
-#define IPI_REASON_NMI_BUCKET               2
-#define IPI_REASON_CPU_STOP_BUCKET          3
-#define IPI_REASON_REBOOT_BUCKET            4
-#define IPI_REASON_THERMAL_BUCKET           5
-#define IPI_REASON_OTHER_BUCKET             6
+#define IPI_REASON_RESCHEDULE_BUCKET 0
+#define IPI_REASON_CALL_FUNCTION_BUCKET 1
+#define IPI_REASON_NMI_BUCKET 2
+#define IPI_REASON_CPU_STOP_BUCKET 3
+#define IPI_REASON_REBOOT_BUCKET 4
+#define IPI_REASON_THERMAL_BUCKET 5
+#define IPI_REASON_OTHER_BUCKET 6
 
 /* ═══════════════════════════════════════════════════════════════════════
  * ──── enum sense_idx — basic 128-slot counter allocation ──────────────
@@ -203,64 +201,71 @@
  * marked "// (v1)" — their rate justification is in the v1 file.
  */
 enum sense_idx {
-
     /* ── Domain 0 — Network (slots 0-31, 15 used, 17 reserved) ──────── */
 
     /* Cache line 0 (bytes 0-63) */
-    NET_TCP_ESTABLISHED          =  0, /* (v1) */
-    NET_TCP_LISTEN               =  1, /* (v1) */
-    NET_TCP_TIME_WAIT            =  2, /* (v1) */
-    NET_TCP_CLOSE_WAIT           =  3, /* (v1) */
-    NET_TCP_OTHER                =  4, /* (v1) */
-    NET_UDP_ACTIVE               =  5, /* (v1) */
-    NET_UNIX_ACTIVE              =  6, /* (v1) */
-    NET_TX_BYTES                 =  7, /* (v1) */
+    NET_TCP_ESTABLISHED = 0, /* (v1) */
+    NET_TCP_LISTEN = 1, /* (v1) */
+    NET_TCP_TIME_WAIT = 2, /* (v1) */
+    NET_TCP_CLOSE_WAIT = 3, /* (v1) */
+    NET_TCP_OTHER = 4, /* (v1) */
+    NET_UDP_ACTIVE = 5, /* (v1) */
+    NET_UNIX_ACTIVE = 6, /* (v1) */
+    NET_TX_BYTES = 7, /* (v1) */
 
     /* Cache line 1 (bytes 64-127) */
-    NET_RX_BYTES                 =  8, /* (v1) */
-    TCP_RETRANSMIT_COUNT         =  9, /* (v1) — rate: 100-10K/sec */
-    TCP_RST_SENT                 = 10, /* (v1) */
-    TCP_ERROR_COUNT              = 11, /* (v1) */
-    SKB_DROP_COUNT               = 12, /* (v1) — rate: 1K-100K/sec aggregate;
+    NET_RX_BYTES = 8, /* (v1) */
+    TCP_RETRANSMIT_COUNT = 9, /* (v1) — rate: 100-10K/sec */
+    TCP_RST_SENT = 10, /* (v1) */
+    TCP_ERROR_COUNT = 11, /* (v1) */
+    SKB_DROP_COUNT = 12, /* (v1) — rate: 1K-100K/sec aggregate;
                                         * is_target() gate keeps per-tenant
                                         * rate << 1K */
-    TCP_CONG_LOSS                = 13, /* (v1) */
-    MPTCP_SUBFLOW_ESTABLISHED    = 14, /* NEW — rate: <0.15 µs/sec
+    TCP_CONG_LOSS = 13, /* (v1) */
+    MPTCP_SUBFLOW_ESTABLISHED = 14, /* NEW — rate: <0.15 µs/sec
                                         * (very rare) */
-    _NET_RESERVED_15             = 15,
+    _NET_RESERVED_15 = 15,
 
     /* Cache lines 2-3 (slots 16-31) — NETWORK reserved */
-    _NET_RESERVED_16             = 16, _NET_RESERVED_17 = 17,
-    _NET_RESERVED_18             = 18, _NET_RESERVED_19 = 19,
-    _NET_RESERVED_20             = 20, _NET_RESERVED_21 = 21,
-    _NET_RESERVED_22             = 22, _NET_RESERVED_23 = 23,
-    _NET_RESERVED_24             = 24, _NET_RESERVED_25 = 25,
-    _NET_RESERVED_26             = 26, _NET_RESERVED_27 = 27,
-    _NET_RESERVED_28             = 28, _NET_RESERVED_29 = 29,
-    _NET_RESERVED_30             = 30, _NET_RESERVED_31 = 31,
+    _NET_RESERVED_16 = 16,
+    _NET_RESERVED_17 = 17,
+    _NET_RESERVED_18 = 18,
+    _NET_RESERVED_19 = 19,
+    _NET_RESERVED_20 = 20,
+    _NET_RESERVED_21 = 21,
+    _NET_RESERVED_22 = 22,
+    _NET_RESERVED_23 = 23,
+    _NET_RESERVED_24 = 24,
+    _NET_RESERVED_25 = 25,
+    _NET_RESERVED_26 = 26,
+    _NET_RESERVED_27 = 27,
+    _NET_RESERVED_28 = 28,
+    _NET_RESERVED_29 = 29,
+    _NET_RESERVED_30 = 30,
+    _NET_RESERVED_31 = 31,
 
     /* ── Domain 1 — I/O + Storage (slots 32-63, 22 used, 10 reserved) ─ */
 
     /* Cache line 4 */
-    FD_OPEN_OPS                  = 32, /* (v1) */
-    IO_READ_BYTES                = 33, /* (v1) */
-    IO_WRITE_BYTES               = 34, /* (v1) */
-    IO_READ_OPS                  = 35, /* (v1) */
-    IO_WRITE_OPS                 = 36, /* (v1) */
-    DISK_READ_BYTES              = 37, /* (v1) */
-    DISK_WRITE_BYTES             = 38, /* (v1) */
-    DISK_IO_LATENCY_NS           = 39, /* (v1) */
+    FD_OPEN_OPS = 32, /* (v1) */
+    IO_READ_BYTES = 33, /* (v1) */
+    IO_WRITE_BYTES = 34, /* (v1) */
+    IO_READ_OPS = 35, /* (v1) */
+    IO_WRITE_OPS = 36, /* (v1) */
+    DISK_READ_BYTES = 37, /* (v1) */
+    DISK_WRITE_BYTES = 38, /* (v1) */
+    DISK_IO_LATENCY_NS = 39, /* (v1) */
 
     /* Cache line 5 */
-    DISK_IO_COUNT                = 40, /* (v1) */
-    PAGE_CACHE_MISSES            = 41, /* (v1) */
-    PAGE_CACHE_EVICTIONS         = 42, /* NEW — rate: 100-1K/sec aggregate
+    DISK_IO_COUNT = 40, /* (v1) */
+    PAGE_CACHE_MISSES = 41, /* (v1) */
+    PAGE_CACHE_EVICTIONS = 42, /* NEW — rate: 100-1K/sec aggregate
                                         * (filemap eviction events; typical
                                         * IO-mostly workload) */
-    READAHEAD_PAGES              = 43, /* (v1) */
-    WRITE_THROTTLE_JIFFIES       = 44, /* (v1) */
-    IO_UNPLUG_COUNT              = 45, /* (v1) */
-    IOCOST_IDLE_COUNT            = 46, /* NEW — rate: <100/sec
+    READAHEAD_PAGES = 43, /* (v1) */
+    WRITE_THROTTLE_JIFFIES = 44, /* (v1) */
+    IO_UNPLUG_COUNT = 45, /* (v1) */
+    IOCOST_IDLE_COUNT = 46, /* NEW — rate: <100/sec
                                         * (cgroup iocg went idle —
                                         * proxy for "throttled hard
                                         * enough that the IO source
@@ -270,92 +275,96 @@ enum sense_idx {
                                         * event; iocg_idle/iocg_activate
                                         * pair captures the under-
                                         * pressure transitions. */
-    IOCOST_ACTIVATE_COUNT        = 47, /* NEW — paired counterpart;
+    IOCOST_ACTIVATE_COUNT = 47, /* NEW — paired counterpart;
                                         * delta IOCOST_IDLE - ACTIVATE
                                         * across a window estimates
                                         * "currently-throttled cgroups". */
 
     /* Cache line 6 */
-    WBT_DELAY_COUNT              = 48, /* NEW — rate: <100/sec
+    WBT_DELAY_COUNT = 48, /* NEW — rate: <100/sec
                                         * (writeback throttle; rare on
                                         * healthy hosts) */
-    WBT_DELAY_NS                 = 49, /* NEW — paired */
-    FILELOCK_WAITS               = 50, /* NEW — rate: <100/sec on most
+    WBT_DELAY_NS = 49, /* NEW — paired */
+    FILELOCK_WAITS = 50, /* NEW — rate: <100/sec on most
                                         * workloads (NFS / shared-FS
                                         * heavier) */
-    FILELOCK_NS                  = 51, /* NEW — paired */
-    SWIOTLB_BOUNCE_COUNT         = 52, /* NEW — rate: <1K/sec
+    FILELOCK_NS = 51, /* NEW — paired */
+    SWIOTLB_BOUNCE_COUNT = 52, /* NEW — rate: <1K/sec
                                         * (only fires when DMA mask
                                         * doesn't cover phys addr;
                                         * critical signal for non-IOMMU
                                         * GPU/NIC traffic) */
-    SWIOTLB_BOUNCE_BYTES         = 53, /* NEW — paired */
-    _STORAGE_RESERVED_54         = 54,
-    _STORAGE_RESERVED_55         = 55,
+    SWIOTLB_BOUNCE_BYTES = 53, /* NEW — paired */
+    _STORAGE_RESERVED_54 = 54,
+    _STORAGE_RESERVED_55 = 55,
 
     /* Cache line 7 — STORAGE reserved */
-    _STORAGE_RESERVED_56         = 56, _STORAGE_RESERVED_57 = 57,
-    _STORAGE_RESERVED_58         = 58, _STORAGE_RESERVED_59 = 59,
-    _STORAGE_RESERVED_60         = 60, _STORAGE_RESERVED_61 = 61,
-    _STORAGE_RESERVED_62         = 62, _STORAGE_RESERVED_63 = 63,
+    _STORAGE_RESERVED_56 = 56,
+    _STORAGE_RESERVED_57 = 57,
+    _STORAGE_RESERVED_58 = 58,
+    _STORAGE_RESERVED_59 = 59,
+    _STORAGE_RESERVED_60 = 60,
+    _STORAGE_RESERVED_61 = 61,
+    _STORAGE_RESERVED_62 = 62,
+    _STORAGE_RESERVED_63 = 63,
 
     /* ── Domain 2 — Memory (slots 64-95, 28 used, 4 reserved) ───────── */
 
     /* Cache line 8 */
-    MEM_MMAP_COUNT               = 64, /* (v1) */
-    MEM_MUNMAP_COUNT             = 65, /* (v1) */
-    MEM_PAGE_FAULTS_MIN          = 66, /* (v1) */
-    MEM_PAGE_FAULTS_MAJ          = 67, /* (v1) */
-    MEM_BRK_CALLS                = 68, /* (v1) */
-    RSS_ANON_BYTES               = 69, /* (v1) */
-    RSS_FILE_BYTES               = 70, /* (v1) */
-    RSS_SWAP_ENTRIES             = 71, /* (v1) */
+    MEM_MMAP_COUNT = 64, /* (v1) */
+    MEM_MUNMAP_COUNT = 65, /* (v1) */
+    MEM_PAGE_FAULTS_MIN = 66, /* (v1) */
+    MEM_PAGE_FAULTS_MAJ = 67, /* (v1) */
+    MEM_BRK_CALLS = 68, /* (v1) */
+    RSS_ANON_BYTES = 69, /* (v1) */
+    RSS_FILE_BYTES = 70, /* (v1) */
+    RSS_SWAP_ENTRIES = 71, /* (v1) */
 
     /* Cache line 9 */
-    RSS_SHMEM_BYTES              = 72, /* (v1) */
-    DIRECT_RECLAIM_COUNT         = 73, /* (v1) */
-    DIRECT_RECLAIM_NS            = 74, /* (v1) */
-    SWAP_OUT_PAGES               = 75, /* (v1) */
-    THP_COLLAPSE_OK              = 76, /* (v1) */
-    THP_COLLAPSE_FAIL            = 77, /* (v1) */
-    _MEM_RESERVED_78             = 78, /* WAS: THP_SPLIT_COUNT — kernel
+    RSS_SHMEM_BYTES = 72, /* (v1) */
+    DIRECT_RECLAIM_COUNT = 73, /* (v1) */
+    DIRECT_RECLAIM_NS = 74, /* (v1) */
+    SWAP_OUT_PAGES = 75, /* (v1) */
+    THP_COLLAPSE_OK = 76, /* (v1) */
+    THP_COLLAPSE_FAIL = 77, /* (v1) */
+    _MEM_RESERVED_78 = 78, /* WAS: THP_SPLIT_COUNT — kernel
                                         * 6.17 has no `huge_memory/
                                         * mm_split_huge_page` tracepoint;
                                         * THP split count is read at
                                         * snapshot time from /proc/vmstat
                                         * (`thp_split_*` lines) via
                                         * ProcGauges → Gauge::THP_SPLIT */
-    NUMA_MIGRATE_PAGES           = 79, /* (v1) — total */
+    NUMA_MIGRATE_PAGES = 79, /* (v1) — total */
 
     /* Cache line 10 */
-    NUMA_MIG_NUMA_HINT           = 80, /* NEW — discriminate rate:
+    NUMA_MIG_NUMA_HINT = 80, /* NEW — discriminate rate:
                                         * 100-1K/sec; subset of total */
-    NUMA_MIG_OTHER               = 81, /* NEW — paired */
-    COMPACTION_STALLS            = 82, /* (v1) */
-    EXTFRAG_EVENTS               = 83, /* (v1) */
-    KSWAPD_WAKES                 = 84, /* NEW — rate: <100/sec (memory
+    NUMA_MIG_OTHER = 81, /* NEW — paired */
+    COMPACTION_STALLS = 82, /* (v1) */
+    EXTFRAG_EVENTS = 83, /* (v1) */
+    KSWAPD_WAKES = 84, /* NEW — rate: <100/sec (memory
                                         * pressure signal; complements
                                         * existing DIRECT_RECLAIM_*) */
-    MMAP_LOCK_WAITS              = 85, /* NEW — rate: <1K/sec (only fires
+    MMAP_LOCK_WAITS = 85, /* NEW — rate: <1K/sec (only fires
                                         * on contention; kernel 5.16+
                                         * tracepoint) */
-    MMAP_LOCK_NS                 = 86, /* NEW — paired */
-    IOMMU_FAULTS                 = 87, /* NEW — rate: ~0 on healthy host
+    MMAP_LOCK_NS = 86, /* NEW — paired */
+    IOMMU_FAULTS = 87, /* NEW — rate: ~0 on healthy host
                                         * (>0 == serious bug) */
 
     /* Cache line 11 */
-    TLB_SHOOTDOWNS               = 88, /* NEW — rate: 100-1K/sec
+    TLB_SHOOTDOWNS = 88, /* NEW — rate: 100-1K/sec
                                         * (cross-CPU TLB invalidates
                                         * stolen from us by other tenants) */
-    VMSCAN_LRU_ISOLATIONS        = 89, /* NEW — rate: <1K/sec; gated on
+    VMSCAN_LRU_ISOLATIONS = 89, /* NEW — rate: <1K/sec; gated on
                                         * is_target() to keep per-tenant
                                         * rate < 100 */
-    VMSCAN_SCAN_NS               = 90, /* NEW — paired */
-    RECLAIM_STALL_LOOPS          = 91, /* (v1) */
-    _MEM_RESERVED_92             = 92,
-    _MEM_RESERVED_93             = 93,
-    _MEM_RESERVED_94             = 94,
-    _MEM_RESERVED_95             = 95,
+    VMSCAN_SCAN_NS = 90, /* NEW — paired */
+    RECLAIM_STALL_LOOPS = 91, /* (v1) */
+    _MEM_RESERVED_92 = 92,
+    _MEM_RESERVED_93 = 93,
+    _MEM_RESERVED_94 = 94,
+    _MEM_RESERVED_95 = 95,
 
     /* ── Domain 3 — Sched + Sync + Reliability (slots 96-127,
      *               32 used, 0 reserved) ──────────────────────────────
@@ -367,57 +376,57 @@ enum sense_idx {
      * audit finding for context. */
 
     /* Cache line 12 */
-    SCHED_CTX_VOL                =  96, /* (v1) */
-    SCHED_CTX_INVOL              =  97, /* (v1) */
-    SCHED_MIGRATIONS             =  98, /* (v1) */
-    SCHED_RUNTIME_NS             =  99, /* (v1) */
-    SCHED_WAIT_NS                = 100, /* (v1) */
-    SCHED_SLEEP_NS               = 101, /* (v1) */
-    SCHED_IOWAIT_NS              = 102, /* (v1) */
-    SCHED_BLOCKED_NS             = 103, /* (v1) */
+    SCHED_CTX_VOL = 96, /* (v1) */
+    SCHED_CTX_INVOL = 97, /* (v1) */
+    SCHED_MIGRATIONS = 98, /* (v1) */
+    SCHED_RUNTIME_NS = 99, /* (v1) */
+    SCHED_WAIT_NS = 100, /* (v1) */
+    SCHED_SLEEP_NS = 101, /* (v1) */
+    SCHED_IOWAIT_NS = 102, /* (v1) */
+    SCHED_BLOCKED_NS = 103, /* (v1) */
 
     /* Cache line 13 */
-    WAKEUPS_RECEIVED             = 104, /* (v1) */
-    WAKEUPS_SENT                 = 105, /* (v1) */
-    KERNEL_LOCK_COUNT            = 106, /* (v1) */
-    KERNEL_LOCK_NS               = 107, /* (v1) */
-    FUTEX_WAIT_COUNT             = 108, /* (v1) */
-    FUTEX_WAIT_NS                = 109, /* (v1) */
-    THREADS_CREATED              = 110, /* (v1) */
-    THREADS_EXITED               = 111, /* (v1) */
+    WAKEUPS_RECEIVED = 104, /* (v1) */
+    WAKEUPS_SENT = 105, /* (v1) */
+    KERNEL_LOCK_COUNT = 106, /* (v1) */
+    KERNEL_LOCK_NS = 107, /* (v1) */
+    FUTEX_WAIT_COUNT = 108, /* (v1) */
+    FUTEX_WAIT_NS = 109, /* (v1) */
+    THREADS_CREATED = 110, /* (v1) */
+    THREADS_EXITED = 111, /* (v1) */
 
     /* Cache line 14 */
-    CPU_FREQ_CHANGES             = 112, /* (v1) */
-    PROCESS_FORKS                = 113, /* NEW — rate: 10-100/sec */
-    PROCESS_EXECS                = 114, /* NEW — rate: 10-100/sec
+    CPU_FREQ_CHANGES = 112, /* (v1) */
+    PROCESS_FORKS = 113, /* NEW — rate: 10-100/sec */
+    PROCESS_EXECS = 114, /* NEW — rate: 10-100/sec
                                          * (should be 0 in steady-state
                                          * compute) */
-    SIGNAL_DELIVERED             = 115, /* NEW — rate: 10-100/sec
+    SIGNAL_DELIVERED = 115, /* NEW — rate: 10-100/sec
                                          * (complements existing
                                          * SIGNAL_FATAL_COUNT and the
                                          * SIGNAL_LAST_SIGNO gauge) */
-    SIGNAL_FATAL_COUNT           = 116, /* (v1) */
-    OOM_KILLS_SYSTEM             = 117, /* (v1) */
-    OOM_KILL_US                  = 118, /* (v1) */
-    MCE_COUNT                    = 119, /* (v1) */
+    SIGNAL_FATAL_COUNT = 116, /* (v1) */
+    OOM_KILLS_SYSTEM = 117, /* (v1) */
+    OOM_KILL_US = 118, /* (v1) */
+    MCE_COUNT = 119, /* (v1) */
 
     /* Cache line 15 */
-    NMI_COUNT                    = 120, /* NEW — rate: <1K/sec (PMU sample
+    NMI_COUNT = 120, /* NEW — rate: <1K/sec (PMU sample
                                          * IRQ + watchdog NMIs).
                                          * NMI-context-safe: only touches
                                          * array map via fetch_and_add. */
-    OSNOISE_NS_TOTAL             = 121, /* NEW — rate: 0 unless
+    OSNOISE_NS_TOTAL = 121, /* NEW — rate: 0 unless
                                          * CONFIG_OSNOISE_TRACER on (kernel
                                          * 5.14+); otherwise stays 0 */
-    CSD_QUEUE_COUNT              = 122, /* NEW — rate: 100-10K/sec
+    CSD_QUEUE_COUNT = 122, /* NEW — rate: 100-10K/sec
                                          * aggregate; gates is_target() */
-    PCIE_AER_CORR                = 123, /* NEW — rate: 0-1/sec (extreme
+    PCIE_AER_CORR = 123, /* NEW — rate: 0-1/sec (extreme
                                          * rare; high rate predicts UE) */
-    PCIE_AER_UNCORR              = 124, /* NEW — rate: 0-rare (any non-zero
+    PCIE_AER_UNCORR = 124, /* NEW — rate: 0-rare (any non-zero
                                          * is alert-worthy) */
-    EDAC_DRAM_CE                 = 125, /* NEW — rate: rare */
-    SOFTIRQ_STOLEN_NS            = 126, /* (v1) */
-    MAP_FULL_DROPS               = 127, /* (v1) — self-observability:
+    EDAC_DRAM_CE = 125, /* NEW — rate: rare */
+    SOFTIRQ_STOLEN_NS = 126, /* (v1) */
+    MAP_FULL_DROPS = 127, /* (v1) — self-observability:
                                          * BPF map_update_elem returned
                                          * non-zero (LRU eviction failure,
                                          * NOEXIST collision, ENOMEM) */
@@ -439,155 +448,166 @@ enum sense_idx {
     /* skb_drop_reason rebucket — 9 buckets of skb/kfree_skb's
      * `reason` field (kernel 5.18+).  Each bucket is one slot.  Total
      * skb drop count remains in slot 12 (SKB_DROP_COUNT). */
-    SKB_DROP_NEIGH_FAILED        = 128, /* rate: variable; high on
+    SKB_DROP_NEIGH_FAILED = 128, /* rate: variable; high on
                                           * misconfigured fleets */
-    SKB_DROP_NETFILTER_DROP      = 129, /* rate: variable */
-    SKB_DROP_TCP_INVALID         = 130, /* rate: variable */
-    SKB_DROP_TCP_RESET           = 131, /* rate: variable */
-    SKB_DROP_TCP_OFOMERGE        = 132, /* rate: variable */
-    SKB_DROP_PROTO_MEM           = 133, /* rate: rare; CRITICAL
+    SKB_DROP_NETFILTER_DROP = 129, /* rate: variable */
+    SKB_DROP_TCP_INVALID = 130, /* rate: variable */
+    SKB_DROP_TCP_RESET = 131, /* rate: variable */
+    SKB_DROP_TCP_OFOMERGE = 132, /* rate: variable */
+    SKB_DROP_PROTO_MEM = 133, /* rate: rare; CRITICAL
                                           * (TCP memory exhaustion) */
-    SKB_DROP_NO_SOCKET           = 134, /* rate: variable; can spike */
-    SKB_DROP_RX_NO_NETDEV        = 135, /* rate: rare */
-    SKB_DROP_OTHER               = 136, /* rate: residual */
+    SKB_DROP_NO_SOCKET = 134, /* rate: variable; can spike */
+    SKB_DROP_RX_NO_NETDEV = 135, /* rate: rare */
+    SKB_DROP_OTHER = 136, /* rate: residual */
 
     /* Cache line 17 */
-    NF_CONNTRACK_NEW             = 137, /* rate: 1K-10K/sec on busy
+    NF_CONNTRACK_NEW = 137, /* rate: 1K-10K/sec on busy
                                           * federation NAT */
-    NF_CONNTRACK_DESTROY         = 138, /* rate: paired with NEW */
-    NF_CONNTRACK_DROPS           = 139, /* rate: rare; high == table full */
-    NETIF_RECV_COUNT             = 140, /* rate: 10K-100K/sec; PERCPU map
+    NF_CONNTRACK_DESTROY = 138, /* rate: paired with NEW */
+    NF_CONNTRACK_DROPS = 139, /* rate: rare; high == table full */
+    NETIF_RECV_COUNT = 140, /* rate: 10K-100K/sec; PERCPU map
                                           * for the inflight side */
-    NAPI_POLL_COUNT              = 141, /* rate: 10K-100K/sec; PERCPU */
-    NAPI_RESCHED_COUNT           = 142, /* rate: 1K-10K/sec */
-    NAPI_BUDGET_EXHAUSTED        = 143, /* rate: 100-10K/sec
+    NAPI_POLL_COUNT = 141, /* rate: 10K-100K/sec; PERCPU */
+    NAPI_RESCHED_COUNT = 142, /* rate: 1K-10K/sec */
+    NAPI_BUDGET_EXHAUSTED = 143, /* rate: 100-10K/sec
                                           * (budget exhaustion ==
                                           * NIC RX overload) */
-    SOCK_OPS_RTT_SAMPLE_COUNT    = 144, /* rate: 100-1K/sec per active
+    SOCK_OPS_RTT_SAMPLE_COUNT = 144, /* rate: 100-1K/sec per active
                                           * connection */
 
     /* Cache line 18 */
-    TCP_RECV_QUEUE_FULL          = 145,
-    TCP_FAST_RETRANSMIT          = 146,
-    TCP_TLP_FIRES                = 147,
-    TCP_LOSS_PROBE_COUNT         = 148,
-    TCP_DSACK_COUNT              = 149,
-    UDP_PROTO_MEM_ERRORS         = 150,
-    SOCKMAP_REDIRECT_COUNT       = 151,
-    QDISC_OVERLIMITS             = 152,
+    TCP_RECV_QUEUE_FULL = 145,
+    TCP_FAST_RETRANSMIT = 146,
+    TCP_TLP_FIRES = 147,
+    TCP_LOSS_PROBE_COUNT = 148,
+    TCP_DSACK_COUNT = 149,
+    UDP_PROTO_MEM_ERRORS = 150,
+    SOCKMAP_REDIRECT_COUNT = 151,
+    QDISC_OVERLIMITS = 152,
 
     /* Cache line 19 — NETWORK_EXT reserved */
-    _NETWORK_EXT_RESERVED_153    = 153, _NETWORK_EXT_RESERVED_154 = 154,
-    _NETWORK_EXT_RESERVED_155    = 155, _NETWORK_EXT_RESERVED_156 = 156,
-    _NETWORK_EXT_RESERVED_157    = 157, _NETWORK_EXT_RESERVED_158 = 158,
-    _NETWORK_EXT_RESERVED_159    = 159,
+    _NETWORK_EXT_RESERVED_153 = 153,
+    _NETWORK_EXT_RESERVED_154 = 154,
+    _NETWORK_EXT_RESERVED_155 = 155,
+    _NETWORK_EXT_RESERVED_156 = 156,
+    _NETWORK_EXT_RESERVED_157 = 157,
+    _NETWORK_EXT_RESERVED_158 = 158,
+    _NETWORK_EXT_RESERVED_159 = 159,
 
     /* ── Extended Domain 5 — Storage detail (slots 160-191) ─────────── */
 
-    BLOCK_INSERT_COUNT           = 160, /* rate: 10K/sec NVMe */
-    BLOCK_ISSUE_COUNT            = 161,
-    BLOCK_COMPLETE_COUNT         = 162,
-    BLOCK_BACKMERGE_COUNT        = 163,
-    BLOCK_FRONTMERGE_COUNT       = 164,
-    IOURING_SUBMIT_COUNT         = 165, /* rate: 10K-100K/sec on async
+    BLOCK_INSERT_COUNT = 160, /* rate: 10K/sec NVMe */
+    BLOCK_ISSUE_COUNT = 161,
+    BLOCK_COMPLETE_COUNT = 162,
+    BLOCK_BACKMERGE_COUNT = 163,
+    BLOCK_FRONTMERGE_COUNT = 164,
+    IOURING_SUBMIT_COUNT = 165, /* rate: 10K-100K/sec on async
                                           * I/O hosts; PERCPU map */
-    IOURING_COMPLETE_COUNT       = 166,
-    IOURING_SQ_FULL_COUNT        = 167, /* rate: rare unless overloaded */
+    IOURING_COMPLETE_COUNT = 166,
+    IOURING_SQ_FULL_COUNT = 167, /* rate: rare unless overloaded */
 
-    NVME_RQ_SETUP_COUNT          = 168,
-    NVME_RQ_COMPLETE_COUNT       = 169,
+    NVME_RQ_SETUP_COUNT = 168,
+    NVME_RQ_COMPLETE_COUNT = 169,
     NVME_QUEUE_DEPTH_GAUGE_VALID_AT_GAUGE = 170, /* placeholder; use gauge
                                                   * slot for actual value */
-    SCSI_DISPATCH_COUNT          = 171,
-    SCSI_COMPLETE_COUNT          = 172,
-    EXT4_TXN_COUNT               = 173,
-    XFS_TXN_COUNT                = 174,
-    BTRFS_TXN_COUNT              = 175,
+    SCSI_DISPATCH_COUNT = 171,
+    SCSI_COMPLETE_COUNT = 172,
+    EXT4_TXN_COUNT = 173,
+    XFS_TXN_COUNT = 174,
+    BTRFS_TXN_COUNT = 175,
 
-    WRITEBACK_INODE_COUNT        = 176,
-    WRITEBACK_PAGES_TOTAL        = 177,
-    DIRTY_PAGES_TOTAL_TRANSIENT  = 178,
-    JBD2_COMMIT_COUNT            = 179,
-    XFS_LOG_FORCE_COUNT          = 180,
-    FUSE_RQ_COUNT                = 181,
-    KYBER_LATENCY_VIOLATIONS     = 182,
-    BFQ_DECISIONS                = 183,
+    WRITEBACK_INODE_COUNT = 176,
+    WRITEBACK_PAGES_TOTAL = 177,
+    DIRTY_PAGES_TOTAL_TRANSIENT = 178,
+    JBD2_COMMIT_COUNT = 179,
+    XFS_LOG_FORCE_COUNT = 180,
+    FUSE_RQ_COUNT = 181,
+    KYBER_LATENCY_VIOLATIONS = 182,
+    BFQ_DECISIONS = 183,
 
     /* Cache line 23 — STORAGE_EXT reserved */
-    _STORAGE_EXT_RESERVED_184    = 184, _STORAGE_EXT_RESERVED_185 = 185,
-    _STORAGE_EXT_RESERVED_186    = 186, _STORAGE_EXT_RESERVED_187 = 187,
-    _STORAGE_EXT_RESERVED_188    = 188, _STORAGE_EXT_RESERVED_189 = 189,
-    _STORAGE_EXT_RESERVED_190    = 190, _STORAGE_EXT_RESERVED_191 = 191,
+    _STORAGE_EXT_RESERVED_184 = 184,
+    _STORAGE_EXT_RESERVED_185 = 185,
+    _STORAGE_EXT_RESERVED_186 = 186,
+    _STORAGE_EXT_RESERVED_187 = 187,
+    _STORAGE_EXT_RESERVED_188 = 188,
+    _STORAGE_EXT_RESERVED_189 = 189,
+    _STORAGE_EXT_RESERVED_190 = 190,
+    _STORAGE_EXT_RESERVED_191 = 191,
 
     /* ── Extended Domain 6 — Memory + cgroup detail (slots 192-223) ── */
 
-    PAGE_ALLOC_NORMAL            = 192,
-    PAGE_ALLOC_DMA32             = 193,
-    PAGE_ALLOC_MOVABLE           = 194,
-    PAGE_ALLOC_RETRY             = 195,
-    PAGE_ALLOC_OOM               = 196,
+    PAGE_ALLOC_NORMAL = 192,
+    PAGE_ALLOC_DMA32 = 193,
+    PAGE_ALLOC_MOVABLE = 194,
+    PAGE_ALLOC_RETRY = 195,
+    PAGE_ALLOC_OOM = 196,
     /* Slots 197-198 RESERVED — earlier draft had SLAB_ALLOC_TOTAL +
      * SLAB_FREE_TOTAL; rate 1M-10M/sec aggregate would be 5-15% CPU
      * even with PERCPU.  Use Gauge::SLAB_TOTAL_BYTES (read from
      * /proc/slabinfo at snapshot time) instead — zero BPF cost. */
-    _MEMORY_EXT_RESERVED_197     = 197,
-    _MEMORY_EXT_RESERVED_198     = 198,
-    KMEMLEAK_OBJECTS_TRACKED     = 199, /* rate: only if CONFIG_DEBUG_KMEMLEAK */
+    _MEMORY_EXT_RESERVED_197 = 197,
+    _MEMORY_EXT_RESERVED_198 = 198,
+    KMEMLEAK_OBJECTS_TRACKED = 199, /* rate: only if CONFIG_DEBUG_KMEMLEAK */
 
-    VMALLOC_BYTES_TOTAL          = 200,
-    HUGETLB_FAULTS               = 201,
-    KSM_PAGES_SHARING            = 202,
-    DAMON_AGGR_COUNT             = 203,
-    MEMCG_HIGH_BREACHES          = 204,
-    MEMCG_MAX_BREACHES           = 205,
-    MEMCG_OOM_KILLS              = 206,
-    MEMCG_SOFT_RECLAIM_BYTES     = 207,
+    VMALLOC_BYTES_TOTAL = 200,
+    HUGETLB_FAULTS = 201,
+    KSM_PAGES_SHARING = 202,
+    DAMON_AGGR_COUNT = 203,
+    MEMCG_HIGH_BREACHES = 204,
+    MEMCG_MAX_BREACHES = 205,
+    MEMCG_OOM_KILLS = 206,
+    MEMCG_SOFT_RECLAIM_BYTES = 207,
 
-    CGROUP_FREEZER_FREEZES       = 208,
-    CGROUP_PIDS_FORKS_DENIED     = 209,
-    CGROUP_DEVICE_DENIES         = 210,
-    KSWAPD_RECLAIM_BYTES         = 211,
-    THP_PROMOTE_COUNT            = 212,
-    THP_DEMOTE_COUNT             = 213,
-    BALLOON_INFLATE_PAGES        = 214,
-    BALLOON_DEFLATE_PAGES        = 215,
+    CGROUP_FREEZER_FREEZES = 208,
+    CGROUP_PIDS_FORKS_DENIED = 209,
+    CGROUP_DEVICE_DENIES = 210,
+    KSWAPD_RECLAIM_BYTES = 211,
+    THP_PROMOTE_COUNT = 212,
+    THP_DEMOTE_COUNT = 213,
+    BALLOON_INFLATE_PAGES = 214,
+    BALLOON_DEFLATE_PAGES = 215,
 
     /* Cache line 27 — MEMORY_EXT reserved */
-    _MEMORY_EXT_RESERVED_216     = 216, _MEMORY_EXT_RESERVED_217 = 217,
-    _MEMORY_EXT_RESERVED_218     = 218, _MEMORY_EXT_RESERVED_219 = 219,
-    _MEMORY_EXT_RESERVED_220     = 220, _MEMORY_EXT_RESERVED_221 = 221,
-    _MEMORY_EXT_RESERVED_222     = 222, _MEMORY_EXT_RESERVED_223 = 223,
+    _MEMORY_EXT_RESERVED_216 = 216,
+    _MEMORY_EXT_RESERVED_217 = 217,
+    _MEMORY_EXT_RESERVED_218 = 218,
+    _MEMORY_EXT_RESERVED_219 = 219,
+    _MEMORY_EXT_RESERVED_220 = 220,
+    _MEMORY_EXT_RESERVED_221 = 221,
+    _MEMORY_EXT_RESERVED_222 = 222,
+    _MEMORY_EXT_RESERVED_223 = 223,
 
     /* ── Extended Domain 7 — Sched + Sync + Reliability detail
      *                        (slots 224-255) ─────────────────────────── */
 
     /* IPI per-reason buckets */
-    IPI_RESCHEDULE               = 224,
-    IPI_CALL_FUNCTION            = 225,
-    IPI_NMI_DELIVERED            = 226,
-    IPI_CPU_STOP                 = 227,
-    IPI_REBOOT                   = 228,
-    IPI_THERMAL                  = 229,
-    IPI_OTHER                    = 230,
-    IPI_TOTAL_LATENCY_NS         = 231, /* total queue→handler latency */
+    IPI_RESCHEDULE = 224,
+    IPI_CALL_FUNCTION = 225,
+    IPI_NMI_DELIVERED = 226,
+    IPI_CPU_STOP = 227,
+    IPI_REBOOT = 228,
+    IPI_THERMAL = 229,
+    IPI_OTHER = 230,
+    IPI_TOTAL_LATENCY_NS = 231, /* total queue→handler latency */
 
     /* Sched extras */
-    SCHED_WAKEUP_LATENCY_TOTAL   = 232, /* rate: high; PERCPU mandatory */
-    CONTEXT_TRACKING_USER_ENTER  = 233, /* rate: 1 per syscall;
+    SCHED_WAKEUP_LATENCY_TOTAL = 232, /* rate: high; PERCPU mandatory */
+    CONTEXT_TRACKING_USER_ENTER = 233, /* rate: 1 per syscall;
                                           * PERCPU mandatory */
-    CONTEXT_TRACKING_USER_EXIT   = 234, /* paired */
-    CPU_ONLINE_TRANSITIONS       = 235, /* rate: rare */
-    CPU_OFFLINE_TRANSITIONS      = 236, /* rate: rare */
-    SCHED_EXT_DECISIONS          = 237, /* rate: 1 per ctx switch under
+    CONTEXT_TRACKING_USER_EXIT = 234, /* paired */
+    CPU_ONLINE_TRANSITIONS = 235, /* rate: rare */
+    CPU_OFFLINE_TRANSITIONS = 236, /* rate: rare */
+    SCHED_EXT_DECISIONS = 237, /* rate: 1 per ctx switch under
                                           * sched_ext */
-    PREEMPT_DISABLE_NS_TOTAL     = 238, /* rate: high; PERCPU */
-    IRQ_DISABLE_NS_TOTAL         = 239, /* paired */
+    PREEMPT_DISABLE_NS_TOTAL = 238, /* rate: high; PERCPU */
+    IRQ_DISABLE_NS_TOTAL = 239, /* paired */
 
     /* Lock detail */
-    RWSEM_WAIT_COUNT             = 240,
-    RWSEM_WAIT_NS                = 241,
-    RTMUTEX_WAIT_COUNT           = 242,
-    RTMUTEX_WAIT_NS              = 243,
+    RWSEM_WAIT_COUNT = 240,
+    RWSEM_WAIT_NS = 241,
+    RTMUTEX_WAIT_COUNT = 242,
+    RTMUTEX_WAIT_NS = 243,
 
     /* Reliability + system extras.
      * Slots 244-245 RESERVED — earlier draft had HARDIRQ_TOTAL_COUNT +
@@ -598,19 +618,19 @@ enum sense_idx {
      * `hardirq.bpf.c` planned facade. */
     _RELIABILITY_EXT_RESERVED_244 = 244,
     _RELIABILITY_EXT_RESERVED_245 = 245,
-    PRINTK_LINE_COUNT            = 246, /* rate: 0 typical, 1K/sec spikes
+    PRINTK_LINE_COUNT = 246, /* rate: 0 typical, 1K/sec spikes
                                           * on errors */
-    AVC_DENIALS                  = 247, /* rate: rare */
-    CAPABILITY_FAILS             = 248, /* rate: rare */
-    KVM_VMEXIT_COUNT             = 249, /* rate: VM-only; varies */
-    RESCTRL_BREACHES             = 250, /* rate: rare */
-    BPF_PROG_VERIFIER_FAILS      = 251, /* rate: 0 in steady state */
+    AVC_DENIALS = 247, /* rate: rare */
+    CAPABILITY_FAILS = 248, /* rate: rare */
+    KVM_VMEXIT_COUNT = 249, /* rate: VM-only; varies */
+    RESCTRL_BREACHES = 250, /* rate: rare */
+    BPF_PROG_VERIFIER_FAILS = 251, /* rate: 0 in steady state */
 
     /* Less critical */
-    MODULE_LOAD_COUNT            = 252,
-    MODULE_UNLOAD_COUNT          = 253,
-    ALARMTIMER_FIRES             = 254,
-    ACPI_GPE_FIRES               = 255,
+    MODULE_LOAD_COUNT = 252,
+    MODULE_UNLOAD_COUNT = 253,
+    ALARMTIMER_FIRES = 254,
+    ACPI_GPE_FIRES = 255,
 
 #endif /* CRUCIBLE_SENSE_HUB_EXTENDED */
 
@@ -631,49 +651,48 @@ enum sense_idx {
  * point-in-time).
  */
 enum sense_gauge {
-
     /* ── Mis-classified-from-v1 (slots 0-7) ─────────────────────────── */
 
-    GAUGE_FD_CURRENT             = 0, /* (v1) — point-in-time */
-    GAUGE_TCP_MIN_SRTT_US        = 1, /* (v1) — running min */
-    GAUGE_TCP_MAX_SRTT_US        = 2, /* (v1) — running max */
-    GAUGE_TCP_LAST_CWND          = 3, /* (v1) — last value */
-    GAUGE_THERMAL_MAX_TRIP       = 4, /* (v1) — running max */
-    GAUGE_SIGNAL_LAST_SIGNO      = 5, /* (v1) — last value */
-    _GAUGE_MISCLASS_RESERVED_6   = 6,
-    _GAUGE_MISCLASS_RESERVED_7   = 7,
+    GAUGE_FD_CURRENT = 0, /* (v1) — point-in-time */
+    GAUGE_TCP_MIN_SRTT_US = 1, /* (v1) — running min */
+    GAUGE_TCP_MAX_SRTT_US = 2, /* (v1) — running max */
+    GAUGE_TCP_LAST_CWND = 3, /* (v1) — last value */
+    GAUGE_THERMAL_MAX_TRIP = 4, /* (v1) — running max */
+    GAUGE_SIGNAL_LAST_SIGNO = 5, /* (v1) — last value */
+    _GAUGE_MISCLASS_RESERVED_6 = 6,
+    _GAUGE_MISCLASS_RESERVED_7 = 7,
 
     /* ── BPF-side max-watermarks (slots 8-15) ───────────────────────── */
 
-    GAUGE_CSD_MAX_QUEUE_TO_START_NS = 8,  /* NEW */
-    GAUGE_OSNOISE_MAX_NS            = 9,  /* NEW */
-    GAUGE_NMI_HANDLER_MAX_NS        = 10, /* NEW */
-    GAUGE_MMAP_LOCK_MAX_WAIT_NS     = 11, /* NEW */
-    _GAUGE_MAX_RESERVED_12          = 12,
-    _GAUGE_MAX_RESERVED_13          = 13,
-    _GAUGE_MAX_RESERVED_14          = 14,
-    _GAUGE_MAX_RESERVED_15          = 15,
+    GAUGE_CSD_MAX_QUEUE_TO_START_NS = 8, /* NEW */
+    GAUGE_OSNOISE_MAX_NS = 9, /* NEW */
+    GAUGE_NMI_HANDLER_MAX_NS = 10, /* NEW */
+    GAUGE_MMAP_LOCK_MAX_WAIT_NS = 11, /* NEW */
+    _GAUGE_MAX_RESERVED_12 = 12,
+    _GAUGE_MAX_RESERVED_13 = 13,
+    _GAUGE_MAX_RESERVED_14 = 14,
+    _GAUGE_MAX_RESERVED_15 = 15,
 
     /* ── Userspace-sampled at snapshot time (slots 16-31) ──────────────
      * These slots are written by `crucible::perf::ProcGauges::populate()`
      * at userspace snapshot time.  Zero BPF cost. */
 
-    GAUGE_SLAB_TOTAL_BYTES          = 16, /* /proc/slabinfo */
-    GAUGE_HARDIRQ_TOTAL_COUNT       = 17, /* /proc/interrupts */
-    GAUGE_NAPI_POLL_TOTAL           = 18, /* /proc/net/softnet_stat */
-    GAUGE_SKB_DROP_REASON_TOTAL     = 19, /* /proc/net/snmp */
-    GAUGE_TCP_RECV_BUFFER_MAX       = 20, /* /proc/net/tcp */
-    GAUGE_BLOCK_QUEUE_DEPTH_MAX     = 21, /* /sys/block/<dev>/stat */
-    GAUGE_PRINTK_RING_BYTES_FREE    = 22, /* /sys/kernel/debug optional */
-    _GAUGE_PROC_RESERVED_23         = 23,
-    _GAUGE_PROC_RESERVED_24         = 24,
-    _GAUGE_PROC_RESERVED_25         = 25,
-    _GAUGE_PROC_RESERVED_26         = 26,
-    _GAUGE_PROC_RESERVED_27         = 27,
-    _GAUGE_PROC_RESERVED_28         = 28,
-    _GAUGE_PROC_RESERVED_29         = 29,
-    _GAUGE_PROC_RESERVED_30         = 30,
-    _GAUGE_PROC_RESERVED_31         = 31,
+    GAUGE_SLAB_TOTAL_BYTES = 16, /* /proc/slabinfo */
+    GAUGE_HARDIRQ_TOTAL_COUNT = 17, /* /proc/interrupts */
+    GAUGE_NAPI_POLL_TOTAL = 18, /* /proc/net/softnet_stat */
+    GAUGE_SKB_DROP_REASON_TOTAL = 19, /* /proc/net/snmp */
+    GAUGE_TCP_RECV_BUFFER_MAX = 20, /* /proc/net/tcp */
+    GAUGE_BLOCK_QUEUE_DEPTH_MAX = 21, /* /sys/block/<dev>/stat */
+    GAUGE_PRINTK_RING_BYTES_FREE = 22, /* /sys/kernel/debug optional */
+    _GAUGE_PROC_RESERVED_23 = 23,
+    _GAUGE_PROC_RESERVED_24 = 24,
+    _GAUGE_PROC_RESERVED_25 = 25,
+    _GAUGE_PROC_RESERVED_26 = 26,
+    _GAUGE_PROC_RESERVED_27 = 27,
+    _GAUGE_PROC_RESERVED_28 = 28,
+    _GAUGE_PROC_RESERVED_29 = 29,
+    _GAUGE_PROC_RESERVED_30 = 30,
+    _GAUGE_PROC_RESERVED_31 = 31,
 
 #ifdef CRUCIBLE_SENSE_HUB_EXTENDED
 
@@ -681,44 +700,47 @@ enum sense_gauge {
 
     /* PMU ratios projected from PmuSample sample ring at read time
      * (NOT BPF tracepoint counters) */
-    GAUGE_PMU_IPC_X1000             = 32,
+    GAUGE_PMU_IPC_X1000 = 32,
     GAUGE_PMU_FRONTEND_STALL_PCT_X100 = 33,
-    GAUGE_PMU_BACKEND_STALL_PCT_X100  = 34,
-    GAUGE_PMU_BAD_SPEC_PCT_X100       = 35,
-    GAUGE_PMU_RETIRING_PCT_X100       = 36,
-    GAUGE_PMU_LLC_MISS_RATE_X100      = 37,
-    GAUGE_PMU_BR_MISS_PER_KINST       = 38,
-    GAUGE_PMU_RAPL_PKG_JOULES_X1000   = 39,
+    GAUGE_PMU_BACKEND_STALL_PCT_X100 = 34,
+    GAUGE_PMU_BAD_SPEC_PCT_X100 = 35,
+    GAUGE_PMU_RETIRING_PCT_X100 = 36,
+    GAUGE_PMU_LLC_MISS_RATE_X100 = 37,
+    GAUGE_PMU_BR_MISS_PER_KINST = 38,
+    GAUGE_PMU_RAPL_PKG_JOULES_X1000 = 39,
     GAUGE_PMU_RAPL_CORES_JOULES_X1000 = 40,
-    GAUGE_PMU_RAPL_DRAM_JOULES_X1000  = 41,
+    GAUGE_PMU_RAPL_DRAM_JOULES_X1000 = 41,
 
     /* Extra max-watermarks (BPF-side) */
-    GAUGE_WAKEUP_LATENCY_MAX_NS     = 42,
-    GAUGE_BLOCK_MAX_LATENCY_NS      = 43,
-    GAUGE_PREEMPT_DISABLE_MAX_NS    = 44,
-    GAUGE_IRQ_DISABLE_MAX_NS        = 45,
-    GAUGE_GP_MAX_NS                 = 46, /* RCU GP max */
-    GAUGE_RQ_DEPTH_MAX              = 47,
-    GAUGE_WQ_DEPTH_MAX              = 48,
+    GAUGE_WAKEUP_LATENCY_MAX_NS = 42,
+    GAUGE_BLOCK_MAX_LATENCY_NS = 43,
+    GAUGE_PREEMPT_DISABLE_MAX_NS = 44,
+    GAUGE_IRQ_DISABLE_MAX_NS = 45,
+    GAUGE_GP_MAX_NS = 46, /* RCU GP max */
+    GAUGE_RQ_DEPTH_MAX = 47,
+    GAUGE_WQ_DEPTH_MAX = 48,
 
     /* Extra userspace-sampled */
-    GAUGE_NUMA_HIT_RATIO_X100       = 49, /* /proc/vmstat numa_hit/miss */
-    GAUGE_TCP_ESTABLISHED_CURRENT   = 50, /* /proc/net/snmp */
-    GAUGE_LOAD_AVG_1M_X100          = 51, /* /proc/loadavg */
-    GAUGE_LOAD_AVG_5M_X100          = 52,
-    GAUGE_LOAD_AVG_15M_X100         = 53,
-    GAUGE_PSI_CPU_SOME_AVG10_X100   = 54, /* /proc/pressure/cpu */
-    GAUGE_PSI_MEM_SOME_AVG10_X100   = 55, /* /proc/pressure/memory */
-    GAUGE_PSI_IO_SOME_AVG10_X100    = 56, /* /proc/pressure/io */
+    GAUGE_NUMA_HIT_RATIO_X100 = 49, /* /proc/vmstat numa_hit/miss */
+    GAUGE_TCP_ESTABLISHED_CURRENT = 50, /* /proc/net/snmp */
+    GAUGE_LOAD_AVG_1M_X100 = 51, /* /proc/loadavg */
+    GAUGE_LOAD_AVG_5M_X100 = 52,
+    GAUGE_LOAD_AVG_15M_X100 = 53,
+    GAUGE_PSI_CPU_SOME_AVG10_X100 = 54, /* /proc/pressure/cpu */
+    GAUGE_PSI_MEM_SOME_AVG10_X100 = 55, /* /proc/pressure/memory */
+    GAUGE_PSI_IO_SOME_AVG10_X100 = 56, /* /proc/pressure/io */
 
-    _GAUGE_EXT_RESERVED_57          = 57, _GAUGE_EXT_RESERVED_58 = 58,
-    _GAUGE_EXT_RESERVED_59          = 59, _GAUGE_EXT_RESERVED_60 = 60,
-    _GAUGE_EXT_RESERVED_61          = 61, _GAUGE_EXT_RESERVED_62 = 62,
-    _GAUGE_EXT_RESERVED_63          = 63,
+    _GAUGE_EXT_RESERVED_57 = 57,
+    _GAUGE_EXT_RESERVED_58 = 58,
+    _GAUGE_EXT_RESERVED_59 = 59,
+    _GAUGE_EXT_RESERVED_60 = 60,
+    _GAUGE_EXT_RESERVED_61 = 61,
+    _GAUGE_EXT_RESERVED_62 = 62,
+    _GAUGE_EXT_RESERVED_63 = 63,
 
 #endif /* CRUCIBLE_SENSE_HUB_EXTENDED */
 
-    SENSE_HUB_NUM_GAUGES_SENTINEL   = SENSE_HUB_NUM_GAUGES,
+    SENSE_HUB_NUM_GAUGES_SENTINEL = SENSE_HUB_NUM_GAUGES,
 };
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -733,13 +755,13 @@ enum sense_gauge {
  *   • wholly-incompatible v1 ↔ v2 ABI mix
  */
 struct sense_meta {
-    __u32 magic;          /* SENSE_HUB_MAGIC = 'CRBL'      — offset 0  */
-    __u32 version;        /* SENSE_HUB_VERSION = 2          — offset 4  */
-    __u32 num_counters;   /* SENSE_HUB_NUM_COUNTERS         — offset 8  */
-    __u32 num_gauges;     /* SENSE_HUB_NUM_GAUGES           — offset 12 */
-    __u64 layout_hash;    /* SENSE_HUB_LAYOUT_HASH          — offset 16 */
-    __u32 build_tag;      /* SENSE_HUB_BUILD_TAG            — offset 24 */
-    __u8  _pad[36];       /* tail padding                   — offset 28..63
+    __u32 magic; /* SENSE_HUB_MAGIC = 'CRBL'      — offset 0  */
+    __u32 version; /* SENSE_HUB_VERSION = 2          — offset 4  */
+    __u32 num_counters; /* SENSE_HUB_NUM_COUNTERS         — offset 8  */
+    __u32 num_gauges; /* SENSE_HUB_NUM_GAUGES           — offset 12 */
+    __u64 layout_hash; /* SENSE_HUB_LAYOUT_HASH          — offset 16 */
+    __u32 build_tag; /* SENSE_HUB_BUILD_TAG            — offset 24 */
+    __u8 _pad[36]; /* tail padding                   — offset 28..63
                            * total = 4+4+4+4+8+4+36 = 64 B = one cache line */
 };
 
@@ -848,31 +870,25 @@ struct {
 // SyscallLatency facades).  Don't redefine them here — the linker would
 // reject the BPF object.
 
-static __always_inline void counter_add(__u32 idx, __u64 delta)
-{
-    __u64 *v = bpf_map_lookup_elem(&counters, &idx);
+static __always_inline void counter_add(__u32 idx, __u64 delta) {
+    __u64* v = bpf_map_lookup_elem(&counters, &idx);
     if (v)
         __sync_fetch_and_add(v, delta);
     else {
         __u32 mfd = MAP_FULL_DROPS;
-        __u64 *m = bpf_map_lookup_elem(&counters, &mfd);
-        if (m)
-            __sync_fetch_and_add(m, 1);
+        __u64* m = bpf_map_lookup_elem(&counters, &mfd);
+        if (m) __sync_fetch_and_add(m, 1);
     }
 }
 
-static __always_inline void gauge_set(__u32 idx, __u64 value)
-{
-    __u64 *v = bpf_map_lookup_elem(&gauges, &idx);
-    if (v)
-        __atomic_store_n(v, value, __ATOMIC_RELAXED);
+static __always_inline void gauge_set(__u32 idx, __u64 value) {
+    __u64* v = bpf_map_lookup_elem(&gauges, &idx);
+    if (v) __atomic_store_n(v, value, __ATOMIC_RELAXED);
 }
 
-static __always_inline void gauge_max(__u32 idx, __u64 value)
-{
-    __u64 *v = bpf_map_lookup_elem(&gauges, &idx);
-    if (!v)
-        return;
+static __always_inline void gauge_max(__u32 idx, __u64 value) {
+    __u64* v = bpf_map_lookup_elem(&gauges, &idx);
+    if (!v) return;
 
     /* atomic_fetch_max via CAS retry — the BPF verifier's bounded
      * loop pragma keeps this tractable */
@@ -880,11 +896,9 @@ static __always_inline void gauge_max(__u32 idx, __u64 value)
 #pragma unroll
     for (int i = 0; i < 4; i++) {
         cur = __atomic_load_n(v, __ATOMIC_RELAXED);
-        if (value <= cur)
-            return;
+        if (value <= cur) return;
         old = __sync_val_compare_and_swap(v, cur, value);
-        if (old == cur)
-            return;
+        if (old == cur) return;
     }
 }
 
@@ -934,8 +948,7 @@ static __always_inline void gauge_max(__u32 idx, __u64 value)
  * ═══════════════════════════════════════════════════════════════════════ */
 
 SEC("tracepoint/sched/sched_switch")
-int sense_sched_switch(void *ctx)
-{
+int sense_sched_switch(void* ctx) {
     /* No is_target() gate — sched_switch fires SYSTEM-WIDE; it is the
      * canonical "this CPU got rescheduled" signal regardless of tenant.
      * This is the single most expensive program in v1 (~0.6% CPU on
@@ -976,19 +989,15 @@ int sense_sched_switch(void *ctx)
  * ═══════════════════════════════════════════════════════════════════════ */
 
 SEC("tracepoint/mptcp/mptcp_subflow_get_send")
-int sense_mptcp_subflow_send(void *ctx)
-{
-    if (!is_target())
-        return 0;
+int sense_mptcp_subflow_send(void* ctx) {
+    if (!is_target()) return 0;
     counter_add(MPTCP_SUBFLOW_ESTABLISHED, 1);
     return 0;
 }
 
 SEC("tracepoint/filemap/mm_filemap_delete_from_page_cache")
-int sense_filemap_evict(void *ctx)
-{
-    if (!is_target())
-        return 0;
+int sense_filemap_evict(void* ctx) {
+    if (!is_target()) return 0;
     counter_add(PAGE_CACHE_EVICTIONS, 1);
     return 0;
 }
@@ -1002,46 +1011,36 @@ int sense_filemap_evict(void *ctx)
  * cgroups".  iocost_iocg_forgive_debt fires when iocost gives up
  * trying to throttle (debt-write-off — extreme pressure indicator). */
 SEC("tracepoint/iocost/iocost_iocg_idle")
-int sense_iocost_idle(void *ctx)
-{
-    if (!is_target())
-        return 0;
+int sense_iocost_idle(void* ctx) {
+    if (!is_target()) return 0;
     counter_add(IOCOST_IDLE_COUNT, 1);
     return 0;
 }
 
 SEC("tracepoint/iocost/iocost_iocg_activate")
-int sense_iocost_activate(void *ctx)
-{
-    if (!is_target())
-        return 0;
+int sense_iocost_activate(void* ctx) {
+    if (!is_target()) return 0;
     counter_add(IOCOST_ACTIVATE_COUNT, 1);
     return 0;
 }
 
 SEC("tracepoint/wbt/wbt_lat")
-int sense_wbt_lat(void *ctx)
-{
-    if (!is_target())
-        return 0;
+int sense_wbt_lat(void* ctx) {
+    if (!is_target()) return 0;
     counter_add(WBT_DELAY_COUNT, 1);
     return 0;
 }
 
 SEC("tracepoint/filelock/locks_get_lock_context")
-int sense_filelock_wait(void *ctx)
-{
-    if (!is_target())
-        return 0;
+int sense_filelock_wait(void* ctx) {
+    if (!is_target()) return 0;
     counter_add(FILELOCK_WAITS, 1);
     return 0;
 }
 
 SEC("tracepoint/swiotlb/swiotlb_bounced")
-int sense_swiotlb_bounced(void *ctx)
-{
-    if (!is_target())
-        return 0;
+int sense_swiotlb_bounced(void* ctx) {
+    if (!is_target()) return 0;
     counter_add(SWIOTLB_BOUNCE_COUNT, 1);
     /* TODO: read size field from ctx, add to SWIOTLB_BOUNCE_BYTES */
     return 0;
@@ -1053,10 +1052,8 @@ int sense_swiotlb_bounced(void *ctx)
  * SenseHubV2.h.  No SEC handler in this file. */
 
 SEC("tracepoint/migrate/mm_migrate_pages")
-int sense_numa_migrate_v2(void *ctx)
-{
-    if (!is_target())
-        return 0;
+int sense_numa_migrate_v2(void* ctx) {
+    if (!is_target()) return 0;
     /* TODO: branch on reason field — reason=5 (numa_misplaced) goes
      * to NUMA_MIG_NUMA_HINT, others to NUMA_MIG_OTHER */
     counter_add(NUMA_MIG_OTHER, 1);
@@ -1064,17 +1061,14 @@ int sense_numa_migrate_v2(void *ctx)
 }
 
 SEC("tracepoint/vmscan/mm_vmscan_kswapd_wake")
-int sense_kswapd_wake(void *ctx)
-{
-    counter_add(KSWAPD_WAKES, 1);  /* system-wide signal */
+int sense_kswapd_wake(void* ctx) {
+    counter_add(KSWAPD_WAKES, 1); /* system-wide signal */
     return 0;
 }
 
 SEC("tracepoint/mmap_lock/mmap_lock_acquire_returned")
-int sense_mmap_lock_returned(void *ctx)
-{
-    if (!is_target())
-        return 0;
+int sense_mmap_lock_returned(void* ctx) {
+    if (!is_target()) return 0;
     /* TODO: record start ts in mmap_lock_ts; on release pair, compute
      * delta, add to MMAP_LOCK_NS, increment MMAP_LOCK_WAITS, update
      * GAUGE_MMAP_LOCK_MAX_WAIT_NS via gauge_max. */
@@ -1083,15 +1077,13 @@ int sense_mmap_lock_returned(void *ctx)
 }
 
 SEC("tracepoint/iommu/io_page_fault")
-int sense_iommu_fault(void *ctx)
-{
-    counter_add(IOMMU_FAULTS, 1);  /* system-wide; rare; alert-worthy */
+int sense_iommu_fault(void* ctx) {
+    counter_add(IOMMU_FAULTS, 1); /* system-wide; rare; alert-worthy */
     return 0;
 }
 
 SEC("tracepoint/tlb/tlb_flush")
-int sense_tlb_shootdown(void *ctx)
-{
+int sense_tlb_shootdown(void* ctx) {
     /* No is_target() — TLB shootdowns from OTHER tenants steal time
      * from us, so we want the system-wide count regardless of which
      * task asked for the flush. */
@@ -1100,41 +1092,34 @@ int sense_tlb_shootdown(void *ctx)
 }
 
 SEC("tracepoint/vmscan/mm_vmscan_lru_isolate")
-int sense_vmscan_lru_isolate(void *ctx)
-{
-    if (!is_target())
-        return 0;
+int sense_vmscan_lru_isolate(void* ctx) {
+    if (!is_target()) return 0;
     counter_add(VMSCAN_LRU_ISOLATIONS, 1);
     /* TODO: VMSCAN_SCAN_NS via paired tracepoint mm_vmscan_lru_shrink_inactive */
     return 0;
 }
 
 SEC("tracepoint/sched/sched_process_fork")
-int sense_process_fork(void *ctx)
-{
+int sense_process_fork(void* ctx) {
     counter_add(PROCESS_FORKS, 1);
     return 0;
 }
 
 SEC("tracepoint/sched/sched_process_exec")
-int sense_process_exec(void *ctx)
-{
+int sense_process_exec(void* ctx) {
     counter_add(PROCESS_EXECS, 1);
     return 0;
 }
 
 SEC("tracepoint/signal/signal_deliver")
-int sense_signal_deliver(void *ctx)
-{
-    if (!is_target())
-        return 0;
+int sense_signal_deliver(void* ctx) {
+    if (!is_target()) return 0;
     counter_add(SIGNAL_DELIVERED, 1);
     return 0;
 }
 
 SEC("tracepoint/nmi/nmi_handler")
-int sense_nmi(void *ctx)
-{
+int sense_nmi(void* ctx) {
     /* NMI-CONTEXT-SAFE: only touches array map via __sync_fetch_and_add.
      * NEVER add a hash map touch to this handler (LRU eviction is
      * not NMI-safe). */
@@ -1147,8 +1132,7 @@ int sense_nmi(void *ctx)
 }
 
 SEC("tracepoint/osnoise/osnoise_sample")
-int sense_osnoise(void *ctx)
-{
+int sense_osnoise(void* ctx) {
     /* OSNOISE event reports {duration, max_thread_id} per sample window.
      * TODO: read `noise` field, add to OSNOISE_NS_TOTAL,
      * gauge_max GAUGE_OSNOISE_MAX_NS. */
@@ -1156,10 +1140,8 @@ int sense_osnoise(void *ctx)
 }
 
 SEC("tracepoint/csd/csd_queue_cpu")
-int sense_csd_queue(void *ctx)
-{
-    if (!is_target())
-        return 0;
+int sense_csd_queue(void* ctx) {
+    if (!is_target()) return 0;
     /* TODO: stash queue ts in csd_inflight; on csd_function_entry,
      * compute queue→start latency, add to total, gauge_max
      * GAUGE_CSD_MAX_QUEUE_TO_START_NS. */
@@ -1168,8 +1150,7 @@ int sense_csd_queue(void *ctx)
 }
 
 SEC("tracepoint/ras/aer_event")
-int sense_pcie_aer(void *ctx)
-{
+int sense_pcie_aer(void* ctx) {
     /* TODO: branch on severity field — 2=Corrected → PCIE_AER_CORR,
      * 0/1=Uncorrected → PCIE_AER_UNCORR. */
     counter_add(PCIE_AER_CORR, 1);
@@ -1177,8 +1158,7 @@ int sense_pcie_aer(void *ctx)
 }
 
 SEC("tracepoint/ras/mc_event")
-int sense_edac_dram_ce(void *ctx)
-{
+int sense_edac_dram_ce(void* ctx) {
     /* TODO: gate on err_type=corrected (most events) */
     counter_add(EDAC_DRAM_CE, 1);
     return 0;
@@ -1192,8 +1172,7 @@ int sense_edac_dram_ce(void *ctx)
 
 /* skb_drop_reason rebucket — write 1 to one of 9 buckets */
 SEC("tracepoint/skb/kfree_skb")
-int sense_skb_drop_reason(void *ctx)
-{
+int sense_skb_drop_reason(void* ctx) {
     /* skb/kfree_skb's TP_PROTO has `reason` (skb_drop_reason enum).
      * TODO: read `reason`, switch into one of 9 buckets:
      *   case SKB_DROP_REASON_NEIGH_FAILED:   counter_add(SKB_DROP_NEIGH_FAILED, 1); break;
@@ -1208,8 +1187,7 @@ int sense_skb_drop_reason(void *ctx)
 
 /* IPI per-reason rebucket */
 SEC("tracepoint/ipi/ipi_send_cpu")
-int sense_ipi_send_cpu(void *ctx)
-{
+int sense_ipi_send_cpu(void* ctx) {
     /* TODO: arch-specific reason discrimination (x86 via callsite,
      * arm64 via ipi_raise reason field). */
     counter_add(IPI_OTHER, 1);
@@ -1218,15 +1196,13 @@ int sense_ipi_send_cpu(void *ctx)
 
 /* Sched wakeup latency aggregation — PERCPU inflight, shared counter */
 SEC("tracepoint/sched/sched_waking")
-int sense_wake_start(void *ctx)
-{
+int sense_wake_start(void* ctx) {
     /* TODO: stash ts_ns in wake_ts_pcpu keyed by tid */
     return 0;
 }
 
 SEC("tracepoint/sched/sched_switch")
-int sense_wake_finish(void *ctx)
-{
+int sense_wake_finish(void* ctx) {
     /* TODO: lookup ts in wake_ts_pcpu, compute latency, add to
      * SCHED_WAKEUP_LATENCY_TOTAL, gauge_max GAUGE_WAKEUP_LATENCY_MAX_NS. */
     return 0;
@@ -1234,15 +1210,13 @@ int sense_wake_finish(void *ctx)
 
 /* context_tracking — every kernel↔user transition */
 SEC("tracepoint/context_tracking/user_enter")
-int sense_user_enter(void *ctx)
-{
+int sense_user_enter(void* ctx) {
     counter_add(CONTEXT_TRACKING_USER_ENTER, 1);
     return 0;
 }
 
 SEC("tracepoint/context_tracking/user_exit")
-int sense_user_exit(void *ctx)
-{
+int sense_user_exit(void* ctx) {
     counter_add(CONTEXT_TRACKING_USER_EXIT, 1);
     return 0;
 }
@@ -1255,27 +1229,22 @@ int sense_user_exit(void *ctx)
 
 /* io_uring submission/completion */
 SEC("tracepoint/io_uring/io_uring_submit_req")
-int sense_iouring_submit(void *ctx)
-{
-    if (!is_target())
-        return 0;
+int sense_iouring_submit(void* ctx) {
+    if (!is_target()) return 0;
     counter_add(IOURING_SUBMIT_COUNT, 1);
     return 0;
 }
 
 SEC("tracepoint/io_uring/io_uring_complete")
-int sense_iouring_complete(void *ctx)
-{
-    if (!is_target())
-        return 0;
+int sense_iouring_complete(void* ctx) {
+    if (!is_target()) return 0;
     counter_add(IOURING_COMPLETE_COUNT, 1);
     return 0;
 }
 
 /* napi/napi_poll */
 SEC("tracepoint/napi/napi_poll")
-int sense_napi_poll(void *ctx)
-{
+int sense_napi_poll(void* ctx) {
     counter_add(NAPI_POLL_COUNT, 1);
     /* TODO: branch on `work` vs `budget` to detect budget exhaustion */
     return 0;
@@ -1283,16 +1252,14 @@ int sense_napi_poll(void *ctx)
 
 /* avc denials — security signal */
 SEC("tracepoint/avc/selinux_audited")
-int sense_avc_denial(void *ctx)
-{
+int sense_avc_denial(void* ctx) {
     counter_add(AVC_DENIALS, 1);
     return 0;
 }
 
 /* printk surge detection */
 SEC("tracepoint/printk/console")
-int sense_printk_line(void *ctx)
-{
+int sense_printk_line(void* ctx) {
     counter_add(PRINTK_LINE_COUNT, 1);
     return 0;
 }

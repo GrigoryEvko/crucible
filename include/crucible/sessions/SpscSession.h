@@ -211,19 +211,13 @@ using ConsumerProto = Loop<Recv<T, Continue>>;
 // to transfer through the wire).
 
 template <typename Channel, ::crucible::effects::IsExecCtx Ctx>
-[[nodiscard]] constexpr auto
-mint_producer_session(Ctx const& ctx,
-                      typename Channel::ProducerHandle& handle) noexcept
-{
+[[nodiscard]] constexpr auto mint_producer_session(Ctx const& ctx, typename Channel::ProducerHandle& handle) noexcept {
     using T = typename Channel::value_type;
     return mint_permissioned_session<ProducerProto<T>>(ctx, &handle);
 }
 
 template <typename Channel, ::crucible::effects::IsExecCtx Ctx>
-[[nodiscard]] constexpr auto
-mint_consumer_session(Ctx const& ctx,
-                      typename Channel::ConsumerHandle& handle) noexcept
-{
+[[nodiscard]] constexpr auto mint_consumer_session(Ctx const& ctx, typename Channel::ConsumerHandle& handle) noexcept {
     using T = typename Channel::value_type;
     return mint_permissioned_session<ConsumerProto<T>>(ctx, &handle);
 }
@@ -276,8 +270,8 @@ namespace crucible::safety::proto::spsc_session::detail::sizeof_witness {
 // (bench_permissioned_session_handle.cpp:202-210).
 struct Tag {};
 using SmallChannel = ::crucible::concurrent::PermissionedSpscChannel<int, 16, Tag>;
-using ProdHandle   = SmallChannel::ProducerHandle;
-using ConsHandle   = SmallChannel::ConsumerHandle;
+using ProdHandle = SmallChannel::ProducerHandle;
+using ConsHandle = SmallChannel::ConsumerHandle;
 
 // Sizeof-equality is asserted on the CONCRETE HEAD types that
 // mint_permissioned_session<ProducerProto<int>>(...) actually returns
@@ -301,23 +295,20 @@ using ConsHandle   = SmallChannel::ConsumerHandle;
 //      tracker only), catching regressions where PS or LoopContext
 //      accidentally gain a non-empty member.
 
-static_assert(sizeof(PermissionedSessionHandle<End, EmptyPermSet,
-                                                ProdHandle*>)
-              == sizeof(SessionHandle<End, ProdHandle*>),
+static_assert(sizeof(PermissionedSessionHandle<End, EmptyPermSet, ProdHandle*>)
+                  == sizeof(SessionHandle<End, ProdHandle*>),
               "spsc_session: PSH<End, EmptyPermSet, ProdHandle*> must be "
               "same size as bare SessionHandle<End, ProdHandle*> — if this "
               "fails, EBO collapse of EmptyPermSet has been broken or the "
               "abandonment tracker grew asymmetrically between PSH and bare.");
 
-static_assert(sizeof(PermissionedSessionHandle<End, EmptyPermSet,
-                                                ConsHandle*>)
-              == sizeof(SessionHandle<End, ConsHandle*>),
+static_assert(sizeof(PermissionedSessionHandle<End, EmptyPermSet, ConsHandle*>)
+                  == sizeof(SessionHandle<End, ConsHandle*>),
               "spsc_session: PSH<End, EmptyPermSet, ConsHandle*> must be "
               "same size as bare SessionHandle<End, ConsHandle*>.");
 
-static_assert(sizeof(PermissionedSessionHandle<Send<int, End>, EmptyPermSet,
-                                                ProdHandle*>)
-              == sizeof(SessionHandle<Send<int, End>, ProdHandle*>),
+static_assert(sizeof(PermissionedSessionHandle<Send<int, End>, EmptyPermSet, ProdHandle*>)
+                  == sizeof(SessionHandle<Send<int, End>, ProdHandle*>),
               "spsc_session: PSH<Send<int, End>, EmptyPermSet, ProdHandle*> "
               "must be same size as bare SessionHandle for the same head.");
 
@@ -333,4 +324,4 @@ static_assert(sizeof(PermissionedSessionHandle<Send<int, End>, EmptyPermSet,
 // SessionHandleBase enrichment without conveying any new information
 // beyond what the size-equality witness already conveys.
 
-}  // namespace
+}  // namespace crucible::safety::proto::spsc_session::detail::sizeof_witness

@@ -98,9 +98,9 @@
 // fixtures and (b) a non-enum NTTP value in a parametric grant
 // rejects at template-id formation.
 
-#include <crucible/fixy/Grant.h>            // grant_base, which_dim primary
-#include <crucible/safety/FpMode.h>         // 11 sub-axis enums + wrappers
-#include <crucible/safety/DimensionTraits.h>// DimensionAxis::FpMode
+#include <crucible/fixy/Grant.h>  // grant_base, which_dim primary
+#include <crucible/safety/FpMode.h>  // 11 sub-axis enums + wrappers
+#include <crucible/safety/DimensionTraits.h>  // DimensionAxis::FpMode
 
 #include <type_traits>
 
@@ -123,32 +123,28 @@ template <::crucible::safety::FpRounding Mode>
 struct with_fp_rounding final : grant_base {};
 
 template <::crucible::safety::FpRounding Mode>
-struct which_dim<with_fp_rounding<Mode>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::FpMode> {};
+struct which_dim<with_fp_rounding<Mode>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::FpMode> {};
 
 // ── Sub-axis 2: Flush-to-zero ─────────────────────────────────────────
 template <::crucible::safety::FpFtz Mode>
 struct with_fp_ftz final : grant_base {};
 
 template <::crucible::safety::FpFtz Mode>
-struct which_dim<with_fp_ftz<Mode>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::FpMode> {};
+struct which_dim<with_fp_ftz<Mode>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::FpMode> {};
 
 // ── Sub-axis 3: Contract (cross-statement FMA folding) ────────────────
 template <::crucible::safety::FpContract Mode>
 struct with_fp_contract final : grant_base {};
 
 template <::crucible::safety::FpContract Mode>
-struct which_dim<with_fp_contract<Mode>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::FpMode> {};
+struct which_dim<with_fp_contract<Mode>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::FpMode> {};
 
 // ── Sub-axis 4: Trap mask ─────────────────────────────────────────────
 template <::crucible::safety::FpTrapMask Mode>
 struct with_fp_trap_mask final : grant_base {};
 
 template <::crucible::safety::FpTrapMask Mode>
-struct which_dim<with_fp_trap_mask<Mode>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::FpMode> {};
+struct which_dim<with_fp_trap_mask<Mode>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::FpMode> {};
 
 // ── Sub-axis 5: Denormal-input handling (DAZ-axis dual) ───────────────
 template <::crucible::safety::FpDenormalInput Mode>
@@ -163,16 +159,14 @@ template <::crucible::safety::FpNanPolicy Mode>
 struct with_fp_nan_policy final : grant_base {};
 
 template <::crucible::safety::FpNanPolicy Mode>
-struct which_dim<with_fp_nan_policy<Mode>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::FpMode> {};
+struct which_dim<with_fp_nan_policy<Mode>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::FpMode> {};
 
 // ── Sub-axis 7: Infinity policy ───────────────────────────────────────
 template <::crucible::safety::FpInfPolicy Mode>
 struct with_fp_inf_policy final : grant_base {};
 
 template <::crucible::safety::FpInfPolicy Mode>
-struct which_dim<with_fp_inf_policy<Mode>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::FpMode> {};
+struct which_dim<with_fp_inf_policy<Mode>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::FpMode> {};
 
 // ── Sub-axis 8: Complex layout ────────────────────────────────────────
 template <::crucible::safety::FpComplexLayout Mode>
@@ -187,16 +181,14 @@ template <::crucible::safety::FpLibmPolicy Mode>
 struct with_fp_libm_policy final : grant_base {};
 
 template <::crucible::safety::FpLibmPolicy Mode>
-struct which_dim<with_fp_libm_policy<Mode>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::FpMode> {};
+struct which_dim<with_fp_libm_policy<Mode>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::FpMode> {};
 
 // ── Sub-axis 10: Reassociation (BITEXACT-critical) ────────────────────
 template <::crucible::safety::FpReassociate Mode>
 struct with_fp_reassociate final : grant_base {};
 
 template <::crucible::safety::FpReassociate Mode>
-struct which_dim<with_fp_reassociate<Mode>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::FpMode> {};
+struct which_dim<with_fp_reassociate<Mode>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::FpMode> {};
 
 // ── Sub-axis 11: Constant rounding (FP-literal folding) ───────────────
 template <::crucible::safety::FpConstantRounding Mode>
@@ -236,8 +228,7 @@ struct which_dim<with_fp_constant_rounding<Mode>>
 struct fp_strict_ieee final : grant_base {};
 
 template <>
-struct which_dim<fp_strict_ieee>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::FpMode> {};
+struct which_dim<fp_strict_ieee> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::FpMode> {};
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Self-test (compile-time) ─────────────────────────────────────────
@@ -250,7 +241,7 @@ struct which_dim<fp_strict_ieee>
 namespace detail::fp_grant_self_test {
 
 namespace sf = ::crucible::safety;
-using D      = dim::DimensionAxis;
+using D = dim::DimensionAxis;
 
 // ── Layer 1: IsGrantTag — sampled at every sub-axis + aggregate ─────
 static_assert(IsGrantTag<with_fp_rounding<sf::FpRounding::RoundToNearestEven>>);
@@ -267,69 +258,55 @@ static_assert(IsGrantTag<with_fp_constant_rounding<sf::FpConstantRounding::SameA
 static_assert(IsGrantTag<fp_strict_ieee>);
 
 // ── Layer 2: sizeof — EBO-collapsible standalone marker (1 byte) ────
-static_assert(sizeof(with_fp_rounding<sf::FpRounding::RoundToNearestEven>)        == 1);
-static_assert(sizeof(with_fp_ftz<sf::FpFtz::PreserveSubnormals>)                  == 1);
-static_assert(sizeof(with_fp_contract<sf::FpContract::Off>)                       == 1);
-static_assert(sizeof(with_fp_trap_mask<sf::FpTrapMask::AllMasked>)                == 1);
+static_assert(sizeof(with_fp_rounding<sf::FpRounding::RoundToNearestEven>) == 1);
+static_assert(sizeof(with_fp_ftz<sf::FpFtz::PreserveSubnormals>) == 1);
+static_assert(sizeof(with_fp_contract<sf::FpContract::Off>) == 1);
+static_assert(sizeof(with_fp_trap_mask<sf::FpTrapMask::AllMasked>) == 1);
 static_assert(sizeof(with_fp_denormal_input<sf::FpDenormalInput::HonorDenormals>) == 1);
-static_assert(sizeof(with_fp_nan_policy<sf::FpNanPolicy::PropagateQuiet>)         == 1);
-static_assert(sizeof(with_fp_inf_policy<sf::FpInfPolicy::PropagateInfinity>)      == 1);
-static_assert(sizeof(with_fp_complex_layout<sf::FpComplexLayout::Interleaved>)    == 1);
-static_assert(sizeof(with_fp_libm_policy<sf::FpLibmPolicy::ScalarLibm>)           == 1);
-static_assert(sizeof(with_fp_reassociate<sf::FpReassociate::Forbidden>)           == 1);
+static_assert(sizeof(with_fp_nan_policy<sf::FpNanPolicy::PropagateQuiet>) == 1);
+static_assert(sizeof(with_fp_inf_policy<sf::FpInfPolicy::PropagateInfinity>) == 1);
+static_assert(sizeof(with_fp_complex_layout<sf::FpComplexLayout::Interleaved>) == 1);
+static_assert(sizeof(with_fp_libm_policy<sf::FpLibmPolicy::ScalarLibm>) == 1);
+static_assert(sizeof(with_fp_reassociate<sf::FpReassociate::Forbidden>) == 1);
 static_assert(sizeof(with_fp_constant_rounding<sf::FpConstantRounding::SameAsRuntime>) == 1);
 static_assert(sizeof(fp_strict_ieee) == 1);
 
 // ── Layer 3: which_dim routing — every tag → FpMode ─────────────────
-static_assert(which_dim_v<with_fp_rounding<sf::FpRounding::RoundToNearestEven>>        == D::FpMode);
-static_assert(which_dim_v<with_fp_ftz<sf::FpFtz::PreserveSubnormals>>                  == D::FpMode);
-static_assert(which_dim_v<with_fp_contract<sf::FpContract::Off>>                       == D::FpMode);
-static_assert(which_dim_v<with_fp_trap_mask<sf::FpTrapMask::AllMasked>>                == D::FpMode);
+static_assert(which_dim_v<with_fp_rounding<sf::FpRounding::RoundToNearestEven>> == D::FpMode);
+static_assert(which_dim_v<with_fp_ftz<sf::FpFtz::PreserveSubnormals>> == D::FpMode);
+static_assert(which_dim_v<with_fp_contract<sf::FpContract::Off>> == D::FpMode);
+static_assert(which_dim_v<with_fp_trap_mask<sf::FpTrapMask::AllMasked>> == D::FpMode);
 static_assert(which_dim_v<with_fp_denormal_input<sf::FpDenormalInput::HonorDenormals>> == D::FpMode);
-static_assert(which_dim_v<with_fp_nan_policy<sf::FpNanPolicy::PropagateQuiet>>         == D::FpMode);
-static_assert(which_dim_v<with_fp_inf_policy<sf::FpInfPolicy::PropagateInfinity>>      == D::FpMode);
-static_assert(which_dim_v<with_fp_complex_layout<sf::FpComplexLayout::Interleaved>>    == D::FpMode);
-static_assert(which_dim_v<with_fp_libm_policy<sf::FpLibmPolicy::ScalarLibm>>           == D::FpMode);
-static_assert(which_dim_v<with_fp_reassociate<sf::FpReassociate::Forbidden>>           == D::FpMode);
+static_assert(which_dim_v<with_fp_nan_policy<sf::FpNanPolicy::PropagateQuiet>> == D::FpMode);
+static_assert(which_dim_v<with_fp_inf_policy<sf::FpInfPolicy::PropagateInfinity>> == D::FpMode);
+static_assert(which_dim_v<with_fp_complex_layout<sf::FpComplexLayout::Interleaved>> == D::FpMode);
+static_assert(which_dim_v<with_fp_libm_policy<sf::FpLibmPolicy::ScalarLibm>> == D::FpMode);
+static_assert(which_dim_v<with_fp_reassociate<sf::FpReassociate::Forbidden>> == D::FpMode);
 static_assert(which_dim_v<with_fp_constant_rounding<sf::FpConstantRounding::SameAsRuntime>> == D::FpMode);
 static_assert(which_dim_v<fp_strict_ieee> == D::FpMode);
 
 // ── Layer 4: cross-sub-axis distinctness — sampled boundary pairs ───
 // Sampling 11 pairs spanning every sub-axis boundary; the sentinel TU
 // runs the full 66-cell pairwise matrix.
-static_assert(!std::is_same_v<
-    with_fp_rounding<sf::FpRounding::RoundToNearestEven>,
-    with_fp_ftz<sf::FpFtz::PreserveSubnormals>>);
-static_assert(!std::is_same_v<
-    with_fp_ftz<sf::FpFtz::PreserveSubnormals>,
-    with_fp_contract<sf::FpContract::Off>>);
-static_assert(!std::is_same_v<
-    with_fp_contract<sf::FpContract::Off>,
-    with_fp_trap_mask<sf::FpTrapMask::AllMasked>>);
-static_assert(!std::is_same_v<
-    with_fp_trap_mask<sf::FpTrapMask::AllMasked>,
-    with_fp_denormal_input<sf::FpDenormalInput::HonorDenormals>>);
-static_assert(!std::is_same_v<
-    with_fp_denormal_input<sf::FpDenormalInput::HonorDenormals>,
-    with_fp_nan_policy<sf::FpNanPolicy::PropagateQuiet>>);
-static_assert(!std::is_same_v<
-    with_fp_nan_policy<sf::FpNanPolicy::PropagateQuiet>,
-    with_fp_inf_policy<sf::FpInfPolicy::PropagateInfinity>>);
-static_assert(!std::is_same_v<
-    with_fp_inf_policy<sf::FpInfPolicy::PropagateInfinity>,
-    with_fp_complex_layout<sf::FpComplexLayout::Interleaved>>);
-static_assert(!std::is_same_v<
-    with_fp_complex_layout<sf::FpComplexLayout::Interleaved>,
-    with_fp_libm_policy<sf::FpLibmPolicy::ScalarLibm>>);
-static_assert(!std::is_same_v<
-    with_fp_libm_policy<sf::FpLibmPolicy::ScalarLibm>,
-    with_fp_reassociate<sf::FpReassociate::Forbidden>>);
-static_assert(!std::is_same_v<
-    with_fp_reassociate<sf::FpReassociate::Forbidden>,
-    with_fp_constant_rounding<sf::FpConstantRounding::SameAsRuntime>>);
-static_assert(!std::is_same_v<
-    with_fp_constant_rounding<sf::FpConstantRounding::SameAsRuntime>,
-    fp_strict_ieee>);
+static_assert(
+    !std::is_same_v<with_fp_rounding<sf::FpRounding::RoundToNearestEven>, with_fp_ftz<sf::FpFtz::PreserveSubnormals>>);
+static_assert(!std::is_same_v<with_fp_ftz<sf::FpFtz::PreserveSubnormals>, with_fp_contract<sf::FpContract::Off>>);
+static_assert(!std::is_same_v<with_fp_contract<sf::FpContract::Off>, with_fp_trap_mask<sf::FpTrapMask::AllMasked>>);
+static_assert(!std::is_same_v<with_fp_trap_mask<sf::FpTrapMask::AllMasked>,
+                              with_fp_denormal_input<sf::FpDenormalInput::HonorDenormals>>);
+static_assert(!std::is_same_v<with_fp_denormal_input<sf::FpDenormalInput::HonorDenormals>,
+                              with_fp_nan_policy<sf::FpNanPolicy::PropagateQuiet>>);
+static_assert(!std::is_same_v<with_fp_nan_policy<sf::FpNanPolicy::PropagateQuiet>,
+                              with_fp_inf_policy<sf::FpInfPolicy::PropagateInfinity>>);
+static_assert(!std::is_same_v<with_fp_inf_policy<sf::FpInfPolicy::PropagateInfinity>,
+                              with_fp_complex_layout<sf::FpComplexLayout::Interleaved>>);
+static_assert(!std::is_same_v<with_fp_complex_layout<sf::FpComplexLayout::Interleaved>,
+                              with_fp_libm_policy<sf::FpLibmPolicy::ScalarLibm>>);
+static_assert(!std::is_same_v<with_fp_libm_policy<sf::FpLibmPolicy::ScalarLibm>,
+                              with_fp_reassociate<sf::FpReassociate::Forbidden>>);
+static_assert(!std::is_same_v<with_fp_reassociate<sf::FpReassociate::Forbidden>,
+                              with_fp_constant_rounding<sf::FpConstantRounding::SameAsRuntime>>);
+static_assert(!std::is_same_v<with_fp_constant_rounding<sf::FpConstantRounding::SameAsRuntime>, fp_strict_ieee>);
 
 // ── Layer 5: within-sub-axis NTTP-distinctness ──────────────────────
 // Two `with_fp_rounding<...>` instantiations with different FpRounding
@@ -338,18 +315,12 @@ static_assert(!std::is_same_v<
 // has 5 enumerators), Ftz (2), Contract (3), Reassociate (3); the
 // other 7 sub-axes follow the same C++ template-instantiation rule
 // and the sentinel TU covers them.
-static_assert(!std::is_same_v<
-    with_fp_rounding<sf::FpRounding::RoundToNearestEven>,
-    with_fp_rounding<sf::FpRounding::RoundToZero>>);
-static_assert(!std::is_same_v<
-    with_fp_ftz<sf::FpFtz::PreserveSubnormals>,
-    with_fp_ftz<sf::FpFtz::FlushToZero>>);
-static_assert(!std::is_same_v<
-    with_fp_contract<sf::FpContract::Off>,
-    with_fp_contract<sf::FpContract::Fast>>);
-static_assert(!std::is_same_v<
-    with_fp_reassociate<sf::FpReassociate::Forbidden>,
-    with_fp_reassociate<sf::FpReassociate::UnrestrictedRewrite>>);
+static_assert(!std::is_same_v<with_fp_rounding<sf::FpRounding::RoundToNearestEven>,
+                              with_fp_rounding<sf::FpRounding::RoundToZero>>);
+static_assert(!std::is_same_v<with_fp_ftz<sf::FpFtz::PreserveSubnormals>, with_fp_ftz<sf::FpFtz::FlushToZero>>);
+static_assert(!std::is_same_v<with_fp_contract<sf::FpContract::Off>, with_fp_contract<sf::FpContract::Fast>>);
+static_assert(!std::is_same_v<with_fp_reassociate<sf::FpReassociate::Forbidden>,
+                              with_fp_reassociate<sf::FpReassociate::UnrestrictedRewrite>>);
 
 // ── cv-ref rejection — every Fp grant flows through IsGrantTag's
 //    `is_same_v<G, remove_cvref_t<G>>` clause (fixy-A4-033). ──────────
@@ -388,69 +359,38 @@ namespace sf = ::crucible::safety;
 
 // Canonical strict-IEEE 754 pin across all 11 sub-axes — the same
 // values the substrate's fp_strict_ieee aggregate grant denotes.
-using strict_ieee_composite = FpModeComposite<
-    sf::FpRounding::RoundToNearestEven,
-    sf::FpFtz::PreserveSubnormals,
-    sf::FpContract::Off,
-    sf::FpTrapMask::AllMasked,
-    sf::FpDenormalInput::HonorDenormals,
-    sf::FpNanPolicy::PropagateQuiet,
-    sf::FpInfPolicy::PropagateInfinity,
-    sf::FpComplexLayout::Interleaved,
-    sf::FpLibmPolicy::ScalarLibm,
-    sf::FpReassociate::Forbidden,
-    sf::FpConstantRounding::SameAsRuntime,
-    double>;
+using strict_ieee_composite =
+    FpModeComposite<sf::FpRounding::RoundToNearestEven, sf::FpFtz::PreserveSubnormals, sf::FpContract::Off,
+                    sf::FpTrapMask::AllMasked, sf::FpDenormalInput::HonorDenormals, sf::FpNanPolicy::PropagateQuiet,
+                    sf::FpInfPolicy::PropagateInfinity, sf::FpComplexLayout::Interleaved, sf::FpLibmPolicy::ScalarLibm,
+                    sf::FpReassociate::Forbidden, sf::FpConstantRounding::SameAsRuntime, double>;
 
 // FIXY-U-115 cell 1 — base-type identity: the fixy:: composite IS the
 // substrate type, not a distinct re-declaration that could drift.
-static_assert(std::is_same_v<
-    strict_ieee_composite,
-    sf::FpModeComposite<
-        sf::FpRounding::RoundToNearestEven,
-        sf::FpFtz::PreserveSubnormals,
-        sf::FpContract::Off,
-        sf::FpTrapMask::AllMasked,
-        sf::FpDenormalInput::HonorDenormals,
-        sf::FpNanPolicy::PropagateQuiet,
-        sf::FpInfPolicy::PropagateInfinity,
-        sf::FpComplexLayout::Interleaved,
-        sf::FpLibmPolicy::ScalarLibm,
-        sf::FpReassociate::Forbidden,
-        sf::FpConstantRounding::SameAsRuntime,
-        double>>,
-    "fixy::wrap::FpModeComposite must alias the safety substrate type");
+static_assert(std::is_same_v<strict_ieee_composite,
+                             sf::FpModeComposite<sf::FpRounding::RoundToNearestEven, sf::FpFtz::PreserveSubnormals,
+                                                 sf::FpContract::Off, sf::FpTrapMask::AllMasked,
+                                                 sf::FpDenormalInput::HonorDenormals, sf::FpNanPolicy::PropagateQuiet,
+                                                 sf::FpInfPolicy::PropagateInfinity, sf::FpComplexLayout::Interleaved,
+                                                 sf::FpLibmPolicy::ScalarLibm, sf::FpReassociate::Forbidden,
+                                                 sf::FpConstantRounding::SameAsRuntime, double>>,
+              "fixy::wrap::FpModeComposite must alias the safety substrate type");
 
 // FIXY-U-115 cell 2 — mint decltype-alias identity: the re-exported
 // factory pointer carries the exact substrate signature (no shadow /
 // forwarder drift would survive this).
-static_assert(std::is_same_v<
-    decltype(&mint_fp_mode_composite<
-        sf::FpRounding::RoundToNearestEven,
-        sf::FpFtz::PreserveSubnormals,
-        sf::FpContract::Off,
-        sf::FpTrapMask::AllMasked,
-        sf::FpDenormalInput::HonorDenormals,
-        sf::FpNanPolicy::PropagateQuiet,
-        sf::FpInfPolicy::PropagateInfinity,
-        sf::FpComplexLayout::Interleaved,
-        sf::FpLibmPolicy::ScalarLibm,
-        sf::FpReassociate::Forbidden,
-        sf::FpConstantRounding::SameAsRuntime,
-        double, double>),
-    decltype(&sf::mint_fp_mode_composite<
-        sf::FpRounding::RoundToNearestEven,
-        sf::FpFtz::PreserveSubnormals,
-        sf::FpContract::Off,
-        sf::FpTrapMask::AllMasked,
-        sf::FpDenormalInput::HonorDenormals,
-        sf::FpNanPolicy::PropagateQuiet,
-        sf::FpInfPolicy::PropagateInfinity,
-        sf::FpComplexLayout::Interleaved,
-        sf::FpLibmPolicy::ScalarLibm,
-        sf::FpReassociate::Forbidden,
-        sf::FpConstantRounding::SameAsRuntime,
-        double, double>)>,
+static_assert(
+    std::is_same_v<
+        decltype(&mint_fp_mode_composite<
+                 sf::FpRounding::RoundToNearestEven, sf::FpFtz::PreserveSubnormals, sf::FpContract::Off,
+                 sf::FpTrapMask::AllMasked, sf::FpDenormalInput::HonorDenormals, sf::FpNanPolicy::PropagateQuiet,
+                 sf::FpInfPolicy::PropagateInfinity, sf::FpComplexLayout::Interleaved, sf::FpLibmPolicy::ScalarLibm,
+                 sf::FpReassociate::Forbidden, sf::FpConstantRounding::SameAsRuntime, double, double>),
+        decltype(&sf::mint_fp_mode_composite<
+                 sf::FpRounding::RoundToNearestEven, sf::FpFtz::PreserveSubnormals, sf::FpContract::Off,
+                 sf::FpTrapMask::AllMasked, sf::FpDenormalInput::HonorDenormals, sf::FpNanPolicy::PropagateQuiet,
+                 sf::FpInfPolicy::PropagateInfinity, sf::FpComplexLayout::Interleaved, sf::FpLibmPolicy::ScalarLibm,
+                 sf::FpReassociate::Forbidden, sf::FpConstantRounding::SameAsRuntime, double, double>)>,
     "fixy::wrap::mint_fp_mode_composite must have the substrate signature");
 
 }  // namespace fp_composite_self_test

@@ -27,28 +27,28 @@
 
 #include <crucible/safety/Mutation.h>  // safety::WriteOnce / WriteOnceNonNull / Monotonic
 #include <crucible/safety/OwnedMmap.h>  // FIXY-V-236 — RAII mmap region
-#include <crucible/safety/Pinned.h>    // safety::NonMovable<T>
+#include <crucible/safety/Pinned.h>  // safety::NonMovable<T>
 
 #include <linux/perf_event.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
-#include <sys/syscall.h>          // SYS_perf_event_open (PMU-specific)
+#include <sys/syscall.h>  // SYS_perf_event_open (PMU-specific)
 
-#include <bit>                    // std::bit_cast — §III-clean volatile-drop on uint8_t*
+#include <bit>  // std::bit_cast — §III-clean volatile-drop on uint8_t*
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>                // strtoull (PMU-specific env_period parser)
+#include <cstdlib>  // strtoull (PMU-specific env_period parser)
 #include <cstring>
-#include <fstream>                // read_dynamic_pmu_type ifstream
-#include <memory>                 // std::start_lifetime_as / start_lifetime_as_array (P2590R2)
+#include <fstream>  // read_dynamic_pmu_type ifstream
+#include <memory>  // std::start_lifetime_as / start_lifetime_as_array (P2590R2)
 
 #include <inplace_vector>
-#include <optional>     // FIXY-V-236 — std::optional<OwnedMmap>
+#include <optional>  // FIXY-V-236 — std::optional<OwnedMmap>
 
 extern "C" {
 extern const unsigned char pmu_sample_bpf_bytecode[];
-extern const unsigned int  pmu_sample_bpf_bytecode_len;
+extern const unsigned int pmu_sample_bpf_bytecode_len;
 }
 
 namespace crucible::perf {
@@ -72,8 +72,8 @@ using ::crucible::perf::detail::verbose;
 // map FD even though both reduce to int.  Kept TU-local so the
 // distinction is visible right next to the consumer.
 namespace local_source {
-    struct PerfEvent {};  // FD returned by perf_event_open()
-}
+struct PerfEvent {};  // FD returned by perf_event_open()
+}  // namespace local_source
 using PerfFd = ::crucible::safety::Tagged<int, local_source::PerfEvent>;
 static_assert(sizeof(PerfFd) == sizeof(int));
 
@@ -121,10 +121,9 @@ static_assert(sizeof(PerfFd) == sizeof(int));
 // Spec table default carries the original period; this helper
 // dispatches to the right env override based on the spec's perf_type
 // (or is_dynamic for IBS).  Called once per event spec at load time.
-[[nodiscard]] uint64_t resolve_period(uint32_t perf_type, bool is_dynamic,
-                                      uint64_t default_period) noexcept {
-    if (is_dynamic)                           return period_ibs(default_period);
-    if (perf_type == PERF_TYPE_SOFTWARE)      return period_sw(default_period);
+[[nodiscard]] uint64_t resolve_period(uint32_t perf_type, bool is_dynamic, uint64_t default_period) noexcept {
+    if (is_dynamic) return period_ibs(default_period);
+    if (perf_type == PERF_TYPE_SOFTWARE) return period_sw(default_period);
     return period_hw(default_period);  // PERF_TYPE_HARDWARE / HW_CACHE
 }
 
@@ -133,8 +132,7 @@ static_assert(sizeof(PerfFd) == sizeof(int));
 // glibc doesn't expose perf_event_open as a function — it's a
 // syscall wrapper everyone has to write themselves.  Standard
 // idiom from `man 2 perf_event_open`.
-[[nodiscard]] long perf_event_open_syscall(struct perf_event_attr* attr,
-                                           pid_t pid, int cpu, int group_fd,
+[[nodiscard]] long perf_event_open_syscall(struct perf_event_attr* attr, pid_t pid, int cpu, int group_fd,
                                            unsigned long flags) noexcept {
     return ::syscall(SYS_perf_event_open, attr, pid, cpu, group_fd, flags);
 }
@@ -160,68 +158,56 @@ static_assert(sizeof(PerfFd) == sizeof(int));
 // Sample periods are conservative defaults — the user can edit
 // the table if they want different rates.
 struct PmuEventSpec {
-    const char* prog_name;     // BPF program section (matches SEC name in .bpf.c)
-    uint32_t    perf_type;     // PERF_TYPE_HARDWARE / SOFTWARE / HW_CACHE / dynamic
-    uint64_t    perf_config;
-    uint64_t    sample_period;
-    bool        is_dynamic;    // true → perf_type read from sysfs at load time
+    const char* prog_name;  // BPF program section (matches SEC name in .bpf.c)
+    uint32_t perf_type;  // PERF_TYPE_HARDWARE / SOFTWARE / HW_CACHE / dynamic
+    uint64_t perf_config;
+    uint64_t sample_period;
+    bool is_dynamic;  // true → perf_type read from sysfs at load time
     const char* dynamic_path;  // sysfs path for is_dynamic events
-    const char* friendly_name; // for diagnostics
+    const char* friendly_name;  // for diagnostics
 };
 
 // HW cache events use a packed config: cache_id | (op << 8) | (result << 16).
 constexpr uint64_t hw_cache_config(uint32_t cache, uint32_t op, uint32_t result) noexcept {
-    return static_cast<uint64_t>(cache)
-         | (static_cast<uint64_t>(op)     << 8)
-         | (static_cast<uint64_t>(result) << 16);
+    return static_cast<uint64_t>(cache) | (static_cast<uint64_t>(op) << 8) | (static_cast<uint64_t>(result) << 16);
 }
 
 const PmuEventSpec kEventSpecs[] = {
     // LLC miss (read+miss).  Sample every 10K LLC misses → typically
     // 10-100 samples/sec on cache-bound workloads.
-    {"pmu_llc",        PERF_TYPE_HW_CACHE,
-     hw_cache_config(PERF_COUNT_HW_CACHE_LL,
-                     PERF_COUNT_HW_CACHE_OP_READ,
-                     PERF_COUNT_HW_CACHE_RESULT_MISS),
-     10000, false, nullptr, "LLC-miss"},
+    {"pmu_llc", PERF_TYPE_HW_CACHE,
+     hw_cache_config(PERF_COUNT_HW_CACHE_LL, PERF_COUNT_HW_CACHE_OP_READ, PERF_COUNT_HW_CACHE_RESULT_MISS), 10000,
+     false, nullptr, "LLC-miss"},
 
     // Branch misprediction.  Sample every 10K mispredictions.
-    {"pmu_branch",     PERF_TYPE_HARDWARE, PERF_COUNT_HW_BRANCH_MISSES,
-     10000, false, nullptr, "branch-miss"},
+    {"pmu_branch", PERF_TYPE_HARDWARE, PERF_COUNT_HW_BRANCH_MISSES, 10000, false, nullptr, "branch-miss"},
 
     // DTLB miss (read+miss).  Sample every 10K misses.
-    {"pmu_dtlb",       PERF_TYPE_HW_CACHE,
-     hw_cache_config(PERF_COUNT_HW_CACHE_DTLB,
-                     PERF_COUNT_HW_CACHE_OP_READ,
-                     PERF_COUNT_HW_CACHE_RESULT_MISS),
-     10000, false, nullptr, "DTLB-miss"},
+    {"pmu_dtlb", PERF_TYPE_HW_CACHE,
+     hw_cache_config(PERF_COUNT_HW_CACHE_DTLB, PERF_COUNT_HW_CACHE_OP_READ, PERF_COUNT_HW_CACHE_RESULT_MISS), 10000,
+     false, nullptr, "DTLB-miss"},
 
     // AMD IBS-Op (precise micro-op sample).  Dynamic type ID.
-    {"pmu_ibs_op",     0, 0, 100000, true,
-     "/sys/bus/event_source/devices/ibs_op/type", "IBS-op"},
+    {"pmu_ibs_op", 0, 0, 100000, true, "/sys/bus/event_source/devices/ibs_op/type", "IBS-op"},
 
     // AMD IBS-Fetch (precise instruction fetch).  Dynamic type ID.
-    {"pmu_ibs_fetch",  0, 0, 100000, true,
-     "/sys/bus/event_source/devices/ibs_fetch/type", "IBS-fetch"},
+    {"pmu_ibs_fetch", 0, 0, 100000, true, "/sys/bus/event_source/devices/ibs_fetch/type", "IBS-fetch"},
 
     // Major page fault (SW event).  Sample every fault.
-    {"pmu_sw_pagefault_maj", PERF_TYPE_SOFTWARE, PERF_COUNT_SW_PAGE_FAULTS_MAJ,
-     1, false, nullptr, "major-pagefault"},
+    {"pmu_sw_pagefault_maj", PERF_TYPE_SOFTWARE, PERF_COUNT_SW_PAGE_FAULTS_MAJ, 1, false, nullptr, "major-pagefault"},
 
     // CPU migration (SW event).  Sample every migration.
-    {"pmu_sw_cpu_migration", PERF_TYPE_SOFTWARE, PERF_COUNT_SW_CPU_MIGRATIONS,
-     1, false, nullptr, "cpu-migration"},
+    {"pmu_sw_cpu_migration", PERF_TYPE_SOFTWARE, PERF_COUNT_SW_CPU_MIGRATIONS, 1, false, nullptr, "cpu-migration"},
 
     // Alignment fault (SW event).  Sample every fault.  Note:
     // alignment-fault SW counter only works on architectures that
     // generate them (some AArch64 configs); x86_64 returns 0 always.
-    {"pmu_sw_alignment_fault", PERF_TYPE_SOFTWARE, PERF_COUNT_SW_ALIGNMENT_FAULTS,
-     1, false, nullptr, "alignment-fault"},
+    {"pmu_sw_alignment_fault", PERF_TYPE_SOFTWARE, PERF_COUNT_SW_ALIGNMENT_FAULTS, 1, false, nullptr,
+     "alignment-fault"},
 };
 constexpr size_t kEventSpecCount = sizeof(kEventSpecs) / sizeof(kEventSpecs[0]);
-static_assert(kEventSpecCount == 8,
-    "Event spec table must match 8 SEC(\"perf_event\") programs in "
-    "include/crucible/perf/bpf/pmu_sample.bpf.c");
+static_assert(kEventSpecCount == 8, "Event spec table must match 8 SEC(\"perf_event\") programs in "
+                                    "include/crucible/perf/bpf/pmu_sample.bpf.c");
 
 }  // namespace
 
@@ -230,13 +216,13 @@ static_assert(kEventSpecCount == 8,
 // resource families: bpf_object, bpf_link[], perf_event FDs[],
 // and the mmap.
 struct PmuSample::State : crucible::safety::NonMovable<PmuSample::State> {
-    struct bpf_object*                       obj = nullptr;
+    struct bpf_object* obj = nullptr;
     std::inplace_vector<struct bpf_link*, 8> links{};
     // perf_event FDs we opened — kept open for the lifetime of the
     // attached BPF link (the link holds a reference but the FD must
     // not be close()d before the link is bpf_link__destroy()ed; we
     // own both until State::~State runs).
-    std::inplace_vector<PerfFd, 8>           perf_fds{};
+    std::inplace_vector<PerfFd, 8> perf_fds{};
 
     // FIXY-V-236: single RAII OwnedMmap replaces the {WriteOnceNonNull
     // <volatile uint8_t*>, WriteOnce<size_t>} pair.  std::optional's
@@ -245,19 +231,19 @@ struct PmuSample::State : crucible::safety::NonMovable<PmuSample::State> {
     // hub mapping swaps at compile time; Prot/Share are residency
     // metadata the wrapper never interprets.
     struct PmuSampleRingbufTag {};
-    struct ReadOnlyProt        {};
-    struct SharedShare         {};
-    using TimelineMmap =
-        ::crucible::safety::OwnedMmap<PmuSampleRingbufTag, ReadOnlyProt, SharedShare>;
-    std::optional<TimelineMmap>                 timeline_mmap{};
+    struct ReadOnlyProt {};
+    struct SharedShare {};
+    using TimelineMmap = ::crucible::safety::OwnedMmap<PmuSampleRingbufTag, ReadOnlyProt, SharedShare>;
+    std::optional<TimelineMmap> timeline_mmap{};
 
     // Monotonic — only bumps on attach failures.
-    safety::Monotonic<size_t>                   attach_fail_cnt{0};
+    safety::Monotonic<size_t> attach_fail_cnt{0};
 
     State() = default;
 
     ~State() {
-        for (struct bpf_link* l : links) if (l != nullptr) bpf_link__destroy(l);
+        for (struct bpf_link* l : links)
+            if (l != nullptr) bpf_link__destroy(l);
         for (PerfFd fd : perf_fds) {
             if (fd.value() >= 0) ::close(fd.value());
         }
@@ -277,12 +263,9 @@ std::optional<PmuSample> PmuSample::load(::crucible::effects::Init) noexcept {
     const auto report = [](const char* why, int err = 0) {
         if (quiet()) return;
         if (err != 0) {
-            std::fprintf(stderr,
-                "[crucible::perf] pmu_sample unavailable: %s (%s)\n",
-                why, std::strerror(err));
+            std::fprintf(stderr, "[crucible::perf] pmu_sample unavailable: %s (%s)\n", why, std::strerror(err));
         } else {
-            std::fprintf(stderr,
-                "[crucible::perf] pmu_sample unavailable: %s\n", why);
+            std::fprintf(stderr, "[crucible::perf] pmu_sample unavailable: %s\n", why);
         }
     };
 
@@ -290,12 +273,10 @@ std::optional<PmuSample> PmuSample::load(::crucible::effects::Init) noexcept {
 
     // ── 1. Parse the embedded ELF ──────────────────────────────────
     struct bpf_object_open_opts opts{};
-    opts.sz          = sizeof(opts);
+    opts.sz = sizeof(opts);
     opts.object_name = "crucible_pmu_sample";
-    struct bpf_object* obj = bpf_object__open_mem(
-        pmu_sample_bpf_bytecode,
-        static_cast<size_t>(pmu_sample_bpf_bytecode_len),
-        &opts);
+    struct bpf_object* obj =
+        bpf_object__open_mem(pmu_sample_bpf_bytecode, static_cast<size_t>(pmu_sample_bpf_bytecode_len), &opts);
     if (obj == nullptr || libbpf_get_error(obj) != 0) {
         const int e = libbpf_errno(obj, errno);
         state->obj = nullptr;
@@ -310,7 +291,7 @@ std::optional<PmuSample> PmuSample::load(::crucible::effects::Init) noexcept {
         const void* current = bpf_map__initial_value(rodata, &vsz);
         if (current != nullptr && vsz >= sizeof(uint32_t)) {
             std::string rewritten(static_cast<const char*>(current), vsz);
-            const Tgid     tgid     = current_tgid();
+            const Tgid tgid = current_tgid();
             const uint32_t tgid_raw = tgid.value();
             std::memcpy(rewritten.data(), &tgid_raw, sizeof(tgid_raw));
             (void)bpf_map__set_initial_value(rodata, rewritten.data(), vsz);
@@ -325,7 +306,8 @@ std::optional<PmuSample> PmuSample::load(::crucible::effects::Init) noexcept {
     // in Phase 5).
     if (const int err = bpf_object__load(state->obj); err != 0) {
         report("bpf_object__load failed (apply CAP_BPF+CAP_PERFMON; "
-               "verifier rejected, missing CAP_BPF, or kernel too old)", -err);
+               "verifier rejected, missing CAP_BPF, or kernel too old)",
+               -err);
         return std::nullopt;
     }
 
@@ -339,7 +321,7 @@ std::optional<PmuSample> PmuSample::load(::crucible::effects::Init) noexcept {
     // EACCES on perf_event_open means the system has restrictive
     // perf_event_paranoid or no CAP_PERFMON; we still try the
     // SOFTWARE events which only need PERFMON_PARANOID <= 2.
-    const Tgid     tgid     = current_tgid();
+    const Tgid tgid = current_tgid();
     const uint32_t tgid_raw = tgid.value();
 
     for (const auto& spec : kEventSpecs) {
@@ -351,9 +333,9 @@ std::optional<PmuSample> PmuSample::load(::crucible::effects::Init) noexcept {
                 state->attach_fail_cnt.bump();
                 if (verbose()) {
                     std::fprintf(stderr,
-                        "[crucible::perf] pmu_sample %s skipped "
-                        "(dynamic PMU type not available — non-AMD?)\n",
-                        spec.friendly_name);
+                                 "[crucible::perf] pmu_sample %s skipped "
+                                 "(dynamic PMU type not available — non-AMD?)\n",
+                                 spec.friendly_name);
                 }
                 continue;
             }
@@ -361,15 +343,14 @@ std::optional<PmuSample> PmuSample::load(::crucible::effects::Init) noexcept {
         }
 
         // Find the BPF program by section name.
-        struct bpf_program* prog =
-            bpf_object__find_program_by_name(state->obj, spec.prog_name);
+        struct bpf_program* prog = bpf_object__find_program_by_name(state->obj, spec.prog_name);
         if (prog == nullptr) {
             state->attach_fail_cnt.bump();
             if (verbose()) {
                 std::fprintf(stderr,
-                    "[crucible::perf] pmu_sample program '%s' not found "
-                    "(bytecode/spec table out of sync — rebuild)\n",
-                    spec.prog_name);
+                             "[crucible::perf] pmu_sample program '%s' not found "
+                             "(bytecode/spec table out of sync — rebuild)\n",
+                             spec.prog_name);
             }
             continue;
         }
@@ -379,45 +360,39 @@ std::optional<PmuSample> PmuSample::load(::crucible::effects::Init) noexcept {
         // perf layer saves an unnecessary BPF invocation.
         // sample_period: env-var override per category (HW/IBS/SW)
         // — see resolve_period() docblock.  Defaults to spec table.
-        const uint64_t effective_period = resolve_period(
-            perf_type, spec.is_dynamic, spec.sample_period);
+        const uint64_t effective_period = resolve_period(perf_type, spec.is_dynamic, spec.sample_period);
         struct perf_event_attr attr{};
-        attr.size           = sizeof(attr);
-        attr.type           = perf_type;
-        attr.config         = spec.perf_config;
-        attr.sample_period  = effective_period;
+        attr.size = sizeof(attr);
+        attr.type = perf_type;
+        attr.config = spec.perf_config;
+        attr.sample_period = effective_period;
         attr.exclude_kernel = 1;
-        attr.exclude_hv     = 1;
-        attr.disabled       = 0;
+        attr.exclude_hv = 1;
+        attr.disabled = 0;
 
         // perf_event_open(attr, pid, cpu=-1, group_fd=-1, flags=0).
         // pid > 0 + cpu = -1 means "track this PID across all CPUs".
-        const long fd_raw = perf_event_open_syscall(
-            &attr, static_cast<pid_t>(tgid_raw),
-            /*cpu=*/-1, /*group_fd=*/-1, /*flags=*/0);
+        const long fd_raw = perf_event_open_syscall(&attr, static_cast<pid_t>(tgid_raw),
+                                                    /*cpu=*/-1, /*group_fd=*/-1, /*flags=*/0);
         if (fd_raw < 0) {
             state->attach_fail_cnt.bump();
             if (verbose()) {
-                std::fprintf(stderr,
-                    "[crucible::perf] pmu_sample %s perf_event_open failed (%s)\n",
-                    spec.friendly_name, std::strerror(errno));
+                std::fprintf(stderr, "[crucible::perf] pmu_sample %s perf_event_open failed (%s)\n", spec.friendly_name,
+                             std::strerror(errno));
             }
             continue;
         }
         const PerfFd perf_fd{static_cast<int>(fd_raw)};
 
         // Attach the BPF program to this perf_event.
-        struct bpf_link* link =
-            bpf_program__attach_perf_event(prog, perf_fd.value());
+        struct bpf_link* link = bpf_program__attach_perf_event(prog, perf_fd.value());
         const long lerr = libbpf_get_error(link);
         if (link == nullptr || lerr != 0) {
             ::close(perf_fd.value());
             state->attach_fail_cnt.bump();
             if (verbose()) {
-                std::fprintf(stderr,
-                    "[crucible::perf] pmu_sample %s attach failed (%s)\n",
-                    spec.friendly_name,
-                    std::strerror(lerr ? static_cast<int>(-lerr) : errno));
+                std::fprintf(stderr, "[crucible::perf] pmu_sample %s attach failed (%s)\n", spec.friendly_name,
+                             std::strerror(lerr ? static_cast<int>(-lerr) : errno));
             }
             continue;
         }
@@ -438,12 +413,10 @@ std::optional<PmuSample> PmuSample::load(::crucible::effects::Init) noexcept {
         // effect.  Only fires under CRUCIBLE_PERF_VERBOSE=1.
         if (verbose()) {
             std::fprintf(stderr,
-                "[crucible::perf] pmu_sample attached %-15s "
-                "type=%u config=0x%llx period=%llu\n",
-                spec.friendly_name,
-                perf_type,
-                static_cast<unsigned long long>(spec.perf_config),
-                static_cast<unsigned long long>(effective_period));
+                         "[crucible::perf] pmu_sample attached %-15s "
+                         "type=%u config=0x%llx period=%llu\n",
+                         spec.friendly_name, perf_type, static_cast<unsigned long long>(spec.perf_config),
+                         static_cast<unsigned long long>(effective_period));
         }
     }
 
@@ -454,8 +427,7 @@ std::optional<PmuSample> PmuSample::load(::crucible::effects::Init) noexcept {
     }
 
     // ── 5. mmap the pmu_sample_buf ─────────────────────────────────
-    struct bpf_map* timeline_map =
-        bpf_object__find_map_by_name(state->obj, "pmu_sample_buf");
+    struct bpf_map* timeline_map = bpf_object__find_map_by_name(state->obj, "pmu_sample_buf");
     if (timeline_map == nullptr) {
         report("pmu_sample_buf map not found in object (bytecode/header out of sync — rebuild)");
         return std::nullopt;
@@ -471,14 +443,13 @@ std::optional<PmuSample> PmuSample::load(::crucible::effects::Init) noexcept {
     // sizeof(PmuSampleHeader) + sizeof(events[PMU_SAMPLE_CAPACITY])
     //   = 64 + (32768 * 32) = 1,048,640 bytes
     // Page-rounded: ~1 MB exactly (mmap rounds to next page).
-    const size_t bytes          = sizeof(PmuSampleHeader) +
-                                  PMU_SAMPLE_CAPACITY * sizeof(PmuSampleEvent);
+    const size_t bytes = sizeof(PmuSampleHeader) + PMU_SAMPLE_CAPACITY * sizeof(PmuSampleEvent);
     const size_t mmap_len_bytes = (bytes + page - 1) & ~(page - 1);
-    void* mmap_address = ::mmap(nullptr, mmap_len_bytes, PROT_READ, MAP_SHARED,
-                                timeline_fd.value(), 0);
+    void* mmap_address = ::mmap(nullptr, mmap_len_bytes, PROT_READ, MAP_SHARED, timeline_fd.value(), 0);
     if (mmap_address == MAP_FAILED) {
         report("mmap of pmu_sample_buf failed (apply CAP_BPF; "
-               "BPF_F_MMAPABLE requires CAP_BPF or kernel ≥ 5.5)", errno);
+               "BPF_F_MMAPABLE requires CAP_BPF or kernel ≥ 5.5)",
+               errno);
         return std::nullopt;
     }
 
@@ -492,9 +463,9 @@ std::optional<PmuSample> PmuSample::load(::crucible::effects::Init) noexcept {
     // Surface partial-coverage warnings once per successful load.
     if (!quiet() && state->attach_fail_cnt.get() != 0) {
         std::fprintf(stderr,
-            "[crucible::perf] pmu_sample partial: %zu of %zu programs failed to attach "
-            "(set CRUCIBLE_PERF_VERBOSE=1 to see which)\n",
-            state->attach_fail_cnt.get(), kEventSpecCount);
+                     "[crucible::perf] pmu_sample partial: %zu of %zu programs failed to attach "
+                     "(set CRUCIBLE_PERF_VERBOSE=1 to see which)\n",
+                     state->attach_fail_cnt.get(), kEventSpecCount);
     }
 
     PmuSample h;
@@ -502,8 +473,7 @@ std::optional<PmuSample> PmuSample::load(::crucible::effects::Init) noexcept {
     return h;
 }
 
-safety::Borrowed<const PmuSampleEvent, PmuSample>
-PmuSample::timeline_view() const noexcept {
+safety::Borrowed<const PmuSampleEvent, PmuSample> PmuSample::timeline_view() const noexcept {
     if (state_ == nullptr || !state_->timeline_mmap) {
         return safety::Borrowed<const PmuSampleEvent, PmuSample>{};
     }
@@ -516,10 +486,8 @@ PmuSample::timeline_view() const noexcept {
     // const _Tp triggers libstdc++ 16's asm clobber "=m"(*__s) writing
     // through a const-qualified array location.
     auto* events = std::start_lifetime_as_array<PmuSampleEvent>(
-        std::bit_cast<const uint8_t*>(base + sizeof(PmuSampleHeader)),
-        PMU_SAMPLE_CAPACITY);
-    return safety::Borrowed<const PmuSampleEvent, PmuSample>{
-        events, PMU_SAMPLE_CAPACITY};
+        std::bit_cast<const uint8_t*>(base + sizeof(PmuSampleHeader)), PMU_SAMPLE_CAPACITY);
+    return safety::Borrowed<const PmuSampleEvent, PmuSample>{events, PMU_SAMPLE_CAPACITY};
 }
 
 uint64_t PmuSample::timeline_write_index() const noexcept {
@@ -533,21 +501,16 @@ uint64_t PmuSample::timeline_write_index() const noexcept {
     return hdr->write_idx;
 }
 
-safety::Refined<safety::bounded_above<8>, std::size_t>
-PmuSample::attached_programs() const noexcept {
+safety::Refined<safety::bounded_above<8>, std::size_t> PmuSample::attached_programs() const noexcept {
     using R = safety::Refined<safety::bounded_above<8>, std::size_t>;
     return R{(state_ != nullptr) ? state_->links.size() : std::size_t{0}};
 }
 
-safety::Refined<safety::bounded_above<8>, std::size_t>
-PmuSample::attach_failures() const noexcept {
+safety::Refined<safety::bounded_above<8>, std::size_t> PmuSample::attach_failures() const noexcept {
     using R = safety::Refined<safety::bounded_above<8>, std::size_t>;
-    return R{(state_ != nullptr) ? state_->attach_fail_cnt.get()
-                                 : std::size_t{0}};
+    return R{(state_ != nullptr) ? state_->attach_fail_cnt.get() : std::size_t{0}};
 }
 
-PmuSample::Snapshot PmuSample::snapshot() const noexcept {
-    return Snapshot{.samples = timeline_write_index()};
-}
+PmuSample::Snapshot PmuSample::snapshot() const noexcept { return Snapshot{.samples = timeline_write_index()}; }
 
 }  // namespace crucible::perf

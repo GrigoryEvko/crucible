@@ -52,35 +52,30 @@ struct is_budgeted_impl : std::false_type {
 };
 
 template <typename U>
-struct is_budgeted_impl<::crucible::safety::Budgeted<U>>
-    : std::true_type
-{
+struct is_budgeted_impl<::crucible::safety::Budgeted<U>> : std::true_type {
     using value_type = U;
 };
 
 }  // namespace detail
 
 template <typename T>
-inline constexpr bool is_budgeted_v =
-    detail::is_budgeted_impl<std::remove_cvref_t<T>>::value;
+inline constexpr bool is_budgeted_v = detail::is_budgeted_impl<std::remove_cvref_t<T>>::value;
 
 template <typename T>
 concept IsBudgeted = is_budgeted_v<T>;
 
 template <typename T>
     requires is_budgeted_v<T>
-using budgeted_value_t =
-    typename detail::is_budgeted_impl<
-        std::remove_cvref_t<T>>::value_type;
+using budgeted_value_t = typename detail::is_budgeted_impl<std::remove_cvref_t<T>>::value_type;
 
 // ── Self-test ─────────────────────────────────────────────────────
 
 namespace detail::is_budgeted_self_test {
 
-using B_int      = ::crucible::safety::Budgeted<int>;
-using B_double   = ::crucible::safety::Budgeted<double>;
-using B_char     = ::crucible::safety::Budgeted<char>;
-using B_uint64   = ::crucible::safety::Budgeted<std::uint64_t>;
+using B_int = ::crucible::safety::Budgeted<int>;
+using B_double = ::crucible::safety::Budgeted<double>;
+using B_char = ::crucible::safety::Budgeted<char>;
+using B_uint64 = ::crucible::safety::Budgeted<std::uint64_t>;
 
 static_assert(is_budgeted_v<B_int>);
 static_assert(is_budgeted_v<B_double>);
@@ -106,13 +101,13 @@ static_assert(!is_budgeted_v<B_int*>);
 static_assert(IsBudgeted<B_int>);
 static_assert(!IsBudgeted<int>);
 
-static_assert(std::is_same_v<budgeted_value_t<B_int>,    int>);
+static_assert(std::is_same_v<budgeted_value_t<B_int>, int>);
 static_assert(std::is_same_v<budgeted_value_t<B_double>, double>);
 static_assert(std::is_same_v<budgeted_value_t<B_uint64>, std::uint64_t>);
 
 // Layout invariant — runtime grade adds 16 bytes (two uint64_t).
 // On uint64_t the layout is exact (no padding needed).
-static_assert(sizeof(B_int)    >= sizeof(int)    + 16);
+static_assert(sizeof(B_int) >= sizeof(int) + 16);
 static_assert(sizeof(B_double) >= sizeof(double) + 16);
 static_assert(sizeof(B_uint64) == 24);
 

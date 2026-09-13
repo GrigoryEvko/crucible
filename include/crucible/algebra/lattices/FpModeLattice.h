@@ -114,10 +114,10 @@ namespace crucible::algebra::lattices {
 // is the topmost ("most-IEEE-compliant"); RTZ is the bottom (cheapest
 // but loses guarantees).
 enum class FpRounding : std::uint8_t {
-    RoundToZero            = 0,  // truncate toward zero
-    RoundToNegativeInf     = 1,  // floor
-    RoundToPositiveInf     = 2,  // ceiling
-    RoundToNearestEven     = 3,  // IEEE 754 default (RTE)
+    RoundToZero = 0,  // truncate toward zero
+    RoundToNegativeInf = 1,  // floor
+    RoundToPositiveInf = 2,  // ceiling
+    RoundToNearestEven = 3,  // IEEE 754 default (RTE)
     RoundToNearestAwayZero = 4,  // tie-break away from zero (RTNA / RNA)
 };
 
@@ -127,16 +127,16 @@ enum class FpRounding : std::uint8_t {
 // (sub-axis 5) which controls INPUT subnormal handling.
 enum class FpFtz : std::uint8_t {
     PreserveSubnormals = 0,  // gradual underflow (IEEE 754 default)
-    FlushToZero        = 1,  // subnormal outputs → ±0.0
+    FlushToZero = 1,  // subnormal outputs → ±0.0
 };
 
 // ── Sub-axis 3: Operator contraction (FMA-fusion across `+`/`*`) ────
 // Whether the compiler is allowed to contract `a * b + c` into a
 // single FMA instruction.  Tracks GCC `-ffp-contract=on/off/fast`.
 enum class FpContract : std::uint8_t {
-    Off       = 0,  // never contract — every `+` / `*` is a separate rounding boundary
-    OnInExpr  = 1,  // contract within a single expression (IEEE 754-2008 default)
-    Fast      = 2,  // contract across statements / arbitrary distances
+    Off = 0,  // never contract — every `+` / `*` is a separate rounding boundary
+    OnInExpr = 1,  // contract within a single expression (IEEE 754-2008 default)
+    Fast = 2,  // contract across statements / arbitrary distances
 };
 
 // ── Sub-axis 4: Trap masks (FE_OVERFLOW / FE_UNDERFLOW / etc.) ──────
@@ -146,19 +146,19 @@ enum class FpContract : std::uint8_t {
 // default) for hot paths; UnmaskedInvalid is admissible only in
 // Forge phase A.Probe.
 enum class FpTrapMask : std::uint8_t {
-    AllMasked         = 0,  // silent (Crucible default — DetSafe-safe)
-    UnmaskedInvalid   = 1,  // SIGFPE on invalid (NaN-from-NaN, 0/0)
-    UnmaskedDivZero   = 2,  // SIGFPE on finite÷0
-    UnmaskedOverflow  = 3,  // SIGFPE on overflow
+    AllMasked = 0,  // silent (Crucible default — DetSafe-safe)
+    UnmaskedInvalid = 1,  // SIGFPE on invalid (NaN-from-NaN, 0/0)
+    UnmaskedDivZero = 2,  // SIGFPE on finite÷0
+    UnmaskedOverflow = 3,  // SIGFPE on overflow
     UnmaskedUnderflow = 4,  // SIGFPE on underflow
-    UnmaskedInexact   = 5,  // SIGFPE on any inexact op (rarely used; perf killer)
+    UnmaskedInexact = 5,  // SIGFPE on any inexact op (rarely used; perf killer)
 };
 
 // ── Sub-axis 5: Denormal-input handling (DAZ) ───────────────────────
 // Whether subnormal INPUTS are treated as ±0.0 (paired with FTZ for
 // outputs).  x86 MXCSR.DAZ bit; ARM FPCR.FZ bit.
 enum class FpDenormalInput : std::uint8_t {
-    HonorDenormals   = 0,  // subnormal inputs participate (IEEE 754 default)
+    HonorDenormals = 0,  // subnormal inputs participate (IEEE 754 default)
     DenormalsAreZero = 1,  // subnormal inputs → ±0.0 (faster, lossy)
 };
 
@@ -167,9 +167,9 @@ enum class FpDenormalInput : std::uint8_t {
 // preserved through arithmetic.  Fast-NaN is the non-IEEE shortcut
 // where NaN propagation is dropped (e.g. `min(NaN, 0) = 0`).
 enum class FpNanPolicy : std::uint8_t {
-    PropagateQuiet      = 0,  // qNaN survives every op (IEEE 754 default)
+    PropagateQuiet = 0,  // qNaN survives every op (IEEE 754 default)
     PropagateSignalling = 1,  // sNaN raises trap on consume; payload survives if masked
-    FastNaN             = 2,  // non-IEEE: `min(NaN, x) = x`, `max(NaN, x) = x` (GPU fast-min/max)
+    FastNaN = 2,  // non-IEEE: `min(NaN, x) = x`, `max(NaN, x) = x` (GPU fast-min/max)
 };
 
 // ── Sub-axis 7: Infinity policy ─────────────────────────────────────
@@ -177,7 +177,7 @@ enum class FpNanPolicy : std::uint8_t {
 // "fast-math" mode often saturates ±Inf to the max finite value.
 enum class FpInfPolicy : std::uint8_t {
     PropagateInfinity = 0,  // ±Inf survives (IEEE 754 default)
-    FlushInfToFinite  = 1,  // ±Inf → ±FLT_MAX (non-IEEE saturation)
+    FlushInfToFinite = 1,  // ±Inf → ±FLT_MAX (non-IEEE saturation)
 };
 
 // ── Sub-axis 8: Complex layout (interleaved / split / Re-major) ─────
@@ -197,12 +197,12 @@ enum class FpComplexLayout : std::uint8_t {
 // per-vendor low-precision approximation (CUDA `__sinf`, AMD
 // `v_sin_f32` etc.).
 enum class FpLibmPolicy : std::uint8_t {
-    ScalarLibm        = 0,  // scalar glibc / musl libm
-    VectorLibmSleef   = 1,  // SLEEF cross-platform vector libm
-    VectorLibmSvml    = 2,  // Intel SVML
+    ScalarLibm = 0,  // scalar glibc / musl libm
+    VectorLibmSleef = 1,  // SLEEF cross-platform vector libm
+    VectorLibmSvml = 2,  // Intel SVML
     VectorLibmLibmvec = 3,  // GCC libmvec
-    FastApproxNv      = 4,  // CUDA `__sinf` / `__cosf` (relaxed ULP bound)
-    FastApproxAm      = 5,  // AMD `v_sin_f32` instruction
+    FastApproxNv = 4,  // CUDA `__sinf` / `__cosf` (relaxed ULP bound)
+    FastApproxAm = 5,  // AMD `v_sin_f32` instruction
     // FIXY-V-095 (append-only per FOUND-I04 Universe extension rule):
     // Polynomial — Crucible-source polynomial approximation evaluated
     // strictly in IEEE 754 arithmetic, NO libm call.  This is the
@@ -215,7 +215,7 @@ enum class FpLibmPolicy : std::uint8_t {
     // sites, NOT via leq/meets/joins.  BITEXACT_TC/STRICT recipes
     // REQUIRE Polynomial; libm variants are admissible only at
     // ORDERED-or-weaker recipe tiers.
-    Polynomial        = 6,  // Crucible polynomial — IEEE 754 bit-stable
+    Polynomial = 6,  // Crucible polynomial — IEEE 754 bit-stable
 };
 
 // ── Sub-axis 10: Reassociation (algebraic rewrite eligibility) ──────
@@ -224,9 +224,9 @@ enum class FpLibmPolicy : std::uint8_t {
 // `Forbidden` for BITEXACT recipes; `BoundedTreeDepth` admits a
 // log-N reduction tree but no arbitrary tree.
 enum class FpReassociate : std::uint8_t {
-    Forbidden          = 0,  // no rewrite (IEEE 754 default; required for BITEXACT)
-    BoundedTreeDepth   = 1,  // log-N tree only (well-defined topology)
-    UnrestrictedRewrite = 2, // -fassociative-math (perf-only; breaks DetSafe)
+    Forbidden = 0,  // no rewrite (IEEE 754 default; required for BITEXACT)
+    BoundedTreeDepth = 1,  // log-N tree only (well-defined topology)
+    UnrestrictedRewrite = 2,  // -fassociative-math (perf-only; breaks DetSafe)
 };
 
 // ── Sub-axis 11: Compile-time FP constant rounding ──────────────────
@@ -236,8 +236,8 @@ enum class FpReassociate : std::uint8_t {
 // constant rounding for the (rare) cases where they diverge.
 enum class FpConstantRounding : std::uint8_t {
     SameAsRuntime = 0,  // FpConstant follows the runtime Rounding enum
-    AlwaysRTE     = 1,  // pin RoundToNearestEven for all literals
-    AlwaysRTZ     = 2,  // pin RoundToZero for all literals
+    AlwaysRTE = 1,  // pin RoundToNearestEven for all literals
+    AlwaysRTZ = 2,  // pin RoundToZero for all literals
 };
 
 // ════════════════════════════════════════════════════════════════════
@@ -256,18 +256,24 @@ enum class FpConstantRounding : std::uint8_t {
 // ── Sub-axis 1: Rounding ────────────────────────────────────────────
 [[nodiscard]] consteval std::string_view fp_rounding_name(FpRounding t) noexcept {
     switch (t) {
-        case FpRounding::RoundToZero:            return "RoundToZero";
-        case FpRounding::RoundToNegativeInf:     return "RoundToNegativeInf";
-        case FpRounding::RoundToPositiveInf:     return "RoundToPositiveInf";
-        case FpRounding::RoundToNearestEven:     return "RoundToNearestEven";
-        case FpRounding::RoundToNearestAwayZero: return "RoundToNearestAwayZero";
-        default:                                  return std::string_view{"<unknown FpRounding>"};
+        case FpRounding::RoundToZero:
+            return "RoundToZero";
+        case FpRounding::RoundToNegativeInf:
+            return "RoundToNegativeInf";
+        case FpRounding::RoundToPositiveInf:
+            return "RoundToPositiveInf";
+        case FpRounding::RoundToNearestEven:
+            return "RoundToNearestEven";
+        case FpRounding::RoundToNearestAwayZero:
+            return "RoundToNearestAwayZero";
+        default:
+            return std::string_view{"<unknown FpRounding>"};
     }
 }
 
 struct FpRoundingLattice : ChainLatticeOps<FpRounding> {
     [[nodiscard]] static constexpr FpRounding bottom() noexcept { return FpRounding::RoundToZero; }
-    [[nodiscard]] static constexpr FpRounding top()    noexcept { return FpRounding::RoundToNearestAwayZero; }
+    [[nodiscard]] static constexpr FpRounding top() noexcept { return FpRounding::RoundToNearestAwayZero; }
     [[nodiscard]] static consteval std::string_view name() noexcept { return "FpRoundingLattice"; }
 
     template <FpRounding T>
@@ -279,18 +285,24 @@ struct FpRoundingLattice : ChainLatticeOps<FpRounding> {
         };
         static constexpr FpRounding tier = T;
         [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-        [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
         [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static consteval std::string_view name() noexcept {
             switch (T) {
-                case FpRounding::RoundToZero:            return "FpRoundingLattice::At<RoundToZero>";
-                case FpRounding::RoundToNegativeInf:     return "FpRoundingLattice::At<RoundToNegativeInf>";
-                case FpRounding::RoundToPositiveInf:     return "FpRoundingLattice::At<RoundToPositiveInf>";
-                case FpRounding::RoundToNearestEven:     return "FpRoundingLattice::At<RoundToNearestEven>";
-                case FpRounding::RoundToNearestAwayZero: return "FpRoundingLattice::At<RoundToNearestAwayZero>";
-                default:                                  return "FpRoundingLattice::At<?>";
+                case FpRounding::RoundToZero:
+                    return "FpRoundingLattice::At<RoundToZero>";
+                case FpRounding::RoundToNegativeInf:
+                    return "FpRoundingLattice::At<RoundToNegativeInf>";
+                case FpRounding::RoundToPositiveInf:
+                    return "FpRoundingLattice::At<RoundToPositiveInf>";
+                case FpRounding::RoundToNearestEven:
+                    return "FpRoundingLattice::At<RoundToNearestEven>";
+                case FpRounding::RoundToNearestAwayZero:
+                    return "FpRoundingLattice::At<RoundToNearestAwayZero>";
+                default:
+                    return "FpRoundingLattice::At<?>";
             }
         }
     };
@@ -299,15 +311,18 @@ struct FpRoundingLattice : ChainLatticeOps<FpRounding> {
 // ── Sub-axis 2: Ftz ─────────────────────────────────────────────────
 [[nodiscard]] consteval std::string_view fp_ftz_name(FpFtz t) noexcept {
     switch (t) {
-        case FpFtz::PreserveSubnormals: return "PreserveSubnormals";
-        case FpFtz::FlushToZero:        return "FlushToZero";
-        default:                         return std::string_view{"<unknown FpFtz>"};
+        case FpFtz::PreserveSubnormals:
+            return "PreserveSubnormals";
+        case FpFtz::FlushToZero:
+            return "FlushToZero";
+        default:
+            return std::string_view{"<unknown FpFtz>"};
     }
 }
 
 struct FpFtzLattice : ChainLatticeOps<FpFtz> {
     [[nodiscard]] static constexpr FpFtz bottom() noexcept { return FpFtz::PreserveSubnormals; }
-    [[nodiscard]] static constexpr FpFtz top()    noexcept { return FpFtz::FlushToZero; }
+    [[nodiscard]] static constexpr FpFtz top() noexcept { return FpFtz::FlushToZero; }
     [[nodiscard]] static consteval std::string_view name() noexcept { return "FpFtzLattice"; }
 
     template <FpFtz T>
@@ -319,15 +334,18 @@ struct FpFtzLattice : ChainLatticeOps<FpFtz> {
         };
         static constexpr FpFtz tier = T;
         [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-        [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
         [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static consteval std::string_view name() noexcept {
             switch (T) {
-                case FpFtz::PreserveSubnormals: return "FpFtzLattice::At<PreserveSubnormals>";
-                case FpFtz::FlushToZero:        return "FpFtzLattice::At<FlushToZero>";
-                default:                         return "FpFtzLattice::At<?>";
+                case FpFtz::PreserveSubnormals:
+                    return "FpFtzLattice::At<PreserveSubnormals>";
+                case FpFtz::FlushToZero:
+                    return "FpFtzLattice::At<FlushToZero>";
+                default:
+                    return "FpFtzLattice::At<?>";
             }
         }
     };
@@ -336,16 +354,20 @@ struct FpFtzLattice : ChainLatticeOps<FpFtz> {
 // ── Sub-axis 3: Contract ────────────────────────────────────────────
 [[nodiscard]] consteval std::string_view fp_contract_name(FpContract t) noexcept {
     switch (t) {
-        case FpContract::Off:      return "Off";
-        case FpContract::OnInExpr: return "OnInExpr";
-        case FpContract::Fast:     return "Fast";
-        default:                    return std::string_view{"<unknown FpContract>"};
+        case FpContract::Off:
+            return "Off";
+        case FpContract::OnInExpr:
+            return "OnInExpr";
+        case FpContract::Fast:
+            return "Fast";
+        default:
+            return std::string_view{"<unknown FpContract>"};
     }
 }
 
 struct FpContractLattice : ChainLatticeOps<FpContract> {
     [[nodiscard]] static constexpr FpContract bottom() noexcept { return FpContract::Off; }
-    [[nodiscard]] static constexpr FpContract top()    noexcept { return FpContract::Fast; }
+    [[nodiscard]] static constexpr FpContract top() noexcept { return FpContract::Fast; }
     [[nodiscard]] static consteval std::string_view name() noexcept { return "FpContractLattice"; }
 
     template <FpContract T>
@@ -357,16 +379,20 @@ struct FpContractLattice : ChainLatticeOps<FpContract> {
         };
         static constexpr FpContract tier = T;
         [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-        [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
         [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static consteval std::string_view name() noexcept {
             switch (T) {
-                case FpContract::Off:      return "FpContractLattice::At<Off>";
-                case FpContract::OnInExpr: return "FpContractLattice::At<OnInExpr>";
-                case FpContract::Fast:     return "FpContractLattice::At<Fast>";
-                default:                    return "FpContractLattice::At<?>";
+                case FpContract::Off:
+                    return "FpContractLattice::At<Off>";
+                case FpContract::OnInExpr:
+                    return "FpContractLattice::At<OnInExpr>";
+                case FpContract::Fast:
+                    return "FpContractLattice::At<Fast>";
+                default:
+                    return "FpContractLattice::At<?>";
             }
         }
     };
@@ -375,19 +401,26 @@ struct FpContractLattice : ChainLatticeOps<FpContract> {
 // ── Sub-axis 4: TrapMask ────────────────────────────────────────────
 [[nodiscard]] consteval std::string_view fp_trap_mask_name(FpTrapMask t) noexcept {
     switch (t) {
-        case FpTrapMask::AllMasked:         return "AllMasked";
-        case FpTrapMask::UnmaskedInvalid:   return "UnmaskedInvalid";
-        case FpTrapMask::UnmaskedDivZero:   return "UnmaskedDivZero";
-        case FpTrapMask::UnmaskedOverflow:  return "UnmaskedOverflow";
-        case FpTrapMask::UnmaskedUnderflow: return "UnmaskedUnderflow";
-        case FpTrapMask::UnmaskedInexact:   return "UnmaskedInexact";
-        default:                             return std::string_view{"<unknown FpTrapMask>"};
+        case FpTrapMask::AllMasked:
+            return "AllMasked";
+        case FpTrapMask::UnmaskedInvalid:
+            return "UnmaskedInvalid";
+        case FpTrapMask::UnmaskedDivZero:
+            return "UnmaskedDivZero";
+        case FpTrapMask::UnmaskedOverflow:
+            return "UnmaskedOverflow";
+        case FpTrapMask::UnmaskedUnderflow:
+            return "UnmaskedUnderflow";
+        case FpTrapMask::UnmaskedInexact:
+            return "UnmaskedInexact";
+        default:
+            return std::string_view{"<unknown FpTrapMask>"};
     }
 }
 
 struct FpTrapMaskLattice : ChainLatticeOps<FpTrapMask> {
     [[nodiscard]] static constexpr FpTrapMask bottom() noexcept { return FpTrapMask::AllMasked; }
-    [[nodiscard]] static constexpr FpTrapMask top()    noexcept { return FpTrapMask::UnmaskedInexact; }
+    [[nodiscard]] static constexpr FpTrapMask top() noexcept { return FpTrapMask::UnmaskedInexact; }
     [[nodiscard]] static consteval std::string_view name() noexcept { return "FpTrapMaskLattice"; }
 
     template <FpTrapMask T>
@@ -399,19 +432,26 @@ struct FpTrapMaskLattice : ChainLatticeOps<FpTrapMask> {
         };
         static constexpr FpTrapMask tier = T;
         [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-        [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
         [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static consteval std::string_view name() noexcept {
             switch (T) {
-                case FpTrapMask::AllMasked:         return "FpTrapMaskLattice::At<AllMasked>";
-                case FpTrapMask::UnmaskedInvalid:   return "FpTrapMaskLattice::At<UnmaskedInvalid>";
-                case FpTrapMask::UnmaskedDivZero:   return "FpTrapMaskLattice::At<UnmaskedDivZero>";
-                case FpTrapMask::UnmaskedOverflow:  return "FpTrapMaskLattice::At<UnmaskedOverflow>";
-                case FpTrapMask::UnmaskedUnderflow: return "FpTrapMaskLattice::At<UnmaskedUnderflow>";
-                case FpTrapMask::UnmaskedInexact:   return "FpTrapMaskLattice::At<UnmaskedInexact>";
-                default:                             return "FpTrapMaskLattice::At<?>";
+                case FpTrapMask::AllMasked:
+                    return "FpTrapMaskLattice::At<AllMasked>";
+                case FpTrapMask::UnmaskedInvalid:
+                    return "FpTrapMaskLattice::At<UnmaskedInvalid>";
+                case FpTrapMask::UnmaskedDivZero:
+                    return "FpTrapMaskLattice::At<UnmaskedDivZero>";
+                case FpTrapMask::UnmaskedOverflow:
+                    return "FpTrapMaskLattice::At<UnmaskedOverflow>";
+                case FpTrapMask::UnmaskedUnderflow:
+                    return "FpTrapMaskLattice::At<UnmaskedUnderflow>";
+                case FpTrapMask::UnmaskedInexact:
+                    return "FpTrapMaskLattice::At<UnmaskedInexact>";
+                default:
+                    return "FpTrapMaskLattice::At<?>";
             }
         }
     };
@@ -420,15 +460,18 @@ struct FpTrapMaskLattice : ChainLatticeOps<FpTrapMask> {
 // ── Sub-axis 5: DenormalInput ───────────────────────────────────────
 [[nodiscard]] consteval std::string_view fp_denormal_input_name(FpDenormalInput t) noexcept {
     switch (t) {
-        case FpDenormalInput::HonorDenormals:   return "HonorDenormals";
-        case FpDenormalInput::DenormalsAreZero: return "DenormalsAreZero";
-        default:                                 return std::string_view{"<unknown FpDenormalInput>"};
+        case FpDenormalInput::HonorDenormals:
+            return "HonorDenormals";
+        case FpDenormalInput::DenormalsAreZero:
+            return "DenormalsAreZero";
+        default:
+            return std::string_view{"<unknown FpDenormalInput>"};
     }
 }
 
 struct FpDenormalInputLattice : ChainLatticeOps<FpDenormalInput> {
     [[nodiscard]] static constexpr FpDenormalInput bottom() noexcept { return FpDenormalInput::HonorDenormals; }
-    [[nodiscard]] static constexpr FpDenormalInput top()    noexcept { return FpDenormalInput::DenormalsAreZero; }
+    [[nodiscard]] static constexpr FpDenormalInput top() noexcept { return FpDenormalInput::DenormalsAreZero; }
     [[nodiscard]] static consteval std::string_view name() noexcept { return "FpDenormalInputLattice"; }
 
     template <FpDenormalInput T>
@@ -440,15 +483,18 @@ struct FpDenormalInputLattice : ChainLatticeOps<FpDenormalInput> {
         };
         static constexpr FpDenormalInput tier = T;
         [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-        [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
         [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static consteval std::string_view name() noexcept {
             switch (T) {
-                case FpDenormalInput::HonorDenormals:   return "FpDenormalInputLattice::At<HonorDenormals>";
-                case FpDenormalInput::DenormalsAreZero: return "FpDenormalInputLattice::At<DenormalsAreZero>";
-                default:                                 return "FpDenormalInputLattice::At<?>";
+                case FpDenormalInput::HonorDenormals:
+                    return "FpDenormalInputLattice::At<HonorDenormals>";
+                case FpDenormalInput::DenormalsAreZero:
+                    return "FpDenormalInputLattice::At<DenormalsAreZero>";
+                default:
+                    return "FpDenormalInputLattice::At<?>";
             }
         }
     };
@@ -457,16 +503,20 @@ struct FpDenormalInputLattice : ChainLatticeOps<FpDenormalInput> {
 // ── Sub-axis 6: NanPolicy ───────────────────────────────────────────
 [[nodiscard]] consteval std::string_view fp_nan_policy_name(FpNanPolicy t) noexcept {
     switch (t) {
-        case FpNanPolicy::PropagateQuiet:      return "PropagateQuiet";
-        case FpNanPolicy::PropagateSignalling: return "PropagateSignalling";
-        case FpNanPolicy::FastNaN:             return "FastNaN";
-        default:                                return std::string_view{"<unknown FpNanPolicy>"};
+        case FpNanPolicy::PropagateQuiet:
+            return "PropagateQuiet";
+        case FpNanPolicy::PropagateSignalling:
+            return "PropagateSignalling";
+        case FpNanPolicy::FastNaN:
+            return "FastNaN";
+        default:
+            return std::string_view{"<unknown FpNanPolicy>"};
     }
 }
 
 struct FpNanPolicyLattice : ChainLatticeOps<FpNanPolicy> {
     [[nodiscard]] static constexpr FpNanPolicy bottom() noexcept { return FpNanPolicy::PropagateQuiet; }
-    [[nodiscard]] static constexpr FpNanPolicy top()    noexcept { return FpNanPolicy::FastNaN; }
+    [[nodiscard]] static constexpr FpNanPolicy top() noexcept { return FpNanPolicy::FastNaN; }
     [[nodiscard]] static consteval std::string_view name() noexcept { return "FpNanPolicyLattice"; }
 
     template <FpNanPolicy T>
@@ -478,16 +528,20 @@ struct FpNanPolicyLattice : ChainLatticeOps<FpNanPolicy> {
         };
         static constexpr FpNanPolicy tier = T;
         [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-        [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
         [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static consteval std::string_view name() noexcept {
             switch (T) {
-                case FpNanPolicy::PropagateQuiet:      return "FpNanPolicyLattice::At<PropagateQuiet>";
-                case FpNanPolicy::PropagateSignalling: return "FpNanPolicyLattice::At<PropagateSignalling>";
-                case FpNanPolicy::FastNaN:             return "FpNanPolicyLattice::At<FastNaN>";
-                default:                                return "FpNanPolicyLattice::At<?>";
+                case FpNanPolicy::PropagateQuiet:
+                    return "FpNanPolicyLattice::At<PropagateQuiet>";
+                case FpNanPolicy::PropagateSignalling:
+                    return "FpNanPolicyLattice::At<PropagateSignalling>";
+                case FpNanPolicy::FastNaN:
+                    return "FpNanPolicyLattice::At<FastNaN>";
+                default:
+                    return "FpNanPolicyLattice::At<?>";
             }
         }
     };
@@ -496,15 +550,18 @@ struct FpNanPolicyLattice : ChainLatticeOps<FpNanPolicy> {
 // ── Sub-axis 7: InfPolicy ───────────────────────────────────────────
 [[nodiscard]] consteval std::string_view fp_inf_policy_name(FpInfPolicy t) noexcept {
     switch (t) {
-        case FpInfPolicy::PropagateInfinity: return "PropagateInfinity";
-        case FpInfPolicy::FlushInfToFinite:  return "FlushInfToFinite";
-        default:                              return std::string_view{"<unknown FpInfPolicy>"};
+        case FpInfPolicy::PropagateInfinity:
+            return "PropagateInfinity";
+        case FpInfPolicy::FlushInfToFinite:
+            return "FlushInfToFinite";
+        default:
+            return std::string_view{"<unknown FpInfPolicy>"};
     }
 }
 
 struct FpInfPolicyLattice : ChainLatticeOps<FpInfPolicy> {
     [[nodiscard]] static constexpr FpInfPolicy bottom() noexcept { return FpInfPolicy::PropagateInfinity; }
-    [[nodiscard]] static constexpr FpInfPolicy top()    noexcept { return FpInfPolicy::FlushInfToFinite; }
+    [[nodiscard]] static constexpr FpInfPolicy top() noexcept { return FpInfPolicy::FlushInfToFinite; }
     [[nodiscard]] static consteval std::string_view name() noexcept { return "FpInfPolicyLattice"; }
 
     template <FpInfPolicy T>
@@ -516,15 +573,18 @@ struct FpInfPolicyLattice : ChainLatticeOps<FpInfPolicy> {
         };
         static constexpr FpInfPolicy tier = T;
         [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-        [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
         [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static consteval std::string_view name() noexcept {
             switch (T) {
-                case FpInfPolicy::PropagateInfinity: return "FpInfPolicyLattice::At<PropagateInfinity>";
-                case FpInfPolicy::FlushInfToFinite:  return "FpInfPolicyLattice::At<FlushInfToFinite>";
-                default:                              return "FpInfPolicyLattice::At<?>";
+                case FpInfPolicy::PropagateInfinity:
+                    return "FpInfPolicyLattice::At<PropagateInfinity>";
+                case FpInfPolicy::FlushInfToFinite:
+                    return "FpInfPolicyLattice::At<FlushInfToFinite>";
+                default:
+                    return "FpInfPolicyLattice::At<?>";
             }
         }
     };
@@ -533,10 +593,14 @@ struct FpInfPolicyLattice : ChainLatticeOps<FpInfPolicy> {
 // ── Sub-axis 8: ComplexLayout ───────────────────────────────────────
 [[nodiscard]] consteval std::string_view fp_complex_layout_name(FpComplexLayout t) noexcept {
     switch (t) {
-        case FpComplexLayout::Interleaved:   return "Interleaved";
-        case FpComplexLayout::SplitRealImag: return "SplitRealImag";
-        case FpComplexLayout::SplitImagReal: return "SplitImagReal";
-        default:                              return std::string_view{"<unknown FpComplexLayout>"};
+        case FpComplexLayout::Interleaved:
+            return "Interleaved";
+        case FpComplexLayout::SplitRealImag:
+            return "SplitRealImag";
+        case FpComplexLayout::SplitImagReal:
+            return "SplitImagReal";
+        default:
+            return std::string_view{"<unknown FpComplexLayout>"};
     }
 }
 
@@ -564,7 +628,7 @@ struct FpInfPolicyLattice : ChainLatticeOps<FpInfPolicy> {
 // Same pattern applies to FpLibmPolicyLattice below.
 struct FpComplexLayoutLattice : ChainLatticeOps<FpComplexLayout> {
     [[nodiscard]] static constexpr FpComplexLayout bottom() noexcept { return FpComplexLayout::Interleaved; }
-    [[nodiscard]] static constexpr FpComplexLayout top()    noexcept { return FpComplexLayout::SplitImagReal; }
+    [[nodiscard]] static constexpr FpComplexLayout top() noexcept { return FpComplexLayout::SplitImagReal; }
     [[nodiscard]] static consteval std::string_view name() noexcept { return "FpComplexLayoutLattice"; }
 
     template <FpComplexLayout T>
@@ -576,16 +640,20 @@ struct FpComplexLayoutLattice : ChainLatticeOps<FpComplexLayout> {
         };
         static constexpr FpComplexLayout tier = T;
         [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-        [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
         [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static consteval std::string_view name() noexcept {
             switch (T) {
-                case FpComplexLayout::Interleaved:   return "FpComplexLayoutLattice::At<Interleaved>";
-                case FpComplexLayout::SplitRealImag: return "FpComplexLayoutLattice::At<SplitRealImag>";
-                case FpComplexLayout::SplitImagReal: return "FpComplexLayoutLattice::At<SplitImagReal>";
-                default:                              return "FpComplexLayoutLattice::At<?>";
+                case FpComplexLayout::Interleaved:
+                    return "FpComplexLayoutLattice::At<Interleaved>";
+                case FpComplexLayout::SplitRealImag:
+                    return "FpComplexLayoutLattice::At<SplitRealImag>";
+                case FpComplexLayout::SplitImagReal:
+                    return "FpComplexLayoutLattice::At<SplitImagReal>";
+                default:
+                    return "FpComplexLayoutLattice::At<?>";
             }
         }
     };
@@ -594,14 +662,22 @@ struct FpComplexLayoutLattice : ChainLatticeOps<FpComplexLayout> {
 // ── Sub-axis 9: LibmPolicy ──────────────────────────────────────────
 [[nodiscard]] consteval std::string_view fp_libm_policy_name(FpLibmPolicy t) noexcept {
     switch (t) {
-        case FpLibmPolicy::ScalarLibm:        return "ScalarLibm";
-        case FpLibmPolicy::VectorLibmSleef:   return "VectorLibmSleef";
-        case FpLibmPolicy::VectorLibmSvml:    return "VectorLibmSvml";
-        case FpLibmPolicy::VectorLibmLibmvec: return "VectorLibmLibmvec";
-        case FpLibmPolicy::FastApproxNv:      return "FastApproxNv";
-        case FpLibmPolicy::FastApproxAm:      return "FastApproxAm";
-        case FpLibmPolicy::Polynomial:        return "Polynomial";  // FIXY-V-095
-        default:                               return std::string_view{"<unknown FpLibmPolicy>"};
+        case FpLibmPolicy::ScalarLibm:
+            return "ScalarLibm";
+        case FpLibmPolicy::VectorLibmSleef:
+            return "VectorLibmSleef";
+        case FpLibmPolicy::VectorLibmSvml:
+            return "VectorLibmSvml";
+        case FpLibmPolicy::VectorLibmLibmvec:
+            return "VectorLibmLibmvec";
+        case FpLibmPolicy::FastApproxNv:
+            return "FastApproxNv";
+        case FpLibmPolicy::FastApproxAm:
+            return "FastApproxAm";
+        case FpLibmPolicy::Polynomial:
+            return "Polynomial";  // FIXY-V-095
+        default:
+            return std::string_view{"<unknown FpLibmPolicy>"};
     }
 }
 
@@ -634,7 +710,7 @@ struct FpLibmPolicyLattice : ChainLatticeOps<FpLibmPolicy> {
     // enumerator's docblock + production discipline (grant-tag at call
     // site requires BITEXACT_TC/STRICT recipes use Polynomial), NOT in
     // the chain ordering.
-    [[nodiscard]] static constexpr FpLibmPolicy top()    noexcept { return FpLibmPolicy::Polynomial; }
+    [[nodiscard]] static constexpr FpLibmPolicy top() noexcept { return FpLibmPolicy::Polynomial; }
     [[nodiscard]] static consteval std::string_view name() noexcept { return "FpLibmPolicyLattice"; }
 
     template <FpLibmPolicy T>
@@ -646,20 +722,28 @@ struct FpLibmPolicyLattice : ChainLatticeOps<FpLibmPolicy> {
         };
         static constexpr FpLibmPolicy tier = T;
         [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-        [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
         [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static consteval std::string_view name() noexcept {
             switch (T) {
-                case FpLibmPolicy::ScalarLibm:        return "FpLibmPolicyLattice::At<ScalarLibm>";
-                case FpLibmPolicy::VectorLibmSleef:   return "FpLibmPolicyLattice::At<VectorLibmSleef>";
-                case FpLibmPolicy::VectorLibmSvml:    return "FpLibmPolicyLattice::At<VectorLibmSvml>";
-                case FpLibmPolicy::VectorLibmLibmvec: return "FpLibmPolicyLattice::At<VectorLibmLibmvec>";
-                case FpLibmPolicy::FastApproxNv:      return "FpLibmPolicyLattice::At<FastApproxNv>";
-                case FpLibmPolicy::FastApproxAm:      return "FpLibmPolicyLattice::At<FastApproxAm>";
-                case FpLibmPolicy::Polynomial:        return "FpLibmPolicyLattice::At<Polynomial>";  // FIXY-V-095
-                default:                               return "FpLibmPolicyLattice::At<?>";
+                case FpLibmPolicy::ScalarLibm:
+                    return "FpLibmPolicyLattice::At<ScalarLibm>";
+                case FpLibmPolicy::VectorLibmSleef:
+                    return "FpLibmPolicyLattice::At<VectorLibmSleef>";
+                case FpLibmPolicy::VectorLibmSvml:
+                    return "FpLibmPolicyLattice::At<VectorLibmSvml>";
+                case FpLibmPolicy::VectorLibmLibmvec:
+                    return "FpLibmPolicyLattice::At<VectorLibmLibmvec>";
+                case FpLibmPolicy::FastApproxNv:
+                    return "FpLibmPolicyLattice::At<FastApproxNv>";
+                case FpLibmPolicy::FastApproxAm:
+                    return "FpLibmPolicyLattice::At<FastApproxAm>";
+                case FpLibmPolicy::Polynomial:
+                    return "FpLibmPolicyLattice::At<Polynomial>";  // FIXY-V-095
+                default:
+                    return "FpLibmPolicyLattice::At<?>";
             }
         }
     };
@@ -668,16 +752,20 @@ struct FpLibmPolicyLattice : ChainLatticeOps<FpLibmPolicy> {
 // ── Sub-axis 10: Reassociate ────────────────────────────────────────
 [[nodiscard]] consteval std::string_view fp_reassociate_name(FpReassociate t) noexcept {
     switch (t) {
-        case FpReassociate::Forbidden:           return "Forbidden";
-        case FpReassociate::BoundedTreeDepth:    return "BoundedTreeDepth";
-        case FpReassociate::UnrestrictedRewrite: return "UnrestrictedRewrite";
-        default:                                  return std::string_view{"<unknown FpReassociate>"};
+        case FpReassociate::Forbidden:
+            return "Forbidden";
+        case FpReassociate::BoundedTreeDepth:
+            return "BoundedTreeDepth";
+        case FpReassociate::UnrestrictedRewrite:
+            return "UnrestrictedRewrite";
+        default:
+            return std::string_view{"<unknown FpReassociate>"};
     }
 }
 
 struct FpReassociateLattice : ChainLatticeOps<FpReassociate> {
     [[nodiscard]] static constexpr FpReassociate bottom() noexcept { return FpReassociate::Forbidden; }
-    [[nodiscard]] static constexpr FpReassociate top()    noexcept { return FpReassociate::UnrestrictedRewrite; }
+    [[nodiscard]] static constexpr FpReassociate top() noexcept { return FpReassociate::UnrestrictedRewrite; }
     [[nodiscard]] static consteval std::string_view name() noexcept { return "FpReassociateLattice"; }
 
     template <FpReassociate T>
@@ -689,16 +777,20 @@ struct FpReassociateLattice : ChainLatticeOps<FpReassociate> {
         };
         static constexpr FpReassociate tier = T;
         [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-        [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
         [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static consteval std::string_view name() noexcept {
             switch (T) {
-                case FpReassociate::Forbidden:           return "FpReassociateLattice::At<Forbidden>";
-                case FpReassociate::BoundedTreeDepth:    return "FpReassociateLattice::At<BoundedTreeDepth>";
-                case FpReassociate::UnrestrictedRewrite: return "FpReassociateLattice::At<UnrestrictedRewrite>";
-                default:                                  return "FpReassociateLattice::At<?>";
+                case FpReassociate::Forbidden:
+                    return "FpReassociateLattice::At<Forbidden>";
+                case FpReassociate::BoundedTreeDepth:
+                    return "FpReassociateLattice::At<BoundedTreeDepth>";
+                case FpReassociate::UnrestrictedRewrite:
+                    return "FpReassociateLattice::At<UnrestrictedRewrite>";
+                default:
+                    return "FpReassociateLattice::At<?>";
             }
         }
     };
@@ -707,16 +799,20 @@ struct FpReassociateLattice : ChainLatticeOps<FpReassociate> {
 // ── Sub-axis 11: ConstantRounding ───────────────────────────────────
 [[nodiscard]] consteval std::string_view fp_constant_rounding_name(FpConstantRounding t) noexcept {
     switch (t) {
-        case FpConstantRounding::SameAsRuntime: return "SameAsRuntime";
-        case FpConstantRounding::AlwaysRTE:     return "AlwaysRTE";
-        case FpConstantRounding::AlwaysRTZ:     return "AlwaysRTZ";
-        default:                                 return std::string_view{"<unknown FpConstantRounding>"};
+        case FpConstantRounding::SameAsRuntime:
+            return "SameAsRuntime";
+        case FpConstantRounding::AlwaysRTE:
+            return "AlwaysRTE";
+        case FpConstantRounding::AlwaysRTZ:
+            return "AlwaysRTZ";
+        default:
+            return std::string_view{"<unknown FpConstantRounding>"};
     }
 }
 
 struct FpConstantRoundingLattice : ChainLatticeOps<FpConstantRounding> {
     [[nodiscard]] static constexpr FpConstantRounding bottom() noexcept { return FpConstantRounding::SameAsRuntime; }
-    [[nodiscard]] static constexpr FpConstantRounding top()    noexcept { return FpConstantRounding::AlwaysRTZ; }
+    [[nodiscard]] static constexpr FpConstantRounding top() noexcept { return FpConstantRounding::AlwaysRTZ; }
     [[nodiscard]] static consteval std::string_view name() noexcept { return "FpConstantRoundingLattice"; }
 
     template <FpConstantRounding T>
@@ -728,16 +824,20 @@ struct FpConstantRoundingLattice : ChainLatticeOps<FpConstantRounding> {
         };
         static constexpr FpConstantRounding tier = T;
         [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-        [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
         [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static consteval std::string_view name() noexcept {
             switch (T) {
-                case FpConstantRounding::SameAsRuntime: return "FpConstantRoundingLattice::At<SameAsRuntime>";
-                case FpConstantRounding::AlwaysRTE:     return "FpConstantRoundingLattice::At<AlwaysRTE>";
-                case FpConstantRounding::AlwaysRTZ:     return "FpConstantRoundingLattice::At<AlwaysRTZ>";
-                default:                                 return "FpConstantRoundingLattice::At<?>";
+                case FpConstantRounding::SameAsRuntime:
+                    return "FpConstantRoundingLattice::At<SameAsRuntime>";
+                case FpConstantRounding::AlwaysRTE:
+                    return "FpConstantRoundingLattice::At<AlwaysRTE>";
+                case FpConstantRounding::AlwaysRTZ:
+                    return "FpConstantRoundingLattice::At<AlwaysRTZ>";
+                default:
+                    return "FpConstantRoundingLattice::At<?>";
             }
         }
     };
@@ -785,17 +885,8 @@ struct FpConstantRoundingLattice : ChainLatticeOps<FpConstantRounding> {
 //   MemSafe  — element_type uses ProductLattice's [[no_unique_address]]
 //              componentwise carrier; no per-instance heap.
 using FpModeProductLattice = ::crucible::algebra::lattices::ProductLattice<
-    FpRoundingLattice,
-    FpFtzLattice,
-    FpContractLattice,
-    FpTrapMaskLattice,
-    FpDenormalInputLattice,
-    FpNanPolicyLattice,
-    FpInfPolicyLattice,
-    FpComplexLayoutLattice,
-    FpLibmPolicyLattice,
-    FpReassociateLattice,
-    FpConstantRoundingLattice>;
+    FpRoundingLattice, FpFtzLattice, FpContractLattice, FpTrapMaskLattice, FpDenormalInputLattice, FpNanPolicyLattice,
+    FpInfPolicyLattice, FpComplexLayoutLattice, FpLibmPolicyLattice, FpReassociateLattice, FpConstantRoundingLattice>;
 
 // Composite-lattice concept-gate witnesses.  The N-ary ProductLattice
 // primary template is gated through the Lattice concept on every
@@ -804,108 +895,86 @@ using FpModeProductLattice = ::crucible::algebra::lattices::ProductLattice<
 // !Semiring check mirrors the per-axis lattice discipline — the
 // composite carries no ⊕/⊗ structure independent of join/meet.
 static_assert(::crucible::algebra::Lattice<FpModeProductLattice>,
-    "FpModeProductLattice must satisfy the Lattice concept "
-    "(componentwise lift of 11 BoundedLattice chains).");
+              "FpModeProductLattice must satisfy the Lattice concept "
+              "(componentwise lift of 11 BoundedLattice chains).");
 static_assert(::crucible::algebra::BoundedLattice<FpModeProductLattice>,
-    "FpModeProductLattice must satisfy BoundedLattice — every component "
-    "ChainLatticeOps<EnumT> publishes bottom() and top().");
+              "FpModeProductLattice must satisfy BoundedLattice — every component "
+              "ChainLatticeOps<EnumT> publishes bottom() and top().");
 static_assert(!::crucible::algebra::Semiring<FpModeProductLattice>,
-    "FpModeProductLattice carries no ⊕/⊗ structure independent of "
-    "join/meet — Semiring would be a falsehood at the type level.");
-static_assert(FpModeProductLattice::arity == 11,
-    "FpModeProductLattice must have arity 11 — one slot per FP sub-axis "
-    "ordinal of the V-088 enum split.");
+              "FpModeProductLattice carries no ⊕/⊗ structure independent of "
+              "join/meet — Semiring would be a falsehood at the type level.");
+static_assert(FpModeProductLattice::arity == 11, "FpModeProductLattice must have arity 11 — one slot per FP sub-axis "
+                                                 "ordinal of the V-088 enum split.");
 
 // ── Self-test (V-088 scaffolding sanity) ────────────────────────────
 namespace detail::fp_mode_lattice_self_test {
 
 // Catalog cardinality assertions — every sub-axis carries at least
 // 2 enumerators (a chain lattice with <2 elements is degenerate).
-inline constexpr std::size_t rounding_count =
-    std::meta::enumerators_of(^^FpRounding).size();
-inline constexpr std::size_t ftz_count =
-    std::meta::enumerators_of(^^FpFtz).size();
-inline constexpr std::size_t contract_count =
-    std::meta::enumerators_of(^^FpContract).size();
-inline constexpr std::size_t trap_mask_count =
-    std::meta::enumerators_of(^^FpTrapMask).size();
-inline constexpr std::size_t denormal_input_count =
-    std::meta::enumerators_of(^^FpDenormalInput).size();
-inline constexpr std::size_t nan_policy_count =
-    std::meta::enumerators_of(^^FpNanPolicy).size();
-inline constexpr std::size_t inf_policy_count =
-    std::meta::enumerators_of(^^FpInfPolicy).size();
-inline constexpr std::size_t complex_layout_count =
-    std::meta::enumerators_of(^^FpComplexLayout).size();
-inline constexpr std::size_t libm_policy_count =
-    std::meta::enumerators_of(^^FpLibmPolicy).size();
-inline constexpr std::size_t reassociate_count =
-    std::meta::enumerators_of(^^FpReassociate).size();
-inline constexpr std::size_t fp_constant_count =
-    std::meta::enumerators_of(^^FpConstantRounding).size();
+inline constexpr std::size_t rounding_count = std::meta::enumerators_of(^^FpRounding).size();
+inline constexpr std::size_t ftz_count = std::meta::enumerators_of(^^FpFtz).size();
+inline constexpr std::size_t contract_count = std::meta::enumerators_of(^^FpContract).size();
+inline constexpr std::size_t trap_mask_count = std::meta::enumerators_of(^^FpTrapMask).size();
+inline constexpr std::size_t denormal_input_count = std::meta::enumerators_of(^^FpDenormalInput).size();
+inline constexpr std::size_t nan_policy_count = std::meta::enumerators_of(^^FpNanPolicy).size();
+inline constexpr std::size_t inf_policy_count = std::meta::enumerators_of(^^FpInfPolicy).size();
+inline constexpr std::size_t complex_layout_count = std::meta::enumerators_of(^^FpComplexLayout).size();
+inline constexpr std::size_t libm_policy_count = std::meta::enumerators_of(^^FpLibmPolicy).size();
+inline constexpr std::size_t reassociate_count = std::meta::enumerators_of(^^FpReassociate).size();
+inline constexpr std::size_t fp_constant_count = std::meta::enumerators_of(^^FpConstantRounding).size();
 
-static_assert(rounding_count == 5,
-    "FpRounding diverged from {RTZ, RTN, RTP, RTE, RTNA} per IEEE 754 "
-    "§4.3 + NV/AMD ISA extensions; confirm intent before changing.");
-static_assert(ftz_count == 2,
-    "FpFtz must be a 2-element chain {PreserveSubnormals, FlushToZero}; "
-    "expanding requires updating x86 MXCSR / ARM FPCR bit-decoders.");
-static_assert(contract_count == 3,
-    "FpContract diverged from {Off, OnInExpr, Fast}; matches GCC "
-    "-ffp-contract={off, on, fast} surface.");
-static_assert(trap_mask_count == 6,
-    "FpTrapMask diverged from the IEEE 754 5-trap + AllMasked surface.");
-static_assert(denormal_input_count == 2,
-    "FpDenormalInput must be {HonorDenormals, DenormalsAreZero}; "
-    "expanding requires updating x86 MXCSR.DAZ / ARM FPCR.FZ decoders.");
-static_assert(nan_policy_count == 3,
-    "FpNanPolicy diverged from {PropagateQuiet, PropagateSignalling, "
-    "FastNaN}.");
-static_assert(inf_policy_count == 2,
-    "FpInfPolicy must be {PropagateInfinity, FlushInfToFinite}.");
-static_assert(complex_layout_count == 3,
-    "FpComplexLayout diverged from {Interleaved, SplitRealImag, "
-    "SplitImagReal}.");
+static_assert(rounding_count == 5, "FpRounding diverged from {RTZ, RTN, RTP, RTE, RTNA} per IEEE 754 "
+                                   "§4.3 + NV/AMD ISA extensions; confirm intent before changing.");
+static_assert(ftz_count == 2, "FpFtz must be a 2-element chain {PreserveSubnormals, FlushToZero}; "
+                              "expanding requires updating x86 MXCSR / ARM FPCR bit-decoders.");
+static_assert(contract_count == 3, "FpContract diverged from {Off, OnInExpr, Fast}; matches GCC "
+                                   "-ffp-contract={off, on, fast} surface.");
+static_assert(trap_mask_count == 6, "FpTrapMask diverged from the IEEE 754 5-trap + AllMasked surface.");
+static_assert(denormal_input_count == 2, "FpDenormalInput must be {HonorDenormals, DenormalsAreZero}; "
+                                         "expanding requires updating x86 MXCSR.DAZ / ARM FPCR.FZ decoders.");
+static_assert(nan_policy_count == 3, "FpNanPolicy diverged from {PropagateQuiet, PropagateSignalling, "
+                                     "FastNaN}.");
+static_assert(inf_policy_count == 2, "FpInfPolicy must be {PropagateInfinity, FlushInfToFinite}.");
+static_assert(complex_layout_count == 3, "FpComplexLayout diverged from {Interleaved, SplitRealImag, "
+                                         "SplitImagReal}.");
 static_assert(libm_policy_count == 7,
-    "FpLibmPolicy diverged from {ScalarLibm, VectorLibmSleef, "
-    "VectorLibmSvml, VectorLibmLibmvec, FastApproxNv, FastApproxAm, "
-    "Polynomial}.");  // FIXY-V-095 appended Polynomial
-static_assert(reassociate_count == 3,
-    "FpReassociate diverged from {Forbidden, BoundedTreeDepth, "
-    "UnrestrictedRewrite}.");
-static_assert(fp_constant_count == 3,
-    "FpConstantRounding diverged from {SameAsRuntime, AlwaysRTE, "
-    "AlwaysRTZ}.");
+              "FpLibmPolicy diverged from {ScalarLibm, VectorLibmSleef, "
+              "VectorLibmSvml, VectorLibmLibmvec, FastApproxNv, FastApproxAm, "
+              "Polynomial}.");  // FIXY-V-095 appended Polynomial
+static_assert(reassociate_count == 3, "FpReassociate diverged from {Forbidden, BoundedTreeDepth, "
+                                      "UnrestrictedRewrite}.");
+static_assert(fp_constant_count == 3, "FpConstantRounding diverged from {SameAsRuntime, AlwaysRTE, "
+                                      "AlwaysRTZ}.");
 
 // Distinctness — every sub-axis is a structurally separate enum type;
 // the type system guarantees `FpRounding` and `FpFtz` cannot be
 // implicitly converted to each other (strong scoped enums).  This
 // witnesses the "11 sub-axes are orthogonal" claim at the type level.
-static_assert(!std::is_same_v<FpRounding,         FpFtz>);
-static_assert(!std::is_same_v<FpRounding,         FpContract>);
-static_assert(!std::is_same_v<FpFtz,              FpDenormalInput>);
-static_assert(!std::is_same_v<FpContract,         FpReassociate>);
-static_assert(!std::is_same_v<FpTrapMask,         FpNanPolicy>);
-static_assert(!std::is_same_v<FpNanPolicy,        FpInfPolicy>);
-static_assert(!std::is_same_v<FpComplexLayout,    FpLibmPolicy>);
-static_assert(!std::is_same_v<FpLibmPolicy,       FpReassociate>);
-static_assert(!std::is_same_v<FpRounding,         FpConstantRounding>);
+static_assert(!std::is_same_v<FpRounding, FpFtz>);
+static_assert(!std::is_same_v<FpRounding, FpContract>);
+static_assert(!std::is_same_v<FpFtz, FpDenormalInput>);
+static_assert(!std::is_same_v<FpContract, FpReassociate>);
+static_assert(!std::is_same_v<FpTrapMask, FpNanPolicy>);
+static_assert(!std::is_same_v<FpNanPolicy, FpInfPolicy>);
+static_assert(!std::is_same_v<FpComplexLayout, FpLibmPolicy>);
+static_assert(!std::is_same_v<FpLibmPolicy, FpReassociate>);
+static_assert(!std::is_same_v<FpRounding, FpConstantRounding>);
 
 // Bottom-element pin — every sub-axis's zero ordinal is the
 // "weakest / least-constraining" element.  V-089 will turn this into
 // a `bottom()` lattice operation; V-088 just asserts the encoding
 // convention is uniform so V-089 can derive `bottom()` mechanically.
-static_assert(std::to_underlying(FpRounding::RoundToZero)            == 0);
-static_assert(std::to_underlying(FpFtz::PreserveSubnormals)          == 0);
-static_assert(std::to_underlying(FpContract::Off)                    == 0);
-static_assert(std::to_underlying(FpTrapMask::AllMasked)              == 0);
-static_assert(std::to_underlying(FpDenormalInput::HonorDenormals)    == 0);
-static_assert(std::to_underlying(FpNanPolicy::PropagateQuiet)        == 0);
-static_assert(std::to_underlying(FpInfPolicy::PropagateInfinity)     == 0);
-static_assert(std::to_underlying(FpComplexLayout::Interleaved)       == 0);
-static_assert(std::to_underlying(FpLibmPolicy::ScalarLibm)           == 0);
-static_assert(std::to_underlying(FpReassociate::Forbidden)           == 0);
-static_assert(std::to_underlying(FpConstantRounding::SameAsRuntime)  == 0);
+static_assert(std::to_underlying(FpRounding::RoundToZero) == 0);
+static_assert(std::to_underlying(FpFtz::PreserveSubnormals) == 0);
+static_assert(std::to_underlying(FpContract::Off) == 0);
+static_assert(std::to_underlying(FpTrapMask::AllMasked) == 0);
+static_assert(std::to_underlying(FpDenormalInput::HonorDenormals) == 0);
+static_assert(std::to_underlying(FpNanPolicy::PropagateQuiet) == 0);
+static_assert(std::to_underlying(FpInfPolicy::PropagateInfinity) == 0);
+static_assert(std::to_underlying(FpComplexLayout::Interleaved) == 0);
+static_assert(std::to_underlying(FpLibmPolicy::ScalarLibm) == 0);
+static_assert(std::to_underlying(FpReassociate::Forbidden) == 0);
+static_assert(std::to_underlying(FpConstantRounding::SameAsRuntime) == 0);
 
 // ════════════════════════════════════════════════════════════════════
 // ── V-089: Per-lattice self-tests (lattice axioms + reflection) ─────
@@ -919,32 +988,29 @@ static_assert(std::to_underlying(FpConstantRounding::SameAsRuntime)  == 0);
 // gains a new enumerator — V-089 ships the coverage check; whoever
 // extends the enum auto-detects the missing switch arm at compile time.
 
-#define CRUCIBLE_FP_NAME_COVERAGE(SubAxis, NameFn, UnknownLit)             \
-    [[nodiscard]] consteval bool every_##NameFn##_has_arm() noexcept {      \
-        static constexpr auto enumerators =                                 \
-            std::define_static_array(std::meta::enumerators_of(^^SubAxis)); \
-        _Pragma("GCC diagnostic push")                                      \
-        _Pragma("GCC diagnostic ignored \"-Wshadow\"")                      \
-        template for (constexpr auto en : enumerators) {                    \
-            if (NameFn([:en:]) == std::string_view{UnknownLit}) return false; \
-        }                                                                   \
-        _Pragma("GCC diagnostic pop")                                       \
-        return true;                                                        \
-    }                                                                       \
-    static_assert(every_##NameFn##_has_arm(),                               \
-        #NameFn "() switch missing an arm for at least one " #SubAxis " enumerator.")
+#define CRUCIBLE_FP_NAME_COVERAGE(SubAxis, NameFn, UnknownLit)                                              \
+    [[nodiscard]] consteval bool every_##NameFn##_has_arm() noexcept {                                      \
+        static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^SubAxis)); \
+        _Pragma("GCC diagnostic push")                                                                      \
+            _Pragma("GCC diagnostic ignored \"-Wshadow\"") template for (constexpr auto en : enumerators) { \
+            if (NameFn([:en:]) == std::string_view{UnknownLit}) return false;                               \
+        }                                                                                                   \
+        _Pragma("GCC diagnostic pop") return true;                                                          \
+    }                                                                                                       \
+    static_assert(every_##NameFn##_has_arm(),                                                               \
+                  #NameFn "() switch missing an arm for at least one " #SubAxis " enumerator.")
 
-CRUCIBLE_FP_NAME_COVERAGE(FpRounding,         fp_rounding_name,         "<unknown FpRounding>");
-CRUCIBLE_FP_NAME_COVERAGE(FpFtz,              fp_ftz_name,              "<unknown FpFtz>");
-CRUCIBLE_FP_NAME_COVERAGE(FpContract,         fp_contract_name,         "<unknown FpContract>");
-CRUCIBLE_FP_NAME_COVERAGE(FpTrapMask,         fp_trap_mask_name,        "<unknown FpTrapMask>");
-CRUCIBLE_FP_NAME_COVERAGE(FpDenormalInput,    fp_denormal_input_name,   "<unknown FpDenormalInput>");
-CRUCIBLE_FP_NAME_COVERAGE(FpNanPolicy,        fp_nan_policy_name,       "<unknown FpNanPolicy>");
-CRUCIBLE_FP_NAME_COVERAGE(FpInfPolicy,        fp_inf_policy_name,       "<unknown FpInfPolicy>");
-CRUCIBLE_FP_NAME_COVERAGE(FpComplexLayout,    fp_complex_layout_name,   "<unknown FpComplexLayout>");
-CRUCIBLE_FP_NAME_COVERAGE(FpLibmPolicy,       fp_libm_policy_name,      "<unknown FpLibmPolicy>");
-CRUCIBLE_FP_NAME_COVERAGE(FpReassociate,      fp_reassociate_name,      "<unknown FpReassociate>");
-CRUCIBLE_FP_NAME_COVERAGE(FpConstantRounding, fp_constant_rounding_name,"<unknown FpConstantRounding>");
+CRUCIBLE_FP_NAME_COVERAGE(FpRounding, fp_rounding_name, "<unknown FpRounding>");
+CRUCIBLE_FP_NAME_COVERAGE(FpFtz, fp_ftz_name, "<unknown FpFtz>");
+CRUCIBLE_FP_NAME_COVERAGE(FpContract, fp_contract_name, "<unknown FpContract>");
+CRUCIBLE_FP_NAME_COVERAGE(FpTrapMask, fp_trap_mask_name, "<unknown FpTrapMask>");
+CRUCIBLE_FP_NAME_COVERAGE(FpDenormalInput, fp_denormal_input_name, "<unknown FpDenormalInput>");
+CRUCIBLE_FP_NAME_COVERAGE(FpNanPolicy, fp_nan_policy_name, "<unknown FpNanPolicy>");
+CRUCIBLE_FP_NAME_COVERAGE(FpInfPolicy, fp_inf_policy_name, "<unknown FpInfPolicy>");
+CRUCIBLE_FP_NAME_COVERAGE(FpComplexLayout, fp_complex_layout_name, "<unknown FpComplexLayout>");
+CRUCIBLE_FP_NAME_COVERAGE(FpLibmPolicy, fp_libm_policy_name, "<unknown FpLibmPolicy>");
+CRUCIBLE_FP_NAME_COVERAGE(FpReassociate, fp_reassociate_name, "<unknown FpReassociate>");
+CRUCIBLE_FP_NAME_COVERAGE(FpConstantRounding, fp_constant_rounding_name, "<unknown FpConstantRounding>");
 
 #undef CRUCIBLE_FP_NAME_COVERAGE
 
@@ -955,14 +1021,13 @@ CRUCIBLE_FP_NAME_COVERAGE(FpConstantRounding, fp_constant_rounding_name,"<unknow
 // confirms lattice axioms + distributivity.  Chain orders are always
 // distributive — failure indicates a leq/join/meet defect.
 
-#define CRUCIBLE_FP_LATTICE_VERIFY(L)                                        \
-    static_assert(Lattice<L>);                                               \
-    static_assert(BoundedLattice<L>);                                        \
-    static_assert(!Semiring<L>);                                             \
-    static_assert(verify_chain_lattice_exhaustive<L>(),                      \
-        #L " chain-order lattice axioms failed at some triple.");            \
-    static_assert(verify_chain_lattice_distributive_exhaustive<L>(),         \
-        #L " chain order failed distributivity — leq/join/meet defect.")
+#define CRUCIBLE_FP_LATTICE_VERIFY(L)                                                                             \
+    static_assert(Lattice<L>);                                                                                    \
+    static_assert(BoundedLattice<L>);                                                                             \
+    static_assert(!Semiring<L>);                                                                                  \
+    static_assert(verify_chain_lattice_exhaustive<L>(), #L " chain-order lattice axioms failed at some triple."); \
+    static_assert(verify_chain_lattice_distributive_exhaustive<L>(),                                              \
+                  #L " chain order failed distributivity — leq/join/meet defect.")
 
 CRUCIBLE_FP_LATTICE_VERIFY(FpRoundingLattice);
 CRUCIBLE_FP_LATTICE_VERIFY(FpFtzLattice);
@@ -984,40 +1049,40 @@ CRUCIBLE_FP_LATTICE_VERIFY(FpConstantRoundingLattice);
 // V-088 self-test pins above) and top == topmost ordinal.  These
 // asserts catch the "someone reordered the enum and the lattice
 // failed to follow" drift class.
-static_assert(FpRoundingLattice::bottom()         == FpRounding::RoundToZero);
-static_assert(FpRoundingLattice::top()            == FpRounding::RoundToNearestAwayZero);
-static_assert(FpFtzLattice::bottom()              == FpFtz::PreserveSubnormals);
-static_assert(FpFtzLattice::top()                 == FpFtz::FlushToZero);
-static_assert(FpContractLattice::bottom()         == FpContract::Off);
-static_assert(FpContractLattice::top()            == FpContract::Fast);
-static_assert(FpTrapMaskLattice::bottom()         == FpTrapMask::AllMasked);
-static_assert(FpTrapMaskLattice::top()            == FpTrapMask::UnmaskedInexact);
-static_assert(FpDenormalInputLattice::bottom()    == FpDenormalInput::HonorDenormals);
-static_assert(FpDenormalInputLattice::top()       == FpDenormalInput::DenormalsAreZero);
-static_assert(FpNanPolicyLattice::bottom()        == FpNanPolicy::PropagateQuiet);
-static_assert(FpNanPolicyLattice::top()           == FpNanPolicy::FastNaN);
-static_assert(FpInfPolicyLattice::bottom()        == FpInfPolicy::PropagateInfinity);
-static_assert(FpInfPolicyLattice::top()           == FpInfPolicy::FlushInfToFinite);
-static_assert(FpComplexLayoutLattice::bottom()    == FpComplexLayout::Interleaved);
-static_assert(FpComplexLayoutLattice::top()       == FpComplexLayout::SplitImagReal);
-static_assert(FpLibmPolicyLattice::bottom()       == FpLibmPolicy::ScalarLibm);
-static_assert(FpLibmPolicyLattice::top()          == FpLibmPolicy::Polynomial);
-static_assert(FpReassociateLattice::bottom()      == FpReassociate::Forbidden);
-static_assert(FpReassociateLattice::top()         == FpReassociate::UnrestrictedRewrite);
+static_assert(FpRoundingLattice::bottom() == FpRounding::RoundToZero);
+static_assert(FpRoundingLattice::top() == FpRounding::RoundToNearestAwayZero);
+static_assert(FpFtzLattice::bottom() == FpFtz::PreserveSubnormals);
+static_assert(FpFtzLattice::top() == FpFtz::FlushToZero);
+static_assert(FpContractLattice::bottom() == FpContract::Off);
+static_assert(FpContractLattice::top() == FpContract::Fast);
+static_assert(FpTrapMaskLattice::bottom() == FpTrapMask::AllMasked);
+static_assert(FpTrapMaskLattice::top() == FpTrapMask::UnmaskedInexact);
+static_assert(FpDenormalInputLattice::bottom() == FpDenormalInput::HonorDenormals);
+static_assert(FpDenormalInputLattice::top() == FpDenormalInput::DenormalsAreZero);
+static_assert(FpNanPolicyLattice::bottom() == FpNanPolicy::PropagateQuiet);
+static_assert(FpNanPolicyLattice::top() == FpNanPolicy::FastNaN);
+static_assert(FpInfPolicyLattice::bottom() == FpInfPolicy::PropagateInfinity);
+static_assert(FpInfPolicyLattice::top() == FpInfPolicy::FlushInfToFinite);
+static_assert(FpComplexLayoutLattice::bottom() == FpComplexLayout::Interleaved);
+static_assert(FpComplexLayoutLattice::top() == FpComplexLayout::SplitImagReal);
+static_assert(FpLibmPolicyLattice::bottom() == FpLibmPolicy::ScalarLibm);
+static_assert(FpLibmPolicyLattice::top() == FpLibmPolicy::Polynomial);
+static_assert(FpReassociateLattice::bottom() == FpReassociate::Forbidden);
+static_assert(FpReassociateLattice::top() == FpReassociate::UnrestrictedRewrite);
 static_assert(FpConstantRoundingLattice::bottom() == FpConstantRounding::SameAsRuntime);
-static_assert(FpConstantRoundingLattice::top()    == FpConstantRounding::AlwaysRTZ);
+static_assert(FpConstantRoundingLattice::top() == FpConstantRounding::AlwaysRTZ);
 
 // ── Lattice top-level diagnostic name pins ──────────────────────────
-static_assert(FpRoundingLattice::name()         == std::string_view{"FpRoundingLattice"});
-static_assert(FpFtzLattice::name()              == std::string_view{"FpFtzLattice"});
-static_assert(FpContractLattice::name()         == std::string_view{"FpContractLattice"});
-static_assert(FpTrapMaskLattice::name()         == std::string_view{"FpTrapMaskLattice"});
-static_assert(FpDenormalInputLattice::name()    == std::string_view{"FpDenormalInputLattice"});
-static_assert(FpNanPolicyLattice::name()        == std::string_view{"FpNanPolicyLattice"});
-static_assert(FpInfPolicyLattice::name()        == std::string_view{"FpInfPolicyLattice"});
-static_assert(FpComplexLayoutLattice::name()    == std::string_view{"FpComplexLayoutLattice"});
-static_assert(FpLibmPolicyLattice::name()       == std::string_view{"FpLibmPolicyLattice"});
-static_assert(FpReassociateLattice::name()      == std::string_view{"FpReassociateLattice"});
+static_assert(FpRoundingLattice::name() == std::string_view{"FpRoundingLattice"});
+static_assert(FpFtzLattice::name() == std::string_view{"FpFtzLattice"});
+static_assert(FpContractLattice::name() == std::string_view{"FpContractLattice"});
+static_assert(FpTrapMaskLattice::name() == std::string_view{"FpTrapMaskLattice"});
+static_assert(FpDenormalInputLattice::name() == std::string_view{"FpDenormalInputLattice"});
+static_assert(FpNanPolicyLattice::name() == std::string_view{"FpNanPolicyLattice"});
+static_assert(FpInfPolicyLattice::name() == std::string_view{"FpInfPolicyLattice"});
+static_assert(FpComplexLayoutLattice::name() == std::string_view{"FpComplexLayoutLattice"});
+static_assert(FpLibmPolicyLattice::name() == std::string_view{"FpLibmPolicyLattice"});
+static_assert(FpReassociateLattice::name() == std::string_view{"FpReassociateLattice"});
 static_assert(FpConstantRoundingLattice::name() == std::string_view{"FpConstantRoundingLattice"});
 
 // ── Strict-chain order pin (lattice ⊥ ⊏ top witness) ────────────────
@@ -1025,27 +1090,27 @@ static_assert(FpConstantRoundingLattice::name() == std::string_view{"FpConstantR
 // Each sub-axis chain has a `leq(bottom, top)` true / `leq(top, bottom)`
 // false witness — pins the chain direction.  Together with
 // verify_chain_lattice_exhaustive the chain is structurally locked.
-static_assert( FpRoundingLattice::leq(FpRounding::RoundToZero, FpRounding::RoundToNearestAwayZero));
+static_assert(FpRoundingLattice::leq(FpRounding::RoundToZero, FpRounding::RoundToNearestAwayZero));
 static_assert(!FpRoundingLattice::leq(FpRounding::RoundToNearestAwayZero, FpRounding::RoundToZero));
-static_assert( FpFtzLattice::leq(FpFtz::PreserveSubnormals, FpFtz::FlushToZero));
+static_assert(FpFtzLattice::leq(FpFtz::PreserveSubnormals, FpFtz::FlushToZero));
 static_assert(!FpFtzLattice::leq(FpFtz::FlushToZero, FpFtz::PreserveSubnormals));
-static_assert( FpContractLattice::leq(FpContract::Off, FpContract::Fast));
+static_assert(FpContractLattice::leq(FpContract::Off, FpContract::Fast));
 static_assert(!FpContractLattice::leq(FpContract::Fast, FpContract::Off));
-static_assert( FpTrapMaskLattice::leq(FpTrapMask::AllMasked, FpTrapMask::UnmaskedInexact));
+static_assert(FpTrapMaskLattice::leq(FpTrapMask::AllMasked, FpTrapMask::UnmaskedInexact));
 static_assert(!FpTrapMaskLattice::leq(FpTrapMask::UnmaskedInexact, FpTrapMask::AllMasked));
-static_assert( FpDenormalInputLattice::leq(FpDenormalInput::HonorDenormals, FpDenormalInput::DenormalsAreZero));
+static_assert(FpDenormalInputLattice::leq(FpDenormalInput::HonorDenormals, FpDenormalInput::DenormalsAreZero));
 static_assert(!FpDenormalInputLattice::leq(FpDenormalInput::DenormalsAreZero, FpDenormalInput::HonorDenormals));
-static_assert( FpNanPolicyLattice::leq(FpNanPolicy::PropagateQuiet, FpNanPolicy::FastNaN));
+static_assert(FpNanPolicyLattice::leq(FpNanPolicy::PropagateQuiet, FpNanPolicy::FastNaN));
 static_assert(!FpNanPolicyLattice::leq(FpNanPolicy::FastNaN, FpNanPolicy::PropagateQuiet));
-static_assert( FpInfPolicyLattice::leq(FpInfPolicy::PropagateInfinity, FpInfPolicy::FlushInfToFinite));
+static_assert(FpInfPolicyLattice::leq(FpInfPolicy::PropagateInfinity, FpInfPolicy::FlushInfToFinite));
 static_assert(!FpInfPolicyLattice::leq(FpInfPolicy::FlushInfToFinite, FpInfPolicy::PropagateInfinity));
-static_assert( FpComplexLayoutLattice::leq(FpComplexLayout::Interleaved, FpComplexLayout::SplitImagReal));
+static_assert(FpComplexLayoutLattice::leq(FpComplexLayout::Interleaved, FpComplexLayout::SplitImagReal));
 static_assert(!FpComplexLayoutLattice::leq(FpComplexLayout::SplitImagReal, FpComplexLayout::Interleaved));
-static_assert( FpLibmPolicyLattice::leq(FpLibmPolicy::ScalarLibm, FpLibmPolicy::FastApproxAm));
+static_assert(FpLibmPolicyLattice::leq(FpLibmPolicy::ScalarLibm, FpLibmPolicy::FastApproxAm));
 static_assert(!FpLibmPolicyLattice::leq(FpLibmPolicy::FastApproxAm, FpLibmPolicy::ScalarLibm));
-static_assert( FpReassociateLattice::leq(FpReassociate::Forbidden, FpReassociate::UnrestrictedRewrite));
+static_assert(FpReassociateLattice::leq(FpReassociate::Forbidden, FpReassociate::UnrestrictedRewrite));
 static_assert(!FpReassociateLattice::leq(FpReassociate::UnrestrictedRewrite, FpReassociate::Forbidden));
-static_assert( FpConstantRoundingLattice::leq(FpConstantRounding::SameAsRuntime, FpConstantRounding::AlwaysRTZ));
+static_assert(FpConstantRoundingLattice::leq(FpConstantRounding::SameAsRuntime, FpConstantRounding::AlwaysRTZ));
 static_assert(!FpConstantRoundingLattice::leq(FpConstantRounding::AlwaysRTZ, FpConstantRounding::SameAsRuntime));
 
 // ── FIXY-FOUND-076 audit pin: FpMode sub-lattice convention sweep ────
@@ -1111,86 +1176,75 @@ static_assert(!FpConstantRoundingLattice::leq(FpConstantRounding::AlwaysRTZ, FpC
 // chain direction reds the corresponding assert.
 
 // FpRounding — ALIGNED per local doc; pin both directions.
-static_assert(FpRoundingLattice::join(FpRounding::RoundToZero,
-                                      FpRounding::RoundToNearestAwayZero)
-              == FpRounding::RoundToNearestAwayZero,
-    "FIXY-FOUND-076: FpRoundingLattice's JOIN returns top "
-    "(RoundToNearestAwayZero) — per local doc L113-115 the 'most-IEEE-"
-    "compliant' choice.  Cross-tree 'strictest-wins via JOIN' holds "
-    "under the local interpretation, though the canonical IEEE default "
-    "(RoundToNearestEven) sits mid-chain — readers should consult the "
-    "doc-block for the rationale.");
-static_assert(FpRoundingLattice::meet(FpRounding::RoundToZero,
-                                      FpRounding::RoundToNearestAwayZero)
-              == FpRounding::RoundToZero,
-    "FIXY-FOUND-076: FpRoundingLattice's MEET returns bottom "
-    "(RoundToZero) — cheapest rounding mode, loses IEEE guarantees.");
+static_assert(FpRoundingLattice::join(FpRounding::RoundToZero, FpRounding::RoundToNearestAwayZero)
+                  == FpRounding::RoundToNearestAwayZero,
+              "FIXY-FOUND-076: FpRoundingLattice's JOIN returns top "
+              "(RoundToNearestAwayZero) — per local doc L113-115 the 'most-IEEE-"
+              "compliant' choice.  Cross-tree 'strictest-wins via JOIN' holds "
+              "under the local interpretation, though the canonical IEEE default "
+              "(RoundToNearestEven) sits mid-chain — readers should consult the "
+              "doc-block for the rationale.");
+static_assert(FpRoundingLattice::meet(FpRounding::RoundToZero, FpRounding::RoundToNearestAwayZero)
+                  == FpRounding::RoundToZero,
+              "FIXY-FOUND-076: FpRoundingLattice's MEET returns bottom "
+              "(RoundToZero) — cheapest rounding mode, loses IEEE guarantees.");
 
 // FpFtz / FpContract / FpTrapMask / FpDenormalInput / FpNanPolicy /
 // FpInfPolicy / FpLibmPolicy / FpReassociate / FpConstantRounding —
 // all INVERTED.  Strictest = chain-bottom.  Pin polarity on each.
-static_assert(FpFtzLattice::meet(FpFtz::PreserveSubnormals, FpFtz::FlushToZero)
-              == FpFtz::PreserveSubnormals,
-    "FIXY-FOUND-076: FpFtzLattice INVERTED — MEET returns "
-    "PreserveSubnormals (bottom = IEEE-strict).  Forge phase E.RecipeSelect "
-    "MUST call MEET to enforce BITEXACT's PreserveSubnormals floor.");
-static_assert(FpContractLattice::meet(FpContract::Off, FpContract::Fast)
-              == FpContract::Off,
-    "FIXY-FOUND-076: FpContractLattice INVERTED — MEET returns Off "
-    "(bottom = no contraction).  BITEXACT recipes MUST gate via MEET.");
-static_assert(FpTrapMaskLattice::meet(FpTrapMask::AllMasked, FpTrapMask::UnmaskedInexact)
-              == FpTrapMask::AllMasked,
-    "FIXY-FOUND-076: FpTrapMaskLattice INVERTED — MEET returns AllMasked "
-    "(bottom = Crucible DetSafe-safe default).");
-static_assert(FpDenormalInputLattice::meet(FpDenormalInput::HonorDenormals,
-                                            FpDenormalInput::DenormalsAreZero)
-              == FpDenormalInput::HonorDenormals,
-    "FIXY-FOUND-076: FpDenormalInputLattice INVERTED — MEET returns "
-    "HonorDenormals (bottom = IEEE-strict).");
+static_assert(FpFtzLattice::meet(FpFtz::PreserveSubnormals, FpFtz::FlushToZero) == FpFtz::PreserveSubnormals,
+              "FIXY-FOUND-076: FpFtzLattice INVERTED — MEET returns "
+              "PreserveSubnormals (bottom = IEEE-strict).  Forge phase E.RecipeSelect "
+              "MUST call MEET to enforce BITEXACT's PreserveSubnormals floor.");
+static_assert(FpContractLattice::meet(FpContract::Off, FpContract::Fast) == FpContract::Off,
+              "FIXY-FOUND-076: FpContractLattice INVERTED — MEET returns Off "
+              "(bottom = no contraction).  BITEXACT recipes MUST gate via MEET.");
+static_assert(FpTrapMaskLattice::meet(FpTrapMask::AllMasked, FpTrapMask::UnmaskedInexact) == FpTrapMask::AllMasked,
+              "FIXY-FOUND-076: FpTrapMaskLattice INVERTED — MEET returns AllMasked "
+              "(bottom = Crucible DetSafe-safe default).");
+static_assert(FpDenormalInputLattice::meet(FpDenormalInput::HonorDenormals, FpDenormalInput::DenormalsAreZero)
+                  == FpDenormalInput::HonorDenormals,
+              "FIXY-FOUND-076: FpDenormalInputLattice INVERTED — MEET returns "
+              "HonorDenormals (bottom = IEEE-strict).");
 static_assert(FpNanPolicyLattice::meet(FpNanPolicy::PropagateQuiet, FpNanPolicy::FastNaN)
-              == FpNanPolicy::PropagateQuiet,
-    "FIXY-FOUND-076: FpNanPolicyLattice INVERTED — MEET returns "
-    "PropagateQuiet (bottom = IEEE NaN propagation).");
-static_assert(FpInfPolicyLattice::meet(FpInfPolicy::PropagateInfinity,
-                                        FpInfPolicy::FlushInfToFinite)
-              == FpInfPolicy::PropagateInfinity,
-    "FIXY-FOUND-076: FpInfPolicyLattice INVERTED — MEET returns "
-    "PropagateInfinity (bottom = IEEE Inf propagation).");
+                  == FpNanPolicy::PropagateQuiet,
+              "FIXY-FOUND-076: FpNanPolicyLattice INVERTED — MEET returns "
+              "PropagateQuiet (bottom = IEEE NaN propagation).");
+static_assert(FpInfPolicyLattice::meet(FpInfPolicy::PropagateInfinity, FpInfPolicy::FlushInfToFinite)
+                  == FpInfPolicy::PropagateInfinity,
+              "FIXY-FOUND-076: FpInfPolicyLattice INVERTED — MEET returns "
+              "PropagateInfinity (bottom = IEEE Inf propagation).");
 static_assert(FpLibmPolicyLattice::meet(FpLibmPolicy::ScalarLibm, FpLibmPolicy::FastApproxAm)
-              == FpLibmPolicy::ScalarLibm,
-    "FIXY-FOUND-076: FpLibmPolicyLattice INVERTED on the chain — MEET "
-    "returns ScalarLibm (chain-bottom).  NOTE: most bit-stable is the "
-    "OFF-CHAIN Polynomial (ordinal 6) per V-095; chain MEET captures "
-    "only chain-bound participants.");
-static_assert(FpReassociateLattice::meet(FpReassociate::Forbidden,
-                                          FpReassociate::UnrestrictedRewrite)
-              == FpReassociate::Forbidden,
-    "FIXY-FOUND-076: FpReassociateLattice INVERTED — MEET returns "
-    "Forbidden (bottom = BITEXACT requires).");
-static_assert(FpConstantRoundingLattice::meet(FpConstantRounding::SameAsRuntime,
-                                               FpConstantRounding::AlwaysRTZ)
-              == FpConstantRounding::SameAsRuntime,
-    "FIXY-FOUND-076: FpConstantRoundingLattice INVERTED — MEET returns "
-    "SameAsRuntime (bottom = consistent with runtime Rounding).");
+                  == FpLibmPolicy::ScalarLibm,
+              "FIXY-FOUND-076: FpLibmPolicyLattice INVERTED on the chain — MEET "
+              "returns ScalarLibm (chain-bottom).  NOTE: most bit-stable is the "
+              "OFF-CHAIN Polynomial (ordinal 6) per V-095; chain MEET captures "
+              "only chain-bound participants.");
+static_assert(FpReassociateLattice::meet(FpReassociate::Forbidden, FpReassociate::UnrestrictedRewrite)
+                  == FpReassociate::Forbidden,
+              "FIXY-FOUND-076: FpReassociateLattice INVERTED — MEET returns "
+              "Forbidden (bottom = BITEXACT requires).");
+static_assert(FpConstantRoundingLattice::meet(FpConstantRounding::SameAsRuntime, FpConstantRounding::AlwaysRTZ)
+                  == FpConstantRounding::SameAsRuntime,
+              "FIXY-FOUND-076: FpConstantRoundingLattice INVERTED — MEET returns "
+              "SameAsRuntime (bottom = consistent with runtime Rounding).");
 
 // FpComplexLayout — N/A.  The chain (Interleaved < SplitRealImag <
 // SplitImagReal) is ordinal-only; semantic readings DO NOT line up
 // with strictness.  Pin both extremes so a refactor inverting the
 // ordinal order reds atomically.
-static_assert(FpComplexLayoutLattice::join(FpComplexLayout::Interleaved,
-                                           FpComplexLayout::SplitImagReal)
-              == FpComplexLayout::SplitImagReal,
-    "FIXY-FOUND-076: FpComplexLayoutLattice is N/A for the strictness "
-    "reading — the chain (Interleaved < SplitRealImag < SplitImagReal) "
-    "is ordinal-only; Interleaved/Split layouts are independent "
-    "memory-layout choices, NOT a strictness ladder.  Cross-tree "
-    "'strictest-wins via JOIN' does not apply.  Use leq for ordinal "
-    "comparison only.");
-static_assert(FpComplexLayoutLattice::meet(FpComplexLayout::Interleaved,
-                                           FpComplexLayout::SplitImagReal)
-              == FpComplexLayout::Interleaved,
-    "FIXY-FOUND-076: FpComplexLayoutLattice MEET — ordinal-min "
-    "(Interleaved).  Polarity pin only; no strictness reading.");
+static_assert(FpComplexLayoutLattice::join(FpComplexLayout::Interleaved, FpComplexLayout::SplitImagReal)
+                  == FpComplexLayout::SplitImagReal,
+              "FIXY-FOUND-076: FpComplexLayoutLattice is N/A for the strictness "
+              "reading — the chain (Interleaved < SplitRealImag < SplitImagReal) "
+              "is ordinal-only; Interleaved/Split layouts are independent "
+              "memory-layout choices, NOT a strictness ladder.  Cross-tree "
+              "'strictest-wins via JOIN' does not apply.  Use leq for ordinal "
+              "comparison only.");
+static_assert(FpComplexLayoutLattice::meet(FpComplexLayout::Interleaved, FpComplexLayout::SplitImagReal)
+                  == FpComplexLayout::Interleaved,
+              "FIXY-FOUND-076: FpComplexLayoutLattice MEET — ordinal-min "
+              "(Interleaved).  Polarity pin only; no strictness reading.");
 
 // ── At<T> singleton — empty element_type for EBO collapse ───────────
 //
@@ -1220,16 +1274,16 @@ static_assert(std::is_empty_v<FpConstantRoundingLattice::At<FpConstantRounding::
 // witnesses, this pins the 11 sub-axes as orthogonal at the algebra
 // layer — V-090's ProductLattice composite will then combine them in
 // a single Graded carrier without cross-axis confusion.
-static_assert(!std::is_same_v<FpRoundingLattice,      FpFtzLattice>);
-static_assert(!std::is_same_v<FpFtzLattice,           FpContractLattice>);
-static_assert(!std::is_same_v<FpContractLattice,      FpTrapMaskLattice>);
-static_assert(!std::is_same_v<FpTrapMaskLattice,      FpDenormalInputLattice>);
+static_assert(!std::is_same_v<FpRoundingLattice, FpFtzLattice>);
+static_assert(!std::is_same_v<FpFtzLattice, FpContractLattice>);
+static_assert(!std::is_same_v<FpContractLattice, FpTrapMaskLattice>);
+static_assert(!std::is_same_v<FpTrapMaskLattice, FpDenormalInputLattice>);
 static_assert(!std::is_same_v<FpDenormalInputLattice, FpNanPolicyLattice>);
-static_assert(!std::is_same_v<FpNanPolicyLattice,     FpInfPolicyLattice>);
-static_assert(!std::is_same_v<FpInfPolicyLattice,     FpComplexLayoutLattice>);
+static_assert(!std::is_same_v<FpNanPolicyLattice, FpInfPolicyLattice>);
+static_assert(!std::is_same_v<FpInfPolicyLattice, FpComplexLayoutLattice>);
 static_assert(!std::is_same_v<FpComplexLayoutLattice, FpLibmPolicyLattice>);
-static_assert(!std::is_same_v<FpLibmPolicyLattice,    FpReassociateLattice>);
-static_assert(!std::is_same_v<FpReassociateLattice,   FpConstantRoundingLattice>);
+static_assert(!std::is_same_v<FpLibmPolicyLattice, FpReassociateLattice>);
+static_assert(!std::is_same_v<FpReassociateLattice, FpConstantRoundingLattice>);
 
 // ── Runtime smoke test (per feedback_algebra_runtime_smoke_test) ────
 //
@@ -1245,7 +1299,7 @@ inline void fp_mode_lattice_runtime_smoke_test() {
     // Rounding (5-element).
     FpRounding ra = FpRounding::RoundToZero;
     FpRounding rb = FpRounding::RoundToNearestAwayZero;
-    [[maybe_unused]] bool       rl1 = FpRoundingLattice::leq(ra, rb);
+    [[maybe_unused]] bool rl1 = FpRoundingLattice::leq(ra, rb);
     [[maybe_unused]] FpRounding rj1 = FpRoundingLattice::join(ra, rb);
     [[maybe_unused]] FpRounding rm1 = FpRoundingLattice::meet(ra, rb);
 

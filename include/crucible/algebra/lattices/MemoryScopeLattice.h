@@ -141,65 +141,66 @@ namespace crucible::algebra::lattices {
 // the integer order IS the scope-width rank; across trunks the integer
 // order is meaningless (the lattice is a partial order).
 enum class MemoryScope : std::uint8_t {
-    Thread   = 0x00,  // ⊥: visible only to the issuing thread; satisfies no cross-thread gate
+    Thread = 0x00,  // ⊥: visible only to the issuing thread; satisfies no cross-thread gate
     // Accelerator (GPU) trunk (narrow → wide)
-    Warp     = 0x10,  // warp-coherent (warp-sync primitives; no `.scope` token)
-    Cta      = 0x11,  // thread-block / cooperative-thread-array (PTX `.cta`)
-    Cluster  = 0x12,  // thread-block cluster (Hopper, PTX `.cluster`)
-    Gpu      = 0x13,  // device-wide (PTX `.gpu`)
+    Warp = 0x10,  // warp-coherent (warp-sync primitives; no `.scope` token)
+    Cta = 0x11,  // thread-block / cooperative-thread-array (PTX `.cta`)
+    Cluster = 0x12,  // thread-block cluster (Hopper, PTX `.cluster`)
+    Gpu = 0x13,  // device-wide (PTX `.gpu`)
     // ARM-host shareability trunk (narrow → wide)
-    Inner    = 0x20,  // inner-shareable domain (DMB ISH)
-    Outer    = 0x21,  // outer-shareable domain (DMB OSH)
-    System   = 0xFF,  // ⊤: full-system visibility (PTX `.sys` / ARM `DMB SY`)
+    Inner = 0x20,  // inner-shareable domain (DMB ISH)
+    Outer = 0x21,  // outer-shareable domain (DMB OSH)
+    System = 0xFF,  // ⊤: full-system visibility (PTX `.sys` / ARM `DMB SY`)
 };
 
-inline constexpr std::size_t memory_scope_count =
-    std::meta::enumerators_of(^^MemoryScope).size();
+inline constexpr std::size_t memory_scope_count = std::meta::enumerators_of(^^MemoryScope).size();
 
 [[nodiscard]] consteval std::string_view memory_scope_name(MemoryScope x) noexcept {
     switch (x) {
-        case MemoryScope::Thread:  return "Thread";
-        case MemoryScope::Warp:    return "Warp";
-        case MemoryScope::Cta:     return "Cta";
-        case MemoryScope::Cluster: return "Cluster";
-        case MemoryScope::Gpu:     return "Gpu";
-        case MemoryScope::Inner:   return "Inner";
-        case MemoryScope::Outer:   return "Outer";
-        case MemoryScope::System:  return "System";
-        default:                   return std::string_view{"<unknown MemoryScope>"};
+        case MemoryScope::Thread:
+            return "Thread";
+        case MemoryScope::Warp:
+            return "Warp";
+        case MemoryScope::Cta:
+            return "Cta";
+        case MemoryScope::Cluster:
+            return "Cluster";
+        case MemoryScope::Gpu:
+            return "Gpu";
+        case MemoryScope::Inner:
+            return "Inner";
+        case MemoryScope::Outer:
+            return "Outer";
+        case MemoryScope::System:
+            return "System";
+        default:
+            return std::string_view{"<unknown MemoryScope>"};
     }
 }
 
 // ── Trunk classification (the partial-order discriminator) ─────────
 [[nodiscard]] constexpr bool mem_scope_is_accel(MemoryScope x) noexcept {
     const auto u = std::to_underlying(x);
-    return u >= std::to_underlying(MemoryScope::Warp) &&
-           u <= std::to_underlying(MemoryScope::Gpu);
+    return u >= std::to_underlying(MemoryScope::Warp) && u <= std::to_underlying(MemoryScope::Gpu);
 }
 [[nodiscard]] constexpr bool mem_scope_is_arm(MemoryScope x) noexcept {
     const auto u = std::to_underlying(x);
-    return u >= std::to_underlying(MemoryScope::Inner) &&
-           u <= std::to_underlying(MemoryScope::Outer);
+    return u >= std::to_underlying(MemoryScope::Inner) && u <= std::to_underlying(MemoryScope::Outer);
 }
 // Two scopes share a trunk iff both are accel-trunk or both are ARM-trunk.
 // Thread and System belong to NEITHER trunk (they are the shared
 // sentinels), so same_trunk(Thread, x) and same_trunk(System, x) are
 // always false — leq/join/meet special-case them before this check.
 [[nodiscard]] constexpr bool mem_scope_same_trunk(MemoryScope a, MemoryScope b) noexcept {
-    return (mem_scope_is_accel(a) && mem_scope_is_accel(b)) ||
-           (mem_scope_is_arm(a) && mem_scope_is_arm(b));
+    return (mem_scope_is_accel(a) && mem_scope_is_accel(b)) || (mem_scope_is_arm(a) && mem_scope_is_arm(b));
 }
 
 // ── Full MemoryScopeLattice (partial order) ─────────────────────────
 struct MemoryScopeLattice {
     using element_type = MemoryScope;
 
-    [[nodiscard]] static constexpr element_type bottom() noexcept {
-        return MemoryScope::Thread;
-    }
-    [[nodiscard]] static constexpr element_type top() noexcept {
-        return MemoryScope::System;
-    }
+    [[nodiscard]] static constexpr element_type bottom() noexcept { return MemoryScope::Thread; }
+    [[nodiscard]] static constexpr element_type top() noexcept { return MemoryScope::System; }
 
     // leq(a, b) — partial-order check.  Priority order:
     //   1. Reflexive: x ⊑ x.
@@ -245,9 +246,7 @@ struct MemoryScopeLattice {
         return MemoryScope::Thread;  // distinct trunks: GLB is ⊥
     }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return "MemoryScopeLattice";
-    }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "MemoryScopeLattice"; }
 
     // ── At<Scope> — per-scope singleton sub-lattice ────────────────
     //
@@ -261,33 +260,38 @@ struct MemoryScopeLattice {
     struct At {
         struct element_type {
             using memory_scope_value_type = MemoryScope;
-            [[nodiscard]] constexpr operator memory_scope_value_type() const noexcept {
-                return S;
-            }
-            [[nodiscard]] constexpr bool operator==(element_type) const noexcept {
-                return true;
-            }
+            [[nodiscard]] constexpr operator memory_scope_value_type() const noexcept { return S; }
+            [[nodiscard]] constexpr bool operator==(element_type) const noexcept { return true; }
         };
 
         static constexpr MemoryScope scope = S;
 
         [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-        [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
         [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
 
         [[nodiscard]] static consteval std::string_view name() noexcept {
             switch (S) {
-                case MemoryScope::Thread:  return "MemoryScopeLattice::At<Thread>";
-                case MemoryScope::Warp:    return "MemoryScopeLattice::At<Warp>";
-                case MemoryScope::Cta:     return "MemoryScopeLattice::At<Cta>";
-                case MemoryScope::Cluster: return "MemoryScopeLattice::At<Cluster>";
-                case MemoryScope::Gpu:     return "MemoryScopeLattice::At<Gpu>";
-                case MemoryScope::Inner:   return "MemoryScopeLattice::At<Inner>";
-                case MemoryScope::Outer:   return "MemoryScopeLattice::At<Outer>";
-                case MemoryScope::System:  return "MemoryScopeLattice::At<System>";
-                default:                   return "MemoryScopeLattice::At<?>";
+                case MemoryScope::Thread:
+                    return "MemoryScopeLattice::At<Thread>";
+                case MemoryScope::Warp:
+                    return "MemoryScopeLattice::At<Warp>";
+                case MemoryScope::Cta:
+                    return "MemoryScopeLattice::At<Cta>";
+                case MemoryScope::Cluster:
+                    return "MemoryScopeLattice::At<Cluster>";
+                case MemoryScope::Gpu:
+                    return "MemoryScopeLattice::At<Gpu>";
+                case MemoryScope::Inner:
+                    return "MemoryScopeLattice::At<Inner>";
+                case MemoryScope::Outer:
+                    return "MemoryScopeLattice::At<Outer>";
+                case MemoryScope::System:
+                    return "MemoryScopeLattice::At<System>";
+                default:
+                    return "MemoryScopeLattice::At<?>";
             }
         }
     };
@@ -295,29 +299,27 @@ struct MemoryScopeLattice {
 
 // ── Convenience aliases ─────────────────────────────────────────────
 namespace memory_scope {
-    using ThreadScope  = MemoryScopeLattice::At<MemoryScope::Thread>;
-    using WarpScope    = MemoryScopeLattice::At<MemoryScope::Warp>;
-    using CtaScope     = MemoryScopeLattice::At<MemoryScope::Cta>;
-    using ClusterScope = MemoryScopeLattice::At<MemoryScope::Cluster>;
-    using GpuScope     = MemoryScopeLattice::At<MemoryScope::Gpu>;
-    using InnerScope   = MemoryScopeLattice::At<MemoryScope::Inner>;
-    using OuterScope   = MemoryScopeLattice::At<MemoryScope::Outer>;
-    using SystemScope  = MemoryScopeLattice::At<MemoryScope::System>;
+using ThreadScope = MemoryScopeLattice::At<MemoryScope::Thread>;
+using WarpScope = MemoryScopeLattice::At<MemoryScope::Warp>;
+using CtaScope = MemoryScopeLattice::At<MemoryScope::Cta>;
+using ClusterScope = MemoryScopeLattice::At<MemoryScope::Cluster>;
+using GpuScope = MemoryScopeLattice::At<MemoryScope::Gpu>;
+using InnerScope = MemoryScopeLattice::At<MemoryScope::Inner>;
+using OuterScope = MemoryScopeLattice::At<MemoryScope::Outer>;
+using SystemScope = MemoryScopeLattice::At<MemoryScope::System>;
 }  // namespace memory_scope
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::memory_scope_lattice_self_test {
 
-static_assert(memory_scope_count == 8,
-    "MemoryScope catalog diverged from {Thread, 4 accel trunk (Warp, Cta, "
-    "Cluster, Gpu), 2 ARM trunk (Inner, Outer), System}; confirm intent and "
-    "update the trunk-classification helpers (mem_scope_is_accel / "
-    "mem_scope_is_arm bound the trunk ranges) AND the V-267 ScopedFence "
-    "satisfies<> + V-268 collision rules AND kAll[] in the verifier below.");
+static_assert(memory_scope_count == 8, "MemoryScope catalog diverged from {Thread, 4 accel trunk (Warp, Cta, "
+                                       "Cluster, Gpu), 2 ARM trunk (Inner, Outer), System}; confirm intent and "
+                                       "update the trunk-classification helpers (mem_scope_is_accel / "
+                                       "mem_scope_is_arm bound the trunk ranges) AND the V-267 ScopedFence "
+                                       "satisfies<> + V-268 collision rules AND kAll[] in the verifier below.");
 
 [[nodiscard]] consteval bool every_memory_scope_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^MemoryScope));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^MemoryScope));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
@@ -328,8 +330,7 @@ static_assert(memory_scope_count == 8,
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_memory_scope_has_name(),
-    "memory_scope_name() switch missing an arm for at least one scope.");
+static_assert(every_memory_scope_has_name(), "memory_scope_name() switch missing an arm for at least one scope.");
 
 static_assert(Lattice<MemoryScopeLattice>);
 static_assert(BoundedLattice<MemoryScopeLattice>);
@@ -349,7 +350,7 @@ static_assert(std::is_empty_v<memory_scope::SystemScope::element_type>);
 
 // ── Bottom + top witnesses ────────────────────────────────────────
 static_assert(MemoryScopeLattice::bottom() == MemoryScope::Thread);
-static_assert(MemoryScopeLattice::top()    == MemoryScope::System);
+static_assert(MemoryScopeLattice::top() == MemoryScope::System);
 
 // ── Trunk-classification witnesses ────────────────────────────────
 static_assert(mem_scope_is_accel(MemoryScope::Warp));
@@ -370,8 +371,8 @@ static_assert(!mem_scope_same_trunk(MemoryScope::System, MemoryScope::Cta));
 
 // ── Reflexivity at every scope ────────────────────────────────────
 static_assert(MemoryScopeLattice::leq(MemoryScope::Thread, MemoryScope::Thread));
-static_assert(MemoryScopeLattice::leq(MemoryScope::Cta,    MemoryScope::Cta));
-static_assert(MemoryScopeLattice::leq(MemoryScope::Outer,  MemoryScope::Outer));
+static_assert(MemoryScopeLattice::leq(MemoryScope::Cta, MemoryScope::Cta));
+static_assert(MemoryScopeLattice::leq(MemoryScope::Outer, MemoryScope::Outer));
 static_assert(MemoryScopeLattice::leq(MemoryScope::System, MemoryScope::System));
 
 // ── Thread ⊑ everything ───────────────────────────────────────────
@@ -382,74 +383,74 @@ static_assert(MemoryScopeLattice::leq(MemoryScope::Thread, MemoryScope::Outer));
 static_assert(MemoryScopeLattice::leq(MemoryScope::Thread, MemoryScope::System));
 
 // ── everything ⊑ System ───────────────────────────────────────────
-static_assert(MemoryScopeLattice::leq(MemoryScope::Warp,  MemoryScope::System));
-static_assert(MemoryScopeLattice::leq(MemoryScope::Gpu,   MemoryScope::System));
+static_assert(MemoryScopeLattice::leq(MemoryScope::Warp, MemoryScope::System));
+static_assert(MemoryScopeLattice::leq(MemoryScope::Gpu, MemoryScope::System));
 static_assert(MemoryScopeLattice::leq(MemoryScope::Inner, MemoryScope::System));
 static_assert(MemoryScopeLattice::leq(MemoryScope::Outer, MemoryScope::System));
 
 // ── Accel trunk subsumption chain (the LOAD-BEARING positive) ─────
 // Warp ⊑ Cta ⊑ Cluster ⊑ Gpu
-static_assert(MemoryScopeLattice::leq(MemoryScope::Warp,    MemoryScope::Cta));
-static_assert(MemoryScopeLattice::leq(MemoryScope::Cta,     MemoryScope::Cluster));
+static_assert(MemoryScopeLattice::leq(MemoryScope::Warp, MemoryScope::Cta));
+static_assert(MemoryScopeLattice::leq(MemoryScope::Cta, MemoryScope::Cluster));
 static_assert(MemoryScopeLattice::leq(MemoryScope::Cluster, MemoryScope::Gpu));
-static_assert(MemoryScopeLattice::leq(MemoryScope::Warp,    MemoryScope::Gpu));   // transitive
+static_assert(MemoryScopeLattice::leq(MemoryScope::Warp, MemoryScope::Gpu));  // transitive
 // Use-case witness: a device fence satisfies a block requirement; a warp
 // fence does not.
-static_assert(MemoryScopeLattice::leq(MemoryScope::Cta,  MemoryScope::Gpu),
-    "FIXY-V-265: Cta ⊑ Gpu — a device-wide fence satisfies a block-scope "
-    "requirement.");
+static_assert(MemoryScopeLattice::leq(MemoryScope::Cta, MemoryScope::Gpu),
+              "FIXY-V-265: Cta ⊑ Gpu — a device-wide fence satisfies a block-scope "
+              "requirement.");
 static_assert(!MemoryScopeLattice::leq(MemoryScope::Gpu, MemoryScope::Cta),
-    "FIXY-V-265: Gpu ⋢ Cta — a block-scope fence is too narrow for a "
-    "device-wide requirement.");
+              "FIXY-V-265: Gpu ⋢ Cta — a block-scope fence is too narrow for a "
+              "device-wide requirement.");
 
 // ── ARM trunk subsumption chain (the LOAD-BEARING positive) ───────
 // Inner (ISH) ⊑ Outer (OSH)
 static_assert(MemoryScopeLattice::leq(MemoryScope::Inner, MemoryScope::Outer));
 static_assert(!MemoryScopeLattice::leq(MemoryScope::Outer, MemoryScope::Inner),
-    "FIXY-V-265: Outer ⋢ Inner — an outer-shareable fence is wider than "
-    "an inner-shareable requirement, not narrower; descending is false.");
+              "FIXY-V-265: Outer ⋢ Inner — an outer-shareable fence is wider than "
+              "an inner-shareable requirement, not narrower; descending is false.");
 
 // ── Cross-trunk incomparability (THE LOAD-BEARING NEGATIVE) ───────
 // Every accel × ARM pair MUST be mutually incomparable — this is what the
 // V-267 ScopedFence safety guarantee depends on (a GPU-scope fence must
 // never be admitted for an ARM-domain requirement and vice versa).
-static_assert(!MemoryScopeLattice::leq(MemoryScope::Cta,     MemoryScope::Inner));
-static_assert(!MemoryScopeLattice::leq(MemoryScope::Inner,   MemoryScope::Cta));
-static_assert(!MemoryScopeLattice::leq(MemoryScope::Gpu,     MemoryScope::Outer));
-static_assert(!MemoryScopeLattice::leq(MemoryScope::Outer,   MemoryScope::Gpu));
-static_assert(!MemoryScopeLattice::leq(MemoryScope::Warp,    MemoryScope::Inner));
-static_assert(!MemoryScopeLattice::leq(MemoryScope::Inner,   MemoryScope::Warp));
+static_assert(!MemoryScopeLattice::leq(MemoryScope::Cta, MemoryScope::Inner));
+static_assert(!MemoryScopeLattice::leq(MemoryScope::Inner, MemoryScope::Cta));
+static_assert(!MemoryScopeLattice::leq(MemoryScope::Gpu, MemoryScope::Outer));
+static_assert(!MemoryScopeLattice::leq(MemoryScope::Outer, MemoryScope::Gpu));
+static_assert(!MemoryScopeLattice::leq(MemoryScope::Warp, MemoryScope::Inner));
+static_assert(!MemoryScopeLattice::leq(MemoryScope::Inner, MemoryScope::Warp));
 static_assert(!MemoryScopeLattice::leq(MemoryScope::Cluster, MemoryScope::Outer));
-static_assert(!MemoryScopeLattice::leq(MemoryScope::Outer,   MemoryScope::Cluster));
+static_assert(!MemoryScopeLattice::leq(MemoryScope::Outer, MemoryScope::Cluster));
 
 // ── Reverse rules — System ⊑ X false, X ⊑ Thread false ────────────
 static_assert(!MemoryScopeLattice::leq(MemoryScope::System, MemoryScope::Cta));
 static_assert(!MemoryScopeLattice::leq(MemoryScope::System, MemoryScope::Outer));
 static_assert(!MemoryScopeLattice::leq(MemoryScope::System, MemoryScope::Thread));
-static_assert(!MemoryScopeLattice::leq(MemoryScope::Cta,    MemoryScope::Thread));
-static_assert(!MemoryScopeLattice::leq(MemoryScope::Outer,  MemoryScope::Thread));
+static_assert(!MemoryScopeLattice::leq(MemoryScope::Cta, MemoryScope::Thread));
+static_assert(!MemoryScopeLattice::leq(MemoryScope::Outer, MemoryScope::Thread));
 
 // ── Join / meet witnesses ─────────────────────────────────────────
 // Same trunk → join = wider rank, meet = narrower rank.
-static_assert(MemoryScopeLattice::join(MemoryScope::Warp, MemoryScope::Gpu)   == MemoryScope::Gpu);
-static_assert(MemoryScopeLattice::meet(MemoryScope::Warp, MemoryScope::Gpu)   == MemoryScope::Warp);
+static_assert(MemoryScopeLattice::join(MemoryScope::Warp, MemoryScope::Gpu) == MemoryScope::Gpu);
+static_assert(MemoryScopeLattice::meet(MemoryScope::Warp, MemoryScope::Gpu) == MemoryScope::Warp);
 static_assert(MemoryScopeLattice::join(MemoryScope::Inner, MemoryScope::Outer) == MemoryScope::Outer);
 static_assert(MemoryScopeLattice::meet(MemoryScope::Inner, MemoryScope::Outer) == MemoryScope::Inner);
 // Cross-trunk → join = System, meet = Thread.
-static_assert(MemoryScopeLattice::join(MemoryScope::Cta, MemoryScope::Inner)  == MemoryScope::System);
-static_assert(MemoryScopeLattice::meet(MemoryScope::Cta, MemoryScope::Inner)  == MemoryScope::Thread);
-static_assert(MemoryScopeLattice::join(MemoryScope::Gpu, MemoryScope::Outer)  == MemoryScope::System);
-static_assert(MemoryScopeLattice::meet(MemoryScope::Gpu, MemoryScope::Outer)  == MemoryScope::Thread);
+static_assert(MemoryScopeLattice::join(MemoryScope::Cta, MemoryScope::Inner) == MemoryScope::System);
+static_assert(MemoryScopeLattice::meet(MemoryScope::Cta, MemoryScope::Inner) == MemoryScope::Thread);
+static_assert(MemoryScopeLattice::join(MemoryScope::Gpu, MemoryScope::Outer) == MemoryScope::System);
+static_assert(MemoryScopeLattice::meet(MemoryScope::Gpu, MemoryScope::Outer) == MemoryScope::Thread);
 // Thread identity for join; System identity for meet.
-static_assert(MemoryScopeLattice::join(MemoryScope::Thread, MemoryScope::Cta)    == MemoryScope::Cta);
+static_assert(MemoryScopeLattice::join(MemoryScope::Thread, MemoryScope::Cta) == MemoryScope::Cta);
 static_assert(MemoryScopeLattice::join(MemoryScope::Thread, MemoryScope::System) == MemoryScope::System);
-static_assert(MemoryScopeLattice::meet(MemoryScope::System, MemoryScope::Outer)  == MemoryScope::Outer);
+static_assert(MemoryScopeLattice::meet(MemoryScope::System, MemoryScope::Outer) == MemoryScope::Outer);
 static_assert(MemoryScopeLattice::meet(MemoryScope::System, MemoryScope::Thread) == MemoryScope::Thread);
 // Thread absorbs in meet; System absorbs in join.
-static_assert(MemoryScopeLattice::meet(MemoryScope::Thread, MemoryScope::Cta)   == MemoryScope::Thread);
+static_assert(MemoryScopeLattice::meet(MemoryScope::Thread, MemoryScope::Cta) == MemoryScope::Thread);
 static_assert(MemoryScopeLattice::join(MemoryScope::System, MemoryScope::Inner) == MemoryScope::System);
 // Idempotence.
-static_assert(MemoryScopeLattice::join(MemoryScope::Cta,   MemoryScope::Cta)   == MemoryScope::Cta);
+static_assert(MemoryScopeLattice::join(MemoryScope::Cta, MemoryScope::Cta) == MemoryScope::Cta);
 static_assert(MemoryScopeLattice::meet(MemoryScope::Outer, MemoryScope::Outer) == MemoryScope::Outer);
 
 // ── Exhaustive lattice-axiom verification — (8 scopes)³ = 512 ──────
@@ -459,10 +460,8 @@ static_assert(MemoryScopeLattice::meet(MemoryScope::Outer, MemoryScope::Outer) =
 // antisymmetry / transitivity of leq + idempotence / commutativity /
 // associativity / absorption / bounds of meet+join + leq-consistency.
 inline constexpr MemoryScope kAll[] = {
-    MemoryScope::Thread,
-    MemoryScope::Warp, MemoryScope::Cta, MemoryScope::Cluster, MemoryScope::Gpu,
-    MemoryScope::Inner, MemoryScope::Outer,
-    MemoryScope::System,
+    MemoryScope::Thread, MemoryScope::Warp,  MemoryScope::Cta,   MemoryScope::Cluster,
+    MemoryScope::Gpu,    MemoryScope::Inner, MemoryScope::Outer, MemoryScope::System,
 };
 
 [[nodiscard]] consteval bool verify_partial_order_exhaustive() noexcept {
@@ -478,14 +477,14 @@ inline constexpr MemoryScope kAll[] = {
             if (L::join(a, L::meet(a, b)) != a) return false;
             if (L::meet(a, L::join(a, b)) != a) return false;
             if (!L::leq(L::bottom(), a)) return false;
-            if (!L::leq(a, L::top()))    return false;
+            if (!L::leq(a, L::top())) return false;
             for (auto c : kAll) {
                 if (L::leq(a, b) && L::leq(b, c) && !L::leq(a, c)) return false;
                 if (L::join(L::join(a, b), c) != L::join(a, L::join(b, c))) return false;
                 if (L::meet(L::meet(a, b), c) != L::meet(a, L::meet(b, c))) return false;
                 bool by_meet = (L::meet(a, b) == a);
                 bool by_join = (L::join(a, b) == b);
-                bool by_leq  = L::leq(a, b);
+                bool by_leq = L::leq(a, b);
                 if (by_leq != by_meet) return false;
                 if (by_leq != by_join) return false;
             }
@@ -494,10 +493,10 @@ inline constexpr MemoryScope kAll[] = {
     return true;
 }
 static_assert(verify_partial_order_exhaustive(),
-    "MemoryScopeLattice's partial-order axioms must hold at every "
-    "(MemoryScope)³ triple over the 8 elements.  If this fires, one of leq "
-    "/ join / meet has a bug for some pair OR the trunk routing (Thread / "
-    "System / same-trunk-rank / cross-trunk) is wrong.");
+              "MemoryScopeLattice's partial-order axioms must hold at every "
+              "(MemoryScope)³ triple over the 8 elements.  If this fires, one of leq "
+              "/ join / meet has a bug for some pair OR the trunk routing (Thread / "
+              "System / same-trunk-rank / cross-trunk) is wrong.");
 
 // ── Non-distributivity witness ────────────────────────────────────
 [[nodiscard]] consteval bool non_distributive_witness() noexcept {
@@ -506,55 +505,53 @@ static_assert(verify_partial_order_exhaustive(),
     // (Gpu ∧ Outer) ∨ (Inner ∧ Outer) = Thread ∨ Inner = Inner   (Inner ⊑ Outer)
     // Outer ≠ Inner — hence non-distributive.
     auto lhs = L::meet(L::join(MemoryScope::Gpu, MemoryScope::Inner), MemoryScope::Outer);
-    auto rhs = L::join(L::meet(MemoryScope::Gpu, MemoryScope::Outer),
-                       L::meet(MemoryScope::Inner, MemoryScope::Outer));
+    auto rhs = L::join(L::meet(MemoryScope::Gpu, MemoryScope::Outer), L::meet(MemoryScope::Inner, MemoryScope::Outer));
     return lhs == MemoryScope::Outer && rhs == MemoryScope::Inner && lhs != rhs;
 }
-static_assert(non_distributive_witness(),
-    "MemoryScopeLattice MUST be non-distributive (see docblock).  If this "
-    "fires, either (a) the accel and ARM trunks were collapsed into one "
-    "chain — DEFEATING the cross-trunk incomparability the V-267 ScopedFence "
-    "safety guarantee depends on — or (b) a synthetic intermediate element "
-    "closed the distributivity gap.  Audit before resolving.");
+static_assert(non_distributive_witness(), "MemoryScopeLattice MUST be non-distributive (see docblock).  If this "
+                                          "fires, either (a) the accel and ARM trunks were collapsed into one "
+                                          "chain — DEFEATING the cross-trunk incomparability the V-267 ScopedFence "
+                                          "safety guarantee depends on — or (b) a synthetic intermediate element "
+                                          "closed the distributivity gap.  Audit before resolving.");
 
 // ── Names ────────────────────────────────────────────────────────
 static_assert(MemoryScopeLattice::name() == "MemoryScopeLattice");
 static_assert(memory_scope::ThreadScope::name() == "MemoryScopeLattice::At<Thread>");
-static_assert(memory_scope::CtaScope::name()    == "MemoryScopeLattice::At<Cta>");
-static_assert(memory_scope::GpuScope::name()    == "MemoryScopeLattice::At<Gpu>");
-static_assert(memory_scope::InnerScope::name()  == "MemoryScopeLattice::At<Inner>");
-static_assert(memory_scope::OuterScope::name()  == "MemoryScopeLattice::At<Outer>");
+static_assert(memory_scope::CtaScope::name() == "MemoryScopeLattice::At<Cta>");
+static_assert(memory_scope::GpuScope::name() == "MemoryScopeLattice::At<Gpu>");
+static_assert(memory_scope::InnerScope::name() == "MemoryScopeLattice::At<Inner>");
+static_assert(memory_scope::OuterScope::name() == "MemoryScopeLattice::At<Outer>");
 static_assert(memory_scope::SystemScope::name() == "MemoryScopeLattice::At<System>");
 
 [[nodiscard]] consteval bool every_at_memory_scope_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^MemoryScope));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^MemoryScope));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
-        if (MemoryScopeLattice::At<([:en:])>::name() ==
-            std::string_view{"MemoryScopeLattice::At<?>"}) {
+        if (MemoryScopeLattice::At<([:en:])>::name() == std::string_view{"MemoryScopeLattice::At<?>"}) {
             return false;
         }
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_at_memory_scope_has_name(),
-    "MemoryScopeLattice::At<S>::name() switch missing an arm.");
+static_assert(every_at_memory_scope_has_name(), "MemoryScopeLattice::At<S>::name() switch missing an arm.");
 
-static_assert(memory_scope::CtaScope::scope    == MemoryScope::Cta);
-static_assert(memory_scope::OuterScope::scope   == MemoryScope::Outer);
-static_assert(memory_scope::ThreadScope::scope  == MemoryScope::Thread);
-static_assert(memory_scope::SystemScope::scope  == MemoryScope::System);
+static_assert(memory_scope::CtaScope::scope == MemoryScope::Cta);
+static_assert(memory_scope::OuterScope::scope == MemoryScope::Outer);
+static_assert(memory_scope::ThreadScope::scope == MemoryScope::Thread);
+static_assert(memory_scope::SystemScope::scope == MemoryScope::System);
 
 // ── Layout invariants ───────────────────────────────────────────────
-struct OneByteValue   { char c{0}; };
-struct EightByteValue { unsigned long long v{0}; };
+struct OneByteValue {
+    char c{0};
+};
+struct EightByteValue {
+    unsigned long long v{0};
+};
 
 template <typename T_>
-using SystemScopeGraded = Graded<ModalityKind::Absolute,
-                                 memory_scope::SystemScope, T_>;
+using SystemScopeGraded = Graded<ModalityKind::Absolute, memory_scope::SystemScope, T_>;
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(SystemScopeGraded, OneByteValue);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(SystemScopeGraded, EightByteValue);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(SystemScopeGraded, int);
@@ -571,21 +568,21 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(OuterGraded, EightByteValue);
 inline void runtime_smoke_test() {
     MemoryScope a = MemoryScope::Cta;
     MemoryScope b = MemoryScope::Inner;
-    [[maybe_unused]] bool        l1   = MemoryScopeLattice::leq(a, b);
-    [[maybe_unused]] MemoryScope j1   = MemoryScopeLattice::join(a, b);
-    [[maybe_unused]] MemoryScope m1   = MemoryScopeLattice::meet(a, b);
-    [[maybe_unused]] MemoryScope bot  = MemoryScopeLattice::bottom();
+    [[maybe_unused]] bool l1 = MemoryScopeLattice::leq(a, b);
+    [[maybe_unused]] MemoryScope j1 = MemoryScopeLattice::join(a, b);
+    [[maybe_unused]] MemoryScope m1 = MemoryScopeLattice::meet(a, b);
+    [[maybe_unused]] MemoryScope bot = MemoryScopeLattice::bottom();
     [[maybe_unused]] MemoryScope topv = MemoryScopeLattice::top();
 
     MemoryScope warp = MemoryScope::Warp;
     [[maybe_unused]] bool within = MemoryScopeLattice::leq(warp, a);  // Warp ⊑ Cta
-    [[maybe_unused]] bool xtrunk = mem_scope_same_trunk(a, b);        // false
+    [[maybe_unused]] bool xtrunk = mem_scope_same_trunk(a, b);  // false
 
     OneByteValue v{42};
     SystemScopeGraded<OneByteValue> initial{v, memory_scope::SystemScope::bottom()};
-    auto widened  = initial.weaken(memory_scope::SystemScope::top());
+    auto widened = initial.weaken(memory_scope::SystemScope::top());
     auto composed = initial.compose(widened);
-    [[maybe_unused]] auto g  = widened.grade();
+    [[maybe_unused]] auto g = widened.grade();
     [[maybe_unused]] auto vc = composed.peek().c;
 
     memory_scope::SystemScope::element_type e{};

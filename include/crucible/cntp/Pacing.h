@@ -55,12 +55,9 @@ struct NicInterfaceName {
     std::array<char, max_bytes> bytes{};
     std::uint8_t size = 0;
 
-    [[nodiscard]] constexpr std::string_view view() const noexcept {
-        return {bytes.data(), size};
-    }
+    [[nodiscard]] constexpr std::string_view view() const noexcept { return {bytes.data(), size}; }
 
-    [[nodiscard]] static constexpr std::expected<NicInterfaceName, PacingError>
-    from(std::string_view name) noexcept {
+    [[nodiscard]] static constexpr std::expected<NicInterfaceName, PacingError> from(std::string_view name) noexcept {
         if (name.empty() || name.size() >= max_bytes) {
             return std::unexpected(PacingError::InvalidInterfaceName);
         }
@@ -68,14 +65,8 @@ struct NicInterfaceName {
         NicInterfaceName out{};
         for (std::size_t i = 0; i < name.size(); ++i) {
             const char c = name[i];
-            const bool ok =
-                (c >= 'a' && c <= 'z') ||
-                (c >= 'A' && c <= 'Z') ||
-                (c >= '0' && c <= '9') ||
-                c == '_' ||
-                c == '-' ||
-                c == '.' ||
-                c == ':';
+            const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'
+                         || c == '-' || c == '.' || c == ':';
             if (!ok) {
                 return std::unexpected(PacingError::InvalidInterfaceName);
             }
@@ -99,8 +90,7 @@ struct QdiscConfig {
     bool allow_auto_config = false;
 };
 
-using DeclaredQdiscConfig =
-    safety::Tagged<QdiscConfig, safety::source::QdiscConfig>;
+using DeclaredQdiscConfig = safety::Tagged<QdiscConfig, safety::source::QdiscConfig>;
 
 static_assert(sizeof(PositivePacingRate) == sizeof(std::uint64_t));
 static_assert(std::is_trivially_copyable_v<NicInterfaceName>);
@@ -114,16 +104,13 @@ admit_pacing_rate(std::uint64_t bytes_per_second) noexcept {
     if (bytes_per_second == 0) {
         return std::unexpected(PacingError::InvalidPacingRate);
     }
-    return PositivePacingRate{
-        bytes_per_second, typename PositivePacingRate::Trusted{}};
+    return PositivePacingRate{bytes_per_second, typename PositivePacingRate::Trusted{}};
 }
 
 template <Qdisc Required>
     requires BbrCompatibleQdisc<Required>
-[[nodiscard]] constexpr DeclaredQdiscConfig
-mint_bbr_qdisc_config(NicInterfaceName iface,
-                      FqConfig fq = {},
-                      bool allow_auto_config = false) noexcept {
+[[nodiscard]] constexpr DeclaredQdiscConfig mint_bbr_qdisc_config(NicInterfaceName iface, FqConfig fq = {},
+                                                                  bool allow_auto_config = false) noexcept {
     return DeclaredQdiscConfig{QdiscConfig{
         .interface = iface,
         .required = Required,
@@ -132,19 +119,15 @@ mint_bbr_qdisc_config(NicInterfaceName iface,
     }};
 }
 
-[[nodiscard]] std::expected<Qdisc, PacingError>
-qdisc_from_kernel_name(std::string_view name) noexcept;
+[[nodiscard]] std::expected<Qdisc, PacingError> qdisc_from_kernel_name(std::string_view name) noexcept;
 
-[[nodiscard]] std::expected<Qdisc, PacingError>
-parse_tc_qdisc_show(std::string_view text) noexcept;
+[[nodiscard]] std::expected<Qdisc, PacingError> parse_tc_qdisc_show(std::string_view text) noexcept;
 
-[[nodiscard]] std::expected<Qdisc, PacingError>
-query_active_qdisc(NicInterfaceName iface) noexcept;
+[[nodiscard]] std::expected<Qdisc, PacingError> query_active_qdisc(NicInterfaceName iface) noexcept;
 
-[[nodiscard]] std::expected<void, PacingError>
-ensure_fq_active(DeclaredQdiscConfig config) noexcept;
+[[nodiscard]] std::expected<void, PacingError> ensure_fq_active(DeclaredQdiscConfig config) noexcept;
 
-[[nodiscard]] std::expected<void, PacingError>
-set_socket_pacing_rate(SocketFd fd, PositivePacingRate bytes_per_second) noexcept;
+[[nodiscard]] std::expected<void, PacingError> set_socket_pacing_rate(SocketFd fd,
+                                                                      PositivePacingRate bytes_per_second) noexcept;
 
 }  // namespace crucible::cntp

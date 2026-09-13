@@ -90,7 +90,7 @@ using ::crucible::safety::PublishSlot;
 namespace crucible {
 
 class Vigil {
- public:
+public:
     // ── Mode machinery (fixy-H-23) ─────────────────────────────────
     //
     // The Mode enum, ModeTransition typestates, ModeCell carrier,
@@ -115,31 +115,27 @@ class Vigil {
     // load. The pending region uses PublishSlot rather than
     // PublishOnce for the same reason: divergence recovery can publish
     // multiple latest-wins regions across one process lifetime.
-    using Mode      = ::crucible::vigil_mode::Mode;
-    using ModeCell  = ::crucible::vigil_mode::ModeCell;
+    using Mode = ::crucible::vigil_mode::Mode;
+    using ModeCell = ::crucible::vigil_mode::ModeCell;
 
     template <Mode From, Mode To>
-    using ModeTransition =
-        ::crucible::vigil_mode::ModeTransition<From, To>;
+    using ModeTransition = ::crucible::vigil_mode::ModeTransition<From, To>;
 
-    using ModeRecordingToCompiled =
-        ::crucible::vigil_mode::ModeRecordingToCompiled;
-    using ModeCompiledToRecording =
-        ::crucible::vigil_mode::ModeCompiledToRecording;
+    using ModeRecordingToCompiled = ::crucible::vigil_mode::ModeRecordingToCompiled;
+    using ModeCompiledToRecording = ::crucible::vigil_mode::ModeCompiledToRecording;
 
-    using ModeProtocol      = ::crucible::vigil_mode::ModeProtocol;
+    using ModeProtocol = ::crucible::vigil_mode::ModeProtocol;
     using ModeSessionHandle = ::crucible::vigil_mode::ModeSessionHandle;
 
-    static consteval bool mode_transition_allowed(Mode from,
-                                                  Mode to) noexcept {
+    static consteval bool mode_transition_allowed(Mode from, Mode to) noexcept {
         return ::crucible::vigil_mode::mode_transition_allowed(from, to);
     }
 
     struct Config {
-        int32_t     rank             = -1;
-        int32_t     world_size       = 0;
-        uint64_t    device_capability = 0;
-        std::string cipher_path;   // empty = no persistence
+        int32_t rank = -1;
+        int32_t world_size = 0;
+        uint64_t device_capability = 0;
+        std::string cipher_path;  // empty = no persistence
 
         // GAPS-004h follow-up: scheduler deadline-miss watchdog wiring.
         //
@@ -164,14 +160,14 @@ class Vigil {
         // sched_switch() == nullptr), but the watchdog's observe()
         // returns InsufficientData every call when the facade is
         // unattached, so the cost is paid for no signal.
-        bool        enable_deadline_watchdog = false;
+        bool enable_deadline_watchdog = false;
 
         // Policy supplied to the watchdog.  Only `deadline_miss_budget`
         // and `watchdog_window_sec` are read; the rest of Policy is
         // ignored at this site (Hardening.h would consume the rest).
         // Default: production() — 10 misses per 60-second window before
         // verdict flips to Downgrade.
-        warden::Policy  watchdog_policy = warden::Policy::production();
+        warden::Policy watchdog_policy = warden::Policy::production();
     };
 
     // Number of consecutive op matches required to confirm an iteration
@@ -204,11 +200,10 @@ class Vigil {
     // Public so HS14 negative-compile fixtures can construct
     // AlignmentPos values in constexpr context to fire the pre.
     static constexpr uint8_t ALIGNMENT_POS_MAX = static_cast<uint8_t>(ALIGNMENT_K);
-    static_assert(ALIGNMENT_K <= UINT8_MAX,
-        "ALIGNMENT_POS_MAX must fit in uint8_t — bump AlignmentPos's "
-        "underlying type if ALIGNMENT_K is ever raised past 255");
-    using AlignmentPos = ::crucible::fixy::wrap::Refined<
-        ::crucible::fixy::wrap::bounded_above<ALIGNMENT_POS_MAX>, uint8_t>;
+    static_assert(ALIGNMENT_K <= UINT8_MAX, "ALIGNMENT_POS_MAX must fit in uint8_t — bump AlignmentPos's "
+                                            "underlying type if ALIGNMENT_K is ever raised past 255");
+    using AlignmentPos =
+        ::crucible::fixy::wrap::Refined<::crucible::fixy::wrap::bounded_above<ALIGNMENT_POS_MAX>, uint8_t>;
 
     // ─── Construction / Destruction ────────────────────────────────
 
@@ -228,10 +223,8 @@ class Vigil {
             // file / env var) — it is `source::External` until
             // Cipher::open() runs sanitize_path() internally to
             // promote provenance to source::Sanitized.
-            cipher_.emplace(Cipher::open(
-                crucible::fixy::wrap::Path<
-                    crucible::fixy::tags::source::External>{
-                    cfg_.cipher_path}));
+            cipher_.emplace(
+                Cipher::open(crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>{cfg_.cipher_path}));
         }
 
         // Wire the background thread callback to our on_region_ready.
@@ -239,9 +232,8 @@ class Vigil {
         // lambda decays to `void(*)(void*, RegionNode*) noexcept` and
         // the no-throw promise is honored under -fno-exceptions
         // (which is globally set for all Crucible TUs).
-        bg_.set_region_ready_callback(this, [](void* self, RegionNode* region) noexcept {
-            static_cast<Vigil*>(self)->on_region_ready(region);
-        });
+        bg_.set_region_ready_callback(
+            this, [](void* self, RegionNode* region) noexcept { static_cast<Vigil*>(self)->on_region_ready(region); });
 
         // GAPS-004h follow-up: load Senses + construct DeadlineWatchdog
         // BEFORE bg_.start() so on_region_ready can call wd_->observe()
@@ -255,24 +247,21 @@ class Vigil {
         // tears down wd_, then senses_ — no UAF on the borrow.
         if (cfg_.enable_deadline_watchdog) {
             senses_.emplace(::crucible::perf::Senses::load_subset(
-                ::crucible::effects::mint_init_context(
-                    ::crucible::effects::detail::ctx_mint::init_key{}),
-                ::crucible::perf::SensesMask{ .sched_switch = true }));
+                ::crucible::effects::mint_init_context(::crucible::effects::detail::ctx_mint::init_key{}),
+                ::crucible::perf::SensesMask{.sched_switch = true}));
             wd_.emplace(&*senses_, cfg_.watchdog_policy,
-                        ::crucible::effects::mint_init_context(
-                            ::crucible::effects::detail::ctx_mint::init_key{}));
+                        ::crucible::effects::mint_init_context(::crucible::effects::detail::ctx_mint::init_key{}));
         }
 
-        bg_.start(ring_.get(), meta_log_.get(),
-                  cfg_.rank, cfg_.world_size, cfg_.device_capability);
+        bg_.start(ring_.get(), meta_log_.get(), cfg_.rank, cfg_.world_size, cfg_.device_capability);
     }
 
-    ~Vigil() = default; // bg_ is declared last → destroyed first → stops thread
+    ~Vigil() = default;  // bg_ is declared last → destroyed first → stops thread
 
-    Vigil(const Vigil&)             = delete("Vigil owns the runtime organism; not copyable");
-    Vigil& operator=(const Vigil&)  = delete("Vigil owns the runtime organism; not copyable");
-    Vigil(Vigil&&)                  = delete("interior pointers from CrucibleContext and ring would dangle");
-    Vigil& operator=(Vigil&&)       = delete("interior pointers from CrucibleContext and ring would dangle");
+    Vigil(const Vigil&) = delete("Vigil owns the runtime organism; not copyable");
+    Vigil& operator=(const Vigil&) = delete("Vigil owns the runtime organism; not copyable");
+    Vigil(Vigil&&) = delete("interior pointers from CrucibleContext and ring would dangle");
+    Vigil& operator=(Vigil&&) = delete("interior pointers from CrucibleContext and ring would dangle");
 
     // ─── Hot path: record one op (RECORDING mode) ──────────────────
     //
@@ -282,14 +271,9 @@ class Vigil {
     // next iteration re-records everything).
     //
     // Hot path: ~5ns + MetaLog write (~10ns for metas) = ~15ns total.
-    [[nodiscard, gnu::hot]] CRUCIBLE_INLINE bool record_op(
-        TraceRing::ValidatedEntryPtr ve,
-        const TensorMeta*            metas,
-        uint32_t                     n_metas,
-        ScopeHash                    scope_hash    = {},
-        CallsiteHash                 callsite_hash = {})
-        pre(ve.value() != nullptr)
-    {
+    [[nodiscard, gnu::hot]] CRUCIBLE_INLINE bool record_op(TraceRing::ValidatedEntryPtr ve, const TensorMeta* metas,
+                                                           uint32_t n_metas, ScopeHash scope_hash = {},
+                                                           CallsiteHash callsite_hash = {}) pre(ve.value() != nullptr) {
         MetaIndex meta_start;  // default = none()
         if (metas && n_metas > 0) {
             meta_start = meta_log_->try_append(metas, n_metas);
@@ -320,14 +304,9 @@ class Vigil {
     //   when needed.  A relaxed load could miss the bg's store for
     //   one op, recording it instead of aligning — alignment then
     //   needs an extra op to reach K, delaying ctx_ activation.
-    [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE DispatchResult dispatch_op(
-        TraceRing::ValidatedEntryPtr ve,
-        const TensorMeta*            metas,
-        uint32_t                     n_metas,
-        ScopeHash                    scope_hash    = {},
-        CallsiteHash                 callsite_hash = {})
-        pre(ve.value() != nullptr)
-    {
+    [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE DispatchResult
+    dispatch_op(TraceRing::ValidatedEntryPtr ve, const TensorMeta* metas, uint32_t n_metas, ScopeHash scope_hash = {},
+                CallsiteHash callsite_hash = {}) pre(ve.value() != nullptr) {
 #ifndef NDEBUG
         // Debug-only SPSC producer-thread check — first dispatch claims
         // the thread, subsequent dispatches must come from the same one.
@@ -348,8 +327,7 @@ class Vigil {
             auto compiled_view = ctx_.mint_compiled_view();
             auto status = ctx_.advance(entry.schema_hash, entry.shape_hash, compiled_view);
             if (status == ReplayStatus::DIVERGED) [[unlikely]]
-                return handle_divergence_(entry, metas, n_metas,
-                                          scope_hash, callsite_hash);
+                return handle_divergence_(entry, metas, n_metas, scope_hash, callsite_hash);
             return {.action = DispatchResult::Action::COMPILED, .status = status, .pad = {}, .op_index = OpIndex{}};
         }
 
@@ -360,12 +338,11 @@ class Vigil {
         // plan, hashes) the bg thread published before its store.
         auto* pending = pending_region_.observe();
         if (pending || pending_activation_) [[unlikely]]
-            return dispatch_transition_(entry, metas, n_metas,
-                                        scope_hash, callsite_hash);
+            return dispatch_transition_(entry, metas, n_metas, scope_hash, callsite_hash);
 
         (void)record_op(ve, metas, n_metas, scope_hash, callsite_hash);
-        return {.action = DispatchResult::Action::RECORD, .status = ReplayStatus::MATCH, .pad = {},
-                .op_index = OpIndex{}};
+        return {
+            .action = DispatchResult::Action::RECORD, .status = ReplayStatus::MATCH, .pad = {}, .op_index = OpIndex{}};
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -409,14 +386,9 @@ class Vigil {
     // — the most common case at production hot-path call sites.
     template <typename CallerRow = ::crucible::effects::Row<>>
         requires ::crucible::effects::IsPure<CallerRow>
-    [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE DispatchResult dispatch_op_pure(
-        TraceRing::ValidatedEntryPtr ve,
-        const TensorMeta*            metas,
-        uint32_t                     n_metas,
-        ScopeHash                    scope_hash    = {},
-        CallsiteHash                 callsite_hash = {})
-        pre(ve.value() != nullptr)
-    {
+    [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE DispatchResult
+    dispatch_op_pure(TraceRing::ValidatedEntryPtr ve, const TensorMeta* metas, uint32_t n_metas,
+                     ScopeHash scope_hash = {}, CallsiteHash callsite_hash = {}) pre(ve.value() != nullptr) {
         return dispatch_op(ve, metas, n_metas, scope_hash, callsite_hash);
     }
 
@@ -429,15 +401,14 @@ class Vigil {
         if (claimed == std::thread::id{}) {
             // First dispatch — try to claim.  Relaxed: this is a
             // debug-only lifecycle gate, no cross-thread sync needed.
-            if (producer_tid_.compare_exchange_strong(
-                    claimed, current_tid, std::memory_order_relaxed)) {
+            if (producer_tid_.compare_exchange_strong(claimed, current_tid, std::memory_order_relaxed)) {
                 return;
             }
             // Lost the race — another thread claimed first; fall through.
         }
-        contract_assert(claimed == current_tid &&
-                        "Vigil::dispatch_op called from a thread other than the "
-                        "foreground producer — SPSC invariant violated");
+        contract_assert(claimed == current_tid
+                        && "Vigil::dispatch_op called from a thread other than the "
+                           "foreground producer — SPSC invariant violated");
     }
 #endif
 
@@ -450,9 +421,7 @@ class Vigil {
     // (the atomic load is not side-effect-free from the optimizer's
     // POV; another thread may change the value between loads, so CSE
     // would be incorrect).  noexcept only.
-    [[nodiscard]] Mode mode() const noexcept {
-        return mode_.load(std::memory_order_relaxed);
-    }
+    [[nodiscard]] Mode mode() const noexcept { return mode_.load(std::memory_order_relaxed); }
     [[nodiscard]] bool is_compiled() const noexcept { return mode() == Mode::COMPILED; }
 
     [[nodiscard]] constexpr ModeSessionHandle mode_session() const noexcept {
@@ -472,18 +441,14 @@ class Vigil {
     // paths.  replay() needs the writable view because the user-supplied
     // RegionExec lambda mutates the region (executes kernels writing
     // outputs).  Eliminates the §III-banned const_cast at the callsite.
-    [[nodiscard]] RegionNode* active_region_mut() noexcept {
-        return bg_.active_region.load(std::memory_order_acquire);
-    }
+    [[nodiscard]] RegionNode* active_region_mut() noexcept { return bg_.active_region.load(std::memory_order_acquire); }
 
     // Monotonic counter advanced exclusively by the bg thread on each
     // region transition (see on_region_ready).  AtomicMonotonic's get()
     // is acquire — strictly stronger than the pre-migration relaxed
     // load, but step_ is informational only (tests + Cipher persist) so
     // the extra ARM dmb on a non-hot read is free.
-    [[nodiscard]] uint64_t current_step() const noexcept {
-        return step_.get();
-    }
+    [[nodiscard]] uint64_t current_step() const noexcept { return step_.get(); }
 
     [[nodiscard]] ContentHash head_hash() const noexcept {
         return cipher_.has_value() ? cipher_->head() : ContentHash{};
@@ -516,9 +481,7 @@ class Vigil {
 
     // Query: has the bg thread fully processed all entries ever produced?
     // Tests use this to verify flush() semantics explicitly.
-    [[nodiscard]] bool flush_complete() const {
-        return bg_.total_processed.get() >= ring_->total_produced();
-    }
+    [[nodiscard]] bool flush_complete() const { return bg_.total_processed.get() >= ring_->total_produced(); }
 
     // Restore the previous SUPERSEDED transaction as the active one.
     // Also deactivates/re-activates CrucibleContext as needed.
@@ -526,15 +489,13 @@ class Vigil {
     [[nodiscard, gnu::cold]] bool rollback() {
         if (!tx_log_.rollback()) return false;
         // Deactivate current per-op replay state.
-        if (ctx_.is_compiled())
-            ctx_.deactivate();
+        if (ctx_.is_compiled()) ctx_.deactivate();
         // Restore active region pointer from the rolled-back transaction.
         const Transaction* tx = tx_log_.active();
         if (tx && tx->region.value()) {
             bg_.active_region.store(tx->region.value(), std::memory_order_release);
             // Re-activate CrucibleContext with the rolled-back region.
-            if (ctx_.activate(tx->region.value()))
-                register_externals_from_region_(tx->region.value());
+            if (ctx_.activate(tx->region.value())) register_externals_from_region_(tx->region.value());
         }
         return true;
     }
@@ -554,10 +515,7 @@ class Vigil {
         if (!region) return false;
         // crucible::replay() is defined in MerkleDag.h.
         // RegionNode : TraceNode, so the pointer upcast is implicit.
-        return crucible::replay(
-            region,
-            std::forward<GuardEval>(eval_guard),
-            std::forward<RegionExec>(exec_region));
+        return crucible::replay(region, std::forward<GuardEval>(eval_guard), std::forward<RegionExec>(exec_region));
     }
 
     // ─── Persistence ───────────────────────────────────────────────
@@ -573,8 +531,7 @@ class Vigil {
         // Mint the view once and thread it through both typed calls —
         // one acquire load instead of two redundant mints.
         auto open_view = cipher_->mint_open_view();
-        const ContentHash hash = cipher_->store(
-            open_view, Cipher::content_addressed(region), meta_log_.get());
+        const ContentHash hash = cipher_->store(open_view, Cipher::content_addressed(region), meta_log_.get());
         if (!hash) return false;
         cipher_->advance_head(open_view, hash, step_.get());
         return true;
@@ -586,8 +543,7 @@ class Vigil {
     [[nodiscard, gnu::cold]] bool load(effects::Alloc a) {
         if (!cipher_.has_value() || cipher_->empty()) return false;
         auto open_view = cipher_->mint_open_view();
-        RegionNode* region = cipher_->load_content_addressed(
-            open_view, a, cipher_->head(), load_arena_).get();
+        RegionNode* region = cipher_->load_content_addressed(open_view, a, cipher_->head(), load_arena_).get();
         if (!region) return false;
         bg_.active_region.store(region, std::memory_order_release);
         mode_.publish_compiled();
@@ -644,14 +600,14 @@ class Vigil {
     // ─── Introspection ─────────────────────────────────────────────
 
     [[nodiscard]] const TransactionLog<16>& tx_log() const CRUCIBLE_LIFETIMEBOUND { return tx_log_; }
-    [[nodiscard]] TraceRing&               ring()       CRUCIBLE_LIFETIMEBOUND { return *ring_; }
-    [[nodiscard]] MetaLog&                 meta_log()   CRUCIBLE_LIFETIMEBOUND { return *meta_log_; }
+    [[nodiscard]] TraceRing& ring() CRUCIBLE_LIFETIMEBOUND { return *ring_; }
+    [[nodiscard]] MetaLog& meta_log() CRUCIBLE_LIFETIMEBOUND { return *meta_log_; }
 
     // Background thread diagnostics.
     [[nodiscard]] uint32_t bg_iterations_completed() const { return bg_.iterations_completed.get(); }
     [[nodiscard]] uint32_t bg_last_iteration_length() const { return bg_.last_iteration_length; }
     [[nodiscard]] uint32_t bg_detector_boundaries() const { return bg_.detector.boundaries_detected.get(); }
-    [[nodiscard]] bool     bg_detector_confirmed() const { return bg_.detector.confirmed; }
+    [[nodiscard]] bool bg_detector_confirmed() const { return bg_.detector.confirmed; }
 
     // ─── Deadline watchdog diagnostics (GAPS-004h follow-up) ───────
     //
@@ -667,16 +623,13 @@ class Vigil {
     // window's observations always yield InsufficientData while the
     // baseline is captured.  Check `last_watchdog_verdict()` for the
     // current verdict.
-    [[nodiscard]] bool watchdog_enabled() const noexcept {
-        return wd_.has_value();
-    }
+    [[nodiscard]] bool watchdog_enabled() const noexcept { return wd_.has_value(); }
 
     // Most recent verdict published by the bg-thread observe() call.
     // Acquire load — pairs with the release store in on_region_ready.
     // Returns InsufficientData on a freshly-constructed Vigil (no
     // region transitions yet) or on a Vigil with watchdog disabled.
-    [[nodiscard]] ::crucible::warden::WatchdogVerdict
-    last_watchdog_verdict() const noexcept {
+    [[nodiscard]] ::crucible::warden::WatchdogVerdict last_watchdog_verdict() const noexcept {
         return wd_last_verdict_.load(std::memory_order_acquire);
     }
 
@@ -705,7 +658,7 @@ class Vigil {
     // needs more state (e.g. baseline_count for window-start
     // attribution), publish it from on_region_ready as another atomic.
 
- private:
+private:
     // ─── Background thread callback ────────────────────────────────
     //
     // Called on the background thread when a new RegionNode is ready.
@@ -732,10 +685,8 @@ class Vigil {
         // accessor's `pre(is_non_zero(merkle_hash))` fires here if
         // recompute_merkle hasn't run; commit's runtime gate at
         // Transaction.h is the second line of defense).
-        (void)tx_log_.commit(tx, Transaction::ArenaRegion{region},
-                             region->content_hash,
-                             ::crucible::make_merkle_root(
-                                 region->computed_merkle_hash()));
+        (void)tx_log_.commit(tx, Transaction::ArenaRegion{region}, region->content_hash,
+                             ::crucible::make_merkle_root(region->computed_merkle_hash()));
         (void)tx_log_.activate(tx);
 
         // Signal fg thread: a region with a MemoryPlan is available.
@@ -785,12 +736,8 @@ class Vigil {
     // Divergence handler: region cache lookup, switch attempt, fallback.
     // Called when ctx_.advance() returns DIVERGED.  ~50-400ns cold path.
     [[nodiscard, gnu::cold]] CRUCIBLE_NOINLINE DispatchResult handle_divergence_(
-        const TraceRing::Entry& entry,
-        [[maybe_unused]] const TensorMeta* metas,
-        [[maybe_unused]] uint32_t          n_metas,
-        [[maybe_unused]] ScopeHash         scope_hash,
-        [[maybe_unused]] CallsiteHash      callsite_hash)
-    {
+        const TraceRing::Entry& entry, [[maybe_unused]] const TensorMeta* metas, [[maybe_unused]] uint32_t n_metas,
+        [[maybe_unused]] ScopeHash scope_hash, [[maybe_unused]] CallsiteHash callsite_hash) {
         const uint32_t div_pos = ctx_.engine().ops_matched();
 
         // Cache the diverging region for future shape switches.
@@ -798,9 +745,7 @@ class Vigil {
 
         // Try to find a cached region that matches at the divergence
         // position.  Excludes the current region.
-        auto* alt = region_cache_.find_alternate(
-            div_pos, entry.schema_hash, entry.shape_hash,
-            ctx_.active_region());
+        auto* alt = region_cache_.find_alternate(div_pos, entry.schema_hash, entry.shape_hash, ctx_.active_region());
 
         if (alt && try_switch_region_(alt, div_pos)) {
             // Switched successfully.  Advance past the divergent op.
@@ -808,15 +753,16 @@ class Vigil {
             auto compiled_view = ctx_.mint_compiled_view();
             auto status = ctx_.advance(entry.schema_hash, entry.shape_hash, compiled_view);
             if (status != ReplayStatus::DIVERGED) {
-                return {.action = DispatchResult::Action::COMPILED, .status = status, .pad = {},
+                return {.action = DispatchResult::Action::COMPILED,
+                        .status = status,
+                        .pad = {},
                         .op_index = OpIndex{ctx_.engine().ops_matched()}};
             }
             // Double divergence — shouldn't happen.  Fall through.
         }
 
         // No cached alternate, switch failed, or double divergence.
-        if (ctx_.is_compiled())
-            ctx_.deactivate();
+        if (ctx_.is_compiled()) ctx_.deactivate();
 
         mode_.publish_recording_after_divergence();
         // Signal bg thread to reset its detector and accumulated trace.
@@ -824,27 +770,26 @@ class Vigil {
         // Don't record the divergent op — it poisons the bg thread's
         // iteration detector.
         return {.action = DispatchResult::Action::RECORD,
-                .status = ReplayStatus::DIVERGED, .pad = {}, .op_index = OpIndex{}};
+                .status = ReplayStatus::DIVERGED,
+                .pad = {},
+                .op_index = OpIndex{}};
     }
 
     // Transition handler: consume pending region, run alignment, or
     // record while a transition is in progress.  Called when
     // pending_region_ or pending_activation_ is non-null.
-    [[nodiscard, gnu::cold]] CRUCIBLE_NOINLINE DispatchResult dispatch_transition_(
-        const TraceRing::Entry& entry,
-        const TensorMeta*       metas,
-        uint32_t                n_metas,
-        ScopeHash               scope_hash,
-        CallsiteHash            callsite_hash)
-    {
+    [[nodiscard, gnu::cold]] CRUCIBLE_NOINLINE DispatchResult dispatch_transition_(const TraceRing::Entry& entry,
+                                                                                   const TensorMeta* metas,
+                                                                                   uint32_t n_metas,
+                                                                                   ScopeHash scope_hash,
+                                                                                   CallsiteHash callsite_hash) {
         // Always try to consume pending_region_.
         // If a newer region arrives while alignment is in progress,
         // consume_pending_region_ replaces pending_activation_ and
         // resets alignment_pos_ to 0. This is correct: the newer
         // region may have different ops (e.g. after a divergence
         // recovery cycle), so we must re-align from scratch.
-        if (pending_region_.observe())
-            consume_pending_region_();
+        if (pending_region_.observe()) consume_pending_region_();
 
         if (pending_activation_) {
             // Alignment phase: don't record (prevents false iteration
@@ -856,8 +801,8 @@ class Vigil {
             (void)record_op(vouch(entry), metas, n_metas, scope_hash, callsite_hash);
         }
 
-        return {.action = DispatchResult::Action::RECORD, .status = ReplayStatus::MATCH, .pad = {},
-                .op_index = OpIndex{}};
+        return {
+            .action = DispatchResult::Action::RECORD, .status = ReplayStatus::MATCH, .pad = {}, .op_index = OpIndex{}};
     }
 
     // ─── Private helpers ────────────────────────────────────────────
@@ -890,9 +835,7 @@ class Vigil {
 
         // Check if current op matches the expected alignment position.
         const uint8_t pos = alignment_pos_.value();
-        if (schema == region->ops[pos].schema_hash &&
-            shape  == region->ops[pos].shape_hash)
-        {
+        if (schema == region->ops[pos].schema_hash && shape == region->ops[pos].shape_hash) {
             // Increment via fresh AlignmentPos construction — Refined's
             // ctor pre fires if (pos + 1) > ALIGNMENT_K; control-flow
             // reaches here only after the prior iteration's `>= threshold`
@@ -902,18 +845,14 @@ class Vigil {
         } else {
             // Mismatch — reset. But check if this op could be a new start (op 0).
             alignment_pos_ = AlignmentPos{uint8_t{0}};
-            if (region->num_ops > 0 &&
-                schema == region->ops[0].schema_hash &&
-                shape  == region->ops[0].shape_hash)
-            {
+            if (region->num_ops > 0 && schema == region->ops[0].schema_hash && shape == region->ops[0].shape_hash) {
                 alignment_pos_ = AlignmentPos{uint8_t{1}};
             }
         }
 
         // Once K consecutive ops match (or entire region if smaller),
         // we've confirmed the iteration boundary. Activate and advance.
-        const uint32_t threshold = (region->num_ops < ALIGNMENT_K)
-                                 ? region->num_ops : ALIGNMENT_K;
+        const uint32_t threshold = (region->num_ops < ALIGNMENT_K) ? region->num_ops : ALIGNMENT_K;
 
         if (uint32_t{alignment_pos_.value()} >= threshold) {
             if (!ctx_.activate(region)) {
@@ -930,8 +869,7 @@ class Vigil {
             // be at position alignment_pos_ so the NEXT op checks against
             // the correct region op.
             for (uint32_t i = 0; i < uint32_t{alignment_pos_.value()}; i++) {
-                auto status = ctx_.advance(region->ops[i].schema_hash,
-                                           region->ops[i].shape_hash);
+                auto status = ctx_.advance(region->ops[i].schema_hash, region->ops[i].shape_hash);
                 // Must match — we verified these during alignment.
                 assert(status == ReplayStatus::MATCH || status == ReplayStatus::COMPLETE);
                 (void)status;
@@ -983,9 +921,7 @@ class Vigil {
     // selective slot migration, and engine advancement.
     //
     // Returns true if switch succeeded and engine is at position div_pos.
-    [[nodiscard, gnu::cold]] bool try_switch_region_(const RegionNode* alt, uint32_t div_pos)
-        pre (alt != nullptr)
-    {
+    [[nodiscard, gnu::cold]] bool try_switch_region_(const RegionNode* alt, uint32_t div_pos) pre(alt != nullptr) {
         if (!alt->plan) return false;
 
         // For div_pos>0, verify prefix match: ops 0..div_pos-1
@@ -997,8 +933,8 @@ class Vigil {
             if (div_pos > alt->num_ops) return false;
 
             for (uint32_t i = 0; i < div_pos; i++) {
-                if (old_region->ops[i].schema_hash != alt->ops[i].schema_hash ||
-                    old_region->ops[i].shape_hash  != alt->ops[i].shape_hash)
+                if (old_region->ops[i].schema_hash != alt->ops[i].schema_hash
+                    || old_region->ops[i].shape_hash != alt->ops[i].shape_hash)
                     return false;
             }
         }
@@ -1038,11 +974,11 @@ class Vigil {
     // bg_ MUST be last: it is destroyed first, stopping the background
     // thread before all other members are invalidated.
 
-    Config                          cfg_;
-    std::unique_ptr<TraceRing>      ring_;
-    std::unique_ptr<MetaLog>        meta_log_;
-    TransactionLog<16>              tx_log_;
-    std::optional<Cipher>           cipher_;
+    Config cfg_;
+    std::unique_ptr<TraceRing> ring_;
+    std::unique_ptr<MetaLog> meta_log_;
+    TransactionLog<16> tx_log_;
+    std::optional<Cipher> cipher_;
     // SPSC invariant: every dispatch_op / record_op must come from the
     // SAME thread (the foreground producer).  A different thread entering
     // violates the ring's single-producer protocol and can corrupt the
@@ -1060,7 +996,7 @@ class Vigil {
     static_assert(std::atomic<std::thread::id>::is_always_lock_free,
                   "std::atomic<std::thread::id> must be lock-free on this "
                   "target — fixy-V-209");
-    std::atomic<std::thread::id>    producer_tid_{};
+    std::atomic<std::thread::id> producer_tid_{};
     // mode_ is a status flag — real sync is pending_region_ observe(),
     // relaxed ordering is sufficient here (fg-thread-primary).  The
     // wrapper removes raw store/load vocabulary from Vigil and leaves
@@ -1068,9 +1004,9 @@ class Vigil {
     // step_ is a monotonic counter advanced by bg thread on each region
     // transition; AtomicMonotonic lifts the monotonicity invariant to
     // the type level (no decrement, no reset, no stale CAS).
-    ModeCell                        mode_;
+    ModeCell mode_;
     fixy::wrap::AtomicMonotonic<uint64_t> step_{0};
-    Arena                           load_arena_{1 << 20}; // for Cipher::load()
+    Arena load_arena_{1 << 20};  // for Cipher::load()
 
     // ─── Tier 1 dispatch state (fg thread only, except pending_region_) ─
 
@@ -1079,10 +1015,10 @@ class Vigil {
     // must see it.  This is reusable latest-wins publication, not
     // PublishOnce: divergence recovery can publish multiple regions.
     fixy::handle::PublishSlot<RegionNode> pending_region_;
-    RegionNode*                     pending_activation_{nullptr}; // fg-only: waiting for alignment
-    AlignmentPos                    alignment_pos_{uint8_t{0}};   // consecutive matched ops from region start (#1077)
-    CrucibleContext                 ctx_;               // fg-only replay
-    RegionCache                     region_cache_;      // fg-only: cached alternate regions
+    RegionNode* pending_activation_{nullptr};  // fg-only: waiting for alignment
+    AlignmentPos alignment_pos_{uint8_t{0}};  // consecutive matched ops from region start (#1077)
+    CrucibleContext ctx_;  // fg-only replay
+    RegionCache region_cache_;  // fg-only: cached alternate regions
 
     // ─── GAPS-004h follow-up: deadline watchdog state ──────────────
     //
@@ -1100,15 +1036,15 @@ class Vigil {
     // lifetime constraint, but kept here for cache-line locality with
     // wd_ (the bg thread writes wd_'s state and these counters in the
     // same on_region_ready frame).
-    std::optional<::crucible::perf::Senses>             senses_;
-    std::optional<::crucible::warden::DeadlineWatchdog>     wd_;
-    std::atomic<::crucible::warden::WatchdogVerdict>        wd_last_verdict_{
+    std::optional<::crucible::perf::Senses> senses_;
+    std::optional<::crucible::warden::DeadlineWatchdog> wd_;
+    std::atomic<::crucible::warden::WatchdogVerdict> wd_last_verdict_{
         ::crucible::warden::WatchdogVerdict::InsufficientData};
-    std::atomic<uint32_t>                               wd_healthy_count_{0};
-    std::atomic<uint32_t>                               wd_downgrade_count_{0};
-    std::atomic<uint32_t>                               wd_insufficient_count_{0};
+    std::atomic<uint32_t> wd_healthy_count_{0};
+    std::atomic<uint32_t> wd_downgrade_count_{0};
+    std::atomic<uint32_t> wd_insufficient_count_{0};
 
-    BackgroundThread                bg_;  // MUST be declared last
+    BackgroundThread bg_;  // MUST be declared last
 };
 
 // §XXI Universal Mint Pattern (token-mint flavor): convenience
@@ -1126,9 +1062,7 @@ class Vigil {
 // remains semantically valid and discipline-uniform.  Closes
 // fixy-M-22 (#1507); fixy-H-23 (#1483) carved out the ModeCell
 // overload as the primary surface.
-[[nodiscard]] constexpr Vigil::ModeSessionHandle mint_vigil_mode_bridge(
-    const Vigil& vigil) noexcept
-{
+[[nodiscard]] constexpr Vigil::ModeSessionHandle mint_vigil_mode_bridge(const Vigil& vigil) noexcept {
     return vigil.mode_session();
 }
 
@@ -1138,4 +1072,4 @@ class Vigil {
 // views must not escape their construction scope.
 static_assert(crucible::fixy::wrap::no_scoped_view_field_check<Vigil>());
 
-} // namespace crucible
+}  // namespace crucible

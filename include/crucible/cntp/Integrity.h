@@ -74,9 +74,7 @@ struct IntegrityStats {
     std::uint64_t checked = 0;
     std::uint64_t violations = 0;
 
-    constexpr void record_ok() noexcept {
-        ++checked;
-    }
+    constexpr void record_ok() noexcept { ++checked; }
 
     constexpr void record_violation() noexcept {
         ++checked;
@@ -94,14 +92,11 @@ template <typename Payload>
 using IntegrityOwnedPayload = safety::Linear<Payload>;
 
 template <typename Payload>
-using IntegrityVerifiedPayload =
-    safety::Tagged<IntegrityOwnedPayload<Payload>,
-                   safety::source::IntegrityVerified>;
+using IntegrityVerifiedPayload = safety::Tagged<IntegrityOwnedPayload<Payload>, safety::source::IntegrityVerified>;
 
 template <typename T>
 concept BytePayloadElement =
-    std::same_as<std::remove_cv_t<T>, std::byte> ||
-    (sizeof(T) == 1 && std::is_trivially_copyable_v<T>);
+    std::same_as<std::remove_cv_t<T>, std::byte> || (sizeof(T) == 1 && std::is_trivially_copyable_v<T>);
 
 template <typename Payload>
 concept HasContiguousPayloadData = requires(Payload const& payload) {
@@ -110,32 +105,22 @@ concept HasContiguousPayloadData = requires(Payload const& payload) {
 };
 
 template <typename Payload>
-using payload_data_pointer_t =
-    decltype(std::data(std::declval<Payload const&>()));
+using payload_data_pointer_t = decltype(std::data(std::declval<Payload const&>()));
 
 template <typename Payload>
-concept ByteContiguousPayload =
-    HasContiguousPayloadData<Payload> &&
-    std::is_pointer_v<payload_data_pointer_t<Payload>> &&
-    BytePayloadElement<
-        std::remove_pointer_t<payload_data_pointer_t<Payload>>>;
+concept ByteContiguousPayload = HasContiguousPayloadData<Payload> && std::is_pointer_v<payload_data_pointer_t<Payload>>
+                             && BytePayloadElement<std::remove_pointer_t<payload_data_pointer_t<Payload>>>;
 
 namespace detail {
 
-inline constexpr std::uint64_t xxh_prime64_1 =
-    11'400'714'785'074'694'791ULL;
-inline constexpr std::uint64_t xxh_prime64_2 =
-    14'029'467'366'897'019'727ULL;
-inline constexpr std::uint64_t xxh_prime64_3 =
-    1'609'587'929'392'839'161ULL;
-inline constexpr std::uint64_t xxh_prime64_4 =
-    9'650'029'242'287'828'579ULL;
-inline constexpr std::uint64_t xxh_prime64_5 =
-    2'870'177'450'012'600'261ULL;
+inline constexpr std::uint64_t xxh_prime64_1 = 11'400'714'785'074'694'791ULL;
+inline constexpr std::uint64_t xxh_prime64_2 = 14'029'467'366'897'019'727ULL;
+inline constexpr std::uint64_t xxh_prime64_3 = 1'609'587'929'392'839'161ULL;
+inline constexpr std::uint64_t xxh_prime64_4 = 9'650'029'242'287'828'579ULL;
+inline constexpr std::uint64_t xxh_prime64_5 = 2'870'177'450'012'600'261ULL;
 inline constexpr std::size_t xxh_stripe_bytes = 32;
 
-[[nodiscard, gnu::pure]] inline std::uint64_t
-load_le64(std::byte const* ptr) noexcept {
+[[nodiscard, gnu::pure]] inline std::uint64_t load_le64(std::byte const* ptr) noexcept {
     std::uint64_t out = 0;
     std::memcpy(&out, ptr, sizeof(out));
     if constexpr (std::endian::native == std::endian::big) {
@@ -144,8 +129,7 @@ load_le64(std::byte const* ptr) noexcept {
     return out;
 }
 
-[[nodiscard, gnu::pure]] inline std::uint32_t
-load_le32(std::byte const* ptr) noexcept {
+[[nodiscard, gnu::pure]] inline std::uint32_t load_le32(std::byte const* ptr) noexcept {
     std::uint32_t out = 0;
     std::memcpy(&out, ptr, sizeof(out));
     if constexpr (std::endian::native == std::endian::big) {
@@ -154,16 +138,14 @@ load_le32(std::byte const* ptr) noexcept {
     return out;
 }
 
-[[nodiscard, gnu::const]] CRUCIBLE_HOT std::uint64_t
-round64(std::uint64_t acc, std::uint64_t lane) noexcept {
+[[nodiscard, gnu::const]] CRUCIBLE_HOT std::uint64_t round64(std::uint64_t acc, std::uint64_t lane) noexcept {
     acc += lane * xxh_prime64_2;
     acc = std::rotl(acc, 31);
     acc *= xxh_prime64_1;
     return acc;
 }
 
-[[nodiscard]] CRUCIBLE_HOT ::crucible::simd::u64x4
-load_stripe_le64(std::byte const* ptr) noexcept {
+[[nodiscard]] CRUCIBLE_HOT ::crucible::simd::u64x4 load_stripe_le64(std::byte const* ptr) noexcept {
     alignas(32) std::array<std::uint64_t, 4> lanes{};
     std::memcpy(lanes.data(), ptr, xxh_stripe_bytes);
     if constexpr (std::endian::native == std::endian::big) {
@@ -171,25 +153,22 @@ load_stripe_le64(std::byte const* ptr) noexcept {
             lane = std::byteswap(lane);
         }
     }
-    return ::crucible::simd::load_aligned<::crucible::simd::u64x4>(
-        lanes.data());
+    return ::crucible::simd::load_aligned<::crucible::simd::u64x4>(lanes.data());
 }
 
-[[nodiscard, gnu::const]] CRUCIBLE_HOT ::crucible::simd::u64x4
-rotl64(::crucible::simd::u64x4 value, int bits) noexcept {
+[[nodiscard, gnu::const]] CRUCIBLE_HOT ::crucible::simd::u64x4 rotl64(::crucible::simd::u64x4 value,
+                                                                      int bits) noexcept {
     return (value << bits) | (value >> (64 - bits));
 }
 
-[[nodiscard, gnu::const]] CRUCIBLE_HOT std::uint64_t
-merge_round64(std::uint64_t acc, std::uint64_t lane) noexcept {
+[[nodiscard, gnu::const]] CRUCIBLE_HOT std::uint64_t merge_round64(std::uint64_t acc, std::uint64_t lane) noexcept {
     acc ^= round64(0, lane);
     acc *= xxh_prime64_1;
     acc += xxh_prime64_4;
     return acc;
 }
 
-[[nodiscard, gnu::const]] CRUCIBLE_HOT std::uint64_t
-avalanche64(std::uint64_t hash) noexcept {
+[[nodiscard, gnu::const]] CRUCIBLE_HOT std::uint64_t avalanche64(std::uint64_t hash) noexcept {
     hash ^= hash >> 33;
     hash *= xxh_prime64_2;
     hash ^= hash >> 29;
@@ -198,12 +177,8 @@ avalanche64(std::uint64_t hash) noexcept {
     return hash;
 }
 
-CRUCIBLE_HOT void
-process_stripe(std::byte const* ptr,
-               std::uint64_t& v1,
-               std::uint64_t& v2,
-               std::uint64_t& v3,
-               std::uint64_t& v4) noexcept {
+CRUCIBLE_HOT void process_stripe(std::byte const* ptr, std::uint64_t& v1, std::uint64_t& v2, std::uint64_t& v3,
+                                 std::uint64_t& v4) noexcept {
     using ::crucible::simd::u64x4;
 
     alignas(32) std::array<std::uint64_t, 4> acc_values{v1, v2, v3, v4};
@@ -223,10 +198,8 @@ process_stripe(std::byte const* ptr,
     v4 = acc_values[3];
 }
 
-[[nodiscard]] CRUCIBLE_HOT std::uint64_t
-finalize_tail(std::uint64_t hash,
-              std::byte const* ptr,
-              std::size_t len) noexcept {
+[[nodiscard]] CRUCIBLE_HOT std::uint64_t finalize_tail(std::uint64_t hash, std::byte const* ptr,
+                                                       std::size_t len) noexcept {
     while (len >= 8) {
         hash ^= round64(0, load_le64(ptr));
         hash = std::rotl(hash, 27) * xxh_prime64_1 + xxh_prime64_4;
@@ -249,8 +222,7 @@ finalize_tail(std::uint64_t hash,
 }
 
 template <ByteContiguousPayload Payload>
-[[nodiscard]] inline std::span<const std::byte>
-payload_bytes(Payload const& payload) noexcept {
+[[nodiscard]] inline std::span<const std::byte> payload_bytes(Payload const& payload) noexcept {
     auto const* ptr = std::data(payload);
     auto const count = static_cast<std::size_t>(std::size(payload));
     // FIXY-U-082 / fixy-A5-028: std::as_bytes is the C++20 idiom for
@@ -261,24 +233,21 @@ payload_bytes(Payload const& payload) noexcept {
 
 }  // namespace detail
 
-[[nodiscard]] inline std::expected<IntegrityHash, IntegrityError>
-admit_integrity_hash(std::uint64_t hash) noexcept {
+[[nodiscard]] inline std::expected<IntegrityHash, IntegrityError> admit_integrity_hash(std::uint64_t hash) noexcept {
     if (hash == 0) {
         return std::unexpected(IntegrityError::ZeroHash);
     }
     return IntegrityHash{hash, IntegrityHash::Trusted{}};
 }
 
-[[nodiscard]] CRUCIBLE_HOT std::uint64_t
-xxhash64_raw(std::span<const std::byte> data,
-             std::uint64_t seed = 0) noexcept {
+[[nodiscard]] CRUCIBLE_HOT std::uint64_t xxhash64_raw(std::span<const std::byte> data,
+                                                      std::uint64_t seed = 0) noexcept {
     std::byte const* ptr = data.data();
     std::size_t len = data.size();
 
     std::uint64_t hash = 0;
     if (len >= detail::xxh_stripe_bytes) {
-        std::uint64_t v1 = seed + detail::xxh_prime64_1 +
-                           detail::xxh_prime64_2;
+        std::uint64_t v1 = seed + detail::xxh_prime64_1 + detail::xxh_prime64_2;
         std::uint64_t v2 = seed + detail::xxh_prime64_2;
         std::uint64_t v3 = seed;
         std::uint64_t v4 = seed - detail::xxh_prime64_1;
@@ -289,8 +258,7 @@ xxhash64_raw(std::span<const std::byte> data,
             len -= detail::xxh_stripe_bytes;
         } while (len >= detail::xxh_stripe_bytes);
 
-        hash = std::rotl(v1, 1) + std::rotl(v2, 7) +
-               std::rotl(v3, 12) + std::rotl(v4, 18);
+        hash = std::rotl(v1, 1) + std::rotl(v2, 7) + std::rotl(v3, 12) + std::rotl(v4, 18);
         hash = detail::merge_round64(hash, v1);
         hash = detail::merge_round64(hash, v2);
         hash = detail::merge_round64(hash, v3);
@@ -303,9 +271,8 @@ xxhash64_raw(std::span<const std::byte> data,
     return detail::finalize_tail(hash, ptr, len);
 }
 
-[[nodiscard]] inline std::expected<IntegrityHash, IntegrityError>
-xxhash64(std::span<const std::byte> data,
-         std::uint64_t seed = 0) noexcept {
+[[nodiscard]] inline std::expected<IntegrityHash, IntegrityError> xxhash64(std::span<const std::byte> data,
+                                                                           std::uint64_t seed = 0) noexcept {
     return admit_integrity_hash(xxhash64_raw(data, seed));
 }
 
@@ -318,13 +285,11 @@ public:
           v3_{seed},
           v4_{seed - detail::xxh_prime64_1} {}
 
-    [[nodiscard]] CRUCIBLE_HOT std::expected<void, IntegrityError>
-    update(std::span<const std::byte> data) noexcept {
+    [[nodiscard]] CRUCIBLE_HOT std::expected<void, IntegrityError> update(std::span<const std::byte> data) noexcept {
         if (data.empty()) {
             return {};
         }
-        if (data.size() >
-            std::numeric_limits<std::uint64_t>::max() - total_len_) {
+        if (data.size() > std::numeric_limits<std::uint64_t>::max() - total_len_) {
             return std::unexpected(IntegrityError::LengthOverflow);
         }
 
@@ -360,12 +325,10 @@ public:
         return {};
     }
 
-    [[nodiscard]] inline std::expected<IntegrityHash, IntegrityError>
-    digest() const noexcept {
+    [[nodiscard]] inline std::expected<IntegrityHash, IntegrityError> digest() const noexcept {
         std::uint64_t hash = 0;
         if (total_len_ >= detail::xxh_stripe_bytes) {
-            hash = std::rotl(v1_, 1) + std::rotl(v2_, 7) +
-                   std::rotl(v3_, 12) + std::rotl(v4_, 18);
+            hash = std::rotl(v1_, 1) + std::rotl(v2_, 7) + std::rotl(v3_, 12) + std::rotl(v4_, 18);
             hash = detail::merge_round64(hash, v1_);
             hash = detail::merge_round64(hash, v2_);
             hash = detail::merge_round64(hash, v3_);
@@ -375,8 +338,7 @@ public:
         }
 
         hash += total_len_;
-        return admit_integrity_hash(
-            detail::finalize_tail(hash, memory_.data(), memory_size_));
+        return admit_integrity_hash(detail::finalize_tail(hash, memory_.data(), memory_size_));
     }
 
 private:
@@ -390,15 +352,12 @@ private:
     std::size_t memory_size_ = 0;
 };
 
-[[nodiscard]] constexpr XxHash64State
-xxhash64_streaming(std::uint64_t seed = 0) noexcept {
+[[nodiscard]] constexpr XxHash64State xxhash64_streaming(std::uint64_t seed = 0) noexcept {
     return XxHash64State{seed};
 }
 
 template <ByteContiguousPayload Payload>
-[[nodiscard]] inline std::expected<
-    IntegrityWrappedMessage<IntegrityOwnedPayload<Payload>>,
-    IntegrityError>
+[[nodiscard]] inline std::expected<IntegrityWrappedMessage<IntegrityOwnedPayload<Payload>>, IntegrityError>
 wrap(Payload payload) noexcept(std::is_nothrow_move_constructible_v<Payload>) {
     auto hash = xxhash64(detail::payload_bytes(payload));
     if (!hash) {
@@ -411,9 +370,7 @@ wrap(Payload payload) noexcept(std::is_nothrow_move_constructible_v<Payload>) {
 }
 
 template <ByteContiguousPayload Payload>
-[[nodiscard]] inline std::expected<
-    IntegrityVerifiedPayload<Payload>,
-    IntegrityError>
+[[nodiscard]] inline std::expected<IntegrityVerifiedPayload<Payload>, IntegrityError>
 unwrap(IntegrityWrappedMessage<IntegrityOwnedPayload<Payload>> message) noexcept(
     std::is_nothrow_move_constructible_v<Payload>) {
     auto actual = xxhash64(detail::payload_bytes(message.payload.peek()));
@@ -427,9 +384,8 @@ unwrap(IntegrityWrappedMessage<IntegrityOwnedPayload<Payload>> message) noexcept
 }
 
 static_assert(sizeof(IntegrityHash) == sizeof(std::uint64_t));
-static_assert(sizeof(IntegrityOwnedPayload<std::span<const std::byte>>) ==
-              sizeof(std::span<const std::byte>));
-static_assert(sizeof(IntegrityWrappedMessage<std::span<const std::byte>>) ==
-              sizeof(std::span<const std::byte>) + sizeof(std::uint64_t));
+static_assert(sizeof(IntegrityOwnedPayload<std::span<const std::byte>>) == sizeof(std::span<const std::byte>));
+static_assert(sizeof(IntegrityWrappedMessage<std::span<const std::byte>>)
+              == sizeof(std::span<const std::byte>) + sizeof(std::uint64_t));
 
 }  // namespace crucible::cntp

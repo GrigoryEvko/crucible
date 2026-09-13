@@ -111,8 +111,7 @@ public:
     // and therefore only it can construct crash_witness_key.  Passed by
     // const-ref so this header can use the forward-declared type without
     // requiring its complete definition (CrashTransport.h supplies that).
-    explicit constexpr crash_witness_key(
-        ::crucible::safety::proto::WrapCrashReturnKey const&) noexcept {}
+    explicit constexpr crash_witness_key(::crucible::safety::proto::WrapCrashReturnKey const&) noexcept {}
 };
 
 template <typename... Tags>
@@ -140,8 +139,7 @@ class mint_permission_inherit_key {
 
 template <typename Tag>
 struct mint_permission_inherit_minter_ {
-    [[nodiscard]] static constexpr ::crucible::safety::Permission<Tag>
-    mint(mint_permission_inherit_key) noexcept {
+    [[nodiscard]] static constexpr ::crucible::safety::Permission<Tag> mint(mint_permission_inherit_key) noexcept {
         return ::crucible::safety::Permission<Tag>{};
     }
 };
@@ -157,8 +155,7 @@ template <typename List>
 struct inheritance_list_empty;
 
 template <typename... Tags>
-struct inheritance_list_empty<inheritance_list<Tags...>>
-    : std::bool_constant<sizeof...(Tags) == 0> {};
+struct inheritance_list_empty<inheritance_list<Tags...>> : std::bool_constant<sizeof...(Tags) == 0> {};
 
 }  // namespace detail
 
@@ -174,20 +171,16 @@ template <typename DeadTag>
 using survivors_t = typename survivor_registry<DeadTag>::type;
 
 template <typename DeadTag, typename SurvivorTag>
-struct inherits_from
-    : detail::inheritance_list_contains<survivors_t<DeadTag>, SurvivorTag> {};
+struct inherits_from : detail::inheritance_list_contains<survivors_t<DeadTag>, SurvivorTag> {};
 
 template <typename DeadTag, typename SurvivorTag>
-inline constexpr bool inherits_from_v =
-    inherits_from<DeadTag, SurvivorTag>::value;
+inline constexpr bool inherits_from_v = inherits_from<DeadTag, SurvivorTag>::value;
 
 template <typename List>
-inline constexpr bool inheritance_list_empty_v =
-    detail::inheritance_list_empty<List>::value;
+inline constexpr bool inheritance_list_empty_v = detail::inheritance_list_empty<List>::value;
 
 template <typename List, typename Query>
-inline constexpr bool inheritance_list_contains_v =
-    detail::inheritance_list_contains<List, Query>::value;
+inline constexpr bool inheritance_list_contains_v = detail::inheritance_list_contains<List, Query>::value;
 
 namespace detail {
 
@@ -196,21 +189,15 @@ struct inherit_from_list;
 
 template <typename DeadTag, typename... SurvivorTags>
 struct inherit_from_list<DeadTag, inheritance_list<SurvivorTags...>> {
-    [[nodiscard]] static constexpr
-        std::tuple<::crucible::safety::Permission<SurvivorTags>...>
-    mint() noexcept {
+    [[nodiscard]] static constexpr std::tuple<::crucible::safety::Permission<SurvivorTags>...> mint() noexcept {
         return std::tuple<::crucible::safety::Permission<SurvivorTags>...>{
-            mint_permission_inherit_minter_<SurvivorTags>::mint(
-                mint_permission_inherit_key{})...
-        };
+            mint_permission_inherit_minter_<SurvivorTags>::mint(mint_permission_inherit_key{})...};
     }
 };
 
 template <typename DeadTag, typename... SurvivorTags>
-using mint_permission_inherit_list_t = std::conditional_t<
-    sizeof...(SurvivorTags) == 0,
-    survivors_t<DeadTag>,
-    inheritance_list<SurvivorTags...>>;
+using mint_permission_inherit_list_t =
+    std::conditional_t<sizeof...(SurvivorTags) == 0, survivors_t<DeadTag>, inheritance_list<SurvivorTags...>>;
 
 // validated_perm_tuple — §XXI single-concept gate for mint_permission_inherit.
 //
@@ -234,16 +221,14 @@ struct validated_perm_tuple;
 
 template <typename DeadTag, typename... Survivors>
 struct validated_perm_tuple<DeadTag, inheritance_list<Survivors...>> {
-    static_assert(sizeof...(Survivors) > 0,
-        "mint_permission_inherit requires at least one survivor tag. "
-        "Specialize survivor_registry<DeadTag> or pass explicit "
-        "SurvivorTags.");
-    static_assert((!std::is_same_v<DeadTag, Survivors> && ...),
-        "mint_permission_inherit forbids circular inheritance: "
-        "DeadTag cannot inherit to itself.");
+    static_assert(sizeof...(Survivors) > 0, "mint_permission_inherit requires at least one survivor tag. "
+                                            "Specialize survivor_registry<DeadTag> or pass explicit "
+                                            "SurvivorTags.");
+    static_assert((!std::is_same_v<DeadTag, Survivors> && ...), "mint_permission_inherit forbids circular inheritance: "
+                                                                "DeadTag cannot inherit to itself.");
     static_assert((inherits_from<DeadTag, Survivors>::value && ...),
-        "mint_permission_inherit requires inherits_from<DeadTag, "
-        "SurvivorTag> to be true for every survivor.");
+                  "mint_permission_inherit requires inherits_from<DeadTag, "
+                  "SurvivorTag> to be true for every survivor.");
 
     using type = std::tuple<::crucible::safety::Permission<Survivors>...>;
 };
@@ -266,10 +251,9 @@ struct validated_perm_tuple<DeadTag, inheritance_list<Survivors...>> {
 //
 // Matches the §XXI table's "Returns" column convention.
 template <typename DeadTag, typename... SurvivorTags>
-using mint_permission_inherit_t = typename detail::validated_perm_tuple<
-    DeadTag,
-    detail::mint_permission_inherit_list_t<
-        DeadTag, SurvivorTags...>>::type;
+using mint_permission_inherit_t =
+    typename detail::validated_perm_tuple<DeadTag,
+                                          detail::mint_permission_inherit_list_t<DeadTag, SurvivorTags...>>::type;
 
 // H-25: the trailing `crash_witness_key` parameter is the proof-of-death
 // passkey.  Only bridges::wrap_crash_return can mint one, so direct user
@@ -282,15 +266,12 @@ using mint_permission_inherit_t = typename detail::validated_perm_tuple<
 // and per-tag Permission<...> instances without descending into the
 // body or the `inherit_from_list::mint()` helper.
 template <typename DeadTag, typename... SurvivorTags>
-[[nodiscard]] constexpr
-    mint_permission_inherit_t<DeadTag, SurvivorTags...>
-mint_permission_inherit(crash_witness_key) noexcept
-{
+[[nodiscard]] constexpr mint_permission_inherit_t<DeadTag, SurvivorTags...>
+mint_permission_inherit(crash_witness_key) noexcept {
     if constexpr (sizeof...(SurvivorTags) == 0) {
         return detail::inherit_from_list<DeadTag, survivors_t<DeadTag>>::mint();
     } else {
-        return detail::inherit_from_list<
-            DeadTag, inheritance_list<SurvivorTags...>>::mint();
+        return detail::inherit_from_list<DeadTag, inheritance_list<SurvivorTags...>>::mint();
     }
 }
 

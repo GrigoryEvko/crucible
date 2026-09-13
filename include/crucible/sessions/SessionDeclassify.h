@@ -150,39 +150,37 @@ class [[nodiscard]] DeclassifyOnSend {
     Secret<T> value_;
 
 public:
-    using value_type   = T;
-    using policy_type  = Policy;
-    using secret_type  = Secret<T>;
+    using value_type = T;
+    using policy_type = Policy;
+    using secret_type = Secret<T>;
 
     // Construct from a Secret<T> (move-in).
-    constexpr explicit DeclassifyOnSend(Secret<T> s)
-        noexcept(std::is_nothrow_move_constructible_v<Secret<T>>)
+    constexpr explicit DeclassifyOnSend(Secret<T> s) noexcept(std::is_nothrow_move_constructible_v<Secret<T>>)
         : value_{std::move(s)} {}
 
     // Construct from a raw T — wraps it in Secret first.  The
     // explicit signature means callers must be intentional about
     // which path they take; passing a raw T to a function expecting
     // DeclassifyOnSend won't happen by accident.
-    constexpr explicit DeclassifyOnSend(T raw)
-        noexcept(std::is_nothrow_move_constructible_v<T>)
+    constexpr explicit DeclassifyOnSend(T raw) noexcept(std::is_nothrow_move_constructible_v<T>)
         : value_{Secret<T>{std::move(raw)}} {}
 
     // In-place construction — forwards args to Secret<T>'s
     // in-place ctor (which forwards to T's ctor).
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr explicit DeclassifyOnSend(std::in_place_t, Args&&... args)
-        noexcept(std::is_nothrow_constructible_v<T, Args...>)
+    constexpr explicit DeclassifyOnSend(std::in_place_t,
+                                        Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>)
         : value_{Secret<T>{std::in_place, std::forward<Args>(args)...}} {}
 
     // Move-only (mirrors Secret<T>'s discipline).
-    DeclassifyOnSend(const DeclassifyOnSend&)
-        = delete("DeclassifyOnSend wraps Secret<T>; classified values cannot silently duplicate");
-    DeclassifyOnSend& operator=(const DeclassifyOnSend&)
-        = delete("DeclassifyOnSend wraps Secret<T>; classified values cannot silently duplicate");
-    DeclassifyOnSend(DeclassifyOnSend&&)            noexcept = default;
+    DeclassifyOnSend(const DeclassifyOnSend&) =
+        delete("DeclassifyOnSend wraps Secret<T>; classified values cannot silently duplicate");
+    DeclassifyOnSend& operator=(const DeclassifyOnSend&) =
+        delete("DeclassifyOnSend wraps Secret<T>; classified values cannot silently duplicate");
+    DeclassifyOnSend(DeclassifyOnSend&&) noexcept = default;
     DeclassifyOnSend& operator=(DeclassifyOnSend&&) noexcept = default;
-    ~DeclassifyOnSend()                                       = default;
+    ~DeclassifyOnSend() = default;
 
     // ── Wire-extraction chokepoint ─────────────────────────────────
     //
@@ -195,9 +193,7 @@ public:
     // Secret in one motion.  After this, the wrapper is moved-from
     // and unusable; no double-declassification possible.
 
-    [[nodiscard]] constexpr T declassify_for_wire() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr T declassify_for_wire() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return std::move(value_).template declassify<Policy>();
     }
 
@@ -223,8 +219,7 @@ template <typename T, typename Policy>
 struct is_declassify_on_send<DeclassifyOnSend<T, Policy>> : std::true_type {};
 
 template <typename T>
-inline constexpr bool is_declassify_on_send_v =
-    is_declassify_on_send<T>::value;
+inline constexpr bool is_declassify_on_send_v = is_declassify_on_send<T>::value;
 
 template <typename T>
 concept DeclassifyOnSendable = is_declassify_on_send_v<T>;
@@ -270,16 +265,18 @@ using wire_policy_t = typename wire_policy<T>::type;
 
 namespace detail::declassify_size_test {
 
-struct OneByteToken { char x; };
-struct FourByteToken { int x; };
+struct OneByteToken {
+    char x;
+};
+struct FourByteToken {
+    int x;
+};
 
-static_assert(sizeof(DeclassifyOnSend<OneByteToken, secret_policy::WireSerialize>)
-              == sizeof(OneByteToken),
-    "DeclassifyOnSend must add zero bytes beyond the wrapped Secret<T>.");
+static_assert(sizeof(DeclassifyOnSend<OneByteToken, secret_policy::WireSerialize>) == sizeof(OneByteToken),
+              "DeclassifyOnSend must add zero bytes beyond the wrapped Secret<T>.");
 
-static_assert(sizeof(DeclassifyOnSend<FourByteToken, secret_policy::WireSerialize>)
-              == sizeof(FourByteToken),
-    "DeclassifyOnSend must add zero bytes beyond the wrapped Secret<T>.");
+static_assert(sizeof(DeclassifyOnSend<FourByteToken, secret_policy::WireSerialize>) == sizeof(FourByteToken),
+              "DeclassifyOnSend must add zero bytes beyond the wrapped Secret<T>.");
 
 }  // namespace detail::declassify_size_test
 
@@ -290,35 +287,35 @@ static_assert(sizeof(DeclassifyOnSend<FourByteToken, secret_policy::WireSerializ
 #ifdef CRUCIBLE_SESSION_SELF_TESTS
 namespace detail::declassify_self_test {
 
-struct Token { int v = 0; };
+struct Token {
+    int v = 0;
+};
 struct Other {};
 
 using TokenWire = DeclassifyOnSend<Token, secret_policy::WireSerialize>;
 using TokenAudit = DeclassifyOnSend<Token, secret_policy::AuditedLogging>;
 
 // Shape predicates.
-static_assert( is_declassify_on_send_v<TokenWire>);
-static_assert( is_declassify_on_send_v<TokenAudit>);
+static_assert(is_declassify_on_send_v<TokenWire>);
+static_assert(is_declassify_on_send_v<TokenAudit>);
 static_assert(!is_declassify_on_send_v<Token>);
 static_assert(!is_declassify_on_send_v<Secret<Token>>);
 static_assert(!is_declassify_on_send_v<int>);
 
 // Concept rejection on non-DeclassifyOnSend.
-static_assert( DeclassifyOnSendable<TokenWire>);
+static_assert(DeclassifyOnSendable<TokenWire>);
 static_assert(!DeclassifyOnSendable<Token>);
 
 // wire_payload_type_t extracts the inner T.
-static_assert(std::is_same_v<wire_payload_type_t<TokenWire>,  Token>);
+static_assert(std::is_same_v<wire_payload_type_t<TokenWire>, Token>);
 static_assert(std::is_same_v<wire_payload_type_t<TokenAudit>, Token>);
 // Non-DeclassifyOnSend types pass through unchanged.
 static_assert(std::is_same_v<wire_payload_type_t<Token>, Token>);
-static_assert(std::is_same_v<wire_payload_type_t<int>,   int>);
+static_assert(std::is_same_v<wire_payload_type_t<int>, int>);
 
 // wire_policy_t extracts the policy tag.
-static_assert(std::is_same_v<wire_policy_t<TokenWire>,
-                              secret_policy::WireSerialize>);
-static_assert(std::is_same_v<wire_policy_t<TokenAudit>,
-                              secret_policy::AuditedLogging>);
+static_assert(std::is_same_v<wire_policy_t<TokenWire>, secret_policy::WireSerialize>);
+static_assert(std::is_same_v<wire_policy_t<TokenAudit>, secret_policy::AuditedLogging>);
 
 // Different policies on the same T are distinct types.
 static_assert(!std::is_same_v<TokenWire, TokenAudit>);
@@ -326,8 +323,8 @@ static_assert(!std::is_same_v<TokenWire, TokenAudit>);
 // Move-only discipline.
 static_assert(!std::is_copy_constructible_v<TokenWire>);
 static_assert(!std::is_copy_assignable_v<TokenWire>);
-static_assert( std::is_move_constructible_v<TokenWire>);
-static_assert( std::is_move_assignable_v<TokenWire>);
+static_assert(std::is_move_constructible_v<TokenWire>);
+static_assert(std::is_move_assignable_v<TokenWire>);
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Composition with Send / Recv via existing payload covariance ───
@@ -343,14 +340,10 @@ using namespace crucible::safety::proto;
 
 // Reflexivity: DeclassifyOnSend ⩽ DeclassifyOnSend (via primary
 // is_subsort = is_same).
-static_assert(is_subtype_sync_v<
-    Send<TokenWire, End>,
-    Send<TokenWire, End>>);
+static_assert(is_subtype_sync_v<Send<TokenWire, End>, Send<TokenWire, End>>);
 
 // Different policies on same T are unrelated payloads.
-static_assert(!is_subtype_sync_v<
-    Send<TokenWire,  End>,
-    Send<TokenAudit, End>>);
+static_assert(!is_subtype_sync_v<Send<TokenWire, End>, Send<TokenAudit, End>>);
 
 // DELIBERATELY ABSENT axiom: Send<DeclassifyOnSend<T, P>, K> is NOT
 // a subtype of Send<T, K>.  Allowing it would mean the type system
@@ -358,23 +351,15 @@ static_assert(!is_subtype_sync_v<
 // defeating the audit-discoverability of `grep DeclassifyOnSend<`.
 //
 // (No specialisation in SessionPayloadSubsort.h for DeclassifyOnSend.)
-static_assert(!is_subtype_sync_v<
-    Send<TokenWire, End>,
-    Send<Token,     End>>);
+static_assert(!is_subtype_sync_v<Send<TokenWire, End>, Send<Token, End>>);
 
 // And the reverse — bare T should NOT silently gain the wire-policy
 // tag (would let unclassified values masquerade as classified).
-static_assert(!is_subtype_sync_v<
-    Send<Token,     End>,
-    Send<TokenWire, End>>);
+static_assert(!is_subtype_sync_v<Send<Token, End>, Send<TokenWire, End>>);
 
 // Recv direction — same asymmetry holds via Recv contravariance.
-static_assert(!is_subtype_sync_v<
-    Recv<TokenWire, End>,
-    Recv<Token,     End>>);
-static_assert(!is_subtype_sync_v<
-    Recv<Token,     End>,
-    Recv<TokenWire, End>>);
+static_assert(!is_subtype_sync_v<Recv<TokenWire, End>, Recv<Token, End>>);
+static_assert(!is_subtype_sync_v<Recv<Token, End>, Recv<TokenWire, End>>);
 
 }  // namespace detail::declassify_self_test
 #endif  // CRUCIBLE_SESSION_SELF_TESTS

@@ -41,35 +41,30 @@ struct is_epoch_versioned_impl : std::false_type {
 };
 
 template <typename U>
-struct is_epoch_versioned_impl<::crucible::safety::EpochVersioned<U>>
-    : std::true_type
-{
+struct is_epoch_versioned_impl<::crucible::safety::EpochVersioned<U>> : std::true_type {
     using value_type = U;
 };
 
 }  // namespace detail
 
 template <typename T>
-inline constexpr bool is_epoch_versioned_v =
-    detail::is_epoch_versioned_impl<std::remove_cvref_t<T>>::value;
+inline constexpr bool is_epoch_versioned_v = detail::is_epoch_versioned_impl<std::remove_cvref_t<T>>::value;
 
 template <typename T>
 concept IsEpochVersioned = is_epoch_versioned_v<T>;
 
 template <typename T>
     requires is_epoch_versioned_v<T>
-using epoch_versioned_value_t =
-    typename detail::is_epoch_versioned_impl<
-        std::remove_cvref_t<T>>::value_type;
+using epoch_versioned_value_t = typename detail::is_epoch_versioned_impl<std::remove_cvref_t<T>>::value_type;
 
 // ── Self-test ─────────────────────────────────────────────────────
 
 namespace detail::is_epoch_versioned_self_test {
 
-using EV_int      = ::crucible::safety::EpochVersioned<int>;
-using EV_double   = ::crucible::safety::EpochVersioned<double>;
-using EV_char     = ::crucible::safety::EpochVersioned<char>;
-using EV_uint64   = ::crucible::safety::EpochVersioned<std::uint64_t>;
+using EV_int = ::crucible::safety::EpochVersioned<int>;
+using EV_double = ::crucible::safety::EpochVersioned<double>;
+using EV_char = ::crucible::safety::EpochVersioned<char>;
+using EV_uint64 = ::crucible::safety::EpochVersioned<std::uint64_t>;
 
 static_assert(is_epoch_versioned_v<EV_int>);
 static_assert(is_epoch_versioned_v<EV_double>);
@@ -95,13 +90,13 @@ static_assert(!is_epoch_versioned_v<EV_int*>);
 static_assert(IsEpochVersioned<EV_int>);
 static_assert(!IsEpochVersioned<int>);
 
-static_assert(std::is_same_v<epoch_versioned_value_t<EV_int>,    int>);
+static_assert(std::is_same_v<epoch_versioned_value_t<EV_int>, int>);
 static_assert(std::is_same_v<epoch_versioned_value_t<EV_double>, double>);
 static_assert(std::is_same_v<epoch_versioned_value_t<EV_uint64>, std::uint64_t>);
 
 // Layout invariant — same regime-4 shape as Budgeted (16 bytes for
 // the two uint64_t axes).
-static_assert(sizeof(EV_int)    >= sizeof(int)    + 16);
+static_assert(sizeof(EV_int) >= sizeof(int) + 16);
 static_assert(sizeof(EV_double) >= sizeof(double) + 16);
 static_assert(sizeof(EV_uint64) == 24);
 

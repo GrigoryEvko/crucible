@@ -169,27 +169,33 @@ namespace crucible::algebra::lattices {
 // smallest set (Pure, function always returns normally); ordinal 4 =
 // largest set (MaySignal, function may also raise an async signal).
 enum class ControlFlow : std::uint8_t {
-    Pure       = 0,  // bottom — always returns normally; no non-local escape
-    AbortOnly  = 1,  // may std::abort / terminate / __builtin_trap (no unwind)
-    ThrowOnly  = 2,  // may throw a C++ exception (unwinds, runs destructors)
+    Pure = 0,  // bottom — always returns normally; no non-local escape
+    AbortOnly = 1,  // may std::abort / terminate / __builtin_trap (no unwind)
+    ThrowOnly = 2,  // may throw a C++ exception (unwinds, runs destructors)
     MayLongjmp = 3,  // may longjmp (jump, SKIPS destructors — RAII-unsafe)
-    MaySignal  = 4,  // top — may raise / deliver an async signal
+    MaySignal = 4,  // top — may raise / deliver an async signal
 };
 
 [[nodiscard]] consteval std::string_view control_flow_name(ControlFlow t) noexcept {
     switch (t) {
-        case ControlFlow::Pure:       return "Pure";
-        case ControlFlow::AbortOnly:  return "AbortOnly";
-        case ControlFlow::ThrowOnly:  return "ThrowOnly";
-        case ControlFlow::MayLongjmp: return "MayLongjmp";
-        case ControlFlow::MaySignal:  return "MaySignal";
-        default:                      return std::string_view{"<unknown ControlFlow>"};
+        case ControlFlow::Pure:
+            return "Pure";
+        case ControlFlow::AbortOnly:
+            return "AbortOnly";
+        case ControlFlow::ThrowOnly:
+            return "ThrowOnly";
+        case ControlFlow::MayLongjmp:
+            return "MayLongjmp";
+        case ControlFlow::MaySignal:
+            return "MaySignal";
+        default:
+            return std::string_view{"<unknown ControlFlow>"};
     }
 }
 
 struct ControlFlowLattice : ChainLatticeOps<ControlFlow> {
     [[nodiscard]] static constexpr ControlFlow bottom() noexcept { return ControlFlow::Pure; }
-    [[nodiscard]] static constexpr ControlFlow top()    noexcept { return ControlFlow::MaySignal; }
+    [[nodiscard]] static constexpr ControlFlow top() noexcept { return ControlFlow::MaySignal; }
     [[nodiscard]] static consteval std::string_view name() noexcept { return "ControlFlowLattice"; }
 
     template <ControlFlow T>
@@ -201,18 +207,24 @@ struct ControlFlowLattice : ChainLatticeOps<ControlFlow> {
         };
         static constexpr ControlFlow tier = T;
         [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-        [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
         [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static consteval std::string_view name() noexcept {
             switch (T) {
-                case ControlFlow::Pure:       return "ControlFlowLattice::At<Pure>";
-                case ControlFlow::AbortOnly:  return "ControlFlowLattice::At<AbortOnly>";
-                case ControlFlow::ThrowOnly:  return "ControlFlowLattice::At<ThrowOnly>";
-                case ControlFlow::MayLongjmp: return "ControlFlowLattice::At<MayLongjmp>";
-                case ControlFlow::MaySignal:  return "ControlFlowLattice::At<MaySignal>";
-                default:                      return "ControlFlowLattice::At<?>";
+                case ControlFlow::Pure:
+                    return "ControlFlowLattice::At<Pure>";
+                case ControlFlow::AbortOnly:
+                    return "ControlFlowLattice::At<AbortOnly>";
+                case ControlFlow::ThrowOnly:
+                    return "ControlFlowLattice::At<ThrowOnly>";
+                case ControlFlow::MayLongjmp:
+                    return "ControlFlowLattice::At<MayLongjmp>";
+                case ControlFlow::MaySignal:
+                    return "ControlFlowLattice::At<MaySignal>";
+                default:
+                    return "ControlFlowLattice::At<?>";
             }
         }
     };
@@ -222,17 +234,15 @@ struct ControlFlowLattice : ChainLatticeOps<ControlFlow> {
 namespace detail::control_flow_lattice_self_test {
 
 // Catalog cardinality — the escape chain has exactly 5 tiers.
-inline constexpr std::size_t control_flow_count =
-    std::meta::enumerators_of(^^ControlFlow).size();
+inline constexpr std::size_t control_flow_count = std::meta::enumerators_of(^^ControlFlow).size();
 
-static_assert(control_flow_count == 5,
-    "ControlFlow diverged from {Pure, AbortOnly, ThrowOnly, MayLongjmp, "
-    "MaySignal} per V-239 §taxonomy.  Adding a new escape tier requires "
-    "(a) appending at the next free ordinal (append-only per FOUND-I04 "
-    "Universe extension rule), (b) the matching control_flow_name() "
-    "switch arm, (c) the matching At<T> singleton name() arm.  Reusing "
-    "an existing ordinal would silently change every stored row_hash "
-    "(federation cache key) without warning.");
+static_assert(control_flow_count == 5, "ControlFlow diverged from {Pure, AbortOnly, ThrowOnly, MayLongjmp, "
+                                       "MaySignal} per V-239 §taxonomy.  Adding a new escape tier requires "
+                                       "(a) appending at the next free ordinal (append-only per FOUND-I04 "
+                                       "Universe extension rule), (b) the matching control_flow_name() "
+                                       "switch arm, (c) the matching At<T> singleton name() arm.  Reusing "
+                                       "an existing ordinal would silently change every stored row_hash "
+                                       "(federation cache key) without warning.");
 
 // Bottom-element pin — ordinal 0 is the smallest escape set (Pure: the
 // function always returns normally, the hot-path-safest claim).
@@ -248,22 +258,20 @@ static_assert(std::is_same_v<std::underlying_type_t<ControlFlow>, std::uint8_t>)
 // Reflection-driven name coverage — every enumerator must resolve to a
 // non-sentinel, non-empty name.  Auto-extends if the enum grows.
 [[nodiscard]] consteval bool every_control_flow_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^ControlFlow));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^ControlFlow));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
         const auto n = control_flow_name([:en:]);
         if (n == std::string_view{"<unknown ControlFlow>"}) return false;
-        if (n.empty())                                      return false;
+        if (n.empty()) return false;
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_control_flow_has_name(),
-    "control_flow_name() switch missing an arm for at least one "
-    "ControlFlow enumerator.  Add the arm or the new tier leaks the "
-    "'<unknown ControlFlow>' sentinel.");
+static_assert(every_control_flow_has_name(), "control_flow_name() switch missing an arm for at least one "
+                                             "ControlFlow enumerator.  Add the arm or the new tier leaks the "
+                                             "'<unknown ControlFlow>' sentinel.");
 
 // Concept conformance — chain lattice satisfies Lattice + BoundedLattice
 // and NOT Semiring (chain order has no independent ⊕/⊗ structure; the
@@ -277,16 +285,16 @@ static_assert(!::crucible::algebra::Semiring<ControlFlowLattice>);
 // Exhaustive lattice-axiom verifier on (axis)³ triples.  Chain orders
 // are always distributive — failure indicates a leq/join/meet defect.
 static_assert(verify_chain_lattice_exhaustive<ControlFlowLattice>(),
-    "ControlFlowLattice chain-order lattice axioms failed at some triple "
-    "— leq/join/meet defect.");
+              "ControlFlowLattice chain-order lattice axioms failed at some triple "
+              "— leq/join/meet defect.");
 static_assert(verify_chain_lattice_distributive_exhaustive<ControlFlowLattice>(),
-    "ControlFlowLattice chain failed distributivity check — leq/join/meet "
-    "defect.");
+              "ControlFlowLattice chain failed distributivity check — leq/join/meet "
+              "defect.");
 
 // Bottom / top pins on the lattice surface (catches "someone reordered
 // the enum and the lattice failed to follow" drift).
 static_assert(ControlFlowLattice::bottom() == ControlFlow::Pure);
-static_assert(ControlFlowLattice::top()    == ControlFlow::MaySignal);
+static_assert(ControlFlowLattice::top() == ControlFlow::MaySignal);
 
 // Lattice top-level diagnostic name pin.
 static_assert(ControlFlowLattice::name() == std::string_view{"ControlFlowLattice"});
@@ -294,28 +302,26 @@ static_assert(ControlFlowLattice::name() == std::string_view{"ControlFlowLattice
 // Strict-chain order pin (bottom ⊏ top witness).  Combined with the
 // exhaustive axiom verifier above, the chain direction is structurally
 // locked.
-static_assert( ControlFlowLattice::leq(ControlFlow::Pure, ControlFlow::MaySignal));
+static_assert(ControlFlowLattice::leq(ControlFlow::Pure, ControlFlow::MaySignal));
 static_assert(!ControlFlowLattice::leq(ControlFlow::MaySignal, ControlFlow::Pure));
 
 // Mid-chain ordering — every tier strictly subsumes the previous.
-static_assert(ControlFlowLattice::leq(ControlFlow::Pure,       ControlFlow::AbortOnly));
-static_assert(ControlFlowLattice::leq(ControlFlow::AbortOnly,  ControlFlow::ThrowOnly));
-static_assert(ControlFlowLattice::leq(ControlFlow::ThrowOnly,  ControlFlow::MayLongjmp));
+static_assert(ControlFlowLattice::leq(ControlFlow::Pure, ControlFlow::AbortOnly));
+static_assert(ControlFlowLattice::leq(ControlFlow::AbortOnly, ControlFlow::ThrowOnly));
+static_assert(ControlFlowLattice::leq(ControlFlow::ThrowOnly, ControlFlow::MayLongjmp));
 static_assert(ControlFlowLattice::leq(ControlFlow::MayLongjmp, ControlFlow::MaySignal));
 
 // Reverse direction must fail for non-equal pairs.
-static_assert(!ControlFlowLattice::leq(ControlFlow::AbortOnly,  ControlFlow::Pure));
-static_assert(!ControlFlowLattice::leq(ControlFlow::MaySignal,  ControlFlow::MayLongjmp));
+static_assert(!ControlFlowLattice::leq(ControlFlow::AbortOnly, ControlFlow::Pure));
+static_assert(!ControlFlowLattice::leq(ControlFlow::MaySignal, ControlFlow::MayLongjmp));
 
 // Join semantics — par=join (strictest-wins / wider-escape-dominates).
 // Composing a throwing site with a longjmping site yields MayLongjmp
 // (the wider escape capability).
-static_assert(ControlFlowLattice::join(ControlFlow::ThrowOnly, ControlFlow::MayLongjmp)
-              == ControlFlow::MayLongjmp);
+static_assert(ControlFlowLattice::join(ControlFlow::ThrowOnly, ControlFlow::MayLongjmp) == ControlFlow::MayLongjmp);
 // Meet semantics — and=meet (tighter-floor).  Meeting a permissive
 // binding with a tight admission policy yields the tight floor.
-static_assert(ControlFlowLattice::meet(ControlFlow::MaySignal, ControlFlow::AbortOnly)
-              == ControlFlow::AbortOnly);
+static_assert(ControlFlowLattice::meet(ControlFlow::MaySignal, ControlFlow::AbortOnly) == ControlFlow::AbortOnly);
 
 // ── FIXY-FOUND-076 audit pin: cross-tree convention misalignment ─────
 //
@@ -351,23 +357,19 @@ static_assert(ControlFlowLattice::meet(ControlFlow::MaySignal, ControlFlow::Abor
 // Polarity-witness pin: a refactor inverting the chain (so MaySignal
 // moves to bottom) would red these asserts in lockstep with the
 // FOUND-009/010/076 family.
-static_assert(ControlFlowLattice::join(ControlFlow::Pure,
-                                       ControlFlow::MaySignal)
-              == ControlFlow::MaySignal,
-    "FIXY-FOUND-076: ControlFlowLattice's JOIN gives WIDEST-escape "
-    "(top=MaySignal).  A consumer treating compose as 'strictest-wins "
-    "control-flow minimization' would silently admit MaySignal.  "
-    "Consumers wanting Pure floor MUST call MEET — SAME defect family "
-    "as FOUND-009/010 (MemOrder/HwInstruction) + FOUND-076 PART A "
-    "(StackUse, GlobalState).");
-static_assert(ControlFlowLattice::meet(ControlFlow::Pure,
-                                       ControlFlow::MaySignal)
-              == ControlFlow::Pure,
-    "FIXY-FOUND-076: ControlFlowLattice's MEET gives strictest-control-"
-    "flow (bottom=Pure).  permission_fork's no-throw enforcement MUST "
-    "call MEET (or use the V-087 grant::ctrl::* structural reject) — "
-    "calling JOIN silently admits the most-permissive participant's "
-    "escape capabilities.");
+static_assert(ControlFlowLattice::join(ControlFlow::Pure, ControlFlow::MaySignal) == ControlFlow::MaySignal,
+              "FIXY-FOUND-076: ControlFlowLattice's JOIN gives WIDEST-escape "
+              "(top=MaySignal).  A consumer treating compose as 'strictest-wins "
+              "control-flow minimization' would silently admit MaySignal.  "
+              "Consumers wanting Pure floor MUST call MEET — SAME defect family "
+              "as FOUND-009/010 (MemOrder/HwInstruction) + FOUND-076 PART A "
+              "(StackUse, GlobalState).");
+static_assert(ControlFlowLattice::meet(ControlFlow::Pure, ControlFlow::MaySignal) == ControlFlow::Pure,
+              "FIXY-FOUND-076: ControlFlowLattice's MEET gives strictest-control-"
+              "flow (bottom=Pure).  permission_fork's no-throw enforcement MUST "
+              "call MEET (or use the V-087 grant::ctrl::* structural reject) — "
+              "calling JOIN silently admits the most-permissive participant's "
+              "escape capabilities.");
 
 // At<T> singleton — empty element_type for EBO collapse at every use
 // site.  V-242's `Graded<Absolute, At<T>, P>` relies on this for
@@ -390,7 +392,7 @@ inline void control_flow_lattice_runtime_smoke_test() {
     // the optimizer cannot collapse the call to a compile-time fold.
     ControlFlow a = ControlFlow::Pure;
     ControlFlow b = ControlFlow::MaySignal;
-    [[maybe_unused]] bool        rl = ControlFlowLattice::leq(a, b);
+    [[maybe_unused]] bool rl = ControlFlowLattice::leq(a, b);
     [[maybe_unused]] ControlFlow rj = ControlFlowLattice::join(a, b);
     [[maybe_unused]] ControlFlow rm = ControlFlowLattice::meet(a, b);
 

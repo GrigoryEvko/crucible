@@ -192,8 +192,8 @@
 #include <crucible/fixy/Pipe.h>
 #include <crucible/fixy/Safety.h>
 #include <crucible/fixy/Sess.h>
-#include <crucible/fixy/SessGlobal.h>          // FIXY-V-068 (canonical)
-#include <crucible/fixy/Mpst.h>                // FIXY-V-068 shim → SessGlobal.h
+#include <crucible/fixy/SessGlobal.h>  // FIXY-V-068 (canonical)
+#include <crucible/fixy/Mpst.h>  // FIXY-V-068 shim → SessGlobal.h
 #include <crucible/fixy/SessDecl.h>
 #include <crucible/fixy/SessCT.h>
 #include <crucible/fixy/SessContentAddr.h>
@@ -207,14 +207,14 @@
 // itself; this slot deliberately removed).
 #include <crucible/fixy/SessContext.h>
 #include <crucible/fixy/SessGrade.h>
-#include <crucible/fixy/SessAssoc.h>      // FIXY-V-059
-#include <crucible/fixy/SessDelegate.h>   // FIXY-V-060
-#include <crucible/fixy/SessCheckpoint.h> // FIXY-V-061
-#include <crucible/fixy/SessRowExtraction.h> // FIXY-V-062
-#include <crucible/fixy/SessView.h>         // FIXY-V-063
-#include <crucible/fixy/SessCrash.h>        // FIXY-V-064
-#include <crucible/fixy/SessFederation.h>   // FIXY-V-065
-#include <crucible/fixy/SessShape.h>        // FIXY-V-066
+#include <crucible/fixy/SessAssoc.h>  // FIXY-V-059
+#include <crucible/fixy/SessDelegate.h>  // FIXY-V-060
+#include <crucible/fixy/SessCheckpoint.h>  // FIXY-V-061
+#include <crucible/fixy/SessRowExtraction.h>  // FIXY-V-062
+#include <crucible/fixy/SessView.h>  // FIXY-V-063
+#include <crucible/fixy/SessCrash.h>  // FIXY-V-064
+#include <crucible/fixy/SessFederation.h>  // FIXY-V-065
+#include <crucible/fixy/SessShape.h>  // FIXY-V-066
 #include <crucible/fixy/Struct.h>
 #include <crucible/fixy/Substr.h>
 #include <crucible/fixy/Wrap.h>

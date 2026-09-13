@@ -126,8 +126,7 @@ struct ChainLatticeOps {
 template <typename ChainLattice>
 [[nodiscard]] consteval bool verify_chain_lattice_exhaustive() noexcept {
     using EnumT = typename ChainLattice::element_type;
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^EnumT));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^EnumT));
     // -Wshadow fires on `template for` bodies because GCC 16 unrolls
     // the loop into successive scopes that each declare the same
     // induction variable; suppress locally for the loop body only.
@@ -136,8 +135,7 @@ template <typename ChainLattice>
     template for (constexpr auto ea : enumerators) {
         template for (constexpr auto eb : enumerators) {
             template for (constexpr auto ec : enumerators) {
-                if (!verify_bounded_lattice_axioms_at<ChainLattice>(
-                        [:ea:], [:eb:], [:ec:])) {
+                if (!verify_bounded_lattice_axioms_at<ChainLattice>([:ea:], [:eb:], [:ec:])) {
                     return false;
                 }
             }
@@ -150,15 +148,13 @@ template <typename ChainLattice>
 template <typename ChainLattice>
 [[nodiscard]] consteval bool verify_chain_lattice_distributive_exhaustive() noexcept {
     using EnumT = typename ChainLattice::element_type;
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^EnumT));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^EnumT));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto ea : enumerators) {
         template for (constexpr auto eb : enumerators) {
             template for (constexpr auto ec : enumerators) {
-                if (!verify_distributive_lattice<ChainLattice>(
-                        [:ea:], [:eb:], [:ec:])) {
+                if (!verify_distributive_lattice<ChainLattice>([:ea:], [:eb:], [:ec:])) {
                     return false;
                 }
             }
@@ -181,18 +177,16 @@ template <typename ChainLattice>
 // only through the production lattices' static_asserts.
 namespace detail::chain_lattice_self_test {
 
-enum class SmokeTier : std::uint8_t { Lo = 0, Mid = 1, Hi = 2 };
+enum class SmokeTier : std::uint8_t {
+    Lo = 0,
+    Mid = 1,
+    Hi = 2
+};
 
 struct SmokeChainLattice : ChainLatticeOps<SmokeTier> {
-    [[nodiscard]] static constexpr SmokeTier bottom() noexcept {
-        return SmokeTier::Lo;
-    }
-    [[nodiscard]] static constexpr SmokeTier top() noexcept {
-        return SmokeTier::Hi;
-    }
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return "SmokeChainLattice";
-    }
+    [[nodiscard]] static constexpr SmokeTier bottom() noexcept { return SmokeTier::Lo; }
+    [[nodiscard]] static constexpr SmokeTier top() noexcept { return SmokeTier::Hi; }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "SmokeChainLattice"; }
 };
 
 // Compile-time: the two consteval verifiers (defined above) over the fresh
@@ -213,12 +207,12 @@ inline void runtime_smoke_test() {
     const SmokeTier lo = SmokeTier::Lo;
     const SmokeTier hi = static_cast<SmokeTier>(raw_hi);
 
-    [[maybe_unused]] bool      le_dir = SmokeChainLattice::leq(lo, hi);
-    [[maybe_unused]] bool      ge_dir = SmokeChainLattice::leq(hi, lo);
-    [[maybe_unused]] SmokeTier mx     = SmokeChainLattice::join(lo, hi);
-    [[maybe_unused]] SmokeTier mn     = SmokeChainLattice::meet(lo, hi);
-    [[maybe_unused]] SmokeTier bot    = SmokeChainLattice::bottom();
-    [[maybe_unused]] SmokeTier top    = SmokeChainLattice::top();
+    [[maybe_unused]] bool le_dir = SmokeChainLattice::leq(lo, hi);
+    [[maybe_unused]] bool ge_dir = SmokeChainLattice::leq(hi, lo);
+    [[maybe_unused]] SmokeTier mx = SmokeChainLattice::join(lo, hi);
+    [[maybe_unused]] SmokeTier mn = SmokeChainLattice::meet(lo, hi);
+    [[maybe_unused]] SmokeTier bot = SmokeChainLattice::bottom();
+    [[maybe_unused]] SmokeTier top = SmokeChainLattice::top();
 }
 
 }  // namespace detail::chain_lattice_self_test

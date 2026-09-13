@@ -55,24 +55,22 @@ namespace crucible::concurrent::traits {
 // ── Universal typedef set ─────────────────────────────────────────
 
 template <typename Ch>
-concept HasUnifiedTypedefs =
-    requires { typename Ch::value_type; }
- && requires { typename Ch::user_tag; }
- && requires { typename Ch::whole_tag; };
+concept HasUnifiedTypedefs = requires { typename Ch::value_type; } && requires { typename Ch::user_tag; }
+                          && requires { typename Ch::whole_tag; };
 
 // ── capacity() — every fixed-cap wrapper ──────────────────────────
 
 template <typename Ch>
-concept HasCapacity =
-    requires { { Ch::capacity() } noexcept -> std::same_as<std::size_t>; };
+concept HasCapacity = requires {
+    { Ch::capacity() } noexcept -> std::same_as<std::size_t>;
+};
 
 // ── is_exclusive_active() — every wrapper ─────────────────────────
 
 template <typename Ch>
-concept HasIsExclusiveActive =
-    requires(const Ch& c) {
-        { c.is_exclusive_active() } noexcept -> std::same_as<bool>;
-    };
+concept HasIsExclusiveActive = requires(const Ch& c) {
+    { c.is_exclusive_active() } noexcept -> std::same_as<bool>;
+};
 
 // ── empty_approx() / size_approx() — FIFO-shaped wrappers ─────────
 //
@@ -80,16 +78,14 @@ concept HasIsExclusiveActive =
 // every other wrapper.
 
 template <typename Ch>
-concept HasEmptyApprox =
-    requires(const Ch& c) {
-        { c.empty_approx() } noexcept -> std::same_as<bool>;
-    };
+concept HasEmptyApprox = requires(const Ch& c) {
+    { c.empty_approx() } noexcept -> std::same_as<bool>;
+};
 
 template <typename Ch>
-concept HasSizeApprox =
-    requires(const Ch& c) {
-        { c.size_approx() } noexcept -> std::same_as<std::size_t>;
-    };
+concept HasSizeApprox = requires(const Ch& c) {
+    { c.size_approx() } noexcept -> std::same_as<std::size_t>;
+};
 
 // ── Mode-transition: pool-based ──────────────────────────────────
 //
@@ -98,11 +94,11 @@ concept HasSizeApprox =
 // ran, false iff pool was busy).
 
 template <typename Ch>
-concept HasPoolDrainedAccess =
-    requires(Ch& c) {
-        { c.with_drained_access([]() noexcept {}) }
-            -> std::same_as<bool>;
-    };
+concept HasPoolDrainedAccess = requires(Ch& c) {
+    {
+        c.with_drained_access([]() noexcept {})
+    } -> std::same_as<bool>;
+};
 
 // ── Mode-transition: linear-only ──────────────────────────────────
 //
@@ -111,33 +107,26 @@ concept HasPoolDrainedAccess =
 // path); whole permission is returned for re-split.
 
 template <typename Ch>
-concept HasLinearRecombinedAccess =
-    requires(Ch& c, safety::Permission<typename Ch::whole_tag> p) {
-        { c.with_recombined_access(std::move(p), []() noexcept {}) }
-            -> std::same_as<safety::Permission<typename Ch::whole_tag>>;
-    };
+concept HasLinearRecombinedAccess = requires(Ch& c, safety::Permission<typename Ch::whole_tag> p) {
+    {
+        c.with_recombined_access(std::move(p), []() noexcept {})
+    } -> std::same_as<safety::Permission<typename Ch::whole_tag>>;
+};
 
 // ── Topology classification (mutually exclusive) ──────────────────
 //
 // Every Permissioned wrapper satisfies exactly one of these.
 
 template <typename Ch>
-concept PoolBasedChannel =
-    HasUnifiedTypedefs<Ch>
- && HasIsExclusiveActive<Ch>
- && HasPoolDrainedAccess<Ch>;
+concept PoolBasedChannel = HasUnifiedTypedefs<Ch> && HasIsExclusiveActive<Ch> && HasPoolDrainedAccess<Ch>;
 
 template <typename Ch>
-concept LinearOnlyChannel =
-    HasUnifiedTypedefs<Ch>
- && HasIsExclusiveActive<Ch>
- && HasLinearRecombinedAccess<Ch>;
+concept LinearOnlyChannel = HasUnifiedTypedefs<Ch> && HasIsExclusiveActive<Ch> && HasLinearRecombinedAccess<Ch>;
 
 // ── Umbrella concept: any Permissioned wrapper ────────────────────
 
 template <typename Ch>
-concept PermissionedChannel =
-    PoolBasedChannel<Ch> || LinearOnlyChannel<Ch>;
+concept PermissionedChannel = PoolBasedChannel<Ch> || LinearOnlyChannel<Ch>;
 
 // ── FIFO-shape concept: queue-style with empty/size diagnostics ───
 //
@@ -146,10 +135,6 @@ concept PermissionedChannel =
 // scheduling.
 
 template <typename Ch>
-concept FifoChannel =
-    PermissionedChannel<Ch>
- && HasEmptyApprox<Ch>
- && HasSizeApprox<Ch>
- && HasCapacity<Ch>;
+concept FifoChannel = PermissionedChannel<Ch> && HasEmptyApprox<Ch> && HasSizeApprox<Ch> && HasCapacity<Ch>;
 
 }  // namespace crucible::concurrent::traits

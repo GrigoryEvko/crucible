@@ -155,21 +155,23 @@ namespace crucible::concurrent {
 
 namespace spsc_tag {
 
-template <typename UserTag> struct Whole    {};
-template <typename UserTag> struct Producer {};
-template <typename UserTag> struct Consumer {};
+template <typename UserTag>
+struct Whole {};
+template <typename UserTag>
+struct Producer {};
+template <typename UserTag>
+struct Consumer {};
 
 }  // namespace spsc_tag
 
 // ── PermissionedSpscChannel<T, Capacity, UserTag> ──────────────────
 
 template <SpscValue T, std::size_t Capacity, typename UserTag = void>
-class PermissionedSpscChannel
-    : public safety::Pinned<PermissionedSpscChannel<T, Capacity, UserTag>> {
+class PermissionedSpscChannel : public safety::Pinned<PermissionedSpscChannel<T, Capacity, UserTag>> {
 public:
-    using value_type   = T;
-    using user_tag     = UserTag;
-    using whole_tag    = spsc_tag::Whole<UserTag>;
+    using value_type = T;
+    using user_tag = UserTag;
+    using whole_tag = spsc_tag::Whole<UserTag>;
     using producer_tag = spsc_tag::Producer<UserTag>;
     using consumer_tag = spsc_tag::Consumer<UserTag>;
 
@@ -207,48 +209,38 @@ public:
         PermissionedSpscChannel& ch_;
         [[no_unique_address]] safety::Permission<producer_tag> perm_;
 
-        constexpr ProducerHandle(PermissionedSpscChannel& c,
-                                 safety::Permission<producer_tag>&& p) noexcept
+        constexpr ProducerHandle(PermissionedSpscChannel& c, safety::Permission<producer_tag>&& p) noexcept
             : ch_{c}, perm_{std::move(p)} {}
         friend class PermissionedSpscChannel;
 
     public:
-        static constexpr std::size_t per_call_working_set =
-            lines_plus_cell_working_set_v<2, T>;
+        static constexpr std::size_t per_call_working_set = lines_plus_cell_working_set_v<2, T>;
 
-        ProducerHandle(const ProducerHandle&)
-            = delete("ProducerHandle owns the Producer Permission — copy would duplicate the linear token");
-        ProducerHandle& operator=(const ProducerHandle&)
-            = delete("ProducerHandle owns the Producer Permission — assignment would overwrite the linear token");
+        ProducerHandle(const ProducerHandle&) =
+            delete("ProducerHandle owns the Producer Permission — copy would duplicate the linear token");
+        ProducerHandle& operator=(const ProducerHandle&) =
+            delete("ProducerHandle owns the Producer Permission — assignment would overwrite the linear token");
         constexpr ProducerHandle(ProducerHandle&&) noexcept = default;
         // Move-assignment is implicitly deleted by the reference member
         // (reference can't be rebound).  Explicit `= delete` here makes
         // the intent visible at the API surface; without it, the
         // diagnostic on attempted move-assign points at the implicitly-
         // deleted special member which is harder to grep.
-        ProducerHandle& operator=(ProducerHandle&&)
-            = delete("ProducerHandle binds to ONE channel for life — rebinding would orphan the original Permission and silently allow a second producer to coexist");
+        ProducerHandle& operator=(ProducerHandle&&) = delete(
+            "ProducerHandle binds to ONE channel for life — rebinding would orphan the original Permission and silently allow a second producer to coexist");
 
         // Push — ~5-8 ns uncontended per SpscRing's contract.  Returns
         // false iff the ring is full; caller decides backpressure
         // (yield + retry, drop, log, etc.).  Inlined to single SpscRing
         // call by the optimizer.
-        [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept {
-            return ch_.ring_.try_push(item);
-        }
+        [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept { return ch_.ring_.try_push(item); }
 
         // Diagnostics — snapshot reads, NOT exact (use for telemetry
         // and "should we keep retrying?" decisions only, NEVER for
         // correctness invariants).
-        [[nodiscard]] bool empty_approx() const noexcept {
-            return ch_.ring_.empty_approx();
-        }
-        [[nodiscard]] std::size_t size_approx() const noexcept {
-            return ch_.ring_.size_approx();
-        }
-        [[nodiscard]] static constexpr std::size_t capacity() noexcept {
-            return Capacity;
-        }
+        [[nodiscard]] bool empty_approx() const noexcept { return ch_.ring_.empty_approx(); }
+        [[nodiscard]] std::size_t size_approx() const noexcept { return ch_.ring_.size_approx(); }
+        [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
     };
 
     // ── ConsumerHandle ────────────────────────────────────────────
@@ -263,40 +255,30 @@ public:
         PermissionedSpscChannel& ch_;
         [[no_unique_address]] safety::Permission<consumer_tag> perm_;
 
-        constexpr ConsumerHandle(PermissionedSpscChannel& c,
-                                 safety::Permission<consumer_tag>&& p) noexcept
+        constexpr ConsumerHandle(PermissionedSpscChannel& c, safety::Permission<consumer_tag>&& p) noexcept
             : ch_{c}, perm_{std::move(p)} {}
         friend class PermissionedSpscChannel;
 
     public:
-        static constexpr std::size_t per_call_working_set =
-            lines_plus_cell_working_set_v<2, T>;
+        static constexpr std::size_t per_call_working_set = lines_plus_cell_working_set_v<2, T>;
 
-        ConsumerHandle(const ConsumerHandle&)
-            = delete("ConsumerHandle owns the Consumer Permission — copy would duplicate the linear token");
-        ConsumerHandle& operator=(const ConsumerHandle&)
-            = delete("ConsumerHandle owns the Consumer Permission — assignment would overwrite the linear token");
+        ConsumerHandle(const ConsumerHandle&) =
+            delete("ConsumerHandle owns the Consumer Permission — copy would duplicate the linear token");
+        ConsumerHandle& operator=(const ConsumerHandle&) =
+            delete("ConsumerHandle owns the Consumer Permission — assignment would overwrite the linear token");
         constexpr ConsumerHandle(ConsumerHandle&&) noexcept = default;
-        ConsumerHandle& operator=(ConsumerHandle&&)
-            = delete("ConsumerHandle binds to ONE channel for life — rebinding would orphan the original Permission and silently allow a second consumer to coexist");
+        ConsumerHandle& operator=(ConsumerHandle&&) = delete(
+            "ConsumerHandle binds to ONE channel for life — rebinding would orphan the original Permission and silently allow a second consumer to coexist");
 
         // Pop — ~5-8 ns uncontended per SpscRing's contract.  Returns
         // nullopt iff the ring is empty; caller decides whether to
         // yield/spin/sleep.  Inlined to single SpscRing call.
-        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept {
-            return ch_.ring_.try_pop();
-        }
+        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept { return ch_.ring_.try_pop(); }
 
         // Diagnostics — snapshot reads, NOT exact.
-        [[nodiscard]] bool empty_approx() const noexcept {
-            return ch_.ring_.empty_approx();
-        }
-        [[nodiscard]] std::size_t size_approx() const noexcept {
-            return ch_.ring_.size_approx();
-        }
-        [[nodiscard]] static constexpr std::size_t capacity() noexcept {
-            return Capacity;
-        }
+        [[nodiscard]] bool empty_approx() const noexcept { return ch_.ring_.empty_approx(); }
+        [[nodiscard]] std::size_t size_approx() const noexcept { return ch_.ring_.size_approx(); }
+        [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
     };
 
     // ── Factories ─────────────────────────────────────────────────
@@ -353,32 +335,23 @@ public:
     template <typename Body>
         requires std::is_invocable_v<Body>
     [[nodiscard]] safety::Permission<whole_tag>
-    with_recombined_access(safety::Permission<whole_tag>&& whole, Body&& body)
-        noexcept(std::is_nothrow_invocable_v<Body>)
-    {
+    with_recombined_access(safety::Permission<whole_tag>&& whole,
+                           Body&& body) noexcept(std::is_nothrow_invocable_v<Body>) {
         std::forward<Body>(body)();
         return std::move(whole);
     }
 
     // ── Channel-level diagnostics (any thread, NOT exact) ─────────
 
-    [[nodiscard]] bool empty_approx() const noexcept {
-        return ring_.empty_approx();
-    }
-    [[nodiscard]] std::size_t size_approx() const noexcept {
-        return ring_.size_approx();
-    }
-    [[nodiscard]] static constexpr std::size_t capacity() noexcept {
-        return Capacity;
-    }
+    [[nodiscard]] bool empty_approx() const noexcept { return ring_.empty_approx(); }
+    [[nodiscard]] std::size_t size_approx() const noexcept { return ring_.size_approx(); }
+    [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
     // SPSC has no atomic exclusivity flag — the linear Permissions ARE
     // the proof of single-handle ownership.  This query exists for API
     // uniformity with the pool-based wrappers; it always returns false
     // because there is no in-flight upgrade state to observe.
-    [[nodiscard]] static constexpr bool is_exclusive_active() noexcept {
-        return false;
-    }
+    [[nodiscard]] static constexpr bool is_exclusive_active() noexcept { return false; }
 
 private:
     SpscRing<T, Capacity> ring_;
@@ -398,30 +371,20 @@ private:
 namespace crucible::safety {
 
 template <typename UserTag>
-struct splits_into<concurrent::spsc_tag::Whole<UserTag>,
-                   concurrent::spsc_tag::Producer<UserTag>,
-                   concurrent::spsc_tag::Consumer<UserTag>>
-    : std::true_type {};
+struct splits_into<concurrent::spsc_tag::Whole<UserTag>, concurrent::spsc_tag::Producer<UserTag>,
+                   concurrent::spsc_tag::Consumer<UserTag>> : std::true_type {};
 
 template <typename UserTag>
-struct splits_into_pack<concurrent::spsc_tag::Whole<UserTag>,
-                        concurrent::spsc_tag::Producer<UserTag>,
-                        concurrent::spsc_tag::Consumer<UserTag>>
-    : std::true_type {};
+struct splits_into_pack<concurrent::spsc_tag::Whole<UserTag>, concurrent::spsc_tag::Producer<UserTag>,
+                        concurrent::spsc_tag::Consumer<UserTag>> : std::true_type {};
 
 // fixy-M-29 authoring witnesses (paired with the specs above).
 template <typename UserTag>
-struct splits_into_authoring_witness<
-    concurrent::spsc_tag::Whole<UserTag>,
-    concurrent::spsc_tag::Producer<UserTag>,
-    concurrent::spsc_tag::Consumer<UserTag>>
-    : std::true_type {};
+struct splits_into_authoring_witness<concurrent::spsc_tag::Whole<UserTag>, concurrent::spsc_tag::Producer<UserTag>,
+                                     concurrent::spsc_tag::Consumer<UserTag>> : std::true_type {};
 
 template <typename UserTag>
-struct splits_into_pack_authoring_witness<
-    concurrent::spsc_tag::Whole<UserTag>,
-    concurrent::spsc_tag::Producer<UserTag>,
-    concurrent::spsc_tag::Consumer<UserTag>>
-    : std::true_type {};
+struct splits_into_pack_authoring_witness<concurrent::spsc_tag::Whole<UserTag>, concurrent::spsc_tag::Producer<UserTag>,
+                                          concurrent::spsc_tag::Consumer<UserTag>> : std::true_type {};
 
 }  // namespace crucible::safety

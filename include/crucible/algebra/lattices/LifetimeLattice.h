@@ -96,24 +96,27 @@ namespace crucible::algebra::lattices {
 
 // ── Lifetime durability scope ───────────────────────────────────────
 enum class Lifetime : std::uint8_t {
-    PER_REQUEST = 0,    // destroyed on session close
-    PER_PROGRAM = 1,    // shared across sibling sessions of the same program
-    PER_FLEET   = 2,    // Raft-replicated across the Canopy fleet
+    PER_REQUEST = 0,  // destroyed on session close
+    PER_PROGRAM = 1,  // shared across sibling sessions of the same program
+    PER_FLEET = 2,  // Raft-replicated across the Canopy fleet
 };
 
 // Cardinality + diagnostic name via reflection — auto-bumps when
 // future Lifetime variants ship; the every_lifetime_has_name self-
 // test catches a missing switch arm before the unknown sentinel
 // leaks into production diagnostics.
-inline constexpr std::size_t lifetime_count =
-    std::meta::enumerators_of(^^Lifetime).size();
+inline constexpr std::size_t lifetime_count = std::meta::enumerators_of(^^Lifetime).size();
 
 [[nodiscard]] consteval std::string_view lifetime_name(Lifetime l) noexcept {
     switch (l) {
-        case Lifetime::PER_REQUEST: return "PER_REQUEST";
-        case Lifetime::PER_PROGRAM: return "PER_PROGRAM";
-        case Lifetime::PER_FLEET:   return "PER_FLEET";
-        default:                    return std::string_view{"<unknown Lifetime>"};
+        case Lifetime::PER_REQUEST:
+            return "PER_REQUEST";
+        case Lifetime::PER_PROGRAM:
+            return "PER_PROGRAM";
+        case Lifetime::PER_FLEET:
+            return "PER_FLEET";
+        default:
+            return std::string_view{"<unknown Lifetime>"};
     }
 }
 
@@ -123,16 +126,10 @@ inline constexpr std::size_t lifetime_count =
 // methods are byte-identical across every chain-order lattice over an
 // enum class, factored out per the audit Tier-2 dedup.
 struct LifetimeLattice : ChainLatticeOps<Lifetime> {
-    [[nodiscard]] static constexpr element_type bottom() noexcept {
-        return Lifetime::PER_REQUEST;
-    }
-    [[nodiscard]] static constexpr element_type top() noexcept {
-        return Lifetime::PER_FLEET;
-    }
+    [[nodiscard]] static constexpr element_type bottom() noexcept { return Lifetime::PER_REQUEST; }
+    [[nodiscard]] static constexpr element_type top() noexcept { return Lifetime::PER_FLEET; }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return "LifetimeLattice";
-    }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "LifetimeLattice"; }
 
     // ── At<L>: singleton sub-lattice at a fixed type-level scope ────
     //
@@ -145,28 +142,28 @@ struct LifetimeLattice : ChainLatticeOps<Lifetime> {
     struct At {
         struct element_type {
             using lifetime_value_type = Lifetime;
-            [[nodiscard]] constexpr operator lifetime_value_type() const noexcept {
-                return L;
-            }
-            [[nodiscard]] constexpr bool operator==(element_type) const noexcept {
-                return true;
-            }
+            [[nodiscard]] constexpr operator lifetime_value_type() const noexcept { return L; }
+            [[nodiscard]] constexpr bool operator==(element_type) const noexcept { return true; }
         };
 
         static constexpr Lifetime scope = L;
 
         [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-        [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
         [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
 
         [[nodiscard]] static consteval std::string_view name() noexcept {
             switch (L) {
-                case Lifetime::PER_REQUEST: return "LifetimeLattice::At<PER_REQUEST>";
-                case Lifetime::PER_PROGRAM: return "LifetimeLattice::At<PER_PROGRAM>";
-                case Lifetime::PER_FLEET:   return "LifetimeLattice::At<PER_FLEET>";
-                default:                    return "LifetimeLattice::At<?>";
+                case Lifetime::PER_REQUEST:
+                    return "LifetimeLattice::At<PER_REQUEST>";
+                case Lifetime::PER_PROGRAM:
+                    return "LifetimeLattice::At<PER_PROGRAM>";
+                case Lifetime::PER_FLEET:
+                    return "LifetimeLattice::At<PER_FLEET>";
+                default:
+                    return "LifetimeLattice::At<?>";
             }
         }
     };
@@ -178,22 +175,20 @@ struct LifetimeLattice : ChainLatticeOps<Lifetime> {
 // by suffixing with `Tier`, mirroring ConfLattice::PublicTier /
 // SecretTier.
 namespace lifetime {
-    using PerRequestTier = LifetimeLattice::At<Lifetime::PER_REQUEST>;
-    using PerProgramTier = LifetimeLattice::At<Lifetime::PER_PROGRAM>;
-    using PerFleetTier   = LifetimeLattice::At<Lifetime::PER_FLEET>;
+using PerRequestTier = LifetimeLattice::At<Lifetime::PER_REQUEST>;
+using PerProgramTier = LifetimeLattice::At<Lifetime::PER_PROGRAM>;
+using PerFleetTier = LifetimeLattice::At<Lifetime::PER_FLEET>;
 }  // namespace lifetime
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::lifetime_lattice_self_test {
 
 // Cardinality + reflection-based name coverage.
-static_assert(lifetime_count == 3,
-    "Lifetime catalog diverged from {PER_REQUEST, PER_PROGRAM, PER_FLEET}; "
-    "confirm intent and update the BatchPolicy / SessionOpaqueState callers.");
+static_assert(lifetime_count == 3, "Lifetime catalog diverged from {PER_REQUEST, PER_PROGRAM, PER_FLEET}; "
+                                   "confirm intent and update the BatchPolicy / SessionOpaqueState callers.");
 
 [[nodiscard]] consteval bool every_lifetime_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^Lifetime));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Lifetime));
     // -Wshadow fires on `template for` bodies because GCC 16 unrolls
     // the loop into successive scopes that each declare the same
     // induction variable; suppress locally for the loop body only.
@@ -207,10 +202,9 @@ static_assert(lifetime_count == 3,
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_lifetime_has_name(),
-    "lifetime_name() switch missing arm for at least one Lifetime — "
-    "add the arm or the new scope leaks the '<unknown Lifetime>' "
-    "sentinel into runtime observer's debug output.");
+static_assert(every_lifetime_has_name(), "lifetime_name() switch missing arm for at least one Lifetime — "
+                                         "add the arm or the new scope leaks the '<unknown Lifetime>' "
+                                         "sentinel into runtime observer's debug output.");
 
 // Concept conformance — full lattice + each At<L> sub-lattice.
 static_assert(Lattice<LifetimeLattice>);
@@ -235,66 +229,63 @@ static_assert(std::is_empty_v<LifetimeLattice::At<Lifetime::PER_FLEET>::element_
 // (audit Tier-2 dedup) — pass the per-lattice ChainLattice as the
 // template argument; reflection-driven enumeration handles the rest.
 static_assert(verify_chain_lattice_exhaustive<LifetimeLattice>(),
-    "LifetimeLattice's chain-order lattice axioms must hold at every "
-    "(Lifetime)³ triple — failure indicates a defect in leq/join/meet "
-    "or in the underlying enum encoding.");
+              "LifetimeLattice's chain-order lattice axioms must hold at every "
+              "(Lifetime)³ triple — failure indicates a defect in leq/join/meet "
+              "or in the underlying enum encoding.");
 static_assert(verify_chain_lattice_distributive_exhaustive<LifetimeLattice>(),
-    "LifetimeLattice's chain order must satisfy distributivity at "
-    "every (Lifetime)³ triple — a chain order always does, so failure "
-    "would indicate a defect in join or meet.");
+              "LifetimeLattice's chain order must satisfy distributivity at "
+              "every (Lifetime)³ triple — a chain order always does, so failure "
+              "would indicate a defect in join or meet.");
 
 // Direct order witnesses — every level subsumed by the next.
-static_assert( LifetimeLattice::leq(Lifetime::PER_REQUEST, Lifetime::PER_PROGRAM));
-static_assert( LifetimeLattice::leq(Lifetime::PER_PROGRAM, Lifetime::PER_FLEET));
-static_assert( LifetimeLattice::leq(Lifetime::PER_REQUEST, Lifetime::PER_FLEET));   // transitive
-static_assert(!LifetimeLattice::leq(Lifetime::PER_FLEET,   Lifetime::PER_REQUEST));
-static_assert(!LifetimeLattice::leq(Lifetime::PER_FLEET,   Lifetime::PER_PROGRAM));
+static_assert(LifetimeLattice::leq(Lifetime::PER_REQUEST, Lifetime::PER_PROGRAM));
+static_assert(LifetimeLattice::leq(Lifetime::PER_PROGRAM, Lifetime::PER_FLEET));
+static_assert(LifetimeLattice::leq(Lifetime::PER_REQUEST, Lifetime::PER_FLEET));  // transitive
+static_assert(!LifetimeLattice::leq(Lifetime::PER_FLEET, Lifetime::PER_REQUEST));
+static_assert(!LifetimeLattice::leq(Lifetime::PER_FLEET, Lifetime::PER_PROGRAM));
 static_assert(!LifetimeLattice::leq(Lifetime::PER_PROGRAM, Lifetime::PER_REQUEST));
 
 // Pin bottom / top to the chain endpoints.
 static_assert(LifetimeLattice::bottom() == Lifetime::PER_REQUEST);
-static_assert(LifetimeLattice::top()    == Lifetime::PER_FLEET);
+static_assert(LifetimeLattice::top() == Lifetime::PER_FLEET);
 
 // Join raises scope (max); meet narrows scope (min).
-static_assert(LifetimeLattice::join(Lifetime::PER_REQUEST, Lifetime::PER_FLEET)   == Lifetime::PER_FLEET);
+static_assert(LifetimeLattice::join(Lifetime::PER_REQUEST, Lifetime::PER_FLEET) == Lifetime::PER_FLEET);
 static_assert(LifetimeLattice::join(Lifetime::PER_PROGRAM, Lifetime::PER_REQUEST) == Lifetime::PER_PROGRAM);
-static_assert(LifetimeLattice::meet(Lifetime::PER_REQUEST, Lifetime::PER_FLEET)   == Lifetime::PER_REQUEST);
-static_assert(LifetimeLattice::meet(Lifetime::PER_PROGRAM, Lifetime::PER_FLEET)   == Lifetime::PER_PROGRAM);
+static_assert(LifetimeLattice::meet(Lifetime::PER_REQUEST, Lifetime::PER_FLEET) == Lifetime::PER_REQUEST);
+static_assert(LifetimeLattice::meet(Lifetime::PER_PROGRAM, Lifetime::PER_FLEET) == Lifetime::PER_PROGRAM);
 
 // Diagnostic names.
 static_assert(LifetimeLattice::name() == "LifetimeLattice");
 static_assert(LifetimeLattice::At<Lifetime::PER_REQUEST>::name() == "LifetimeLattice::At<PER_REQUEST>");
 static_assert(LifetimeLattice::At<Lifetime::PER_PROGRAM>::name() == "LifetimeLattice::At<PER_PROGRAM>");
-static_assert(LifetimeLattice::At<Lifetime::PER_FLEET>::name()   == "LifetimeLattice::At<PER_FLEET>");
+static_assert(LifetimeLattice::At<Lifetime::PER_FLEET>::name() == "LifetimeLattice::At<PER_FLEET>");
 static_assert(lifetime_name(Lifetime::PER_REQUEST) == "PER_REQUEST");
 static_assert(lifetime_name(Lifetime::PER_PROGRAM) == "PER_PROGRAM");
-static_assert(lifetime_name(Lifetime::PER_FLEET)   == "PER_FLEET");
+static_assert(lifetime_name(Lifetime::PER_FLEET) == "PER_FLEET");
 
 // Reflection-driven coverage check on At<L>::name() — same discipline
 // as ConfLattice's every_at_conf_has_name.
 [[nodiscard]] consteval bool every_at_lifetime_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^Lifetime));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Lifetime));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
-        if (LifetimeLattice::At<([:en:])>::name() ==
-            std::string_view{"LifetimeLattice::At<?>"}) {
+        if (LifetimeLattice::At<([:en:])>::name() == std::string_view{"LifetimeLattice::At<?>"}) {
             return false;
         }
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_at_lifetime_has_name(),
-    "LifetimeLattice::At<L>::name() switch missing an arm for at least "
-    "one Lifetime — add the arm or the new scope leaks the "
-    "'LifetimeLattice::At<?>' sentinel.");
+static_assert(every_at_lifetime_has_name(), "LifetimeLattice::At<L>::name() switch missing an arm for at least "
+                                            "one Lifetime — add the arm or the new scope leaks the "
+                                            "'LifetimeLattice::At<?>' sentinel.");
 
 // Convenience aliases resolve correctly.
 static_assert(lifetime::PerRequestTier::scope == Lifetime::PER_REQUEST);
 static_assert(lifetime::PerProgramTier::scope == Lifetime::PER_PROGRAM);
-static_assert(lifetime::PerFleetTier::scope   == Lifetime::PER_FLEET);
+static_assert(lifetime::PerFleetTier::scope == Lifetime::PER_FLEET);
 
 // ── Layout invariants on Graded<...,At<L>,T> ────────────────────────
 //
@@ -302,8 +293,12 @@ static_assert(lifetime::PerFleetTier::scope   == Lifetime::PER_FLEET);
 // EBO-collapse the empty grade.  Witnesses pin the contract for the
 // trivially-default-constructible-T axis (audit drop) and for an
 // 8-byte payload (typical pointer-sized OpaqueState).
-struct OneByteValue   { char c{0}; };
-struct EightByteValue { unsigned long long v{0}; };
+struct OneByteValue {
+    char c{0};
+};
+struct EightByteValue {
+    unsigned long long v{0};
+};
 
 template <typename T>
 using FleetOpaque = Graded<ModalityKind::Comonad, lifetime::PerFleetTier, T>;
@@ -332,23 +327,23 @@ inline void runtime_smoke_test() {
     // Full LifetimeLattice ops at runtime.
     Lifetime a = Lifetime::PER_REQUEST;
     Lifetime b = Lifetime::PER_FLEET;
-    [[maybe_unused]] bool     l1   = LifetimeLattice::leq(a, b);
-    [[maybe_unused]] Lifetime j1   = LifetimeLattice::join(a, b);
-    [[maybe_unused]] Lifetime m1   = LifetimeLattice::meet(a, b);
-    [[maybe_unused]] Lifetime bot  = LifetimeLattice::bottom();
-    [[maybe_unused]] Lifetime top  = LifetimeLattice::top();
+    [[maybe_unused]] bool l1 = LifetimeLattice::leq(a, b);
+    [[maybe_unused]] Lifetime j1 = LifetimeLattice::join(a, b);
+    [[maybe_unused]] Lifetime m1 = LifetimeLattice::meet(a, b);
+    [[maybe_unused]] Lifetime bot = LifetimeLattice::bottom();
+    [[maybe_unused]] Lifetime top = LifetimeLattice::top();
 
     // Graded<Comonad, At<Fleet>, T> at runtime.
     OneByteValue v{42};
     FleetOpaque<OneByteValue> initial{v, lifetime::PerFleetTier::bottom()};
-    auto widened   = initial.weaken(lifetime::PerFleetTier::top());
-    auto composed  = initial.compose(widened);
-    auto rv_widen  = std::move(widened).weaken(lifetime::PerFleetTier::top());
+    auto widened = initial.weaken(lifetime::PerFleetTier::top());
+    auto composed = initial.compose(widened);
+    auto rv_widen = std::move(widened).weaken(lifetime::PerFleetTier::top());
 
     // Comonad counit (extract) — only available because modality is Comonad.
     auto extracted = std::move(composed).extract();
 
-    [[maybe_unused]] auto g  = rv_widen.grade();
+    [[maybe_unused]] auto g = rv_widen.grade();
     [[maybe_unused]] auto vc = extracted.c;
 
     // Conversion: At<Lifetime>::element_type → Lifetime at runtime.

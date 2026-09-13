@@ -134,8 +134,7 @@ struct is_concurrent_row<ConcurrentRow<Ts...>> : std::true_type {};
 }  // namespace detail
 
 template <typename T>
-inline constexpr bool is_concurrent_row_v =
-    detail::is_concurrent_row<T>::value;
+inline constexpr bool is_concurrent_row_v = detail::is_concurrent_row<T>::value;
 
 template <typename T>
 concept IsConcurrentRow = is_concurrent_row_v<T>;
@@ -162,13 +161,11 @@ struct concurrent_row_value<K, ConcurrentRow<>> {
 
 template <ResourceKind K, ResourceTag... Ts>
 struct concurrent_row_value<K, ConcurrentRow<Ts...>> {
-    static constexpr std::uint64_t value =
-        ((Ts::kind == K ? Ts::value : std::uint64_t{0}) + ...);
+    static constexpr std::uint64_t value = ((Ts::kind == K ? Ts::value : std::uint64_t{0}) + ...);
 };
 
 template <ResourceKind K, typename R>
-inline constexpr std::uint64_t concurrent_row_value_v =
-    concurrent_row_value<K, R>::value;
+inline constexpr std::uint64_t concurrent_row_value_v = concurrent_row_value<K, R>::value;
 
 // ── kind_to_tag<K, V> ───────────────────────────────────────────────
 //
@@ -183,34 +180,34 @@ namespace detail {
 template <ResourceKind K, std::uint64_t V>
 struct kind_to_tag;
 
-#define CRUCIBLE_KIND_TO_TAG(KindEnum, TagName)                            \
-    template <std::uint64_t V>                                             \
-    struct kind_to_tag<ResourceKind::KindEnum, V> {                        \
-        using type = ::crucible::effects::resource::TagName<V>;            \
+#define CRUCIBLE_KIND_TO_TAG(KindEnum, TagName)                 \
+    template <std::uint64_t V>                                  \
+    struct kind_to_tag<ResourceKind::KindEnum, V> {             \
+        using type = ::crucible::effects::resource::TagName<V>; \
     }
 
-CRUCIBLE_KIND_TO_TAG(Sm,                SmBudget);
-CRUCIBLE_KIND_TO_TAG(WarpScheduler,     WarpSchedulerSlots);
-CRUCIBLE_KIND_TO_TAG(RegistersPerWarp,  RegistersPerWarp);
-CRUCIBLE_KIND_TO_TAG(Smem,              SmemBytes);
-CRUCIBLE_KIND_TO_TAG(L2,                L2Bytes);
-CRUCIBLE_KIND_TO_TAG(HbmBytes,          HbmBytes);
-CRUCIBLE_KIND_TO_TAG(HbmBw,             HbmBandwidth);
-CRUCIBLE_KIND_TO_TAG(NvlinkBw,          NvlinkBandwidth);
-CRUCIBLE_KIND_TO_TAG(PcieBw,            PcieBandwidth);
-CRUCIBLE_KIND_TO_TAG(NicQ,              NicQueueBudget);
-CRUCIBLE_KIND_TO_TAG(NicRing,           NicRingDepth);
-CRUCIBLE_KIND_TO_TAG(NicQp,             NicQp);
-CRUCIBLE_KIND_TO_TAG(NicCq,             NicCq);
-CRUCIBLE_KIND_TO_TAG(NicMr,             NicMr);
-CRUCIBLE_KIND_TO_TAG(SwitchEgressBw,    SwitchEgressBw);
-CRUCIBLE_KIND_TO_TAG(SwitchBuffer,      SwitchBufferCells);
-CRUCIBLE_KIND_TO_TAG(Tcam,              TcamEntries);
-CRUCIBLE_KIND_TO_TAG(CpuCore,           CpuCoreBudget);
-CRUCIBLE_KIND_TO_TAG(Llc,               LlcBytes);
-CRUCIBLE_KIND_TO_TAG(PowerWatts,        PowerWatts);
-CRUCIBLE_KIND_TO_TAG(ThermalCelsius,    ThermalCelsius);
-CRUCIBLE_KIND_TO_TAG(RackPowerKw,       RackPowerKw);
+CRUCIBLE_KIND_TO_TAG(Sm, SmBudget);
+CRUCIBLE_KIND_TO_TAG(WarpScheduler, WarpSchedulerSlots);
+CRUCIBLE_KIND_TO_TAG(RegistersPerWarp, RegistersPerWarp);
+CRUCIBLE_KIND_TO_TAG(Smem, SmemBytes);
+CRUCIBLE_KIND_TO_TAG(L2, L2Bytes);
+CRUCIBLE_KIND_TO_TAG(HbmBytes, HbmBytes);
+CRUCIBLE_KIND_TO_TAG(HbmBw, HbmBandwidth);
+CRUCIBLE_KIND_TO_TAG(NvlinkBw, NvlinkBandwidth);
+CRUCIBLE_KIND_TO_TAG(PcieBw, PcieBandwidth);
+CRUCIBLE_KIND_TO_TAG(NicQ, NicQueueBudget);
+CRUCIBLE_KIND_TO_TAG(NicRing, NicRingDepth);
+CRUCIBLE_KIND_TO_TAG(NicQp, NicQp);
+CRUCIBLE_KIND_TO_TAG(NicCq, NicCq);
+CRUCIBLE_KIND_TO_TAG(NicMr, NicMr);
+CRUCIBLE_KIND_TO_TAG(SwitchEgressBw, SwitchEgressBw);
+CRUCIBLE_KIND_TO_TAG(SwitchBuffer, SwitchBufferCells);
+CRUCIBLE_KIND_TO_TAG(Tcam, TcamEntries);
+CRUCIBLE_KIND_TO_TAG(CpuCore, CpuCoreBudget);
+CRUCIBLE_KIND_TO_TAG(Llc, LlcBytes);
+CRUCIBLE_KIND_TO_TAG(PowerWatts, PowerWatts);
+CRUCIBLE_KIND_TO_TAG(ThermalCelsius, ThermalCelsius);
+CRUCIBLE_KIND_TO_TAG(RackPowerKw, RackPowerKw);
 CRUCIBLE_KIND_TO_TAG(CarbonGramsPerKwh, CarbonGramsPerKwh);
 
 #undef CRUCIBLE_KIND_TO_TAG
@@ -223,10 +220,7 @@ using kind_to_tag_t = typename kind_to_tag<K, V>::type;
 // `A + B >= A` is the standard unsigned-overflow detection idiom.
 // Holds iff the sum did not wrap.  Used by ConcurrentlySchedulable
 // to reject schedules that would silently corrupt the budget total.
-[[nodiscard]] consteval bool sum_does_not_overflow(std::uint64_t a,
-                                                   std::uint64_t b) noexcept {
-    return (a + b) >= a;
-}
+[[nodiscard]] consteval bool sum_does_not_overflow(std::uint64_t a, std::uint64_t b) noexcept { return (a + b) >= a; }
 
 // ── Build canonical ConcurrentRow from per-kind sums ────────────────
 //
@@ -251,18 +245,14 @@ struct concurrent_row_prepend<Tag, ConcurrentRow<Ts...>> {
 };
 
 template <typename Tag, typename Row>
-using concurrent_row_prepend_t =
-    typename concurrent_row_prepend<Tag, Row>::type;
+using concurrent_row_prepend_t = typename concurrent_row_prepend<Tag, Row>::type;
 
 // Conditional emit for a single kind: if sum > 0, prepend the tag;
 // else passthrough.  Cardinality stays bounded because every kind
 // emits at most one tag.
 template <ResourceKind K, std::uint64_t Sum, typename Row>
 struct conditional_emit {
-    using type = std::conditional_t<
-        (Sum > 0),
-        concurrent_row_prepend_t<kind_to_tag_t<K, Sum>, Row>,
-        Row>;
+    using type = std::conditional_t<(Sum > 0), concurrent_row_prepend_t<kind_to_tag_t<K, Sum>, Row>, Row>;
 };
 
 template <ResourceKind K, std::uint64_t Sum, typename Row>
@@ -280,77 +270,132 @@ struct build_canonical_row {
         // Walk catalog from CarbonGramsPerKwh (22) down to Sm (0),
         // prepending non-zero sums.  Fold: start with EmptyRow,
         // accumulate one kind at a time.
-        conditional_emit_t<ResourceKind::Sm,
-            concurrent_row_value_v<ResourceKind::Sm, R1>
-                + concurrent_row_value_v<ResourceKind::Sm, R2>,
-        conditional_emit_t<ResourceKind::WarpScheduler,
-            concurrent_row_value_v<ResourceKind::WarpScheduler, R1>
-                + concurrent_row_value_v<ResourceKind::WarpScheduler, R2>,
-        conditional_emit_t<ResourceKind::RegistersPerWarp,
-            concurrent_row_value_v<ResourceKind::RegistersPerWarp, R1>
-                + concurrent_row_value_v<ResourceKind::RegistersPerWarp, R2>,
-        conditional_emit_t<ResourceKind::Smem,
-            concurrent_row_value_v<ResourceKind::Smem, R1>
-                + concurrent_row_value_v<ResourceKind::Smem, R2>,
-        conditional_emit_t<ResourceKind::L2,
-            concurrent_row_value_v<ResourceKind::L2, R1>
-                + concurrent_row_value_v<ResourceKind::L2, R2>,
-        conditional_emit_t<ResourceKind::HbmBytes,
-            concurrent_row_value_v<ResourceKind::HbmBytes, R1>
-                + concurrent_row_value_v<ResourceKind::HbmBytes, R2>,
-        conditional_emit_t<ResourceKind::HbmBw,
-            concurrent_row_value_v<ResourceKind::HbmBw, R1>
-                + concurrent_row_value_v<ResourceKind::HbmBw, R2>,
-        conditional_emit_t<ResourceKind::NvlinkBw,
-            concurrent_row_value_v<ResourceKind::NvlinkBw, R1>
-                + concurrent_row_value_v<ResourceKind::NvlinkBw, R2>,
-        conditional_emit_t<ResourceKind::PcieBw,
-            concurrent_row_value_v<ResourceKind::PcieBw, R1>
-                + concurrent_row_value_v<ResourceKind::PcieBw, R2>,
-        conditional_emit_t<ResourceKind::NicQ,
-            concurrent_row_value_v<ResourceKind::NicQ, R1>
-                + concurrent_row_value_v<ResourceKind::NicQ, R2>,
-        conditional_emit_t<ResourceKind::NicRing,
-            concurrent_row_value_v<ResourceKind::NicRing, R1>
-                + concurrent_row_value_v<ResourceKind::NicRing, R2>,
-        conditional_emit_t<ResourceKind::NicQp,
-            concurrent_row_value_v<ResourceKind::NicQp, R1>
-                + concurrent_row_value_v<ResourceKind::NicQp, R2>,
-        conditional_emit_t<ResourceKind::NicCq,
-            concurrent_row_value_v<ResourceKind::NicCq, R1>
-                + concurrent_row_value_v<ResourceKind::NicCq, R2>,
-        conditional_emit_t<ResourceKind::NicMr,
-            concurrent_row_value_v<ResourceKind::NicMr, R1>
-                + concurrent_row_value_v<ResourceKind::NicMr, R2>,
-        conditional_emit_t<ResourceKind::SwitchEgressBw,
-            concurrent_row_value_v<ResourceKind::SwitchEgressBw, R1>
-                + concurrent_row_value_v<ResourceKind::SwitchEgressBw, R2>,
-        conditional_emit_t<ResourceKind::SwitchBuffer,
-            concurrent_row_value_v<ResourceKind::SwitchBuffer, R1>
-                + concurrent_row_value_v<ResourceKind::SwitchBuffer, R2>,
-        conditional_emit_t<ResourceKind::Tcam,
-            concurrent_row_value_v<ResourceKind::Tcam, R1>
-                + concurrent_row_value_v<ResourceKind::Tcam, R2>,
-        conditional_emit_t<ResourceKind::CpuCore,
-            concurrent_row_value_v<ResourceKind::CpuCore, R1>
-                + concurrent_row_value_v<ResourceKind::CpuCore, R2>,
-        conditional_emit_t<ResourceKind::Llc,
-            concurrent_row_value_v<ResourceKind::Llc, R1>
-                + concurrent_row_value_v<ResourceKind::Llc, R2>,
-        conditional_emit_t<ResourceKind::PowerWatts,
-            concurrent_row_value_v<ResourceKind::PowerWatts, R1>
-                + concurrent_row_value_v<ResourceKind::PowerWatts, R2>,
-        conditional_emit_t<ResourceKind::ThermalCelsius,
-            concurrent_row_value_v<ResourceKind::ThermalCelsius, R1>
-                + concurrent_row_value_v<ResourceKind::ThermalCelsius, R2>,
-        conditional_emit_t<ResourceKind::RackPowerKw,
-            concurrent_row_value_v<ResourceKind::RackPowerKw, R1>
-                + concurrent_row_value_v<ResourceKind::RackPowerKw, R2>,
-        conditional_emit_t<ResourceKind::CarbonGramsPerKwh,
-            concurrent_row_value_v<ResourceKind::CarbonGramsPerKwh, R1>
-                + concurrent_row_value_v<ResourceKind::CarbonGramsPerKwh, R2>,
-        ConcurrentRow<>
-        >>>>>>>>>>>>>>>>>>>>>>>;
+        conditional_emit_t<
+            ResourceKind::Sm,
+            concurrent_row_value_v<ResourceKind::Sm, R1> + concurrent_row_value_v<ResourceKind::Sm, R2>,
+            conditional_emit_t<
+                ResourceKind::WarpScheduler,
+                concurrent_row_value_v<ResourceKind::WarpScheduler, R1>
+                    + concurrent_row_value_v<ResourceKind::WarpScheduler, R2>,
+                conditional_emit_t<
+                    ResourceKind::RegistersPerWarp,
+                    concurrent_row_value_v<ResourceKind::RegistersPerWarp, R1>
+                        + concurrent_row_value_v<ResourceKind::RegistersPerWarp, R2>,
+                    conditional_emit_t<
+                        ResourceKind::Smem,
+                        concurrent_row_value_v<ResourceKind::Smem, R1> + concurrent_row_value_v<ResourceKind::Smem, R2>,
+                        conditional_emit_t<
+                            ResourceKind::L2,
+                            concurrent_row_value_v<ResourceKind::L2, R1> + concurrent_row_value_v<ResourceKind::L2, R2>,
+                            conditional_emit_t<
+                                ResourceKind::HbmBytes,
+                                concurrent_row_value_v<ResourceKind::HbmBytes, R1>
+                                    + concurrent_row_value_v<ResourceKind::HbmBytes, R2>,
+                                conditional_emit_t<
+                                    ResourceKind::HbmBw,
+                                    concurrent_row_value_v<ResourceKind::HbmBw, R1>
+                                        + concurrent_row_value_v<ResourceKind::HbmBw, R2>,
+                                    conditional_emit_t<
+                                        ResourceKind::NvlinkBw,
+                                        concurrent_row_value_v<ResourceKind::NvlinkBw, R1>
+                                            + concurrent_row_value_v<ResourceKind::NvlinkBw, R2>,
+                                        conditional_emit_t<
+                                            ResourceKind::PcieBw,
+                                            concurrent_row_value_v<ResourceKind::PcieBw, R1>
+                                                + concurrent_row_value_v<ResourceKind::PcieBw, R2>,
+                                            conditional_emit_t<
+                                                ResourceKind::NicQ,
+                                                concurrent_row_value_v<ResourceKind::NicQ, R1>
+                                                    + concurrent_row_value_v<ResourceKind::NicQ, R2>,
+                                                conditional_emit_t<
+                                                    ResourceKind::NicRing,
+                                                    concurrent_row_value_v<ResourceKind::NicRing, R1>
+                                                        + concurrent_row_value_v<ResourceKind::NicRing, R2>,
+                                                    conditional_emit_t<
+                                                        ResourceKind::NicQp,
+                                                        concurrent_row_value_v<ResourceKind::NicQp, R1>
+                                                            + concurrent_row_value_v<ResourceKind::NicQp, R2>,
+                                                        conditional_emit_t<
+                                                            ResourceKind::NicCq,
+                                                            concurrent_row_value_v<ResourceKind::NicCq, R1>
+                                                                + concurrent_row_value_v<ResourceKind::NicCq, R2>,
+                                                            conditional_emit_t<
+                                                                ResourceKind::NicMr,
+                                                                concurrent_row_value_v<ResourceKind::NicMr, R1>
+                                                                    + concurrent_row_value_v<ResourceKind::NicMr, R2>,
+                                                                conditional_emit_t<
+                                                                    ResourceKind::SwitchEgressBw,
+                                                                    concurrent_row_value_v<ResourceKind::SwitchEgressBw,
+                                                                                           R1>
+                                                                        + concurrent_row_value_v<
+                                                                            ResourceKind::SwitchEgressBw, R2>,
+                                                                    conditional_emit_t<
+                                                                        ResourceKind::SwitchBuffer,
+                                                                        concurrent_row_value_v<
+                                                                            ResourceKind::SwitchBuffer, R1>
+                                                                            + concurrent_row_value_v<
+                                                                                ResourceKind::SwitchBuffer, R2>,
+                                                                        conditional_emit_t<
+                                                                            ResourceKind::Tcam,
+                                                                            concurrent_row_value_v<ResourceKind::Tcam,
+                                                                                                   R1>
+                                                                                + concurrent_row_value_v<
+                                                                                    ResourceKind::Tcam, R2>,
+                                                                            conditional_emit_t<
+                                                                                ResourceKind::CpuCore,
+                                                                                concurrent_row_value_v<
+                                                                                    ResourceKind::CpuCore, R1>
+                                                                                    + concurrent_row_value_v<
+                                                                                        ResourceKind::CpuCore, R2>,
+                                                                                conditional_emit_t<
+                                                                                    ResourceKind::Llc,
+                                                                                    concurrent_row_value_v<
+                                                                                        ResourceKind::Llc, R1>
+                                                                                        + concurrent_row_value_v<
+                                                                                            ResourceKind::Llc, R2>,
+                                                                                    conditional_emit_t<
+                                                                                        ResourceKind::PowerWatts,
+                                                                                        concurrent_row_value_v<
+                                                                                            ResourceKind::PowerWatts,
+                                                                                            R1>
+                                                                                            + concurrent_row_value_v<
+                                                                                                ResourceKind::
+                                                                                                    PowerWatts,
+                                                                                                R2>,
+                                                                                        conditional_emit_t<
+                                                                                            ResourceKind::
+                                                                                                ThermalCelsius,
+                                                                                            concurrent_row_value_v<
+                                                                                                ResourceKind::
+                                                                                                    ThermalCelsius,
+                                                                                                R1>
+                                                                                                + concurrent_row_value_v<
+                                                                                                    ResourceKind::
+                                                                                                        ThermalCelsius,
+                                                                                                    R2>,
+                                                                                            conditional_emit_t<
+                                                                                                ResourceKind::
+                                                                                                    RackPowerKw,
+                                                                                                concurrent_row_value_v<
+                                                                                                    ResourceKind::
+                                                                                                        RackPowerKw,
+                                                                                                    R1>
+                                                                                                    + concurrent_row_value_v<
+                                                                                                        ResourceKind::
+                                                                                                            RackPowerKw,
+                                                                                                        R2>,
+                                                                                                conditional_emit_t<
+                                                                                                    ResourceKind::
+                                                                                                        CarbonGramsPerKwh,
+                                                                                                    concurrent_row_value_v<
+                                                                                                        ResourceKind::
+                                                                                                            CarbonGramsPerKwh,
+                                                                                                        R1>
+                                                                                                        + concurrent_row_value_v<
+                                                                                                            ResourceKind::
+                                                                                                                CarbonGramsPerKwh,
+                                                                                                            R2>,
+                                                                                                    ConcurrentRow<>>>>>>>>>>>>>>>>>>>>>>>>;
 };
 
 }  // namespace detail
@@ -367,8 +412,7 @@ struct build_canonical_row {
 // guaranteed-no-overflow composition should constrain on
 // `ConcurrentlySchedulable` BEFORE asking for the sum type.
 template <typename R1, typename R2>
-using concurrent_row_sum_t =
-    typename detail::build_canonical_row<R1, R2>::type;
+using concurrent_row_sum_t = typename detail::build_canonical_row<R1, R2>::type;
 
 // ── concurrent_row_n_t<Rs...> — variadic N-way fold ─────────────────
 //
@@ -393,10 +437,7 @@ struct concurrent_row_n<R> {
 
 template <typename R1, typename R2, typename... Rest>
 struct concurrent_row_n<R1, R2, Rest...> {
-    using type = typename concurrent_row_n<
-        concurrent_row_sum_t<R1, R2>,
-        Rest...
-    >::type;
+    using type = typename concurrent_row_n<concurrent_row_sum_t<R1, R2>, Rest...>::type;
 };
 
 }  // namespace detail
@@ -460,8 +501,7 @@ struct intra_row_kind_safe<K, ConcurrentRow<Ts...>> {
 // ResourceKind atom automatically extends both guards.
 template <typename R>
 [[nodiscard]] consteval bool eval_intra_row_overflow_safe_() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^ResourceKind));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^ResourceKind));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto ea : enumerators) {
@@ -475,19 +515,16 @@ template <typename R>
 }
 
 template <typename R>
-inline constexpr bool intra_row_overflow_safe_v =
-    eval_intra_row_overflow_safe_<R>();
+inline constexpr bool intra_row_overflow_safe_v = eval_intra_row_overflow_safe_<R>();
 
 }  // namespace detail
 
 // Public: per-row intra-row-overflow safety witness.
 template <typename R>
-inline constexpr bool intra_row_overflow_safe_v =
-    detail::intra_row_overflow_safe_v<R>;
+inline constexpr bool intra_row_overflow_safe_v = detail::intra_row_overflow_safe_v<R>;
 
 template <typename R>
-concept IntraRowOverflowSafe =
-    IsConcurrentRow<R> && intra_row_overflow_safe_v<R>;
+concept IntraRowOverflowSafe = IsConcurrentRow<R> && intra_row_overflow_safe_v<R>;
 
 // ── Canonical-form gate (FIXY-FOUND-100) ────────────────────────────
 //
@@ -520,14 +557,12 @@ struct kind_occurrence_count<K, ConcurrentRow<>> {
 
 template <ResourceKind K, ResourceTag... Ts>
 struct kind_occurrence_count<K, ConcurrentRow<Ts...>> {
-    static constexpr std::size_t value =
-        ((Ts::kind == K ? std::size_t{1} : std::size_t{0}) + ... + std::size_t{0});
+    static constexpr std::size_t value = ((Ts::kind == K ? std::size_t{1} : std::size_t{0}) + ... + std::size_t{0});
 };
 
 template <typename R>
 [[nodiscard]] consteval bool eval_is_canonical_concurrent_row_() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^ResourceKind));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^ResourceKind));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto ea : enumerators) {
@@ -541,18 +576,15 @@ template <typename R>
 }
 
 template <typename R>
-inline constexpr bool is_canonical_concurrent_row_v =
-    eval_is_canonical_concurrent_row_<R>();
+inline constexpr bool is_canonical_concurrent_row_v = eval_is_canonical_concurrent_row_<R>();
 
 }  // namespace detail
 
 template <typename R>
-inline constexpr bool is_canonical_concurrent_row_v =
-    detail::is_canonical_concurrent_row_v<R>;
+inline constexpr bool is_canonical_concurrent_row_v = detail::is_canonical_concurrent_row_v<R>;
 
 template <typename R>
-concept IsCanonicalConcurrentRow =
-    IsConcurrentRow<R> && is_canonical_concurrent_row_v<R>;
+concept IsCanonicalConcurrentRow = IsConcurrentRow<R> && is_canonical_concurrent_row_v<R>;
 
 // ── ConcurrentlySchedulable concept ─────────────────────────────────
 //
@@ -582,9 +614,8 @@ namespace detail {
 // Per-kind no-overflow guard.  Returns true iff the pairwise sum on
 // kind K does not wrap.
 template <ResourceKind K, typename R1, typename R2>
-inline constexpr bool kind_no_overflow_v = sum_does_not_overflow(
-    concurrent_row_value_v<K, R1>,
-    concurrent_row_value_v<K, R2>);
+inline constexpr bool kind_no_overflow_v =
+    sum_does_not_overflow(concurrent_row_value_v<K, R1>, concurrent_row_value_v<K, R2>);
 
 // All-kinds no-overflow guard.  Reflection-driven `template for`
 // over `std::meta::enumerators_of(^^ResourceKind)` materialized via
@@ -603,8 +634,7 @@ template <typename R1, typename R2>
     // constexpr local has a per-invocation address that is NOT a
     // constant expression (GCC 16 reflection footgun documented in
     // CLAUDE.md "GCC 16 reflection — implementation gotchas").
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^ResourceKind));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^ResourceKind));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto ea : enumerators) {
@@ -618,16 +648,13 @@ template <typename R1, typename R2>
 }
 
 template <typename R1, typename R2>
-inline constexpr bool concurrently_schedulable_v =
-    eval_concurrently_schedulable_<R1, R2>();
+inline constexpr bool concurrently_schedulable_v = eval_concurrently_schedulable_<R1, R2>();
 
 }  // namespace detail
 
 template <typename R1, typename R2>
-concept ConcurrentlySchedulable =
-    detail::intra_row_overflow_safe_v<R1> &&
-    detail::intra_row_overflow_safe_v<R2> &&
-    detail::concurrently_schedulable_v<R1, R2>;
+concept ConcurrentlySchedulable = detail::intra_row_overflow_safe_v<R1> && detail::intra_row_overflow_safe_v<R2>
+                               && detail::concurrently_schedulable_v<R1, R2>;
 
 // ── Row-level type-erased descriptors (fixy-A3-029) ─────────────────
 //
@@ -649,13 +676,12 @@ struct concurrent_row_descriptors;
 
 template <ResourceTag... Ts>
 struct concurrent_row_descriptors<ConcurrentRow<Ts...>> {
-    static constexpr std::array<ResourceTagDescriptor, sizeof...(Ts)>
-        value{ ResourceTagDescriptor{Ts::kind, Ts::value, Ts::name}... };
+    static constexpr std::array<ResourceTagDescriptor, sizeof...(Ts)> value{
+        ResourceTagDescriptor{Ts::kind, Ts::value, Ts::name}...};
 };
 
 template <typename R>
-inline constexpr auto concurrent_row_descriptors_v =
-    concurrent_row_descriptors<R>::value;
+inline constexpr auto concurrent_row_descriptors_v = concurrent_row_descriptors<R>::value;
 
 // IsConcurrentRow — defined at top of file, just after ConcurrentRow
 // carrier (see "Co-located with the carrier" rationale there).
@@ -664,120 +690,87 @@ inline constexpr auto concurrent_row_descriptors_v =
 namespace detail::concurrent_row_self_test {
 
 // Empty row sums to itself.
-static_assert(std::is_same_v<
-    concurrent_row_sum_t<ConcurrentRow<>, ConcurrentRow<>>,
-    ConcurrentRow<>>);
+static_assert(std::is_same_v<concurrent_row_sum_t<ConcurrentRow<>, ConcurrentRow<>>, ConcurrentRow<>>);
 
 // Singleton row + empty = singleton row.
-static_assert(std::is_same_v<
-    concurrent_row_sum_t<ConcurrentRow<resource::SmBudget<32>>,
-                        ConcurrentRow<>>,
-    ConcurrentRow<resource::SmBudget<32>>>);
+static_assert(std::is_same_v<concurrent_row_sum_t<ConcurrentRow<resource::SmBudget<32>>, ConcurrentRow<>>,
+                             ConcurrentRow<resource::SmBudget<32>>>);
 
 // Empty + singleton = singleton (commutativity check via swap).
-static_assert(std::is_same_v<
-    concurrent_row_sum_t<ConcurrentRow<>,
-                        ConcurrentRow<resource::SmBudget<32>>>,
-    ConcurrentRow<resource::SmBudget<32>>>);
+static_assert(std::is_same_v<concurrent_row_sum_t<ConcurrentRow<>, ConcurrentRow<resource::SmBudget<32>>>,
+                             ConcurrentRow<resource::SmBudget<32>>>);
 
 // Same-kind summation: SmBudget<32> + SmBudget<64> = SmBudget<96>.
-static_assert(std::is_same_v<
-    concurrent_row_sum_t<ConcurrentRow<resource::SmBudget<32>>,
-                        ConcurrentRow<resource::SmBudget<64>>>,
-    ConcurrentRow<resource::SmBudget<96>>>);
+static_assert(
+    std::is_same_v<concurrent_row_sum_t<ConcurrentRow<resource::SmBudget<32>>, ConcurrentRow<resource::SmBudget<64>>>,
+                   ConcurrentRow<resource::SmBudget<96>>>);
 
 // Cross-kind merging: SmBudget<32> ⊕ NicQp<4> = ConcurrentRow with
 // both, in catalog order (Sm=0 before NicQp=11).
-static_assert(std::is_same_v<
-    concurrent_row_sum_t<ConcurrentRow<resource::SmBudget<32>>,
-                        ConcurrentRow<resource::NicQp<4>>>,
-    ConcurrentRow<resource::SmBudget<32>, resource::NicQp<4>>>);
+static_assert(
+    std::is_same_v<concurrent_row_sum_t<ConcurrentRow<resource::SmBudget<32>>, ConcurrentRow<resource::NicQp<4>>>,
+                   ConcurrentRow<resource::SmBudget<32>, resource::NicQp<4>>>);
 
 // Mixed: same-kind summed, cross-kind merged.
-static_assert(std::is_same_v<
-    concurrent_row_sum_t<
-        ConcurrentRow<resource::SmBudget<32>, resource::NicQp<4>>,
-        ConcurrentRow<resource::SmBudget<64>, resource::NicQp<2>>>,
-    ConcurrentRow<resource::SmBudget<96>, resource::NicQp<6>>>);
+static_assert(std::is_same_v<concurrent_row_sum_t<ConcurrentRow<resource::SmBudget<32>, resource::NicQp<4>>,
+                                                  ConcurrentRow<resource::SmBudget<64>, resource::NicQp<2>>>,
+                             ConcurrentRow<resource::SmBudget<96>, resource::NicQp<6>>>);
 
 // Variadic N-way: 4-way same-kind sum.
-static_assert(std::is_same_v<
-    concurrent_row_n_t<
-        ConcurrentRow<resource::SmBudget<10>>,
-        ConcurrentRow<resource::SmBudget<20>>,
-        ConcurrentRow<resource::SmBudget<30>>,
-        ConcurrentRow<resource::SmBudget<40>>>,
-    ConcurrentRow<resource::SmBudget<100>>>);
+static_assert(
+    std::is_same_v<concurrent_row_n_t<ConcurrentRow<resource::SmBudget<10>>, ConcurrentRow<resource::SmBudget<20>>,
+                                      ConcurrentRow<resource::SmBudget<30>>, ConcurrentRow<resource::SmBudget<40>>>,
+                   ConcurrentRow<resource::SmBudget<100>>>);
 
 // Variadic N-way: zero rows = empty.
-static_assert(std::is_same_v<
-    concurrent_row_n_t<>,
-    ConcurrentRow<>>);
+static_assert(std::is_same_v<concurrent_row_n_t<>, ConcurrentRow<>>);
 
 // Variadic N-way: single row = identity.
-static_assert(std::is_same_v<
-    concurrent_row_n_t<ConcurrentRow<resource::SmBudget<32>>>,
-    ConcurrentRow<resource::SmBudget<32>>>);
+static_assert(
+    std::is_same_v<concurrent_row_n_t<ConcurrentRow<resource::SmBudget<32>>>, ConcurrentRow<resource::SmBudget<32>>>);
 
 // Order independence: catalog order in result regardless of input
 // order.  Sm (0) comes before NicQp (11) in both directions.
-static_assert(std::is_same_v<
-    concurrent_row_sum_t<
-        ConcurrentRow<resource::NicQp<4>>,
-        ConcurrentRow<resource::SmBudget<32>>>,
-    ConcurrentRow<resource::SmBudget<32>, resource::NicQp<4>>>);
+static_assert(
+    std::is_same_v<concurrent_row_sum_t<ConcurrentRow<resource::NicQp<4>>, ConcurrentRow<resource::SmBudget<32>>>,
+                   ConcurrentRow<resource::SmBudget<32>, resource::NicQp<4>>>);
 
 // Per-kind value lookup: present and absent kinds.
-static_assert(concurrent_row_value_v<ResourceKind::Sm,
-    ConcurrentRow<resource::SmBudget<32>>> == 32);
-static_assert(concurrent_row_value_v<ResourceKind::NicQp,
-    ConcurrentRow<resource::SmBudget<32>>> == 0);
-static_assert(concurrent_row_value_v<ResourceKind::Sm,
-    ConcurrentRow<>> == 0);
+static_assert(concurrent_row_value_v<ResourceKind::Sm, ConcurrentRow<resource::SmBudget<32>>> == 32);
+static_assert(concurrent_row_value_v<ResourceKind::NicQp, ConcurrentRow<resource::SmBudget<32>>> == 0);
+static_assert(concurrent_row_value_v<ResourceKind::Sm, ConcurrentRow<>> == 0);
 
 // Non-canonical input: same-kind duplicates sum at lookup time.
-static_assert(concurrent_row_value_v<ResourceKind::Sm,
-    ConcurrentRow<resource::SmBudget<10>,
-                  resource::SmBudget<20>,
-                  resource::SmBudget<30>>> == 60);
+static_assert(
+    concurrent_row_value_v<ResourceKind::Sm,
+                           ConcurrentRow<resource::SmBudget<10>, resource::SmBudget<20>, resource::SmBudget<30>>>
+    == 60);
 
 // concurrent_row_sum canonicalizes non-canonical input.  After
 // summation, the result has at most one tag per kind.
-static_assert(std::is_same_v<
-    concurrent_row_sum_t<
-        ConcurrentRow<resource::SmBudget<10>,
-                      resource::SmBudget<20>>,
-        ConcurrentRow<resource::SmBudget<30>>>,
-    ConcurrentRow<resource::SmBudget<60>>>);
+static_assert(std::is_same_v<concurrent_row_sum_t<ConcurrentRow<resource::SmBudget<10>, resource::SmBudget<20>>,
+                                                  ConcurrentRow<resource::SmBudget<30>>>,
+                             ConcurrentRow<resource::SmBudget<60>>>);
 
 // ── ConcurrentlySchedulable: positive cases ────────────────────────
-static_assert(ConcurrentlySchedulable<
-    ConcurrentRow<resource::SmBudget<32>>,
-    ConcurrentRow<resource::SmBudget<64>>>);
+static_assert(ConcurrentlySchedulable<ConcurrentRow<resource::SmBudget<32>>, ConcurrentRow<resource::SmBudget<64>>>);
 
-static_assert(ConcurrentlySchedulable<
-    ConcurrentRow<resource::HbmBytes<40'000'000'000ULL>>,
-    ConcurrentRow<resource::HbmBytes<40'000'000'000ULL>>>);
+static_assert(ConcurrentlySchedulable<ConcurrentRow<resource::HbmBytes<40'000'000'000ULL>>,
+                                      ConcurrentRow<resource::HbmBytes<40'000'000'000ULL>>>);
 
-static_assert(ConcurrentlySchedulable<
-    ConcurrentRow<>,
-    ConcurrentRow<>>);
+static_assert(ConcurrentlySchedulable<ConcurrentRow<>, ConcurrentRow<>>);
 
 // ── ConcurrentlySchedulable: overflow rejection ────────────────────
 //
 // UINT64_MAX + 1 wraps to 0 — the canonical overflow case.  The
 // concept must reject it.  Compile-time check: if the assertion
 // below holds, the overflow guard is functioning.
-static_assert(!ConcurrentlySchedulable<
-    ConcurrentRow<resource::HbmBytes<UINT64_MAX>>,
-    ConcurrentRow<resource::HbmBytes<1>>>);
+static_assert(
+    !ConcurrentlySchedulable<ConcurrentRow<resource::HbmBytes<UINT64_MAX>>, ConcurrentRow<resource::HbmBytes<1>>>);
 
 // Cross-kind: overflow on one kind taints the entire pair.
-static_assert(!ConcurrentlySchedulable<
-    ConcurrentRow<resource::SmBudget<32>,
-                  resource::HbmBytes<UINT64_MAX>>,
-    ConcurrentRow<resource::SmBudget<64>,
-                  resource::HbmBytes<1>>>);
+static_assert(!ConcurrentlySchedulable<ConcurrentRow<resource::SmBudget<32>, resource::HbmBytes<UINT64_MAX>>,
+                                       ConcurrentRow<resource::SmBudget<64>, resource::HbmBytes<1>>>);
 
 // ── fixy-A3-023: reflection refactor — behavior-preservation pin
 //
@@ -791,21 +784,16 @@ static_assert(!ConcurrentlySchedulable<
 //      rejected (proves the reflection loop visits the LAST atom,
 //      not just an early prefix; a buggy early-return would let this
 //      slip past).
-static_assert(ConcurrentlySchedulable<
-    ConcurrentRow<>,
-    ConcurrentRow<>>);
+static_assert(ConcurrentlySchedulable<ConcurrentRow<>, ConcurrentRow<>>);
 
-static_assert(ConcurrentlySchedulable<
-    ConcurrentRow<resource::SmBudget<1>>,
-    ConcurrentRow<>>);
+static_assert(ConcurrentlySchedulable<ConcurrentRow<resource::SmBudget<1>>, ConcurrentRow<>>);
 
 // CarbonGramsPerKwh is the LAST enumerator in the ResourceKind
 // catalog.  An overflow there proves the reflection-derived loop
 // covers the full atom set; a buggy hand-roll that dropped the last
 // `&&` would silently accept this.
-static_assert(!ConcurrentlySchedulable<
-    ConcurrentRow<resource::CarbonGramsPerKwh<UINT64_MAX>>,
-    ConcurrentRow<resource::CarbonGramsPerKwh<1>>>);
+static_assert(!ConcurrentlySchedulable<ConcurrentRow<resource::CarbonGramsPerKwh<UINT64_MAX>>,
+                                       ConcurrentRow<resource::CarbonGramsPerKwh<1>>>);
 
 // ── FIXY-FOUND-100: intra-row overflow detection ───────────────────
 //
@@ -816,41 +804,32 @@ static_assert(intra_row_overflow_safe_v<ConcurrentRow<>>);
 
 // Singleton row: any single tag is intra-safe (acc=0, +V doesn't
 // wrap because V ≤ UINT64_MAX and acc starts at 0).
-static_assert(intra_row_overflow_safe_v<
-    ConcurrentRow<resource::SmBudget<UINT64_MAX>>>);
+static_assert(intra_row_overflow_safe_v<ConcurrentRow<resource::SmBudget<UINT64_MAX>>>);
 
 // Non-canonical row with safe sum: SmBudget<10> + SmBudget<20> = 30,
 // no wrap.  Pre-existing public contract (canonicalisable input) is
 // preserved.
-static_assert(intra_row_overflow_safe_v<
-    ConcurrentRow<resource::SmBudget<10>, resource::SmBudget<20>>>);
+static_assert(intra_row_overflow_safe_v<ConcurrentRow<resource::SmBudget<10>, resource::SmBudget<20>>>);
 
 // Three-way same-kind safe sum.
-static_assert(intra_row_overflow_safe_v<
-    ConcurrentRow<resource::SmBudget<10>,
-                  resource::SmBudget<20>,
-                  resource::SmBudget<30>>>);
+static_assert(
+    intra_row_overflow_safe_v<ConcurrentRow<resource::SmBudget<10>, resource::SmBudget<20>, resource::SmBudget<30>>>);
 
 // THE BUG WITNESS — FIXY-FOUND-012 scenario.  SmBudget<UINT64_MAX> +
 // SmBudget<1> wraps to 0.  Pre-fix, `concurrent_row_value_v<Sm, R>`
 // returns 0 silently and `ConcurrentlySchedulable<R, EmptyRow>`
 // returns TRUE — total bypass.  Post-fix, intra_row_overflow_safe_v
 // returns FALSE and ConcurrentlySchedulable rejects.
-static_assert(!intra_row_overflow_safe_v<
-    ConcurrentRow<resource::SmBudget<UINT64_MAX>,
-                  resource::SmBudget<1>>>);
+static_assert(!intra_row_overflow_safe_v<ConcurrentRow<resource::SmBudget<UINT64_MAX>, resource::SmBudget<1>>>);
 
 // Cross-kind: one wrapping kind taints the entire row.
 static_assert(!intra_row_overflow_safe_v<
-    ConcurrentRow<resource::SmBudget<32>,
-                  resource::HbmBytes<UINT64_MAX>,
-                  resource::HbmBytes<1>>>);
+              ConcurrentRow<resource::SmBudget<32>, resource::HbmBytes<UINT64_MAX>, resource::HbmBytes<1>>>);
 
 // Last-catalog-atom overflow — proves the reflection loop visits the
 // final enumerator (mirrors the inter-row variant at line ~642).
-static_assert(!intra_row_overflow_safe_v<
-    ConcurrentRow<resource::CarbonGramsPerKwh<UINT64_MAX>,
-                  resource::CarbonGramsPerKwh<1>>>);
+static_assert(
+    !intra_row_overflow_safe_v<ConcurrentRow<resource::CarbonGramsPerKwh<UINT64_MAX>, resource::CarbonGramsPerKwh<1>>>);
 
 // Three-tag intra-row with partial-sum overflow at step 2 (not the
 // final value).  Proves the LEFT-FOLD detection — pre-fix a "final
@@ -859,18 +838,13 @@ static_assert(!intra_row_overflow_safe_v<
 //   acc=UINT64_MAX-10, +20 → wraps (UINT64_MAX-10 + 20 = 9, not safe)
 //   acc=??, +1 → terminates after first failure
 static_assert(!intra_row_overflow_safe_v<
-    ConcurrentRow<resource::SmBudget<UINT64_MAX - 10>,
-                  resource::SmBudget<20>,
-                  resource::SmBudget<1>>>);
+              ConcurrentRow<resource::SmBudget<UINT64_MAX - 10>, resource::SmBudget<20>, resource::SmBudget<1>>>);
 
 // IntraRowOverflowSafe concept — combines IsConcurrentRow gate with
 // the predicate.
 static_assert(IntraRowOverflowSafe<ConcurrentRow<>>);
-static_assert(IntraRowOverflowSafe<
-    ConcurrentRow<resource::SmBudget<10>, resource::SmBudget<20>>>);
-static_assert(!IntraRowOverflowSafe<
-    ConcurrentRow<resource::SmBudget<UINT64_MAX>,
-                  resource::SmBudget<1>>>);
+static_assert(IntraRowOverflowSafe<ConcurrentRow<resource::SmBudget<10>, resource::SmBudget<20>>>);
+static_assert(!IntraRowOverflowSafe<ConcurrentRow<resource::SmBudget<UINT64_MAX>, resource::SmBudget<1>>>);
 static_assert(!IntraRowOverflowSafe<int>);
 
 // ── FIXY-FOUND-100 regression — ConcurrentlySchedulable now rejects
@@ -880,23 +854,16 @@ static_assert(!IntraRowOverflowSafe<int>);
 // would have asserted `true` (inter-row guard sees 0 + 0).  Post-fix,
 // the intra-row guard on R1 fires before the inter-row check runs,
 // and the concept rejects.
-static_assert(!ConcurrentlySchedulable<
-    ConcurrentRow<resource::SmBudget<UINT64_MAX>,
-                  resource::SmBudget<1>>,
-    ConcurrentRow<>>);
+static_assert(
+    !ConcurrentlySchedulable<ConcurrentRow<resource::SmBudget<UINT64_MAX>, resource::SmBudget<1>>, ConcurrentRow<>>);
 
 // Symmetric: R2 is intra-row-unsafe.
-static_assert(!ConcurrentlySchedulable<
-    ConcurrentRow<>,
-    ConcurrentRow<resource::SmBudget<UINT64_MAX>,
-                  resource::SmBudget<1>>>);
+static_assert(
+    !ConcurrentlySchedulable<ConcurrentRow<>, ConcurrentRow<resource::SmBudget<UINT64_MAX>, resource::SmBudget<1>>>);
 
 // Both unsafe.
-static_assert(!ConcurrentlySchedulable<
-    ConcurrentRow<resource::SmBudget<UINT64_MAX>,
-                  resource::SmBudget<1>>,
-    ConcurrentRow<resource::HbmBytes<UINT64_MAX>,
-                  resource::HbmBytes<1>>>);
+static_assert(!ConcurrentlySchedulable<ConcurrentRow<resource::SmBudget<UINT64_MAX>, resource::SmBudget<1>>,
+                                       ConcurrentRow<resource::HbmBytes<UINT64_MAX>, resource::HbmBytes<1>>>);
 
 // ── FIXY-FOUND-100: canonical-form gate ─────────────────────────────
 
@@ -904,70 +871,55 @@ static_assert(!ConcurrentlySchedulable<
 static_assert(is_canonical_concurrent_row_v<ConcurrentRow<>>);
 
 // Singleton row is canonical.
-static_assert(is_canonical_concurrent_row_v<
-    ConcurrentRow<resource::SmBudget<32>>>);
+static_assert(is_canonical_concurrent_row_v<ConcurrentRow<resource::SmBudget<32>>>);
 
 // Two distinct kinds: canonical.
-static_assert(is_canonical_concurrent_row_v<
-    ConcurrentRow<resource::SmBudget<32>, resource::NicQp<4>>>);
+static_assert(is_canonical_concurrent_row_v<ConcurrentRow<resource::SmBudget<32>, resource::NicQp<4>>>);
 
 // Three distinct kinds in arbitrary order: canonical.
-static_assert(is_canonical_concurrent_row_v<
-    ConcurrentRow<resource::NicQp<4>,
-                  resource::SmBudget<32>,
-                  resource::HbmBytes<1024>>>);
+static_assert(
+    is_canonical_concurrent_row_v<ConcurrentRow<resource::NicQp<4>, resource::SmBudget<32>, resource::HbmBytes<1024>>>);
 
 // Same kind twice: NOT canonical.
-static_assert(!is_canonical_concurrent_row_v<
-    ConcurrentRow<resource::SmBudget<10>, resource::SmBudget<20>>>);
+static_assert(!is_canonical_concurrent_row_v<ConcurrentRow<resource::SmBudget<10>, resource::SmBudget<20>>>);
 
 // Same kind three times: NOT canonical.
 static_assert(!is_canonical_concurrent_row_v<
-    ConcurrentRow<resource::SmBudget<10>,
-                  resource::SmBudget<20>,
-                  resource::SmBudget<30>>>);
+              ConcurrentRow<resource::SmBudget<10>, resource::SmBudget<20>, resource::SmBudget<30>>>);
 
 // Mixed: distinct kinds + duplicate kind → NOT canonical.
-static_assert(!is_canonical_concurrent_row_v<
-    ConcurrentRow<resource::SmBudget<32>,
-                  resource::NicQp<4>,
-                  resource::SmBudget<64>>>);
+static_assert(
+    !is_canonical_concurrent_row_v<ConcurrentRow<resource::SmBudget<32>, resource::NicQp<4>, resource::SmBudget<64>>>);
 
 // Last-catalog-atom duplication — proves the reflection loop visits
 // the final enumerator.
-static_assert(!is_canonical_concurrent_row_v<
-    ConcurrentRow<resource::CarbonGramsPerKwh<10>,
-                  resource::CarbonGramsPerKwh<20>>>);
+static_assert(
+    !is_canonical_concurrent_row_v<ConcurrentRow<resource::CarbonGramsPerKwh<10>, resource::CarbonGramsPerKwh<20>>>);
 
 // `concurrent_row_sum_t` always produces canonical output (the
 // documented contract at line ~342).  Pin it.
-static_assert(IsCanonicalConcurrentRow<
-    concurrent_row_sum_t<
-        ConcurrentRow<resource::SmBudget<10>, resource::SmBudget<20>>,
-        ConcurrentRow<resource::SmBudget<30>>>>);
+static_assert(
+    IsCanonicalConcurrentRow<concurrent_row_sum_t<ConcurrentRow<resource::SmBudget<10>, resource::SmBudget<20>>,
+                                                  ConcurrentRow<resource::SmBudget<30>>>>);
 
-static_assert(IsCanonicalConcurrentRow<
-    concurrent_row_sum_t<
-        ConcurrentRow<resource::SmBudget<32>, resource::NicQp<4>>,
-        ConcurrentRow<resource::SmBudget<64>, resource::NicQp<2>>>>);
+static_assert(
+    IsCanonicalConcurrentRow<concurrent_row_sum_t<ConcurrentRow<resource::SmBudget<32>, resource::NicQp<4>>,
+                                                  ConcurrentRow<resource::SmBudget<64>, resource::NicQp<2>>>>);
 
 // IsCanonicalConcurrentRow concept guards: empty, singleton, and
 // distinct-kind packs satisfy; non-ConcurrentRow types reject; dup-
 // kind packs reject.
 static_assert(IsCanonicalConcurrentRow<ConcurrentRow<>>);
-static_assert(IsCanonicalConcurrentRow<
-    ConcurrentRow<resource::SmBudget<32>>>);
+static_assert(IsCanonicalConcurrentRow<ConcurrentRow<resource::SmBudget<32>>>);
 static_assert(!IsCanonicalConcurrentRow<int>);
-static_assert(!IsCanonicalConcurrentRow<
-    ConcurrentRow<resource::SmBudget<10>, resource::SmBudget<20>>>);
+static_assert(!IsCanonicalConcurrentRow<ConcurrentRow<resource::SmBudget<10>, resource::SmBudget<20>>>);
 
 // Canonical implies intra-safe (every canonical row trivially has at
 // most one tag per kind, so the intra-row fold is degenerate).  This
 // is a structural relationship pinned by the witness pairs above —
 // every IsCanonicalConcurrentRow witness here also satisfies
 // IntraRowOverflowSafe.
-static_assert(IntraRowOverflowSafe<
-    ConcurrentRow<resource::SmBudget<32>, resource::NicQp<4>>>);
+static_assert(IntraRowOverflowSafe<ConcurrentRow<resource::SmBudget<32>, resource::NicQp<4>>>);
 
 // ── IsConcurrentRow concept ────────────────────────────────────────
 static_assert(IsConcurrentRow<ConcurrentRow<>>);
@@ -982,47 +934,27 @@ static_assert(!IsConcurrentRow<resource::SmBudget<32>>);
 // array preserving template-argument order.
 static_assert(concurrent_row_descriptors_v<ConcurrentRow<>>.size() == 0);
 
-static_assert(
-    concurrent_row_descriptors_v<ConcurrentRow<resource::SmBudget<32>>>.size()
-    == 1);
-static_assert(
-    concurrent_row_descriptors_v<ConcurrentRow<resource::SmBudget<32>>>[0].kind
-    == ResourceKind::Sm);
-static_assert(
-    concurrent_row_descriptors_v<ConcurrentRow<resource::SmBudget<32>>>[0].value
-    == 32);
+static_assert(concurrent_row_descriptors_v<ConcurrentRow<resource::SmBudget<32>>>.size() == 1);
+static_assert(concurrent_row_descriptors_v<ConcurrentRow<resource::SmBudget<32>>>[0].kind == ResourceKind::Sm);
+static_assert(concurrent_row_descriptors_v<ConcurrentRow<resource::SmBudget<32>>>[0].value == 32);
 
 // Mixed-kind in catalog order — proves SmBudget<32> projects to
 // (Sm, 32) and NicQp<4> projects to (NicQp, 4) at the right
 // positions.
-static_assert(
-    concurrent_row_descriptors_v<
-        ConcurrentRow<resource::SmBudget<32>, resource::NicQp<4>>>.size()
-    == 2);
-static_assert(
-    concurrent_row_descriptors_v<
-        ConcurrentRow<resource::SmBudget<32>, resource::NicQp<4>>>[0].kind
-    == ResourceKind::Sm);
-static_assert(
-    concurrent_row_descriptors_v<
-        ConcurrentRow<resource::SmBudget<32>, resource::NicQp<4>>>[1].kind
-    == ResourceKind::NicQp);
-static_assert(
-    concurrent_row_descriptors_v<
-        ConcurrentRow<resource::SmBudget<32>, resource::NicQp<4>>>[1].value
-    == 4);
+static_assert(concurrent_row_descriptors_v<ConcurrentRow<resource::SmBudget<32>, resource::NicQp<4>>>.size() == 2);
+static_assert(concurrent_row_descriptors_v<ConcurrentRow<resource::SmBudget<32>, resource::NicQp<4>>>[0].kind
+              == ResourceKind::Sm);
+static_assert(concurrent_row_descriptors_v<ConcurrentRow<resource::SmBudget<32>, resource::NicQp<4>>>[1].kind
+              == ResourceKind::NicQp);
+static_assert(concurrent_row_descriptors_v<ConcurrentRow<resource::SmBudget<32>, resource::NicQp<4>>>[1].value == 4);
 
 // Position stability: a hand-rolled non-canonical row preserves
 // template-argument order in the descriptor array (the contract is
 // "no re-sort").
-static_assert(
-    concurrent_row_descriptors_v<
-        ConcurrentRow<resource::NicQp<4>, resource::SmBudget<32>>>[0].kind
-    == ResourceKind::NicQp);
-static_assert(
-    concurrent_row_descriptors_v<
-        ConcurrentRow<resource::NicQp<4>, resource::SmBudget<32>>>[1].kind
-    == ResourceKind::Sm);
+static_assert(concurrent_row_descriptors_v<ConcurrentRow<resource::NicQp<4>, resource::SmBudget<32>>>[0].kind
+              == ResourceKind::NicQp);
+static_assert(concurrent_row_descriptors_v<ConcurrentRow<resource::NicQp<4>, resource::SmBudget<32>>>[1].kind
+              == ResourceKind::Sm);
 
 // ── Size invariant ─────────────────────────────────────────────────
 //
@@ -1030,8 +962,7 @@ static_assert(
 // effects::Row.
 static_assert(std::is_empty_v<ConcurrentRow<>>);
 static_assert(std::is_empty_v<ConcurrentRow<resource::SmBudget<32>>>);
-static_assert(std::is_empty_v<
-    ConcurrentRow<resource::SmBudget<32>, resource::NicQp<4>>>);
+static_assert(std::is_empty_v<ConcurrentRow<resource::SmBudget<32>, resource::NicQp<4>>>);
 
 // ── Runtime smoke test ─────────────────────────────────────────────
 //
@@ -1048,11 +979,11 @@ inline void runtime_smoke_test() {
     ConcurrentRow<resource::SmBudget<32>> sm{};
     ConcurrentRow<resource::SmBudget<32>, resource::NicQp<4>> mixed{};
     [[maybe_unused]] auto empty_size = sizeof(empty);
-    [[maybe_unused]] auto sm_size    = sizeof(sm);
+    [[maybe_unused]] auto sm_size = sizeof(sm);
     [[maybe_unused]] auto mixed_size = sizeof(mixed);
     [[maybe_unused]] bool is_empty_row = IsConcurrentRow<decltype(empty)>;
-    [[maybe_unused]] bool is_sm_row    = IsConcurrentRow<decltype(sm)>;
-    [[maybe_unused]] bool not_a_row    = IsConcurrentRow<int>;
+    [[maybe_unused]] bool is_sm_row = IsConcurrentRow<decltype(sm)>;
+    [[maybe_unused]] bool not_a_row = IsConcurrentRow<int>;
 
     // fixy-A3-029 — drive concurrent_row_descriptors_v through runtime
     // iteration with non-constant operations.  Pure static_assert
@@ -1060,8 +991,7 @@ inline void runtime_smoke_test() {
     // iterator paths against project warning flags; a runtime fold
     // closes the header-only blind spot.
     std::uint64_t value_sum = 0;
-    for (auto const& desc :
-         concurrent_row_descriptors_v<decltype(mixed)>) {
+    for (auto const& desc : concurrent_row_descriptors_v<decltype(mixed)>) {
         value_sum += desc.value;
         // Also touch kind and name so the optimizer doesn't strip
         // the unused fields and we exercise their accessor paths.
@@ -1126,28 +1056,28 @@ struct row_hash_contribution<::crucible::effects::ConcurrentRow<Tags...>> {
         // adding both arms in lockstep (the cardinality assertion in
         // Resources.h fires when this list goes stale).
         constexpr std::array<std::uint64_t, 23> sums{
-            eff::concurrent_row_value_v<K::Sm,                R>,
-            eff::concurrent_row_value_v<K::WarpScheduler,     R>,
-            eff::concurrent_row_value_v<K::RegistersPerWarp,  R>,
-            eff::concurrent_row_value_v<K::Smem,              R>,
-            eff::concurrent_row_value_v<K::L2,                R>,
-            eff::concurrent_row_value_v<K::HbmBytes,          R>,
-            eff::concurrent_row_value_v<K::HbmBw,             R>,
-            eff::concurrent_row_value_v<K::NvlinkBw,          R>,
-            eff::concurrent_row_value_v<K::PcieBw,            R>,
-            eff::concurrent_row_value_v<K::NicQ,              R>,
-            eff::concurrent_row_value_v<K::NicRing,           R>,
-            eff::concurrent_row_value_v<K::NicQp,             R>,
-            eff::concurrent_row_value_v<K::NicCq,             R>,
-            eff::concurrent_row_value_v<K::NicMr,             R>,
-            eff::concurrent_row_value_v<K::SwitchEgressBw,    R>,
-            eff::concurrent_row_value_v<K::SwitchBuffer,      R>,
-            eff::concurrent_row_value_v<K::Tcam,              R>,
-            eff::concurrent_row_value_v<K::CpuCore,           R>,
-            eff::concurrent_row_value_v<K::Llc,               R>,
-            eff::concurrent_row_value_v<K::PowerWatts,        R>,
-            eff::concurrent_row_value_v<K::ThermalCelsius,    R>,
-            eff::concurrent_row_value_v<K::RackPowerKw,       R>,
+            eff::concurrent_row_value_v<K::Sm, R>,
+            eff::concurrent_row_value_v<K::WarpScheduler, R>,
+            eff::concurrent_row_value_v<K::RegistersPerWarp, R>,
+            eff::concurrent_row_value_v<K::Smem, R>,
+            eff::concurrent_row_value_v<K::L2, R>,
+            eff::concurrent_row_value_v<K::HbmBytes, R>,
+            eff::concurrent_row_value_v<K::HbmBw, R>,
+            eff::concurrent_row_value_v<K::NvlinkBw, R>,
+            eff::concurrent_row_value_v<K::PcieBw, R>,
+            eff::concurrent_row_value_v<K::NicQ, R>,
+            eff::concurrent_row_value_v<K::NicRing, R>,
+            eff::concurrent_row_value_v<K::NicQp, R>,
+            eff::concurrent_row_value_v<K::NicCq, R>,
+            eff::concurrent_row_value_v<K::NicMr, R>,
+            eff::concurrent_row_value_v<K::SwitchEgressBw, R>,
+            eff::concurrent_row_value_v<K::SwitchBuffer, R>,
+            eff::concurrent_row_value_v<K::Tcam, R>,
+            eff::concurrent_row_value_v<K::CpuCore, R>,
+            eff::concurrent_row_value_v<K::Llc, R>,
+            eff::concurrent_row_value_v<K::PowerWatts, R>,
+            eff::concurrent_row_value_v<K::ThermalCelsius, R>,
+            eff::concurrent_row_value_v<K::RackPowerKw, R>,
             eff::concurrent_row_value_v<K::CarbonGramsPerKwh, R>,
         };
         // Semantic cardinality — number of non-zero kinds.
@@ -1158,9 +1088,7 @@ struct row_hash_contribution<::crucible::effects::ConcurrentRow<Tags...>> {
         // Seed mixes the ConcurrentRow wrapper-tag salt with the
         // semantic cardinality.  Empty row yields a hash distinct
         // from both bare EmptyRow and the primary-template zero.
-        std::uint64_t h = detail::combine_ids(
-            detail::WRAPPER_CONCURRENT_ROW_TAG,
-            static_cast<std::uint64_t>(card));
+        std::uint64_t h = detail::combine_ids(detail::WRAPPER_CONCURRENT_ROW_TAG, static_cast<std::uint64_t>(card));
         // Fold (kind, sum) for non-zero kinds in catalog order.  Kind
         // bits are wrapper-tag-salted to keep them distinct from the
         // sum value space (mirrors the per-tag specialization's
@@ -1168,11 +1096,7 @@ struct row_hash_contribution<::crucible::effects::ConcurrentRow<Tags...>> {
         for (std::size_t k = 0; k < sums.size(); ++k) {
             if (sums[k] > 0) {
                 h = detail::combine_ids(
-                    h,
-                    detail::combine_ids(
-                        detail::WRAPPER_RESOURCE_TAG_TAG
-                            | static_cast<std::uint64_t>(k),
-                        sums[k]));
+                    h, detail::combine_ids(detail::WRAPPER_RESOURCE_TAG_TAG | static_cast<std::uint64_t>(k), sums[k]));
             }
         }
         return h;
@@ -1191,21 +1115,19 @@ using ::crucible::effects::resource::HbmBytes;
 // Empty ConcurrentRow hashes distinctly from the primary-template
 // zero AND from a singleton row — A3-002 fixes the silent collapse.
 static_assert(row_hash_contribution_v<EmptyConcurrentRow> != 0);
-static_assert(row_hash_contribution_v<EmptyConcurrentRow>
-           != row_hash_contribution_v<ConcurrentRow<SmBudget<32>>>);
+static_assert(row_hash_contribution_v<EmptyConcurrentRow> != row_hash_contribution_v<ConcurrentRow<SmBudget<32>>>);
 
 // Single-kind rows differ from each other.  This is THE structural
 // witness for A3-002's federation cache slot collision claim — pre-
 // fix `ConcurrentRow<SmBudget<32>>` and `ConcurrentRow<NicQp<4>>`
 // both hashed to 0; post-fix they hash distinctly.
+static_assert(row_hash_contribution_v<ConcurrentRow<SmBudget<32>>> != row_hash_contribution_v<ConcurrentRow<NicQp<4>>>);
 static_assert(row_hash_contribution_v<ConcurrentRow<SmBudget<32>>>
-           != row_hash_contribution_v<ConcurrentRow<NicQp<4>>>);
-static_assert(row_hash_contribution_v<ConcurrentRow<SmBudget<32>>>
-           != row_hash_contribution_v<ConcurrentRow<HbmBytes<32>>>);
+              != row_hash_contribution_v<ConcurrentRow<HbmBytes<32>>>);
 
 // Same-kind, different N: the N-value drift propagates into the hash.
 static_assert(row_hash_contribution_v<ConcurrentRow<SmBudget<32>>>
-           != row_hash_contribution_v<ConcurrentRow<SmBudget<64>>>);
+              != row_hash_contribution_v<ConcurrentRow<SmBudget<64>>>);
 
 // ── Canonical-vs-non-canonical semantic equivalence ────────────────
 //
@@ -1215,25 +1137,21 @@ static_assert(row_hash_contribution_v<ConcurrentRow<SmBudget<32>>>
 // `concurrent_row_value_v<Sm, ...>` returns 30 for both.  The hash
 // MUST agree, otherwise canonical-form drift fragments the cache
 // (the A3-001 hazard surfacing in ConcurrentRow form).
-static_assert(row_hash_contribution_v<
-        ConcurrentRow<SmBudget<10>, SmBudget<20>>>
-           == row_hash_contribution_v<ConcurrentRow<SmBudget<30>>>);
+static_assert(row_hash_contribution_v<ConcurrentRow<SmBudget<10>, SmBudget<20>>>
+              == row_hash_contribution_v<ConcurrentRow<SmBudget<30>>>);
 
 // Three-way same-kind: SmBudget<10> + SmBudget<20> + SmBudget<30> ≡
 // SmBudget<60>.
-static_assert(row_hash_contribution_v<
-        ConcurrentRow<SmBudget<10>, SmBudget<20>, SmBudget<30>>>
-           == row_hash_contribution_v<ConcurrentRow<SmBudget<60>>>);
+static_assert(row_hash_contribution_v<ConcurrentRow<SmBudget<10>, SmBudget<20>, SmBudget<30>>>
+              == row_hash_contribution_v<ConcurrentRow<SmBudget<60>>>);
 
 // ── Order independence ────────────────────────────────────────────
 //
 // `ConcurrentRow<A, B>` and `ConcurrentRow<B, A>` hash identically —
 // the catalog-order walk in the fold above produces the same emit
 // sequence regardless of input pack order.
-static_assert(row_hash_contribution_v<
-        ConcurrentRow<SmBudget<32>, NicQp<4>>>
-           == row_hash_contribution_v<
-        ConcurrentRow<NicQp<4>, SmBudget<32>>>);
+static_assert(row_hash_contribution_v<ConcurrentRow<SmBudget<32>, NicQp<4>>>
+              == row_hash_contribution_v<ConcurrentRow<NicQp<4>, SmBudget<32>>>);
 
 // ── Distinctness from a bare ResourceTag ──────────────────────────
 //
@@ -1244,8 +1162,7 @@ static_assert(row_hash_contribution_v<
 // itself or two semantically-different sites would alias.  The
 // ConcurrentRow wrapper-tag salt (WRAPPER_CONCURRENT_ROW_TAG, byte
 // 0x11) keeps the two disjoint regardless of the inner fold result.
-static_assert(row_hash_contribution_v<ConcurrentRow<SmBudget<32>>>
-           != row_hash_contribution_v<SmBudget<32>>);
+static_assert(row_hash_contribution_v<ConcurrentRow<SmBudget<32>>> != row_hash_contribution_v<SmBudget<32>>);
 
 }  // namespace detail::row_hash_concurrent_row_self_test
 

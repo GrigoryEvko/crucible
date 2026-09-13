@@ -83,9 +83,8 @@ namespace crucible::concurrent {
 // distribution without inter-producer coordination.
 struct RoundRobinRouting {
     template <typename T>
-    [[nodiscard, gnu::const]] static std::size_t route(
-        std::size_t /*producer_id*/, std::uint64_t seq,
-        std::size_t num_consumers, const T& /*item*/) noexcept {
+    [[nodiscard, gnu::const]] static std::size_t route(std::size_t /*producer_id*/, std::uint64_t seq,
+                                                       std::size_t num_consumers, const T& /*item*/) noexcept {
         // size_t == uint64_t on supported platforms; implicit
         // conversion exact, explicit cast triggers -Werror=useless-cast.
         return seq % num_consumers;
@@ -100,9 +99,8 @@ struct RoundRobinRouting {
 template <typename KeyFn>
 struct HashKeyRouting {
     template <typename T>
-    [[nodiscard, gnu::pure]] static std::size_t route(
-        std::size_t /*producer_id*/, std::uint64_t /*seq*/,
-        std::size_t num_consumers, const T& item) noexcept {
+    [[nodiscard, gnu::pure]] static std::size_t route(std::size_t /*producer_id*/, std::uint64_t /*seq*/,
+                                                      std::size_t num_consumers, const T& item) noexcept {
         const std::uint64_t key = static_cast<std::uint64_t>(KeyFn{}(item));
         // FNV-1a over the 8 bytes of `key` — small constant cost,
         // good distribution.
@@ -128,25 +126,19 @@ struct HashKeyRouting {
 // locality.
 struct AffinityRouting {
     template <typename T>
-    [[nodiscard, gnu::const]] static std::size_t route(
-        std::size_t producer_id, std::uint64_t /*seq*/,
-        std::size_t num_consumers, const T& /*item*/) noexcept {
+    [[nodiscard, gnu::const]] static std::size_t route(std::size_t producer_id, std::uint64_t /*seq*/,
+                                                       std::size_t num_consumers, const T& /*item*/) noexcept {
         return producer_id % num_consumers;
     }
 };
 
 // ── ShardedSpscGrid<T, M, N, Capacity, Routing> ──────────────────
 
-template <SpscValue T,
-          std::size_t M,
-          std::size_t N,
-          std::size_t Capacity,
-          typename Routing = RoundRobinRouting>
-class ShardedSpscGrid : public safety::Pinned<
-    ShardedSpscGrid<T, M, N, Capacity, Routing>> {
+template <SpscValue T, std::size_t M, std::size_t N, std::size_t Capacity, typename Routing = RoundRobinRouting>
+class ShardedSpscGrid : public safety::Pinned<ShardedSpscGrid<T, M, N, Capacity, Routing>> {
 public:
     using value_type = T;
-    static constexpr std::size_t shard_capacity   = Capacity;
+    static constexpr std::size_t shard_capacity = Capacity;
     static constexpr std::size_t channel_capacity = M * N * Capacity;
 
     static_assert(M > 0, "ShardedSpscGrid requires at least one producer");
@@ -163,16 +155,12 @@ public:
     //
     // Caller MUST guarantee `producer_id < M` AND that the calling
     // thread is the sole producer for that id.
-    [[nodiscard, gnu::hot]] bool try_push(std::size_t producer_id,
-                                          const T& item) noexcept
-        pre (producer_id < M)
-    {
+    [[nodiscard, gnu::hot]] bool try_push(std::size_t producer_id, const T& item) noexcept pre(producer_id < M) {
         // Per-producer sequence counter for routing decisions.
         // Single-producer access — no atomic needed (caller owns
         // this producer slot exclusively).
         auto& seq = producer_seqs_[producer_id].seq;
-        const std::size_t consumer =
-            Routing::route(producer_id, seq, N, item);
+        const std::size_t consumer = Routing::route(producer_id, seq, N, item);
 
         // Advance seq regardless of push success — keeps round-robin
         // fair under back-pressure (a full ring doesn't pin all
@@ -191,10 +179,7 @@ public:
     //
     // Caller MUST guarantee `consumer_id < N` AND that the calling
     // thread is the sole consumer for that id.
-    [[nodiscard, gnu::hot]] std::optional<T> try_pop(
-        std::size_t consumer_id) noexcept
-        pre (consumer_id < N)
-    {
+    [[nodiscard, gnu::hot]] std::optional<T> try_pop(std::size_t consumer_id) noexcept pre(consumer_id < N) {
         // Per-consumer fairness cursor — single-consumer access,
         // no atomic needed.
         auto& hint = consumer_hints_[consumer_id].next_producer;
@@ -214,11 +199,8 @@ public:
     // Per-shard size — the M×N grid has independent SpscRings, so
     // there is no single global size; caller passes the (producer,
     // consumer) pair.
-    [[nodiscard]] std::size_t size_approx(std::size_t producer_id,
-                                           std::size_t consumer_id) const noexcept
-        pre (producer_id < M)
-        pre (consumer_id < N)
-    {
+    [[nodiscard]] std::size_t size_approx(std::size_t producer_id, std::size_t consumer_id) const noexcept
+        pre(producer_id < M) pre(consumer_id < N) {
         return rings_[producer_id][consumer_id].size_approx();
     }
 
@@ -247,7 +229,7 @@ public:
     [[nodiscard]] static constexpr std::size_t num_producers() noexcept { return M; }
     [[nodiscard]] static constexpr std::size_t num_consumers() noexcept { return N; }
     [[nodiscard]] static constexpr std::size_t ring_capacity() noexcept { return Capacity; }
-    [[nodiscard]] static constexpr std::size_t capacity()      noexcept { return M * N * Capacity; }
+    [[nodiscard]] static constexpr std::size_t capacity() noexcept { return M * N * Capacity; }
 
 private:
     // M×N grid of SPSC rings.  Each ring[p][c] is independently

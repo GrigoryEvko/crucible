@@ -112,10 +112,10 @@
 // `family_tier_v<>` resolves to a single `SyscallFamily::Privilege`
 // integral_constant at compile time; `which_dim_v<>` likewise.
 
-#include <crucible/fixy/syscall/Family.h>   // family_tier primary + syscall ns
-#include <crucible/fixy/Grant.h>            // grant_base + which_dim primary
-#include <crucible/safety/DimensionTraits.h>// DimensionAxis::SyscallSurface
-#include <crucible/algebra/lattices/SyscallFamilyLattice.h> // SyscallFamily
+#include <crucible/fixy/syscall/Family.h>  // family_tier primary + syscall ns
+#include <crucible/fixy/Grant.h>  // grant_base + which_dim primary
+#include <crucible/safety/DimensionTraits.h>  // DimensionAxis::SyscallSurface
+#include <crucible/algebra/lattices/SyscallFamilyLattice.h>  // SyscallFamily
 
 #include <cstdint>
 #include <meta>
@@ -136,24 +136,24 @@ namespace crucible::fixy::grant::syscall {
 // shrinking silently invalidates every row_hash federation cache key.
 enum class IoctlVendor : std::uint16_t {
     // ── NVIDIA driver ────────────────────────────────────────────────
-    nvidia_ctl       = 0,   // /dev/nvidiactl       — control device
-    nvidia_dev       = 1,   // /dev/nvidia0..N      — per-GPU devices
-    nvidia_uvm       = 2,   // /dev/nvidia-uvm      — Unified Virtual Memory
-    nvidia_modeset   = 3,   // /dev/nvidia-modeset  — modeset / display
+    nvidia_ctl = 0,  // /dev/nvidiactl       — control device
+    nvidia_dev = 1,  // /dev/nvidia0..N      — per-GPU devices
+    nvidia_uvm = 2,  // /dev/nvidia-uvm      — Unified Virtual Memory
+    nvidia_modeset = 3,  // /dev/nvidia-modeset  — modeset / display
 
     // ── AMD driver ──────────────────────────────────────────────────
-    amd_kfd          = 4,   // /dev/kfd             — Kernel Fusion Driver
-    amd_render       = 5,   // /dev/dri/renderD*    — DRM render node (ROCm)
+    amd_kfd = 4,  // /dev/kfd             — Kernel Fusion Driver
+    amd_render = 5,  // /dev/dri/renderD*    — DRM render node (ROCm)
 
     // ── Intel drivers ───────────────────────────────────────────────
-    intel_i915       = 6,   // /dev/dri/renderD*    — i915 GPU
-    intel_xe         = 7,   // /dev/dri/renderD*    — Xe GPU (Arc, Battlemage)
-    intel_habana     = 8,   // /dev/accel/accel*    — Gaudi accelerator
+    intel_i915 = 6,  // /dev/dri/renderD*    — i915 GPU
+    intel_xe = 7,  // /dev/dri/renderD*    — Xe GPU (Arc, Battlemage)
+    intel_habana = 8,  // /dev/accel/accel*    — Gaudi accelerator
 
     // ── Other accelerator families ──────────────────────────────────
-    apple_neural     = 9,   // /dev/aneuralengine   — Apple ANE
-    google_tpu       = 10,  // /dev/accel0..N       — Cloud TPU
-    aws_trainium     = 11,  // /dev/neuron*         — Trainium / Inferentia
+    apple_neural = 9,  // /dev/aneuralengine   — Apple ANE
+    google_tpu = 10,  // /dev/accel0..N       — Cloud TPU
+    aws_trainium = 11,  // /dev/neuron*         — Trainium / Inferentia
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -166,21 +166,21 @@ enum class IoctlVendor : std::uint16_t {
 // vendor devices that share the subsystem (DRM ioctls work on every
 // DRM-compliant vendor regardless of which /dev/dri/* node is opened).
 enum class IoctlSubsystem : std::uint16_t {
-    drm              = 0,   // DRM_IOCTL_* (Direct Rendering Manager)
-    kvm              = 1,   // KVM_*       (Kernel-based Virtual Machine)
-    bpf              = 2,   // BPF_*       (eBPF map / program load)
-    io_uring         = 3,   // IORING_*    (io_uring control)
-    netlink          = 4,   // NETLINK_*   (sock configuration)
-    perf_event       = 5,   // PERF_EVENT_IOC_* (perf event control)
-    tty              = 6,   // TIO* / TCGETS / TIOCGWINSZ
-    file_generic     = 7,   // FIONREAD / FIONBIO / FICLONE / FIDEDUPERANGE
-    ipmi             = 8,   // IPMI_*      (Intelligent Platform Management)
-    tun              = 9,   // TUNSETIFF / TUNSETPERSIST (TUN/TAP)
-    loop             = 10,  // LOOP_*      (loopback device)
-    block            = 11,  // BLK*        (block device — BLKGETSIZE etc.)
-    vfio_pci         = 12,  // VFIO_*      (PCIe passthrough — SR-IOV, GPU virt)
-    iommu            = 13,  // IOMMU_*     (IOMMU control)
-    i2c              = 14,  // I2C_*       (smbus / sensor)
+    drm = 0,  // DRM_IOCTL_* (Direct Rendering Manager)
+    kvm = 1,  // KVM_*       (Kernel-based Virtual Machine)
+    bpf = 2,  // BPF_*       (eBPF map / program load)
+    io_uring = 3,  // IORING_*    (io_uring control)
+    netlink = 4,  // NETLINK_*   (sock configuration)
+    perf_event = 5,  // PERF_EVENT_IOC_* (perf event control)
+    tty = 6,  // TIO* / TCGETS / TIOCGWINSZ
+    file_generic = 7,  // FIONREAD / FIONBIO / FICLONE / FIDEDUPERANGE
+    ipmi = 8,  // IPMI_*      (Intelligent Platform Management)
+    tun = 9,  // TUNSETIFF / TUNSETPERSIST (TUN/TAP)
+    loop = 10,  // LOOP_*      (loopback device)
+    block = 11,  // BLK*        (block device — BLKGETSIZE etc.)
+    vfio_pci = 12,  // VFIO_*      (PCIe passthrough — SR-IOV, GPU virt)
+    iommu = 13,  // IOMMU_*     (IOMMU control)
+    i2c = 14,  // I2C_*       (smbus / sensor)
 };
 
 namespace ioctl {
@@ -221,13 +221,11 @@ namespace crucible::fixy::grant {
 // ═════════════════════════════════════════════════════════════════════
 template <syscall::IoctlVendor V>
 struct which_dim<syscall::ioctl::vendor<V>>
-    : std::integral_constant<dim::DimensionAxis,
-                             dim::DimensionAxis::SyscallSurface> {};
+    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::SyscallSurface> {};
 
 template <syscall::IoctlSubsystem S>
 struct which_dim<syscall::ioctl::subsystem<S>>
-    : std::integral_constant<dim::DimensionAxis,
-                             dim::DimensionAxis::SyscallSurface> {};
+    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::SyscallSurface> {};
 
 // ═════════════════════════════════════════════════════════════════════
 // ── family_tier — uniformly Privilege (top of V-097's chain) ─────────
@@ -258,10 +256,10 @@ namespace detail::syscall_ioctl_grant_self_test {
 
 namespace sc = syscall;
 namespace al = ::crucible::algebra::lattices;
-using D      = dim::DimensionAxis;
-using SF     = al::SyscallFamily;
-using IV     = sc::IoctlVendor;
-using IS     = sc::IoctlSubsystem;
+using D = dim::DimensionAxis;
+using SF = al::SyscallFamily;
+using IV = sc::IoctlVendor;
+using IS = sc::IoctlSubsystem;
 
 // ── Layer 1: IsGrantTag — sampled across every vendor + subsystem ───
 static_assert(IsGrantTag<sc::ioctl::vendor<IV::nvidia_ctl>>);
@@ -280,73 +278,73 @@ static_assert(IsGrantTag<sc::ioctl::subsystem<IS::perf_event>>);
 static_assert(IsGrantTag<sc::ioctl::subsystem<IS::vfio_pci>>);
 
 // ── Layer 2: sizeof — 1 byte standalone, EBO-collapsible ─────────────
-static_assert(sizeof(sc::ioctl::vendor<IV::nvidia_ctl>)        == 1);
-static_assert(sizeof(sc::ioctl::vendor<IV::amd_kfd>)           == 1);
-static_assert(sizeof(sc::ioctl::vendor<IV::intel_habana>)      == 1);
-static_assert(sizeof(sc::ioctl::vendor<IV::google_tpu>)        == 1);
-static_assert(sizeof(sc::ioctl::subsystem<IS::drm>)            == 1);
-static_assert(sizeof(sc::ioctl::subsystem<IS::kvm>)            == 1);
-static_assert(sizeof(sc::ioctl::subsystem<IS::io_uring>)       == 1);
-static_assert(sizeof(sc::ioctl::subsystem<IS::vfio_pci>)       == 1);
+static_assert(sizeof(sc::ioctl::vendor<IV::nvidia_ctl>) == 1);
+static_assert(sizeof(sc::ioctl::vendor<IV::amd_kfd>) == 1);
+static_assert(sizeof(sc::ioctl::vendor<IV::intel_habana>) == 1);
+static_assert(sizeof(sc::ioctl::vendor<IV::google_tpu>) == 1);
+static_assert(sizeof(sc::ioctl::subsystem<IS::drm>) == 1);
+static_assert(sizeof(sc::ioctl::subsystem<IS::kvm>) == 1);
+static_assert(sizeof(sc::ioctl::subsystem<IS::io_uring>) == 1);
+static_assert(sizeof(sc::ioctl::subsystem<IS::vfio_pci>) == 1);
 
 // ── Layer 3: which_dim routing — every grant → SyscallSurface ────────
-static_assert(which_dim_v<sc::ioctl::vendor<IV::nvidia_ctl>>    == D::SyscallSurface);
-static_assert(which_dim_v<sc::ioctl::vendor<IV::nvidia_uvm>>    == D::SyscallSurface);
-static_assert(which_dim_v<sc::ioctl::vendor<IV::amd_kfd>>       == D::SyscallSurface);
-static_assert(which_dim_v<sc::ioctl::vendor<IV::amd_render>>    == D::SyscallSurface);
-static_assert(which_dim_v<sc::ioctl::vendor<IV::intel_i915>>    == D::SyscallSurface);
-static_assert(which_dim_v<sc::ioctl::vendor<IV::intel_xe>>      == D::SyscallSurface);
-static_assert(which_dim_v<sc::ioctl::vendor<IV::intel_habana>>  == D::SyscallSurface);
-static_assert(which_dim_v<sc::ioctl::vendor<IV::apple_neural>>  == D::SyscallSurface);
-static_assert(which_dim_v<sc::ioctl::vendor<IV::google_tpu>>    == D::SyscallSurface);
-static_assert(which_dim_v<sc::ioctl::vendor<IV::aws_trainium>>  == D::SyscallSurface);
+static_assert(which_dim_v<sc::ioctl::vendor<IV::nvidia_ctl>> == D::SyscallSurface);
+static_assert(which_dim_v<sc::ioctl::vendor<IV::nvidia_uvm>> == D::SyscallSurface);
+static_assert(which_dim_v<sc::ioctl::vendor<IV::amd_kfd>> == D::SyscallSurface);
+static_assert(which_dim_v<sc::ioctl::vendor<IV::amd_render>> == D::SyscallSurface);
+static_assert(which_dim_v<sc::ioctl::vendor<IV::intel_i915>> == D::SyscallSurface);
+static_assert(which_dim_v<sc::ioctl::vendor<IV::intel_xe>> == D::SyscallSurface);
+static_assert(which_dim_v<sc::ioctl::vendor<IV::intel_habana>> == D::SyscallSurface);
+static_assert(which_dim_v<sc::ioctl::vendor<IV::apple_neural>> == D::SyscallSurface);
+static_assert(which_dim_v<sc::ioctl::vendor<IV::google_tpu>> == D::SyscallSurface);
+static_assert(which_dim_v<sc::ioctl::vendor<IV::aws_trainium>> == D::SyscallSurface);
 
-static_assert(which_dim_v<sc::ioctl::subsystem<IS::drm>>            == D::SyscallSurface);
-static_assert(which_dim_v<sc::ioctl::subsystem<IS::kvm>>            == D::SyscallSurface);
-static_assert(which_dim_v<sc::ioctl::subsystem<IS::bpf>>            == D::SyscallSurface);
-static_assert(which_dim_v<sc::ioctl::subsystem<IS::io_uring>>       == D::SyscallSurface);
-static_assert(which_dim_v<sc::ioctl::subsystem<IS::netlink>>        == D::SyscallSurface);
-static_assert(which_dim_v<sc::ioctl::subsystem<IS::perf_event>>     == D::SyscallSurface);
-static_assert(which_dim_v<sc::ioctl::subsystem<IS::file_generic>>   == D::SyscallSurface);
-static_assert(which_dim_v<sc::ioctl::subsystem<IS::vfio_pci>>       == D::SyscallSurface);
+static_assert(which_dim_v<sc::ioctl::subsystem<IS::drm>> == D::SyscallSurface);
+static_assert(which_dim_v<sc::ioctl::subsystem<IS::kvm>> == D::SyscallSurface);
+static_assert(which_dim_v<sc::ioctl::subsystem<IS::bpf>> == D::SyscallSurface);
+static_assert(which_dim_v<sc::ioctl::subsystem<IS::io_uring>> == D::SyscallSurface);
+static_assert(which_dim_v<sc::ioctl::subsystem<IS::netlink>> == D::SyscallSurface);
+static_assert(which_dim_v<sc::ioctl::subsystem<IS::perf_event>> == D::SyscallSurface);
+static_assert(which_dim_v<sc::ioctl::subsystem<IS::file_generic>> == D::SyscallSurface);
+static_assert(which_dim_v<sc::ioctl::subsystem<IS::vfio_pci>> == D::SyscallSurface);
 
 // ── Layer 4: family_tier — Privilege uniformly ───────────────────────
-static_assert(family_tier_v<sc::ioctl::vendor<IV::nvidia_ctl>>       == SF::Privilege);
-static_assert(family_tier_v<sc::ioctl::vendor<IV::nvidia_uvm>>       == SF::Privilege);
-static_assert(family_tier_v<sc::ioctl::vendor<IV::amd_kfd>>          == SF::Privilege);
-static_assert(family_tier_v<sc::ioctl::vendor<IV::amd_render>>       == SF::Privilege);
-static_assert(family_tier_v<sc::ioctl::vendor<IV::intel_i915>>       == SF::Privilege);
-static_assert(family_tier_v<sc::ioctl::vendor<IV::intel_xe>>         == SF::Privilege);
-static_assert(family_tier_v<sc::ioctl::vendor<IV::intel_habana>>     == SF::Privilege);
-static_assert(family_tier_v<sc::ioctl::vendor<IV::apple_neural>>     == SF::Privilege);
-static_assert(family_tier_v<sc::ioctl::vendor<IV::google_tpu>>       == SF::Privilege);
-static_assert(family_tier_v<sc::ioctl::vendor<IV::aws_trainium>>     == SF::Privilege);
+static_assert(family_tier_v<sc::ioctl::vendor<IV::nvidia_ctl>> == SF::Privilege);
+static_assert(family_tier_v<sc::ioctl::vendor<IV::nvidia_uvm>> == SF::Privilege);
+static_assert(family_tier_v<sc::ioctl::vendor<IV::amd_kfd>> == SF::Privilege);
+static_assert(family_tier_v<sc::ioctl::vendor<IV::amd_render>> == SF::Privilege);
+static_assert(family_tier_v<sc::ioctl::vendor<IV::intel_i915>> == SF::Privilege);
+static_assert(family_tier_v<sc::ioctl::vendor<IV::intel_xe>> == SF::Privilege);
+static_assert(family_tier_v<sc::ioctl::vendor<IV::intel_habana>> == SF::Privilege);
+static_assert(family_tier_v<sc::ioctl::vendor<IV::apple_neural>> == SF::Privilege);
+static_assert(family_tier_v<sc::ioctl::vendor<IV::google_tpu>> == SF::Privilege);
+static_assert(family_tier_v<sc::ioctl::vendor<IV::aws_trainium>> == SF::Privilege);
 
-static_assert(family_tier_v<sc::ioctl::subsystem<IS::drm>>           == SF::Privilege);
-static_assert(family_tier_v<sc::ioctl::subsystem<IS::kvm>>           == SF::Privilege);
-static_assert(family_tier_v<sc::ioctl::subsystem<IS::bpf>>           == SF::Privilege);
-static_assert(family_tier_v<sc::ioctl::subsystem<IS::io_uring>>      == SF::Privilege);
-static_assert(family_tier_v<sc::ioctl::subsystem<IS::netlink>>       == SF::Privilege);
-static_assert(family_tier_v<sc::ioctl::subsystem<IS::perf_event>>    == SF::Privilege);
-static_assert(family_tier_v<sc::ioctl::subsystem<IS::tty>>           == SF::Privilege);
-static_assert(family_tier_v<sc::ioctl::subsystem<IS::file_generic>>  == SF::Privilege);
-static_assert(family_tier_v<sc::ioctl::subsystem<IS::vfio_pci>>      == SF::Privilege);
-static_assert(family_tier_v<sc::ioctl::subsystem<IS::iommu>>         == SF::Privilege);
+static_assert(family_tier_v<sc::ioctl::subsystem<IS::drm>> == SF::Privilege);
+static_assert(family_tier_v<sc::ioctl::subsystem<IS::kvm>> == SF::Privilege);
+static_assert(family_tier_v<sc::ioctl::subsystem<IS::bpf>> == SF::Privilege);
+static_assert(family_tier_v<sc::ioctl::subsystem<IS::io_uring>> == SF::Privilege);
+static_assert(family_tier_v<sc::ioctl::subsystem<IS::netlink>> == SF::Privilege);
+static_assert(family_tier_v<sc::ioctl::subsystem<IS::perf_event>> == SF::Privilege);
+static_assert(family_tier_v<sc::ioctl::subsystem<IS::tty>> == SF::Privilege);
+static_assert(family_tier_v<sc::ioctl::subsystem<IS::file_generic>> == SF::Privilege);
+static_assert(family_tier_v<sc::ioctl::subsystem<IS::vfio_pci>> == SF::Privilege);
+static_assert(family_tier_v<sc::ioctl::subsystem<IS::iommu>> == SF::Privilege);
 
 // ── Layer 5: NTTP-distinctness — distinct enumerators → distinct types
 // Sampled across every vendor adjacency + every subsystem adjacency;
 // the full distinctness matrix is the (12 × 11)/2 + (15 × 14)/2 = 171-cell
 // surface that any contributor adding an enumerator implicitly inherits.
-static_assert(!std::is_same_v<sc::ioctl::vendor<IV::nvidia_ctl>,    sc::ioctl::vendor<IV::nvidia_dev>>);
-static_assert(!std::is_same_v<sc::ioctl::vendor<IV::nvidia_dev>,    sc::ioctl::vendor<IV::nvidia_uvm>>);
-static_assert(!std::is_same_v<sc::ioctl::vendor<IV::amd_kfd>,       sc::ioctl::vendor<IV::amd_render>>);
-static_assert(!std::is_same_v<sc::ioctl::vendor<IV::intel_i915>,    sc::ioctl::vendor<IV::intel_xe>>);
-static_assert(!std::is_same_v<sc::ioctl::vendor<IV::nvidia_ctl>,    sc::ioctl::vendor<IV::amd_kfd>>);
-static_assert(!std::is_same_v<sc::ioctl::vendor<IV::google_tpu>,    sc::ioctl::vendor<IV::aws_trainium>>);
+static_assert(!std::is_same_v<sc::ioctl::vendor<IV::nvidia_ctl>, sc::ioctl::vendor<IV::nvidia_dev>>);
+static_assert(!std::is_same_v<sc::ioctl::vendor<IV::nvidia_dev>, sc::ioctl::vendor<IV::nvidia_uvm>>);
+static_assert(!std::is_same_v<sc::ioctl::vendor<IV::amd_kfd>, sc::ioctl::vendor<IV::amd_render>>);
+static_assert(!std::is_same_v<sc::ioctl::vendor<IV::intel_i915>, sc::ioctl::vendor<IV::intel_xe>>);
+static_assert(!std::is_same_v<sc::ioctl::vendor<IV::nvidia_ctl>, sc::ioctl::vendor<IV::amd_kfd>>);
+static_assert(!std::is_same_v<sc::ioctl::vendor<IV::google_tpu>, sc::ioctl::vendor<IV::aws_trainium>>);
 
-static_assert(!std::is_same_v<sc::ioctl::subsystem<IS::drm>,        sc::ioctl::subsystem<IS::kvm>>);
-static_assert(!std::is_same_v<sc::ioctl::subsystem<IS::kvm>,        sc::ioctl::subsystem<IS::bpf>>);
-static_assert(!std::is_same_v<sc::ioctl::subsystem<IS::io_uring>,   sc::ioctl::subsystem<IS::netlink>>);
+static_assert(!std::is_same_v<sc::ioctl::subsystem<IS::drm>, sc::ioctl::subsystem<IS::kvm>>);
+static_assert(!std::is_same_v<sc::ioctl::subsystem<IS::kvm>, sc::ioctl::subsystem<IS::bpf>>);
+static_assert(!std::is_same_v<sc::ioctl::subsystem<IS::io_uring>, sc::ioctl::subsystem<IS::netlink>>);
 static_assert(!std::is_same_v<sc::ioctl::subsystem<IS::perf_event>, sc::ioctl::subsystem<IS::vfio_pci>>);
 
 // ── Layer 6: cross-grant distinctness ────────────────────────────────
@@ -364,36 +362,25 @@ static_assert(!std::is_same_v<sc::ioctl::subsystem<IS::perf_event>, sc::ioctl::s
 // All six trip `FixyDuplicate_SyscallSurface`.
 
 // (b) — ioctl::vendor ≠ ioctl::subsystem at every ordinal
-static_assert(!std::is_same_v<sc::ioctl::vendor<IV::nvidia_ctl>,
-                              sc::ioctl::subsystem<IS::drm>>);
-static_assert(!std::is_same_v<sc::ioctl::vendor<IV::amd_kfd>,
-                              sc::ioctl::subsystem<IS::kvm>>);
-static_assert(!std::is_same_v<sc::ioctl::vendor<IV::intel_i915>,
-                              sc::ioctl::subsystem<IS::file_generic>>);
+static_assert(!std::is_same_v<sc::ioctl::vendor<IV::nvidia_ctl>, sc::ioctl::subsystem<IS::drm>>);
+static_assert(!std::is_same_v<sc::ioctl::vendor<IV::amd_kfd>, sc::ioctl::subsystem<IS::kvm>>);
+static_assert(!std::is_same_v<sc::ioctl::vendor<IV::intel_i915>, sc::ioctl::subsystem<IS::file_generic>>);
 
 // (c) — ioctl::vendor ≠ family_*
-static_assert(!std::is_same_v<sc::ioctl::vendor<IV::nvidia_ctl>,
-                              sc::family_privilege>);
-static_assert(!std::is_same_v<sc::ioctl::vendor<IV::amd_kfd>,
-                              sc::family_privilege>);
+static_assert(!std::is_same_v<sc::ioctl::vendor<IV::nvidia_ctl>, sc::family_privilege>);
+static_assert(!std::is_same_v<sc::ioctl::vendor<IV::amd_kfd>, sc::family_privilege>);
 
 // (d) — ioctl::vendor ≠ per<>
-static_assert(!std::is_same_v<sc::ioctl::vendor<IV::nvidia_ctl>,
-                              sc::per<sc::SyscallId::ptrace>>);
-static_assert(!std::is_same_v<sc::ioctl::vendor<IV::amd_render>,
-                              sc::per<sc::SyscallId::capset>>);
+static_assert(!std::is_same_v<sc::ioctl::vendor<IV::nvidia_ctl>, sc::per<sc::SyscallId::ptrace>>);
+static_assert(!std::is_same_v<sc::ioctl::vendor<IV::amd_render>, sc::per<sc::SyscallId::capset>>);
 
 // (e) — ioctl::subsystem ≠ family_*
-static_assert(!std::is_same_v<sc::ioctl::subsystem<IS::drm>,
-                              sc::family_privilege>);
-static_assert(!std::is_same_v<sc::ioctl::subsystem<IS::io_uring>,
-                              sc::family_file_mutation>);
+static_assert(!std::is_same_v<sc::ioctl::subsystem<IS::drm>, sc::family_privilege>);
+static_assert(!std::is_same_v<sc::ioctl::subsystem<IS::io_uring>, sc::family_file_mutation>);
 
 // (f) — ioctl::subsystem ≠ per<>
-static_assert(!std::is_same_v<sc::ioctl::subsystem<IS::drm>,
-                              sc::per<sc::SyscallId::ptrace>>);
-static_assert(!std::is_same_v<sc::ioctl::subsystem<IS::file_generic>,
-                              sc::per<sc::SyscallId::pwrite>>);
+static_assert(!std::is_same_v<sc::ioctl::subsystem<IS::drm>, sc::per<sc::SyscallId::ptrace>>);
+static_assert(!std::is_same_v<sc::ioctl::subsystem<IS::file_generic>, sc::per<sc::SyscallId::pwrite>>);
 
 // ── Layer 7: reflection-driven cardinality — append-only witness ────
 //
@@ -401,31 +388,26 @@ static_assert(!std::is_same_v<sc::ioctl::subsystem<IS::file_generic>,
 // pinned here.  A contributor adding an enumerator MUST (a) append at
 // the next free ordinal, (b) extend the cardinality below, (c) extend
 // the layered-tests above to sample the new enumerator at every layer.
-inline constexpr std::size_t ioctl_vendor_count =
-    std::meta::enumerators_of(^^IV).size();
-static_assert(ioctl_vendor_count == 12,
-    "FIXY-V-099: IoctlVendor catalog drifted from the 12-enumerator "
-    "shipped surface.  If you're adding a new device-file family, "
-    "append it at the next free ordinal AND extend the self-test arms "
-    "above.  Reordering / shrinking the enum silently invalidates "
-    "every stored row_hash (federation cache key).");
+inline constexpr std::size_t ioctl_vendor_count = std::meta::enumerators_of(^^IV).size();
+static_assert(ioctl_vendor_count == 12, "FIXY-V-099: IoctlVendor catalog drifted from the 12-enumerator "
+                                        "shipped surface.  If you're adding a new device-file family, "
+                                        "append it at the next free ordinal AND extend the self-test arms "
+                                        "above.  Reordering / shrinking the enum silently invalidates "
+                                        "every stored row_hash (federation cache key).");
 
-inline constexpr std::size_t ioctl_subsystem_count =
-    std::meta::enumerators_of(^^IS).size();
-static_assert(ioctl_subsystem_count == 15,
-    "FIXY-V-099: IoctlSubsystem catalog drifted from the 15-enumerator "
-    "shipped surface.  If you're adding a new kernel-subsystem ioctl "
-    "namespace, append it at the next free ordinal AND extend the "
-    "self-test arms above.  Reordering / shrinking the enum silently "
-    "invalidates every stored row_hash (federation cache key).");
+inline constexpr std::size_t ioctl_subsystem_count = std::meta::enumerators_of(^^IS).size();
+static_assert(ioctl_subsystem_count == 15, "FIXY-V-099: IoctlSubsystem catalog drifted from the 15-enumerator "
+                                           "shipped surface.  If you're adding a new kernel-subsystem ioctl "
+                                           "namespace, append it at the next free ordinal AND extend the "
+                                           "self-test arms above.  Reordering / shrinking the enum silently "
+                                           "invalidates every stored row_hash (federation cache key).");
 
 // Cross-check against V-097's 9-tier lattice cardinality — ensures
 // V-099 stays consistent if the lattice grows.
-static_assert(
-    ::crucible::algebra::lattices::detail::syscall_family_lattice_self_test::family_count == 9,
-    "FIXY-V-099: Ioctl.h depends on V-097's 9-tier chain (every ioctl "
-    "pins Privilege = top).  If the lattice gained a 10th tier, every "
-    "family_tier specialization above is stale.");
+static_assert(::crucible::algebra::lattices::detail::syscall_family_lattice_self_test::family_count == 9,
+              "FIXY-V-099: Ioctl.h depends on V-097's 9-tier chain (every ioctl "
+              "pins Privilege = top).  If the lattice gained a 10th tier, every "
+              "family_tier specialization above is stale.");
 
 }  // namespace detail::syscall_ioctl_grant_self_test
 

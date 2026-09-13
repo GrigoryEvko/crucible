@@ -100,10 +100,10 @@
 
 #include <crucible/Platform.h>
 
-#include <bit>            // std::bit_cast for runtime smoke FP compare
-#include <cstdint>        // std::uint64_t in runtime smoke FP compare
-#include <cstdlib>        // std::abort in runtime smoke
-#include <meta>           // std::meta::display_string_of for diag names
+#include <bit>  // std::bit_cast for runtime smoke FP compare
+#include <cstdint>  // std::uint64_t in runtime smoke FP compare
+#include <cstdlib>  // std::abort in runtime smoke
+#include <meta>  // std::meta::display_string_of for diag names
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -114,7 +114,7 @@ template <typename Tag, typename T>
     requires std::is_default_constructible_v<T>
 class [[nodiscard]] ThreadLocalRef {
 public:
-    using tag_type   = Tag;
+    using tag_type = Tag;
     using value_type = T;
 
 private:
@@ -127,9 +127,7 @@ private:
     // access per thread; for trivially-zero T (int{} == 0, double{} ==
     // 0.0) this is zero-init; for non-trivial T, the default ctor
     // runs per-thread-on-first-access per C++ thread_local rules.
-    [[nodiscard]] static T& storage_() noexcept(
-        std::is_nothrow_default_constructible_v<T>)
-    {
+    [[nodiscard]] static T& storage_() noexcept(std::is_nothrow_default_constructible_v<T>) {
         thread_local T storage{};
         return storage;
     }
@@ -146,18 +144,14 @@ public:
     // `ThreadLocalRef<Tag, T>` are interchangeable references to the
     // SAME per-thread storage cell.  Copying a handle does NOT
     // duplicate storage.
-    constexpr ThreadLocalRef(ThreadLocalRef const&) noexcept            = default;
-    constexpr ThreadLocalRef(ThreadLocalRef&&) noexcept                 = default;
+    constexpr ThreadLocalRef(ThreadLocalRef const&) noexcept = default;
+    constexpr ThreadLocalRef(ThreadLocalRef&&) noexcept = default;
     constexpr ThreadLocalRef& operator=(ThreadLocalRef const&) noexcept = default;
-    constexpr ThreadLocalRef& operator=(ThreadLocalRef&&) noexcept      = default;
-    ~ThreadLocalRef()                                                   = default;
+    constexpr ThreadLocalRef& operator=(ThreadLocalRef&&) noexcept = default;
+    ~ThreadLocalRef() = default;
 
     // ── Read-only access ────────────────────────────────────────────
-    [[nodiscard]] T const& peek() const noexcept(
-        std::is_nothrow_default_constructible_v<T>)
-    {
-        return storage_();
-    }
+    [[nodiscard]] T const& peek() const noexcept(std::is_nothrow_default_constructible_v<T>) { return storage_(); }
 
     // ── Mutable access ──────────────────────────────────────────────
     //
@@ -166,11 +160,7 @@ public:
     // helper to the per-thread cell, NOT through any state owned
     // by *this.  `const ThreadLocalRef<Tag, T> h; h.peek_mut() = v;`
     // is correct — the handle is const, the per-thread cell is not.
-    [[nodiscard]] T& peek_mut() const noexcept(
-        std::is_nothrow_default_constructible_v<T>)
-    {
-        return storage_();
-    }
+    [[nodiscard]] T& peek_mut() const noexcept(std::is_nothrow_default_constructible_v<T>) { return storage_(); }
 
     // ── Store-by-value ──────────────────────────────────────────────
     //
@@ -180,10 +170,8 @@ public:
     // pins the rejection.
     template <typename U>
         requires std::is_assignable_v<T&, U&&>
-    void store(U&& v) const noexcept(
-        std::is_nothrow_default_constructible_v<T>
-        && std::is_nothrow_assignable_v<T&, U&&>)
-    {
+    void store(U&& v) const
+        noexcept(std::is_nothrow_default_constructible_v<T> && std::is_nothrow_assignable_v<T&, U&&>) {
         storage_() = std::forward<U>(v);
     }
 
@@ -192,10 +180,7 @@ public:
     // Typical end-of-iteration discipline — clear the per-thread
     // accumulator back to its default-init.  For HdrHistogram-style
     // sites this is the per-period reset.
-    void reset() const noexcept(
-        std::is_nothrow_default_constructible_v<T>
-        && std::is_nothrow_move_assignable_v<T>)
-    {
+    void reset() const noexcept(std::is_nothrow_default_constructible_v<T> && std::is_nothrow_move_assignable_v<T>) {
         storage_() = T{};
     }
 
@@ -204,9 +189,7 @@ public:
     // Surface the Tag and T display strings for runtime observer's
     // debug output; production code typically reads tag_type /
     // value_type aliases instead.
-    [[nodiscard]] static consteval std::string_view tag_name() noexcept {
-        return std::meta::display_string_of(^^Tag);
-    }
+    [[nodiscard]] static consteval std::string_view tag_name() noexcept { return std::meta::display_string_of(^^Tag); }
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return std::meta::display_string_of(^^T);
     }
@@ -232,8 +215,10 @@ template <typename Tag, typename T>
 // sizeof(empty class) >= 1).  This is the STRUCTURAL-wrapper
 // signature: minimal handle, all state delegated to a discipline-
 // enforcing site.
-namespace detail { struct LayoutAnchorTag {}; }
-static_assert(sizeof(ThreadLocalRef<detail::LayoutAnchorTag, int>)    == 1);
+namespace detail {
+struct LayoutAnchorTag {};
+}  // namespace detail
+static_assert(sizeof(ThreadLocalRef<detail::LayoutAnchorTag, int>) == 1);
 static_assert(sizeof(ThreadLocalRef<detail::LayoutAnchorTag, double>) == 1);
 static_assert(std::is_empty_v<ThreadLocalRef<detail::LayoutAnchorTag, int>>);
 static_assert(std::is_trivially_copyable_v<ThreadLocalRef<detail::LayoutAnchorTag, int>>);
@@ -245,9 +230,9 @@ struct CounterTag {};
 struct AccumulatorTag {};
 struct OtherTag {};
 
-using IntCounter      = ThreadLocalRef<CounterTag,     int>;
-using IntAccumulator  = ThreadLocalRef<AccumulatorTag, int>;
-using DoubleOther     = ThreadLocalRef<OtherTag,       double>;
+using IntCounter = ThreadLocalRef<CounterTag, int>;
+using IntAccumulator = ThreadLocalRef<AccumulatorTag, int>;
+using DoubleOther = ThreadLocalRef<OtherTag, double>;
 
 // ── Construction paths ─────────────────────────────────────────────
 inline constexpr IntCounter c_default{};
@@ -255,9 +240,9 @@ inline constexpr IntCounter c_copy = c_default;
 static_assert(sizeof(IntCounter) == 1);
 
 // ── Type aliases ───────────────────────────────────────────────────
-static_assert(std::is_same_v<IntCounter::tag_type,   CounterTag>);
+static_assert(std::is_same_v<IntCounter::tag_type, CounterTag>);
 static_assert(std::is_same_v<IntCounter::value_type, int>);
-static_assert(std::is_same_v<DoubleOther::tag_type,  OtherTag>);
+static_assert(std::is_same_v<DoubleOther::tag_type, OtherTag>);
 static_assert(std::is_same_v<DoubleOther::value_type, double>);
 
 // ── Distinct Tags → distinct types ─────────────────────────────────
@@ -294,7 +279,7 @@ static_assert(DoubleOther::value_type_name() == "double");
 // updates, reset returns to 0, distinct-Tag witnesses get distinct
 // cells.
 inline void runtime_smoke_test() {
-    int seed = 17;                                          // non-constant
+    int seed = 17;  // non-constant
 
     IntCounter c{};
     // First access — default-init to 0.
@@ -326,11 +311,11 @@ inline void runtime_smoke_test() {
     IntCounter c1{};
     IntCounter c2{};
     c1.store(seed);
-    if (c2.peek() != 17) std::abort();    // shared cell — same Tag
+    if (c2.peek() != 17) std::abort();  // shared cell — same Tag
 
     // mint factory path.
     auto m = mint_thread_local_ref<CounterTag, int>();
-    if (m.peek() != 17) std::abort();     // mint returns handle to SAME cell
+    if (m.peek() != 17) std::abort();  // mint returns handle to SAME cell
 
     // Distinct T witness — DoubleOther cell is double, separate
     // template instantiation entirely.  Bit-exact compare via bit_cast

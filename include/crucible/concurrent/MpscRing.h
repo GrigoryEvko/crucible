@@ -105,9 +105,7 @@ namespace crucible::concurrent {
 // guarded by the out-of-band bitmap publish/consume protocol.
 
 template <typename T>
-concept RingValue =
-    std::is_trivially_copyable_v<T> &&
-    std::is_trivially_destructible_v<T>;
+concept RingValue = std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T>;
 
 // ── MpscRing<T, Capacity> ─────────────────────────────────────────
 
@@ -117,17 +115,15 @@ public:
     using value_type = T;
     static constexpr std::size_t channel_capacity = Capacity;
 
-    static_assert(std::has_single_bit(Capacity),
-                  "Capacity must be a power of two");
-    static_assert(Capacity >= 1,
-                  "Capacity must be greater than zero");
+    static_assert(std::has_single_bit(Capacity), "Capacity must be a power of two");
+    static_assert(Capacity >= 1, "Capacity must be greater than zero");
 
 private:
-    static constexpr std::uint64_t MASK  = std::uint64_t{Capacity - 1};
+    static constexpr std::uint64_t MASK = std::uint64_t{Capacity - 1};
     // Ceil-divide: small Capacity (<64) still gets one bitmap word.
     // Unused high bits in the word stay zero; never touched because
     // cell_idx < Capacity always.
-    static constexpr std::size_t   WORDS = (Capacity + 63) / 64;
+    static constexpr std::size_t WORDS = (Capacity + 63) / 64;
     static constexpr std::uint64_t kAllSet = ~std::uint64_t{0};
 
 public:
@@ -164,9 +160,8 @@ public:
                 return false;
             }
             std::uint64_t expected = pos;
-            if (!head_.compare_exchange_advance_weak(expected, pos + 1,
-                    std::memory_order_relaxed,
-                    std::memory_order_relaxed)) {
+            if (!head_.compare_exchange_advance_weak(expected, pos + 1, std::memory_order_relaxed,
+                                                     std::memory_order_relaxed)) {
                 // Another producer raced; retry.
                 continue;
             }
@@ -175,9 +170,9 @@ public:
             const std::size_t cell_idx = pos & MASK;
             cells_[cell_idx] = item;
 
-            const std::size_t word_idx = cell_idx >> 6;        // /64
-            const std::size_t bit_idx  = cell_idx & 63;        // %64
-            const std::uint64_t mask   = std::uint64_t{1} << bit_idx;
+            const std::size_t word_idx = cell_idx >> 6;  // /64
+            const std::size_t bit_idx = cell_idx & 63;  // %64
+            const std::uint64_t mask = std::uint64_t{1} << bit_idx;
             ready_[word_idx].fetch_or(mask, std::memory_order_release);
             return true;
         }
@@ -193,11 +188,11 @@ public:
     //   1 tail acquire-load + 1 head weak CAS + N data writes +
     //   ⌈N/64⌉ bitmap fetch_or ops.
 
-    [[nodiscard, gnu::hot]] std::size_t try_push_batch(
-        std::span<const T> items) noexcept {
+    [[nodiscard, gnu::hot]] std::size_t try_push_batch(std::span<const T> items) noexcept {
         const std::size_t N = items.size();
         if (N == 0) return 0;
-        if (N > Capacity) [[unlikely]] return 0;
+        if (N > Capacity) [[unlikely]]
+            return 0;
 
         for (;;) {
             // FIXY-FOUND-115: load_relaxed for race-CAS expected-
@@ -209,9 +204,8 @@ public:
                 return 0;
             }
             std::uint64_t expected = pos;
-            if (!head_.compare_exchange_advance_weak(expected, pos + N,
-                    std::memory_order_relaxed,
-                    std::memory_order_relaxed)) {
+            if (!head_.compare_exchange_advance_weak(expected, pos + N, std::memory_order_relaxed,
+                                                     std::memory_order_relaxed)) {
                 continue;
             }
 
@@ -249,8 +243,8 @@ public:
         const std::uint64_t pos = tail_.peek_relaxed();
         const std::size_t cell_idx = pos & MASK;
         const std::size_t word_idx = cell_idx >> 6;
-        const std::size_t bit_idx  = cell_idx & 63;
-        const std::uint64_t mask   = std::uint64_t{1} << bit_idx;
+        const std::size_t bit_idx = cell_idx & 63;
+        const std::uint64_t mask = std::uint64_t{1} << bit_idx;
 
         const std::uint64_t word = ready_[word_idx].load(std::memory_order_acquire);
         if ((word & mask) == 0) {
@@ -277,8 +271,7 @@ public:
     // tail's cell).  Items written into out[0..return-1] in FIFO
     // order.
 
-    [[nodiscard, gnu::hot]] std::size_t try_pop_batch(
-        std::span<T> out) noexcept {
+    [[nodiscard, gnu::hot]] std::size_t try_pop_batch(std::span<T> out) noexcept {
         // Clamp the request to Capacity.  The ring holds AT MOST Capacity
         // live items (head - tail <= Capacity, enforced by every
         // producer's capacity gate).  Without this clamp a caller passing
@@ -303,20 +296,18 @@ public:
         while (R < cap) {
             const std::size_t cell_idx = (pos0 + R) & MASK;
             const std::size_t word_idx = cell_idx >> 6;
-            const std::size_t bit_idx  = cell_idx & 63;
+            const std::size_t bit_idx = cell_idx & 63;
 
             // Read word once, scan as many bits as we can within it.
-            const std::uint64_t word =
-                ready_[word_idx].load(std::memory_order_acquire);
+            const std::uint64_t word = ready_[word_idx].load(std::memory_order_acquire);
             // Shift right so our bit_idx becomes bit 0, then count
             // trailing ones via inversion + countr_zero.
             const std::uint64_t shifted = word >> bit_idx;
             // Number of consecutive 1s starting at our bit:
             //   if shifted == ~0 (all 1s remaining): 64 - bit_idx
             //   else: countr_zero(~shifted)
-            const std::size_t avail_in_word = (~shifted == 0)
-                ? (64 - bit_idx)
-                : static_cast<std::size_t>(std::countr_zero(~shifted));
+            const std::size_t avail_in_word =
+                (~shifted == 0) ? (64 - bit_idx) : static_cast<std::size_t>(std::countr_zero(~shifted));
             // Cap by remaining buffer in word + remaining requested.
             const std::size_t remaining = cap - R;
             const std::size_t take = std::min(avail_in_word, remaining);
@@ -348,8 +339,8 @@ public:
         const std::uint64_t pos = tail_.get();
         const std::size_t cell_idx = pos & MASK;
         const std::size_t word_idx = cell_idx >> 6;
-        const std::size_t bit_idx  = cell_idx & 63;
-        const std::uint64_t mask   = std::uint64_t{1} << bit_idx;
+        const std::size_t bit_idx = cell_idx & 63;
+        const std::uint64_t mask = std::uint64_t{1} << bit_idx;
         return (ready_[word_idx].load(std::memory_order_acquire) & mask) == 0;
     }
 
@@ -366,9 +357,7 @@ public:
         return d > Capacity ? Capacity : static_cast<std::size_t>(d);
     }
 
-    [[nodiscard]] static constexpr std::size_t capacity() noexcept {
-        return Capacity;
-    }
+    [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
 private:
     // ── publish_range_ — set bits [bit_start, bit_end) in bitmap ──
@@ -376,8 +365,7 @@ private:
     // Handles wraparound: if N items span the buffer end, sets two
     // disjoint bit ranges.  Per-word fetch_or with release.
 
-    void publish_range_(std::size_t bit_start, std::size_t bit_end,
-                        std::size_t N) noexcept {
+    void publish_range_(std::size_t bit_start, std::size_t bit_end, std::size_t N) noexcept {
         if (N >= Capacity) [[unlikely]] {
             // Full-buffer publish: set every bit.
             for (auto& w : ready_) {
@@ -401,19 +389,16 @@ private:
         while (start < end) {
             const std::size_t word_idx = start >> 6;
             const std::size_t bit_offset = start & 63;
-            const std::size_t bits_in_word =
-                std::min<std::size_t>(64 - bit_offset, end - start);
-            const std::uint64_t mask = (bits_in_word == 64)
-                ? kAllSet
-                : (((std::uint64_t{1} << bits_in_word) - 1) << bit_offset);
+            const std::size_t bits_in_word = std::min<std::size_t>(64 - bit_offset, end - start);
+            const std::uint64_t mask =
+                (bits_in_word == 64) ? kAllSet : (((std::uint64_t{1} << bits_in_word) - 1) << bit_offset);
             ready_[word_idx].fetch_or(mask, std::memory_order_release);
             start += bits_in_word;
         }
     }
 
     // ── clear_range_ — clear bits [bit_start, bit_end) ────────────
-    void clear_range_(std::size_t bit_start, std::size_t bit_end,
-                      std::size_t N) noexcept {
+    void clear_range_(std::size_t bit_start, std::size_t bit_end, std::size_t N) noexcept {
         if (N >= Capacity) [[unlikely]] {
             for (auto& w : ready_) {
                 w.fetch_and(0, std::memory_order_release);
@@ -432,11 +417,9 @@ private:
         while (start < end) {
             const std::size_t word_idx = start >> 6;
             const std::size_t bit_offset = start & 63;
-            const std::size_t bits_in_word =
-                std::min<std::size_t>(64 - bit_offset, end - start);
-            const std::uint64_t mask = (bits_in_word == 64)
-                ? kAllSet
-                : (((std::uint64_t{1} << bits_in_word) - 1) << bit_offset);
+            const std::size_t bits_in_word = std::min<std::size_t>(64 - bit_offset, end - start);
+            const std::uint64_t mask =
+                (bits_in_word == 64) ? kAllSet : (((std::uint64_t{1} << bits_in_word) - 1) << bit_offset);
             ready_[word_idx].fetch_and(~mask, std::memory_order_release);
             start += bits_in_word;
         }
@@ -459,10 +442,10 @@ private:
     // Total sizeof at Cap=1024, T=uint64: ~8.4 KB (vs 64 KB for the
     // previous Vyukov per-cell-sequence design — 7.77× density).
 
-    alignas(64) std::array<T, Capacity>                         cells_{};
-    alignas(64) std::array<std::atomic<std::uint64_t>, WORDS>   ready_{};
-    alignas(64) safety::AtomicMonotonic<std::uint64_t>          head_{0};
-    alignas(64) safety::AtomicMonotonic<std::uint64_t>          tail_{0};
+    alignas(64) std::array<T, Capacity> cells_{};
+    alignas(64) std::array<std::atomic<std::uint64_t>, WORDS> ready_{};
+    alignas(64) safety::AtomicMonotonic<std::uint64_t> head_{0};
+    alignas(64) safety::AtomicMonotonic<std::uint64_t> tail_{0};
 };
 
 }  // namespace crucible::concurrent

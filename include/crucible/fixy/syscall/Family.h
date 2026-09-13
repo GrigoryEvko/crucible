@@ -98,9 +98,9 @@
 // neg_fixy_v_098_*.cpp witnessing (a) wrong-axis routing rejection
 // and (b) family + per duplicate engagement rejection.
 
-#include <crucible/fixy/Grant.h>           // grant_base, which_dim primary
-#include <crucible/safety/DimensionTraits.h>// DimensionAxis::SyscallSurface
-#include <crucible/algebra/lattices/SyscallFamilyLattice.h> // SyscallFamily
+#include <crucible/fixy/Grant.h>  // grant_base, which_dim primary
+#include <crucible/safety/DimensionTraits.h>  // DimensionAxis::SyscallSurface
+#include <crucible/algebra/lattices/SyscallFamilyLattice.h>  // SyscallFamily
 
 #include <type_traits>
 
@@ -123,8 +123,7 @@ template <typename G>
 struct family_tier;  // primary undefined — specialized per family tag
 
 template <typename G>
-inline constexpr ::crucible::algebra::lattices::SyscallFamily family_tier_v =
-    family_tier<G>::value;
+inline constexpr ::crucible::algebra::lattices::SyscallFamily family_tier_v = family_tier<G>::value;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── 9 family-tier grant tags ──────────────────────────────────────────
@@ -236,8 +235,8 @@ namespace detail::syscall_family_grant_self_test {
 
 namespace sc = syscall;
 namespace al = ::crucible::algebra::lattices;
-using D      = dim::DimensionAxis;
-using SF     = al::SyscallFamily;
+using D = dim::DimensionAxis;
+using SF = al::SyscallFamily;
 
 // ── Layer 1: IsGrantTag — every family tag structurally valid ──────
 static_assert(IsGrantTag<sc::family_no_syscall>);
@@ -251,53 +250,53 @@ static_assert(IsGrantTag<sc::family_process_control>);
 static_assert(IsGrantTag<sc::family_privilege>);
 
 // ── Layer 2: sizeof — 1 byte standalone, EBO-collapsible ───────────
-static_assert(sizeof(sc::family_no_syscall)       == 1);
-static_assert(sizeof(sc::family_vdso_only)        == 1);
-static_assert(sizeof(sc::family_read_only_state)  == 1);
-static_assert(sizeof(sc::family_file_mutation)    == 1);
-static_assert(sizeof(sc::family_memory_mapping)   == 1);
-static_assert(sizeof(sc::family_thread_sync)      == 1);
-static_assert(sizeof(sc::family_network_io)       == 1);
-static_assert(sizeof(sc::family_process_control)  == 1);
-static_assert(sizeof(sc::family_privilege)        == 1);
+static_assert(sizeof(sc::family_no_syscall) == 1);
+static_assert(sizeof(sc::family_vdso_only) == 1);
+static_assert(sizeof(sc::family_read_only_state) == 1);
+static_assert(sizeof(sc::family_file_mutation) == 1);
+static_assert(sizeof(sc::family_memory_mapping) == 1);
+static_assert(sizeof(sc::family_thread_sync) == 1);
+static_assert(sizeof(sc::family_network_io) == 1);
+static_assert(sizeof(sc::family_process_control) == 1);
+static_assert(sizeof(sc::family_privilege) == 1);
 
 // ── Layer 3: which_dim routing — every tag → SyscallSurface ────────
-static_assert(which_dim_v<sc::family_no_syscall>       == D::SyscallSurface);
-static_assert(which_dim_v<sc::family_vdso_only>        == D::SyscallSurface);
-static_assert(which_dim_v<sc::family_read_only_state>  == D::SyscallSurface);
-static_assert(which_dim_v<sc::family_file_mutation>    == D::SyscallSurface);
-static_assert(which_dim_v<sc::family_memory_mapping>   == D::SyscallSurface);
-static_assert(which_dim_v<sc::family_thread_sync>      == D::SyscallSurface);
-static_assert(which_dim_v<sc::family_network_io>       == D::SyscallSurface);
-static_assert(which_dim_v<sc::family_process_control>  == D::SyscallSurface);
-static_assert(which_dim_v<sc::family_privilege>        == D::SyscallSurface);
+static_assert(which_dim_v<sc::family_no_syscall> == D::SyscallSurface);
+static_assert(which_dim_v<sc::family_vdso_only> == D::SyscallSurface);
+static_assert(which_dim_v<sc::family_read_only_state> == D::SyscallSurface);
+static_assert(which_dim_v<sc::family_file_mutation> == D::SyscallSurface);
+static_assert(which_dim_v<sc::family_memory_mapping> == D::SyscallSurface);
+static_assert(which_dim_v<sc::family_thread_sync> == D::SyscallSurface);
+static_assert(which_dim_v<sc::family_network_io> == D::SyscallSurface);
+static_assert(which_dim_v<sc::family_process_control> == D::SyscallSurface);
+static_assert(which_dim_v<sc::family_privilege> == D::SyscallSurface);
 
 // ── Layer 4: family_tier — every tag → matching SyscallFamily ──────
-static_assert(family_tier_v<sc::family_no_syscall>       == SF::NoSyscall);
-static_assert(family_tier_v<sc::family_vdso_only>        == SF::VdsoOnly);
-static_assert(family_tier_v<sc::family_read_only_state>  == SF::ReadOnlyState);
-static_assert(family_tier_v<sc::family_file_mutation>    == SF::FileMutation);
-static_assert(family_tier_v<sc::family_memory_mapping>   == SF::MemoryMapping);
-static_assert(family_tier_v<sc::family_thread_sync>      == SF::ThreadSync);
-static_assert(family_tier_v<sc::family_network_io>       == SF::NetworkIo);
-static_assert(family_tier_v<sc::family_process_control>  == SF::ProcessControl);
-static_assert(family_tier_v<sc::family_privilege>        == SF::Privilege);
+static_assert(family_tier_v<sc::family_no_syscall> == SF::NoSyscall);
+static_assert(family_tier_v<sc::family_vdso_only> == SF::VdsoOnly);
+static_assert(family_tier_v<sc::family_read_only_state> == SF::ReadOnlyState);
+static_assert(family_tier_v<sc::family_file_mutation> == SF::FileMutation);
+static_assert(family_tier_v<sc::family_memory_mapping> == SF::MemoryMapping);
+static_assert(family_tier_v<sc::family_thread_sync> == SF::ThreadSync);
+static_assert(family_tier_v<sc::family_network_io> == SF::NetworkIo);
+static_assert(family_tier_v<sc::family_process_control> == SF::ProcessControl);
+static_assert(family_tier_v<sc::family_privilege> == SF::Privilege);
 
 // ── Layer 5: pairwise type-distinctness — sampled adjacencies ──────
 // Each pair witnesses the V-097 chain monotonicity at the type level:
 // adjacent tiers are distinct types so packs cannot accidentally
 // collapse to a single engagement when two tags appear in different
 // positions.  Sentinel TU runs the full 9×8/2 = 36-cell matrix.
-static_assert(!std::is_same_v<sc::family_no_syscall,      sc::family_vdso_only>);
-static_assert(!std::is_same_v<sc::family_vdso_only,       sc::family_read_only_state>);
+static_assert(!std::is_same_v<sc::family_no_syscall, sc::family_vdso_only>);
+static_assert(!std::is_same_v<sc::family_vdso_only, sc::family_read_only_state>);
 static_assert(!std::is_same_v<sc::family_read_only_state, sc::family_file_mutation>);
-static_assert(!std::is_same_v<sc::family_file_mutation,   sc::family_memory_mapping>);
-static_assert(!std::is_same_v<sc::family_memory_mapping,  sc::family_thread_sync>);
-static_assert(!std::is_same_v<sc::family_thread_sync,     sc::family_network_io>);
-static_assert(!std::is_same_v<sc::family_network_io,      sc::family_process_control>);
+static_assert(!std::is_same_v<sc::family_file_mutation, sc::family_memory_mapping>);
+static_assert(!std::is_same_v<sc::family_memory_mapping, sc::family_thread_sync>);
+static_assert(!std::is_same_v<sc::family_thread_sync, sc::family_network_io>);
+static_assert(!std::is_same_v<sc::family_network_io, sc::family_process_control>);
 static_assert(!std::is_same_v<sc::family_process_control, sc::family_privilege>);
 // Cross-chain (non-adjacent) sample
-static_assert(!std::is_same_v<sc::family_no_syscall,      sc::family_privilege>);
+static_assert(!std::is_same_v<sc::family_no_syscall, sc::family_privilege>);
 
 // ── Layer 6: family-tier coverage — bijection witness ──────────────
 // The nine tags collectively cover the nine SyscallFamily tiers
@@ -306,26 +305,24 @@ static_assert(!std::is_same_v<sc::family_no_syscall,      sc::family_privilege>)
 // with the cardinality assertion below, this proves bijection.
 [[nodiscard]] consteval bool every_family_tier_covered() noexcept {
     using sf2 = al::SyscallFamily;
-    return family_tier_v<sc::family_no_syscall>      == sf2::NoSyscall
-        && family_tier_v<sc::family_vdso_only>       == sf2::VdsoOnly
+    return family_tier_v<sc::family_no_syscall> == sf2::NoSyscall
+        && family_tier_v<sc::family_vdso_only> == sf2::VdsoOnly
         && family_tier_v<sc::family_read_only_state> == sf2::ReadOnlyState
-        && family_tier_v<sc::family_file_mutation>   == sf2::FileMutation
-        && family_tier_v<sc::family_memory_mapping>  == sf2::MemoryMapping
-        && family_tier_v<sc::family_thread_sync>     == sf2::ThreadSync
-        && family_tier_v<sc::family_network_io>      == sf2::NetworkIo
+        && family_tier_v<sc::family_file_mutation> == sf2::FileMutation
+        && family_tier_v<sc::family_memory_mapping> == sf2::MemoryMapping
+        && family_tier_v<sc::family_thread_sync> == sf2::ThreadSync
+        && family_tier_v<sc::family_network_io> == sf2::NetworkIo
         && family_tier_v<sc::family_process_control> == sf2::ProcessControl
-        && family_tier_v<sc::family_privilege>       == sf2::Privilege;
+        && family_tier_v<sc::family_privilege> == sf2::Privilege;
 }
-static_assert(every_family_tier_covered(),
-    "FIXY-V-098: nine family tags MUST collectively cover the nine "
-    "SyscallFamily tiers exactly once.  If this fires, the family_tier "
-    "specialization for at least one tag is wrong or missing.");
+static_assert(every_family_tier_covered(), "FIXY-V-098: nine family tags MUST collectively cover the nine "
+                                           "SyscallFamily tiers exactly once.  If this fires, the family_tier "
+                                           "specialization for at least one tag is wrong or missing.");
 
 // Cross-check against V-097's cardinality assertion.
-static_assert(
-    ::crucible::algebra::lattices::detail::syscall_family_lattice_self_test::family_count == 9,
-    "FIXY-V-098 depends on V-097's 9-tier chain.  If the lattice grew "
-    "an enumerator, every family_tier specialization above is stale.");
+static_assert(::crucible::algebra::lattices::detail::syscall_family_lattice_self_test::family_count == 9,
+              "FIXY-V-098 depends on V-097's 9-tier chain.  If the lattice grew "
+              "an enumerator, every family_tier specialization above is stale.");
 
 }  // namespace detail::syscall_family_grant_self_test
 

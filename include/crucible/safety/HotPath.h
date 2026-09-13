@@ -125,7 +125,7 @@
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/lattices/HotPathLattice.h>
 
-#include <cstdlib>      // std::abort in the runtime smoke test
+#include <cstdlib>  // std::abort in the runtime smoke test
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -143,14 +143,10 @@ template <HotPathTier_v Tier, typename T>
 class [[nodiscard]] HotPath {
 public:
     // ── Public type aliases ─────────────────────────────────────────
-    using value_type   = T;
+    using value_type = T;
     using lattice_type = HotPathLattice::At<Tier>;
-    using graded_type  = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Absolute,
-        lattice_type,
-        T>;
-    static constexpr ::crucible::algebra::ModalityKind modality =
-        ::crucible::algebra::ModalityKind::Absolute;
+    using graded_type = ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
+    static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::Absolute;
 
     // The pinned tier — exposed as a static constexpr for callers
     // doing tier-aware dispatch without instantiating the wrapper.
@@ -160,7 +156,6 @@ private:
     graded_type impl_;
 
 public:
-
     // ── Construction ────────────────────────────────────────────────
     //
     // Default: T{} at the pinned tier.
@@ -176,40 +171,37 @@ public:
     // constructor at tier-anchored production sites; the default
     // ctor exists for compatibility with std::array<HotPath<Hot, T>,
     // N> / struct-field default-init contexts.
-    constexpr HotPath() noexcept(
-        std::is_nothrow_default_constructible_v<T>)
+    constexpr HotPath() noexcept(std::is_nothrow_default_constructible_v<T>)
         : impl_{T{}, typename lattice_type::element_type{}} {}
 
     // Explicit construction from a T value.  The most common
     // production pattern — a hot-path-safe production site
     // constructs the wrapper at the appropriate tier.
-    constexpr explicit HotPath(T value) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    constexpr explicit HotPath(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(value), typename lattice_type::element_type{}} {}
 
     // In-place construction.
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr explicit HotPath(std::in_place_t, Args&&... args)
-        noexcept(std::is_nothrow_constructible_v<T, Args...>
-                 && std::is_nothrow_move_constructible_v<T>)
-        : impl_{T(std::forward<Args>(args)...),
-                typename lattice_type::element_type{}} {}
+    constexpr explicit HotPath(std::in_place_t, Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
+                                                                         && std::is_nothrow_move_constructible_v<T>)
+        : impl_{T(std::forward<Args>(args)...), typename lattice_type::element_type{}} {}
 
     // Defaulted copy/move/destroy — HotPath IS COPYABLE within the
     // same tier pin.
-    constexpr HotPath(const HotPath&)            = default;
-    constexpr HotPath(HotPath&&)                 = default;
+    constexpr HotPath(const HotPath&) = default;
+    constexpr HotPath(HotPath&&) = default;
     constexpr HotPath& operator=(const HotPath&) = default;
-    constexpr HotPath& operator=(HotPath&&)      = default;
-    ~HotPath()                                   = default;
+    constexpr HotPath& operator=(HotPath&&) = default;
+    ~HotPath() = default;
 
     // Equality: compares value bytes within the SAME tier pin.
     // Cross-tier comparison rejected at overload resolution.
-    [[nodiscard]] friend constexpr bool operator==(
-        HotPath const& a, HotPath const& b) noexcept(
-        noexcept(a.peek() == b.peek()))
-        requires requires(T const& x, T const& y) { { x == y } -> std::convertible_to<bool>; }
+    [[nodiscard]] friend constexpr bool operator==(HotPath const& a,
+                                                   HotPath const& b) noexcept(noexcept(a.peek() == b.peek()))
+        requires requires(T const& x, T const& y) {
+            { x == y } -> std::convertible_to<bool>;
+        }
     {
         return a.peek() == b.peek();
     }
@@ -218,37 +210,21 @@ public:
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return graded_type::lattice_name();
-    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 
     // ── Read-only access ────────────────────────────────────────────
-    [[nodiscard]] constexpr T const& peek() const& noexcept {
-        return impl_.peek();
-    }
+    [[nodiscard]] constexpr T const& peek() const& noexcept { return impl_.peek(); }
 
-    [[nodiscard]] constexpr T consume() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return std::move(impl_).consume();
     }
 
-    [[nodiscard]] constexpr T& peek_mut() & noexcept {
-        return impl_.peek_mut();
-    }
+    [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(); }
 
     // ── swap ────────────────────────────────────────────────────────
-    constexpr void swap(HotPath& other)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
-        impl_.swap(other.impl_);
-    }
+    constexpr void swap(HotPath& other) noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
 
-    friend constexpr void swap(HotPath& a, HotPath& b)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
-        a.swap(b);
-    }
+    friend constexpr void swap(HotPath& a, HotPath& b) noexcept(std::is_nothrow_swappable_v<T>) { a.swap(b); }
 
     // ── satisfies<RequiredTier> — static subsumption check ────────
     //
@@ -278,41 +254,43 @@ public:
     // Compile error when WeakerTier > Tier — would CLAIM more
     // hot-path compliance than the source provides.
     template <HotPathTier_v WeakerTier>
-        requires (HotPathLattice::leq(WeakerTier, Tier))
-    [[nodiscard]] constexpr HotPath<WeakerTier, T> relax() const&
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
+        requires(HotPathLattice::leq(WeakerTier, Tier))
+    [[nodiscard]] constexpr HotPath<WeakerTier, T> relax() const& noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
     {
         return HotPath<WeakerTier, T>{this->peek()};
     }
 
     template <HotPathTier_v WeakerTier>
-        requires (HotPathLattice::leq(WeakerTier, Tier))
-    [[nodiscard]] constexpr HotPath<WeakerTier, T> relax() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
-        return HotPath<WeakerTier, T>{
-            std::move(impl_).consume()};
+        requires(HotPathLattice::leq(WeakerTier, Tier))
+    [[nodiscard]] constexpr HotPath<WeakerTier, T> relax() && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return HotPath<WeakerTier, T>{std::move(impl_).consume()};
     }
 };
 
 // ── Convenience aliases ─────────────────────────────────────────────
 namespace hot_path {
-    template <typename T> using Hot  = HotPath<HotPathTier_v::Hot,  T>;
-    template <typename T> using Warm = HotPath<HotPathTier_v::Warm, T>;
-    template <typename T> using Cold = HotPath<HotPathTier_v::Cold, T>;
+template <typename T>
+using Hot = HotPath<HotPathTier_v::Hot, T>;
+template <typename T>
+using Warm = HotPath<HotPathTier_v::Warm, T>;
+template <typename T>
+using Cold = HotPath<HotPathTier_v::Cold, T>;
 }  // namespace hot_path
 
 // ── Layout invariants ───────────────────────────────────────────────
 namespace detail::hot_path_layout {
 
-template <typename T> using HotH  = HotPath<HotPathTier_v::Hot,  T>;
-template <typename T> using WarmH = HotPath<HotPathTier_v::Warm, T>;
-template <typename T> using ColdH = HotPath<HotPathTier_v::Cold, T>;
+template <typename T>
+using HotH = HotPath<HotPathTier_v::Hot, T>;
+template <typename T>
+using WarmH = HotPath<HotPathTier_v::Warm, T>;
+template <typename T>
+using ColdH = HotPath<HotPathTier_v::Cold, T>;
 
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(HotH,  char);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(HotH,  int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(HotH,  double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(HotH, char);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(HotH, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(HotH, double);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(WarmH, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(WarmH, double);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(ColdH, int);
@@ -320,17 +298,17 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(ColdH, double);
 
 }  // namespace detail::hot_path_layout
 
-static_assert(sizeof(HotPath<HotPathTier_v::Hot,  int>)    == sizeof(int));
-static_assert(sizeof(HotPath<HotPathTier_v::Warm, int>)    == sizeof(int));
-static_assert(sizeof(HotPath<HotPathTier_v::Cold, int>)    == sizeof(int));
-static_assert(sizeof(HotPath<HotPathTier_v::Hot,  double>) == sizeof(double));
+static_assert(sizeof(HotPath<HotPathTier_v::Hot, int>) == sizeof(int));
+static_assert(sizeof(HotPath<HotPathTier_v::Warm, int>) == sizeof(int));
+static_assert(sizeof(HotPath<HotPathTier_v::Cold, int>) == sizeof(int));
+static_assert(sizeof(HotPath<HotPathTier_v::Hot, double>) == sizeof(double));
 static_assert(sizeof(HotPath<HotPathTier_v::Warm, double>) == sizeof(double));
 static_assert(sizeof(HotPath<HotPathTier_v::Cold, double>) == sizeof(double));
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::hot_path_self_test {
 
-using HotInt  = HotPath<HotPathTier_v::Hot,  int>;
+using HotInt = HotPath<HotPathTier_v::Hot, int>;
 using WarmInt = HotPath<HotPathTier_v::Warm, int>;
 using ColdInt = HotPath<HotPathTier_v::Cold, int>;
 
@@ -346,7 +324,7 @@ inline constexpr HotInt h_in_place{std::in_place, 7};
 static_assert(h_in_place.peek() == 7);
 
 // ── Pinned tier accessor ──────────────────────────────────────────
-static_assert(HotInt::tier  == HotPathTier_v::Hot);
+static_assert(HotInt::tier == HotPathTier_v::Hot);
 static_assert(WarmInt::tier == HotPathTier_v::Warm);
 static_assert(ColdInt::tier == HotPathTier_v::Cold);
 
@@ -362,37 +340,33 @@ static_assert(HotInt::satisfies<HotPathTier_v::Warm>);
 static_assert(HotInt::satisfies<HotPathTier_v::Cold>);
 
 // Warm satisfies Warm and Cold; FAILS on Hot.
-static_assert( WarmInt::satisfies<HotPathTier_v::Warm>);    // self
-static_assert( WarmInt::satisfies<HotPathTier_v::Cold>);    // weaker
-static_assert(!WarmInt::satisfies<HotPathTier_v::Hot>,      // STRONGER fails ✓
-    "Warm MUST NOT satisfy Hot — this is the load-bearing rejection "
-    "that the hot-path dispatcher gates depend on.  If this fires, "
-    "background work could silently flow into the foreground hot-path "
-    "and miss the per-call shape budget (atomic ops + cache-line "
-    "touches).");
+static_assert(WarmInt::satisfies<HotPathTier_v::Warm>);  // self
+static_assert(WarmInt::satisfies<HotPathTier_v::Cold>);  // weaker
+static_assert(!WarmInt::satisfies<HotPathTier_v::Hot>,  // STRONGER fails ✓
+              "Warm MUST NOT satisfy Hot — this is the load-bearing rejection "
+              "that the hot-path dispatcher gates depend on.  If this fires, "
+              "background work could silently flow into the foreground hot-path "
+              "and miss the per-call shape budget (atomic ops + cache-line "
+              "touches).");
 
 // Cold satisfies only Cold.
-static_assert( ColdInt::satisfies<HotPathTier_v::Cold>);
+static_assert(ColdInt::satisfies<HotPathTier_v::Cold>);
 static_assert(!ColdInt::satisfies<HotPathTier_v::Warm>);
 static_assert(!ColdInt::satisfies<HotPathTier_v::Hot>);
 
 // ── relax<WeakerTier> — DOWN-the-lattice conversion ───────────────
-inline constexpr auto from_hot_to_warm =
-    HotInt{42}.relax<HotPathTier_v::Warm>();
+inline constexpr auto from_hot_to_warm = HotInt{42}.relax<HotPathTier_v::Warm>();
 static_assert(from_hot_to_warm.peek() == 42);
 static_assert(from_hot_to_warm.tier == HotPathTier_v::Warm);
 
-inline constexpr auto from_hot_to_cold =
-    HotInt{99}.relax<HotPathTier_v::Cold>();
+inline constexpr auto from_hot_to_cold = HotInt{99}.relax<HotPathTier_v::Cold>();
 static_assert(from_hot_to_cold.peek() == 99);
 static_assert(from_hot_to_cold.tier == HotPathTier_v::Cold);
 
-inline constexpr auto from_warm_to_cold =
-    WarmInt{7}.relax<HotPathTier_v::Cold>();
+inline constexpr auto from_warm_to_cold = WarmInt{7}.relax<HotPathTier_v::Cold>();
 static_assert(from_warm_to_cold.peek() == 7);
 
-inline constexpr auto from_warm_to_self =
-    WarmInt{8}.relax<HotPathTier_v::Warm>();   // identity
+inline constexpr auto from_warm_to_self = WarmInt{8}.relax<HotPathTier_v::Warm>();  // identity
 static_assert(from_warm_to_self.peek() == 8);
 
 // SFINAE-style detector — proves the requires-clause's correctness.
@@ -401,27 +375,27 @@ concept can_relax = requires(W w) {
     { std::move(w).template relax<T_target>() };
 };
 
-static_assert( can_relax<HotInt,  HotPathTier_v::Warm>);    // ✓ down
-static_assert( can_relax<HotInt,  HotPathTier_v::Cold>);    // ✓ down
-static_assert( can_relax<HotInt,  HotPathTier_v::Hot>);     // ✓ self
-static_assert( can_relax<WarmInt, HotPathTier_v::Cold>);    // ✓ down
-static_assert( can_relax<WarmInt, HotPathTier_v::Warm>);    // ✓ self
-static_assert(!can_relax<WarmInt, HotPathTier_v::Hot>,       // ✗ up
-    "relax<Hot> on a Warm-pinned wrapper MUST be rejected — "
-    "this is the load-bearing claim-stronger-than-source rejection. "
-    "If this fires, the hot-path discipline can be silently bypassed "
-    "by a Warm-tier value claiming Hot compliance.");
-static_assert(!can_relax<ColdInt, HotPathTier_v::Warm>);    // ✗ up
-static_assert(!can_relax<ColdInt, HotPathTier_v::Hot>);     // ✗ up
+static_assert(can_relax<HotInt, HotPathTier_v::Warm>);  // ✓ down
+static_assert(can_relax<HotInt, HotPathTier_v::Cold>);  // ✓ down
+static_assert(can_relax<HotInt, HotPathTier_v::Hot>);  // ✓ self
+static_assert(can_relax<WarmInt, HotPathTier_v::Cold>);  // ✓ down
+static_assert(can_relax<WarmInt, HotPathTier_v::Warm>);  // ✓ self
+static_assert(!can_relax<WarmInt, HotPathTier_v::Hot>,  // ✗ up
+              "relax<Hot> on a Warm-pinned wrapper MUST be rejected — "
+              "this is the load-bearing claim-stronger-than-source rejection. "
+              "If this fires, the hot-path discipline can be silently bypassed "
+              "by a Warm-tier value claiming Hot compliance.");
+static_assert(!can_relax<ColdInt, HotPathTier_v::Warm>);  // ✗ up
+static_assert(!can_relax<ColdInt, HotPathTier_v::Hot>);  // ✗ up
 // Cold reflexivity — the bottom of the chain still admits relax to
 // itself (leq is reflexive at every point including bottom).  Pinning
 // this proves the requires-clause uses ≤ not strict-< at the chain
 // endpoint.
-static_assert( can_relax<ColdInt, HotPathTier_v::Cold>);    // ✓ self at bottom
+static_assert(can_relax<ColdInt, HotPathTier_v::Cold>);  // ✓ self at bottom
 
 // ── Diagnostic forwarders ─────────────────────────────────────────
 static_assert(HotInt::value_type_name().ends_with("int"));
-static_assert(HotInt::lattice_name()  == "HotPathLattice::At<Hot>");
+static_assert(HotInt::lattice_name() == "HotPathLattice::At<Hot>");
 static_assert(WarmInt::lattice_name() == "HotPathLattice::At<Warm>");
 static_assert(ColdInt::lattice_name() == "HotPathLattice::At<Cold>");
 
@@ -476,16 +450,16 @@ concept can_equality_compare = requires(W const& a, W const& b) {
     { a == b } -> std::convertible_to<bool>;
 };
 
-static_assert( can_equality_compare<HotInt>);
+static_assert(can_equality_compare<HotInt>);
 static_assert(!can_equality_compare<HotPath<HotPathTier_v::Hot, NoEqualityT>>);
 
 // NoEqualityT has DELETED copy ctor — HotPath<Hot, NoEqualityT>
 // must inherit that deletion.  Pins the structural property that
 // T's move-only-ness propagates through the wrapper layer.
 static_assert(!std::is_copy_constructible_v<HotPath<HotPathTier_v::Hot, NoEqualityT>>,
-    "HotPath<Tier, T> must transitively inherit T's copy-deletion. "
-    "If this fires, NoEqualityT's deleted copy ctor is no longer "
-    "visible through the wrapper.");
+              "HotPath<Tier, T> must transitively inherit T's copy-deletion. "
+              "If this fires, NoEqualityT's deleted copy ctor is no longer "
+              "visible through the wrapper.");
 static_assert(std::is_move_constructible_v<HotPath<HotPathTier_v::Hot, NoEqualityT>>);
 
 // ── relax reflexivity ─────────────────────────────────────────────
@@ -524,12 +498,12 @@ concept can_relax_lvalue = requires(W const& w) {
 };
 
 using HotMoveOnly = HotPath<HotPathTier_v::Hot, MoveOnlyT>;
-static_assert( can_relax_rvalue<HotMoveOnly, HotPathTier_v::Warm>,
-    "relax<>() && MUST work for move-only T — the rvalue overload "
-    "moves through consume(), no copy required.");
+static_assert(can_relax_rvalue<HotMoveOnly, HotPathTier_v::Warm>,
+              "relax<>() && MUST work for move-only T — the rvalue overload "
+              "moves through consume(), no copy required.");
 static_assert(!can_relax_lvalue<HotMoveOnly, HotPathTier_v::Warm>,
-    "relax<>() const& on move-only T MUST be rejected — the const& "
-    "overload requires copy_constructible<T>.");
+              "relax<>() const& on move-only T MUST be rejected — the const& "
+              "overload requires copy_constructible<T>.");
 
 [[nodiscard]] consteval bool relax_move_only_works() noexcept {
     HotMoveOnly src{MoveOnlyT{77}};
@@ -544,12 +518,11 @@ static_assert(HotInt::lattice_name().size() > 0);
 static_assert(HotInt::lattice_name().starts_with("HotPathLattice::At<"));
 
 // ── Convenience aliases resolve correctly ────────────────────────
-static_assert(hot_path::Hot<int>::tier  == HotPathTier_v::Hot);
+static_assert(hot_path::Hot<int>::tier == HotPathTier_v::Hot);
 static_assert(hot_path::Warm<int>::tier == HotPathTier_v::Warm);
 static_assert(hot_path::Cold<int>::tier == HotPathTier_v::Cold);
 
-static_assert(std::is_same_v<hot_path::Hot<double>,
-                             HotPath<HotPathTier_v::Hot, double>>);
+static_assert(std::is_same_v<hot_path::Hot<double>, HotPath<HotPathTier_v::Hot, double>>);
 
 // ── Hot-path admission simulation — the load-bearing scenario ────
 //
@@ -566,18 +539,14 @@ static_assert(std::is_same_v<hot_path::Hot<double>,
 //   Cold-tier values are REJECTED (✓)
 
 template <typename W>
-concept is_hot_path_admissible =
-    W::template satisfies<HotPathTier_v::Hot>;
+concept is_hot_path_admissible = W::template satisfies<HotPathTier_v::Hot>;
 
-static_assert( is_hot_path_admissible<HotInt>,
-    "Hot-tier value MUST pass the hot-path admission gate.");
-static_assert(!is_hot_path_admissible<WarmInt>,
-    "Warm-tier value MUST be REJECTED at the hot-path admission "
-    "gate — this is the LOAD-BEARING TEST.  Without this rejection, "
-    "background work flows silently into the foreground hot-path.");
-static_assert(!is_hot_path_admissible<ColdInt>,
-    "Cold-tier value MUST be REJECTED at the hot-path admission "
-    "gate.");
+static_assert(is_hot_path_admissible<HotInt>, "Hot-tier value MUST pass the hot-path admission gate.");
+static_assert(!is_hot_path_admissible<WarmInt>, "Warm-tier value MUST be REJECTED at the hot-path admission "
+                                                "gate — this is the LOAD-BEARING TEST.  Without this rejection, "
+                                                "background work flows silently into the foreground hot-path.");
+static_assert(!is_hot_path_admissible<ColdInt>, "Cold-tier value MUST be REJECTED at the hot-path admission "
+                                                "gate.");
 
 // ── Runtime smoke test ─────────────────────────────────────────────
 inline void runtime_smoke_test() {
@@ -628,7 +597,7 @@ inline void runtime_smoke_test() {
     if (extracted != 55) std::abort();
 
     // Convenience-alias instantiation.
-    hot_path::Hot<int>  alias_hot{123};
+    hot_path::Hot<int> alias_hot{123};
     hot_path::Warm<int> alias_warm{456};
     hot_path::Cold<int> alias_cold{789};
     [[maybe_unused]] auto av = alias_hot.peek();
@@ -636,7 +605,7 @@ inline void runtime_smoke_test() {
     [[maybe_unused]] auto cv = alias_cold.peek();
 
     // Hot-path admission simulation at runtime.
-    [[maybe_unused]] bool can_hot_pass  = is_hot_path_admissible<HotInt>;
+    [[maybe_unused]] bool can_hot_pass = is_hot_path_admissible<HotInt>;
     [[maybe_unused]] bool can_warm_pass = is_hot_path_admissible<WarmInt>;
     [[maybe_unused]] bool can_cold_pass = is_hot_path_admissible<ColdInt>;
 }

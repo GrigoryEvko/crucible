@@ -9,8 +9,7 @@
 #include "common.h"
 
 SEC("tracepoint/qdisc/qdisc_enqueue")
-int crucible_dp_queue_backlog(void *ctx)
-{
+int crucible_dp_queue_backlog(void* ctx) {
     (void)ctx;
     return 0;
 }

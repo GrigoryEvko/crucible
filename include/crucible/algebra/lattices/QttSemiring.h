@@ -72,23 +72,26 @@ namespace crucible::algebra::lattices {
 
 // ── QttGrade enum ───────────────────────────────────────────────────
 enum class QttGrade : std::int8_t {
-    Zero  = 0,
-    One   = 1,
+    Zero = 0,
+    One = 1,
     Omega = 2,
 };
 
 // Cardinality + diagnostic name via reflection — auto-bumps when a
 // new grade is added; name-coverage assertion in the self-test
 // catches missing switch arms.
-inline constexpr std::size_t qtt_grade_count =
-    std::meta::enumerators_of(^^QttGrade).size();
+inline constexpr std::size_t qtt_grade_count = std::meta::enumerators_of(^^QttGrade).size();
 
 [[nodiscard]] consteval std::string_view qtt_grade_name(QttGrade g) noexcept {
     switch (g) {
-        case QttGrade::Zero:  return "0";
-        case QttGrade::One:   return "1";
-        case QttGrade::Omega: return "\xCF\x89";  // UTF-8 ω
-        default:              return std::string_view{"<unknown QttGrade>"};
+        case QttGrade::Zero:
+            return "0";
+        case QttGrade::One:
+            return "1";
+        case QttGrade::Omega:
+            return "\xCF\x89";  // UTF-8 ω
+        default:
+            return std::string_view{"<unknown QttGrade>"};
     }
 }
 
@@ -97,12 +100,8 @@ struct QttSemiring {
     using element_type = QttGrade;
 
     // ── Lattice ops (chain order: Zero ⊑ One ⊑ Omega) ───────────────
-    [[nodiscard]] static constexpr element_type bottom() noexcept {
-        return QttGrade::Zero;
-    }
-    [[nodiscard]] static constexpr element_type top() noexcept {
-        return QttGrade::Omega;
-    }
+    [[nodiscard]] static constexpr element_type bottom() noexcept { return QttGrade::Zero; }
+    [[nodiscard]] static constexpr element_type top() noexcept { return QttGrade::Omega; }
     [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept {
         return std::to_underlying(a) <= std::to_underlying(b);
     }
@@ -114,12 +113,8 @@ struct QttSemiring {
     }
 
     // ── Semiring ops (Atkey 2018 QTT) ───────────────────────────────
-    [[nodiscard]] static constexpr element_type zero() noexcept {
-        return QttGrade::Zero;
-    }
-    [[nodiscard]] static constexpr element_type one() noexcept {
-        return QttGrade::One;
-    }
+    [[nodiscard]] static constexpr element_type zero() noexcept { return QttGrade::Zero; }
+    [[nodiscard]] static constexpr element_type one() noexcept { return QttGrade::One; }
 
     // add: sum of usage counts.  Zero is additive identity; One+One
     // saturates to Omega (two uses lose linearity); anything+Omega
@@ -143,9 +138,7 @@ struct QttSemiring {
         return QttGrade::Omega;  // Omega · Omega = Omega
     }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return "QttSemiring";
-    }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "QttSemiring"; }
 
     // ── At<Grade>: singleton sub-lattice at a type-level grade ──────
     //
@@ -166,28 +159,28 @@ struct QttSemiring {
         // operator (instance level) to recover the grade.
         struct element_type {
             using grade_value_type = QttGrade;
-            [[nodiscard]] constexpr operator grade_value_type() const noexcept {
-                return Grade;
-            }
-            [[nodiscard]] constexpr bool operator==(element_type) const noexcept {
-                return true;
-            }
+            [[nodiscard]] constexpr operator grade_value_type() const noexcept { return Grade; }
+            [[nodiscard]] constexpr bool operator==(element_type) const noexcept { return true; }
         };
 
         static constexpr QttGrade grade = Grade;
 
         [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-        [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
         [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
 
         [[nodiscard]] static consteval std::string_view name() noexcept {
             switch (Grade) {
-                case QttGrade::Zero:  return "QttSemiring::At<0>";
-                case QttGrade::One:   return "QttSemiring::At<1>";
-                case QttGrade::Omega: return "QttSemiring::At<\xCF\x89>";  // UTF-8 ω
-                default:              return "QttSemiring::At<?>";
+                case QttGrade::Zero:
+                    return "QttSemiring::At<0>";
+                case QttGrade::One:
+                    return "QttSemiring::At<1>";
+                case QttGrade::Omega:
+                    return "QttSemiring::At<\xCF\x89>";  // UTF-8 ω
+                default:
+                    return "QttSemiring::At<?>";
             }
         }
     };
@@ -198,22 +191,20 @@ struct QttSemiring {
 // `LinearGrade` rather than `Linear` to avoid colliding with the
 // future safety::Linear<T> wrapper alias from MIGRATE-1 (#461).
 namespace qtt {
-    using Erased       = QttSemiring::At<QttGrade::Zero>;
-    using LinearGrade  = QttSemiring::At<QttGrade::One>;
-    using Unrestricted = QttSemiring::At<QttGrade::Omega>;
+using Erased = QttSemiring::At<QttGrade::Zero>;
+using LinearGrade = QttSemiring::At<QttGrade::One>;
+using Unrestricted = QttSemiring::At<QttGrade::Omega>;
 }  // namespace qtt
 
 // ── Self-test (compile-time + reflection-driven name coverage) ──────
 namespace detail::qtt_self_test {
 
 // Cardinality.
-static_assert(qtt_grade_count == 3,
-    "QttGrade catalog diverged from Atkey 2018 {0, 1, ω}; confirm intent.");
+static_assert(qtt_grade_count == 3, "QttGrade catalog diverged from Atkey 2018 {0, 1, ω}; confirm intent.");
 
 // Name coverage via reflection.
 [[nodiscard]] consteval bool every_qtt_grade_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^QttGrade));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^QttGrade));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
@@ -224,9 +215,8 @@ static_assert(qtt_grade_count == 3,
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_qtt_grade_has_name(),
-    "qtt_grade_name() missing arm for at least one QttGrade — add the "
-    "arm or the new grade leaks the '<unknown QttGrade>' sentinel.");
+static_assert(every_qtt_grade_has_name(), "qtt_grade_name() missing arm for at least one QttGrade — add the "
+                                          "arm or the new grade leaks the '<unknown QttGrade>' sentinel.");
 
 // Concept conformance.
 static_assert(Lattice<QttSemiring>);
@@ -252,15 +242,13 @@ static_assert(std::is_empty_v<QttSemiring::At<QttGrade::Omega>::element_type>);
 // 540 sub-checks = 27 triples × ~20 axiom predicates.  Fits well
 // within compile-time budget; no per-TU cost at runtime.
 [[nodiscard]] consteval bool exhaustive_lattice_check() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^QttGrade));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^QttGrade));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto ea : enumerators) {
         template for (constexpr auto eb : enumerators) {
             template for (constexpr auto ec : enumerators) {
-                if (!verify_bounded_lattice_axioms_at<QttSemiring>(
-                        [:ea:], [:eb:], [:ec:])) {
+                if (!verify_bounded_lattice_axioms_at<QttSemiring>([:ea:], [:eb:], [:ec:])) {
                     return false;
                 }
             }
@@ -269,21 +257,18 @@ static_assert(std::is_empty_v<QttSemiring::At<QttGrade::Omega>::element_type>);
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(exhaustive_lattice_check(),
-    "QttSemiring's chain-order lattice axioms must hold at EVERY "
-    "(QttGrade)³ triple — failure indicates a defect in leq/join/meet "
-    "or in the underlying enum encoding.");
+static_assert(exhaustive_lattice_check(), "QttSemiring's chain-order lattice axioms must hold at EVERY "
+                                          "(QttGrade)³ triple — failure indicates a defect in leq/join/meet "
+                                          "or in the underlying enum encoding.");
 
 [[nodiscard]] consteval bool exhaustive_semiring_check() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^QttGrade));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^QttGrade));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto ea : enumerators) {
         template for (constexpr auto eb : enumerators) {
             template for (constexpr auto ec : enumerators) {
-                if (!verify_semiring_axioms_at<QttSemiring>(
-                        [:ea:], [:eb:], [:ec:])) {
+                if (!verify_semiring_axioms_at<QttSemiring>([:ea:], [:eb:], [:ec:])) {
                     return false;
                 }
             }
@@ -292,28 +277,27 @@ static_assert(exhaustive_lattice_check(),
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(exhaustive_semiring_check(),
-    "QttSemiring's QTT semiring axioms must hold at EVERY (QttGrade)³ "
-    "triple — covers Atkey 2018's full algebraic structure.");
+static_assert(exhaustive_semiring_check(), "QttSemiring's QTT semiring axioms must hold at EVERY (QttGrade)³ "
+                                           "triple — covers Atkey 2018's full algebraic structure.");
 
 // Atkey-specific identities.
 static_assert(QttSemiring::add(QttGrade::One, QttGrade::One) == QttGrade::Omega,
-    "QTT additive saturation: One+One must equal Omega (linearity loss).");
+              "QTT additive saturation: One+One must equal Omega (linearity loss).");
 static_assert(QttSemiring::mul(QttGrade::Zero, QttGrade::Omega) == QttGrade::Zero,
-    "QTT multiplicative absorption: Zero·anything = Zero.");
+              "QTT multiplicative absorption: Zero·anything = Zero.");
 static_assert(QttSemiring::mul(QttGrade::One, QttGrade::Omega) == QttGrade::Omega,
-    "QTT multiplicative identity: One·x = x.");
+              "QTT multiplicative identity: One·x = x.");
 
 // Lattice ops are NOT the same as semiring ops.
 static_assert(QttSemiring::join(QttGrade::One, QttGrade::One) == QttGrade::One,
-    "Lattice join is idempotent: One ∨ One = One (chain max), unlike "
-    "semiring add One+One = Omega.");
+              "Lattice join is idempotent: One ∨ One = One (chain max), unlike "
+              "semiring add One+One = Omega.");
 
 // Diagnostic names.
 static_assert(QttSemiring::name() == "QttSemiring");
 static_assert(QttSemiring::At<QttGrade::One>::name() == "QttSemiring::At<1>");
-static_assert(qtt_grade_name(QttGrade::Zero)  == "0");
-static_assert(qtt_grade_name(QttGrade::One)   == "1");
+static_assert(qtt_grade_name(QttGrade::Zero) == "0");
+static_assert(qtt_grade_name(QttGrade::One) == "1");
 
 // Reflection-driven coverage check on At<Grade>::name() — every
 // QttGrade enumerator must produce a non-sentinel name from the
@@ -321,37 +305,38 @@ static_assert(qtt_grade_name(QttGrade::One)   == "1");
 // for the free function; catches missing switch arms on future
 // grade extensions independently.
 [[nodiscard]] consteval bool every_at_grade_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^QttGrade));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^QttGrade));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
         // Splice in template-argument position needs parens to
         // disambiguate from the <: digraph; per P2996R13 / C++26.
-        if (QttSemiring::At<([:en:])>::name() ==
-            std::string_view{"QttSemiring::At<?>"}) {
+        if (QttSemiring::At<([:en:])>::name() == std::string_view{"QttSemiring::At<?>"}) {
             return false;
         }
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_at_grade_has_name(),
-    "QttSemiring::At<Grade>::name() switch is missing an arm for at "
-    "least one QttGrade enumerator — add the arm or the new grade "
-    "leaks the 'QttSemiring::At<?>' sentinel into diagnostics.");
+static_assert(every_at_grade_has_name(), "QttSemiring::At<Grade>::name() switch is missing an arm for at "
+                                         "least one QttGrade enumerator — add the arm or the new grade "
+                                         "leaks the 'QttSemiring::At<?>' sentinel into diagnostics.");
 
 // Convenience aliases resolve to the right At<> instantiations.
-static_assert(qtt::Erased::grade       == QttGrade::Zero);
-static_assert(qtt::LinearGrade::grade  == QttGrade::One);
+static_assert(qtt::Erased::grade == QttGrade::Zero);
+static_assert(qtt::LinearGrade::grade == QttGrade::One);
 static_assert(qtt::Unrestricted::grade == QttGrade::Omega);
 
 // ── Layout invariants on Graded<...,At<Grade>,T> ────────────────────
 //
 // Empty grade type (At<>'s element_type is empty) collapses via EBO;
 // sizeof(Graded<...>) == sizeof(T) for non-empty T.
-struct OneByteValue { char c{0}; };
-struct EightByteValue { unsigned long long v{0}; };
+struct OneByteValue {
+    char c{0};
+};
+struct EightByteValue {
+    unsigned long long v{0};
+};
 
 template <typename T>
 using LinearGraded = Graded<ModalityKind::Absolute, qtt::LinearGrade, T>;
@@ -376,21 +361,21 @@ inline void runtime_smoke_test() {
     QttGrade a = QttGrade::Zero;
     QttGrade b = QttGrade::One;
     QttGrade c = QttGrade::Omega;
-    [[maybe_unused]] bool       l1  = QttSemiring::leq(a, b);
-    [[maybe_unused]] QttGrade   j1  = QttSemiring::join(b, c);
-    [[maybe_unused]] QttGrade   m1  = QttSemiring::meet(b, c);
-    [[maybe_unused]] QttGrade   ad1 = QttSemiring::add(b, b);   // One+One = Omega
-    [[maybe_unused]] QttGrade   mu1 = QttSemiring::mul(c, c);   // Omega·Omega = Omega
-    [[maybe_unused]] QttGrade   zr  = QttSemiring::zero();
-    [[maybe_unused]] QttGrade   on  = QttSemiring::one();
+    [[maybe_unused]] bool l1 = QttSemiring::leq(a, b);
+    [[maybe_unused]] QttGrade j1 = QttSemiring::join(b, c);
+    [[maybe_unused]] QttGrade m1 = QttSemiring::meet(b, c);
+    [[maybe_unused]] QttGrade ad1 = QttSemiring::add(b, b);  // One+One = Omega
+    [[maybe_unused]] QttGrade mu1 = QttSemiring::mul(c, c);  // Omega·Omega = Omega
+    [[maybe_unused]] QttGrade zr = QttSemiring::zero();
+    [[maybe_unused]] QttGrade on = QttSemiring::one();
 
     // Graded over At<LinearGrade> at runtime.
     OneByteValue v{42};
     LinearGraded<OneByteValue> initial{v, qtt::LinearGrade::bottom()};
-    auto widened   = initial.weaken(qtt::LinearGrade::top());
-    auto composed  = initial.compose(widened);
-    auto rv_widen  = std::move(widened).weaken(qtt::LinearGrade::top());
-    auto rv_comp   = std::move(initial).compose(composed);
+    auto widened = initial.weaken(qtt::LinearGrade::top());
+    auto composed = initial.compose(widened);
+    auto rv_widen = std::move(widened).weaken(qtt::LinearGrade::top());
+    auto rv_comp = std::move(initial).compose(composed);
 
     [[maybe_unused]] auto g1 = composed.grade();
     [[maybe_unused]] auto g2 = rv_widen.grade();

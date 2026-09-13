@@ -9,8 +9,7 @@
 #include "common.h"
 
 SEC("tracepoint/net/net_dev_queue")
-int crucible_cog_nic_probe(void *ctx)
-{
+int crucible_cog_nic_probe(void* ctx) {
     (void)ctx;
     return 0;
 }

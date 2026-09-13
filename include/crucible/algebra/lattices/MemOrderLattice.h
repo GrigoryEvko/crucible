@@ -168,70 +168,71 @@ namespace crucible::algebra::lattices {
 // preserved.  Note: `consume` is deliberately omitted — see lattice
 // docblock divergence (3).
 enum class MemOrderTag : std::uint8_t {
-    SeqCst  = 0,    // bottom: total-order fence (most expensive)
-    AcqRel  = 1,    // RMW combined Acquire+Release
-    Release = 2,    // store-side directional fence
-    Acquire = 3,    // load-side directional fence
-    Relaxed = 4,    // top: atomicity only, no fence (cheapest)
+    SeqCst = 0,  // bottom: total-order fence (most expensive)
+    AcqRel = 1,  // RMW combined Acquire+Release
+    Release = 2,  // store-side directional fence
+    Acquire = 3,  // load-side directional fence
+    Relaxed = 4,  // top: atomicity only, no fence (cheapest)
 };
 
 // Cardinality + diagnostic name via reflection.
-inline constexpr std::size_t mem_order_tag_count =
-    std::meta::enumerators_of(^^MemOrderTag).size();
+inline constexpr std::size_t mem_order_tag_count = std::meta::enumerators_of(^^MemOrderTag).size();
 
 [[nodiscard]] consteval std::string_view mem_order_tag_name(MemOrderTag t) noexcept {
     switch (t) {
-        case MemOrderTag::SeqCst:  return "SeqCst";
-        case MemOrderTag::AcqRel:  return "AcqRel";
-        case MemOrderTag::Release: return "Release";
-        case MemOrderTag::Acquire: return "Acquire";
-        case MemOrderTag::Relaxed: return "Relaxed";
-        default:                   return std::string_view{"<unknown MemOrderTag>"};
+        case MemOrderTag::SeqCst:
+            return "SeqCst";
+        case MemOrderTag::AcqRel:
+            return "AcqRel";
+        case MemOrderTag::Release:
+            return "Release";
+        case MemOrderTag::Acquire:
+            return "Acquire";
+        case MemOrderTag::Relaxed:
+            return "Relaxed";
+        default:
+            return std::string_view{"<unknown MemOrderTag>"};
     }
 }
 
 // ── Full MemOrderLattice (chain order) ──────────────────────────────
 struct MemOrderLattice : ChainLatticeOps<MemOrderTag> {
-    [[nodiscard]] static constexpr element_type bottom() noexcept {
-        return MemOrderTag::SeqCst;
-    }
-    [[nodiscard]] static constexpr element_type top() noexcept {
-        return MemOrderTag::Relaxed;
-    }
+    [[nodiscard]] static constexpr element_type bottom() noexcept { return MemOrderTag::SeqCst; }
+    [[nodiscard]] static constexpr element_type top() noexcept { return MemOrderTag::Relaxed; }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return "MemOrderLattice";
-    }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "MemOrderLattice"; }
 
     // ── At<T>: singleton sub-lattice at a fixed type-level tag ─────
     template <MemOrderTag T>
     struct At {
         struct element_type {
             using mem_order_tag_value_type = MemOrderTag;
-            [[nodiscard]] constexpr operator mem_order_tag_value_type() const noexcept {
-                return T;
-            }
-            [[nodiscard]] constexpr bool operator==(element_type) const noexcept {
-                return true;
-            }
+            [[nodiscard]] constexpr operator mem_order_tag_value_type() const noexcept { return T; }
+            [[nodiscard]] constexpr bool operator==(element_type) const noexcept { return true; }
         };
 
         static constexpr MemOrderTag tag = T;
 
         [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-        [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
         [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
 
         [[nodiscard]] static consteval std::string_view name() noexcept {
             switch (T) {
-                case MemOrderTag::SeqCst:  return "MemOrderLattice::At<SeqCst>";
-                case MemOrderTag::AcqRel:  return "MemOrderLattice::At<AcqRel>";
-                case MemOrderTag::Release: return "MemOrderLattice::At<Release>";
-                case MemOrderTag::Acquire: return "MemOrderLattice::At<Acquire>";
-                case MemOrderTag::Relaxed: return "MemOrderLattice::At<Relaxed>";
-                default:                   return "MemOrderLattice::At<?>";
+                case MemOrderTag::SeqCst:
+                    return "MemOrderLattice::At<SeqCst>";
+                case MemOrderTag::AcqRel:
+                    return "MemOrderLattice::At<AcqRel>";
+                case MemOrderTag::Release:
+                    return "MemOrderLattice::At<Release>";
+                case MemOrderTag::Acquire:
+                    return "MemOrderLattice::At<Acquire>";
+                case MemOrderTag::Relaxed:
+                    return "MemOrderLattice::At<Relaxed>";
+                default:
+                    return "MemOrderLattice::At<?>";
             }
         }
     };
@@ -239,38 +240,34 @@ struct MemOrderLattice : ChainLatticeOps<MemOrderTag> {
 
 // ── Convenience aliases ─────────────────────────────────────────────
 namespace mem_order_tag {
-    using SeqCstTag  = MemOrderLattice::At<MemOrderTag::SeqCst>;
-    using AcqRelTag  = MemOrderLattice::At<MemOrderTag::AcqRel>;
-    using ReleaseTag = MemOrderLattice::At<MemOrderTag::Release>;
-    using AcquireTag = MemOrderLattice::At<MemOrderTag::Acquire>;
-    using RelaxedTag = MemOrderLattice::At<MemOrderTag::Relaxed>;
+using SeqCstTag = MemOrderLattice::At<MemOrderTag::SeqCst>;
+using AcqRelTag = MemOrderLattice::At<MemOrderTag::AcqRel>;
+using ReleaseTag = MemOrderLattice::At<MemOrderTag::Release>;
+using AcquireTag = MemOrderLattice::At<MemOrderTag::Acquire>;
+using RelaxedTag = MemOrderLattice::At<MemOrderTag::Relaxed>;
 }  // namespace mem_order_tag
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::mem_order_lattice_self_test {
 
 // Cardinality + reflection-based name coverage.
-static_assert(mem_order_tag_count == 5,
-    "MemOrderTag catalog diverged from {SeqCst, AcqRel, Release, "
-    "Acquire, Relaxed}; confirm intent and update the dispatcher's "
-    "hot-path admission gates.");
+static_assert(mem_order_tag_count == 5, "MemOrderTag catalog diverged from {SeqCst, AcqRel, Release, "
+                                        "Acquire, Relaxed}; confirm intent and update the dispatcher's "
+                                        "hot-path admission gates.");
 
 [[nodiscard]] consteval bool every_mem_order_tag_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^MemOrderTag));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^MemOrderTag));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
-        if (mem_order_tag_name([:en:]) ==
-            std::string_view{"<unknown MemOrderTag>"}) {
+        if (mem_order_tag_name([:en:]) == std::string_view{"<unknown MemOrderTag>"}) {
             return false;
         }
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_mem_order_tag_has_name(),
-    "mem_order_tag_name() switch missing arm for at least one tag.");
+static_assert(every_mem_order_tag_has_name(), "mem_order_tag_name() switch missing arm for at least one tag.");
 
 // Concept conformance — full lattice + each At<T> sub-lattice.
 static_assert(Lattice<MemOrderLattice>);
@@ -294,27 +291,27 @@ static_assert(std::is_empty_v<mem_order_tag::SeqCstTag::element_type>);
 // EXHAUSTIVE lattice-axiom + distributivity coverage over
 // (MemOrderTag)³ = 125 triples each.
 static_assert(verify_chain_lattice_exhaustive<MemOrderLattice>(),
-    "MemOrderLattice's chain-order lattice axioms must hold at every "
-    "(MemOrderTag)³ triple — failure indicates a defect in "
-    "leq/join/meet or in the underlying enum encoding.");
+              "MemOrderLattice's chain-order lattice axioms must hold at every "
+              "(MemOrderTag)³ triple — failure indicates a defect in "
+              "leq/join/meet or in the underlying enum encoding.");
 static_assert(verify_chain_lattice_distributive_exhaustive<MemOrderLattice>(),
-    "MemOrderLattice's chain order must satisfy distributivity at "
-    "every (MemOrderTag)³ triple.");
+              "MemOrderLattice's chain order must satisfy distributivity at "
+              "every (MemOrderTag)³ triple.");
 
 // Direct order witnesses — Relaxed at the top (cheapest) and SeqCst
 // at the bottom (most expensive).
-static_assert( MemOrderLattice::leq(MemOrderTag::SeqCst,  MemOrderTag::AcqRel));
-static_assert( MemOrderLattice::leq(MemOrderTag::AcqRel,  MemOrderTag::Release));
-static_assert( MemOrderLattice::leq(MemOrderTag::Release, MemOrderTag::Acquire));
-static_assert( MemOrderLattice::leq(MemOrderTag::Acquire, MemOrderTag::Relaxed));
-static_assert( MemOrderLattice::leq(MemOrderTag::SeqCst,  MemOrderTag::Relaxed)); // transitive
+static_assert(MemOrderLattice::leq(MemOrderTag::SeqCst, MemOrderTag::AcqRel));
+static_assert(MemOrderLattice::leq(MemOrderTag::AcqRel, MemOrderTag::Release));
+static_assert(MemOrderLattice::leq(MemOrderTag::Release, MemOrderTag::Acquire));
+static_assert(MemOrderLattice::leq(MemOrderTag::Acquire, MemOrderTag::Relaxed));
+static_assert(MemOrderLattice::leq(MemOrderTag::SeqCst, MemOrderTag::Relaxed));  // transitive
 static_assert(!MemOrderLattice::leq(MemOrderTag::Relaxed, MemOrderTag::SeqCst));
 static_assert(!MemOrderLattice::leq(MemOrderTag::Relaxed, MemOrderTag::Acquire));
-static_assert(!MemOrderLattice::leq(MemOrderTag::AcqRel,  MemOrderTag::SeqCst));
+static_assert(!MemOrderLattice::leq(MemOrderTag::AcqRel, MemOrderTag::SeqCst));
 
 // Pin bottom / top to chain endpoints.
 static_assert(MemOrderLattice::bottom() == MemOrderTag::SeqCst);
-static_assert(MemOrderLattice::top()    == MemOrderTag::Relaxed);
+static_assert(MemOrderLattice::top() == MemOrderTag::Relaxed);
 
 // ── FIXY-FOUND-009: lattice convention vs cross-tree "strictest-wins" ──
 //
@@ -361,14 +358,10 @@ static_assert(MemOrderLattice::top()    == MemOrderTag::Relaxed);
 // position (climb / descend the chain), NOT memory-ordering strength.
 // In this inverted convention, climbing the lattice = weakening the
 // memory order.  See FOUND-076 for the cross-tree audit.
-static_assert(MemOrderLattice::join(MemOrderTag::SeqCst, MemOrderTag::Relaxed)
-              == MemOrderTag::Relaxed);
-static_assert(MemOrderLattice::join(MemOrderTag::AcqRel, MemOrderTag::Release)
-              == MemOrderTag::Release);
-static_assert(MemOrderLattice::meet(MemOrderTag::SeqCst, MemOrderTag::Relaxed)
-              == MemOrderTag::SeqCst);
-static_assert(MemOrderLattice::meet(MemOrderTag::Acquire, MemOrderTag::Relaxed)
-              == MemOrderTag::Acquire);
+static_assert(MemOrderLattice::join(MemOrderTag::SeqCst, MemOrderTag::Relaxed) == MemOrderTag::Relaxed);
+static_assert(MemOrderLattice::join(MemOrderTag::AcqRel, MemOrderTag::Release) == MemOrderTag::Release);
+static_assert(MemOrderLattice::meet(MemOrderTag::SeqCst, MemOrderTag::Relaxed) == MemOrderTag::SeqCst);
+static_assert(MemOrderLattice::meet(MemOrderTag::Acquire, MemOrderTag::Relaxed) == MemOrderTag::Acquire);
 
 // FIXY-FOUND-009 strictest-wins pin — for THIS lattice's refinement-
 // lattice convention, the "strictest-wins" composition reading is the
@@ -384,62 +377,60 @@ static_assert(MemOrderLattice::meet(MemOrderTag::Acquire, MemOrderTag::Relaxed)
 // This is NOT the same as the "natural" memory-ordering partial order
 // where Acquire ∥ Release are incomparable — the lattice linearizes
 // for chain-ops uniformity.
-static_assert(MemOrderLattice::meet(MemOrderTag::AcqRel, MemOrderTag::Relaxed)
-              == MemOrderTag::AcqRel,
-    "FIXY-FOUND-009: MemOrderLattice's MEET gives strictest-wins under "
-    "the refinement-lattice convention (bottom=SeqCst). meet(AcqRel, "
-    "Relaxed) returns AcqRel — the stricter of the two.");
-static_assert(MemOrderLattice::meet(MemOrderTag::Release, MemOrderTag::Acquire)
-              == MemOrderTag::Release,
-    "FIXY-FOUND-009: chain meet(Release, Acquire) = Release (the lower-"
-    "ordinal in this linearized chain).  This linearization is a "
-    "modeling choice — the natural memory-order partial order makes "
-    "Acquire ∥ Release incomparable; this chain admits a single result.");
-static_assert(MemOrderLattice::join(MemOrderTag::Release, MemOrderTag::Acquire)
-              == MemOrderTag::Acquire,
-    "FIXY-FOUND-009: chain JOIN(Release, Acquire) = Acquire (the higher-"
-    "ordinal = WEAKER under refinement-lattice convention).  Consumers "
-    "wanting strictest-wins must call MEET, not JOIN — direct contradiction "
-    "of the cross-tree Tier-S 'par=join, strictest-wins' contract.  See "
-    "FOUND-076 for the audit-sweep that normalizes the convention.");
+static_assert(MemOrderLattice::meet(MemOrderTag::AcqRel, MemOrderTag::Relaxed) == MemOrderTag::AcqRel,
+              "FIXY-FOUND-009: MemOrderLattice's MEET gives strictest-wins under "
+              "the refinement-lattice convention (bottom=SeqCst). meet(AcqRel, "
+              "Relaxed) returns AcqRel — the stricter of the two.");
+static_assert(MemOrderLattice::meet(MemOrderTag::Release, MemOrderTag::Acquire) == MemOrderTag::Release,
+              "FIXY-FOUND-009: chain meet(Release, Acquire) = Release (the lower-"
+              "ordinal in this linearized chain).  This linearization is a "
+              "modeling choice — the natural memory-order partial order makes "
+              "Acquire ∥ Release incomparable; this chain admits a single result.");
+static_assert(MemOrderLattice::join(MemOrderTag::Release, MemOrderTag::Acquire) == MemOrderTag::Acquire,
+              "FIXY-FOUND-009: chain JOIN(Release, Acquire) = Acquire (the higher-"
+              "ordinal = WEAKER under refinement-lattice convention).  Consumers "
+              "wanting strictest-wins must call MEET, not JOIN — direct contradiction "
+              "of the cross-tree Tier-S 'par=join, strictest-wins' contract.  See "
+              "FOUND-076 for the audit-sweep that normalizes the convention.");
 
 // Diagnostic names.
 static_assert(MemOrderLattice::name() == "MemOrderLattice");
-static_assert(mem_order_tag::SeqCstTag::name()  == "MemOrderLattice::At<SeqCst>");
-static_assert(mem_order_tag::AcqRelTag::name()  == "MemOrderLattice::At<AcqRel>");
+static_assert(mem_order_tag::SeqCstTag::name() == "MemOrderLattice::At<SeqCst>");
+static_assert(mem_order_tag::AcqRelTag::name() == "MemOrderLattice::At<AcqRel>");
 static_assert(mem_order_tag::ReleaseTag::name() == "MemOrderLattice::At<Release>");
 static_assert(mem_order_tag::AcquireTag::name() == "MemOrderLattice::At<Acquire>");
 static_assert(mem_order_tag::RelaxedTag::name() == "MemOrderLattice::At<Relaxed>");
 
 // Reflection-driven coverage check on At<T>::name().
 [[nodiscard]] consteval bool every_at_mem_order_tag_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^MemOrderTag));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^MemOrderTag));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
-        if (MemOrderLattice::At<([:en:])>::name() ==
-            std::string_view{"MemOrderLattice::At<?>"}) {
+        if (MemOrderLattice::At<([:en:])>::name() == std::string_view{"MemOrderLattice::At<?>"}) {
             return false;
         }
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_at_mem_order_tag_has_name(),
-    "MemOrderLattice::At<T>::name() switch missing an arm for at "
-    "least one tag.");
+static_assert(every_at_mem_order_tag_has_name(), "MemOrderLattice::At<T>::name() switch missing an arm for at "
+                                                 "least one tag.");
 
 // Convenience aliases resolve correctly.
-static_assert(mem_order_tag::SeqCstTag::tag  == MemOrderTag::SeqCst);
-static_assert(mem_order_tag::AcqRelTag::tag  == MemOrderTag::AcqRel);
+static_assert(mem_order_tag::SeqCstTag::tag == MemOrderTag::SeqCst);
+static_assert(mem_order_tag::AcqRelTag::tag == MemOrderTag::AcqRel);
 static_assert(mem_order_tag::ReleaseTag::tag == MemOrderTag::Release);
 static_assert(mem_order_tag::AcquireTag::tag == MemOrderTag::Acquire);
 static_assert(mem_order_tag::RelaxedTag::tag == MemOrderTag::Relaxed);
 
 // ── Layout invariants on Graded<...,At<T>,T_> ───────────────────────
-struct OneByteValue   { char c{0}; };
-struct EightByteValue { unsigned long long v{0}; };
+struct OneByteValue {
+    char c{0};
+};
+struct EightByteValue {
+    unsigned long long v{0};
+};
 
 // RelaxedTag — most semantically-loaded (relaxed atomicity-only;
 // admits at any consumer).  Production: TraceRing head/tail
@@ -466,26 +457,26 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(SeqCstGraded, EightByteValue);
 inline void runtime_smoke_test() {
     MemOrderTag a = MemOrderTag::SeqCst;
     MemOrderTag b = MemOrderTag::Relaxed;
-    [[maybe_unused]] bool        l1   = MemOrderLattice::leq(a, b);
-    [[maybe_unused]] MemOrderTag j1   = MemOrderLattice::join(a, b);
-    [[maybe_unused]] MemOrderTag m1   = MemOrderLattice::meet(a, b);
-    [[maybe_unused]] MemOrderTag bot  = MemOrderLattice::bottom();
+    [[maybe_unused]] bool l1 = MemOrderLattice::leq(a, b);
+    [[maybe_unused]] MemOrderTag j1 = MemOrderLattice::join(a, b);
+    [[maybe_unused]] MemOrderTag m1 = MemOrderLattice::meet(a, b);
+    [[maybe_unused]] MemOrderTag bot = MemOrderLattice::bottom();
     [[maybe_unused]] MemOrderTag topv = MemOrderLattice::top();
 
     // Mid-tier ops — chain through the Acquire/Release boundary.
     MemOrderTag acq = MemOrderTag::Acquire;
     MemOrderTag rel = MemOrderTag::Release;
-    [[maybe_unused]] MemOrderTag j2 = MemOrderLattice::join(acq, rel);   // Acquire (top of pair)
-    [[maybe_unused]] MemOrderTag m2 = MemOrderLattice::meet(acq, rel);   // Release (bottom of pair)
+    [[maybe_unused]] MemOrderTag j2 = MemOrderLattice::join(acq, rel);  // Acquire (top of pair)
+    [[maybe_unused]] MemOrderTag m2 = MemOrderLattice::meet(acq, rel);  // Release (bottom of pair)
 
     // Graded<Absolute, RelaxedTag, T> at runtime.
     OneByteValue v{42};
     RelaxedGraded<OneByteValue> initial{v, mem_order_tag::RelaxedTag::bottom()};
-    auto widened   = initial.weaken(mem_order_tag::RelaxedTag::top());
-    auto composed  = initial.compose(widened);
-    auto rv_widen  = std::move(widened).weaken(mem_order_tag::RelaxedTag::top());
+    auto widened = initial.weaken(mem_order_tag::RelaxedTag::top());
+    auto composed = initial.compose(widened);
+    auto rv_widen = std::move(widened).weaken(mem_order_tag::RelaxedTag::top());
 
-    [[maybe_unused]] auto g  = rv_widen.grade();
+    [[maybe_unused]] auto g = rv_widen.grade();
     [[maybe_unused]] auto vc = composed.peek().c;
 
     // Conversion: At<MemOrderTag>::element_type → MemOrderTag.

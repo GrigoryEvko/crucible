@@ -47,10 +47,10 @@
 // Zero.  `namespace source = ::crucible::safety::source;` is a name-
 // lookup directive only; no symbols emitted, no types introduced.
 
-#include <crucible/Types.h>                        // hash_family::*
+#include <crucible/Types.h>  // hash_family::*
 #include <crucible/permissions/FederationPermission.h>  // federation::*
-#include <crucible/safety/Secret.h>                // secret_policy::*
-#include <crucible/safety/Tagged.h>                // source::*, trust::*, access::*, version::*, vessel_trust::*
+#include <crucible/safety/Secret.h>  // secret_policy::*
+#include <crucible/safety/Tagged.h>  // source::*, trust::*, access::*, version::*, vessel_trust::*
 
 namespace crucible::fixy::tags {
 
@@ -301,41 +301,33 @@ using ::crucible::permissions::mint_federation_admittance;
 namespace crucible::fixy::tags::self_test {
 
 // One canonical witness per axis — full coverage in test_fixy_source.cpp.
-static_assert(std::is_same_v<source::FromUser,
-                             ::crucible::safety::source::FromUser>,
-    "fixy::tags::source::FromUser must alias safety::source::FromUser");
+static_assert(std::is_same_v<source::FromUser, ::crucible::safety::source::FromUser>,
+              "fixy::tags::source::FromUser must alias safety::source::FromUser");
 
-static_assert(std::is_same_v<trust::Verified,
-                             ::crucible::safety::trust::Verified>,
-    "fixy::tags::trust::Verified must alias safety::trust::Verified");
+static_assert(std::is_same_v<trust::Verified, ::crucible::safety::trust::Verified>,
+              "fixy::tags::trust::Verified must alias safety::trust::Verified");
 
-static_assert(std::is_same_v<access::RW,
-                             ::crucible::safety::access::RW>,
-    "fixy::tags::access::RW must alias safety::access::RW");
+static_assert(std::is_same_v<access::RW, ::crucible::safety::access::RW>,
+              "fixy::tags::access::RW must alias safety::access::RW");
 
-static_assert(std::is_same_v<version::V<3>,
-                             ::crucible::safety::version::V<3>>,
-    "fixy::tags::version::V<N> must alias safety::version::V<N>");
+static_assert(std::is_same_v<version::V<3>, ::crucible::safety::version::V<3>>,
+              "fixy::tags::version::V<N> must alias safety::version::V<N>");
 
-static_assert(std::is_same_v<vessel_trust::Validated,
-                             ::crucible::safety::vessel_trust::Validated>,
-    "fixy::tags::vessel_trust::Validated must alias safety::vessel_trust::Validated");
+static_assert(std::is_same_v<vessel_trust::Validated, ::crucible::safety::vessel_trust::Validated>,
+              "fixy::tags::vessel_trust::Validated must alias safety::vessel_trust::Validated");
 
-static_assert(std::is_same_v<secret_policy::AuditedLogging,
-                             ::crucible::safety::secret_policy::AuditedLogging>,
-    "fixy::tags::secret_policy::AuditedLogging must alias the substrate tag");
+static_assert(std::is_same_v<secret_policy::AuditedLogging, ::crucible::safety::secret_policy::AuditedLogging>,
+              "fixy::tags::secret_policy::AuditedLogging must alias the substrate tag");
 
 // fixy-A4-015: AuthorizedReplay is the freshness-discharging policy.
 // Aliasing the substrate tag through the umbrella keeps the discipline
 // "grep secret_policy::AuthorizedReplay" load-bearing even when callers
 // only reach the policy through fixy::tags.
-static_assert(std::is_same_v<secret_policy::AuthorizedReplay,
-                             ::crucible::safety::secret_policy::AuthorizedReplay>,
-    "fixy::tags::secret_policy::AuthorizedReplay must alias the substrate tag");
+static_assert(std::is_same_v<secret_policy::AuthorizedReplay, ::crucible::safety::secret_policy::AuthorizedReplay>,
+              "fixy::tags::secret_policy::AuthorizedReplay must alias the substrate tag");
 
-static_assert(std::is_same_v<hash_family::FamilyA,
-                             ::crucible::hash_family::FamilyA>,
-    "fixy::tags::hash_family::FamilyA must alias hash_family::FamilyA");
+static_assert(std::is_same_v<hash_family::FamilyA, ::crucible::hash_family::FamilyA>,
+              "fixy::tags::hash_family::FamilyA must alias hash_family::FamilyA");
 
 // ── fixy-A4-013: provenance / permission FederatedPeer disambiguation
 //
@@ -354,29 +346,26 @@ namespace a4_013_disambiguation {
 struct ProbeOrg {};
 }  // namespace a4_013_disambiguation
 
-static_assert(!std::is_same_v<
-        ::crucible::fixy::tags::source::FederatedPeer<a4_013_disambiguation::ProbeOrg>,
-        ::crucible::fixy::source::federation::FederatedPeer<a4_013_disambiguation::ProbeOrg>>,
-    "fixy-A4-013: fixy::tags::source::FederatedPeer (provenance axis) and "
-    "fixy::source::federation::FederatedPeer (permission axis) must remain "
-    "distinct substrate types.  Unification would collapse two orthogonal "
-    "axes (Bell-LaPadula provenance vs CSL frame-rule permission) into one "
-    "and break the umbrella's axis-discrimination contract.");
+static_assert(!std::is_same_v<::crucible::fixy::tags::source::FederatedPeer<a4_013_disambiguation::ProbeOrg>,
+                              ::crucible::fixy::source::federation::FederatedPeer<a4_013_disambiguation::ProbeOrg>>,
+              "fixy-A4-013: fixy::tags::source::FederatedPeer (provenance axis) and "
+              "fixy::source::federation::FederatedPeer (permission axis) must remain "
+              "distinct substrate types.  Unification would collapse two orthogonal "
+              "axes (Bell-LaPadula provenance vs CSL frame-rule permission) into one "
+              "and break the umbrella's axis-discrimination contract.");
 
 // Symmetric positive assertions — pin each fixy path to its substrate
 // origin so a rename on either substrate side reddens HERE rather
 // than 40 call sites downstream.
-static_assert(std::is_same_v<
-        ::crucible::fixy::tags::source::FederatedPeer<a4_013_disambiguation::ProbeOrg>,
-        ::crucible::safety::source::FederatedPeer<a4_013_disambiguation::ProbeOrg>>,
-    "fixy-A4-013: fixy::tags::source::FederatedPeer must alias "
-    "safety::source::FederatedPeer (provenance axis).");
+static_assert(std::is_same_v<::crucible::fixy::tags::source::FederatedPeer<a4_013_disambiguation::ProbeOrg>,
+                             ::crucible::safety::source::FederatedPeer<a4_013_disambiguation::ProbeOrg>>,
+              "fixy-A4-013: fixy::tags::source::FederatedPeer must alias "
+              "safety::source::FederatedPeer (provenance axis).");
 
-static_assert(std::is_same_v<
-        ::crucible::fixy::source::federation::FederatedPeer<a4_013_disambiguation::ProbeOrg>,
-        ::crucible::permissions::tag::FederatedPeer<a4_013_disambiguation::ProbeOrg>>,
-    "fixy-A4-013: fixy::source::federation::FederatedPeer must alias "
-    "permissions::tag::FederatedPeer (permission axis).");
+static_assert(std::is_same_v<::crucible::fixy::source::federation::FederatedPeer<a4_013_disambiguation::ProbeOrg>,
+                             ::crucible::permissions::tag::FederatedPeer<a4_013_disambiguation::ProbeOrg>>,
+              "fixy-A4-013: fixy::source::federation::FederatedPeer must alias "
+              "permissions::tag::FederatedPeer (permission axis).");
 
 // ── FIXY-V-025: retag_policy + RetagAllowed alias pinning ──────────
 //
@@ -392,55 +381,52 @@ static_assert(std::is_same_v<
 // the using-declaration carries specializations, not just the primary
 // template.
 static_assert(retag_policy<source::FromUser, source::FromUser>::allowed,
-    "fixy-V-025: fixy::tags::retag_policy identity specialization "
-    "must admit (X → X) via the V-022 identity rule.");
+              "fixy-V-025: fixy::tags::retag_policy identity specialization "
+              "must admit (X → X) via the V-022 identity rule.");
 
 // Fail-closed default — sentinel pair stays unspecialized, primary
 // template's `allowed = false` reaches through the alias.
-static_assert(!retag_policy<retag_policy_test::NeverFrom,
-                            retag_policy_test::NeverTo>::allowed,
-    "fixy-V-025: fixy::tags::retag_policy primary template MUST be "
-    "fail-closed for the V-022 sentinel pair when reached via the "
-    "fixy alias.");
+static_assert(!retag_policy<retag_policy_test::NeverFrom, retag_policy_test::NeverTo>::allowed,
+              "fixy-V-025: fixy::tags::retag_policy primary template MUST be "
+              "fail-closed for the V-022 sentinel pair when reached via the "
+              "fixy alias.");
 
 // V-023 catalog reachable through alias — External → Sanitized is
 // one of the production admittances.  Witnesses that the alias
 // surfaces ALL substrate specializations, not just primaries.
 static_assert(retag_policy<source::External, source::Sanitized>::allowed,
-    "fixy-V-025: V-023 catalog (External → Sanitized) must be "
-    "reachable through the fixy::tags alias.");
+              "fixy-V-025: V-023 catalog (External → Sanitized) must be "
+              "reachable through the fixy::tags alias.");
 
 // vessel_trust axis — pin a second axis to witness the alias is
 // axis-agnostic.
-static_assert(retag_policy<vessel_trust::FromPytorch,
-                            vessel_trust::Validated>::allowed,
-    "fixy-V-025: V-023 catalog (vessel_trust::FromPytorch → Validated) "
-    "must be reachable through the fixy::tags alias.");
+static_assert(retag_policy<vessel_trust::FromPytorch, vessel_trust::Validated>::allowed,
+              "fixy-V-025: V-023 catalog (vessel_trust::FromPytorch → Validated) "
+              "must be reachable through the fixy::tags alias.");
 
 // Concept form — `RetagAllowed<>` consults the same policy table;
 // pin the concept's reach independently.
 static_assert(RetagAllowed<source::External, source::Sanitized>,
-    "fixy-V-025: fixy::tags::RetagAllowed concept must admit V-023 "
-    "catalog transitions through the alias.");
+              "fixy-V-025: fixy::tags::RetagAllowed concept must admit V-023 "
+              "catalog transitions through the alias.");
 
-static_assert(!RetagAllowed<retag_policy_test::NeverFrom,
-                              retag_policy_test::NeverTo>,
-    "fixy-V-025: fixy::tags::RetagAllowed concept must reject the "
-    "V-022 sentinel pair through the alias.");
+static_assert(!RetagAllowed<retag_policy_test::NeverFrom, retag_policy_test::NeverTo>,
+              "fixy-V-025: fixy::tags::RetagAllowed concept must reject the "
+              "V-022 sentinel pair through the alias.");
 
 // Identity through concept form — closes the matrix (policy.allowed
 // reachable AND concept reachable, both pinned positive + negative).
 static_assert(RetagAllowed<source::FromUser, source::FromUser>,
-    "fixy-V-025: fixy::tags::RetagAllowed concept must admit identity "
-    "(X → X) through the V-022 identity specialization.");
+              "fixy-V-025: fixy::tags::RetagAllowed concept must admit identity "
+              "(X → X) through the V-022 identity specialization.");
 
 // Inverse-direction one-way-ratchet — V-023's trust:: catalog is a
 // one-way ratchet (Unverified ⊏ Verified, never backwards).  Pin the
 // inverse-rejection through the alias so a future regression that
 // silently admits Verified → Unverified reddens HERE.
 static_assert(!RetagAllowed<trust::Verified, trust::Unverified>,
-    "fixy-V-025: trust ratchet (Verified → Unverified) MUST stay "
-    "rejected; admitting it would defeat the verification-status "
-    "monotonicity contract.");
+              "fixy-V-025: trust ratchet (Verified → Unverified) MUST stay "
+              "rejected; admitting it would defeat the verification-status "
+              "monotonicity contract.");
 
 }  // namespace crucible::fixy::tags::self_test

@@ -34,9 +34,7 @@ struct DeviceSemaphore {
 
 namespace detail {
 
-inline void semaphore_signal_oracle(DeviceSemaphore sem,
-                                    std::uint64_t value) noexcept
-{
+inline void semaphore_signal_oracle(DeviceSemaphore sem, std::uint64_t value) noexcept {
     sem.value->store(value, std::memory_order_release);
 }
 
@@ -44,9 +42,7 @@ inline void semaphore_signal_oracle(DeviceSemaphore sem,
 // bool — the caller spins / yields / does something else on `false`.
 // Real vendor backends override the per-namespace `semaphore_wait`
 // entry points with blocking implementations; this stub never blocks.
-[[nodiscard]] inline bool semaphore_poll_oracle(DeviceSemaphore sem,
-                                                std::uint64_t expected) noexcept
-{
+[[nodiscard]] inline bool semaphore_poll_oracle(DeviceSemaphore sem, std::uint64_t expected) noexcept {
     return sem.value->load(std::memory_order_acquire) >= expected;
 }
 
@@ -56,8 +52,7 @@ namespace cpu {
 inline void semaphore_signal(DeviceSemaphore sem, std::uint64_t value) noexcept {
     detail::semaphore_signal_oracle(sem, value);
 }
-[[nodiscard]] inline bool semaphore_wait(DeviceSemaphore sem,
-                                         std::uint64_t expected) noexcept {
+[[nodiscard]] inline bool semaphore_wait(DeviceSemaphore sem, std::uint64_t expected) noexcept {
     return detail::semaphore_poll_oracle(sem, expected);
 }
 }  // namespace cpu
@@ -66,8 +61,7 @@ namespace nv {
 inline void semaphore_signal(DeviceSemaphore sem, std::uint64_t value) noexcept {
     detail::semaphore_signal_oracle(sem, value);
 }
-[[nodiscard]] inline bool semaphore_wait(DeviceSemaphore sem,
-                                         std::uint64_t expected) noexcept {
+[[nodiscard]] inline bool semaphore_wait(DeviceSemaphore sem, std::uint64_t expected) noexcept {
     return detail::semaphore_poll_oracle(sem, expected);
 }
 }  // namespace nv
@@ -76,8 +70,7 @@ namespace amd {
 inline void semaphore_signal(DeviceSemaphore sem, std::uint64_t value) noexcept {
     detail::semaphore_signal_oracle(sem, value);
 }
-[[nodiscard]] inline bool semaphore_wait(DeviceSemaphore sem,
-                                         std::uint64_t expected) noexcept {
+[[nodiscard]] inline bool semaphore_wait(DeviceSemaphore sem, std::uint64_t expected) noexcept {
     return detail::semaphore_poll_oracle(sem, expected);
 }
 }  // namespace amd
@@ -86,8 +79,7 @@ namespace tpu {
 inline void semaphore_signal(DeviceSemaphore sem, std::uint64_t value) noexcept {
     detail::semaphore_signal_oracle(sem, value);
 }
-[[nodiscard]] inline bool semaphore_wait(DeviceSemaphore sem,
-                                         std::uint64_t expected) noexcept {
+[[nodiscard]] inline bool semaphore_wait(DeviceSemaphore sem, std::uint64_t expected) noexcept {
     return detail::semaphore_poll_oracle(sem, expected);
 }
 }  // namespace tpu
@@ -96,8 +88,7 @@ namespace trn {
 inline void semaphore_signal(DeviceSemaphore sem, std::uint64_t value) noexcept {
     detail::semaphore_signal_oracle(sem, value);
 }
-[[nodiscard]] inline bool semaphore_wait(DeviceSemaphore sem,
-                                         std::uint64_t expected) noexcept {
+[[nodiscard]] inline bool semaphore_wait(DeviceSemaphore sem, std::uint64_t expected) noexcept {
     return detail::semaphore_poll_oracle(sem, expected);
 }
 }  // namespace trn
@@ -120,8 +111,7 @@ inline void semaphore_signal(DeviceSemaphore sem, std::uint64_t value) noexcept 
 }
 
 template <VendorBackend Backend>
-[[nodiscard]] inline bool semaphore_wait(DeviceSemaphore sem,
-                                         std::uint64_t expected) noexcept {
+[[nodiscard]] inline bool semaphore_wait(DeviceSemaphore sem, std::uint64_t expected) noexcept {
     if constexpr (Backend == VendorBackend::NV) {
         return nv::semaphore_wait(sem, expected);
     } else if constexpr (Backend == VendorBackend::AMD) {

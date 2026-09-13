@@ -34,11 +34,11 @@
  *   aarch64: TTBR1 range          ≥ 0xFFFF000000000000 (48-bit VA)
  */
 #if defined(__TARGET_ARCH_arm64)
-#define SAMPLE_IP(ctx)       ((ctx)->regs.pc)
-#define KERNEL_ADDR_MIN      0xFFFF000000000000ULL
+#define SAMPLE_IP(ctx) ((ctx)->regs.pc)
+#define KERNEL_ADDR_MIN 0xFFFF000000000000ULL
 #elif defined(__TARGET_ARCH_x86)
-#define SAMPLE_IP(ctx)       ((ctx)->regs.ip)
-#define KERNEL_ADDR_MIN      0xFFFF800000000000ULL
+#define SAMPLE_IP(ctx) ((ctx)->regs.ip)
+#define KERNEL_ADDR_MIN 0xFFFF800000000000ULL
 #else
 #error "Unsupported architecture for PMU sampling"
 #endif
@@ -73,24 +73,20 @@ struct {
  *            the reader. Rust volatile loads provide the compiler barrier.
  *            Tested on: Cortex-A53 (RPi3), Cortex-A72 (RPi4), Neoverse N1 (Graviton2).
  */
-static __always_inline int emit_pmu_sample(struct bpf_perf_event_data *ctx, __u8 etype)
-{
+static __always_inline int emit_pmu_sample(struct bpf_perf_event_data* ctx, __u8 etype) {
     /* Filter: only our process */
-    if (!is_target())
-        return 0;
+    if (!is_target()) return 0;
 
     /* Instruction pointer from the interrupted context (arch-portable) */
     __u64 ip = SAMPLE_IP(ctx);
 
     /* Skip kernel-space IPs */
-    if (ip >= KERNEL_ADDR_MIN)
-        return 0;
+    if (ip >= KERNEL_ADDR_MIN) return 0;
 
     /* Look up the shared circular buffer */
     __u32 zero = 0;
-    struct pmu_sample_timeline *tl = bpf_map_lookup_elem(&pmu_sample_buf, &zero);
-    if (!tl)
-        return 0;
+    struct pmu_sample_timeline* tl = bpf_map_lookup_elem(&pmu_sample_buf, &zero);
+    if (!tl) return 0;
 
     /* Atomically claim a slot */
     __u64 idx = __sync_fetch_and_add(&tl->hdr.write_idx, 1);
@@ -121,22 +117,13 @@ static __always_inline int emit_pmu_sample(struct bpf_perf_event_data *ctx, __u8
 /* ─── Entry points (one per PMU event type) ──────────────────────────── */
 
 SEC("perf_event")
-int pmu_llc(struct bpf_perf_event_data *ctx)
-{
-    return emit_pmu_sample(ctx, 2);  /* LLC miss */
-}
+int pmu_llc(struct bpf_perf_event_data* ctx) { return emit_pmu_sample(ctx, 2); /* LLC miss */ }
 
 SEC("perf_event")
-int pmu_branch(struct bpf_perf_event_data *ctx)
-{
-    return emit_pmu_sample(ctx, 3);  /* Branch miss */
-}
+int pmu_branch(struct bpf_perf_event_data* ctx) { return emit_pmu_sample(ctx, 3); /* Branch miss */ }
 
 SEC("perf_event")
-int pmu_dtlb(struct bpf_perf_event_data *ctx)
-{
-    return emit_pmu_sample(ctx, 4);  /* DTLB miss */
-}
+int pmu_dtlb(struct bpf_perf_event_data* ctx) { return emit_pmu_sample(ctx, 4); /* DTLB miss */ }
 
 /*
  * AMD IBS (Instruction-Based Sampling) entry points.
@@ -160,15 +147,13 @@ int pmu_dtlb(struct bpf_perf_event_data *ctx)
  * ibs_op/type to get the dynamic PMU type ID. Non-AMD systems simply skip.
  */
 SEC("perf_event")
-int pmu_ibs_op(struct bpf_perf_event_data *ctx)
-{
-    return emit_pmu_sample(ctx, 5);  /* IBS-Op: precise micro-op sample */
+int pmu_ibs_op(struct bpf_perf_event_data* ctx) {
+    return emit_pmu_sample(ctx, 5); /* IBS-Op: precise micro-op sample */
 }
 
 SEC("perf_event")
-int pmu_ibs_fetch(struct bpf_perf_event_data *ctx)
-{
-    return emit_pmu_sample(ctx, 6);  /* IBS-Fetch: instruction fetch sample */
+int pmu_ibs_fetch(struct bpf_perf_event_data* ctx) {
+    return emit_pmu_sample(ctx, 6); /* IBS-Fetch: instruction fetch sample */
 }
 
 /*
@@ -181,21 +166,12 @@ int pmu_ibs_fetch(struct bpf_perf_event_data *ctx)
  *   - Alignment fault: IP of the misaligned memory access
  */
 SEC("perf_event")
-int pmu_sw_pagefault_maj(struct bpf_perf_event_data *ctx)
-{
-    return emit_pmu_sample(ctx, 7);  /* Major page fault */
-}
+int pmu_sw_pagefault_maj(struct bpf_perf_event_data* ctx) { return emit_pmu_sample(ctx, 7); /* Major page fault */ }
 
 SEC("perf_event")
-int pmu_sw_cpu_migration(struct bpf_perf_event_data *ctx)
-{
-    return emit_pmu_sample(ctx, 8);  /* CPU migration */
-}
+int pmu_sw_cpu_migration(struct bpf_perf_event_data* ctx) { return emit_pmu_sample(ctx, 8); /* CPU migration */ }
 
 SEC("perf_event")
-int pmu_sw_alignment_fault(struct bpf_perf_event_data *ctx)
-{
-    return emit_pmu_sample(ctx, 9);  /* Alignment fault */
-}
+int pmu_sw_alignment_fault(struct bpf_perf_event_data* ctx) { return emit_pmu_sample(ctx, 9); /* Alignment fault */ }
 
 char LICENSE[] SEC("license") = "Dual BSD/GPL";

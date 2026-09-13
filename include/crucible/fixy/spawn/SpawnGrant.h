@@ -123,10 +123,10 @@
 //                runtime work.
 
 #include <crucible/Platform.h>
-#include <crucible/fixy/Dim.h>                 // dim::DimensionAxis
-#include <crucible/fixy/Grant.h>               // grant_base + which_dim
-#include <crucible/fixy/grant/Ctrl.h>          // ctrl::rationale<N>
-#include <crucible/fixy/spawn/JoinPolicy.h>    // V-203 mechanism tags
+#include <crucible/fixy/Dim.h>  // dim::DimensionAxis
+#include <crucible/fixy/Grant.h>  // grant_base + which_dim
+#include <crucible/fixy/grant/Ctrl.h>  // ctrl::rationale<N>
+#include <crucible/fixy/spawn/JoinPolicy.h>  // V-203 mechanism tags
 
 #include <cstddef>
 #include <type_traits>
@@ -160,25 +160,23 @@ inline constexpr bool rationale_nonempty_v = (Reason.size() > 1);
 // static_assert rejects empty literals.
 template <::crucible::fixy::grant::ctrl::rationale Rationale>
 struct detach_with final : ::crucible::fixy::grant::grant_base {
-    static_assert(rationale_nonempty_v<Rationale>,
-        "grant::detach_with<\"\"> rejected — Rationale must be "
-        "non-empty.  Every detach() audit-trail must declare its "
-        "non-engagement reason in the type so `grep \"detach_with<\"`"
-        " enumerates every legitimate detach across the codebase.  "
-        "Replace the empty literal with a descriptive justification "
-        "(e.g., \"logger drain outlives container\").");
+    static_assert(rationale_nonempty_v<Rationale>, "grant::detach_with<\"\"> rejected — Rationale must be "
+                                                   "non-empty.  Every detach() audit-trail must declare its "
+                                                   "non-engagement reason in the type so `grep \"detach_with<\"`"
+                                                   " enumerates every legitimate detach across the codebase.  "
+                                                   "Replace the empty literal with a descriptive justification "
+                                                   "(e.g., \"logger drain outlives container\").");
     static constexpr ::crucible::fixy::grant::ctrl::rationale reason = Rationale;
 };
 
 // (2) syscall_only<Rationale> — pairs with V-203 join::Cloned.
 template <::crucible::fixy::grant::ctrl::rationale Rationale>
 struct syscall_only final : ::crucible::fixy::grant::grant_base {
-    static_assert(rationale_nonempty_v<Rationale>,
-        "grant::syscall_only<\"\"> rejected — Rationale must be "
-        "non-empty.  Raw clone(2) bypasses libc thread machinery "
-        "and is reserved for perf/bpf/cog loaders that genuinely "
-        "need CLONE_VM / CLONE_THREAD / CLONE_FILES semantics; the "
-        "audit trail of which loader and why is load-bearing.");
+    static_assert(rationale_nonempty_v<Rationale>, "grant::syscall_only<\"\"> rejected — Rationale must be "
+                                                   "non-empty.  Raw clone(2) bypasses libc thread machinery "
+                                                   "and is reserved for perf/bpf/cog loaders that genuinely "
+                                                   "need CLONE_VM / CLONE_THREAD / CLONE_FILES semantics; the "
+                                                   "audit trail of which loader and why is load-bearing.");
     static constexpr ::crucible::fixy::grant::ctrl::rationale reason = Rationale;
 };
 
@@ -186,13 +184,12 @@ struct syscall_only final : ::crucible::fixy::grant::grant_base {
 // join::PosixSpawn.
 template <::crucible::fixy::grant::ctrl::rationale Rationale>
 struct subprocess final : ::crucible::fixy::grant::grant_base {
-    static_assert(rationale_nonempty_v<Rationale>,
-        "grant::subprocess<\"\"> rejected — Rationale must be "
-        "non-empty.  fork(2) / posix_spawn(3) creates a separate "
-        "process image that escapes the entire fixy:: type system; "
-        "the script-side opt-in (V-210 CRUCIBLE_SPAWN_ALLOW_PROCESS) "
-        "guards the call site, this in-type grant complements it "
-        "with the audit-trail rationale.");
+    static_assert(rationale_nonempty_v<Rationale>, "grant::subprocess<\"\"> rejected — Rationale must be "
+                                                   "non-empty.  fork(2) / posix_spawn(3) creates a separate "
+                                                   "process image that escapes the entire fixy:: type system; "
+                                                   "the script-side opt-in (V-210 CRUCIBLE_SPAWN_ALLOW_PROCESS) "
+                                                   "guards the call site, this in-type grant complements it "
+                                                   "with the audit-trail rationale.");
     static constexpr ::crucible::fixy::grant::ctrl::rationale reason = Rationale;
 };
 
@@ -224,17 +221,20 @@ struct exec_ctx final : ::crucible::fixy::grant::grant_base {
 
 namespace detail {
 
-template <typename G> struct is_detach_with  : std::false_type {};
+template <typename G>
+struct is_detach_with : std::false_type {};
 template <::crucible::fixy::grant::ctrl::rationale R>
-struct is_detach_with<detach_with<R>>        : std::true_type {};
+struct is_detach_with<detach_with<R>> : std::true_type {};
 
-template <typename G> struct is_syscall_only : std::false_type {};
+template <typename G>
+struct is_syscall_only : std::false_type {};
 template <::crucible::fixy::grant::ctrl::rationale R>
-struct is_syscall_only<syscall_only<R>>      : std::true_type {};
+struct is_syscall_only<syscall_only<R>> : std::true_type {};
 
-template <typename G> struct is_subprocess   : std::false_type {};
+template <typename G>
+struct is_subprocess : std::false_type {};
 template <::crucible::fixy::grant::ctrl::rationale R>
-struct is_subprocess<subprocess<R>>          : std::true_type {};
+struct is_subprocess<subprocess<R>> : std::true_type {};
 
 // any_of_v<Pred, Grants...> — fold across a parameter pack to test
 // whether any grant satisfies the per-grant `is_*` predicate.
@@ -250,16 +250,13 @@ inline constexpr bool any_of_v = (Pred<Grants>::value || ...);
 // X<>?".  Simpler than a generic template-template parameter
 // dispatcher and produces sharper diagnostics on mismatch.
 template <typename... Grants>
-inline constexpr bool has_detach_with_v =
-    detail::any_of_v<detail::is_detach_with, Grants...>;
+inline constexpr bool has_detach_with_v = detail::any_of_v<detail::is_detach_with, Grants...>;
 
 template <typename... Grants>
-inline constexpr bool has_syscall_only_v =
-    detail::any_of_v<detail::is_syscall_only, Grants...>;
+inline constexpr bool has_syscall_only_v = detail::any_of_v<detail::is_syscall_only, Grants...>;
 
 template <typename... Grants>
-inline constexpr bool has_subprocess_v =
-    detail::any_of_v<detail::is_subprocess, Grants...>;
+inline constexpr bool has_subprocess_v = detail::any_of_v<detail::is_subprocess, Grants...>;
 
 }  // namespace crucible::fixy::spawn::grant
 
@@ -310,18 +307,15 @@ namespace join = ::crucible::fixy::spawn::join;
 template <typename Mechanism, typename... Grants>
 concept JoinPolicyGrantsCoherent =
     join::IsJoinMechanismTag<Mechanism>
-    && (
-        std::is_same_v<Mechanism, join::AutoJoin>     // default — no grant required
-     || std::is_same_v<Mechanism, join::ManualJoin>   // tag-acknowledged join site
-     || (std::is_same_v<Mechanism, join::Detached>
-         && grant::detail::any_of_v<grant::detail::is_detach_with, Grants...>)
-     || (std::is_same_v<Mechanism, join::Cloned>
-         && grant::detail::any_of_v<grant::detail::is_syscall_only, Grants...>)
-     || (std::is_same_v<Mechanism, join::Forked>
-         && grant::detail::any_of_v<grant::detail::is_subprocess, Grants...>)
-     || (std::is_same_v<Mechanism, join::PosixSpawn>
-         && grant::detail::any_of_v<grant::detail::is_subprocess, Grants...>)
-    );
+    && (std::is_same_v<Mechanism, join::AutoJoin>  // default — no grant required
+        || std::is_same_v<Mechanism, join::ManualJoin>  // tag-acknowledged join site
+        || (std::is_same_v<Mechanism, join::Detached>
+            && grant::detail::any_of_v<grant::detail::is_detach_with, Grants...>)
+        || (std::is_same_v<Mechanism, join::Cloned>
+            && grant::detail::any_of_v<grant::detail::is_syscall_only, Grants...>)
+        || (std::is_same_v<Mechanism, join::Forked> && grant::detail::any_of_v<grant::detail::is_subprocess, Grants...>)
+        || (std::is_same_v<Mechanism, join::PosixSpawn>
+            && grant::detail::any_of_v<grant::detail::is_subprocess, Grants...>));
 
 }  // namespace crucible::fixy::spawn
 
@@ -330,14 +324,14 @@ concept JoinPolicyGrantsCoherent =
 // ═══════════════════════════════════════════════════════════════════
 namespace crucible::fixy::spawn::grant::detail::v204_self_test {
 
-namespace dim  = ::crucible::fixy::dim;
+namespace dim = ::crucible::fixy::dim;
 namespace join = ::crucible::fixy::spawn::join;
-namespace fg   = ::crucible::fixy::grant;
+namespace fg = ::crucible::fixy::grant;
 namespace ctrl = ::crucible::fixy::grant::ctrl;
 
 // ── rationale_nonempty_v witness ───────────────────────────────────
-static_assert( rationale_nonempty_v<ctrl::rationale{"x"}>);
-static_assert( rationale_nonempty_v<ctrl::rationale{"reason"}>);
+static_assert(rationale_nonempty_v<ctrl::rationale{"x"}>);
+static_assert(rationale_nonempty_v<ctrl::rationale{"reason"}>);
 static_assert(!rationale_nonempty_v<ctrl::rationale{""}>);
 
 // ── Grants inherit grant_base (recognized by the fixy::grant substrate) ──
@@ -348,11 +342,11 @@ static_assert(std::is_base_of_v<fg::grant_base, fork_parent<struct dummy_parent_
 static_assert(std::is_base_of_v<fg::grant_base, exec_ctx<struct dummy_ctx>>);
 
 // ── which_dim routing ──────────────────────────────────────────────
-static_assert(fg::which_dim_v<detach_with<ctrl::rationale{"x"}>>     == dim::DimensionAxis::Protocol);
-static_assert(fg::which_dim_v<syscall_only<ctrl::rationale{"x"}>>    == dim::DimensionAxis::Protocol);
-static_assert(fg::which_dim_v<subprocess<ctrl::rationale{"x"}>>      == dim::DimensionAxis::Protocol);
+static_assert(fg::which_dim_v<detach_with<ctrl::rationale{"x"}>> == dim::DimensionAxis::Protocol);
+static_assert(fg::which_dim_v<syscall_only<ctrl::rationale{"x"}>> == dim::DimensionAxis::Protocol);
+static_assert(fg::which_dim_v<subprocess<ctrl::rationale{"x"}>> == dim::DimensionAxis::Protocol);
 static_assert(fg::which_dim_v<fork_parent<struct dummy_parent_tag2>> == dim::DimensionAxis::Protocol);
-static_assert(fg::which_dim_v<exec_ctx<struct dummy_ctx2>>           == dim::DimensionAxis::Protocol);
+static_assert(fg::which_dim_v<exec_ctx<struct dummy_ctx2>> == dim::DimensionAxis::Protocol);
 
 // ── EBO size: each grant is empty (sizeof == 1, EBO-collapsible) ──
 static_assert(std::is_empty_v<detach_with<ctrl::rationale{"x"}>>);
@@ -366,63 +360,59 @@ static_assert(sizeof(detach_with<ctrl::rationale{"x"}>) == 1);
 static_assert(detach_with<ctrl::rationale{"audit"}>::reason.size() == 6);  // "audit" + NUL
 
 // ── Distinct rationales → distinct types ───────────────────────────
-static_assert(!std::is_same_v<
-    detach_with<ctrl::rationale{"reason_a"}>,
-    detach_with<ctrl::rationale{"reason_b"}>>);
+static_assert(!std::is_same_v<detach_with<ctrl::rationale{"reason_a"}>, detach_with<ctrl::rationale{"reason_b"}>>);
 
 // ── Detection helpers ──────────────────────────────────────────────
-static_assert( any_of_v<is_detach_with,  detach_with<ctrl::rationale{"x"}>>);
-static_assert(!any_of_v<is_detach_with,  syscall_only<ctrl::rationale{"x"}>>);
-static_assert( any_of_v<is_detach_with,
-    syscall_only<ctrl::rationale{"x"}>,
-    detach_with<ctrl::rationale{"y"}>>);  // anywhere in pack
-static_assert(!any_of_v<is_detach_with>); // empty pack
+static_assert(any_of_v<is_detach_with, detach_with<ctrl::rationale{"x"}>>);
+static_assert(!any_of_v<is_detach_with, syscall_only<ctrl::rationale{"x"}>>);
+static_assert(any_of_v<is_detach_with, syscall_only<ctrl::rationale{"x"}>,
+                       detach_with<ctrl::rationale{"y"}>>);  // anywhere in pack
+static_assert(!any_of_v<is_detach_with>);  // empty pack
 
 // ── JoinPolicyGrantsCoherent — full per-mechanism truth table ─────
 //
 // AutoJoin / ManualJoin: trivially coherent with any grant set,
 // including empty.
-static_assert( ::crucible::fixy::spawn::JoinPolicyGrantsCoherent<join::AutoJoin>);
-static_assert( ::crucible::fixy::spawn::JoinPolicyGrantsCoherent<join::ManualJoin>);
-static_assert( ::crucible::fixy::spawn::JoinPolicyGrantsCoherent<join::AutoJoin,
-    detach_with<ctrl::rationale{"unused but allowed"}>>);
+static_assert(::crucible::fixy::spawn::JoinPolicyGrantsCoherent<join::AutoJoin>);
+static_assert(::crucible::fixy::spawn::JoinPolicyGrantsCoherent<join::ManualJoin>);
+static_assert(::crucible::fixy::spawn::JoinPolicyGrantsCoherent<join::AutoJoin,
+                                                                detach_with<ctrl::rationale{"unused but allowed"}>>);
 
 // Detached: needs detach_with<>.
 static_assert(!::crucible::fixy::spawn::JoinPolicyGrantsCoherent<join::Detached>);
-static_assert( ::crucible::fixy::spawn::JoinPolicyGrantsCoherent<join::Detached,
-    detach_with<ctrl::rationale{"logger drain outlives container"}>>);
+static_assert(::crucible::fixy::spawn::JoinPolicyGrantsCoherent<
+              join::Detached, detach_with<ctrl::rationale{"logger drain outlives container"}>>);
 static_assert(!::crucible::fixy::spawn::JoinPolicyGrantsCoherent<join::Detached,
-    subprocess<ctrl::rationale{"wrong grant family"}>>);
+                                                                 subprocess<ctrl::rationale{"wrong grant family"}>>);
 
 // Cloned: needs syscall_only<>.
 static_assert(!::crucible::fixy::spawn::JoinPolicyGrantsCoherent<join::Cloned>);
-static_assert( ::crucible::fixy::spawn::JoinPolicyGrantsCoherent<join::Cloned,
-    syscall_only<ctrl::rationale{"perf bpf loader needs CLONE_VM"}>>);
+static_assert(::crucible::fixy::spawn::JoinPolicyGrantsCoherent<
+              join::Cloned, syscall_only<ctrl::rationale{"perf bpf loader needs CLONE_VM"}>>);
 
 // Forked: needs subprocess<>.
 static_assert(!::crucible::fixy::spawn::JoinPolicyGrantsCoherent<join::Forked>);
-static_assert( ::crucible::fixy::spawn::JoinPolicyGrantsCoherent<join::Forked,
-    subprocess<ctrl::rationale{"CLI launcher fork-then-exec"}>>);
+static_assert(::crucible::fixy::spawn::JoinPolicyGrantsCoherent<
+              join::Forked, subprocess<ctrl::rationale{"CLI launcher fork-then-exec"}>>);
 
 // PosixSpawn: same subprocess<> family.
 static_assert(!::crucible::fixy::spawn::JoinPolicyGrantsCoherent<join::PosixSpawn>);
-static_assert( ::crucible::fixy::spawn::JoinPolicyGrantsCoherent<join::PosixSpawn,
-    subprocess<ctrl::rationale{"test-harness fork-exec helper"}>>);
+static_assert(::crucible::fixy::spawn::JoinPolicyGrantsCoherent<
+              join::PosixSpawn, subprocess<ctrl::rationale{"test-harness fork-exec helper"}>>);
 
 // Cross-family negatives — verify the gate doesn't accidentally pass
 // the wrong family for the mechanism.
-static_assert(!::crucible::fixy::spawn::JoinPolicyGrantsCoherent<join::Detached,
-    syscall_only<ctrl::rationale{"wrong family"}>>);
-static_assert(!::crucible::fixy::spawn::JoinPolicyGrantsCoherent<join::Cloned,
-    detach_with<ctrl::rationale{"wrong family"}>>);
-static_assert(!::crucible::fixy::spawn::JoinPolicyGrantsCoherent<join::Forked,
-    detach_with<ctrl::rationale{"wrong family"}>>);
+static_assert(
+    !::crucible::fixy::spawn::JoinPolicyGrantsCoherent<join::Detached, syscall_only<ctrl::rationale{"wrong family"}>>);
+static_assert(
+    !::crucible::fixy::spawn::JoinPolicyGrantsCoherent<join::Cloned, detach_with<ctrl::rationale{"wrong family"}>>);
+static_assert(
+    !::crucible::fixy::spawn::JoinPolicyGrantsCoherent<join::Forked, detach_with<ctrl::rationale{"wrong family"}>>);
 
 // Mixed grant pack with the RIGHT family alongside others passes.
-static_assert( ::crucible::fixy::spawn::JoinPolicyGrantsCoherent<join::Detached,
-    fork_parent<struct dummy_pt>,
-    detach_with<ctrl::rationale{"r"}>,
-    exec_ctx<struct dummy_cx>>);
+static_assert(
+    ::crucible::fixy::spawn::JoinPolicyGrantsCoherent<join::Detached, fork_parent<struct dummy_pt>,
+                                                      detach_with<ctrl::rationale{"r"}>, exec_ctx<struct dummy_cx>>);
 
 // Non-mechanism first arg fails the concept (IsJoinMechanismTag gate).
 static_assert(!::crucible::fixy::spawn::JoinPolicyGrantsCoherent<int>);

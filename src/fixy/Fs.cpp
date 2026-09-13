@@ -66,9 +66,10 @@ namespace crucible::fixy::fs::detail::impl {
 // On success: returns the bare FileHandle (move-only RAII).
 // On failure: std::unexpected wrapping errno in std::system_category().
 
-std::expected<::crucible::safety::FileHandle, std::error_code>
-do_open_impl(const char* path, int flags, ::mode_t perms) noexcept {
-    const int fd = ::open(path, flags, perms);  // SYSCALL-CAP-OK: do_open_impl, sole caller mint_file ctx-gate (CtxFitsFileMint)
+std::expected<::crucible::safety::FileHandle, std::error_code> do_open_impl(const char* path, int flags,
+                                                                            ::mode_t perms) noexcept {
+    const int fd =
+        ::open(path, flags, perms);  // SYSCALL-CAP-OK: do_open_impl, sole caller mint_file ctx-gate (CtxFitsFileMint)
     if (fd < 0) {
         return std::unexpected{std::error_code{errno, std::system_category()}};
     }
@@ -81,10 +82,8 @@ do_open_impl(const char* path, int flags, ::mode_t perms) noexcept {
 // open_dirfd() to mint a Dirfd for openat() sandboxing.  Trailing
 // component MUST be a directory; symlinks refused (O_NOFOLLOW).
 
-std::expected<::crucible::safety::FileHandle, std::error_code>
-do_open_dirfd_impl(const char* dir_path) noexcept {
-    const int fd = ::open(dir_path,
-                          O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC | O_RDONLY);
+std::expected<::crucible::safety::FileHandle, std::error_code> do_open_dirfd_impl(const char* dir_path) noexcept {
+    const int fd = ::open(dir_path, O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC | O_RDONLY);
     if (fd < 0) {
         return std::unexpected{std::error_code{errno, std::system_category()}};
     }
@@ -107,8 +106,7 @@ do_open_dirfd_impl(const char* dir_path) noexcept {
 // the diagnostic at the impl boundary keeps the template surface
 // uniform (one return type) while still failing-loud on misuse.
 
-std::expected<void, std::error_code>
-do_sync_impl(int fd, SyncOpTag op) noexcept {
+std::expected<void, std::error_code> do_sync_impl(int fd, SyncOpTag op) noexcept {
     int rc = 0;
     switch (op) {
         case SyncOpTag::Fdatasync:
@@ -126,8 +124,7 @@ do_sync_impl(int fd, SyncOpTag op) noexcept {
         case SyncOpTag::Msync:
             // Mmap surface owns the syscall — Fs.h's signature
             // doesn't carry (address, length).  Reject loudly.
-            return std::unexpected{
-                std::error_code{EINVAL, std::system_category()}};
+            return std::unexpected{std::error_code{EINVAL, std::system_category()}};
         default:
             // SyncOpTag is a closed enum — any other value is UB.
             // The template caller's static_assert chain already
@@ -160,25 +157,22 @@ do_sync_impl(int fd, SyncOpTag op) noexcept {
 // CipherDurableHandle to thread the tmp fd through to linkat.  Bare
 // Fs.h commit_atomic doesn't have the fd argument shape yet.
 
-std::expected<void, std::error_code>
-do_commit_atomic_impl(const char* tmp,
-                      const char* target,
-                      AtomicityTag atomicity) noexcept {
+std::expected<void, std::error_code> do_commit_atomic_impl(const char* tmp, const char* target,
+                                                           AtomicityTag atomicity) noexcept {
     int rc = 0;
     switch (atomicity) {
         case AtomicityTag::Rename:
-            rc = ::rename(tmp, target);  // SYSCALL-CAP-OK: do_commit_atomic_impl, sole caller commit_atomic<Atomicity> ctx-gate (CtxFitsCommitAtomic)
+            rc = ::rename(
+                tmp,
+                target);  // SYSCALL-CAP-OK: do_commit_atomic_impl, sole caller commit_atomic<Atomicity> ctx-gate (CtxFitsCommitAtomic)
             break;
         case AtomicityTag::RenameAt2NoReplace:
-            rc = ::renameat2(AT_FDCWD, tmp,
-                             AT_FDCWD, target,
-                             RENAME_NOREPLACE);
+            rc = ::renameat2(AT_FDCWD, tmp, AT_FDCWD, target, RENAME_NOREPLACE);
             break;
         case AtomicityTag::LinkAtomic:
             // V-228 CipherDurable owns the fd-channel wiring; the bare
             // path-pair signature here cannot do linkat(AT_EMPTY_PATH).
-            return std::unexpected{
-                std::error_code{ENOSYS, std::system_category()}};
+            return std::unexpected{std::error_code{ENOSYS, std::system_category()}};
         case AtomicityTag::None:
             // Caller-asserted no-op.  Both path arguments are
             // intentionally unused.

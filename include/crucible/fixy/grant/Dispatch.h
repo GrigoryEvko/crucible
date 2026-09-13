@@ -44,8 +44,8 @@
 // `scripts/check-fixy-grant-namespace-purity.sh` allowlists it.  The
 // `grant::dispatch` sub-namespace open is NOT the locked namespace.
 
-#include <crucible/fixy/Grant.h>            // grant_base, which_dim, accept_default_strict_for
-#include <crucible/fixy/Dim.h>              // dim::DimensionAxis::CallShape
+#include <crucible/fixy/Grant.h>  // grant_base, which_dim, accept_default_strict_for
+#include <crucible/fixy/Dim.h>  // dim::DimensionAxis::CallShape
 
 #include <cstddef>
 #include <type_traits>
@@ -102,16 +102,14 @@ struct which_dim<dispatch::recurses<MaxDepth>>
     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::CallShape> {};
 
 template <>
-struct which_dim<dispatch::tail_call>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::CallShape> {};
+struct which_dim<dispatch::tail_call> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::CallShape> {};
 
 // ─── Mandatory engagement tag for the CallShape axis ──────────────────
 //
 // "I have read the CallShape discipline and accept the strict default
 // (Direct) for this binding."  which_dim handled by the generic
 // `accept_default_strict_for<D>` specialization in Grant.h.
-using accept_default_strict_for_CallShape =
-    accept_default_strict_for<dim::DimensionAxis::CallShape>;
+using accept_default_strict_for_CallShape = accept_default_strict_for<dim::DimensionAxis::CallShape>;
 
 }  // namespace crucible::fixy::grant
 
@@ -124,7 +122,7 @@ namespace crucible::fixy::grant::detail::dispatch_grant_self_test {
 using D = dim::DimensionAxis;
 
 struct sample_family final {};
-struct sample_base   final {};
+struct sample_base final {};
 
 // ─── (1) IsGrantTag — every grant tag participates ────────────────────
 static_assert(IsGrantTag<dispatch::indirect_call<sample_family>>);
@@ -135,28 +133,26 @@ static_assert(IsGrantTag<dispatch::tail_call>);
 
 // ─── (2) sizeof — EBO-collapsible standalone marker (1 byte) ──────────
 static_assert(sizeof(dispatch::indirect_call<sample_family>) == 1);
-static_assert(sizeof(dispatch::virtual_call<sample_base>)    == 1);
-static_assert(sizeof(dispatch::recurses<32>)                 == 1);
-static_assert(sizeof(dispatch::tail_call)                    == 1);
+static_assert(sizeof(dispatch::virtual_call<sample_base>) == 1);
+static_assert(sizeof(dispatch::recurses<32>) == 1);
+static_assert(sizeof(dispatch::tail_call) == 1);
 
 // ─── (3) which_dim routing — every tag → CallShape ────────────────────
 static_assert(which_dim_v<dispatch::indirect_call<sample_family>> == D::CallShape);
-static_assert(which_dim_v<dispatch::virtual_call<sample_base>>    == D::CallShape);
-static_assert(which_dim_v<dispatch::recurses<32>>                 == D::CallShape);
-static_assert(which_dim_v<dispatch::recurses<1>>                  == D::CallShape);
-static_assert(which_dim_v<dispatch::tail_call>                    == D::CallShape);
-static_assert(which_dim_v<accept_default_strict_for_CallShape>    == D::CallShape);
+static_assert(which_dim_v<dispatch::virtual_call<sample_base>> == D::CallShape);
+static_assert(which_dim_v<dispatch::recurses<32>> == D::CallShape);
+static_assert(which_dim_v<dispatch::recurses<1>> == D::CallShape);
+static_assert(which_dim_v<dispatch::tail_call> == D::CallShape);
+static_assert(which_dim_v<accept_default_strict_for_CallShape> == D::CallShape);
 
 // ─── (4) Distinctness — different grant kinds are different types ─────
-static_assert(!std::is_same_v<dispatch::indirect_call<sample_family>,
-                              dispatch::virtual_call<sample_base>>);
+static_assert(!std::is_same_v<dispatch::indirect_call<sample_family>, dispatch::virtual_call<sample_base>>);
 static_assert(!std::is_same_v<dispatch::recurses<32>, dispatch::tail_call>);
 static_assert(!std::is_same_v<dispatch::recurses<32>, dispatch::recurses<16>>);  // bound carries identity
 static_assert(std::is_same_v<dispatch::recurses<32>, dispatch::recurses<32>>);
 
 // ─── (5) Family / base tags carry identity ────────────────────────────
 struct other_family final {};
-static_assert(!std::is_same_v<dispatch::indirect_call<sample_family>,
-                              dispatch::indirect_call<other_family>>);
+static_assert(!std::is_same_v<dispatch::indirect_call<sample_family>, dispatch::indirect_call<other_family>>);
 
 }  // namespace crucible::fixy::grant::detail::dispatch_grant_self_test

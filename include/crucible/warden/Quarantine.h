@@ -60,8 +60,7 @@ enum class QuarantineSignal : std::uint32_t {
 
 struct QuarantineTransition : safety::diag::tag_base {
     static constexpr std::string_view name = "QuarantineTransition";
-    static constexpr std::string_view description =
-        "A Cog changed quarantine/routing-admission state.";
+    static constexpr std::string_view description = "A Cog changed quarantine/routing-admission state.";
     static constexpr std::string_view remediation =
         "Preserve the transition event, stop routing new work to Quarantined "
         "or Permanent Cogs, and require operator authority for Permanent.";
@@ -105,19 +104,14 @@ struct QuarantineEvent {
 };
 
 template <class Ctx>
-concept CtxFitsQuarantineMint =
-       effects::IsExecCtx<Ctx>
-    && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
+concept CtxFitsQuarantineMint = effects::IsExecCtx<Ctx> && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
 
 template <class Ctx>
-concept CtxFitsQuarantineRecord =
-       effects::IsExecCtx<Ctx>
-    && effects::CtxOwnsCapability<Ctx, effects::Effect::Bg>;
+concept CtxFitsQuarantineRecord = effects::IsExecCtx<Ctx> && effects::CtxOwnsCapability<Ctx, effects::Effect::Bg>;
 
 template <class Ctx>
 concept CtxFitsQuarantineOverride =
-       effects::IsExecCtx<Ctx>
-    && effects::CtxOwnsAnyOf<Ctx, effects::Effect::Init, effects::Effect::Test>;
+    effects::IsExecCtx<Ctx> && effects::CtxOwnsAnyOf<Ctx, effects::Effect::Init, effects::Effect::Test>;
 
 namespace detail {
 
@@ -125,15 +119,20 @@ namespace detail {
     return lhs.hi == rhs.hi && lhs.lo == rhs.lo;
 }
 
-[[nodiscard]] constexpr std::uint32_t load_for(QuarantineState state,
-                                               QuarantineConfig const& config) noexcept {
+[[nodiscard]] constexpr std::uint32_t load_for(QuarantineState state, QuarantineConfig const& config) noexcept {
     switch (state) {
-        case QuarantineState::Healthy:     return 1'000'000;
-        case QuarantineState::Suspect:     return 300'000;
-        case QuarantineState::Quarantined: return 0;
-        case QuarantineState::Recovered:   return config.canary_load_ppm;
-        case QuarantineState::Permanent:   return 0;
-        default:                           return 0;
+        case QuarantineState::Healthy:
+            return 1'000'000;
+        case QuarantineState::Suspect:
+            return 300'000;
+        case QuarantineState::Quarantined:
+            return 0;
+        case QuarantineState::Recovered:
+            return config.canary_load_ppm;
+        case QuarantineState::Permanent:
+            return 0;
+        default:
+            return 0;
     }
 }
 
@@ -208,9 +207,7 @@ class QuarantinePolicy : public safety::Pinned<QuarantinePolicy<MaxCogs, MaxEven
         };
     }
 
-    constexpr void append_event(Slot const& slot,
-                                QuarantineState from,
-                                QuarantineState to) noexcept {
+    constexpr void append_event(Slot const& slot, QuarantineState from, QuarantineState to) noexcept {
         events_[next_event_] = QuarantineEvent{
             .cog_uuid = slot.cog_uuid,
             .from = from,
@@ -227,9 +224,7 @@ class QuarantinePolicy : public safety::Pinned<QuarantinePolicy<MaxCogs, MaxEven
         }
     }
 
-    constexpr void transition_to(Slot& slot,
-                                 QuarantineState next,
-                                 std::uint64_t now_ns) noexcept {
+    constexpr void transition_to(Slot& slot, QuarantineState next, std::uint64_t now_ns) noexcept {
         if (slot.state == next) {
             return;
         }
@@ -245,10 +240,8 @@ class QuarantinePolicy : public safety::Pinned<QuarantinePolicy<MaxCogs, MaxEven
         append_event(slot, prior, next);
     }
 
-    [[nodiscard]] constexpr QuarantineState state_from_health(
-        Slot const& slot,
-        topology::HealthSnapshot const& health,
-        safety::Bits<QuarantineSignal>& signals) const noexcept {
+    [[nodiscard]] constexpr QuarantineState state_from_health(Slot const& slot, topology::HealthSnapshot const& health,
+                                                              safety::Bits<QuarantineSignal>& signals) const noexcept {
         if (slot.state == QuarantineState::Permanent) {
             return QuarantineState::Permanent;
         }
@@ -261,8 +254,7 @@ class QuarantinePolicy : public safety::Pinned<QuarantinePolicy<MaxCogs, MaxEven
             signals.set(QuarantineSignal::HealthQuarantine);
             return QuarantineState::Quarantined;
         }
-        if (health.state == topology::HealthState::Suspect
-            || health.score.raw() <= config_.suspect_at_or_below.raw()) {
+        if (health.state == topology::HealthState::Suspect || health.score.raw() <= config_.suspect_at_or_below.raw()) {
             signals.set(QuarantineSignal::HealthSuspect);
             return QuarantineState::Suspect;
         }
@@ -276,19 +268,14 @@ class QuarantinePolicy : public safety::Pinned<QuarantinePolicy<MaxCogs, MaxEven
     }
 
 public:
-    explicit constexpr QuarantinePolicy(QuarantineConfig config = {}) noexcept
-        : config_{config} {}
+    explicit constexpr QuarantinePolicy(QuarantineConfig config = {}) noexcept : config_{config} {}
 
-    [[nodiscard]] constexpr QuarantineConfig config() const noexcept {
-        return config_;
-    }
+    [[nodiscard]] constexpr QuarantineConfig config() const noexcept { return config_; }
 
     template <effects::IsExecCtx Ctx>
         requires CtxFitsQuarantineRecord<Ctx>
-    [[nodiscard]] constexpr bool on_health_event(Ctx const&,
-                                                 cog::CogIdentity const& cog,
-                                                 topology::HealthSnapshot health,
-                                                 std::uint64_t now_ns) noexcept {
+    [[nodiscard]] constexpr bool on_health_event(Ctx const&, cog::CogIdentity const& cog,
+                                                 topology::HealthSnapshot health, std::uint64_t now_ns) noexcept {
         Slot* slot = find_or_insert(cog);
         if (slot == nullptr || !slot->sequence.try_advance(health.sequence)) {
             return false;
@@ -302,12 +289,9 @@ public:
 
     template <effects::IsExecCtx Ctx>
         requires CtxFitsQuarantineRecord<Ctx>
-    [[nodiscard]] constexpr bool on_asymmetric_failure(
-        Ctx const&,
-        cog::CogIdentity const& cog,
-        topology::FailureClass cls,
-        std::uint64_t now_ns,
-        std::uint64_t sequence) noexcept {
+    [[nodiscard]] constexpr bool on_asymmetric_failure(Ctx const&, cog::CogIdentity const& cog,
+                                                       topology::FailureClass cls, std::uint64_t now_ns,
+                                                       std::uint64_t sequence) noexcept {
         Slot* slot = find_or_insert(cog);
         if (slot == nullptr || !slot->sequence.try_advance(sequence)) {
             return false;
@@ -317,11 +301,9 @@ public:
         if (cls == topology::FailureClass::BidiFailed) {
             slot->signals.set(QuarantineSignal::AsymmetricDead);
             next = QuarantineState::Quarantined;
-        } else if (cls == topology::FailureClass::TxBroken
-                   || cls == topology::FailureClass::RxBroken) {
+        } else if (cls == topology::FailureClass::TxBroken || cls == topology::FailureClass::RxBroken) {
             slot->signals.set(QuarantineSignal::AsymmetricSuspect);
-            if (slot->state == QuarantineState::Healthy
-                || slot->state == QuarantineState::Recovered) {
+            if (slot->state == QuarantineState::Healthy || slot->state == QuarantineState::Recovered) {
                 next = QuarantineState::Suspect;
             }
         }
@@ -331,11 +313,8 @@ public:
 
     template <effects::IsExecCtx Ctx>
         requires CtxFitsQuarantineRecord<Ctx>
-    [[nodiscard]] constexpr bool record_recovery_probe(
-        Ctx const&,
-        cog::CogIdentity const& cog,
-        observe::ProbeOutcome outcome,
-        std::uint64_t now_ns) noexcept {
+    [[nodiscard]] constexpr bool record_recovery_probe(Ctx const&, cog::CogIdentity const& cog,
+                                                       observe::ProbeOutcome outcome, std::uint64_t now_ns) noexcept {
         Slot* slot = find_or_insert(cog);
         if (slot == nullptr || !slot->sequence.try_advance(outcome.sequence)) {
             return false;
@@ -346,12 +325,10 @@ public:
         }
         if (outcome.ok()) {
             slot->signals.set(QuarantineSignal::RecoveryProbePassed);
-            if (slot->consecutive_recovery_probes
-                < config_.recovery_probe_count.value()) {
+            if (slot->consecutive_recovery_probes < config_.recovery_probe_count.value()) {
                 ++slot->consecutive_recovery_probes;
             }
-            if (slot->consecutive_recovery_probes
-                >= config_.recovery_probe_count.value()) {
+            if (slot->consecutive_recovery_probes >= config_.recovery_probe_count.value()) {
                 slot->signals.set(QuarantineSignal::RecoveryThresholdMet);
                 transition_to(*slot, QuarantineState::Recovered, now_ns);
             }
@@ -364,17 +341,14 @@ public:
 
     template <effects::IsExecCtx Ctx>
         requires CtxFitsQuarantineRecord<Ctx>
-    [[nodiscard]] constexpr bool check_permanent_deadline(Ctx const&,
-                                                          cog::CogIdentity const& cog,
-                                                          std::uint64_t now_ns,
+    [[nodiscard]] constexpr bool check_permanent_deadline(Ctx const&, cog::CogIdentity const& cog, std::uint64_t now_ns,
                                                           std::uint64_t sequence) noexcept {
         Slot* slot = find_or_insert(cog);
         if (slot == nullptr || !slot->sequence.try_advance(sequence)) {
             return false;
         }
         slot->signals = {};
-        if (slot->state != QuarantineState::Quarantined
-            || slot->quarantine_since_ns == 0
+        if (slot->state != QuarantineState::Quarantined || slot->quarantine_since_ns == 0
             || now_ns < slot->quarantine_since_ns
             || now_ns - slot->quarantine_since_ns < config_.permanent_after_ns.value()) {
             return true;
@@ -388,11 +362,8 @@ public:
     template <effects::IsExecCtx Ctx>
         requires CtxFitsQuarantineOverride<Ctx>
     [[nodiscard]] constexpr safety::Permission<quarantine_tag::OperatorOverride>
-    operator_override(Ctx const&,
-                      safety::Permission<quarantine_tag::OperatorOverride>&& authority,
-                      cog::CogIdentity const& cog,
-                      QuarantineState forced,
-                      std::uint64_t now_ns,
+    operator_override(Ctx const&, safety::Permission<quarantine_tag::OperatorOverride>&& authority,
+                      cog::CogIdentity const& cog, QuarantineState forced, std::uint64_t now_ns,
                       std::uint64_t sequence) noexcept {
         Slot* slot = find_or_insert(cog);
         if (slot != nullptr && slot->sequence.try_advance(sequence)) {
@@ -429,17 +400,13 @@ public:
     // post-wrap chronological access MUST use transition_event_at()
     // below; this span accessor is preserved only for pre-wrap
     // callers + as the legacy raw view.
-    [[nodiscard]] constexpr std::span<const QuarantineEvent>
-    transition_events() const noexcept {
+    [[nodiscard]] constexpr std::span<const QuarantineEvent> transition_events() const noexcept {
         return std::span<const QuarantineEvent>{events_.data(), event_count_};
     }
 
-    [[nodiscard]] constexpr std::size_t transition_event_count() const noexcept {
-        return event_count_;
-    }
+    [[nodiscard]] constexpr std::size_t transition_event_count() const noexcept { return event_count_; }
 
-    [[nodiscard]] constexpr const QuarantineEvent*
-    transition_event_at(std::size_t index) const noexcept {
+    [[nodiscard]] constexpr const QuarantineEvent* transition_event_at(std::size_t index) const noexcept {
         if (index >= event_count_) {
             return nullptr;
         }

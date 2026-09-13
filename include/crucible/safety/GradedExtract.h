@@ -114,8 +114,7 @@ namespace crucible::safety::extract {
 // uniformity.
 
 template <typename W>
-concept IsGradedWrapper =
-    ::crucible::algebra::GradedWrapper<std::remove_cvref_t<W>>;
+concept IsGradedWrapper = ::crucible::algebra::GradedWrapper<std::remove_cvref_t<W>>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Universal extractors ───────────────────────────────────────────
@@ -140,8 +139,7 @@ using lattice_of_t = typename std::remove_cvref_t<W>::lattice_type;
 // which is already discharged by IsGradedWrapper<W>.
 template <typename W>
     requires IsGradedWrapper<W>
-using grade_of_t =
-    typename std::remove_cvref_t<W>::graded_type::grade_type;
+using grade_of_t = typename std::remove_cvref_t<W>::graded_type::grade_type;
 
 // Wrapper's ModalityKind value.  Per CHEAT-5, this matches the
 // substrate's modality template arg, so reading W::modality (the
@@ -151,8 +149,7 @@ using grade_of_t =
 // reading the wrapper's surface keeps the diagnostic chain short.
 template <typename W>
     requires IsGradedWrapper<W>
-inline constexpr ::crucible::algebra::ModalityKind modality_of_v =
-    std::remove_cvref_t<W>::modality;
+inline constexpr ::crucible::algebra::ModalityKind modality_of_v = std::remove_cvref_t<W>::modality;
 
 // Wrapper's substrate Graded<M, L, T> instance.  CHEAT-1 (regime-3
 // AppendOnly case) means W::value_type may differ from
@@ -167,8 +164,7 @@ using graded_type_of_t = typename std::remove_cvref_t<W>::graded_type;
 // metaprogram folds (e.g., `if constexpr (is_*_v<T>)`) a value form
 // is more ergonomic than a concept form; both surfaces ship.
 template <typename W>
-inline constexpr bool is_graded_wrapper_v =
-    IsGradedWrapper<W>;
+inline constexpr bool is_graded_wrapper_v = IsGradedWrapper<W>;
 
 // True iff T is a bare Graded<M, L, T> specialization (the
 // substrate type, NOT a wrapper around it).  Forwarding from
@@ -176,8 +172,7 @@ inline constexpr bool is_graded_wrapper_v =
 // uniformity with the rest of this namespace.
 template <typename T>
 inline constexpr bool is_graded_specialization_v =
-    ::crucible::algebra::is_graded_specialization_v<
-        std::remove_cvref_t<T>>;
+    ::crucible::algebra::is_graded_specialization_v<std::remove_cvref_t<T>>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Self-test discipline ───────────────────────────────────────────
@@ -213,7 +208,9 @@ static_assert(!is_graded_wrapper_v<void>);
 static_assert(!is_graded_wrapper_v<int(int)>);
 
 // A struct missing the GradedWrapper surface fails the concept.
-struct Lookalike_missing_surface { using value_type = int; };
+struct Lookalike_missing_surface {
+    using value_type = int;
+};
 static_assert(!IsGradedWrapper<Lookalike_missing_surface>);
 static_assert(!is_graded_wrapper_v<Lookalike_missing_surface>);
 

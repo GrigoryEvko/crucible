@@ -60,8 +60,8 @@
 // sub-namespace open is NOT the locked namespace (the purity regex
 // matches only the bare `grant {` reopen) and needs no allowlist entry.
 
-#include <crucible/fixy/Grant.h>            // grant_base, which_dim, accept_default_strict_for
-#include <crucible/fixy/Dim.h>              // dim::DimensionAxis::ControlFlow
+#include <crucible/fixy/Grant.h>  // grant_base, which_dim, accept_default_strict_for
+#include <crucible/fixy/Dim.h>  // dim::DimensionAxis::ControlFlow
 
 #include <cstddef>
 #include <type_traits>
@@ -109,14 +109,14 @@ struct any_exception final {};
 //   at_exit         — std::exit: runs atexit handlers + static dtors.
 //   no_cleanup      — std::exit with no further cleanup expected.
 //   exit_immediate  — std::_Exit / _exit: NO atexit, NO static dtors.
-struct at_exit        final {};
-struct no_cleanup     final {};
+struct at_exit final {};
+struct no_cleanup final {};
 struct exit_immediate final {};
 
 // coroutine<SuspensionPolicy> ∈ {co_await_only, generator, async_task}.
 struct co_await_only final {};
-struct generator     final {};
-struct async_task    final {};
+struct generator final {};
+struct async_task final {};
 
 // ─── (a) throws<ExceptionFamily> — callable may throw (ThrowOnly tier) ─
 //
@@ -151,7 +151,7 @@ struct exit final : grant_base {};
 // (Graph.h, ExprPool.h, Platform.h).  Named without the leading
 // double-underscore of the builtin (reserved-identifier rule).
 struct builtin_trap_ok final : grant_base {};
-struct unreachable_ok  final : grant_base {};
+struct unreachable_ok final : grant_base {};
 
 // ─── (f) coroutine<SuspensionPolicy> — suspension-point grant ─────────
 template <class SuspensionPolicy>
@@ -170,8 +170,7 @@ struct which_dim<ctrl::throws<ExceptionFamily>>
     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::ControlFlow> {};
 
 template <ctrl::rationale Reason>
-struct which_dim<ctrl::abort<Reason>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::ControlFlow> {};
+struct which_dim<ctrl::abort<Reason>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::ControlFlow> {};
 
 template <ctrl::rationale Reason>
 struct which_dim<ctrl::longjmp_unsafe<Reason>>
@@ -182,12 +181,11 @@ struct which_dim<ctrl::exit<CleanupPolicy>>
     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::ControlFlow> {};
 
 template <>
-struct which_dim<ctrl::builtin_trap_ok>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::ControlFlow> {};
+struct which_dim<ctrl::builtin_trap_ok> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::ControlFlow> {
+};
 
 template <>
-struct which_dim<ctrl::unreachable_ok>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::ControlFlow> {};
+struct which_dim<ctrl::unreachable_ok> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::ControlFlow> {};
 
 template <class SuspensionPolicy>
 struct which_dim<ctrl::coroutine<SuspensionPolicy>>
@@ -198,8 +196,7 @@ struct which_dim<ctrl::coroutine<SuspensionPolicy>>
 // "I have read the ControlFlow discipline and accept the strict default
 // (Pure) for this binding."  which_dim is handled by the generic
 // `accept_default_strict_for<D>` specialization in Grant.h.
-using accept_default_strict_for_ControlFlow =
-    accept_default_strict_for<dim::DimensionAxis::ControlFlow>;
+using accept_default_strict_for_ControlFlow = accept_default_strict_for<dim::DimensionAxis::ControlFlow>;
 
 }  // namespace crucible::fixy::grant
 
@@ -231,27 +228,27 @@ static_assert(!IsGrantTag<ctrl::at_exit>);
 static_assert(!IsGrantTag<ctrl::co_await_only>);
 
 // ─── (2) sizeof — EBO-collapsible standalone marker (1 byte) ──────────
-static_assert(sizeof(ctrl::throws<>)                 == 1);
-static_assert(sizeof(ctrl::abort<"x">)               == 1);
-static_assert(sizeof(ctrl::longjmp_unsafe<"x">)      == 1);
-static_assert(sizeof(ctrl::exit<ctrl::at_exit>)      == 1);
-static_assert(sizeof(ctrl::builtin_trap_ok)          == 1);
-static_assert(sizeof(ctrl::unreachable_ok)           == 1);
+static_assert(sizeof(ctrl::throws<>) == 1);
+static_assert(sizeof(ctrl::abort<"x">) == 1);
+static_assert(sizeof(ctrl::longjmp_unsafe<"x">) == 1);
+static_assert(sizeof(ctrl::exit<ctrl::at_exit>) == 1);
+static_assert(sizeof(ctrl::builtin_trap_ok) == 1);
+static_assert(sizeof(ctrl::unreachable_ok) == 1);
 static_assert(sizeof(ctrl::coroutine<ctrl::generator>) == 1);
 
 // ─── (3) which_dim routing — every tag → ControlFlow ──────────────────
-static_assert(which_dim_v<ctrl::throws<>>                   == D::ControlFlow);
-static_assert(which_dim_v<ctrl::throws<sample_exception>>   == D::ControlFlow);
-static_assert(which_dim_v<ctrl::abort<"oom">>               == D::ControlFlow);
-static_assert(which_dim_v<ctrl::longjmp_unsafe<"jmp">>      == D::ControlFlow);
-static_assert(which_dim_v<ctrl::exit<ctrl::at_exit>>        == D::ControlFlow);
-static_assert(which_dim_v<ctrl::exit<ctrl::no_cleanup>>     == D::ControlFlow);
+static_assert(which_dim_v<ctrl::throws<>> == D::ControlFlow);
+static_assert(which_dim_v<ctrl::throws<sample_exception>> == D::ControlFlow);
+static_assert(which_dim_v<ctrl::abort<"oom">> == D::ControlFlow);
+static_assert(which_dim_v<ctrl::longjmp_unsafe<"jmp">> == D::ControlFlow);
+static_assert(which_dim_v<ctrl::exit<ctrl::at_exit>> == D::ControlFlow);
+static_assert(which_dim_v<ctrl::exit<ctrl::no_cleanup>> == D::ControlFlow);
 static_assert(which_dim_v<ctrl::exit<ctrl::exit_immediate>> == D::ControlFlow);
-static_assert(which_dim_v<ctrl::builtin_trap_ok>            == D::ControlFlow);
-static_assert(which_dim_v<ctrl::unreachable_ok>             == D::ControlFlow);
+static_assert(which_dim_v<ctrl::builtin_trap_ok> == D::ControlFlow);
+static_assert(which_dim_v<ctrl::unreachable_ok> == D::ControlFlow);
 static_assert(which_dim_v<ctrl::coroutine<ctrl::co_await_only>> == D::ControlFlow);
-static_assert(which_dim_v<ctrl::coroutine<ctrl::generator>>     == D::ControlFlow);
-static_assert(which_dim_v<ctrl::coroutine<ctrl::async_task>>    == D::ControlFlow);
+static_assert(which_dim_v<ctrl::coroutine<ctrl::generator>> == D::ControlFlow);
+static_assert(which_dim_v<ctrl::coroutine<ctrl::async_task>> == D::ControlFlow);
 static_assert(which_dim_v<accept_default_strict_for_ControlFlow> == D::ControlFlow);
 
 // ─── (4) Distinctness — different grant kinds are different types ─────
@@ -259,8 +256,7 @@ static_assert(!std::is_same_v<ctrl::throws<>, ctrl::abort<"x">>);
 static_assert(!std::is_same_v<ctrl::abort<"x">, ctrl::longjmp_unsafe<"x">>);
 static_assert(!std::is_same_v<ctrl::builtin_trap_ok, ctrl::unreachable_ok>);
 static_assert(!std::is_same_v<ctrl::exit<ctrl::at_exit>, ctrl::exit<ctrl::no_cleanup>>);
-static_assert(!std::is_same_v<ctrl::coroutine<ctrl::generator>,
-                              ctrl::coroutine<ctrl::async_task>>);
+static_assert(!std::is_same_v<ctrl::coroutine<ctrl::generator>, ctrl::coroutine<ctrl::async_task>>);
 static_assert(!std::is_same_v<ctrl::throws<>, ctrl::throws<sample_exception>>);
 
 // ─── (5) Rationale carries identity — distinct strings, distinct types ─

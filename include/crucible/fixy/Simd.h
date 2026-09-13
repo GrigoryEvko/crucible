@@ -82,9 +82,9 @@
 //                                       but not an enumerated width class)
 //   (The width<512>-on-AVX2 composition fixture 4.2 ships with V-260 S001.)
 
-#include <crucible/fixy/Grant.h>            // grant_base, which_dim, IsGrantTag
-#include <crucible/fixy/Dim.h>              // dim::DimensionAxis
-#include <crucible/fixy/Hw.h>               // FOUND-039: hw::simd_width for sentinel
+#include <crucible/fixy/Grant.h>  // grant_base, which_dim, IsGrantTag
+#include <crucible/fixy/Dim.h>  // dim::DimensionAxis
+#include <crucible/fixy/Hw.h>  // FOUND-039: hw::simd_width for sentinel
 
 #include <cstdint>
 #include <type_traits>
@@ -94,10 +94,10 @@ namespace crucible::fixy::simd {
 
 // ── WidthBits — SIMD vector width in bits ─────────────────────────────
 enum class WidthBits : std::uint16_t {
-    Scalar   = 0,
-    Bits128  = 128,
-    Bits256  = 256,
-    Bits512  = 512,
+    Scalar = 0,
+    Bits128 = 128,
+    Bits256 = 256,
+    Bits512 = 512,
     Bits1024 = 1024,  // SVE — pre-declared, forward-compat
     Bits2048 = 2048,  // SVE2 wide — pre-declared, forward-compat
 };
@@ -145,8 +145,7 @@ namespace crucible::fixy::grant {
 
 template <::crucible::fixy::simd::WidthBits W>
     requires ::crucible::fixy::simd::is_known_width_v<W>
-struct which_dim<simd::width<W>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::SimdIsa> {};
+struct which_dim<simd::width<W>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::SimdIsa> {};
 
 }  // namespace crucible::fixy::grant
 
@@ -159,9 +158,9 @@ namespace crucible::fixy::simd {
 namespace gs = ::crucible::fixy::grant::simd;
 
 using width_scalar = gs::width<WidthBits::Scalar>;
-using width_128    = gs::width<WidthBits::Bits128>;
-using width_256    = gs::width<WidthBits::Bits256>;
-using width_512    = gs::width<WidthBits::Bits512>;
+using width_128 = gs::width<WidthBits::Bits128>;
+using width_256 = gs::width<WidthBits::Bits256>;
+using width_512 = gs::width<WidthBits::Bits512>;
 
 }  // namespace crucible::fixy::simd
 
@@ -177,30 +176,30 @@ using ::crucible::fixy::grant::which_dim_v;
 using D = ::crucible::fixy::dim::DimensionAxis;
 
 // ── Layer 1: is_known_width — total + correct ─────────────────────────
-static_assert( is_known_width(WidthBits::Scalar));
-static_assert( is_known_width(WidthBits::Bits128));
-static_assert( is_known_width(WidthBits::Bits256));
-static_assert( is_known_width(WidthBits::Bits512));
-static_assert( is_known_width(WidthBits::Bits1024));
-static_assert( is_known_width(WidthBits::Bits2048));
+static_assert(is_known_width(WidthBits::Scalar));
+static_assert(is_known_width(WidthBits::Bits128));
+static_assert(is_known_width(WidthBits::Bits256));
+static_assert(is_known_width(WidthBits::Bits512));
+static_assert(is_known_width(WidthBits::Bits1024));
+static_assert(is_known_width(WidthBits::Bits2048));
 static_assert(!is_known_width(static_cast<WidthBits>(64)));
 static_assert(!is_known_width(static_cast<WidthBits>(777)));
 
 // ── Layer 2: width is a valid grant tag routing to SimdIsa ────────────
 static_assert(IsGrantTag<gs::width<WidthBits::Bits256>>);
 static_assert(IsGrantTag<gs::width<WidthBits::Bits1024>>);  // forward-compat SVE
-static_assert(which_dim_v<gs::width<WidthBits::Scalar>>  == D::SimdIsa);
+static_assert(which_dim_v<gs::width<WidthBits::Scalar>> == D::SimdIsa);
 static_assert(which_dim_v<gs::width<WidthBits::Bits512>> == D::SimdIsa);
 
 // ── Layer 3: sizeof — EBO-collapsible (1 byte standalone) ─────────────
-static_assert(sizeof(gs::width<WidthBits::Scalar>)   == 1);
-static_assert(sizeof(gs::width<WidthBits::Bits512>)  == 1);
+static_assert(sizeof(gs::width<WidthBits::Scalar>) == 1);
+static_assert(sizeof(gs::width<WidthBits::Bits512>) == 1);
 static_assert(sizeof(gs::width<WidthBits::Bits2048>) == 1);
 
 // ── Layer 4: NTTP distinctness — different W → different type ──────────
 static_assert(!std::is_same_v<gs::width<WidthBits::Bits128>, gs::width<WidthBits::Bits256>>);
 static_assert(!std::is_same_v<gs::width<WidthBits::Bits512>, gs::width<WidthBits::Bits1024>>);
-static_assert( std::is_same_v<gs::width<WidthBits::Bits256>, gs::width<WidthBits::Bits256>>);
+static_assert(std::is_same_v<gs::width<WidthBits::Bits256>, gs::width<WidthBits::Bits256>>);
 
 // ── Layer 5: cv-ref rejection (fixy-A4-033) ───────────────────────────
 static_assert(!::crucible::fixy::grant::IsGrantTag_v<const gs::width<WidthBits::Bits256>>);
@@ -208,16 +207,16 @@ static_assert(!::crucible::fixy::grant::IsGrantTag_v<gs::width<WidthBits::Bits51
 
 // ── Layer 6: the 4 canonical aliases resolve to the documented widths ─
 static_assert(std::is_same_v<width_scalar, gs::width<WidthBits::Scalar>>);
-static_assert(std::is_same_v<width_128,    gs::width<WidthBits::Bits128>>);
-static_assert(std::is_same_v<width_256,    gs::width<WidthBits::Bits256>>);
-static_assert(std::is_same_v<width_512,    gs::width<WidthBits::Bits512>>);
+static_assert(std::is_same_v<width_128, gs::width<WidthBits::Bits128>>);
+static_assert(std::is_same_v<width_256, gs::width<WidthBits::Bits256>>);
+static_assert(std::is_same_v<width_512, gs::width<WidthBits::Bits512>>);
 static_assert(IsGrantTag<width_scalar>);
 static_assert(IsGrantTag<width_512>);
 
 // ── Runtime smoke test — non-constant args defeat consteval folding ───
 inline void runtime_smoke_test() {
     WidthBits w = WidthBits::Bits256;
-    [[maybe_unused]] bool known   = is_known_width(w);
+    [[maybe_unused]] bool known = is_known_width(w);
     [[maybe_unused]] bool unknown = is_known_width(static_cast<WidthBits>(48));
 
     [[maybe_unused]] width_256 a{};
@@ -254,10 +253,10 @@ using D = ::crucible::fixy::dim::DimensionAxis;
 
 // Layer 1: each grant individually routes to SimdIsa (already tested
 // in Hw.h:593 and Simd.h:178 above; restated here to anchor FOUND-039).
-static_assert(which_dim_v<gh::simd_width<256>>               == D::SimdIsa,
-    "FIXY-FOUND-039 anchor: hw::simd_width<W> MUST route to SimdIsa.");
-static_assert(which_dim_v<gs::width<WidthBits::Bits256>>     == D::SimdIsa,
-    "FIXY-FOUND-039 anchor: simd::width<W> MUST route to SimdIsa.");
+static_assert(which_dim_v<gh::simd_width<256>> == D::SimdIsa,
+              "FIXY-FOUND-039 anchor: hw::simd_width<W> MUST route to SimdIsa.");
+static_assert(which_dim_v<gs::width<WidthBits::Bits256>> == D::SimdIsa,
+              "FIXY-FOUND-039 anchor: simd::width<W> MUST route to SimdIsa.");
 
 // Layer 2: the load-bearing FOUND-039 invariant — both grants engage
 // the SAME axis.  A user who passes both will fail tier-4
@@ -265,28 +264,26 @@ static_assert(which_dim_v<gs::width<WidthBits::Bits256>>     == D::SimdIsa,
 // future audit accidentally re-routes one of the two grants to a new
 // axis (which would silently re-admit the previously-rejected pack
 // shape).
-static_assert(which_dim_v<gh::simd_width<256>>
-              == which_dim_v<gs::width<WidthBits::Bits256>>,
-    "FIXY-FOUND-039: hw::simd_width AND simd::width MUST share an "
-    "axis so a Grants pack containing both fails "
-    "UniqueEngagementPerAxis (FixyDuplicate_SimdIsa).");
+static_assert(which_dim_v<gh::simd_width<256>> == which_dim_v<gs::width<WidthBits::Bits256>>,
+              "FIXY-FOUND-039: hw::simd_width AND simd::width MUST share an "
+              "axis so a Grants pack containing both fails "
+              "UniqueEngagementPerAxis (FixyDuplicate_SimdIsa).");
 
 // Layer 3: NTTP-distinct types (so the codebase can hold both
 // definitions and use them at different call sites — they are
 // type-incompatible even when comparing the same width value).
-static_assert(!std::is_same_v<gh::simd_width<256>,
-                              gs::width<WidthBits::Bits256>>,
-    "FIXY-FOUND-039: the two grants are STRUCTURALLY DISTINCT types "
-    "(different NTTP shapes); they coexist at TYPE level but cannot "
-    "coexist within a single Grants pack.");
+static_assert(!std::is_same_v<gh::simd_width<256>, gs::width<WidthBits::Bits256>>,
+              "FIXY-FOUND-039: the two grants are STRUCTURALLY DISTINCT types "
+              "(different NTTP shapes); they coexist at TYPE level but cannot "
+              "coexist within a single Grants pack.");
 
 // Layer 4: width-value parity sanity — `gh::simd_width<256>` and
 // `gs::width<Bits256>` represent the SAME width concept.  Reviewer
 // reads this and understands the rejection isn't a "different widths
 // don't compose" bug — it's a "same axis, one slot" rule.
 static_assert(static_cast<std::uint16_t>(WidthBits::Bits256) == 256u,
-    "FIXY-FOUND-039 sanity: WidthBits::Bits256 underlying value is "
-    "256 — confirms the two grant families address the same width "
-    "physical concept when both name 256-bit.");
+              "FIXY-FOUND-039 sanity: WidthBits::Bits256 underlying value is "
+              "256 — confirms the two grant families address the same width "
+              "physical concept when both name 256-bit.");
 
 }  // namespace crucible::fixy::simd::detail::v039_simd_isa_duplicate_witness

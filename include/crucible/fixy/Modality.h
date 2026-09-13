@@ -71,8 +71,7 @@ namespace crucible::fixy::modality {
 
 using ::crucible::algebra::ModalityKind;
 using ::crucible::algebra::modality_name;
-inline constexpr std::size_t modality_kind_count =
-    ::crucible::algebra::modality_kind_count;
+inline constexpr std::size_t modality_kind_count = ::crucible::algebra::modality_kind_count;
 
 // ── Well-formedness gate ──────────────────────────────────────────
 
@@ -82,29 +81,29 @@ concept IsModality = ::crucible::algebra::IsModality<K>;
 // ── Six per-form concepts ─────────────────────────────────────────
 
 template <ModalityKind K>
-concept ComonadModality       = ::crucible::algebra::ComonadModality<K>;
+concept ComonadModality = ::crucible::algebra::ComonadModality<K>;
 
 template <ModalityKind K>
 concept RelativeMonadModality = ::crucible::algebra::RelativeMonadModality<K>;
 
 template <ModalityKind K>
-concept AbsoluteModality      = ::crucible::algebra::AbsoluteModality<K>;
+concept AbsoluteModality = ::crucible::algebra::AbsoluteModality<K>;
 
 template <ModalityKind K>
-concept RelativeModality      = ::crucible::algebra::RelativeModality<K>;
+concept RelativeModality = ::crucible::algebra::RelativeModality<K>;
 
 template <ModalityKind K>
-concept QuotientModality      = ::crucible::algebra::QuotientModality<K>;
+concept QuotientModality = ::crucible::algebra::QuotientModality<K>;
 
 template <ModalityKind K>
-concept CoeffectModality      = ::crucible::algebra::CoeffectModality<K>;
+concept CoeffectModality = ::crucible::algebra::CoeffectModality<K>;
 
 // ── Compile-time queries ──────────────────────────────────────────
 
 template <ModalityKind K>
-inline constexpr bool has_counit_v     = ::crucible::algebra::has_counit_v<K>;
+inline constexpr bool has_counit_v = ::crucible::algebra::has_counit_v<K>;
 template <ModalityKind K>
-inline constexpr bool has_unit_v       = ::crucible::algebra::has_unit_v<K>;
+inline constexpr bool has_unit_v = ::crucible::algebra::has_unit_v<K>;
 template <ModalityKind K>
 inline constexpr bool has_grade_only_v = ::crucible::algebra::has_grade_only_v<K>;
 
@@ -112,12 +111,12 @@ inline constexpr bool has_grade_only_v = ::crucible::algebra::has_grade_only_v<K
 //
 // Same identity as algebra::modality::*_t; sizeof == 1 each.
 
-using Comonad_t       = ::crucible::algebra::modality::Comonad_t;
+using Comonad_t = ::crucible::algebra::modality::Comonad_t;
 using RelativeMonad_t = ::crucible::algebra::modality::RelativeMonad_t;
-using Absolute_t      = ::crucible::algebra::modality::Absolute_t;
-using Relative_t      = ::crucible::algebra::modality::Relative_t;
-using Quotient_t      = ::crucible::algebra::modality::Quotient_t;
-using Coeffect_t      = ::crucible::algebra::modality::Coeffect_t;
+using Absolute_t = ::crucible::algebra::modality::Absolute_t;
+using Relative_t = ::crucible::algebra::modality::Relative_t;
+using Quotient_t = ::crucible::algebra::modality::Quotient_t;
+using Coeffect_t = ::crucible::algebra::modality::Coeffect_t;
 
 }  // namespace crucible::fixy::modality
 
@@ -134,81 +133,58 @@ namespace crucible::fixy::modality::self_test {
 
 // ── Enum + cardinality identity ──────────────────────────────────
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::modality::ModalityKind,
-    ::crucible::algebra::ModalityKind>,
-    "fixy::modality::ModalityKind must alias algebra::ModalityKind");
+static_assert(std::is_same_v<::crucible::fixy::modality::ModalityKind, ::crucible::algebra::ModalityKind>,
+              "fixy::modality::ModalityKind must alias algebra::ModalityKind");
 
-static_assert(::crucible::fixy::modality::ModalityKind::Comonad
-              == ::crucible::algebra::ModalityKind::Comonad);
+static_assert(::crucible::fixy::modality::ModalityKind::Comonad == ::crucible::algebra::ModalityKind::Comonad);
 static_assert(::crucible::fixy::modality::ModalityKind::RelativeMonad
               == ::crucible::algebra::ModalityKind::RelativeMonad);
-static_assert(::crucible::fixy::modality::ModalityKind::Absolute
-              == ::crucible::algebra::ModalityKind::Absolute);
-static_assert(::crucible::fixy::modality::ModalityKind::Relative
-              == ::crucible::algebra::ModalityKind::Relative);
-static_assert(::crucible::fixy::modality::ModalityKind::Quotient
-              == ::crucible::algebra::ModalityKind::Quotient);
-static_assert(::crucible::fixy::modality::ModalityKind::Coeffect
-              == ::crucible::algebra::ModalityKind::Coeffect);
+static_assert(::crucible::fixy::modality::ModalityKind::Absolute == ::crucible::algebra::ModalityKind::Absolute);
+static_assert(::crucible::fixy::modality::ModalityKind::Relative == ::crucible::algebra::ModalityKind::Relative);
+static_assert(::crucible::fixy::modality::ModalityKind::Quotient == ::crucible::algebra::ModalityKind::Quotient);
+static_assert(::crucible::fixy::modality::ModalityKind::Coeffect == ::crucible::algebra::ModalityKind::Coeffect);
 
 // ── Concept identity + behavior ──────────────────────────────────
 
-static_assert(::crucible::fixy::modality::IsModality<
-    ::crucible::fixy::modality::ModalityKind::Comonad>);
-static_assert(::crucible::fixy::modality::IsModality<
-    ::crucible::fixy::modality::ModalityKind::Coeffect>);
+static_assert(::crucible::fixy::modality::IsModality<::crucible::fixy::modality::ModalityKind::Comonad>);
+static_assert(::crucible::fixy::modality::IsModality<::crucible::fixy::modality::ModalityKind::Coeffect>);
 
-static_assert(::crucible::fixy::modality::ComonadModality<
-    ::crucible::fixy::modality::ModalityKind::Comonad>);
-static_assert(!::crucible::fixy::modality::ComonadModality<
-    ::crucible::fixy::modality::ModalityKind::RelativeMonad>);
+static_assert(::crucible::fixy::modality::ComonadModality<::crucible::fixy::modality::ModalityKind::Comonad>);
+static_assert(!::crucible::fixy::modality::ComonadModality<::crucible::fixy::modality::ModalityKind::RelativeMonad>);
 
-static_assert(::crucible::fixy::modality::CoeffectModality<
-    ::crucible::fixy::modality::ModalityKind::Coeffect>);
-static_assert(!::crucible::fixy::modality::CoeffectModality<
-    ::crucible::fixy::modality::ModalityKind::Quotient>);
+static_assert(::crucible::fixy::modality::CoeffectModality<::crucible::fixy::modality::ModalityKind::Coeffect>);
+static_assert(!::crucible::fixy::modality::CoeffectModality<::crucible::fixy::modality::ModalityKind::Quotient>);
 
 // ── Query-fn behavior ────────────────────────────────────────────
 
-static_assert(::crucible::fixy::modality::has_counit_v<
-    ::crucible::fixy::modality::ModalityKind::Comonad>);
-static_assert(::crucible::fixy::modality::has_unit_v<
-    ::crucible::fixy::modality::ModalityKind::RelativeMonad>);
-static_assert(::crucible::fixy::modality::has_grade_only_v<
-    ::crucible::fixy::modality::ModalityKind::Absolute>);
-static_assert(!::crucible::fixy::modality::has_counit_v<
-    ::crucible::fixy::modality::ModalityKind::Absolute>);
+static_assert(::crucible::fixy::modality::has_counit_v<::crucible::fixy::modality::ModalityKind::Comonad>);
+static_assert(::crucible::fixy::modality::has_unit_v<::crucible::fixy::modality::ModalityKind::RelativeMonad>);
+static_assert(::crucible::fixy::modality::has_grade_only_v<::crucible::fixy::modality::ModalityKind::Absolute>);
+static_assert(!::crucible::fixy::modality::has_counit_v<::crucible::fixy::modality::ModalityKind::Absolute>);
 
 // ── Tag-type identity ────────────────────────────────────────────
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::modality::Comonad_t,
-    ::crucible::algebra::modality::Comonad_t>);
-static_assert(std::is_same_v<
-    ::crucible::fixy::modality::Coeffect_t,
-    ::crucible::algebra::modality::Coeffect_t>);
+static_assert(std::is_same_v<::crucible::fixy::modality::Comonad_t, ::crucible::algebra::modality::Comonad_t>);
+static_assert(std::is_same_v<::crucible::fixy::modality::Coeffect_t, ::crucible::algebra::modality::Coeffect_t>);
 
 // Each tag type round-trips to its enum kind.
-static_assert(::crucible::fixy::modality::Comonad_t::kind
-              == ::crucible::fixy::modality::ModalityKind::Comonad);
-static_assert(::crucible::fixy::modality::Quotient_t::kind
-              == ::crucible::fixy::modality::ModalityKind::Quotient);
+static_assert(::crucible::fixy::modality::Comonad_t::kind == ::crucible::fixy::modality::ModalityKind::Comonad);
+static_assert(::crucible::fixy::modality::Quotient_t::kind == ::crucible::fixy::modality::ModalityKind::Quotient);
 
 // Empty tag types collapse to sizeof == 1.
-static_assert(sizeof(::crucible::fixy::modality::Comonad_t)       == 1);
+static_assert(sizeof(::crucible::fixy::modality::Comonad_t) == 1);
 static_assert(sizeof(::crucible::fixy::modality::RelativeMonad_t) == 1);
-static_assert(sizeof(::crucible::fixy::modality::Absolute_t)      == 1);
-static_assert(sizeof(::crucible::fixy::modality::Relative_t)      == 1);
-static_assert(sizeof(::crucible::fixy::modality::Quotient_t)      == 1);
-static_assert(sizeof(::crucible::fixy::modality::Coeffect_t)      == 1);
+static_assert(sizeof(::crucible::fixy::modality::Absolute_t) == 1);
+static_assert(sizeof(::crucible::fixy::modality::Relative_t) == 1);
+static_assert(sizeof(::crucible::fixy::modality::Quotient_t) == 1);
+static_assert(sizeof(::crucible::fixy::modality::Coeffect_t) == 1);
 
 // ── Diagnostic-name reach ────────────────────────────────────────
 
-static_assert(::crucible::fixy::modality::modality_name(
-    ::crucible::fixy::modality::ModalityKind::Comonad) == "Comonad");
-static_assert(::crucible::fixy::modality::modality_name(
-    ::crucible::fixy::modality::ModalityKind::Coeffect) == "Coeffect");
+static_assert(::crucible::fixy::modality::modality_name(::crucible::fixy::modality::ModalityKind::Comonad)
+              == "Comonad");
+static_assert(::crucible::fixy::modality::modality_name(::crucible::fixy::modality::ModalityKind::Coeffect)
+              == "Coeffect");
 
 // ── Cardinality mirror — drives off substrate's reflection ───────
 //
@@ -222,23 +198,20 @@ static_assert(::crucible::fixy::modality::modality_name(
 // algebra value) stays exact since both are aliases of the same
 // reflection result.
 
-static_assert(::crucible::fixy::modality::modality_kind_count
-              == ::crucible::algebra::modality_kind_count);
+static_assert(::crucible::fixy::modality::modality_kind_count == ::crucible::algebra::modality_kind_count);
 static_assert(::crucible::fixy::modality::modality_kind_count >= 6,
-    "fixy::modality::modality_kind_count floor: regressed below 6 — "
-    "a ModalityKind enumerator was removed from algebra/Modality.h "
-    "without updating both the colocated ceiling pin AND this floor "
-    "witness.");
+              "fixy::modality::modality_kind_count floor: regressed below 6 — "
+              "a ModalityKind enumerator was removed from algebra/Modality.h "
+              "without updating both the colocated ceiling pin AND this floor "
+              "witness.");
 
-constexpr int u060_concept_cardinality  = 7;  // IsModality + 6 per-form
-constexpr int u060_tag_cardinality      = 6;  // Comonad_t..Coeffect_t
-constexpr int u060_query_cardinality    = 3;  // has_counit/unit/grade_only_v
+constexpr int u060_concept_cardinality = 7;  // IsModality + 6 per-form
+constexpr int u060_tag_cardinality = 6;  // Comonad_t..Coeffect_t
+constexpr int u060_query_cardinality = 3;  // has_counit/unit/grade_only_v
 
 static_assert(u060_concept_cardinality == 7,
-    "fixy::modality:: concept surface drifted from 7 (IsModality + 6 per-form).");
-static_assert(u060_tag_cardinality     == 6,
-    "fixy::modality:: tag-type surface drifted from 6.");
-static_assert(u060_query_cardinality   == 3,
-    "fixy::modality:: query-fn surface drifted from 3 (has_*_v family).");
+              "fixy::modality:: concept surface drifted from 7 (IsModality + 6 per-form).");
+static_assert(u060_tag_cardinality == 6, "fixy::modality:: tag-type surface drifted from 6.");
+static_assert(u060_query_cardinality == 3, "fixy::modality:: query-fn surface drifted from 3 (has_*_v family).");
 
 }  // namespace crucible::fixy::modality::self_test

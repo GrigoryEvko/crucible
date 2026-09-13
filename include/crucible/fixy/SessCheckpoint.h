@@ -152,40 +152,35 @@ namespace proto = ::crucible::safety::proto;
 
 // Fixture protocols — minimal well-formed sessions exercising every
 // export without depending on richer SessionHandle machinery.
-struct Request  {};
+struct Request {};
 struct Response {};
-struct Error    {};
+struct Error {};
 
 // Two-phase-commit-shaped checkpoint pair.
-using CommitPath   = proto::Send<Request, proto::Recv<Response, proto::End>>;
-using RollbackPath = proto::Send<Request, proto::Recv<Error,    proto::End>>;
-using CkptSession  = CheckpointedSession<CommitPath, RollbackPath>;
+using CommitPath = proto::Send<Request, proto::Recv<Response, proto::End>>;
+using RollbackPath = proto::Send<Request, proto::Recv<Error, proto::End>>;
+using CkptSession = CheckpointedSession<CommitPath, RollbackPath>;
 
 // A non-checkpoint protocol for shape-trait reject cases.
-using PlainProto   = proto::Send<Request, proto::End>;
+using PlainProto = proto::Send<Request, proto::End>;
 
 // ── A. Core combinator reach (type identity) ───────────────────────
-static_assert(std::is_same_v<
-    CheckpointedSession<CommitPath, RollbackPath>,
-    proto::CheckpointedSession<CommitPath, RollbackPath>>,
+static_assert(
+    std::is_same_v<CheckpointedSession<CommitPath, RollbackPath>, proto::CheckpointedSession<CommitPath, RollbackPath>>,
     "CheckpointedSession must reach identically through fixy::.  "
     "If this red-lights, fixy/SessCheckpoint.h's first using-decl "
     "is broken or the substrate type was moved.");
 
 // Nested aliases preserved through the umbrella.
-static_assert(std::is_same_v<typename CkptSession::base,     CommitPath>);
+static_assert(std::is_same_v<typename CkptSession::base, CommitPath>);
 static_assert(std::is_same_v<typename CkptSession::rollback, RollbackPath>);
 
 // ── B. Shape traits reach ──────────────────────────────────────────
-static_assert(is_checkpointed_session_v<CkptSession>
-              == proto::is_checkpointed_session_v<CkptSession>,
-    "is_checkpointed_session_v must reach identically through fixy::");
-static_assert(is_checkpointed_session_v<CkptSession>,
-    "CkptSession IS a CheckpointedSession — trait must return true.");
-static_assert(!is_checkpointed_session_v<PlainProto>,
-    "Send<T, K> is NOT a CheckpointedSession — trait must reject.");
-static_assert(!is_checkpointed_session_v<proto::End>,
-    "End is NOT a CheckpointedSession — trait must reject.");
+static_assert(is_checkpointed_session_v<CkptSession> == proto::is_checkpointed_session_v<CkptSession>,
+              "is_checkpointed_session_v must reach identically through fixy::");
+static_assert(is_checkpointed_session_v<CkptSession>, "CkptSession IS a CheckpointedSession — trait must return true.");
+static_assert(!is_checkpointed_session_v<PlainProto>, "Send<T, K> is NOT a CheckpointedSession — trait must reject.");
+static_assert(!is_checkpointed_session_v<proto::End>, "End is NOT a CheckpointedSession — trait must reject.");
 
 // Class-template form (for inheritance-based composition).
 static_assert(is_checkpointed_session<CkptSession>::value);
@@ -193,51 +188,44 @@ static_assert(!is_checkpointed_session<PlainProto>::value);
 
 // ── C. Branch extractors reach ─────────────────────────────────────
 static_assert(std::is_same_v<checkpoint_base_t<CkptSession>, CommitPath>,
-    "checkpoint_base_t<CkptSession> must equal CommitPath.");
+              "checkpoint_base_t<CkptSession> must equal CommitPath.");
 static_assert(std::is_same_v<checkpoint_rollback_t<CkptSession>, RollbackPath>,
-    "checkpoint_rollback_t<CkptSession> must equal RollbackPath.");
+              "checkpoint_rollback_t<CkptSession> must equal RollbackPath.");
 
 // Class-template form.
-static_assert(std::is_same_v<
-    typename checkpoint_base<CkptSession>::type, CommitPath>);
-static_assert(std::is_same_v<
-    typename checkpoint_rollback<CkptSession>::type, RollbackPath>);
+static_assert(std::is_same_v<typename checkpoint_base<CkptSession>::type, CommitPath>);
+static_assert(std::is_same_v<typename checkpoint_rollback<CkptSession>::type, RollbackPath>);
 
 // Equivalence of fixy and substrate _t aliases.
-static_assert(std::is_same_v<
-    checkpoint_base_t<CkptSession>,
-    proto::checkpoint_base_t<CkptSession>>,
-    "checkpoint_base_t must reach identically through fixy::");
-static_assert(std::is_same_v<
-    checkpoint_rollback_t<CkptSession>,
-    proto::checkpoint_rollback_t<CkptSession>>,
-    "checkpoint_rollback_t must reach identically through fixy::");
+static_assert(std::is_same_v<checkpoint_base_t<CkptSession>, proto::checkpoint_base_t<CkptSession>>,
+              "checkpoint_base_t must reach identically through fixy::");
+static_assert(std::is_same_v<checkpoint_rollback_t<CkptSession>, proto::checkpoint_rollback_t<CkptSession>>,
+              "checkpoint_rollback_t must reach identically through fixy::");
 
 // ── D. Concept reach ───────────────────────────────────────────────
 template <typename P>
     requires Checkpointed<P>
-consteval bool requires_checkpointed_witness() { return true; }
+consteval bool requires_checkpointed_witness() {
+    return true;
+}
 static_assert(requires_checkpointed_witness<CkptSession>(),
-    "Checkpointed concept must admit CheckpointedSession<B, R>.");
+              "Checkpointed concept must admit CheckpointedSession<B, R>.");
 
 // Negative concept witness — Checkpointed rejects non-checkpoint.
 template <typename P>
 consteval bool can_satisfy_checkpointed() {
     return requires { requires Checkpointed<P>; };
 }
-static_assert(!can_satisfy_checkpointed<PlainProto>(),
-    "Checkpointed concept must REJECT non-checkpoint protocols.");
-static_assert(!can_satisfy_checkpointed<proto::End>(),
-    "Checkpointed concept must REJECT End.");
+static_assert(!can_satisfy_checkpointed<PlainProto>(), "Checkpointed concept must REJECT non-checkpoint protocols.");
+static_assert(!can_satisfy_checkpointed<proto::End>(), "Checkpointed concept must REJECT End.");
 
 // ── E. assert_checkpointed_matches reach (happy path) ──────────────
 consteval bool check_fixy_assert_checkpointed_matches() {
     assert_checkpointed_matches<CkptSession, CommitPath, RollbackPath>();
     return true;
 }
-static_assert(check_fixy_assert_checkpointed_matches(),
-    "assert_checkpointed_matches must accept the correct (P, B, R) "
-    "triple at consteval.");
+static_assert(check_fixy_assert_checkpointed_matches(), "assert_checkpointed_matches must accept the correct (P, B, R) "
+                                                        "triple at consteval.");
 
 // ── F. Cardinality witness — count of items V-061 surfaces ─────────
 //
@@ -248,10 +236,9 @@ static_assert(check_fixy_assert_checkpointed_matches(),
 // + consteval assertion (1: assert_checkpointed_matches)
 //                                                          ──── 9
 constexpr int v061_surface_cardinality = 9;
-static_assert(v061_surface_cardinality == 9,
-    "fixy::sess::checkpoint:: V-061 surface cardinality drifted — "
-    "update SessCheckpoint.h using-decls AND this sentinel in "
-    "lockstep.");
+static_assert(v061_surface_cardinality == 9, "fixy::sess::checkpoint:: V-061 surface cardinality drifted — "
+                                             "update SessCheckpoint.h using-decls AND this sentinel in "
+                                             "lockstep.");
 
 }  // namespace crucible::fixy::sess::checkpoint::v061_self_test
 
@@ -273,27 +260,26 @@ inline void runtime_smoke_test() noexcept {
     struct Err {};
 
     using B = proto::Send<Req, proto::Recv<Resp, proto::End>>;
-    using R = proto::Send<Req, proto::Recv<Err,  proto::End>>;
+    using R = proto::Send<Req, proto::Recv<Err, proto::End>>;
     using C = CheckpointedSession<B, R>;
     using P = proto::Send<Req, proto::End>;
 
-    [[maybe_unused]] constexpr bool is_ckpt_yes   = is_checkpointed_session_v<C>;
-    [[maybe_unused]] constexpr bool is_ckpt_no    = is_checkpointed_session_v<P>;
-    [[maybe_unused]] constexpr bool base_eq_B     =
-        std::is_same_v<checkpoint_base_t<C>, B>;
-    [[maybe_unused]] constexpr bool rollback_eq_R =
-        std::is_same_v<checkpoint_rollback_t<C>, R>;
+    [[maybe_unused]] constexpr bool is_ckpt_yes = is_checkpointed_session_v<C>;
+    [[maybe_unused]] constexpr bool is_ckpt_no = is_checkpointed_session_v<P>;
+    [[maybe_unused]] constexpr bool base_eq_B = std::is_same_v<checkpoint_base_t<C>, B>;
+    [[maybe_unused]] constexpr bool rollback_eq_R = std::is_same_v<checkpoint_rollback_t<C>, R>;
 
     // Concept reach.
-    constexpr auto satisfies_ckpt = []<typename Q>() {
-        return Checkpointed<Q>;
-    };
+    constexpr auto satisfies_ckpt = []<typename Q>() { return Checkpointed<Q>; };
     [[maybe_unused]] constexpr bool concept_yes = satisfies_ckpt.template operator()<C>();
-    [[maybe_unused]] constexpr bool concept_no  = satisfies_ckpt.template operator()<P>();
+    [[maybe_unused]] constexpr bool concept_no = satisfies_ckpt.template operator()<P>();
 
-    (void) is_ckpt_yes; (void) is_ckpt_no;
-    (void) base_eq_B; (void) rollback_eq_R;
-    (void) concept_yes; (void) concept_no;
+    (void)is_ckpt_yes;
+    (void)is_ckpt_no;
+    (void)base_eq_B;
+    (void)rollback_eq_R;
+    (void)concept_yes;
+    (void)concept_no;
 }
 
 }  // namespace crucible::fixy::sess::checkpoint

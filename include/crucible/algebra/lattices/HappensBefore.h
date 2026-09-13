@@ -128,12 +128,12 @@
 #include <crucible/safety/Decide.h>
 
 #include <array>
-#include <compare>       // std::partial_ordering for operator<=>
+#include <compare>  // std::partial_ordering for operator<=>
 #include <cstdint>
 #include <cstddef>
 #include <limits>
 #include <string_view>
-#include <utility>       // std::index_sequence for make_clock helper
+#include <utility>  // std::index_sequence for make_clock helper
 
 namespace crucible::algebra::lattices {
 
@@ -144,10 +144,9 @@ namespace crucible::algebra::lattices {
 // N", no protocol disambiguation needed).
 template <std::size_t N, typename Tag = void>
 struct HappensBeforeLattice {
-    static_assert(N > 0,
-        "HappensBeforeLattice<0> is forbidden — an empty vector clock "
-        "has no algebraic content.  Use N >= 1; N=1 reduces to a "
-        "Lamport scalar clock.");
+    static_assert(N > 0, "HappensBeforeLattice<0> is forbidden — an empty vector clock "
+                         "has no algebraic content.  Use N >= 1; N=1 reduces to a "
+                         "Lamport scalar clock.");
 
     // ── element_type ────────────────────────────────────────────────
     //
@@ -188,19 +187,17 @@ struct HappensBeforeLattice {
 
         [[nodiscard]] constexpr bool operator==(element_type const&) const noexcept = default;
 
-        [[nodiscard]] constexpr std::partial_ordering
-        operator<=>(element_type const& other) const noexcept
-        {
-            bool self_leq_other  = true;
-            bool other_leq_self  = true;
+        [[nodiscard]] constexpr std::partial_ordering operator<=>(element_type const& other) const noexcept {
+            bool self_leq_other = true;
+            bool other_leq_self = true;
             for (std::size_t i = 0; i < N; ++i) {
                 if (clock[i] > other.clock[i]) self_leq_other = false;
                 if (other.clock[i] > clock[i]) other_leq_self = false;
                 if (!self_leq_other && !other_leq_self) break;  // short-circuit on definite ∥
             }
             if (self_leq_other && other_leq_self) return std::partial_ordering::equivalent;
-            if (self_leq_other)                   return std::partial_ordering::less;
-            if (other_leq_self)                   return std::partial_ordering::greater;
+            if (self_leq_other) return std::partial_ordering::less;
+            if (other_leq_self) return std::partial_ordering::greater;
             return std::partial_ordering::unordered;
         }
 
@@ -227,16 +224,15 @@ struct HappensBeforeLattice {
         // lifts process-id callers to `Refined<bounded_above<N - 1>,
         // size_t>` and the predicate name carries through.
         [[nodiscard]] constexpr std::uint64_t operator[](std::size_t p) const noexcept
-            pre (::crucible::decide::in_range<std::size_t>(p, 0, N - 1))
-        {
+            pre(::crucible::decide::in_range<std::size_t>(p, 0, N - 1)) {
             return clock[p];
         }
     };
 
     static constexpr std::size_t process_count = N;
-    using process_id_type  = std::size_t;
+    using process_id_type = std::size_t;
     using clock_value_type = std::uint64_t;
-    using tag_type         = Tag;
+    using tag_type = Tag;
 
     // ── Bounded structure ───────────────────────────────────────────
     //
@@ -293,9 +289,7 @@ struct HappensBeforeLattice {
     // a → b iff every observation captured in a is also captured in
     // b, and b captures at least one more.  Asymmetric, irreflexive,
     // transitive — the strict order on the lattice.
-    [[nodiscard]] static constexpr bool happens_before(
-        element_type a, element_type b) noexcept
-    {
+    [[nodiscard]] static constexpr bool happens_before(element_type a, element_type b) noexcept {
         return leq(a, b) && !(a == b);
     }
 
@@ -305,18 +299,14 @@ struct HappensBeforeLattice {
     // vector clocks form a genuine partial order with antichains.
     // For N=1 this is vacuously false (any two distinct scalars are
     // ordered).
-    [[nodiscard]] static constexpr bool is_concurrent(
-        element_type a, element_type b) noexcept
-    {
+    [[nodiscard]] static constexpr bool is_concurrent(element_type a, element_type b) noexcept {
         return !leq(a, b) && !leq(b, a);
     }
 
     // comparable(a, b) — causally ordered in EITHER direction.
     // Complement of is_concurrent (modulo equality, which is in both
     // since equal elements are leq-comparable both ways).
-    [[nodiscard]] static constexpr bool comparable(
-        element_type a, element_type b) noexcept
-    {
+    [[nodiscard]] static constexpr bool comparable(element_type a, element_type b) noexcept {
         return leq(a, b) || leq(b, a);
     }
 
@@ -337,9 +327,8 @@ struct HappensBeforeLattice {
     //      would fail when v.clock[p] wraps to 0).  Catches the
     //      pathological 2^64-event-on-one-process case before
     //      undefined-behavior territory.
-    [[nodiscard]] static constexpr element_type successor_at(
-        element_type v, std::size_t p) noexcept
-        pre (::crucible::decide::in_range<std::size_t>(p, 0, N - 1))
+    [[nodiscard]] static constexpr element_type successor_at(element_type v, std::size_t p) noexcept
+        pre(::crucible::decide::in_range<std::size_t>(p, 0, N - 1))
         // The overflow-guard clause is preserved BARE: it is a
         // structural non-saturation predicate over a member of `v`,
         // not an integer-bound on a parameter.  No catalog procedure
@@ -347,8 +336,7 @@ struct HappensBeforeLattice {
         // second cite emerges in the codebase the predicate becomes
         // a candidate for `decide::not_saturated<T>(arr, idx)` per
         // the bottom-up growth discipline (Decide.h skeleton rules).
-        pre (v.clock[p] != std::numeric_limits<std::uint64_t>::max())
-    {
+        pre(v.clock[p] != std::numeric_limits<std::uint64_t>::max()) {
         v.clock[p] += 1;
         return v;
     }
@@ -381,17 +369,14 @@ struct HappensBeforeLattice {
     // already takes the joined element_type by value (the join is
     // computed regardless), so the inner pre fires on the already-
     // computed slot at zero additional cost.  Single source of truth.
-    [[nodiscard]] static constexpr element_type causal_merge(
-        element_type local, element_type received, std::size_t me) noexcept
-        pre (::crucible::decide::in_range<std::size_t>(me, 0, N - 1))
-    {
+    [[nodiscard]] static constexpr element_type causal_merge(element_type local, element_type received,
+                                                             std::size_t me) noexcept
+        pre(::crucible::decide::in_range<std::size_t>(me, 0, N - 1)) {
         return successor_at(join(local, received), me);
     }
 
     // ── Diagnostic ──────────────────────────────────────────────────
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return "HappensBeforeLattice";
-    }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "HappensBeforeLattice"; }
 };
 
 // ── make_clock<HB> factory — variadic vector-clock construction ─────
@@ -412,12 +397,10 @@ struct HappensBeforeLattice {
 //   auto c2 = make_clock<HappensBeforeLattice<8>>(0, 0, 0, 0, 0, 0, 0, 0);
 //   auto c3 = make_clock<HBReplay>(2, 1, 0, 0);  // Tag-distinguished
 template <typename HB, typename... Slots>
-    requires (sizeof...(Slots) == HB::process_count)
-          && (std::convertible_to<Slots, typename HB::clock_value_type> && ...)
+    requires(sizeof...(Slots) == HB::process_count)
+         && (std::convertible_to<Slots, typename HB::clock_value_type> && ...)
 [[nodiscard]] constexpr typename HB::element_type make_clock(Slots... slots) noexcept {
-    return typename HB::element_type{{
-        static_cast<typename HB::clock_value_type>(slots)...
-    }};
+    return typename HB::element_type{{static_cast<typename HB::clock_value_type>(slots)...}};
 }
 
 // ── Self-test ───────────────────────────────────────────────────────
@@ -467,8 +450,8 @@ static_assert(std::three_way_comparable<HB4::element_type, std::partial_ordering
 // ── Witnesses ──────────────────────────────────────────────────────
 
 // Bottom and top.
-inline constexpr HB4::element_type hb4_bot{};                              // (0,0,0,0)
-inline constexpr HB4::element_type hb4_top = HB4::top();                   // (max,max,max,max)
+inline constexpr HB4::element_type hb4_bot{};  // (0,0,0,0)
+inline constexpr HB4::element_type hb4_top = HB4::top();  // (max,max,max,max)
 
 // Strictly ordered chain: a → b → c.
 inline constexpr HB4::element_type hb4_a{{1, 0, 0, 0}};
@@ -500,25 +483,25 @@ static_assert(verify_distributive_lattice<HB4>(hb4_a, hb4_a, hb4_y));
 // ── Order discipline ──────────────────────────────────────────────
 
 // Strictly ordered chain: leq holds, happens_before holds, NOT concurrent.
-static_assert( HB4::leq(hb4_a, hb4_b));
-static_assert( HB4::leq(hb4_b, hb4_c));
-static_assert( HB4::leq(hb4_a, hb4_c));      // transitive
-static_assert( HB4::happens_before(hb4_a, hb4_b));
-static_assert( HB4::happens_before(hb4_b, hb4_c));
-static_assert( HB4::happens_before(hb4_a, hb4_c));
+static_assert(HB4::leq(hb4_a, hb4_b));
+static_assert(HB4::leq(hb4_b, hb4_c));
+static_assert(HB4::leq(hb4_a, hb4_c));  // transitive
+static_assert(HB4::happens_before(hb4_a, hb4_b));
+static_assert(HB4::happens_before(hb4_b, hb4_c));
+static_assert(HB4::happens_before(hb4_a, hb4_c));
 static_assert(!HB4::is_concurrent(hb4_a, hb4_b));
 static_assert(!HB4::is_concurrent(hb4_a, hb4_c));
-static_assert( HB4::comparable(hb4_a, hb4_b));
-static_assert( HB4::comparable(hb4_a, hb4_c));
+static_assert(HB4::comparable(hb4_a, hb4_b));
+static_assert(HB4::comparable(hb4_a, hb4_c));
 
 // Reverse direction: NOT leq, NOT happens_before.
 static_assert(!HB4::leq(hb4_b, hb4_a));
 static_assert(!HB4::happens_before(hb4_b, hb4_a));
 
 // Reflexive: any vector is leq itself, but NOT happens_before itself.
-static_assert( HB4::leq(hb4_a, hb4_a));
-static_assert(!HB4::happens_before(hb4_a, hb4_a));   // strict order
-static_assert(!HB4::is_concurrent(hb4_a, hb4_a));    // identical, not concurrent
+static_assert(HB4::leq(hb4_a, hb4_a));
+static_assert(!HB4::happens_before(hb4_a, hb4_a));  // strict order
+static_assert(!HB4::is_concurrent(hb4_a, hb4_a));  // identical, not concurrent
 
 // ── Direct bottom / top order witnesses ──────────────────────────
 //
@@ -531,17 +514,17 @@ static_assert(!HB4::is_concurrent(hb4_a, hb4_a));    // identical, not concurren
 // might make join/meet still pass identity laws while subtly breaking
 // the leq witness (e.g., by swapping the order of arguments inside
 // leq).  Cheap to assert, hard to derive in your head when debugging.
-static_assert( HB4::leq(hb4_bot, hb4_a));
-static_assert( HB4::leq(hb4_bot, hb4_b));
-static_assert( HB4::leq(hb4_bot, hb4_c));
-static_assert( HB4::leq(hb4_bot, hb4_x));
-static_assert( HB4::leq(hb4_bot, hb4_y));
-static_assert( HB4::leq(hb4_bot, hb4_top));
-static_assert( HB4::leq(hb4_a,   hb4_top));
-static_assert( HB4::leq(hb4_b,   hb4_top));
-static_assert( HB4::leq(hb4_c,   hb4_top));
-static_assert( HB4::leq(hb4_x,   hb4_top));
-static_assert( HB4::leq(hb4_y,   hb4_top));
+static_assert(HB4::leq(hb4_bot, hb4_a));
+static_assert(HB4::leq(hb4_bot, hb4_b));
+static_assert(HB4::leq(hb4_bot, hb4_c));
+static_assert(HB4::leq(hb4_bot, hb4_x));
+static_assert(HB4::leq(hb4_bot, hb4_y));
+static_assert(HB4::leq(hb4_bot, hb4_top));
+static_assert(HB4::leq(hb4_a, hb4_top));
+static_assert(HB4::leq(hb4_b, hb4_top));
+static_assert(HB4::leq(hb4_c, hb4_top));
+static_assert(HB4::leq(hb4_x, hb4_top));
+static_assert(HB4::leq(hb4_y, hb4_top));
 
 // Pin top()/bottom() values explicitly — guards against a regression
 // where (e.g.) top() returns the zero vector by accident.  The
@@ -549,12 +532,10 @@ static_assert( HB4::leq(hb4_y,   hb4_top));
 // algebraically) but downstream callers expecting top to be the
 // genuine ceiling would break silently.
 static_assert(hb4_bot == HB4::element_type{{0, 0, 0, 0}});
-static_assert(hb4_top == HB4::element_type{
-    std::numeric_limits<std::uint64_t>::max(),
-    std::numeric_limits<std::uint64_t>::max(),
-    std::numeric_limits<std::uint64_t>::max(),
-    std::numeric_limits<std::uint64_t>::max()
-});
+static_assert(hb4_top
+              == HB4::element_type{std::numeric_limits<std::uint64_t>::max(), std::numeric_limits<std::uint64_t>::max(),
+                                   std::numeric_limits<std::uint64_t>::max(),
+                                   std::numeric_limits<std::uint64_t>::max()});
 
 // ── operator<=> result coverage ──────────────────────────────────
 //
@@ -568,28 +549,28 @@ static_assert(hb4_top == HB4::element_type{
 //   b    <=> a     == greater       (b → a)
 //   x    <=> y     == unordered     (x ∥ y)
 static_assert((hb4_bot <=> hb4_bot) == std::partial_ordering::equivalent);
-static_assert((hb4_a   <=> hb4_a  ) == std::partial_ordering::equivalent);
-static_assert((hb4_a   <=> hb4_b  ) == std::partial_ordering::less);
-static_assert((hb4_b   <=> hb4_a  ) == std::partial_ordering::greater);
-static_assert((hb4_a   <=> hb4_c  ) == std::partial_ordering::less);     // transitive
-static_assert((hb4_x   <=> hb4_y  ) == std::partial_ordering::unordered);
-static_assert((hb4_y   <=> hb4_x  ) == std::partial_ordering::unordered); // symmetric ∥
-static_assert((hb4_bot <=> hb4_top) == std::partial_ordering::less);     // ⊥ < ⊤
+static_assert((hb4_a <=> hb4_a) == std::partial_ordering::equivalent);
+static_assert((hb4_a <=> hb4_b) == std::partial_ordering::less);
+static_assert((hb4_b <=> hb4_a) == std::partial_ordering::greater);
+static_assert((hb4_a <=> hb4_c) == std::partial_ordering::less);  // transitive
+static_assert((hb4_x <=> hb4_y) == std::partial_ordering::unordered);
+static_assert((hb4_y <=> hb4_x) == std::partial_ordering::unordered);  // symmetric ∥
+static_assert((hb4_bot <=> hb4_top) == std::partial_ordering::less);  // ⊥ < ⊤
 static_assert((hb4_top <=> hb4_bot) == std::partial_ordering::greater);
 
 // And the idiomatic C++20 client syntax flows correctly through
 // partial_ordering's bool conversions: concurrent elements satisfy
 // NEITHER < nor > nor == — defends against a recurring beginner
 // mistake "well a is not greater than b, so a <= b."
-static_assert(  hb4_a   <  hb4_b);
-static_assert(  hb4_a   <= hb4_b);
-static_assert(  hb4_b   >  hb4_a);
-static_assert(  hb4_a   == hb4_a);
-static_assert(!(hb4_x   <  hb4_y));   // concurrent: not less
-static_assert(!(hb4_x   >  hb4_y));   // concurrent: not greater
-static_assert(!(hb4_x   == hb4_y));   // concurrent: not equal
-static_assert(!(hb4_x   <= hb4_y));   // concurrent: not <=
-static_assert(!(hb4_y   <= hb4_x));   // concurrent: not <= other way
+static_assert(hb4_a < hb4_b);
+static_assert(hb4_a <= hb4_b);
+static_assert(hb4_b > hb4_a);
+static_assert(hb4_a == hb4_a);
+static_assert(!(hb4_x < hb4_y));  // concurrent: not less
+static_assert(!(hb4_x > hb4_y));  // concurrent: not greater
+static_assert(!(hb4_x == hb4_y));  // concurrent: not equal
+static_assert(!(hb4_x <= hb4_y));  // concurrent: not <=
+static_assert(!(hb4_y <= hb4_x));  // concurrent: not <= other way
 
 // ── Chain-plus-concurrent cross-witnesses ────────────────────────
 //
@@ -602,26 +583,26 @@ static_assert(!(hb4_y   <= hb4_x));   // concurrent: not <= other way
 //
 // a's clock is {1,0,0,0}; x's is {2,0,1,0}.  x ⊒ a pointwise
 // (x.clock[0]=2>1, x.clock[2]=1>0, others equal).  So a → x.
-static_assert( HB4::leq(hb4_a, hb4_x));
-static_assert( HB4::happens_before(hb4_a, hb4_x));
+static_assert(HB4::leq(hb4_a, hb4_x));
+static_assert(HB4::happens_before(hb4_a, hb4_x));
 static_assert(!HB4::is_concurrent(hb4_a, hb4_x));
 
 // y's clock is {0,2,0,1}.  a={1,0,0,0}.  Mismatched: a > y in slot 0,
 // y > a in slot 1.  Concurrent.
-static_assert( HB4::is_concurrent(hb4_a, hb4_y));
+static_assert(HB4::is_concurrent(hb4_a, hb4_y));
 static_assert(!HB4::leq(hb4_a, hb4_y));
 static_assert(!HB4::leq(hb4_y, hb4_a));
 
 // b={1,1,0,0} vs y={0,2,0,1}: y > b in slots 1 and 3, b > y in
 // slot 0.  Concurrent.
-static_assert( HB4::is_concurrent(hb4_b, hb4_y));
+static_assert(HB4::is_concurrent(hb4_b, hb4_y));
 
 // x={2,0,1,0} vs c={2,2,1,0}: c ⊒ x pointwise.  So x → c.  This is
 // the key chain-plus-concurrent fact — x is concurrent with y but
 // strictly precedes c.  The vector-clock partial order has antichains
 // embedded in chains, validating the partial-order shape.
-static_assert( HB4::leq(hb4_x, hb4_c));
-static_assert( HB4::happens_before(hb4_x, hb4_c));
+static_assert(HB4::leq(hb4_x, hb4_c));
+static_assert(HB4::happens_before(hb4_x, hb4_c));
 static_assert(!HB4::is_concurrent(hb4_x, hb4_c));
 
 // ── Concurrency — THE distinctive vector-clock feature ──────────────
@@ -630,35 +611,35 @@ static_assert(!HB4::is_concurrent(hb4_x, hb4_c));
 // slots 1 and 3.  Neither is leq the other; both are leq the join.
 static_assert(!HB4::leq(hb4_x, hb4_y));
 static_assert(!HB4::leq(hb4_y, hb4_x));
-static_assert( HB4::is_concurrent(hb4_x, hb4_y));
-static_assert( HB4::is_concurrent(hb4_y, hb4_x));    // symmetric
+static_assert(HB4::is_concurrent(hb4_x, hb4_y));
+static_assert(HB4::is_concurrent(hb4_y, hb4_x));  // symmetric
 static_assert(!HB4::happens_before(hb4_x, hb4_y));
 static_assert(!HB4::happens_before(hb4_y, hb4_x));
 static_assert(!HB4::comparable(hb4_x, hb4_y));
 
 // Both x and y are leq their join (the "causal merge" point).
-static_assert( HB4::leq(hb4_x, HB4::join(hb4_x, hb4_y)));
-static_assert( HB4::leq(hb4_y, HB4::join(hb4_x, hb4_y)));
-static_assert( HB4::join(hb4_x, hb4_y) == HB4::element_type{{2, 2, 1, 1}});
+static_assert(HB4::leq(hb4_x, HB4::join(hb4_x, hb4_y)));
+static_assert(HB4::leq(hb4_y, HB4::join(hb4_x, hb4_y)));
+static_assert(HB4::join(hb4_x, hb4_y) == HB4::element_type{{2, 2, 1, 1}});
 
 // Their meet is the latest common ancestor.
-static_assert( HB4::meet(hb4_x, hb4_y) == HB4::element_type{{0, 0, 0, 0}});
+static_assert(HB4::meet(hb4_x, hb4_y) == HB4::element_type{{0, 0, 0, 0}});
 
 // ── successor_at: monotone, advances exactly one slot ───────────────
 inline constexpr HB4::element_type hb4_a_after_p0 = HB4::successor_at(hb4_a, 0);
 static_assert(hb4_a_after_p0 == HB4::element_type{{2, 0, 0, 0}});
-static_assert( HB4::leq(hb4_a, hb4_a_after_p0));
-static_assert( HB4::happens_before(hb4_a, hb4_a_after_p0));
+static_assert(HB4::leq(hb4_a, hb4_a_after_p0));
+static_assert(HB4::happens_before(hb4_a, hb4_a_after_p0));
 static_assert(!HB4::leq(hb4_a_after_p0, hb4_a));
 
 // successor_at on a different slot — advances p, leaves others.
 inline constexpr HB4::element_type hb4_a_after_p2 = HB4::successor_at(hb4_a, 2);
 static_assert(hb4_a_after_p2 == HB4::element_type{{1, 0, 1, 0}});
-static_assert( HB4::leq(hb4_a, hb4_a_after_p2));
+static_assert(HB4::leq(hb4_a, hb4_a_after_p2));
 
 // Two successors on different slots are CONCURRENT — local events
 // at distinct processes with no causal link are independent.
-static_assert( HB4::is_concurrent(hb4_a_after_p0, hb4_a_after_p2));
+static_assert(HB4::is_concurrent(hb4_a_after_p0, hb4_a_after_p2));
 
 // ── causal_merge: the receive-event composite ───────────────────────
 //
@@ -671,13 +652,13 @@ inline constexpr HB4::element_type hb4_received_y = HB4::causal_merge(hb4_a, hb4
 static_assert(hb4_received_y == HB4::element_type{{2, 2, 0, 1}});
 
 // Post-merge clock observes BOTH the local prior AND the sender's history.
-static_assert( HB4::leq(hb4_a, hb4_received_y));    // saw local prior
-static_assert( HB4::leq(hb4_y, hb4_received_y));    // saw sender's
+static_assert(HB4::leq(hb4_a, hb4_received_y));  // saw local prior
+static_assert(HB4::leq(hb4_y, hb4_received_y));  // saw sender's
 
 // The receive event itself is a NEW event — strictly after both
 // inputs in the causal order.
-static_assert( HB4::happens_before(hb4_a, hb4_received_y));
-static_assert( HB4::happens_before(hb4_y, hb4_received_y));
+static_assert(HB4::happens_before(hb4_a, hb4_received_y));
+static_assert(HB4::happens_before(hb4_y, hb4_received_y));
 
 // ── N=1 degenerate case (Lamport scalar clock) ──────────────────────
 //
@@ -691,15 +672,15 @@ static_assert( HB4::happens_before(hb4_y, hb4_received_y));
 // expose it while N=4 would mask it.
 using HB1 = HappensBeforeLattice<1>;
 inline constexpr HB1::element_type hb1_zero{{0}};
-inline constexpr HB1::element_type hb1_one {{1}};
-inline constexpr HB1::element_type hb1_two {{2}};
+inline constexpr HB1::element_type hb1_one{{1}};
+inline constexpr HB1::element_type hb1_two{{2}};
 
-static_assert( HB1::leq(hb1_zero, hb1_one));
-static_assert( HB1::leq(hb1_one, hb1_two));
-static_assert( HB1::happens_before(hb1_zero, hb1_two));
+static_assert(HB1::leq(hb1_zero, hb1_one));
+static_assert(HB1::leq(hb1_one, hb1_two));
+static_assert(HB1::happens_before(hb1_zero, hb1_two));
 static_assert(!HB1::is_concurrent(hb1_zero, hb1_one));
 static_assert(!HB1::is_concurrent(hb1_one, hb1_two));
-static_assert( HB1::comparable(hb1_zero, hb1_two));   // total order
+static_assert(HB1::comparable(hb1_zero, hb1_two));  // total order
 
 // Bounded-lattice axioms still hold for N=1 (degenerate case is a
 // valid lattice — the chain {0, 1, 2} is a sublattice of (ℕ, ≤)).
@@ -715,24 +696,24 @@ static_assert(verify_distributive_lattice<HB1>(hb1_zero, hb1_one, hb1_two));
 inline constexpr HB1::element_type hb1_zero_after_succ = HB1::successor_at(hb1_zero, 0);
 static_assert(hb1_zero_after_succ == HB1::element_type{{1}});
 static_assert(hb1_zero_after_succ == hb1_one);
-static_assert( HB1::happens_before(hb1_zero, hb1_zero_after_succ));
+static_assert(HB1::happens_before(hb1_zero, hb1_zero_after_succ));
 
 // causal_merge in the degenerate N=1 case reduces to the receive
 // event for a Lamport clock: max(local, received) + 1.
 inline constexpr HB1::element_type hb1_merged = HB1::causal_merge(hb1_one, hb1_two, 0);
 static_assert(hb1_merged == HB1::element_type{{3}});  // max(1, 2) + 1 = 3
-static_assert( HB1::leq(hb1_one, hb1_merged));
-static_assert( HB1::leq(hb1_two, hb1_merged));
-static_assert( HB1::happens_before(hb1_one, hb1_merged));
-static_assert( HB1::happens_before(hb1_two, hb1_merged));
+static_assert(HB1::leq(hb1_one, hb1_merged));
+static_assert(HB1::leq(hb1_two, hb1_merged));
+static_assert(HB1::happens_before(hb1_one, hb1_merged));
+static_assert(HB1::happens_before(hb1_two, hb1_merged));
 
 // operator<=> on N=1 is total: every two distinct elements are
 // strictly comparable (no `unordered` reachable).  The pre-condition
 // for `unordered` requires a slot where each side dominates — N=1
 // has only one slot, so dominance is total.
 static_assert((hb1_zero <=> hb1_one) == std::partial_ordering::less);
-static_assert((hb1_two  <=> hb1_one) == std::partial_ordering::greater);
-static_assert((hb1_one  <=> hb1_one) == std::partial_ordering::equivalent);
+static_assert((hb1_two <=> hb1_one) == std::partial_ordering::greater);
+static_assert((hb1_one <=> hb1_one) == std::partial_ordering::equivalent);
 
 // ── Cross-Tag distinction ──────────────────────────────────────────
 //
@@ -744,22 +725,21 @@ static_assert((hb1_one  <=> hb1_one) == std::partial_ordering::equivalent);
 struct ReplayClockTag {};
 struct KernelOrderClockTag {};
 
-using HBReplay   = HappensBeforeLattice<4, ReplayClockTag>;
-using HBKernel   = HappensBeforeLattice<4, KernelOrderClockTag>;
-using HBDefault  = HappensBeforeLattice<4>;  // Tag=void
+using HBReplay = HappensBeforeLattice<4, ReplayClockTag>;
+using HBKernel = HappensBeforeLattice<4, KernelOrderClockTag>;
+using HBDefault = HappensBeforeLattice<4>;  // Tag=void
 
 static_assert(!std::is_same_v<HBReplay, HBKernel>);
 static_assert(!std::is_same_v<HBReplay, HBDefault>);
 static_assert(!std::is_same_v<HBKernel, HBDefault>);
-static_assert(!std::is_same_v<typename HBReplay::element_type,
-                              typename HBKernel::element_type>);
+static_assert(!std::is_same_v<typename HBReplay::element_type, typename HBKernel::element_type>);
 
 // But the underlying storage shape is identical.
 static_assert(sizeof(HBReplay::element_type) == sizeof(HBKernel::element_type));
 static_assert(sizeof(HBReplay::element_type) == sizeof(HBDefault::element_type));
 
 // ── Diagnostic name ────────────────────────────────────────────────
-static_assert(HB4::name()      == "HappensBeforeLattice");
+static_assert(HB4::name() == "HappensBeforeLattice");
 static_assert(HBReplay::name() == "HappensBeforeLattice");
 
 // ── make_clock factory: variadic ergonomic construction ────────────
@@ -771,16 +751,12 @@ static_assert(HBReplay::name() == "HappensBeforeLattice");
 static_assert(make_clock<HB4>(1, 0, 0, 0) == HB4::element_type{{1, 0, 0, 0}});
 static_assert(make_clock<HB4>(0, 0, 0, 0) == HB4::bottom());
 static_assert(make_clock<HB4>(2, 2, 1, 0) == hb4_c);
-static_assert(make_clock<HB1>(7)          == HB1::element_type{{7}});
+static_assert(make_clock<HB1>(7) == HB1::element_type{{7}});
 
 // Cross-Tag distinction propagates through make_clock — same slot
 // values, different Tag → structurally different element_type.
-static_assert(std::is_same_v<
-    decltype(make_clock<HBReplay>(1, 0, 0, 0)),
-    HBReplay::element_type>);
-static_assert(!std::is_same_v<
-    decltype(make_clock<HBReplay>(1, 0, 0, 0)),
-    decltype(make_clock<HBKernel>(1, 0, 0, 0))>);
+static_assert(std::is_same_v<decltype(make_clock<HBReplay>(1, 0, 0, 0)), HBReplay::element_type>);
+static_assert(!std::is_same_v<decltype(make_clock<HBReplay>(1, 0, 0, 0)), decltype(make_clock<HBKernel>(1, 0, 0, 0))>);
 
 // ── Runtime smoke test ─────────────────────────────────────────────
 //
@@ -798,33 +774,33 @@ inline void runtime_smoke_test() {
     HB4::element_type y{{0, 2, 0, 1}};
 
     // Lattice ops at runtime.
-    [[maybe_unused]] bool                l_ab = HB4::leq(a, b);
-    [[maybe_unused]] HB4::element_type   j_ab = HB4::join(a, b);
-    [[maybe_unused]] HB4::element_type   m_xy = HB4::meet(x, y);
+    [[maybe_unused]] bool l_ab = HB4::leq(a, b);
+    [[maybe_unused]] HB4::element_type j_ab = HB4::join(a, b);
+    [[maybe_unused]] HB4::element_type m_xy = HB4::meet(x, y);
 
     // Bounded ops at runtime.
-    [[maybe_unused]] HB4::element_type   bot  = HB4::bottom();
-    [[maybe_unused]] HB4::element_type   top  = HB4::top();
+    [[maybe_unused]] HB4::element_type bot = HB4::bottom();
+    [[maybe_unused]] HB4::element_type top = HB4::top();
 
     // Distributed-systems vocabulary at runtime.
-    [[maybe_unused]] bool                hb_ab    = HB4::happens_before(a, b);
-    [[maybe_unused]] bool                conc_xy  = HB4::is_concurrent(x, y);
-    [[maybe_unused]] bool                comp_ab  = HB4::comparable(a, b);
+    [[maybe_unused]] bool hb_ab = HB4::happens_before(a, b);
+    [[maybe_unused]] bool conc_xy = HB4::is_concurrent(x, y);
+    [[maybe_unused]] bool comp_ab = HB4::comparable(a, b);
 
     // Successor at process 0.  Exercises the bounds-check pre and
     // the overflow-guard pre at runtime under the test target's
     // enforce semantic.
-    [[maybe_unused]] HB4::element_type   succ_a   = HB4::successor_at(a, 0);
+    [[maybe_unused]] HB4::element_type succ_a = HB4::successor_at(a, 0);
 
     // Causal merge: receive y at process 0.  Exercises the optimized
     // O(1) std::max projection in the overflow pre.
-    [[maybe_unused]] HB4::element_type   merged   = HB4::causal_merge(a, y, 0);
+    [[maybe_unused]] HB4::element_type merged = HB4::causal_merge(a, y, 0);
 
     // operator[] with bounds-checked pre — exercises the contract at
     // runtime.  Every slot is reachable; access slot 3 to exercise
     // the high end of the bound.
-    [[maybe_unused]] std::uint64_t       slot0    = a[0];
-    [[maybe_unused]] std::uint64_t       slot3    = a[3];
+    [[maybe_unused]] std::uint64_t slot0 = a[0];
+    [[maybe_unused]] std::uint64_t slot3 = a[3];
 
     // operator<=> at runtime — exercises the partial-order spaceship
     // through both ordered (a vs b) and concurrent (x vs y) paths.
@@ -833,16 +809,16 @@ inline void runtime_smoke_test() {
     // partial_ordering → bool conversion the client syntax relies on.
     [[maybe_unused]] std::partial_ordering ord_ab = a <=> b;
     [[maybe_unused]] std::partial_ordering ord_xy = x <=> y;
-    [[maybe_unused]] bool                  lt_ab  = (a < b);
-    [[maybe_unused]] bool                  ne_xy  = !(x == y);
+    [[maybe_unused]] bool lt_ab = (a < b);
+    [[maybe_unused]] bool ne_xy = !(x == y);
 
     // N=1 degenerate path — same operator coverage as N=4 to confirm
     // both shapes type-check at runtime.
     HB1::element_type s0{{0}};
     HB1::element_type s1{{1}};
-    [[maybe_unused]] bool                 l_s     = HB1::leq(s0, s1);
-    [[maybe_unused]] HB1::element_type    next_s  = HB1::successor_at(s0, 0);
-    [[maybe_unused]] HB1::element_type    merged1 = HB1::causal_merge(s0, s1, 0);
+    [[maybe_unused]] bool l_s = HB1::leq(s0, s1);
+    [[maybe_unused]] HB1::element_type next_s = HB1::successor_at(s0, 0);
+    [[maybe_unused]] HB1::element_type merged1 = HB1::causal_merge(s0, s1, 0);
     [[maybe_unused]] std::partial_ordering ord_s1 = s0 <=> s1;
 }
 

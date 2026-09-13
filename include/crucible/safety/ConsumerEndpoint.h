@@ -127,19 +127,18 @@ namespace crucible::safety::extract {
 // ═════════════════════════════════════════════════════════════════════
 
 template <auto FnPtr>
-concept ConsumerEndpoint =
-    arity_v<FnPtr> == 2
-    // Parameter 0: non-const rvalue reference to a consumer handle.
-    && std::is_rvalue_reference_v<param_type_t<FnPtr, 0>>
-    && !std::is_const_v<std::remove_reference_t<param_type_t<FnPtr, 0>>>
-    && is_consumer_handle_v<param_type_t<FnPtr, 0>>
-    // Parameter 1: non-const rvalue reference to an OwnedRegion.
-    && std::is_rvalue_reference_v<param_type_t<FnPtr, 1>>
-    && !std::is_const_v<std::remove_reference_t<param_type_t<FnPtr, 1>>>
-    && is_owned_region_v<param_type_t<FnPtr, 1>>
-    // Return type — void (canonical "drain into output buffer" per
-    // §3.5).
-    && std::is_void_v<return_type_t<FnPtr>>;
+concept ConsumerEndpoint = arity_v<FnPtr> == 2
+                        // Parameter 0: non-const rvalue reference to a consumer handle.
+                        && std::is_rvalue_reference_v<param_type_t<FnPtr, 0>>
+                        && !std::is_const_v<std::remove_reference_t<param_type_t<FnPtr, 0>>>
+                        && is_consumer_handle_v<param_type_t<FnPtr, 0>>
+                        // Parameter 1: non-const rvalue reference to an OwnedRegion.
+                        && std::is_rvalue_reference_v<param_type_t<FnPtr, 1>>
+                        && !std::is_const_v<std::remove_reference_t<param_type_t<FnPtr, 1>>>
+                        && is_owned_region_v<param_type_t<FnPtr, 1>>
+                        // Return type — void (canonical "drain into output buffer" per
+                        // §3.5).
+                        && std::is_void_v<return_type_t<FnPtr>>;
 
 template <auto FnPtr>
 inline constexpr bool is_consumer_endpoint_v = ConsumerEndpoint<FnPtr>;
@@ -153,21 +152,18 @@ inline constexpr bool is_consumer_endpoint_v = ConsumerEndpoint<FnPtr>;
 // returning some void-ish nonsense.
 template <auto FnPtr>
     requires ConsumerEndpoint<FnPtr>
-using consumer_endpoint_handle_value_t =
-    consumer_handle_value_t<param_type_t<FnPtr, 0>>;
+using consumer_endpoint_handle_value_t = consumer_handle_value_t<param_type_t<FnPtr, 0>>;
 
 // Output region's Tag — the sink-side permission tag.
 template <auto FnPtr>
     requires ConsumerEndpoint<FnPtr>
-using consumer_endpoint_region_tag_t =
-    owned_region_tag_t<param_type_t<FnPtr, 1>>;
+using consumer_endpoint_region_tag_t = owned_region_tag_t<param_type_t<FnPtr, 1>>;
 
 // Output region's element type.  Should equal handle_value_t for a
 // well-formed dispatch.
 template <auto FnPtr>
     requires ConsumerEndpoint<FnPtr>
-using consumer_endpoint_region_value_t =
-    owned_region_value_t<param_type_t<FnPtr, 1>>;
+using consumer_endpoint_region_value_t = owned_region_value_t<param_type_t<FnPtr, 1>>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Value-consistency predicate ────────────────────────────────────
@@ -188,8 +184,7 @@ using consumer_endpoint_region_value_t =
 template <auto FnPtr>
     requires ConsumerEndpoint<FnPtr>
 inline constexpr bool consumer_endpoint_value_consistent_v =
-    std::is_same_v<consumer_endpoint_handle_value_t<FnPtr>,
-                   consumer_endpoint_region_value_t<FnPtr>>;
+    std::is_same_v<consumer_endpoint_handle_value_t<FnPtr>, consumer_endpoint_region_value_t<FnPtr>>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Self-test block ────────────────────────────────────────────────

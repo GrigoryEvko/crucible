@@ -115,50 +115,41 @@ namespace crucible::safety {
 // ════════════════════════════════════════════════════════════════════
 template <typename T, std::size_t N, typename Tag = void>
 class [[nodiscard]] TimeOrdered {
-    static_assert(N > 0,
-        "TimeOrdered<T, 0> is forbidden — a zero-participant vector "
-        "clock has no algebraic content.  Use N >= 1; N=1 reduces to "
-        "a Lamport scalar clock.");
+    static_assert(N > 0, "TimeOrdered<T, 0> is forbidden — a zero-participant vector "
+                         "clock has no algebraic content.  Use N >= 1; N=1 reduces to "
+                         "a Lamport scalar clock.");
 
 public:
     // ── Public type aliases ─────────────────────────────────────────
-    using value_type            = T;
+    using value_type = T;
     // Substrate alias chain.  The HappensBeforeLattice's element_type
     // is a non-trivial 2-field struct (regime #4) — TimeOrdered is
     // the first production wrapper to exercise this regime.
-    using lattice_type          = ::crucible::algebra::lattices::HappensBeforeLattice<N, Tag>;
-    using lattice_t             = lattice_type;
-    using vector_clock_t        = typename lattice_type::element_type;
-    using process_id_t          = std::size_t;
-    using tag_t                 = Tag;
+    using lattice_type = ::crucible::algebra::lattices::HappensBeforeLattice<N, Tag>;
+    using lattice_t = lattice_type;
+    using vector_clock_t = typename lattice_type::element_type;
+    using process_id_t = std::size_t;
+    using tag_t = Tag;
     static constexpr std::size_t process_count = N;
     // Modality declaration — Round-4 CHEAT-5; see safety/Linear.h.
-    static constexpr ::crucible::algebra::ModalityKind modality =
-        ::crucible::algebra::ModalityKind::Absolute;
+    static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::Absolute;
     // Public per GRADED-TRAIT-1 — see Linear.h for the rationale.
-    using graded_type           = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Absolute,
-        lattice_type,
-        T>;
+    using graded_type = ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
 
 private:
     graded_type impl_;
 
 public:
-
     // ── Construction ────────────────────────────────────────────────
     //
     // Default-construct: value at T{}, clock at the zero vector
     // (HappensBeforeLattice's bottom()).  Useful for sentinel events.
-    constexpr TimeOrdered() noexcept(
-        std::is_nothrow_default_constructible_v<T>)
-        : impl_{T{}, lattice_type::bottom()} {}
+    constexpr TimeOrdered() noexcept(std::is_nothrow_default_constructible_v<T>) : impl_{T{}, lattice_type::bottom()} {}
 
     // Explicit construction with both value and clock.  The most
     // common production pattern — caller has a value freshly produced
     // at a known causal position and binds them.
-    constexpr TimeOrdered(T value, vector_clock_t vc) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    constexpr TimeOrdered(T value, vector_clock_t vc) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(value), vc} {}
 
     // In-place construction of T inside TimeOrdered, paired with a
@@ -166,17 +157,15 @@ public:
     // mirrors Linear<T>'s std::in_place_t pattern.
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr TimeOrdered(std::in_place_t, vector_clock_t vc, Args&&... args)
-        noexcept(std::is_nothrow_constructible_v<T, Args...>
-                 && std::is_nothrow_move_constructible_v<T>)
+    constexpr TimeOrdered(std::in_place_t, vector_clock_t vc,
+                          Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
+                                                   && std::is_nothrow_move_constructible_v<T>)
         : impl_{T(std::forward<Args>(args)...), vc} {}
 
     // Convenience factory: value at the origin (clock == bottom).
     // Used when an event's first observation is at the start of a
     // session — no prior causal predecessors.
-    [[nodiscard]] static constexpr TimeOrdered at_origin(T value)
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] static constexpr TimeOrdered at_origin(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
         return TimeOrdered{std::move(value), lattice_type::bottom()};
     }
 
@@ -184,11 +173,11 @@ public:
     // (vs Linear<T> which deletes copy).  The Absolute modality with
     // a non-Linearity grade does not impose ownership constraints;
     // events can be replayed via copy.
-    constexpr TimeOrdered(const TimeOrdered&)            = default;
-    constexpr TimeOrdered(TimeOrdered&&)                 = default;
+    constexpr TimeOrdered(const TimeOrdered&) = default;
+    constexpr TimeOrdered(TimeOrdered&&) = default;
     constexpr TimeOrdered& operator=(const TimeOrdered&) = default;
-    constexpr TimeOrdered& operator=(TimeOrdered&&)      = default;
-    ~TimeOrdered()                                       = default;
+    constexpr TimeOrdered& operator=(TimeOrdered&&) = default;
+    ~TimeOrdered() = default;
 
     // Equality: compares BOTH value and clock.  Two events at the
     // same clock with different payloads are unequal events; two
@@ -202,11 +191,9 @@ public:
     // T::operator== with vector_clock_t::operator==, picking the
     // "both must match" semantic that distributed-systems events
     // follow.
-    [[nodiscard]] friend constexpr bool operator==(
-        TimeOrdered const& a, TimeOrdered const& b) noexcept(
-        noexcept(a.peek() == b.peek())
-        && noexcept(a.vector_clock() == b.vector_clock()))
-    {
+    [[nodiscard]] friend constexpr bool
+    operator==(TimeOrdered const& a, TimeOrdered const& b) noexcept(noexcept(a.peek() == b.peek())
+                                                                    && noexcept(a.vector_clock() == b.vector_clock())) {
         return a.peek() == b.peek() && a.vector_clock() == b.vector_clock();
     }
 
@@ -231,9 +218,7 @@ public:
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return graded_type::lattice_name();
-    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 
     // ── Swap (forwarded from Graded substrate) ─────────────────────
     //
@@ -247,34 +232,26 @@ public:
     // The friend overload enables ADL-style `swap(a, b)` calls that
     // generic algorithms (std::swap_ranges, std::iter_swap, etc.)
     // route through.
-    constexpr void swap(TimeOrdered& other)
-        noexcept(std::is_nothrow_swappable_v<T>
-                 && std::is_nothrow_swappable_v<vector_clock_t>)
-    {
+    constexpr void swap(TimeOrdered& other) noexcept(std::is_nothrow_swappable_v<T>
+                                                     && std::is_nothrow_swappable_v<vector_clock_t>) {
         impl_.swap(other.impl_);
     }
 
-    friend constexpr void swap(TimeOrdered& a, TimeOrdered& b)
-        noexcept(std::is_nothrow_swappable_v<T>
-                 && std::is_nothrow_swappable_v<vector_clock_t>)
-    {
+    friend constexpr void swap(TimeOrdered& a,
+                               TimeOrdered& b) noexcept(std::is_nothrow_swappable_v<T>
+                                                        && std::is_nothrow_swappable_v<vector_clock_t>) {
         a.swap(b);
     }
 
     // ── Read-only access ────────────────────────────────────────────
-    [[nodiscard]] constexpr T const& peek() const& noexcept {
-        return impl_.peek();
-    }
+    [[nodiscard]] constexpr T const& peek() const& noexcept { return impl_.peek(); }
 
-    [[nodiscard]] constexpr T consume() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return std::move(impl_).consume();
     }
 
     [[nodiscard]] constexpr vector_clock_t vector_clock() const
-        noexcept(std::is_nothrow_copy_constructible_v<vector_clock_t>)
-    {
+        noexcept(std::is_nothrow_copy_constructible_v<vector_clock_t>) {
         return impl_.grade();
     }
 
@@ -294,8 +271,7 @@ public:
     // `evt.vector_clock_at(my_process)` to ask "what's my view of the
     // sender's events at the moment THIS event was produced?".
     [[nodiscard]] constexpr std::uint64_t vector_clock_at(std::size_t p) const noexcept
-        pre (::crucible::decide::in_range<std::size_t>(p, 0, N - 1))
-    {
+        pre(::crucible::decide::in_range<std::size_t>(p, 0, N - 1)) {
         return impl_.grade()[p];
     }
 
@@ -305,9 +281,7 @@ public:
     // — sound here because the vector-clock grade is orthogonal to T's
     // bytes (the clock records WHEN the value was produced, not WHAT
     // it contains; mutation of the value doesn't violate the clock).
-    [[nodiscard]] constexpr T& peek_mut() & noexcept {
-        return impl_.peek_mut();
-    }
+    [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(); }
 
     // ── Distributed-systems vocabulary (forwards to lattice) ────────
     //
@@ -317,9 +291,7 @@ public:
 
     // a → b: strict causal precedence.  a's clock is leq b's AND
     // they are not equal.  Asymmetric, irreflexive, transitive.
-    [[nodiscard]] constexpr bool happens_before(
-        TimeOrdered const& other) const noexcept
-    {
+    [[nodiscard]] constexpr bool happens_before(TimeOrdered const& other) const noexcept {
         return lattice_type::happens_before(this->vector_clock(), other.vector_clock());
     }
 
@@ -327,17 +299,13 @@ public:
     // distinctive vector-clock feature — events that could have
     // happened in either order.  For N=1 (degenerate Lamport) this
     // is vacuously false except for equal clocks.
-    [[nodiscard]] constexpr bool is_concurrent(
-        TimeOrdered const& other) const noexcept
-    {
+    [[nodiscard]] constexpr bool is_concurrent(TimeOrdered const& other) const noexcept {
         return lattice_type::is_concurrent(this->vector_clock(), other.vector_clock());
     }
 
     // Comparable in EITHER direction (complement of is_concurrent
     // modulo equality).
-    [[nodiscard]] constexpr bool comparable(
-        TimeOrdered const& other) const noexcept
-    {
+    [[nodiscard]] constexpr bool comparable(TimeOrdered const& other) const noexcept {
         return lattice_type::comparable(this->vector_clock(), other.vector_clock());
     }
 
@@ -354,18 +322,15 @@ public:
 
     // Local-event advancement: process p observes a local event,
     // bumps its slot.  pre (p < N) inherited from successor_at.
-    [[nodiscard]] constexpr TimeOrdered advance_at(std::size_t p) const&
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
+    [[nodiscard]] constexpr TimeOrdered
+    advance_at(std::size_t p) const& noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
-        pre (::crucible::decide::in_range<std::size_t>(p, 0, N - 1))
-    {
+    pre(::crucible::decide::in_range<std::size_t>(p, 0, N - 1)) {
         return TimeOrdered{this->peek(), lattice_type::successor_at(this->vector_clock(), p)};
     }
 
-    [[nodiscard]] constexpr TimeOrdered advance_at(std::size_t p) &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-        pre (::crucible::decide::in_range<std::size_t>(p, 0, N - 1))
-    {
+    [[nodiscard]] constexpr TimeOrdered advance_at(std::size_t p) && noexcept(std::is_nothrow_move_constructible_v<T>)
+        pre(::crucible::decide::in_range<std::size_t>(p, 0, N - 1)) {
         vector_clock_t advanced = lattice_type::successor_at(this->vector_clock(), p);
         return TimeOrdered{std::move(impl_).consume(), advanced};
     }
@@ -374,18 +339,14 @@ public:
     // distributed-systems-vocabulary verb.  "I observed a local
     // event; tick the clock at my slot."  Both names live; choose
     // by call-site readability.  No semantic difference.
-    [[nodiscard]] constexpr TimeOrdered tick(std::size_t p) const&
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
+    [[nodiscard]] constexpr TimeOrdered tick(std::size_t p) const& noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
-        pre (::crucible::decide::in_range<std::size_t>(p, 0, N - 1))
-    {
+    pre(::crucible::decide::in_range<std::size_t>(p, 0, N - 1)) {
         return advance_at(p);
     }
 
-    [[nodiscard]] constexpr TimeOrdered tick(std::size_t p) &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-        pre (::crucible::decide::in_range<std::size_t>(p, 0, N - 1))
-    {
+    [[nodiscard]] constexpr TimeOrdered tick(std::size_t p) && noexcept(std::is_nothrow_move_constructible_v<T>)
+        pre(::crucible::decide::in_range<std::size_t>(p, 0, N - 1)) {
         return std::move(*this).advance_at(p);
     }
 
@@ -399,16 +360,15 @@ public:
     // clock.  The caller is responsible for whatever protocol-
     // discipline applies (typically: only call this with a clock
     // that's known to be ≥ this->vector_clock() under the lattice's leq).
-    [[nodiscard]] constexpr TimeOrdered with_vector_clock(vector_clock_t new_vector_clock) const&
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
+    [[nodiscard]] constexpr TimeOrdered
+    with_vector_clock(vector_clock_t new_vector_clock) const& noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
     {
         return TimeOrdered{this->peek(), new_vector_clock};
     }
 
-    [[nodiscard]] constexpr TimeOrdered with_vector_clock(vector_clock_t new_vector_clock) &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr TimeOrdered
+    with_vector_clock(vector_clock_t new_vector_clock) && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return TimeOrdered{std::move(impl_).consume(), new_vector_clock};
     }
 
@@ -421,11 +381,9 @@ public:
     // either THIS's payload, or a merged transform of both — the
     // wrapper doesn't dictate the payload-merge policy because that
     // depends on T's domain).
-    [[nodiscard]] constexpr TimeOrdered merge(
-        T received_value, vector_clock_t received_vector_clock, std::size_t me) const noexcept(
-        std::is_nothrow_move_constructible_v<T>)
-        pre (::crucible::decide::in_range<std::size_t>(me, 0, N - 1))
-    {
+    [[nodiscard]] constexpr TimeOrdered merge(T received_value, vector_clock_t received_vector_clock,
+                                              std::size_t me) const noexcept(std::is_nothrow_move_constructible_v<T>)
+        pre(::crucible::decide::in_range<std::size_t>(me, 0, N - 1)) {
         vector_clock_t merged = lattice_type::causal_merge(this->vector_clock(), received_vector_clock, me);
         return TimeOrdered{std::move(received_value), merged};
     }
@@ -454,18 +412,18 @@ TimeOrdered(T, typename ::crucible::algebra::lattices::HappensBeforeLattice<N, T
 namespace detail::time_ordered_layout {
 
 // Witness T = std::int64_t (typical event payload-hash slot).
-using TO_int64_n4  = TimeOrdered<std::int64_t, 4>;
-using TO_int64_n8  = TimeOrdered<std::int64_t, 8>;
+using TO_int64_n4 = TimeOrdered<std::int64_t, 4>;
+using TO_int64_n8 = TimeOrdered<std::int64_t, 8>;
 using TO_int64_n16 = TimeOrdered<std::int64_t, 16>;
 
 // Each clock is N×8 bytes; T is 8 bytes; total is sizeof(T) +
 // sizeof(clock) + alignment padding (≤ alignof(uint64_t) = 8).
-static_assert(sizeof(TO_int64_n4)  <= sizeof(std::int64_t) + 4  * sizeof(std::uint64_t) + 8,
-    "TimeOrdered<int64, 4> exceeded sizeof(int64) + 32 + 8 bytes — "
-    "the regime-#4 storage discipline drifted.  Investigate "
-    "HappensBeforeLattice<4>::element_type alignment OR Graded's "
-    "grade_ field placement.");
-static_assert(sizeof(TO_int64_n8)  <= sizeof(std::int64_t) + 8  * sizeof(std::uint64_t) + 8);
+static_assert(sizeof(TO_int64_n4) <= sizeof(std::int64_t) + 4 * sizeof(std::uint64_t) + 8,
+              "TimeOrdered<int64, 4> exceeded sizeof(int64) + 32 + 8 bytes — "
+              "the regime-#4 storage discipline drifted.  Investigate "
+              "HappensBeforeLattice<4>::element_type alignment OR Graded's "
+              "grade_ field placement.");
+static_assert(sizeof(TO_int64_n8) <= sizeof(std::int64_t) + 8 * sizeof(std::uint64_t) + 8);
 static_assert(sizeof(TO_int64_n16) <= sizeof(std::int64_t) + 16 * sizeof(std::uint64_t) + 8);
 
 // Witness T = void* (typical pointer payload — a kernel result handle).
@@ -498,30 +456,30 @@ inline constexpr TO4 evt_y{50, HB4::element_type{{0, 2, 0, 1}}};
 // at_origin factory yields a TimeOrdered at clock = bottom.
 inline constexpr TO4 evt_origin = TO4::at_origin(99);
 static_assert(evt_origin.vector_clock() == HB4::element_type{{0, 0, 0, 0}});
-static_assert(evt_origin.peek()  == 99);
+static_assert(evt_origin.peek() == 99);
 
 // Default ctor: value = T{}, clock = bottom.
 inline constexpr TO4 evt_default{};
 static_assert(evt_default.vector_clock() == HB4::element_type{{0, 0, 0, 0}});
-static_assert(evt_default.peek()  == 0);
+static_assert(evt_default.peek() == 0);
 
 // Strict causal chain: a → b → c.
-static_assert( evt_a.happens_before(evt_b));
-static_assert( evt_b.happens_before(evt_c));
-static_assert( evt_a.happens_before(evt_c));   // transitive
-static_assert(!evt_b.happens_before(evt_a));   // asymmetric
-static_assert(!evt_a.happens_before(evt_a));   // irreflexive (strict)
+static_assert(evt_a.happens_before(evt_b));
+static_assert(evt_b.happens_before(evt_c));
+static_assert(evt_a.happens_before(evt_c));  // transitive
+static_assert(!evt_b.happens_before(evt_a));  // asymmetric
+static_assert(!evt_a.happens_before(evt_a));  // irreflexive (strict)
 
 // Concurrent pair: x ∥ y (neither happens-before the other).
-static_assert( evt_x.is_concurrent(evt_y));
-static_assert( evt_y.is_concurrent(evt_x));   // symmetric
+static_assert(evt_x.is_concurrent(evt_y));
+static_assert(evt_y.is_concurrent(evt_x));  // symmetric
 static_assert(!evt_x.happens_before(evt_y));
 static_assert(!evt_y.happens_before(evt_x));
 static_assert(!evt_x.comparable(evt_y));
 
 // Comparable forms — chain elements ARE comparable.
-static_assert( evt_a.comparable(evt_b));
-static_assert( evt_a.comparable(evt_c));
+static_assert(evt_a.comparable(evt_b));
+static_assert(evt_a.comparable(evt_c));
 
 // Equality: same value AND clock → equal.
 static_assert(evt_a == TO4{10, HB4::element_type{{1, 0, 0, 0}}});
@@ -544,7 +502,7 @@ static_assert(evt_c.vector_clock_at(2) == 1);
 // advance_at on rvalue: produces a successor event.
 inline constexpr TO4 evt_a_after = TO4{10, HB4::element_type{{1, 0, 0, 0}}}.advance_at(0);
 static_assert(evt_a_after.vector_clock() == HB4::element_type{{2, 0, 0, 0}});
-static_assert(evt_a_after.peek()  == 10);
+static_assert(evt_a_after.peek() == 10);
 
 // Successor strictly happens after predecessor.
 static_assert(evt_a.happens_before(evt_a_after));
@@ -552,14 +510,14 @@ static_assert(evt_a.happens_before(evt_a_after));
 // tick(p) — synonym for advance_at(p), confirms semantic identity.
 inline constexpr TO4 evt_a_ticked = evt_a.tick(0);
 static_assert(evt_a_ticked.vector_clock() == evt_a_after.vector_clock());
-static_assert(evt_a_ticked.peek()  == evt_a.peek());
+static_assert(evt_a_ticked.peek() == evt_a.peek());
 static_assert(evt_a.happens_before(evt_a_ticked));
 
 // with_vector_clock — same payload, different vector clock.  No monotonicity
 // constraint — caller responsibility.  Used for peer-state
 // notifications: "rebind my view of this value to a new clock."
 inline constexpr TO4 evt_a_relocated = evt_a.with_vector_clock(HB4::element_type{{5, 5, 5, 5}});
-static_assert(evt_a_relocated.peek()  == evt_a.peek());
+static_assert(evt_a_relocated.peek() == evt_a.peek());
 static_assert(evt_a_relocated.vector_clock() == HB4::element_type{{5, 5, 5, 5}});
 
 // merge: receive evt_y at process 0 — pointwise max of clocks + bump
@@ -567,7 +525,7 @@ static_assert(evt_a_relocated.vector_clock() == HB4::element_type{{5, 5, 5, 5}})
 // → {2,2,0,1}.  Payload = received_value (123 in this witness).
 inline constexpr TO4 evt_merged = evt_a.merge(123, evt_y.vector_clock(), 0);
 static_assert(evt_merged.vector_clock() == HB4::element_type{{2, 2, 0, 1}});
-static_assert(evt_merged.peek()  == 123);
+static_assert(evt_merged.peek() == 123);
 
 // Post-merge event observes BOTH input clocks (causal closure).
 static_assert(evt_a.happens_before(evt_merged));
@@ -604,8 +562,8 @@ static_assert(TO4::lattice_name() == "HappensBeforeLattice");
     TO4 a{10, HB4::element_type{{1, 0, 0, 0}}};
     TO4 b{20, HB4::element_type{{2, 2, 1, 0}}};
     a.swap(b);
-    return a.peek() == 20 && a.vector_clock() == HB4::element_type{{2, 2, 1, 0}}
-        && b.peek() == 10 && b.vector_clock() == HB4::element_type{{1, 0, 0, 0}};
+    return a.peek() == 20 && a.vector_clock() == HB4::element_type{{2, 2, 1, 0}} && b.peek() == 10
+        && b.vector_clock() == HB4::element_type{{1, 0, 0, 0}};
 }
 static_assert(swap_exchanges_both_components());
 
@@ -636,8 +594,8 @@ inline void runtime_smoke_test() {
     TO4 y{50, cy};
 
     [[maybe_unused]] bool hb_ab = a.happens_before(b);
-    [[maybe_unused]] bool conc  = a.is_concurrent(y);
-    [[maybe_unused]] bool comp  = a.comparable(b);
+    [[maybe_unused]] bool conc = a.is_concurrent(y);
+    [[maybe_unused]] bool comp = a.comparable(b);
 
     // Successor + merge.
     TO4 a_succ = a.advance_at(0);

@@ -81,8 +81,8 @@ class Cipher;
 // full Cipher header.  The tag is a phantom — empty struct, no
 // invariants of its own.
 namespace cipher_state {
-    struct Open {};
-}
+struct Open {};
+}  // namespace cipher_state
 
 // fixy-A2-014: namespace-scope alias for the proof-of-Open scoped
 // view.  Class Cipher re-exports this as `Cipher::OpenView` to keep
@@ -97,8 +97,6 @@ using CipherOpenView = safety::ScopedView<Cipher, cipher_state::Open>;
 // fsyncs at boundaries (Block).  Class Cipher re-exports this as its
 // `persist_session_events_required_row` member.
 using CipherSessionEventPersistenceRow =
-    ::crucible::effects::Row<
-        ::crucible::effects::Effect::IO,
-        ::crucible::effects::Effect::Block>;
+    ::crucible::effects::Row<::crucible::effects::Effect::IO, ::crucible::effects::Effect::Block>;
 
 }  // namespace crucible

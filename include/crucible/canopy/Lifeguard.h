@@ -25,25 +25,14 @@
 namespace crucible::canopy {
 
 template <std::size_t MaxPeers, std::size_t RttWindow, std::size_t MaxEvents>
-concept LifeguardShape =
-    MaxPeers > 0 &&
-    RttWindow > 1 &&
-    MaxEvents > 0 &&
-    MaxPeers <= static_cast<std::size_t>(
-        std::numeric_limits<std::uint16_t>::max()) &&
-    RttWindow <= static_cast<std::size_t>(
-        std::numeric_limits<std::uint16_t>::max()) &&
-    MaxEvents <= static_cast<std::size_t>(
-        std::numeric_limits<std::uint16_t>::max());
+concept LifeguardShape = MaxPeers > 0 && RttWindow > 1 && MaxEvents > 0
+                      && MaxPeers <= static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max())
+                      && RttWindow <= static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max())
+                      && MaxEvents <= static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max());
 
 template <std::size_t Capacity>
-    requires (Capacity > 0 &&
-              Capacity <= static_cast<std::size_t>(
-                  std::numeric_limits<std::uint16_t>::max()))
-using LifeguardCount =
-    safety::Refined<safety::bounded_above<
-                        static_cast<std::uint16_t>(Capacity)>,
-                    std::uint16_t>;
+    requires(Capacity > 0 && Capacity <= static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max()))
+using LifeguardCount = safety::Refined<safety::bounded_above<static_cast<std::uint16_t>(Capacity)>, std::uint16_t>;
 
 using LifeguardDurationNs = safety::Refined<safety::positive, std::uint64_t>;
 using LifeguardPositiveCount = safety::Refined<safety::positive, std::uint16_t>;
@@ -66,8 +55,7 @@ enum class LifeguardError : std::uint8_t {
     ZeroUuid,
 };
 
-[[nodiscard]] std::string_view
-lifeguard_error_name(LifeguardError error) noexcept;
+[[nodiscard]] std::string_view lifeguard_error_name(LifeguardError error) noexcept;
 
 struct LifeguardConfig {
     LifeguardDurationNs base_probe_timeout_ns{500'000'000ULL};
@@ -103,41 +91,28 @@ struct LifeguardRefutePlan {
 };
 
 template <std::size_t Capacity>
-    requires (Capacity > 0)
+    requires(Capacity > 0)
 struct LifeguardEventBatch {
     safety::FixedArray<LifeguardEvent, Capacity> events{};
     std::uint16_t count = 0;
 
-    [[nodiscard]] constexpr LifeguardCount<Capacity>
-    size() const noexcept {
-        return LifeguardCount<Capacity>{
-            count,
-            typename LifeguardCount<Capacity>::Trusted{}};
+    [[nodiscard]] constexpr LifeguardCount<Capacity> size() const noexcept {
+        return LifeguardCount<Capacity>{count, typename LifeguardCount<Capacity>::Trusted{}};
     }
 };
 
-template <std::size_t MaxPeers = 128,
-          std::size_t MaxPiggyback = 32,
-          std::size_t RttWindow = 16,
+template <std::size_t MaxPeers = 128, std::size_t MaxPiggyback = 32, std::size_t RttWindow = 16,
           std::size_t MaxEvents = MaxPeers * 4>
-    requires SwimCapacity<MaxPeers> &&
-             SwimCapacity<MaxPiggyback> &&
-             LifeguardShape<MaxPeers, RttWindow, MaxEvents>
-class alignas(64) LifeguardSwim
-    : public safety::Pinned<
-          LifeguardSwim<MaxPeers, MaxPiggyback, RttWindow, MaxEvents>> {
+    requires SwimCapacity<MaxPeers> && SwimCapacity<MaxPiggyback> && LifeguardShape<MaxPeers, RttWindow, MaxEvents>
+class alignas(64) LifeguardSwim : public safety::Pinned<LifeguardSwim<MaxPeers, MaxPiggyback, RttWindow, MaxEvents>> {
 public:
     using swim_type = SwimMembership<MaxPeers, MaxPiggyback>;
     using witness_set_type = SwimWitnessSet<MaxPeers>;
     using event_batch_type = LifeguardEventBatch<MaxEvents>;
 
-    LifeguardSwim(SwimPeer local_peer,
-                  std::span<const SwimPeer> initial_peers = {},
-                  LifeguardConfig lifeguard_config = {},
-                  SwimConfig swim_config = {}) noexcept
-        : swim_{swim_config},
-          local_{local_peer.value()},
-          lifeguard_config_{lifeguard_config} {
+    LifeguardSwim(SwimPeer local_peer, std::span<const SwimPeer> initial_peers = {},
+                  LifeguardConfig lifeguard_config = {}, SwimConfig swim_config = {}) noexcept
+        : swim_{swim_config}, local_{local_peer.value()}, lifeguard_config_{lifeguard_config} {
         // FIXY-U-080 / fixy-A5-014: was __builtin_trap (silent SIGILL).
         CRUCIBLE_FATAL_INVARIANT(config_valid_());
         for (SwimPeer const& peer : initial_peers) {
@@ -145,26 +120,17 @@ public:
         }
     }
 
-    [[nodiscard]] LifeguardConfig lifeguard_config() const noexcept {
-        return lifeguard_config_;
-    }
+    [[nodiscard]] LifeguardConfig lifeguard_config() const noexcept { return lifeguard_config_; }
 
-    [[nodiscard]] SwimConfig swim_config() const noexcept {
-        return swim_.config();
-    }
+    [[nodiscard]] SwimConfig swim_config() const noexcept { return swim_.config(); }
 
-    [[nodiscard]] cog::CogIdentity local_peer() const noexcept {
-        return local_;
-    }
+    [[nodiscard]] cog::CogIdentity local_peer() const noexcept { return local_; }
 
     [[nodiscard]] LifeguardCount<MaxPeers> size() const noexcept {
-        return LifeguardCount<MaxPeers>{
-            swim_.size().value(),
-            typename LifeguardCount<MaxPeers>::Trusted{}};
+        return LifeguardCount<MaxPeers>{swim_.size().value(), typename LifeguardCount<MaxPeers>::Trusted{}};
     }
 
-    [[nodiscard]] std::expected<void, LifeguardError>
-    add_peer(SwimPeer peer) noexcept {
+    [[nodiscard]] std::expected<void, LifeguardError> add_peer(SwimPeer peer) noexcept {
         auto added = swim_.add_peer(peer);
         if (!added) {
             return std::unexpected(map_swim_error_(added.error()));
@@ -181,33 +147,23 @@ public:
         if (slot == nullptr) {
             return std::unexpected(LifeguardError::PeerNotFound);
         }
-        return LifeguardMultiplier{
-            slot->lhm,
-            typename LifeguardMultiplier::Trusted{}};
+        return LifeguardMultiplier{slot->lhm, typename LifeguardMultiplier::Trusted{}};
     }
 
-    [[nodiscard]] std::expected<LifeguardDurationNs, LifeguardError>
-    adaptive_timeout(cog::Uuid peer) const noexcept {
+    [[nodiscard]] std::expected<LifeguardDurationNs, LifeguardError> adaptive_timeout(cog::Uuid peer) const noexcept {
         Slot const* slot = find_slot_(peer);
         if (slot == nullptr) {
             return std::unexpected(LifeguardError::PeerNotFound);
         }
-        const std::uint64_t by_lhm = sat_mul_(
-            lifeguard_config_.base_probe_timeout_ns.value(),
-            slot->lhm);
-        const std::uint64_t by_rtt =
-            slot->rtt_count == 0
-                ? std::uint64_t{0}
-                : sat_mul_(mean_rtt_(*slot),
-                           lifeguard_config_.rtt_safety_multiplier.value());
+        const std::uint64_t by_lhm = sat_mul_(lifeguard_config_.base_probe_timeout_ns.value(), slot->lhm);
+        const std::uint64_t by_rtt = slot->rtt_count == 0
+                                       ? std::uint64_t{0}
+                                       : sat_mul_(mean_rtt_(*slot), lifeguard_config_.rtt_safety_multiplier.value());
         const std::uint64_t timeout = std::max(by_lhm, by_rtt);
-        return LifeguardDurationNs{
-            timeout == 0 ? std::uint64_t{1} : timeout,
-            typename LifeguardDurationNs::Trusted{}};
+        return LifeguardDurationNs{timeout == 0 ? std::uint64_t{1} : timeout, typename LifeguardDurationNs::Trusted{}};
     }
 
-    [[nodiscard]] std::optional<LifeguardProbe>
-    next_probe(std::uint64_t now_ns) noexcept {
+    [[nodiscard]] std::optional<LifeguardProbe> next_probe(std::uint64_t now_ns) noexcept {
         auto probe = swim_.next_probe(now_ns);
         if (!probe) {
             return std::nullopt;
@@ -226,10 +182,8 @@ public:
         };
     }
 
-    [[nodiscard]] std::expected<void, LifeguardError>
-    on_ack(cog::Uuid peer,
-           std::uint64_t now_ns,
-           LifeguardRttNs rtt) noexcept {
+    [[nodiscard]] std::expected<void, LifeguardError> on_ack(cog::Uuid peer, std::uint64_t now_ns,
+                                                             LifeguardRttNs rtt) noexcept {
         auto ack = swim_.on_ack(peer, now_ns);
         if (!ack) {
             return std::unexpected(map_swim_error_(ack.error()));
@@ -243,8 +197,7 @@ public:
         return {};
     }
 
-    [[nodiscard]] std::expected<void, LifeguardError>
-    on_ping_timeout(cog::Uuid peer) noexcept {
+    [[nodiscard]] std::expected<void, LifeguardError> on_ping_timeout(cog::Uuid peer) noexcept {
         auto timeout = swim_.on_ping_timeout(peer);
         if (!timeout) {
             return std::unexpected(map_swim_error_(timeout.error()));
@@ -257,10 +210,8 @@ public:
         return {};
     }
 
-    [[nodiscard]] std::expected<void, LifeguardError>
-    on_indirect_ack(cog::Uuid peer,
-                    std::uint64_t now_ns,
-                    LifeguardRttNs rtt) noexcept {
+    [[nodiscard]] std::expected<void, LifeguardError> on_indirect_ack(cog::Uuid peer, std::uint64_t now_ns,
+                                                                      LifeguardRttNs rtt) noexcept {
         auto ack = swim_.on_indirect_ack(peer, now_ns);
         if (!ack) {
             return std::unexpected(map_swim_error_(ack.error()));
@@ -274,8 +225,7 @@ public:
         return {};
     }
 
-    [[nodiscard]] std::expected<void, LifeguardError>
-    on_indirect_timeout(cog::Uuid peer) noexcept {
+    [[nodiscard]] std::expected<void, LifeguardError> on_indirect_timeout(cog::Uuid peer) noexcept {
         auto timeout = swim_.on_indirect_timeout(peer);
         if (!timeout) {
             return std::unexpected(map_swim_error_(timeout.error()));
@@ -288,8 +238,7 @@ public:
         return {};
     }
 
-    [[nodiscard]] std::expected<void, LifeguardError>
-    on_no_loss_window(cog::Uuid peer) noexcept {
+    [[nodiscard]] std::expected<void, LifeguardError> on_no_loss_window(cog::Uuid peer) noexcept {
         Slot* slot = find_slot_(peer);
         if (slot == nullptr) {
             return std::unexpected(LifeguardError::PeerNotFound);
@@ -298,8 +247,7 @@ public:
         return {};
     }
 
-    [[nodiscard]] witness_set_type
-    indirect_witnesses(cog::Uuid suspect) const noexcept {
+    [[nodiscard]] witness_set_type indirect_witnesses(cog::Uuid suspect) const noexcept {
         witness_set_type out{};
         const std::uint16_t limit = adaptive_indirect_count_(suspect);
         auto live = swim_.live_peers();
@@ -313,23 +261,23 @@ public:
         return out;
     }
 
-    [[nodiscard]] std::expected<LifeguardRefutePlan, LifeguardError>
-    apply_gossip(GossipedSwimEvent event, std::uint64_t now_ns) noexcept {
+    [[nodiscard]] std::expected<LifeguardRefutePlan, LifeguardError> apply_gossip(GossipedSwimEvent event,
+                                                                                  std::uint64_t now_ns) noexcept {
         SwimEvent const& incoming = event.value();
         if (incoming.peer.uuid.is_zero()) {
             return std::unexpected(LifeguardError::ZeroUuid);
         }
-        if (incoming.peer.uuid == local_.uuid &&
-            incoming.state == SwimState::Suspect) {
+        if (incoming.peer.uuid == local_.uuid && incoming.state == SwimState::Suspect) {
             LifeguardRefutePlan out{
                 .should_refute = true,
-                .alive = SwimEvent{
-                    .peer = local_,
-                    .state = SwimState::Alive,
-                    .consecutive_misses = 0,
-                    .incarnation = sat_add_(incoming.incarnation, 1),
-                    .sequence = ++sequence_,
-                },
+                .alive =
+                    SwimEvent{
+                        .peer = local_,
+                        .state = SwimState::Alive,
+                        .consecutive_misses = 0,
+                        .incarnation = sat_add_(incoming.incarnation, 1),
+                        .sequence = ++sequence_,
+                    },
             };
             return out;
         }
@@ -340,8 +288,7 @@ public:
         if (!ensure_slot_(incoming.peer)) {
             return std::unexpected(LifeguardError::CapacityExceeded);
         }
-        if (incoming.state == SwimState::Suspect ||
-            incoming.state == SwimState::Dead) {
+        if (incoming.state == SwimState::Suspect || incoming.state == SwimState::Dead) {
             Slot* slot = find_slot_(incoming.peer.uuid);
             if (slot != nullptr) {
                 penalize_lhm_(*slot, LifeguardOutcome::Timeout);
@@ -367,9 +314,7 @@ public:
         event_count_ = static_cast<std::uint16_t>(event_count_ - n);
     }
 
-    [[nodiscard]] swim_type const& swim() const noexcept {
-        return swim_;
-    }
+    [[nodiscard]] swim_type const& swim() const noexcept { return swim_; }
 
 private:
     struct alignas(64) Slot {
@@ -382,16 +327,12 @@ private:
     };
 
     [[nodiscard]] bool config_valid_() const noexcept {
-        return !local_.uuid.is_zero() &&
-               lifeguard_config_.min_lhm.value() <=
-               lifeguard_config_.max_lhm.value() &&
-               lifeguard_config_.min_indirect_checks.value() <=
-               lifeguard_config_.max_indirect_checks.value() &&
-               lifeguard_config_.max_indirect_checks.value() <= MaxPeers;
+        return !local_.uuid.is_zero() && lifeguard_config_.min_lhm.value() <= lifeguard_config_.max_lhm.value()
+            && lifeguard_config_.min_indirect_checks.value() <= lifeguard_config_.max_indirect_checks.value()
+            && lifeguard_config_.max_indirect_checks.value() <= MaxPeers;
     }
 
-    [[nodiscard]] static constexpr LifeguardError
-    map_swim_error_(SwimError error) noexcept {
+    [[nodiscard]] static constexpr LifeguardError map_swim_error_(SwimError error) noexcept {
         switch (error) {
             case SwimError::CapacityExceeded:
                 return LifeguardError::CapacityExceeded;
@@ -406,14 +347,12 @@ private:
         }
     }
 
-    [[nodiscard]] static constexpr std::uint64_t
-    sat_add_(std::uint64_t a, std::uint64_t b) noexcept {
+    [[nodiscard]] static constexpr std::uint64_t sat_add_(std::uint64_t a, std::uint64_t b) noexcept {
         const std::uint64_t max = std::numeric_limits<std::uint64_t>::max();
         return a > max - b ? max : a + b;
     }
 
-    [[nodiscard]] static constexpr std::uint64_t
-    sat_mul_(std::uint64_t a, std::uint64_t b) noexcept {
+    [[nodiscard]] static constexpr std::uint64_t sat_mul_(std::uint64_t a, std::uint64_t b) noexcept {
         if (a == 0 || b == 0) {
             return 0;
         }
@@ -470,42 +409,30 @@ private:
         return mean == 0 ? std::uint64_t{1} : mean;
     }
 
-    [[nodiscard]] std::uint16_t
-    adaptive_indirect_count_(cog::Uuid peer) const noexcept {
+    [[nodiscard]] std::uint16_t adaptive_indirect_count_(cog::Uuid peer) const noexcept {
         Slot const* slot = find_slot_(peer);
-        const std::uint16_t lhm = slot == nullptr
-            ? lifeguard_config_.min_lhm.value()
-            : slot->lhm;
-        const std::uint16_t lhm_delta =
-            lhm <= lifeguard_config_.min_lhm.value()
-                ? std::uint16_t{0}
-                : static_cast<std::uint16_t>(
-                    lhm - lifeguard_config_.min_lhm.value());
+        const std::uint16_t lhm = slot == nullptr ? lifeguard_config_.min_lhm.value() : slot->lhm;
+        const std::uint16_t lhm_delta = lhm <= lifeguard_config_.min_lhm.value()
+                                          ? std::uint16_t{0}
+                                          : static_cast<std::uint16_t>(lhm - lifeguard_config_.min_lhm.value());
         const std::uint16_t desired = static_cast<std::uint16_t>(
-            lifeguard_config_.min_indirect_checks.value() +
-            std::min<std::uint16_t>(
-                lhm_delta,
-                static_cast<std::uint16_t>(
-                    lifeguard_config_.max_indirect_checks.value() -
-                    lifeguard_config_.min_indirect_checks.value())));
-        return std::min<std::uint16_t>(
-            desired,
-            lifeguard_config_.max_indirect_checks.value());
+            lifeguard_config_.min_indirect_checks.value()
+            + std::min<std::uint16_t>(lhm_delta,
+                                      static_cast<std::uint16_t>(lifeguard_config_.max_indirect_checks.value()
+                                                                 - lifeguard_config_.min_indirect_checks.value())));
+        return std::min<std::uint16_t>(desired, lifeguard_config_.max_indirect_checks.value());
     }
 
     void record_rtt_(Slot& slot, std::uint64_t rtt_ns) noexcept {
         slot.rtt_ns[slot.rtt_cursor] = rtt_ns;
-        slot.rtt_cursor = static_cast<std::uint16_t>(
-            (static_cast<std::size_t>(slot.rtt_cursor) + std::size_t{1}) %
-            RttWindow);
+        slot.rtt_cursor =
+            static_cast<std::uint16_t>((static_cast<std::size_t>(slot.rtt_cursor) + std::size_t{1}) % RttWindow);
         if (slot.rtt_count < RttWindow) {
             ++slot.rtt_count;
         }
     }
 
-    void append_event_(Slot const& slot,
-                       LifeguardOutcome outcome,
-                       std::uint16_t prior_lhm,
+    void append_event_(Slot const& slot, LifeguardOutcome outcome, std::uint16_t prior_lhm,
                        std::uint64_t observed_rtt_ns) noexcept {
         LifeguardEvent event{
             .peer = slot.peer,
@@ -528,26 +455,19 @@ private:
     void penalize_lhm_(Slot& slot, LifeguardOutcome outcome) noexcept {
         const std::uint16_t prior = slot.lhm;
         const std::uint16_t max_lhm = lifeguard_config_.max_lhm.value();
-        const std::uint16_t penalty =
-            lifeguard_config_.lhm_timeout_penalty.value();
+        const std::uint16_t penalty = lifeguard_config_.lhm_timeout_penalty.value();
         slot.lhm = static_cast<std::uint16_t>(
-            std::min<std::uint32_t>(
-                max_lhm,
-                static_cast<std::uint32_t>(slot.lhm) + penalty));
+            std::min<std::uint32_t>(max_lhm, static_cast<std::uint32_t>(slot.lhm) + penalty));
         append_event_(slot, outcome, prior, 0);
     }
 
-    void recover_lhm_(Slot& slot,
-                      LifeguardOutcome outcome,
-                      std::uint64_t observed_rtt_ns) noexcept {
+    void recover_lhm_(Slot& slot, LifeguardOutcome outcome, std::uint64_t observed_rtt_ns) noexcept {
         const std::uint16_t prior = slot.lhm;
         const std::uint16_t min_lhm = lifeguard_config_.min_lhm.value();
-        const std::uint16_t recovery =
-            lifeguard_config_.lhm_success_recovery.value();
-        slot.lhm = slot.lhm <= min_lhm ||
-                   static_cast<std::uint16_t>(slot.lhm - min_lhm) <= recovery
-            ? min_lhm
-            : static_cast<std::uint16_t>(slot.lhm - recovery);
+        const std::uint16_t recovery = lifeguard_config_.lhm_success_recovery.value();
+        slot.lhm = slot.lhm <= min_lhm || static_cast<std::uint16_t>(slot.lhm - min_lhm) <= recovery
+                     ? min_lhm
+                     : static_cast<std::uint16_t>(slot.lhm - recovery);
         append_event_(slot, outcome, prior, observed_rtt_ns);
     }
 
@@ -564,25 +484,14 @@ private:
 static_assert(!std::is_copy_constructible_v<LifeguardSwim<4, 8, 4, 8>>);
 static_assert(!std::is_move_constructible_v<LifeguardSwim<4, 8, 4, 8>>);
 
-template <std::size_t MaxPeers = 128,
-          std::size_t MaxPiggyback = 32,
-          std::size_t RttWindow = 16,
+template <std::size_t MaxPeers = 128, std::size_t MaxPiggyback = 32, std::size_t RttWindow = 16,
           std::size_t MaxEvents = MaxPeers * 4>
-    requires SwimCapacity<MaxPeers> &&
-             SwimCapacity<MaxPiggyback> &&
-             LifeguardShape<MaxPeers, RttWindow, MaxEvents>
+    requires SwimCapacity<MaxPeers> && SwimCapacity<MaxPiggyback> && LifeguardShape<MaxPeers, RttWindow, MaxEvents>
 [[nodiscard]] LifeguardSwim<MaxPeers, MaxPiggyback, RttWindow, MaxEvents>
-mint_lifeguard_swim(
-    effects::Init,
-    SwimPeer local_peer,
-    std::span<const SwimPeer> initial_peers = {},
-    LifeguardConfig lifeguard_config = {},
-    SwimConfig swim_config = {}) noexcept {
-    return LifeguardSwim<MaxPeers, MaxPiggyback, RttWindow, MaxEvents>{
-        local_peer,
-        initial_peers,
-        lifeguard_config,
-        swim_config};
+mint_lifeguard_swim(effects::Init, SwimPeer local_peer, std::span<const SwimPeer> initial_peers = {},
+                    LifeguardConfig lifeguard_config = {}, SwimConfig swim_config = {}) noexcept {
+    return LifeguardSwim<MaxPeers, MaxPiggyback, RttWindow, MaxEvents>{local_peer, initial_peers, lifeguard_config,
+                                                                       swim_config};
 }
 
 }  // namespace crucible::canopy

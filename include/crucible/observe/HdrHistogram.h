@@ -43,29 +43,23 @@ namespace detail {
 
 template <std::uint8_t Significant, std::uint64_t MaxValue>
 struct HdrLayout {
-    static_assert(Significant >= 1 && Significant <= 5,
-                  "HdrHistogram Significant must be in [1, 5]");
+    static_assert(Significant >= 1 && Significant <= 5, "HdrHistogram Significant must be in [1, 5]");
     static_assert(MaxValue > 0, "HdrHistogram MaxValue must be positive");
 
-    static constexpr std::uint64_t sub_bucket_count =
-        next_power_of_two(pow10_u64(Significant) * 2);
+    static constexpr std::uint64_t sub_bucket_count = next_power_of_two(pow10_u64(Significant) * 2);
     static constexpr std::uint64_t sub_bucket_half_count = sub_bucket_count / 2;
-    static constexpr unsigned sub_bucket_half_count_magnitude =
-        std::countr_zero(sub_bucket_half_count);
+    static constexpr unsigned sub_bucket_half_count_magnitude = std::countr_zero(sub_bucket_half_count);
     static constexpr std::uint64_t sub_bucket_mask = sub_bucket_count - 1;
 
     [[nodiscard]] static constexpr std::uint32_t bucket_index(std::uint64_t value) noexcept {
         const std::uint64_t normalized = value | sub_bucket_mask;
         const auto bit_count = static_cast<unsigned>(std::bit_width(normalized));
-        return bit_count > sub_bucket_half_count_magnitude + 1
-            ? bit_count - sub_bucket_half_count_magnitude - 1
-            : 0;
+        return bit_count > sub_bucket_half_count_magnitude + 1 ? bit_count - sub_bucket_half_count_magnitude - 1 : 0;
     }
 
     static constexpr std::uint32_t bucket_count = bucket_index(MaxValue) + 1;
     static constexpr std::size_t counts_len =
-        static_cast<std::size_t>(bucket_count + 1) *
-        static_cast<std::size_t>(sub_bucket_half_count);
+        static_cast<std::size_t>(bucket_count + 1) * static_cast<std::size_t>(sub_bucket_half_count);
 
     [[nodiscard]] static constexpr std::size_t counts_index(std::uint64_t value) noexcept {
         const std::uint32_t bucket = bucket_index(value);
@@ -74,9 +68,8 @@ struct HdrLayout {
         }
         const std::uint64_t sub_bucket = value >> bucket;
         const std::uint64_t offset = sub_bucket - sub_bucket_half_count;
-        return (static_cast<std::size_t>(bucket + 1) *
-                static_cast<std::size_t>(sub_bucket_half_count)) +
-               static_cast<std::size_t>(offset);
+        return (static_cast<std::size_t>(bucket + 1) * static_cast<std::size_t>(sub_bucket_half_count))
+             + static_cast<std::size_t>(offset);
     }
 
     [[nodiscard]] static constexpr std::uint64_t value_from_index(std::size_t index) noexcept {
@@ -96,9 +89,7 @@ struct HdrLayout {
 
 }  // namespace detail
 
-template <
-    std::uint8_t Significant = 3,
-    std::uint64_t MaxValue = 3'600'000'000'000ull>
+template <std::uint8_t Significant = 3, std::uint64_t MaxValue = 3'600'000'000'000ull>
 class HdrHistogram {
 public:
     using layout_type = detail::HdrLayout<Significant, MaxValue>;
@@ -114,8 +105,7 @@ public:
     // narrowing it later would require either a separate "zero"
     // sentinel bucket OR per-call gating in every caller — both
     // strictly worse than letting zero be a first-class sample value.
-    using value_type =
-        safety::Refined<safety::in_range<std::uint64_t{0}, MaxValue>, std::uint64_t>;
+    using value_type = safety::Refined<safety::in_range<std::uint64_t{0}, MaxValue>, std::uint64_t>;
 
     struct EncodedBucket {
         std::uint32_t index;
@@ -132,9 +122,7 @@ public:
         std::size_t written;
         std::size_t required;
 
-        [[nodiscard]] constexpr bool complete() const noexcept {
-            return written == required;
-        }
+        [[nodiscard]] constexpr bool complete() const noexcept { return written == required; }
     };
 
     static constexpr std::uint8_t significant_digits = Significant;
@@ -150,9 +138,7 @@ public:
     HdrHistogram(const HdrHistogram&) = delete;
     HdrHistogram& operator=(const HdrHistogram&) = delete;
 
-    [[nodiscard]] static constexpr value_type checked_value(std::uint64_t value) noexcept {
-        return value_type{value};
-    }
+    [[nodiscard]] static constexpr value_type checked_value(std::uint64_t value) noexcept { return value_type{value}; }
 
     CRUCIBLE_HOT void record(value_type value) noexcept {
         const std::size_t index = layout_type::counts_index(value.value());
@@ -174,9 +160,7 @@ public:
         total_count_.fetch_add(1, std::memory_order_acq_rel);
     }
 
-    [[nodiscard]] std::uint64_t total_count() const noexcept {
-        return total_count_.load(std::memory_order_acquire);
-    }
+    [[nodiscard]] std::uint64_t total_count() const noexcept { return total_count_.load(std::memory_order_acquire); }
 
     [[nodiscard]] std::uint64_t percentile(double pct) const noexcept {
         const std::uint64_t total = total_count();
@@ -192,8 +176,7 @@ public:
         // (pct, total) could pick a DIFFERENT bucket near a boundary across
         // the fleet (DetSafe violation).  IEEE-754 double mul/div + ceil are
         // correctly rounded and bit-identical on every target.
-        const double rank_f =
-            (pct / 100.0) * static_cast<double>(total);
+        const double rank_f = (pct / 100.0) * static_cast<double>(total);
         std::uint64_t rank = static_cast<std::uint64_t>(std::ceil(rank_f));
         if (rank == 0) {
             rank = 1;
@@ -226,8 +209,7 @@ public:
         for (std::size_t i = 0; i < counts_.size(); ++i) {
             const std::uint64_t count = counts_[i].load(std::memory_order_relaxed);
             if (count != 0) {
-                sum += static_cast<wide_unsigned>(layout_type::value_from_index(i)) *
-                       static_cast<wide_unsigned>(count);
+                sum += static_cast<wide_unsigned>(layout_type::value_from_index(i)) * static_cast<wide_unsigned>(count);
             }
         }
         // Round-half-up integer division (mean is reported in integer units);
@@ -254,15 +236,12 @@ public:
             const std::uint64_t count = counts_[i].load(std::memory_order_relaxed);
             if (count != 0) {
                 const wide_signed delta =
-                    static_cast<wide_signed>(layout_type::value_from_index(i)) -
-                    static_cast<wide_signed>(avg);
-                const wide_unsigned sq =
-                    static_cast<wide_unsigned>(delta * delta);
+                    static_cast<wide_signed>(layout_type::value_from_index(i)) - static_cast<wide_signed>(avg);
+                const wide_unsigned sq = static_cast<wide_unsigned>(delta * delta);
                 sum_sq += sq * static_cast<wide_unsigned>(count);
             }
         }
-        const double variance =
-            static_cast<double>(sum_sq) / static_cast<double>(total);
+        const double variance = static_cast<double>(sum_sq) / static_cast<double>(total);
         return static_cast<std::uint64_t>(std::sqrt(variance) + 0.5);
     }
 
@@ -280,9 +259,7 @@ public:
         total_count_.fetch_add(other.total_count(), std::memory_order_acq_rel);
     }
 
-    void add_from(const HdrHistogram& other) noexcept {
-        merge_from(other);
-    }
+    void add_from(const HdrHistogram& other) noexcept { merge_from(other); }
 
     // fixy-A5-007 supersedes fixy-A5-019: publish discipline matches
     // merge_from and record — acq_rel on total_count_ updates.  The
@@ -354,19 +331,14 @@ private:
     // every downstream use refers to these names and never re-spells the
     // keyword, so the rest of the header stays ISO-pedantic-clean.
     __extension__ using wide_unsigned = unsigned __int128;
-    __extension__ using wide_signed   = __int128;
+    __extension__ using wide_signed = __int128;
 
-    static void saturating_sub(std::atomic<std::uint64_t>& dst,
-                               std::uint64_t amount,
-                               std::memory_order success =
-                                   std::memory_order_relaxed) noexcept {
+    static void saturating_sub(std::atomic<std::uint64_t>& dst, std::uint64_t amount,
+                               std::memory_order success = std::memory_order_relaxed) noexcept {
         std::uint64_t observed = dst.load(std::memory_order_relaxed);
         while (true) {
             const std::uint64_t desired = observed > amount ? observed - amount : 0;
-            if (dst.compare_exchange_weak(
-                    observed, desired,
-                    success,
-                    std::memory_order_relaxed)) {
+            if (dst.compare_exchange_weak(observed, desired, success, std::memory_order_relaxed)) {
                 return;
             }
         }
@@ -406,11 +378,8 @@ static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
 // fetch_add result.  Sticky after that.  Per-instance + per-thread =
 // the original intent, now structurally enforced by the type system.
 
-template <
-    std::uint8_t Significant = 3,
-    std::uint64_t MaxValue = 3'600'000'000'000ull,
-    std::size_t ShardCount = 4,
-    typename UniqueTag = struct DefaultConcurrentHdrTag>
+template <std::uint8_t Significant = 3, std::uint64_t MaxValue = 3'600'000'000'000ull, std::size_t ShardCount = 4,
+          typename UniqueTag = struct DefaultConcurrentHdrTag>
 class ConcurrentHdrHistogram {
     static_assert(ShardCount > 0, "ConcurrentHdrHistogram needs at least one shard");
 
@@ -423,9 +392,7 @@ public:
     ConcurrentHdrHistogram(const ConcurrentHdrHistogram&) = delete;
     ConcurrentHdrHistogram& operator=(const ConcurrentHdrHistogram&) = delete;
 
-    CRUCIBLE_HOT void record(value_type value) noexcept {
-        shards_[thread_shard_()].record(value);
-    }
+    CRUCIBLE_HOT void record(value_type value) noexcept { shards_[thread_shard_()].record(value); }
 
     CRUCIBLE_HOT void record_on_shard(std::size_t shard, value_type value) noexcept {
         shards_[shard % ShardCount].record(value);
@@ -462,9 +429,7 @@ private:
         const ::crucible::safety::ThreadLocalRef<UniqueTag, std::size_t> cell{};
         std::size_t& cached_plus_one = cell.peek_mut();
         if (cached_plus_one == 0) [[unlikely]] {
-            cached_plus_one = (next_thread_shard_.fetch_add(
-                                  1, std::memory_order_relaxed)
-                               % ShardCount) + 1;
+            cached_plus_one = (next_thread_shard_.fetch_add(1, std::memory_order_relaxed) % ShardCount) + 1;
         }
         return cached_plus_one - 1;
     }
@@ -477,10 +442,7 @@ private:
 };
 
 template <typename H>
-concept HdrHistogramCompatible = requires (
-    H& h,
-    const H& ch,
-    typename H::value_type value) {
+concept HdrHistogramCompatible = requires(H& h, const H& ch, typename H::value_type value) {
     typename H::value_type;
     { H::significant_digits } -> std::convertible_to<std::uint8_t>;
     { H::max_trackable_value } -> std::convertible_to<std::uint64_t>;
@@ -494,38 +456,25 @@ concept HdrHistogramCompatible = requires (
 };
 
 template <typename H>
-concept ConcurrentHdrCompatible = requires (
-    H& h,
-    const H& ch,
-    typename H::value_type value,
-    typename H::histogram_type& out) {
-    typename H::value_type;
-    typename H::histogram_type;
-    { h.record(value) } noexcept -> std::same_as<void>;
-    { ch.total_count() } noexcept -> std::same_as<std::uint64_t>;
-    { ch.merge_into(out) } noexcept -> std::same_as<void>;
-    { h.reset() } noexcept -> std::same_as<void>;
-};
+concept ConcurrentHdrCompatible =
+    requires(H& h, const H& ch, typename H::value_type value, typename H::histogram_type& out) {
+        typename H::value_type;
+        typename H::histogram_type;
+        { h.record(value) } noexcept -> std::same_as<void>;
+        { ch.total_count() } noexcept -> std::same_as<std::uint64_t>;
+        { ch.merge_into(out) } noexcept -> std::same_as<void>;
+        { h.reset() } noexcept -> std::same_as<void>;
+    };
 
 template <typename H>
 concept HdrCompatible = HdrHistogramCompatible<H> || ConcurrentHdrCompatible<H>;
 
-template <
-    std::uint8_t Significant,
-    std::uint64_t MaxValue,
-    std::size_t Capacity,
-    typename UserTag>
-using HdrRecordChannel = concurrent::PermissionedSpscChannel<
-    std::uint64_t,
-    Capacity,
-    UserTag>;
+template <std::uint8_t Significant, std::uint64_t MaxValue, std::size_t Capacity, typename UserTag>
+using HdrRecordChannel = concurrent::PermissionedSpscChannel<std::uint64_t, Capacity, UserTag>;
 
 template <HdrCompatible H, typename ConsumerHandle>
-std::size_t drain_record_stream(
-    H& hist,
-    ConsumerHandle& consumer,
-    std::size_t max_records) noexcept(noexcept(consumer.try_pop()))
-{
+std::size_t drain_record_stream(H& hist, ConsumerHandle& consumer,
+                                std::size_t max_records) noexcept(noexcept(consumer.try_pop())) {
     std::size_t drained = 0;
     while (drained < max_records) {
         auto sample = consumer.try_pop();

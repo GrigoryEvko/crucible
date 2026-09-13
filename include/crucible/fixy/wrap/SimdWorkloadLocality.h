@@ -79,13 +79,13 @@
 //                in index sequence; LocalityHint is a policy override,
 //                does NOT change the result, only worker placement.
 
-#include <crucible/safety/Simd.h>          // 23 symbols in crucible::simd::
-#include <crucible/safety/Workload.h>      //  8 symbols in crucible::safety::
+#include <crucible/safety/Simd.h>  // 23 symbols in crucible::simd::
+#include <crucible/safety/Workload.h>  //  8 symbols in crucible::safety::
 #include <crucible/safety/LocalityHint.h>  //  6 symbols in crucible::safety::
 
-#include <cstddef>       // self_test uses size_t
-#include <type_traits>   // self_test uses std::is_same_v
-#include <utility>       // self_test uses std::pair
+#include <cstddef>  // self_test uses size_t
+#include <type_traits>  // self_test uses std::is_same_v
+#include <utility>  // self_test uses std::pair
 
 namespace crucible::fixy::wrap {
 
@@ -219,36 +219,20 @@ namespace crucible::fixy::wrap::self_test_simd_workload_locality {
 // Type aliases are direct using-decls of typedefs / using-decls in
 // the substrate.  is_same_v witness across both reach paths.
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::wrap::i64x8,
-    ::crucible::simd::i64x8>);
-static_assert(std::is_same_v<
-    ::crucible::fixy::wrap::u32x8,
-    ::crucible::simd::u32x8>);
-static_assert(std::is_same_v<
-    ::crucible::fixy::wrap::u8x16,
-    ::crucible::simd::u8x16>);
-static_assert(std::is_same_v<
-    ::crucible::fixy::wrap::i64x8_mask,
-    ::crucible::simd::i64x8_mask>);
+static_assert(std::is_same_v<::crucible::fixy::wrap::i64x8, ::crucible::simd::i64x8>);
+static_assert(std::is_same_v<::crucible::fixy::wrap::u32x8, ::crucible::simd::u32x8>);
+static_assert(std::is_same_v<::crucible::fixy::wrap::u8x16, ::crucible::simd::u8x16>);
+static_assert(std::is_same_v<::crucible::fixy::wrap::i64x8_mask, ::crucible::simd::i64x8_mask>);
 
 // ── 2. Simd compile-time flag identity ─────────────────────────────
 //
 // Variable-template using-decls resolve to substrate's compile-time
 // constant.  Boolean equality witnesses identity.
 
-static_assert(
-    ::crucible::fixy::wrap::kAvx512Available ==
-    ::crucible::simd::kAvx512Available);
-static_assert(
-    ::crucible::fixy::wrap::kAvx2Available ==
-    ::crucible::simd::kAvx2Available);
-static_assert(
-    ::crucible::fixy::wrap::kSse42Available ==
-    ::crucible::simd::kSse42Available);
-static_assert(
-    ::crucible::fixy::wrap::kNeonAvailable ==
-    ::crucible::simd::kNeonAvailable);
+static_assert(::crucible::fixy::wrap::kAvx512Available == ::crucible::simd::kAvx512Available);
+static_assert(::crucible::fixy::wrap::kAvx2Available == ::crucible::simd::kAvx2Available);
+static_assert(::crucible::fixy::wrap::kSse42Available == ::crucible::simd::kSse42Available);
+static_assert(::crucible::fixy::wrap::kNeonAvailable == ::crucible::simd::kNeonAvailable);
 
 // ── 3. Simd DetSafeSimd concept identity ───────────────────────────
 //
@@ -257,21 +241,16 @@ static_assert(
 // is not a vec — it has no `value_type` integral lane in the
 // concept-required sense).
 
-static_assert(
-    ::crucible::fixy::wrap::DetSafeSimd<::crucible::simd::i64x8>);
-static_assert(
-    ::crucible::fixy::wrap::DetSafeSimd<::crucible::simd::u64x8>);
-static_assert(
-    ::crucible::fixy::wrap::DetSafeSimd<::crucible::simd::u32x8>);
+static_assert(::crucible::fixy::wrap::DetSafeSimd<::crucible::simd::i64x8>);
+static_assert(::crucible::fixy::wrap::DetSafeSimd<::crucible::simd::u64x8>);
+static_assert(::crucible::fixy::wrap::DetSafeSimd<::crucible::simd::u32x8>);
 // Negative: an explicit non-DetSafe candidate.  A facade vec on a
 // floating-point type has `value_type = float` which fails the
 // std::integral<value_type> requirement.
-static_assert(
-    !::crucible::fixy::wrap::DetSafeSimd<::crucible::simd::vec<float, 8>>);
+static_assert(!::crucible::fixy::wrap::DetSafeSimd<::crucible::simd::vec<float, 8>>);
 // Cross-path agreement on the negative case.
-static_assert(
-    ::crucible::fixy::wrap::DetSafeSimd<::crucible::simd::i64x8> ==
-    ::crucible::simd::DetSafeSimd<::crucible::simd::i64x8>);
+static_assert(::crucible::fixy::wrap::DetSafeSimd<::crucible::simd::i64x8>
+              == ::crucible::simd::DetSafeSimd<::crucible::simd::i64x8>);
 
 // ── 4. Simd iota_v value identity ──────────────────────────────────
 //
@@ -281,7 +260,7 @@ static_assert(
 // so cross-path equality is well-defined.
 
 [[nodiscard]] consteval bool iota_v_through_alias_matches_substrate() noexcept {
-    constexpr auto via_fixy      = ::crucible::fixy::wrap::iota_v<::crucible::simd::u64x8>();
+    constexpr auto via_fixy = ::crucible::fixy::wrap::iota_v<::crucible::simd::u64x8>();
     constexpr auto via_substrate = ::crucible::simd::iota_v<::crucible::simd::u64x8>();
     // Lane-wise equality: subscript both, compare each.  vec::operator[]
     // is value-returning const; subscript returns lane value as integer.
@@ -301,9 +280,7 @@ static_assert(iota_v_through_alias_matches_substrate());
 // struct.  is_same_v on the type + field default-equality witnesses
 // the alias preserves the NSDMI defaults.
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::wrap::WorkBudget,
-    ::crucible::safety::WorkBudget>);
+static_assert(std::is_same_v<::crucible::fixy::wrap::WorkBudget, ::crucible::safety::WorkBudget>);
 
 [[nodiscard]] consteval bool workbudget_default_state_preserved() noexcept {
     ::crucible::fixy::wrap::WorkBudget b{};
@@ -350,15 +327,9 @@ struct WorkloadProbeTag {};
 // + std::is_empty_v witness that the EBO-collapsible property is
 // preserved.
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::wrap::LocalityIgnore_t,
-    ::crucible::safety::LocalityIgnore_t>);
-static_assert(std::is_same_v<
-    ::crucible::fixy::wrap::LocalityLocal_t,
-    ::crucible::safety::LocalityLocal_t>);
-static_assert(std::is_same_v<
-    ::crucible::fixy::wrap::LocalitySpread_t,
-    ::crucible::safety::LocalitySpread_t>);
+static_assert(std::is_same_v<::crucible::fixy::wrap::LocalityIgnore_t, ::crucible::safety::LocalityIgnore_t>);
+static_assert(std::is_same_v<::crucible::fixy::wrap::LocalityLocal_t, ::crucible::safety::LocalityLocal_t>);
+static_assert(std::is_same_v<::crucible::fixy::wrap::LocalitySpread_t, ::crucible::safety::LocalitySpread_t>);
 
 static_assert(std::is_empty_v<::crucible::fixy::wrap::LocalityIgnore_t>);
 static_assert(std::is_empty_v<::crucible::fixy::wrap::LocalityLocal_t>);
@@ -379,16 +350,14 @@ struct LocalityHintProbe_Typo {
 };
 
 static_assert(!::crucible::fixy::wrap::HasLocalityHint<LocalityHintProbe_Unhinted>);
-static_assert( ::crucible::fixy::wrap::HasLocalityHint<LocalityHintProbe_Local>);
+static_assert(::crucible::fixy::wrap::HasLocalityHint<LocalityHintProbe_Local>);
 static_assert(!::crucible::fixy::wrap::HasLocalityHint<LocalityHintProbe_Typo>);
 
 // Cross-path concept admission agreement.
-static_assert(
-    ::crucible::fixy::wrap::HasLocalityHint<LocalityHintProbe_Local> ==
-    ::crucible::safety::HasLocalityHint<LocalityHintProbe_Local>);
-static_assert(
-    ::crucible::fixy::wrap::HasLocalityHint<LocalityHintProbe_Typo> ==
-    ::crucible::safety::HasLocalityHint<LocalityHintProbe_Typo>);
+static_assert(::crucible::fixy::wrap::HasLocalityHint<LocalityHintProbe_Local>
+              == ::crucible::safety::HasLocalityHint<LocalityHintProbe_Local>);
+static_assert(::crucible::fixy::wrap::HasLocalityHint<LocalityHintProbe_Typo>
+              == ::crucible::safety::HasLocalityHint<LocalityHintProbe_Typo>);
 
 // ── 9. LocalityHint — locality_hint_of_v value identity ────────────
 //
@@ -396,20 +365,16 @@ static_assert(
 // constant.  All four cases (no hint / Local / Spread / Ignore-
 // explicit) verified across reach paths.
 
-static_assert(
-    ::crucible::fixy::wrap::locality_hint_of_v<LocalityHintProbe_Unhinted> ==
-    ::crucible::concurrent::NumaPolicy::NumaIgnore);
-static_assert(
-    ::crucible::fixy::wrap::locality_hint_of_v<LocalityHintProbe_Local> ==
-    ::crucible::concurrent::NumaPolicy::NumaLocal);
+static_assert(::crucible::fixy::wrap::locality_hint_of_v<LocalityHintProbe_Unhinted>
+              == ::crucible::concurrent::NumaPolicy::NumaIgnore);
+static_assert(::crucible::fixy::wrap::locality_hint_of_v<LocalityHintProbe_Local>
+              == ::crucible::concurrent::NumaPolicy::NumaLocal);
 
 // Cross-path equality of the value template — alias identity proof.
-static_assert(
-    ::crucible::fixy::wrap::locality_hint_of_v<LocalityHintProbe_Local> ==
-    ::crucible::safety::locality_hint_of_v<LocalityHintProbe_Local>);
-static_assert(
-    ::crucible::fixy::wrap::locality_hint_of_v<LocalityHintProbe_Unhinted> ==
-    ::crucible::safety::locality_hint_of_v<LocalityHintProbe_Unhinted>);
+static_assert(::crucible::fixy::wrap::locality_hint_of_v<LocalityHintProbe_Local>
+              == ::crucible::safety::locality_hint_of_v<LocalityHintProbe_Local>);
+static_assert(::crucible::fixy::wrap::locality_hint_of_v<LocalityHintProbe_Unhinted>
+              == ::crucible::safety::locality_hint_of_v<LocalityHintProbe_Unhinted>);
 
 // ── 10. Cardinality witness ───────────────────────────────────────
 //
@@ -442,8 +407,8 @@ static_assert(
 
 constexpr int simd_workload_locality_alias_cardinality = 37;
 static_assert(simd_workload_locality_alias_cardinality == 37,
-    "fixy::wrap::{Simd,Workload,LocalityHint} cardinality changed "
-    "— update SimdWorkloadLocality.h sentinel block to track the "
-    "substrate workload-policy surface.");
+              "fixy::wrap::{Simd,Workload,LocalityHint} cardinality changed "
+              "— update SimdWorkloadLocality.h sentinel block to track the "
+              "substrate workload-policy surface.");
 
 }  // namespace crucible::fixy::wrap::self_test_simd_workload_locality

@@ -72,7 +72,7 @@
 #include <crucible/algebra/lattices/HwInstructionLattice.h>
 
 #include <concepts>
-#include <cstdlib>      // std::abort in the runtime smoke test
+#include <cstdlib>  // std::abort in the runtime smoke test
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -86,12 +86,10 @@ template <HwInstruction_v Tier, typename T>
 class [[nodiscard]] Hw {
 public:
     // ── Public type aliases (GradedWrapper uniform surface) ─────────
-    using value_type   = T;
+    using value_type = T;
     using lattice_type = HwInstructionLattice::At<Tier>;
-    using graded_type  = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
-    static constexpr ::crucible::algebra::ModalityKind modality =
-        ::crucible::algebra::ModalityKind::Absolute;
+    using graded_type = ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
+    static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::Absolute;
 
     // The pinned instruction tier — exposed for callers doing
     // tier-aware dispatch without instantiating the wrapper.
@@ -105,29 +103,27 @@ public:
     constexpr Hw() noexcept(std::is_nothrow_default_constructible_v<T>)
         : impl_{T{}, typename lattice_type::element_type{}} {}
 
-    constexpr explicit Hw(T value) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    constexpr explicit Hw(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(value), typename lattice_type::element_type{}} {}
 
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr explicit Hw(std::in_place_t, Args&&... args)
-        noexcept(std::is_nothrow_constructible_v<T, Args...>
-                 && std::is_nothrow_move_constructible_v<T>)
-        : impl_{T(std::forward<Args>(args)...),
-                typename lattice_type::element_type{}} {}
+    constexpr explicit Hw(std::in_place_t, Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
+                                                                    && std::is_nothrow_move_constructible_v<T>)
+        : impl_{T(std::forward<Args>(args)...), typename lattice_type::element_type{}} {}
 
-    constexpr Hw(const Hw&)            = default;
-    constexpr Hw(Hw&&)                 = default;
+    constexpr Hw(const Hw&) = default;
+    constexpr Hw(Hw&&) = default;
     constexpr Hw& operator=(const Hw&) = default;
-    constexpr Hw& operator=(Hw&&)      = default;
-    ~Hw()                              = default;
+    constexpr Hw& operator=(Hw&&) = default;
+    ~Hw() = default;
 
     // Equality: compares value bytes within the SAME tier pin.
     // Cross-tier comparison rejected at overload resolution.
-    [[nodiscard]] friend constexpr bool operator==(
-        Hw const& a, Hw const& b) noexcept(noexcept(a.peek() == b.peek()))
-        requires requires(T const& x, T const& y) { { x == y } -> std::convertible_to<bool>; }
+    [[nodiscard]] friend constexpr bool operator==(Hw const& a, Hw const& b) noexcept(noexcept(a.peek() == b.peek()))
+        requires requires(T const& x, T const& y) {
+            { x == y } -> std::convertible_to<bool>;
+        }
     {
         return a.peek() == b.peek();
     }
@@ -136,23 +132,18 @@ public:
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return graded_type::lattice_name();
-    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 
     // ── Read-only / mutable access ──────────────────────────────────
     [[nodiscard]] constexpr T const& peek() const& noexcept { return impl_.peek(); }
-    [[nodiscard]] constexpr T consume() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    { return std::move(impl_).consume(); }
+    [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return std::move(impl_).consume();
+    }
     [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(); }
 
     // ── swap ────────────────────────────────────────────────────────
-    constexpr void swap(Hw& other) noexcept(std::is_nothrow_swappable_v<T>) {
-        impl_.swap(other.impl_);
-    }
-    friend constexpr void swap(Hw& a, Hw& b)
-        noexcept(std::is_nothrow_swappable_v<T>) { a.swap(b); }
+    constexpr void swap(Hw& other) noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
+    friend constexpr void swap(Hw& a, Hw& b) noexcept(std::is_nothrow_swappable_v<T>) { a.swap(b); }
 
     // ── satisfies<Ceiling> — capability-ceiling subsumption ────────
     //
@@ -171,70 +162,78 @@ public:
     // actually needs (e.g. relabel an rdtsc kernel as Scalar), defeating
     // the Mimic legalization gate.
     template <HwInstruction_v Higher>
-        requires (HwInstructionLattice::leq(Tier, Higher))
-    [[nodiscard]] constexpr Hw<Higher, T> widen() const&
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
+        requires(HwInstructionLattice::leq(Tier, Higher))
+    [[nodiscard]] constexpr Hw<Higher, T> widen() const& noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
-    { return Hw<Higher, T>{this->peek()}; }
+    {
+        return Hw<Higher, T>{this->peek()};
+    }
 
     template <HwInstruction_v Higher>
-        requires (HwInstructionLattice::leq(Tier, Higher))
-    [[nodiscard]] constexpr Hw<Higher, T> widen() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    { return Hw<Higher, T>{std::move(impl_).consume()}; }
+        requires(HwInstructionLattice::leq(Tier, Higher))
+    [[nodiscard]] constexpr Hw<Higher, T> widen() && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return Hw<Higher, T>{std::move(impl_).consume()};
+    }
 };
 
 // ── §XXI mint factory ───────────────────────────────────────────────
 template <HwInstruction_v Tier, typename T, typename... Args>
     requires std::is_constructible_v<T, Args...>
-[[nodiscard]] constexpr Hw<Tier, T> mint_hw(Args&&... args)
-    noexcept(std::is_nothrow_constructible_v<T, Args...>)
-{
+[[nodiscard]] constexpr Hw<Tier, T> mint_hw(Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>) {
     return Hw<Tier, T>{std::in_place, std::forward<Args>(args)...};
 }
 
 // ── Convenience aliases ─────────────────────────────────────────────
 namespace hw_pin {
-    template <typename T> using NoneAllowed         = Hw<HwInstruction_v::NoneAllowed,         T>;
-    template <typename T> using Scalar              = Hw<HwInstruction_v::Scalar,              T>;
-    template <typename T> using Vectorizable        = Hw<HwInstruction_v::Vectorizable,        T>;
-    template <typename T> using NonDeterministicTsc = Hw<HwInstruction_v::NonDeterministicTsc, T>;
-    template <typename T> using PrivilegedMsr       = Hw<HwInstruction_v::PrivilegedMsr,       T>;
+template <typename T>
+using NoneAllowed = Hw<HwInstruction_v::NoneAllowed, T>;
+template <typename T>
+using Scalar = Hw<HwInstruction_v::Scalar, T>;
+template <typename T>
+using Vectorizable = Hw<HwInstruction_v::Vectorizable, T>;
+template <typename T>
+using NonDeterministicTsc = Hw<HwInstruction_v::NonDeterministicTsc, T>;
+template <typename T>
+using PrivilegedMsr = Hw<HwInstruction_v::PrivilegedMsr, T>;
 }  // namespace hw_pin
 
 // ── Layout invariants — regime-1 EBO collapse ───────────────────────
 namespace detail::hw_layout {
 
-template <typename T> using NoneAllowedHw   = Hw<HwInstruction_v::NoneAllowed,   T>;
-template <typename T> using ScalarHw        = Hw<HwInstruction_v::Scalar,        T>;
-template <typename T> using VectorizableHw  = Hw<HwInstruction_v::Vectorizable,  T>;
-template <typename T> using PrivilegedMsrHw = Hw<HwInstruction_v::PrivilegedMsr, T>;
+template <typename T>
+using NoneAllowedHw = Hw<HwInstruction_v::NoneAllowed, T>;
+template <typename T>
+using ScalarHw = Hw<HwInstruction_v::Scalar, T>;
+template <typename T>
+using VectorizableHw = Hw<HwInstruction_v::Vectorizable, T>;
+template <typename T>
+using PrivilegedMsrHw = Hw<HwInstruction_v::PrivilegedMsr, T>;
 
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoneAllowedHw,   char);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoneAllowedHw,   int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoneAllowedHw,   double);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(ScalarHw,        int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(VectorizableHw,  double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoneAllowedHw, char);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoneAllowedHw, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoneAllowedHw, double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(ScalarHw, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(VectorizableHw, double);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(PrivilegedMsrHw, int);
 
 }  // namespace detail::hw_layout
 
-static_assert(sizeof(Hw<HwInstruction_v::NoneAllowed,         int>)    == sizeof(int));
-static_assert(sizeof(Hw<HwInstruction_v::Scalar,              int>)    == sizeof(int));
-static_assert(sizeof(Hw<HwInstruction_v::Vectorizable,        int>)    == sizeof(int));
-static_assert(sizeof(Hw<HwInstruction_v::NonDeterministicTsc, int>)    == sizeof(int));
-static_assert(sizeof(Hw<HwInstruction_v::PrivilegedMsr,       int>)    == sizeof(int));
-static_assert(sizeof(Hw<HwInstruction_v::Vectorizable,        double>) == sizeof(double));
-static_assert(sizeof(Hw<HwInstruction_v::NoneAllowed,         char>)   == sizeof(char));
+static_assert(sizeof(Hw<HwInstruction_v::NoneAllowed, int>) == sizeof(int));
+static_assert(sizeof(Hw<HwInstruction_v::Scalar, int>) == sizeof(int));
+static_assert(sizeof(Hw<HwInstruction_v::Vectorizable, int>) == sizeof(int));
+static_assert(sizeof(Hw<HwInstruction_v::NonDeterministicTsc, int>) == sizeof(int));
+static_assert(sizeof(Hw<HwInstruction_v::PrivilegedMsr, int>) == sizeof(int));
+static_assert(sizeof(Hw<HwInstruction_v::Vectorizable, double>) == sizeof(double));
+static_assert(sizeof(Hw<HwInstruction_v::NoneAllowed, char>) == sizeof(char));
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::hw_self_test {
 
-using NoneInt   = Hw<HwInstruction_v::NoneAllowed,         int>;
-using ScalarInt = Hw<HwInstruction_v::Scalar,             int>;
-using VecInt    = Hw<HwInstruction_v::Vectorizable,       int>;
-using TscInt    = Hw<HwInstruction_v::NonDeterministicTsc, int>;
-using MsrInt    = Hw<HwInstruction_v::PrivilegedMsr,      int>;
+using NoneInt = Hw<HwInstruction_v::NoneAllowed, int>;
+using ScalarInt = Hw<HwInstruction_v::Scalar, int>;
+using VecInt = Hw<HwInstruction_v::Vectorizable, int>;
+using TscInt = Hw<HwInstruction_v::NonDeterministicTsc, int>;
+using MsrInt = Hw<HwInstruction_v::PrivilegedMsr, int>;
 
 // ── Construction paths ─────────────────────────────────────────────
 inline constexpr ScalarInt s_default{};
@@ -248,7 +247,7 @@ inline constexpr ScalarInt s_in_place{std::in_place, 7};
 static_assert(s_in_place.peek() == 7);
 
 static_assert(NoneInt::tier == HwInstruction_v::NoneAllowed);
-static_assert(MsrInt::tier  == HwInstruction_v::PrivilegedMsr);
+static_assert(MsrInt::tier == HwInstruction_v::PrivilegedMsr);
 static_assert(NoneInt::modality == ::crucible::algebra::ModalityKind::Absolute);
 
 // ── satisfies<Ceiling> — capability-ceiling subsumption ────────────
@@ -262,19 +261,19 @@ static_assert(NoneInt::satisfies<HwInstruction_v::PrivilegedMsr>);
 // Scalar flows into a Vectorizable gate — THE LOAD-BEARING SUBSUMPTION.
 static_assert(ScalarInt::satisfies<HwInstruction_v::Scalar>);
 static_assert(ScalarInt::satisfies<HwInstruction_v::Vectorizable>,
-    "Hw<Scalar>::satisfies<Vectorizable> MUST be TRUE — a scalar kernel "
-    "is admissible everywhere a Vectorizable ceiling is allowed "
-    "(Scalar ⊑ Vectorizable).  This is the subsumption HS14 fixture.");
+              "Hw<Scalar>::satisfies<Vectorizable> MUST be TRUE — a scalar kernel "
+              "is admissible everywhere a Vectorizable ceiling is allowed "
+              "(Scalar ⊑ Vectorizable).  This is the subsumption HS14 fixture.");
 static_assert(!ScalarInt::satisfies<HwInstruction_v::NoneAllowed>,
-    "Hw<Scalar>::satisfies<NoneAllowed> MUST be FALSE — a scalar kernel "
-    "issues hardware instructions and cannot satisfy a no-hw ceiling.");
+              "Hw<Scalar>::satisfies<NoneAllowed> MUST be FALSE — a scalar kernel "
+              "issues hardware instructions and cannot satisfy a no-hw ceiling.");
 
 // PrivilegedMsr satisfies ONLY itself (it is the top).
-static_assert( MsrInt::satisfies<HwInstruction_v::PrivilegedMsr>);
+static_assert(MsrInt::satisfies<HwInstruction_v::PrivilegedMsr>);
 static_assert(!MsrInt::satisfies<HwInstruction_v::NonDeterministicTsc>,
-    "Hw<PrivilegedMsr>::satisfies<NonDeterministicTsc> MUST be FALSE — "
-    "an MSR kernel exceeds a TSC ceiling.  This is the consumer-too-weak "
-    "rejection that neg_hw_consumer_too_weak.cpp pins at a real gate.");
+              "Hw<PrivilegedMsr>::satisfies<NonDeterministicTsc> MUST be FALSE — "
+              "an MSR kernel exceeds a TSC ceiling.  This is the consumer-too-weak "
+              "rejection that neg_hw_consumer_too_weak.cpp pins at a real gate.");
 static_assert(!MsrInt::satisfies<HwInstruction_v::Scalar>);
 static_assert(!MsrInt::satisfies<HwInstruction_v::NoneAllowed>);
 
@@ -290,28 +289,31 @@ static_assert(scalar_reflexive.peek() == 55);
 
 // ── widen SFINAE detector — chain-direction check ──────────────────
 template <typename W, HwInstruction_v Target>
-concept can_widen = requires(W w) { { std::move(w).template widen<Target>() }; };
+concept can_widen = requires(W w) {
+    { std::move(w).template widen<Target>() };
+};
 
-static_assert( can_widen<NoneInt,   HwInstruction_v::PrivilegedMsr>);
-static_assert( can_widen<ScalarInt, HwInstruction_v::Vectorizable>);
-static_assert( can_widen<ScalarInt, HwInstruction_v::Scalar>);
+static_assert(can_widen<NoneInt, HwInstruction_v::PrivilegedMsr>);
+static_assert(can_widen<ScalarInt, HwInstruction_v::Vectorizable>);
+static_assert(can_widen<ScalarInt, HwInstruction_v::Scalar>);
 // Widen DOWN the chain REJECTED — the load-bearing negative.
-static_assert(!can_widen<VecInt,    HwInstruction_v::Scalar>,
-    "widen<Scalar> on an Hw<Vectorizable> wrapper MUST be REJECTED — "
-    "widening DOWN would relabel a SIMD kernel as scalar-only, defeating "
-    "the Mimic instruction-legalization gate.  See neg_hw_widen_to_lower.cpp.");
-static_assert(!can_widen<MsrInt,    HwInstruction_v::NonDeterministicTsc>);
-static_assert(!can_widen<TscInt,    HwInstruction_v::Vectorizable>);
+static_assert(!can_widen<VecInt, HwInstruction_v::Scalar>,
+              "widen<Scalar> on an Hw<Vectorizable> wrapper MUST be REJECTED — "
+              "widening DOWN would relabel a SIMD kernel as scalar-only, defeating "
+              "the Mimic instruction-legalization gate.  See neg_hw_widen_to_lower.cpp.");
+static_assert(!can_widen<MsrInt, HwInstruction_v::NonDeterministicTsc>);
+static_assert(!can_widen<TscInt, HwInstruction_v::Vectorizable>);
 
 // ── Diagnostic forwarders ──────────────────────────────────────────
 static_assert(ScalarInt::value_type_name().ends_with("int"));
 static_assert(ScalarInt::lattice_name() == "HwInstructionLattice::At<Scalar>");
-static_assert(VecInt::lattice_name()    == "HwInstructionLattice::At<Vectorizable>");
-static_assert(MsrInt::lattice_name()    == "HwInstructionLattice::At<PrivilegedMsr>");
+static_assert(VecInt::lattice_name() == "HwInstructionLattice::At<Vectorizable>");
+static_assert(MsrInt::lattice_name() == "HwInstructionLattice::At<PrivilegedMsr>");
 
 // ── swap / peek_mut / operator== ───────────────────────────────────
 [[nodiscard]] consteval bool swap_exchanges_within_same_tier() noexcept {
-    ScalarInt a{10}; ScalarInt b{20};
+    ScalarInt a{10};
+    ScalarInt b{20};
     a.swap(b);
     return a.peek() == 20 && b.peek() == 10;
 }
@@ -325,7 +327,9 @@ static_assert(swap_exchanges_within_same_tier());
 static_assert(peek_mut_works());
 
 [[nodiscard]] consteval bool equality_compares_value_bytes() noexcept {
-    ScalarInt a{42}; ScalarInt b{42}; ScalarInt c{43};
+    ScalarInt a{42};
+    ScalarInt b{42};
+    ScalarInt c{43};
     return (a == b) && !(a == c);
 }
 static_assert(equality_compares_value_bytes());
@@ -348,13 +352,10 @@ static_assert(minted.peek() == 99 && minted.tier == HwInstruction_v::Vectorizabl
 template <typename W>
 concept is_portable_legal = W::template satisfies<HwInstruction_v::Scalar>;
 
-static_assert( is_portable_legal<NoneInt>,
-    "A no-hw kernel MUST pass the portable-ISA legalization gate.");
-static_assert( is_portable_legal<ScalarInt>,
-    "A scalar kernel MUST pass the portable-ISA legalization gate.");
-static_assert(!is_portable_legal<VecInt>,
-    "A Vectorizable kernel MUST be REJECTED at the portable-ISA gate — "
-    "it needs the V-256 SimdWidthPinned ISA-availability proof first.");
+static_assert(is_portable_legal<NoneInt>, "A no-hw kernel MUST pass the portable-ISA legalization gate.");
+static_assert(is_portable_legal<ScalarInt>, "A scalar kernel MUST pass the portable-ISA legalization gate.");
+static_assert(!is_portable_legal<VecInt>, "A Vectorizable kernel MUST be REJECTED at the portable-ISA gate — "
+                                          "it needs the V-256 SimdWidthPinned ISA-availability proof first.");
 static_assert(!is_portable_legal<MsrInt>);
 
 // ── Runtime smoke test ─────────────────────────────────────────────
@@ -384,8 +385,8 @@ inline void runtime_smoke_test() {
     if (!s1 || s2) std::abort();
 
     // Convenience-alias instantiation.
-    hw_pin::NoneAllowed<int>   alias_none{0};
-    hw_pin::Vectorizable<int>  alias_vec{456};
+    hw_pin::NoneAllowed<int> alias_none{0};
+    hw_pin::Vectorizable<int> alias_vec{456};
     if (alias_none.peek() != 0 || alias_vec.peek() != 456) std::abort();
 }
 

@@ -59,8 +59,8 @@
 #include <crucible/Platform.h>
 #include <crucible/RecipePool.h>
 #include <crucible/Types.h>
-#include <crucible/fixy/Source.h>           // FIXY-U-096m: tags::source::JsonRegistry
-#include <crucible/fixy/Wrap.h>             // FIXY-U-096m: BorrowedRef + IsBorrowedRef + NumericalTier + Tolerance + ToleranceLattice + RecipeSpec + RecipeFamily + Tagged
+#include <crucible/fixy/Source.h>  // FIXY-U-096m: tags::source::JsonRegistry
+#include <crucible/fixy/Wrap.h>  // FIXY-U-096m: BorrowedRef + IsBorrowedRef + NumericalTier + Tolerance + ToleranceLattice + RecipeSpec + RecipeFamily + Tagged
 
 // FIXY-U-096m production migration: BorrowedRef / IsBorrowedRef / Tagged /
 // NumericalTier / Tolerance / ToleranceLattice / RecipeSpec / RecipeFamily /
@@ -107,9 +107,9 @@ namespace crucible {
 // Enum ordinals are stable across versions — new recipes are added by
 // appending entries to the registry, not by renumbering the errors.
 enum class RecipeError : uint8_t {
-  NameNotFound      = 1,
-  HashNotFound      = 2,
-  ToleranceMismatch = 3,
+    NameNotFound = 1,
+    HashNotFound = 2,
+    ToleranceMismatch = 3,
 };
 
 // ─── tolerance_for_dtype — output-precision → Tolerance tier mapping ─
@@ -124,19 +124,26 @@ enum class RecipeError : uint8_t {
 // budgets (e.g. ORDERED's ≤4 ULP at FP16) MUST NOT collapse into the
 // per-dtype 1-ULP class — that would defeat the load-bearing
 // admission-gate rejection.
-[[nodiscard, gnu::const]] constexpr fixy::wrap::Tolerance
-tolerance_for_dtype(ScalarType dtype) noexcept {
-  switch (dtype) {
-    case ScalarType::Double:        return fixy::wrap::Tolerance::ULP_FP64;
-    case ScalarType::Float:         return fixy::wrap::Tolerance::ULP_FP32;
-    case ScalarType::Half:          return fixy::wrap::Tolerance::ULP_FP16;
-    case ScalarType::BFloat16:      return fixy::wrap::Tolerance::ULP_FP16;
-    case ScalarType::Float8_e4m3fn: return fixy::wrap::Tolerance::ULP_FP8;
-    case ScalarType::Float8_e5m2:   return fixy::wrap::Tolerance::ULP_FP8;
-    case ScalarType::Char:
-    case ScalarType::Byte:          return fixy::wrap::Tolerance::ULP_INT8;
-    default:                        return fixy::wrap::Tolerance::RELAXED;
-  }
+[[nodiscard, gnu::const]] constexpr fixy::wrap::Tolerance tolerance_for_dtype(ScalarType dtype) noexcept {
+    switch (dtype) {
+        case ScalarType::Double:
+            return fixy::wrap::Tolerance::ULP_FP64;
+        case ScalarType::Float:
+            return fixy::wrap::Tolerance::ULP_FP32;
+        case ScalarType::Half:
+            return fixy::wrap::Tolerance::ULP_FP16;
+        case ScalarType::BFloat16:
+            return fixy::wrap::Tolerance::ULP_FP16;
+        case ScalarType::Float8_e4m3fn:
+            return fixy::wrap::Tolerance::ULP_FP8;
+        case ScalarType::Float8_e5m2:
+            return fixy::wrap::Tolerance::ULP_FP8;
+        case ScalarType::Char:
+        case ScalarType::Byte:
+            return fixy::wrap::Tolerance::ULP_INT8;
+        default:
+            return fixy::wrap::Tolerance::RELAXED;
+    }
 }
 
 // ─── tolerance_of — recipe → satisfied tolerance class ──────────────
@@ -164,31 +171,30 @@ tolerance_for_dtype(ScalarType dtype) noexcept {
 // lets the optimizer (observed on stock GCC 16.1.1 -O1, sanitizers off) treat a
 // preceding `r.field = …` write as dead, reading value-initialized fields. pure
 // is the correct attribute for a referentially-transparent reader of memory.
-[[nodiscard, gnu::pure]] constexpr fixy::wrap::Tolerance
-tolerance_of(NumericalRecipe const& r) noexcept {
-  switch (r.determinism) {
-    case ReductionDeterminism::BITEXACT_STRICT:
-      // 0 ULP byte-identical across every supported chip.  The only
-      // recipe class that can claim BITEXACT.
-      return fixy::wrap::Tolerance::BITEXACT;
-    case ReductionDeterminism::BITEXACT_TC:
-      // 0-1 ULP cross-vendor at TC fragment level; admit at the
-      // out_dtype's 1-ULP class.  Strictly stronger than ORDERED but
-      // not bit-identical (the "0-1" includes the case where it's 1).
-      return tolerance_for_dtype(r.out_dtype);
-    case ReductionDeterminism::ORDERED:
-    case ReductionDeterminism::UNORDERED:
-      // ≤4 ULP (ORDERED) or unbounded (UNORDERED); coarser than any
-      // 1-ULP class.  Conservative: admit only at RELAXED (lattice
-      // bottom).  See header comment for rationale.
-      return fixy::wrap::Tolerance::RELAXED;
-    default:
-      // Defensive: -Werror=switch-default requires this arm even
-      // though the four-tier enum is exhaustive above.  Future
-      // ReductionDeterminism additions land here as RELAXED until
-      // their tolerance class is explicitly mapped.
-      return fixy::wrap::Tolerance::RELAXED;
-  }
+[[nodiscard, gnu::pure]] constexpr fixy::wrap::Tolerance tolerance_of(NumericalRecipe const& r) noexcept {
+    switch (r.determinism) {
+        case ReductionDeterminism::BITEXACT_STRICT:
+            // 0 ULP byte-identical across every supported chip.  The only
+            // recipe class that can claim BITEXACT.
+            return fixy::wrap::Tolerance::BITEXACT;
+        case ReductionDeterminism::BITEXACT_TC:
+            // 0-1 ULP cross-vendor at TC fragment level; admit at the
+            // out_dtype's 1-ULP class.  Strictly stronger than ORDERED but
+            // not bit-identical (the "0-1" includes the case where it's 1).
+            return tolerance_for_dtype(r.out_dtype);
+        case ReductionDeterminism::ORDERED:
+        case ReductionDeterminism::UNORDERED:
+            // ≤4 ULP (ORDERED) or unbounded (UNORDERED); coarser than any
+            // 1-ULP class.  Conservative: admit only at RELAXED (lattice
+            // bottom).  See header comment for rationale.
+            return fixy::wrap::Tolerance::RELAXED;
+        default:
+            // Defensive: -Werror=switch-default requires this arm even
+            // though the four-tier enum is exhaustive above.  Future
+            // ReductionDeterminism additions land here as RELAXED until
+            // their tolerance class is explicitly mapped.
+            return fixy::wrap::Tolerance::RELAXED;
+    }
 }
 
 // ─── recipe_family_of — recipe → RecipeFamily category ─────────────
@@ -217,287 +223,283 @@ tolerance_of(NumericalRecipe const& r) noexcept {
 // defensive position for future ReductionAlgo additions.
 // gnu::pure (NOT gnu::const): reads `r.reduction_algo` through the reference
 // argument — same reasoning as tolerance_of above.
-[[nodiscard, gnu::pure]] constexpr fixy::wrap::RecipeFamily
-recipe_family_of(NumericalRecipe const& r) noexcept {
-  switch (r.reduction_algo) {
-    case ReductionAlgo::PAIRWISE:     return fixy::wrap::RecipeFamily::Pairwise;
-    case ReductionAlgo::LINEAR:       return fixy::wrap::RecipeFamily::Linear;
-    case ReductionAlgo::KAHAN:        return fixy::wrap::RecipeFamily::Kahan;
-    case ReductionAlgo::BLOCK_STABLE: return fixy::wrap::RecipeFamily::BlockStable;
-    default:
-      // Defensive: -Werror=switch-default requires this arm even
-      // though the four-algo enum is exhaustive above.  Future
-      // ReductionAlgo additions land here as None (bottom) until
-      // their family is explicitly named — strictly safe because
-      // None subsumes nothing (admits returns false for any specific
-      // family request).
-      return fixy::wrap::RecipeFamily::None;
-  }
+[[nodiscard, gnu::pure]] constexpr fixy::wrap::RecipeFamily recipe_family_of(NumericalRecipe const& r) noexcept {
+    switch (r.reduction_algo) {
+        case ReductionAlgo::PAIRWISE:
+            return fixy::wrap::RecipeFamily::Pairwise;
+        case ReductionAlgo::LINEAR:
+            return fixy::wrap::RecipeFamily::Linear;
+        case ReductionAlgo::KAHAN:
+            return fixy::wrap::RecipeFamily::Kahan;
+        case ReductionAlgo::BLOCK_STABLE:
+            return fixy::wrap::RecipeFamily::BlockStable;
+        default:
+            // Defensive: -Werror=switch-default requires this arm even
+            // though the four-algo enum is exhaustive above.  Future
+            // ReductionAlgo additions land here as None (bottom) until
+            // their family is explicitly named — strictly safe because
+            // None subsumes nothing (admits returns false for any specific
+            // family request).
+            return fixy::wrap::RecipeFamily::None;
+    }
 }
 
 class CRUCIBLE_OWNER RecipeRegistry {
- public:
-  using PoolBorrow = fixy::wrap::BorrowedRef<RecipePool>;
-  using pure_projection_row = effects::Row<>;
+public:
+    using PoolBorrow = fixy::wrap::BorrowedRef<RecipePool>;
+    using pure_projection_row = effects::Row<>;
 
-  static_assert(fixy::wrap::IsBorrowedRef<PoolBorrow>);
+    static_assert(fixy::wrap::IsBorrowedRef<PoolBorrow>);
 
-  // Registry-local (name, recipe*) binding.  name points at a static
-  // string literal (the starter table lives in the header's .rodata);
-  // recipe* points into the RecipePool's arena.  Both lifetimes
-  // outlive every realistic caller; the registry itself encodes this
-  // with CRUCIBLE_LIFETIMEBOUND on entries().
-  struct Entry {
-    std::string_view name;
-    const NumericalRecipe* recipe = nullptr;
-  };
+    // Registry-local (name, recipe*) binding.  name points at a static
+    // string literal (the starter table lives in the header's .rodata);
+    // recipe* points into the RecipePool's arena.  Both lifetimes
+    // outlive every realistic caller; the registry itself encodes this
+    // with CRUCIBLE_LIFETIMEBOUND on entries().
+    struct Entry {
+        std::string_view name;
+        const NumericalRecipe* recipe = nullptr;
+    };
 
-  using Entries = fixy::wrap::Tagged<
-      std::span<const Entry>, fixy::tags::source::JsonRegistry>;
+    using Entries = fixy::wrap::Tagged<std::span<const Entry>, fixy::tags::source::JsonRegistry>;
 
-  // Fixed starter-set size.  New starter recipes bump this; tests
-  // assert entries().size() == STARTER_COUNT so a forgotten update
-  // fires immediately.
-  static constexpr std::size_t STARTER_COUNT = 8;
+    // Fixed starter-set size.  New starter recipes bump this; tests
+    // assert entries().size() == STARTER_COUNT so a forgotten update
+    // fires immediately.
+    static constexpr std::size_t STARTER_COUNT = 8;
 
-  // Populate the registry by interning every starter recipe into the
-  // caller-supplied pool.  Each pool.intern call is a fresh allocation
-  // (no pool populated yet) so this runs in O(STARTER_COUNT × probe)
-  // = O(1) in practice.
-  //
-  // The pool is caller-owned; the registry holds non-owning recipe
-  // pointers into the pool's arena after construction, but never
-  // mutates or destroys the pool. Pool outlives the registry.
-  [[gnu::cold]] explicit RecipeRegistry(PoolBorrow pool,
-                                        effects::Alloc a) noexcept;
+    // Populate the registry by interning every starter recipe into the
+    // caller-supplied pool.  Each pool.intern call is a fresh allocation
+    // (no pool populated yet) so this runs in O(STARTER_COUNT × probe)
+    // = O(1) in practice.
+    //
+    // The pool is caller-owned; the registry holds non-owning recipe
+    // pointers into the pool's arena after construction, but never
+    // mutates or destroys the pool. Pool outlives the registry.
+    [[gnu::cold]] explicit RecipeRegistry(PoolBorrow pool, effects::Alloc a) noexcept;
 
-  // Interior recipe pointers into the caller's pool arena; relocating
-  // the registry would not move those recipes, but copying the handle
-  // surface would duplicate a view whose construction was deliberately
-  // tied to one seed pass.
-  RecipeRegistry(const RecipeRegistry&)            = delete("RecipeRegistry holds interior recipe pointers into the caller's pool arena");
-  RecipeRegistry& operator=(const RecipeRegistry&) = delete("RecipeRegistry holds interior recipe pointers into the caller's pool arena");
-  RecipeRegistry(RecipeRegistry&&)                 = delete("interior pointers would dangle");
-  RecipeRegistry& operator=(RecipeRegistry&&)      = delete("interior pointers would dangle");
+    // Interior recipe pointers into the caller's pool arena; relocating
+    // the registry would not move those recipes, but copying the handle
+    // surface would duplicate a view whose construction was deliberately
+    // tied to one seed pass.
+    RecipeRegistry(const RecipeRegistry&) =
+        delete("RecipeRegistry holds interior recipe pointers into the caller's pool arena");
+    RecipeRegistry& operator=(const RecipeRegistry&) =
+        delete("RecipeRegistry holds interior recipe pointers into the caller's pool arena");
+    RecipeRegistry(RecipeRegistry&&) = delete("interior pointers would dangle");
+    RecipeRegistry& operator=(RecipeRegistry&&) = delete("interior pointers would dangle");
 
-  // Look up a starter recipe by name.  Returns the canonical interned
-  // pointer on hit, RecipeError::NameNotFound on miss.
-  //
-  // Comparison is case-sensitive and exact.  The lookup is a linear
-  // scan over the tiny starter table — at 8 entries × 24 B per Entry
-  // = 192 B, two cache lines, the scan is faster than any hash table
-  // would be.
-  //
-  // Cost: ~15 ns for a miss, ~5-10 ns for a hit.
-  template <typename CallerRow = pure_projection_row>
-      requires effects::Subrow<CallerRow, pure_projection_row>
-  [[nodiscard, gnu::pure]] std::expected<const NumericalRecipe*, RecipeError>
-      by_name(std::string_view name) const noexcept;
+    // Look up a starter recipe by name.  Returns the canonical interned
+    // pointer on hit, RecipeError::NameNotFound on miss.
+    //
+    // Comparison is case-sensitive and exact.  The lookup is a linear
+    // scan over the tiny starter table — at 8 entries × 24 B per Entry
+    // = 192 B, two cache lines, the scan is faster than any hash table
+    // would be.
+    //
+    // Cost: ~15 ns for a miss, ~5-10 ns for a hit.
+    template <typename CallerRow = pure_projection_row>
+        requires effects::Subrow<CallerRow, pure_projection_row>
+    [[nodiscard, gnu::pure]] std::expected<const NumericalRecipe*, RecipeError>
+    by_name(std::string_view name) const noexcept;
 
-  // Look up a starter recipe by Family-A hash.
-  //
-  // This is the Cipher load path: a persisted KernelContentHash
-  // (FORGE.md §18.6) composes a RecipeHash; on recovery the Cipher
-  // hands the hash to the registry to resolve back to the canonical
-  // const NumericalRecipe* pointer in the current process.
-  //
-  // Hash mismatch modes:
-  //   - The persisted registry had a recipe this process's registry
-  //     doesn't (registry downgrade): returns HashNotFound.
-  //   - The persistence blob was corrupted: same, returns HashNotFound.
-  //   - The Family-A hash fold changed since persist (CDAG_VERSION
-  //     break): same, returns HashNotFound.
-  //
-  // Callers MUST handle the miss — falling back to a default recipe
-  // is usually wrong (it breaks the load-bearing replay-determinism
-  // invariant from CRUCIBLE.md §10).  The right escalation is: abort
-  // the load, surface a "recipe downgrade" diagnostic, require the
-  // operator to either re-run with the newer build or accept the
-  // non-replayable loss.
-  //
-  // Cost: ~8 ns miss, ~5 ns hit — one predicated branch per entry,
-  // no string compare overhead.  Compared to by_name this is tighter
-  // because 8-byte hash compare is a single integer test.
-  template <typename CallerRow = pure_projection_row>
-      requires effects::Subrow<CallerRow, pure_projection_row>
-  [[nodiscard, gnu::pure]] std::expected<const NumericalRecipe*, RecipeError>
-      by_hash(RecipeHash hash) const noexcept;
+    // Look up a starter recipe by Family-A hash.
+    //
+    // This is the Cipher load path: a persisted KernelContentHash
+    // (FORGE.md §18.6) composes a RecipeHash; on recovery the Cipher
+    // hands the hash to the registry to resolve back to the canonical
+    // const NumericalRecipe* pointer in the current process.
+    //
+    // Hash mismatch modes:
+    //   - The persisted registry had a recipe this process's registry
+    //     doesn't (registry downgrade): returns HashNotFound.
+    //   - The persistence blob was corrupted: same, returns HashNotFound.
+    //   - The Family-A hash fold changed since persist (CDAG_VERSION
+    //     break): same, returns HashNotFound.
+    //
+    // Callers MUST handle the miss — falling back to a default recipe
+    // is usually wrong (it breaks the load-bearing replay-determinism
+    // invariant from CRUCIBLE.md §10).  The right escalation is: abort
+    // the load, surface a "recipe downgrade" diagnostic, require the
+    // operator to either re-run with the newer build or accept the
+    // non-replayable loss.
+    //
+    // Cost: ~8 ns miss, ~5 ns hit — one predicated branch per entry,
+    // no string compare overhead.  Compared to by_name this is tighter
+    // because 8-byte hash compare is a single integer test.
+    template <typename CallerRow = pure_projection_row>
+        requires effects::Subrow<CallerRow, pure_projection_row>
+    [[nodiscard, gnu::pure]] std::expected<const NumericalRecipe*, RecipeError> by_hash(RecipeHash hash) const noexcept;
 
-  // Enumerate every (name, recipe*) binding.  Order matches the
-  // starter table declaration order in the .cpp; stable across the
-  // lifetime of the registry.
-  //
-  // Used by tests (to sweep every starter recipe), Meridian probes
-  // (to emit native_on bitmaps per chip — future), and diagnostic
-  // dumps (`crucible-top --recipes`).
-  template <typename CallerRow = pure_projection_row>
-      requires effects::Subrow<CallerRow, pure_projection_row>
-  [[nodiscard, gnu::pure]] Entries entries() const noexcept
-      CRUCIBLE_LIFETIMEBOUND
-  {
-    return Entries{std::span<const Entry>{entries_.data(), STARTER_COUNT}};
-  }
-
-  // Convenience: the count of starter recipes, independent of the
-  // array being populated.  Used in static_asserts on generated
-  // tables and CI.
-  [[nodiscard, gnu::const]] static constexpr std::size_t size() noexcept {
-    return STARTER_COUNT;
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // FOUND-G04: NumericalTier-pinned recipe lookup
-  // ═══════════════════════════════════════════════════════════════
-  //
-  // Type-pinned overlay for by_name / by_hash that lifts the
-  // recipe's runtime tolerance class into the type system at the
-  // boundary.  A consumer pinned at, e.g., `fixy::wrap::Tolerance::
-  // BITEXACT` can ONLY obtain a `NumericalTier<BITEXACT, const
-  // NumericalRecipe*>` from the registry — registry returns
-  // ToleranceMismatch for any recipe whose `tolerance_of(*r)` does
-  // not subsume the requested static tier.
-  //
-  // The bug class caught: a refactor that pins a hot-path recipe
-  // consumer to ULP_FP16 but accidentally accepts a recipe with
-  // `ReductionDeterminism::ORDERED` (≤4 ULP, NOT ≤1 ULP at FP16).
-  // Today caught by cross-vendor numerics CI 12 hours after the
-  // commit lands; with the pinned overload, caught at the registry
-  // boundary the moment the recipe is pulled.
-  //
-  // Subsumption semantics (per ToleranceLattice):
-  //
-  //   Bottom = RELAXED (loosest); Top = BITEXACT (tightest).
-  //   leq(loose, tight) reads "loose is below tight."  A producer
-  //   at HIGHER tier (BITEXACT) satisfies a consumer at LOWER tier
-  //   (ULP_FP16) — stronger promise serves weaker requirement.
-  //
-  //   So: `by_name_pinned<RELAXED>("any_recipe")` always succeeds
-  //   (every recipe satisfies RELAXED).
-  //
-  //   And:  `by_name_pinned<BITEXACT>("f32_strict")` succeeds.
-  //         `by_name_pinned<BITEXACT>("f32_ordered")` returns
-  //         ToleranceMismatch — ORDERED maps to RELAXED, which
-  //         does NOT satisfy BITEXACT.
-  //
-  // Error priority: NameNotFound / HashNotFound take precedence
-  // over ToleranceMismatch.  An unknown name surfaces NameNotFound
-  // even if the static tier is RELAXED — symmetric with by_name's
-  // contract; pinned is purely additive.
-  //
-  // Cost: ~5-10 ns hit (linear scan + tolerance_of switch + leq
-  // compare); ~15 ns miss.  No heap, no atomic, no CAS — same as
-  // the non-pinned variant.
-
-  // ── by_name_pinned — name lookup with tier admission ────────────
-  template <fixy::wrap::Tolerance T, typename CallerRow = pure_projection_row>
-      requires effects::Subrow<CallerRow, pure_projection_row>
-  [[nodiscard, gnu::pure]]
-  std::expected<fixy::wrap::NumericalTier<T, const NumericalRecipe*>, RecipeError>
-  by_name_pinned(std::string_view name) const noexcept {
-    auto base = by_name<CallerRow>(name);
-    if (!base) return std::unexpected(base.error());
-    const NumericalRecipe* recipe = *base;
-    // tolerance_of cannot be null (recipe pointer is guaranteed
-    // non-null by by_name's contract).  Verify the runtime class
-    // subsumes the static request: leq(Required, Actual).
-    if (!fixy::wrap::ToleranceLattice::leq(T, tolerance_of(*recipe))) {
-      return std::unexpected(RecipeError::ToleranceMismatch);
+    // Enumerate every (name, recipe*) binding.  Order matches the
+    // starter table declaration order in the .cpp; stable across the
+    // lifetime of the registry.
+    //
+    // Used by tests (to sweep every starter recipe), Meridian probes
+    // (to emit native_on bitmaps per chip — future), and diagnostic
+    // dumps (`crucible-top --recipes`).
+    template <typename CallerRow = pure_projection_row>
+        requires effects::Subrow<CallerRow, pure_projection_row>
+    [[nodiscard, gnu::pure]] Entries entries() const noexcept CRUCIBLE_LIFETIMEBOUND {
+        return Entries{std::span<const Entry>{entries_.data(), STARTER_COUNT}};
     }
-    return fixy::wrap::NumericalTier<T, const NumericalRecipe*>{recipe};
-  }
 
-  // ── by_hash_pinned — hash lookup with tier admission ────────────
-  template <fixy::wrap::Tolerance T, typename CallerRow = pure_projection_row>
-      requires effects::Subrow<CallerRow, pure_projection_row>
-  [[nodiscard, gnu::pure]]
-  std::expected<fixy::wrap::NumericalTier<T, const NumericalRecipe*>, RecipeError>
-  by_hash_pinned(RecipeHash hash) const noexcept {
-    auto base = by_hash<CallerRow>(hash);
-    if (!base) return std::unexpected(base.error());
-    const NumericalRecipe* recipe = *base;
-    if (!fixy::wrap::ToleranceLattice::leq(T, tolerance_of(*recipe))) {
-      return std::unexpected(RecipeError::ToleranceMismatch);
+    // Convenience: the count of starter recipes, independent of the
+    // array being populated.  Used in static_asserts on generated
+    // tables and CI.
+    [[nodiscard, gnu::const]] static constexpr std::size_t size() noexcept { return STARTER_COUNT; }
+
+    // ═══════════════════════════════════════════════════════════════
+    // FOUND-G04: NumericalTier-pinned recipe lookup
+    // ═══════════════════════════════════════════════════════════════
+    //
+    // Type-pinned overlay for by_name / by_hash that lifts the
+    // recipe's runtime tolerance class into the type system at the
+    // boundary.  A consumer pinned at, e.g., `fixy::wrap::Tolerance::
+    // BITEXACT` can ONLY obtain a `NumericalTier<BITEXACT, const
+    // NumericalRecipe*>` from the registry — registry returns
+    // ToleranceMismatch for any recipe whose `tolerance_of(*r)` does
+    // not subsume the requested static tier.
+    //
+    // The bug class caught: a refactor that pins a hot-path recipe
+    // consumer to ULP_FP16 but accidentally accepts a recipe with
+    // `ReductionDeterminism::ORDERED` (≤4 ULP, NOT ≤1 ULP at FP16).
+    // Today caught by cross-vendor numerics CI 12 hours after the
+    // commit lands; with the pinned overload, caught at the registry
+    // boundary the moment the recipe is pulled.
+    //
+    // Subsumption semantics (per ToleranceLattice):
+    //
+    //   Bottom = RELAXED (loosest); Top = BITEXACT (tightest).
+    //   leq(loose, tight) reads "loose is below tight."  A producer
+    //   at HIGHER tier (BITEXACT) satisfies a consumer at LOWER tier
+    //   (ULP_FP16) — stronger promise serves weaker requirement.
+    //
+    //   So: `by_name_pinned<RELAXED>("any_recipe")` always succeeds
+    //   (every recipe satisfies RELAXED).
+    //
+    //   And:  `by_name_pinned<BITEXACT>("f32_strict")` succeeds.
+    //         `by_name_pinned<BITEXACT>("f32_ordered")` returns
+    //         ToleranceMismatch — ORDERED maps to RELAXED, which
+    //         does NOT satisfy BITEXACT.
+    //
+    // Error priority: NameNotFound / HashNotFound take precedence
+    // over ToleranceMismatch.  An unknown name surfaces NameNotFound
+    // even if the static tier is RELAXED — symmetric with by_name's
+    // contract; pinned is purely additive.
+    //
+    // Cost: ~5-10 ns hit (linear scan + tolerance_of switch + leq
+    // compare); ~15 ns miss.  No heap, no atomic, no CAS — same as
+    // the non-pinned variant.
+
+    // ── by_name_pinned — name lookup with tier admission ────────────
+    template <fixy::wrap::Tolerance T, typename CallerRow = pure_projection_row>
+        requires effects::Subrow<CallerRow, pure_projection_row>
+    [[nodiscard, gnu::pure]]
+    std::expected<fixy::wrap::NumericalTier<T, const NumericalRecipe*>, RecipeError>
+    by_name_pinned(std::string_view name) const noexcept {
+        auto base = by_name<CallerRow>(name);
+        if (!base) return std::unexpected(base.error());
+        const NumericalRecipe* recipe = *base;
+        // tolerance_of cannot be null (recipe pointer is guaranteed
+        // non-null by by_name's contract).  Verify the runtime class
+        // subsumes the static request: leq(Required, Actual).
+        if (!fixy::wrap::ToleranceLattice::leq(T, tolerance_of(*recipe))) {
+            return std::unexpected(RecipeError::ToleranceMismatch);
+        }
+        return fixy::wrap::NumericalTier<T, const NumericalRecipe*>{recipe};
     }
-    return fixy::wrap::NumericalTier<T, const NumericalRecipe*>{recipe};
-  }
 
-  // ═══════════════════════════════════════════════════════════════
-  // FOUND-G78: RecipeSpec product-wrapper recipe lookup
-  // ═══════════════════════════════════════════════════════════════
-  //
-  // Per-instance two-axis recipe specification overlay — pairs a
-  // recipe pointer with its (tolerance_tier, recipe_family) at
-  // RUNTIME inside a `fixy::wrap::RecipeSpec<const NumericalRecipe*>`.
-  // Unlike by_name_pinned / by_hash_pinned (FOUND-G04, regime-1
-  // single-axis static admission), RecipeSpec is regime-4 (per-
-  // instance grade carried in 2 bytes of runtime state) — so the
-  // overload takes NO template parameter.  Both the tolerance tier
-  // AND the recipe-family axis are populated from the recipe's
-  // runtime fields via tolerance_of() + recipe_family_of().
-  //
-  // THE LOAD-BEARING USE CASE — Forge Phase E.RecipeSelect dispatch:
-  //
-  //   auto spec = registry.by_name_spec("f16_f32accum_tc")
-  //                  .value();   // RecipeSpec<const NumericalRecipe*>
-  //   if (!spec.admits(consumer_req_tier, consumer_req_family))
-  //     return reject_recipe_mismatch();
-  //   auto* recipe = spec.peek();   // canonical interned pointer
-  //
-  // The `admits()` gate fences a TWO-DIMENSIONAL bug class that the
-  // single-axis pinned overload cannot:
-  //
-  //   1. tolerance-only mismatch — caught by by_name_pinned today.
-  //   2. recipe-family mismatch — Forge intersection solver picks
-  //      a Pairwise recipe but the consumer requires Kahan
-  //      (e.g., Adam moment-buffer accumulator with strict ε
-  //      growth).  Different ALGORITHMS, same tolerance band.
-  //   3. JOINT failure — both axes off; admits() short-circuits at
-  //      the first failing axis but reports failure regardless of
-  //      which axis tripped (consumer's responsibility to inspect).
-  //
-  // The combine_max() composition also lifts here: at sites where
-  // multiple recipe-tagged streams converge (e.g., multi-vendor
-  // pipeline reductions), `a.combine_max(b)` joins both axes
-  // pointwise — tolerance promotes to the max tier, family
-  // promotes to wildcard (Any) when the two streams disagree.
-  //
-  // Error priority: NameNotFound / HashNotFound take precedence
-  // over any joint-axis mismatch (mismatch is per-call, not per-
-  // entry — the registry hands out the spec, the caller decides
-  // whether it admits).  Symmetric with the pinned overload.
-  //
-  // Cost: ~5-10 ns hit (linear scan + tolerance_of switch +
-  // recipe_family_of switch + RecipeSpec construction with two
-  // 1-byte stores); ~15 ns miss.  No heap, no atomic, no CAS.
+    // ── by_hash_pinned — hash lookup with tier admission ────────────
+    template <fixy::wrap::Tolerance T, typename CallerRow = pure_projection_row>
+        requires effects::Subrow<CallerRow, pure_projection_row>
+    [[nodiscard, gnu::pure]]
+    std::expected<fixy::wrap::NumericalTier<T, const NumericalRecipe*>, RecipeError>
+    by_hash_pinned(RecipeHash hash) const noexcept {
+        auto base = by_hash<CallerRow>(hash);
+        if (!base) return std::unexpected(base.error());
+        const NumericalRecipe* recipe = *base;
+        if (!fixy::wrap::ToleranceLattice::leq(T, tolerance_of(*recipe))) {
+            return std::unexpected(RecipeError::ToleranceMismatch);
+        }
+        return fixy::wrap::NumericalTier<T, const NumericalRecipe*>{recipe};
+    }
 
-  // ── by_name_spec — name lookup with two-axis spec wrap ──────────
-  template <typename CallerRow = pure_projection_row>
-      requires effects::Subrow<CallerRow, pure_projection_row>
-  [[nodiscard, gnu::pure]]
-  std::expected<fixy::wrap::RecipeSpec<const NumericalRecipe*>, RecipeError>
-  by_name_spec(std::string_view name) const noexcept {
-    auto base = by_name<CallerRow>(name);
-    if (!base) return std::unexpected(base.error());
-    const NumericalRecipe* recipe = *base;
-    return fixy::wrap::RecipeSpec<const NumericalRecipe*>{
-        recipe, tolerance_of(*recipe), recipe_family_of(*recipe)};
-  }
+    // ═══════════════════════════════════════════════════════════════
+    // FOUND-G78: RecipeSpec product-wrapper recipe lookup
+    // ═══════════════════════════════════════════════════════════════
+    //
+    // Per-instance two-axis recipe specification overlay — pairs a
+    // recipe pointer with its (tolerance_tier, recipe_family) at
+    // RUNTIME inside a `fixy::wrap::RecipeSpec<const NumericalRecipe*>`.
+    // Unlike by_name_pinned / by_hash_pinned (FOUND-G04, regime-1
+    // single-axis static admission), RecipeSpec is regime-4 (per-
+    // instance grade carried in 2 bytes of runtime state) — so the
+    // overload takes NO template parameter.  Both the tolerance tier
+    // AND the recipe-family axis are populated from the recipe's
+    // runtime fields via tolerance_of() + recipe_family_of().
+    //
+    // THE LOAD-BEARING USE CASE — Forge Phase E.RecipeSelect dispatch:
+    //
+    //   auto spec = registry.by_name_spec("f16_f32accum_tc")
+    //                  .value();   // RecipeSpec<const NumericalRecipe*>
+    //   if (!spec.admits(consumer_req_tier, consumer_req_family))
+    //     return reject_recipe_mismatch();
+    //   auto* recipe = spec.peek();   // canonical interned pointer
+    //
+    // The `admits()` gate fences a TWO-DIMENSIONAL bug class that the
+    // single-axis pinned overload cannot:
+    //
+    //   1. tolerance-only mismatch — caught by by_name_pinned today.
+    //   2. recipe-family mismatch — Forge intersection solver picks
+    //      a Pairwise recipe but the consumer requires Kahan
+    //      (e.g., Adam moment-buffer accumulator with strict ε
+    //      growth).  Different ALGORITHMS, same tolerance band.
+    //   3. JOINT failure — both axes off; admits() short-circuits at
+    //      the first failing axis but reports failure regardless of
+    //      which axis tripped (consumer's responsibility to inspect).
+    //
+    // The combine_max() composition also lifts here: at sites where
+    // multiple recipe-tagged streams converge (e.g., multi-vendor
+    // pipeline reductions), `a.combine_max(b)` joins both axes
+    // pointwise — tolerance promotes to the max tier, family
+    // promotes to wildcard (Any) when the two streams disagree.
+    //
+    // Error priority: NameNotFound / HashNotFound take precedence
+    // over any joint-axis mismatch (mismatch is per-call, not per-
+    // entry — the registry hands out the spec, the caller decides
+    // whether it admits).  Symmetric with the pinned overload.
+    //
+    // Cost: ~5-10 ns hit (linear scan + tolerance_of switch +
+    // recipe_family_of switch + RecipeSpec construction with two
+    // 1-byte stores); ~15 ns miss.  No heap, no atomic, no CAS.
 
-  // ── by_hash_spec — hash lookup with two-axis spec wrap ──────────
-  template <typename CallerRow = pure_projection_row>
-      requires effects::Subrow<CallerRow, pure_projection_row>
-  [[nodiscard, gnu::pure]]
-  std::expected<fixy::wrap::RecipeSpec<const NumericalRecipe*>, RecipeError>
-  by_hash_spec(RecipeHash hash) const noexcept {
-    auto base = by_hash<CallerRow>(hash);
-    if (!base) return std::unexpected(base.error());
-    const NumericalRecipe* recipe = *base;
-    return fixy::wrap::RecipeSpec<const NumericalRecipe*>{
-        recipe, tolerance_of(*recipe), recipe_family_of(*recipe)};
-  }
+    // ── by_name_spec — name lookup with two-axis spec wrap ──────────
+    template <typename CallerRow = pure_projection_row>
+        requires effects::Subrow<CallerRow, pure_projection_row>
+    [[nodiscard, gnu::pure]]
+    std::expected<fixy::wrap::RecipeSpec<const NumericalRecipe*>, RecipeError>
+    by_name_spec(std::string_view name) const noexcept {
+        auto base = by_name<CallerRow>(name);
+        if (!base) return std::unexpected(base.error());
+        const NumericalRecipe* recipe = *base;
+        return fixy::wrap::RecipeSpec<const NumericalRecipe*>{recipe, tolerance_of(*recipe), recipe_family_of(*recipe)};
+    }
 
- private:
-  std::array<Entry, STARTER_COUNT> entries_{};
+    // ── by_hash_spec — hash lookup with two-axis spec wrap ──────────
+    template <typename CallerRow = pure_projection_row>
+        requires effects::Subrow<CallerRow, pure_projection_row>
+    [[nodiscard, gnu::pure]]
+    std::expected<fixy::wrap::RecipeSpec<const NumericalRecipe*>, RecipeError>
+    by_hash_spec(RecipeHash hash) const noexcept {
+        auto base = by_hash<CallerRow>(hash);
+        if (!base) return std::unexpected(base.error());
+        const NumericalRecipe* recipe = *base;
+        return fixy::wrap::RecipeSpec<const NumericalRecipe*>{recipe, tolerance_of(*recipe), recipe_family_of(*recipe)};
+    }
+
+private:
+    std::array<Entry, STARTER_COUNT> entries_{};
 };
 
 // ─── Starter recipe names ──────────────────────────────────────────
@@ -518,14 +520,14 @@ class CRUCIBLE_OWNER RecipeRegistry {
 //                                    per-block MX scales, ORDERED
 
 namespace recipe_names {
-inline constexpr std::string_view kF32Strict             = "f32_strict";
-inline constexpr std::string_view kF32Ordered            = "f32_ordered";
-inline constexpr std::string_view kF16F32AccumTc         = "f16_f32accum_tc";
-inline constexpr std::string_view kF16F32AccumOrdered    = "f16_f32accum_ordered";
-inline constexpr std::string_view kBf16F32AccumTc        = "bf16_f32accum_tc";
-inline constexpr std::string_view kBf16F32AccumOrdered   = "bf16_f32accum_ordered";
-inline constexpr std::string_view kFp8E4m3F32AccumMxOrd  = "fp8e4m3_f32accum_mx_ordered";
-inline constexpr std::string_view kFp8E5m2F32AccumMxOrd  = "fp8e5m2_f32accum_mx_ordered";
+inline constexpr std::string_view kF32Strict = "f32_strict";
+inline constexpr std::string_view kF32Ordered = "f32_ordered";
+inline constexpr std::string_view kF16F32AccumTc = "f16_f32accum_tc";
+inline constexpr std::string_view kF16F32AccumOrdered = "f16_f32accum_ordered";
+inline constexpr std::string_view kBf16F32AccumTc = "bf16_f32accum_tc";
+inline constexpr std::string_view kBf16F32AccumOrdered = "bf16_f32accum_ordered";
+inline constexpr std::string_view kFp8E4m3F32AccumMxOrd = "fp8e4m3_f32accum_mx_ordered";
+inline constexpr std::string_view kFp8E5m2F32AccumMxOrd = "fp8e5m2_f32accum_mx_ordered";
 }  // namespace recipe_names
 
 // ─── Starter recipe specs (the pure-data source of truth) ──────────
@@ -538,8 +540,8 @@ inline constexpr std::string_view kFp8E5m2F32AccumMxOrd  = "fp8e5m2_f32accum_mx_
 namespace detail_recipe_registry {
 
 struct StarterSpec {
-  std::string_view name;
-  NumericalRecipe  fields;  // `hash` populated via hashed() below
+    std::string_view name;
+    NumericalRecipe fields;  // `hash` populated via hashed() below
 };
 
 // Eight starter recipes — the tractable cross-section of the four-
@@ -547,180 +549,174 @@ struct StarterSpec {
 // been hand-verified against FORGE.md §20.1; a new row bumps
 // RecipeRegistry::STARTER_COUNT AND adds an entry to the by_name
 // switch in RecipeRegistry.cpp-equivalent path (inline below).
-inline constexpr std::array<StarterSpec, RecipeRegistry::STARTER_COUNT>
-    kStarterRecipes = {{
-        // 1. f32_strict — FP32 end-to-end, bit-identical on any
-        //    silicon including CPU oracle.  The compliance / replay
-        //    reference.  10-50× slower than UNORDERED but 0 ULP on
-        //    every backend.
-        {recipe_names::kF32Strict, hashed(NumericalRecipe{
-            .accum_dtype    = ScalarType::Float,
-            .out_dtype      = ScalarType::Float,
-            .reduction_algo = ReductionAlgo::PAIRWISE,
-            .rounding       = RoundingMode::RN,
-            .scale_policy   = ScalePolicy::NONE,
-            .softmax        = SoftmaxRecurrence::ONLINE_LSE,
-            .determinism    = ReductionDeterminism::BITEXACT_STRICT,
-            .flags          = {},
-            .hash           = {},
-        })},
-        // 2. f32_ordered — FP32 with vendor-native tile shapes;
-        //    ≤4 ULP cross-vendor.  The default for FP32 training on
-        //    a heterogeneous fleet.
-        {recipe_names::kF32Ordered, hashed(NumericalRecipe{
-            .accum_dtype    = ScalarType::Float,
-            .out_dtype      = ScalarType::Float,
-            .reduction_algo = ReductionAlgo::PAIRWISE,
-            .rounding       = RoundingMode::RN,
-            .scale_policy   = ScalePolicy::NONE,
-            .softmax        = SoftmaxRecurrence::ONLINE_LSE,
-            .determinism    = ReductionDeterminism::ORDERED,
-            .flags          = {},
-            .hash           = {},
-        })},
-        // 3. f16_f32accum_tc — FP16 storage, FP32 accumulator,
-        //    K≤8 tensor-core fragments + pinned outer scalar reduction.
-        //    0-1 ULP cross-vendor; ~5-8% tax vs UNORDERED.  The
-        //    pragmatic sweet spot for cross-vendor mixed-precision
-        //    training with tensor-core throughput.
-        {recipe_names::kF16F32AccumTc, hashed(NumericalRecipe{
-            .accum_dtype    = ScalarType::Float,
-            .out_dtype      = ScalarType::Half,
-            .reduction_algo = ReductionAlgo::PAIRWISE,
-            .rounding       = RoundingMode::RN,
-            .scale_policy   = ScalePolicy::NONE,
-            .softmax        = SoftmaxRecurrence::ONLINE_LSE,
-            .determinism    = ReductionDeterminism::BITEXACT_TC,
-            .flags          = {},
-            .hash           = {},
-        })},
-        // 4. f16_f32accum_ordered — FP16 storage, FP32 accumulator,
-        //    vendor-native tile shapes; ≤4 ULP cross-vendor.  Default
-        //    for heterogeneous-fleet FP16 training when BITEXACT_TC
-        //    isn't required.
-        {recipe_names::kF16F32AccumOrdered, hashed(NumericalRecipe{
-            .accum_dtype    = ScalarType::Float,
-            .out_dtype      = ScalarType::Half,
-            .reduction_algo = ReductionAlgo::PAIRWISE,
-            .rounding       = RoundingMode::RN,
-            .scale_policy   = ScalePolicy::NONE,
-            .softmax        = SoftmaxRecurrence::ONLINE_LSE,
-            .determinism    = ReductionDeterminism::ORDERED,
-            .flags          = {},
-            .hash           = {},
-        })},
-        // 5. bf16_f32accum_tc — BF16 storage, FP32 accumulator,
-        //    K≤8 tensor-core fragments.  BF16 is the training-default
-        //    on modern silicon; this recipe is what most TC training
-        //    runs should pin.
-        {recipe_names::kBf16F32AccumTc, hashed(NumericalRecipe{
-            .accum_dtype    = ScalarType::Float,
-            .out_dtype      = ScalarType::BFloat16,
-            .reduction_algo = ReductionAlgo::PAIRWISE,
-            .rounding       = RoundingMode::RN,
-            .scale_policy   = ScalePolicy::NONE,
-            .softmax        = SoftmaxRecurrence::ONLINE_LSE,
-            .determinism    = ReductionDeterminism::BITEXACT_TC,
-            .flags          = {},
-            .hash           = {},
-        })},
-        // 6. bf16_f32accum_ordered — BF16 storage, FP32 accumulator,
-        //    vendor-native tile shapes.  Tolerance-bounded training
-        //    on heterogeneous fleets.
-        {recipe_names::kBf16F32AccumOrdered, hashed(NumericalRecipe{
-            .accum_dtype    = ScalarType::Float,
-            .out_dtype      = ScalarType::BFloat16,
-            .reduction_algo = ReductionAlgo::PAIRWISE,
-            .rounding       = RoundingMode::RN,
-            .scale_policy   = ScalePolicy::NONE,
-            .softmax        = SoftmaxRecurrence::ONLINE_LSE,
-            .determinism    = ReductionDeterminism::ORDERED,
-            .flags          = {},
-            .hash           = {},
-        })},
-        // 7. fp8e4m3_f32accum_mx_ordered — FP8-E4M3 storage, FP32
-        //    accumulator, per-block MX scales.  Softmax NAIVE because
-        //    block-scaled formats don't compose cleanly with online
-        //    LSE; softmax is implemented as two-pass max-sub/exp/norm
-        //    in the IR003* realization.  Cannot declare BITEXACT_*
-        //    per FORGE.md §19.1 (block-scale divergence > 1 ULP).
-        {recipe_names::kFp8E4m3F32AccumMxOrd, hashed(NumericalRecipe{
-            .accum_dtype    = ScalarType::Float,
-            .out_dtype      = ScalarType::Float8_e4m3fn,
-            .reduction_algo = ReductionAlgo::PAIRWISE,
-            .rounding       = RoundingMode::RN,
-            .scale_policy   = ScalePolicy::PER_BLOCK_MX,
-            .softmax        = SoftmaxRecurrence::NAIVE,
-            .determinism    = ReductionDeterminism::ORDERED,
-            .flags          = {},
-            .hash           = {},
-        })},
-        // 8. fp8e5m2_f32accum_mx_ordered — FP8-E5M2 storage (5-bit
-        //    exponent, larger dynamic range than E4M3), FP32 accum,
-        //    per-block MX scales.  Paired with E4M3 for gradient/
-        //    weight asymmetric training (gradients often use E5M2 for
-        //    the dynamic range).
-        {recipe_names::kFp8E5m2F32AccumMxOrd, hashed(NumericalRecipe{
-            .accum_dtype    = ScalarType::Float,
-            .out_dtype      = ScalarType::Float8_e5m2,
-            .reduction_algo = ReductionAlgo::PAIRWISE,
-            .rounding       = RoundingMode::RN,
-            .scale_policy   = ScalePolicy::PER_BLOCK_MX,
-            .softmax        = SoftmaxRecurrence::NAIVE,
-            .determinism    = ReductionDeterminism::ORDERED,
-            .flags          = {},
-            .hash           = {},
-        })},
-    }};
+inline constexpr std::array<StarterSpec, RecipeRegistry::STARTER_COUNT> kStarterRecipes = {{
+    // 1. f32_strict — FP32 end-to-end, bit-identical on any
+    //    silicon including CPU oracle.  The compliance / replay
+    //    reference.  10-50× slower than UNORDERED but 0 ULP on
+    //    every backend.
+    {recipe_names::kF32Strict, hashed(NumericalRecipe{
+                                   .accum_dtype = ScalarType::Float,
+                                   .out_dtype = ScalarType::Float,
+                                   .reduction_algo = ReductionAlgo::PAIRWISE,
+                                   .rounding = RoundingMode::RN,
+                                   .scale_policy = ScalePolicy::NONE,
+                                   .softmax = SoftmaxRecurrence::ONLINE_LSE,
+                                   .determinism = ReductionDeterminism::BITEXACT_STRICT,
+                                   .flags = {},
+                                   .hash = {},
+                               })},
+    // 2. f32_ordered — FP32 with vendor-native tile shapes;
+    //    ≤4 ULP cross-vendor.  The default for FP32 training on
+    //    a heterogeneous fleet.
+    {recipe_names::kF32Ordered, hashed(NumericalRecipe{
+                                    .accum_dtype = ScalarType::Float,
+                                    .out_dtype = ScalarType::Float,
+                                    .reduction_algo = ReductionAlgo::PAIRWISE,
+                                    .rounding = RoundingMode::RN,
+                                    .scale_policy = ScalePolicy::NONE,
+                                    .softmax = SoftmaxRecurrence::ONLINE_LSE,
+                                    .determinism = ReductionDeterminism::ORDERED,
+                                    .flags = {},
+                                    .hash = {},
+                                })},
+    // 3. f16_f32accum_tc — FP16 storage, FP32 accumulator,
+    //    K≤8 tensor-core fragments + pinned outer scalar reduction.
+    //    0-1 ULP cross-vendor; ~5-8% tax vs UNORDERED.  The
+    //    pragmatic sweet spot for cross-vendor mixed-precision
+    //    training with tensor-core throughput.
+    {recipe_names::kF16F32AccumTc, hashed(NumericalRecipe{
+                                       .accum_dtype = ScalarType::Float,
+                                       .out_dtype = ScalarType::Half,
+                                       .reduction_algo = ReductionAlgo::PAIRWISE,
+                                       .rounding = RoundingMode::RN,
+                                       .scale_policy = ScalePolicy::NONE,
+                                       .softmax = SoftmaxRecurrence::ONLINE_LSE,
+                                       .determinism = ReductionDeterminism::BITEXACT_TC,
+                                       .flags = {},
+                                       .hash = {},
+                                   })},
+    // 4. f16_f32accum_ordered — FP16 storage, FP32 accumulator,
+    //    vendor-native tile shapes; ≤4 ULP cross-vendor.  Default
+    //    for heterogeneous-fleet FP16 training when BITEXACT_TC
+    //    isn't required.
+    {recipe_names::kF16F32AccumOrdered, hashed(NumericalRecipe{
+                                            .accum_dtype = ScalarType::Float,
+                                            .out_dtype = ScalarType::Half,
+                                            .reduction_algo = ReductionAlgo::PAIRWISE,
+                                            .rounding = RoundingMode::RN,
+                                            .scale_policy = ScalePolicy::NONE,
+                                            .softmax = SoftmaxRecurrence::ONLINE_LSE,
+                                            .determinism = ReductionDeterminism::ORDERED,
+                                            .flags = {},
+                                            .hash = {},
+                                        })},
+    // 5. bf16_f32accum_tc — BF16 storage, FP32 accumulator,
+    //    K≤8 tensor-core fragments.  BF16 is the training-default
+    //    on modern silicon; this recipe is what most TC training
+    //    runs should pin.
+    {recipe_names::kBf16F32AccumTc, hashed(NumericalRecipe{
+                                        .accum_dtype = ScalarType::Float,
+                                        .out_dtype = ScalarType::BFloat16,
+                                        .reduction_algo = ReductionAlgo::PAIRWISE,
+                                        .rounding = RoundingMode::RN,
+                                        .scale_policy = ScalePolicy::NONE,
+                                        .softmax = SoftmaxRecurrence::ONLINE_LSE,
+                                        .determinism = ReductionDeterminism::BITEXACT_TC,
+                                        .flags = {},
+                                        .hash = {},
+                                    })},
+    // 6. bf16_f32accum_ordered — BF16 storage, FP32 accumulator,
+    //    vendor-native tile shapes.  Tolerance-bounded training
+    //    on heterogeneous fleets.
+    {recipe_names::kBf16F32AccumOrdered, hashed(NumericalRecipe{
+                                             .accum_dtype = ScalarType::Float,
+                                             .out_dtype = ScalarType::BFloat16,
+                                             .reduction_algo = ReductionAlgo::PAIRWISE,
+                                             .rounding = RoundingMode::RN,
+                                             .scale_policy = ScalePolicy::NONE,
+                                             .softmax = SoftmaxRecurrence::ONLINE_LSE,
+                                             .determinism = ReductionDeterminism::ORDERED,
+                                             .flags = {},
+                                             .hash = {},
+                                         })},
+    // 7. fp8e4m3_f32accum_mx_ordered — FP8-E4M3 storage, FP32
+    //    accumulator, per-block MX scales.  Softmax NAIVE because
+    //    block-scaled formats don't compose cleanly with online
+    //    LSE; softmax is implemented as two-pass max-sub/exp/norm
+    //    in the IR003* realization.  Cannot declare BITEXACT_*
+    //    per FORGE.md §19.1 (block-scale divergence > 1 ULP).
+    {recipe_names::kFp8E4m3F32AccumMxOrd, hashed(NumericalRecipe{
+                                              .accum_dtype = ScalarType::Float,
+                                              .out_dtype = ScalarType::Float8_e4m3fn,
+                                              .reduction_algo = ReductionAlgo::PAIRWISE,
+                                              .rounding = RoundingMode::RN,
+                                              .scale_policy = ScalePolicy::PER_BLOCK_MX,
+                                              .softmax = SoftmaxRecurrence::NAIVE,
+                                              .determinism = ReductionDeterminism::ORDERED,
+                                              .flags = {},
+                                              .hash = {},
+                                          })},
+    // 8. fp8e5m2_f32accum_mx_ordered — FP8-E5M2 storage (5-bit
+    //    exponent, larger dynamic range than E4M3), FP32 accum,
+    //    per-block MX scales.  Paired with E4M3 for gradient/
+    //    weight asymmetric training (gradients often use E5M2 for
+    //    the dynamic range).
+    {recipe_names::kFp8E5m2F32AccumMxOrd, hashed(NumericalRecipe{
+                                              .accum_dtype = ScalarType::Float,
+                                              .out_dtype = ScalarType::Float8_e5m2,
+                                              .reduction_algo = ReductionAlgo::PAIRWISE,
+                                              .rounding = RoundingMode::RN,
+                                              .scale_policy = ScalePolicy::PER_BLOCK_MX,
+                                              .softmax = SoftmaxRecurrence::NAIVE,
+                                              .determinism = ReductionDeterminism::ORDERED,
+                                              .flags = {},
+                                              .hash = {},
+                                          })},
+}};
 
 }  // namespace detail_recipe_registry
 
 // ─── Inline implementation ──────────────────────────────────────────
 
-inline RecipeRegistry::RecipeRegistry(PoolBorrow pool,
-                                      effects::Alloc a) noexcept
-{
-  // Intern every starter spec into the pool; the pool writes the
-  // authoritative hash, we capture the canonical pointer.  Order
-  // matches kStarterRecipes.
-  for (std::size_t i = 0; i < STARTER_COUNT; ++i) {
-    const auto& spec = detail_recipe_registry::kStarterRecipes[i];
-    entries_[i].name   = spec.name;
-    entries_[i].recipe = pool->intern(a, spec.fields);
-  }
+inline RecipeRegistry::RecipeRegistry(PoolBorrow pool, effects::Alloc a) noexcept {
+    // Intern every starter spec into the pool; the pool writes the
+    // authoritative hash, we capture the canonical pointer.  Order
+    // matches kStarterRecipes.
+    for (std::size_t i = 0; i < STARTER_COUNT; ++i) {
+        const auto& spec = detail_recipe_registry::kStarterRecipes[i];
+        entries_[i].name = spec.name;
+        entries_[i].recipe = pool->intern(a, spec.fields);
+    }
 }
 
 template <typename CallerRow>
-  requires effects::Subrow<CallerRow, RecipeRegistry::pure_projection_row>
+    requires effects::Subrow<CallerRow, RecipeRegistry::pure_projection_row>
 inline std::expected<const NumericalRecipe*, RecipeError>
-RecipeRegistry::by_name(std::string_view name) const noexcept
-{
-  // Linear scan over ~8 entries; cache-friendly, no hash overhead.
-  // Branch-light: every iteration is `if (name == entry.name) return`.
-  for (const auto& e : entries_) {
-    if (e.name == name) {
-      return e.recipe;  // guaranteed non-null: populated in ctor
+RecipeRegistry::by_name(std::string_view name) const noexcept {
+    // Linear scan over ~8 entries; cache-friendly, no hash overhead.
+    // Branch-light: every iteration is `if (name == entry.name) return`.
+    for (const auto& e : entries_) {
+        if (e.name == name) {
+            return e.recipe;  // guaranteed non-null: populated in ctor
+        }
     }
-  }
-  return std::unexpected(RecipeError::NameNotFound);
+    return std::unexpected(RecipeError::NameNotFound);
 }
 
 template <typename CallerRow>
-  requires effects::Subrow<CallerRow, RecipeRegistry::pure_projection_row>
-inline std::expected<const NumericalRecipe*, RecipeError>
-RecipeRegistry::by_hash(RecipeHash hash) const noexcept
-{
-  // Linear scan — 8 × 8-byte compare = one cache line's worth of
-  // work, faster than a hash-map probe would be.  The hash stored
-  // on each interned recipe is authoritative (RecipePool guarantees
-  // it via compute_recipe_hash) so comparing against recipe->hash
-  // is the identity the caller expects.
-  for (const auto& e : entries_) {
-    if (e.recipe->hash == hash) {
-      return e.recipe;
+    requires effects::Subrow<CallerRow, RecipeRegistry::pure_projection_row>
+inline std::expected<const NumericalRecipe*, RecipeError> RecipeRegistry::by_hash(RecipeHash hash) const noexcept {
+    // Linear scan — 8 × 8-byte compare = one cache line's worth of
+    // work, faster than a hash-map probe would be.  The hash stored
+    // on each interned recipe is authoritative (RecipePool guarantees
+    // it via compute_recipe_hash) so comparing against recipe->hash
+    // is the identity the caller expects.
+    for (const auto& e : entries_) {
+        if (e.recipe->hash == hash) {
+            return e.recipe;
+        }
     }
-  }
-  return std::unexpected(RecipeError::HashNotFound);
+    return std::unexpected(RecipeError::HashNotFound);
 }
 
 }  // namespace crucible

@@ -151,16 +151,14 @@ struct SmemDrain {
 
 template <std::size_t Bytes, std::size_t Stages>
 struct SmemSlotData {
-    static_assert(Bytes % 16 == 0,
-                  "SmemSlotData<Bytes>: TMA expect_tx must be 16-byte aligned");
-    static_assert(Stages >= 1,
-                  "SmemSlotData<Stages>: pipeline depth must be >= 1");
+    static_assert(Bytes % 16 == 0, "SmemSlotData<Bytes>: TMA expect_tx must be 16-byte aligned");
+    static_assert(Stages >= 1, "SmemSlotData<Stages>: pipeline depth must be >= 1");
 
-    static constexpr std::size_t bytes  = Bytes;
+    static constexpr std::size_t bytes = Bytes;
     static constexpr std::size_t stages = Stages;
 
-    std::uint32_t offset_bytes = 0;   // offset into the smem arena
-    std::uint32_t phase        = 0;   // current ring phase
+    std::uint32_t offset_bytes = 0;  // offset into the smem arena
+    std::uint32_t phase = 0;  // current ring phase
 
     [[nodiscard]] constexpr bool operator==(const SmemSlotData&) const noexcept = default;
 };
@@ -180,8 +178,7 @@ using LinearSmemSlot = ::crucible::safety::Linear<SmemSlot<Bytes, Stages, Scope>
 
 template <typename SlotTag, std::size_t Bytes>
 using ProducerProto =
-    Loop<Send<Transferable<SmemFill<Bytes>, SlotTag>,
-              Recv<Returned<SmemDrain<Bytes>, SlotTag>, Continue>>>;
+    Loop<Send<Transferable<SmemFill<Bytes>, SlotTag>, Recv<Returned<SmemDrain<Bytes>, SlotTag>, Continue>>>;
 
 template <typename SlotTag, std::size_t Bytes>
 using ConsumerProto = dual_of_t<ProducerProto<SlotTag, Bytes>>;
@@ -195,18 +192,16 @@ using ConsumerProto = dual_of_t<ProducerProto<SlotTag, Bytes>>;
 // fails the concept and the mint will not select.
 
 template <typename Handle>
-concept AsyncPipelineSlotHandle =
-    requires {
-        typename Handle::slot_tag;
-        requires std::convertible_to<decltype(Handle::slot_bytes), std::size_t>;
-        requires std::convertible_to<decltype(Handle::stages), std::size_t>;
-        requires std::same_as<std::remove_cv_t<decltype(Handle::scope)>, MemoryScope>;
-        requires (Handle::stages >= 1);
-    } &&
-    requires (Handle& handle, std::size_t bytes, std::uint32_t phase) {
-        { handle.arrive_expect_tx(bytes) } -> std::same_as<void>;
-        { handle.try_wait(phase) }         -> std::same_as<bool>;
-    };
+concept AsyncPipelineSlotHandle = requires {
+    typename Handle::slot_tag;
+    requires std::convertible_to<decltype(Handle::slot_bytes), std::size_t>;
+    requires std::convertible_to<decltype(Handle::stages), std::size_t>;
+    requires std::same_as<std::remove_cv_t<decltype(Handle::scope)>, MemoryScope>;
+    requires(Handle::stages >= 1);
+} && requires(Handle& handle, std::size_t bytes, std::uint32_t phase) {
+    { handle.arrive_expect_tx(bytes) } -> std::same_as<void>;
+    { handle.try_wait(phase) } -> std::same_as<bool>;
+};
 
 // ── Mint gate (§XXI single concept; two distinct mismatch classes) ──
 //
@@ -220,8 +215,7 @@ concept AsyncPipelineSlotHandle =
 
 template <std::size_t Bytes, typename Handle>
 concept CtxFitsAsyncPipeline =
-    AsyncPipelineSlotHandle<Handle>
-    && (Bytes == static_cast<std::size_t>(Handle::slot_bytes))
+    AsyncPipelineSlotHandle<Handle> && (Bytes == static_cast<std::size_t>(Handle::slot_bytes))
     && mem_scope_is_accel(Handle::scope);
 
 // ── Establishment factories (§XXI ctx-bound mints) ──────────────────
@@ -232,49 +226,32 @@ concept CtxFitsAsyncPipeline =
 // gate above rejects any value that disagrees with the handle.  SlotTag /
 // Stages / Scope are carried by the Handle type and need not be respelled.
 
-template <std::size_t Bytes,
-          typename Handle,
-          ::crucible::effects::IsExecCtx Ctx>
+template <std::size_t Bytes, typename Handle, ::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsAsyncPipeline<Bytes, Handle>
 [[nodiscard]] constexpr auto
-mint_async_pipeline_producer_session(
-    Ctx const& ctx,
-    Handle& handle,
-    ::crucible::safety::Permission<typename Handle::slot_tag>&& slot_perm) noexcept
-{
+mint_async_pipeline_producer_session(Ctx const& ctx, Handle& handle,
+                                     ::crucible::safety::Permission<typename Handle::slot_tag>&& slot_perm) noexcept {
     using SlotTag = typename Handle::slot_tag;
-    return mint_permissioned_session<ProducerProto<SlotTag, Bytes>>(
-        ctx, &handle, std::move(slot_perm));
+    return mint_permissioned_session<ProducerProto<SlotTag, Bytes>>(ctx, &handle, std::move(slot_perm));
 }
 
-template <std::size_t Bytes,
-          typename Handle,
-          ::crucible::effects::IsExecCtx Ctx>
+template <std::size_t Bytes, typename Handle, ::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsAsyncPipeline<Bytes, Handle>
-[[nodiscard]] constexpr auto
-mint_async_pipeline_consumer_session(Ctx const& ctx, Handle& handle) noexcept
-{
+[[nodiscard]] constexpr auto mint_async_pipeline_consumer_session(Ctx const& ctx, Handle& handle) noexcept {
     using SlotTag = typename Handle::slot_tag;
     return mint_permissioned_session<ConsumerProto<SlotTag, Bytes>>(ctx, &handle);
 }
 
 // ── Session handle type aliases ─────────────────────────────────────
 
-template <std::size_t Bytes,
-          typename Handle,
-          ::crucible::effects::IsExecCtx Ctx = ::crucible::effects::HotFgCtx>
-using ProducerSessionHandle = decltype(
-    mint_async_pipeline_producer_session<Bytes>(
-        std::declval<Ctx const&>(),
-        std::declval<Handle&>(),
-        std::declval<::crucible::safety::Permission<typename Handle::slot_tag>&&>()));
+template <std::size_t Bytes, typename Handle, ::crucible::effects::IsExecCtx Ctx = ::crucible::effects::HotFgCtx>
+using ProducerSessionHandle = decltype(mint_async_pipeline_producer_session<Bytes>(
+    std::declval<Ctx const&>(), std::declval<Handle&>(),
+    std::declval<::crucible::safety::Permission<typename Handle::slot_tag>&&>()));
 
-template <std::size_t Bytes,
-          typename Handle,
-          ::crucible::effects::IsExecCtx Ctx = ::crucible::effects::HotFgCtx>
-using ConsumerSessionHandle = decltype(
-    mint_async_pipeline_consumer_session<Bytes>(
-        std::declval<Ctx const&>(), std::declval<Handle&>()));
+template <std::size_t Bytes, typename Handle, ::crucible::effects::IsExecCtx Ctx = ::crucible::effects::HotFgCtx>
+using ConsumerSessionHandle =
+    decltype(mint_async_pipeline_consumer_session<Bytes>(std::declval<Ctx const&>(), std::declval<Handle&>()));
 
 // ── Transport helpers ───────────────────────────────────────────────
 //
@@ -306,9 +283,11 @@ inline constexpr auto drain_send_transport = [](auto& hp, auto&& drain) noexcept
 template <std::size_t Bytes, typename SlotTag>
 [[nodiscard]] constexpr auto recv_fill_transport() noexcept {
     return [](auto& hp) noexcept {
-        while (!hp->try_wait(0u)) { CRUCIBLE_SPIN_PAUSE; }
-        return Transferable<SmemFill<Bytes>, SlotTag>{
-            SmemFill<Bytes>{}, ::crucible::safety::mint_permission_root<SlotTag>()};
+        while (!hp->try_wait(0u)) {
+            CRUCIBLE_SPIN_PAUSE;
+        }
+        return Transferable<SmemFill<Bytes>, SlotTag>{SmemFill<Bytes>{},
+                                                      ::crucible::safety::mint_permission_root<SlotTag>()};
     };
 }
 
@@ -316,9 +295,11 @@ template <std::size_t Bytes, typename SlotTag>
 template <std::size_t Bytes, typename SlotTag>
 [[nodiscard]] constexpr auto recv_drain_transport() noexcept {
     return [](auto& hp) noexcept {
-        while (!hp->try_wait(0u)) { CRUCIBLE_SPIN_PAUSE; }
-        return Returned<SmemDrain<Bytes>, SlotTag>{
-            SmemDrain<Bytes>{}, ::crucible::safety::mint_permission_root<SlotTag>()};
+        while (!hp->try_wait(0u)) {
+            CRUCIBLE_SPIN_PAUSE;
+        }
+        return Returned<SmemDrain<Bytes>, SlotTag>{SmemDrain<Bytes>{},
+                                                   ::crucible::safety::mint_permission_root<SlotTag>()};
     };
 }
 
@@ -336,8 +317,8 @@ struct SlotTag {};
 struct FakeSlotHandle {
     using slot_tag = SlotTag;
     static constexpr std::size_t slot_bytes = 256;
-    static constexpr std::size_t stages     = 2;
-    static constexpr MemoryScope scope      = MemoryScope::Cta;
+    static constexpr std::size_t stages = 2;
+    static constexpr MemoryScope scope = MemoryScope::Cta;
 
     std::uint32_t arrivals = 0;
     constexpr void arrive_expect_tx(std::size_t) noexcept { ++arrivals; }
@@ -351,22 +332,21 @@ static_assert(CtxFitsAsyncPipeline<256, FakeSlotHandle>);
 using Prod = ProducerProto<SlotTag, 256>;
 using Cons = ConsumerProto<SlotTag, 256>;
 
-static_assert(std::is_same_v<Prod,
-    Loop<Send<Transferable<SmemFill<256>, SlotTag>,
-              Recv<Returned<SmemDrain<256>, SlotTag>, Continue>>>>);
-static_assert(std::is_same_v<Cons,
-    Loop<Recv<Transferable<SmemFill<256>, SlotTag>,
-              Send<Returned<SmemDrain<256>, SlotTag>, Continue>>>>);
-static_assert(std::is_same_v<dual_of_t<Prod>, Cons>,
-              "AsyncPipeline producer/consumer must be exact duals "
-              "(deadlock-freedom witness)");
+static_assert(
+    std::is_same_v<
+        Prod, Loop<Send<Transferable<SmemFill<256>, SlotTag>, Recv<Returned<SmemDrain<256>, SlotTag>, Continue>>>>);
+static_assert(
+    std::is_same_v<
+        Cons, Loop<Recv<Transferable<SmemFill<256>, SlotTag>, Send<Returned<SmemDrain<256>, SlotTag>, Continue>>>>);
+static_assert(std::is_same_v<dual_of_t<Prod>, Cons>, "AsyncPipeline producer/consumer must be exact duals "
+                                                     "(deadlock-freedom witness)");
 static_assert(std::is_same_v<dual_of_t<Cons>, Prod>);
 
 // ── Slot value witnesses ────────────────────────────────────────────
 using Slot = LinearSmemSlot<256, 2, MemoryScope::Cta>;
-static_assert(std::is_same_v<Slot,
-    ::crucible::safety::Linear<
-        ::crucible::safety::ScopedFence<MemoryScope::Cta, SmemSlotData<256, 2>>>>);
+static_assert(
+    std::is_same_v<
+        Slot, ::crucible::safety::Linear<::crucible::safety::ScopedFence<MemoryScope::Cta, SmemSlotData<256, 2>>>>);
 static_assert(SmemSlotData<256, 2>::bytes == 256);
 static_assert(SmemSlotData<256, 2>::stages == 2);
 
@@ -385,15 +365,11 @@ static_assert(std::is_same_v<typename ConsSession::perm_set, EmptyPermSet>,
 //
 // Producer body: Send<Transferable<…,SlotTag>> removes SlotTag (slot
 // handed off); Recv<Returned<…,SlotTag>> re-inserts it; the Loop balances.
-static_assert(perm_set_equal_v<
-    compute_perm_set_after_send_t<PermSet<SlotTag>,
-                                  Transferable<SmemFill<256>, SlotTag>>,
-    EmptyPermSet>,
-    "Send<Transferable<…,SlotTag>> must drop SlotTag from the producer PS");
-static_assert(perm_set_equal_v<
-    compute_perm_set_after_recv_t<EmptyPermSet,
-                                  Returned<SmemDrain<256>, SlotTag>>,
-    PermSet<SlotTag>>,
+static_assert(perm_set_equal_v<compute_perm_set_after_send_t<PermSet<SlotTag>, Transferable<SmemFill<256>, SlotTag>>,
+                               EmptyPermSet>,
+              "Send<Transferable<…,SlotTag>> must drop SlotTag from the producer PS");
+static_assert(
+    perm_set_equal_v<compute_perm_set_after_recv_t<EmptyPermSet, Returned<SmemDrain<256>, SlotTag>>, PermSet<SlotTag>>,
     "Recv<Returned<…,SlotTag>> must restore SlotTag to the producer PS");
 
 }  // namespace crucible::safety::proto::async_pipeline_session::detail::self_test

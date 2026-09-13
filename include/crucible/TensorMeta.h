@@ -15,8 +15,8 @@
 
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
-#include <crucible/fixy/Source.h>   // FIXY-U-096x: tags::source::External
-#include <crucible/fixy/Wrap.h>     // FIXY-U-096x: Tagged / Refined / bounded_above
+#include <crucible/fixy/Source.h>  // FIXY-U-096x: tags::source::External
+#include <crucible/fixy/Wrap.h>  // FIXY-U-096x: Tagged / Refined / bounded_above
 
 #include <cstddef>
 #include <cstdint>
@@ -39,12 +39,11 @@ inline constexpr uint8_t kMaxTensorNDim = 8;
 // from PyTorch / trace / disk boundaries.  The runtime only hashes and
 // compares them as opaque external cookies until a later validator
 // explicitly retags them.
-using ExternalDataPtr = ::crucible::fixy::wrap::Tagged<
-    void*, ::crucible::fixy::tags::source::External>;
+using ExternalDataPtr = ::crucible::fixy::wrap::Tagged<void*, ::crucible::fixy::tags::source::External>;
 
 static_assert(sizeof(ExternalDataPtr) == sizeof(void*),
-    "Tagged<void*, source::External> must EBO-collapse so TensorMeta "
-    "stays layout-stable");
+              "Tagged<void*, source::External> must EBO-collapse so TensorMeta "
+              "stays layout-stable");
 static_assert(std::is_trivially_copyable_v<ExternalDataPtr>);
 static_assert(std::is_standard_layout_v<ExternalDataPtr>);
 
@@ -52,12 +51,10 @@ static_assert(std::is_standard_layout_v<ExternalDataPtr>);
 // The value may depend on autograd object identity and must never be
 // treated as a persistent Family-A key.  Tagged keeps the 8-byte layout
 // but forces every consumer to acknowledge the Family-B lane.
-using GradFnHash = ::crucible::fixy::wrap::Tagged<
-    uint64_t, ::crucible::hash_family::FamilyB>;
+using GradFnHash = ::crucible::fixy::wrap::Tagged<uint64_t, ::crucible::hash_family::FamilyB>;
 
-static_assert(sizeof(GradFnHash) == sizeof(uint64_t),
-    "Tagged<uint64_t, hash_family::FamilyB> must EBO-collapse so "
-    "TensorMeta stays layout-stable");
+static_assert(sizeof(GradFnHash) == sizeof(uint64_t), "Tagged<uint64_t, hash_family::FamilyB> must EBO-collapse so "
+                                                      "TensorMeta stays layout-stable");
 static_assert(std::is_trivially_copyable_v<GradFnHash>);
 static_assert(std::is_standard_layout_v<GradFnHash>);
 
@@ -66,155 +63,108 @@ static_assert(std::is_standard_layout_v<GradFnHash>);
 // raw storage remains int64_t[8] so DimHash/StorageNbytes can keep
 // zero-copy SIMD loads; writes go through TensorDim.
 inline constexpr int64_t kTensorDimElementByteBudget = 16;
-inline constexpr int64_t kMaxTensorDimExtent =
-    std::numeric_limits<int64_t>::max() / kTensorDimElementByteBudget;
+inline constexpr int64_t kMaxTensorDimExtent = std::numeric_limits<int64_t>::max() / kTensorDimElementByteBudget;
 
-using TensorDim = ::crucible::fixy::wrap::Refined<
-    ::crucible::fixy::wrap::bounded_above<kMaxTensorDimExtent>, int64_t>;
+using TensorDim = ::crucible::fixy::wrap::Refined<::crucible::fixy::wrap::bounded_above<kMaxTensorDimExtent>, int64_t>;
 
-static_assert(sizeof(TensorDim) == sizeof(int64_t),
-    "Refined<bounded_above<kMaxTensorDimExtent>, int64_t> must "
-    "EBO-collapse so TensorMeta stays layout-stable");
+static_assert(sizeof(TensorDim) == sizeof(int64_t), "Refined<bounded_above<kMaxTensorDimExtent>, int64_t> must "
+                                                    "EBO-collapse so TensorMeta stays layout-stable");
 static_assert(std::is_trivially_copyable_v<TensorDim>);
 static_assert(std::is_standard_layout_v<TensorDim>);
 
 struct TensorDimArray {
 private:
-  int64_t lanes_[kMaxTensorNDim]{};
+    int64_t lanes_[kMaxTensorNDim]{};
 
 public:
-  struct Slot {
-    int64_t* lane = nullptr;
+    struct Slot {
+        int64_t* lane = nullptr;
 
-    constexpr void operator=(TensorDim dim) const noexcept {
-      *lane = dim.value();
-    }
+        constexpr void operator=(TensorDim dim) const noexcept { *lane = dim.value(); }
 
-    [[nodiscard]] constexpr int64_t value() const noexcept {
-      return *lane;
-    }
+        [[nodiscard]] constexpr int64_t value() const noexcept { return *lane; }
 
-    [[nodiscard]] constexpr operator TensorDim() const noexcept {
-      return TensorDim{*lane, TensorDim::Trusted{}};
-    }
-  };
+        [[nodiscard]] constexpr operator TensorDim() const noexcept { return TensorDim{*lane, TensorDim::Trusted{}}; }
+    };
 
-  struct ConstSlot {
-    const int64_t* lane = nullptr;
+    struct ConstSlot {
+        const int64_t* lane = nullptr;
 
-    [[nodiscard]] constexpr int64_t value() const noexcept {
-      return *lane;
-    }
+        [[nodiscard]] constexpr int64_t value() const noexcept { return *lane; }
 
-    [[nodiscard]] constexpr operator TensorDim() const noexcept {
-      return TensorDim{*lane, TensorDim::Trusted{}};
-    }
-  };
+        [[nodiscard]] constexpr operator TensorDim() const noexcept { return TensorDim{*lane, TensorDim::Trusted{}}; }
+    };
 
-  [[nodiscard]] constexpr Slot operator[](std::size_t index) noexcept {
-    return Slot{&lanes_[index]};
-  }
+    [[nodiscard]] constexpr Slot operator[](std::size_t index) noexcept { return Slot{&lanes_[index]}; }
 
-  [[nodiscard]] constexpr ConstSlot operator[](std::size_t index) const noexcept {
-    return ConstSlot{&lanes_[index]};
-  }
+    [[nodiscard]] constexpr ConstSlot operator[](std::size_t index) const noexcept { return ConstSlot{&lanes_[index]}; }
 
-  [[nodiscard]] constexpr int64_t* raw_data() noexcept {
-    return lanes_;
-  }
+    [[nodiscard]] constexpr int64_t* raw_data() noexcept { return lanes_; }
 
-  [[nodiscard]] constexpr const int64_t* raw_data() const noexcept {
-    return lanes_;
-  }
+    [[nodiscard]] constexpr const int64_t* raw_data() const noexcept { return lanes_; }
 };
 
 static_assert(sizeof(TensorDimArray) == sizeof(int64_t) * kMaxTensorNDim,
-    "TensorDimArray must remain the same 64-byte lane block as int64_t[8]");
+              "TensorDimArray must remain the same 64-byte lane block as int64_t[8]");
 static_assert(std::is_trivially_copyable_v<TensorDimArray>);
 static_assert(std::is_standard_layout_v<TensorDimArray>);
 
-[[nodiscard]] inline constexpr TensorDim
-tensor_dim(int64_t value) noexcept {
-  return TensorDim{value};
-}
+[[nodiscard]] inline constexpr TensorDim tensor_dim(int64_t value) noexcept { return TensorDim{value}; }
 
-[[nodiscard]] inline constexpr int64_t
-raw_tensor_dim(TensorDim dim) noexcept {
-  return dim.value();
-}
+[[nodiscard]] inline constexpr int64_t raw_tensor_dim(TensorDim dim) noexcept { return dim.value(); }
 
-[[nodiscard]] inline constexpr int64_t
-raw_tensor_dim(TensorDimArray::Slot dim) noexcept {
-  return dim.value();
-}
+[[nodiscard]] inline constexpr int64_t raw_tensor_dim(TensorDimArray::Slot dim) noexcept { return dim.value(); }
 
-[[nodiscard]] inline constexpr int64_t
-raw_tensor_dim(TensorDimArray::ConstSlot dim) noexcept {
-  return dim.value();
-}
+[[nodiscard]] inline constexpr int64_t raw_tensor_dim(TensorDimArray::ConstSlot dim) noexcept { return dim.value(); }
 
 struct TensorMeta {
-  TensorDimArray sizes{};     // 64B — zero-init prevents hash instability
-  TensorDimArray strides{};   // 64B
-  ExternalDataPtr data_ptr{nullptr}; // 8B — external tensor pointer cookie
-  uint8_t ndim = 0;          // 1B — dimensions used (0..kMaxTensorNDim)
-  ScalarType dtype = ScalarType::Undefined; // 1B
-  DeviceType device_type = DeviceType::CPU; // 1B
-  int8_t device_idx = -1;   // 1B — -1 = CPU, 0+ = device index
-  Layout layout = Layout::Strided; // 1B
-  bool requires_grad = false; // 1B — tensor.requires_grad (forward/backward discriminator)
+    TensorDimArray sizes{};  // 64B — zero-init prevents hash instability
+    TensorDimArray strides{};  // 64B
+    ExternalDataPtr data_ptr{nullptr};  // 8B — external tensor pointer cookie
+    uint8_t ndim = 0;  // 1B — dimensions used (0..kMaxTensorNDim)
+    ScalarType dtype = ScalarType::Undefined;  // 1B
+    DeviceType device_type = DeviceType::CPU;  // 1B
+    int8_t device_idx = -1;  // 1B — -1 = CPU, 0+ = device index
+    Layout layout = Layout::Strided;  // 1B
+    bool requires_grad = false;  // 1B — tensor.requires_grad (forward/backward discriminator)
 
-  // Packed tensor flags (1B). Bit layout:
-  //   bit 0: is_leaf       — parameter or user-created tensor (no grad_fn)
-  //   bit 1: is_contiguous — contiguous memory layout
-  //   bit 2: has_grad_fn   — has autograd history (not a leaf)
-  //   bit 3: is_view       — shares storage with another tensor
-  //   bit 4: is_neg        — negation bit-view (torch._neg_view)
-  //   bit 5: is_conj       — conjugate bit-view
-  //   bit 6-7: reserved
-  uint8_t flags = 0;          // 1B — packed tensor flags (see meta_flags)
+    // Packed tensor flags (1B). Bit layout:
+    //   bit 0: is_leaf       — parameter or user-created tensor (no grad_fn)
+    //   bit 1: is_contiguous — contiguous memory layout
+    //   bit 2: has_grad_fn   — has autograd history (not a leaf)
+    //   bit 3: is_view       — shares storage with another tensor
+    //   bit 4: is_neg        — negation bit-view (torch._neg_view)
+    //   bit 5: is_conj       — conjugate bit-view
+    //   bit 6-7: reserved
+    uint8_t flags = 0;  // 1B — packed tensor flags (see meta_flags)
 
-  uint8_t output_nr = 0;     // 1B — autograd output number (multi-output ops)
+    uint8_t output_nr = 0;  // 1B — autograd output number (multi-output ops)
 
-  // ── Extended fields (24B) ─────────────────────────────────────────
-  int64_t storage_offset = 0; // 8B — offset into underlying storage (view chains)
-  uint32_t version = 0;      // 4B — tensor data version counter (in-place mutation detection)
-  uint32_t storage_nbytes = 0; // 4B — actual storage size in bytes (may differ from view)
-  GradFnHash grad_fn_hash{0}; // 8B — Family-B FNV-1a grad_fn class-name hash
-                              //      0 = no grad_fn (leaf tensor or no autograd)
+    // ── Extended fields (24B) ─────────────────────────────────────────
+    int64_t storage_offset = 0;  // 8B — offset into underlying storage (view chains)
+    uint32_t version = 0;  // 4B — tensor data version counter (in-place mutation detection)
+    uint32_t storage_nbytes = 0;  // 4B — actual storage size in bytes (may differ from view)
+    GradFnHash grad_fn_hash{0};  // 8B — Family-B FNV-1a grad_fn class-name hash
+    //      0 = no grad_fn (leaf tensor or no autograd)
 };
 
 static_assert(sizeof(TensorMeta) == 168, "TensorMeta layout check");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(TensorMeta);
 
-[[nodiscard]] inline constexpr ExternalDataPtr
-external_data_ptr(void* ptr) noexcept {
-  return ExternalDataPtr{ptr};
+[[nodiscard]] inline constexpr ExternalDataPtr external_data_ptr(void* ptr) noexcept { return ExternalDataPtr{ptr}; }
+
+[[nodiscard]] inline constexpr void* raw_data_ptr(ExternalDataPtr ptr) noexcept { return ptr.value(); }
+
+[[nodiscard]] inline constexpr void* raw_data_ptr(const TensorMeta& meta) noexcept {
+    return raw_data_ptr(meta.data_ptr);
 }
 
-[[nodiscard]] inline constexpr void*
-raw_data_ptr(ExternalDataPtr ptr) noexcept {
-  return ptr.value();
-}
+[[nodiscard]] inline constexpr GradFnHash grad_fn_hash(uint64_t hash) noexcept { return GradFnHash{hash}; }
 
-[[nodiscard]] inline constexpr void*
-raw_data_ptr(const TensorMeta& meta) noexcept {
-  return raw_data_ptr(meta.data_ptr);
-}
+[[nodiscard]] inline constexpr uint64_t raw_grad_fn_hash(GradFnHash hash) noexcept { return hash.value(); }
 
-[[nodiscard]] inline constexpr GradFnHash
-grad_fn_hash(uint64_t hash) noexcept {
-  return GradFnHash{hash};
-}
-
-[[nodiscard]] inline constexpr uint64_t
-raw_grad_fn_hash(GradFnHash hash) noexcept {
-  return hash.value();
-}
-
-[[nodiscard]] inline constexpr uint64_t
-raw_grad_fn_hash(const TensorMeta& meta) noexcept {
-  return raw_grad_fn_hash(meta.grad_fn_hash);
+[[nodiscard]] inline constexpr uint64_t raw_grad_fn_hash(const TensorMeta& meta) noexcept {
+    return raw_grad_fn_hash(meta.grad_fn_hash);
 }
 
 // WRAP-StorageNbytes-5 (#1022): storage-span computation is an
@@ -222,12 +172,10 @@ raw_grad_fn_hash(const TensorMeta& meta) noexcept {
 // Vessel / traces / disk.  Callers must now explicitly mark the input
 // as source::External before compute_storage_nbytes* consumes it.
 // Reference payload keeps the 168-byte TensorMeta layout untouched.
-using ExternalTensorMeta = ::crucible::fixy::wrap::Tagged<
-    const TensorMeta&, ::crucible::fixy::tags::source::External>;
+using ExternalTensorMeta = ::crucible::fixy::wrap::Tagged<const TensorMeta&, ::crucible::fixy::tags::source::External>;
 
-[[nodiscard]] inline constexpr ExternalTensorMeta
-external_tensor_meta(const TensorMeta& meta) noexcept {
-  return ExternalTensorMeta{meta};
+[[nodiscard]] inline constexpr ExternalTensorMeta external_tensor_meta(const TensorMeta& meta) noexcept {
+    return ExternalTensorMeta{meta};
 }
 
 // ── Validated ndim carrier (#534 PROD-WRAP-5) ──────────────────────
@@ -267,13 +215,9 @@ external_tensor_meta(const TensorMeta& meta) noexcept {
 // type-level bound and the runtime path to disagree.
 //
 // Cost: regime-1 EBO collapse — sizeof(ValidNDim) == sizeof(uint8_t).
-using ValidNDim = ::crucible::fixy::wrap::Refined<
-    ::crucible::fixy::wrap::bounded_above<kMaxTensorNDim>, uint8_t>;
+using ValidNDim = ::crucible::fixy::wrap::Refined<::crucible::fixy::wrap::bounded_above<kMaxTensorNDim>, uint8_t>;
 
-[[nodiscard, gnu::const]] inline constexpr
-uint8_t make_ndim(ValidNDim raw) noexcept {
-    return raw.value();
-}
+[[nodiscard, gnu::const]] inline constexpr uint8_t make_ndim(ValidNDim raw) noexcept { return raw.value(); }
 
 // ── read_meta dtype gate (sibling of #534 ndim / #892 kernel_id) ──────
 //
@@ -294,30 +238,35 @@ uint8_t make_ndim(ValidNDim raw) noexcept {
 // consumes the identical byte).
 //
 // Cost: regime-1 EBO collapse — sizeof(ValidScalarType) == sizeof(int8_t).
-inline constexpr auto valid_scalar_type =
-    [](auto raw) constexpr noexcept -> bool {
-        switch (static_cast<ScalarType>(static_cast<std::int8_t>(raw))) {
-            case ScalarType::Byte:            case ScalarType::Char:
-            case ScalarType::Short:           case ScalarType::Int:
-            case ScalarType::Long:            case ScalarType::Half:
-            case ScalarType::Float:           case ScalarType::Double:
-            case ScalarType::ComplexHalf:     case ScalarType::ComplexFloat:
-            case ScalarType::ComplexDouble:   case ScalarType::Bool:
-            case ScalarType::BFloat16:
-            case ScalarType::Float8_e5m2:     case ScalarType::Float8_e4m3fn:
-            case ScalarType::Float8_e5m2fnuz: case ScalarType::Float8_e4m3fnuz:
-            case ScalarType::Undefined:
-                return true;
-            default:
-                return false;
-        }
-    };
+inline constexpr auto valid_scalar_type = [](auto raw) constexpr noexcept -> bool {
+    switch (static_cast<ScalarType>(static_cast<std::int8_t>(raw))) {
+        case ScalarType::Byte:
+        case ScalarType::Char:
+        case ScalarType::Short:
+        case ScalarType::Int:
+        case ScalarType::Long:
+        case ScalarType::Half:
+        case ScalarType::Float:
+        case ScalarType::Double:
+        case ScalarType::ComplexHalf:
+        case ScalarType::ComplexFloat:
+        case ScalarType::ComplexDouble:
+        case ScalarType::Bool:
+        case ScalarType::BFloat16:
+        case ScalarType::Float8_e5m2:
+        case ScalarType::Float8_e4m3fn:
+        case ScalarType::Float8_e5m2fnuz:
+        case ScalarType::Float8_e4m3fnuz:
+        case ScalarType::Undefined:
+            return true;
+        default:
+            return false;
+    }
+};
 
-using ValidScalarType = ::crucible::fixy::wrap::Refined<
-    valid_scalar_type, std::int8_t>;
+using ValidScalarType = ::crucible::fixy::wrap::Refined<valid_scalar_type, std::int8_t>;
 
-[[nodiscard, gnu::const]] inline constexpr
-ScalarType make_scalar_type(ValidScalarType raw) noexcept {
+[[nodiscard, gnu::const]] inline constexpr ScalarType make_scalar_type(ValidScalarType raw) noexcept {
     return static_cast<ScalarType>(raw.value());
 }
 
@@ -338,24 +287,25 @@ ScalarType make_scalar_type(ValidScalarType raw) noexcept {
 // / dtype gates, rather than admitting a node with a corrupted hash.
 //
 // Cost: regime-1 EBO collapse — sizeof(ValidDeviceType) == sizeof(int8_t).
-inline constexpr auto valid_device_type =
-    [](auto raw) constexpr noexcept -> bool {
-        switch (static_cast<DeviceType>(static_cast<std::int8_t>(raw))) {
-            case DeviceType::CPU:    case DeviceType::CUDA:
-            case DeviceType::MKLDNN: case DeviceType::HIP:
-            case DeviceType::XLA:    case DeviceType::MPS:
-            case DeviceType::Meta:   case DeviceType::PrivateUse1:
-                return true;
-            default:
-                return false;
-        }
-    };
+inline constexpr auto valid_device_type = [](auto raw) constexpr noexcept -> bool {
+    switch (static_cast<DeviceType>(static_cast<std::int8_t>(raw))) {
+        case DeviceType::CPU:
+        case DeviceType::CUDA:
+        case DeviceType::MKLDNN:
+        case DeviceType::HIP:
+        case DeviceType::XLA:
+        case DeviceType::MPS:
+        case DeviceType::Meta:
+        case DeviceType::PrivateUse1:
+            return true;
+        default:
+            return false;
+    }
+};
 
-using ValidDeviceType = ::crucible::fixy::wrap::Refined<
-    valid_device_type, std::int8_t>;
+using ValidDeviceType = ::crucible::fixy::wrap::Refined<valid_device_type, std::int8_t>;
 
-[[nodiscard, gnu::const]] inline constexpr
-DeviceType make_device_type(ValidDeviceType raw) noexcept {
+[[nodiscard, gnu::const]] inline constexpr DeviceType make_device_type(ValidDeviceType raw) noexcept {
     return static_cast<DeviceType>(raw.value());
 }
 
@@ -377,23 +327,23 @@ DeviceType make_device_type(ValidDeviceType raw) noexcept {
 // (-1 <= 5), and the named cases stay correct if Layout gains ordinals.
 //
 // Cost: regime-1 EBO collapse — sizeof(ValidLayout) == sizeof(int8_t).
-inline constexpr auto valid_layout =
-    [](auto raw) constexpr noexcept -> bool {
-        switch (static_cast<Layout>(static_cast<std::int8_t>(raw))) {
-            case Layout::Strided:   case Layout::Sparse:
-            case Layout::SparseCsr: case Layout::SparseCsc:
-            case Layout::SparseBsr: case Layout::SparseBsc:
-                return true;
-            default:
-                return false;
-        }
-    };
+inline constexpr auto valid_layout = [](auto raw) constexpr noexcept -> bool {
+    switch (static_cast<Layout>(static_cast<std::int8_t>(raw))) {
+        case Layout::Strided:
+        case Layout::Sparse:
+        case Layout::SparseCsr:
+        case Layout::SparseCsc:
+        case Layout::SparseBsr:
+        case Layout::SparseBsc:
+            return true;
+        default:
+            return false;
+    }
+};
 
-using ValidLayout = ::crucible::fixy::wrap::Refined<
-    valid_layout, std::int8_t>;
+using ValidLayout = ::crucible::fixy::wrap::Refined<valid_layout, std::int8_t>;
 
-[[nodiscard, gnu::const]] inline constexpr
-Layout make_layout(ValidLayout raw) noexcept {
+[[nodiscard, gnu::const]] inline constexpr Layout make_layout(ValidLayout raw) noexcept {
     return static_cast<Layout>(raw.value());
 }
 

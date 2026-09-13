@@ -139,24 +139,29 @@ namespace crucible::safety {
 // ═════════════════════════════════════════════════════════════════════
 
 enum class TierKind : std::uint8_t {
-    Semiring     = 0,  // Tier S — par=+, seq=*, 0 annihilator (26 dims)
-    Lattice      = 1,  // Tier L — par=join, seq=meet, valid_D check (2 dims)
-    Typestate    = 2,  // Tier T — transitions on state; no par/seq (1 dim)
+    Semiring = 0,  // Tier S — par=+, seq=*, 0 annihilator (26 dims)
+    Lattice = 1,  // Tier L — par=join, seq=meet, valid_D check (2 dims)
+    Typestate = 2,  // Tier T — transitions on state; no par/seq (1 dim)
     Foundational = 3,  // Tier F — bidirectional elaboration (2 dims)
-    Versioned    = 4,  // Tier V — consistency check at each site (1 dim)
+    Versioned = 4,  // Tier V — consistency check at each site (1 dim)
 };
 
-inline constexpr std::size_t TIER_KIND_COUNT =
-    std::meta::enumerators_of(^^TierKind).size();
+inline constexpr std::size_t TIER_KIND_COUNT = std::meta::enumerators_of(^^TierKind).size();
 
 [[nodiscard]] constexpr std::string_view tier_kind_name(TierKind t) noexcept {
     switch (t) {
-        case TierKind::Semiring:     return "Tier-S (Semiring)";
-        case TierKind::Lattice:      return "Tier-L (Lattice)";
-        case TierKind::Typestate:    return "Tier-T (Typestate)";
-        case TierKind::Foundational: return "Tier-F (Foundational)";
-        case TierKind::Versioned:    return "Tier-V (Versioned)";
-        default:                     return std::string_view{"<unknown TierKind>"};
+        case TierKind::Semiring:
+            return "Tier-S (Semiring)";
+        case TierKind::Lattice:
+            return "Tier-L (Lattice)";
+        case TierKind::Typestate:
+            return "Tier-T (Typestate)";
+        case TierKind::Foundational:
+            return "Tier-F (Foundational)";
+        case TierKind::Versioned:
+            return "Tier-V (Versioned)";
+        default:
+            return std::string_view{"<unknown TierKind>"};
     }
 }
 
@@ -171,30 +176,30 @@ inline constexpr std::size_t TIER_KIND_COUNT =
 // here is structural, not accidental).
 
 enum class DimensionAxis : std::uint8_t {
-    Type           = 0,   // F  (FX dim 1)
-    Refinement     = 1,   // F  (FX dim 2)
-    Usage          = 2,   // S  (FX dim 3)
-    Effect         = 3,   // S  (FX dim 4)
-    Security       = 4,   // S  (FX dim 5)
-    Protocol       = 5,   // T  (FX dim 6)
-    Lifetime       = 6,   // S  (FX dim 7)
-    Provenance     = 7,   // S  (FX dim 8)
-    Trust          = 8,   // S  (FX dim 9)
-    Representation = 9,   // L  (FX dim 10)
-    Observability  = 10,  // S  (FX dim 11)
+    Type = 0,  // F  (FX dim 1)
+    Refinement = 1,  // F  (FX dim 2)
+    Usage = 2,  // S  (FX dim 3)
+    Effect = 3,  // S  (FX dim 4)
+    Security = 4,  // S  (FX dim 5)
+    Protocol = 5,  // T  (FX dim 6)
+    Lifetime = 6,  // S  (FX dim 7)
+    Provenance = 7,  // S  (FX dim 8)
+    Trust = 8,  // S  (FX dim 9)
+    Representation = 9,  // L  (FX dim 10)
+    Observability = 10,  // S  (FX dim 11)
     // FX dim 12 Clock Domain dropped per fixy.md §24.1 — Crucible
     // does not synthesize Verilog.
-    Complexity     = 11,  // S  (FX dim 13)
-    Precision      = 12,  // S  (FX dim 14)
-    Space          = 13,  // S  (FX dim 15)
-    Overflow       = 14,  // S  (FX dim 16)
+    Complexity = 11,  // S  (FX dim 13)
+    Precision = 12,  // S  (FX dim 14)
+    Space = 13,  // S  (FX dim 15)
+    Overflow = 14,  // S  (FX dim 16)
     // FX dim 17 FP Order dropped per fixy.md §24.1 — NumericalRecipe
     // pinning at the Mimic-emit layer subsumes it.
-    Mutation       = 15,  // S  (FX dim 18)
-    Reentrancy     = 16,  // S  (FX dim 19)
-    Size           = 17,  // S  (FX dim 20)
-    Version        = 18,  // V  (FX dim 21)
-    Staleness      = 19,  // S  (FX dim 22)
+    Mutation = 15,  // S  (FX dim 18)
+    Reentrancy = 16,  // S  (FX dim 19)
+    Size = 17,  // S  (FX dim 20)
+    Version = 18,  // V  (FX dim 21)
+    Staleness = 19,  // S  (FX dim 22)
     // Synchronization (fixy-A3-008) — added 2026-05-18 to host
     // safety::Wait (SpinPause/Sleep/Futex strategy) and
     // safety::MemOrder (Relaxed/Acquire/Release/SeqCst) wrappers,
@@ -206,7 +211,7 @@ enum class DimensionAxis : std::uint8_t {
     // aggregator slot (the wrappers compose at use-sites, not via
     // Fn parameter aggregation — parallel to dim 11 Observability
     // which is also derived rather than Fn-aggregated).
-    Synchronization = 20, // S  (Crucible extension, 2026-05-18)
+    Synchronization = 20,  // S  (Crucible extension, 2026-05-18)
     // Regime (fixy-A3-009) — added 2026-05-18 to host
     // safety::HotPath (Hot/Warm/Cold tier) wrappers, previously
     // misclassified on dim 13 Complexity.  Complexity tracks
@@ -217,7 +222,7 @@ enum class DimensionAxis : std::uint8_t {
     // Tier S with par=join (hottest-wins; Hot ⊕ Warm = Hot).  No
     // Fn<> aggregator slot — HotPath composes at use-sites, like
     // Observability and Synchronization.
-    Regime          = 21, // S  (Crucible extension, 2026-05-18)
+    Regime = 21,  // S  (Crucible extension, 2026-05-18)
     // FpMode (FIXY-V-088) — added 2026-05-22 to host the 11-sub-axis
     // floating-point mode taxonomy (Rounding / Ftz / Contract /
     // TrapMask / Denormal / NanPolicy / InfPolicy / ComplexLayout /
@@ -233,7 +238,7 @@ enum class DimensionAxis : std::uint8_t {
     // tolerances; no Fn<> aggregator slot (composes via wrapper-nesting
     // and Forge phase E.RecipeSelect, parallel to Synchronization and
     // Regime).
-    FpMode          = 22, // S  (Crucible extension, 2026-05-22)
+    FpMode = 22,  // S  (Crucible extension, 2026-05-22)
     // SyscallSurface (FIXY-V-097) — added 2026-05-22 to host the
     // syscall-family taxonomy (V-098 ships the per-family grant catalog,
     // V-099 ships the per-ioctl grants, V-100 ships the syscall→effect-row
@@ -257,7 +262,7 @@ enum class DimensionAxis : std::uint8_t {
     // No Fn<> aggregator slot (composes via wrapper-nesting at the value
     // site + Forge phase E gating, parallel to Synchronization / Regime
     // / FpMode).
-    SyscallSurface  = 23, // S  (Crucible extension, 2026-05-22)
+    SyscallSurface = 23,  // S  (Crucible extension, 2026-05-22)
     // ControlFlow / CallShape / StackUse / GlobalState / Stdio
     // (FIXY-V-238) — added 2026-05-23 to host the function-behavior
     // taxonomy that V-239/V-240/V-241 will populate (ControlFlowLattice
@@ -276,11 +281,11 @@ enum class DimensionAxis : std::uint8_t {
     // Fn<> aggregator slot (compose via wrapper-nesting at the value
     // site + grant engagement, parallel to Synchronization / Regime /
     // FpMode / SyscallSurface).
-    ControlFlow     = 24, // S  (Crucible extension, 2026-05-23)
-    CallShape       = 25, // S  (Crucible extension, 2026-05-23)
-    StackUse        = 26, // S  (Crucible extension, 2026-05-23)
-    GlobalState     = 27, // S  (Crucible extension, 2026-05-23)
-    Stdio           = 28, // S  (Crucible extension, 2026-05-23)
+    ControlFlow = 24,  // S  (Crucible extension, 2026-05-23)
+    CallShape = 25,  // S  (Crucible extension, 2026-05-23)
+    StackUse = 26,  // S  (Crucible extension, 2026-05-23)
+    GlobalState = 27,  // S  (Crucible extension, 2026-05-23)
+    Stdio = 28,  // S  (Crucible extension, 2026-05-23)
     // HwInstruction / BarrierStrength / SimdIsa (FIXY-V-253, Agent 11
     // §3.2) — added 2026-05-23 to host the hardware-instruction taxonomy
     // that V-251/V-252/V-250 populate and V-254/V-255/V-256 wrap:
@@ -303,9 +308,9 @@ enum class DimensionAxis : std::uint8_t {
     // SimdIsa is Tier-L (the second Tier-L axis, peer to Representation).
     // No Fn<> aggregator slot (compose via wrapper-nesting at the value
     // site + grant engagement).
-    HwInstruction   = 29, // S  (Crucible extension, 2026-05-23)
-    BarrierStrength = 30, // S  (Crucible extension, 2026-05-23)
-    SimdIsa         = 31, // L  (Crucible extension, 2026-05-23)
+    HwInstruction = 29,  // S  (Crucible extension, 2026-05-23)
+    BarrierStrength = 30,  // S  (Crucible extension, 2026-05-23)
+    SimdIsa = 31,  // L  (Crucible extension, 2026-05-23)
     // MemoryScope (FIXY-V-266, Agent WMEM keystone) — added 2026-05-23 to
     // host the memory-visibility-scope taxonomy that MemoryScopeLattice
     // (V-265) populates and safety/ScopedFence.h (V-267) wraps:
@@ -320,48 +325,81 @@ enum class DimensionAxis : std::uint8_t {
     //                 value site, never via a single lattice op.  Third
     //                 Tier-L axis (peer to Representation + SimdIsa); no Fn<>
     //                 aggregator slot.
-    MemoryScope     = 32, // L  (Crucible extension, 2026-05-23)
+    MemoryScope = 32,  // L  (Crucible extension, 2026-05-23)
 };
 
-inline constexpr std::size_t DIMENSION_AXIS_COUNT =
-    std::meta::enumerators_of(^^DimensionAxis).size();
+inline constexpr std::size_t DIMENSION_AXIS_COUNT = std::meta::enumerators_of(^^DimensionAxis).size();
 
 [[nodiscard]] constexpr std::string_view dimension_axis_name(DimensionAxis d) noexcept {
     switch (d) {
-        case DimensionAxis::Type:           return "Type";
-        case DimensionAxis::Refinement:     return "Refinement";
-        case DimensionAxis::Usage:          return "Usage";
-        case DimensionAxis::Effect:         return "Effect";
-        case DimensionAxis::Security:       return "Security";
-        case DimensionAxis::Protocol:       return "Protocol";
-        case DimensionAxis::Lifetime:       return "Lifetime";
-        case DimensionAxis::Provenance:     return "Provenance";
-        case DimensionAxis::Trust:          return "Trust";
-        case DimensionAxis::Representation: return "Representation";
-        case DimensionAxis::Observability:  return "Observability";
-        case DimensionAxis::Complexity:     return "Complexity";
-        case DimensionAxis::Precision:      return "Precision";
-        case DimensionAxis::Space:          return "Space";
-        case DimensionAxis::Overflow:       return "Overflow";
-        case DimensionAxis::Mutation:       return "Mutation";
-        case DimensionAxis::Reentrancy:     return "Reentrancy";
-        case DimensionAxis::Size:           return "Size";
-        case DimensionAxis::Version:        return "Version";
-        case DimensionAxis::Staleness:      return "Staleness";
-        case DimensionAxis::Synchronization: return "Synchronization";
-        case DimensionAxis::Regime:         return "Regime";
-        case DimensionAxis::FpMode:         return "FpMode";
-        case DimensionAxis::SyscallSurface: return "SyscallSurface";
-        case DimensionAxis::ControlFlow:    return "ControlFlow";
-        case DimensionAxis::CallShape:      return "CallShape";
-        case DimensionAxis::StackUse:       return "StackUse";
-        case DimensionAxis::GlobalState:    return "GlobalState";
-        case DimensionAxis::Stdio:          return "Stdio";
-        case DimensionAxis::HwInstruction:  return "HwInstruction";
-        case DimensionAxis::BarrierStrength: return "BarrierStrength";
-        case DimensionAxis::SimdIsa:        return "SimdIsa";
-        case DimensionAxis::MemoryScope:    return "MemoryScope";
-        default:                            return std::string_view{"<unknown DimensionAxis>"};
+        case DimensionAxis::Type:
+            return "Type";
+        case DimensionAxis::Refinement:
+            return "Refinement";
+        case DimensionAxis::Usage:
+            return "Usage";
+        case DimensionAxis::Effect:
+            return "Effect";
+        case DimensionAxis::Security:
+            return "Security";
+        case DimensionAxis::Protocol:
+            return "Protocol";
+        case DimensionAxis::Lifetime:
+            return "Lifetime";
+        case DimensionAxis::Provenance:
+            return "Provenance";
+        case DimensionAxis::Trust:
+            return "Trust";
+        case DimensionAxis::Representation:
+            return "Representation";
+        case DimensionAxis::Observability:
+            return "Observability";
+        case DimensionAxis::Complexity:
+            return "Complexity";
+        case DimensionAxis::Precision:
+            return "Precision";
+        case DimensionAxis::Space:
+            return "Space";
+        case DimensionAxis::Overflow:
+            return "Overflow";
+        case DimensionAxis::Mutation:
+            return "Mutation";
+        case DimensionAxis::Reentrancy:
+            return "Reentrancy";
+        case DimensionAxis::Size:
+            return "Size";
+        case DimensionAxis::Version:
+            return "Version";
+        case DimensionAxis::Staleness:
+            return "Staleness";
+        case DimensionAxis::Synchronization:
+            return "Synchronization";
+        case DimensionAxis::Regime:
+            return "Regime";
+        case DimensionAxis::FpMode:
+            return "FpMode";
+        case DimensionAxis::SyscallSurface:
+            return "SyscallSurface";
+        case DimensionAxis::ControlFlow:
+            return "ControlFlow";
+        case DimensionAxis::CallShape:
+            return "CallShape";
+        case DimensionAxis::StackUse:
+            return "StackUse";
+        case DimensionAxis::GlobalState:
+            return "GlobalState";
+        case DimensionAxis::Stdio:
+            return "Stdio";
+        case DimensionAxis::HwInstruction:
+            return "HwInstruction";
+        case DimensionAxis::BarrierStrength:
+            return "BarrierStrength";
+        case DimensionAxis::SimdIsa:
+            return "SimdIsa";
+        case DimensionAxis::MemoryScope:
+            return "MemoryScope";
+        default:
+            return std::string_view{"<unknown DimensionAxis>"};
     }
 }
 
@@ -476,11 +514,10 @@ concept FoundationalGrade = std::is_object_v<G>;
 // par/seq site the runtime checks compatible(prev, next) before
 // admitting the new grade.
 template <typename G>
-concept VersionedGrade = requires {
-    typename G::element_type;
-} && requires (typename G::element_type a, typename G::element_type b) {
-    { G::compatible(a, b) } -> std::convertible_to<bool>;
-};
+concept VersionedGrade =
+    requires { typename G::element_type; } && requires(typename G::element_type a, typename G::element_type b) {
+        { G::compatible(a, b) } -> std::convertible_to<bool>;
+    };
 
 // ═════════════════════════════════════════════════════════════════════
 // ── tier_for_grade — best-effort Tier classification of a grade ────
@@ -503,11 +540,16 @@ concept VersionedGrade = requires {
 template <typename G>
 struct tier_for_grade {
     static constexpr TierKind value = []() consteval {
-        if constexpr (TypestateGrade<G>)        return TierKind::Typestate;
-        else if constexpr (VersionedGrade<G>)   return TierKind::Versioned;
-        else if constexpr (SemiringGrade<G>)    return TierKind::Semiring;
-        else if constexpr (LatticeGrade<G>)     return TierKind::Lattice;
-        else                                    return TierKind::Foundational;
+        if constexpr (TypestateGrade<G>)
+            return TierKind::Typestate;
+        else if constexpr (VersionedGrade<G>)
+            return TierKind::Versioned;
+        else if constexpr (SemiringGrade<G>)
+            return TierKind::Semiring;
+        else if constexpr (LatticeGrade<G>)
+            return TierKind::Lattice;
+        else
+            return TierKind::Foundational;
     }();
 };
 
@@ -524,8 +566,7 @@ inline constexpr TierKind tier_for_grade_v = tier_for_grade<G>::value;
 // trait (Phase 1 P1-N).
 
 template <algebra::GradedWrapper W>
-inline constexpr TierKind dimension_tier_v =
-    tier_for_grade_v<typename W::lattice_type>;
+inline constexpr TierKind dimension_tier_v = tier_for_grade_v<typename W::lattice_type>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── wrapper_dimension / verify_quadruple — exact wrapper table ──────
@@ -544,59 +585,47 @@ struct wrapper_dimension;
 
 template <typename W>
 concept DimensionedGradedWrapper =
-    algebra::GradedWrapper<std::remove_cvref_t<W>> &&
-    requires { wrapper_dimension<std::remove_cvref_t<W>>::value; };
+    algebra::GradedWrapper<std::remove_cvref_t<W>> && requires { wrapper_dimension<std::remove_cvref_t<W>>::value; };
 
 template <DimensionedGradedWrapper W>
-inline constexpr DimensionAxis wrapper_dimension_v =
-    wrapper_dimension<std::remove_cvref_t<W>>::value;
+inline constexpr DimensionAxis wrapper_dimension_v = wrapper_dimension<std::remove_cvref_t<W>>::value;
 
 template <DimensionedGradedWrapper W>
-inline constexpr TierKind wrapper_tier_v =
-    tier_of_axis(wrapper_dimension_v<W>);
+inline constexpr TierKind wrapper_tier_v = tier_of_axis(wrapper_dimension_v<W>);
 
 template <DimensionedGradedWrapper W>
 using wrapper_lattice_t = typename std::remove_cvref_t<W>::lattice_type;
 
 template <DimensionedGradedWrapper W>
-inline constexpr algebra::ModalityKind wrapper_modality_v =
-    std::remove_cvref_t<W>::modality;
+inline constexpr algebra::ModalityKind wrapper_modality_v = std::remove_cvref_t<W>::modality;
 
 template <typename T>
-struct wrapper_dimension<Linear<T>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::Usage> {};
+struct wrapper_dimension<Linear<T>> : std::integral_constant<DimensionAxis, DimensionAxis::Usage> {};
 
 template <auto Pred, typename T>
-struct wrapper_dimension<Refined<Pred, T>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::Refinement> {};
+struct wrapper_dimension<Refined<Pred, T>> : std::integral_constant<DimensionAxis, DimensionAxis::Refinement> {};
 
 template <auto Pred, typename T>
-struct wrapper_dimension<SealedRefined<Pred, T>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::Refinement> {};
+struct wrapper_dimension<SealedRefined<Pred, T>> : std::integral_constant<DimensionAxis, DimensionAxis::Refinement> {};
 
 template <typename T, typename Tag>
-struct wrapper_dimension<Tagged<T, Tag>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::Provenance> {};
+struct wrapper_dimension<Tagged<T, Tag>> : std::integral_constant<DimensionAxis, DimensionAxis::Provenance> {};
 
 template <typename T>
-struct wrapper_dimension<Secret<T>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::Security> {};
+struct wrapper_dimension<Secret<T>> : std::integral_constant<DimensionAxis, DimensionAxis::Security> {};
 
 template <typename T>
-struct wrapper_dimension<Stale<T>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::Staleness> {};
+struct wrapper_dimension<Stale<T>> : std::integral_constant<DimensionAxis, DimensionAxis::Staleness> {};
 
 template <typename T, std::size_t N, typename Tag>
 struct wrapper_dimension<TimeOrdered<T, N, Tag>>
     : std::integral_constant<DimensionAxis, DimensionAxis::Representation> {};
 
 template <typename T, typename Cmp>
-struct wrapper_dimension<Monotonic<T, Cmp>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::Mutation> {};
+struct wrapper_dimension<Monotonic<T, Cmp>> : std::integral_constant<DimensionAxis, DimensionAxis::Mutation> {};
 
 template <typename T, template <typename...> class Storage>
-struct wrapper_dimension<AppendOnly<T, Storage>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::Mutation> {};
+struct wrapper_dimension<AppendOnly<T, Storage>> : std::integral_constant<DimensionAxis, DimensionAxis::Mutation> {};
 
 // fixy-A3-009 (2026-05-18): HotPath reclassified from dim 13
 // Complexity to dim 21 Regime.  Complexity tracks asymptotic /
@@ -608,27 +637,22 @@ struct wrapper_dimension<AppendOnly<T, Storage>>
 // regime function can still be Possibly_Diverging (and is then
 // a bug in the Hot path that must be caught by other gates).
 template <HotPathTier_v Tier, typename T>
-struct wrapper_dimension<HotPath<Tier, T>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::Regime> {};
+struct wrapper_dimension<HotPath<Tier, T>> : std::integral_constant<DimensionAxis, DimensionAxis::Regime> {};
 
 template <DetSafeTier_v Tier, typename T>
-struct wrapper_dimension<DetSafe<Tier, T>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::Effect> {};
+struct wrapper_dimension<DetSafe<Tier, T>> : std::integral_constant<DimensionAxis, DimensionAxis::Effect> {};
 
 template <Tolerance Tier, typename T>
-struct wrapper_dimension<NumericalTier<Tier, T>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::Precision> {};
+struct wrapper_dimension<NumericalTier<Tier, T>> : std::integral_constant<DimensionAxis, DimensionAxis::Precision> {};
 
 template <VendorBackend_v Backend, typename T>
-struct wrapper_dimension<Vendor<Backend, T>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::Representation> {};
+struct wrapper_dimension<Vendor<Backend, T>> : std::integral_constant<DimensionAxis, DimensionAxis::Representation> {};
 
 // FIXY-V-254 — Hw<HwInstruction Tier, T> occupies the HwInstruction axis
 // (V-253, Tier-S Semiring with par=join).  §XVI neighborhood: between
 // Vendor (which backend) and ResidencyHeat (where the value lives).
 template <HwInstruction_v Tier, typename T>
-struct wrapper_dimension<Hw<Tier, T>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::HwInstruction> {};
+struct wrapper_dimension<Hw<Tier, T>> : std::integral_constant<DimensionAxis, DimensionAxis::HwInstruction> {};
 
 // FIXY-V-255 — BarrierGuarded<BarrierStrength Tier, T> occupies the
 // BarrierStrength axis (V-253, Tier-S Semiring).  Repr-neighborhood peer
@@ -641,28 +665,23 @@ struct wrapper_dimension<BarrierGuarded<Tier, T>>
 // (V-253, Tier-L Lattice — the second Tier-L dimension peer to
 // Representation).  Partial-order provider wrapper, sibling to Vendor.
 template <SimdIsa_v W, typename T>
-struct wrapper_dimension<SimdWidthPinned<W, T>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::SimdIsa> {};
+struct wrapper_dimension<SimdWidthPinned<W, T>> : std::integral_constant<DimensionAxis, DimensionAxis::SimdIsa> {};
 
 // FIXY-V-267 — ScopedFence<MemoryScope S, T> occupies the MemoryScope axis
 // (V-266, Tier-L Lattice — a Crucible extension peer to SimdIsa).
 // Partial-order provider wrapper, sibling to SimdWidthPinned; pins the
 // memory-visibility scope a publication was released under.
 template <MemoryScope_v S, typename T>
-struct wrapper_dimension<ScopedFence<S, T>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::MemoryScope> {};
+struct wrapper_dimension<ScopedFence<S, T>> : std::integral_constant<DimensionAxis, DimensionAxis::MemoryScope> {};
 
 template <ResidencyHeatTag_v Tier, typename T>
-struct wrapper_dimension<ResidencyHeat<Tier, T>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::Space> {};
+struct wrapper_dimension<ResidencyHeat<Tier, T>> : std::integral_constant<DimensionAxis, DimensionAxis::Space> {};
 
 template <CipherTierTag_v Tier, typename T>
-struct wrapper_dimension<CipherTier<Tier, T>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::Security> {};
+struct wrapper_dimension<CipherTier<Tier, T>> : std::integral_constant<DimensionAxis, DimensionAxis::Security> {};
 
 template <AllocClassTag_v Tag, typename T>
-struct wrapper_dimension<AllocClass<Tag, T>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::Space> {};
+struct wrapper_dimension<AllocClass<Tag, T>> : std::integral_constant<DimensionAxis, DimensionAxis::Space> {};
 
 // fixy-A3-008 (2026-05-18): Wait + MemOrder reclassified from
 // dim 16 Reentrancy to dim 20 Synchronization.  Reentrancy tracks
@@ -672,20 +691,16 @@ struct wrapper_dimension<AllocClass<Tag, T>>
 // / SeqCst).  Both are concurrency-coordination axes — neither
 // touches reentrancy semantics.  Tier preserved at Semiring (S).
 template <WaitStrategy_v Strategy, typename T>
-struct wrapper_dimension<Wait<Strategy, T>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::Synchronization> {};
+struct wrapper_dimension<Wait<Strategy, T>> : std::integral_constant<DimensionAxis, DimensionAxis::Synchronization> {};
 
 template <MemOrderTag_v Tag, typename T>
-struct wrapper_dimension<MemOrder<Tag, T>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::Synchronization> {};
+struct wrapper_dimension<MemOrder<Tag, T>> : std::integral_constant<DimensionAxis, DimensionAxis::Synchronization> {};
 
 template <ProgressClass_v Class, typename T>
-struct wrapper_dimension<Progress<Class, T>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::Complexity> {};
+struct wrapper_dimension<Progress<Class, T>> : std::integral_constant<DimensionAxis, DimensionAxis::Complexity> {};
 
 template <Consistency_v Level, typename T>
-struct wrapper_dimension<Consistency<Level, T>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::Version> {};
+struct wrapper_dimension<Consistency<Level, T>> : std::integral_constant<DimensionAxis, DimensionAxis::Version> {};
 
 // FIXY-V-054 — Witness<Tier, T> occupies the Observability axis.
 // Witness encodes epistemic confidence (UNWITNESSED ⊑ TYPE_CHECKED ⊑
@@ -694,8 +709,7 @@ struct wrapper_dimension<Consistency<Level, T>>
 // Observability axis was previously unoccupied (FX dim 11); Witness
 // is its canonical inhabitant.  Tier-S (Semiring) per tier_of_axis.
 template <Witness_v Tier, typename T>
-struct wrapper_dimension<Witness<Tier, T>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::Observability> {};
+struct wrapper_dimension<Witness<Tier, T>> : std::integral_constant<DimensionAxis, DimensionAxis::Observability> {};
 
 // FIXY-V-079 — JoinPolicy<Tier, T> occupies the Synchronization axis
 // (dim 20).  JoinPolicy encodes structural-concurrency engagement
@@ -706,8 +720,8 @@ struct wrapper_dimension<Witness<Tier, T>>
 // concurrency-discipline annotations; tier-S with par=join
 // (strictest-wins) reading per the same shape as Wait + MemOrder.
 template <JoinPolicy_v Tier, typename T>
-struct wrapper_dimension<JoinPolicy<Tier, T>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::Synchronization> {};
+struct wrapper_dimension<JoinPolicy<Tier, T>> : std::integral_constant<DimensionAxis, DimensionAxis::Synchronization> {
+};
 
 // FIXY-V-090 — FpModePinned<auto Mode, T> on the FpMode axis (Tier-S
 // chain, axis 22).  Every per-axis spelling (FpRoundingPinned /
@@ -719,32 +733,25 @@ struct wrapper_dimension<JoinPolicy<Tier, T>>
 // happens through the row_hash specializations in safety/diag/
 // RowHashFold.h (salts 0x21..0x2B per NTTP enum type).
 template <auto Mode, typename T>
-struct wrapper_dimension<FpModePinned<Mode, T>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::FpMode> {};
+struct wrapper_dimension<FpModePinned<Mode, T>> : std::integral_constant<DimensionAxis, DimensionAxis::FpMode> {};
 
 template <Lifetime_v Scope, typename T>
-struct wrapper_dimension<OpaqueLifetime<Scope, T>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::Lifetime> {};
+struct wrapper_dimension<OpaqueLifetime<Scope, T>> : std::integral_constant<DimensionAxis, DimensionAxis::Lifetime> {};
 
 template <CrashClass_v Class, typename T>
-struct wrapper_dimension<Crash<Class, T>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::Effect> {};
+struct wrapper_dimension<Crash<Class, T>> : std::integral_constant<DimensionAxis, DimensionAxis::Effect> {};
 
 template <typename T>
-struct wrapper_dimension<Budgeted<T>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::Space> {};
+struct wrapper_dimension<Budgeted<T>> : std::integral_constant<DimensionAxis, DimensionAxis::Space> {};
 
 template <typename T>
-struct wrapper_dimension<EpochVersioned<T>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::Version> {};
+struct wrapper_dimension<EpochVersioned<T>> : std::integral_constant<DimensionAxis, DimensionAxis::Version> {};
 
 template <typename T>
-struct wrapper_dimension<NumaPlacement<T>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::Representation> {};
+struct wrapper_dimension<NumaPlacement<T>> : std::integral_constant<DimensionAxis, DimensionAxis::Representation> {};
 
 template <typename T>
-struct wrapper_dimension<RecipeSpec<T>>
-    : std::integral_constant<DimensionAxis, DimensionAxis::Precision> {};
+struct wrapper_dimension<RecipeSpec<T>> : std::integral_constant<DimensionAxis, DimensionAxis::Precision> {};
 
 template <TierKind Tier, typename Lattice>
 [[nodiscard]] consteval bool tier_admits_lattice() noexcept {
@@ -815,12 +822,9 @@ template <DimensionedGradedWrapper W>
     constexpr auto tier = wrapper_tier_v<X>;
     constexpr auto modality = wrapper_modality_v<X>;
 
-    return std::is_same_v<L, typename X::lattice_type>
-        && std::is_same_v<L, typename X::graded_type::lattice_type>
-        && modality == X::modality
-        && modality == algebra::graded_modality_v<typename X::graded_type>
-        && tier_kind_name(tier) != std::string_view{"<unknown TierKind>"}
-        && tier_admits_lattice<tier, L>()
+    return std::is_same_v<L, typename X::lattice_type> && std::is_same_v<L, typename X::graded_type::lattice_type>
+        && modality == X::modality && modality == algebra::graded_modality_v<typename X::graded_type>
+        && tier_kind_name(tier) != std::string_view{"<unknown TierKind>"} && tier_admits_lattice<tier, L>()
         && tier_admits_modality<tier, modality>();
 }
 
@@ -859,119 +863,186 @@ template <DimensionedGradedWrapper W>
 // self_test` directly.
 
 enum class WrapperKind : std::uint8_t {
-    Linear,           // → DimensionAxis::Usage
-    Refined,          // → DimensionAxis::Refinement
-    SealedRefined,    // → DimensionAxis::Refinement
-    Tagged,           // → DimensionAxis::Provenance
-    Secret,           // → DimensionAxis::Security
-    Stale,            // → DimensionAxis::Staleness
-    TimeOrdered,      // → DimensionAxis::Representation
-    Monotonic,        // → DimensionAxis::Mutation
-    AppendOnly,       // → DimensionAxis::Mutation
-    HotPath,          // → DimensionAxis::Regime
-    DetSafe,          // → DimensionAxis::Effect
-    NumericalTier,    // → DimensionAxis::Precision
-    Vendor,           // → DimensionAxis::Representation
-    Hw,               // → DimensionAxis::HwInstruction
-    BarrierGuarded,   // → DimensionAxis::BarrierStrength
+    Linear,  // → DimensionAxis::Usage
+    Refined,  // → DimensionAxis::Refinement
+    SealedRefined,  // → DimensionAxis::Refinement
+    Tagged,  // → DimensionAxis::Provenance
+    Secret,  // → DimensionAxis::Security
+    Stale,  // → DimensionAxis::Staleness
+    TimeOrdered,  // → DimensionAxis::Representation
+    Monotonic,  // → DimensionAxis::Mutation
+    AppendOnly,  // → DimensionAxis::Mutation
+    HotPath,  // → DimensionAxis::Regime
+    DetSafe,  // → DimensionAxis::Effect
+    NumericalTier,  // → DimensionAxis::Precision
+    Vendor,  // → DimensionAxis::Representation
+    Hw,  // → DimensionAxis::HwInstruction
+    BarrierGuarded,  // → DimensionAxis::BarrierStrength
     SimdWidthPinned,  // → DimensionAxis::SimdIsa
-    ScopedFence,      // → DimensionAxis::MemoryScope
-    ResidencyHeat,    // → DimensionAxis::Space
-    CipherTier,       // → DimensionAxis::Security
-    AllocClass,       // → DimensionAxis::Space
-    Wait,             // → DimensionAxis::Synchronization
-    MemOrder,         // → DimensionAxis::Synchronization
-    Progress,         // → DimensionAxis::Complexity
-    Consistency,      // → DimensionAxis::Version
-    Witness,          // → DimensionAxis::Observability
-    JoinPolicy,       // → DimensionAxis::Synchronization
-    FpModePinned,     // → DimensionAxis::FpMode
-    OpaqueLifetime,   // → DimensionAxis::Lifetime
-    Crash,            // → DimensionAxis::Effect
-    Budgeted,         // → DimensionAxis::Space
-    EpochVersioned,   // → DimensionAxis::Version
-    NumaPlacement,    // → DimensionAxis::Representation
-    RecipeSpec,       // → DimensionAxis::Precision
+    ScopedFence,  // → DimensionAxis::MemoryScope
+    ResidencyHeat,  // → DimensionAxis::Space
+    CipherTier,  // → DimensionAxis::Security
+    AllocClass,  // → DimensionAxis::Space
+    Wait,  // → DimensionAxis::Synchronization
+    MemOrder,  // → DimensionAxis::Synchronization
+    Progress,  // → DimensionAxis::Complexity
+    Consistency,  // → DimensionAxis::Version
+    Witness,  // → DimensionAxis::Observability
+    JoinPolicy,  // → DimensionAxis::Synchronization
+    FpModePinned,  // → DimensionAxis::FpMode
+    OpaqueLifetime,  // → DimensionAxis::Lifetime
+    Crash,  // → DimensionAxis::Effect
+    Budgeted,  // → DimensionAxis::Space
+    EpochVersioned,  // → DimensionAxis::Version
+    NumaPlacement,  // → DimensionAxis::Representation
+    RecipeSpec,  // → DimensionAxis::Precision
 };
 
-inline constexpr std::size_t WRAPPER_KIND_COUNT =
-    std::meta::enumerators_of(^^WrapperKind).size();
+inline constexpr std::size_t WRAPPER_KIND_COUNT = std::meta::enumerators_of(^^WrapperKind).size();
 
 [[nodiscard]] constexpr DimensionAxis wrapper_kind_to_axis(WrapperKind k) noexcept {
     switch (k) {
-        case WrapperKind::Linear:           return DimensionAxis::Usage;
-        case WrapperKind::Refined:          return DimensionAxis::Refinement;
-        case WrapperKind::SealedRefined:    return DimensionAxis::Refinement;
-        case WrapperKind::Tagged:           return DimensionAxis::Provenance;
-        case WrapperKind::Secret:           return DimensionAxis::Security;
-        case WrapperKind::Stale:            return DimensionAxis::Staleness;
-        case WrapperKind::TimeOrdered:      return DimensionAxis::Representation;
-        case WrapperKind::Monotonic:        return DimensionAxis::Mutation;
-        case WrapperKind::AppendOnly:       return DimensionAxis::Mutation;
-        case WrapperKind::HotPath:          return DimensionAxis::Regime;
-        case WrapperKind::DetSafe:          return DimensionAxis::Effect;
-        case WrapperKind::NumericalTier:    return DimensionAxis::Precision;
-        case WrapperKind::Vendor:           return DimensionAxis::Representation;
-        case WrapperKind::Hw:               return DimensionAxis::HwInstruction;
-        case WrapperKind::BarrierGuarded:   return DimensionAxis::BarrierStrength;
-        case WrapperKind::SimdWidthPinned:  return DimensionAxis::SimdIsa;
-        case WrapperKind::ScopedFence:      return DimensionAxis::MemoryScope;
-        case WrapperKind::ResidencyHeat:    return DimensionAxis::Space;
-        case WrapperKind::CipherTier:       return DimensionAxis::Security;
-        case WrapperKind::AllocClass:       return DimensionAxis::Space;
-        case WrapperKind::Wait:             return DimensionAxis::Synchronization;
-        case WrapperKind::MemOrder:         return DimensionAxis::Synchronization;
-        case WrapperKind::Progress:         return DimensionAxis::Complexity;
-        case WrapperKind::Consistency:      return DimensionAxis::Version;
-        case WrapperKind::Witness:          return DimensionAxis::Observability;
-        case WrapperKind::JoinPolicy:       return DimensionAxis::Synchronization;
-        case WrapperKind::FpModePinned:     return DimensionAxis::FpMode;
-        case WrapperKind::OpaqueLifetime:   return DimensionAxis::Lifetime;
-        case WrapperKind::Crash:            return DimensionAxis::Effect;
-        case WrapperKind::Budgeted:         return DimensionAxis::Space;
-        case WrapperKind::EpochVersioned:   return DimensionAxis::Version;
-        case WrapperKind::NumaPlacement:    return DimensionAxis::Representation;
-        case WrapperKind::RecipeSpec:       return DimensionAxis::Precision;
-        default:                            return DimensionAxis{0xFF};
+        case WrapperKind::Linear:
+            return DimensionAxis::Usage;
+        case WrapperKind::Refined:
+            return DimensionAxis::Refinement;
+        case WrapperKind::SealedRefined:
+            return DimensionAxis::Refinement;
+        case WrapperKind::Tagged:
+            return DimensionAxis::Provenance;
+        case WrapperKind::Secret:
+            return DimensionAxis::Security;
+        case WrapperKind::Stale:
+            return DimensionAxis::Staleness;
+        case WrapperKind::TimeOrdered:
+            return DimensionAxis::Representation;
+        case WrapperKind::Monotonic:
+            return DimensionAxis::Mutation;
+        case WrapperKind::AppendOnly:
+            return DimensionAxis::Mutation;
+        case WrapperKind::HotPath:
+            return DimensionAxis::Regime;
+        case WrapperKind::DetSafe:
+            return DimensionAxis::Effect;
+        case WrapperKind::NumericalTier:
+            return DimensionAxis::Precision;
+        case WrapperKind::Vendor:
+            return DimensionAxis::Representation;
+        case WrapperKind::Hw:
+            return DimensionAxis::HwInstruction;
+        case WrapperKind::BarrierGuarded:
+            return DimensionAxis::BarrierStrength;
+        case WrapperKind::SimdWidthPinned:
+            return DimensionAxis::SimdIsa;
+        case WrapperKind::ScopedFence:
+            return DimensionAxis::MemoryScope;
+        case WrapperKind::ResidencyHeat:
+            return DimensionAxis::Space;
+        case WrapperKind::CipherTier:
+            return DimensionAxis::Security;
+        case WrapperKind::AllocClass:
+            return DimensionAxis::Space;
+        case WrapperKind::Wait:
+            return DimensionAxis::Synchronization;
+        case WrapperKind::MemOrder:
+            return DimensionAxis::Synchronization;
+        case WrapperKind::Progress:
+            return DimensionAxis::Complexity;
+        case WrapperKind::Consistency:
+            return DimensionAxis::Version;
+        case WrapperKind::Witness:
+            return DimensionAxis::Observability;
+        case WrapperKind::JoinPolicy:
+            return DimensionAxis::Synchronization;
+        case WrapperKind::FpModePinned:
+            return DimensionAxis::FpMode;
+        case WrapperKind::OpaqueLifetime:
+            return DimensionAxis::Lifetime;
+        case WrapperKind::Crash:
+            return DimensionAxis::Effect;
+        case WrapperKind::Budgeted:
+            return DimensionAxis::Space;
+        case WrapperKind::EpochVersioned:
+            return DimensionAxis::Version;
+        case WrapperKind::NumaPlacement:
+            return DimensionAxis::Representation;
+        case WrapperKind::RecipeSpec:
+            return DimensionAxis::Precision;
+        default:
+            return DimensionAxis{0xFF};
     }
 }
 
 [[nodiscard]] constexpr std::string_view wrapper_kind_name(WrapperKind k) noexcept {
     switch (k) {
-        case WrapperKind::Linear:           return "Linear";
-        case WrapperKind::Refined:          return "Refined";
-        case WrapperKind::SealedRefined:    return "SealedRefined";
-        case WrapperKind::Tagged:           return "Tagged";
-        case WrapperKind::Secret:           return "Secret";
-        case WrapperKind::Stale:            return "Stale";
-        case WrapperKind::TimeOrdered:      return "TimeOrdered";
-        case WrapperKind::Monotonic:        return "Monotonic";
-        case WrapperKind::AppendOnly:       return "AppendOnly";
-        case WrapperKind::HotPath:          return "HotPath";
-        case WrapperKind::DetSafe:          return "DetSafe";
-        case WrapperKind::NumericalTier:    return "NumericalTier";
-        case WrapperKind::Vendor:           return "Vendor";
-        case WrapperKind::Hw:               return "Hw";
-        case WrapperKind::BarrierGuarded:   return "BarrierGuarded";
-        case WrapperKind::SimdWidthPinned:  return "SimdWidthPinned";
-        case WrapperKind::ScopedFence:      return "ScopedFence";
-        case WrapperKind::ResidencyHeat:    return "ResidencyHeat";
-        case WrapperKind::CipherTier:       return "CipherTier";
-        case WrapperKind::AllocClass:       return "AllocClass";
-        case WrapperKind::Wait:             return "Wait";
-        case WrapperKind::MemOrder:         return "MemOrder";
-        case WrapperKind::Progress:         return "Progress";
-        case WrapperKind::Consistency:      return "Consistency";
-        case WrapperKind::Witness:          return "Witness";
-        case WrapperKind::JoinPolicy:       return "JoinPolicy";
-        case WrapperKind::FpModePinned:     return "FpModePinned";
-        case WrapperKind::OpaqueLifetime:   return "OpaqueLifetime";
-        case WrapperKind::Crash:            return "Crash";
-        case WrapperKind::Budgeted:         return "Budgeted";
-        case WrapperKind::EpochVersioned:   return "EpochVersioned";
-        case WrapperKind::NumaPlacement:    return "NumaPlacement";
-        case WrapperKind::RecipeSpec:       return "RecipeSpec";
-        default:                            return std::string_view{"<unknown WrapperKind>"};
+        case WrapperKind::Linear:
+            return "Linear";
+        case WrapperKind::Refined:
+            return "Refined";
+        case WrapperKind::SealedRefined:
+            return "SealedRefined";
+        case WrapperKind::Tagged:
+            return "Tagged";
+        case WrapperKind::Secret:
+            return "Secret";
+        case WrapperKind::Stale:
+            return "Stale";
+        case WrapperKind::TimeOrdered:
+            return "TimeOrdered";
+        case WrapperKind::Monotonic:
+            return "Monotonic";
+        case WrapperKind::AppendOnly:
+            return "AppendOnly";
+        case WrapperKind::HotPath:
+            return "HotPath";
+        case WrapperKind::DetSafe:
+            return "DetSafe";
+        case WrapperKind::NumericalTier:
+            return "NumericalTier";
+        case WrapperKind::Vendor:
+            return "Vendor";
+        case WrapperKind::Hw:
+            return "Hw";
+        case WrapperKind::BarrierGuarded:
+            return "BarrierGuarded";
+        case WrapperKind::SimdWidthPinned:
+            return "SimdWidthPinned";
+        case WrapperKind::ScopedFence:
+            return "ScopedFence";
+        case WrapperKind::ResidencyHeat:
+            return "ResidencyHeat";
+        case WrapperKind::CipherTier:
+            return "CipherTier";
+        case WrapperKind::AllocClass:
+            return "AllocClass";
+        case WrapperKind::Wait:
+            return "Wait";
+        case WrapperKind::MemOrder:
+            return "MemOrder";
+        case WrapperKind::Progress:
+            return "Progress";
+        case WrapperKind::Consistency:
+            return "Consistency";
+        case WrapperKind::Witness:
+            return "Witness";
+        case WrapperKind::JoinPolicy:
+            return "JoinPolicy";
+        case WrapperKind::FpModePinned:
+            return "FpModePinned";
+        case WrapperKind::OpaqueLifetime:
+            return "OpaqueLifetime";
+        case WrapperKind::Crash:
+            return "Crash";
+        case WrapperKind::Budgeted:
+            return "Budgeted";
+        case WrapperKind::EpochVersioned:
+            return "EpochVersioned";
+        case WrapperKind::NumaPlacement:
+            return "NumaPlacement";
+        case WrapperKind::RecipeSpec:
+            return "RecipeSpec";
+        default:
+            return std::string_view{"<unknown WrapperKind>"};
     }
 }
 
@@ -985,37 +1056,33 @@ inline constexpr std::size_t WRAPPER_KIND_COUNT =
 // three sites are grep-discoverable; the static_assert below catches
 // the cardinality drift, the reflection-driven coverage harnesses
 // below catch missing switch arms.
-static_assert(WRAPPER_KIND_COUNT == 33,
-    "WrapperKind enumerator count drifted from the 33 wrapper_dimension "
-    "specializations declared at lines 566..746.  Adding a new wrapper "
-    "requires APPEND-ONLY WrapperKind enumerator + wrapper_kind_to_axis "
-    "arm + wrapper_kind_name arm.  Existing ordinals never change (the "
-    "federation cache key for any consumer that hashed a WrapperKind "
-    "ordinal never drifts across append-only growth).");
+static_assert(WRAPPER_KIND_COUNT == 33, "WrapperKind enumerator count drifted from the 33 wrapper_dimension "
+                                        "specializations declared at lines 566..746.  Adding a new wrapper "
+                                        "requires APPEND-ONLY WrapperKind enumerator + wrapper_kind_to_axis "
+                                        "arm + wrapper_kind_name arm.  Existing ordinals never change (the "
+                                        "federation cache key for any consumer that hashed a WrapperKind "
+                                        "ordinal never drifts across append-only growth).");
 
 // Reflection-driven name coverage — same shape as
 // every_dimension_axis_has_name() below.
 [[nodiscard]] consteval bool every_wrapper_kind_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^WrapperKind));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^WrapperKind));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
         const auto n = wrapper_kind_name([:en:]);
         if (n == std::string_view{"<unknown WrapperKind>"}) return false;
-        if (n.empty())                                       return false;
+        if (n.empty()) return false;
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_wrapper_kind_has_name(),
-    "wrapper_kind_name() missing arm for at least one WrapperKind — "
-    "add the arm or the new wrapper kind leaks the '<unknown "
-    "WrapperKind>' sentinel.");
+static_assert(every_wrapper_kind_has_name(), "wrapper_kind_name() missing arm for at least one WrapperKind — "
+                                             "add the arm or the new wrapper kind leaks the '<unknown "
+                                             "WrapperKind>' sentinel.");
 
 [[nodiscard]] consteval bool every_wrapper_kind_has_axis() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^WrapperKind));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^WrapperKind));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
@@ -1023,26 +1090,22 @@ static_assert(every_wrapper_kind_has_name(),
         // wrapper_kind_to_axis returns DimensionAxis{0xFF} on
         // unreachable fallthrough; name resolves to "<unknown
         // DimensionAxis>".
-        if (dimension_axis_name(a)
-            == std::string_view{"<unknown DimensionAxis>"}) {
+        if (dimension_axis_name(a) == std::string_view{"<unknown DimensionAxis>"}) {
             return false;
         }
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_wrapper_kind_has_axis(),
-    "wrapper_kind_to_axis() switch missing arm for at least one "
-    "WrapperKind — add the arm or new wrapper kinds silently fall "
-    "through to the unreachable DimensionAxis{0xFF} sentinel.");
+static_assert(every_wrapper_kind_has_axis(), "wrapper_kind_to_axis() switch missing arm for at least one "
+                                             "WrapperKind — add the arm or new wrapper kinds silently fall "
+                                             "through to the unreachable DimensionAxis{0xFF} sentinel.");
 
 // Reverse map — count + filtered array of WrapperKind per axis.
 // Same reflection pattern as count_dims_in_tier above.
 
-[[nodiscard]] consteval std::size_t
-count_wrappers_on_axis(DimensionAxis d) noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^WrapperKind));
+[[nodiscard]] consteval std::size_t count_wrappers_on_axis(DimensionAxis d) noexcept {
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^WrapperKind));
     std::size_t n = 0;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
@@ -1060,12 +1123,9 @@ count_wrappers_on_axis(DimensionAxis d) noexcept {
 // `count_wrappers_on_axis(D)`, so the array length is exact (no
 // trailing sentinels).
 template <DimensionAxis D>
-[[nodiscard]] consteval auto wrapper_for() noexcept
-    -> std::array<WrapperKind, count_wrappers_on_axis(D)>
-{
+[[nodiscard]] consteval auto wrapper_for() noexcept -> std::array<WrapperKind, count_wrappers_on_axis(D)> {
     std::array<WrapperKind, count_wrappers_on_axis(D)> out{};
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^WrapperKind));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^WrapperKind));
     std::size_t i = 0;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
@@ -1091,68 +1151,61 @@ inline constexpr auto wrapper_for_v = wrapper_for<D>();
 namespace detail::dimension_traits_self_test {
 
 // ── Cardinality assertions ─────────────────────────────────────────
-static_assert(TIER_KIND_COUNT == 5,
-    "TierKind catalog diverged from fixy.md §24.1 Tier S/L/T/F/V (5); "
-    "if intentional, update fixy.md and this constant together.");
-static_assert(DIMENSION_AXIS_COUNT == 33,
-    "DimensionAxis catalog diverged from fixy.md §24.1 (33 dims: FX's "
-    "22 minus dim 12 Clock Domain and dim 17 FP Order, plus the Crucible "
-    "Synchronization extension added 2026-05-18 for Wait + MemOrder, plus "
-    "the Crucible Regime extension added 2026-05-18 for HotPath, plus "
-    "the Crucible FpMode extension added 2026-05-22 for the 11-sub-axis "
-    "FP-mode taxonomy per FIXY-V-088, plus the Crucible SyscallSurface "
-    "extension added 2026-05-22 for the syscall-family taxonomy per "
-    "FIXY-V-097, plus the five Crucible function-behavior extensions added "
-    "2026-05-23 (ControlFlow / CallShape / StackUse / GlobalState / Stdio) "
-    "per FIXY-V-238, plus the three Crucible hardware-instruction "
-    "extensions added 2026-05-23 (HwInstruction / BarrierStrength / "
-    "SimdIsa) per FIXY-V-253, plus the Crucible MemoryScope extension "
-    "added 2026-05-23 for the memory-visibility-scope taxonomy per "
-    "FIXY-V-266); if intentional, update fixy.md §24.1 + "
-    "§24.14 + §24.15 + §24.16 + §24.17 + §24.18 + §24.19 + §24.20 and this "
-    "constant.");
+static_assert(TIER_KIND_COUNT == 5, "TierKind catalog diverged from fixy.md §24.1 Tier S/L/T/F/V (5); "
+                                    "if intentional, update fixy.md and this constant together.");
+static_assert(DIMENSION_AXIS_COUNT == 33, "DimensionAxis catalog diverged from fixy.md §24.1 (33 dims: FX's "
+                                          "22 minus dim 12 Clock Domain and dim 17 FP Order, plus the Crucible "
+                                          "Synchronization extension added 2026-05-18 for Wait + MemOrder, plus "
+                                          "the Crucible Regime extension added 2026-05-18 for HotPath, plus "
+                                          "the Crucible FpMode extension added 2026-05-22 for the 11-sub-axis "
+                                          "FP-mode taxonomy per FIXY-V-088, plus the Crucible SyscallSurface "
+                                          "extension added 2026-05-22 for the syscall-family taxonomy per "
+                                          "FIXY-V-097, plus the five Crucible function-behavior extensions added "
+                                          "2026-05-23 (ControlFlow / CallShape / StackUse / GlobalState / Stdio) "
+                                          "per FIXY-V-238, plus the three Crucible hardware-instruction "
+                                          "extensions added 2026-05-23 (HwInstruction / BarrierStrength / "
+                                          "SimdIsa) per FIXY-V-253, plus the Crucible MemoryScope extension "
+                                          "added 2026-05-23 for the memory-visibility-scope taxonomy per "
+                                          "FIXY-V-266); if intentional, update fixy.md §24.1 + "
+                                          "§24.14 + §24.15 + §24.16 + §24.17 + §24.18 + §24.19 + §24.20 and this "
+                                          "constant.");
 
 // ── Reflection-driven name coverage (TierKind) ─────────────────────
 [[nodiscard]] consteval bool every_tier_kind_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^TierKind));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^TierKind));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
         const auto n = tier_kind_name([:en:]);
         if (n == std::string_view{"<unknown TierKind>"}) return false;
-        if (n.empty())                                   return false;
+        if (n.empty()) return false;
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_tier_kind_has_name(),
-    "tier_kind_name() missing arm for at least one TierKind — add the "
-    "arm or the new tier leaks the '<unknown TierKind>' sentinel.");
+static_assert(every_tier_kind_has_name(), "tier_kind_name() missing arm for at least one TierKind — add the "
+                                          "arm or the new tier leaks the '<unknown TierKind>' sentinel.");
 
 // ── Reflection-driven name coverage (DimensionAxis) ────────────────
 [[nodiscard]] consteval bool every_dimension_axis_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^DimensionAxis));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^DimensionAxis));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
         const auto n = dimension_axis_name([:en:]);
         if (n == std::string_view{"<unknown DimensionAxis>"}) return false;
-        if (n.empty())                                        return false;
+        if (n.empty()) return false;
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_dimension_axis_has_name(),
-    "dimension_axis_name() missing arm for at least one DimensionAxis — "
-    "add the arm or the new axis leaks the '<unknown DimensionAxis>' "
-    "sentinel.");
+static_assert(every_dimension_axis_has_name(), "dimension_axis_name() missing arm for at least one DimensionAxis — "
+                                               "add the arm or the new axis leaks the '<unknown DimensionAxis>' "
+                                               "sentinel.");
 
 // ── Reflection-driven Tier coverage (every axis maps to a Tier) ────
 [[nodiscard]] consteval bool every_dimension_axis_has_tier() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^DimensionAxis));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^DimensionAxis));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
@@ -1166,15 +1219,13 @@ static_assert(every_dimension_axis_has_name(),
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_dimension_axis_has_tier(),
-    "tier_of_axis() switch missing arm for at least one DimensionAxis — "
-    "add the arm or new axes silently fall through to the unreachable "
-    "TierKind{0xFF} sentinel.");
+static_assert(every_dimension_axis_has_tier(), "tier_of_axis() switch missing arm for at least one DimensionAxis — "
+                                               "add the arm or new axes silently fall through to the unreachable "
+                                               "TierKind{0xFF} sentinel.");
 
 // ── fixy.md §24.1 hard-coded Tier counts ──────────────────────────
 [[nodiscard]] consteval std::size_t count_dims_in_tier(TierKind t) noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^DimensionAxis));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^DimensionAxis));
     std::size_t n = 0;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
@@ -1185,37 +1236,33 @@ static_assert(every_dimension_axis_has_tier(),
     return n;
 }
 
-static_assert(count_dims_in_tier(TierKind::Semiring)     == 26,
-    "fixy.md §24.1 declares 26 Tier-S dimensions (15 FX-inherited + "
-    "Synchronization 2026-05-18 per fixy-A3-008 + Regime 2026-05-18 per "
-    "fixy-A3-009 + FpMode 2026-05-22 per FIXY-V-088 + SyscallSurface "
-    "2026-05-22 per FIXY-V-097 + ControlFlow / CallShape / StackUse / "
-    "GlobalState / Stdio 2026-05-23 per FIXY-V-238 + HwInstruction / "
-    "BarrierStrength 2026-05-23 per FIXY-V-253); tier_of_axis "
-    "disagrees.");
-static_assert(count_dims_in_tier(TierKind::Lattice)      == 3,
-    "fixy.md §24.1 declares 3 Tier-L dimensions (Representation + SimdIsa "
-    "2026-05-23 per FIXY-V-253 + MemoryScope 2026-05-23 per FIXY-V-266); "
-    "tier_of_axis disagrees.");
-static_assert(count_dims_in_tier(TierKind::Typestate)    == 1,
-    "fixy.md §24.1 declares 1 Tier-T dimension (Protocol); "
-    "tier_of_axis disagrees.");
+static_assert(count_dims_in_tier(TierKind::Semiring) == 26,
+              "fixy.md §24.1 declares 26 Tier-S dimensions (15 FX-inherited + "
+              "Synchronization 2026-05-18 per fixy-A3-008 + Regime 2026-05-18 per "
+              "fixy-A3-009 + FpMode 2026-05-22 per FIXY-V-088 + SyscallSurface "
+              "2026-05-22 per FIXY-V-097 + ControlFlow / CallShape / StackUse / "
+              "GlobalState / Stdio 2026-05-23 per FIXY-V-238 + HwInstruction / "
+              "BarrierStrength 2026-05-23 per FIXY-V-253); tier_of_axis "
+              "disagrees.");
+static_assert(count_dims_in_tier(TierKind::Lattice) == 3,
+              "fixy.md §24.1 declares 3 Tier-L dimensions (Representation + SimdIsa "
+              "2026-05-23 per FIXY-V-253 + MemoryScope 2026-05-23 per FIXY-V-266); "
+              "tier_of_axis disagrees.");
+static_assert(count_dims_in_tier(TierKind::Typestate) == 1, "fixy.md §24.1 declares 1 Tier-T dimension (Protocol); "
+                                                            "tier_of_axis disagrees.");
 static_assert(count_dims_in_tier(TierKind::Foundational) == 2,
-    "fixy.md §24.1 declares 2 Tier-F dimensions (Type, Refinement); "
-    "tier_of_axis disagrees.");
-static_assert(count_dims_in_tier(TierKind::Versioned)    == 1,
-    "fixy.md §24.1 declares 1 Tier-V dimension (Version); "
-    "tier_of_axis disagrees.");
+              "fixy.md §24.1 declares 2 Tier-F dimensions (Type, Refinement); "
+              "tier_of_axis disagrees.");
+static_assert(count_dims_in_tier(TierKind::Versioned) == 1, "fixy.md §24.1 declares 1 Tier-V dimension (Version); "
+                                                            "tier_of_axis disagrees.");
 
 // Sum check — every dim assigned to exactly one Tier.
-static_assert(count_dims_in_tier(TierKind::Semiring)
-            + count_dims_in_tier(TierKind::Lattice)
-            + count_dims_in_tier(TierKind::Typestate)
-            + count_dims_in_tier(TierKind::Foundational)
-            + count_dims_in_tier(TierKind::Versioned)
-              == DIMENSION_AXIS_COUNT,
-    "Sum of per-Tier dimension counts does not equal DIMENSION_AXIS_COUNT "
-    "— a dimension is either uncounted or double-counted in tier_of_axis.");
+static_assert(count_dims_in_tier(TierKind::Semiring) + count_dims_in_tier(TierKind::Lattice)
+                      + count_dims_in_tier(TierKind::Typestate) + count_dims_in_tier(TierKind::Foundational)
+                      + count_dims_in_tier(TierKind::Versioned)
+                  == DIMENSION_AXIS_COUNT,
+              "Sum of per-Tier dimension counts does not equal DIMENSION_AXIS_COUNT "
+              "— a dimension is either uncounted or double-counted in tier_of_axis.");
 
 // ── Concept witnesses ──────────────────────────────────────────────
 //
@@ -1225,8 +1272,8 @@ static_assert(count_dims_in_tier(TierKind::Semiring)
 struct TestLattice {
     using element_type = bool;
     [[nodiscard]] static constexpr bool bottom() noexcept { return false; }
-    [[nodiscard]] static constexpr bool top()    noexcept { return true;  }
-    [[nodiscard]] static constexpr bool leq (bool a, bool b) noexcept { return !a || b; }
+    [[nodiscard]] static constexpr bool top() noexcept { return true; }
+    [[nodiscard]] static constexpr bool leq(bool a, bool b) noexcept { return !a || b; }
     [[nodiscard]] static constexpr bool join(bool a, bool b) noexcept { return a || b; }
     [[nodiscard]] static constexpr bool meet(bool a, bool b) noexcept { return a && b; }
 };
@@ -1234,25 +1281,23 @@ struct TestLattice {
 struct TestSemiring {
     using element_type = bool;
     [[nodiscard]] static constexpr bool bottom() noexcept { return false; }
-    [[nodiscard]] static constexpr bool top()    noexcept { return true;  }
-    [[nodiscard]] static constexpr bool leq (bool a, bool b) noexcept { return !a || b; }
+    [[nodiscard]] static constexpr bool top() noexcept { return true; }
+    [[nodiscard]] static constexpr bool leq(bool a, bool b) noexcept { return !a || b; }
     [[nodiscard]] static constexpr bool join(bool a, bool b) noexcept { return a || b; }
     [[nodiscard]] static constexpr bool meet(bool a, bool b) noexcept { return a && b; }
     [[nodiscard]] static constexpr bool zero() noexcept { return false; }
-    [[nodiscard]] static constexpr bool one()  noexcept { return true;  }
+    [[nodiscard]] static constexpr bool one() noexcept { return true; }
     [[nodiscard]] static constexpr bool add(bool a, bool b) noexcept { return a || b; }
     [[nodiscard]] static constexpr bool mul(bool a, bool b) noexcept { return a && b; }
 };
 
 struct TestVersioned {
     using element_type = std::uint32_t;
-    [[nodiscard]] static constexpr bool compatible(std::uint32_t a, std::uint32_t b) noexcept {
-        return a == b;
-    }
+    [[nodiscard]] static constexpr bool compatible(std::uint32_t a, std::uint32_t b) noexcept { return a == b; }
 };
 
 struct TestTypestate {
-    using state_type      = int;
+    using state_type = int;
     using transition_type = int;
 };
 
@@ -1261,17 +1306,17 @@ struct TestBareFoundational {
 };
 
 // Concept satisfaction.
-static_assert( LatticeGrade<TestLattice>);
-static_assert(!SemiringGrade<TestLattice>);   // No add/mul.
+static_assert(LatticeGrade<TestLattice>);
+static_assert(!SemiringGrade<TestLattice>);  // No add/mul.
 
-static_assert( LatticeGrade<TestSemiring>);
-static_assert( SemiringGrade<TestSemiring>);  // Both shapes.
+static_assert(LatticeGrade<TestSemiring>);
+static_assert(SemiringGrade<TestSemiring>);  // Both shapes.
 
-static_assert( VersionedGrade<TestVersioned>);
+static_assert(VersionedGrade<TestVersioned>);
 static_assert(!LatticeGrade<TestVersioned>);
 static_assert(!TypestateGrade<TestVersioned>);
 
-static_assert( TypestateGrade<TestTypestate>);
+static_assert(TypestateGrade<TestTypestate>);
 static_assert(!LatticeGrade<TestTypestate>);
 static_assert(!VersionedGrade<TestTypestate>);
 
@@ -1279,128 +1324,128 @@ static_assert(FoundationalGrade<int>);
 static_assert(FoundationalGrade<TestBareFoundational>);
 
 // tier_for_grade priority order.
-static_assert(tier_for_grade_v<TestSemiring>          == TierKind::Semiring);
-static_assert(tier_for_grade_v<TestLattice>           == TierKind::Lattice);
-static_assert(tier_for_grade_v<TestTypestate>         == TierKind::Typestate);
-static_assert(tier_for_grade_v<TestVersioned>         == TierKind::Versioned);
-static_assert(tier_for_grade_v<TestBareFoundational>  == TierKind::Foundational);
-static_assert(tier_for_grade_v<int>                   == TierKind::Foundational);
+static_assert(tier_for_grade_v<TestSemiring> == TierKind::Semiring);
+static_assert(tier_for_grade_v<TestLattice> == TierKind::Lattice);
+static_assert(tier_for_grade_v<TestTypestate> == TierKind::Typestate);
+static_assert(tier_for_grade_v<TestVersioned> == TierKind::Versioned);
+static_assert(tier_for_grade_v<TestBareFoundational> == TierKind::Foundational);
+static_assert(tier_for_grade_v<int> == TierKind::Foundational);
 
 // Diagnostic surface — exact strings.
-static_assert(tier_kind_name(TierKind::Semiring)     == "Tier-S (Semiring)");
-static_assert(tier_kind_name(TierKind::Lattice)      == "Tier-L (Lattice)");
-static_assert(tier_kind_name(TierKind::Typestate)    == "Tier-T (Typestate)");
+static_assert(tier_kind_name(TierKind::Semiring) == "Tier-S (Semiring)");
+static_assert(tier_kind_name(TierKind::Lattice) == "Tier-L (Lattice)");
+static_assert(tier_kind_name(TierKind::Typestate) == "Tier-T (Typestate)");
 static_assert(tier_kind_name(TierKind::Foundational) == "Tier-F (Foundational)");
-static_assert(tier_kind_name(TierKind::Versioned)    == "Tier-V (Versioned)");
+static_assert(tier_kind_name(TierKind::Versioned) == "Tier-V (Versioned)");
 
-static_assert(dimension_axis_name(DimensionAxis::Type)           == "Type");
-static_assert(dimension_axis_name(DimensionAxis::Refinement)     == "Refinement");
-static_assert(dimension_axis_name(DimensionAxis::Usage)          == "Usage");
-static_assert(dimension_axis_name(DimensionAxis::Effect)         == "Effect");
-static_assert(dimension_axis_name(DimensionAxis::Security)       == "Security");
-static_assert(dimension_axis_name(DimensionAxis::Protocol)       == "Protocol");
-static_assert(dimension_axis_name(DimensionAxis::Lifetime)       == "Lifetime");
-static_assert(dimension_axis_name(DimensionAxis::Provenance)     == "Provenance");
-static_assert(dimension_axis_name(DimensionAxis::Trust)          == "Trust");
+static_assert(dimension_axis_name(DimensionAxis::Type) == "Type");
+static_assert(dimension_axis_name(DimensionAxis::Refinement) == "Refinement");
+static_assert(dimension_axis_name(DimensionAxis::Usage) == "Usage");
+static_assert(dimension_axis_name(DimensionAxis::Effect) == "Effect");
+static_assert(dimension_axis_name(DimensionAxis::Security) == "Security");
+static_assert(dimension_axis_name(DimensionAxis::Protocol) == "Protocol");
+static_assert(dimension_axis_name(DimensionAxis::Lifetime) == "Lifetime");
+static_assert(dimension_axis_name(DimensionAxis::Provenance) == "Provenance");
+static_assert(dimension_axis_name(DimensionAxis::Trust) == "Trust");
 static_assert(dimension_axis_name(DimensionAxis::Representation) == "Representation");
-static_assert(dimension_axis_name(DimensionAxis::Observability)  == "Observability");
-static_assert(dimension_axis_name(DimensionAxis::Complexity)     == "Complexity");
-static_assert(dimension_axis_name(DimensionAxis::Precision)      == "Precision");
-static_assert(dimension_axis_name(DimensionAxis::Space)          == "Space");
-static_assert(dimension_axis_name(DimensionAxis::Overflow)       == "Overflow");
-static_assert(dimension_axis_name(DimensionAxis::Mutation)       == "Mutation");
-static_assert(dimension_axis_name(DimensionAxis::Reentrancy)     == "Reentrancy");
-static_assert(dimension_axis_name(DimensionAxis::Size)           == "Size");
-static_assert(dimension_axis_name(DimensionAxis::Version)        == "Version");
-static_assert(dimension_axis_name(DimensionAxis::Staleness)      == "Staleness");
+static_assert(dimension_axis_name(DimensionAxis::Observability) == "Observability");
+static_assert(dimension_axis_name(DimensionAxis::Complexity) == "Complexity");
+static_assert(dimension_axis_name(DimensionAxis::Precision) == "Precision");
+static_assert(dimension_axis_name(DimensionAxis::Space) == "Space");
+static_assert(dimension_axis_name(DimensionAxis::Overflow) == "Overflow");
+static_assert(dimension_axis_name(DimensionAxis::Mutation) == "Mutation");
+static_assert(dimension_axis_name(DimensionAxis::Reentrancy) == "Reentrancy");
+static_assert(dimension_axis_name(DimensionAxis::Size) == "Size");
+static_assert(dimension_axis_name(DimensionAxis::Version) == "Version");
+static_assert(dimension_axis_name(DimensionAxis::Staleness) == "Staleness");
 static_assert(dimension_axis_name(DimensionAxis::Synchronization) == "Synchronization");
-static_assert(dimension_axis_name(DimensionAxis::Regime)         == "Regime");
-static_assert(dimension_axis_name(DimensionAxis::FpMode)         == "FpMode");
+static_assert(dimension_axis_name(DimensionAxis::Regime) == "Regime");
+static_assert(dimension_axis_name(DimensionAxis::FpMode) == "FpMode");
 static_assert(dimension_axis_name(DimensionAxis::SyscallSurface) == "SyscallSurface");
-static_assert(dimension_axis_name(DimensionAxis::ControlFlow)    == "ControlFlow");
-static_assert(dimension_axis_name(DimensionAxis::CallShape)      == "CallShape");
-static_assert(dimension_axis_name(DimensionAxis::StackUse)       == "StackUse");
-static_assert(dimension_axis_name(DimensionAxis::GlobalState)    == "GlobalState");
-static_assert(dimension_axis_name(DimensionAxis::Stdio)          == "Stdio");
-static_assert(dimension_axis_name(DimensionAxis::HwInstruction)  == "HwInstruction");
+static_assert(dimension_axis_name(DimensionAxis::ControlFlow) == "ControlFlow");
+static_assert(dimension_axis_name(DimensionAxis::CallShape) == "CallShape");
+static_assert(dimension_axis_name(DimensionAxis::StackUse) == "StackUse");
+static_assert(dimension_axis_name(DimensionAxis::GlobalState) == "GlobalState");
+static_assert(dimension_axis_name(DimensionAxis::Stdio) == "Stdio");
+static_assert(dimension_axis_name(DimensionAxis::HwInstruction) == "HwInstruction");
 static_assert(dimension_axis_name(DimensionAxis::BarrierStrength) == "BarrierStrength");
-static_assert(dimension_axis_name(DimensionAxis::SimdIsa)        == "SimdIsa");
-static_assert(dimension_axis_name(DimensionAxis::MemoryScope)    == "MemoryScope");
+static_assert(dimension_axis_name(DimensionAxis::SimdIsa) == "SimdIsa");
+static_assert(dimension_axis_name(DimensionAxis::MemoryScope) == "MemoryScope");
 
 // fixy.md §24.1 axis-to-Tier mapping spot checks.
-static_assert(tier_of_axis(DimensionAxis::Type)           == TierKind::Foundational);
-static_assert(tier_of_axis(DimensionAxis::Refinement)     == TierKind::Foundational);
-static_assert(tier_of_axis(DimensionAxis::Usage)          == TierKind::Semiring);
-static_assert(tier_of_axis(DimensionAxis::Effect)         == TierKind::Semiring);
-static_assert(tier_of_axis(DimensionAxis::Protocol)       == TierKind::Typestate);
+static_assert(tier_of_axis(DimensionAxis::Type) == TierKind::Foundational);
+static_assert(tier_of_axis(DimensionAxis::Refinement) == TierKind::Foundational);
+static_assert(tier_of_axis(DimensionAxis::Usage) == TierKind::Semiring);
+static_assert(tier_of_axis(DimensionAxis::Effect) == TierKind::Semiring);
+static_assert(tier_of_axis(DimensionAxis::Protocol) == TierKind::Typestate);
 static_assert(tier_of_axis(DimensionAxis::Representation) == TierKind::Lattice);
-static_assert(tier_of_axis(DimensionAxis::Version)        == TierKind::Versioned);
-static_assert(tier_of_axis(DimensionAxis::Staleness)      == TierKind::Semiring);
+static_assert(tier_of_axis(DimensionAxis::Version) == TierKind::Versioned);
+static_assert(tier_of_axis(DimensionAxis::Staleness) == TierKind::Semiring);
 static_assert(tier_of_axis(DimensionAxis::Synchronization) == TierKind::Semiring);
-static_assert(tier_of_axis(DimensionAxis::Regime)         == TierKind::Semiring);
-static_assert(tier_of_axis(DimensionAxis::FpMode)         == TierKind::Semiring);
+static_assert(tier_of_axis(DimensionAxis::Regime) == TierKind::Semiring);
+static_assert(tier_of_axis(DimensionAxis::FpMode) == TierKind::Semiring);
 static_assert(tier_of_axis(DimensionAxis::SyscallSurface) == TierKind::Semiring);
-static_assert(tier_of_axis(DimensionAxis::ControlFlow)    == TierKind::Semiring);
-static_assert(tier_of_axis(DimensionAxis::CallShape)      == TierKind::Semiring);
-static_assert(tier_of_axis(DimensionAxis::StackUse)       == TierKind::Semiring);
-static_assert(tier_of_axis(DimensionAxis::GlobalState)    == TierKind::Semiring);
-static_assert(tier_of_axis(DimensionAxis::Stdio)          == TierKind::Semiring);
-static_assert(tier_of_axis(DimensionAxis::HwInstruction)  == TierKind::Semiring);
+static_assert(tier_of_axis(DimensionAxis::ControlFlow) == TierKind::Semiring);
+static_assert(tier_of_axis(DimensionAxis::CallShape) == TierKind::Semiring);
+static_assert(tier_of_axis(DimensionAxis::StackUse) == TierKind::Semiring);
+static_assert(tier_of_axis(DimensionAxis::GlobalState) == TierKind::Semiring);
+static_assert(tier_of_axis(DimensionAxis::Stdio) == TierKind::Semiring);
+static_assert(tier_of_axis(DimensionAxis::HwInstruction) == TierKind::Semiring);
 static_assert(tier_of_axis(DimensionAxis::BarrierStrength) == TierKind::Semiring);
-static_assert(tier_of_axis(DimensionAxis::SimdIsa)        == TierKind::Lattice);
+static_assert(tier_of_axis(DimensionAxis::SimdIsa) == TierKind::Lattice);
 
 // Variable-template form mirrors the function form.
-static_assert(tier_of_axis_v<DimensionAxis::Type>     == TierKind::Foundational);
-static_assert(tier_of_axis_v<DimensionAxis::Effect>   == TierKind::Semiring);
-static_assert(tier_of_axis_v<DimensionAxis::Version>  == TierKind::Versioned);
+static_assert(tier_of_axis_v<DimensionAxis::Type> == TierKind::Foundational);
+static_assert(tier_of_axis_v<DimensionAxis::Effect> == TierKind::Semiring);
+static_assert(tier_of_axis_v<DimensionAxis::Version> == TierKind::Versioned);
 
 // ── Wrapper × lattice × modality × tier verification ────────────────
 
 struct QuadTag {};
-using WLinear          = Linear<int>;
-using WRefined         = Refined<positive, int>;
-using WSealedRefined   = SealedRefined<positive, int>;
-using WTagged          = Tagged<int, source::FromUser>;
-using WSecret          = Secret<int>;
-using WStale           = Stale<int>;
-using WTimeOrdered     = TimeOrdered<int, 4, QuadTag>;
-using WMonotonic       = Monotonic<std::uint64_t>;
-using WAppendOnly      = AppendOnly<int>;
-using WHotPath         = HotPath<HotPathTier_v::Hot, int>;
-using WDetSafe         = DetSafe<DetSafeTier_v::Pure, int>;
-using WNumericalTier   = NumericalTier<Tolerance::BITEXACT, int>;
-using WVendor          = Vendor<VendorBackend_v::Portable, int>;
-using WResidencyHeat   = ResidencyHeat<ResidencyHeatTag_v::Hot, int>;
-using WCipherTier      = CipherTier<CipherTierTag_v::Hot, int>;
-using WAllocClass      = AllocClass<AllocClassTag_v::Arena, int>;
-using WWait            = Wait<WaitStrategy_v::SpinPause, int>;
-using WMemOrder        = MemOrder<MemOrderTag_v::SeqCst, int>;
-using WProgress        = Progress<ProgressClass_v::Bounded, int>;
-using WConsistency     = Consistency<Consistency_v::STRONG, int>;
-using WOpaqueLifetime  = OpaqueLifetime<Lifetime_v::PER_REQUEST, int>;
-using WCrash           = Crash<CrashClass_v::NoThrow, int>;
-using WBudgeted        = Budgeted<int>;
-using WEpochVersioned  = EpochVersioned<int>;
-using WNumaPlacement   = NumaPlacement<int>;
-using WRecipeSpec      = RecipeSpec<int>;
-using WWitness         = Witness<Witness_v::FORMALLY_VERIFIED, int>;
+using WLinear = Linear<int>;
+using WRefined = Refined<positive, int>;
+using WSealedRefined = SealedRefined<positive, int>;
+using WTagged = Tagged<int, source::FromUser>;
+using WSecret = Secret<int>;
+using WStale = Stale<int>;
+using WTimeOrdered = TimeOrdered<int, 4, QuadTag>;
+using WMonotonic = Monotonic<std::uint64_t>;
+using WAppendOnly = AppendOnly<int>;
+using WHotPath = HotPath<HotPathTier_v::Hot, int>;
+using WDetSafe = DetSafe<DetSafeTier_v::Pure, int>;
+using WNumericalTier = NumericalTier<Tolerance::BITEXACT, int>;
+using WVendor = Vendor<VendorBackend_v::Portable, int>;
+using WResidencyHeat = ResidencyHeat<ResidencyHeatTag_v::Hot, int>;
+using WCipherTier = CipherTier<CipherTierTag_v::Hot, int>;
+using WAllocClass = AllocClass<AllocClassTag_v::Arena, int>;
+using WWait = Wait<WaitStrategy_v::SpinPause, int>;
+using WMemOrder = MemOrder<MemOrderTag_v::SeqCst, int>;
+using WProgress = Progress<ProgressClass_v::Bounded, int>;
+using WConsistency = Consistency<Consistency_v::STRONG, int>;
+using WOpaqueLifetime = OpaqueLifetime<Lifetime_v::PER_REQUEST, int>;
+using WCrash = Crash<CrashClass_v::NoThrow, int>;
+using WBudgeted = Budgeted<int>;
+using WEpochVersioned = EpochVersioned<int>;
+using WNumaPlacement = NumaPlacement<int>;
+using WRecipeSpec = RecipeSpec<int>;
+using WWitness = Witness<Witness_v::FORMALLY_VERIFIED, int>;
 // FIXY-FOUND-095 (#2250): six wrappers had wrapper_dimension<>
 // specializations but no W-alias / verify_quadruple sweep entry —
 // the GAPS-091 quadruple-pinning discipline was incomplete.  Adding
 // the missing aliases extends the sweep to all 33 specialized
 // wrappers.
-using WHw              = Hw<HwInstruction_v::Scalar, int>;
-using WBarrierGuarded  = BarrierGuarded<BarrierStrength_v::AcqRel, int>;
+using WHw = Hw<HwInstruction_v::Scalar, int>;
+using WBarrierGuarded = BarrierGuarded<BarrierStrength_v::AcqRel, int>;
 using WSimdWidthPinned = SimdWidthPinned<SimdIsa_v::Scalar, int>;
-using WScopedFence     = ScopedFence<MemoryScope_v::Thread, int>;
-using WJoinPolicy      = JoinPolicy<JoinPolicy_v::DETACH, int>;
-using WFpModePinned    = FpModePinned<FpRounding::RoundToNearestEven, int>;
+using WScopedFence = ScopedFence<MemoryScope_v::Thread, int>;
+using WJoinPolicy = JoinPolicy<JoinPolicy_v::DETACH, int>;
+using WFpModePinned = FpModePinned<FpRounding::RoundToNearestEven, int>;
 
-static_assert(wrapper_tier_v<WLinear>         == TierKind::Semiring);
-static_assert(wrapper_tier_v<WRefined>        == TierKind::Foundational);
-static_assert(wrapper_tier_v<WTagged>         == TierKind::Semiring);
-static_assert(wrapper_tier_v<WSecret>         == TierKind::Semiring);
-static_assert(wrapper_tier_v<WTimeOrdered>    == TierKind::Lattice);
+static_assert(wrapper_tier_v<WLinear> == TierKind::Semiring);
+static_assert(wrapper_tier_v<WRefined> == TierKind::Foundational);
+static_assert(wrapper_tier_v<WTagged> == TierKind::Semiring);
+static_assert(wrapper_tier_v<WSecret> == TierKind::Semiring);
+static_assert(wrapper_tier_v<WTimeOrdered> == TierKind::Lattice);
 static_assert(wrapper_tier_v<WEpochVersioned> == TierKind::Versioned);
 
 static_assert(verify_quadruple<WLinear>());
@@ -1448,20 +1493,18 @@ static_assert(verify_quadruple<WFpModePinned>());
 // Shape (b) — Stale has a full StalenessSemiring carrier with
 // add/mul/zero/one published.  SemiringGrade<L> AND LatticeGrade<L>
 // both hold; tier_admits_semiring permits.
-static_assert(tier_admits_semiring<
-    wrapper_tier_v<WStale>, wrapper_lattice_t<WStale>>());
+static_assert(tier_admits_semiring<wrapper_tier_v<WStale>, wrapper_lattice_t<WStale>>());
 
 // Shape (a) — HotPath's lattice_type is HotPathTierLattice::At<Hot>,
 // a singleton with empty element_type.  LatticeGrade<L> holds but
 // SemiringGrade<L> does NOT (no add/mul/zero/one on the singleton).
 // tier_admits_semiring REJECTS — proves the strict variant is
 // distinguishing shape (a) from shape (b), per the doc-block above.
-static_assert(!tier_admits_semiring<
-    wrapper_tier_v<WHotPath>, wrapper_lattice_t<WHotPath>>());
+static_assert(!tier_admits_semiring<wrapper_tier_v<WHotPath>, wrapper_lattice_t<WHotPath>>());
 
 // FIXY-V-054 — Witness pins Observability + Tier-S (Semiring).
 static_assert(wrapper_dimension_v<WWitness> == DimensionAxis::Observability);
-static_assert(wrapper_tier_v<WWitness>      == TierKind::Semiring);
+static_assert(wrapper_tier_v<WWitness> == TierKind::Semiring);
 
 }  // namespace detail::dimension_traits_self_test
 

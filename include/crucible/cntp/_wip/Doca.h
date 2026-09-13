@@ -60,8 +60,7 @@ enum class DocaOffloadKind : std::uint8_t {
 };
 
 [[nodiscard]] std::string_view doca_error_name(DocaError error) noexcept;
-[[nodiscard]] std::string_view
-doca_offload_kind_name(DocaOffloadKind kind) noexcept;
+[[nodiscard]] std::string_view doca_offload_kind_name(DocaOffloadKind kind) noexcept;
 
 using DocaProgramId = safety::Refined<safety::non_zero, std::uint64_t>;
 using DocaImageBytes = safety::Positive<std::uint64_t>;
@@ -69,13 +68,10 @@ using DocaQueueDepth = safety::Positive<std::uint16_t>;
 using DocaPayloadBytes = safety::Positive<std::uint32_t>;
 
 struct DocaOffloadSpec {
-    DocaProgramId program_id{std::uint64_t{1},
-                             typename DocaProgramId::Trusted{}};
+    DocaProgramId program_id{std::uint64_t{1}, typename DocaProgramId::Trusted{}};
     DocaOffloadKind kind = DocaOffloadKind::SwimGossip;
-    DocaImageBytes image_bytes{std::uint64_t{1},
-                               typename DocaImageBytes::Trusted{}};
-    DocaQueueDepth queue_depth{std::uint16_t{1},
-                               typename DocaQueueDepth::Trusted{}};
+    DocaImageBytes image_bytes{std::uint64_t{1}, typename DocaImageBytes::Trusted{}};
+    DocaQueueDepth queue_depth{std::uint16_t{1}, typename DocaQueueDepth::Trusted{}};
     bool runtime_loaded = false;
     bool allow_backend_deploy = false;
 };
@@ -87,51 +83,40 @@ struct DocaDeployPlan {
 
 struct DocaOffloadHandle {
     cog::Uuid dpu_uuid{};
-    DocaProgramId program_id{std::uint64_t{1},
-                             typename DocaProgramId::Trusted{}};
+    DocaProgramId program_id{std::uint64_t{1}, typename DocaProgramId::Trusted{}};
     DocaOffloadKind kind = DocaOffloadKind::SwimGossip;
-    DocaQueueDepth queue_depth{std::uint16_t{1},
-                               typename DocaQueueDepth::Trusted{}};
+    DocaQueueDepth queue_depth{std::uint16_t{1}, typename DocaQueueDepth::Trusted{}};
 };
 
 struct DocaChannelConfig {
-    DocaPayloadBytes max_payload_bytes{std::uint32_t{1},
-                                       typename DocaPayloadBytes::Trusted{}};
+    DocaPayloadBytes max_payload_bytes{std::uint32_t{1}, typename DocaPayloadBytes::Trusted{}};
     bool comm_channel_ready = false;
 };
 
-using DeclaredDocaDeployPlan =
-    safety::Tagged<DocaDeployPlan, wip_source::DocaOffload>;
+using DeclaredDocaDeployPlan = safety::Tagged<DocaDeployPlan, wip_source::DocaOffload>;
 using OwnedDocaOffload = safety::Linear<DocaOffloadHandle>;
 
 template <class Ctx>
-concept CtxFitsDocaMint =
-    effects::IsExecCtx<Ctx>
-    && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Init>>;
+concept CtxFitsDocaMint = effects::IsExecCtx<Ctx> && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Init>>;
 
 template <class Ctx>
-concept CtxFitsDocaComm =
-    effects::IsExecCtx<Ctx>
-    && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Bg>>;
+concept CtxFitsDocaComm = effects::IsExecCtx<Ctx> && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Bg>>;
 
-[[nodiscard]] constexpr std::expected<DocaProgramId, DocaError>
-admit_doca_program_id(std::uint64_t id) noexcept {
+[[nodiscard]] constexpr std::expected<DocaProgramId, DocaError> admit_doca_program_id(std::uint64_t id) noexcept {
     if (id == 0u) {
         return std::unexpected(DocaError::InvalidProgramId);
     }
     return DocaProgramId{id, typename DocaProgramId::Trusted{}};
 }
 
-[[nodiscard]] constexpr std::expected<DocaImageBytes, DocaError>
-admit_doca_image_bytes(std::uint64_t bytes) noexcept {
+[[nodiscard]] constexpr std::expected<DocaImageBytes, DocaError> admit_doca_image_bytes(std::uint64_t bytes) noexcept {
     if (bytes == 0u) {
         return std::unexpected(DocaError::InvalidProgramImageBytes);
     }
     return DocaImageBytes{bytes, typename DocaImageBytes::Trusted{}};
 }
 
-[[nodiscard]] constexpr std::expected<DocaQueueDepth, DocaError>
-admit_doca_queue_depth(std::uint16_t depth) noexcept {
+[[nodiscard]] constexpr std::expected<DocaQueueDepth, DocaError> admit_doca_queue_depth(std::uint16_t depth) noexcept {
     if (depth == 0u) {
         return std::unexpected(DocaError::InvalidQueueDepth);
     }
@@ -150,9 +135,8 @@ admit_doca_payload_bytes(std::uint32_t bytes) noexcept {
     return kind == cog::CogKind::NicCard || kind == cog::CogKind::NvSwitch;
 }
 
-[[nodiscard]] constexpr std::expected<void, DocaError>
-validate_doca_dpu(cog::CogIdentity dpu,
-                  cog::NvSwitchTargetCaps const& caps) noexcept {
+[[nodiscard]] constexpr std::expected<void, DocaError> validate_doca_dpu(cog::CogIdentity dpu,
+                                                                         cog::NvSwitchTargetCaps const& caps) noexcept {
     if (dpu.uuid.is_zero()) {
         return std::unexpected(DocaError::ZeroDpuCog);
     }
@@ -165,8 +149,7 @@ validate_doca_dpu(cog::CogIdentity dpu,
     return {};
 }
 
-[[nodiscard]] constexpr std::expected<void, DocaError>
-validate_doca_spec(DocaOffloadSpec const& spec) noexcept {
+[[nodiscard]] constexpr std::expected<void, DocaError> validate_doca_spec(DocaOffloadSpec const& spec) noexcept {
     if (spec.program_id.value() == 0u) {
         return std::unexpected(DocaError::InvalidProgramId);
     }
@@ -180,8 +163,7 @@ validate_doca_spec(DocaOffloadSpec const& spec) noexcept {
 }
 
 [[nodiscard]] constexpr std::expected<DeclaredDocaDeployPlan, DocaError>
-validate_doca_deploy_plan(DocaDeployPlan plan,
-                          cog::NvSwitchTargetCaps const& caps) noexcept {
+validate_doca_deploy_plan(DocaDeployPlan plan, cog::NvSwitchTargetCaps const& caps) noexcept {
     auto dpu_valid = validate_doca_dpu(plan.dpu, caps);
     if (!dpu_valid.has_value()) {
         return std::unexpected(dpu_valid.error());
@@ -196,14 +178,13 @@ validate_doca_deploy_plan(DocaDeployPlan plan,
 template <class Ctx>
     requires CtxFitsDocaMint<Ctx>
 [[nodiscard]] constexpr std::expected<DeclaredDocaDeployPlan, DocaError>
-mint_doca_deploy_plan(Ctx const&,
-                      cog::CogIdentity dpu,
-                      cog::NvSwitchTargetCaps caps,
-                      DocaOffloadSpec spec) noexcept {
-    return validate_doca_deploy_plan(DocaDeployPlan{
-        .dpu = dpu,
-        .spec = spec,
-    }, caps);
+mint_doca_deploy_plan(Ctx const&, cog::CogIdentity dpu, cog::NvSwitchTargetCaps caps, DocaOffloadSpec spec) noexcept {
+    return validate_doca_deploy_plan(
+        DocaDeployPlan{
+            .dpu = dpu,
+            .spec = spec,
+        },
+        caps);
 }
 
 [[nodiscard]] constexpr std::expected<OwnedDocaOffload, DocaError>
@@ -223,14 +204,12 @@ class DpuCommChannel : public safety::Pinned<DpuCommChannel> {
     DocaChannelConfig config_{};
 
 public:
-    DpuCommChannel(OwnedDocaOffload offload,
-                   DocaChannelConfig config) noexcept
+    DpuCommChannel(OwnedDocaOffload offload, DocaChannelConfig config) noexcept
         : offload_{std::move(offload)}, config_{config} {}
 
     template <class Ctx>
         requires CtxFitsDocaComm<Ctx>
-    [[nodiscard]] std::expected<void, DocaError>
-    send_to_dpu(Ctx const&, std::span<const std::byte> payload) noexcept {
+    [[nodiscard]] std::expected<void, DocaError> send_to_dpu(Ctx const&, std::span<const std::byte> payload) noexcept {
         if (payload.size() > config_.max_payload_bytes.value()) {
             return std::unexpected(DocaError::PayloadTooLarge);
         }
@@ -242,8 +221,8 @@ public:
 
     template <class Ctx>
         requires CtxFitsDocaComm<Ctx>
-    [[nodiscard]] std::expected<std::size_t, DocaError>
-    recv_from_dpu(Ctx const&, std::span<std::byte> output) noexcept {
+    [[nodiscard]] std::expected<std::size_t, DocaError> recv_from_dpu(Ctx const&,
+                                                                      std::span<std::byte> output) noexcept {
         if (output.size() < config_.max_payload_bytes.value()) {
             return std::unexpected(DocaError::OutputBufferTooSmall);
         }
@@ -253,9 +232,7 @@ public:
         return std::unexpected(DocaError::VendorBackendUnavailable);
     }
 
-    [[nodiscard]] constexpr DocaOffloadHandle const& handle() const noexcept {
-        return offload_.peek();
-    }
+    [[nodiscard]] constexpr DocaOffloadHandle const& handle() const noexcept { return offload_.peek(); }
 };
 
 [[nodiscard]] std::expected<OwnedDocaOffload, DocaError>

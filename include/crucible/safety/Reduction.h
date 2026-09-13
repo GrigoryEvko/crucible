@@ -130,25 +130,24 @@ namespace crucible::safety::extract {
 // ═════════════════════════════════════════════════════════════════════
 
 template <auto FnPtr>
-concept Reduction =
-    arity_v<FnPtr> == 2
-    // Parameter 0: non-const rvalue reference to OwnedRegion (the
-    // CONSUMED input).  is_owned_region_v applies cv-ref stripping
-    // internally; the rvalue-ref + non-const checks happen OUTSIDE
-    // the wrapper-detection.
-    && std::is_rvalue_reference_v<param_type_t<FnPtr, 0>>
-    && !std::is_const_v<std::remove_reference_t<param_type_t<FnPtr, 0>>>
-    && is_owned_region_v<param_type_t<FnPtr, 0>>
-    // Parameter 1: non-const lvalue reference to reduce_into (the
-    // BORROWED accumulator).  Lvalue reference because the caller
-    // keeps the accumulator alive across calls; non-const because the
-    // reducer must mutate it.
-    && std::is_lvalue_reference_v<param_type_t<FnPtr, 1>>
-    && !std::is_const_v<std::remove_reference_t<param_type_t<FnPtr, 1>>>
-    && is_reduce_into_v<param_type_t<FnPtr, 1>>
-    // Return type: void.  The reducer's result lives in the borrowed
-    // accumulator; a non-void return would be redundant and ambiguous.
-    && std::is_void_v<return_type_t<FnPtr>>;
+concept Reduction = arity_v<FnPtr> == 2
+                 // Parameter 0: non-const rvalue reference to OwnedRegion (the
+                 // CONSUMED input).  is_owned_region_v applies cv-ref stripping
+                 // internally; the rvalue-ref + non-const checks happen OUTSIDE
+                 // the wrapper-detection.
+                 && std::is_rvalue_reference_v<param_type_t<FnPtr, 0>>
+                 && !std::is_const_v<std::remove_reference_t<param_type_t<FnPtr, 0>>>
+                 && is_owned_region_v<param_type_t<FnPtr, 0>>
+                 // Parameter 1: non-const lvalue reference to reduce_into (the
+                 // BORROWED accumulator).  Lvalue reference because the caller
+                 // keeps the accumulator alive across calls; non-const because the
+                 // reducer must mutate it.
+                 && std::is_lvalue_reference_v<param_type_t<FnPtr, 1>>
+                 && !std::is_const_v<std::remove_reference_t<param_type_t<FnPtr, 1>>>
+                 && is_reduce_into_v<param_type_t<FnPtr, 1>>
+                 // Return type: void.  The reducer's result lives in the borrowed
+                 // accumulator; a non-void return would be redundant and ambiguous.
+                 && std::is_void_v<return_type_t<FnPtr>>;
 
 template <auto FnPtr>
 inline constexpr bool is_reduction_v = Reduction<FnPtr>;
@@ -163,23 +162,19 @@ inline constexpr bool is_reduction_v = Reduction<FnPtr>;
 
 template <auto FnPtr>
     requires Reduction<FnPtr>
-using reduction_input_tag_t =
-    owned_region_tag_t<param_type_t<FnPtr, 0>>;
+using reduction_input_tag_t = owned_region_tag_t<param_type_t<FnPtr, 0>>;
 
 template <auto FnPtr>
     requires Reduction<FnPtr>
-using reduction_input_value_t =
-    owned_region_value_t<param_type_t<FnPtr, 0>>;
+using reduction_input_value_t = owned_region_value_t<param_type_t<FnPtr, 0>>;
 
 template <auto FnPtr>
     requires Reduction<FnPtr>
-using reduction_accumulator_t =
-    reduce_into_accumulator_t<param_type_t<FnPtr, 1>>;
+using reduction_accumulator_t = reduce_into_accumulator_t<param_type_t<FnPtr, 1>>;
 
 template <auto FnPtr>
     requires Reduction<FnPtr>
-using reduction_reducer_t =
-    reduce_into_reducer_t<param_type_t<FnPtr, 1>>;
+using reduction_reducer_t = reduce_into_reducer_t<param_type_t<FnPtr, 1>>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Self-test block ────────────────────────────────────────────────

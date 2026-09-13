@@ -112,13 +112,11 @@ class [[nodiscard]] Saturated {
 public:
     using value_type = T;
 
-    static constexpr std::string_view wrapper_kind() noexcept {
-        return "structural::Saturated";
-    }
+    static constexpr std::string_view wrapper_kind() noexcept { return "structural::Saturated"; }
 
 private:
-    T    value_   = T{};      // ── NSDMI: zero-init (InitSafe) ──
-    bool clamped_ = false;    // ── NSDMI: never-clamped default ──
+    T value_ = T{};  // ── NSDMI: zero-init (InitSafe) ──
+    bool clamped_ = false;  // ── NSDMI: never-clamped default ──
 
 public:
     // ── Construction ────────────────────────────────────────────────
@@ -135,21 +133,20 @@ public:
     // below.  Two-arg construction must be explicit because the
     // semantics ("THIS clamping observation IS load-bearing") cannot
     // be inferred from the call site.
-    constexpr explicit Saturated(T v, bool was_clamped) noexcept
-        : value_{v}, clamped_{was_clamped} {}
+    constexpr explicit Saturated(T v, bool was_clamped) noexcept : value_{v}, clamped_{was_clamped} {}
 
     // Defaulted copy/move/dtor.
-    constexpr Saturated(Saturated const&)            = default;
-    constexpr Saturated(Saturated&&)                 = default;
+    constexpr Saturated(Saturated const&) = default;
+    constexpr Saturated(Saturated&&) = default;
     constexpr Saturated& operator=(Saturated const&) = default;
-    constexpr Saturated& operator=(Saturated&&)      = default;
-    ~Saturated()                                     = default;
+    constexpr Saturated& operator=(Saturated&&) = default;
+    ~Saturated() = default;
 
     // ── Accessors ───────────────────────────────────────────────────
 
-    [[nodiscard]] constexpr T const&  value() const& noexcept { return value_; }
-    [[nodiscard]] constexpr T&        value() &      noexcept { return value_; }
-    [[nodiscard]] constexpr T         value() &&     noexcept { return value_; }
+    [[nodiscard]] constexpr T const& value() const& noexcept { return value_; }
+    [[nodiscard]] constexpr T& value() & noexcept { return value_; }
+    [[nodiscard]] constexpr T value() && noexcept { return value_; }
 
     [[nodiscard]] constexpr bool was_clamped() const noexcept { return clamped_; }
 
@@ -164,8 +161,7 @@ public:
     // flag match.  Two distinct operations producing the same value
     // — one via clean arithmetic, one via clamping — are NOT equal,
     // because the clamping observation is semantically load-bearing.
-    [[nodiscard]] friend constexpr bool operator==(
-        Saturated const& a, Saturated const& b) noexcept = default;
+    [[nodiscard]] friend constexpr bool operator==(Saturated const& a, Saturated const& b) noexcept = default;
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -189,8 +185,7 @@ template <std::integral T>
     if (__builtin_add_overflow(a, b, &r)) [[unlikely]] {
         // Saturate to T's max or min depending on operand signs.
         if constexpr (std::is_signed_v<T>) {
-            r = (b > T{0}) ? std::numeric_limits<T>::max()
-                           : std::numeric_limits<T>::min();
+            r = (b > T{0}) ? std::numeric_limits<T>::max() : std::numeric_limits<T>::min();
         } else {
             // Unsigned overflow → always wraps past max → saturate to max.
             r = std::numeric_limits<T>::max();
@@ -205,8 +200,7 @@ template <std::integral T>
     T r{};
     if (__builtin_sub_overflow(a, b, &r)) [[unlikely]] {
         if constexpr (std::is_signed_v<T>) {
-            r = (b > T{0}) ? std::numeric_limits<T>::min()
-                           : std::numeric_limits<T>::max();
+            r = (b > T{0}) ? std::numeric_limits<T>::min() : std::numeric_limits<T>::max();
         } else {
             // Unsigned underflow → always wraps below 0 → saturate to 0.
             r = T{0};
@@ -224,8 +218,7 @@ template <std::integral T>
             // Sign of saturation bound: positive if operands have same
             // sign (XOR-NOR-true), negative if opposite signs.
             bool same_sign = (a < T{0}) == (b < T{0});
-            r = same_sign ? std::numeric_limits<T>::max()
-                          : std::numeric_limits<T>::min();
+            r = same_sign ? std::numeric_limits<T>::max() : std::numeric_limits<T>::min();
         } else {
             r = std::numeric_limits<T>::max();
         }
@@ -240,13 +233,13 @@ template <std::integral T>
 
 // sizeof preserved at "T + 1 + alignment-padding".  Production-relevant
 // instantiations:
-static_assert(sizeof(Saturated<uint8_t>)  == 2);   // 1 + 1, no padding
-static_assert(sizeof(Saturated<uint16_t>) == 4);   // 2 + 1 + 1 padding
-static_assert(sizeof(Saturated<uint32_t>) == 8);   // 4 + 1 + 3 padding
+static_assert(sizeof(Saturated<uint8_t>) == 2);  // 1 + 1, no padding
+static_assert(sizeof(Saturated<uint16_t>) == 4);  // 2 + 1 + 1 padding
+static_assert(sizeof(Saturated<uint32_t>) == 8);  // 4 + 1 + 3 padding
 static_assert(sizeof(Saturated<uint64_t>) == 16);  // 8 + 1 + 7 padding
-static_assert(sizeof(Saturated<int8_t>)   == 2);
-static_assert(sizeof(Saturated<int32_t>)  == 8);
-static_assert(sizeof(Saturated<int64_t>)  == 16);
+static_assert(sizeof(Saturated<int8_t>) == 2);
+static_assert(sizeof(Saturated<int32_t>) == 8);
+static_assert(sizeof(Saturated<int64_t>) == 16);
 
 // alignof matches T (the larger member determines alignment).
 static_assert(alignof(Saturated<uint64_t>) == alignof(uint64_t));
@@ -265,7 +258,7 @@ static_assert(!std::is_same_v<Saturated<uint64_t>, uint64_t>);
 // Implicit conversion FROM T is allowed (constructor is implicit) for
 // the common "fresh value, no clamping observed" case.  Implicit
 // conversion TO T is NOT allowed (operator T is explicit).
-static_assert( std::is_convertible_v<uint64_t, Saturated<uint64_t>>);
+static_assert(std::is_convertible_v<uint64_t, Saturated<uint64_t>>);
 static_assert(!std::is_convertible_v<Saturated<uint64_t>, uint64_t>);
 
 // ═════════════════════════════════════════════════════════════════════
@@ -311,7 +304,7 @@ static_assert(explicit_t_conversion());
 [[nodiscard]] consteval bool equality_pair_compare() noexcept {
     Sat64 a{uint64_t{5}, false};
     Sat64 b{uint64_t{5}, false};
-    Sat64 c{uint64_t{5}, true};   // same value, different flag
+    Sat64 c{uint64_t{5}, true};  // same value, different flag
     Sat64 d{uint64_t{6}, false};  // different value, same flag
     return (a == b) && !(a == c) && !(a == d);
 }
@@ -327,24 +320,21 @@ static_assert(add_sat_no_overflow());
 // add_sat_checked: unsigned overflow saturates to max + clamped=true.
 [[nodiscard]] consteval bool add_sat_unsigned_overflow() noexcept {
     auto s = add_sat_checked<uint8_t>(200, 100);  // 200+100=300 > 255
-    return s.value() == std::numeric_limits<uint8_t>::max()
-        && s.was_clamped();
+    return s.value() == std::numeric_limits<uint8_t>::max() && s.was_clamped();
 }
 static_assert(add_sat_unsigned_overflow());
 
 // add_sat_checked: signed positive overflow saturates to max.
 [[nodiscard]] consteval bool add_sat_signed_pos_overflow() noexcept {
     auto s = add_sat_checked<int8_t>(int8_t{100}, int8_t{50});
-    return s.value() == std::numeric_limits<int8_t>::max()
-        && s.was_clamped();
+    return s.value() == std::numeric_limits<int8_t>::max() && s.was_clamped();
 }
 static_assert(add_sat_signed_pos_overflow());
 
 // add_sat_checked: signed negative overflow saturates to min.
 [[nodiscard]] consteval bool add_sat_signed_neg_overflow() noexcept {
     auto s = add_sat_checked<int8_t>(int8_t{-100}, int8_t{-50});
-    return s.value() == std::numeric_limits<int8_t>::min()
-        && s.was_clamped();
+    return s.value() == std::numeric_limits<int8_t>::min() && s.was_clamped();
 }
 static_assert(add_sat_signed_neg_overflow());
 
@@ -358,32 +348,28 @@ static_assert(sub_sat_unsigned_underflow());
 // sub_sat_checked: signed overflow (large positive - large negative).
 [[nodiscard]] consteval bool sub_sat_signed_overflow() noexcept {
     auto s = sub_sat_checked<int8_t>(int8_t{100}, int8_t{-50});
-    return s.value() == std::numeric_limits<int8_t>::max()
-        && s.was_clamped();
+    return s.value() == std::numeric_limits<int8_t>::max() && s.was_clamped();
 }
 static_assert(sub_sat_signed_overflow());
 
 // mul_sat_checked: unsigned overflow saturates to max.
 [[nodiscard]] consteval bool mul_sat_unsigned_overflow() noexcept {
     auto s = mul_sat_checked<uint8_t>(20, 20);  // 400 > 255
-    return s.value() == std::numeric_limits<uint8_t>::max()
-        && s.was_clamped();
+    return s.value() == std::numeric_limits<uint8_t>::max() && s.was_clamped();
 }
 static_assert(mul_sat_unsigned_overflow());
 
 // mul_sat_checked: signed positive overflow saturates to max.
 [[nodiscard]] consteval bool mul_sat_signed_pos_pos_overflow() noexcept {
     auto s = mul_sat_checked<int8_t>(int8_t{50}, int8_t{50});
-    return s.value() == std::numeric_limits<int8_t>::max()
-        && s.was_clamped();
+    return s.value() == std::numeric_limits<int8_t>::max() && s.was_clamped();
 }
 static_assert(mul_sat_signed_pos_pos_overflow());
 
 // mul_sat_checked: signed negative-positive overflow saturates to min.
 [[nodiscard]] consteval bool mul_sat_signed_neg_pos_overflow() noexcept {
     auto s = mul_sat_checked<int8_t>(int8_t{-50}, int8_t{50});
-    return s.value() == std::numeric_limits<int8_t>::min()
-        && s.was_clamped();
+    return s.value() == std::numeric_limits<int8_t>::min() && s.was_clamped();
 }
 static_assert(mul_sat_signed_neg_pos_overflow());
 
@@ -447,9 +433,9 @@ inline void runtime_smoke_test() {
     // Equality.
     Sat64 eq_a{uint64_t{5}, false};
     Sat64 eq_b{uint64_t{5}, false};
-    Sat64 eq_c{uint64_t{5}, true};   // same value, different flag
+    Sat64 eq_c{uint64_t{5}, true};  // same value, different flag
     if (!(eq_a == eq_b)) std::abort();
-    if (eq_a == eq_c) std::abort();   // flag differs → unequal
+    if (eq_a == eq_c) std::abort();  // flag differs → unequal
 
     // Explicit T conversion drops the flag.
     auto raw = static_cast<uint64_t>(eq_c);

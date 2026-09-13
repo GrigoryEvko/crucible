@@ -150,15 +150,13 @@ public:
     using tag_type = Tag;
     static constexpr std::uint32_t writer_burst_limit = BurstLimit;
 
-    static_assert(BurstLimit > 0,
-        "FairSharedPermissionPool BurstLimit must be > 0; "
-        "BurstLimit=0 would forbid every writer upgrade, indefinite starvation.");
+    static_assert(BurstLimit > 0, "FairSharedPermissionPool BurstLimit must be > 0; "
+                                  "BurstLimit=0 would forbid every writer upgrade, indefinite starvation.");
 
     // Construct from an exclusive Permission, just like
     // SharedPermissionPool.  Burst counter starts at 0 (full budget
     // available).
-    constexpr explicit FairSharedPermissionPool(Permission<Tag>&& exc) noexcept
-        : inner_{std::move(exc)} {}
+    constexpr explicit FairSharedPermissionPool(Permission<Tag>&& exc) noexcept : inner_{std::move(exc)} {}
 
     // ── try_upgrade — fair, gated by the burst limit ───────────────
     //
@@ -181,8 +179,7 @@ public:
 
     template <::crucible::effects::IsExecCtx Ctx>
         requires CtxAdmitsPermission<Tag, Ctx>
-    [[nodiscard, gnu::hot]] std::optional<Permission<Tag>>
-    try_upgrade(Ctx const& ctx) noexcept {
+    [[nodiscard, gnu::hot]] std::optional<Permission<Tag>> try_upgrade(Ctx const& ctx) noexcept {
         if (consecutive_writer_wins_.load(std::memory_order_acquire) >= BurstLimit) {
             return std::nullopt;  // fairness gate
         }
@@ -209,8 +206,7 @@ public:
 
     template <::crucible::effects::IsExecCtx Ctx>
         requires CtxAdmitsPermission<Tag, Ctx>
-    [[nodiscard, gnu::hot]] std::optional<Permission<Tag>>
-    try_upgrade_unchecked(Ctx const& ctx) noexcept {
+    [[nodiscard, gnu::hot]] std::optional<Permission<Tag>> try_upgrade_unchecked(Ctx const& ctx) noexcept {
         auto upgrade = inner_.try_upgrade(ctx);
         if (upgrade) {
             consecutive_writer_wins_.fetch_add(1, std::memory_order_acq_rel);
@@ -224,9 +220,7 @@ public:
     // — the counter only decreases when readers progress.  The writer
     // can deposit and immediately re-upgrade if (a) the burst budget
     // is not yet exhausted AND (b) inner CAS succeeds.
-    void deposit_exclusive(Permission<Tag>&& exc) noexcept {
-        inner_.deposit_exclusive(std::move(exc));
-    }
+    void deposit_exclusive(Permission<Tag>&& exc) noexcept { inner_.deposit_exclusive(std::move(exc)); }
 
     // ── lend — succeeds iff no exclusive is out; resets burst ──────
     //
@@ -247,8 +241,7 @@ public:
 
     template <::crucible::effects::IsExecCtx Ctx>
         requires CtxAdmitsPermission<Tag, Ctx>
-    [[nodiscard, gnu::hot]] std::optional<SharedPermissionGuard<Tag>>
-    lend(Ctx const& ctx) noexcept {
+    [[nodiscard, gnu::hot]] std::optional<SharedPermissionGuard<Tag>> lend(Ctx const& ctx) noexcept {
         auto guard = inner_.lend(ctx);
         if (guard) {
             consecutive_writer_wins_.store(0, std::memory_order_release);
@@ -272,18 +265,12 @@ public:
 
     // True iff the next try_upgrade() would refuse due to the burst
     // gate (regardless of whether the inner CAS would succeed).
-    [[nodiscard]] bool is_burst_exhausted() const noexcept {
-        return consecutive_writer_wins() >= BurstLimit;
-    }
+    [[nodiscard]] bool is_burst_exhausted() const noexcept { return consecutive_writer_wins() >= BurstLimit; }
 
     // Forwarded inner-pool diagnostics — useful for the no-reader
     // detection idiom in the writer's hot loop.
-    [[nodiscard]] std::uint64_t outstanding() const noexcept {
-        return inner_.outstanding();
-    }
-    [[nodiscard]] bool is_exclusive_out() const noexcept {
-        return inner_.is_exclusive_out();
-    }
+    [[nodiscard]] std::uint64_t outstanding() const noexcept { return inner_.outstanding(); }
+    [[nodiscard]] bool is_exclusive_out() const noexcept { return inner_.is_exclusive_out(); }
 
 private:
     SharedPermissionPool<Tag> inner_;
@@ -313,29 +300,24 @@ private:
 
 template <typename Tag, std::uint32_t K, typename Body>
     requires std::is_invocable_v<Body, SharedPermission<Tag>>
-[[nodiscard]] auto with_shared_read(
-    FairSharedPermissionPool<Tag, K>& pool, Body&& body)
-    noexcept(std::is_nothrow_invocable_v<Body, SharedPermission<Tag>>)
+[[nodiscard]] auto with_shared_read(FairSharedPermissionPool<Tag, K>& pool,
+                                    Body&& body) noexcept(std::is_nothrow_invocable_v<Body, SharedPermission<Tag>>)
     -> std::optional<std::invoke_result_t<Body, SharedPermission<Tag>>>
-    requires (!std::is_void_v<std::invoke_result_t<Body, SharedPermission<Tag>>>)
+    requires(!std::is_void_v<std::invoke_result_t<Body, SharedPermission<Tag>>>)
 {
     auto guard_opt = pool.lend();
     if (!guard_opt) return std::nullopt;
     return std::optional{std::forward<Body>(body)(guard_opt->token())};
 }
 
-template <typename Tag, std::uint32_t K,
-          ::crucible::effects::IsExecCtx Ctx,
-          typename Body>
+template <typename Tag, std::uint32_t K, ::crucible::effects::IsExecCtx Ctx, typename Body>
     requires CtxAdmitsPermission<Tag, Ctx>
           && std::is_invocable_v<Body, SharedPermission<Tag>>
-[[nodiscard]] auto with_shared_read(
-    Ctx const& ctx,
-    FairSharedPermissionPool<Tag, K>& pool,
-    Body&& body)
-    noexcept(std::is_nothrow_invocable_v<Body, SharedPermission<Tag>>)
-    -> std::optional<std::invoke_result_t<Body, SharedPermission<Tag>>>
-    requires (!std::is_void_v<std::invoke_result_t<Body, SharedPermission<Tag>>>)
+             [[nodiscard]] auto
+             with_shared_read(Ctx const& ctx, FairSharedPermissionPool<Tag, K>& pool,
+                              Body&& body) noexcept(std::is_nothrow_invocable_v<Body, SharedPermission<Tag>>)
+                 -> std::optional<std::invoke_result_t<Body, SharedPermission<Tag>>>
+                 requires(!std::is_void_v<std::invoke_result_t<Body, SharedPermission<Tag>>>)
 {
     auto guard_opt = pool.lend(ctx);
     if (!guard_opt) return std::nullopt;
@@ -345,28 +327,19 @@ template <typename Tag, std::uint32_t K,
 template <typename Tag, std::uint32_t K, typename Body>
     requires std::is_invocable_v<Body, SharedPermission<Tag>>
           && std::is_void_v<std::invoke_result_t<Body, SharedPermission<Tag>>>
-bool with_shared_read(
-    FairSharedPermissionPool<Tag, K>& pool, Body&& body)
-    noexcept(std::is_nothrow_invocable_v<Body, SharedPermission<Tag>>)
-{
+bool with_shared_read(FairSharedPermissionPool<Tag, K>& pool,
+                      Body&& body) noexcept(std::is_nothrow_invocable_v<Body, SharedPermission<Tag>>) {
     auto guard_opt = pool.lend();
     if (!guard_opt) return false;
     std::forward<Body>(body)(guard_opt->token());
     return true;
 }
 
-template <typename Tag, std::uint32_t K,
-          ::crucible::effects::IsExecCtx Ctx,
-          typename Body>
-    requires CtxAdmitsPermission<Tag, Ctx>
-          && std::is_invocable_v<Body, SharedPermission<Tag>>
+template <typename Tag, std::uint32_t K, ::crucible::effects::IsExecCtx Ctx, typename Body>
+    requires CtxAdmitsPermission<Tag, Ctx> && std::is_invocable_v<Body, SharedPermission<Tag>>
           && std::is_void_v<std::invoke_result_t<Body, SharedPermission<Tag>>>
-bool with_shared_read(
-    Ctx const& ctx,
-    FairSharedPermissionPool<Tag, K>& pool,
-    Body&& body)
-    noexcept(std::is_nothrow_invocable_v<Body, SharedPermission<Tag>>)
-{
+bool with_shared_read(Ctx const& ctx, FairSharedPermissionPool<Tag, K>& pool,
+                      Body&& body) noexcept(std::is_nothrow_invocable_v<Body, SharedPermission<Tag>>) {
     auto guard_opt = pool.lend(ctx);
     if (!guard_opt) return false;
     std::forward<Body>(body)(guard_opt->token());
@@ -398,19 +371,16 @@ static_assert(std::is_same_v<FairSharedPermissionPool<TestRegion>::tag_type, Tes
 // pool (the fairness counter, alignas(64) to prevent false sharing
 // with the inner pool's alignas(64) state_ atomic).  This pins the
 // no-false-sharing claim.
-static_assert(sizeof(FairSharedPermissionPool<TestRegion>) ==
-              sizeof(SharedPermissionPool<TestRegion>) + 64,
-    "FairSharedPermissionPool should add exactly one cache line "
-    "(the fairness counter) over the inner pool.  If sizeof drifts, "
-    "false sharing or padding regression has occurred.");
+static_assert(sizeof(FairSharedPermissionPool<TestRegion>) == sizeof(SharedPermissionPool<TestRegion>) + 64,
+              "FairSharedPermissionPool should add exactly one cache line "
+              "(the fairness counter) over the inner pool.  If sizeof drifts, "
+              "false sharing or padding regression has occurred.");
 
 // Counter type is uint64_t — overflow at 100M wins/sec takes 5840
 // years.  Effectively impossible.  Pinning this prevents accidental
 // downgrade to uint32_t (which would wrap in ~40s of contention).
-static_assert(std::is_same_v<
-    decltype(std::declval<FairSharedPermissionPool<TestRegion>>()
-        .consecutive_writer_wins()),
-    std::uint64_t>);
+static_assert(std::is_same_v<decltype(std::declval<FairSharedPermissionPool<TestRegion>>().consecutive_writer_wins()),
+                             std::uint64_t>);
 
 }  // namespace detail::fair_pool_self_test
 
@@ -430,17 +400,17 @@ static_assert(std::is_same_v<
     auto exc = mint_permission_root<SmokeTag>();
     FairSharedPermissionPool<SmokeTag, kBurst> pool{std::move(exc)};
 
-    if (pool.consecutive_writer_wins() != 0)            std::abort();
-    if (pool.is_burst_exhausted())                      std::abort();
+    if (pool.consecutive_writer_wins() != 0) std::abort();
+    if (pool.is_burst_exhausted()) std::abort();
 
     // Fill the burst budget — kBurst successful try_upgrades.
     for (std::uint32_t i = 0; i < kBurst; ++i) {
         auto u = pool.try_upgrade();
         if (!u) std::abort();
         pool.deposit_exclusive(std::move(*u));
-        if (pool.consecutive_writer_wins() != i + 1)    std::abort();
+        if (pool.consecutive_writer_wins() != i + 1) std::abort();
     }
-    if (!pool.is_burst_exhausted())                     std::abort();
+    if (!pool.is_burst_exhausted()) std::abort();
 
     // Burst gate fires.
     {
@@ -453,15 +423,15 @@ static_assert(std::is_same_v<
         if (!u) std::abort();
         pool.deposit_exclusive(std::move(*u));
     }
-    if (pool.consecutive_writer_wins() != kBurst + 1)   std::abort();
+    if (pool.consecutive_writer_wins() != kBurst + 1) std::abort();
 
     // A successful lend resets the counter.
     {
         auto g = pool.lend();
         if (!g) std::abort();
     }
-    if (pool.consecutive_writer_wins() != 0)            std::abort();
-    if (pool.is_burst_exhausted())                      std::abort();
+    if (pool.consecutive_writer_wins() != 0) std::abort();
+    if (pool.is_burst_exhausted()) std::abort();
 
     // Writer can upgrade again with full budget.
     {
@@ -469,7 +439,7 @@ static_assert(std::is_same_v<
         if (!u) std::abort();
         pool.deposit_exclusive(std::move(*u));
     }
-    if (pool.consecutive_writer_wins() != 1)            std::abort();
+    if (pool.consecutive_writer_wins() != 1) std::abort();
 }
 
 }  // namespace crucible::safety

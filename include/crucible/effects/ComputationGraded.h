@@ -86,44 +86,30 @@ namespace crucible::effects {
 
 template <typename R, typename T>
 using ComputationGraded =
-    ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Relative,
-        effect_row_to_at_t<R>,
-        T>;
+    ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Relative, effect_row_to_at_t<R>, T>;
 
 // ── Type-level identity ─────────────────────────────────────────────
 
-static_assert(std::is_same_v<
-    typename ComputationGraded<Row<>, int>::value_type,
-    int>);
+static_assert(std::is_same_v<typename ComputationGraded<Row<>, int>::value_type, int>);
 
-static_assert(std::is_same_v<
-    typename ComputationGraded<Row<>, int>::lattice_type,
-    EffectRowLattice::At<>>);
+static_assert(std::is_same_v<typename ComputationGraded<Row<>, int>::lattice_type, EffectRowLattice::At<>>);
 
-static_assert(std::is_same_v<
-    typename ComputationGraded<Row<Effect::Bg>, int>::lattice_type,
-    EffectRowLattice::At<Effect::Bg>>);
+static_assert(
+    std::is_same_v<typename ComputationGraded<Row<Effect::Bg>, int>::lattice_type, EffectRowLattice::At<Effect::Bg>>);
 
-static_assert(std::is_same_v<
-    typename ComputationGraded<Row<Effect::Alloc, Effect::IO>, int>::lattice_type,
-    EffectRowLattice::At<Effect::Alloc, Effect::IO>>);
+static_assert(std::is_same_v<typename ComputationGraded<Row<Effect::Alloc, Effect::IO>, int>::lattice_type,
+                             EffectRowLattice::At<Effect::Alloc, Effect::IO>>);
 
-static_assert(ComputationGraded<Row<>, int>::modality
-    == ::crucible::algebra::ModalityKind::Relative);
+static_assert(ComputationGraded<Row<>, int>::modality == ::crucible::algebra::ModalityKind::Relative);
 
-static_assert(ComputationGraded<Row<Effect::Bg>, double>::modality
-    == ::crucible::algebra::ModalityKind::Relative);
+static_assert(ComputationGraded<Row<Effect::Bg>, double>::modality == ::crucible::algebra::ModalityKind::Relative);
 
 // grade_type is the lattice's element_type — empty struct for At<>.
-static_assert(std::is_empty_v<
-    typename ComputationGraded<Row<>, int>::grade_type>);
-static_assert(std::is_empty_v<
-    typename ComputationGraded<Row<Effect::Bg>, int>::grade_type>);
-static_assert(std::is_empty_v<
-    typename ComputationGraded<Row<
-        Effect::Alloc, Effect::IO, Effect::Block,
-        Effect::Bg,    Effect::Init, Effect::Test>, int>::grade_type>);
+static_assert(std::is_empty_v<typename ComputationGraded<Row<>, int>::grade_type>);
+static_assert(std::is_empty_v<typename ComputationGraded<Row<Effect::Bg>, int>::grade_type>);
+static_assert(
+    std::is_empty_v<typename ComputationGraded<
+        Row<Effect::Alloc, Effect::IO, Effect::Block, Effect::Bg, Effect::Init, Effect::Test>, int>::grade_type>);
 
 // ── Diagnostic forwarding ───────────────────────────────────────────
 //
@@ -134,11 +120,8 @@ static_assert(std::is_empty_v<
 // is TU-context-fragile per Graded.h:156-186; do NOT static_assert
 // equality of its output here (see the warning block in Graded.h).
 
-static_assert(
-    ComputationGraded<Row<>, int>::modality_name() == "Relative");
-static_assert(
-    ComputationGraded<Row<Effect::Bg>, int>::lattice_name()
-        == "EffectRow::At");
+static_assert(ComputationGraded<Row<>, int>::modality_name() == "Relative");
+static_assert(ComputationGraded<Row<Effect::Bg>, int>::lattice_name() == "EffectRow::At");
 
 // ── Layout: zero-cost across every Row + value combination ──────────
 //
@@ -153,41 +136,36 @@ static_assert(
 namespace detail::computation_graded_layout {
 
 struct EmptyValue {};
-struct OneByteValue { char c{0}; };
-struct EightByteValue { unsigned long long v{0}; };
+struct OneByteValue {
+    char c{0};
+};
+struct EightByteValue {
+    unsigned long long v{0};
+};
 
 // Empty value: irreducible C++ minimum-object-size of 1.
 static_assert(sizeof(ComputationGraded<Row<>, EmptyValue>) == 1);
 static_assert(sizeof(ComputationGraded<Row<Effect::Bg>, EmptyValue>) == 1);
 
 // Non-empty values: sizeof(T) preserved exactly across every row.
-static_assert(sizeof(ComputationGraded<Row<>, int>)
-              == sizeof(int));
-static_assert(sizeof(ComputationGraded<Row<Effect::Alloc>, int>)
-              == sizeof(int));
-static_assert(sizeof(ComputationGraded<Row<Effect::Bg>, int>)
-              == sizeof(int));
-static_assert(sizeof(ComputationGraded<Row<
-    Effect::Alloc, Effect::IO, Effect::Block,
-    Effect::Bg,    Effect::Init, Effect::Test>, int>)
-              == sizeof(int));
+static_assert(sizeof(ComputationGraded<Row<>, int>) == sizeof(int));
+static_assert(sizeof(ComputationGraded<Row<Effect::Alloc>, int>) == sizeof(int));
+static_assert(sizeof(ComputationGraded<Row<Effect::Bg>, int>) == sizeof(int));
+static_assert(
+    sizeof(
+        ComputationGraded<Row<Effect::Alloc, Effect::IO, Effect::Block, Effect::Bg, Effect::Init, Effect::Test>, int>)
+    == sizeof(int));
 
-static_assert(sizeof(ComputationGraded<Row<>, OneByteValue>)
-              == sizeof(OneByteValue));
-static_assert(sizeof(ComputationGraded<Row<Effect::Bg>, OneByteValue>)
-              == sizeof(OneByteValue));
+static_assert(sizeof(ComputationGraded<Row<>, OneByteValue>) == sizeof(OneByteValue));
+static_assert(sizeof(ComputationGraded<Row<Effect::Bg>, OneByteValue>) == sizeof(OneByteValue));
 
-static_assert(sizeof(ComputationGraded<Row<>, EightByteValue>)
-              == sizeof(EightByteValue));
-static_assert(sizeof(ComputationGraded<Row<Effect::Bg>, EightByteValue>)
-              == sizeof(EightByteValue));
+static_assert(sizeof(ComputationGraded<Row<>, EightByteValue>) == sizeof(EightByteValue));
+static_assert(sizeof(ComputationGraded<Row<Effect::Bg>, EightByteValue>) == sizeof(EightByteValue));
 
 // Alignment preserved exactly — the empty grade_type must not force
 // over-alignment.
-static_assert(alignof(ComputationGraded<Row<>, int>)
-              == alignof(int));
-static_assert(alignof(ComputationGraded<Row<Effect::Bg>, EightByteValue>)
-              == alignof(EightByteValue));
+static_assert(alignof(ComputationGraded<Row<>, int>) == alignof(int));
+static_assert(alignof(ComputationGraded<Row<Effect::Bg>, EightByteValue>) == alignof(EightByteValue));
 
 // ── Layout invariant macro (CRUCIBLE_GRADED_LAYOUT_INVARIANT) ───────
 //
@@ -209,9 +187,8 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(CompOverBg, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(CompOverBg, EightByteValue);
 
 template <typename T>
-using CompOverAll = ComputationGraded<Row<
-    Effect::Alloc, Effect::IO, Effect::Block,
-    Effect::Bg,    Effect::Init, Effect::Test>, T>;
+using CompOverAll =
+    ComputationGraded<Row<Effect::Alloc, Effect::IO, Effect::Block, Effect::Bg, Effect::Init, Effect::Test>, T>;
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(CompOverAll, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(CompOverAll, EightByteValue);
 
@@ -225,14 +202,10 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(CompOverAll, EightByteValue);
 // future refactor that accidentally specializes EmptyRow distinctly
 // (e.g. `struct EmptyRow {};` instead of an alias) fires here.
 
-static_assert(std::is_same_v<
-    ComputationGraded<EmptyRow, int>,
-    ComputationGraded<Row<>, int>>);
-static_assert(std::is_same_v<
-    typename ComputationGraded<EmptyRow, int>::lattice_type,
-    typename ComputationGraded<Row<>, int>::lattice_type>);
-static_assert(sizeof(ComputationGraded<EmptyRow, int>)
-              == sizeof(ComputationGraded<Row<>, int>));
+static_assert(std::is_same_v<ComputationGraded<EmptyRow, int>, ComputationGraded<Row<>, int>>);
+static_assert(std::is_same_v<typename ComputationGraded<EmptyRow, int>::lattice_type,
+                             typename ComputationGraded<Row<>, int>::lattice_type>);
+static_assert(sizeof(ComputationGraded<EmptyRow, int>) == sizeof(ComputationGraded<Row<>, int>));
 
 // ── at_bottom() reachability (FOUND-H03-AUDIT-1) ────────────────────
 //
@@ -243,18 +216,15 @@ static_assert(sizeof(ComputationGraded<EmptyRow, int>)
 // just by spot-instantiation.
 
 namespace detail::computation_graded_caps {
-template <typename G> concept HasAtBottom =
-    requires(typename G::value_type v) { G::at_bottom(v); };
+template <typename G>
+concept HasAtBottom = requires(typename G::value_type v) { G::at_bottom(v); };
 }  // namespace detail::computation_graded_caps
 
-static_assert(detail::computation_graded_caps::HasAtBottom<
-    ComputationGraded<Row<>, int>>);
-static_assert(detail::computation_graded_caps::HasAtBottom<
-    ComputationGraded<Row<Effect::Bg>, int>>);
-static_assert(detail::computation_graded_caps::HasAtBottom<
-    ComputationGraded<Row<
-        Effect::Alloc, Effect::IO, Effect::Block,
-        Effect::Bg,    Effect::Init, Effect::Test>, int>>);
+static_assert(detail::computation_graded_caps::HasAtBottom<ComputationGraded<Row<>, int>>);
+static_assert(detail::computation_graded_caps::HasAtBottom<ComputationGraded<Row<Effect::Bg>, int>>);
+static_assert(
+    detail::computation_graded_caps::HasAtBottom<
+        ComputationGraded<Row<Effect::Alloc, Effect::IO, Effect::Block, Effect::Bg, Effect::Init, Effect::Test>, int>>);
 
 // ── Object semantics ────────────────────────────────────────────────
 //
@@ -264,25 +234,18 @@ static_assert(detail::computation_graded_caps::HasAtBottom<
 // IS Linear-equivalent), but the bare alias is fully regular for
 // regular T.
 
-static_assert(std::is_default_constructible_v<
-    ComputationGraded<Row<>, int>>);
-static_assert(std::is_copy_constructible_v<
-    ComputationGraded<Row<>, int>>);
-static_assert(std::is_move_constructible_v<
-    ComputationGraded<Row<Effect::Bg>, int>>);
-static_assert(std::is_copy_assignable_v<
-    ComputationGraded<Row<>, int>>);
-static_assert(std::is_move_assignable_v<
-    ComputationGraded<Row<Effect::Bg>, int>>);
-static_assert(std::is_destructible_v<
-    ComputationGraded<Row<>, int>>);
+static_assert(std::is_default_constructible_v<ComputationGraded<Row<>, int>>);
+static_assert(std::is_copy_constructible_v<ComputationGraded<Row<>, int>>);
+static_assert(std::is_move_constructible_v<ComputationGraded<Row<Effect::Bg>, int>>);
+static_assert(std::is_copy_assignable_v<ComputationGraded<Row<>, int>>);
+static_assert(std::is_move_assignable_v<ComputationGraded<Row<Effect::Bg>, int>>);
+static_assert(std::is_destructible_v<ComputationGraded<Row<>, int>>);
 
 // Trivial copyability parity — required for memcpy-safe Cipher
 // serialization through the substrate.
+static_assert(std::is_trivially_copyable_v<int> == std::is_trivially_copyable_v<ComputationGraded<Row<>, int>>);
 static_assert(std::is_trivially_copyable_v<int>
-           == std::is_trivially_copyable_v<ComputationGraded<Row<>, int>>);
-static_assert(std::is_trivially_copyable_v<int>
-           == std::is_trivially_copyable_v<ComputationGraded<Row<Effect::Bg>, int>>);
+              == std::is_trivially_copyable_v<ComputationGraded<Row<Effect::Bg>, int>>);
 
 // ── Capability gates (concept-driven) ───────────────────────────────
 //
@@ -293,30 +256,29 @@ static_assert(std::is_trivially_copyable_v<int>
 
 namespace detail::computation_graded_caps {
 
-template <typename G> concept HasPeekMut =
-    requires(G& g) { g.peek_mut(); };
-template <typename G> concept HasSwap =
-    requires(G& a, G& b) { a.swap(b); };
-template <typename G> concept HasComonadExtract =
-    requires(G g) { std::move(g).extract(); };
-template <typename G> concept HasRelMonadInject =
-    requires { G::inject(typename G::value_type{},
-                         typename G::grade_type{}); };
-template <typename G> concept HasWeaken =
-    requires(G g, typename G::grade_type r) { std::move(g).weaken(r); };
-template <typename G> concept HasCompose =
-    requires(G g, G const& o) { std::move(g).compose(o); };
+template <typename G>
+concept HasPeekMut = requires(G& g) { g.peek_mut(); };
+template <typename G>
+concept HasSwap = requires(G& a, G& b) { a.swap(b); };
+template <typename G>
+concept HasComonadExtract = requires(G g) { std::move(g).extract(); };
+template <typename G>
+concept HasRelMonadInject = requires { G::inject(typename G::value_type{}, typename G::grade_type{}); };
+template <typename G>
+concept HasWeaken = requires(G g, typename G::grade_type r) { std::move(g).weaken(r); };
+template <typename G>
+concept HasCompose = requires(G g, G const& o) { std::move(g).compose(o); };
 
 using G_pure = ComputationGraded<Row<>, int>;
-using G_bg   = ComputationGraded<Row<Effect::Bg>, int>;
+using G_bg = ComputationGraded<Row<Effect::Bg>, int>;
 
 // Empty-grade path admits peek_mut + swap even under Relative modality
 // (the refined gate `AbsoluteModality<M> || std::is_empty_v<grade_type>`
 // fires on the empty-grade clause).
-static_assert( HasPeekMut<G_pure>);
-static_assert( HasPeekMut<G_bg>);
-static_assert( HasSwap<G_pure>);
-static_assert( HasSwap<G_bg>);
+static_assert(HasPeekMut<G_pure>);
+static_assert(HasPeekMut<G_bg>);
+static_assert(HasSwap<G_pure>);
+static_assert(HasSwap<G_bg>);
 
 // Relative modality forbids Comonad/RelativeMonad-specific operations.
 static_assert(!HasComonadExtract<G_pure>);
@@ -325,10 +287,10 @@ static_assert(!HasRelMonadInject<G_pure>);
 static_assert(!HasRelMonadInject<G_bg>);
 
 // weaken / compose are primary-template methods, always reachable.
-static_assert( HasWeaken<G_pure>);
-static_assert( HasWeaken<G_bg>);
-static_assert( HasCompose<G_pure>);
-static_assert( HasCompose<G_bg>);
+static_assert(HasWeaken<G_pure>);
+static_assert(HasWeaken<G_bg>);
+static_assert(HasCompose<G_pure>);
+static_assert(HasCompose<G_bg>);
 
 }  // namespace detail::computation_graded_caps
 
@@ -343,12 +305,12 @@ static_assert( HasCompose<G_bg>);
 
 inline void runtime_smoke_test_computation_graded() noexcept {
     using G_pure = ComputationGraded<Row<>, int>;
-    using G_bg   = ComputationGraded<Row<Effect::Bg>, int>;
+    using G_bg = ComputationGraded<Row<Effect::Bg>, int>;
 
     // Construction with a non-constant value + grade.
-    int   value_runtime = 42;
+    int value_runtime = 42;
     G_pure pure{value_runtime, G_pure::grade_type{}};
-    G_bg   bg{value_runtime + 1, G_bg::grade_type{}};
+    G_bg bg{value_runtime + 1, G_bg::grade_type{}};
 
     // Default ctor + copy + move.
     G_pure pure_default{};
@@ -358,8 +320,8 @@ inline void runtime_smoke_test_computation_graded() noexcept {
     // Access surface — peek / consume / grade through non-constant
     // call sites.
     [[maybe_unused]] int const& peeked = pure.peek();
-    [[maybe_unused]] int        moved  = std::move(pure_default).consume();
-    [[maybe_unused]] auto       grade  = pure.grade();
+    [[maybe_unused]] int moved = std::move(pure_default).consume();
+    [[maybe_unused]] auto grade = pure.grade();
 
     // peek_mut / swap admitted via the empty-grade path (Relative
     // modality with empty grade_type).  Drive them so the gates fire.
@@ -370,8 +332,7 @@ inline void runtime_smoke_test_computation_graded() noexcept {
 
     // weaken to the singleton grade — a no-op move at runtime since
     // both grade values are the empty struct's single inhabitant.
-    [[maybe_unused]] auto widened =
-        std::move(bg).weaken(G_bg::grade_type{});
+    [[maybe_unused]] auto widened = std::move(bg).weaken(G_bg::grade_type{});
 
     // compose against another instance — exercises the join path.
     G_pure pure_c{value_runtime, G_pure::grade_type{}};
@@ -382,7 +343,7 @@ inline void runtime_smoke_test_computation_graded() noexcept {
     // factory must be reachable on every ComputationGraded.  Drive
     // with a non-constant value to instantiate the body.
     [[maybe_unused]] G_pure pure_bot = G_pure::at_bottom(value_runtime);
-    [[maybe_unused]] G_bg   bg_bot   = G_bg::at_bottom(value_runtime + 3);
+    [[maybe_unused]] G_bg bg_bot = G_bg::at_bottom(value_runtime + 3);
 
     // Concept-based capability check at the boundary (per
     // feedback_algebra_runtime_smoke_test_discipline).

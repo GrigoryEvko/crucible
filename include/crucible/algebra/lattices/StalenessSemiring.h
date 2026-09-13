@@ -135,19 +135,13 @@ struct StalenessSemiring {
         // Default spaceship comparison — UINT64_MAX is automatically
         // the largest value, so ∞ orders after all finite staleness
         // values, which IS the desired chain-order semantic.
-        [[nodiscard]] friend constexpr auto operator<=>(
-            element_type, element_type) noexcept = default;
-        [[nodiscard]] friend constexpr bool operator==(
-            element_type, element_type) noexcept = default;
+        [[nodiscard]] friend constexpr auto operator<=>(element_type, element_type) noexcept = default;
+        [[nodiscard]] friend constexpr bool operator==(element_type, element_type) noexcept = default;
     };
 
     // ── Lattice ops (chain order; smaller staleness = bottom) ───────
-    [[nodiscard]] static constexpr element_type bottom() noexcept {
-        return element_type{0};
-    }
-    [[nodiscard]] static constexpr element_type top() noexcept {
-        return element_type::infinity();
-    }
+    [[nodiscard]] static constexpr element_type bottom() noexcept { return element_type{0}; }
+    [[nodiscard]] static constexpr element_type top() noexcept { return element_type::infinity(); }
     [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept {
         // ∞ encoded as UINT64_MAX orders correctly under ≤.
         return a.value <= b.value;
@@ -194,9 +188,7 @@ struct StalenessSemiring {
         return element_type{::crucible::sat::add_sat(a.value, b.value)};
     }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return "StalenessSemiring";
-    }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "StalenessSemiring"; }
 };
 
 // ── Convenience constructors / aliases ──────────────────────────────
@@ -207,11 +199,11 @@ struct StalenessSemiring {
 // staleness with a contract guard rejecting the ∞ sentinel.
 namespace staleness {
 
-inline constexpr StalenessSemiring::element_type fresh    = StalenessSemiring::bottom();
+inline constexpr StalenessSemiring::element_type fresh = StalenessSemiring::bottom();
 inline constexpr StalenessSemiring::element_type infinite = StalenessSemiring::top();
 
 [[nodiscard]] constexpr StalenessSemiring::element_type at(std::uint64_t n) noexcept
-    pre (n < std::numeric_limits<std::uint64_t>::max())  // not the ∞ sentinel
+    pre(n < std::numeric_limits<std::uint64_t>::max())  // not the ∞ sentinel
 {
     return StalenessSemiring::element_type{n};
 }
@@ -246,51 +238,49 @@ static_assert(StalenessSemiring::element_type{std::numeric_limits<std::uint64_t>
 static_assert(StalenessSemiring::bottom().is_finite());
 static_assert(!StalenessSemiring::top().is_finite());
 static_assert(StalenessSemiring::element_type{42}.is_finite());
-static_assert(!StalenessSemiring::element_type{
-    std::numeric_limits<std::uint64_t>::max()}.is_finite());
+static_assert(!StalenessSemiring::element_type{std::numeric_limits<std::uint64_t>::max()}.is_finite());
 
 // ── Lattice ops at representative witnesses ─────────────────────────
-constexpr auto fresh   = StalenessSemiring::bottom();
-constexpr auto stale1  = StalenessSemiring::element_type{1};
-constexpr auto stale100= StalenessSemiring::element_type{100};
+constexpr auto fresh = StalenessSemiring::bottom();
+constexpr auto stale1 = StalenessSemiring::element_type{1};
+constexpr auto stale100 = StalenessSemiring::element_type{100};
 constexpr auto stale1k = StalenessSemiring::element_type{1000};
-constexpr auto inf     = StalenessSemiring::top();
+constexpr auto inf = StalenessSemiring::top();
 
-static_assert(StalenessSemiring::leq(fresh,   stale1));
-static_assert(StalenessSemiring::leq(stale1,  stale100));
+static_assert(StalenessSemiring::leq(fresh, stale1));
+static_assert(StalenessSemiring::leq(stale1, stale100));
 static_assert(StalenessSemiring::leq(stale100, stale1k));
 static_assert(StalenessSemiring::leq(stale1k, inf));
-static_assert(StalenessSemiring::leq(fresh,   inf));         // bottom ⊑ top
-static_assert(StalenessSemiring::leq(fresh,   fresh));       // reflexive
-static_assert(StalenessSemiring::leq(inf,     inf));         // reflexive at top
+static_assert(StalenessSemiring::leq(fresh, inf));  // bottom ⊑ top
+static_assert(StalenessSemiring::leq(fresh, fresh));  // reflexive
+static_assert(StalenessSemiring::leq(inf, inf));  // reflexive at top
 static_assert(!StalenessSemiring::leq(stale1, fresh));
-static_assert(!StalenessSemiring::leq(inf,    stale1k));
+static_assert(!StalenessSemiring::leq(inf, stale1k));
 
 // max-as-join, min-as-meet (lattice operations).
 static_assert(StalenessSemiring::join(stale1, stale100) == stale100);
-static_assert(StalenessSemiring::join(stale100, inf)    == inf);
+static_assert(StalenessSemiring::join(stale100, inf) == inf);
 static_assert(StalenessSemiring::meet(stale1, stale100) == stale1);
-static_assert(StalenessSemiring::meet(fresh, stale100)  == fresh);
-static_assert(StalenessSemiring::meet(stale1k, inf)     == stale1k);
+static_assert(StalenessSemiring::meet(fresh, stale100) == fresh);
+static_assert(StalenessSemiring::meet(stale1k, inf) == stale1k);
 
 // ── Semiring (tropical) ops at representative witnesses ─────────────
 //
 // Tropical addition = min (pick freshest).
-static_assert(StalenessSemiring::add(stale1, stale100)         == stale1);
-static_assert(StalenessSemiring::add(stale1k, inf)             == stale1k);  // ∞ identity
+static_assert(StalenessSemiring::add(stale1, stale100) == stale1);
+static_assert(StalenessSemiring::add(stale1k, inf) == stale1k);  // ∞ identity
 static_assert(StalenessSemiring::add(StalenessSemiring::zero(), stale1) == stale1);
 
 // Tropical multiplication = + (compose stalenesses; ∞ absorbing).
-static_assert(StalenessSemiring::mul(stale1, stale100)         == StalenessSemiring::element_type{101});
+static_assert(StalenessSemiring::mul(stale1, stale100) == StalenessSemiring::element_type{101});
 static_assert(StalenessSemiring::mul(StalenessSemiring::one(), stale1) == stale1);
-static_assert(StalenessSemiring::mul(StalenessSemiring::one(), inf)    == inf);
-static_assert(StalenessSemiring::mul(inf, stale1)              == inf);  // ∞ absorbs
-static_assert(StalenessSemiring::mul(stale1, inf)              == inf);  // ∞ absorbs
+static_assert(StalenessSemiring::mul(StalenessSemiring::one(), inf) == inf);
+static_assert(StalenessSemiring::mul(inf, stale1) == inf);  // ∞ absorbs
+static_assert(StalenessSemiring::mul(stale1, inf) == inf);  // ∞ absorbs
 
 // Saturating overflow → ∞ encoding.  UINT64_MAX-1 + 2 saturates to
 // UINT64_MAX which IS the ∞ sentinel.
-constexpr auto near_max = StalenessSemiring::element_type{
-    std::numeric_limits<std::uint64_t>::max() - 5};
+constexpr auto near_max = StalenessSemiring::element_type{std::numeric_limits<std::uint64_t>::max() - 5};
 static_assert(StalenessSemiring::mul(near_max, StalenessSemiring::element_type{10}) == inf);
 
 // ── EXHAUSTIVE-WITHIN-WITNESS-SET axiom coverage ────────────────────
@@ -299,32 +289,32 @@ static_assert(StalenessSemiring::mul(near_max, StalenessSemiring::element_type{1
 // verify_semiring_axioms_at each cover the per-triple axiom families.
 // Below picks representative triples crossing the ∞ boundary, the
 // finite interior, and the descending direction.
-static_assert(verify_bounded_lattice_axioms_at<StalenessSemiring>(fresh,    fresh,    fresh));
-static_assert(verify_bounded_lattice_axioms_at<StalenessSemiring>(fresh,    stale1,   inf));
-static_assert(verify_bounded_lattice_axioms_at<StalenessSemiring>(stale1,   stale100, stale1k));
-static_assert(verify_bounded_lattice_axioms_at<StalenessSemiring>(stale1k,  stale100, stale1));   // descending
-static_assert(verify_bounded_lattice_axioms_at<StalenessSemiring>(inf,      inf,      inf));
-static_assert(verify_bounded_lattice_axioms_at<StalenessSemiring>(inf,      stale1,   fresh));    // boundary
-static_assert(verify_bounded_lattice_axioms_at<StalenessSemiring>(fresh,    stale100, inf));      // span
+static_assert(verify_bounded_lattice_axioms_at<StalenessSemiring>(fresh, fresh, fresh));
+static_assert(verify_bounded_lattice_axioms_at<StalenessSemiring>(fresh, stale1, inf));
+static_assert(verify_bounded_lattice_axioms_at<StalenessSemiring>(stale1, stale100, stale1k));
+static_assert(verify_bounded_lattice_axioms_at<StalenessSemiring>(stale1k, stale100, stale1));  // descending
+static_assert(verify_bounded_lattice_axioms_at<StalenessSemiring>(inf, inf, inf));
+static_assert(verify_bounded_lattice_axioms_at<StalenessSemiring>(inf, stale1, fresh));  // boundary
+static_assert(verify_bounded_lattice_axioms_at<StalenessSemiring>(fresh, stale100, inf));  // span
 
 // Semiring axioms — distributivity is the load-bearing tropical
 // property.  Witnesses must avoid overflow in the finite interior
 // for the equalities to hold ULP-exactly.
-static_assert(verify_semiring_axioms_at<StalenessSemiring>(fresh,   fresh,   fresh));
-static_assert(verify_semiring_axioms_at<StalenessSemiring>(fresh,   stale1,  stale100));
-static_assert(verify_semiring_axioms_at<StalenessSemiring>(stale1,  stale100, stale1k));
-static_assert(verify_semiring_axioms_at<StalenessSemiring>(stale1k, stale100, stale1));   // descending
-static_assert(verify_semiring_axioms_at<StalenessSemiring>(inf,     inf,     inf));
-static_assert(verify_semiring_axioms_at<StalenessSemiring>(inf,     stale1,  fresh));     // ∞ + ∞ axioms
-static_assert(verify_semiring_axioms_at<StalenessSemiring>(stale1,  inf,     stale100));  // mid-∞-mid
+static_assert(verify_semiring_axioms_at<StalenessSemiring>(fresh, fresh, fresh));
+static_assert(verify_semiring_axioms_at<StalenessSemiring>(fresh, stale1, stale100));
+static_assert(verify_semiring_axioms_at<StalenessSemiring>(stale1, stale100, stale1k));
+static_assert(verify_semiring_axioms_at<StalenessSemiring>(stale1k, stale100, stale1));  // descending
+static_assert(verify_semiring_axioms_at<StalenessSemiring>(inf, inf, inf));
+static_assert(verify_semiring_axioms_at<StalenessSemiring>(inf, stale1, fresh));  // ∞ + ∞ axioms
+static_assert(verify_semiring_axioms_at<StalenessSemiring>(stale1, inf, stale100));  // mid-∞-mid
 
 // Diagnostic name.
 static_assert(StalenessSemiring::name() == "StalenessSemiring");
 
 // Convenience constants.
-static_assert(staleness::fresh    == StalenessSemiring::bottom());
+static_assert(staleness::fresh == StalenessSemiring::bottom());
 static_assert(staleness::infinite == StalenessSemiring::top());
-static_assert(staleness::at(42)   == StalenessSemiring::element_type{42});
+static_assert(staleness::at(42) == StalenessSemiring::element_type{42});
 
 // ── AUDIT-FOUNDATION-2026-04-26 + FIXY-FOUND-098 saturation axioms ──
 //
@@ -399,16 +389,11 @@ static_assert(staleness::at(42)   == StalenessSemiring::element_type{42});
         StalenessSemiring::element_type{5},
         StalenessSemiring::element_type{100},
         StalenessSemiring::element_type{1000},
-        StalenessSemiring::element_type{
-            std::numeric_limits<std::uint64_t>::max() - 100},
-        StalenessSemiring::element_type{
-            std::numeric_limits<std::uint64_t>::max() - 10},
-        StalenessSemiring::element_type{
-            std::numeric_limits<std::uint64_t>::max() - 5},
-        StalenessSemiring::element_type{
-            std::numeric_limits<std::uint64_t>::max() - 2},
-        StalenessSemiring::element_type{
-            std::numeric_limits<std::uint64_t>::max() - 1},
+        StalenessSemiring::element_type{std::numeric_limits<std::uint64_t>::max() - 100},
+        StalenessSemiring::element_type{std::numeric_limits<std::uint64_t>::max() - 10},
+        StalenessSemiring::element_type{std::numeric_limits<std::uint64_t>::max() - 5},
+        StalenessSemiring::element_type{std::numeric_limits<std::uint64_t>::max() - 2},
+        StalenessSemiring::element_type{std::numeric_limits<std::uint64_t>::max() - 1},
         StalenessSemiring::top(),  // ∞ = UINT64_MAX
     };
     for (auto a : witnesses) {
@@ -422,26 +407,27 @@ static_assert(staleness::at(42)   == StalenessSemiring::element_type{42});
     }
     return true;
 }
-static_assert(exhaustive_saturation_axioms(),
-    "StalenessSemiring's tropical (min, +) semiring axioms must hold at "
-    "every (witness)³ triple including the UINT64_MAX-region saturation "
-    "boundary — failure indicates the saturating add_sat does not "
-    "commute with min, breaking distributivity at the boundary.");
+static_assert(exhaustive_saturation_axioms(), "StalenessSemiring's tropical (min, +) semiring axioms must hold at "
+                                              "every (witness)³ triple including the UINT64_MAX-region saturation "
+                                              "boundary — failure indicates the saturating add_sat does not "
+                                              "commute with min, breaking distributivity at the boundary.");
 
 // ── Layout — NOT zero-overhead (dynamic-grade) ──────────────────────
-struct OneByteValue { char c{0}; };
-struct EightByteValue { unsigned long long v{0}; };
+struct OneByteValue {
+    char c{0};
+};
+struct EightByteValue {
+    unsigned long long v{0};
+};
 
 template <typename T>
 using StaleGraded = Graded<ModalityKind::Absolute, StalenessSemiring, T>;
 
 // 1B value + 8B grade → 16 bytes (1 + 7 padding + 8).
-static_assert(sizeof(StaleGraded<OneByteValue>) ==
-              sizeof(OneByteValue) + sizeof(StalenessSemiring::element_type) + 7);
+static_assert(sizeof(StaleGraded<OneByteValue>) == sizeof(OneByteValue) + sizeof(StalenessSemiring::element_type) + 7);
 
 // 8B value + 8B grade → 16 bytes exactly.
-static_assert(sizeof(StaleGraded<EightByteValue>) ==
-              sizeof(EightByteValue) + sizeof(StalenessSemiring::element_type));
+static_assert(sizeof(StaleGraded<EightByteValue>) == sizeof(EightByteValue) + sizeof(StalenessSemiring::element_type));
 
 // ── Runtime smoke test ──────────────────────────────────────────────
 //
@@ -460,12 +446,12 @@ inline void runtime_smoke_test() {
     auto b = StalenessSemiring::element_type{n_b};
 
     // Lattice ops at runtime.
-    [[maybe_unused]] bool                            l = StalenessSemiring::leq(a, b);
+    [[maybe_unused]] bool l = StalenessSemiring::leq(a, b);
     [[maybe_unused]] StalenessSemiring::element_type j = StalenessSemiring::join(a, b);
     [[maybe_unused]] StalenessSemiring::element_type m = StalenessSemiring::meet(a, b);
 
     // Semiring ops at runtime — exercises std::add_sat.
-    [[maybe_unused]] auto sum  = StalenessSemiring::add(a, b);
+    [[maybe_unused]] auto sum = StalenessSemiring::add(a, b);
     [[maybe_unused]] auto prod = StalenessSemiring::mul(a, b);
     [[maybe_unused]] auto absb = StalenessSemiring::mul(a, StalenessSemiring::top());
 
@@ -475,11 +461,11 @@ inline void runtime_smoke_test() {
     // Graded<Absolute, StalenessSemiring, T> at runtime.
     OneByteValue v{42};
     StaleGraded<OneByteValue> initial{v, StalenessSemiring::bottom()};
-    auto widened   = initial.weaken(a);                  // weaken to staleness 5
-    auto widened2  = widened.weaken(b);                  // advance to 17
-    auto composed  = initial.compose(widened2);          // join with worse
-    auto rv_widen  = std::move(widened2).weaken(b);      // rvalue-this weaken
-    auto rv_comp   = std::move(initial).compose(composed); // rvalue-this compose
+    auto widened = initial.weaken(a);  // weaken to staleness 5
+    auto widened2 = widened.weaken(b);  // advance to 17
+    auto composed = initial.compose(widened2);  // join with worse
+    auto rv_widen = std::move(widened2).weaken(b);  // rvalue-this weaken
+    auto rv_comp = std::move(initial).compose(composed);  // rvalue-this compose
 
     [[maybe_unused]] auto g1 = composed.grade();
     [[maybe_unused]] auto v1 = composed.peek().c;

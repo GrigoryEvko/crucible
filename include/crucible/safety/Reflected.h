@@ -142,19 +142,18 @@ namespace crucible::safety::reflected {
 
 template <ScopedEnum E, typename F>
 constexpr void for_each_enumerator(F&& f) {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^E));
-    // GCC 16 expansion statements unroll into successive scopes that
-    // each declare the same induction variable; -Wshadow fires per
-    // iteration.  Suppress locally for the loop body only.
-    #pragma GCC diagnostic push
-    #pragma GCC diagnostic ignored "-Wshadow"
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^E));
+// GCC 16 expansion statements unroll into successive scopes that
+// each declare the same induction variable; -Wshadow fires per
+// iteration.  Suppress locally for the loop body only.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto e : enumerators) {
-        constexpr E                value = [:e:];
-        constexpr std::string_view name  = std::meta::identifier_of(e);
+        constexpr E value = [:e:];
+        constexpr std::string_view name = std::meta::identifier_of(e);
         f(value, name);
     }
-    #pragma GCC diagnostic pop
+#pragma GCC diagnostic pop
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -174,20 +173,18 @@ constexpr void for_each_enumerator(F&& f) {
 template <ScopedEnum E, typename F>
 constexpr void for_each_single_bit_enumerator(F&& f) {
     using U = std::underlying_type_t<E>;
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^E));
-    #pragma GCC diagnostic push
-    #pragma GCC diagnostic ignored "-Wshadow"
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^E));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto e : enumerators) {
         constexpr E flag = [:e:];
-        constexpr U raw  = static_cast<U>(flag);
-        if constexpr (std::popcount(
-                          static_cast<std::make_unsigned_t<U>>(raw)) == 1) {
+        constexpr U raw = static_cast<U>(flag);
+        if constexpr (std::popcount(static_cast<std::make_unsigned_t<U>>(raw)) == 1) {
             constexpr std::string_view name = std::meta::identifier_of(e);
             f(flag, name);
         }
     }
-    #pragma GCC diagnostic pop
+#pragma GCC diagnostic pop
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -202,12 +199,11 @@ template <ScopedEnum E>
     // the alias case (two enumerators with the same value) deterministic
     // and predictable: the FIRST enumerator in declaration order wins.
     std::string_view result{};
-    for_each_enumerator<E>(
-        [&](E candidate, std::string_view name) noexcept {
-            if (result.empty() && candidate == value) {
-                result = name;
-            }
-        });
+    for_each_enumerator<E>([&](E candidate, std::string_view name) noexcept {
+        if (result.empty() && candidate == value) {
+            result = name;
+        }
+    });
     return result;
 }
 
@@ -234,27 +230,26 @@ template <ScopedEnum E>
 
 template <ScopedEnum E>
 [[nodiscard]] constexpr size_t bits_to_string(Bits<E> b, char* out, size_t cap) noexcept
-    pre (::crucible::decide::valid_span(cap, out))
-{
-    size_t needed = 0;   // chars that would be written, excluding NUL
-    bool   first  = true;
+    pre(::crucible::decide::valid_span(cap, out)) {
+    size_t needed = 0;  // chars that would be written, excluding NUL
+    bool first = true;
 
     auto emit_byte = [&](char c) noexcept {
         if (cap > 0 && needed + 1 < cap) out[needed] = c;
         ++needed;
     };
     auto emit_view = [&](std::string_view s) noexcept {
-        for (char c : s) emit_byte(c);
+        for (char c : s)
+            emit_byte(c);
     };
 
-    for_each_single_bit_enumerator<E>(
-        [&](E flag, std::string_view name) noexcept {
-            if (b.test(flag)) {
-                if (!first) emit_byte('|');
-                emit_view(name);
-                first = false;
-            }
-        });
+    for_each_single_bit_enumerator<E>([&](E flag, std::string_view name) noexcept {
+        if (b.test(flag)) {
+            if (!first) emit_byte('|');
+            emit_view(name);
+            first = false;
+        }
+    });
 
     // Always NUL-terminate when cap > 0, even on truncation.
     if (cap > 0) {
@@ -271,19 +266,19 @@ template <ScopedEnum E>
 namespace detail::reflected_self_test {
 
 enum class TestFlags : std::uint8_t {
-    Alpha   = 0x01,
-    Beta    = 0x02,
-    Gamma   = 0x04,
-    Delta   = 0x08,
+    Alpha = 0x01,
+    Beta = 0x02,
+    Gamma = 0x04,
+    Delta = 0x08,
     // Composite enumerator — must be SKIPPED by bits_to_string and
     // NOT match a single-bit query in enumerator_name on a composite
     // value.
     AlphaBeta = 0x03,
     // Zero-valued enumerator — must be SKIPPED.
-    None    = 0x00,
+    None = 0x00,
 };
 
-using TF  = TestFlags;
+using TF = TestFlags;
 using BTF = ::crucible::safety::Bits<TF>;
 
 // ── enumerator_name positive ────────────────────────────────────────
@@ -300,9 +295,8 @@ static_assert(name_alphabeta == "AlphaBeta");
 
 // Composite VALUE that is NOT a named enumerator returns "".
 [[nodiscard]] consteval bool composite_value_lookup_returns_empty() noexcept {
-    constexpr auto raw = static_cast<TF>(
-        static_cast<std::uint8_t>(TF::Alpha)
-        | static_cast<std::uint8_t>(TF::Gamma));   // 0x05 — NOT named
+    constexpr auto raw = static_cast<TF>(static_cast<std::uint8_t>(TF::Alpha)
+                                         | static_cast<std::uint8_t>(TF::Gamma));  // 0x05 — NOT named
     return enumerator_name(raw).empty();
 }
 static_assert(composite_value_lookup_returns_empty());
@@ -326,48 +320,46 @@ static_assert(enumerator_name(static_cast<TF>(0xFF)).empty());
 // ── bits_to_string positive ─────────────────────────────────────────
 
 [[nodiscard]] consteval bool empty_bits_writes_empty_string() noexcept {
-    char  buf[16] = {};
-    BTF   b{};
-    auto  n = bits_to_string<TF>(b, buf, sizeof(buf));
+    char buf[16] = {};
+    BTF b{};
+    auto n = bits_to_string<TF>(b, buf, sizeof(buf));
     return n == 0 && buf[0] == '\0';
 }
 static_assert(empty_bits_writes_empty_string());
 
 [[nodiscard]] consteval bool single_flag_writes_name() noexcept {
-    char  buf[16] = {};
-    BTF   b{TF::Alpha};
-    auto  n = bits_to_string<TF>(b, buf, sizeof(buf));
+    char buf[16] = {};
+    BTF b{TF::Alpha};
+    auto n = bits_to_string<TF>(b, buf, sizeof(buf));
     return n == 5 /* "Alpha" */ && std::string_view{buf} == "Alpha";
 }
 static_assert(single_flag_writes_name());
 
 [[nodiscard]] consteval bool multi_flag_writes_pipe_separated() noexcept {
-    char  buf[64] = {};
-    BTF   b{TF::Alpha, TF::Gamma, TF::Delta};
-    auto  n = bits_to_string<TF>(b, buf, sizeof(buf));
+    char buf[64] = {};
+    BTF b{TF::Alpha, TF::Gamma, TF::Delta};
+    auto n = bits_to_string<TF>(b, buf, sizeof(buf));
     // Iteration order = enum declaration order:
     //   Alpha|Gamma|Delta — composite/zero skipped.
-    return std::string_view{buf} == "Alpha|Gamma|Delta"
-        && n == std::string_view{buf}.size();
+    return std::string_view{buf} == "Alpha|Gamma|Delta" && n == std::string_view{buf}.size();
 }
 static_assert(multi_flag_writes_pipe_separated());
 
 [[nodiscard]] consteval bool composite_enumerator_is_skipped() noexcept {
     // Set Alpha and Beta — the AlphaBeta composite enumerator MUST
     // NOT appear in the output (popcount(AlphaBeta) = 2).
-    char  buf[64] = {};
-    BTF   b{TF::Alpha, TF::Beta};
-    auto  n = bits_to_string<TF>(b, buf, sizeof(buf));
-    return std::string_view{buf} == "Alpha|Beta"
-        && n == std::string_view{buf}.size();
+    char buf[64] = {};
+    BTF b{TF::Alpha, TF::Beta};
+    auto n = bits_to_string<TF>(b, buf, sizeof(buf));
+    return std::string_view{buf} == "Alpha|Beta" && n == std::string_view{buf}.size();
 }
 static_assert(composite_enumerator_is_skipped());
 
 [[nodiscard]] consteval bool zero_enumerator_is_skipped() noexcept {
     // None = 0x00 — popcount == 0, must NOT appear regardless of bits.
-    char  buf[64] = {};
-    BTF   b{TF::Alpha};
-    auto  n = bits_to_string<TF>(b, buf, sizeof(buf));
+    char buf[64] = {};
+    BTF b{TF::Alpha};
+    auto n = bits_to_string<TF>(b, buf, sizeof(buf));
     // No "None" prefix.
     return std::string_view{buf} == "Alpha" && n == 5;
 }
@@ -377,9 +369,9 @@ static_assert(zero_enumerator_is_skipped());
 
 [[nodiscard]] consteval bool truncation_returns_needed_length() noexcept {
     // "Alpha|Beta" needs 10 chars + NUL.  Give it cap=8.
-    char  buf[8] = {};
-    BTF   b{TF::Alpha, TF::Beta};
-    auto  n = bits_to_string<TF>(b, buf, sizeof(buf));
+    char buf[8] = {};
+    BTF b{TF::Alpha, TF::Beta};
+    auto n = bits_to_string<TF>(b, buf, sizeof(buf));
     // chars NEEDED equals 10 (the full "Alpha|Beta"), not 7 (what
     // fit) — snprintf convention so callers can detect truncation.
     if (n != 10) return false;
@@ -392,17 +384,17 @@ static_assert(truncation_returns_needed_length());
 [[nodiscard]] consteval bool zero_capacity_probes_size() noexcept {
     // cap=0 — snprintf probing convention.  Returns chars-needed,
     // writes nothing (out may even be nullptr in this branch).
-    BTF   b{TF::Alpha, TF::Beta, TF::Gamma};
-    auto  n = bits_to_string<TF>(b, nullptr, 0);
+    BTF b{TF::Alpha, TF::Beta, TF::Gamma};
+    auto n = bits_to_string<TF>(b, nullptr, 0);
     return n == std::string_view{"Alpha|Beta|Gamma"}.size();
 }
 static_assert(zero_capacity_probes_size());
 
 [[nodiscard]] consteval bool unit_capacity_writes_nul_only() noexcept {
     // cap=1 — only room for the NUL terminator.
-    char  buf[1] = {'X'};
-    BTF   b{TF::Alpha};
-    auto  n = bits_to_string<TF>(b, buf, sizeof(buf));
+    char buf[1] = {'X'};
+    BTF b{TF::Alpha};
+    auto n = bits_to_string<TF>(b, buf, sizeof(buf));
     return buf[0] == '\0' && n == 5;
 }
 static_assert(unit_capacity_writes_nul_only());
@@ -411,9 +403,9 @@ static_assert(unit_capacity_writes_nul_only());
 // One byte less (cap == needed) would already truncate.
 [[nodiscard]] consteval bool exact_fit_capacity_no_truncation() noexcept {
     // "Alpha|Beta" needs 10 chars + NUL = 11 bytes.
-    char  buf[11] = {};
-    BTF   b{TF::Alpha, TF::Beta};
-    auto  n = bits_to_string<TF>(b, buf, sizeof(buf));
+    char buf[11] = {};
+    BTF b{TF::Alpha, TF::Beta};
+    auto n = bits_to_string<TF>(b, buf, sizeof(buf));
     if (n != 10) return false;
     if (std::string_view{buf} != "Alpha|Beta") return false;
     return buf[10] == '\0';
@@ -422,9 +414,9 @@ static_assert(exact_fit_capacity_no_truncation());
 
 [[nodiscard]] consteval bool one_byte_short_truncates_one_char() noexcept {
     // "Alpha|Beta" needs 10 + NUL = 11 bytes; cap=10 is one short.
-    char  buf[10] = {};
-    BTF   b{TF::Alpha, TF::Beta};
-    auto  n = bits_to_string<TF>(b, buf, sizeof(buf));
+    char buf[10] = {};
+    BTF b{TF::Alpha, TF::Beta};
+    auto n = bits_to_string<TF>(b, buf, sizeof(buf));
     if (n != 10) return false;
     // cap=10 → write 9 chars + NUL at index 9.
     if (std::string_view{buf} != "Alpha|Bet") return false;
@@ -436,12 +428,10 @@ static_assert(one_byte_short_truncates_one_char());
 // single-bit enumerator.  Composite (AlphaBeta) and zero (None)
 // stay out of the output even when their bits are nominally in raw.
 [[nodiscard]] consteval bool all_flags_set_emits_every_single_bit() noexcept {
-    char  buf[64] = {};
-    BTF   b{TF::Alpha, TF::Beta, TF::Gamma, TF::Delta,
-            TF::AlphaBeta, TF::None};   // composite + zero are no-ops
-    auto  n = bits_to_string<TF>(b, buf, sizeof(buf));
-    return std::string_view{buf} == "Alpha|Beta|Gamma|Delta"
-        && n == std::string_view{buf}.size();
+    char buf[64] = {};
+    BTF b{TF::Alpha, TF::Beta, TF::Gamma, TF::Delta, TF::AlphaBeta, TF::None};  // composite + zero are no-ops
+    auto n = bits_to_string<TF>(b, buf, sizeof(buf));
+    return std::string_view{buf} == "Alpha|Beta|Gamma|Delta" && n == std::string_view{buf}.size();
 }
 static_assert(all_flags_set_emits_every_single_bit());
 
@@ -450,7 +440,7 @@ static_assert(all_flags_set_emits_every_single_bit());
 [[nodiscard]] consteval bool deterministic_output() noexcept {
     char buf1[64] = {};
     char buf2[64] = {};
-    BTF  b{TF::Beta, TF::Delta};
+    BTF b{TF::Beta, TF::Delta};
     auto n1 = bits_to_string<TF>(b, buf1, sizeof(buf1));
     auto n2 = bits_to_string<TF>(b, buf2, sizeof(buf2));
     return n1 == n2 && std::string_view{buf1} == std::string_view{buf2};
@@ -461,8 +451,7 @@ static_assert(deterministic_output());
 
 [[nodiscard]] consteval int count_enumerators() noexcept {
     int n = 0;
-    for_each_enumerator<TF>(
-        [&](TF, std::string_view) noexcept { ++n; });
+    for_each_enumerator<TF>([&](TF, std::string_view) noexcept { ++n; });
     return n;
 }
 // 6 declared enumerators: Alpha Beta Gamma Delta AlphaBeta None.
@@ -470,8 +459,7 @@ static_assert(count_enumerators() == 6);
 
 [[nodiscard]] consteval int count_single_bit_enumerators() noexcept {
     int n = 0;
-    for_each_single_bit_enumerator<TF>(
-        [&](TF, std::string_view) noexcept { ++n; });
+    for_each_single_bit_enumerator<TF>([&](TF, std::string_view) noexcept { ++n; });
     return n;
 }
 // Single-bit only: Alpha Beta Gamma Delta — composite (AlphaBeta=0x03)
@@ -480,15 +468,15 @@ static_assert(count_single_bit_enumerators() == 4);
 
 [[nodiscard]] consteval bool single_bit_iteration_yields_declaration_order() noexcept {
     // Build a comma-joined name list to verify both ORDER and CONTENTS.
-    char  buf[64] = {};
-    size_t pos    = 0;
-    bool   first  = true;
-    for_each_single_bit_enumerator<TF>(
-        [&](TF, std::string_view name) noexcept {
-            if (!first) buf[pos++] = ',';
-            for (char c : name) buf[pos++] = c;
-            first = false;
-        });
+    char buf[64] = {};
+    size_t pos = 0;
+    bool first = true;
+    for_each_single_bit_enumerator<TF>([&](TF, std::string_view name) noexcept {
+        if (!first) buf[pos++] = ',';
+        for (char c : name)
+            buf[pos++] = c;
+        first = false;
+    });
     return std::string_view{buf, pos} == "Alpha,Beta,Gamma,Delta";
 }
 static_assert(single_bit_iteration_yields_declaration_order());
@@ -497,13 +485,11 @@ static_assert(single_bit_iteration_yields_declaration_order());
 
 template <class T>
 concept can_bits_to_string = requires(T t, char* p, size_t s) {
-    { bits_to_string<T>(::crucible::safety::Bits<T>{}, p, s) }
-        -> std::same_as<size_t>;
+    { bits_to_string<T>(::crucible::safety::Bits<T>{}, p, s) } -> std::same_as<size_t>;
 };
-static_assert( can_bits_to_string<TF>);
-static_assert(!can_bits_to_string<int>,
-    "bits_to_string<int> MUST NOT instantiate — int is not a scoped "
-    "enum, so Bits<int> is itself ill-formed (ScopedEnum concept).");
+static_assert(can_bits_to_string<TF>);
+static_assert(!can_bits_to_string<int>, "bits_to_string<int> MUST NOT instantiate — int is not a scoped "
+                                        "enum, so Bits<int> is itself ill-formed (ScopedEnum concept).");
 
 // ── Runtime smoke test ──────────────────────────────────────────────
 
@@ -549,8 +535,7 @@ inline void runtime_smoke_test() {
     // Exact-fit capacity boundary — runtime check on the consteval test.
     {
         char tight[11] = {};
-        auto nfit = bits_to_string<TF>(BTF{TF::Alpha, TF::Beta},
-                                       tight, sizeof(tight));
+        auto nfit = bits_to_string<TF>(BTF{TF::Alpha, TF::Beta}, tight, sizeof(tight));
         if (nfit != 10) std::abort();
         if (std::string_view{tight} != "Alpha|Beta") std::abort();
         if (tight[10] != '\0') std::abort();
@@ -558,8 +543,7 @@ inline void runtime_smoke_test() {
     // One-byte-short — runtime mirror of the consteval test.
     {
         char short_buf[10] = {};
-        auto nshort = bits_to_string<TF>(BTF{TF::Alpha, TF::Beta},
-                                         short_buf, sizeof(short_buf));
+        auto nshort = bits_to_string<TF>(BTF{TF::Alpha, TF::Beta}, short_buf, sizeof(short_buf));
         if (nshort != 10) std::abort();
         if (std::string_view{short_buf} != "Alpha|Bet") std::abort();
         if (short_buf[9] != '\0') std::abort();
@@ -576,22 +560,19 @@ inline void runtime_smoke_test() {
     if (enumerator_name(TF::AlphaBeta) != "AlphaBeta") std::abort();
 
     // enumerator_name composite-not-named.
-    auto fancy = static_cast<TF>(
-        static_cast<std::uint8_t>(TF::Alpha)
-        | static_cast<std::uint8_t>(TF::Delta));    // 0x09 — unnamed
+    auto fancy =
+        static_cast<TF>(static_cast<std::uint8_t>(TF::Alpha) | static_cast<std::uint8_t>(TF::Delta));  // 0x09 — unnamed
     if (!enumerator_name(fancy).empty()) std::abort();
 
     // for_each_enumerator iterates all six declared enumerators.
     int counter = 0;
-    for_each_enumerator<TF>(
-        [&](TF, std::string_view) noexcept { ++counter; });
+    for_each_enumerator<TF>([&](TF, std::string_view) noexcept { ++counter; });
     if (counter != 6) std::abort();
 
     // for_each_single_bit_enumerator filters at compile time — only
     // four single-bit names reach the lambda.
     int single_bit_counter = 0;
-    for_each_single_bit_enumerator<TF>(
-        [&](TF, std::string_view) noexcept { ++single_bit_counter; });
+    for_each_single_bit_enumerator<TF>([&](TF, std::string_view) noexcept { ++single_bit_counter; });
     if (single_bit_counter != 4) std::abort();
 }
 

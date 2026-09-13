@@ -110,23 +110,21 @@ namespace crucible::safety::extract {
 // ═════════════════════════════════════════════════════════════════════
 
 template <auto FnPtr>
-concept UnaryTransform =
-    arity_v<FnPtr> == 1
-    // Parameter 0's reference category — must be rvalue reference,
-    // expressing the consume-ownership semantics.  is_owned_region_v
-    // applies cv-ref stripping internally, so we check rvalue-ref
-    // OUTSIDE the wrapper-detection.
-    && std::is_rvalue_reference_v<param_type_t<FnPtr, 0>>
-    // CONST rvalue reference is rejected — you cannot move from a
-    // const value, defeating consume-ownership semantics.  We check
-    // this by stripping ONE reference level (turning && into the
-    // pointee) and verifying the pointee is non-const.
-    && !std::is_const_v<std::remove_reference_t<param_type_t<FnPtr, 0>>>
-    // Parameter 0's stripped type — must be OwnedRegion<T, Tag>.
-    && is_owned_region_v<param_type_t<FnPtr, 0>>
-    // Return type — void (in-place) OR OwnedRegion (out-of-place).
-    && (std::is_void_v<return_type_t<FnPtr>>
-        || is_owned_region_v<return_type_t<FnPtr>>);
+concept UnaryTransform = arity_v<FnPtr> == 1
+                      // Parameter 0's reference category — must be rvalue reference,
+                      // expressing the consume-ownership semantics.  is_owned_region_v
+                      // applies cv-ref stripping internally, so we check rvalue-ref
+                      // OUTSIDE the wrapper-detection.
+                      && std::is_rvalue_reference_v<param_type_t<FnPtr, 0>>
+                      // CONST rvalue reference is rejected — you cannot move from a
+                      // const value, defeating consume-ownership semantics.  We check
+                      // this by stripping ONE reference level (turning && into the
+                      // pointee) and verifying the pointee is non-const.
+                      && !std::is_const_v<std::remove_reference_t<param_type_t<FnPtr, 0>>>
+                      // Parameter 0's stripped type — must be OwnedRegion<T, Tag>.
+                      && is_owned_region_v<param_type_t<FnPtr, 0>>
+                      // Return type — void (in-place) OR OwnedRegion (out-of-place).
+                      && (std::is_void_v<return_type_t<FnPtr>> || is_owned_region_v<return_type_t<FnPtr>>);
 
 template <auto FnPtr>
 inline constexpr bool is_unary_transform_v = UnaryTransform<FnPtr>;
@@ -140,22 +138,19 @@ inline constexpr bool is_unary_transform_v = UnaryTransform<FnPtr>;
 // allocate a new output region with potentially different tag /
 // element type.
 template <auto FnPtr>
-inline constexpr bool is_in_place_unary_transform_v =
-    UnaryTransform<FnPtr> && std::is_void_v<return_type_t<FnPtr>>;
+inline constexpr bool is_in_place_unary_transform_v = UnaryTransform<FnPtr> && std::is_void_v<return_type_t<FnPtr>>;
 
 // Input region's Tag.  Constrained on UnaryTransform so non-matching
 // signatures are rejected at the alias declaration with a single
 // requires-clause diagnostic rather than a deep substitution failure.
 template <auto FnPtr>
     requires UnaryTransform<FnPtr>
-using unary_transform_input_tag_t =
-    owned_region_tag_t<param_type_t<FnPtr, 0>>;
+using unary_transform_input_tag_t = owned_region_tag_t<param_type_t<FnPtr, 0>>;
 
 // Input region's element type T.
 template <auto FnPtr>
     requires UnaryTransform<FnPtr>
-using unary_transform_input_value_t =
-    owned_region_value_t<param_type_t<FnPtr, 0>>;
+using unary_transform_input_value_t = owned_region_value_t<param_type_t<FnPtr, 0>>;
 
 // Output region's Tag, OR `void` when the transform is in-place.
 // We use a detail-namespace dispatcher to discriminate the void
@@ -179,9 +174,8 @@ struct unary_transform_output_tag_select<FnPtr, /*IsInPlace=*/false> {
 
 template <auto FnPtr>
     requires UnaryTransform<FnPtr>
-using unary_transform_output_tag_t = typename
-    detail::unary_transform_output_tag_select<
-        FnPtr, std::is_void_v<return_type_t<FnPtr>>>::type;
+using unary_transform_output_tag_t =
+    typename detail::unary_transform_output_tag_select<FnPtr, std::is_void_v<return_type_t<FnPtr>>>::type;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Self-test block ────────────────────────────────────────────────

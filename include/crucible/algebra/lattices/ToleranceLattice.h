@@ -114,29 +114,36 @@ namespace crucible::algebra::lattices {
 
 // ── Tolerance tier ──────────────────────────────────────────────────
 enum class Tolerance : std::uint8_t {
-    RELAXED  = 0,    // no error bound (quantized inference)
-    ULP_INT8 = 1,    // ~10⁻² (post-training quantization)
-    ULP_FP8  = 2,    // ~10⁻³..10⁻² (FP8 tensor cores)
-    ULP_FP16 = 3,    // ~10⁻⁴..10⁻³ (FP16/BF16 + FP32 accumulator)
-    ULP_FP32 = 4,    // ~10⁻⁷..10⁻⁶ (single-precision ULP)
-    ULP_FP64 = 5,    // ~10⁻¹⁵      (double-precision ULP)
-    BITEXACT = 6,    // 0           (bit-identical across replicas)
+    RELAXED = 0,  // no error bound (quantized inference)
+    ULP_INT8 = 1,  // ~10⁻² (post-training quantization)
+    ULP_FP8 = 2,  // ~10⁻³..10⁻² (FP8 tensor cores)
+    ULP_FP16 = 3,  // ~10⁻⁴..10⁻³ (FP16/BF16 + FP32 accumulator)
+    ULP_FP32 = 4,  // ~10⁻⁷..10⁻⁶ (single-precision ULP)
+    ULP_FP64 = 5,  // ~10⁻¹⁵      (double-precision ULP)
+    BITEXACT = 6,  // 0           (bit-identical across replicas)
 };
 
 // Cardinality + diagnostic name via reflection.
-inline constexpr std::size_t tolerance_count =
-    std::meta::enumerators_of(^^Tolerance).size();
+inline constexpr std::size_t tolerance_count = std::meta::enumerators_of(^^Tolerance).size();
 
 [[nodiscard]] consteval std::string_view tolerance_name(Tolerance t) noexcept {
     switch (t) {
-        case Tolerance::RELAXED:  return "RELAXED";
-        case Tolerance::ULP_INT8: return "ULP_INT8";
-        case Tolerance::ULP_FP8:  return "ULP_FP8";
-        case Tolerance::ULP_FP16: return "ULP_FP16";
-        case Tolerance::ULP_FP32: return "ULP_FP32";
-        case Tolerance::ULP_FP64: return "ULP_FP64";
-        case Tolerance::BITEXACT: return "BITEXACT";
-        default:                  return std::string_view{"<unknown Tolerance>"};
+        case Tolerance::RELAXED:
+            return "RELAXED";
+        case Tolerance::ULP_INT8:
+            return "ULP_INT8";
+        case Tolerance::ULP_FP8:
+            return "ULP_FP8";
+        case Tolerance::ULP_FP16:
+            return "ULP_FP16";
+        case Tolerance::ULP_FP32:
+            return "ULP_FP32";
+        case Tolerance::ULP_FP64:
+            return "ULP_FP64";
+        case Tolerance::BITEXACT:
+            return "BITEXACT";
+        default:
+            return std::string_view{"<unknown Tolerance>"};
     }
 }
 
@@ -145,16 +152,10 @@ inline constexpr std::size_t tolerance_count =
 // Inherits leq/join/meet from ChainLatticeOps<Tolerance> — see
 // ChainLattice.h for the rationale (audit Tier-2 dedup).
 struct ToleranceLattice : ChainLatticeOps<Tolerance> {
-    [[nodiscard]] static constexpr element_type bottom() noexcept {
-        return Tolerance::RELAXED;
-    }
-    [[nodiscard]] static constexpr element_type top() noexcept {
-        return Tolerance::BITEXACT;
-    }
+    [[nodiscard]] static constexpr element_type bottom() noexcept { return Tolerance::RELAXED; }
+    [[nodiscard]] static constexpr element_type top() noexcept { return Tolerance::BITEXACT; }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return "ToleranceLattice";
-    }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "ToleranceLattice"; }
 
     // ── At<T>: singleton sub-lattice at a fixed type-level tier ─────
     //
@@ -166,32 +167,36 @@ struct ToleranceLattice : ChainLatticeOps<Tolerance> {
     struct At {
         struct element_type {
             using tolerance_value_type = Tolerance;
-            [[nodiscard]] constexpr operator tolerance_value_type() const noexcept {
-                return T;
-            }
-            [[nodiscard]] constexpr bool operator==(element_type) const noexcept {
-                return true;
-            }
+            [[nodiscard]] constexpr operator tolerance_value_type() const noexcept { return T; }
+            [[nodiscard]] constexpr bool operator==(element_type) const noexcept { return true; }
         };
 
         static constexpr Tolerance tier = T;
 
         [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-        [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
         [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
 
         [[nodiscard]] static consteval std::string_view name() noexcept {
             switch (T) {
-                case Tolerance::RELAXED:  return "ToleranceLattice::At<RELAXED>";
-                case Tolerance::ULP_INT8: return "ToleranceLattice::At<ULP_INT8>";
-                case Tolerance::ULP_FP8:  return "ToleranceLattice::At<ULP_FP8>";
-                case Tolerance::ULP_FP16: return "ToleranceLattice::At<ULP_FP16>";
-                case Tolerance::ULP_FP32: return "ToleranceLattice::At<ULP_FP32>";
-                case Tolerance::ULP_FP64: return "ToleranceLattice::At<ULP_FP64>";
-                case Tolerance::BITEXACT: return "ToleranceLattice::At<BITEXACT>";
-                default:                  return "ToleranceLattice::At<?>";
+                case Tolerance::RELAXED:
+                    return "ToleranceLattice::At<RELAXED>";
+                case Tolerance::ULP_INT8:
+                    return "ToleranceLattice::At<ULP_INT8>";
+                case Tolerance::ULP_FP8:
+                    return "ToleranceLattice::At<ULP_FP8>";
+                case Tolerance::ULP_FP16:
+                    return "ToleranceLattice::At<ULP_FP16>";
+                case Tolerance::ULP_FP32:
+                    return "ToleranceLattice::At<ULP_FP32>";
+                case Tolerance::ULP_FP64:
+                    return "ToleranceLattice::At<ULP_FP64>";
+                case Tolerance::BITEXACT:
+                    return "ToleranceLattice::At<BITEXACT>";
+                default:
+                    return "ToleranceLattice::At<?>";
             }
         }
     };
@@ -199,42 +204,38 @@ struct ToleranceLattice : ChainLatticeOps<Tolerance> {
 
 // ── Convenience aliases ─────────────────────────────────────────────
 namespace tolerance {
-    using RelaxedTier  = ToleranceLattice::At<Tolerance::RELAXED>;
-    using Int8Tier     = ToleranceLattice::At<Tolerance::ULP_INT8>;
-    using Fp8Tier      = ToleranceLattice::At<Tolerance::ULP_FP8>;
-    using Fp16Tier     = ToleranceLattice::At<Tolerance::ULP_FP16>;
-    using Fp32Tier     = ToleranceLattice::At<Tolerance::ULP_FP32>;
-    using Fp64Tier     = ToleranceLattice::At<Tolerance::ULP_FP64>;
-    using BitexactTier = ToleranceLattice::At<Tolerance::BITEXACT>;
+using RelaxedTier = ToleranceLattice::At<Tolerance::RELAXED>;
+using Int8Tier = ToleranceLattice::At<Tolerance::ULP_INT8>;
+using Fp8Tier = ToleranceLattice::At<Tolerance::ULP_FP8>;
+using Fp16Tier = ToleranceLattice::At<Tolerance::ULP_FP16>;
+using Fp32Tier = ToleranceLattice::At<Tolerance::ULP_FP32>;
+using Fp64Tier = ToleranceLattice::At<Tolerance::ULP_FP64>;
+using BitexactTier = ToleranceLattice::At<Tolerance::BITEXACT>;
 }  // namespace tolerance
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::tolerance_lattice_self_test {
 
 // Cardinality + reflection-based name coverage.
-static_assert(tolerance_count == 7,
-    "Tolerance catalog diverged from {RELAXED, ULP_INT8, ULP_FP8, "
-    "ULP_FP16, ULP_FP32, ULP_FP64, BITEXACT}; confirm intent and "
-    "update precision-budget calibrator callers.");
+static_assert(tolerance_count == 7, "Tolerance catalog diverged from {RELAXED, ULP_INT8, ULP_FP8, "
+                                    "ULP_FP16, ULP_FP32, ULP_FP64, BITEXACT}; confirm intent and "
+                                    "update precision-budget calibrator callers.");
 
 [[nodiscard]] consteval bool every_tolerance_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^Tolerance));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Tolerance));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
-        if (tolerance_name([:en:]) ==
-            std::string_view{"<unknown Tolerance>"}) {
+        if (tolerance_name([:en:]) == std::string_view{"<unknown Tolerance>"}) {
             return false;
         }
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_tolerance_has_name(),
-    "tolerance_name() switch missing arm for at least one tier — "
-    "add the arm or the new tier leaks the '<unknown Tolerance>' "
-    "sentinel into runtime observer's debug output.");
+static_assert(every_tolerance_has_name(), "tolerance_name() switch missing arm for at least one tier — "
+                                          "add the arm or the new tier leaks the '<unknown Tolerance>' "
+                                          "sentinel into runtime observer's debug output.");
 
 // Concept conformance — full lattice + each At<T> sub-lattice.
 static_assert(Lattice<ToleranceLattice>);
@@ -266,28 +267,28 @@ static_assert(std::is_empty_v<tolerance::BitexactTier::element_type>);
 // (audit Tier-2 dedup) — adding a new Tolerance tier auto-extends
 // coverage with no per-lattice code change.
 static_assert(verify_chain_lattice_exhaustive<ToleranceLattice>(),
-    "ToleranceLattice's chain-order lattice axioms must hold at every "
-    "(Tolerance)³ triple — failure indicates a defect in leq/join/meet "
-    "or in the underlying enum encoding.");
+              "ToleranceLattice's chain-order lattice axioms must hold at every "
+              "(Tolerance)³ triple — failure indicates a defect in leq/join/meet "
+              "or in the underlying enum encoding.");
 static_assert(verify_chain_lattice_distributive_exhaustive<ToleranceLattice>(),
-    "ToleranceLattice's chain order must satisfy distributivity at "
-    "every (Tolerance)³ triple — a chain order always does, so failure "
-    "would indicate a defect in join or meet.");
+              "ToleranceLattice's chain order must satisfy distributivity at "
+              "every (Tolerance)³ triple — a chain order always does, so failure "
+              "would indicate a defect in join or meet.");
 
 // Direct order witnesses — the entire chain is increasing.
-static_assert( ToleranceLattice::leq(Tolerance::RELAXED,  Tolerance::ULP_INT8));
-static_assert( ToleranceLattice::leq(Tolerance::ULP_INT8, Tolerance::ULP_FP8));
-static_assert( ToleranceLattice::leq(Tolerance::ULP_FP8,  Tolerance::ULP_FP16));
-static_assert( ToleranceLattice::leq(Tolerance::ULP_FP16, Tolerance::ULP_FP32));
-static_assert( ToleranceLattice::leq(Tolerance::ULP_FP32, Tolerance::ULP_FP64));
-static_assert( ToleranceLattice::leq(Tolerance::ULP_FP64, Tolerance::BITEXACT));
-static_assert( ToleranceLattice::leq(Tolerance::RELAXED,  Tolerance::BITEXACT));   // transitive endpoints
+static_assert(ToleranceLattice::leq(Tolerance::RELAXED, Tolerance::ULP_INT8));
+static_assert(ToleranceLattice::leq(Tolerance::ULP_INT8, Tolerance::ULP_FP8));
+static_assert(ToleranceLattice::leq(Tolerance::ULP_FP8, Tolerance::ULP_FP16));
+static_assert(ToleranceLattice::leq(Tolerance::ULP_FP16, Tolerance::ULP_FP32));
+static_assert(ToleranceLattice::leq(Tolerance::ULP_FP32, Tolerance::ULP_FP64));
+static_assert(ToleranceLattice::leq(Tolerance::ULP_FP64, Tolerance::BITEXACT));
+static_assert(ToleranceLattice::leq(Tolerance::RELAXED, Tolerance::BITEXACT));  // transitive endpoints
 static_assert(!ToleranceLattice::leq(Tolerance::BITEXACT, Tolerance::RELAXED));
 static_assert(!ToleranceLattice::leq(Tolerance::ULP_FP32, Tolerance::ULP_FP16));
 
 // Pin bottom / top to the chain endpoints.
 static_assert(ToleranceLattice::bottom() == Tolerance::RELAXED);
-static_assert(ToleranceLattice::top()    == Tolerance::BITEXACT);
+static_assert(ToleranceLattice::top() == Tolerance::BITEXACT);
 
 // Join tightens budget (max); meet loosens (min).  These are the
 // algebraic operations the §10 LP allocator's per-op aggregation
@@ -330,63 +331,62 @@ static_assert(ToleranceLattice::meet(Tolerance::ULP_FP32, Tolerance::ULP_FP16) =
 // Polarity-witness pin: a refactor inverting the chain (so RELAXED
 // moves to top) would red THIS assert and force coordinated cross-tree
 // audit of all Forge phase E aggregation sites.
-static_assert(ToleranceLattice::join(Tolerance::RELAXED, Tolerance::BITEXACT)
-              == Tolerance::BITEXACT,
-    "FIXY-FOUND-076: ToleranceLattice's JOIN gives strictest-wins "
-    "under the natural-tolerance-budget convention (top=BITEXACT). "
-    "join(RELAXED, BITEXACT) returns BITEXACT — the tighter budget "
-    "dominates.  Cross-tree 'par=join, strictest-wins' contract holds; "
-    "consumers can call JOIN directly here.  Forge phase E.RecipeSelect "
-    "depends on this alignment.");
-static_assert(ToleranceLattice::meet(Tolerance::RELAXED, Tolerance::BITEXACT)
-              == Tolerance::RELAXED,
-    "FIXY-FOUND-076: ToleranceLattice's MEET gives loosest-floor "
-    "(bottom=RELAXED).  Admission gates wanting a 'permit any tolerance' "
-    "minimum MUST call MEET — RELAXED absorbs in meet by chain-minimum.");
+static_assert(ToleranceLattice::join(Tolerance::RELAXED, Tolerance::BITEXACT) == Tolerance::BITEXACT,
+              "FIXY-FOUND-076: ToleranceLattice's JOIN gives strictest-wins "
+              "under the natural-tolerance-budget convention (top=BITEXACT). "
+              "join(RELAXED, BITEXACT) returns BITEXACT — the tighter budget "
+              "dominates.  Cross-tree 'par=join, strictest-wins' contract holds; "
+              "consumers can call JOIN directly here.  Forge phase E.RecipeSelect "
+              "depends on this alignment.");
+static_assert(ToleranceLattice::meet(Tolerance::RELAXED, Tolerance::BITEXACT) == Tolerance::RELAXED,
+              "FIXY-FOUND-076: ToleranceLattice's MEET gives loosest-floor "
+              "(bottom=RELAXED).  Admission gates wanting a 'permit any tolerance' "
+              "minimum MUST call MEET — RELAXED absorbs in meet by chain-minimum.");
 
 // Diagnostic names.
 static_assert(ToleranceLattice::name() == "ToleranceLattice");
-static_assert(tolerance::RelaxedTier::name()  == "ToleranceLattice::At<RELAXED>");
-static_assert(tolerance::Int8Tier::name()     == "ToleranceLattice::At<ULP_INT8>");
-static_assert(tolerance::Fp8Tier::name()      == "ToleranceLattice::At<ULP_FP8>");
-static_assert(tolerance::Fp16Tier::name()     == "ToleranceLattice::At<ULP_FP16>");
-static_assert(tolerance::Fp32Tier::name()     == "ToleranceLattice::At<ULP_FP32>");
-static_assert(tolerance::Fp64Tier::name()     == "ToleranceLattice::At<ULP_FP64>");
+static_assert(tolerance::RelaxedTier::name() == "ToleranceLattice::At<RELAXED>");
+static_assert(tolerance::Int8Tier::name() == "ToleranceLattice::At<ULP_INT8>");
+static_assert(tolerance::Fp8Tier::name() == "ToleranceLattice::At<ULP_FP8>");
+static_assert(tolerance::Fp16Tier::name() == "ToleranceLattice::At<ULP_FP16>");
+static_assert(tolerance::Fp32Tier::name() == "ToleranceLattice::At<ULP_FP32>");
+static_assert(tolerance::Fp64Tier::name() == "ToleranceLattice::At<ULP_FP64>");
 static_assert(tolerance::BitexactTier::name() == "ToleranceLattice::At<BITEXACT>");
 
 // Reflection-driven coverage check on At<T>::name() — same discipline
 // as ConfLattice's every_at_conf_has_name.
 [[nodiscard]] consteval bool every_at_tolerance_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^Tolerance));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Tolerance));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
-        if (ToleranceLattice::At<([:en:])>::name() ==
-            std::string_view{"ToleranceLattice::At<?>"}) {
+        if (ToleranceLattice::At<([:en:])>::name() == std::string_view{"ToleranceLattice::At<?>"}) {
             return false;
         }
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_at_tolerance_has_name(),
-    "ToleranceLattice::At<T>::name() switch missing an arm for at "
-    "least one tier — add the arm or the new tier leaks the "
-    "'ToleranceLattice::At<?>' sentinel.");
+static_assert(every_at_tolerance_has_name(), "ToleranceLattice::At<T>::name() switch missing an arm for at "
+                                             "least one tier — add the arm or the new tier leaks the "
+                                             "'ToleranceLattice::At<?>' sentinel.");
 
 // Convenience aliases resolve correctly.
-static_assert(tolerance::RelaxedTier::tier  == Tolerance::RELAXED);
-static_assert(tolerance::Int8Tier::tier     == Tolerance::ULP_INT8);
-static_assert(tolerance::Fp8Tier::tier      == Tolerance::ULP_FP8);
-static_assert(tolerance::Fp16Tier::tier     == Tolerance::ULP_FP16);
-static_assert(tolerance::Fp32Tier::tier     == Tolerance::ULP_FP32);
-static_assert(tolerance::Fp64Tier::tier     == Tolerance::ULP_FP64);
+static_assert(tolerance::RelaxedTier::tier == Tolerance::RELAXED);
+static_assert(tolerance::Int8Tier::tier == Tolerance::ULP_INT8);
+static_assert(tolerance::Fp8Tier::tier == Tolerance::ULP_FP8);
+static_assert(tolerance::Fp16Tier::tier == Tolerance::ULP_FP16);
+static_assert(tolerance::Fp32Tier::tier == Tolerance::ULP_FP32);
+static_assert(tolerance::Fp64Tier::tier == Tolerance::ULP_FP64);
 static_assert(tolerance::BitexactTier::tier == Tolerance::BITEXACT);
 
 // ── Layout invariants on Graded<...,At<T>,T_> ───────────────────────
-struct OneByteValue   { char c{0}; };
-struct EightByteValue { unsigned long long v{0}; };
+struct OneByteValue {
+    char c{0};
+};
+struct EightByteValue {
+    unsigned long long v{0};
+};
 
 // BitexactTier — the most semantically-loaded tier (BITEXACT_STRICT
 // recipe gate, federated-replay invariant).  Witnessed against
@@ -419,26 +419,26 @@ inline void runtime_smoke_test() {
     // Full ToleranceLattice ops at runtime.
     Tolerance a = Tolerance::RELAXED;
     Tolerance b = Tolerance::BITEXACT;
-    [[maybe_unused]] bool      l1   = ToleranceLattice::leq(a, b);
-    [[maybe_unused]] Tolerance j1   = ToleranceLattice::join(a, b);
-    [[maybe_unused]] Tolerance m1   = ToleranceLattice::meet(a, b);
-    [[maybe_unused]] Tolerance bot  = ToleranceLattice::bottom();
-    [[maybe_unused]] Tolerance top  = ToleranceLattice::top();
+    [[maybe_unused]] bool l1 = ToleranceLattice::leq(a, b);
+    [[maybe_unused]] Tolerance j1 = ToleranceLattice::join(a, b);
+    [[maybe_unused]] Tolerance m1 = ToleranceLattice::meet(a, b);
+    [[maybe_unused]] Tolerance bot = ToleranceLattice::bottom();
+    [[maybe_unused]] Tolerance top = ToleranceLattice::top();
 
     // Mid-tier ops — chains through the FP* portion of the lattice.
     Tolerance fp16 = Tolerance::ULP_FP16;
     Tolerance fp32 = Tolerance::ULP_FP32;
-    [[maybe_unused]] Tolerance j2 = ToleranceLattice::join(fp16, fp32);    // ULP_FP32
-    [[maybe_unused]] Tolerance m2 = ToleranceLattice::meet(fp16, fp32);    // ULP_FP16
+    [[maybe_unused]] Tolerance j2 = ToleranceLattice::join(fp16, fp32);  // ULP_FP32
+    [[maybe_unused]] Tolerance m2 = ToleranceLattice::meet(fp16, fp32);  // ULP_FP16
 
     // Graded<Absolute, BitexactTier, T> at runtime.
     OneByteValue v{42};
     BitexactGraded<OneByteValue> initial{v, tolerance::BitexactTier::bottom()};
-    auto widened   = initial.weaken(tolerance::BitexactTier::top());
-    auto composed  = initial.compose(widened);
-    auto rv_widen  = std::move(widened).weaken(tolerance::BitexactTier::top());
+    auto widened = initial.weaken(tolerance::BitexactTier::top());
+    auto composed = initial.compose(widened);
+    auto rv_widen = std::move(widened).weaken(tolerance::BitexactTier::top());
 
-    [[maybe_unused]] auto g  = rv_widen.grade();
+    [[maybe_unused]] auto g = rv_widen.grade();
     [[maybe_unused]] auto vc = composed.peek().c;
 
     // Conversion: At<Tolerance>::element_type → Tolerance at runtime.

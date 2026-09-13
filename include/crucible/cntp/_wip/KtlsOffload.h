@@ -57,21 +57,18 @@ enum class TlsOffloadDirection : std::uint8_t {
 };
 
 [[nodiscard]] std::string_view ktls_error_name(KtlsError error) noexcept;
-[[nodiscard]] std::string_view
-tls_offload_direction_name(TlsOffloadDirection direction) noexcept;
+[[nodiscard]] std::string_view tls_offload_direction_name(TlsOffloadDirection direction) noexcept;
 
 template <TlsVersion Version>
 concept SupportedKtlsVersion = Version == TlsVersion::V13;
 
 template <MtlsCipherSuite Suite>
 concept KtlsAesGcmCipherSuite =
-    Suite == MtlsCipherSuite::TlsAes128GcmSha256 ||
-    Suite == MtlsCipherSuite::TlsAes256GcmSha384;
+    Suite == MtlsCipherSuite::TlsAes128GcmSha256 || Suite == MtlsCipherSuite::TlsAes256GcmSha384;
 
 template <MtlsCipherSuite Suite, std::size_t KeyBytes>
-concept KtlsKeySizeForCipher =
-    (Suite == MtlsCipherSuite::TlsAes128GcmSha256 && KeyBytes == 16u) ||
-    (Suite == MtlsCipherSuite::TlsAes256GcmSha384 && KeyBytes == 32u);
+concept KtlsKeySizeForCipher = (Suite == MtlsCipherSuite::TlsAes128GcmSha256 && KeyBytes == 16u)
+                            || (Suite == MtlsCipherSuite::TlsAes256GcmSha384 && KeyBytes == 32u);
 
 struct KtlsCryptoMaterial {
     static constexpr std::size_t max_key_bytes = 32;
@@ -122,15 +119,21 @@ struct KtlsCryptoMaterial {
 
     constexpr ~KtlsCryptoMaterial() noexcept { zeroize(); }
 
-    [[nodiscard]] constexpr std::size_t size() const noexcept {
-        return key_bytes;
-    }
+    [[nodiscard]] constexpr std::size_t size() const noexcept { return key_bytes; }
 
     constexpr void zeroize() noexcept {
-        for (auto& b : key) { b = std::byte{0}; }
-        for (auto& b : iv) { b = std::byte{0}; }
-        for (auto& b : salt) { b = std::byte{0}; }
-        for (auto& b : record_sequence) { b = std::byte{0}; }
+        for (auto& b : key) {
+            b = std::byte{0};
+        }
+        for (auto& b : iv) {
+            b = std::byte{0};
+        }
+        for (auto& b : salt) {
+            b = std::byte{0};
+        }
+        for (auto& b : record_sequence) {
+            b = std::byte{0};
+        }
         key_bytes = 0;
         iv_bytes = 0;
         salt_bytes = 0;
@@ -153,8 +156,7 @@ struct TlsCryptoInfo {
     KtlsSecretMaterial material;
 };
 
-using DeclaredTlsCryptoInfo =
-    safety::Tagged<TlsCryptoInfo, wip_source::KtlsOffloaded>;
+using DeclaredTlsCryptoInfo = safety::Tagged<TlsCryptoInfo, wip_source::KtlsOffloaded>;
 
 struct KtlsOffloadRequest {
     SocketFd socket;
@@ -164,8 +166,7 @@ struct KtlsOffloadRequest {
     bool allow_kernel_install = false;
 };
 
-using DeclaredKtlsOffload =
-    safety::Tagged<KtlsOffloadRequest, wip_source::KtlsOffloaded>;
+using DeclaredKtlsOffload = safety::Tagged<KtlsOffloadRequest, wip_source::KtlsOffloaded>;
 
 class KtlsOffloadSocket : public safety::Pinned<KtlsOffloadSocket> {
 public:
@@ -173,9 +174,7 @@ public:
     [[nodiscard]] NicInterfaceName interface() const noexcept { return interface_; }
     [[nodiscard]] bool tx_active() const noexcept { return tx_active_; }
     [[nodiscard]] bool rx_active() const noexcept { return rx_active_; }
-    [[nodiscard]] bool is_offload_active() const noexcept {
-        return tx_active_ || rx_active_;
-    }
+    [[nodiscard]] bool is_offload_active() const noexcept { return tx_active_ || rx_active_; }
 
 private:
     SocketFd socket_;
@@ -183,19 +182,15 @@ private:
     bool tx_active_ = false;
     bool rx_active_ = false;
 
-    constexpr KtlsOffloadSocket(SocketFd socket,
-                                NicInterfaceName interface) noexcept
+    constexpr KtlsOffloadSocket(SocketFd socket, NicInterfaceName interface) noexcept
         : socket_{socket}, interface_{interface} {}
 
-    friend constexpr KtlsOffloadSocket
-    mint_ktls_socket(effects::Init, SocketFd, NicInterfaceName) noexcept;
+    friend constexpr KtlsOffloadSocket mint_ktls_socket(effects::Init, SocketFd, NicInterfaceName) noexcept;
 };
 
-[[nodiscard]] constexpr bool
-ktls_direction_valid(TlsOffloadDirection direction) noexcept {
-    return direction == TlsOffloadDirection::Tx ||
-           direction == TlsOffloadDirection::Rx ||
-           direction == TlsOffloadDirection::Both;
+[[nodiscard]] constexpr bool ktls_direction_valid(TlsOffloadDirection direction) noexcept {
+    return direction == TlsOffloadDirection::Tx || direction == TlsOffloadDirection::Rx
+        || direction == TlsOffloadDirection::Both;
 }
 
 template <MtlsCipherSuite Suite>
@@ -209,10 +204,8 @@ template <MtlsCipherSuite Suite>
 }
 
 [[nodiscard]] constexpr std::expected<KtlsCryptoMaterial, KtlsError>
-admit_ktls_crypto_material(std::span<const std::byte> key,
-                           std::span<const std::byte> iv,
-                           std::span<const std::byte> salt,
-                           std::span<const std::byte> record_sequence) noexcept {
+admit_ktls_crypto_material(std::span<const std::byte> key, std::span<const std::byte> iv,
+                           std::span<const std::byte> salt, std::span<const std::byte> record_sequence) noexcept {
     if (key.empty()) {
         return std::unexpected(KtlsError::EmptyKey);
     }
@@ -233,22 +226,26 @@ admit_ktls_crypto_material(std::span<const std::byte> key,
     }
 
     KtlsCryptoMaterial out{};
-    for (std::size_t i = 0; i < key.size(); ++i) { out.key[i] = key[i]; }
-    for (std::size_t i = 0; i < iv.size(); ++i) { out.iv[i] = iv[i]; }
-    for (std::size_t i = 0; i < salt.size(); ++i) { out.salt[i] = salt[i]; }
+    for (std::size_t i = 0; i < key.size(); ++i) {
+        out.key[i] = key[i];
+    }
+    for (std::size_t i = 0; i < iv.size(); ++i) {
+        out.iv[i] = iv[i];
+    }
+    for (std::size_t i = 0; i < salt.size(); ++i) {
+        out.salt[i] = salt[i];
+    }
     for (std::size_t i = 0; i < record_sequence.size(); ++i) {
         out.record_sequence[i] = record_sequence[i];
     }
     out.key_bytes = static_cast<std::uint8_t>(key.size());
     out.iv_bytes = static_cast<std::uint8_t>(iv.size());
     out.salt_bytes = static_cast<std::uint8_t>(salt.size());
-    out.record_sequence_bytes =
-        static_cast<std::uint8_t>(record_sequence.size());
+    out.record_sequence_bytes = static_cast<std::uint8_t>(record_sequence.size());
     return out;
 }
 
-template <TlsVersion Version = TlsVersion::V13,
-          MtlsCipherSuite Suite = MtlsCipherSuite::TlsAes256GcmSha384>
+template <TlsVersion Version = TlsVersion::V13, MtlsCipherSuite Suite = MtlsCipherSuite::TlsAes256GcmSha384>
     requires SupportedKtlsVersion<Version> && KtlsAesGcmCipherSuite<Suite>
 [[nodiscard]] constexpr std::expected<DeclaredTlsCryptoInfo, KtlsError>
 mint_ktls_crypto_info(KtlsCryptoMaterial material) noexcept {
@@ -268,18 +265,14 @@ mint_ktls_crypto_info(KtlsCryptoMaterial material) noexcept {
     }};
 }
 
-[[nodiscard]] constexpr KtlsOffloadSocket
-mint_ktls_socket(effects::Init, SocketFd socket, NicInterfaceName iface) noexcept {
+[[nodiscard]] constexpr KtlsOffloadSocket mint_ktls_socket(effects::Init, SocketFd socket,
+                                                           NicInterfaceName iface) noexcept {
     return KtlsOffloadSocket{socket, iface};
 }
 
 [[nodiscard]] constexpr std::expected<DeclaredKtlsOffload, KtlsError>
-mint_ktls_offload_for_socket(effects::Init,
-                             SocketFd socket,
-                             NicInterfaceName iface,
-                             DeclaredTlsCryptoInfo crypto,
-                             TlsOffloadDirection direction,
-                             bool allow_kernel_install = false) noexcept {
+mint_ktls_offload_for_socket(effects::Init, SocketFd socket, NicInterfaceName iface, DeclaredTlsCryptoInfo crypto,
+                             TlsOffloadDirection direction, bool allow_kernel_install = false) noexcept {
     if (!ktls_direction_valid(direction)) {
         return std::unexpected(KtlsError::InvalidDirection);
     }
@@ -295,14 +288,11 @@ mint_ktls_offload_for_socket(effects::Init,
 [[nodiscard]] constexpr std::expected<void, KtlsError>
 validate_ktls_crypto_info(DeclaredTlsCryptoInfo const& crypto) noexcept {
     auto const& raw = crypto.value();
-    if (raw.cipher != MtlsCipherSuite::TlsAes128GcmSha256 &&
-        raw.cipher != MtlsCipherSuite::TlsAes256GcmSha384) {
+    if (raw.cipher != MtlsCipherSuite::TlsAes128GcmSha256 && raw.cipher != MtlsCipherSuite::TlsAes256GcmSha384) {
         return std::unexpected(KtlsError::UnsupportedCipherSuite);
     }
-    if ((raw.cipher == MtlsCipherSuite::TlsAes128GcmSha256 &&
-         raw.shape.key_bytes != 16u) ||
-        (raw.cipher == MtlsCipherSuite::TlsAes256GcmSha384 &&
-         raw.shape.key_bytes != 32u)) {
+    if ((raw.cipher == MtlsCipherSuite::TlsAes128GcmSha256 && raw.shape.key_bytes != 16u)
+        || (raw.cipher == MtlsCipherSuite::TlsAes256GcmSha384 && raw.shape.key_bytes != 32u)) {
         return std::unexpected(KtlsError::InvalidKeySize);
     }
     if (raw.shape.iv_bytes == 0u) {
@@ -314,8 +304,7 @@ validate_ktls_crypto_info(DeclaredTlsCryptoInfo const& crypto) noexcept {
     if (raw.shape.salt_bytes > KtlsCryptoMaterial::max_salt_bytes) {
         return std::unexpected(KtlsError::SaltTooLarge);
     }
-    if (raw.shape.record_sequence_bytes >
-        KtlsCryptoMaterial::max_record_sequence_bytes) {
+    if (raw.shape.record_sequence_bytes > KtlsCryptoMaterial::max_record_sequence_bytes) {
         return std::unexpected(KtlsError::RecSeqTooLarge);
     }
     return {};
@@ -330,9 +319,8 @@ validate_ktls_offload(DeclaredKtlsOffload const& request) noexcept {
     return validate_ktls_crypto_info(raw.crypto);
 }
 
-[[nodiscard]] std::expected<void, KtlsError>
-enable_ktls_offload(KtlsOffloadSocket& socket,
-                    DeclaredKtlsOffload const& request) noexcept;
+[[nodiscard]] std::expected<void, KtlsError> enable_ktls_offload(KtlsOffloadSocket& socket,
+                                                                 DeclaredKtlsOffload const& request) noexcept;
 
 static_assert(sizeof(KtlsSecretMaterial) == sizeof(KtlsCryptoMaterial));
 static_assert(std::is_trivially_copyable_v<KtlsCryptoShape>);

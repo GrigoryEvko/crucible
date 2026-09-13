@@ -232,9 +232,9 @@ namespace crucible::concurrent::scheduler {
 // is order-only (Fifo / Lifo / RoundRobin / LocalityAware).
 
 enum class PriorityKind : std::uint8_t {
-    None,             // queue order alone determines next job
-    Deadline,         // key = absolute deadline; smaller = sooner due
-    VirtualRuntime,   // key = accumulated vruntime; smaller = ran least
+    None,  // queue order alone determines next job
+    Deadline,  // key = absolute deadline; smaller = sooner due
+    VirtualRuntime,  // key = accumulated vruntime; smaller = ran least
     VirtualDeadline,  // key = vruntime + lag/weight; smaller = overdue
 };
 
@@ -265,11 +265,11 @@ struct EevdfPerShard {};
 
 template <typename Policy>
 struct policy_defaults {
-    static constexpr std::size_t   capacity      = 1024;
-    static constexpr std::size_t   num_shards    = 4;
-    static constexpr std::size_t   num_consumers = 4;
-    static constexpr std::size_t   num_buckets   = 1024;
-    static constexpr std::uint64_t quantum       = 100'000;  // 100 µs / 100k vrun-ticks
+    static constexpr std::size_t capacity = 1024;
+    static constexpr std::size_t num_shards = 4;
+    static constexpr std::size_t num_consumers = 4;
+    static constexpr std::size_t num_buckets = 1024;
+    static constexpr std::uint64_t quantum = 100'000;  // 100 µs / 100k vrun-ticks
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -283,14 +283,11 @@ struct policy_defaults {
 
 struct Fifo {
     template <typename Job>
-    using queue_template =
-        PermissionedMpmcChannel<Job,
-                                policy_defaults<Fifo>::capacity,
-                                tag::Fifo>;
+    using queue_template = PermissionedMpmcChannel<Job, policy_defaults<Fifo>::capacity, tag::Fifo>;
 
     using policy_tag = tag::Fifo;
     static constexpr PriorityKind priority_kind = PriorityKind::None;
-    static constexpr bool needs_topology        = false;
+    static constexpr bool needs_topology = false;
     static constexpr std::string_view name() noexcept { return "Fifo"; }
 };
 
@@ -305,14 +302,11 @@ struct Fifo {
 
 struct Lifo {
     template <typename Job>
-    using queue_template =
-        PermissionedChaseLevDeque<Job,
-                                  policy_defaults<Lifo>::capacity,
-                                  tag::Lifo>;
+    using queue_template = PermissionedChaseLevDeque<Job, policy_defaults<Lifo>::capacity, tag::Lifo>;
 
     using policy_tag = tag::Lifo;
     static constexpr PriorityKind priority_kind = PriorityKind::None;
-    static constexpr bool needs_topology        = false;
+    static constexpr bool needs_topology = false;
     static constexpr std::string_view name() noexcept { return "Lifo"; }
 };
 
@@ -329,14 +323,11 @@ struct Lifo {
 
 struct RoundRobin {
     template <typename Job>
-    using queue_template =
-        PermissionedMpscChannel<Job,
-                                policy_defaults<RoundRobin>::capacity,
-                                tag::RoundRobin>;
+    using queue_template = PermissionedMpscChannel<Job, policy_defaults<RoundRobin>::capacity, tag::RoundRobin>;
 
     using policy_tag = tag::RoundRobin;
     static constexpr PriorityKind priority_kind = PriorityKind::None;
-    static constexpr bool needs_topology        = false;
+    static constexpr bool needs_topology = false;
     static constexpr std::string_view name() noexcept { return "RoundRobin"; }
 };
 
@@ -354,16 +345,13 @@ struct RoundRobin {
 
 struct LocalityAware {
     template <typename Job>
-    using queue_template =
-        PermissionedShardedGrid<Job,
-                                policy_defaults<LocalityAware>::num_shards,
-                                policy_defaults<LocalityAware>::num_consumers,
-                                policy_defaults<LocalityAware>::capacity,
-                                tag::LocalityAware>;
+    using queue_template = PermissionedShardedGrid<Job, policy_defaults<LocalityAware>::num_shards,
+                                                   policy_defaults<LocalityAware>::num_consumers,
+                                                   policy_defaults<LocalityAware>::capacity, tag::LocalityAware>;
 
     using policy_tag = tag::LocalityAware;
     static constexpr PriorityKind priority_kind = PriorityKind::None;
-    static constexpr bool needs_topology        = true;
+    static constexpr bool needs_topology = true;
     static constexpr std::string_view name() noexcept { return "LocalityAware"; }
 };
 
@@ -392,25 +380,18 @@ struct LocalityAware {
 // Use when: each job has a hard or soft deadline and miss penalty
 // dominates other scheduling concerns.
 
-template <typename KeyExtractor,
-          std::size_t   NumProducers = policy_defaults<tag::Deadline>::num_shards,
-          std::size_t   NumBuckets   = policy_defaults<tag::Deadline>::num_buckets,
-          std::size_t   BucketCap    = policy_defaults<tag::Deadline>::capacity,
-          std::uint64_t QuantumNs    = policy_defaults<tag::Deadline>::quantum>
+template <typename KeyExtractor, std::size_t NumProducers = policy_defaults<tag::Deadline>::num_shards,
+          std::size_t NumBuckets = policy_defaults<tag::Deadline>::num_buckets,
+          std::size_t BucketCap = policy_defaults<tag::Deadline>::capacity,
+          std::uint64_t QuantumNs = policy_defaults<tag::Deadline>::quantum>
 struct Deadline {
     template <typename Job>
     using queue_template =
-        PermissionedCalendarGrid<Job,
-                                 NumProducers,
-                                 NumBuckets,
-                                 BucketCap,
-                                 KeyExtractor,
-                                 QuantumNs,
-                                 tag::Deadline>;
+        PermissionedCalendarGrid<Job, NumProducers, NumBuckets, BucketCap, KeyExtractor, QuantumNs, tag::Deadline>;
 
     using policy_tag = tag::Deadline;
     static constexpr PriorityKind priority_kind = PriorityKind::Deadline;
-    static constexpr bool needs_topology        = false;
+    static constexpr bool needs_topology = false;
     static constexpr std::string_view name() noexcept { return "Deadline"; }
 };
 
@@ -430,25 +411,18 @@ struct Deadline {
 // weight provides priority differentiation.  Pair with the
 // AdaptiveScheduler's per-task vruntime accumulator (#313).
 
-template <typename KeyExtractor,
-          std::size_t   NumProducers = policy_defaults<tag::Cfs>::num_shards,
-          std::size_t   NumBuckets   = policy_defaults<tag::Cfs>::num_buckets,
-          std::size_t   BucketCap    = policy_defaults<tag::Cfs>::capacity,
-          std::uint64_t Quantum      = policy_defaults<tag::Cfs>::quantum>
+template <typename KeyExtractor, std::size_t NumProducers = policy_defaults<tag::Cfs>::num_shards,
+          std::size_t NumBuckets = policy_defaults<tag::Cfs>::num_buckets,
+          std::size_t BucketCap = policy_defaults<tag::Cfs>::capacity,
+          std::uint64_t Quantum = policy_defaults<tag::Cfs>::quantum>
 struct Cfs {
     template <typename Job>
     using queue_template =
-        PermissionedCalendarGrid<Job,
-                                 NumProducers,
-                                 NumBuckets,
-                                 BucketCap,
-                                 KeyExtractor,
-                                 Quantum,
-                                 tag::Cfs>;
+        PermissionedCalendarGrid<Job, NumProducers, NumBuckets, BucketCap, KeyExtractor, Quantum, tag::Cfs>;
 
     using policy_tag = tag::Cfs;
     static constexpr PriorityKind priority_kind = PriorityKind::VirtualRuntime;
-    static constexpr bool needs_topology        = false;
+    static constexpr bool needs_topology = false;
     static constexpr std::string_view name() noexcept { return "Cfs"; }
 };
 
@@ -464,25 +438,18 @@ struct Cfs {
 // in the user's KeyExtractor and the AdaptiveScheduler's per-task
 // state.
 
-template <typename KeyExtractor,
-          std::size_t   NumProducers = policy_defaults<tag::Eevdf>::num_shards,
-          std::size_t   NumBuckets   = policy_defaults<tag::Eevdf>::num_buckets,
-          std::size_t   BucketCap    = policy_defaults<tag::Eevdf>::capacity,
-          std::uint64_t Quantum      = policy_defaults<tag::Eevdf>::quantum>
+template <typename KeyExtractor, std::size_t NumProducers = policy_defaults<tag::Eevdf>::num_shards,
+          std::size_t NumBuckets = policy_defaults<tag::Eevdf>::num_buckets,
+          std::size_t BucketCap = policy_defaults<tag::Eevdf>::capacity,
+          std::uint64_t Quantum = policy_defaults<tag::Eevdf>::quantum>
 struct Eevdf {
     template <typename Job>
     using queue_template =
-        PermissionedCalendarGrid<Job,
-                                 NumProducers,
-                                 NumBuckets,
-                                 BucketCap,
-                                 KeyExtractor,
-                                 Quantum,
-                                 tag::Eevdf>;
+        PermissionedCalendarGrid<Job, NumProducers, NumBuckets, BucketCap, KeyExtractor, Quantum, tag::Eevdf>;
 
     using policy_tag = tag::Eevdf;
     static constexpr PriorityKind priority_kind = PriorityKind::VirtualDeadline;
-    static constexpr bool needs_topology        = false;
+    static constexpr bool needs_topology = false;
     static constexpr std::string_view name() noexcept { return "Eevdf"; }
 };
 
@@ -516,81 +483,60 @@ struct Eevdf {
 
 template <typename Policy>
 struct per_shard_defaults {
-    static constexpr std::size_t   num_shards   = 4;
-    static constexpr std::size_t   num_buckets  = 64;
-    static constexpr std::size_t   bucket_cap   = 16;
-    static constexpr std::uint64_t quantum      = 100'000;
+    static constexpr std::size_t num_shards = 4;
+    static constexpr std::size_t num_buckets = 64;
+    static constexpr std::size_t bucket_cap = 16;
+    static constexpr std::uint64_t quantum = 100'000;
 };
 
 // ── DeadlinePerShard ──────────────────────────────────────────────
 
-template <typename KeyExtractor,
-          std::size_t   NumShards   = per_shard_defaults<tag::DeadlinePerShard>::num_shards,
-          std::size_t   NumBuckets  = per_shard_defaults<tag::DeadlinePerShard>::num_buckets,
-          std::size_t   BucketCap   = per_shard_defaults<tag::DeadlinePerShard>::bucket_cap,
-          std::uint64_t QuantumNs   = per_shard_defaults<tag::DeadlinePerShard>::quantum>
+template <typename KeyExtractor, std::size_t NumShards = per_shard_defaults<tag::DeadlinePerShard>::num_shards,
+          std::size_t NumBuckets = per_shard_defaults<tag::DeadlinePerShard>::num_buckets,
+          std::size_t BucketCap = per_shard_defaults<tag::DeadlinePerShard>::bucket_cap,
+          std::uint64_t QuantumNs = per_shard_defaults<tag::DeadlinePerShard>::quantum>
 struct DeadlinePerShard {
     template <typename Job>
-    using queue_template =
-        PermissionedShardedCalendarGrid<Job,
-                                        NumShards,
-                                        NumBuckets,
-                                        BucketCap,
-                                        KeyExtractor,
-                                        QuantumNs,
-                                        tag::DeadlinePerShard>;
+    using queue_template = PermissionedShardedCalendarGrid<Job, NumShards, NumBuckets, BucketCap, KeyExtractor,
+                                                           QuantumNs, tag::DeadlinePerShard>;
 
     using policy_tag = tag::DeadlinePerShard;
     static constexpr PriorityKind priority_kind = PriorityKind::Deadline;
-    static constexpr bool needs_topology        = true;
+    static constexpr bool needs_topology = true;
     static constexpr std::string_view name() noexcept { return "DeadlinePerShard"; }
 };
 
 // ── CfsPerShard ──────────────────────────────────────────────────
 
-template <typename KeyExtractor,
-          std::size_t   NumShards   = per_shard_defaults<tag::CfsPerShard>::num_shards,
-          std::size_t   NumBuckets  = per_shard_defaults<tag::CfsPerShard>::num_buckets,
-          std::size_t   BucketCap   = per_shard_defaults<tag::CfsPerShard>::bucket_cap,
-          std::uint64_t Quantum     = per_shard_defaults<tag::CfsPerShard>::quantum>
+template <typename KeyExtractor, std::size_t NumShards = per_shard_defaults<tag::CfsPerShard>::num_shards,
+          std::size_t NumBuckets = per_shard_defaults<tag::CfsPerShard>::num_buckets,
+          std::size_t BucketCap = per_shard_defaults<tag::CfsPerShard>::bucket_cap,
+          std::uint64_t Quantum = per_shard_defaults<tag::CfsPerShard>::quantum>
 struct CfsPerShard {
     template <typename Job>
     using queue_template =
-        PermissionedShardedCalendarGrid<Job,
-                                        NumShards,
-                                        NumBuckets,
-                                        BucketCap,
-                                        KeyExtractor,
-                                        Quantum,
-                                        tag::CfsPerShard>;
+        PermissionedShardedCalendarGrid<Job, NumShards, NumBuckets, BucketCap, KeyExtractor, Quantum, tag::CfsPerShard>;
 
     using policy_tag = tag::CfsPerShard;
     static constexpr PriorityKind priority_kind = PriorityKind::VirtualRuntime;
-    static constexpr bool needs_topology        = true;
+    static constexpr bool needs_topology = true;
     static constexpr std::string_view name() noexcept { return "CfsPerShard"; }
 };
 
 // ── EevdfPerShard ────────────────────────────────────────────────
 
-template <typename KeyExtractor,
-          std::size_t   NumShards   = per_shard_defaults<tag::EevdfPerShard>::num_shards,
-          std::size_t   NumBuckets  = per_shard_defaults<tag::EevdfPerShard>::num_buckets,
-          std::size_t   BucketCap   = per_shard_defaults<tag::EevdfPerShard>::bucket_cap,
-          std::uint64_t Quantum     = per_shard_defaults<tag::EevdfPerShard>::quantum>
+template <typename KeyExtractor, std::size_t NumShards = per_shard_defaults<tag::EevdfPerShard>::num_shards,
+          std::size_t NumBuckets = per_shard_defaults<tag::EevdfPerShard>::num_buckets,
+          std::size_t BucketCap = per_shard_defaults<tag::EevdfPerShard>::bucket_cap,
+          std::uint64_t Quantum = per_shard_defaults<tag::EevdfPerShard>::quantum>
 struct EevdfPerShard {
     template <typename Job>
-    using queue_template =
-        PermissionedShardedCalendarGrid<Job,
-                                        NumShards,
-                                        NumBuckets,
-                                        BucketCap,
-                                        KeyExtractor,
-                                        Quantum,
-                                        tag::EevdfPerShard>;
+    using queue_template = PermissionedShardedCalendarGrid<Job, NumShards, NumBuckets, BucketCap, KeyExtractor, Quantum,
+                                                           tag::EevdfPerShard>;
 
     using policy_tag = tag::EevdfPerShard;
     static constexpr PriorityKind priority_kind = PriorityKind::VirtualDeadline;
-    static constexpr bool needs_topology        = true;
+    static constexpr bool needs_topology = true;
     static constexpr std::string_view name() noexcept { return "EevdfPerShard"; }
 };
 
@@ -604,21 +550,18 @@ struct EevdfPerShard {
 // ═══════════════════════════════════════════════════════════════════
 
 template <typename P, typename Job = int>
-concept SchedulerPolicy =
-    requires {
-        typename P::policy_tag;
-        typename P::template queue_template<Job>;
-        { P::priority_kind } -> std::convertible_to<PriorityKind>;
-        { P::needs_topology } -> std::convertible_to<bool>;
-        { P::name()         } -> std::convertible_to<std::string_view>;
-    }
-    && traits::PermissionedChannel<typename P::template queue_template<Job>>;
+concept SchedulerPolicy = requires {
+    typename P::policy_tag;
+    typename P::template queue_template<Job>;
+    { P::priority_kind } -> std::convertible_to<PriorityKind>;
+    { P::needs_topology } -> std::convertible_to<bool>;
+    { P::name() } -> std::convertible_to<std::string_view>;
+} && traits::PermissionedChannel<typename P::template queue_template<Job>>;
 
 // ── Detection traits — convenient for dispatcher concept overloads ──
 
 template <typename P>
-inline constexpr bool needs_priority_key_v =
-    P::priority_kind != PriorityKind::None;
+inline constexpr bool needs_priority_key_v = P::priority_kind != PriorityKind::None;
 
 // ── DefaultPolicy — what the pool selects when the user omits one ──
 

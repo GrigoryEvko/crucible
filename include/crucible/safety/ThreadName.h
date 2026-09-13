@@ -44,13 +44,13 @@
 //   - neg_thread_name_wrong_ctx  (CtxIsInitPhase rejects a Bg context)
 
 #include <crucible/Platform.h>
-#include <crucible/effects/ExecCtx.h>          // IsExecCtx, row_type_of_t, row_contains_v, Effect, Init
+#include <crucible/effects/ExecCtx.h>  // IsExecCtx, row_type_of_t, row_contains_v, Effect, Init
 
-#include <pthread.h>                            // pthread_setname_np, pthread_self
+#include <pthread.h>  // pthread_setname_np, pthread_self
 
-#include <cstddef>                              // std::size_t
-#include <string_view>                          // self-test name comparison
-#include <type_traits>                          // remove_cvref_t, is_same_v
+#include <cstddef>  // std::size_t
+#include <string_view>  // self-test name comparison
+#include <type_traits>  // remove_cvref_t, is_same_v
 
 namespace crucible::safety {
 
@@ -65,9 +65,8 @@ struct ThreadNameLiteral {
     // TASK_COMM_LEN == 16 (15 visible chars + NUL).  A source literal of
     // length N (NUL inclusive) names N-1 visible chars; N must fit the cap.
     static_assert(N >= 1, "ThreadNameLiteral: degenerate empty literal");
-    static_assert(N <= 16,
-        "FIXY-V-189: thread name exceeds TASK_COMM_LEN (15 visible chars + "
-        "NUL); the Linux kernel would SILENTLY truncate it — shorten the name.");
+    static_assert(N <= 16, "FIXY-V-189: thread name exceeds TASK_COMM_LEN (15 visible chars + "
+                           "NUL); the Linux kernel would SILENTLY truncate it — shorten the name.");
 
     char data[N]{};
 
@@ -93,9 +92,7 @@ struct [[nodiscard]] ThreadNamed {
     static constexpr ThreadNameLiteral name = Name;
 
     [[nodiscard]] static constexpr const char* c_str() noexcept { return Name.c_str(); }
-    [[nodiscard]] static constexpr std::size_t visible_length() noexcept {
-        return Name.visible_length;
-    }
+    [[nodiscard]] static constexpr std::size_t visible_length() noexcept { return Name.visible_length; }
 };
 
 // ── IsThreadNamed concept + extractor ───────────────────────────────
@@ -123,8 +120,7 @@ concept IsThreadNamed = detail::thread_name_extract::is_thread_named_v<std::remo
 template <typename Ctx>
 concept CtxIsInitPhase =
     std::same_as<std::remove_cvref_t<Ctx>, ::crucible::effects::Init>
-    || ::crucible::effects::CtxOwnsCapability<std::remove_cvref_t<Ctx>,
-                                              ::crucible::effects::Effect::Init>;
+    || ::crucible::effects::CtxOwnsCapability<std::remove_cvref_t<Ctx>, ::crucible::effects::Effect::Init>;
 
 // ── mint_thread_name — the Init-row syscall mint (§XXI) ─────────────
 //
@@ -154,10 +150,10 @@ using namespace ::crucible::safety::detail::thread_name_extract;
 
 // Distinct names yield distinct witness types.
 static_assert(!std::is_same_v<ThreadNamed<"a">, ThreadNamed<"b">>);
-static_assert( std::is_same_v<ThreadNamed<"a">, ThreadNamed<"a">>);
+static_assert(std::is_same_v<ThreadNamed<"a">, ThreadNamed<"a">>);
 
 // Concept extractor.
-static_assert( IsThreadNamed<ThreadNamed<"crucible-bg">>);
+static_assert(IsThreadNamed<ThreadNamed<"crucible-bg">>);
 static_assert(!IsThreadNamed<int>);
 
 // Compile-time name readout.
@@ -165,7 +161,7 @@ static_assert(ThreadNamed<"crucible-fg">::visible_length() == 11);
 static_assert(std::string_view{ThreadNamed<"crucible-fg">::c_str()} == "crucible-fg");
 
 // CtxIsInitPhase admits the bare Init context, rejects Bg / Test.
-static_assert( CtxIsInitPhase<::crucible::effects::Init>);
+static_assert(CtxIsInitPhase<::crucible::effects::Init>);
 static_assert(!CtxIsInitPhase<::crucible::effects::Bg>);
 static_assert(!CtxIsInitPhase<::crucible::effects::Test>);
 

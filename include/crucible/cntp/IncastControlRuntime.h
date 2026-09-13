@@ -26,12 +26,10 @@ namespace crucible::cntp {
 // row_contains_v<row_type_of_t<Ctx>, ...> expansion.  Same predicate,
 // same cost, grep-discoverable authorization shape.
 template <class Ctx>
-concept CtxFitsIncastConfigure =
-    effects::CtxOwnsAnyOf<Ctx, effects::Effect::Init, effects::Effect::Bg>;
+concept CtxFitsIncastConfigure = effects::CtxOwnsAnyOf<Ctx, effects::Effect::Init, effects::Effect::Bg>;
 
 template <class Ctx>
-concept CtxFitsIncastCredit =
-    effects::CtxOwnsCapability<Ctx, effects::Effect::Bg>;
+concept CtxFitsIncastCredit = effects::CtxOwnsCapability<Ctx, effects::Effect::Bg>;
 
 struct IncastCreditGrant {
     cntp::SocketFd fd{0, typename cntp::SocketFd::Trusted{}};
@@ -61,8 +59,7 @@ class IncastController : public safety::Pinned<IncastController<MaxFlows>> {
         return nullptr;
     }
 
-    [[nodiscard]] constexpr FlowSlot const*
-    find(cntp::SocketFd fd) const noexcept {
+    [[nodiscard]] constexpr FlowSlot const* find(cntp::SocketFd fd) const noexcept {
         for (auto const& flow : flows_) {
             if (flow.occupied && flow.fd.value() == fd.value()) {
                 return &flow;
@@ -72,8 +69,7 @@ class IncastController : public safety::Pinned<IncastController<MaxFlows>> {
     }
 
     [[nodiscard]] constexpr std::expected<FlowSlot*, cntp::IncastError>
-    find_or_insert(cntp::SocketFd fd,
-                   cntp::PositiveCreditBytes initial_credit) noexcept {
+    find_or_insert(cntp::SocketFd fd, cntp::PositiveCreditBytes initial_credit) noexcept {
         if (FlowSlot* existing = find(fd); existing != nullptr) {
             existing->credit_bytes = initial_credit.value();
             return existing;
@@ -95,10 +91,8 @@ public:
 
     template <class Ctx>
         requires CtxFitsIncastConfigure<Ctx>
-    [[nodiscard]] std::expected<void, cntp::IncastError>
-    configure_socket(Ctx const&,
-                     cntp::SocketFd fd,
-                     cntp::DeclaredIncastConfig config) noexcept {
+    [[nodiscard]] std::expected<void, cntp::IncastError> configure_socket(Ctx const&, cntp::SocketFd fd,
+                                                                          cntp::DeclaredIncastConfig config) noexcept {
         auto applied = cntp::apply_incast_config(fd, config);
         if (!applied.has_value()) {
             return std::unexpected(applied.error());
@@ -115,9 +109,7 @@ public:
     template <class Ctx>
         requires CtxFitsIncastConfigure<Ctx>
     [[nodiscard]] constexpr std::expected<void, cntp::IncastError>
-    start_credit_flow(Ctx const&,
-                      cntp::SocketFd fd,
-                      cntp::PositiveCreditBytes initial_credit) noexcept {
+    start_credit_flow(Ctx const&, cntp::SocketFd fd, cntp::PositiveCreditBytes initial_credit) noexcept {
         auto flow = find_or_insert(fd, initial_credit);
         if (!flow.has_value()) {
             return std::unexpected(flow.error());
@@ -128,16 +120,12 @@ public:
     template <class Ctx>
         requires CtxFitsIncastCredit<Ctx>
     [[nodiscard]] constexpr std::expected<IncastCreditGrant, cntp::IncastError>
-    issue_credit(Ctx const&,
-                 cntp::SocketFd fd,
-                 cntp::PositiveCreditBytes bytes,
-                 std::uint64_t sequence) noexcept {
+    issue_credit(Ctx const&, cntp::SocketFd fd, cntp::PositiveCreditBytes bytes, std::uint64_t sequence) noexcept {
         FlowSlot* flow = find(fd);
         if (flow == nullptr) {
             return std::unexpected(cntp::IncastError::FlowNotStarted);
         }
-        const std::uint32_t room =
-            std::numeric_limits<std::uint32_t>::max() - flow->credit_bytes;
+        const std::uint32_t room = std::numeric_limits<std::uint32_t>::max() - flow->credit_bytes;
         if (bytes.value() > room) {
             return std::unexpected(cntp::IncastError::CreditOverflow);
         }
@@ -162,8 +150,7 @@ public:
     // controller.
     template <class Ctx>
         requires CtxFitsIncastCredit<Ctx>
-    [[nodiscard]] constexpr std::expected<
-        cntp::PositiveCreditBytes, cntp::IncastError>
+    [[nodiscard]] constexpr std::expected<cntp::PositiveCreditBytes, cntp::IncastError>
     try_consume_credit(Ctx const&, cntp::SocketFd fd) noexcept {
         FlowSlot* flow = find(fd);
         if (flow == nullptr) {
@@ -174,12 +161,10 @@ public:
         }
         const std::uint32_t granted = flow->credit_bytes;
         flow->credit_bytes = 0;
-        return cntp::PositiveCreditBytes{
-            granted, typename cntp::PositiveCreditBytes::Trusted{}};
+        return cntp::PositiveCreditBytes{granted, typename cntp::PositiveCreditBytes::Trusted{}};
     }
 
-    [[nodiscard]] constexpr std::expected<
-        cntp::PositiveCreditBytes, cntp::IncastError>
+    [[nodiscard]] constexpr std::expected<cntp::PositiveCreditBytes, cntp::IncastError>
     outstanding_credit(cntp::SocketFd fd) const noexcept {
         FlowSlot const* flow = find(fd);
         if (flow == nullptr) {
@@ -188,16 +173,13 @@ public:
         if (flow->credit_bytes == 0) {
             return std::unexpected(cntp::IncastError::CreditUnavailable);
         }
-        return cntp::PositiveCreditBytes{
-            flow->credit_bytes, typename cntp::PositiveCreditBytes::Trusted{}};
+        return cntp::PositiveCreditBytes{flow->credit_bytes, typename cntp::PositiveCreditBytes::Trusted{}};
     }
 };
 
 template <std::size_t MaxFlows, class Ctx>
-    requires effects::IsExecCtx<Ctx>
-          && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>
-[[nodiscard]] constexpr IncastController<MaxFlows>
-mint_incast_controller(Ctx const&) noexcept {
+    requires effects::IsExecCtx<Ctx> && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>
+[[nodiscard]] constexpr IncastController<MaxFlows> mint_incast_controller(Ctx const&) noexcept {
     return {};
 }
 

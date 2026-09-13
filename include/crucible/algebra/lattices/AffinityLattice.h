@@ -85,8 +85,8 @@ namespace crucible::algebra::lattices {
 // Generation) — phantom-tagged by structure name only; no implicit
 // conversion to or from any other axis.
 struct AffinityMask {
-    static constexpr std::size_t  kWords    = 4;
-    static constexpr std::size_t  kBits     = kWords * 64;     // 256
+    static constexpr std::size_t kWords = 4;
+    static constexpr std::size_t kBits = kWords * 64;  // 256
     static constexpr std::uint16_t kMaxCore = static_cast<std::uint16_t>(kBits - 1);
 
     std::array<std::uint64_t, kWords> words{};
@@ -108,8 +108,7 @@ struct AffinityMask {
     // `Refined<bounded_above<kMaxCore>, uint16_t>` and the predicate
     // name carries through one place.
     [[nodiscard]] static constexpr AffinityMask single(std::uint16_t core) noexcept
-        pre (::crucible::decide::in_range<std::uint16_t>(core, 0, kMaxCore))
-    {
+        pre(::crucible::decide::in_range<std::uint16_t>(core, 0, kMaxCore)) {
         AffinityMask m{};
         m.words[core / 64] = std::uint64_t{1} << (core % 64);
         return m;
@@ -125,8 +124,7 @@ struct AffinityMask {
     // predicate itself remains parameter-only, so vanilla P2900
     // `pre()` is consteval-safe.
     [[nodiscard]] constexpr bool contains(std::uint16_t core) const noexcept
-        pre (::crucible::decide::in_range<std::uint16_t>(core, 0, kMaxCore))
-    {
+        pre(::crucible::decide::in_range<std::uint16_t>(core, 0, kMaxCore)) {
         return (words[core / 64] & (std::uint64_t{1} << (core % 64))) != 0;
     }
 
@@ -154,11 +152,8 @@ struct AffinityMask {
     // `decide::ordered<T>(a, b)`, deferred until a second cite
     // appears in the codebase per the bottom-up growth discipline
     // documented in the Decide.h skeleton's authoring rules).
-    [[nodiscard]] static constexpr AffinityMask range(std::uint16_t first_core,
-                                                       std::uint16_t last_core) noexcept
-        pre (first_core <= last_core)
-        pre (::crucible::decide::in_range<std::uint16_t>(last_core, 0, kMaxCore))
-    {
+    [[nodiscard]] static constexpr AffinityMask range(std::uint16_t first_core, std::uint16_t last_core) noexcept
+        pre(first_core <= last_core) pre(::crucible::decide::in_range<std::uint16_t>(last_core, 0, kMaxCore)) {
         AffinityMask m{};
         for (std::uint16_t c = first_core; c <= last_core; ++c) {
             m.words[c / 64] |= std::uint64_t{1} << (c % 64);
@@ -171,12 +166,11 @@ struct AffinityMask {
 struct AffinityLattice {
     using element_type = AffinityMask;
 
-    [[nodiscard]] static constexpr element_type bottom() noexcept {
-        return element_type{};
-    }
+    [[nodiscard]] static constexpr element_type bottom() noexcept { return element_type{}; }
     [[nodiscard]] static constexpr element_type top() noexcept {
         element_type m{};
-        for (auto& w : m.words) w = std::numeric_limits<std::uint64_t>::max();
+        for (auto& w : m.words)
+            w = std::numeric_limits<std::uint64_t>::max();
         return m;
     }
     [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept {
@@ -205,13 +199,9 @@ struct AffinityLattice {
     // safety/CpuPinned.h proof + the V-190 CtxFitsTscReader concept assert
     // (a TSC read is only sound when the thread is pinned to ONE core, so
     // the affinity mask must have exactly one bit set).
-    [[nodiscard]] static constexpr bool is_singleton(element_type m) noexcept {
-        return m.popcount() == 1;
-    }
+    [[nodiscard]] static constexpr bool is_singleton(element_type m) noexcept { return m.popcount() == 1; }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return "AffinityLattice";
-    }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "AffinityLattice"; }
 };
 
 // ── Self-test ───────────────────────────────────────────────────────
@@ -223,9 +213,9 @@ static_assert(!UnboundedLattice<AffinityLattice>);
 static_assert(!Semiring<AffinityLattice>);
 
 // Layout assertions.
-static_assert(AffinityMask::kWords    == 4);
-static_assert(AffinityMask::kBits     == 256);
-static_assert(AffinityMask::kMaxCore  == 255);
+static_assert(AffinityMask::kWords == 4);
+static_assert(AffinityMask::kBits == 256);
+static_assert(AffinityMask::kMaxCore == 255);
 static_assert(sizeof(AffinityMask) == AffinityMask::kWords * sizeof(std::uint64_t));
 static_assert(std::is_trivially_copyable_v<AffinityMask>);
 static_assert(std::is_standard_layout_v<AffinityMask>);
@@ -236,10 +226,10 @@ static_assert(!std::is_same_v<AffinityMask, std::uint64_t>);
 static_assert(!std::is_same_v<AffinityMask, std::array<std::uint64_t, 4>>);
 
 // ── Set-helper witnesses ─────────────────────────────────────────
-static_assert(AffinityMask::single(0).words[0]   == 0b1);
-static_assert(AffinityMask::single(3).words[0]   == 0b1000);
-static_assert(AffinityMask::single(63).words[0]  == (std::uint64_t{1} << 63));
-static_assert(AffinityMask::single(64).words[1]  == std::uint64_t{1});  // crosses word
+static_assert(AffinityMask::single(0).words[0] == 0b1);
+static_assert(AffinityMask::single(3).words[0] == 0b1000);
+static_assert(AffinityMask::single(63).words[0] == (std::uint64_t{1} << 63));
+static_assert(AffinityMask::single(64).words[1] == std::uint64_t{1});  // crosses word
 static_assert(AffinityMask::single(127).words[1] == (std::uint64_t{1} << 63));
 static_assert(AffinityMask::single(128).words[2] == std::uint64_t{1});
 static_assert(AffinityMask::single(192).words[3] == std::uint64_t{1});
@@ -249,7 +239,7 @@ static_assert(AffinityMask::single(0).contains(0));
 static_assert(!AffinityMask::single(0).contains(1));
 static_assert(AffinityMask::single(127).contains(127));
 static_assert(!AffinityMask::single(127).contains(128));
-static_assert(AffinityMask::single(192).contains(192));   // Bergamo upper boundary
+static_assert(AffinityMask::single(192).contains(192));  // Bergamo upper boundary
 
 // Boundary: highest valid core (kMaxCore = 255) must succeed.
 static_assert(AffinityMask::single(AffinityMask::kMaxCore).contains(255));
@@ -260,38 +250,34 @@ static_assert(AffinityMask::range(0, 3).contains(0));
 static_assert(AffinityMask::range(0, 3).contains(3));
 static_assert(!AffinityMask::range(0, 3).contains(4));
 static_assert(AffinityMask::range(60, 70).contains(60));
-static_assert(AffinityMask::range(60, 70).contains(63));   // last bit of word 0
-static_assert(AffinityMask::range(60, 70).contains(64));   // first bit of word 1
+static_assert(AffinityMask::range(60, 70).contains(63));  // last bit of word 0
+static_assert(AffinityMask::range(60, 70).contains(64));  // first bit of word 1
 static_assert(AffinityMask::range(60, 70).contains(70));
 static_assert(!AffinityMask::range(60, 70).contains(71));
 static_assert(AffinityMask::range(0, 191).popcount() == 192);  // full Bergamo
 static_assert(AffinityMask::range(0, 255).popcount() == 256);  // full mask
 
 // popcount.
-static_assert(AffinityMask::single(0).popcount()   == 1);
+static_assert(AffinityMask::single(0).popcount() == 1);
 static_assert(AffinityMask::single(127).popcount() == 1);
 static_assert(AffinityMask::single(255).popcount() == 1);
 static_assert(AffinityLattice::bottom().popcount() == 0);
-static_assert(AffinityLattice::top().popcount()    == AffinityMask::kBits);
+static_assert(AffinityLattice::top().popcount() == AffinityMask::kBits);
 
 // FIXY-V-187 — is_singleton: exactly one bit set (the CpuPinned/TSC gate).
-static_assert( AffinityLattice::is_singleton(AffinityMask::single(0)));
-static_assert( AffinityLattice::is_singleton(AffinityMask::single(255)));
+static_assert(AffinityLattice::is_singleton(AffinityMask::single(0)));
+static_assert(AffinityLattice::is_singleton(AffinityMask::single(255)));
 static_assert(!AffinityLattice::is_singleton(AffinityLattice::bottom()),
-    "the empty mask is NOT a singleton — no core pinned.");
+              "the empty mask is NOT a singleton — no core pinned.");
 static_assert(!AffinityLattice::is_singleton(AffinityMask::range(0, 1)),
-    "a 2-core mask is NOT a singleton — a TSC read across two cores is unsound.");
+              "a 2-core mask is NOT a singleton — a TSC read across two cores is unsound.");
 static_assert(!AffinityLattice::is_singleton(AffinityLattice::top()));
 
 // ── Ordering witnesses (set inclusion, componentwise) ─────────────
-static_assert( AffinityLattice::leq(AffinityMask{},
-                                    AffinityMask::range(0, 7)));
-static_assert( AffinityLattice::leq(AffinityMask::single(127),
-                                    AffinityMask::range(127, 192)));
-static_assert(!AffinityLattice::leq(AffinityMask::single(127),
-                                    AffinityMask::range(0, 63)));     // wrong word
-static_assert( AffinityLattice::leq(AffinityLattice::bottom(),
-                                    AffinityLattice::top()));
+static_assert(AffinityLattice::leq(AffinityMask{}, AffinityMask::range(0, 7)));
+static_assert(AffinityLattice::leq(AffinityMask::single(127), AffinityMask::range(127, 192)));
+static_assert(!AffinityLattice::leq(AffinityMask::single(127), AffinityMask::range(0, 63)));  // wrong word
+static_assert(AffinityLattice::leq(AffinityLattice::bottom(), AffinityLattice::top()));
 
 // ── Bounds ───────────────────────────────────────────────────────
 static_assert(AffinityLattice::bottom() == AffinityMask{});
@@ -308,42 +294,38 @@ static_assert(top_has_all_bits());
 
 // ── Join / meet (componentwise bitwise) ──────────────────────────
 [[nodiscard]] consteval bool join_meet_witness() noexcept {
-    AffinityMask a = AffinityMask::range(0, 63);            // word 0 full
-    AffinityMask b = AffinityMask::range(64, 127);          // word 1 full
+    AffinityMask a = AffinityMask::range(0, 63);  // word 0 full
+    AffinityMask b = AffinityMask::range(64, 127);  // word 1 full
     AffinityMask jab = AffinityLattice::join(a, b);
     AffinityMask mab = AffinityLattice::meet(a, b);
-    return  jab.popcount() == 128                           // disjoint union
-        &&  mab.popcount() == 0                             // disjoint intersection
-        &&  jab.contains(0)
-        &&  jab.contains(127)
-        && !mab.contains(0);
+    return jab.popcount() == 128  // disjoint union
+        && mab.popcount() == 0  // disjoint intersection
+        && jab.contains(0) && jab.contains(127) && !mab.contains(0);
 }
 static_assert(join_meet_witness());
 
 // Bound identities.
 [[nodiscard]] consteval bool bound_identities() noexcept {
     AffinityMask m = AffinityMask::single(192);
-    return  AffinityLattice::join(m, AffinityLattice::bottom()) == m
-        &&  AffinityLattice::meet(m, AffinityLattice::top())    == m;
+    return AffinityLattice::join(m, AffinityLattice::bottom()) == m
+        && AffinityLattice::meet(m, AffinityLattice::top()) == m;
 }
 static_assert(bound_identities());
 
 // Idempotence.
 [[nodiscard]] consteval bool idempotence_witness() noexcept {
     AffinityMask m = AffinityMask::range(0, 191);
-    return  AffinityLattice::join(m, m) == m
-        &&  AffinityLattice::meet(m, m) == m;
+    return AffinityLattice::join(m, m) == m && AffinityLattice::meet(m, m) == m;
 }
 static_assert(idempotence_witness());
 
 // ── Distributivity at three witnesses (boolean lattice) ───────────
 [[nodiscard]] consteval bool distributive_witness() noexcept {
-    AffinityMask a = AffinityMask::range(0,   63);
-    AffinityMask b = AffinityMask::range(32,  95);
+    AffinityMask a = AffinityMask::range(0, 63);
+    AffinityMask b = AffinityMask::range(32, 95);
     AffinityMask c = AffinityMask::range(64, 127);
-    auto         lhs = AffinityLattice::meet(a, AffinityLattice::join(b, c));
-    auto         rhs = AffinityLattice::join(AffinityLattice::meet(a, b),
-                                             AffinityLattice::meet(a, c));
+    auto lhs = AffinityLattice::meet(a, AffinityLattice::join(b, c));
+    auto rhs = AffinityLattice::join(AffinityLattice::meet(a, b), AffinityLattice::meet(a, c));
     return lhs == rhs;
 }
 static_assert(distributive_witness());
@@ -362,21 +344,19 @@ static_assert(complement_witness());
 
 // ── Transitivity of set inclusion ─────────────────────────────────
 [[nodiscard]] consteval bool transitivity_witness() noexcept {
-    AffinityMask small  = AffinityMask::single(7);
-    AffinityMask medium = AffinityMask::range(0,  31);
-    AffinityMask large  = AffinityMask::range(0, 191);    // Bergamo-shape
-    return  AffinityLattice::leq(small,  medium)
-        &&  AffinityLattice::leq(medium, large)
-        &&  AffinityLattice::leq(small,  large)
-        &&  AffinityLattice::leq(AffinityLattice::bottom(), small)
-        &&  AffinityLattice::leq(large, AffinityLattice::top());
+    AffinityMask small = AffinityMask::single(7);
+    AffinityMask medium = AffinityMask::range(0, 31);
+    AffinityMask large = AffinityMask::range(0, 191);  // Bergamo-shape
+    return AffinityLattice::leq(small, medium) && AffinityLattice::leq(medium, large)
+        && AffinityLattice::leq(small, large) && AffinityLattice::leq(AffinityLattice::bottom(), small)
+        && AffinityLattice::leq(large, AffinityLattice::top());
 }
 static_assert(transitivity_witness());
 
 // ── De Morgan's laws ──────────────────────────────────────────────
 [[nodiscard]] consteval bool de_morgan_witness() noexcept {
-    AffinityMask a = AffinityMask::range(0,   31);
-    AffinityMask b = AffinityMask::range(16,  47);
+    AffinityMask a = AffinityMask::range(0, 31);
+    AffinityMask b = AffinityMask::range(16, 47);
     AffinityMask cmp_a{}, cmp_b{};
     for (std::size_t i = 0; i < AffinityMask::kWords; ++i) {
         cmp_a.words[i] = ~a.words[i];
@@ -406,63 +386,50 @@ static_assert(de_morgan_witness());
 // fixy-H-20: invoke central Lattice.h verifier.  Boolean lattice ⇒
 // distributive (powerset under ∪/∩ is the canonical distributive
 // lattice; Birkhoff's representation theorem).
-static_assert(verify_bounded_lattice_axioms_at<AffinityLattice>(
-    AffinityLattice::bottom(),
-    AffinityMask::range(0, 31),
-    AffinityLattice::top()));
-static_assert(verify_bounded_lattice_axioms_at<AffinityLattice>(
-    AffinityMask::single(0),
-    AffinityMask::single(127),
-    AffinityMask::single(255)));
-static_assert(verify_bounded_lattice_axioms_at<AffinityLattice>(
-    AffinityMask::range(0,   63),
-    AffinityMask::range(32,  95),
-    AffinityMask::range(64, 127)));
-static_assert(verify_distributive_lattice<AffinityLattice>(
-    AffinityLattice::bottom(),
-    AffinityMask::range(0, 31),
-    AffinityLattice::top()));
-static_assert(verify_distributive_lattice<AffinityLattice>(
-    AffinityMask::range(0,   63),
-    AffinityMask::range(32,  95),
-    AffinityMask::range(64, 127)));
-static_assert(verify_distributive_lattice<AffinityLattice>(
-    AffinityMask::single(0),
-    AffinityMask::single(127),
-    AffinityMask::single(255)));
+static_assert(verify_bounded_lattice_axioms_at<AffinityLattice>(AffinityLattice::bottom(), AffinityMask::range(0, 31),
+                                                                AffinityLattice::top()));
+static_assert(verify_bounded_lattice_axioms_at<AffinityLattice>(AffinityMask::single(0), AffinityMask::single(127),
+                                                                AffinityMask::single(255)));
+static_assert(verify_bounded_lattice_axioms_at<AffinityLattice>(AffinityMask::range(0, 63), AffinityMask::range(32, 95),
+                                                                AffinityMask::range(64, 127)));
+static_assert(verify_distributive_lattice<AffinityLattice>(AffinityLattice::bottom(), AffinityMask::range(0, 31),
+                                                           AffinityLattice::top()));
+static_assert(verify_distributive_lattice<AffinityLattice>(AffinityMask::range(0, 63), AffinityMask::range(32, 95),
+                                                           AffinityMask::range(64, 127)));
+static_assert(verify_distributive_lattice<AffinityLattice>(AffinityMask::single(0), AffinityMask::single(127),
+                                                           AffinityMask::single(255)));
 
 inline void runtime_smoke_test() {
-    AffinityMask                  bot   = AffinityLattice::bottom();
-    AffinityMask                  topv  = AffinityLattice::top();
-    AffinityMask                  bergamo_full = AffinityMask::range(0, 191);
+    AffinityMask bot = AffinityLattice::bottom();
+    AffinityMask topv = AffinityLattice::top();
+    AffinityMask bergamo_full = AffinityMask::range(0, 191);
 
-    [[maybe_unused]] bool         l1    = AffinityLattice::leq(bot,           topv);
-    [[maybe_unused]] bool         l2    = AffinityLattice::leq(bergamo_full,  topv);
-    [[maybe_unused]] AffinityMask j     = AffinityLattice::join(bergamo_full, bot);
-    [[maybe_unused]] AffinityMask m     = AffinityLattice::meet(bergamo_full, topv);
+    [[maybe_unused]] bool l1 = AffinityLattice::leq(bot, topv);
+    [[maybe_unused]] bool l2 = AffinityLattice::leq(bergamo_full, topv);
+    [[maybe_unused]] AffinityMask j = AffinityLattice::join(bergamo_full, bot);
+    [[maybe_unused]] AffinityMask m = AffinityLattice::meet(bergamo_full, topv);
 
     if (bergamo_full.popcount() != 192) std::abort();
 
-    AffinityMask                  core_0       = AffinityMask::single(0);
-    AffinityMask                  core_191     = AffinityMask::single(191);   // Bergamo top
-    AffinityMask                  core_255     = AffinityMask::single(255);   // mask top
-    if (!core_0.contains(0))     std::abort();
+    AffinityMask core_0 = AffinityMask::single(0);
+    AffinityMask core_191 = AffinityMask::single(191);  // Bergamo top
+    AffinityMask core_255 = AffinityMask::single(255);  // mask top
+    if (!core_0.contains(0)) std::abort();
     if (!core_191.contains(191)) std::abort();
     if (!core_255.contains(255)) std::abort();
-    if ( core_0.contains(1))     std::abort();
+    if (core_0.contains(1)) std::abort();
 
-    AffinityMask                  joined = AffinityLattice::join(core_0, core_191);
-    if (!joined.contains(0))   std::abort();
+    AffinityMask joined = AffinityLattice::join(core_0, core_191);
+    if (!joined.contains(0)) std::abort();
     if (!joined.contains(191)) std::abort();
 
-    AffinityMask                  intersected =
-        AffinityLattice::meet(AffinityMask::range(0, 127), AffinityMask::range(64, 191));
-    if (intersected.popcount() != 64) std::abort();    // word 1 only
+    AffinityMask intersected = AffinityLattice::meet(AffinityMask::range(0, 127), AffinityMask::range(64, 191));
+    if (intersected.popcount() != 64) std::abort();  // word 1 only
 
     using AffinityGraded = Graded<ModalityKind::Absolute, AffinityLattice, double>;
-    AffinityGraded                v{3.14, AffinityMask::range(0, 31)};
-    [[maybe_unused]] auto         g  = v.grade();
-    [[maybe_unused]] auto         vp = v.peek();
+    AffinityGraded v{3.14, AffinityMask::range(0, 31)};
+    [[maybe_unused]] auto g = v.grade();
+    [[maybe_unused]] auto vp = v.peek();
 }
 
 }  // namespace detail::affinity_lattice_self_test

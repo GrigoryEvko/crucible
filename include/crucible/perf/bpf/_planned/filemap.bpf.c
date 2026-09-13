@@ -33,24 +33,21 @@
  *
  * Per-event payload includes inode_id, page index (offset/PAGE_SIZE),
  * mapping flags.  inode→file path resolution requires userspace
- * `iter_task` or `find /proc/*/fd -inum` walk at bench-end.
- *
- * ─── MAPS ─────────────────────────────────────────────────────────────
- * - per_inode: LRU_HASH[inode_id → {add_count, delete_count, fault_count,
- *                                    last_access_ts, byte_count}]
- *              LRU max 4096 (working set of hot files)
- * - rate_limit: PERCPU_ARRAY[1] — sample-period gating (1-in-N events)
- *               recommended to throttle add/delete which fire at ~1M/sec
- * - timeline: ARRAY[1] + BPF_F_MMAPABLE — recent {inode, idx, kind, ts}
- *
- * ─── WIRE CONTRACT ────────────────────────────────────────────────────
- * struct timeline_filemap_event {
- *     uint64_t inode_id;
- *     uint64_t page_idx;
- *     uint8_t  event_kind;       // ADD / DELETE / FAULT / GET / MAP
- *     uint8_t  _pad[7];
- *     uint64_t ts_ns;            // WRITTEN LAST
- * };  // 32 B (cache-line coresident)
+ * `iter_task` or `find /proc/*/ fd - inum` walk at bench
+    - end.** ─── MAPS ─────────────────────────────────────────────────────────────
+          * -per_inode : LRU_HASH[inode_id → {add_count, delete_count, fault_count, *last_access_ts, byte_count}]
+          * LRU max 4096(working set of hot files) * -rate_limit : PERCPU_ARRAY[1] — sample
+    - period gating(1 - in - N events) * recommended to throttle add / delete which fire at ~1M / sec
+          * -timeline : ARRAY[1]
+    + BPF_F_MMAPABLE — recent{inode, idx, kind, ts}
+          * * ─── WIRE CONTRACT ──────────────────────────────────────────────────── * struct timeline_filemap_event {
+    *uint64_t inode_id;
+    *uint64_t page_idx;
+    *uint8_t event_kind;  // ADD / DELETE / FAULT / GET / MAP
+    *uint8_t _pad[7];
+    *uint64_t ts_ns;  // WRITTEN LAST
+    *
+};  // 32 B (cache-line coresident)
  *
  * ─── COST MODEL ───────────────────────────────────────────────────────
  * Per-event: ~50 ns × 1M events/sec on busy I/O host = 50% CPU.
@@ -64,9 +61,10 @@
  * default-on safe at <0.01% CPU.  Other 4 events default-off.
  *
  * ─── KNOWN LIMITS ─────────────────────────────────────────────────────
- * - inode→path resolution is expensive at runtime; do at userspace via
- *   `iter_task` walk at bench-end.
- * - Doesn't distinguish Crucible's own file traffic from other tenants;
+ * - inode→path resolution is expensive at runtime;
+ do
+     at userspace via*   `iter_task` walk at bench
+         - end.* -Doesn 't distinguish Crucible' s own file traffic from other tenants;
  *   for per-tenant attribution combine with cgroup_id from
  *   bpf_get_current_cgroup_id().
  * - shmem and tmpfs go through filemap — high-rate even on
@@ -76,13 +74,12 @@
  * Sibling: writeback_inode.bpf.c (per-inode writeback) — pairs with
  *   this for read+write attribution per file.
  * Sibling: vfs_hot.bpf.c (planned) — VFS-layer entry for read/write/open;
- *   filemap is the page-cache layer beneath VFS.
- * Sibling: vmscan_ext.bpf.c (planned) — page eviction reasons; filemap
- *   sees the eviction (delete_from_page_cache) but not the WHY.
- */
+ *filemap is the page - cache layer beneath VFS.* Sibling : vmscan_ext.bpf.c(planned) — page eviction reasons;
+ filemap* sees the eviction(delete_from_page_cache)
+ but not the WHY.* /
 
 #include "../common.h"
 
-/* TODO: implement. */
+     /* TODO: implement. */
 
-char LICENSE[] SEC("license") = "Dual BSD/GPL";
+     char LICENSE[] SEC("license") = "Dual BSD/GPL";

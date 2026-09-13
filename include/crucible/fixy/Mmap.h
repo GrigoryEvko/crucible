@@ -93,14 +93,14 @@
 //   6. mint_mmap in a ColdInitCtx (Row<Init,Alloc,IO>, no Block).
 //   7. advise<DontNeed> on the safe surface — must use advise_release_aware.
 
-#include <crucible/fixy/Grant.h>            // grant_base, which_dim primary
-#include <crucible/safety/DimensionTraits.h>// DimensionAxis::SyscallSurface
-#include <crucible/safety/Linear.h>         // safety::Linear
-#include <crucible/safety/OwnedMmap.h>      // safety::OwnedMmap — V-231 promoted RAII
-#include <crucible/permissions/Permission.h>// Permission<Tag> — V-234 borrow-proof
+#include <crucible/fixy/Grant.h>  // grant_base, which_dim primary
+#include <crucible/safety/DimensionTraits.h>  // DimensionAxis::SyscallSurface
+#include <crucible/safety/Linear.h>  // safety::Linear
+#include <crucible/safety/OwnedMmap.h>  // safety::OwnedMmap — V-231 promoted RAII
+#include <crucible/permissions/Permission.h>  // Permission<Tag> — V-234 borrow-proof
 
-#include <crucible/effects/ExecCtx.h>       // IsExecCtx + row_type_of_t
-#include <crucible/effects/EffectRow.h>     // row_contains_v
+#include <crucible/effects/ExecCtx.h>  // IsExecCtx + row_type_of_t
+#include <crucible/effects/EffectRow.h>  // row_contains_v
 #include <crucible/effects/Capabilities.h>  // effects::Effect
 
 #include <sys/mman.h>
@@ -121,19 +121,19 @@
 // header builds against any libc that doesn't yet expose them.
 
 #ifndef MADV_COLLAPSE
-#  define MADV_COLLAPSE 25   // Linux 6.1 (2022-12).
+#define MADV_COLLAPSE 25  // Linux 6.1 (2022-12).
 #endif
 #ifndef MADV_FREE
-#  define MADV_FREE 8        // Linux 4.5 (2016-03).
+#define MADV_FREE 8  // Linux 4.5 (2016-03).
 #endif
 #ifndef MADV_WIPEONFORK
-#  define MADV_WIPEONFORK 18 // Linux 4.14 (2017-11).
+#define MADV_WIPEONFORK 18  // Linux 4.14 (2017-11).
 #endif
 #ifndef MADV_DONTDUMP
-#  define MADV_DONTDUMP 16   // Linux 3.4 (2012-05).
+#define MADV_DONTDUMP 16  // Linux 3.4 (2012-05).
 #endif
 #ifndef MAP_HUGE_2MB
-#  define MAP_HUGE_2MB (21 << 26)
+#define MAP_HUGE_2MB (21 << 26)
 #endif
 
 namespace crucible::fixy::mmap {
@@ -149,18 +149,22 @@ namespace crucible::fixy::mmap {
 // hardware-enforced memory protection (XOM, CET shadow stacks) assumes.
 
 namespace prot {
-struct ReadOnly  final {};   // PROT_READ
-struct WriteCopy final {};   // PROT_READ | PROT_WRITE — COW, pairs with Private
-struct ReadWrite final {};   // PROT_READ | PROT_WRITE — pairs with Shared
-struct Exec      final {};   // PROT_READ | PROT_EXEC — gated by trusted_jit
+struct ReadOnly final {};  // PROT_READ
+struct WriteCopy final {};  // PROT_READ | PROT_WRITE — COW, pairs with Private
+struct ReadWrite final {};  // PROT_READ | PROT_WRITE — pairs with Shared
+struct Exec final {};  // PROT_READ | PROT_EXEC — gated by trusted_jit
 }  // namespace prot
 
 template <typename Prot>
 struct prot_bits : std::integral_constant<int, 0> {};
-template <> struct prot_bits<prot::ReadOnly>  : std::integral_constant<int, PROT_READ> {};
-template <> struct prot_bits<prot::WriteCopy> : std::integral_constant<int, PROT_READ | PROT_WRITE> {};
-template <> struct prot_bits<prot::ReadWrite> : std::integral_constant<int, PROT_READ | PROT_WRITE> {};
-template <> struct prot_bits<prot::Exec>      : std::integral_constant<int, PROT_READ | PROT_EXEC> {};
+template <>
+struct prot_bits<prot::ReadOnly> : std::integral_constant<int, PROT_READ> {};
+template <>
+struct prot_bits<prot::WriteCopy> : std::integral_constant<int, PROT_READ | PROT_WRITE> {};
+template <>
+struct prot_bits<prot::ReadWrite> : std::integral_constant<int, PROT_READ | PROT_WRITE> {};
+template <>
+struct prot_bits<prot::Exec> : std::integral_constant<int, PROT_READ | PROT_EXEC> {};
 
 template <typename Prot>
 inline constexpr int prot_bits_v = prot_bits<Prot>::value;
@@ -180,22 +184,28 @@ inline constexpr int prot_bits_v = prot_bits<Prot>::value;
 //   HugeTLB    MAP_HUGETLB|MAP_HUGE_2MB   — 2 MiB pages
 
 namespace share {
-struct Private    final {};
-struct Shared     final {};
-struct Anonymous  final {};
-struct Locked     final {};
-struct Populate   final {};
-struct HugeTLB    final {};
+struct Private final {};
+struct Shared final {};
+struct Anonymous final {};
+struct Locked final {};
+struct Populate final {};
+struct HugeTLB final {};
 }  // namespace share
 
 template <typename Share>
 struct share_flags : std::integral_constant<int, 0> {};
-template <> struct share_flags<share::Private>   : std::integral_constant<int, MAP_PRIVATE> {};
-template <> struct share_flags<share::Shared>    : std::integral_constant<int, MAP_SHARED> {};
-template <> struct share_flags<share::Anonymous> : std::integral_constant<int, MAP_PRIVATE | MAP_ANONYMOUS> {};
-template <> struct share_flags<share::Locked>    : std::integral_constant<int, MAP_LOCKED> {};
-template <> struct share_flags<share::Populate>  : std::integral_constant<int, MAP_POPULATE> {};
-template <> struct share_flags<share::HugeTLB>   : std::integral_constant<int, MAP_HUGETLB | MAP_HUGE_2MB> {};
+template <>
+struct share_flags<share::Private> : std::integral_constant<int, MAP_PRIVATE> {};
+template <>
+struct share_flags<share::Shared> : std::integral_constant<int, MAP_SHARED> {};
+template <>
+struct share_flags<share::Anonymous> : std::integral_constant<int, MAP_PRIVATE | MAP_ANONYMOUS> {};
+template <>
+struct share_flags<share::Locked> : std::integral_constant<int, MAP_LOCKED> {};
+template <>
+struct share_flags<share::Populate> : std::integral_constant<int, MAP_POPULATE> {};
+template <>
+struct share_flags<share::HugeTLB> : std::integral_constant<int, MAP_HUGETLB | MAP_HUGE_2MB> {};
 
 template <typename Share>
 inline constexpr int share_flags_v = share_flags<Share>::value;
@@ -204,10 +214,8 @@ inline constexpr int share_flags_v = share_flags<Share>::value;
 // primary tiers.  Used by has_primary_share_v / has_duplicate_primary_v.
 
 template <typename Share>
-inline constexpr bool is_primary_share_v =
-    std::is_same_v<Share, share::Private>
-    || std::is_same_v<Share, share::Shared>
-    || std::is_same_v<Share, share::Anonymous>;
+inline constexpr bool is_primary_share_v = std::is_same_v<Share, share::Private> || std::is_same_v<Share, share::Shared>
+                                        || std::is_same_v<Share, share::Anonymous>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── (c) advice — madvise(2) hint tier ─────────────────────────────────
@@ -220,30 +228,40 @@ inline constexpr bool is_primary_share_v =
 // RegionTag>` which carries the typed witness.
 
 namespace advice {
-struct HugePage     final {};  // MADV_HUGEPAGE
-struct NoHugePage   final {};  // MADV_NOHUGEPAGE
-struct Collapse     final {};  // MADV_COLLAPSE (kernel 6.1+)
-struct Sequential   final {};  // MADV_SEQUENTIAL
-struct Random       final {};  // MADV_RANDOM
-struct WillNeed     final {};  // MADV_WILLNEED
-struct DontNeed     final {};  // MADV_DONTNEED — DANGEROUS, zeros pages
-struct Free         final {};  // MADV_FREE
-struct WipeOnFork   final {};  // MADV_WIPEONFORK
-struct DontDump     final {};  // MADV_DONTDUMP
+struct HugePage final {};  // MADV_HUGEPAGE
+struct NoHugePage final {};  // MADV_NOHUGEPAGE
+struct Collapse final {};  // MADV_COLLAPSE (kernel 6.1+)
+struct Sequential final {};  // MADV_SEQUENTIAL
+struct Random final {};  // MADV_RANDOM
+struct WillNeed final {};  // MADV_WILLNEED
+struct DontNeed final {};  // MADV_DONTNEED — DANGEROUS, zeros pages
+struct Free final {};  // MADV_FREE
+struct WipeOnFork final {};  // MADV_WIPEONFORK
+struct DontDump final {};  // MADV_DONTDUMP
 }  // namespace advice
 
 template <typename Advice>
 struct advice_value : std::integral_constant<int, -1> {};
-template <> struct advice_value<advice::HugePage>   : std::integral_constant<int, MADV_HUGEPAGE> {};
-template <> struct advice_value<advice::NoHugePage> : std::integral_constant<int, MADV_NOHUGEPAGE> {};
-template <> struct advice_value<advice::Collapse>   : std::integral_constant<int, MADV_COLLAPSE> {};
-template <> struct advice_value<advice::Sequential> : std::integral_constant<int, MADV_SEQUENTIAL> {};
-template <> struct advice_value<advice::Random>     : std::integral_constant<int, MADV_RANDOM> {};
-template <> struct advice_value<advice::WillNeed>   : std::integral_constant<int, MADV_WILLNEED> {};
-template <> struct advice_value<advice::DontNeed>   : std::integral_constant<int, MADV_DONTNEED> {};
-template <> struct advice_value<advice::Free>       : std::integral_constant<int, MADV_FREE> {};
-template <> struct advice_value<advice::WipeOnFork> : std::integral_constant<int, MADV_WIPEONFORK> {};
-template <> struct advice_value<advice::DontDump>   : std::integral_constant<int, MADV_DONTDUMP> {};
+template <>
+struct advice_value<advice::HugePage> : std::integral_constant<int, MADV_HUGEPAGE> {};
+template <>
+struct advice_value<advice::NoHugePage> : std::integral_constant<int, MADV_NOHUGEPAGE> {};
+template <>
+struct advice_value<advice::Collapse> : std::integral_constant<int, MADV_COLLAPSE> {};
+template <>
+struct advice_value<advice::Sequential> : std::integral_constant<int, MADV_SEQUENTIAL> {};
+template <>
+struct advice_value<advice::Random> : std::integral_constant<int, MADV_RANDOM> {};
+template <>
+struct advice_value<advice::WillNeed> : std::integral_constant<int, MADV_WILLNEED> {};
+template <>
+struct advice_value<advice::DontNeed> : std::integral_constant<int, MADV_DONTNEED> {};
+template <>
+struct advice_value<advice::Free> : std::integral_constant<int, MADV_FREE> {};
+template <>
+struct advice_value<advice::WipeOnFork> : std::integral_constant<int, MADV_WIPEONFORK> {};
+template <>
+struct advice_value<advice::DontDump> : std::integral_constant<int, MADV_DONTDUMP> {};
 
 template <typename Advice>
 inline constexpr int advice_value_v = advice_value<Advice>::value;
@@ -257,8 +275,7 @@ inline constexpr int advice_value_v = advice_value<Advice>::value;
 // concept gate; `advise_release_aware<>` uses the positive case.
 
 template <typename Advice>
-inline constexpr bool is_dangerous_advice_v =
-    std::is_same_v<Advice, advice::DontNeed>;
+inline constexpr bool is_dangerous_advice_v = std::is_same_v<Advice, advice::DontNeed>;
 
 }  // namespace crucible::fixy::mmap
 
@@ -280,20 +297,20 @@ namespace mmap {
 // EBO-collapsible (sizeof == 1 standalone, 0 inside aggregators).
 
 template <typename Prot>
-struct with_prot       final : grant_base {};
+struct with_prot final : grant_base {};
 
 template <typename Share>
-struct with_share      final : grant_base {};
+struct with_share final : grant_base {};
 
 template <typename Advice>
-struct with_advice     final : grant_base {};
+struct with_advice final : grant_base {};
 
 // Trusted-JIT gate — enables `with_prot<prot::Exec>` at mint time.
 // Documentary intent: caller has audited the executable bytes and
 // asserts the W^X discipline (separate write-mapped region, code
 // signing, RX-only at execution time).
 
-struct trusted_jit     final : grant_base {};
+struct trusted_jit final : grant_base {};
 
 // `release_aware<RegionTag>` — typed witness for the Bug 5 closure.
 //
@@ -305,7 +322,7 @@ struct trusted_jit     final : grant_base {};
 // (SEPLOG/CSL) ensures cross-tag traffic can't masquerade.
 
 template <typename RegionTag>
-struct release_aware   final : grant_base {};
+struct release_aware final : grant_base {};
 
 }  // namespace mmap
 
@@ -345,8 +362,7 @@ template <typename Advice>
 struct which_dim<mmap::with_advice<Advice>>
     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::SyscallSurface> {};
 template <>
-struct which_dim<mmap::trusted_jit>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::SyscallSurface> {};
+struct which_dim<mmap::trusted_jit> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::SyscallSurface> {};
 template <typename RegionTag>
 struct which_dim<mmap::release_aware<RegionTag>>
     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::SyscallSurface> {};
@@ -374,8 +390,7 @@ struct which_dim<leak::resource<RationaleTag>>
 namespace crucible::safety {
 
 template <typename RationaleTag>
-struct is_leak_grant<::crucible::fixy::grant::leak::resource<RationaleTag>>
-    : std::true_type {};
+struct is_leak_grant<::crucible::fixy::grant::leak::resource<RationaleTag>> : std::true_type {};
 
 }  // namespace crucible::safety
 
@@ -391,9 +406,13 @@ namespace detail {
 
 // Extract Prot from with_prot<Prot> grant.  Non-with_prot grants give void.
 template <typename G>
-struct extract_prot { using type = void; };
+struct extract_prot {
+    using type = void;
+};
 template <typename Prot>
-struct extract_prot<::crucible::fixy::grant::mmap::with_prot<Prot>> { using type = Prot; };
+struct extract_prot<::crucible::fixy::grant::mmap::with_prot<Prot>> {
+    using type = Prot;
+};
 template <typename G>
 using extract_prot_t = typename extract_prot<G>::type;
 
@@ -459,12 +478,10 @@ template <typename... Grants>
 inline constexpr bool has_release_aware_v = (is_release_aware_v<Grants> || ...);
 
 template <typename... Grants>
-inline constexpr bool has_duplicate_prot_v =
-    (static_cast<int>(is_with_prot_v<Grants>) + ...) > 1;
+inline constexpr bool has_duplicate_prot_v = (static_cast<int>(is_with_prot_v<Grants>) + ...) > 1;
 
 template <typename... Grants>
-inline constexpr bool has_duplicate_primary_share_v =
-    (static_cast<int>(is_primary_with_share_v<Grants>) + ...) > 1;
+inline constexpr bool has_duplicate_primary_share_v = (static_cast<int>(is_primary_with_share_v<Grants>) + ...) > 1;
 
 // Extract Prot from the Grants pack.  Walks the pack and returns the
 // first with_prot<X>'s X.  Returns void if no with_prot is present
@@ -473,22 +490,25 @@ template <typename... Grants>
 struct prot_of;
 template <typename First, typename... Rest>
 struct prot_of<First, Rest...> {
-    using type = std::conditional_t<
-        is_with_prot_v<First>,
-        extract_prot_t<First>,
-        typename prot_of<Rest...>::type>;
+    using type = std::conditional_t<is_with_prot_v<First>, extract_prot_t<First>, typename prot_of<Rest...>::type>;
 };
 template <>
-struct prot_of<> { using type = void; };
+struct prot_of<> {
+    using type = void;
+};
 template <typename... Grants>
 using prot_of_t = typename prot_of<Grants...>::type;
 
 // Same for Share — walks the pack, returns the first primary
 // with_share<X>'s X.
 template <typename G>
-struct extract_share { using type = void; };
+struct extract_share {
+    using type = void;
+};
 template <typename Share>
-struct extract_share<::crucible::fixy::grant::mmap::with_share<Share>> { using type = Share; };
+struct extract_share<::crucible::fixy::grant::mmap::with_share<Share>> {
+    using type = Share;
+};
 template <typename G>
 using extract_share_t = typename extract_share<G>::type;
 
@@ -496,13 +516,13 @@ template <typename... Grants>
 struct primary_share_of;
 template <typename First, typename... Rest>
 struct primary_share_of<First, Rest...> {
-    using type = std::conditional_t<
-        is_primary_with_share_v<First>,
-        extract_share_t<First>,
-        typename primary_share_of<Rest...>::type>;
+    using type = std::conditional_t<is_primary_with_share_v<First>, extract_share_t<First>,
+                                    typename primary_share_of<Rest...>::type>;
 };
 template <>
-struct primary_share_of<> { using type = void; };
+struct primary_share_of<> {
+    using type = void;
+};
 template <typename... Grants>
 using primary_share_of_t = typename primary_share_of<Grants...>::type;
 
@@ -590,12 +610,8 @@ using OwnedMmap = ::crucible::safety::OwnedMmap<Tag, Prot, Share>;
 template <typename Ctx>
 concept CtxAdmitsIoBlock =
     ::crucible::effects::IsExecCtx<Ctx>
-    && ::crucible::effects::row_contains_v<
-           ::crucible::effects::row_type_of_t<Ctx>,
-           ::crucible::effects::Effect::IO>
-    && ::crucible::effects::row_contains_v<
-           ::crucible::effects::row_type_of_t<Ctx>,
-           ::crucible::effects::Effect::Block>;
+    && ::crucible::effects::row_contains_v<::crucible::effects::row_type_of_t<Ctx>, ::crucible::effects::Effect::IO>
+    && ::crucible::effects::row_contains_v<::crucible::effects::row_type_of_t<Ctx>, ::crucible::effects::Effect::Block>;
 
 // `CtxFitsMmapMint<Ctx, Grants...>` — single soundness gate on
 // `mint_mmap<Tag, Grants...>(ctx, ...)`.  Bundles:
@@ -611,11 +627,8 @@ concept CtxAdmitsIoBlock =
 
 template <typename Ctx, typename... Grants>
 concept CtxFitsMmapMint =
-    CtxAdmitsIoBlock<Ctx>
-    && detail::has_prot_grant_v<Grants...>
-    && detail::has_primary_share_grant_v<Grants...>
-    && !detail::has_duplicate_prot_v<Grants...>
-    && !detail::has_duplicate_primary_share_v<Grants...>
+    CtxAdmitsIoBlock<Ctx> && detail::has_prot_grant_v<Grants...> && detail::has_primary_share_grant_v<Grants...>
+    && !detail::has_duplicate_prot_v<Grants...> && !detail::has_duplicate_primary_share_v<Grants...>
     && (!detail::has_exec_prot_v<Grants...> || detail::has_trusted_jit_v<Grants...>);
 
 // `CtxFitsAnonMmapMint<Ctx, Grants...>` — strict superset of
@@ -623,17 +636,13 @@ concept CtxFitsMmapMint =
 // Anonymous (no file backing).  fixture #5 fires when this is violated.
 
 template <typename Ctx, typename... Grants>
-concept CtxFitsAnonMmapMint =
-    CtxFitsMmapMint<Ctx, Grants...>
-    && detail::pack_has_anonymous_v<Grants...>;
+concept CtxFitsAnonMmapMint = CtxFitsMmapMint<Ctx, Grants...> && detail::pack_has_anonymous_v<Grants...>;
 
 // `CtxFitsSafeAdvise<Ctx, Advice>` — gate for the safe-surface
 // `advise<Advice>` call.  Refuses Advice ∈ dangerous-set (fixture #7).
 
 template <typename Ctx, typename Advice>
-concept CtxFitsSafeAdvise =
-    CtxAdmitsIoBlock<Ctx>
-    && !is_dangerous_advice_v<Advice>;
+concept CtxFitsSafeAdvise = CtxAdmitsIoBlock<Ctx> && !is_dangerous_advice_v<Advice>;
 
 // `CtxFitsReleaseAwareAdvise<Ctx, Advice, RegionTag>` — gate for the
 // dangerous-surface call.  Requires Advice ∈ dangerous-set + Ctx fit.
@@ -641,9 +650,7 @@ concept CtxFitsSafeAdvise =
 // concept, making the proof obligation runtime-witnessable.)
 
 template <typename Ctx, typename Advice, typename RegionTag>
-concept CtxFitsReleaseAwareAdvise =
-    CtxAdmitsIoBlock<Ctx>
-    && is_dangerous_advice_v<Advice>;
+concept CtxFitsReleaseAwareAdvise = CtxAdmitsIoBlock<Ctx> && is_dangerous_advice_v<Advice>;
 
 // ── mint_mmap<Tag, Grants...>(ctx, fd, length, offset) ───────────────
 //
@@ -661,23 +668,18 @@ concept CtxFitsReleaseAwareAdvise =
 template <typename Tag, typename... Grants, ::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsMmapMint<Ctx, Grants...>
 [[nodiscard]] inline std::expected<
-    ::crucible::safety::Linear<OwnedMmap<Tag,
-                                         detail::prot_of_t<Grants...>,
-                                         detail::primary_share_of_t<Grants...>>>,
+    ::crucible::safety::Linear<OwnedMmap<Tag, detail::prot_of_t<Grants...>, detail::primary_share_of_t<Grants...>>>,
     std::error_code>
-mint_mmap(Ctx const&,
-          int          fd,
-          std::size_t  length,
-          ::off_t      offset = 0) noexcept {
-    constexpr int prot_bits   = detail::fold_prot_bits<Grants...>();
+mint_mmap(Ctx const&, int fd, std::size_t length, ::off_t offset = 0) noexcept {
+    constexpr int prot_bits = detail::fold_prot_bits<Grants...>();
     constexpr int share_flags = detail::fold_share_flags<Grants...>();
-    void* const addr = ::mmap(nullptr, length, prot_bits, share_flags, fd, offset);  // SYSCALL-CAP-OK: mint_mmap ctx-gate (CtxFitsMmapMint: CtxAdmitsIoBlock, effects::IO+Block)
+    void* const addr =
+        ::mmap(nullptr, length, prot_bits, share_flags, fd,
+               offset);  // SYSCALL-CAP-OK: mint_mmap ctx-gate (CtxFitsMmapMint: CtxAdmitsIoBlock, effects::IO+Block)
     if (addr == MAP_FAILED) {
         return std::unexpected{std::error_code{errno, std::system_category()}};
     }
-    using Region = OwnedMmap<Tag,
-                             detail::prot_of_t<Grants...>,
-                             detail::primary_share_of_t<Grants...>>;
+    using Region = OwnedMmap<Tag, detail::prot_of_t<Grants...>, detail::primary_share_of_t<Grants...>>;
     return ::crucible::safety::Linear<Region>{Region{addr, length}};
 }
 
@@ -691,21 +693,18 @@ mint_mmap(Ctx const&,
 template <typename Tag, typename... Grants, ::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsAnonMmapMint<Ctx, Grants...>
 [[nodiscard]] inline std::expected<
-    ::crucible::safety::Linear<OwnedMmap<Tag,
-                                         detail::prot_of_t<Grants...>,
-                                         detail::primary_share_of_t<Grants...>>>,
+    ::crucible::safety::Linear<OwnedMmap<Tag, detail::prot_of_t<Grants...>, detail::primary_share_of_t<Grants...>>>,
     std::error_code>
-mint_mmap_anon(Ctx const&,
-               std::size_t length) noexcept {
-    constexpr int prot_bits   = detail::fold_prot_bits<Grants...>();
+mint_mmap_anon(Ctx const&, std::size_t length) noexcept {
+    constexpr int prot_bits = detail::fold_prot_bits<Grants...>();
     constexpr int share_flags = detail::fold_share_flags<Grants...>();
-    void* const addr = ::mmap(nullptr, length, prot_bits, share_flags, -1, 0);  // SYSCALL-CAP-OK: mint_mmap_anon ctx-gate (CtxFitsAnonMmapMint: CtxAdmitsIoBlock, effects::IO+Block)
+    void* const addr = ::mmap(
+        nullptr, length, prot_bits, share_flags, -1,
+        0);  // SYSCALL-CAP-OK: mint_mmap_anon ctx-gate (CtxFitsAnonMmapMint: CtxAdmitsIoBlock, effects::IO+Block)
     if (addr == MAP_FAILED) {
         return std::unexpected{std::error_code{errno, std::system_category()}};
     }
-    using Region = OwnedMmap<Tag,
-                             detail::prot_of_t<Grants...>,
-                             detail::primary_share_of_t<Grants...>>;
+    using Region = OwnedMmap<Tag, detail::prot_of_t<Grants...>, detail::primary_share_of_t<Grants...>>;
     return ::crucible::safety::Linear<Region>{Region{addr, length}};
 }
 
@@ -715,17 +714,15 @@ mint_mmap_anon(Ctx const&,
 // gate refuses the dangerous-set; callers needing DontNeed must route
 // through advise_release_aware<Advice, RegionTag>.
 
-template <typename Advice,
-          typename Tag, typename Prot, typename Share,
-          ::crucible::effects::IsExecCtx Ctx>
+template <typename Advice, typename Tag, typename Prot, typename Share, ::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsSafeAdvise<Ctx, Advice>
-[[nodiscard]] inline std::expected<void, std::error_code>
-advise(Ctx const&,
-       OwnedMmap<Tag, Prot, Share>& region) noexcept {
+[[nodiscard]] inline std::expected<void, std::error_code> advise(Ctx const&,
+                                                                 OwnedMmap<Tag, Prot, Share>& region) noexcept {
     if (!region.is_mapped()) {
         return std::unexpected{std::error_code{EINVAL, std::system_category()}};
     }
-    if (::madvise(region.data(), region.size(), advice_value_v<Advice>) < 0) {  // SYSCALL-CAP-OK: advise ctx-gate (CtxFitsSafeAdvise: CtxAdmitsIoBlock, effects::IO+Block)
+    if (::madvise(region.data(), region.size(), advice_value_v<Advice>)
+        < 0) {  // SYSCALL-CAP-OK: advise ctx-gate (CtxFitsSafeAdvise: CtxAdmitsIoBlock, effects::IO+Block)
         return std::unexpected{std::error_code{errno, std::system_category()}};
     }
     return {};
@@ -765,18 +762,17 @@ advise(Ctx const&,
 // rejecting Advice that IS in the dangerous set on the safe surface —
 // the two concepts together form the disjoint-routing rule M001 names.
 
-template <typename Advice, typename RegionTag,
-          typename Tag, typename Prot, typename Share,
+template <typename Advice, typename RegionTag, typename Tag, typename Prot, typename Share,
           ::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsReleaseAwareAdvise<Ctx, Advice, RegionTag>
 [[nodiscard]] inline std::expected<void, std::error_code>
-advise_release_aware(Ctx const&,
-                     OwnedMmap<Tag, Prot, Share>& region,
+advise_release_aware(Ctx const&, OwnedMmap<Tag, Prot, Share>& region,
                      ::crucible::safety::Permission<RegionTag> const& /*exclusive_proof*/) noexcept {
     if (!region.is_mapped()) {
         return std::unexpected{std::error_code{EINVAL, std::system_category()}};
     }
-    if (::madvise(region.data(), region.size(), advice_value_v<Advice>) < 0) {  // SYSCALL-CAP-OK: advise_release_aware ctx-gate (CtxFitsReleaseAwareAdvise: IO+Block + Permission<RegionTag>)
+    if (::madvise(region.data(), region.size(), advice_value_v<Advice>)
+        < 0) {  // SYSCALL-CAP-OK: advise_release_aware ctx-gate (CtxFitsReleaseAwareAdvise: IO+Block + Permission<RegionTag>)
         return std::unexpected{std::error_code{errno, std::system_category()}};
     }
     return {};
@@ -789,20 +785,19 @@ advise_release_aware(Ctx const&,
 namespace self_test {
 
 // ── prot_bits / share_flags / advice_value tables sane ───────────────
-static_assert(prot_bits_v<prot::ReadOnly>  == PROT_READ);
+static_assert(prot_bits_v<prot::ReadOnly> == PROT_READ);
 static_assert(prot_bits_v<prot::WriteCopy> == (PROT_READ | PROT_WRITE));
 static_assert(prot_bits_v<prot::ReadWrite> == (PROT_READ | PROT_WRITE));
-static_assert(prot_bits_v<prot::Exec>      == (PROT_READ | PROT_EXEC));
-static_assert((prot_bits_v<prot::Exec> & PROT_WRITE) == 0,
-              "W^X: prot::Exec must NOT include PROT_WRITE");
+static_assert(prot_bits_v<prot::Exec> == (PROT_READ | PROT_EXEC));
+static_assert((prot_bits_v<prot::Exec> & PROT_WRITE) == 0, "W^X: prot::Exec must NOT include PROT_WRITE");
 
-static_assert(share_flags_v<share::Private>   == MAP_PRIVATE);
-static_assert(share_flags_v<share::Shared>    == MAP_SHARED);
+static_assert(share_flags_v<share::Private> == MAP_PRIVATE);
+static_assert(share_flags_v<share::Shared> == MAP_SHARED);
 static_assert((share_flags_v<share::Anonymous> & MAP_ANONYMOUS) != 0);
 
 static_assert(advice_value_v<advice::DontNeed> == MADV_DONTNEED);
 static_assert(advice_value_v<advice::HugePage> == MADV_HUGEPAGE);
-static_assert(advice_value_v<advice::Free>     == MADV_FREE);
+static_assert(advice_value_v<advice::Free> == MADV_FREE);
 
 static_assert(is_dangerous_advice_v<advice::DontNeed>);
 static_assert(!is_dangerous_advice_v<advice::HugePage>);
@@ -820,10 +815,10 @@ static_assert(!is_primary_share_v<share::HugeTLB>);
 using G_RO_Priv = ::crucible::fixy::grant::mmap::with_prot<prot::ReadOnly>;
 using G_RW_Shar = ::crucible::fixy::grant::mmap::with_share<share::Shared>;
 using G_RW_Priv = ::crucible::fixy::grant::mmap::with_share<share::Private>;
-using G_Anon    = ::crucible::fixy::grant::mmap::with_share<share::Anonymous>;
-using G_Locked  = ::crucible::fixy::grant::mmap::with_share<share::Locked>;
-using G_Exec    = ::crucible::fixy::grant::mmap::with_prot<prot::Exec>;
-using G_Jit     = ::crucible::fixy::grant::mmap::trusted_jit;
+using G_Anon = ::crucible::fixy::grant::mmap::with_share<share::Anonymous>;
+using G_Locked = ::crucible::fixy::grant::mmap::with_share<share::Locked>;
+using G_Exec = ::crucible::fixy::grant::mmap::with_prot<prot::Exec>;
+using G_Jit = ::crucible::fixy::grant::mmap::trusted_jit;
 
 static_assert(detail::has_prot_grant_v<G_RO_Priv, G_RW_Shar>);
 static_assert(!detail::has_prot_grant_v<G_RW_Shar>);
@@ -850,16 +845,14 @@ static_assert(std::is_same_v<detail::primary_share_of_t<G_RO_Priv, G_Anon, G_Loc
 // fold_prot_bits / fold_share_flags OR the contributions.
 static_assert(detail::fold_prot_bits<G_RO_Priv, G_Exec, G_Jit>()
               == (PROT_READ | PROT_EXEC));  // RO contributes PROT_READ; Exec contributes PROT_READ|PROT_EXEC
-static_assert(detail::fold_share_flags<G_RW_Shar, G_Locked>()
-              == (MAP_SHARED | MAP_LOCKED));
+static_assert(detail::fold_share_flags<G_RW_Shar, G_Locked>() == (MAP_SHARED | MAP_LOCKED));
 
 // ── OwnedMmap layout discipline ──────────────────────────────────────
 
 struct RegionA {};  // dummy Tag for self-test
 using TestRegion = OwnedMmap<RegionA, prot::ReadOnly, share::Private>;
 
-static_assert(!std::is_copy_constructible_v<TestRegion>,
-              "OwnedMmap must be move-only — copy would double-unmap");
+static_assert(!std::is_copy_constructible_v<TestRegion>, "OwnedMmap must be move-only — copy would double-unmap");
 static_assert(!std::is_copy_assignable_v<TestRegion>);
 static_assert(std::is_nothrow_move_constructible_v<TestRegion>);
 static_assert(std::is_nothrow_move_assignable_v<TestRegion>);
@@ -873,28 +866,18 @@ static_assert(sizeof(TestRegion) == sizeof(void*) + sizeof(std::size_t),
 // admits IO+Block.  G_RO_Priv + G_RW_Shar engages both axes once
 // without duplicate, no Exec, no trusted_jit needed — gate accepts.
 
-static_assert(CtxFitsMmapMint<
-    ::crucible::effects::TestRunnerCtx,
-    G_RO_Priv, G_RW_Shar>);
+static_assert(CtxFitsMmapMint<::crucible::effects::TestRunnerCtx, G_RO_Priv, G_RW_Shar>);
 
 // Anon variant — TestRunnerCtx + ReadOnly + Anonymous (primary).
-static_assert(CtxFitsAnonMmapMint<
-    ::crucible::effects::TestRunnerCtx,
-    G_RO_Priv, G_Anon>);
+static_assert(CtxFitsAnonMmapMint<::crucible::effects::TestRunnerCtx, G_RO_Priv, G_Anon>);
 
 // Anon variant REJECTS Shared (must be Anonymous).
-static_assert(!CtxFitsAnonMmapMint<
-    ::crucible::effects::TestRunnerCtx,
-    G_RO_Priv, G_RW_Shar>);
+static_assert(!CtxFitsAnonMmapMint<::crucible::effects::TestRunnerCtx, G_RO_Priv, G_RW_Shar>);
 
 // Exec without trusted_jit REJECTS.
-static_assert(!CtxFitsMmapMint<
-    ::crucible::effects::TestRunnerCtx,
-    G_Exec, G_RW_Priv>);
+static_assert(!CtxFitsMmapMint<::crucible::effects::TestRunnerCtx, G_Exec, G_RW_Priv>);
 // Exec WITH trusted_jit accepts.
-static_assert(CtxFitsMmapMint<
-    ::crucible::effects::TestRunnerCtx,
-    G_Exec, G_RW_Priv, G_Jit>);
+static_assert(CtxFitsMmapMint<::crucible::effects::TestRunnerCtx, G_Exec, G_RW_Priv, G_Jit>);
 
 // Empty Grants rejects (no prot, no share).
 static_assert(!CtxFitsMmapMint<::crucible::effects::TestRunnerCtx>);
@@ -920,14 +903,11 @@ static_assert(!CtxFitsReleaseAwareAdvise<::crucible::effects::TestRunnerCtx, adv
 struct DummyLeakRationale {};
 using LeakGrant = ::crucible::fixy::grant::leak::resource<DummyLeakRationale>;
 
-static_assert(::crucible::safety::is_leak_grant_v<LeakGrant>,
-              "leak::resource<RationaleTag> must satisfy IsLeakGrant");
+static_assert(::crucible::safety::is_leak_grant_v<LeakGrant>, "leak::resource<RationaleTag> must satisfy IsLeakGrant");
 static_assert(::crucible::safety::IsLeakGrant<LeakGrant>,
               "leak::resource<RationaleTag> must satisfy IsLeakGrant concept");
-static_assert(!::crucible::safety::is_leak_grant_v<int>,
-              "int must NOT satisfy IsLeakGrant");
-static_assert(!::crucible::safety::is_leak_grant_v<G_RO_Priv>,
-              "non-leak grants must NOT satisfy IsLeakGrant");
+static_assert(!::crucible::safety::is_leak_grant_v<int>, "int must NOT satisfy IsLeakGrant");
+static_assert(!::crucible::safety::is_leak_grant_v<G_RO_Priv>, "non-leak grants must NOT satisfy IsLeakGrant");
 
 }  // namespace self_test
 

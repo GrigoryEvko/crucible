@@ -103,27 +103,21 @@ using ::crucible::safety::mint_linear_view;
 
 namespace crucible::fixy::safety::self_test {
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::safety::Linear<int>,
-    ::crucible::safety::Linear<int>>,
-    "fixy::safety::Linear must alias safety::Linear");
+static_assert(std::is_same_v<::crucible::fixy::safety::Linear<int>, ::crucible::safety::Linear<int>>,
+              "fixy::safety::Linear must alias safety::Linear");
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::safety::Secret<int>,
-    ::crucible::safety::Secret<int>>,
-    "fixy::safety::Secret must alias safety::Secret");
+static_assert(std::is_same_v<::crucible::fixy::safety::Secret<int>, ::crucible::safety::Secret<int>>,
+              "fixy::safety::Secret must alias safety::Secret");
 
 // ScopedView is template <typename C, typename Tag>; use void/void.
-static_assert(std::is_same_v<
-    ::crucible::fixy::safety::ScopedView<int, void>,
-    ::crucible::safety::ScopedView<int, void>>,
+static_assert(
+    std::is_same_v<::crucible::fixy::safety::ScopedView<int, void>, ::crucible::safety::ScopedView<int, void>>,
     "fixy::safety::ScopedView must alias safety::ScopedView");
 
 // ── Cardinality witness ──────────────────────────────────────────
 
 constexpr int safety_using_cardinality = 8;
-static_assert(safety_using_cardinality == 8,
-    "fixy::safety:: surface drifted from 8 using-decls — Safety.h "
-    "and its sentinel must update in lockstep.");
+static_assert(safety_using_cardinality == 8, "fixy::safety:: surface drifted from 8 using-decls — Safety.h "
+                                             "and its sentinel must update in lockstep.");
 
 }  // namespace crucible::fixy::safety::self_test

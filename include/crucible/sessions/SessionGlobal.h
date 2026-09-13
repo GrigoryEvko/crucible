@@ -121,7 +121,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/sessions/Session.h>
-#include <crucible/sessions/SessionContext.h>   // detail::ctx::type_id_hash_v
+#include <crucible/sessions/SessionContext.h>  // detail::ctx::type_id_hash_v
 #include <crucible/sessions/SessionCrash.h>
 
 #include <algorithm>
@@ -154,10 +154,10 @@ struct End_G {};
 // then the protocol continues as G.
 template <typename From, typename To, typename Payload, typename G>
 struct Transmission {
-    using from    = From;
-    using to      = To;
+    using from = From;
+    using to = To;
     using payload = Payload;
-    using next    = G;
+    using next = G;
 };
 
 // A single labeled branch in a Choice.  Positional ordering —
@@ -165,15 +165,15 @@ struct Transmission {
 template <typename Payload, typename G>
 struct BranchG {
     using payload = Payload;
-    using next    = G;
+    using next = G;
 };
 
 // n-way choice: From sends To exactly one of the Branches' payloads;
 // the protocol continues as that branch's continuation.
 template <typename From, typename To, typename... Branches>
 struct Choice {
-    using from    = From;
-    using to      = To;
+    using from = From;
+    using to = To;
     static constexpr std::size_t branch_count = sizeof...(Branches);
 };
 
@@ -215,32 +215,48 @@ struct StopG {
 // ── Shape traits ───────────────────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 
-template <typename G> struct is_end_g : std::false_type {};
-template <> struct is_end_g<End_G> : std::true_type {};
+template <typename G>
+struct is_end_g : std::false_type {};
+template <>
+struct is_end_g<End_G> : std::true_type {};
 
-template <typename G> struct is_transmission : std::false_type {};
+template <typename G>
+struct is_transmission : std::false_type {};
 template <typename F, typename T, typename P, typename N>
 struct is_transmission<Transmission<F, T, P, N>> : std::true_type {};
 
-template <typename G> struct is_choice : std::false_type {};
+template <typename G>
+struct is_choice : std::false_type {};
 template <typename F, typename T, typename... Bs>
 struct is_choice<Choice<F, T, Bs...>> : std::true_type {};
 
-template <typename G> struct is_rec_g : std::false_type {};
-template <typename B> struct is_rec_g<Rec_G<B>> : std::true_type {};
+template <typename G>
+struct is_rec_g : std::false_type {};
+template <typename B>
+struct is_rec_g<Rec_G<B>> : std::true_type {};
 
-template <typename G> struct is_var_g : std::false_type {};
-template <> struct is_var_g<Var_G> : std::true_type {};
+template <typename G>
+struct is_var_g : std::false_type {};
+template <>
+struct is_var_g<Var_G> : std::true_type {};
 
-template <typename G> struct is_stop_g : std::false_type {};
-template <typename P, CrashClass C> struct is_stop_g<StopG<P, C>> : std::true_type {};
+template <typename G>
+struct is_stop_g : std::false_type {};
+template <typename P, CrashClass C>
+struct is_stop_g<StopG<P, C>> : std::true_type {};
 
-template <typename G> inline constexpr bool is_end_g_v        = is_end_g<G>::value;
-template <typename G> inline constexpr bool is_transmission_v = is_transmission<G>::value;
-template <typename G> inline constexpr bool is_choice_v       = is_choice<G>::value;
-template <typename G> inline constexpr bool is_rec_g_v        = is_rec_g<G>::value;
-template <typename G> inline constexpr bool is_var_g_v        = is_var_g<G>::value;
-template <typename G> inline constexpr bool is_stop_g_v       = is_stop_g<G>::value;
+template <typename G>
+inline constexpr bool is_end_g_v = is_end_g<G>::value;
+template <typename G>
+inline constexpr bool is_transmission_v = is_transmission<G>::value;
+template <typename G>
+inline constexpr bool is_choice_v = is_choice<G>::value;
+template <typename G>
+inline constexpr bool is_rec_g_v = is_rec_g<G>::value;
+template <typename G>
+inline constexpr bool is_var_g_v = is_var_g<G>::value;
+template <typename G>
+inline constexpr bool is_stop_g_v = is_stop_g<G>::value;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── RoleList + set operations ──────────────────────────────────────
@@ -263,10 +279,7 @@ struct contains_role<R, RoleList<>> : std::false_type {};
 
 template <typename R, typename Head, typename... Rest>
 struct contains_role<R, RoleList<Head, Rest...>>
-    : std::bool_constant<
-          std::is_same_v<R, Head> ||
-          contains_role<R, RoleList<Rest...>>::value
-      > {};
+    : std::bool_constant<std::is_same_v<R, Head> || contains_role<R, RoleList<Rest...>>::value> {};
 
 template <typename R, typename RL>
 inline constexpr bool contains_role_v = contains_role<R, RL>::value;
@@ -276,10 +289,7 @@ struct insert_unique;
 
 template <typename R, typename... Rs>
 struct insert_unique<R, RoleList<Rs...>> {
-    using type = std::conditional_t<
-        contains_role_v<R, RoleList<Rs...>>,
-        RoleList<Rs...>,
-        RoleList<R, Rs...>>;
+    using type = std::conditional_t<contains_role_v<R, RoleList<Rs...>>, RoleList<Rs...>, RoleList<R, Rs...>>;
 };
 
 }  // namespace detail::global
@@ -299,9 +309,7 @@ struct union_roles<RoleList<Rs1...>, RoleList<>> {
 
 template <typename... Rs1, typename Head, typename... Rest>
 struct union_roles<RoleList<Rs1...>, RoleList<Head, Rest...>>
-    : union_roles<
-          insert_unique_t<Head, RoleList<Rs1...>>,
-          RoleList<Rest...>> {};
+    : union_roles<insert_unique_t<Head, RoleList<Rs1...>>, RoleList<Rest...>> {};
 
 }  // namespace detail::global
 
@@ -341,13 +349,19 @@ template <typename G>
 struct flat_roles;
 
 template <>
-struct flat_roles<End_G> { using type = RoleList<>; };
+struct flat_roles<End_G> {
+    using type = RoleList<>;
+};
 
 template <>
-struct flat_roles<Var_G> { using type = RoleList<>; };
+struct flat_roles<Var_G> {
+    using type = RoleList<>;
+};
 
 template <typename Peer, CrashClass C>
-struct flat_roles<StopG<Peer, C>> { using type = RoleList<Peer>; };
+struct flat_roles<StopG<Peer, C>> {
+    using type = RoleList<Peer>;
+};
 
 template <typename Body>
 struct flat_roles<Rec_G<Body>> {
@@ -359,30 +373,29 @@ template <typename... RLs>
 struct concat_role_lists;
 
 template <>
-struct concat_role_lists<> { using type = RoleList<>; };
+struct concat_role_lists<> {
+    using type = RoleList<>;
+};
 
 template <typename... Rs>
-struct concat_role_lists<RoleList<Rs...>> { using type = RoleList<Rs...>; };
+struct concat_role_lists<RoleList<Rs...>> {
+    using type = RoleList<Rs...>;
+};
 
 template <typename... A, typename... B, typename... Rest>
-struct concat_role_lists<RoleList<A...>, RoleList<B...>, Rest...>
-    : concat_role_lists<RoleList<A..., B...>, Rest...> {};
+struct concat_role_lists<RoleList<A...>, RoleList<B...>, Rest...> : concat_role_lists<RoleList<A..., B...>, Rest...> {};
 
 template <typename... RLs>
 using concat_role_lists_t = typename concat_role_lists<RLs...>::type;
 
 template <typename From, typename To, typename P, typename G>
 struct flat_roles<Transmission<From, To, P, G>> {
-    using type = concat_role_lists_t<
-        RoleList<From, To>,
-        typename flat_roles<G>::type>;
+    using type = concat_role_lists_t<RoleList<From, To>, typename flat_roles<G>::type>;
 };
 
 template <typename From, typename To, typename... Bs>
 struct flat_roles<Choice<From, To, Bs...>> {
-    using type = concat_role_lists_t<
-        RoleList<From, To>,
-        typename flat_roles<typename Bs::next>::type...>;
+    using type = concat_role_lists_t<RoleList<From, To>, typename flat_roles<typename Bs::next>::type...>;
 };
 
 template <typename G>
@@ -395,11 +408,10 @@ using flat_roles_t = typename flat_roles<G>::type;
 template <typename... Rs>
 [[nodiscard]] inline consteval std::size_t compute_dedup_count() noexcept {
     constexpr std::size_t N = sizeof...(Rs);
-    if constexpr (N == 0) return 0;
+    if constexpr (N == 0)
+        return 0;
     else {
-        std::array<std::uint64_t, N> hashes{
-            detail::ctx::type_id_hash_v<Rs>...
-        };
+        std::array<std::uint64_t, N> hashes{detail::ctx::type_id_hash_v<Rs>...};
         std::ranges::sort(hashes);
         std::size_t unique = 1;
         for (std::size_t j = 1; j < N; ++j) {
@@ -416,22 +428,22 @@ template <typename... Rs>
 [[nodiscard]] inline consteval auto compute_kept_indices() noexcept {
     constexpr std::size_t N = sizeof...(Rs);
     std::array<std::size_t, N == 0 ? 1 : N> kept{};
-    if constexpr (N == 0) return kept;  // unused
+    if constexpr (N == 0)
+        return kept;  // unused
     else {
         std::array<std::pair<std::uint64_t, std::size_t>, N> tagged{};
         for (std::size_t i = 0; i < N; ++i) {
             tagged[i] = std::pair{std::uint64_t{0}, i};
         }
         // Fill hashes via fold-expression.
-        const std::array<std::uint64_t, N> hashes{
-            detail::ctx::type_id_hash_v<Rs>...
-        };
-        for (std::size_t i = 0; i < N; ++i) tagged[i].first = hashes[i];
+        const std::array<std::uint64_t, N> hashes{detail::ctx::type_id_hash_v<Rs>...};
+        for (std::size_t i = 0; i < N; ++i)
+            tagged[i].first = hashes[i];
 
         // Sort by (hash, original_index) so equal-hash entries land
         // adjacent with the lowest-index first (gives first-occurrence
         // semantics on dedup).
-        std::ranges::sort(tagged, [](const auto& a, const auto& b){
+        std::ranges::sort(tagged, [](const auto& a, const auto& b) {
             if (a.first != b.first) return a.first < b.first;
             return a.second < b.second;
         });
@@ -469,13 +481,14 @@ struct dedup_role_list;
 
 // Empty-pack short-circuit: avoid pack-indexing on an empty pack.
 template <>
-struct dedup_role_list<RoleList<>> { using type = RoleList<>; };
+struct dedup_role_list<RoleList<>> {
+    using type = RoleList<>;
+};
 
 template <typename First, typename... Rest>
 struct dedup_role_list<RoleList<First, Rest...>> {
     static constexpr std::size_t kept_n = compute_dedup_count<First, Rest...>();
-    using type = decltype(build_dedup_role_list_helper<First, Rest...>(
-        std::make_index_sequence<kept_n>{}));
+    using type = decltype(build_dedup_role_list_helper<First, Rest...>(std::make_index_sequence<kept_n>{}));
 };
 
 template <typename RL>
@@ -488,8 +501,7 @@ using dedup_role_list_t = typename dedup_role_list<RL>::type;
 
 template <typename G>
 struct RolesOf {
-    using type = detail::global::dedup_role_list_t<
-        detail::global::flat_roles_t<G>>;
+    using type = detail::global::dedup_role_list_t<detail::global::flat_roles_t<G>>;
 };
 
 template <typename G>
@@ -515,15 +527,11 @@ template <typename RecCtx>
 struct is_global_well_formed<End_G, RecCtx> : std::true_type {};
 
 template <typename RecCtx>
-struct is_global_well_formed<Var_G, RecCtx>
-    : std::bool_constant<!std::is_void_v<RecCtx>> {};
+struct is_global_well_formed<Var_G, RecCtx> : std::bool_constant<!std::is_void_v<RecCtx>> {};
 
 template <typename From, typename To, typename P, typename G, typename RecCtx>
 struct is_global_well_formed<Transmission<From, To, P, G>, RecCtx>
-    : std::bool_constant<
-          !std::is_same_v<From, To>
-          && is_global_well_formed<G, RecCtx>::value
-      > {};
+    : std::bool_constant<!std::is_same_v<From, To> && is_global_well_formed<G, RecCtx>::value> {};
 
 // fixy-A2-011 — Choice<From, To> with zero branches is rejected.
 //
@@ -544,10 +552,8 @@ struct is_global_well_formed<Choice<From, To>, RecCtx> : std::false_type {};
 
 template <typename From, typename To, typename... Bs, typename RecCtx>
 struct is_global_well_formed<Choice<From, To, Bs...>, RecCtx>
-    : std::bool_constant<
-          !std::is_same_v<From, To>
-          && (is_global_well_formed<typename Bs::next, RecCtx>::value && ...)
-      > {};
+    : std::bool_constant<!std::is_same_v<From, To>
+                         && (is_global_well_formed<typename Bs::next, RecCtx>::value && ...)> {};
 
 template <typename Body, typename RecCtx>
 struct is_global_well_formed<Rec_G<Body>, RecCtx>
@@ -558,8 +564,7 @@ template <typename Peer, CrashClass C, typename RecCtx>
 struct is_global_well_formed<StopG<Peer, C>, RecCtx> : std::true_type {};
 
 template <typename G>
-inline constexpr bool is_global_well_formed_v =
-    is_global_well_formed<G>::value;
+inline constexpr bool is_global_well_formed_v = is_global_well_formed<G>::value;
 
 // ─── Self-loop detection (#363) ────────────────────────────────────
 //
@@ -576,16 +581,11 @@ struct has_self_loop : std::false_type {};
 
 template <typename From, typename To, typename P, typename G>
 struct has_self_loop<Transmission<From, To, P, G>>
-    : std::bool_constant<
-          std::is_same_v<From, To> || has_self_loop<G>::value
-      > {};
+    : std::bool_constant<std::is_same_v<From, To> || has_self_loop<G>::value> {};
 
 template <typename From, typename To, typename... Bs>
 struct has_self_loop<Choice<From, To, Bs...>>
-    : std::bool_constant<
-          std::is_same_v<From, To>
-          || (has_self_loop<typename Bs::next>::value || ...)
-      > {};
+    : std::bool_constant<std::is_same_v<From, To> || (has_self_loop<typename Bs::next>::value || ...)> {};
 
 template <typename Body>
 struct has_self_loop<Rec_G<Body>> : has_self_loop<Body> {};
@@ -601,16 +601,15 @@ inline constexpr bool has_self_loop_v = has_self_loop<G>::value;
 
 template <typename G>
 consteval void assert_no_self_loop() noexcept {
-    static_assert(!has_self_loop_v<G>,
-        "crucible::session::diagnostic [ProtocolViolation_Self_Loop]: "
-        "global type contains a Transmission<X, X, ...> or "
-        "Choice<X, X, ...> — a participant cannot send to itself in "
-        "MPST.  Check that From and To in your Transmission / Choice "
-        "are different role tags.  Common cause: copy-paste error "
-        "where both sides reference the same role tag.  If you "
-        "genuinely want a participant's local-only state transition, "
-        "model it as a Machine<State> transition outside the global "
-        "protocol rather than as a self-Transmission.");
+    static_assert(!has_self_loop_v<G>, "crucible::session::diagnostic [ProtocolViolation_Self_Loop]: "
+                                       "global type contains a Transmission<X, X, ...> or "
+                                       "Choice<X, X, ...> — a participant cannot send to itself in "
+                                       "MPST.  Check that From and To in your Transmission / Choice "
+                                       "are different role tags.  Common cause: copy-paste error "
+                                       "where both sides reference the same role tag.  If you "
+                                       "genuinely want a participant's local-only state transition, "
+                                       "model it as a Machine<State> transition outside the global "
+                                       "protocol rather than as a self-Transmission.");
 }
 
 // ─── Empty-Choice detection (fixy-A2-011) ──────────────────────────
@@ -632,8 +631,7 @@ template <typename G>
 struct has_empty_choice : std::false_type {};
 
 template <typename From, typename To, typename P, typename G>
-struct has_empty_choice<Transmission<From, To, P, G>>
-    : has_empty_choice<G> {};
+struct has_empty_choice<Transmission<From, To, P, G>> : has_empty_choice<G> {};
 
 // Empty-pack Choice — the load-bearing specialization.  Matches
 // `Choice<From, To>` more specifically than the variadic case
@@ -644,9 +642,7 @@ struct has_empty_choice<Choice<From, To>> : std::true_type {};
 // Non-empty-branch Choice — recurse into each branch's continuation.
 template <typename From, typename To, typename... Bs>
 struct has_empty_choice<Choice<From, To, Bs...>>
-    : std::bool_constant<
-          (has_empty_choice<typename Bs::next>::value || ...)
-      > {};
+    : std::bool_constant<(has_empty_choice<typename Bs::next>::value || ...)> {};
 
 template <typename Body>
 struct has_empty_choice<Rec_G<Body>> : has_empty_choice<Body> {};
@@ -662,18 +658,17 @@ inline constexpr bool has_empty_choice_v = has_empty_choice<G>::value;
 
 template <typename G>
 consteval void assert_no_empty_choice() noexcept {
-    static_assert(!has_empty_choice_v<G>,
-        "crucible::session::diagnostic [Choice_Empty_Branches]: "
-        "global type contains a Choice<From, To> with zero branches.  "
-        "An empty-branch Choice has no semantic meaning in MPST — "
-        "there's no selectable label to drive the protocol forward, "
-        "and projection would collapse to plain_merge_t<> which is "
-        "ill-formed at the leaf.  Add at least one BranchG<Payload, "
-        "Continuation> to the Choice's branch pack, or replace the "
-        "Choice with End_G / StopG<Peer> / Transmission<From, To, P, "
-        "End_G> depending on the intended semantics.  Common cause: "
-        "scaffolding a Choice before its branches were filled in and "
-        "leaving the placeholder.");
+    static_assert(!has_empty_choice_v<G>, "crucible::session::diagnostic [Choice_Empty_Branches]: "
+                                          "global type contains a Choice<From, To> with zero branches.  "
+                                          "An empty-branch Choice has no semantic meaning in MPST — "
+                                          "there's no selectable label to drive the protocol forward, "
+                                          "and projection would collapse to plain_merge_t<> which is "
+                                          "ill-formed at the leaf.  Add at least one BranchG<Payload, "
+                                          "Continuation> to the Choice's branch pack, or replace the "
+                                          "Choice with End_G / StopG<Peer> / Transmission<From, To, P, "
+                                          "End_G> depending on the intended semantics.  Common cause: "
+                                          "scaffolding a Choice before its branches were filled in and "
+                                          "leaving the placeholder.");
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -704,16 +699,15 @@ struct plain_merge_impl<T> {
 
 template <typename T, typename... Rest>
 struct plain_merge_impl<T, Rest...> {
-    static_assert((std::is_same_v<T, Rest> && ...),
-        "crucible::session::diagnostic [Merge_Branches_Diverge]: "
-        "plain_merge_t: branch projections differ.  The third-party "
-        "role sees structurally-different local types across Choice "
-        "branches, which plain merging cannot unify.  Full merging "
-        "(PMY25 §4.3 coinductive) is required — not yet implemented "
-        "in this shipment of SessionGlobal.h.  Workaround: project "
-        "to a role that IS involved in every Choice (From or To), "
-        "or restructure the global type so third-party projections "
-        "match across all branches.");
+    static_assert((std::is_same_v<T, Rest> && ...), "crucible::session::diagnostic [Merge_Branches_Diverge]: "
+                                                    "plain_merge_t: branch projections differ.  The third-party "
+                                                    "role sees structurally-different local types across Choice "
+                                                    "branches, which plain merging cannot unify.  Full merging "
+                                                    "(PMY25 §4.3 coinductive) is required — not yet implemented "
+                                                    "in this shipment of SessionGlobal.h.  Workaround: project "
+                                                    "to a role that IS involved in every Choice (From or To), "
+                                                    "or restructure the global type so third-party projections "
+                                                    "match across all branches.");
     using type = T;
 };
 
@@ -763,8 +757,7 @@ namespace detail::global {
 // bug review-detectable instead of silent.
 template <typename F, typename T, typename A, typename B>
 inline constexpr bool same_unordered_pair_v =
-       (std::is_same_v<F, A> && std::is_same_v<T, B>)
-    || (std::is_same_v<F, B> && std::is_same_v<T, A>);
+    (std::is_same_v<F, A> && std::is_same_v<T, B>) || (std::is_same_v<F, B> && std::is_same_v<T, A>);
 
 template <typename G, typename RoleA, typename RoleB>
 struct has_interaction_between : std::false_type {};
@@ -781,34 +774,25 @@ struct has_interaction_between<StopG<Peer, C>, A, B> : std::false_type {};
 
 // Transmission: matches if {From, To} == {A, B}; recurse into
 // continuation otherwise.
-template <typename From, typename To, typename P, typename N,
-          typename A, typename B>
+template <typename From, typename To, typename P, typename N, typename A, typename B>
 struct has_interaction_between<Transmission<From, To, P, N>, A, B>
-    : std::bool_constant<
-             same_unordered_pair_v<From, To, A, B>
-          || has_interaction_between<N, A, B>::value
-      > {};
+    : std::bool_constant<same_unordered_pair_v<From, To, A, B> || has_interaction_between<N, A, B>::value> {};
 
 // Choice: matches if {From, To} == {A, B}; recurse into all branches'
 // continuations otherwise.
-template <typename From, typename To, typename... Bs,
-          typename A, typename B>
+template <typename From, typename To, typename... Bs, typename A, typename B>
 struct has_interaction_between<Choice<From, To, Bs...>, A, B>
-    : std::bool_constant<
-             same_unordered_pair_v<From, To, A, B>
-          || (has_interaction_between<typename Bs::next, A, B>::value || ...)
-      > {};
+    : std::bool_constant<same_unordered_pair_v<From, To, A, B>
+                         || (has_interaction_between<typename Bs::next, A, B>::value || ...)> {};
 
 // Rec_G recurses into Body.  Var_G inside Body terminates the walk
 // (handled by Var_G specialisation above) — the loop body is finite
 // type-tree even if its runtime semantics is unbounded.
 template <typename Body, typename A, typename B>
-struct has_interaction_between<Rec_G<Body>, A, B>
-    : has_interaction_between<Body, A, B> {};
+struct has_interaction_between<Rec_G<Body>, A, B> : has_interaction_between<Body, A, B> {};
 
 template <typename G, typename A, typename B>
-inline constexpr bool has_interaction_between_v =
-    has_interaction_between<G, A, B>::value;
+inline constexpr bool has_interaction_between_v = has_interaction_between<G, A, B>::value;
 
 }  // namespace detail::global
 
@@ -829,8 +813,7 @@ inline constexpr bool has_interaction_between_v =
 // to compile unchanged — the alias is purely additive.
 
 template <typename G, typename A, typename B>
-inline constexpr bool has_interaction_between_v =
-    detail::global::has_interaction_between_v<G, A, B>;
+inline constexpr bool has_interaction_between_v = detail::global::has_interaction_between_v<G, A, B>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Project<G, Role> — projection metafunction ─────────────────────
@@ -874,11 +857,15 @@ struct ProjectImpl;
 
 // End_G projects to End for every role.
 template <typename Role, typename RootG>
-struct ProjectImpl<End_G, Role, RootG> { using type = End; };
+struct ProjectImpl<End_G, Role, RootG> {
+    using type = End;
+};
 
 // Var_G projects to Continue (framework enforces Var_G inside Rec_G).
 template <typename Role, typename RootG>
-struct ProjectImpl<Var_G, Role, RootG> { using type = Continue; };
+struct ProjectImpl<Var_G, Role, RootG> {
+    using type = Continue;
+};
 
 // Rec_G<Body> projects to Loop<Body↾R>.  RootG threads unchanged.
 template <typename Body, typename Role, typename RootG>
@@ -893,7 +880,9 @@ struct ProjectImpl<Rec_G<Body>, Role, RootG> {
 // Stop_g<Throw>, not Stop_g<Abort>.  Default C=Abort preserves every
 // pre-existing call site.
 template <typename Peer, CrashClass C, typename RootG>
-struct ProjectImpl<StopG<Peer, C>, Peer, RootG> { using type = Stop_g<C>; };
+struct ProjectImpl<StopG<Peer, C>, Peer, RootG> {
+    using type = Stop_g<C>;
+};
 
 // StopG<Peer, C> — non-Peer role.  Per BHYZ23 / BSYZ22 [GR-✂] crash
 // propagation: surviving roles whose protocol intersects with Peer's
@@ -923,98 +912,72 @@ struct ProjectImpl<StopG<Peer, C>, Peer, RootG> { using type = Stop_g<C>; };
 // dispatches crash recovery now gets the correctly-tagged signal.
 template <typename Peer, CrashClass C, typename Role, typename RootG>
 struct ProjectImpl<StopG<Peer, C>, Role, RootG> {
-    using type = std::conditional_t<
-        has_interaction_between_v<RootG, Role, Peer>,
-        Stop_g<C>,
-        End>;
+    using type = std::conditional_t<has_interaction_between_v<RootG, Role, Peer>, Stop_g<C>, End>;
 };
 
 // ─── Transmission projection: three-case dispatch ────────────────
 
-enum class proj_case { sender, receiver, third_party };
+enum class proj_case {
+    sender,
+    receiver,
+    third_party
+};
 
 template <typename Role, typename From, typename To>
-inline constexpr proj_case project_case_v =
-      std::is_same_v<Role, From> ? proj_case::sender
-    : std::is_same_v<Role, To>   ? proj_case::receiver
-    :                              proj_case::third_party;
+inline constexpr proj_case project_case_v = std::is_same_v<Role, From> ? proj_case::sender
+                                          : std::is_same_v<Role, To>   ? proj_case::receiver
+                                                                       : proj_case::third_party;
 
-template <proj_case C, typename From, typename To, typename Role,
-          typename P, typename G, typename RootG>
+template <proj_case C, typename From, typename To, typename Role, typename P, typename G, typename RootG>
 struct project_transmission_helper;
 
-template <typename From, typename To, typename Role, typename P,
-          typename G, typename RootG>
-struct project_transmission_helper<proj_case::sender,
-                                    From, To, Role, P, G, RootG> {
+template <typename From, typename To, typename Role, typename P, typename G, typename RootG>
+struct project_transmission_helper<proj_case::sender, From, To, Role, P, G, RootG> {
     using type = Send<P, typename ProjectImpl<G, Role, RootG>::type>;
 };
 
-template <typename From, typename To, typename Role, typename P,
-          typename G, typename RootG>
-struct project_transmission_helper<proj_case::receiver,
-                                    From, To, Role, P, G, RootG> {
+template <typename From, typename To, typename Role, typename P, typename G, typename RootG>
+struct project_transmission_helper<proj_case::receiver, From, To, Role, P, G, RootG> {
     using type = Recv<P, typename ProjectImpl<G, Role, RootG>::type>;
 };
 
-template <typename From, typename To, typename Role, typename P,
-          typename G, typename RootG>
-struct project_transmission_helper<proj_case::third_party,
-                                    From, To, Role, P, G, RootG> {
+template <typename From, typename To, typename Role, typename P, typename G, typename RootG>
+struct project_transmission_helper<proj_case::third_party, From, To, Role, P, G, RootG> {
     // Role is not involved — skip the event, project the continuation.
     using type = typename ProjectImpl<G, Role, RootG>::type;
 };
 
-template <typename From, typename To, typename P, typename G,
-          typename Role, typename RootG>
+template <typename From, typename To, typename P, typename G, typename Role, typename RootG>
 struct ProjectImpl<Transmission<From, To, P, G>, Role, RootG> {
-    using type = typename project_transmission_helper<
-        project_case_v<Role, From, To>,
-        From, To, Role, P, G, RootG
-    >::type;
+    using type =
+        typename project_transmission_helper<project_case_v<Role, From, To>, From, To, Role, P, G, RootG>::type;
 };
 
 // ─── Choice projection: three-case dispatch ──────────────────────
 
-template <proj_case C, typename From, typename To, typename Role,
-          typename RootG, typename... Bs>
+template <proj_case C, typename From, typename To, typename Role, typename RootG, typename... Bs>
 struct project_choice_helper;
 
-template <typename From, typename To, typename Role, typename RootG,
-          typename... Bs>
-struct project_choice_helper<proj_case::sender, From, To, Role,
-                              RootG, Bs...> {
-    using type = Select<
-        Send<typename Bs::payload,
-             typename ProjectImpl<typename Bs::next, Role, RootG>::type>...>;
+template <typename From, typename To, typename Role, typename RootG, typename... Bs>
+struct project_choice_helper<proj_case::sender, From, To, Role, RootG, Bs...> {
+    using type = Select<Send<typename Bs::payload, typename ProjectImpl<typename Bs::next, Role, RootG>::type>...>;
 };
 
-template <typename From, typename To, typename Role, typename RootG,
-          typename... Bs>
-struct project_choice_helper<proj_case::receiver, From, To, Role,
-                              RootG, Bs...> {
-    using type = Offer<
-        Recv<typename Bs::payload,
-             typename ProjectImpl<typename Bs::next, Role, RootG>::type>...>;
+template <typename From, typename To, typename Role, typename RootG, typename... Bs>
+struct project_choice_helper<proj_case::receiver, From, To, Role, RootG, Bs...> {
+    using type = Offer<Recv<typename Bs::payload, typename ProjectImpl<typename Bs::next, Role, RootG>::type>...>;
 };
 
-template <typename From, typename To, typename Role, typename RootG,
-          typename... Bs>
-struct project_choice_helper<proj_case::third_party, From, To, Role,
-                              RootG, Bs...> {
+template <typename From, typename To, typename Role, typename RootG, typename... Bs>
+struct project_choice_helper<proj_case::third_party, From, To, Role, RootG, Bs...> {
     // Third-party: merge branch projections (plain merge; full merge
     // deferred — see plain_merge_t docstring).
-    using type = plain_merge_t<
-        typename ProjectImpl<typename Bs::next, Role, RootG>::type...>;
+    using type = plain_merge_t<typename ProjectImpl<typename Bs::next, Role, RootG>::type...>;
 };
 
-template <typename From, typename To, typename... Bs,
-          typename Role, typename RootG>
+template <typename From, typename To, typename... Bs, typename Role, typename RootG>
 struct ProjectImpl<Choice<From, To, Bs...>, Role, RootG> {
-    using type = typename project_choice_helper<
-        project_case_v<Role, From, To>,
-        From, To, Role, RootG, Bs...
-    >::type;
+    using type = typename project_choice_helper<project_case_v<Role, From, To>, From, To, Role, RootG, Bs...>::type;
 };
 
 }  // namespace detail::global
@@ -1043,79 +1006,73 @@ namespace detail::global::global_self_test {
 
 // Fixture role tags.
 struct Alice {};
-struct Bob   {};
+struct Bob {};
 struct Carol {};
 
 // Fixture payloads.
 struct Ping {};
 struct Pong {};
-struct Ack  {};
+struct Ack {};
 struct Query {};
 struct Reply {};
 
 // ─── Shape traits ─────────────────────────────────────────────────
 
-static_assert( is_end_g_v<End_G>);
+static_assert(is_end_g_v<End_G>);
 static_assert(!is_end_g_v<Transmission<Alice, Bob, Ping, End_G>>);
-static_assert( is_transmission_v<Transmission<Alice, Bob, Ping, End_G>>);
+static_assert(is_transmission_v<Transmission<Alice, Bob, Ping, End_G>>);
 static_assert(!is_transmission_v<End_G>);
-static_assert( is_choice_v<Choice<Alice, Bob, BranchG<Ping, End_G>>>);
-static_assert( is_rec_g_v<Rec_G<End_G>>);
-static_assert( is_var_g_v<Var_G>);
-static_assert( is_stop_g_v<StopG<Alice>>);
+static_assert(is_choice_v<Choice<Alice, Bob, BranchG<Ping, End_G>>>);
+static_assert(is_rec_g_v<Rec_G<End_G>>);
+static_assert(is_var_g_v<Var_G>);
+static_assert(is_stop_g_v<StopG<Alice>>);
 
 // ─── RoleList operations ──────────────────────────────────────────
 
-using RL_AB  = RoleList<Alice, Bob>;
-using RL_BC  = RoleList<Bob, Carol>;
+using RL_AB = RoleList<Alice, Bob>;
+using RL_BC = RoleList<Bob, Carol>;
 using RL_ABC = RoleList<Alice, Bob, Carol>;
 
 static_assert(EmptyRoleList::size == 0);
-static_assert(RL_AB::size  == 2);
+static_assert(RL_AB::size == 2);
 static_assert(RL_ABC::size == 3);
 
 static_assert(contains_role_v<Alice, RL_AB>);
-static_assert(contains_role_v<Bob,   RL_AB>);
+static_assert(contains_role_v<Bob, RL_AB>);
 static_assert(!contains_role_v<Carol, RL_AB>);
 
 // insert_unique: new element prepends.
-static_assert(std::is_same_v<
-    insert_unique_t<Carol, RL_AB>,
-    RoleList<Carol, Alice, Bob>>);
+static_assert(std::is_same_v<insert_unique_t<Carol, RL_AB>, RoleList<Carol, Alice, Bob>>);
 
 // insert_unique: existing element is idempotent.
-static_assert(std::is_same_v<
-    insert_unique_t<Alice, RL_AB>,
-    RL_AB>);
+static_assert(std::is_same_v<insert_unique_t<Alice, RL_AB>, RL_AB>);
 
 // union_roles: merges without duplicates.
 using Merged = union_roles_t<RL_AB, RL_BC>;
 static_assert(Merged::size == 3);
 static_assert(contains_role_v<Alice, Merged>);
-static_assert(contains_role_v<Bob,   Merged>);
+static_assert(contains_role_v<Bob, Merged>);
 static_assert(contains_role_v<Carol, Merged>);
 
 // union with empty is identity.
-static_assert(std::is_same_v<
-    union_roles_t<RL_AB, EmptyRoleList>, RL_AB>);
+static_assert(std::is_same_v<union_roles_t<RL_AB, EmptyRoleList>, RL_AB>);
 
 // ─── RolesOf ──────────────────────────────────────────────────────
 
 using G_binary = Transmission<Alice, Bob, Ping, End_G>;
-using G_ternary = Transmission<Alice, Bob, Ping,
-                   Transmission<Bob, Carol, Pong, End_G>>;
+using G_ternary = Transmission<Alice, Bob, Ping, Transmission<Bob, Carol, Pong, End_G>>;
 
 static_assert(roles_of_t<End_G>::size == 0);
 
 // A binary transmission has two roles.
 static_assert(contains_role_v<Alice, roles_of_t<G_binary>>);
-static_assert(contains_role_v<Bob,   roles_of_t<G_binary>>);
+static_assert(contains_role_v<Bob, roles_of_t<G_binary>>);
 static_assert(!contains_role_v<Carol, roles_of_t<G_binary>>);
 static_assert(roles_of_t<G_binary>::size == 2);
 
 // A ternary chain has three roles.
 static_assert(contains_role_v<Alice, roles_of_t<G_ternary>>);
-static_assert(contains_role_v<Bob,   roles_of_t<G_ternary>>);
+static_assert(contains_role_v<Bob, roles_of_t<G_ternary>>);
 static_assert(contains_role_v<Carol, roles_of_t<G_ternary>>);
 static_assert(roles_of_t<G_ternary>::size == 3);
 
@@ -1128,15 +1085,12 @@ static_assert(!contains_role_v<Bob, roles_of_t<StopG<Alice>>>);
 static_assert(is_global_well_formed_v<End_G>);
 static_assert(is_global_well_formed_v<Transmission<Alice, Bob, Ping, End_G>>);
 static_assert(is_global_well_formed_v<Rec_G<Transmission<Alice, Bob, Ping, Var_G>>>);
-static_assert(is_global_well_formed_v<Rec_G<Choice<Alice, Bob,
-    BranchG<Ping, Var_G>,
-    BranchG<Ack,  End_G>>>>);
+static_assert(is_global_well_formed_v<Rec_G<Choice<Alice, Bob, BranchG<Ping, Var_G>, BranchG<Ack, End_G>>>>);
 
 // Var_G outside Rec_G — ill-formed.
 static_assert(!is_global_well_formed_v<Var_G>);
 static_assert(!is_global_well_formed_v<Transmission<Alice, Bob, Ping, Var_G>>);
-static_assert(!is_global_well_formed_v<Choice<Alice, Bob,
-    BranchG<Ping, Var_G>>>);
+static_assert(!is_global_well_formed_v<Choice<Alice, Bob, BranchG<Ping, Var_G>>>);
 
 // Nested Rec_G: inner Var_G binds to innermost (well-formed).
 static_assert(is_global_well_formed_v<Rec_G<Rec_G<Transmission<Alice, Bob, Ping, Var_G>>>>);
@@ -1153,47 +1107,38 @@ static_assert(is_global_well_formed_v<Transmission<Alice, Bob, Ping, StopG<Alice
 
 // Self-Transmission rejected.
 static_assert(!is_global_well_formed_v<Transmission<Alice, Alice, Ping, End_G>>);
-static_assert(!is_global_well_formed_v<Transmission<Bob,   Bob,   Ack,  End_G>>);
+static_assert(!is_global_well_formed_v<Transmission<Bob, Bob, Ack, End_G>>);
 
 // Self-Choice rejected.
-static_assert(!is_global_well_formed_v<Choice<Alice, Alice,
-    BranchG<Ping, End_G>>>);
-static_assert(!is_global_well_formed_v<Choice<Bob, Bob,
-    BranchG<Ping, End_G>,
-    BranchG<Ack,  End_G>>>);
+static_assert(!is_global_well_formed_v<Choice<Alice, Alice, BranchG<Ping, End_G>>>);
+static_assert(!is_global_well_formed_v<Choice<Bob, Bob, BranchG<Ping, End_G>, BranchG<Ack, End_G>>>);
 
 // Cross-role transmissions still well-formed (positive control).
-static_assert( is_global_well_formed_v<Transmission<Alice, Bob,   Ping, End_G>>);
-static_assert( is_global_well_formed_v<Transmission<Bob,   Alice, Ack,  End_G>>);
+static_assert(is_global_well_formed_v<Transmission<Alice, Bob, Ping, End_G>>);
+static_assert(is_global_well_formed_v<Transmission<Bob, Alice, Ack, End_G>>);
 
 // Self-loop NESTED inside a well-formed prefix is also rejected
 // (the non-self-loop prefix doesn't redeem the inner self-loop).
-static_assert(!is_global_well_formed_v<Transmission<Alice, Bob, Ping,
-    Transmission<Alice, Alice, Ack, End_G>>>);
+static_assert(!is_global_well_formed_v<Transmission<Alice, Bob, Ping, Transmission<Alice, Alice, Ack, End_G>>>);
 
 // Same nested check for Choice.
-static_assert(!is_global_well_formed_v<Choice<Alice, Bob,
-    BranchG<Ping, End_G>,
-    BranchG<Ack,  Transmission<Bob, Bob, Ping, End_G>>>>);
+static_assert(!is_global_well_formed_v<
+              Choice<Alice, Bob, BranchG<Ping, End_G>, BranchG<Ack, Transmission<Bob, Bob, Ping, End_G>>>>);
 
 // Inside Rec_G: the recursion variable is fine; the self-loop is
 // what makes it ill-formed.
-static_assert( is_global_well_formed_v<
-    Rec_G<Transmission<Alice, Bob, Ping, Var_G>>>);
-static_assert(!is_global_well_formed_v<
-    Rec_G<Transmission<Alice, Alice, Ping, Var_G>>>);
+static_assert(is_global_well_formed_v<Rec_G<Transmission<Alice, Bob, Ping, Var_G>>>);
+static_assert(!is_global_well_formed_v<Rec_G<Transmission<Alice, Alice, Ping, Var_G>>>);
 
 // has_self_loop_v identifies self-loops independently of WF status.
 static_assert(!has_self_loop_v<Transmission<Alice, Bob, Ping, End_G>>);
-static_assert( has_self_loop_v<Transmission<Alice, Alice, Ping, End_G>>);
-static_assert( has_self_loop_v<Choice<Alice, Alice, BranchG<Ping, End_G>>>);
+static_assert(has_self_loop_v<Transmission<Alice, Alice, Ping, End_G>>);
+static_assert(has_self_loop_v<Choice<Alice, Alice, BranchG<Ping, End_G>>>);
 
 // Self-loop nested anywhere in the tree.
-static_assert( has_self_loop_v<Transmission<Alice, Bob, Ping,
-    Transmission<Alice, Alice, Ack, End_G>>>);
-static_assert( has_self_loop_v<Choice<Alice, Bob,
-    BranchG<Ping, End_G>,
-    BranchG<Ack,  Transmission<Bob, Bob, Ping, End_G>>>>);
+static_assert(has_self_loop_v<Transmission<Alice, Bob, Ping, Transmission<Alice, Alice, Ack, End_G>>>);
+static_assert(
+    has_self_loop_v<Choice<Alice, Bob, BranchG<Ping, End_G>, BranchG<Ack, Transmission<Bob, Bob, Ping, End_G>>>>);
 
 // has_self_loop_v on End_G / Var_G / StopG is false.
 static_assert(!has_self_loop_v<End_G>);
@@ -1218,16 +1163,13 @@ static_assert(check_assert_no_self_loop_compiles());
 
 // Zero-branch Choice at the root — rejected.
 static_assert(!is_global_well_formed_v<Choice<Alice, Bob>>);
-static_assert(!is_global_well_formed_v<Choice<Bob,   Carol>>);
+static_assert(!is_global_well_formed_v<Choice<Bob, Carol>>);
 
 // Single-branch Choice — well-formed (positive sentinel).
-static_assert( is_global_well_formed_v<Choice<Alice, Bob,
-    BranchG<Ping, End_G>>>);
+static_assert(is_global_well_formed_v<Choice<Alice, Bob, BranchG<Ping, End_G>>>);
 
 // Multi-branch Choice — well-formed.
-static_assert( is_global_well_formed_v<Choice<Alice, Bob,
-    BranchG<Ping, End_G>,
-    BranchG<Ack,  End_G>>>);
+static_assert(is_global_well_formed_v<Choice<Alice, Bob, BranchG<Ping, End_G>, BranchG<Ack, End_G>>>);
 
 // Zero-branch Choice nested inside Rec_G — also rejected (recursion
 // into Body, which contains the empty Choice).
@@ -1235,13 +1177,11 @@ static_assert(!is_global_well_formed_v<Rec_G<Choice<Alice, Bob>>>);
 
 // Zero-branch Choice nested inside a Transmission's continuation —
 // also rejected.
-static_assert(!is_global_well_formed_v<
-    Transmission<Alice, Bob, Ping, Choice<Bob, Carol>>>);
+static_assert(!is_global_well_formed_v<Transmission<Alice, Bob, Ping, Choice<Bob, Carol>>>);
 
 // Zero-branch Choice nested inside a Choice branch's continuation —
 // also rejected.
-static_assert(!is_global_well_formed_v<Choice<Alice, Bob,
-    BranchG<Ping, Choice<Bob, Carol>>>>);
+static_assert(!is_global_well_formed_v<Choice<Alice, Bob, BranchG<Ping, Choice<Bob, Carol>>>>);
 
 // has_empty_choice_v identifies empty Choice independently of WF
 // (a well-formed prefix doesn't redeem the inner empty Choice).
@@ -1249,18 +1189,14 @@ static_assert(!has_empty_choice_v<End_G>);
 static_assert(!has_empty_choice_v<Var_G>);
 static_assert(!has_empty_choice_v<StopG<Alice>>);
 static_assert(!has_empty_choice_v<Transmission<Alice, Bob, Ping, End_G>>);
-static_assert(!has_empty_choice_v<Choice<Alice, Bob,
-    BranchG<Ping, End_G>>>);
-static_assert( has_empty_choice_v<Choice<Alice, Bob>>);
-static_assert( has_empty_choice_v<Rec_G<Choice<Alice, Bob>>>);
-static_assert( has_empty_choice_v<Transmission<Alice, Bob, Ping,
-    Choice<Bob, Carol>>>);
-static_assert( has_empty_choice_v<Choice<Alice, Bob,
-    BranchG<Ping, Choice<Bob, Carol>>>>);
+static_assert(!has_empty_choice_v<Choice<Alice, Bob, BranchG<Ping, End_G>>>);
+static_assert(has_empty_choice_v<Choice<Alice, Bob>>);
+static_assert(has_empty_choice_v<Rec_G<Choice<Alice, Bob>>>);
+static_assert(has_empty_choice_v<Transmission<Alice, Bob, Ping, Choice<Bob, Carol>>>);
+static_assert(has_empty_choice_v<Choice<Alice, Bob, BranchG<Ping, Choice<Bob, Carol>>>>);
 
 // has_empty_choice_v on Rec_G with a clean body — false.
-static_assert(!has_empty_choice_v<
-    Rec_G<Transmission<Alice, Bob, Ping, Var_G>>>);
+static_assert(!has_empty_choice_v<Rec_G<Transmission<Alice, Bob, Ping, Var_G>>>);
 
 // assert_no_empty_choice<G>() is consteval and compiles for clean Gs.
 consteval bool check_assert_no_empty_choice_compiles() {
@@ -1277,79 +1213,57 @@ static_assert(check_assert_no_empty_choice_compiles());
 static_assert(std::is_same_v<plain_merge_t<>, End>);  // vacuous
 static_assert(std::is_same_v<plain_merge_t<End>, End>);
 static_assert(std::is_same_v<plain_merge_t<End, End, End>, End>);
-static_assert(std::is_same_v<
-    plain_merge_t<Send<int, End>, Send<int, End>>,
-    Send<int, End>>);
+static_assert(std::is_same_v<plain_merge_t<Send<int, End>, Send<int, End>>, Send<int, End>>);
 
 // ─── Projection: End_G ─────────────────────────────────────────────
 
 static_assert(std::is_same_v<project_t<End_G, Alice>, End>);
-static_assert(std::is_same_v<project_t<End_G, Bob>,   End>);
+static_assert(std::is_same_v<project_t<End_G, Bob>, End>);
 
 // ─── Projection: Transmission (binary) ────────────────────────────
 
 using G_AB = Transmission<Alice, Bob, Ping, End_G>;
 
 // Sender: Send<P, End>.
-static_assert(std::is_same_v<
-    project_t<G_AB, Alice>,
-    Send<Ping, End>>);
+static_assert(std::is_same_v<project_t<G_AB, Alice>, Send<Ping, End>>);
 
 // Receiver: Recv<P, End>.
-static_assert(std::is_same_v<
-    project_t<G_AB, Bob>,
-    Recv<Ping, End>>);
+static_assert(std::is_same_v<project_t<G_AB, Bob>, Recv<Ping, End>>);
 
 // ─── Projection: three-party Transmission chain ──────────────────
 
 // Alice → Bob, then Bob → Carol.  Each role sees only events they
 // participate in; events between other roles are skipped.
 
-using G_chain = Transmission<Alice, Bob, Ping,
-                Transmission<Bob, Carol, Pong, End_G>>;
+using G_chain = Transmission<Alice, Bob, Ping, Transmission<Bob, Carol, Pong, End_G>>;
 
 // Alice: sends Ping, then skips Bob→Carol.
-static_assert(std::is_same_v<
-    project_t<G_chain, Alice>,
-    Send<Ping, End>>);
+static_assert(std::is_same_v<project_t<G_chain, Alice>, Send<Ping, End>>);
 
 // Bob: recvs Ping (from Alice), then sends Pong (to Carol).
-static_assert(std::is_same_v<
-    project_t<G_chain, Bob>,
-    Recv<Ping, Send<Pong, End>>>);
+static_assert(std::is_same_v<project_t<G_chain, Bob>, Recv<Ping, Send<Pong, End>>>);
 
 // Carol: skips Alice→Bob, then recvs Pong.
-static_assert(std::is_same_v<
-    project_t<G_chain, Carol>,
-    Recv<Pong, End>>);
+static_assert(std::is_same_v<project_t<G_chain, Carol>, Recv<Pong, End>>);
 
 // ─── Projection: Choice ────────────────────────────────────────────
 
 // Binary request-response with loop: Alice sends either Query
 // or close, Bob offers both.
-using G_reqresp = Rec_G<Choice<Alice, Bob,
-    BranchG<Query, Transmission<Bob, Alice, Reply, Var_G>>,
-    BranchG<Ack,   End_G>>>;
+using G_reqresp =
+    Rec_G<Choice<Alice, Bob, BranchG<Query, Transmission<Bob, Alice, Reply, Var_G>>, BranchG<Ack, End_G>>>;
 
 // Alice's projection: Loop<Select<Send<Query, Recv<Reply, Continue>>,
 //                                  Send<Ack, End>>>.
-static_assert(std::is_same_v<
-    project_t<G_reqresp, Alice>,
-    Loop<Select<
-        Send<Query, Recv<Reply, Continue>>,
-        Send<Ack,   End>>>>);
+static_assert(
+    std::is_same_v<project_t<G_reqresp, Alice>, Loop<Select<Send<Query, Recv<Reply, Continue>>, Send<Ack, End>>>>);
 
 // Bob's projection: the dual shape — Offer over Recv.
-static_assert(std::is_same_v<
-    project_t<G_reqresp, Bob>,
-    Loop<Offer<
-        Recv<Query, Send<Reply, Continue>>,
-        Recv<Ack,   End>>>>);
+static_assert(
+    std::is_same_v<project_t<G_reqresp, Bob>, Loop<Offer<Recv<Query, Send<Reply, Continue>>, Recv<Ack, End>>>>);
 
 // And the duals match.
-static_assert(std::is_same_v<
-    dual_of_t<project_t<G_reqresp, Alice>>,
-    project_t<G_reqresp, Bob>>);
+static_assert(std::is_same_v<dual_of_t<project_t<G_reqresp, Alice>>, project_t<G_reqresp, Bob>>);
 
 // ─── Projection: StopG (GAPS-001 — crash-safety preservation) ─────
 //
@@ -1362,9 +1276,7 @@ static_assert(std::is_same_v<
 using G_alice_stops = Transmission<Alice, Bob, Ping, StopG<Alice>>;
 
 // Alice: Send<Ping, Stop> — she IS the crashed peer.
-static_assert(std::is_same_v<
-    project_t<G_alice_stops, Alice>,
-    Send<Ping, Stop>>);
+static_assert(std::is_same_v<project_t<G_alice_stops, Alice>, Send<Ping, Stop>>);
 
 // Bob: Recv<Ping, Stop> — Bob INTERACTED with Alice (received Ping),
 // so Bob sees crash-induced Stop, not clean End.  Tightening from
@@ -1372,9 +1284,7 @@ static_assert(std::is_same_v<
 // (Stop is the bottom — SessionCrash.h:205), so any code that
 // correctly handled End handles Stop, but crash-recovery dispatch
 // now gets the type-level signal.
-static_assert(std::is_same_v<
-    project_t<G_alice_stops, Bob>,
-    Recv<Ping, Stop>>);
+static_assert(std::is_same_v<project_t<G_alice_stops, Bob>, Recv<Ping, Stop>>);
 
 // Stop and End are distinct (Stop is bottom of subtype order).
 static_assert(!std::is_same_v<End, Stop>);
@@ -1384,31 +1294,21 @@ static_assert(!std::is_same_v<End, Stop>);
 // Bob sends Query to Alice; Alice immediately crashes.  Bob doesn't
 // know if his send arrived — he must see crash-induced termination.
 using G_send_then_crash = Transmission<Bob, Alice, Query, StopG<Alice>>;
-static_assert(std::is_same_v<
-    project_t<G_send_then_crash, Bob>,
-    Send<Query, Stop>>);
-static_assert(std::is_same_v<
-    project_t<G_send_then_crash, Alice>,
-    Recv<Query, Stop>>);
+static_assert(std::is_same_v<project_t<G_send_then_crash, Bob>, Send<Query, Stop>>);
+static_assert(std::is_same_v<project_t<G_send_then_crash, Alice>, Recv<Query, Stop>>);
 
 // (b) Non-Peer role with NO INTERACTIONS with Peer — projects to End.
 //
 // Carol is a third party who never interacts with Alice in the
 // protocol; Alice's crash doesn't affect Carol's session, which can
 // terminate cleanly.
-using G_carol_unaffected = Transmission<Bob, Carol, Pong,
-                            Transmission<Alice, Bob, Ping,
-                              StopG<Alice>>>;
+using G_carol_unaffected = Transmission<Bob, Carol, Pong, Transmission<Alice, Bob, Ping, StopG<Alice>>>;
 // Carol projects to: Recv<Pong, End> — Carol's only interaction is
 // with Bob; Alice's crash propagates only to Bob (who interacts with
 // Alice), not to Carol (who doesn't).
-static_assert(std::is_same_v<
-    project_t<G_carol_unaffected, Carol>,
-    Recv<Pong, End>>);
+static_assert(std::is_same_v<project_t<G_carol_unaffected, Carol>, Recv<Pong, End>>);
 // Bob still sees Stop (he interacts with Alice afterwards).
-static_assert(std::is_same_v<
-    project_t<G_carol_unaffected, Bob>,
-    Send<Pong, Recv<Ping, Stop>>>);
+static_assert(std::is_same_v<project_t<G_carol_unaffected, Bob>, Send<Pong, Recv<Ping, Stop>>>);
 
 // (c) Round-trip Γ → G → projection → Γ' preserves crash-safety:
 // every projection that ends at a StopG<Peer> for a role R that
@@ -1429,16 +1329,13 @@ template <>
 struct ends_in_stop_recursive<Stop> : std::true_type {};
 
 template <typename Payload, typename Continuation>
-struct ends_in_stop_recursive<Send<Payload, Continuation>>
-    : ends_in_stop_recursive<Continuation> {};
+struct ends_in_stop_recursive<Send<Payload, Continuation>> : ends_in_stop_recursive<Continuation> {};
 
 template <typename Payload, typename Continuation>
-struct ends_in_stop_recursive<Recv<Payload, Continuation>>
-    : ends_in_stop_recursive<Continuation> {};
+struct ends_in_stop_recursive<Recv<Payload, Continuation>> : ends_in_stop_recursive<Continuation> {};
 
 template <typename Body>
-struct ends_in_stop_recursive<Loop<Body>>
-    : ends_in_stop_recursive<Body> {};
+struct ends_in_stop_recursive<Loop<Body>> : ends_in_stop_recursive<Body> {};
 
 template <typename Proto>
 inline constexpr bool ends_in_stop_v = ends_in_stop_recursive<Proto>::value;
@@ -1451,12 +1348,12 @@ static_assert(ends_in_stop_v<project_t<G_alice_stops, Bob>>);
 static_assert(std::is_same_v<project_t<G_alice_stops, Carol>, End>);
 
 // has_interaction_between_v witness — the helper the fix is built on.
-static_assert( has_interaction_between_v<G_alice_stops, Alice, Bob>);
-static_assert( has_interaction_between_v<G_alice_stops, Bob,   Alice>);  // symmetric
+static_assert(has_interaction_between_v<G_alice_stops, Alice, Bob>);
+static_assert(has_interaction_between_v<G_alice_stops, Bob, Alice>);  // symmetric
 static_assert(!has_interaction_between_v<G_alice_stops, Carol, Alice>);
 static_assert(!has_interaction_between_v<G_alice_stops, Carol, Bob>);
-static_assert( has_interaction_between_v<G_carol_unaffected, Bob, Carol>);
-static_assert( has_interaction_between_v<G_carol_unaffected, Alice, Bob>);
+static_assert(has_interaction_between_v<G_carol_unaffected, Bob, Carol>);
+static_assert(has_interaction_between_v<G_carol_unaffected, Alice, Bob>);
 static_assert(!has_interaction_between_v<G_carol_unaffected, Carol, Alice>);
 
 // ─── Projection: StopG with explicit CrashClass (fixy-A2-001) ─────
@@ -1474,63 +1371,50 @@ static_assert(!has_interaction_between_v<G_carol_unaffected, Carol, Alice>);
 // crossing.
 
 // (1) Peer's own projection threads C — every tier round-trips.
-static_assert(std::is_same_v<
-    project_t<Transmission<Alice, Bob, Ping, StopG<Alice, CrashClass::Abort>>, Alice>,
-    Send<Ping, Stop_g<CrashClass::Abort>>>);
-static_assert(std::is_same_v<
-    project_t<Transmission<Alice, Bob, Ping, StopG<Alice, CrashClass::Throw>>, Alice>,
-    Send<Ping, Stop_g<CrashClass::Throw>>>);
-static_assert(std::is_same_v<
-    project_t<Transmission<Alice, Bob, Ping, StopG<Alice, CrashClass::ErrorReturn>>, Alice>,
-    Send<Ping, Stop_g<CrashClass::ErrorReturn>>>);
-static_assert(std::is_same_v<
-    project_t<Transmission<Alice, Bob, Ping, StopG<Alice, CrashClass::NoThrow>>, Alice>,
-    Send<Ping, Stop_g<CrashClass::NoThrow>>>);
+static_assert(std::is_same_v<project_t<Transmission<Alice, Bob, Ping, StopG<Alice, CrashClass::Abort>>, Alice>,
+                             Send<Ping, Stop_g<CrashClass::Abort>>>);
+static_assert(std::is_same_v<project_t<Transmission<Alice, Bob, Ping, StopG<Alice, CrashClass::Throw>>, Alice>,
+                             Send<Ping, Stop_g<CrashClass::Throw>>>);
+static_assert(std::is_same_v<project_t<Transmission<Alice, Bob, Ping, StopG<Alice, CrashClass::ErrorReturn>>, Alice>,
+                             Send<Ping, Stop_g<CrashClass::ErrorReturn>>>);
+static_assert(std::is_same_v<project_t<Transmission<Alice, Bob, Ping, StopG<Alice, CrashClass::NoThrow>>, Alice>,
+                             Send<Ping, Stop_g<CrashClass::NoThrow>>>);
 
 // (2) Non-Peer-but-interacting role's projection also threads C.
-static_assert(std::is_same_v<
-    project_t<Transmission<Alice, Bob, Ping, StopG<Alice, CrashClass::Throw>>, Bob>,
-    Recv<Ping, Stop_g<CrashClass::Throw>>>);
-static_assert(std::is_same_v<
-    project_t<Transmission<Alice, Bob, Ping, StopG<Alice, CrashClass::NoThrow>>, Bob>,
-    Recv<Ping, Stop_g<CrashClass::NoThrow>>>);
+static_assert(std::is_same_v<project_t<Transmission<Alice, Bob, Ping, StopG<Alice, CrashClass::Throw>>, Bob>,
+                             Recv<Ping, Stop_g<CrashClass::Throw>>>);
+static_assert(std::is_same_v<project_t<Transmission<Alice, Bob, Ping, StopG<Alice, CrashClass::NoThrow>>, Bob>,
+                             Recv<Ping, Stop_g<CrashClass::NoThrow>>>);
 
 // (3) Uninvolved third-party still projects to End regardless of C.
 // (End does not carry a CrashClass — the role is unaffected.)
-using G_carol_uninvolved_throw = Transmission<Bob, Carol, Pong,
-                                  Transmission<Alice, Bob, Ping,
-                                    StopG<Alice, CrashClass::Throw>>>;
-static_assert(std::is_same_v<
-    project_t<G_carol_uninvolved_throw, Carol>,
-    Recv<Pong, End>>);
+using G_carol_uninvolved_throw =
+    Transmission<Bob, Carol, Pong, Transmission<Alice, Bob, Ping, StopG<Alice, CrashClass::Throw>>>;
+static_assert(std::is_same_v<project_t<G_carol_uninvolved_throw, Carol>, Recv<Pong, End>>);
 
 // (4) Tiers are structurally distinct — fixy-A2-001 closes the
 //     collapse-to-one-tier hole.
-static_assert(!std::is_same_v<Stop_g<CrashClass::Abort>,
-                              Stop_g<CrashClass::Throw>>);
-static_assert(!std::is_same_v<Stop_g<CrashClass::ErrorReturn>,
-                              Stop_g<CrashClass::NoThrow>>);
+static_assert(!std::is_same_v<Stop_g<CrashClass::Abort>, Stop_g<CrashClass::Throw>>);
+static_assert(!std::is_same_v<Stop_g<CrashClass::ErrorReturn>, Stop_g<CrashClass::NoThrow>>);
 
 // (5) Backward compat: bare `StopG<Peer>` (no C) defaults to Abort and
 //     projects identically to `StopG<Peer, CrashClass::Abort>` — every
 //     pre-existing call site sees no behavioural change.
-static_assert(std::is_same_v<
-    project_t<Transmission<Alice, Bob, Ping, StopG<Alice>>, Alice>,
-    project_t<Transmission<Alice, Bob, Ping, StopG<Alice, CrashClass::Abort>>, Alice>>);
-static_assert(std::is_same_v<
-    project_t<Transmission<Alice, Bob, Ping, StopG<Alice>>, Bob>,
-    project_t<Transmission<Alice, Bob, Ping, StopG<Alice, CrashClass::Abort>>, Bob>>);
+static_assert(std::is_same_v<project_t<Transmission<Alice, Bob, Ping, StopG<Alice>>, Alice>,
+                             project_t<Transmission<Alice, Bob, Ping, StopG<Alice, CrashClass::Abort>>, Alice>>);
+static_assert(std::is_same_v<project_t<Transmission<Alice, Bob, Ping, StopG<Alice>>, Bob>,
+                             project_t<Transmission<Alice, Bob, Ping, StopG<Alice, CrashClass::Abort>>, Bob>>);
 
 // (6) is_stop_g_v continues to recognize the graded variant.
-static_assert( is_stop_g_v<StopG<Alice, CrashClass::Throw>>);
-static_assert( is_stop_g_v<StopG<Alice, CrashClass::NoThrow>>);
+static_assert(is_stop_g_v<StopG<Alice, CrashClass::Throw>>);
+static_assert(is_stop_g_v<StopG<Alice, CrashClass::NoThrow>>);
 
 // (7) Well-formedness independent of C.
 static_assert(is_global_well_formed_v<StopG<Alice, CrashClass::ErrorReturn>>);
 
 // (8) Roles set independent of C (StopG contributes Peer only).
-static_assert( contains_role_v<Alice, roles_of_t<StopG<Alice, CrashClass::NoThrow>>>);
-static_assert(!contains_role_v<Bob,   roles_of_t<StopG<Alice, CrashClass::NoThrow>>>);
+static_assert(contains_role_v<Alice, roles_of_t<StopG<Alice, CrashClass::NoThrow>>>);
+static_assert(!contains_role_v<Bob, roles_of_t<StopG<Alice, CrashClass::NoThrow>>>);
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Multiparty (MPST) crash-propagation fixtures (GAPS-001) ────────
@@ -1543,15 +1427,15 @@ static_assert(!contains_role_v<Bob,   roles_of_t<StopG<Alice, CrashClass::NoThro
 // stress every shape with 5+ roles.
 
 struct David {};
-struct Eve   {};
+struct Eve {};
 struct Frank {};
 struct Grace {};
 
-struct Cmd   {};   // broadcast/command payload
-struct Beat  {};   // heartbeat / link-step payload
-struct Vote  {};   // voting payload
-struct Sum   {};   // aggregation payload
-struct Close {};   // shut-down marker
+struct Cmd {};  // broadcast/command payload
+struct Beat {};  // heartbeat / link-step payload
+struct Vote {};  // voting payload
+struct Sum {};  // aggregation payload
+struct Close {};  // shut-down marker
 
 // ─── (1) FIVE-PARTY BROADCAST + COORDINATOR CRASH ────────────────
 //
@@ -1560,43 +1444,33 @@ struct Close {};   // shut-down marker
 // with Alice (received Cmd) → all see Stop.  Bystander Frank never
 // appears → End.
 
-using G_broadcast_crash =
-    Transmission<Alice, Bob,   Cmd,
-    Transmission<Alice, Carol, Cmd,
-    Transmission<Alice, David, Cmd,
-    Transmission<Alice, Eve,   Cmd,
-      StopG<Alice>>>>>;
+using G_broadcast_crash = Transmission<
+    Alice, Bob, Cmd,
+    Transmission<Alice, Carol, Cmd, Transmission<Alice, David, Cmd, Transmission<Alice, Eve, Cmd, StopG<Alice>>>>>;
 
 static_assert(is_global_well_formed_v<G_broadcast_crash>);
 static_assert(roles_of_t<G_broadcast_crash>::size == 5);
 
 // Alice (the crashed coordinator) emits 4 Sends then Stop.
-static_assert(std::is_same_v<
-    project_t<G_broadcast_crash, Alice>,
-    Send<Cmd, Send<Cmd, Send<Cmd, Send<Cmd, Stop>>>>>);
+static_assert(std::is_same_v<project_t<G_broadcast_crash, Alice>, Send<Cmd, Send<Cmd, Send<Cmd, Send<Cmd, Stop>>>>>);
 
 // Each downstream Di sees Recv<Cmd, Stop>.  Their projection skips
 // the broadcasts to OTHER recipients (third-party events) and lands
 // at StopG<Alice>, which projects to Stop (each Di interacted with
 // Alice).
-static_assert(std::is_same_v<
-    project_t<G_broadcast_crash, Bob>,    Recv<Cmd, Stop>>);
-static_assert(std::is_same_v<
-    project_t<G_broadcast_crash, Carol>,  Recv<Cmd, Stop>>);
-static_assert(std::is_same_v<
-    project_t<G_broadcast_crash, David>,  Recv<Cmd, Stop>>);
-static_assert(std::is_same_v<
-    project_t<G_broadcast_crash, Eve>,    Recv<Cmd, Stop>>);
+static_assert(std::is_same_v<project_t<G_broadcast_crash, Bob>, Recv<Cmd, Stop>>);
+static_assert(std::is_same_v<project_t<G_broadcast_crash, Carol>, Recv<Cmd, Stop>>);
+static_assert(std::is_same_v<project_t<G_broadcast_crash, David>, Recv<Cmd, Stop>>);
+static_assert(std::is_same_v<project_t<G_broadcast_crash, Eve>, Recv<Cmd, Stop>>);
 
 // Bystander Frank — never appears — projects to End.
-static_assert(std::is_same_v<
-    project_t<G_broadcast_crash, Frank>, End>);
+static_assert(std::is_same_v<project_t<G_broadcast_crash, Frank>, End>);
 
 // Pairwise interactions: every Di interacts with Alice; no Di
 // interacts with another Di.
-static_assert( has_interaction_between_v<G_broadcast_crash, Alice, Bob>);
-static_assert( has_interaction_between_v<G_broadcast_crash, Alice, Eve>);
-static_assert(!has_interaction_between_v<G_broadcast_crash, Bob,   Carol>);
+static_assert(has_interaction_between_v<G_broadcast_crash, Alice, Bob>);
+static_assert(has_interaction_between_v<G_broadcast_crash, Alice, Eve>);
+static_assert(!has_interaction_between_v<G_broadcast_crash, Bob, Carol>);
 static_assert(!has_interaction_between_v<G_broadcast_crash, David, Eve>);
 static_assert(!has_interaction_between_v<G_broadcast_crash, Frank, Alice>);
 
@@ -1608,33 +1482,24 @@ static_assert(!has_interaction_between_v<G_broadcast_crash, Frank, Alice>);
 // Frank never participates → End.
 
 using G_fan_in_crash =
-    Transmission<Bob,   Eve, Vote,
-    Transmission<Carol, Eve, Vote,
-    Transmission<David, Eve, Vote,
-      StopG<Eve>>>>;
+    Transmission<Bob, Eve, Vote, Transmission<Carol, Eve, Vote, Transmission<David, Eve, Vote, StopG<Eve>>>>;
 
 static_assert(is_global_well_formed_v<G_fan_in_crash>);
 static_assert(roles_of_t<G_fan_in_crash>::size == 4);
 
 // Eve (the crashed aggregator) receives 3 Votes then Stop.
-static_assert(std::is_same_v<
-    project_t<G_fan_in_crash, Eve>,
-    Recv<Vote, Recv<Vote, Recv<Vote, Stop>>>>);
+static_assert(std::is_same_v<project_t<G_fan_in_crash, Eve>, Recv<Vote, Recv<Vote, Recv<Vote, Stop>>>>);
 
 // Each voter sends its Vote, then sees Stop because voter interacts
 // with Eve directly.  The intermediate Vote events (between OTHER
 // voters and Eve) are third-party from this voter's perspective and
 // collapse to the StopG continuation's projection.
-static_assert(std::is_same_v<
-    project_t<G_fan_in_crash, Bob>,   Send<Vote, Stop>>);
-static_assert(std::is_same_v<
-    project_t<G_fan_in_crash, Carol>, Send<Vote, Stop>>);
-static_assert(std::is_same_v<
-    project_t<G_fan_in_crash, David>, Send<Vote, Stop>>);
+static_assert(std::is_same_v<project_t<G_fan_in_crash, Bob>, Send<Vote, Stop>>);
+static_assert(std::is_same_v<project_t<G_fan_in_crash, Carol>, Send<Vote, Stop>>);
+static_assert(std::is_same_v<project_t<G_fan_in_crash, David>, Send<Vote, Stop>>);
 
 // Frank never appears.
-static_assert(std::is_same_v<
-    project_t<G_fan_in_crash, Frank>, End>);
+static_assert(std::is_same_v<project_t<G_fan_in_crash, Frank>, End>);
 
 // ─── (3) LONG CHAIN — TRANSITIVE INFLUENCE BOUNDARY ──────────────
 //
@@ -1658,49 +1523,36 @@ static_assert(std::is_same_v<
 // require costly causality analysis.  The DIRECT-only rule keeps
 // the machinery compositional.
 
-using G_long_chain =
-    Transmission<Alice, Bob,   Beat,
-    Transmission<Bob,   Carol, Beat,
-    Transmission<Carol, David, Beat,
-    Transmission<David, Eve,   Beat,
-      StopG<Eve>>>>>;
+using G_long_chain = Transmission<
+    Alice, Bob, Beat,
+    Transmission<Bob, Carol, Beat, Transmission<Carol, David, Beat, Transmission<David, Eve, Beat, StopG<Eve>>>>>;
 
 static_assert(is_global_well_formed_v<G_long_chain>);
 static_assert(roles_of_t<G_long_chain>::size == 5);
 
 // Eve (peer) — receives the last Beat then Stop.
-static_assert(std::is_same_v<
-    project_t<G_long_chain, Eve>,
-    Recv<Beat, Stop>>);
+static_assert(std::is_same_v<project_t<G_long_chain, Eve>, Recv<Beat, Stop>>);
 
 // David — recv from Carol, send to Eve, then Stop (direct interaction
 // with Eve).
-static_assert(std::is_same_v<
-    project_t<G_long_chain, David>,
-    Recv<Beat, Send<Beat, Stop>>>);
+static_assert(std::is_same_v<project_t<G_long_chain, David>, Recv<Beat, Send<Beat, Stop>>>);
 
 // Carol — recv from Bob, send to David, then End (no DIRECT
 // interaction with Eve in the tree).
-static_assert(std::is_same_v<
-    project_t<G_long_chain, Carol>,
-    Recv<Beat, Send<Beat, End>>>);
+static_assert(std::is_same_v<project_t<G_long_chain, Carol>, Recv<Beat, Send<Beat, End>>>);
 
 // Bob — recv from Alice, send to Carol, then End.
-static_assert(std::is_same_v<
-    project_t<G_long_chain, Bob>,
-    Recv<Beat, Send<Beat, End>>>);
+static_assert(std::is_same_v<project_t<G_long_chain, Bob>, Recv<Beat, Send<Beat, End>>>);
 
 // Alice — initiates with one Send, then End (no chain-tail Stop).
-static_assert(std::is_same_v<
-    project_t<G_long_chain, Alice>,
-    Send<Beat, End>>);
+static_assert(std::is_same_v<project_t<G_long_chain, Alice>, Send<Beat, End>>);
 
 // Interaction matrix: only adjacent pairs.
-static_assert( has_interaction_between_v<G_long_chain, David, Eve>);
-static_assert( has_interaction_between_v<G_long_chain, Eve,   David>);    // symmetric
-static_assert(!has_interaction_between_v<G_long_chain, Carol, Eve>);      // not direct
-static_assert(!has_interaction_between_v<G_long_chain, Alice, Eve>);      // not direct
-static_assert(!has_interaction_between_v<G_long_chain, Bob,   David>);    // not adjacent
+static_assert(has_interaction_between_v<G_long_chain, David, Eve>);
+static_assert(has_interaction_between_v<G_long_chain, Eve, David>);  // symmetric
+static_assert(!has_interaction_between_v<G_long_chain, Carol, Eve>);  // not direct
+static_assert(!has_interaction_between_v<G_long_chain, Alice, Eve>);  // not direct
+static_assert(!has_interaction_between_v<G_long_chain, Bob, David>);  // not adjacent
 
 // ─── (4) DIAMOND PATTERN — A→{B,C}, {B,C}→D, then D crashes ──────
 //
@@ -1710,44 +1562,33 @@ static_assert(!has_interaction_between_v<G_long_chain, Bob,   David>);    // not
 // even though her Cmds initiated the pipeline that killed him —
 // Alice projects to clean End at the StopG point.
 
-using G_diamond_crash =
-    Transmission<Alice, Bob,   Cmd,
-    Transmission<Alice, Carol, Cmd,
-    Transmission<Bob,   David, Sum,
-    Transmission<Carol, David, Sum,
-      StopG<David>>>>>;
+using G_diamond_crash = Transmission<
+    Alice, Bob, Cmd,
+    Transmission<Alice, Carol, Cmd, Transmission<Bob, David, Sum, Transmission<Carol, David, Sum, StopG<David>>>>>;
 
 static_assert(is_global_well_formed_v<G_diamond_crash>);
 static_assert(roles_of_t<G_diamond_crash>::size == 4);
 
 // David (peer) — receives both Sums then Stop.
-static_assert(std::is_same_v<
-    project_t<G_diamond_crash, David>,
-    Recv<Sum, Recv<Sum, Stop>>>);
+static_assert(std::is_same_v<project_t<G_diamond_crash, David>, Recv<Sum, Recv<Sum, Stop>>>);
 
 // Bob — recv Cmd from Alice, send Sum to David, then Stop.
-static_assert(std::is_same_v<
-    project_t<G_diamond_crash, Bob>,
-    Recv<Cmd, Send<Sum, Stop>>>);
+static_assert(std::is_same_v<project_t<G_diamond_crash, Bob>, Recv<Cmd, Send<Sum, Stop>>>);
 
 // Carol — recv Cmd from Alice, send Sum to David, then Stop.
-static_assert(std::is_same_v<
-    project_t<G_diamond_crash, Carol>,
-    Recv<Cmd, Send<Sum, Stop>>>);
+static_assert(std::is_same_v<project_t<G_diamond_crash, Carol>, Recv<Cmd, Send<Sum, Stop>>>);
 
 // Alice — sends Cmd to Bob, then Cmd to Carol; never directly
 // interacts with David, so projects to End at the StopG.
-static_assert(std::is_same_v<
-    project_t<G_diamond_crash, Alice>,
-    Send<Cmd, Send<Cmd, End>>>);
+static_assert(std::is_same_v<project_t<G_diamond_crash, Alice>, Send<Cmd, Send<Cmd, End>>>);
 
 // Interaction matrix: A↔B, A↔C, B↔D, C↔D — but NOT A↔D, NOT B↔C.
-static_assert( has_interaction_between_v<G_diamond_crash, Alice, Bob>);
-static_assert( has_interaction_between_v<G_diamond_crash, Alice, Carol>);
-static_assert( has_interaction_between_v<G_diamond_crash, Bob,   David>);
-static_assert( has_interaction_between_v<G_diamond_crash, Carol, David>);
+static_assert(has_interaction_between_v<G_diamond_crash, Alice, Bob>);
+static_assert(has_interaction_between_v<G_diamond_crash, Alice, Carol>);
+static_assert(has_interaction_between_v<G_diamond_crash, Bob, David>);
+static_assert(has_interaction_between_v<G_diamond_crash, Carol, David>);
 static_assert(!has_interaction_between_v<G_diamond_crash, Alice, David>);
-static_assert(!has_interaction_between_v<G_diamond_crash, Bob,   Carol>);
+static_assert(!has_interaction_between_v<G_diamond_crash, Bob, Carol>);
 
 // ─── (5) RECURSIVE PUMP WITH CRASH BRANCH (Rec_G + Choice + Stop) ─
 //
@@ -1761,38 +1602,26 @@ static_assert(!has_interaction_between_v<G_diamond_crash, Bob,   Carol>);
 // non-Peer rule for Bob detects that Bob does interact with Alice
 // in the Beat arm of the Choice).
 
-using G_pump_crash = Rec_G<Choice<Alice, Bob,
-    BranchG<Beat,  Var_G>,
-    BranchG<Close, StopG<Alice>>>>;
+using G_pump_crash = Rec_G<Choice<Alice, Bob, BranchG<Beat, Var_G>, BranchG<Close, StopG<Alice>>>>;
 
 static_assert(is_global_well_formed_v<G_pump_crash>);
 
 // Alice projects to Loop<Select<beat-arm, close-arm>>; the close-arm
 // terminates in Stop (Alice IS the crashed peer in that arm).
-static_assert(std::is_same_v<
-    project_t<G_pump_crash, Alice>,
-    Loop<Select<
-        Send<Beat,  Continue>,
-        Send<Close, Stop>>>>);
+static_assert(std::is_same_v<project_t<G_pump_crash, Alice>, Loop<Select<Send<Beat, Continue>, Send<Close, Stop>>>>);
 
 // Bob projects to the dual: Loop<Offer<Recv<Beat, Continue>,
 //                                       Recv<Close, Stop>>>.  Bob
 // interacts with Alice in the Beat arm, so the Close arm's StopG<Alice>
 // projects to Stop for Bob (not End) — the surviving role sees the
 // crash signal, ready to dispatch crash recovery on the close branch.
-static_assert(std::is_same_v<
-    project_t<G_pump_crash, Bob>,
-    Loop<Offer<
-        Recv<Beat,  Continue>,
-        Recv<Close, Stop>>>>);
+static_assert(std::is_same_v<project_t<G_pump_crash, Bob>, Loop<Offer<Recv<Beat, Continue>, Recv<Close, Stop>>>>);
 
 // Duals match: dual_of(Alice's projection) == Bob's projection.
-static_assert(std::is_same_v<
-    dual_of_t<project_t<G_pump_crash, Alice>>,
-    project_t<G_pump_crash, Bob>>);
+static_assert(std::is_same_v<dual_of_t<project_t<G_pump_crash, Alice>>, project_t<G_pump_crash, Bob>>);
 
 // has_interaction_between recurses through Rec_G → Choice.
-static_assert( has_interaction_between_v<G_pump_crash, Alice, Bob>);
+static_assert(has_interaction_between_v<G_pump_crash, Alice, Bob>);
 static_assert(!has_interaction_between_v<G_pump_crash, Alice, Carol>);
 
 // ─── (6) MID-PROTOCOL CRASH — fan-out path interrupted by crash ──
@@ -1802,32 +1631,22 @@ static_assert(!has_interaction_between_v<G_pump_crash, Alice, Carol>);
 // is with David — no direct touch of Frank — so Carol sees End.
 // Grace doesn't participate at all → End.
 
-using G_fan_out_in_crash =
-    Transmission<Carol, David, Beat,
-    Transmission<David, Frank, Beat,
-      StopG<Frank>>>;
+using G_fan_out_in_crash = Transmission<Carol, David, Beat, Transmission<David, Frank, Beat, StopG<Frank>>>;
 
 static_assert(is_global_well_formed_v<G_fan_out_in_crash>);
 static_assert(roles_of_t<G_fan_out_in_crash>::size == 3);
 
 // Frank (peer) — recv Beat from David then Stop.
-static_assert(std::is_same_v<
-    project_t<G_fan_out_in_crash, Frank>,
-    Recv<Beat, Stop>>);
+static_assert(std::is_same_v<project_t<G_fan_out_in_crash, Frank>, Recv<Beat, Stop>>);
 
 // David — recv from Carol, send to Frank, then Stop (direct).
-static_assert(std::is_same_v<
-    project_t<G_fan_out_in_crash, David>,
-    Recv<Beat, Send<Beat, Stop>>>);
+static_assert(std::is_same_v<project_t<G_fan_out_in_crash, David>, Recv<Beat, Send<Beat, Stop>>>);
 
 // Carol — send to David, then End (no direct interaction with Frank).
-static_assert(std::is_same_v<
-    project_t<G_fan_out_in_crash, Carol>,
-    Send<Beat, End>>);
+static_assert(std::is_same_v<project_t<G_fan_out_in_crash, Carol>, Send<Beat, End>>);
 
 // Grace doesn't participate → End.
-static_assert(std::is_same_v<
-    project_t<G_fan_out_in_crash, Grace>, End>);
+static_assert(std::is_same_v<project_t<G_fan_out_in_crash, Grace>, End>);
 
 // ─── (7) STAR PATTERN — central hub crashes, every spoke sees Stop ─
 //
@@ -1836,37 +1655,27 @@ static_assert(std::is_same_v<
 // every spoke's projection ends in Stop.  This is the inverse shape
 // of (1): everyone-talks-to-one rather than one-talks-to-everyone.
 
-using G_star_hub_crash =
-    Transmission<Alice, Eve, Vote,
-    Transmission<Bob,   Eve, Vote,
-    Transmission<Carol, Eve, Vote,
-    Transmission<David, Eve, Vote,
-      StopG<Eve>>>>>;
+using G_star_hub_crash = Transmission<
+    Alice, Eve, Vote,
+    Transmission<Bob, Eve, Vote, Transmission<Carol, Eve, Vote, Transmission<David, Eve, Vote, StopG<Eve>>>>>;
 
 static_assert(is_global_well_formed_v<G_star_hub_crash>);
 static_assert(roles_of_t<G_star_hub_crash>::size == 5);
 
 // Eve (peer) — 4 recvs then Stop.
-static_assert(std::is_same_v<
-    project_t<G_star_hub_crash, Eve>,
-    Recv<Vote, Recv<Vote, Recv<Vote, Recv<Vote, Stop>>>>>);
+static_assert(std::is_same_v<project_t<G_star_hub_crash, Eve>, Recv<Vote, Recv<Vote, Recv<Vote, Recv<Vote, Stop>>>>>);
 
 // Each spoke's first event is its own Send<Vote, ...>; intermediate
 // events (other spokes' Sends to Eve) are third-party and skip; the
 // tail at StopG<Eve> projects to Stop (each spoke directly interacts
 // with Eve).  So every spoke projects to Send<Vote, Stop>.
-static_assert(std::is_same_v<
-    project_t<G_star_hub_crash, Alice>, Send<Vote, Stop>>);
-static_assert(std::is_same_v<
-    project_t<G_star_hub_crash, Bob>,   Send<Vote, Stop>>);
-static_assert(std::is_same_v<
-    project_t<G_star_hub_crash, Carol>, Send<Vote, Stop>>);
-static_assert(std::is_same_v<
-    project_t<G_star_hub_crash, David>, Send<Vote, Stop>>);
+static_assert(std::is_same_v<project_t<G_star_hub_crash, Alice>, Send<Vote, Stop>>);
+static_assert(std::is_same_v<project_t<G_star_hub_crash, Bob>, Send<Vote, Stop>>);
+static_assert(std::is_same_v<project_t<G_star_hub_crash, Carol>, Send<Vote, Stop>>);
+static_assert(std::is_same_v<project_t<G_star_hub_crash, David>, Send<Vote, Stop>>);
 
 // Frank again uninvolved.
-static_assert(std::is_same_v<
-    project_t<G_star_hub_crash, Frank>, End>);
+static_assert(std::is_same_v<project_t<G_star_hub_crash, Frank>, End>);
 
 // ─── (8) NESTED-CHOICE INTERACTION DETECTION (audit-round-2) ─────
 //
@@ -1878,22 +1687,19 @@ static_assert(std::is_same_v<
 // in this file because no other fixture has the interacting pair
 // nested below the top-level Choice's (F, T).
 
-using G_nested_choice =
-    Choice<Alice, Bob,
-        BranchG<Cmd, Transmission<Bob, Carol, Reply, End_G>>,
-        BranchG<Ack, End_G>>;
+using G_nested_choice = Choice<Alice, Bob, BranchG<Cmd, Transmission<Bob, Carol, Reply, End_G>>, BranchG<Ack, End_G>>;
 
 static_assert(is_global_well_formed_v<G_nested_choice>);
 
 // Top-level pair: yes (Choice<Alice, Bob, ...>).
-static_assert( has_interaction_between_v<G_nested_choice, Alice, Bob>);
-static_assert( has_interaction_between_v<G_nested_choice, Bob,   Alice>);
+static_assert(has_interaction_between_v<G_nested_choice, Alice, Bob>);
+static_assert(has_interaction_between_v<G_nested_choice, Bob, Alice>);
 
 // Nested in branch 0's continuation: Transmission<Bob, Carol, ...>.
 // This is the audit-critical case — the walker must descend into
 // branches' next-fields, not just inspect the Choice's (From, To).
-static_assert( has_interaction_between_v<G_nested_choice, Bob,   Carol>);
-static_assert( has_interaction_between_v<G_nested_choice, Carol, Bob>);    // symmetric
+static_assert(has_interaction_between_v<G_nested_choice, Bob, Carol>);
+static_assert(has_interaction_between_v<G_nested_choice, Carol, Bob>);  // symmetric
 
 // (Alice, Carol) does NOT appear anywhere → false.
 static_assert(!has_interaction_between_v<G_nested_choice, Alice, Carol>);
@@ -1904,9 +1710,7 @@ static_assert(!has_interaction_between_v<G_nested_choice, Alice, Carol>);
 // branch where Bob crashes.
 
 using G_nested_choice_with_crash =
-    Choice<Alice, Bob,
-        BranchG<Cmd, Transmission<Bob, Carol, Reply, StopG<Bob>>>,
-        BranchG<Ack, End_G>>;
+    Choice<Alice, Bob, BranchG<Cmd, Transmission<Bob, Carol, Reply, StopG<Bob>>>, BranchG<Ack, End_G>>;
 
 static_assert(is_global_well_formed_v<G_nested_choice_with_crash>);
 
@@ -1922,8 +1726,7 @@ static_assert(is_global_well_formed_v<G_nested_choice_with_crash>);
 // shapes.  This fixture deliberately exercises the limit and shows
 // that the audit-critical query is the has_interaction_between query
 // itself, not the (deferred) full-merge question.  Concrete check:
-static_assert( has_interaction_between_v<G_nested_choice_with_crash,
-                                          Carol, Bob>);
+static_assert(has_interaction_between_v<G_nested_choice_with_crash, Carol, Bob>);
 // Bob's projection on branch 0: Send<Reply, Stop>; on branch 1: End.
 // Bob is the Choice's To role — sees Offer<...>.  We don't try to
 // compute Bob's full projection here (Choice projection on the To
@@ -1938,22 +1741,20 @@ static_assert( has_interaction_between_v<G_nested_choice_with_crash,
 // pair.  This wires up all three recursion arms in a single fixture.
 
 using G_loop_with_nested_pair =
-    Rec_G<Choice<Alice, Bob,
-        BranchG<Beat,  Transmission<Bob, Carol, Reply, Var_G>>,
-        BranchG<Close, End_G>>>;
+    Rec_G<Choice<Alice, Bob, BranchG<Beat, Transmission<Bob, Carol, Reply, Var_G>>, BranchG<Close, End_G>>>;
 
 static_assert(is_global_well_formed_v<G_loop_with_nested_pair>);
 
 // Top-level Rec_G + Choice's (From, To): (Alice, Bob).
-static_assert( has_interaction_between_v<G_loop_with_nested_pair, Alice, Bob>);
-static_assert( has_interaction_between_v<G_loop_with_nested_pair, Bob,   Alice>);
+static_assert(has_interaction_between_v<G_loop_with_nested_pair, Alice, Bob>);
+static_assert(has_interaction_between_v<G_loop_with_nested_pair, Bob, Alice>);
 
 // Buried in branch 0's continuation, inside Rec_G: (Bob, Carol).
 // Only reached if walker recurses Rec_G → Choice → branch.next →
 // Transmission.  All three layers must be wired — single bug in any
 // would make this assertion fire.
-static_assert( has_interaction_between_v<G_loop_with_nested_pair, Bob,   Carol>);
-static_assert( has_interaction_between_v<G_loop_with_nested_pair, Carol, Bob>);
+static_assert(has_interaction_between_v<G_loop_with_nested_pair, Bob, Carol>);
+static_assert(has_interaction_between_v<G_loop_with_nested_pair, Carol, Bob>);
 
 // Pairs that DON'T appear anywhere: (Alice, Carol), (David, Bob).
 static_assert(!has_interaction_between_v<G_loop_with_nested_pair, Alice, Carol>);
@@ -1961,14 +1762,14 @@ static_assert(!has_interaction_between_v<G_loop_with_nested_pair, David, Bob>);
 
 // ─── (10) same_unordered_pair_v helper unit-tests ────────────────
 
-static_assert( same_unordered_pair_v<Alice, Bob, Alice, Bob>);  // identical
-static_assert( same_unordered_pair_v<Alice, Bob, Bob,   Alice>); // swapped
-static_assert(!same_unordered_pair_v<Alice, Bob, Alice, Carol>); // mismatch
-static_assert(!same_unordered_pair_v<Alice, Bob, Carol, David>); // disjoint
+static_assert(same_unordered_pair_v<Alice, Bob, Alice, Bob>);  // identical
+static_assert(same_unordered_pair_v<Alice, Bob, Bob, Alice>);  // swapped
+static_assert(!same_unordered_pair_v<Alice, Bob, Alice, Carol>);  // mismatch
+static_assert(!same_unordered_pair_v<Alice, Bob, Carol, David>);  // disjoint
 // Self-pair degeneracy is rejected upstream by has_self_loop_v / WF
 // gating — at the helper level, (Alice, Alice) vs (Alice, Alice) is
 // trivially true.  Documented for completeness.
-static_assert( same_unordered_pair_v<Alice, Alice, Alice, Alice>);
+static_assert(same_unordered_pair_v<Alice, Alice, Alice, Alice>);
 
 // ─── (11) Quirky fixtures (GAPS-001 audit-round-3) ───────────────
 
@@ -1981,17 +1782,17 @@ static_assert(is_global_well_formed_v<G_only_stop>);
 // roles_of_t<StopG<Alice>>::size == 1 (only Alice; StopG contributes
 // the Peer to the role set per `roles_of_t<StopG<P>> = {P}`).
 static_assert(roles_of_t<G_only_stop>::size == 1);
-static_assert( contains_role_v<Alice, roles_of_t<G_only_stop>>);
+static_assert(contains_role_v<Alice, roles_of_t<G_only_stop>>);
 // Alice (the Peer) projects to Stop directly.
 static_assert(std::is_same_v<project_t<G_only_stop, Alice>, Stop>);
 // Any other role: no interaction in RootG → End.
-static_assert(std::is_same_v<project_t<G_only_stop, Bob>,   End>);
+static_assert(std::is_same_v<project_t<G_only_stop, Bob>, End>);
 static_assert(std::is_same_v<project_t<G_only_stop, Carol>, End>);
 static_assert(std::is_same_v<project_t<G_only_stop, Frank>, End>);
 // has_interaction_between_v on this fixture: false for any pair
 // (StopG itself contributes no interactions).
 static_assert(!has_interaction_between_v<G_only_stop, Alice, Bob>);
-static_assert(!has_interaction_between_v<G_only_stop, Bob,   Alice>);
+static_assert(!has_interaction_between_v<G_only_stop, Bob, Alice>);
 
 // (11b) Multi-hop crash with Peer-as-From earlier in the protocol.
 // Alice both SENDS earlier (Alice→Bob: P) AND IS the crashed peer.
@@ -1999,10 +1800,7 @@ static_assert(!has_interaction_between_v<G_only_stop, Bob,   Alice>);
 // Carol have direct interactions with Alice — both must project to
 // Stop.  Verifies the walker correctly aggregates two independent
 // interaction edges resolving on the same Peer.
-using G_peer_is_from_earlier =
-    Transmission<Alice, Bob,   Ping,
-    Transmission<Carol, Alice, Query,
-      StopG<Alice>>>;
+using G_peer_is_from_earlier = Transmission<Alice, Bob, Ping, Transmission<Carol, Alice, Query, StopG<Alice>>>;
 
 static_assert(is_global_well_formed_v<G_peer_is_from_earlier>);
 static_assert(roles_of_t<G_peer_is_from_earlier>::size == 3);
@@ -2012,57 +1810,45 @@ static_assert(roles_of_t<G_peer_is_from_earlier>::size == 3);
 // StopG<Alice>'s non-Peer rule queries has_interaction_between_v
 // <RootG, Bob, Alice>, which finds the (Alice, Bob) Transmission and
 // returns true → Stop.
-static_assert(std::is_same_v<
-    project_t<G_peer_is_from_earlier, Bob>,
-    Recv<Ping, Stop>>);
+static_assert(std::is_same_v<project_t<G_peer_is_from_earlier, Bob>, Recv<Ping, Stop>>);
 
 // Carol's projection: Send<Query, Stop>.  Alice→Bob is third-party
 // from Carol's view (skipped); Carol sends Query to Alice; then
 // StopG<Alice> with Carol-Alice interaction → Stop.
-static_assert(std::is_same_v<
-    project_t<G_peer_is_from_earlier, Carol>,
-    Send<Query, Stop>>);
+static_assert(std::is_same_v<project_t<G_peer_is_from_earlier, Carol>, Send<Query, Stop>>);
 
 // Alice's projection: Send<Ping, Recv<Query, Stop>>.  Alice both
 // sends and receives, then crashes.
-static_assert(std::is_same_v<
-    project_t<G_peer_is_from_earlier, Alice>,
-    Send<Ping, Recv<Query, Stop>>>);
+static_assert(std::is_same_v<project_t<G_peer_is_from_earlier, Alice>, Send<Ping, Recv<Query, Stop>>>);
 
 // Frank uninvolved → End.
-static_assert(std::is_same_v<
-    project_t<G_peer_is_from_earlier, Frank>, End>);
+static_assert(std::is_same_v<project_t<G_peer_is_from_earlier, Frank>, End>);
 
 // Both edges are detected.
-static_assert( has_interaction_between_v<G_peer_is_from_earlier, Alice, Bob>);
-static_assert( has_interaction_between_v<G_peer_is_from_earlier, Carol, Alice>);
-static_assert(!has_interaction_between_v<G_peer_is_from_earlier, Bob,   Carol>);
+static_assert(has_interaction_between_v<G_peer_is_from_earlier, Alice, Bob>);
+static_assert(has_interaction_between_v<G_peer_is_from_earlier, Carol, Alice>);
+static_assert(!has_interaction_between_v<G_peer_is_from_earlier, Bob, Carol>);
 
 // (11c) Nested Rec_G has_interaction_between recursion.  The walker
 // must descend through stacked Rec_G layers.  Each layer's body is
 // itself a Rec_G; the deepest layer holds the actual Transmission.
 // A buggy walker that recurses Rec_G only one level deep would miss
 // this and return false — the assertion fires.
-using G_nested_rec_3deep = Rec_G<Rec_G<Rec_G<
-    Transmission<Alice, Bob, Ping, Var_G>>>>;
+using G_nested_rec_3deep = Rec_G<Rec_G<Rec_G<Transmission<Alice, Bob, Ping, Var_G>>>>;
 
 static_assert(is_global_well_formed_v<G_nested_rec_3deep>);
 // Walker must descend three Rec_G levels to find the (Alice, Bob)
 // Transmission inside the innermost body.
-static_assert( has_interaction_between_v<G_nested_rec_3deep, Alice, Bob>);
-static_assert( has_interaction_between_v<G_nested_rec_3deep, Bob,   Alice>); // sym
+static_assert(has_interaction_between_v<G_nested_rec_3deep, Alice, Bob>);
+static_assert(has_interaction_between_v<G_nested_rec_3deep, Bob, Alice>);  // sym
 static_assert(!has_interaction_between_v<G_nested_rec_3deep, Alice, Carol>);
 
 // Projection through nested Rec_G.  Each Rec_G wraps a Loop in the
 // projected protocol.  The framework's `Rec_G<Body>↾R = Loop<Body↾R>`
 // rule gives Loop<Loop<Loop<Send<Ping, Continue>>>> for Alice — three
 // nested Loops mirroring the three nested Rec_Gs.
-static_assert(std::is_same_v<
-    project_t<G_nested_rec_3deep, Alice>,
-    Loop<Loop<Loop<Send<Ping, Continue>>>>>);
-static_assert(std::is_same_v<
-    project_t<G_nested_rec_3deep, Bob>,
-    Loop<Loop<Loop<Recv<Ping, Continue>>>>>);
+static_assert(std::is_same_v<project_t<G_nested_rec_3deep, Alice>, Loop<Loop<Loop<Send<Ping, Continue>>>>>);
+static_assert(std::is_same_v<project_t<G_nested_rec_3deep, Bob>, Loop<Loop<Loop<Recv<Ping, Continue>>>>>);
 
 // (11d) Repeated interaction in Rec_G + Choice.  The same (A, B)
 // pair appears in MULTIPLE places: top-level Choice's (From, To)
@@ -2079,21 +1865,20 @@ static_assert(std::is_same_v<
 //                   Transmission<Bob, Carol, R,        // (B,C) nested
 //                     Var_G>>>,
 //       BranchG<Q, End_G>>>
-using G_repeated_pair = Rec_G<Choice<Alice, Bob,
-    BranchG<Ping,  Transmission<Alice, Bob,   Query,
-                    Transmission<Bob,   Carol, Reply, Var_G>>>,
-    BranchG<Ack,   End_G>>>;
+using G_repeated_pair =
+    Rec_G<Choice<Alice, Bob, BranchG<Ping, Transmission<Alice, Bob, Query, Transmission<Bob, Carol, Reply, Var_G>>>,
+                 BranchG<Ack, End_G>>>;
 
 static_assert(is_global_well_formed_v<G_repeated_pair>);
 
 // Top-level Choice + nested Transmission<Alice, Bob>.
-static_assert( has_interaction_between_v<G_repeated_pair, Alice, Bob>);
+static_assert(has_interaction_between_v<G_repeated_pair, Alice, Bob>);
 
 // Nested-deeper Transmission<Bob, Carol> — must be reached via
 // Rec_G → Choice → branch.next → Transmission → continuation →
 // Transmission.  Five-level descent.
-static_assert( has_interaction_between_v<G_repeated_pair, Bob,   Carol>);
-static_assert( has_interaction_between_v<G_repeated_pair, Carol, Bob>);    // sym
+static_assert(has_interaction_between_v<G_repeated_pair, Bob, Carol>);
+static_assert(has_interaction_between_v<G_repeated_pair, Carol, Bob>);  // sym
 
 // Pairs that don't appear at any depth.
 static_assert(!has_interaction_between_v<G_repeated_pair, Alice, Carol>);
@@ -2113,17 +1898,13 @@ static_assert(!has_interaction_between_v<G_repeated_pair, David, Eve>);
 //   project_t<G_alice_stops, Bob> would become Recv<Ping, End>
 //   instead of Recv<Ping, Stop>.  The first negative assertion below
 //   would FAIL TO COMPILE (the !std::is_same_v negation would fire).
-static_assert(!std::is_same_v<
-    project_t<G_alice_stops, Bob>,
-    Recv<Ping, End>>);  // would fail iff GAPS-001 regressed
+static_assert(!std::is_same_v<project_t<G_alice_stops, Bob>, Recv<Ping, End>>);  // would fail iff GAPS-001 regressed
 
-static_assert(!std::is_same_v<
-    project_t<G_send_then_crash, Bob>,
-    Send<Query, End>>);  // would fail iff GAPS-001 regressed
+static_assert(
+    !std::is_same_v<project_t<G_send_then_crash, Bob>, Send<Query, End>>);  // would fail iff GAPS-001 regressed
 
-static_assert(!std::is_same_v<
-    project_t<G_diamond_crash, Bob>,
-    Recv<Cmd, Send<Sum, End>>>);  // would fail iff GAPS-001 regressed
+static_assert(
+    !std::is_same_v<project_t<G_diamond_crash, Bob>, Recv<Cmd, Send<Sum, End>>>);  // would fail iff GAPS-001 regressed
 
 // ─── End multiparty fixtures (GAPS-001) ──────────────────────────
 
@@ -2132,13 +1913,9 @@ static_assert(!std::is_same_v<
 // A simple loop: Alice → Bob forever.
 using G_forever = Rec_G<Transmission<Alice, Bob, Ping, Var_G>>;
 
-static_assert(std::is_same_v<
-    project_t<G_forever, Alice>,
-    Loop<Send<Ping, Continue>>>);
+static_assert(std::is_same_v<project_t<G_forever, Alice>, Loop<Send<Ping, Continue>>>);
 
-static_assert(std::is_same_v<
-    project_t<G_forever, Bob>,
-    Loop<Recv<Ping, Continue>>>);
+static_assert(std::is_same_v<project_t<G_forever, Bob>, Loop<Recv<Ping, Continue>>>);
 
 // ─── Projection: third-party with plain merge ─────────────────────
 //
@@ -2152,27 +1929,17 @@ static_assert(std::is_same_v<
 // Carol sees the same Recv<Reply, End> in both branches — plain
 // merge yields Recv<Reply, End>.
 
-using G_merged = Choice<Alice, Bob,
-    BranchG<Ping, Transmission<Bob, Carol, Reply, End_G>>,
-    BranchG<Ack,  Transmission<Bob, Carol, Reply, End_G>>>;
+using G_merged = Choice<Alice, Bob, BranchG<Ping, Transmission<Bob, Carol, Reply, End_G>>,
+                        BranchG<Ack, Transmission<Bob, Carol, Reply, End_G>>>;
 
 // Carol's projection is the merge of both branches (both the same).
-static_assert(std::is_same_v<
-    project_t<G_merged, Carol>,
-    Recv<Reply, End>>);
+static_assert(std::is_same_v<project_t<G_merged, Carol>, Recv<Reply, End>>);
 
 // Alice (sender) and Bob (receiver) still see Select/Offer.
-static_assert(std::is_same_v<
-    project_t<G_merged, Alice>,
-    Select<
-        Send<Ping, End>,
-        Send<Ack,  End>>>);
+static_assert(std::is_same_v<project_t<G_merged, Alice>, Select<Send<Ping, End>, Send<Ack, End>>>);
 
-static_assert(std::is_same_v<
-    project_t<G_merged, Bob>,
-    Offer<
-        Recv<Ping, Send<Reply, End>>,
-        Recv<Ack,  Send<Reply, End>>>>);
+static_assert(
+    std::is_same_v<project_t<G_merged, Bob>, Offer<Recv<Ping, Send<Reply, End>>, Recv<Ack, Send<Reply, End>>>>);
 
 // ─── Dual preservation: peer projection is dual of my projection ──
 //
@@ -2182,13 +1949,9 @@ static_assert(std::is_same_v<
 // This is the "duality preservation under projection" theorem for
 // binary MPST (degenerate — classical binary Honda 1998 subsumed).
 
-static_assert(std::is_same_v<
-    dual_of_t<project_t<G_AB, Alice>>,
-    project_t<G_AB, Bob>>);
+static_assert(std::is_same_v<dual_of_t<project_t<G_AB, Alice>>, project_t<G_AB, Bob>>);
 
-static_assert(std::is_same_v<
-    dual_of_t<project_t<G_forever, Alice>>,
-    project_t<G_forever, Bob>>);
+static_assert(std::is_same_v<dual_of_t<project_t<G_forever, Alice>>, project_t<G_forever, Bob>>);
 
 // ─── Patterns built via projection match hand-written patterns ────
 //
@@ -2197,16 +1960,13 @@ static_assert(std::is_same_v<
 // from SessionPatterns.h (modulo the in-band close branch).  This
 // verifies the framework is consistent.
 
-using G_rrloop = Rec_G<Transmission<Alice, Bob, Query,
-                        Transmission<Bob, Alice, Reply, Var_G>>>;
+using G_rrloop = Rec_G<Transmission<Alice, Bob, Query, Transmission<Bob, Alice, Reply, Var_G>>>;
 
-static_assert(std::is_same_v<
-    project_t<G_rrloop, Alice>,
-    Loop<Send<Query, Recv<Reply, Continue>>>>);  // = RequestResponse_Client<Query, Reply>
+static_assert(std::is_same_v<project_t<G_rrloop, Alice>,
+                             Loop<Send<Query, Recv<Reply, Continue>>>>);  // = RequestResponse_Client<Query, Reply>
 
-static_assert(std::is_same_v<
-    project_t<G_rrloop, Bob>,
-    Loop<Recv<Query, Send<Reply, Continue>>>>);  // = RequestResponse_Server<Query, Reply>
+static_assert(std::is_same_v<project_t<G_rrloop, Bob>,
+                             Loop<Recv<Query, Send<Reply, Continue>>>>);  // = RequestResponse_Server<Query, Reply>
 
 }  // namespace detail::global::global_self_test
 #endif  // CRUCIBLE_SESSION_SELF_TESTS

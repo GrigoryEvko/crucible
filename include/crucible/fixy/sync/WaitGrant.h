@@ -124,17 +124,22 @@ using wait_value_t = ::crucible::safety::extract::wait_value_t<T>;
 
 template <typename T>
     requires is_wait_v<T>
-inline constexpr Strategy wait_strategy_v =
-    ::crucible::safety::extract::wait_strategy_v<T>;
+inline constexpr Strategy wait_strategy_v = ::crucible::safety::extract::wait_strategy_v<T>;
 
 // ─── Convenience aliases (mirror safety::wait::*) ──────────────────
 namespace wait {
-    template <typename T> using SpinPause   = Wait<Strategy::SpinPause,   T>;
-    template <typename T> using BoundedSpin = Wait<Strategy::BoundedSpin, T>;
-    template <typename T> using UmwaitC01   = Wait<Strategy::UmwaitC01,   T>;
-    template <typename T> using AcquireWait = Wait<Strategy::AcquireWait, T>;
-    template <typename T> using Park        = Wait<Strategy::Park,        T>;
-    template <typename T> using Block       = Wait<Strategy::Block,       T>;
+template <typename T>
+using SpinPause = Wait<Strategy::SpinPause, T>;
+template <typename T>
+using BoundedSpin = Wait<Strategy::BoundedSpin, T>;
+template <typename T>
+using UmwaitC01 = Wait<Strategy::UmwaitC01, T>;
+template <typename T>
+using AcquireWait = Wait<Strategy::AcquireWait, T>;
+template <typename T>
+using Park = Wait<Strategy::Park, T>;
+template <typename T>
+using Block = Wait<Strategy::Block, T>;
 }  // namespace wait
 
 // ═════════════════════════════════════════════════════════════════════
@@ -149,43 +154,41 @@ namespace wait {
 namespace detail::wait_surface_sentinel {
 
 // Alias identity — Wait<S, T> at fixy::sync IS the substrate type.
-static_assert(std::is_same_v<
-    ::crucible::fixy::sync::Wait<Strategy::SpinPause, int>,
-    ::crucible::safety::Wait<::crucible::safety::WaitStrategy_v::SpinPause, int>>,
-    "FIXY-V-084: fixy::sync::Wait<S, T> must alias safety::Wait<S, T> "
-    "verbatim.");
+static_assert(std::is_same_v<::crucible::fixy::sync::Wait<Strategy::SpinPause, int>,
+                             ::crucible::safety::Wait<::crucible::safety::WaitStrategy_v::SpinPause, int>>,
+              "FIXY-V-084: fixy::sync::Wait<S, T> must alias safety::Wait<S, T> "
+              "verbatim.");
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::sync::Wait<Strategy::Block, double>,
-    ::crucible::safety::Wait<::crucible::safety::WaitStrategy_v::Block, double>>,
-    "FIXY-V-084: fixy::sync::Wait<Block, double> identity drift.");
+static_assert(std::is_same_v<::crucible::fixy::sync::Wait<Strategy::Block, double>,
+                             ::crucible::safety::Wait<::crucible::safety::WaitStrategy_v::Block, double>>,
+              "FIXY-V-084: fixy::sync::Wait<Block, double> identity drift.");
 
 // Strategy enum identity — the type ID must be the substrate enum.
 static_assert(std::is_same_v<Strategy, ::crucible::safety::WaitStrategy_v>,
-    "FIXY-V-084: fixy::sync::Strategy must alias safety::WaitStrategy_v.");
+              "FIXY-V-084: fixy::sync::Strategy must alias safety::WaitStrategy_v.");
 
 // Enumerator value preservation — ordinals are load-bearing for
 // `WaitLattice::leq()` chain ordering.
-static_assert(static_cast<int>(Strategy::SpinPause)   == 5);
+static_assert(static_cast<int>(Strategy::SpinPause) == 5);
 static_assert(static_cast<int>(Strategy::BoundedSpin) == 4);
-static_assert(static_cast<int>(Strategy::UmwaitC01)   == 3);
+static_assert(static_cast<int>(Strategy::UmwaitC01) == 3);
 static_assert(static_cast<int>(Strategy::AcquireWait) == 2);
-static_assert(static_cast<int>(Strategy::Park)        == 1);
-static_assert(static_cast<int>(Strategy::Block)       == 0);
+static_assert(static_cast<int>(Strategy::Park) == 1);
+static_assert(static_cast<int>(Strategy::Block) == 0);
 
 // WaitLattice surface identity — `leq()` must be reachable through
 // the fixy surface for band-3 callers doing chain-ordering checks.
 static_assert(WaitLattice::leq(Strategy::Block, Strategy::SpinPause),
-    "FIXY-V-084: Block ⊑ SpinPause must hold via fixy::sync::WaitLattice.");
+              "FIXY-V-084: Block ⊑ SpinPause must hold via fixy::sync::WaitLattice.");
 static_assert(!WaitLattice::leq(Strategy::SpinPause, Strategy::Block),
-    "FIXY-V-084: SpinPause ⊑ Block must FAIL — chain direction drift.");
+              "FIXY-V-084: SpinPause ⊑ Block must FAIL — chain direction drift.");
 
 // EBO collapse preservation — re-export does NOT inflate the size.
 static_assert(sizeof(Wait<Strategy::SpinPause, int>) == sizeof(int),
-    "FIXY-V-084: fixy::sync::Wait<SpinPause, int> must EBO-collapse "
-    "to sizeof(int).");
+              "FIXY-V-084: fixy::sync::Wait<SpinPause, int> must EBO-collapse "
+              "to sizeof(int).");
 static_assert(sizeof(Wait<Strategy::Block, double>) == sizeof(double),
-    "FIXY-V-084: fixy::sync::Wait<Block, double> must EBO-collapse.");
+              "FIXY-V-084: fixy::sync::Wait<Block, double> must EBO-collapse.");
 
 // Detector concept reach — IsWait at fixy::sync ≡ safety::extract::IsWait.
 static_assert(IsWait<Wait<Strategy::SpinPause, int>>);
@@ -197,15 +200,15 @@ static_assert(!IsWait<int*>);
 static_assert(std::is_same_v<wait_value_t<Wait<Strategy::SpinPause, int>>, int>);
 static_assert(std::is_same_v<wait_value_t<Wait<Strategy::Park, double>>, double>);
 static_assert(wait_strategy_v<Wait<Strategy::SpinPause, int>> == Strategy::SpinPause);
-static_assert(wait_strategy_v<Wait<Strategy::Block,     int>> == Strategy::Block);
+static_assert(wait_strategy_v<Wait<Strategy::Block, int>> == Strategy::Block);
 
 // Convenience alias identity — wait::SpinPause<T> ≡ Wait<SpinPause, T>.
-static_assert(std::is_same_v<wait::SpinPause<int>,   Wait<Strategy::SpinPause,   int>>);
+static_assert(std::is_same_v<wait::SpinPause<int>, Wait<Strategy::SpinPause, int>>);
 static_assert(std::is_same_v<wait::BoundedSpin<int>, Wait<Strategy::BoundedSpin, int>>);
-static_assert(std::is_same_v<wait::UmwaitC01<int>,   Wait<Strategy::UmwaitC01,   int>>);
+static_assert(std::is_same_v<wait::UmwaitC01<int>, Wait<Strategy::UmwaitC01, int>>);
 static_assert(std::is_same_v<wait::AcquireWait<int>, Wait<Strategy::AcquireWait, int>>);
-static_assert(std::is_same_v<wait::Park<int>,        Wait<Strategy::Park,        int>>);
-static_assert(std::is_same_v<wait::Block<int>,       Wait<Strategy::Block,       int>>);
+static_assert(std::is_same_v<wait::Park<int>, Wait<Strategy::Park, int>>);
+static_assert(std::is_same_v<wait::Block<int>, Wait<Strategy::Block, int>>);
 
 // satisfies<> subsumption gate — reachable through the fixy surface.
 // SpinPause satisfies every weaker consumer; Block satisfies only Block.
@@ -214,18 +217,18 @@ static_assert(Wait<Strategy::SpinPause, int>::template satisfies<Strategy::Bound
 static_assert(Wait<Strategy::SpinPause, int>::template satisfies<Strategy::Block>);
 static_assert(Wait<Strategy::Block, int>::template satisfies<Strategy::Block>);
 static_assert(!Wait<Strategy::Block, int>::template satisfies<Strategy::SpinPause>,
-    "FIXY-V-084: Block-tier value MUST NOT satisfy SpinPause — this "
-    "is the load-bearing rejection the hot-path discipline depends "
-    "on.  If this fires, futex-or-syscall-tier waits could silently "
-    "flow through the SpinPause-required gate.");
+              "FIXY-V-084: Block-tier value MUST NOT satisfy SpinPause — this "
+              "is the load-bearing rejection the hot-path discipline depends "
+              "on.  If this fires, futex-or-syscall-tier waits could silently "
+              "flow through the SpinPause-required gate.");
 
 // Cardinality witness — six WaitStrategy enumerators ship today.  If
 // a new tier is added (e.g. WaitStrategy::UmwaitC02) the surface
 // reddens here, forcing the conv-alias namespace to be updated in
 // lockstep.
 static_assert(std::meta::enumerators_of(^^Strategy).size() == 6,
-    "FIXY-V-084: WaitStrategy enumerator count drift — fixy::sync::"
-    "wait::* convenience-alias namespace must be updated to mirror.");
+              "FIXY-V-084: WaitStrategy enumerator count drift — fixy::sync::"
+              "wait::* convenience-alias namespace must be updated to mirror.");
 
 }  // namespace detail::wait_surface_sentinel
 

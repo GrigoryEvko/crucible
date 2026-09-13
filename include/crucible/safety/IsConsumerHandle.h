@@ -121,9 +121,7 @@ template <typename T, typename = void>
 struct has_try_push : std::false_type {};
 
 template <typename T>
-struct has_try_push<T, std::void_t<decltype(&T::try_push)>>
-    : std::true_type
-{};
+struct has_try_push<T, std::void_t<decltype(&T::try_push)>> : std::true_type {};
 
 }  // namespace detail
 
@@ -133,16 +131,14 @@ struct has_try_push<T, std::void_t<decltype(&T::try_push)>>
 
 template <typename T>
 inline constexpr bool is_consumer_handle_v =
-    detail::try_pop_shape<std::remove_cvref_t<T>>::matches
- && !detail::has_try_push<std::remove_cvref_t<T>>::value;
+    detail::try_pop_shape<std::remove_cvref_t<T>>::matches && !detail::has_try_push<std::remove_cvref_t<T>>::value;
 
 template <typename T>
 concept IsConsumerHandle = is_consumer_handle_v<T>;
 
 template <typename T>
     requires is_consumer_handle_v<T>
-using consumer_handle_value_t =
-    typename detail::try_pop_shape<std::remove_cvref_t<T>>::payload;
+using consumer_handle_value_t = typename detail::try_pop_shape<std::remove_cvref_t<T>>::payload;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Self-test block ────────────────────────────────────────────────
@@ -163,8 +159,8 @@ struct synthetic_producer {
 
 // Synthetic hybrid — exposes BOTH; rejected as ambiguous.
 struct synthetic_hybrid {
-    [[nodiscard]] std::optional<int> try_pop()       noexcept { return {}; }
-    [[nodiscard]] bool try_push(int const&)          noexcept { return true; }
+    [[nodiscard]] std::optional<int> try_pop() noexcept { return {}; }
+    [[nodiscard]] bool try_push(int const&) noexcept { return true; }
 };
 
 // Synthetic shape with try_pop returning bool (out-parameter
@@ -181,8 +177,8 @@ struct synthetic_value_pop {
 
 // Synthetic shape with overloaded try_pop — &T::try_pop is ill-formed.
 struct synthetic_overloaded_pop {
-    [[nodiscard]] std::optional<int>   try_pop() noexcept       { return {}; }
-    [[nodiscard]] std::optional<int>   try_pop(int) noexcept    { return {}; }
+    [[nodiscard]] std::optional<int> try_pop() noexcept { return {}; }
+    [[nodiscard]] std::optional<int> try_pop(int) noexcept { return {}; }
 };
 
 // Different payload type — payload extraction must propagate.
@@ -217,16 +213,12 @@ static_assert(!is_consumer_handle_v<synthetic_consumer*>);
 
 // ── Payload extraction ────────────────────────────────────────────
 
-static_assert(std::is_same_v<
-    consumer_handle_value_t<synthetic_consumer>, int>);
-static_assert(std::is_same_v<
-    consumer_handle_value_t<synthetic_double_consumer>, double>);
+static_assert(std::is_same_v<consumer_handle_value_t<synthetic_consumer>, int>);
+static_assert(std::is_same_v<consumer_handle_value_t<synthetic_double_consumer>, double>);
 
 // Cv-ref stripping on the alias.
-static_assert(std::is_same_v<
-    consumer_handle_value_t<synthetic_consumer&>, int>);
-static_assert(std::is_same_v<
-    consumer_handle_value_t<synthetic_consumer const&>, int>);
+static_assert(std::is_same_v<consumer_handle_value_t<synthetic_consumer&>, int>);
+static_assert(std::is_same_v<consumer_handle_value_t<synthetic_consumer const&>, int>);
 
 }  // namespace detail::is_consumer_handle_self_test
 

@@ -40,11 +40,11 @@
 namespace crucible {
 
 enum class TxStatus : uint8_t {
-    RECORDING,    // ring buffer is accepting ops
-    CLOSED,       // iteration boundary detected, ring sealed for this tx
-    COMMITTED,    // RegionNode built + Merkle hash computed
-    ACTIVE,       // atomic pointer swap done, this region is live
-    SUPERSEDED,   // newer tx took over (kept for rollback window)
+    RECORDING,  // ring buffer is accepting ops
+    CLOSED,  // iteration boundary detected, ring sealed for this tx
+    COMMITTED,  // RegionNode built + Merkle hash computed
+    ACTIVE,  // atomic pointer swap done, this region is live
+    SUPERSEDED,  // newer tx took over (kept for rollback window)
     ROLLED_BACK,  // quality regression, previous tx restored
 };
 
@@ -61,8 +61,7 @@ enum class TxStatus : uint8_t {
 //                      total 48B
 
 struct Transaction {
-    using ArenaRegion = ::crucible::fixy::wrap::Tagged<
-        RegionNode*, ::crucible::fixy::tags::source::Arena>;
+    using ArenaRegion = ::crucible::fixy::wrap::Tagged<RegionNode*, ::crucible::fixy::tags::source::Arena>;
 
     static_assert(sizeof(ArenaRegion) == sizeof(RegionNode*));
 
@@ -79,9 +78,9 @@ struct Transaction {
     // monotonicity is enforced by TransactionLog::count_'s
     // BoundedMonotonic gate (#1064 WRAP-Transaction-5).
     ::crucible::fixy::wrap::Monotonic<uint64_t> step_id{0};
-    ContentHash  content_hash;        // default (0) until COMMITTED
-    MerkleHash   merkle_root;         // default (0) until COMMITTED
-    ArenaRegion  region{nullptr};     // null until COMMITTED; arena-owned
+    ContentHash content_hash;  // default (0) until COMMITTED
+    MerkleHash merkle_root;  // default (0) until COMMITTED
+    ArenaRegion region{nullptr};  // null until COMMITTED; arena-owned
     // ── ts_ns (WRAP-Transaction-3 #1062) ───────────────────────────
     // MonotonicClockBytes<u64> pins the timestamp's clock-source
     // provenance at the type level: any drift to a wall-clock,
@@ -93,8 +92,8 @@ struct Transaction {
     // so no body updates are required.  Parallels FIXY-V-198
     // (Cipher::now_ns) exactly.
     ::crucible::safety::MonotonicClockBytes<std::uint64_t> ts_ns{};
-    TxStatus     status = TxStatus::RECORDING;
-    uint8_t      pad[7]{};
+    TxStatus status = TxStatus::RECORDING;
+    uint8_t pad[7]{};
 };
 
 static_assert(sizeof(Transaction) == 48, "Transaction layout must be 48 bytes");
@@ -108,16 +107,12 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(Transaction);
 // helper — trips at compile time.  Regime-1 EBO collapse is also
 // asserted: without it, the 48B Transaction layout would break.
 static_assert(
-    std::is_same_v<
-        decltype(std::declval<Transaction>().ts_ns),
-        ::crucible::safety::MonotonicClockBytes<std::uint64_t>>,
+    std::is_same_v<decltype(std::declval<Transaction>().ts_ns), ::crucible::safety::MonotonicClockBytes<std::uint64_t>>,
     "WRAP-Transaction-3 #1062: Transaction::ts_ns must be "
     "MonotonicClockBytes<u64> — clock-source provenance pin.");
-static_assert(
-    sizeof(::crucible::safety::MonotonicClockBytes<std::uint64_t>) ==
-        sizeof(std::uint64_t),
-    "WRAP-Transaction-3 #1062: MonotonicClockBytes<u64> must be "
-    "regime-1 EBO-collapsible to preserve 48B Transaction layout.");
+static_assert(sizeof(::crucible::safety::MonotonicClockBytes<std::uint64_t>) == sizeof(std::uint64_t),
+              "WRAP-Transaction-3 #1062: MonotonicClockBytes<u64> must be "
+              "regime-1 EBO-collapsible to preserve 48B Transaction layout.");
 
 // ─── TransactionLog<N>: circular ring of the last N transactions ───
 //
@@ -132,7 +127,7 @@ class TransactionLog {
     //  counter now live inside CyclicBuffer<Transaction, N> — see the Ring
     //  alias below.  CyclicBuffer owns the & (N-1) wrap-mask internally.)
 
- public:
+public:
     // ── ring storage wrapper (#1063 WRAP-Transaction-4) ───────────────
     // The (entries_ + head_ + count_) triple — N inline slots, a masked
     // write cursor, and a saturating fill counter — IS the
@@ -153,10 +148,10 @@ class TransactionLog {
     using Ring = ::crucible::fixy::wrap::CyclicBuffer<Transaction, N>;
 
     TransactionLog() = default;
-    TransactionLog(const TransactionLog&)            = delete("TransactionLog holds ring-internal pointers");
+    TransactionLog(const TransactionLog&) = delete("TransactionLog holds ring-internal pointers");
     TransactionLog& operator=(const TransactionLog&) = delete("TransactionLog holds ring-internal pointers");
-    TransactionLog(TransactionLog&&)                 = delete("interior pointers into entries_ would dangle");
-    TransactionLog& operator=(TransactionLog&&)      = delete("interior pointers into entries_ would dangle");
+    TransactionLog(TransactionLog&&) = delete("interior pointers into entries_ would dangle");
+    TransactionLog& operator=(TransactionLog&&) = delete("interior pointers into entries_ would dangle");
 
     // gnu::cold: step-boundary transition, amortized once per iteration.
     [[nodiscard, gnu::cold]] Transaction* begin_tx(uint64_t step_id) noexcept {
@@ -168,13 +163,13 @@ class TransactionLog {
         // CyclicBuffer fill bump keeps the saturate-don't-abort semantic
         // (its own LOAD-BEARING `if (count < N)` guard around bump()).
         Transaction* tx = &ring_.claim();
-        *tx = Transaction{};   // value-init via NSDMI defaults (no memset on non-trivial type)
+        *tx = Transaction{};  // value-init via NSDMI defaults (no memset on non-trivial type)
         // step_id is Monotonic<uint64_t>{0} after the reset; advance()
         // pre-clause `0 <= step_id` holds for any uint64_t.  Bypassing
         // raw-assignment forecloses a future refactor that re-introduces
         // a retrograde write under bug-in-bug regression.
         tx->step_id.advance(step_id);
-        tx->ts_ns   = now_ns();
+        tx->ts_ns = now_ns();
         // CONTRACT-Tx-Begin-POST: factory result-shape contract — every
         // begin_tx returns a non-null Transaction in the RECORDING state
         // with the caller's step_id stamped.  Catches a future refactor
@@ -217,14 +212,10 @@ class TransactionLog {
     // re-checking).  Companion typed witness: ValidMerkleRoot
     // (MerkleDag.h) — callers that hold a ValidMerkleRoot can pass
     // `make_merkle_root(witness)` to surface the proof at the call site.
-    [[nodiscard]] bool commit(Transaction* const tx, Transaction::ArenaRegion region,
-                ContentHash content_hash, MerkleHash merkle_root) noexcept
-        pre (tx != nullptr)
-        pre (region.value() != nullptr)
-        pre (::crucible::decide::is_non_zero(merkle_root))
-    {
-        if (tx->status != TxStatus::RECORDING
-            && tx->status != TxStatus::CLOSED) {
+    [[nodiscard]] bool commit(Transaction* const tx, Transaction::ArenaRegion region, ContentHash content_hash,
+                              MerkleHash merkle_root) noexcept pre(tx != nullptr) pre(region.value() != nullptr)
+        pre(::crucible::decide::is_non_zero(merkle_root)) {
+        if (tx->status != TxStatus::RECORDING && tx->status != TxStatus::CLOSED) {
             // CONTRACT-Tx-Commit-POST: failure path — false return.
             // The implication post r → COMMITTED holds vacuously.
             // Migrated from P2900 post(r: ...) to in-body CRUCIBLE_POST
@@ -238,11 +229,11 @@ class TransactionLog {
             CRUCIBLE_POST(0, !false || tx->status == TxStatus::COMMITTED);
             return false;
         }
-        tx->region       = region;
+        tx->region = region;
         tx->content_hash = content_hash;
-        tx->merkle_root  = merkle_root;
-        tx->status       = TxStatus::COMMITTED;
-        tx->ts_ns        = now_ns();
+        tx->merkle_root = merkle_root;
+        tx->status = TxStatus::COMMITTED;
+        tx->ts_ns = now_ns();
         // CONTRACT-Tx-Commit-POST: success path — strengthen the
         // returned-true case.  After a successful commit:
         //   (1) tx->status == COMMITTED (set above)
@@ -266,9 +257,7 @@ class TransactionLog {
     // Transition COMMITTED → ACTIVE. Marks the previous ACTIVE as SUPERSEDED.
     // Returns the previously ACTIVE transaction (the rollback target), or nullptr
     // if no previous ACTIVE existed.
-    [[nodiscard]] Transaction* activate(Transaction* const tx) noexcept
-        pre (tx != nullptr)
-    {
+    [[nodiscard]] Transaction* activate(Transaction* const tx) noexcept pre(tx != nullptr) {
         if (tx->status != TxStatus::COMMITTED) {
             // CONTRACT-Tx-Activate-POST: rejected-promotion path.
             // The original P2900 post (r: r == nullptr || ACTIVE) holds
@@ -276,8 +265,7 @@ class TransactionLog {
             // vacuously.  Migrated to CRUCIBLE_POST for the same
             // GCC 16.1.1 consteval-bypass-vulnerable parameter-pointee
             // reason as commit() above.
-            CRUCIBLE_POST(static_cast<Transaction*>(nullptr),
-                          true || tx->status == TxStatus::ACTIVE);
+            CRUCIBLE_POST(static_cast<Transaction*>(nullptr), true || tx->status == TxStatus::ACTIVE);
             return nullptr;
         }
 
@@ -289,12 +277,12 @@ class TransactionLog {
         Transaction* prev = nullptr;
         if (active_tx_.value() != nullptr) {
             active_tx_.value()->status = TxStatus::SUPERSEDED;
-            active_tx_.value()->ts_ns  = now_ns();
+            active_tx_.value()->ts_ns = now_ns();
             prev = active_tx_.value();
         }
 
         tx->status = TxStatus::ACTIVE;
-        tx->ts_ns  = now_ns();
+        tx->ts_ns = now_ns();
         active_tx_ = ActiveTxPtr{tx};
         // CONTRACT-Tx-Activate-POST: successful-promotion path —
         // strengthen invariants for the success case:
@@ -323,8 +311,7 @@ class TransactionLog {
         // dereferences the antecedent's witnessed non-null pointer.
         CRUCIBLE_POST(prev, tx->status == TxStatus::ACTIVE);
         CRUCIBLE_POST(prev, active_tx_.value() == tx);
-        CRUCIBLE_POST(prev, prev == nullptr ||
-                            prev->status == TxStatus::SUPERSEDED);
+        CRUCIBLE_POST(prev, prev == nullptr || prev->status == TxStatus::SUPERSEDED);
         return prev;
     }
 
@@ -337,11 +324,11 @@ class TransactionLog {
 
         if (active_tx_.value() != nullptr) {
             active_tx_.value()->status = TxStatus::ROLLED_BACK;
-            active_tx_.value()->ts_ns  = now_ns();
+            active_tx_.value()->ts_ns = now_ns();
         }
         prev->status = TxStatus::ACTIVE;
-        prev->ts_ns  = now_ns();
-        active_tx_   = ActiveTxPtr{prev};
+        prev->ts_ns = now_ns();
+        active_tx_ = ActiveTxPtr{prev};
         return true;
     }
 
@@ -350,7 +337,7 @@ class TransactionLog {
     // WRAP-Transaction-6 #1065: extracts the raw Transaction* from the
     // Tagged<Transaction*, source::Ring> field — callers continue to see
     // the unwrapped pointer for compatibility with existing read paths.
-    [[nodiscard]] Transaction* active() CRUCIBLE_LIFETIMEBOUND  { return active_tx_.value(); }
+    [[nodiscard]] Transaction* active() CRUCIBLE_LIFETIMEBOUND { return active_tx_.value(); }
 
     [[nodiscard]] Transaction* previous() CRUCIBLE_LIFETIMEBOUND {
         // Walk the ring backward from the cursor for the most recent
@@ -371,7 +358,7 @@ class TransactionLog {
         return static_cast<uint32_t>(ring_.size());
     }
 
- private:
+private:
     // ── now_ns() (WRAP-Transaction-3 #1062) ────────────────────────
     // Returns MonotonicClockBytes<u64> so the typed clock-source
     // witness propagates straight into Transaction::ts_ns.  The
@@ -381,32 +368,23 @@ class TransactionLog {
     // CLOCK_MONOTONIC reading on Linux; the mint just stamps the
     // provenance lattice value on top.  Parallels Cipher::now_ns
     // (FIXY-V-198) and Mutation::MonotonicClock::now_ns (FIXY-V-193).
-    [[nodiscard]] static auto now_ns() noexcept
-        -> ::crucible::safety::MonotonicClockBytes<std::uint64_t>
-    {
+    [[nodiscard]] static auto now_ns() noexcept -> ::crucible::safety::MonotonicClockBytes<std::uint64_t> {
         const auto tp = std::chrono::steady_clock::now();
         const std::uint64_t raw = static_cast<std::uint64_t>(
-            std::chrono::duration_cast<std::chrono::nanoseconds>(
-                tp.time_since_epoch()).count());
-        return ::crucible::safety::mint_clock_source<
-            ::crucible::safety::ClockSource_v::Monotonic,
-            std::uint64_t>(raw);
+            std::chrono::duration_cast<std::chrono::nanoseconds>(tp.time_since_epoch()).count());
+        return ::crucible::safety::mint_clock_source<::crucible::safety::ClockSource_v::Monotonic, std::uint64_t>(raw);
     }
 
     // ── WRAP-Transaction-3 #1062 sentinel: now_ns return-type pin ──
     // Pin the typed return.  If a future maintainer accidentally
     // reverts to `static uint64_t now_ns()` or returns a wall-clock
     // wrap, this sentinel fires at every TU.
-    static_assert(
-        std::is_same_v<
-            decltype(now_ns()),
-            ::crucible::safety::MonotonicClockBytes<std::uint64_t>>,
-        "WRAP-Transaction-3 #1062: Transaction::now_ns must return "
-        "MonotonicClockBytes<u64>.");
-    static_assert(
-        sizeof(decltype(now_ns())) == sizeof(std::uint64_t),
-        "WRAP-Transaction-3 #1062: now_ns return must be regime-1 "
-        "EBO-collapsed to preserve hot-path layout.");
+    static_assert(std::is_same_v<decltype(now_ns()), ::crucible::safety::MonotonicClockBytes<std::uint64_t>>,
+                  "WRAP-Transaction-3 #1062: Transaction::now_ns must return "
+                  "MonotonicClockBytes<u64>.");
+    static_assert(sizeof(decltype(now_ns())) == sizeof(std::uint64_t),
+                  "WRAP-Transaction-3 #1062: now_ns return must be regime-1 "
+                  "EBO-collapsed to preserve hot-path layout.");
 
     // The (entries_ + head_ + count_) ring triple, now one audited
     // composition (see the Ring alias above).  active_tx_ tracks WHICH
@@ -427,10 +405,9 @@ class TransactionLog {
     // public `active()` accessor continues to return raw Transaction*
     // so external callers (CipherTransactionLog wiring, BackgroundThread
     // rollback paths) are not changed by this ship.
-    using ActiveTxPtr = ::crucible::safety::Tagged<
-        Transaction*, ::crucible::safety::source::Ring>;
-    Ring         ring_{};
-    ActiveTxPtr  active_tx_{nullptr};
+    using ActiveTxPtr = ::crucible::safety::Tagged<Transaction*, ::crucible::safety::source::Ring>;
+    Ring ring_{};
+    ActiveTxPtr active_tx_{nullptr};
 };
 
 // Zero-cost ring wiring (#1063 WRAP-Transaction-4): CyclicBuffer<Transaction, N>
@@ -438,12 +415,11 @@ class TransactionLog {
 // alignment — sizeof equals the sum of the three composed members.  N=16 is
 // the production shape (TransactionLog<16> is the BackgroundThread rollback
 // ring).  A regression in the composition's zero-cost guarantee reddens here.
-static_assert(
-    sizeof(::crucible::fixy::wrap::CyclicBuffer<Transaction, 16>)
-        == sizeof(::crucible::safety::FixedArray<Transaction, 16>)
-         + sizeof(::crucible::safety::Cyclic<std::size_t, 16>)
-         + sizeof(::crucible::safety::BoundedMonotonic<std::size_t, 16>),
-    "CyclicBuffer<Transaction, N> must stay a zero-overhead composition");
+static_assert(sizeof(::crucible::fixy::wrap::CyclicBuffer<Transaction, 16>)
+                  == sizeof(::crucible::safety::FixedArray<Transaction, 16>)
+                         + sizeof(::crucible::safety::Cyclic<std::size_t, 16>)
+                         + sizeof(::crucible::safety::BoundedMonotonic<std::size_t, 16>),
+              "CyclicBuffer<Transaction, N> must stay a zero-overhead composition");
 
 // WRAP-Transaction-6 #1065: zero-cost field migration sentinel.
 // active_tx_'s Tagged<Transaction*, source::Ring> wrapper MUST collapse
@@ -453,17 +429,13 @@ static_assert(
 // bit-identical to the pre-migration shape.  A future Tagged refactor
 // that drops EBO collapse, or a Ring tag that grows beyond an empty
 // struct, reddens here.
-static_assert(
-    sizeof(::crucible::safety::Tagged<Transaction*,
-                                      ::crucible::safety::source::Ring>)
-        == sizeof(Transaction*),
-    "WRAP-Transaction-6 #1065: Tagged<Transaction*, source::Ring> must "
-    "preserve pointer size via regime-1 EBO collapse.");
-static_assert(
-    alignof(::crucible::safety::Tagged<Transaction*,
-                                       ::crucible::safety::source::Ring>)
-        == alignof(Transaction*),
-    "WRAP-Transaction-6 #1065: Tagged<Transaction*, source::Ring> must "
-    "preserve pointer alignment via regime-1 EBO collapse.");
+static_assert(sizeof(::crucible::safety::Tagged<Transaction*, ::crucible::safety::source::Ring>)
+                  == sizeof(Transaction*),
+              "WRAP-Transaction-6 #1065: Tagged<Transaction*, source::Ring> must "
+              "preserve pointer size via regime-1 EBO collapse.");
+static_assert(alignof(::crucible::safety::Tagged<Transaction*, ::crucible::safety::source::Ring>)
+                  == alignof(Transaction*),
+              "WRAP-Transaction-6 #1065: Tagged<Transaction*, source::Ring> must "
+              "preserve pointer alignment via regime-1 EBO collapse.");
 
-} // namespace crucible
+}  // namespace crucible

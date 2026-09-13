@@ -111,8 +111,10 @@ namespace crucible::safety {
 // every Affine consumer.  This is the same forward-declare pattern
 // Linear.h uses, ensuring the rejection table stays in lockstep
 // across the linearity-axis wrappers.
-template <typename Tag> class Permission;
-template <typename Tag> class SharedPermission;
+template <typename Tag>
+class Permission;
+template <typename Tag>
+class SharedPermission;
 
 // is_already_consume_disciplined<T> — type-system witness that T
 // already encodes a USE-DISCIPLINE at finer-or-equal granularity than
@@ -135,22 +137,18 @@ template <typename T>
 struct is_already_consume_disciplined_impl : std::false_type {};
 
 template <typename Tag>
-struct is_already_consume_disciplined_impl<Permission<Tag>>
-    : std::true_type {};
+struct is_already_consume_disciplined_impl<Permission<Tag>> : std::true_type {};
 
 template <typename Tag>
-struct is_already_consume_disciplined_impl<SharedPermission<Tag>>
-    : std::true_type {};
+struct is_already_consume_disciplined_impl<SharedPermission<Tag>> : std::true_type {};
 
 }  // namespace detail
 
 template <typename T>
-struct is_already_consume_disciplined
-    : detail::is_already_consume_disciplined_impl<std::remove_cvref_t<T>> {};
+struct is_already_consume_disciplined : detail::is_already_consume_disciplined_impl<std::remove_cvref_t<T>> {};
 
 template <typename T>
-inline constexpr bool is_already_consume_disciplined_v =
-    is_already_consume_disciplined<T>::value;
+inline constexpr bool is_already_consume_disciplined_v = is_already_consume_disciplined<T>::value;
 
 template <typename T>
 class [[nodiscard]] Affine {
@@ -165,34 +163,31 @@ class [[nodiscard]] Affine {
     // than deep inside the Graded substrate's later checks.  Single
     // grep target: grep "is_already_consume_disciplined" finds every
     // type the rejection covers.
-    static_assert(!is_already_consume_disciplined_v<T>,
-        "Affine<Permission<Tag>> / Affine<SharedPermission<Tag>> is "
-        "unsound: Permission carries an EXACTLY-ONCE obligation (CSL "
-        "frame rule); wrapping in Affine downgrades that to at-most-"
-        "once, making the consume OPTIONAL when the frame rule "
-        "REQUIRES it.  Use Permission<Tag> directly; pass via "
-        "mint_permission_root / mint_permission_split / permission_"
-        "fork (CLAUDE.md §XVI).");
+    static_assert(!is_already_consume_disciplined_v<T>, "Affine<Permission<Tag>> / Affine<SharedPermission<Tag>> is "
+                                                        "unsound: Permission carries an EXACTLY-ONCE obligation (CSL "
+                                                        "frame rule); wrapping in Affine downgrades that to at-most-"
+                                                        "once, making the consume OPTIONAL when the frame rule "
+                                                        "REQUIRES it.  Use Permission<Tag> directly; pass via "
+                                                        "mint_permission_root / mint_permission_split / permission_"
+                                                        "fork (CLAUDE.md §XVI).");
+
 public:
     using value_type = T;
     // The QTT grade-0 lattice (singleton "erased / affine grade").
-    using lattice_type = ::crucible::algebra::lattices::QttSemiring::At<
-        ::crucible::algebra::lattices::QttGrade::Zero>;
+    using lattice_type = ::crucible::algebra::lattices::QttSemiring::At<::crucible::algebra::lattices::QttGrade::Zero>;
 
     // Modality declaration — the GradedWrapper concept verifies this
     // matches graded_type's modality template parameter.  Affine is
     // Absolute (uniform-grade-known-at-type-level, no extract/inject
     // monadic operations).  Same modality as Linear; the lattice
     // position is what distinguishes them.
-    static constexpr ::crucible::algebra::ModalityKind modality =
-        ::crucible::algebra::ModalityKind::Absolute;
+    static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::Absolute;
 
     // Public per GRADED-TRAIT-1 — external code (GradedWrapper concept,
     // test_migration_verification, future SealedRefined-of-Affine, mCRL2
     // export) needs to introspect the migration mapping.  Zero
     // behavioral change vs a private declaration.
-    using graded_type = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
+    using graded_type = ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
 
 private:
     // Empty-lattice grade_type collapses via [[no_unique_address]] in
@@ -201,16 +196,13 @@ private:
 
     // Helper: the singleton element_type value.  QttSemiring::At<Zero>
     // has an empty element_type, so this is a zero-cost {} construction.
-    [[nodiscard]] static constexpr typename lattice_type::element_type
-    grade_zero() noexcept {
+    [[nodiscard]] static constexpr typename lattice_type::element_type grade_zero() noexcept {
         return typename lattice_type::element_type{};
     }
 
 public:
-
     // Move-from-T construction.  Forwards to Graded(value, grade).
-    constexpr explicit Affine(T v)
-        noexcept(std::is_nothrow_move_constructible_v<T>)
+    constexpr explicit Affine(T v) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(v), grade_zero()} {}
 
     // In-place construction: build T directly inside the Affine.
@@ -221,32 +213,27 @@ public:
     // construction happens in-situ via guaranteed copy elision.
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr explicit Affine(std::in_place_t, Args&&... args)
-        noexcept(std::is_nothrow_constructible_v<T, Args...>
-                 && std::is_nothrow_move_constructible_v<T>)
+    constexpr explicit Affine(std::in_place_t, Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
+                                                                        && std::is_nothrow_move_constructible_v<T>)
         : impl_{T(std::forward<Args>(args)...), grade_zero()} {}
 
-    Affine(const Affine&)            = delete("Affine<T> is move-only; use std::move or drop()");
+    Affine(const Affine&) = delete("Affine<T> is move-only; use std::move or drop()");
     Affine& operator=(const Affine&) = delete("Affine<T> is move-only; use std::move or drop()");
-    Affine(Affine&&)                 = default;
-    Affine& operator=(Affine&&)      = default;
-    ~Affine()                        = default;
+    Affine(Affine&&) = default;
+    Affine& operator=(Affine&&) = default;
+    ~Affine() = default;
 
     // Ownership transfer — must be called on rvalue.  Compile error
     // on lvalue.  Forwards to Graded::consume().  Optional per affine
     // semantics: the value may be silently dropped instead (the
     // destructor handles cleanup of T per T's own discipline).
-    [[nodiscard]] constexpr T consume() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return std::move(impl_).consume();
     }
 
     // Shared borrow — Affine keeps the value.  Forwards to
     // Graded::peek().
-    [[nodiscard]] constexpr const T& peek() const & noexcept {
-        return impl_.peek();
-    }
+    [[nodiscard]] constexpr const T& peek() const& noexcept { return impl_.peek(); }
 
     // Mutable borrow — Affine keeps the value but caller may mutate.
     // Prefer consume+reconstruct over this when the change is
@@ -254,19 +241,13 @@ public:
     // AbsoluteModality<M> in Graded — the QTT-At-Zero grade is a
     // static property of the wrapper (the at-most-once bound is
     // about ownership, not value identity), so raw mutation is sound.
-    [[nodiscard]] constexpr T& peek_mut() & noexcept {
-        return impl_.peek_mut();
-    }
+    [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(); }
 
     // Swap — preserves at-most-once on both sides.  Forwards to
     // Graded::swap (also gated on AbsoluteModality).
-    constexpr void swap(Affine& other) noexcept(std::is_nothrow_swappable_v<T>) {
-        impl_.swap(other.impl_);
-    }
+    constexpr void swap(Affine& other) noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
 
-    friend constexpr void swap(Affine& a, Affine& b) noexcept(std::is_nothrow_swappable_v<T>) {
-        a.swap(b);
-    }
+    friend constexpr void swap(Affine& a, Affine& b) noexcept(std::is_nothrow_swappable_v<T>) { a.swap(b); }
 
     // ── Diagnostic names (forwarded from Graded substrate) ─────────
     //
@@ -284,9 +265,7 @@ public:
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return graded_type::lattice_name();
-    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 };
 
 template <typename T>
@@ -304,9 +283,7 @@ Affine(T) -> Affine<T>;
 // ambiguously.
 template <typename T, typename... Args>
     requires std::is_constructible_v<T, Args...>
-[[nodiscard]] constexpr Affine<T> mint_affine(Args&&... args)
-    noexcept(std::is_nothrow_constructible_v<T, Args...>)
-{
+[[nodiscard]] constexpr Affine<T> mint_affine(Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>) {
     return Affine<T>{std::in_place, std::forward<Args>(args)...};
 }
 
@@ -331,9 +308,9 @@ constexpr void drop(Affine<T>&& x) noexcept {
 // the lattice's empty element_type + Graded's [[no_unique_address]]
 // on grade_.  If this fires after a Graded refactor, the EBO
 // discipline regressed.
-static_assert(sizeof(Affine<int>)        == sizeof(int));
-static_assert(sizeof(Affine<void*>)      == sizeof(void*));
-static_assert(sizeof(Affine<long long>)  == sizeof(long long));
+static_assert(sizeof(Affine<int>) == sizeof(int));
+static_assert(sizeof(Affine<void*>) == sizeof(void*));
+static_assert(sizeof(Affine<long long>) == sizeof(long long));
 
 // ── Modality + grade type-system witnesses ──────────────────────────
 //
@@ -341,12 +318,10 @@ static_assert(sizeof(Affine<long long>)  == sizeof(long long));
 // QTT grade Zero, distinguishing it from Linear (which sits at the
 // same modality but grade One).  If either assertion regresses the
 // substrate is mis-routed and federation cache slots would collide.
-static_assert(Affine<int>::modality ==
-              ::crucible::algebra::ModalityKind::Absolute);
-static_assert(std::is_same_v<
-    Affine<int>::lattice_type,
-    ::crucible::algebra::lattices::QttSemiring::At<
-        ::crucible::algebra::lattices::QttGrade::Zero>>);
+static_assert(Affine<int>::modality == ::crucible::algebra::ModalityKind::Absolute);
+static_assert(
+    std::is_same_v<Affine<int>::lattice_type,
+                   ::crucible::algebra::lattices::QttSemiring::At<::crucible::algebra::lattices::QttGrade::Zero>>);
 
 namespace detail::affine_self_test {
 
@@ -361,7 +336,7 @@ namespace detail::affine_self_test {
 //      in-place constructor's emplace path);
 //   3. swap's noexcept propagation through Graded::swap.
 inline void runtime_smoke_test() {
-    int seed = 41;                       // non-constant
+    int seed = 41;  // non-constant
     Affine<int> a{std::in_place, seed + 1};
     if (a.peek() != 42) std::abort();
 
@@ -390,9 +365,9 @@ inline void runtime_smoke_test() {
     // Move-only T witness — verifies in-place construction path.
     struct only_move {
         only_move(int v) : p{std::make_unique<int>(v)} {}
-        only_move(only_move&&)                 = default;
-        only_move& operator=(only_move&&)      = default;
-        only_move(const only_move&)            = delete;
+        only_move(only_move&&) = default;
+        only_move& operator=(only_move&&) = default;
+        only_move(const only_move&) = delete;
         only_move& operator=(const only_move&) = delete;
         std::unique_ptr<int> p;
     };

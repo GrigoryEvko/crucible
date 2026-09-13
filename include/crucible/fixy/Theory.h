@@ -149,17 +149,17 @@
 #include <crucible/fixy/Dim.h>
 #include <crucible/fixy/Grant.h>
 #include <crucible/safety/Fn.h>
-#include <crucible/safety/Secret.h>          // fixy-A4-015: AuthorizedReplay et al.
+#include <crucible/safety/Secret.h>  // fixy-A4-015: AuthorizedReplay et al.
 
-#include <array>                             // fixy-L-09/L-10: std::array CTAD for kRoster drift sentinel
+#include <array>  // fixy-L-09/L-10: std::array CTAD for kRoster drift sentinel
 #include <cstddef>
-#include <cstdint>                           // fixy-A4-015: std::uint32_t for DischargeAxis
+#include <cstdint>  // fixy-A4-015: std::uint32_t for DischargeAxis
 #include <meta>
 #include <string>
 #include <string_view>
-#include <tuple>                             // FIXY-FOUND-136: secret_policy_roster
+#include <tuple>  // FIXY-FOUND-136: secret_policy_roster
 #include <type_traits>
-#include <utility>                           // fixy-A4-015: std::to_underlying
+#include <utility>  // fixy-A4-015: std::to_underlying
 
 namespace crucible::fixy::theory {
 
@@ -182,12 +182,12 @@ template <template <typename> class Predicate, typename... Grants>
 
 // Per-tag boolean traits — true for the matching shape, false else.
 
-template <typename G> struct is_secret_grant
-    : std::false_type {};
-template <> struct is_secret_grant<grant::as_secret>
-    : std::true_type {};
-template <> struct is_secret_grant<grant::as_classified>
-    : std::true_type {};
+template <typename G>
+struct is_secret_grant : std::false_type {};
+template <>
+struct is_secret_grant<grant::as_secret> : std::true_type {};
+template <>
+struct is_secret_grant<grant::as_classified> : std::true_type {};
 // fixy-A4-015: declassify<Policy> ALSO engages the Security axis
 // (per Grant.h `which_dim_v<declassify<P>> == DimensionAxis::Security`).
 // Pre-A4-015 this specialization was absent — packs that engaged
@@ -201,8 +201,7 @@ template <> struct is_secret_grant<grant::as_classified>
 // REMAIN rejected (their behaviour is unchanged); only the
 // declassify-only-Security path becomes structurally visible.
 template <typename Policy>
-struct is_secret_grant<grant::declassify<Policy>>
-    : std::true_type {};
+struct is_secret_grant<grant::declassify<Policy>> : std::true_type {};
 
 // Strict-default-Security form (fixy-CR-01).  The grant
 // `accept_default_strict_for<Security>` is semantically equivalent to
@@ -216,23 +215,18 @@ struct is_secret_grant<grant::declassify<Policy>>
 // weakens the strict default below `Classified`, the build breaks
 // (and the predicate's semantic correctness needs re-evaluation).
 template <>
-struct is_secret_grant<grant::accept_default_strict_for<
-        dim::DimensionAxis::Security>>
-    : std::true_type {};
+struct is_secret_grant<grant::accept_default_strict_for<dim::DimensionAxis::Security>> : std::true_type {};
 
-static_assert(
-    strict_default_for<dim::DimensionAxis::Security>::value
-        == ::crucible::safety::fn::SecLevel::Classified,
-    "Theory.h §30.14 invariant: strict_default_for<Security> must "
-    "resolve to SecLevel::Classified.  The strict-default-Security "
-    "form of is_secret_grant relies on this equivalence; weakening "
-    "the strict default would re-open the fixy-CR-01 bypass.");
+static_assert(strict_default_for<dim::DimensionAxis::Security>::value == ::crucible::safety::fn::SecLevel::Classified,
+              "Theory.h §30.14 invariant: strict_default_for<Security> must "
+              "resolve to SecLevel::Classified.  The strict-default-Security "
+              "form of is_secret_grant relies on this equivalence; weakening "
+              "the strict default would re-open the fixy-CR-01 bypass.");
 
-template <typename G> struct is_declassify_grant
-    : std::false_type {};
+template <typename G>
+struct is_declassify_grant : std::false_type {};
 template <typename Policy>
-struct is_declassify_grant<grant::declassify<Policy>>
-    : std::true_type {};
+struct is_declassify_grant<grant::declassify<Policy>> : std::true_type {};
 
 // ── FIXY-FOUND-005: is_secret_carrier — carrier-only Security ─────
 //
@@ -254,16 +248,14 @@ struct is_declassify_grant<grant::declassify<Policy>>
 // present, distinct from any declassify on the same binding.  Other
 // corpus entries (2, 5, 6) retain `is_secret_grant` until FOUND-006's
 // sweep migrates them.
-template <typename G> struct is_secret_carrier
-    : std::false_type {};
-template <> struct is_secret_carrier<grant::as_secret>
-    : std::true_type {};
-template <> struct is_secret_carrier<grant::as_classified>
-    : std::true_type {};
+template <typename G>
+struct is_secret_carrier : std::false_type {};
 template <>
-struct is_secret_carrier<grant::accept_default_strict_for<
-        dim::DimensionAxis::Security>>
-    : std::true_type {};
+struct is_secret_carrier<grant::as_secret> : std::true_type {};
+template <>
+struct is_secret_carrier<grant::as_classified> : std::true_type {};
+template <>
+struct is_secret_carrier<grant::accept_default_strict_for<dim::DimensionAxis::Security>> : std::true_type {};
 // Note: NO specialization for grant::declassify<Policy> — declassify
 // is the discharge-side surface (FIXY-FOUND-005 self-cancellation fix).
 
@@ -306,12 +298,12 @@ struct is_secret_carrier<grant::accept_default_strict_for<
 //   - Crash      — BSYZ22 crash-stop session-protocol audit discharge.
 //   - Reentrancy — re-entrant audit-trail (re-classification) discharge.
 enum class DischargeAxis : std::uint32_t {
-    None        = 0u,
-    Staleness   = 1u << 0,
-    IO          = 1u << 1,  // reserved — see fixy-A4-015 Theory.h
-    Bg          = 1u << 2,  // reserved
-    Crash       = 1u << 3,  // reserved
-    Reentrancy  = 1u << 4,  // reserved
+    None = 0u,
+    Staleness = 1u << 0,
+    IO = 1u << 1,  // reserved — see fixy-A4-015 Theory.h
+    Bg = 1u << 2,  // reserved
+    Crash = 1u << 3,  // reserved
+    Reentrancy = 1u << 4,  // reserved
     // FOUND-020: Termination — reserved bit for a future
     // secret_policy::AuthorizedDivergence (or equivalent) that admits
     // Secret-dependent unbounded-Complexity flow.  No currently-
@@ -338,16 +330,13 @@ enum class DischargeAxis : std::uint32_t {
     CatastrophicReplay = 1u << 6,  // reserved — FOUND-024 staleness gradient
 };
 
-[[nodiscard]] constexpr DischargeAxis
-operator|(DischargeAxis a, DischargeAxis b) noexcept {
+[[nodiscard]] constexpr DischargeAxis operator|(DischargeAxis a, DischargeAxis b) noexcept {
     return DischargeAxis{std::to_underlying(a) | std::to_underlying(b)};
 }
-[[nodiscard]] constexpr DischargeAxis
-operator&(DischargeAxis a, DischargeAxis b) noexcept {
+[[nodiscard]] constexpr DischargeAxis operator&(DischargeAxis a, DischargeAxis b) noexcept {
     return DischargeAxis{std::to_underlying(a) & std::to_underlying(b)};
 }
-[[nodiscard]] constexpr bool
-discharge_axis_contains(DischargeAxis mask, DischargeAxis axis) noexcept {
+[[nodiscard]] constexpr bool discharge_axis_contains(DischargeAxis mask, DischargeAxis axis) noexcept {
     return (std::to_underlying(mask) & std::to_underlying(axis)) != 0u;
 }
 
@@ -356,11 +345,9 @@ discharge_axis_contains(DischargeAxis mask, DischargeAxis axis) noexcept {
 // Sands safe-default rule (above).  Specialize per-policy to lift
 // the bits the policy genuinely admits.
 template <typename Policy>
-struct axes_discharged_of
-    : std::integral_constant<DischargeAxis, DischargeAxis::None> {};
+struct axes_discharged_of : std::integral_constant<DischargeAxis, DischargeAxis::None> {};
 template <typename Policy>
-inline constexpr DischargeAxis axes_discharged_of_v =
-    axes_discharged_of<Policy>::value;
+inline constexpr DischargeAxis axes_discharged_of_v = axes_discharged_of<Policy>::value;
 
 // `secret_policy::AuthorizedReplay` discharges Staleness.  Defined in
 // substrate `safety/Secret.h` (re-exported as
@@ -368,8 +355,7 @@ inline constexpr DischargeAxis axes_discharged_of_v =
 // alias in fixy/Source.h).  This is THE policy that admits
 // `as_secret + stale_to<N>` through the §30.14 corpus.
 template <>
-struct axes_discharged_of<
-        ::crucible::safety::secret_policy::AuthorizedReplay>
+struct axes_discharged_of<::crucible::safety::secret_policy::AuthorizedReplay>
     : std::integral_constant<DischargeAxis, DischargeAxis::Staleness> {};
 
 // `is_declassify_for_axis<Axis, G>` — true iff G is a
@@ -379,8 +365,7 @@ template <DischargeAxis Axis, typename G>
 struct is_declassify_for_axis : std::false_type {};
 template <DischargeAxis Axis, typename Policy>
 struct is_declassify_for_axis<Axis, grant::declassify<Policy>>
-    : std::bool_constant<
-          discharge_axis_contains(axes_discharged_of_v<Policy>, Axis)> {};
+    : std::bool_constant<discharge_axis_contains(axes_discharged_of_v<Policy>, Axis)> {};
 
 // `has_declassify_for_axis<Axis, Grants...>()` — fold OR over the
 // pack: does any grant carry a declassify<Policy> that discharges
@@ -399,25 +384,19 @@ template <DischargeAxis Axis, typename... Grants>
 // Locked invariants — if the substrate's AuthorizedReplay tag is
 // renamed or removed, or its axis assignment shifts, these fire
 // before any matcher silently breaks.
-static_assert(
-    axes_discharged_of_v<
-        ::crucible::safety::secret_policy::AuthorizedReplay>
-        == DischargeAxis::Staleness,
-    "fixy-A4-015: AuthorizedReplay must discharge Staleness — "
-    "the only currently-surfaced axis-specific policy in the §30.14 "
-    "corpus.  Lifting other axes (IO/Bg/Crash/Reentrancy) requires "
-    "naming new policy tags and specializing axes_discharged_of "
-    "accordingly; existing AuditedLogging / WireSerialize / "
-    "HashForCompare / LengthOnly / UserDisplay tags REMAIN at "
-    "DischargeAxis::None per Hunt-Sands safe-default discipline.");
-static_assert(
-    axes_discharged_of_v<
-        ::crucible::safety::secret_policy::AuditedLogging>
-        == DischargeAxis::None,
-    "fixy-A4-015: pre-A4-015 declassify policies retain the safe "
-    "default DischargeAxis::None — any future axis lift requires an "
-    "explicit specialization with Hunt-Sands-style justification at "
-    "the policy tag's declaration site (substrate safety/Secret.h).");
+static_assert(axes_discharged_of_v<::crucible::safety::secret_policy::AuthorizedReplay> == DischargeAxis::Staleness,
+              "fixy-A4-015: AuthorizedReplay must discharge Staleness — "
+              "the only currently-surfaced axis-specific policy in the §30.14 "
+              "corpus.  Lifting other axes (IO/Bg/Crash/Reentrancy) requires "
+              "naming new policy tags and specializing axes_discharged_of "
+              "accordingly; existing AuditedLogging / WireSerialize / "
+              "HashForCompare / LengthOnly / UserDisplay tags REMAIN at "
+              "DischargeAxis::None per Hunt-Sands safe-default discipline.");
+static_assert(axes_discharged_of_v<::crucible::safety::secret_policy::AuditedLogging> == DischargeAxis::None,
+              "fixy-A4-015: pre-A4-015 declassify policies retain the safe "
+              "default DischargeAxis::None — any future axis lift requires an "
+              "explicit specialization with Hunt-Sands-style justification at "
+              "the policy tag's declaration site (substrate safety/Secret.h).");
 
 // ═══════════════════════════════════════════════════════════════════
 // FIXY-FOUND-136 — secret_policy roster + per-policy sentinels
@@ -470,19 +449,17 @@ namespace secret_policy_roster {
 // tree handshake.
 using AllPolicies = ::crucible::safety::secret_policy::roster::All;
 
-inline constexpr std::size_t kPolicyRosterCardinality =
-    std::tuple_size_v<AllPolicies>;
+inline constexpr std::size_t kPolicyRosterCardinality = std::tuple_size_v<AllPolicies>;
 
-static_assert(kPolicyRosterCardinality == 6,
-    "FIXY-FOUND-136 cardinality pin: secret_policy roster grew "
-    "beyond 6 entries.  Adding a new policy to safety/Secret.h "
-    "requires (a) appending the type to AllPolicies above, (b) "
-    "shipping an axes_discharged_of<NewPolicy> specialization in "
-    "this file (default None per Hunt-Sands safe-default), (c) "
-    "adding an explicit sentinel below witnessing the expected "
-    "discharge mask, and (d) bumping this assertion to the new "
-    "count.  See safety/Secret.h secret_policy:: doc-block for the "
-    "rationale on per-tag NotInherited<> + final discipline.");
+static_assert(kPolicyRosterCardinality == 6, "FIXY-FOUND-136 cardinality pin: secret_policy roster grew "
+                                             "beyond 6 entries.  Adding a new policy to safety/Secret.h "
+                                             "requires (a) appending the type to AllPolicies above, (b) "
+                                             "shipping an axes_discharged_of<NewPolicy> specialization in "
+                                             "this file (default None per Hunt-Sands safe-default), (c) "
+                                             "adding an explicit sentinel below witnessing the expected "
+                                             "discharge mask, and (d) bumping this assertion to the new "
+                                             "count.  See safety/Secret.h secret_policy:: doc-block for the "
+                                             "rationale on per-tag NotInherited<> + final discipline.");
 
 }  // namespace secret_policy_roster
 
@@ -492,38 +469,26 @@ static_assert(kPolicyRosterCardinality == 6,
 // above (lines 340-358).  These four close the gap so EVERY entry in
 // the roster has a structurally-enforced expected discharge.
 
-static_assert(
-    axes_discharged_of_v<
-        ::crucible::safety::secret_policy::WireSerialize>
-        == DischargeAxis::None,
-    "FIXY-FOUND-136: WireSerialize is an IO-channel serialization "
-    "policy, NOT an axis-discharge policy.  Lifting to IO (when the "
-    "Sabelfeld-Myers 2003 implicit-flow IO axis matcher tightens) "
-    "requires explicit specialization + bumping the closed-set "
-    "count below.");
-static_assert(
-    axes_discharged_of_v<
-        ::crucible::safety::secret_policy::HashForCompare>
-        == DischargeAxis::None,
-    "FIXY-FOUND-136: HashForCompare is a Security-relaxation policy "
-    "(release-as-hash), NOT a temporal-replay or IO discharge.  "
-    "Hunt-Sands safe-default applies.");
-static_assert(
-    axes_discharged_of_v<
-        ::crucible::safety::secret_policy::LengthOnly>
-        == DischargeAxis::None,
-    "FIXY-FOUND-136: LengthOnly releases only size metadata; the "
-    "channel-axis taxonomy treats it as Hunt-Sands None — size "
-    "telemetry IS an information channel but no current matcher "
-    "axis-types it.  Future tightening would mint a dedicated "
-    "DischargeAxis::SizeChannel bit and lift this sentinel.");
-static_assert(
-    axes_discharged_of_v<
-        ::crucible::safety::secret_policy::UserDisplay>
-        == DischargeAxis::None,
-    "FIXY-FOUND-136: UserDisplay is a UI-render policy (e.g. last-4 "
-    "of a card number).  Not a temporal-replay / IO / Bg / Crash / "
-    "Reentrancy discharge; Hunt-Sands safe-default applies.");
+static_assert(axes_discharged_of_v<::crucible::safety::secret_policy::WireSerialize> == DischargeAxis::None,
+              "FIXY-FOUND-136: WireSerialize is an IO-channel serialization "
+              "policy, NOT an axis-discharge policy.  Lifting to IO (when the "
+              "Sabelfeld-Myers 2003 implicit-flow IO axis matcher tightens) "
+              "requires explicit specialization + bumping the closed-set "
+              "count below.");
+static_assert(axes_discharged_of_v<::crucible::safety::secret_policy::HashForCompare> == DischargeAxis::None,
+              "FIXY-FOUND-136: HashForCompare is a Security-relaxation policy "
+              "(release-as-hash), NOT a temporal-replay or IO discharge.  "
+              "Hunt-Sands safe-default applies.");
+static_assert(axes_discharged_of_v<::crucible::safety::secret_policy::LengthOnly> == DischargeAxis::None,
+              "FIXY-FOUND-136: LengthOnly releases only size metadata; the "
+              "channel-axis taxonomy treats it as Hunt-Sands None — size "
+              "telemetry IS an information channel but no current matcher "
+              "axis-types it.  Future tightening would mint a dedicated "
+              "DischargeAxis::SizeChannel bit and lift this sentinel.");
+static_assert(axes_discharged_of_v<::crucible::safety::secret_policy::UserDisplay> == DischargeAxis::None,
+              "FIXY-FOUND-136: UserDisplay is a UI-render policy (e.g. last-4 "
+              "of a card number).  Not a temporal-replay / IO / Bg / Crash / "
+              "Reentrancy discharge; Hunt-Sands safe-default applies.");
 
 // ── Closed-set invariant: exactly one non-None policy ──────────────
 //
@@ -543,29 +508,27 @@ struct non_none_policy_count;
 template <typename... Ps>
 struct non_none_policy_count<std::tuple<Ps...>>
     : std::integral_constant<std::size_t,
-          ((axes_discharged_of_v<Ps> != DischargeAxis::None
-              ? std::size_t{1} : std::size_t{0}) + ... + std::size_t{0})> {};
+                             ((axes_discharged_of_v<Ps> != DischargeAxis::None ? std::size_t{1} : std::size_t{0}) + ...
+                              + std::size_t{0})> {};
 
 template <typename TupleT>
-inline constexpr std::size_t non_none_policy_count_v =
-    non_none_policy_count<TupleT>::value;
+inline constexpr std::size_t non_none_policy_count_v = non_none_policy_count<TupleT>::value;
 
 static_assert(non_none_policy_count_v<secret_policy_roster::AllPolicies> == 1,
-    "FIXY-FOUND-136 closed-set invariant: exactly one secret_policy "
-    "in the roster has a non-None axes_discharged_of mask.  The "
-    "single non-None entry is AuthorizedReplay → Staleness "
-    "(fixy-A4-015).  Lifting another policy off Hunt-Sands "
-    "safe-default requires bumping this count AND adding an "
-    "explicit per-axis sentinel above documenting WHICH axis the "
-    "policy is now authoritative on.");
+              "FIXY-FOUND-136 closed-set invariant: exactly one secret_policy "
+              "in the roster has a non-None axes_discharged_of mask.  The "
+              "single non-None entry is AuthorizedReplay → Staleness "
+              "(fixy-A4-015).  Lifting another policy off Hunt-Sands "
+              "safe-default requires bumping this count AND adding an "
+              "explicit per-axis sentinel above documenting WHICH axis the "
+              "policy is now authoritative on.");
 
 }  // namespace detail::secret_policy_invariants
 
-template <typename G> struct is_io_effect_grant
-    : std::false_type {};
+template <typename G>
+struct is_io_effect_grant : std::false_type {};
 template <effects::Effect... Es>
-struct is_io_effect_grant<grant::with<Es...>>
-    : std::bool_constant<((Es == effects::Effect::IO) || ...)> {};
+struct is_io_effect_grant<grant::with<Es...>> : std::bool_constant<((Es == effects::Effect::IO) || ...)> {};
 
 // `is_internal_grant<G>` — true iff G is the `grant::as_internal`
 // Security-engagement tag.  Used by the
@@ -579,21 +542,20 @@ struct is_io_effect_grant<grant::with<Es...>>
 // to recognise (the strict-default-Security path resolves to
 // Classified, which is captured by is_secret_grant via the
 // accept_default_strict_for<Security> specialization above).
-template <typename G> struct is_internal_grant
-    : std::false_type {};
-template <> struct is_internal_grant<grant::as_internal>
-    : std::true_type {};
+template <typename G>
+struct is_internal_grant : std::false_type {};
+template <>
+struct is_internal_grant<grant::as_internal> : std::true_type {};
 
 // `is_bg_effect_grant<G>` — true iff G is `grant::with<...>` and its
 // effect pack contains `Effect::Bg`.  Used by the
 // `classified_bg_without_declassify` corpus entry to detect a secret
 // value flowing into a background-thread context without
 // declassification.
-template <typename G> struct is_bg_effect_grant
-    : std::false_type {};
+template <typename G>
+struct is_bg_effect_grant : std::false_type {};
 template <effects::Effect... Es>
-struct is_bg_effect_grant<grant::with<Es...>>
-    : std::bool_constant<((Es == effects::Effect::Bg) || ...)> {};
+struct is_bg_effect_grant<grant::with<Es...>> : std::bool_constant<((Es == effects::Effect::Bg) || ...)> {};
 
 // ── FIXY-FOUND-040: `is_pure_effect_grant<G>` ──────────────────────
 //
@@ -630,19 +592,16 @@ struct is_bg_effect_grant<grant::with<Es...>>
 // inserting a non-empty effect row), the build breaks AND the
 // predicate's semantic equivalence must be re-evaluated.
 
-template <typename G> struct is_pure_effect_grant
-    : std::false_type {};
+template <typename G>
+struct is_pure_effect_grant : std::false_type {};
 
 // Positive form — empty effect pack.
 template <>
-struct is_pure_effect_grant<grant::with<>>
-    : std::true_type {};
+struct is_pure_effect_grant<grant::with<>> : std::true_type {};
 
 // Deferred form — accept_default_strict_for<Effect>.
 template <>
-struct is_pure_effect_grant<grant::accept_default_strict_for<
-        dim::DimensionAxis::Effect>>
-    : std::true_type {};
+struct is_pure_effect_grant<grant::accept_default_strict_for<dim::DimensionAxis::Effect>> : std::true_type {};
 
 template <typename G>
 inline constexpr bool is_pure_effect_grant_v = is_pure_effect_grant<G>::value;
@@ -652,14 +611,12 @@ inline constexpr bool is_pure_effect_grant_v = is_pure_effect_grant<G>::value;
 // to effects::Row<>.  A future audit that injects a non-empty default
 // row would silently re-route the deferred form to a non-pure
 // engagement; the build breaks here before that can happen.
-static_assert(
-    std::is_same_v<typename strict_default_for<dim::DimensionAxis::Effect>::type,
-                   effects::Row<>>,
-    "FIXY-FOUND-040 invariant: strict_default_for<Effect> must "
-    "resolve to effects::Row<>.  The deferred-form specialization "
-    "of is_pure_effect_grant relies on this equivalence — any "
-    "change here requires re-evaluating the predicate's semantic "
-    "correctness.");
+static_assert(std::is_same_v<typename strict_default_for<dim::DimensionAxis::Effect>::type, effects::Row<>>,
+              "FIXY-FOUND-040 invariant: strict_default_for<Effect> must "
+              "resolve to effects::Row<>.  The deferred-form specialization "
+              "of is_pure_effect_grant relies on this equivalence — any "
+              "change here requires re-evaluating the predicate's semantic "
+              "correctness.");
 
 // ── FIXY-FOUND-040 — predicate coverage matrix ─────────────────────
 //
@@ -670,55 +627,47 @@ static_assert(
 namespace detail::found_040_witness {
 
 // (1) Positive form — `with<>` empty effect pack: TRUE.
-static_assert(is_pure_effect_grant_v<grant::with<>>,
-    "FIXY-FOUND-040: grant::with<> (positive empty-pack form) MUST "
-    "satisfy is_pure_effect_grant — it IS the audit anchor for "
-    "pure-compute bindings.");
+static_assert(is_pure_effect_grant_v<grant::with<>>, "FIXY-FOUND-040: grant::with<> (positive empty-pack form) MUST "
+                                                     "satisfy is_pure_effect_grant — it IS the audit anchor for "
+                                                     "pure-compute bindings.");
 
 // (2) Deferred form — accept_default_strict_for<Effect>: TRUE.
-static_assert(is_pure_effect_grant_v<grant::accept_default_strict_for<
-                  dim::DimensionAxis::Effect>>,
-    "FIXY-FOUND-040: deferred-form accept_default_strict_for<Effect> "
-    "resolves to effects::Row<> via strict_default_for<Effect>; "
-    "the predicate unifies positive + deferred under one query.");
+static_assert(is_pure_effect_grant_v<grant::accept_default_strict_for<dim::DimensionAxis::Effect>>,
+              "FIXY-FOUND-040: deferred-form accept_default_strict_for<Effect> "
+              "resolves to effects::Row<> via strict_default_for<Effect>; "
+              "the predicate unifies positive + deferred under one query.");
 
 // (3) Single-effect with<IO>: FALSE.
 static_assert(!is_pure_effect_grant_v<grant::with<effects::Effect::IO>>,
-    "FIXY-FOUND-040: with<IO> declares a NON-EMPTY effect row — "
-    "the binding IS NOT pure.");
+              "FIXY-FOUND-040: with<IO> declares a NON-EMPTY effect row — "
+              "the binding IS NOT pure.");
 
 // (4) Multi-effect with<Alloc, IO>: FALSE.
-static_assert(!is_pure_effect_grant_v<grant::with<effects::Effect::Alloc,
-                                                  effects::Effect::IO>>,
-    "FIXY-FOUND-040: any non-empty effect pack disqualifies "
-    "the binding from the pure-effect audit class.");
+static_assert(!is_pure_effect_grant_v<grant::with<effects::Effect::Alloc, effects::Effect::IO>>,
+              "FIXY-FOUND-040: any non-empty effect pack disqualifies "
+              "the binding from the pure-effect audit class.");
 
 // (5) Convenience alias with_io: FALSE (resolves to with<IO>).
-static_assert(!is_pure_effect_grant_v<grant::with_io>,
-    "FIXY-FOUND-040: convenience aliases inherit non-pure status "
-    "through their underlying with<E> specialization.");
+static_assert(!is_pure_effect_grant_v<grant::with_io>, "FIXY-FOUND-040: convenience aliases inherit non-pure status "
+                                                       "through their underlying with<E> specialization.");
 
 // (6) Convenience alias with_bg: FALSE.
-static_assert(!is_pure_effect_grant_v<grant::with_bg>,
-    "FIXY-FOUND-040: with_bg engages Effect with Bg — distinct "
-    "from pure-effect.  Audited separately by is_bg_effect_grant.");
+static_assert(!is_pure_effect_grant_v<grant::with_bg>, "FIXY-FOUND-040: with_bg engages Effect with Bg — distinct "
+                                                       "from pure-effect.  Audited separately by is_bg_effect_grant.");
 
 // (7) Wrong-axis deferred — accept_default_strict_for<Usage>: FALSE.
-static_assert(!is_pure_effect_grant_v<grant::accept_default_strict_for<
-                   dim::DimensionAxis::Usage>>,
-    "FIXY-FOUND-040: the deferred form is axis-keyed — only the "
-    "Effect-axis deferred grant matches.  Other axes' deferred "
-    "forms (Usage, Security, etc.) MUST NOT cross-match.");
+static_assert(!is_pure_effect_grant_v<grant::accept_default_strict_for<dim::DimensionAxis::Usage>>,
+              "FIXY-FOUND-040: the deferred form is axis-keyed — only the "
+              "Effect-axis deferred grant matches.  Other axes' deferred "
+              "forms (Usage, Security, etc.) MUST NOT cross-match.");
 
 // (8) Non-grant types — FALSE (catch-all primary template).
-static_assert(!is_pure_effect_grant_v<int>,
-    "FIXY-FOUND-040: non-grant types fall through to the primary "
-    "false_type template.  The predicate is total over the type "
-    "universe.");
-static_assert(!is_pure_effect_grant_v<grant::as_secret>,
-    "FIXY-FOUND-040: Security-axis grants do not match the "
-    "Effect-axis pure-effect predicate, even when sharing the "
-    "is_*_grant naming convention.");
+static_assert(!is_pure_effect_grant_v<int>, "FIXY-FOUND-040: non-grant types fall through to the primary "
+                                            "false_type template.  The predicate is total over the type "
+                                            "universe.");
+static_assert(!is_pure_effect_grant_v<grant::as_secret>, "FIXY-FOUND-040: Security-axis grants do not match the "
+                                                         "Effect-axis pure-effect predicate, even when sharing the "
+                                                         "is_*_grant naming convention.");
 
 }  // namespace detail::found_040_witness
 
@@ -727,11 +676,10 @@ static_assert(!is_pure_effect_grant_v<grant::as_secret>,
 // `staleness_secret_without_declassify` corpus entry to detect a
 // classified value reachable through a stale-cache replay channel
 // without a freshness-discharging declassification policy.
-template <typename G> struct is_stale_grant
-    : std::false_type {};
+template <typename G>
+struct is_stale_grant : std::false_type {};
 template <auto TauMax>
-struct is_stale_grant<grant::stale_to<TauMax>>
-    : std::true_type {};
+struct is_stale_grant<grant::stale_to<TauMax>> : std::true_type {};
 
 // ── FIXY-FOUND-024: magnitude-aware stale_to predicate ─────────────
 //
@@ -774,8 +722,7 @@ struct stale_to_value<grant::stale_to<N>> {
 // least `Threshold`.  Empty pack returns false (no stale claim →
 // no catastrophic claim).
 template <std::uint64_t Threshold, typename... Grants>
-[[nodiscard]] consteval bool
-any_stale_to_at_least() noexcept {
+[[nodiscard]] consteval bool any_stale_to_at_least() noexcept {
     if constexpr (sizeof...(Grants) == 0) {
         return false;
     } else {
@@ -797,42 +744,40 @@ inline constexpr std::uint64_t kStaleToCatastrophic = 1024;
 // so a refactor of stale_to or the NTTP extractor reds these BEFORE
 // entry 10 silently misfires.
 static_assert(stale_to_value<grant::stale_to<5>>::value == 5u,
-    "FIXY-FOUND-024: stale_to<5> must surface TauMax = 5 via the "
-    "uint64_t canonicalization.  If this reds, grant::stale_to's "
-    "template shape changed (e.g. dropped the auto NTTP) and the "
-    "extractor specialization needs to follow.");
+              "FIXY-FOUND-024: stale_to<5> must surface TauMax = 5 via the "
+              "uint64_t canonicalization.  If this reds, grant::stale_to's "
+              "template shape changed (e.g. dropped the auto NTTP) and the "
+              "extractor specialization needs to follow.");
 static_assert(stale_to_value<grant::stale_to<10000>>::value == 10000u,
-    "FIXY-FOUND-024: stale_to<10000> must surface TauMax = 10000 "
-    "(canonical large-window witness for entry 10).");
+              "FIXY-FOUND-024: stale_to<10000> must surface TauMax = 10000 "
+              "(canonical large-window witness for entry 10).");
 static_assert(stale_to_value<grant::as_secret>::value == 0u,
-    "FIXY-FOUND-024: non-stale_to grants must surface 0 (the "
-    "sentinel for 'no stale claim') — Security-axis grants must "
-    "NOT leak into the staleness-magnitude predicate.");
-static_assert(any_stale_to_at_least<kStaleToCatastrophic,
-              grant::stale_to<5000>>(),
-    "FIXY-FOUND-024: stale_to<5000> exceeds the catastrophic "
-    "threshold (1024) and must trigger entry 10's magnitude-aware "
-    "reject.");
-static_assert(!any_stale_to_at_least<kStaleToCatastrophic,
-              grant::stale_to<100>>(),
-    "FIXY-FOUND-024: stale_to<100> is below the catastrophic "
-    "threshold (1024) and must NOT trigger entry 10 — small "
-    "windows route through entry 4 with normal AuthorizedReplay "
-    "discharge.");
+              "FIXY-FOUND-024: non-stale_to grants must surface 0 (the "
+              "sentinel for 'no stale claim') — Security-axis grants must "
+              "NOT leak into the staleness-magnitude predicate.");
+static_assert(any_stale_to_at_least<kStaleToCatastrophic, grant::stale_to<5000>>(),
+              "FIXY-FOUND-024: stale_to<5000> exceeds the catastrophic "
+              "threshold (1024) and must trigger entry 10's magnitude-aware "
+              "reject.");
+static_assert(!any_stale_to_at_least<kStaleToCatastrophic, grant::stale_to<100>>(),
+              "FIXY-FOUND-024: stale_to<100> is below the catastrophic "
+              "threshold (1024) and must NOT trigger entry 10 — small "
+              "windows route through entry 4 with normal AuthorizedReplay "
+              "discharge.");
 static_assert(!any_stale_to_at_least<kStaleToCatastrophic>(),
-    "FIXY-FOUND-024: empty grant pack must return false from the "
-    "magnitude predicate (no stale claim implies no catastrophic "
-    "claim).");
+              "FIXY-FOUND-024: empty grant pack must return false from the "
+              "magnitude predicate (no stale claim implies no catastrophic "
+              "claim).");
 
 // `is_ghost_grant<G>` — true iff G is the `grant::ghost` Usage tag
 // (Usage = Ghost).  Used by the `ghost_runtime_observable` corpus
 // entry to detect ghost-marked bindings that ALSO request runtime-
 // observable effects (Alloc/IO/Block/Bg).  Ghost code is erased at
 // compile time and MUST NOT request runtime presence.
-template <typename G> struct is_ghost_grant
-    : std::false_type {};
-template <> struct is_ghost_grant<grant::ghost>
-    : std::true_type {};
+template <typename G>
+struct is_ghost_grant : std::false_type {};
+template <>
+struct is_ghost_grant<grant::ghost> : std::true_type {};
 
 // `is_observable_effect_grant<G>` — true iff G is `grant::with<...>`
 // and its effect pack contains ANY effect with a runtime observability
@@ -860,8 +805,8 @@ template <> struct is_ghost_grant<grant::ghost>
 // contradictions, the fix is to elevate Init into the observable
 // set here AND add a new §30.14 corpus entry for the specific
 // contradiction — never silently broaden the predicate.
-template <typename G> struct is_observable_effect_grant
-    : std::false_type {};
+template <typename G>
+struct is_observable_effect_grant : std::false_type {};
 // FIXY-FOUND-133: route through effects::is_observable<E> (Pattern B
 // reflection-driven gate in effects/Capabilities.h).  Prior body
 // hardcoded the IN-set `(Alloc || IO || Block || Bg)`; a new Effect
@@ -870,27 +815,26 @@ template <typename G> struct is_observable_effect_grant
 // The atom-helper's switch has no default branch → -Werror=switch
 // reddens the build on a new atom that isn't deliberately classified.
 template <effects::Effect... Es>
-struct is_observable_effect_grant<grant::with<Es...>>
-    : std::bool_constant<(effects::is_observable<Es>() || ...)> {};
+struct is_observable_effect_grant<grant::with<Es...>> : std::bool_constant<(effects::is_observable<Es>() || ...)> {};
 
 // fixy-M-11: structural witnesses lock the IN/OUT membership in.
 // If a future contributor changes the predicate, the corresponding
 // assertion fires and forces a lockstep update to the rationale
 // doc-block above (and a new corpus entry where applicable).
 static_assert(!is_observable_effect_grant<grant::with<effects::Effect::Init>>::value,
-    "fixy-M-11: Init must remain EXCLUDED from observable effects.  "
-    "Update the rationale doc-block AND add a corpus entry if "
-    "the boundary changes.");
+              "fixy-M-11: Init must remain EXCLUDED from observable effects.  "
+              "Update the rationale doc-block AND add a corpus entry if "
+              "the boundary changes.");
 static_assert(!is_observable_effect_grant<grant::with<effects::Effect::Test>>::value,
-    "fixy-M-11: Test must remain EXCLUDED from observable effects.");
-static_assert( is_observable_effect_grant<grant::with<effects::Effect::Alloc>>::value,
-    "fixy-M-11: Alloc must remain IN the observable set.");
-static_assert( is_observable_effect_grant<grant::with<effects::Effect::IO>>::value,
-    "fixy-M-11: IO must remain IN the observable set.");
-static_assert( is_observable_effect_grant<grant::with<effects::Effect::Block>>::value,
-    "fixy-M-11: Block must remain IN the observable set.");
-static_assert( is_observable_effect_grant<grant::with<effects::Effect::Bg>>::value,
-    "fixy-M-11: Bg must remain IN the observable set.");
+              "fixy-M-11: Test must remain EXCLUDED from observable effects.");
+static_assert(is_observable_effect_grant<grant::with<effects::Effect::Alloc>>::value,
+              "fixy-M-11: Alloc must remain IN the observable set.");
+static_assert(is_observable_effect_grant<grant::with<effects::Effect::IO>>::value,
+              "fixy-M-11: IO must remain IN the observable set.");
+static_assert(is_observable_effect_grant<grant::with<effects::Effect::Block>>::value,
+              "fixy-M-11: Block must remain IN the observable set.");
+static_assert(is_observable_effect_grant<grant::with<effects::Effect::Bg>>::value,
+              "fixy-M-11: Bg must remain IN the observable set.");
 
 // ── FIXY-FOUND-019 detectors (Biba/Clark-Wilson integrity dual) ──
 //
@@ -906,56 +850,49 @@ static_assert( is_observable_effect_grant<grant::with<effects::Effect::Bg>>::val
 // tag for raw untrusted input (network bytes, FFI handoffs, raw user
 // text).  Tagged.h:75 declares the source tag; retag_policy<External,
 // IntegrityVerified> is the canonical discharge path (Tagged.h:710).
-template <typename G> struct is_external_source_grant
-    : std::false_type {};
+template <typename G>
+struct is_external_source_grant : std::false_type {};
 template <>
-struct is_external_source_grant<
-    grant::from_source<::crucible::safety::source::External>>
-    : std::true_type {};
+struct is_external_source_grant<grant::from_source<::crucible::safety::source::External>> : std::true_type {};
 
 // `is_trust_verified_grant<G>` — true iff G is `grant::trust_verified`,
 // the high-integrity Trust-axis claim (Grant.h:510).  A binding that
 // engages this is asserting "my output is verified-trustworthy" —
 // the Biba/Clark-Wilson "Constrained Data Item" producer position.
-template <typename G> struct is_trust_verified_grant
-    : std::false_type {};
+template <typename G>
+struct is_trust_verified_grant : std::false_type {};
 template <>
-struct is_trust_verified_grant<grant::trust_verified>
-    : std::true_type {};
+struct is_trust_verified_grant<grant::trust_verified> : std::true_type {};
 
 // `is_trust_assumed_grant<G>` — true iff G is `grant::trust_assumed<
 // Rationale>` (any Rationale NTTP per FOUND-038's axis_query_tag
 // discipline).  The grant is Crucible's Clark-Wilson "Transformation
 // Procedure": developer-documented integrity attestation bridging
 // External → Verified with an audit-grade rationale literal.
-template <typename G> struct is_trust_assumed_grant
-    : std::false_type {};
+template <typename G>
+struct is_trust_assumed_grant : std::false_type {};
 template <auto Rationale>
-struct is_trust_assumed_grant<grant::trust_assumed<Rationale>>
-    : std::true_type {};
+struct is_trust_assumed_grant<grant::trust_assumed<Rationale>> : std::true_type {};
 
 // Structural witnesses — pin the canonical positive/negative cases so
 // a future refactor that changes from_source / trust_verified /
 // trust_assumed shape reds these BEFORE the corpus entry below
 // silently misfires.
-static_assert(is_external_source_grant<
-    grant::from_source<::crucible::safety::source::External>>::value,
-    "FIXY-FOUND-019: from_source<External> must remain detectable as "
-    "the low-integrity provenance tag.  If this reds, source::External "
-    "was renamed or from_source's shape changed.");
-static_assert(!is_external_source_grant<
-    grant::from_source<::crucible::safety::source::Sanitized>>::value,
-    "FIXY-FOUND-019: from_source<Sanitized> must NOT match the "
-    "External detector — Sanitized is the DISCHARGED tag (retag from "
-    "External admitted at Tagged.h:706).");
+static_assert(is_external_source_grant<grant::from_source<::crucible::safety::source::External>>::value,
+              "FIXY-FOUND-019: from_source<External> must remain detectable as "
+              "the low-integrity provenance tag.  If this reds, source::External "
+              "was renamed or from_source's shape changed.");
+static_assert(!is_external_source_grant<grant::from_source<::crucible::safety::source::Sanitized>>::value,
+              "FIXY-FOUND-019: from_source<Sanitized> must NOT match the "
+              "External detector — Sanitized is the DISCHARGED tag (retag from "
+              "External admitted at Tagged.h:706).");
 static_assert(is_trust_verified_grant<grant::trust_verified>::value,
-    "FIXY-FOUND-019: trust_verified must remain detectable as the "
-    "high-integrity Trust claim.");
-static_assert(is_trust_assumed_grant<
-    grant::trust_assumed<grant::axis_query_tag>>::value,
-    "FIXY-FOUND-019: trust_assumed<Rationale> with any Rationale NTTP "
-    "must match the attestation detector.  If this reds, FOUND-038's "
-    "mandatory-Rationale form was broken.");
+              "FIXY-FOUND-019: trust_verified must remain detectable as the "
+              "high-integrity Trust claim.");
+static_assert(is_trust_assumed_grant<grant::trust_assumed<grant::axis_query_tag>>::value,
+              "FIXY-FOUND-019: trust_assumed<Rationale> with any Rationale NTTP "
+              "must match the attestation detector.  If this reds, FOUND-038's "
+              "mandatory-Rationale form was broken.");
 
 // ── FIXY-FOUND-020 detector (Askarov-Hunt termination channel) ────
 //
@@ -981,28 +918,27 @@ static_assert(is_trust_assumed_grant<
 // `cost_constant` which pins Complexity to O(1) and from absence-
 // of-grant which defaults to a more conservative bound per the
 // axis's strict-default policy.
-template <typename G> struct is_cost_unbounded_grant
-    : std::false_type {};
+template <typename G>
+struct is_cost_unbounded_grant : std::false_type {};
 template <>
-struct is_cost_unbounded_grant<grant::cost_unbounded>
-    : std::true_type {};
+struct is_cost_unbounded_grant<grant::cost_unbounded> : std::true_type {};
 
 // Structural witnesses — pin the canonical positive/negative cases
 // so a future refactor that changes cost_unbounded shape OR
 // introduces a divergence-discharging policy reds these BEFORE
 // the corpus entry below silently misfires.
 static_assert(is_cost_unbounded_grant<grant::cost_unbounded>::value,
-    "FIXY-FOUND-020: grant::cost_unbounded must remain detectable as "
-    "the Complexity-axis unbounded-execution claim (Askarov-Hunt-"
-    "Sabelfeld-Sands 2008 termination-channel pattern).  If this "
-    "reds, the grant tag was renamed or relocated.");
+              "FIXY-FOUND-020: grant::cost_unbounded must remain detectable as "
+              "the Complexity-axis unbounded-execution claim (Askarov-Hunt-"
+              "Sabelfeld-Sands 2008 termination-channel pattern).  If this "
+              "reds, the grant tag was renamed or relocated.");
 static_assert(!is_cost_unbounded_grant<grant::cost_constant>::value,
-    "FIXY-FOUND-020: cost_constant must NOT match the unbounded "
-    "detector — cost_constant pins Complexity to O(1), the safe-"
-    "default case that does NOT admit a termination channel.");
+              "FIXY-FOUND-020: cost_constant must NOT match the unbounded "
+              "detector — cost_constant pins Complexity to O(1), the safe-"
+              "default case that does NOT admit a termination channel.");
 static_assert(!is_cost_unbounded_grant<grant::as_secret>::value,
-    "FIXY-FOUND-020: Security-axis grants must NOT match the "
-    "Complexity-axis cost_unbounded detector (cross-axis discipline).");
+              "FIXY-FOUND-020: Security-axis grants must NOT match the "
+              "Complexity-axis cost_unbounded detector (cross-axis discipline).");
 
 // ═════════════════════════════════════════════════════════════════════
 // ── FIXY-FOUND-042 — ImplicitTypeMarker inertness roster ──────────
@@ -1047,8 +983,7 @@ namespace detail::found_042_witness {
 // directly without including Reject.h (which Theory.h ALREADY
 // imports transitively, but the literal form makes the roster
 // self-contained for review).
-using TypeMarker =
-    grant::accept_default_strict_for<dim::DimensionAxis::Type>;
+using TypeMarker = grant::accept_default_strict_for<dim::DimensionAxis::Type>;
 
 // PredicateRef<Predicate> — wraps a per-grant predicate template so
 // it can be stored in a tuple.  `inert_on_marker_v` evaluates the
@@ -1056,27 +991,19 @@ using TypeMarker =
 // is INERT (returns false_type).
 template <template <typename> class Predicate>
 struct PredicateRef {
-    static constexpr bool inert_on_marker_v =
-        !Predicate<TypeMarker>::value;
+    static constexpr bool inert_on_marker_v = !Predicate<TypeMarker>::value;
 };
 
 // Roster of every per-grant predicate that corpus matchers fold
 // through `has_grant_of`.  Order is the definition order above
 // (line-number-sorted).
-using AllCorpusPredicates = std::tuple<
-    PredicateRef<is_secret_grant>,
-    PredicateRef<is_declassify_grant>,
-    PredicateRef<is_io_effect_grant>,
-    PredicateRef<is_internal_grant>,
-    PredicateRef<is_bg_effect_grant>,
-    PredicateRef<is_pure_effect_grant>,         // FOUND-040
-    PredicateRef<is_stale_grant>,
-    PredicateRef<is_ghost_grant>,
-    PredicateRef<is_observable_effect_grant>,
-    PredicateRef<is_external_source_grant>,
-    PredicateRef<is_trust_verified_grant>,
-    PredicateRef<is_trust_assumed_grant>,
-    PredicateRef<is_cost_unbounded_grant>>;
+using AllCorpusPredicates =
+    std::tuple<PredicateRef<is_secret_grant>, PredicateRef<is_declassify_grant>, PredicateRef<is_io_effect_grant>,
+               PredicateRef<is_internal_grant>, PredicateRef<is_bg_effect_grant>,
+               PredicateRef<is_pure_effect_grant>,  // FOUND-040
+               PredicateRef<is_stale_grant>, PredicateRef<is_ghost_grant>, PredicateRef<is_observable_effect_grant>,
+               PredicateRef<is_external_source_grant>, PredicateRef<is_trust_verified_grant>,
+               PredicateRef<is_trust_assumed_grant>, PredicateRef<is_cost_unbounded_grant>>;
 
 // Fold helper — AND-reduce `inert_on_marker_v` over the roster.
 template <typename Tuple>
@@ -1091,42 +1018,38 @@ template <typename Tuple>
 // added to the roster AND that predicate erroneously matches the
 // marker.
 static_assert(all_inert_on_marker<AllCorpusPredicates>(),
-    "FIXY-FOUND-042: every per-grant corpus predicate MUST return "
-    "false_type on accept_default_strict_for<DimensionAxis::Type> "
-    "(the canonical ImplicitTypeMarker).  A predicate that matches "
-    "the marker would treat the wrapper's auto-injection as a "
-    "user-supplied payload claim, polluting §30.14 corpus "
-    "matchers.  Axis-keyed deferred-form specializations (e.g., "
-    "is_secret_grant<accept_default_strict_for<Security>>) MUST "
-    "axis-discriminate via the DimensionAxis NTTP; a permissive "
-    "accept_default_strict_for<auto> specialization is FORBIDDEN.");
+              "FIXY-FOUND-042: every per-grant corpus predicate MUST return "
+              "false_type on accept_default_strict_for<DimensionAxis::Type> "
+              "(the canonical ImplicitTypeMarker).  A predicate that matches "
+              "the marker would treat the wrapper's auto-injection as a "
+              "user-supplied payload claim, polluting §30.14 corpus "
+              "matchers.  Axis-keyed deferred-form specializations (e.g., "
+              "is_secret_grant<accept_default_strict_for<Security>>) MUST "
+              "axis-discriminate via the DimensionAxis NTTP; a permissive "
+              "accept_default_strict_for<auto> specialization is FORBIDDEN.");
 
 // (2) Cardinality pin — the count of audited predicates is
 // STRUCTURALLY pinned.  Adding a new per-grant predicate without
 // extending the roster fires a build error here (the count
 // asserts diverges from the comment-stated count).  Reciprocal:
 // removing a predicate without bumping the count also fires.
-inline constexpr std::size_t kAuditedCorpusPredicateCount =
-    std::tuple_size_v<AllCorpusPredicates>;
-static_assert(kAuditedCorpusPredicateCount == 13,
-    "FIXY-FOUND-042 cardinality pin: 13 per-grant predicates "
-    "currently audited.  Bumping requires (a) appending the new "
-    "PredicateRef<is_NEW_grant> to AllCorpusPredicates AND (b) "
-    "incrementing this literal.  A drift between roster and count "
-    "fires here.");
+inline constexpr std::size_t kAuditedCorpusPredicateCount = std::tuple_size_v<AllCorpusPredicates>;
+static_assert(kAuditedCorpusPredicateCount == 13, "FIXY-FOUND-042 cardinality pin: 13 per-grant predicates "
+                                                  "currently audited.  Bumping requires (a) appending the new "
+                                                  "PredicateRef<is_NEW_grant> to AllCorpusPredicates AND (b) "
+                                                  "incrementing this literal.  A drift between roster and count "
+                                                  "fires here.");
 
 // (3) Per-predicate explicit witnesses — pin each axis-keyed
 // specialization individually.  These are redundant with (1) but
 // surface the SPECIFIC predicate at fault when a diagnostic
 // fires, rather than the opaque "all_inert_on_marker fold".
-static_assert(!is_secret_grant<TypeMarker>::value,
-    "FIXY-FOUND-042: is_secret_grant's accept_default_strict_for"
-    "<Security> specialization MUST axis-discriminate — Type-axis "
-    "marker must NOT match.");
-static_assert(!is_pure_effect_grant<TypeMarker>::value,
-    "FIXY-FOUND-042: is_pure_effect_grant's accept_default_strict"
-    "_for<Effect> specialization MUST axis-discriminate — "
-    "Type-axis marker must NOT match (FOUND-040 closure).");
+static_assert(!is_secret_grant<TypeMarker>::value, "FIXY-FOUND-042: is_secret_grant's accept_default_strict_for"
+                                                   "<Security> specialization MUST axis-discriminate — Type-axis "
+                                                   "marker must NOT match.");
+static_assert(!is_pure_effect_grant<TypeMarker>::value, "FIXY-FOUND-042: is_pure_effect_grant's accept_default_strict"
+                                                        "_for<Effect> specialization MUST axis-discriminate — "
+                                                        "Type-axis marker must NOT match (FOUND-040 closure).");
 
 // (4) Soundness chain — IF every per-grant predicate is inert on
 // ImplicitTypeMarker (assertion (1) above), THEN the
@@ -1169,32 +1092,30 @@ static_assert(!is_pure_effect_grant<TypeMarker>::value,
 // payload position.  Future Secret-equivalent wrappers (e.g. a
 // `Classified<T>` if it ships) would extend via additional
 // specializations on the same template.
-template <typename T> struct is_secret_type
-    : std::false_type {};
 template <typename T>
-struct is_secret_type<::crucible::safety::Secret<T>>
-    : std::true_type {};
+struct is_secret_type : std::false_type {};
+template <typename T>
+struct is_secret_type<::crucible::safety::Secret<T>> : std::true_type {};
 
 // Structural witnesses — pin the canonical positive/negative cases
 // so a future refactor that changes Secret<T>'s template shape OR
 // adds a new Secret-equivalent wrapper reds these BEFORE entry 9
 // silently misfires.
 static_assert(is_secret_type<::crucible::safety::Secret<int>>::value,
-    "FIXY-FOUND-022: Secret<int> must match the payload-secret "
-    "detector — the canonical Secret<T>-wrapped payload position.  "
-    "If this reds, Secret's template shape changed (e.g., added a "
-    "second template parameter) and the specialization above needs "
-    "to follow.");
-static_assert(!is_secret_type<int>::value,
-    "FIXY-FOUND-022: bare int must NOT match the secret-payload "
-    "detector — type-level secrecy requires explicit Secret<T> "
-    "wrapping at the payload position.");
+              "FIXY-FOUND-022: Secret<int> must match the payload-secret "
+              "detector — the canonical Secret<T>-wrapped payload position.  "
+              "If this reds, Secret's template shape changed (e.g., added a "
+              "second template parameter) and the specialization above needs "
+              "to follow.");
+static_assert(!is_secret_type<int>::value, "FIXY-FOUND-022: bare int must NOT match the secret-payload "
+                                           "detector — type-level secrecy requires explicit Secret<T> "
+                                           "wrapping at the payload position.");
 static_assert(!is_secret_type<::crucible::safety::Secret<int>*>::value,
-    "FIXY-FOUND-022: pointer-to-Secret must NOT match — the Secret "
-    "wrapping is one indirection level removed and the pointer "
-    "payload itself is not classified.  If callers want pointer-to-"
-    "Secret to fire entry 9, that is a separate specialization "
-    "decision (covered by a future FIXY-FOUND-* task).");
+              "FIXY-FOUND-022: pointer-to-Secret must NOT match — the Secret "
+              "wrapping is one indirection level removed and the pointer "
+              "payload itself is not classified.  If callers want pointer-to-"
+              "Secret to fire entry 9, that is a separate specialization "
+              "decision (covered by a future FIXY-FOUND-* task).");
 
 // ── FIXY-FOUND-023 sentinel (SecLevel growth audit) ────────────────
 //
@@ -1227,26 +1148,25 @@ static_assert(!is_secret_type<::crucible::safety::Secret<int>*>::value,
 // future SecLevel tier additions" surface structurally — adding
 // a SecLevel enumerator now reds the build instead of silently
 // bypassing the corpus.
-static_assert(std::meta::enumerators_of(
-        ^^::crucible::safety::fn::SecLevel).size() == 5,
-    "FIXY-FOUND-023: safety::SecLevel grew beyond its 5-enumerator "
-    "audit anchor (Unclassified/Public/Internal/Classified/Secret "
-    "as of FOUND-023 ship).  `is_secret_grant` in this header "
-    "hardcodes specializations for `as_secret`, `as_classified`, "
-    "`declassify<P>`, and `accept_default_strict_for<Security>` — "
-    "all of which engage secrecy-raising or declassification on "
-    "the existing 5-tier lattice.  A new SecLevel enumerator does "
-    "NOT automatically extend `is_secret_grant`; the maintainer "
-    "MUST audit: (a) is the new tier secrecy-raising (above the "
-    "old Secret top)?  → add an `is_secret_grant` specialization "
-    "for the corresponding `as_<tier>` grant.  (b) is the new "
-    "tier projection-down (between Unclassified and Public, or "
-    "below Unclassified)?  → no `is_secret_grant` update needed "
-    "(downward projection is not a silencer per FOUND-022 entry 9 "
-    "cite).  Other Security-axis-aware detectors across the "
-    "codebase (corpus matchers, retag_policy specializations, "
-    "stance tables) should be re-audited regardless.  Bump this "
-    "5 to the new count after auditing.");
+static_assert(std::meta::enumerators_of(^^::crucible::safety::fn::SecLevel).size() == 5,
+              "FIXY-FOUND-023: safety::SecLevel grew beyond its 5-enumerator "
+              "audit anchor (Unclassified/Public/Internal/Classified/Secret "
+              "as of FOUND-023 ship).  `is_secret_grant` in this header "
+              "hardcodes specializations for `as_secret`, `as_classified`, "
+              "`declassify<P>`, and `accept_default_strict_for<Security>` — "
+              "all of which engage secrecy-raising or declassification on "
+              "the existing 5-tier lattice.  A new SecLevel enumerator does "
+              "NOT automatically extend `is_secret_grant`; the maintainer "
+              "MUST audit: (a) is the new tier secrecy-raising (above the "
+              "old Secret top)?  → add an `is_secret_grant` specialization "
+              "for the corresponding `as_<tier>` grant.  (b) is the new "
+              "tier projection-down (between Unclassified and Public, or "
+              "below Unclassified)?  → no `is_secret_grant` update needed "
+              "(downward projection is not a silencer per FOUND-022 entry 9 "
+              "cite).  Other Security-axis-aware detectors across the "
+              "codebase (corpus matchers, retag_policy specializations, "
+              "stance tables) should be re-audited regardless.  Bump this "
+              "5 to the new count after auditing.");
 
 // ── FIXY-FOUND-025: shared full-diagnostic storage ─────────────────
 //
@@ -1275,19 +1195,18 @@ static_assert(std::meta::enumerators_of(
 // `name` and `cite` to the current entry's static methods), which
 // lets a single replace_all migrate the entire corpus in one edit.
 template <auto NameFn, auto CiteFn>
-inline constexpr std::string_view kCorpusFullDiagnostic =
-    []() consteval -> std::string_view {
-        std::string msg;
-        msg += "fixy::fn<Type, Grants...> [tier 5: "
-               "NotInTheoryCorpus]: binding matches §30.14 "
-               "unsoundness corpus entry: ";
-        std::string_view name_sv = NameFn();
-        std::string_view cite_sv = CiteFn();
-        msg.append(name_sv.data(), name_sv.size());
-        msg += ".  ";
-        msg.append(cite_sv.data(), cite_sv.size());
-        return std::define_static_string(msg);
-    }();
+inline constexpr std::string_view kCorpusFullDiagnostic = []() consteval -> std::string_view {
+    std::string msg;
+    msg += "fixy::fn<Type, Grants...> [tier 5: "
+           "NotInTheoryCorpus]: binding matches §30.14 "
+           "unsoundness corpus entry: ";
+    std::string_view name_sv = NameFn();
+    std::string_view cite_sv = CiteFn();
+    msg.append(name_sv.data(), name_sv.size());
+    msg += ".  ";
+    msg.append(cite_sv.data(), cite_sv.size());
+    return std::define_static_string(msg);
+}();
 
 }  // namespace detail
 
@@ -1338,10 +1257,8 @@ struct classified_io_without_declassify {
         // still admits; declassify-only + IO still admits) unchanged;
         // the predicate is now structurally honest.  Future downstream
         // consumers reading `has_secret` see what the name claims.
-        const bool has_secret =
-            detail::has_grant_of<detail::is_secret_carrier, Grants...>();
-        const bool has_io =
-            detail::has_grant_of<detail::is_io_effect_grant, Grants...>();
+        const bool has_secret = detail::has_grant_of<detail::is_secret_carrier, Grants...>();
+        const bool has_io = detail::has_grant_of<detail::is_io_effect_grant, Grants...>();
         // FIXY-FOUND-006: per-axis declassify discipline (Hunt-Sands).
         // Pre-fix `has_declassify = has_grant_of<is_declassify_grant>`
         // silenced Entry 1 on ANY declassify, including policies whose
@@ -1357,15 +1274,11 @@ struct classified_io_without_declassify {
         // forcing the user to either (a) drop the as_secret/IO pair or
         // (b) ship a new `secret_policy::AuthorizedIo`-style tag whose
         // `axes_discharged_of_v` includes DischargeAxis::IO.
-        const bool has_declassify =
-            detail::has_declassify_for_axis<
-                detail::DischargeAxis::IO, Grants...>();
+        const bool has_declassify = detail::has_declassify_for_axis<detail::DischargeAxis::IO, Grants...>();
         return has_secret && has_io && !has_declassify;
     }
 
-    static constexpr std::string_view name() noexcept {
-        return "classified_io_without_declassify";
-    }
+    static constexpr std::string_view name() noexcept { return "classified_io_without_declassify"; }
 
     static constexpr std::string_view cite() noexcept {
         return "Sabelfeld-Myers 2003 (after Volpano-Smith-Irvine 1996 "
@@ -1397,8 +1310,7 @@ struct classified_io_without_declassify {
         // now lives in a single inline-variable-template instantiation
         // keyed on this entry's (&name, &cite) NTTP function-pointer
         // pair, dedup'd across all TUs at link time.
-        return ::crucible::fixy::theory::detail::kCorpusFullDiagnostic<
-            &name, &cite>;
+        return ::crucible::fixy::theory::detail::kCorpusFullDiagnostic<&name, &cite>;
     }
 };
 
@@ -1454,19 +1366,13 @@ struct classified_bg_without_declassify {
         //     policy lifts Bg; remediation reduces to dropping the
         //     as_secret/Bg pair until a `secret_policy::AuthorizedBg`-
         //     style tag ships.
-        const bool has_secret =
-            detail::has_grant_of<detail::is_secret_carrier, Grants...>();
-        const bool has_bg =
-            detail::has_grant_of<detail::is_bg_effect_grant, Grants...>();
-        const bool has_declassify =
-            detail::has_declassify_for_axis<
-                detail::DischargeAxis::Bg, Grants...>();
+        const bool has_secret = detail::has_grant_of<detail::is_secret_carrier, Grants...>();
+        const bool has_bg = detail::has_grant_of<detail::is_bg_effect_grant, Grants...>();
+        const bool has_declassify = detail::has_declassify_for_axis<detail::DischargeAxis::Bg, Grants...>();
         return has_secret && has_bg && !has_declassify;
     }
 
-    static constexpr std::string_view name() noexcept {
-        return "classified_bg_without_declassify";
-    }
+    static constexpr std::string_view name() noexcept { return "classified_bg_without_declassify"; }
 
     static constexpr std::string_view cite() noexcept {
         return "Smith-Volpano 1998 / Sabelfeld-Sands 2000 / "
@@ -1484,8 +1390,7 @@ struct classified_bg_without_declassify {
         // now lives in a single inline-variable-template instantiation
         // keyed on this entry's (&name, &cite) NTTP function-pointer
         // pair, dedup'd across all TUs at link time.
-        return ::crucible::fixy::theory::detail::kCorpusFullDiagnostic<
-            &name, &cite>;
+        return ::crucible::fixy::theory::detail::kCorpusFullDiagnostic<&name, &cite>;
     }
 };
 
@@ -1559,10 +1464,8 @@ struct classified_bg_without_declassify {
 struct staleness_secret_without_declassify {
     template <typename Type, typename... Grants>
     [[nodiscard]] static consteval bool matches() noexcept {
-        const bool has_secret =
-            detail::has_grant_of<detail::is_secret_grant, Grants...>();
-        const bool has_stale =
-            detail::has_grant_of<detail::is_stale_grant, Grants...>();
+        const bool has_secret = detail::has_grant_of<detail::is_secret_grant, Grants...>();
+        const bool has_stale = detail::has_grant_of<detail::is_stale_grant, Grants...>();
         // fixy-A4-015: axis-specific discharge.  Pre-A4-015 ANY
         // declassify grant silenced this matcher — including
         // policies (AuditedLogging / WireSerialize / ...) whose
@@ -1575,14 +1478,11 @@ struct staleness_secret_without_declassify {
         // others (each must specialize `axes_discharged_of` to lift
         // the Staleness bit explicitly).
         const bool has_staleness_discharge =
-            detail::has_declassify_for_axis<
-                detail::DischargeAxis::Staleness, Grants...>();
+            detail::has_declassify_for_axis<detail::DischargeAxis::Staleness, Grants...>();
         return has_secret && has_stale && !has_staleness_discharge;
     }
 
-    static constexpr std::string_view name() noexcept {
-        return "staleness_secret_without_declassify";
-    }
+    static constexpr std::string_view name() noexcept { return "staleness_secret_without_declassify"; }
 
     static constexpr std::string_view cite() noexcept {
         // fixy-A4-024: prose hierarchy made explicit.  Pre-A4-024 all
@@ -1633,8 +1533,7 @@ struct staleness_secret_without_declassify {
         // now lives in a single inline-variable-template instantiation
         // keyed on this entry's (&name, &cite) NTTP function-pointer
         // pair, dedup'd across all TUs at link time.
-        return ::crucible::fixy::theory::detail::kCorpusFullDiagnostic<
-            &name, &cite>;
+        return ::crucible::fixy::theory::detail::kCorpusFullDiagnostic<&name, &cite>;
     }
 };
 
@@ -1689,17 +1588,12 @@ struct staleness_secret_without_declassify {
 struct ghost_runtime_observable {
     template <typename Type, typename... Grants>
     [[nodiscard]] static consteval bool matches() noexcept {
-        const bool has_ghost =
-            detail::has_grant_of<detail::is_ghost_grant, Grants...>();
-        const bool has_observable =
-            detail::has_grant_of<detail::is_observable_effect_grant,
-                                 Grants...>();
+        const bool has_ghost = detail::has_grant_of<detail::is_ghost_grant, Grants...>();
+        const bool has_observable = detail::has_grant_of<detail::is_observable_effect_grant, Grants...>();
         return has_ghost && has_observable;
     }
 
-    static constexpr std::string_view name() noexcept {
-        return "ghost_runtime_observable";
-    }
+    static constexpr std::string_view name() noexcept { return "ghost_runtime_observable"; }
 
     static constexpr std::string_view cite() noexcept {
         return "Filliâtre-Gondelman-Paskevich 2014 'The Spirit of "
@@ -1720,8 +1614,7 @@ struct ghost_runtime_observable {
         // now lives in a single inline-variable-template instantiation
         // keyed on this entry's (&name, &cite) NTTP function-pointer
         // pair, dedup'd across all TUs at link time.
-        return ::crucible::fixy::theory::detail::kCorpusFullDiagnostic<
-            &name, &cite>;
+        return ::crucible::fixy::theory::detail::kCorpusFullDiagnostic<&name, &cite>;
     }
 };
 
@@ -1781,10 +1674,8 @@ struct ghost_runtime_observable {
 struct internal_io_without_declassify {
     template <typename Type, typename... Grants>
     [[nodiscard]] static consteval bool matches() noexcept {
-        const bool has_internal =
-            detail::has_grant_of<detail::is_internal_grant, Grants...>();
-        const bool has_io =
-            detail::has_grant_of<detail::is_io_effect_grant, Grants...>();
+        const bool has_internal = detail::has_grant_of<detail::is_internal_grant, Grants...>();
+        const bool has_io = detail::has_grant_of<detail::is_io_effect_grant, Grants...>();
         // FIXY-FOUND-006: per-axis declassify discipline (Hunt-Sands).
         // Parallel to the Entry 1 fix.  Pre-fix `has_declassify =
         // has_grant_of<is_declassify_grant>` silenced Entry 5 on ANY
@@ -1806,15 +1697,11 @@ struct internal_io_without_declassify {
         // must drop the as_internal/IO pair or ship a new
         // `secret_policy::AuthorizedIo`-style tag whose
         // `axes_discharged_of_v` includes DischargeAxis::IO.
-        const bool has_declassify =
-            detail::has_declassify_for_axis<
-                detail::DischargeAxis::IO, Grants...>();
+        const bool has_declassify = detail::has_declassify_for_axis<detail::DischargeAxis::IO, Grants...>();
         return has_internal && has_io && !has_declassify;
     }
 
-    static constexpr std::string_view name() noexcept {
-        return "internal_io_without_declassify";
-    }
+    static constexpr std::string_view name() noexcept { return "internal_io_without_declassify"; }
 
     static constexpr std::string_view cite() noexcept {
         return "Bell-LaPadula 1973 / Volpano-Smith-Irvine 1996 / "
@@ -1835,8 +1722,7 @@ struct internal_io_without_declassify {
         // now lives in a single inline-variable-template instantiation
         // keyed on this entry's (&name, &cite) NTTP function-pointer
         // pair, dedup'd across all TUs at link time.
-        return ::crucible::fixy::theory::detail::kCorpusFullDiagnostic<
-            &name, &cite>;
+        return ::crucible::fixy::theory::detail::kCorpusFullDiagnostic<&name, &cite>;
     }
 };
 
@@ -1897,10 +1783,8 @@ struct internal_io_without_declassify {
 struct internal_bg_without_declassify {
     template <typename Type, typename... Grants>
     [[nodiscard]] static consteval bool matches() noexcept {
-        const bool has_internal =
-            detail::has_grant_of<detail::is_internal_grant, Grants...>();
-        const bool has_bg =
-            detail::has_grant_of<detail::is_bg_effect_grant, Grants...>();
+        const bool has_internal = detail::has_grant_of<detail::is_internal_grant, Grants...>();
+        const bool has_bg = detail::has_grant_of<detail::is_bg_effect_grant, Grants...>();
         // FIXY-FOUND-006: per-axis declassify discipline (Hunt-Sands).
         // Parallel to the Entry 2 fix.  Pre-fix `has_declassify =
         // has_grant_of<is_declassify_grant>` silenced Entry 6 on ANY
@@ -1923,15 +1807,11 @@ struct internal_bg_without_declassify {
         // as_internal/Bg pair or ship a new
         // `secret_policy::CrossThreadAuthorizedDisclosure`-style tag
         // whose `axes_discharged_of_v` includes DischargeAxis::Bg.
-        const bool has_declassify =
-            detail::has_declassify_for_axis<
-                detail::DischargeAxis::Bg, Grants...>();
+        const bool has_declassify = detail::has_declassify_for_axis<detail::DischargeAxis::Bg, Grants...>();
         return has_internal && has_bg && !has_declassify;
     }
 
-    static constexpr std::string_view name() noexcept {
-        return "internal_bg_without_declassify";
-    }
+    static constexpr std::string_view name() noexcept { return "internal_bg_without_declassify"; }
 
     static constexpr std::string_view cite() noexcept {
         return "Bell-LaPadula 1973 / Smith-Volpano 1998 / "
@@ -1958,8 +1838,7 @@ struct internal_bg_without_declassify {
         // now lives in a single inline-variable-template instantiation
         // keyed on this entry's (&name, &cite) NTTP function-pointer
         // pair, dedup'd across all TUs at link time.
-        return ::crucible::fixy::theory::detail::kCorpusFullDiagnostic<
-            &name, &cite>;
+        return ::crucible::fixy::theory::detail::kCorpusFullDiagnostic<&name, &cite>;
     }
 };
 
@@ -2022,18 +1901,13 @@ struct internal_bg_without_declassify {
 struct external_to_verified_without_attest {
     template <typename Type, typename... Grants>
     [[nodiscard]] static consteval bool matches() noexcept {
-        const bool has_external =
-            detail::has_grant_of<detail::is_external_source_grant, Grants...>();
-        const bool has_verified =
-            detail::has_grant_of<detail::is_trust_verified_grant, Grants...>();
-        const bool has_attest =
-            detail::has_grant_of<detail::is_trust_assumed_grant, Grants...>();
+        const bool has_external = detail::has_grant_of<detail::is_external_source_grant, Grants...>();
+        const bool has_verified = detail::has_grant_of<detail::is_trust_verified_grant, Grants...>();
+        const bool has_attest = detail::has_grant_of<detail::is_trust_assumed_grant, Grants...>();
         return has_external && has_verified && !has_attest;
     }
 
-    static constexpr std::string_view name() noexcept {
-        return "external_to_verified_without_attest";
-    }
+    static constexpr std::string_view name() noexcept { return "external_to_verified_without_attest"; }
 
     static constexpr std::string_view cite() noexcept {
         return "Biba 1977 'Integrity Considerations for Secure "
@@ -2055,8 +1929,7 @@ struct external_to_verified_without_attest {
         // now lives in a single inline-variable-template instantiation
         // keyed on this entry's (&name, &cite) NTTP function-pointer
         // pair, dedup'd across all TUs at link time.
-        return ::crucible::fixy::theory::detail::kCorpusFullDiagnostic<
-            &name, &cite>;
+        return ::crucible::fixy::theory::detail::kCorpusFullDiagnostic<&name, &cite>;
     }
 };
 
@@ -2099,20 +1972,14 @@ struct secret_unbounded_termination_channel {
         // payload + cost_unbounded just as it does on as_secret
         // grant + cost_unbounded.
         const bool has_secret =
-            detail::has_grant_of<detail::is_secret_grant, Grants...>()
-            || detail::is_secret_type<Type>::value;
-        const bool has_unbounded =
-            detail::has_grant_of<detail::is_cost_unbounded_grant,
-                                 Grants...>();
+            detail::has_grant_of<detail::is_secret_grant, Grants...>() || detail::is_secret_type<Type>::value;
+        const bool has_unbounded = detail::has_grant_of<detail::is_cost_unbounded_grant, Grants...>();
         const bool has_termination_discharge =
-            detail::has_declassify_for_axis<
-                detail::DischargeAxis::Termination, Grants...>();
+            detail::has_declassify_for_axis<detail::DischargeAxis::Termination, Grants...>();
         return has_secret && has_unbounded && !has_termination_discharge;
     }
 
-    static constexpr std::string_view name() noexcept {
-        return "secret_unbounded_termination_channel";
-    }
+    static constexpr std::string_view name() noexcept { return "secret_unbounded_termination_channel"; }
 
     static constexpr std::string_view cite() noexcept {
         return "Askarov-Hunt-Sabelfeld-Sands 2008 'Termination-"
@@ -2148,8 +2015,7 @@ struct secret_unbounded_termination_channel {
         // now lives in a single inline-variable-template instantiation
         // keyed on this entry's (&name, &cite) NTTP function-pointer
         // pair, dedup'd across all TUs at link time.
-        return ::crucible::fixy::theory::detail::kCorpusFullDiagnostic<
-            &name, &cite>;
+        return ::crucible::fixy::theory::detail::kCorpusFullDiagnostic<&name, &cite>;
     }
 };
 
@@ -2245,26 +2111,18 @@ struct secret_catastrophic_staleness {
         // FOUND-022 strengthening: type-level Secret<T> AND
         // grant-level secrecy claim both count as engagement.
         const bool has_secret =
-            detail::has_grant_of<detail::is_secret_grant, Grants...>()
-            || detail::is_secret_type<Type>::value;
+            detail::has_grant_of<detail::is_secret_grant, Grants...>() || detail::is_secret_type<Type>::value;
         // FOUND-024 magnitude predicate: catastrophic window
         // (TauMax >= 1024) AT THE TYPE LEVEL.
-        const bool has_catastrophic_stale =
-            detail::any_stale_to_at_least<
-                detail::kStaleToCatastrophic, Grants...>();
+        const bool has_catastrophic_stale = detail::any_stale_to_at_least<detail::kStaleToCatastrophic, Grants...>();
         // FOUND-024 discharge: AuthorizedReplay lifts Staleness but
         // NOT CatastrophicReplay; entry 10 requires the latter.
         const bool has_catastrophic_discharge =
-            detail::has_declassify_for_axis<
-                detail::DischargeAxis::CatastrophicReplay,
-                Grants...>();
-        return has_secret && has_catastrophic_stale &&
-               !has_catastrophic_discharge;
+            detail::has_declassify_for_axis<detail::DischargeAxis::CatastrophicReplay, Grants...>();
+        return has_secret && has_catastrophic_stale && !has_catastrophic_discharge;
     }
 
-    static constexpr std::string_view name() noexcept {
-        return "secret_catastrophic_staleness";
-    }
+    static constexpr std::string_view name() noexcept { return "secret_catastrophic_staleness"; }
 
     static constexpr std::string_view cite() noexcept {
         return "Askarov-Hunt-Sabelfeld-Sands 2008 'Termination-"
@@ -2302,24 +2160,19 @@ struct secret_catastrophic_staleness {
         // now lives in a single inline-variable-template instantiation
         // keyed on this entry's (&name, &cite) NTTP function-pointer
         // pair, dedup'd across all TUs at link time.
-        return ::crucible::fixy::theory::detail::kCorpusFullDiagnostic<
-            &name, &cite>;
+        return ::crucible::fixy::theory::detail::kCorpusFullDiagnostic<&name, &cite>;
     }
 };
 
 struct secret_payload_without_security_claim {
     template <typename Type, typename... Grants>
     [[nodiscard]] static consteval bool matches() noexcept {
-        const bool type_is_secret =
-            detail::is_secret_type<Type>::value;
-        const bool has_security_engagement =
-            detail::has_grant_of<detail::is_secret_grant, Grants...>();
+        const bool type_is_secret = detail::is_secret_type<Type>::value;
+        const bool has_security_engagement = detail::has_grant_of<detail::is_secret_grant, Grants...>();
         return type_is_secret && !has_security_engagement;
     }
 
-    static constexpr std::string_view name() noexcept {
-        return "secret_payload_without_security_claim";
-    }
+    static constexpr std::string_view name() noexcept { return "secret_payload_without_security_claim"; }
 
     static constexpr std::string_view cite() noexcept {
         return "Sabelfeld-Sands 2009 'Declassification: Dimensions "
@@ -2360,8 +2213,7 @@ struct secret_payload_without_security_claim {
         // now lives in a single inline-variable-template instantiation
         // keyed on this entry's (&name, &cite) NTTP function-pointer
         // pair, dedup'd across all TUs at link time.
-        return ::crucible::fixy::theory::detail::kCorpusFullDiagnostic<
-            &name, &cite>;
+        return ::crucible::fixy::theory::detail::kCorpusFullDiagnostic<&name, &cite>;
     }
 };
 
@@ -2397,18 +2249,15 @@ namespace detail {
 //
 // To bump corpus_size_v: append to this tuple AND increment
 // corpus_size_v (sentinel below catches forgetting either side).
-using CorpusEntries = std::tuple<
-    corpus::classified_io_without_declassify,
-    corpus::classified_bg_without_declassify,
-    corpus::staleness_secret_without_declassify,
-    corpus::ghost_runtime_observable,
-    corpus::internal_io_without_declassify,
-    corpus::internal_bg_without_declassify,
-    corpus::external_to_verified_without_attest,        // FOUND-019 Biba/Clark-Wilson integrity dual
-    corpus::secret_unbounded_termination_channel,       // FOUND-020 Askarov-Hunt termination channel
-    corpus::secret_payload_without_security_claim,      // FOUND-022 payload-classification opacity closure
-    corpus::secret_catastrophic_staleness               // FOUND-024 staleness magnitude gradient
->;
+using CorpusEntries =
+    std::tuple<corpus::classified_io_without_declassify, corpus::classified_bg_without_declassify,
+               corpus::staleness_secret_without_declassify, corpus::ghost_runtime_observable,
+               corpus::internal_io_without_declassify, corpus::internal_bg_without_declassify,
+               corpus::external_to_verified_without_attest,  // FOUND-019 Biba/Clark-Wilson integrity dual
+               corpus::secret_unbounded_termination_channel,  // FOUND-020 Askarov-Hunt termination channel
+               corpus::secret_payload_without_security_claim,  // FOUND-022 payload-classification opacity closure
+               corpus::secret_catastrophic_staleness  // FOUND-024 staleness magnitude gradient
+               >;
 
 // Fold over CorpusEntries, returning Extractor(Entry) for the first
 // matching Entry's accessor, or empty string_view if none match.
@@ -2416,8 +2265,7 @@ using CorpusEntries = std::tuple<
 // std::string_view (the accessor selection — cite / name /
 // full_diagnostic).
 template <typename Type, typename... Grants, typename Extractor>
-[[nodiscard]] consteval std::string_view
-corpus_first_match_string_(Extractor extractor) noexcept {
+[[nodiscard]] consteval std::string_view corpus_first_match_string_(Extractor extractor) noexcept {
     std::string_view result{};
     bool found = false;
     [&]<std::size_t... Is>(std::index_sequence<Is...>) consteval {
@@ -2427,8 +2275,7 @@ corpus_first_match_string_(Extractor extractor) noexcept {
                 found = true;
             }
         };
-        (check.template operator()<
-            std::tuple_element_t<Is, CorpusEntries>>(), ...);
+        (check.template operator()<std::tuple_element_t<Is, CorpusEntries>>(), ...);
     }(std::make_index_sequence<std::tuple_size_v<CorpusEntries>>{});
     return result;
 }
@@ -2442,14 +2289,12 @@ template <typename Type, typename... Grants>
     // now derives from the tuple, eliminating FOUND-021 silent-bug
     // surface.
     return [&]<std::size_t... Is>(std::index_sequence<Is...>) consteval {
-        return (std::tuple_element_t<Is, detail::CorpusEntries>
-                    ::template matches<Type, Grants...>() || ...);
+        return (std::tuple_element_t<Is, detail::CorpusEntries>::template matches<Type, Grants...>() || ...);
     }(std::make_index_sequence<std::tuple_size_v<detail::CorpusEntries>>{});
 }
 
 template <typename Type, typename... Grants>
-inline constexpr bool IsInUnsoundnessCorpus_v =
-    is_in_unsoundness_corpus<Type, Grants...>();
+inline constexpr bool IsInUnsoundnessCorpus_v = is_in_unsoundness_corpus<Type, Grants...>();
 
 // ═════════════════════════════════════════════════════════════════════
 // ── corpus_size_v — count sentinel for the maintenance protocol ────
@@ -2505,23 +2350,18 @@ struct entry_witness {
 // what `corpus_size_v` is declared to be.  This is what makes the
 // drift static_assert below load-bearing rather than tautological.
 inline constexpr std::array kRoster = {
-    entry_witness{corpus::classified_io_without_declassify::name(),
-                  corpus::classified_io_without_declassify::cite(),
+    entry_witness{corpus::classified_io_without_declassify::name(), corpus::classified_io_without_declassify::cite(),
                   corpus::classified_io_without_declassify::full_diagnostic()},
-    entry_witness{corpus::classified_bg_without_declassify::name(),
-                  corpus::classified_bg_without_declassify::cite(),
+    entry_witness{corpus::classified_bg_without_declassify::name(), corpus::classified_bg_without_declassify::cite(),
                   corpus::classified_bg_without_declassify::full_diagnostic()},
     entry_witness{corpus::staleness_secret_without_declassify::name(),
                   corpus::staleness_secret_without_declassify::cite(),
                   corpus::staleness_secret_without_declassify::full_diagnostic()},
-    entry_witness{corpus::ghost_runtime_observable::name(),
-                  corpus::ghost_runtime_observable::cite(),
+    entry_witness{corpus::ghost_runtime_observable::name(), corpus::ghost_runtime_observable::cite(),
                   corpus::ghost_runtime_observable::full_diagnostic()},
-    entry_witness{corpus::internal_io_without_declassify::name(),
-                  corpus::internal_io_without_declassify::cite(),
+    entry_witness{corpus::internal_io_without_declassify::name(), corpus::internal_io_without_declassify::cite(),
                   corpus::internal_io_without_declassify::full_diagnostic()},
-    entry_witness{corpus::internal_bg_without_declassify::name(),
-                  corpus::internal_bg_without_declassify::cite(),
+    entry_witness{corpus::internal_bg_without_declassify::name(), corpus::internal_bg_without_declassify::cite(),
                   corpus::internal_bg_without_declassify::full_diagnostic()},
     entry_witness{corpus::external_to_verified_without_attest::name(),
                   corpus::external_to_verified_without_attest::cite(),
@@ -2532,17 +2372,15 @@ inline constexpr std::array kRoster = {
     entry_witness{corpus::secret_payload_without_security_claim::name(),
                   corpus::secret_payload_without_security_claim::cite(),
                   corpus::secret_payload_without_security_claim::full_diagnostic()},
-    entry_witness{corpus::secret_catastrophic_staleness::name(),
-                  corpus::secret_catastrophic_staleness::cite(),
+    entry_witness{corpus::secret_catastrophic_staleness::name(), corpus::secret_catastrophic_staleness::cite(),
                   corpus::secret_catastrophic_staleness::full_diagnostic()},
 };
-static_assert(kRoster.size() == corpus_size_v,
-    "fixy-L-09/L-10: corpus_size_v drifted from the actual entry "
-    "roster.  Re-audit the OR fold in is_in_unsoundness_corpus, the "
-    "if-chains in corpus_cite_for_v / corpus_entry_name_for_v / "
-    "corpus_full_diagnostic_v, AND this roster array.  The "
-    "discipline block at the top of Theory.h enumerates the "
-    "5-step PR shape.");
+static_assert(kRoster.size() == corpus_size_v, "fixy-L-09/L-10: corpus_size_v drifted from the actual entry "
+                                               "roster.  Re-audit the OR fold in is_in_unsoundness_corpus, the "
+                                               "if-chains in corpus_cite_for_v / corpus_entry_name_for_v / "
+                                               "corpus_full_diagnostic_v, AND this roster array.  The "
+                                               "discipline block at the top of Theory.h enumerates the "
+                                               "5-step PR shape.");
 
 // Roster entries must each surface a NON-EMPTY name + cite — every
 // corpus struct ships these via `define_static_string` literals.
@@ -2551,14 +2389,18 @@ static_assert(kRoster.size() == corpus_size_v,
 // diagnostic IS allowed to be empty under specific structural
 // conditions (see corpus::ghost_runtime_observable doc-block), so
 // we only constrain name + cite here.
-static_assert([] consteval {
-    for (auto const& w : kRoster) {
-        if (w.name.empty() || w.cite.empty()) { return false; }
-    }
-    return true;
-}(), "fixy-L-09/L-10: a corpus entry shipped empty name() or "
-     "cite() — every entry must surface a non-empty diagnostic "
-     "string for the tier-5 rejection message.");
+static_assert(
+    [] consteval {
+        for (auto const& w : kRoster) {
+            if (w.name.empty() || w.cite.empty()) {
+                return false;
+            }
+        }
+        return true;
+    }(),
+    "fixy-L-09/L-10: a corpus entry shipped empty name() or "
+    "cite() — every entry must surface a non-empty diagnostic "
+    "string for the tier-5 rejection message.");
 
 }  // namespace detail::corpus_size_sentinel
 
@@ -2603,9 +2445,8 @@ concept NotInTheoryCorpus = !IsInUnsoundnessCorpus_v<Type, Grants...>;
 // order) — replaces the hand-written 6-clause if-chain that was
 // silent-bug-prone vs the OR-fold's order.
 template <typename Type, typename... Grants>
-inline constexpr std::string_view corpus_cite_for_v =
-    detail::corpus_first_match_string_<Type, Grants...>(
-        []<typename E>() consteval -> std::string_view { return E::cite(); });
+inline constexpr std::string_view corpus_cite_for_v = detail::corpus_first_match_string_<Type, Grants...>(
+    []<typename E>() consteval -> std::string_view { return E::cite(); });
 
 // ═════════════════════════════════════════════════════════════════════
 // ── corpus_entry_name_for_v — struct name of first-matching entry ──
@@ -2629,9 +2470,8 @@ inline constexpr std::string_view corpus_cite_for_v =
 
 // FIXY-FOUND-021: iterates detail::CorpusEntries (single source of order).
 template <typename Type, typename... Grants>
-inline constexpr std::string_view corpus_entry_name_for_v =
-    detail::corpus_first_match_string_<Type, Grants...>(
-        []<typename E>() consteval -> std::string_view { return E::name(); });
+inline constexpr std::string_view corpus_entry_name_for_v = detail::corpus_first_match_string_<Type, Grants...>(
+    []<typename E>() consteval -> std::string_view { return E::name(); });
 
 // ═════════════════════════════════════════════════════════════════════
 // ── corpus_full_diagnostic_v — combined name + cite for tier-5 ─────
@@ -2659,10 +2499,7 @@ inline constexpr std::string_view corpus_entry_name_for_v =
 // FIXY-FOUND-021: iterates detail::CorpusEntries (single source of order).
 // No corpus match → empty string_view (tier-5 succeeds; message unused).
 template <typename Type, typename... Grants>
-inline constexpr std::string_view corpus_full_diagnostic_v =
-    detail::corpus_first_match_string_<Type, Grants...>(
-        []<typename E>() consteval -> std::string_view {
-            return E::full_diagnostic();
-        });
+inline constexpr std::string_view corpus_full_diagnostic_v = detail::corpus_first_match_string_<Type, Grants...>(
+    []<typename E>() consteval -> std::string_view { return E::full_diagnostic(); });
 
 }  // namespace crucible::fixy::theory

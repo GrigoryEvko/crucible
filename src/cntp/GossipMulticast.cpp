@@ -2,8 +2,7 @@
 
 namespace crucible::cntp {
 
-std::string_view
-gossip_multicast_error_name(GossipMulticastError error) noexcept {
+std::string_view gossip_multicast_error_name(GossipMulticastError error) noexcept {
     switch (error) {
         case GossipMulticastError::EmptyTopic:
             return "EmptyTopic";

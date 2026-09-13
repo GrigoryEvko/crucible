@@ -86,7 +86,7 @@ namespace crucible::safety {
 // a type-level marker.
 
 struct LocalityIgnore_t {};
-struct LocalityLocal_t  {};
+struct LocalityLocal_t {};
 struct LocalitySpread_t {};
 
 // ═════════════════════════════════════════════════════════════════════
@@ -103,8 +103,8 @@ template <typename Tag>
 concept HasLocalityHint = requires {
     typename Tag::locality_hint;
     requires std::is_same_v<typename Tag::locality_hint, LocalityIgnore_t>
-          || std::is_same_v<typename Tag::locality_hint, LocalityLocal_t>
-          || std::is_same_v<typename Tag::locality_hint, LocalitySpread_t>;
+                 || std::is_same_v<typename Tag::locality_hint, LocalityLocal_t>
+                 || std::is_same_v<typename Tag::locality_hint, LocalitySpread_t>;
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -123,8 +123,7 @@ concept HasLocalityHint = requires {
 namespace detail {
 
 template <typename Tag>
-[[nodiscard]] consteval ::crucible::concurrent::NumaPolicy
-locality_hint_of_impl() noexcept {
+[[nodiscard]] consteval ::crucible::concurrent::NumaPolicy locality_hint_of_impl() noexcept {
     if constexpr (HasLocalityHint<Tag>) {
         using H = typename Tag::locality_hint;
         if constexpr (std::is_same_v<H, LocalityLocal_t>) {
@@ -143,8 +142,7 @@ locality_hint_of_impl() noexcept {
 }  // namespace detail
 
 template <typename Tag>
-inline constexpr ::crucible::concurrent::NumaPolicy
-locality_hint_of_v = detail::locality_hint_of_impl<Tag>();
+inline constexpr ::crucible::concurrent::NumaPolicy locality_hint_of_v = detail::locality_hint_of_impl<Tag>();
 
 // ═════════════════════════════════════════════════════════════════════
 // ── recommend_parallelism_with_locality<Tag>(budget) ───────────────
@@ -170,8 +168,7 @@ locality_hint_of_v = detail::locality_hint_of_impl<Tag>();
 
 template <typename Tag>
 [[nodiscard]] inline ::crucible::concurrent::ParallelismDecision
-recommend_parallelism_with_locality(
-    ::crucible::concurrent::WorkBudget budget) noexcept {
+recommend_parallelism_with_locality(::crucible::concurrent::WorkBudget budget) noexcept {
     auto dec = ::crucible::concurrent::recommend_parallelism(budget);
     if constexpr (HasLocalityHint<Tag>) {
         // Tag's hint overrides the cache-tier-derived default.
@@ -193,8 +190,7 @@ namespace detail::locality_hint_self_test {
 
 struct unpinned_tag {};
 static_assert(!HasLocalityHint<unpinned_tag>);
-static_assert(locality_hint_of_v<unpinned_tag>
-              == ::crucible::concurrent::NumaPolicy::NumaIgnore);
+static_assert(locality_hint_of_v<unpinned_tag> == ::crucible::concurrent::NumaPolicy::NumaIgnore);
 
 // ── Tag with LocalityLocal_t hint ────────────────────────────────
 
@@ -202,8 +198,7 @@ struct local_tag {
     using locality_hint = LocalityLocal_t;
 };
 static_assert(HasLocalityHint<local_tag>);
-static_assert(locality_hint_of_v<local_tag>
-              == ::crucible::concurrent::NumaPolicy::NumaLocal);
+static_assert(locality_hint_of_v<local_tag> == ::crucible::concurrent::NumaPolicy::NumaLocal);
 
 // ── Tag with LocalitySpread_t hint ───────────────────────────────
 
@@ -211,8 +206,7 @@ struct spread_tag {
     using locality_hint = LocalitySpread_t;
 };
 static_assert(HasLocalityHint<spread_tag>);
-static_assert(locality_hint_of_v<spread_tag>
-              == ::crucible::concurrent::NumaPolicy::NumaSpread);
+static_assert(locality_hint_of_v<spread_tag> == ::crucible::concurrent::NumaPolicy::NumaSpread);
 
 // ── Tag with LocalityIgnore_t hint (explicit) ────────────────────
 
@@ -220,8 +214,7 @@ struct ignore_tag {
     using locality_hint = LocalityIgnore_t;
 };
 static_assert(HasLocalityHint<ignore_tag>);
-static_assert(locality_hint_of_v<ignore_tag>
-              == ::crucible::concurrent::NumaPolicy::NumaIgnore);
+static_assert(locality_hint_of_v<ignore_tag> == ::crucible::concurrent::NumaPolicy::NumaIgnore);
 
 // ── Tag with WRONG locality_hint type fails the concept ──────────
 
@@ -229,8 +222,7 @@ struct typo_tag {
     using locality_hint = int;  // not one of the three phantoms
 };
 static_assert(!HasLocalityHint<typo_tag>);
-static_assert(locality_hint_of_v<typo_tag>
-              == ::crucible::concurrent::NumaPolicy::NumaIgnore);
+static_assert(locality_hint_of_v<typo_tag> == ::crucible::concurrent::NumaPolicy::NumaIgnore);
 
 // ── Phantoms are empty (sizeof = 1, EBO-collapsible) ─────────────
 

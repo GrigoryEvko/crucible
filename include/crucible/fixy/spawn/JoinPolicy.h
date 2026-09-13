@@ -130,29 +130,35 @@ namespace crucible::fixy::spawn::join {
 // federation cache slot that mentions a JoinMechanism stable across
 // versions.
 enum class JoinMechanism : std::uint8_t {
-    AutoJoin   = 0,   // std::jthread, RAII destructor joins — DEFAULT.
-    ManualJoin = 1,   // std::jthread, caller explicitly .join()s.
-    Detached   = 2,   // .detach() on jthread/thread — needs detach_with.
-    Cloned     = 3,   // Linux raw clone(2) — needs syscall_only.
-    Forked     = 4,   // fork(2) — needs subprocess + CMake opt-in.
-    PosixSpawn = 5,   // posix_spawn(3) — needs subprocess + CMake opt-in.
+    AutoJoin = 0,  // std::jthread, RAII destructor joins — DEFAULT.
+    ManualJoin = 1,  // std::jthread, caller explicitly .join()s.
+    Detached = 2,  // .detach() on jthread/thread — needs detach_with.
+    Cloned = 3,  // Linux raw clone(2) — needs syscall_only.
+    Forked = 4,  // fork(2) — needs subprocess + CMake opt-in.
+    PosixSpawn = 5,  // posix_spawn(3) — needs subprocess + CMake opt-in.
 };
 
 // Cardinality via P2996 reflection — auto-bumps on universe extension;
 // reflection-based name coverage assertion catches a missed switch arm.
-inline constexpr std::size_t join_mechanism_count =
-    std::meta::enumerators_of(^^JoinMechanism).size();
+inline constexpr std::size_t join_mechanism_count = std::meta::enumerators_of(^^JoinMechanism).size();
 
 // Diagnostic name — switch over the enum.
 [[nodiscard]] consteval std::string_view name_of(JoinMechanism m) noexcept {
     switch (m) {
-        case JoinMechanism::AutoJoin:   return "AutoJoin";
-        case JoinMechanism::ManualJoin: return "ManualJoin";
-        case JoinMechanism::Detached:   return "Detached";
-        case JoinMechanism::Cloned:     return "Cloned";
-        case JoinMechanism::Forked:     return "Forked";
-        case JoinMechanism::PosixSpawn: return "PosixSpawn";
-        default:                        return std::string_view{"<unknown JoinMechanism>"};
+        case JoinMechanism::AutoJoin:
+            return "AutoJoin";
+        case JoinMechanism::ManualJoin:
+            return "ManualJoin";
+        case JoinMechanism::Detached:
+            return "Detached";
+        case JoinMechanism::Cloned:
+            return "Cloned";
+        case JoinMechanism::Forked:
+            return "Forked";
+        case JoinMechanism::PosixSpawn:
+            return "PosixSpawn";
+        default:
+            return std::string_view{"<unknown JoinMechanism>"};
     }
 }
 
@@ -162,19 +168,19 @@ inline constexpr std::size_t join_mechanism_count =
 // and carries a `static constexpr JoinMechanism mechanism` field for
 // reverse lookup.  Empty struct → sizeof == 1 → EBO-collapsible
 // inside Graded / Permission / fork-result tuples.
-struct AutoJoin   final {
+struct AutoJoin final {
     static constexpr JoinMechanism mechanism = JoinMechanism::AutoJoin;
 };
 struct ManualJoin final {
     static constexpr JoinMechanism mechanism = JoinMechanism::ManualJoin;
 };
-struct Detached   final {
+struct Detached final {
     static constexpr JoinMechanism mechanism = JoinMechanism::Detached;
 };
-struct Cloned     final {
+struct Cloned final {
     static constexpr JoinMechanism mechanism = JoinMechanism::Cloned;
 };
-struct Forked     final {
+struct Forked final {
     static constexpr JoinMechanism mechanism = JoinMechanism::Forked;
 };
 struct PosixSpawn final {
@@ -197,13 +203,8 @@ struct PosixSpawn final {
 // substitute its own private struct for AutoJoin.  This closes the
 // "anyone can mint a join-policy tag" hole.
 template <typename T>
-concept IsJoinMechanismTag =
-    std::is_same_v<T, AutoJoin>
-    || std::is_same_v<T, ManualJoin>
-    || std::is_same_v<T, Detached>
-    || std::is_same_v<T, Cloned>
-    || std::is_same_v<T, Forked>
-    || std::is_same_v<T, PosixSpawn>;
+concept IsJoinMechanismTag = std::is_same_v<T, AutoJoin> || std::is_same_v<T, ManualJoin> || std::is_same_v<T, Detached>
+                          || std::is_same_v<T, Cloned> || std::is_same_v<T, Forked> || std::is_same_v<T, PosixSpawn>;
 
 // Reverse lookup metafunction — extract the enum value at compile time.
 template <typename T>
@@ -227,18 +228,16 @@ namespace detail::join_policy_self_test {
 
 // Cardinality — six mechanism tags today; future additions MUST land
 // at the next free enumerator position (append-only).
-static_assert(join_mechanism_count == 6,
-    "fixy::spawn::join::JoinMechanism universe drifted from six "
-    "{AutoJoin, ManualJoin, Detached, Cloned, Forked, PosixSpawn} — "
-    "adding a new mechanism is APPEND-ONLY (next free ordinal) per "
-    "the federation-cache stability invariant; update the cardinality "
-    "sentinel + the per-tag struct + the name_of switch in lockstep.");
+static_assert(join_mechanism_count == 6, "fixy::spawn::join::JoinMechanism universe drifted from six "
+                                         "{AutoJoin, ManualJoin, Detached, Cloned, Forked, PosixSpawn} — "
+                                         "adding a new mechanism is APPEND-ONLY (next free ordinal) per "
+                                         "the federation-cache stability invariant; update the cardinality "
+                                         "sentinel + the per-tag struct + the name_of switch in lockstep.");
 
 // Reflection-driven name coverage — fires if a future enumerator
 // addition lands without a name_of switch arm.
 [[nodiscard]] consteval bool every_mechanism_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^JoinMechanism));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^JoinMechanism));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
@@ -249,26 +248,25 @@ static_assert(join_mechanism_count == 6,
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_mechanism_has_name(),
-    "fixy::spawn::join::name_of switch is missing an arm for at "
-    "least one JoinMechanism enumerator — add the arm or the new "
-    "mechanism leaks the '<unknown JoinMechanism>' sentinel into "
-    "runtime observer's debug output.");
+static_assert(every_mechanism_has_name(), "fixy::spawn::join::name_of switch is missing an arm for at "
+                                          "least one JoinMechanism enumerator — add the arm or the new "
+                                          "mechanism leaks the '<unknown JoinMechanism>' sentinel into "
+                                          "runtime observer's debug output.");
 
 // Per-tag mechanism field — reverse-lookup correctness.
-static_assert(AutoJoin::mechanism   == JoinMechanism::AutoJoin);
+static_assert(AutoJoin::mechanism == JoinMechanism::AutoJoin);
 static_assert(ManualJoin::mechanism == JoinMechanism::ManualJoin);
-static_assert(Detached::mechanism   == JoinMechanism::Detached);
-static_assert(Cloned::mechanism     == JoinMechanism::Cloned);
-static_assert(Forked::mechanism     == JoinMechanism::Forked);
+static_assert(Detached::mechanism == JoinMechanism::Detached);
+static_assert(Cloned::mechanism == JoinMechanism::Cloned);
+static_assert(Forked::mechanism == JoinMechanism::Forked);
 static_assert(PosixSpawn::mechanism == JoinMechanism::PosixSpawn);
 
 // mechanism_of_v round-trips.
-static_assert(mechanism_of_v<AutoJoin>   == JoinMechanism::AutoJoin);
+static_assert(mechanism_of_v<AutoJoin> == JoinMechanism::AutoJoin);
 static_assert(mechanism_of_v<ManualJoin> == JoinMechanism::ManualJoin);
-static_assert(mechanism_of_v<Detached>   == JoinMechanism::Detached);
-static_assert(mechanism_of_v<Cloned>     == JoinMechanism::Cloned);
-static_assert(mechanism_of_v<Forked>     == JoinMechanism::Forked);
+static_assert(mechanism_of_v<Detached> == JoinMechanism::Detached);
+static_assert(mechanism_of_v<Cloned> == JoinMechanism::Cloned);
+static_assert(mechanism_of_v<Forked> == JoinMechanism::Forked);
 static_assert(mechanism_of_v<PosixSpawn> == JoinMechanism::PosixSpawn);
 
 // IsJoinMechanismTag admits exactly the six tags.
@@ -291,20 +289,20 @@ static_assert(std::is_empty_v<Detached>);
 static_assert(std::is_empty_v<Cloned>);
 static_assert(std::is_empty_v<Forked>);
 static_assert(std::is_empty_v<PosixSpawn>);
-static_assert(sizeof(AutoJoin)   == 1);
+static_assert(sizeof(AutoJoin) == 1);
 static_assert(sizeof(ManualJoin) == 1);
-static_assert(sizeof(Detached)   == 1);
-static_assert(sizeof(Cloned)     == 1);
-static_assert(sizeof(Forked)     == 1);
+static_assert(sizeof(Detached) == 1);
+static_assert(sizeof(Cloned) == 1);
+static_assert(sizeof(Forked) == 1);
 static_assert(sizeof(PosixSpawn) == 1);
 
 // Tags are distinct types — caller cannot substitute one for another.
-static_assert(!std::is_same_v<AutoJoin,   ManualJoin>);
-static_assert(!std::is_same_v<AutoJoin,   Detached>);
+static_assert(!std::is_same_v<AutoJoin, ManualJoin>);
+static_assert(!std::is_same_v<AutoJoin, Detached>);
 static_assert(!std::is_same_v<ManualJoin, Detached>);
-static_assert(!std::is_same_v<Cloned,     Forked>);
-static_assert(!std::is_same_v<Forked,     PosixSpawn>);
-static_assert(!std::is_same_v<Detached,   PosixSpawn>);
+static_assert(!std::is_same_v<Cloned, Forked>);
+static_assert(!std::is_same_v<Forked, PosixSpawn>);
+static_assert(!std::is_same_v<Detached, PosixSpawn>);
 
 // `final` prevents inheritance-laundering an imposter through a
 // derived class that satisfies T::mechanism but fails the identity
@@ -321,11 +319,11 @@ static_assert(std::is_final_v<PosixSpawn>);
 static_assert(std::is_same_v<Default, AutoJoin>);
 
 // Diagnostic names — full per-mechanism coverage.
-static_assert(name_of(JoinMechanism::AutoJoin)   == "AutoJoin");
+static_assert(name_of(JoinMechanism::AutoJoin) == "AutoJoin");
 static_assert(name_of(JoinMechanism::ManualJoin) == "ManualJoin");
-static_assert(name_of(JoinMechanism::Detached)   == "Detached");
-static_assert(name_of(JoinMechanism::Cloned)     == "Cloned");
-static_assert(name_of(JoinMechanism::Forked)     == "Forked");
+static_assert(name_of(JoinMechanism::Detached) == "Detached");
+static_assert(name_of(JoinMechanism::Cloned) == "Cloned");
+static_assert(name_of(JoinMechanism::Forked) == "Forked");
 static_assert(name_of(JoinMechanism::PosixSpawn) == "PosixSpawn");
 
 }  // namespace detail::join_policy_self_test

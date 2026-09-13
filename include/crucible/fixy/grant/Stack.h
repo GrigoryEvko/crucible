@@ -33,7 +33,7 @@ template <std::size_t MaxBytes>
 struct alloc final : grant_base {};
 
 // ─── VLA / alloca exception markers ───────────────────────────────────
-struct vla_ok    final : grant_base {};
+struct vla_ok final : grant_base {};
 struct alloca_ok final : grant_base {};
 
 }  // namespace crucible::fixy::grant::stack
@@ -41,20 +41,16 @@ struct alloca_ok final : grant_base {};
 namespace crucible::fixy::grant {
 
 template <std::size_t MaxBytes>
-struct which_dim<stack::alloc<MaxBytes>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::StackUse> {};
+struct which_dim<stack::alloc<MaxBytes>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::StackUse> {};
 
 template <>
-struct which_dim<stack::vla_ok>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::StackUse> {};
+struct which_dim<stack::vla_ok> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::StackUse> {};
 
 template <>
-struct which_dim<stack::alloca_ok>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::StackUse> {};
+struct which_dim<stack::alloca_ok> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::StackUse> {};
 
 // "I accept the ≤4 KB strict default for this binding's stack footprint."
-using accept_default_strict_for_StackUse =
-    accept_default_strict_for<dim::DimensionAxis::StackUse>;
+using accept_default_strict_for_StackUse = accept_default_strict_for<dim::DimensionAxis::StackUse>;
 
 }  // namespace crucible::fixy::grant
 
@@ -68,13 +64,13 @@ static_assert(IsGrantTag<stack::vla_ok>);
 static_assert(IsGrantTag<stack::alloca_ok>);
 
 static_assert(sizeof(stack::alloc<64>) == 1);
-static_assert(sizeof(stack::vla_ok)    == 1);
+static_assert(sizeof(stack::vla_ok) == 1);
 static_assert(sizeof(stack::alloca_ok) == 1);
 
-static_assert(which_dim_v<stack::alloc<64>>    == D::StackUse);
-static_assert(which_dim_v<stack::alloc<4096>>  == D::StackUse);
-static_assert(which_dim_v<stack::vla_ok>       == D::StackUse);
-static_assert(which_dim_v<stack::alloca_ok>    == D::StackUse);
+static_assert(which_dim_v<stack::alloc<64>> == D::StackUse);
+static_assert(which_dim_v<stack::alloc<4096>> == D::StackUse);
+static_assert(which_dim_v<stack::vla_ok> == D::StackUse);
+static_assert(which_dim_v<stack::alloca_ok> == D::StackUse);
 static_assert(which_dim_v<accept_default_strict_for_StackUse> == D::StackUse);
 
 static_assert(!std::is_same_v<stack::alloc<64>, stack::alloc<128>>);  // bound carries identity

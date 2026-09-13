@@ -37,28 +37,32 @@ namespace crucible::safety {
 template <std::integral T>
 [[nodiscard]] constexpr std::optional<T> checked_add(T a, T b) noexcept {
     T r{};
-    if (__builtin_add_overflow(a, b, &r)) [[unlikely]] return std::nullopt;
+    if (__builtin_add_overflow(a, b, &r)) [[unlikely]]
+        return std::nullopt;
     return r;
 }
 
 template <std::integral T>
 [[nodiscard]] constexpr std::optional<T> checked_sub(T a, T b) noexcept {
     T r{};
-    if (__builtin_sub_overflow(a, b, &r)) [[unlikely]] return std::nullopt;
+    if (__builtin_sub_overflow(a, b, &r)) [[unlikely]]
+        return std::nullopt;
     return r;
 }
 
 template <std::integral T>
 [[nodiscard]] constexpr std::optional<T> checked_mul(T a, T b) noexcept {
     T r{};
-    if (__builtin_mul_overflow(a, b, &r)) [[unlikely]] return std::nullopt;
+    if (__builtin_mul_overflow(a, b, &r)) [[unlikely]]
+        return std::nullopt;
     return r;
 }
 
 // Division: two overflow paths — divide by zero, and (for signed) MIN/-1.
 template <std::integral T>
 [[nodiscard]] constexpr std::optional<T> checked_div(T a, T b) noexcept {
-    if (b == T{0}) [[unlikely]] return std::nullopt;
+    if (b == T{0}) [[unlikely]]
+        return std::nullopt;
     if constexpr (std::is_signed_v<T>) {
         if (a == std::numeric_limits<T>::min() && b == T{-1}) [[unlikely]]
             return std::nullopt;
@@ -68,7 +72,8 @@ template <std::integral T>
 
 template <std::integral T>
 [[nodiscard]] constexpr std::optional<T> checked_mod(T a, T b) noexcept {
-    if (b == T{0}) [[unlikely]] return std::nullopt;
+    if (b == T{0}) [[unlikely]]
+        return std::nullopt;
     if constexpr (std::is_signed_v<T>) {
         if (a == std::numeric_limits<T>::min() && b == T{-1}) [[unlikely]]
             return T{0};  // mathematically defined, despite INT_MIN/-1 overflow
@@ -79,13 +84,15 @@ template <std::integral T>
 // Negation: INT_MIN negated overflows for signed.
 template <std::signed_integral T>
 [[nodiscard]] constexpr std::optional<T> checked_neg(T a) noexcept {
-    if (a == std::numeric_limits<T>::min()) [[unlikely]] return std::nullopt;
+    if (a == std::numeric_limits<T>::min()) [[unlikely]]
+        return std::nullopt;
     return static_cast<T>(-a);
 }
 
 template <std::signed_integral T>
 [[nodiscard]] constexpr std::optional<T> checked_abs(T a) noexcept {
-    if (a == std::numeric_limits<T>::min()) [[unlikely]] return std::nullopt;
+    if (a == std::numeric_limits<T>::min()) [[unlikely]]
+        return std::nullopt;
     return static_cast<T>(a < T{0} ? -a : a);
 }
 
@@ -96,7 +103,8 @@ template <std::integral T>
         return std::nullopt;
     if constexpr (std::is_signed_v<T>) {
         // Left-shift of negative values is UB; reject.
-        if (a < T{0}) [[unlikely]] return std::nullopt;
+        if (a < T{0}) [[unlikely]]
+            return std::nullopt;
     }
     return static_cast<T>(a << shift);
 }
@@ -136,29 +144,34 @@ template <std::integral T>
 template <std::integral T>
 [[nodiscard]] constexpr T trapping_add(T a, T b) noexcept {
     T r{};
-    if (__builtin_add_overflow(a, b, &r)) [[unlikely]] std::abort();
+    if (__builtin_add_overflow(a, b, &r)) [[unlikely]]
+        std::abort();
     return r;
 }
 
 template <std::integral T>
 [[nodiscard]] constexpr T trapping_sub(T a, T b) noexcept {
     T r{};
-    if (__builtin_sub_overflow(a, b, &r)) [[unlikely]] std::abort();
+    if (__builtin_sub_overflow(a, b, &r)) [[unlikely]]
+        std::abort();
     return r;
 }
 
 template <std::integral T>
 [[nodiscard]] constexpr T trapping_mul(T a, T b) noexcept {
     T r{};
-    if (__builtin_mul_overflow(a, b, &r)) [[unlikely]] std::abort();
+    if (__builtin_mul_overflow(a, b, &r)) [[unlikely]]
+        std::abort();
     return r;
 }
 
 template <std::integral T>
 [[nodiscard]] constexpr T trapping_div(T a, T b) noexcept {
-    if (b == T{0}) [[unlikely]] std::abort();
+    if (b == T{0}) [[unlikely]]
+        std::abort();
     if constexpr (std::is_signed_v<T>) {
-        if (a == std::numeric_limits<T>::min() && b == T{-1}) [[unlikely]] std::abort();
+        if (a == std::numeric_limits<T>::min() && b == T{-1}) [[unlikely]]
+            std::abort();
     }
     return static_cast<T>(a / b);
 }
@@ -254,27 +267,24 @@ namespace detail {
 template <std::integral T, T A, T B>
 struct safe_add_impl {
     static constexpr auto _opt = checked_add<T>(A, B);
-    static_assert(_opt.has_value(),
-        "[Checked_Capacity_Overflow] safe_add: A + B overflows the "
-        "destination integer type.  Pick a wider T or smaller operands.");
+    static_assert(_opt.has_value(), "[Checked_Capacity_Overflow] safe_add: A + B overflows the "
+                                    "destination integer type.  Pick a wider T or smaller operands.");
     static constexpr T value = *_opt;
 };
 
 template <std::integral T, T A, T B>
 struct safe_sub_impl {
     static constexpr auto _opt = checked_sub<T>(A, B);
-    static_assert(_opt.has_value(),
-        "[Checked_Capacity_Overflow] safe_sub: A - B underflows the "
-        "destination integer type.  For unsigned T, A must be >= B.");
+    static_assert(_opt.has_value(), "[Checked_Capacity_Overflow] safe_sub: A - B underflows the "
+                                    "destination integer type.  For unsigned T, A must be >= B.");
     static constexpr T value = *_opt;
 };
 
 template <std::integral T, T A, T B>
 struct safe_mul_impl {
     static constexpr auto _opt = checked_mul<T>(A, B);
-    static_assert(_opt.has_value(),
-        "[Checked_Capacity_Overflow] safe_mul: A * B overflows the "
-        "destination integer type.  Pick a wider T or smaller operands.");
+    static_assert(_opt.has_value(), "[Checked_Capacity_Overflow] safe_mul: A * B overflows the "
+                                    "destination integer type.  Pick a wider T or smaller operands.");
     static constexpr T value = *_opt;
 };
 
@@ -343,12 +353,11 @@ struct safe_add_all_impl<T, X> {
 template <std::integral T, T X, T Y, T... Rest>
 struct safe_add_all_impl<T, X, Y, Rest...> {
     static constexpr auto _opt = checked_add<T>(X, Y);
-    static_assert(_opt.has_value(),
-        "[Checked_Capacity_Overflow] safe_add_all: partial sum "
-        "overflows the destination integer type.  One of the terms "
-        "in the variadic sum exceeds the remaining budget; split the "
-        "sum into smaller chunks, pick a wider T, or reduce an "
-        "operand.");
+    static_assert(_opt.has_value(), "[Checked_Capacity_Overflow] safe_add_all: partial sum "
+                                    "overflows the destination integer type.  One of the terms "
+                                    "in the variadic sum exceeds the remaining budget; split the "
+                                    "sum into smaller chunks, pick a wider T, or reduce an "
+                                    "operand.");
     static constexpr T value = safe_add_all_impl<T, *_opt, Rest...>::value;
 };
 
@@ -366,8 +375,7 @@ inline constexpr T safe_add_all = detail::safe_add_all_impl<T, Xs...>::value;
 // [Checked_Capacity_Overflow] prefix on overflow.  The canonical "I
 // want to allocate N objects of T" budget calculation.
 template <typename T, std::size_t N>
-inline constexpr std::size_t safe_array_bytes =
-    safe_mul<std::size_t, sizeof(T), N>;
+inline constexpr std::size_t safe_array_bytes = safe_mul<std::size_t, sizeof(T), N>;
 
 // safe_struct_bytes<T1, T2, ..., Tn> — sum of sizeof(Ti) over a type
 // pack.  Overflow-safe variadic sum of the sizeof's.  Useful for
@@ -378,8 +386,7 @@ inline constexpr std::size_t safe_array_bytes =
 // alignment(Ti) and pad bytes separately (or use reflection to compute
 // the true sizeof-with-padding of a packed struct).
 template <typename... Ts>
-inline constexpr std::size_t safe_struct_bytes =
-    safe_add_all<std::size_t, sizeof(Ts)...>;
+inline constexpr std::size_t safe_struct_bytes = safe_add_all<std::size_t, sizeof(Ts)...>;
 
 // ─── Compile-time budget fit check (#134) ────────────────────────────
 //
@@ -407,16 +414,15 @@ inline constexpr bool bytes_fit_v = (Used <= Budget);
 
 template <std::size_t Budget, std::size_t Used>
 consteval void ensure_bytes_fit() noexcept {
-    static_assert(bytes_fit_v<Budget, Used>,
-        "[Byte_Budget_Exceeded] ensure_bytes_fit<Budget, Used>(): "
-        "the computed byte usage exceeds the declared budget.  "
-        "Inspect `safe_struct_bytes<...>` / `safe_array_bytes<T, N>` / "
-        "`safe_add_all<size_t, ...>` for the individual contributors, "
-        "OR widen the budget if the carrier can accommodate it.  "
-        "Common causes: (a) added a new field to a cache-line-tight "
-        "struct, (b) bumped N for an array that was sized to fit a "
-        "single page, (c) composed a buffer layout whose sum crosses "
-        "a hardware-alignment boundary (cache line, page, sector).");
+    static_assert(bytes_fit_v<Budget, Used>, "[Byte_Budget_Exceeded] ensure_bytes_fit<Budget, Used>(): "
+                                             "the computed byte usage exceeds the declared budget.  "
+                                             "Inspect `safe_struct_bytes<...>` / `safe_array_bytes<T, N>` / "
+                                             "`safe_add_all<size_t, ...>` for the individual contributors, "
+                                             "OR widen the budget if the carrier can accommodate it.  "
+                                             "Common causes: (a) added a new field to a cache-line-tight "
+                                             "struct, (b) bumped N for an array that was sized to fit a "
+                                             "single page, (c) composed a buffer layout whose sum crosses "
+                                             "a hardware-alignment boundary (cache line, page, sector).");
 }
 
 template <std::size_t A, std::size_t B>
@@ -433,47 +439,45 @@ inline constexpr std::size_t safe_size_diff = safe_sub<std::size_t, A, B>;
 // what we want to TRIGGER, and that has to live in a TU that's not
 // part of the regular build.
 
-static_assert(safe_add<std::uint32_t, 10u, 20u>                         == 30u);
-static_assert(safe_sub<std::uint32_t, 30u, 20u>                         == 10u);
-static_assert(safe_mul<std::uint32_t, 6u, 7u>                           == 42u);
-static_assert(safe_capacity<8u, 16u>                                    == 128u);
+static_assert(safe_add<std::uint32_t, 10u, 20u> == 30u);
+static_assert(safe_sub<std::uint32_t, 30u, 20u> == 10u);
+static_assert(safe_mul<std::uint32_t, 6u, 7u> == 42u);
+static_assert(safe_capacity<8u, 16u> == 128u);
 static_assert(safe_capacity<std::size_t{1} << 16, std::size_t{1} << 16> == (std::size_t{1} << 32));
-static_assert(safe_byte_budget<256u, 64u>                               == 256u * 64u);
-static_assert(safe_size_sum<10u, 20u>                                   == 30u);
-static_assert(safe_size_diff<30u, 10u>                                  == 20u);
+static_assert(safe_byte_budget<256u, 64u> == 256u * 64u);
+static_assert(safe_size_sum<10u, 20u> == 30u);
+static_assert(safe_size_diff<30u, 10u> == 20u);
 
 // Edge: zero is fine in both directions.
 static_assert(safe_mul<std::size_t, std::size_t{0}, std::size_t{1} << 60> == 0u);
-static_assert(safe_add<std::size_t, std::size_t{0}, std::size_t{0}>       == 0u);
+static_assert(safe_add<std::size_t, std::size_t{0}, std::size_t{0}> == 0u);
 
 // ─── Self-tests for the #134 variadic / layout helpers ─────────────
 
 // safe_add_all: empty fold is 0, single-term is identity, multi-term
 // equals the sum.
-static_assert(safe_add_all<std::size_t>                               == 0u);
-static_assert(safe_add_all<std::size_t, 42u>                          == 42u);
-static_assert(safe_add_all<std::size_t, 1u, 2u, 3u, 4u, 5u>           == 15u);
-static_assert(safe_add_all<std::uint32_t, 10u, 20u, 30u>              == 60u);
+static_assert(safe_add_all<std::size_t> == 0u);
+static_assert(safe_add_all<std::size_t, 42u> == 42u);
+static_assert(safe_add_all<std::size_t, 1u, 2u, 3u, 4u, 5u> == 15u);
+static_assert(safe_add_all<std::uint32_t, 10u, 20u, 30u> == 60u);
 
 // safe_array_bytes: sizeof(T) * N.
-static_assert(safe_array_bytes<std::uint64_t, 8u>                     == 64u);
-static_assert(safe_array_bytes<std::byte, 4096u>                      == 4096u);
-static_assert(safe_array_bytes<std::uint32_t, 0u>                     == 0u);
+static_assert(safe_array_bytes<std::uint64_t, 8u> == 64u);
+static_assert(safe_array_bytes<std::byte, 4096u> == 4096u);
+static_assert(safe_array_bytes<std::uint32_t, 0u> == 0u);
 
 // safe_struct_bytes: sum of sizeof(Ts...).  Naive sum — NOT alignment-
 // aware; sizeof(struct{uint64;uint32;}) would be 16 not 12, but the
 // helper returns 12 (raw sum).  The distinction is documented.
-static_assert(safe_struct_bytes<>                                     == 0u);
-static_assert(safe_struct_bytes<std::uint64_t>                        == 8u);
-static_assert(safe_struct_bytes<std::uint64_t, std::uint32_t>         == 12u);
-static_assert(safe_struct_bytes<std::uint64_t,
-                                std::uint64_t,
-                                std::uint32_t>                        == 20u);
+static_assert(safe_struct_bytes<> == 0u);
+static_assert(safe_struct_bytes<std::uint64_t> == 8u);
+static_assert(safe_struct_bytes<std::uint64_t, std::uint32_t> == 12u);
+static_assert(safe_struct_bytes<std::uint64_t, std::uint64_t, std::uint32_t> == 20u);
 
 // bytes_fit_v / ensure_bytes_fit.
 static_assert(bytes_fit_v<64u, 20u>);
-static_assert(bytes_fit_v<64u, 64u>);                          // exact fit
-static_assert(!bytes_fit_v<64u, 65u>);                         // overflow by 1
+static_assert(bytes_fit_v<64u, 64u>);  // exact fit
+static_assert(!bytes_fit_v<64u, 65u>);  // overflow by 1
 
 // ensure_bytes_fit is consteval; the happy path compiles silently.
 // (Neg-compile test covers the [Byte_Budget_Exceeded] path.)
@@ -482,4 +486,4 @@ static_assert(!bytes_fit_v<64u, 65u>);                         // overflow by 1
     return 0;
 }();
 
-} // namespace crucible::safety
+}  // namespace crucible::safety

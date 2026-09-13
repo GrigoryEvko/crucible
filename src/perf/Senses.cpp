@@ -43,8 +43,7 @@ Senses::Senses(std::optional<State> s) noexcept : state_{std::move(s)} {}
 // Both follow from `state_ == std::nullopt` via the existing
 // `if (!state_) return ...` guards in the accessor + coverage paths.
 
-Senses::Senses(Senses&& other) noexcept
-    : state_{std::exchange(other.state_, std::nullopt)} {}
+Senses::Senses(Senses&& other) noexcept : state_{std::exchange(other.state_, std::nullopt)} {}
 
 Senses& Senses::operator=(Senses&& other) noexcept {
     if (this != &other) {
@@ -62,8 +61,7 @@ Senses::~Senses() noexcept = default;
 // for each subprogram's load() — Init is the "once at startup" cap,
 // and we ARE at startup, so re-minting is sound.
 
-Senses Senses::load_subset(::crucible::effects::Init init,
-                           SensesMask which) noexcept {
+Senses Senses::load_subset(::crucible::effects::Init init, SensesMask which) noexcept {
     // fixy-A5-026 / FIXY-U-088: State is stack-constructed (was nothrow
     // new + unique_ptr).  noexcept Init-path forbids heap allocation:
     // even nothrow-new is a system-call boundary that can fail under
@@ -72,22 +70,20 @@ Senses Senses::load_subset(::crucible::effects::Init init,
     // NRVO moves the State into the returned Senses without copy.
     State s{};
 
-    if (which.sense_hub)       s.sense_hub       = SenseHub::load(init);
-    if (which.sched_switch)    s.sched_switch    = SchedSwitch::load(init);
-    if (which.pmu_sample)      s.pmu_sample      = PmuSample::load(init);
+    if (which.sense_hub) s.sense_hub = SenseHub::load(init);
+    if (which.sched_switch) s.sched_switch = SchedSwitch::load(init);
+    if (which.pmu_sample) s.pmu_sample = PmuSample::load(init);
     if (which.lock_contention) s.lock_contention = LockContention::load(init);
     if (which.syscall_latency) s.syscall_latency = SyscallLatency::load(init);
-    if (which.sched_tp_btf)    s.sched_tp_btf    = SchedTpBtf::load(init);
-    if (which.syscall_tp_btf)  s.syscall_tp_btf  = SyscallTpBtf::load(init);
+    if (which.sched_tp_btf) s.sched_tp_btf = SchedTpBtf::load(init);
+    if (which.syscall_tp_btf) s.syscall_tp_btf = SyscallTpBtf::load(init);
 
     return Senses{std::optional<State>{std::move(s)}};
 }
 
 // ─── load_all — convenience wrapper ──────────────────────────────────
 
-Senses Senses::load_all(::crucible::effects::Init init) noexcept {
-    return load_subset(init, SensesMask::all());
-}
+Senses Senses::load_all(::crucible::effects::Init init) noexcept { return load_subset(init, SensesMask::all()); }
 
 // ─── Accessors ───────────────────────────────────────────────────────
 
@@ -131,15 +127,15 @@ const SyscallTpBtf* Senses::syscall_tp_btf() const noexcept {
 CoverageReport Senses::coverage() const noexcept {
     CoverageReport r;
     if (state_) {
-        r.sense_hub_attached       = state_->sense_hub.has_value();
-        r.sched_switch_attached    = state_->sched_switch.has_value();
-        r.pmu_sample_attached      = state_->pmu_sample.has_value();
+        r.sense_hub_attached = state_->sense_hub.has_value();
+        r.sched_switch_attached = state_->sched_switch.has_value();
+        r.pmu_sample_attached = state_->pmu_sample.has_value();
         r.lock_contention_attached = state_->lock_contention.has_value();
         r.syscall_latency_attached = state_->syscall_latency.has_value();
-        r.sched_tp_btf_attached    = state_->sched_tp_btf.has_value();
-        r.syscall_tp_btf_attached  = state_->syscall_tp_btf.has_value();
+        r.sched_tp_btf_attached = state_->sched_tp_btf.has_value();
+        r.syscall_tp_btf_attached = state_->syscall_tp_btf.has_value();
     }
     return r;
 }
 
-} // namespace crucible::perf
+}  // namespace crucible::perf

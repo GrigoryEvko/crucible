@@ -17,9 +17,9 @@ const volatile __u32 target_tgid = 0;
 
 /* ─── Shared constants ────────────────────────────────────────────────── */
 
-#define MAX_STACK_DEPTH  127
-#define MAX_ENTRIES      65536
-#define MAX_STACKS       16384
+#define MAX_STACK_DEPTH 127
+#define MAX_ENTRIES 65536
+#define MAX_STACKS 16384
 
 /* ─── Off-CPU types (shared between BPF and userspace) ───────────────── */
 
@@ -46,8 +46,8 @@ struct syscall_stats {
 /* ─── Lock contention types ──────────────────────────────────────────── */
 
 struct lock_key {
-    __u64 addr;      /* futex address (userspace VA) */
-    __s32 stack_id;  /* stack trace at contention point */
+    __u64 addr; /* futex address (userspace VA) */
+    __s32 stack_id; /* stack trace at contention point */
     __u32 _pad;
 };
 
@@ -77,8 +77,8 @@ struct fault_val {
 
 /* ─── Timeline circular buffer (mmap'd zero-copy, sub-ns reads) ──────── */
 
-#define TIMELINE_CAPACITY 4096          /* events per category, power of 2 */
-#define TIMELINE_MASK     (TIMELINE_CAPACITY - 1)
+#define TIMELINE_CAPACITY 4096 /* events per category, power of 2 */
+#define TIMELINE_MASK (TIMELINE_CAPACITY - 1)
 
 /*
  * Per-event records. Write ts_ns LAST — non-zero signals completion.
@@ -88,11 +88,11 @@ struct fault_val {
  *          all fields share the same cache line, delivered atomically by coherency.
  */
 struct timeline_sched_event {
-    __u64 off_cpu_ns;  /* how long thread was off-CPU */
+    __u64 off_cpu_ns; /* how long thread was off-CPU */
     __u32 tid;
-    __u32 on_cpu;      /* CPU core switched onto */
-    __u64 ts_ns;       /* bpf_ktime_get_ns() — WRITTEN LAST */
-    __u64 _pad;        /* GAPS-004b-AUDIT (2026-05-04): pad to 32 B
+    __u32 on_cpu; /* CPU core switched onto */
+    __u64 ts_ns; /* bpf_ktime_get_ns() — WRITTEN LAST */
+    __u64 _pad; /* GAPS-004b-AUDIT (2026-05-04): pad to 32 B
                         * so the events array's slots are always
                         * cache-line-coresident (32 divides 64
                         * evenly).  Without this, slot N at byte
@@ -110,8 +110,8 @@ struct timeline_syscall_event {
     __u64 duration_ns;
     __u32 tid;
     __u32 syscall_nr;
-    __u64 ts_ns;       /* bpf_ktime_get_ns() — WRITTEN LAST */
-    __u64 _pad;        /* GAPS-004e (2026-05-04): pad to 32 B so the
+    __u64 ts_ns; /* bpf_ktime_get_ns() — WRITTEN LAST */
+    __u64 _pad; /* GAPS-004e (2026-05-04): pad to 32 B so the
                         * events array's slots are always cache-line-
                         * coresident (32 divides 64 evenly).  Without
                         * this, slot N at byte (64 + 24*N) straddles
@@ -130,7 +130,7 @@ struct timeline_lock_event {
     __u64 wait_ns;
     __u32 tid;
     __u32 _pad;
-    __u64 ts_ns;       /* bpf_ktime_get_ns() — WRITTEN LAST */
+    __u64 ts_ns; /* bpf_ktime_get_ns() — WRITTEN LAST */
 };
 
 /*
@@ -139,8 +139,8 @@ struct timeline_lock_event {
  * Padded to 64 bytes (one cache line) so events start cache-aligned.
  */
 struct timeline_header {
-    __u64 write_idx;   /* monotonically increasing, never resets */
-    __u64 _pad[7];     /* pad to 64 bytes */
+    __u64 write_idx; /* monotonically increasing, never resets */
+    __u64 _pad[7]; /* pad to 64 bytes */
 };
 
 struct sched_timeline {
@@ -160,8 +160,8 @@ struct lock_timeline {
 
 /* ─── PMU sample circular buffer (BPF perf_event → mmap'd zero-copy) ─── */
 
-#define PMU_SAMPLE_CAPACITY 32768       /* 2^15 events, larger than timeline */
-#define PMU_SAMPLE_MASK     (PMU_SAMPLE_CAPACITY - 1)
+#define PMU_SAMPLE_CAPACITY 32768 /* 2^15 events, larger than timeline */
+#define PMU_SAMPLE_MASK (PMU_SAMPLE_CAPACITY - 1)
 
 /*
  * PMU sample event — one per hardware counter overflow.
@@ -171,12 +171,12 @@ struct lock_timeline {
  * Write ts_ns LAST as completion marker.
  */
 struct pmu_sample_event {
-    __u64 ip;           /* instruction pointer (userspace virtual addr) */
-    __u32 tid;          /* thread ID */
-    __u8  event_type;   /* PMU event discriminator */
-    __u8  _pad[3];      /* align ts_ns to 8 bytes */
-    __u64 ts_ns;        /* bpf_ktime_get_ns() — WRITTEN LAST */
-    __u64 _pad8;        /* GAPS-004c (2026-05-04): cache-line-
+    __u64 ip; /* instruction pointer (userspace virtual addr) */
+    __u32 tid; /* thread ID */
+    __u8 event_type; /* PMU event discriminator */
+    __u8 _pad[3]; /* align ts_ns to 8 bytes */
+    __u64 ts_ns; /* bpf_ktime_get_ns() — WRITTEN LAST */
+    __u64 _pad8; /* GAPS-004c (2026-05-04): cache-line-
                          * coresidence pad.  Same bug + same fix
                          * as TimelineSchedEvent — without this
                          * 24+8=32 byte struct, slots straddle
@@ -208,15 +208,11 @@ struct pmu_sample_timeline {
  * Pure additive — when target_tgid != 0 (normal case), behavior
  * identical to the previous form.
  */
-static __always_inline bool is_target(void)
-{
+static __always_inline bool is_target(void) {
     __u32 tgid = bpf_get_current_pid_tgid() >> 32;
     return target_tgid != 0 && tgid == target_tgid;
 }
 
-static __always_inline __u32 get_tid(void)
-{
-    return (__u32)bpf_get_current_pid_tgid();
-}
+static __always_inline __u32 get_tid(void) { return (__u32)bpf_get_current_pid_tgid(); }
 
 #endif /* __CRUCIBLE_PERF_BPF_COMMON_H */

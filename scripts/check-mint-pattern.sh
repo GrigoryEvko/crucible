@@ -528,14 +528,20 @@ has_noexcept_in_signature() {
 # deletion.  Returns 0 (skip) when a deletion is found before any body.
 is_deleted_decl() {
     local file="$1" line="$2"
-    local offset ln text
+    local offset ln text joined=""
     for offset in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14; do
         ln=$((line + offset))
         text="$(sed -n "${ln}p" "$file" 2>/dev/null || true)"
         [[ -z "$text" ]] && break
-        case "$text" in
-            *'= delete'*|*'=delete'*) return 0 ;;
-        esac
+        # Accumulate the window before matching.  A wrapped signature can leave
+        # the `=` at the end of one line and `delete` at the start of the next,
+        # so neither line holds the token pair on its own.
+        joined="$joined $text"
+        # Regex, not a glob: the join can leave any run of whitespace (or none)
+        # between the `=` and `delete`, depending on where the wrap fell.
+        if [[ "$joined" =~ =[[:space:]]*delete ]]; then
+            return 0
+        fi
         # A body-open brace means this is a real definition, not a
         # deletion — stop before mis-reading a later overload's deletion.
         case "$text" in

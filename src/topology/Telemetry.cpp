@@ -10,19 +10,16 @@ namespace crucible::topology {
 namespace {
 
 [[nodiscard]] constexpr std::string_view trim(std::string_view s) noexcept {
-    while (!s.empty() && (s.front() == ' ' || s.front() == '\t' ||
-                         s.front() == '\r' || s.front() == '\n')) {
+    while (!s.empty() && (s.front() == ' ' || s.front() == '\t' || s.front() == '\r' || s.front() == '\n')) {
         s.remove_prefix(1);
     }
-    while (!s.empty() && (s.back() == ' ' || s.back() == '\t' ||
-                         s.back() == '\r' || s.back() == '\n')) {
+    while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '\r' || s.back() == '\n')) {
         s.remove_suffix(1);
     }
     return s;
 }
 
-[[nodiscard]] constexpr std::pair<std::string_view, std::string_view>
-split_key_value(std::string_view line) noexcept {
+[[nodiscard]] constexpr std::pair<std::string_view, std::string_view> split_key_value(std::string_view line) noexcept {
     const std::size_t colon = line.find(':');
     if (colon != std::string_view::npos) {
         return {trim(line.substr(0, colon)), trim(line.substr(colon + 1))};
@@ -38,8 +35,7 @@ split_key_value(std::string_view line) noexcept {
     return {trim(line), std::string_view{}};
 }
 
-[[nodiscard]] constexpr bool contains_ci(std::string_view haystack,
-                                         std::string_view needle) noexcept {
+[[nodiscard]] constexpr bool contains_ci(std::string_view haystack, std::string_view needle) noexcept {
     if (needle.empty() || needle.size() > haystack.size()) {
         return false;
     }
@@ -67,8 +63,7 @@ split_key_value(std::string_view line) noexcept {
     return end == std::string_view::npos ? s : s.substr(0, end);
 }
 
-[[nodiscard]] constexpr bool parse_u64(std::string_view value,
-                                       std::uint64_t& out) noexcept {
+[[nodiscard]] constexpr bool parse_u64(std::string_view value, std::uint64_t& out) noexcept {
     value = first_token(value);
     if (value.empty()) {
         return false;
@@ -79,8 +74,7 @@ split_key_value(std::string_view line) noexcept {
     return ec == std::errc{} && ptr == last;
 }
 
-[[nodiscard]] constexpr bool parse_leading_u64(std::string_view value,
-                                               std::uint64_t& out) noexcept {
+[[nodiscard]] constexpr bool parse_leading_u64(std::string_view value, std::uint64_t& out) noexcept {
     value = first_token(value);
     if (value.empty() || value.front() < '0' || value.front() > '9') {
         return false;
@@ -95,8 +89,7 @@ split_key_value(std::string_view line) noexcept {
     return ec == std::errc{} && ptr == last;
 }
 
-[[nodiscard]] constexpr bool parse_u32(std::string_view value,
-                                       std::uint32_t& out) noexcept {
+[[nodiscard]] constexpr bool parse_u32(std::string_view value, std::uint32_t& out) noexcept {
     std::uint64_t tmp = 0;
     if (!parse_u64(value, tmp) || tmp > UINT32_MAX) {
         return false;
@@ -110,9 +103,7 @@ split_key_value(std::string_view line) noexcept {
     while (!value.empty()) {
         value = trim(value);
         const std::size_t end = value.find_first_of(" \t\r\n");
-        const std::string_view token = end == std::string_view::npos
-            ? value
-            : value.substr(0, end);
+        const std::string_view token = end == std::string_view::npos ? value : value.substr(0, end);
         if (token.size() > 1 && token.back() == 'p') {
             std::uint64_t parsed = 0;
             if (parse_leading_u64(token, parsed) && parsed <= UINT32_MAX) {
@@ -131,20 +122,28 @@ split_key_value(std::string_view line) noexcept {
 
 std::string_view nic_telemetry_error_name(NicTelemetryError error) noexcept {
     switch (error) {
-        case NicTelemetryError::None:                 return "None";
-        case NicTelemetryError::EmptyInput:           return "EmptyInput";
-        case NicTelemetryError::MalformedRecord:      return "MalformedRecord";
-        case NicTelemetryError::MissingRequiredField: return "MissingRequiredField";
-        case NicTelemetryError::InvalidNicCog:        return "InvalidNicCog";
-        case NicTelemetryError::EmptyHistory:         return "EmptyHistory";
-        case NicTelemetryError::InvalidWindow:        return "InvalidWindow";
-        case NicTelemetryError::NonPositiveCapacity:  return "NonPositiveCapacity";
-        default:                                      return "<unknown NicTelemetryError>";
+        case NicTelemetryError::None:
+            return "None";
+        case NicTelemetryError::EmptyInput:
+            return "EmptyInput";
+        case NicTelemetryError::MalformedRecord:
+            return "MalformedRecord";
+        case NicTelemetryError::MissingRequiredField:
+            return "MissingRequiredField";
+        case NicTelemetryError::InvalidNicCog:
+            return "InvalidNicCog";
+        case NicTelemetryError::EmptyHistory:
+            return "EmptyHistory";
+        case NicTelemetryError::InvalidWindow:
+            return "InvalidWindow";
+        case NicTelemetryError::NonPositiveCapacity:
+            return "NonPositiveCapacity";
+        default:
+            return "<unknown NicTelemetryError>";
     }
 }
 
-std::expected<DeclaredNetdevCounters, NicTelemetryError>
-parse_netdev_counters(ExternalTelemetryText text) noexcept {
+std::expected<DeclaredNetdevCounters, NicTelemetryError> parse_netdev_counters(ExternalTelemetryText text) noexcept {
     std::string_view input = text.value();
     if (trim(input).empty()) {
         return std::unexpected(NicTelemetryError::EmptyInput);
@@ -153,9 +152,7 @@ parse_netdev_counters(ExternalTelemetryText text) noexcept {
     std::uint16_t admitted = 0;
     while (!input.empty()) {
         const std::size_t nl = input.find('\n');
-        std::string_view line = nl == std::string_view::npos
-            ? input
-            : input.substr(0, nl);
+        std::string_view line = nl == std::string_view::npos ? input : input.substr(0, nl);
         input = nl == std::string_view::npos ? std::string_view{} : input.substr(nl + 1);
         auto [key, value] = split_key_value(line);
         std::uint64_t parsed = 0;
@@ -193,8 +190,7 @@ parse_netdev_counters(ExternalTelemetryText text) noexcept {
     return declare_netdev_counters(counters);
 }
 
-std::expected<DeclaredQdiscBacklog, NicTelemetryError>
-parse_qdisc_backlog(ExternalTelemetryText text) noexcept {
+std::expected<DeclaredQdiscBacklog, NicTelemetryError> parse_qdisc_backlog(ExternalTelemetryText text) noexcept {
     std::string_view input = text.value();
     if (trim(input).empty()) {
         return std::unexpected(NicTelemetryError::EmptyInput);
@@ -203,9 +199,7 @@ parse_qdisc_backlog(ExternalTelemetryText text) noexcept {
     std::uint16_t admitted = 0;
     while (!input.empty()) {
         const std::size_t nl = input.find('\n');
-        std::string_view line = nl == std::string_view::npos
-            ? input
-            : input.substr(0, nl);
+        std::string_view line = nl == std::string_view::npos ? input : input.substr(0, nl);
         input = nl == std::string_view::npos ? std::string_view{} : input.substr(nl + 1);
         auto [key, value] = split_key_value(line);
         std::uint64_t parsed = 0;
@@ -227,8 +221,7 @@ parse_qdisc_backlog(ExternalTelemetryText text) noexcept {
     return declare_qdisc_backlog(backlog);
 }
 
-std::expected<DeclaredSysctlSnapshot, NicTelemetryError>
-parse_sysctl_snapshot(ExternalTelemetryText text) noexcept {
+std::expected<DeclaredSysctlSnapshot, NicTelemetryError> parse_sysctl_snapshot(ExternalTelemetryText text) noexcept {
     std::string_view input = text.value();
     if (trim(input).empty()) {
         return std::unexpected(NicTelemetryError::EmptyInput);
@@ -237,27 +230,20 @@ parse_sysctl_snapshot(ExternalTelemetryText text) noexcept {
     std::uint16_t admitted = 0;
     while (!input.empty()) {
         const std::size_t nl = input.find('\n');
-        std::string_view line = nl == std::string_view::npos
-            ? input
-            : input.substr(0, nl);
+        std::string_view line = nl == std::string_view::npos ? input : input.substr(0, nl);
         input = nl == std::string_view::npos ? std::string_view{} : input.substr(nl + 1);
         auto [key, value] = split_key_value(line);
         std::uint64_t parsed64 = 0;
         std::uint32_t parsed32 = 0;
-        if ((key == "net.core.rmem_max" || key == "rmem_max")
-            && parse_u64(value, parsed64)) {
+        if ((key == "net.core.rmem_max" || key == "rmem_max") && parse_u64(value, parsed64)) {
             snapshot.rmem_max_bytes = parsed64;
-        } else if ((key == "net.core.wmem_max" || key == "wmem_max")
-                   && parse_u64(value, parsed64)) {
+        } else if ((key == "net.core.wmem_max" || key == "wmem_max") && parse_u64(value, parsed64)) {
             snapshot.wmem_max_bytes = parsed64;
-        } else if ((key == "net.core.busy_poll" || key == "busy_poll")
-                   && parse_u32(value, parsed32)) {
+        } else if ((key == "net.core.busy_poll" || key == "busy_poll") && parse_u32(value, parsed32)) {
             snapshot.busy_poll_us = parsed32;
-        } else if ((key == "net.ipv4.tcp_rmem_max" || key == "tcp_rmem_max")
-                   && parse_u32(value, parsed32)) {
+        } else if ((key == "net.ipv4.tcp_rmem_max" || key == "tcp_rmem_max") && parse_u32(value, parsed32)) {
             snapshot.tcp_rmem_max_bytes = parsed32;
-        } else if ((key == "net.ipv4.tcp_wmem_max" || key == "tcp_wmem_max")
-                   && parse_u32(value, parsed32)) {
+        } else if ((key == "net.ipv4.tcp_wmem_max" || key == "tcp_wmem_max") && parse_u32(value, parsed32)) {
             snapshot.tcp_wmem_max_bytes = parsed32;
         } else {
             continue;

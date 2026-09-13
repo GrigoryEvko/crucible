@@ -17,8 +17,7 @@ struct {
 } cntp_wip_ack_clock_events SEC(".maps");
 
 SEC("tracepoint/tcp/tcp_probe")
-int crucible_cntp_wip_ack_clock_sample(void *ctx)
-{
+int crucible_cntp_wip_ack_clock_sample(void* ctx) {
     (void)ctx;
     return 0;
 }

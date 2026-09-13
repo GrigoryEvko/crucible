@@ -40,13 +40,16 @@ enum class PingmeshProbeStatus : std::uint8_t {
     Rejected = 2,
 };
 
-[[nodiscard]] constexpr std::string_view
-pingmesh_probe_status_name(PingmeshProbeStatus status) noexcept {
+[[nodiscard]] constexpr std::string_view pingmesh_probe_status_name(PingmeshProbeStatus status) noexcept {
     switch (status) {
-        case PingmeshProbeStatus::Delivered: return "Delivered";
-        case PingmeshProbeStatus::Lost:      return "Lost";
-        case PingmeshProbeStatus::Rejected:  return "Rejected";
-        default:                             return "<unknown PingmeshProbeStatus>";
+        case PingmeshProbeStatus::Delivered:
+            return "Delivered";
+        case PingmeshProbeStatus::Lost:
+            return "Lost";
+        case PingmeshProbeStatus::Rejected:
+            return "Rejected";
+        default:
+            return "<unknown PingmeshProbeStatus>";
     }
 }
 
@@ -62,19 +65,28 @@ enum class PingmeshError : std::uint8_t {
     InsufficientPeers = 8,
 };
 
-[[nodiscard]] constexpr std::string_view
-pingmesh_error_name(PingmeshError error) noexcept {
+[[nodiscard]] constexpr std::string_view pingmesh_error_name(PingmeshError error) noexcept {
     switch (error) {
-        case PingmeshError::None:              return "None";
-        case PingmeshError::ZeroPeer:          return "ZeroPeer";
-        case PingmeshError::DuplicatePeer:     return "DuplicatePeer";
-        case PingmeshError::Full:              return "Full";
-        case PingmeshError::UnknownPeer:       return "UnknownPeer";
-        case PingmeshError::SelfPair:          return "SelfPair";
-        case PingmeshError::DisabledPair:      return "DisabledPair";
-        case PingmeshError::LatencyOutOfRange: return "LatencyOutOfRange";
-        case PingmeshError::InsufficientPeers: return "InsufficientPeers";
-        default:                               return "<unknown PingmeshError>";
+        case PingmeshError::None:
+            return "None";
+        case PingmeshError::ZeroPeer:
+            return "ZeroPeer";
+        case PingmeshError::DuplicatePeer:
+            return "DuplicatePeer";
+        case PingmeshError::Full:
+            return "Full";
+        case PingmeshError::UnknownPeer:
+            return "UnknownPeer";
+        case PingmeshError::SelfPair:
+            return "SelfPair";
+        case PingmeshError::DisabledPair:
+            return "DisabledPair";
+        case PingmeshError::LatencyOutOfRange:
+            return "LatencyOutOfRange";
+        case PingmeshError::InsufficientPeers:
+            return "InsufficientPeers";
+        default:
+            return "<unknown PingmeshError>";
     }
 }
 
@@ -93,13 +105,10 @@ struct PingmeshMeasurement {
     std::uint64_t sequence = 0;
     PingmeshProbeStatus status = PingmeshProbeStatus::Delivered;
 
-    [[nodiscard]] constexpr bool delivered() const noexcept {
-        return status == PingmeshProbeStatus::Delivered;
-    }
+    [[nodiscard]] constexpr bool delivered() const noexcept { return status == PingmeshProbeStatus::Delivered; }
 };
 
-using DeclaredPingmeshMeasurement =
-    safety::Tagged<PingmeshMeasurement, safety::source::Pingmesh>;
+using DeclaredPingmeshMeasurement = safety::Tagged<PingmeshMeasurement, safety::source::Pingmesh>;
 
 struct PingmeshPairStats {
     cog::Uuid src{};
@@ -128,14 +137,10 @@ struct PingmeshAnomalyReport {
 };
 
 template <class Ctx>
-concept CtxFitsPingmeshMint =
-    effects::IsExecCtx<Ctx>
-    && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Init>>;
+concept CtxFitsPingmeshMint = effects::IsExecCtx<Ctx> && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Init>>;
 
 template <class Ctx>
-concept CtxFitsPingmeshRecord =
-    effects::IsExecCtx<Ctx>
-    && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Bg>>;
+concept CtxFitsPingmeshRecord = effects::IsExecCtx<Ctx> && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Bg>>;
 
 namespace detail {
 
@@ -173,10 +178,8 @@ static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
               "std::atomic<uint64_t> must be lock-free on this target — see "
               "fixy-A5-029");
 
-[[nodiscard]] constexpr std::uint32_t
-zscore_milli(std::uint64_t value,
-             std::uint64_t mean,
-             std::uint64_t stddev) noexcept {
+[[nodiscard]] constexpr std::uint32_t zscore_milli(std::uint64_t value, std::uint64_t mean,
+                                                   std::uint64_t stddev) noexcept {
     if (stddev == 0 || value <= mean) {
         return 0;
     }
@@ -190,14 +193,10 @@ zscore_milli(std::uint64_t value,
 
 }  // namespace detail
 
-template <
-    std::size_t MaxPeers,
-    std::uint8_t Significant = 2,
-    std::uint64_t MaxLatencyNs = 60'000'000'000ull>
+template <std::size_t MaxPeers, std::uint8_t Significant = 2, std::uint64_t MaxLatencyNs = 60'000'000'000ull>
 class Pingmesh : public safety::Pinned<Pingmesh<MaxPeers, Significant, MaxLatencyNs>> {
     static_assert(MaxPeers > 1, "Pingmesh<MaxPeers> requires at least two peers.");
-    static_assert(MaxPeers <= 256,
-        "Pingmesh keeps a fixed all-pairs matrix; shard fleets above 256 peers.");
+    static_assert(MaxPeers <= 256, "Pingmesh keeps a fixed all-pairs matrix; shard fleets above 256 peers.");
 
 public:
     using histogram_type = observe::HdrHistogram<Significant, MaxLatencyNs>;
@@ -217,8 +216,7 @@ private:
     std::array<histogram_type, max_pairs> latency_{};
     std::array<detail::AtomicPingmeshPairCounters, max_pairs> counters_{};
 
-    [[nodiscard]] static constexpr std::size_t
-    pair_index(std::size_t src, std::size_t dst) noexcept {
+    [[nodiscard]] static constexpr std::size_t pair_index(std::size_t src, std::size_t dst) noexcept {
         return src * MaxPeers + dst;
     }
 
@@ -231,8 +229,7 @@ private:
         return MaxPeers;
     }
 
-    [[nodiscard]] PingmeshError
-    validate_pair(std::size_t src, std::size_t dst) const noexcept {
+    [[nodiscard]] PingmeshError validate_pair(std::size_t src, std::size_t dst) const noexcept {
         if (src == MaxPeers || dst == MaxPeers) {
             return PingmeshError::UnknownPeer;
         }
@@ -246,20 +243,17 @@ private:
     }
 
 public:
-    explicit Pingmesh(PingmeshConfig config = {}) noexcept
-        : config_{config} {}
+    explicit Pingmesh(PingmeshConfig config = {}) noexcept : config_{config} {}
 
     [[nodiscard]] PingmeshConfig config() const noexcept { return config_; }
 
-    [[nodiscard]] std::span<const PeerSlot, MaxPeers>
-    peers() const noexcept {
+    [[nodiscard]] std::span<const PeerSlot, MaxPeers> peers() const noexcept {
         return std::span<const PeerSlot, MaxPeers>{peers_};
     }
 
     template <effects::IsExecCtx Ctx>
         requires CtxFitsPingmeshMint<Ctx>
-    [[nodiscard]] PingmeshError
-    start_probing(Ctx const&, std::span<const cog::CogIdentity> peers) noexcept {
+    [[nodiscard]] PingmeshError start_probing(Ctx const&, std::span<const cog::CogIdentity> peers) noexcept {
         if (peers.size() < 2) {
             return PingmeshError::InsufficientPeers;
         }
@@ -291,8 +285,7 @@ public:
         return PingmeshError::None;
     }
 
-    [[nodiscard]] PingmeshError
-    register_peer(cog::CogIdentity peer) noexcept {
+    [[nodiscard]] PingmeshError register_peer(cog::CogIdentity peer) noexcept {
         if (peer.uuid.is_zero()) {
             return PingmeshError::ZeroPeer;
         }
@@ -312,14 +305,12 @@ public:
     void enable_all_registered_pairs() noexcept {
         for (std::size_t src = 0; src < MaxPeers; ++src) {
             for (std::size_t dst = 0; dst < MaxPeers; ++dst) {
-                enabled_pairs_[pair_index(src, dst)] =
-                    src != dst && peers_[src].active && peers_[dst].active;
+                enabled_pairs_[pair_index(src, dst)] = src != dst && peers_[src].active && peers_[dst].active;
             }
         }
     }
 
-    [[nodiscard]] PingmeshError
-    enable_pair(cog::Uuid src, cog::Uuid dst) noexcept {
+    [[nodiscard]] PingmeshError enable_pair(cog::Uuid src, cog::Uuid dst) noexcept {
         auto const src_i = find_peer(src);
         auto const dst_i = find_peer(dst);
         auto const err = validate_pair(src_i, dst_i);
@@ -332,9 +323,7 @@ public:
 
     template <effects::IsExecCtx Ctx>
         requires CtxFitsPingmeshRecord<Ctx>
-    [[nodiscard]] PingmeshError
-    record_measurement(Ctx const&,
-                       DeclaredPingmeshMeasurement measurement) noexcept {
+    [[nodiscard]] PingmeshError record_measurement(Ctx const&, DeclaredPingmeshMeasurement measurement) noexcept {
         auto const& value = measurement.value();
         auto const src = find_peer(value.src);
         auto const dst = find_peer(value.dst);
@@ -367,8 +356,7 @@ public:
         return PingmeshError::None;
     }
 
-    [[nodiscard]] histogram_type const*
-    per_pair_latency(cog::Uuid src, cog::Uuid dst) const noexcept {
+    [[nodiscard]] histogram_type const* per_pair_latency(cog::Uuid src, cog::Uuid dst) const noexcept {
         auto const src_i = find_peer(src);
         auto const dst_i = find_peer(dst);
         if (validate_pair(src_i, dst_i) != PingmeshError::None) {
@@ -377,8 +365,7 @@ public:
         return &latency_[pair_index(src_i, dst_i)];
     }
 
-    [[nodiscard]] PingmeshPairStats
-    pair_stats(cog::Uuid src, cog::Uuid dst) const noexcept {
+    [[nodiscard]] PingmeshPairStats pair_stats(cog::Uuid src, cog::Uuid dst) const noexcept {
         auto const src_i = find_peer(src);
         auto const dst_i = find_peer(dst);
         if (validate_pair(src_i, dst_i) != PingmeshError::None) {
@@ -417,8 +404,8 @@ public:
                     continue;
                 }
                 auto stats = pair_stats(peers_[src].peer.uuid, peers_[dst].peer.uuid);
-                auto const z = detail::zscore_milli(
-                    stats.p99_latency_ns, stats.mean_latency_ns, stats.stddev_latency_ns);
+                auto const z =
+                    detail::zscore_milli(stats.p99_latency_ns, stats.mean_latency_ns, stats.stddev_latency_ns);
                 if (z >= threshold || stats.lost != 0 || stats.rejected != 0) {
                     report.entries[report.count++] = PingmeshAnomaly{
                         .stats = stats,
@@ -432,13 +419,11 @@ public:
     }
 };
 
-template <effects::IsExecCtx Ctx,
-          std::size_t MaxPeers,
-          std::uint8_t Significant = 2,
+template <effects::IsExecCtx Ctx, std::size_t MaxPeers, std::uint8_t Significant = 2,
           std::uint64_t MaxLatencyNs = 60'000'000'000ull>
     requires CtxFitsPingmeshMint<Ctx>
-[[nodiscard]] Pingmesh<MaxPeers, Significant, MaxLatencyNs>
-mint_pingmesh(Ctx const&, PingmeshConfig config = {}) noexcept {
+[[nodiscard]] Pingmesh<MaxPeers, Significant, MaxLatencyNs> mint_pingmesh(Ctx const&,
+                                                                          PingmeshConfig config = {}) noexcept {
     return Pingmesh<MaxPeers, Significant, MaxLatencyNs>{config};
 }
 

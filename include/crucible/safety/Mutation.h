@@ -42,8 +42,8 @@
 #include <crucible/algebra/GradedTrait.h>
 #include <crucible/algebra/lattices/MonotoneLattice.h>
 #include <crucible/algebra/lattices/SeqPrefixLattice.h>
-#include <crucible/effects/ExecCtx.h>           // FIXY-V-193: MonotonicClock ctx-gate
-#include <crucible/safety/ClockSource.h>        // FIXY-V-193: MonotonicClockBytes return type
+#include <crucible/effects/ExecCtx.h>  // FIXY-V-193: MonotonicClock ctx-gate
+#include <crucible/safety/ClockSource.h>  // FIXY-V-193: MonotonicClockBytes return type
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/Pinned.h>
 #include <crucible/safety/Post.h>
@@ -75,11 +75,15 @@ namespace crucible::safety {
 // Catching the pattern structurally keeps the backlog clear of
 // "should we also wrap the value?" design questions.
 
-template <typename T> class WriteOnce;                // forward decl
-template <typename Ptr> class WriteOnceNonNull;        // forward decl (#77)
+template <typename T>
+class WriteOnce;  // forward decl
+template <typename Ptr>
+class WriteOnceNonNull;  // forward decl (#77)
 
-template <typename T> struct is_writeonce            : std::false_type {};
-template <typename U> struct is_writeonce<WriteOnce<U>> : std::true_type {};
+template <typename T>
+struct is_writeonce : std::false_type {};
+template <typename U>
+struct is_writeonce<WriteOnce<U>> : std::true_type {};
 template <typename T>
 inline constexpr bool is_writeonce_v = is_writeonce<std::remove_cvref_t<T>>::value;
 
@@ -89,11 +93,12 @@ inline constexpr bool is_writeonce_v = is_writeonce<std::remove_cvref_t<T>>::val
 // as a separate trait so AppendOnly can fire a distinct named
 // diagnostic for each form, and the pre-existing neg-compile
 // regex `"AppendOnly<WriteOnce<T>> is redundant"` stays stable.
-template <typename T> struct is_writeoncenonnull                    : std::false_type {};
-template <typename Ptr> struct is_writeoncenonnull<WriteOnceNonNull<Ptr>> : std::true_type {};
 template <typename T>
-inline constexpr bool is_writeoncenonnull_v =
-    is_writeoncenonnull<std::remove_cvref_t<T>>::value;
+struct is_writeoncenonnull : std::false_type {};
+template <typename Ptr>
+struct is_writeoncenonnull<WriteOnceNonNull<Ptr>> : std::true_type {};
+template <typename T>
+inline constexpr bool is_writeoncenonnull_v = is_writeoncenonnull<std::remove_cvref_t<T>>::value;
 
 // ── AppendOnly ──────────────────────────────────────────────────────
 //
@@ -180,11 +185,10 @@ inline constexpr bool is_writeoncenonnull_v =
 
 template <typename T, template <typename...> class Storage = std::vector>
 class [[nodiscard]] AppendOnly {
-    static_assert(!is_writeonce_v<T>,
-        "AppendOnly<WriteOnce<T>> is redundant: AppendOnly already guarantees "
-        "that emplaced elements are never mutated, reassigned, or removed. "
-        "Use AppendOnly<T> directly — the WriteOnce layer adds no invariant "
-        "and doubles per-element storage by one std::optional tag byte.");
+    static_assert(!is_writeonce_v<T>, "AppendOnly<WriteOnce<T>> is redundant: AppendOnly already guarantees "
+                                      "that emplaced elements are never mutated, reassigned, or removed. "
+                                      "Use AppendOnly<T> directly — the WriteOnce layer adds no invariant "
+                                      "and doubles per-element storage by one std::optional tag byte.");
     // Symmetric rejection for the pointer-specialized wrapper (#77).
     // WriteOnceNonNull<T*> is the pointer-slot form of WriteOnce; it
     // uses nullptr as the "not yet set" sentinel instead of carrying
@@ -192,17 +196,17 @@ class [[nodiscard]] AppendOnly {
     // invariant for the same reason as WriteOnce<T> — AppendOnly's
     // own immutability promise subsumes it.
     static_assert(!is_writeoncenonnull_v<T>,
-        "[AppendOnly_Over_WriteOnceNonNull_Redundant] AppendOnly<WriteOnceNonNull<T*>> "
-        "is redundant: AppendOnly already guarantees that emplaced elements "
-        "are never mutated, reassigned, or removed, which subsumes "
-        "WriteOnceNonNull's single-set guarantee.  Use AppendOnly<T*> directly "
-        "when the elements are pointers, and rely on a per-insertion "
-        "non-null contract at the call site if that's the real invariant. "
-        "(#77, symmetric with the AppendOnly<WriteOnce<T>> rejection above)");
+                  "[AppendOnly_Over_WriteOnceNonNull_Redundant] AppendOnly<WriteOnceNonNull<T*>> "
+                  "is redundant: AppendOnly already guarantees that emplaced elements "
+                  "are never mutated, reassigned, or removed, which subsumes "
+                  "WriteOnceNonNull's single-set guarantee.  Use AppendOnly<T*> directly "
+                  "when the elements are pointers, and rely on a per-insertion "
+                  "non-null contract at the call site if that's the real invariant. "
+                  "(#77, symmetric with the AppendOnly<WriteOnce<T>> rejection above)");
 
 public:
-    using value_type     = T;
-    using storage_type   = Storage<T>;
+    using value_type = T;
+    using storage_type = Storage<T>;
     using const_iterator = typename Storage<T>::const_iterator;
     using lattice_type = ::crucible::algebra::lattices::SeqPrefixLattice<T>;
     // Modality declaration — Round-4 CHEAT-5; see safety/Linear.h.
@@ -212,17 +216,15 @@ public:
     // value_type_decoupled trait specialization at the bottom of
     // this header — its value_type is T (element) but its substrate
     // carries Storage<T> (container).  See algebra/GradedTrait.h.
-    static constexpr ::crucible::algebra::ModalityKind modality =
-        ::crucible::algebra::ModalityKind::Absolute;
+    static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::Absolute;
     // Public per GRADED-TRAIT-1 — see Linear.h for the rationale.
-    using graded_type  = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Absolute, lattice_type, Storage<T>>;
+    using graded_type =
+        ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Absolute, lattice_type, Storage<T>>;
 
 private:
     graded_type impl_;
 
 public:
-
     // Default-construct: empty Storage; derived grade automatically
     // resolves to Length{0} == bottom.
     AppendOnly() : impl_{Storage<T>{}} {}
@@ -236,21 +238,17 @@ public:
         impl_.peek_mut().emplace_back(std::forward<Args>(args)...);
     }
 
-    void append(T item) {
-        impl_.peek_mut().emplace_back(std::move(item));
-    }
+    void append(T item) { impl_.peek_mut().emplace_back(std::move(item)); }
 
     // Read-only access — forwards through Graded::peek().
-    [[nodiscard]] const T& operator[](std::size_t i) const noexcept {
-        return impl_.peek()[i];
-    }
+    [[nodiscard]] const T& operator[](std::size_t i) const noexcept { return impl_.peek()[i]; }
     [[nodiscard]] const T& front() const noexcept { return impl_.peek().front(); }
-    [[nodiscard]] const T& back()  const noexcept { return impl_.peek().back(); }
-    [[nodiscard]] std::size_t size()  const noexcept { return impl_.peek().size(); }
-    [[nodiscard]] bool        empty() const noexcept { return impl_.peek().empty(); }
+    [[nodiscard]] const T& back() const noexcept { return impl_.peek().back(); }
+    [[nodiscard]] std::size_t size() const noexcept { return impl_.peek().size(); }
+    [[nodiscard]] bool empty() const noexcept { return impl_.peek().empty(); }
 
     [[nodiscard]] const_iterator begin() const noexcept { return impl_.peek().begin(); }
-    [[nodiscard]] const_iterator end()   const noexcept { return impl_.peek().end(); }
+    [[nodiscard]] const_iterator end() const noexcept { return impl_.peek().end(); }
 
     // Consuming drain — yield the collected storage and leave *this
     // in a moved-from state.  Forwards through Graded::consume().
@@ -273,9 +271,7 @@ public:
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return graded_type::lattice_name();
-    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 };
 
 // Zero-cost guarantee preserved by Graded's derived-grade
@@ -283,7 +279,7 @@ public:
 // element (Length<T>, 8 bytes) is computed on demand from the
 // container's .size() rather than stored as a separate field —
 // no +8 byte regression vs pre-migration storage.
-static_assert(sizeof(AppendOnly<char*>)        == sizeof(std::vector<char*>),
+static_assert(sizeof(AppendOnly<char*>) == sizeof(std::vector<char*>),
               "AppendOnly<char*> must collapse to sizeof(Storage<char*>) — "
               "Graded's derived-grade specialization lets the grade "
               "(Length{size_t}) be computed from c.size() rather than "
@@ -317,21 +313,19 @@ static_assert(sizeof(AppendOnly<std::uint64_t>) == sizeof(std::vector<std::uint6
 //                   contract semantic=enforce/observe; zero under
 //                   semantic=ignore (hot-path TUs).
 
-template <typename T,
-          typename KeyFn = std::identity,
-          typename Cmp   = std::less<>,
+template <typename T, typename KeyFn = std::identity, typename Cmp = std::less<>,
           template <typename...> class Storage = std::vector>
 class [[nodiscard]] OrderedAppendOnly {
-    AppendOnly<T, Storage>     inner_;
+    AppendOnly<T, Storage> inner_;
     [[no_unique_address]] KeyFn key_{};
-    [[no_unique_address]] Cmp   cmp_{};
+    [[no_unique_address]] Cmp cmp_{};
 
 public:
-    using value_type     = T;
-    using key_type       = std::invoke_result_t<KeyFn, const T&>;
-    using key_fn_type    = KeyFn;
-    using comparator     = Cmp;
-    using storage_type   = Storage<T>;
+    using value_type = T;
+    using key_type = std::invoke_result_t<KeyFn, const T&>;
+    using key_fn_type = KeyFn;
+    using comparator = Cmp;
+    using storage_type = Storage<T>;
     using const_iterator = typename AppendOnly<T, Storage>::const_iterator;
 
     OrderedAppendOnly() = default;
@@ -343,8 +337,7 @@ public:
     // Monotonic::advance's `pre(!Cmp{}(new, old))`.
     // fixy-A1-007: this->-member pre (references inner_) migrated to
     // body CRUCIBLE_PRE.
-    void append(T item)
-    {
+    void append(T item) {
         CRUCIBLE_PRE(inner_.empty() || !Cmp{}(KeyFn{}(item), KeyFn{}(inner_.back())));
         inner_.append(std::move(item));
     }
@@ -360,12 +353,12 @@ public:
     // Read-only access — delegates to the wrapped AppendOnly.
     [[nodiscard]] const T& operator[](std::size_t i) const noexcept { return inner_[i]; }
     [[nodiscard]] const T& front() const noexcept { return inner_.front(); }
-    [[nodiscard]] const T& back()  const noexcept { return inner_.back(); }
-    [[nodiscard]] std::size_t size()  const noexcept { return inner_.size(); }
-    [[nodiscard]] bool        empty() const noexcept { return inner_.empty(); }
+    [[nodiscard]] const T& back() const noexcept { return inner_.back(); }
+    [[nodiscard]] std::size_t size() const noexcept { return inner_.size(); }
+    [[nodiscard]] bool empty() const noexcept { return inner_.empty(); }
 
     [[nodiscard]] const_iterator begin() const noexcept { return inner_.begin(); }
-    [[nodiscard]] const_iterator end()   const noexcept { return inner_.end(); }
+    [[nodiscard]] const_iterator end() const noexcept { return inner_.end(); }
 
     // Consuming drain — yield the collected storage and leave *this empty.
     [[nodiscard]] Storage<T> drain() && noexcept(std::is_nothrow_move_constructible_v<Storage<T>>) {
@@ -425,34 +418,30 @@ static_assert(sizeof(OrderedAppendOnly<std::uint64_t>) == sizeof(AppendOnly<std:
 template <typename T, typename Cmp = std::less<T>>
 class [[nodiscard]] Monotonic {
 public:
-    using value_type      = T;
+    using value_type = T;
     using comparator_type = Cmp;
     using lattice_type = ::crucible::algebra::lattices::MonotoneLattice<T, Cmp>;
     // Modality declaration — Round-4 CHEAT-5; see safety/Linear.h.
-    static constexpr ::crucible::algebra::ModalityKind modality =
-        ::crucible::algebra::ModalityKind::Absolute;
+    static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::Absolute;
     // Public per GRADED-TRAIT-1 — see Linear.h for the rationale.
-    using graded_type  = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
+    using graded_type = ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
 
 private:
     graded_type impl_;
 
 public:
-
     // Construction: pass `initial` once via the Graded specialization's
     // ergonomic single-arg ctor.  One move into the unified storage
     // cell.  No copy, no double-store.
-    constexpr explicit Monotonic(T initial)
-        noexcept(std::is_nothrow_move_constructible_v<T>)
+    constexpr explicit Monotonic(T initial) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(initial)} {}
 
-    Monotonic(const Monotonic&)            = default;
-    Monotonic(Monotonic&&)                 = default;
+    Monotonic(const Monotonic&) = default;
+    Monotonic(Monotonic&&) = default;
     Monotonic& operator=(const Monotonic&) = default;
-    Monotonic& operator=(Monotonic&&)      = default;
+    Monotonic& operator=(Monotonic&&) = default;
 
-    [[nodiscard]] constexpr const T& get()     const noexcept { return impl_.peek(); }
+    [[nodiscard]] constexpr const T& get() const noexcept { return impl_.peek(); }
     [[nodiscard]] constexpr const T& current() const noexcept { return impl_.peek(); }
 
     // Advance.  Contract-checks that the new value does not go
@@ -460,9 +449,7 @@ public:
     // algebraic clarity — `lattice_type::leq(current, new_value)` is
     // exactly `!Cmp{}(new_value, current)`, the original predicate.
     // fixy-A1-007: this->-member pre migrated to body CRUCIBLE_PRE.
-    constexpr void advance(T new_value)
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    constexpr void advance(T new_value) noexcept(std::is_nothrow_move_constructible_v<T>) {
         CRUCIBLE_PRE(lattice_type::leq(impl_.peek(), new_value));
         // Reassign impl_ via the specialization's single-arg ctor.
         // Storage is one cell; one move suffices to bring both the
@@ -473,9 +460,7 @@ public:
     // Compare-and-advance.  Returns true iff advanced.  Useful when
     // multiple threads attempt to advance and only the monotonic-
     // valid ones should succeed.
-    constexpr bool try_advance(T new_value)
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    constexpr bool try_advance(T new_value) noexcept(std::is_nothrow_move_constructible_v<T>) {
         if (!lattice_type::leq(impl_.peek(), new_value)) return false;
         impl_ = graded_type{std::move(new_value)};
         return true;
@@ -529,9 +514,7 @@ public:
     // Caller is responsible for ensuring no concurrent reader or
     // writer races with this call; the type system cannot prove
     // quiescence.  Same precondition as the atomic variant.
-    constexpr void reset_under_quiescence(T value = T{})
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    constexpr void reset_under_quiescence(T value = T{}) noexcept(std::is_nothrow_move_constructible_v<T>) {
         impl_ = graded_type{std::move(value)};
     }
 
@@ -547,9 +530,7 @@ public:
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return graded_type::lattice_name();
-    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 };
 
 // Zero-cost guarantee preserved by Graded's partial specialization
@@ -595,37 +576,34 @@ class [[nodiscard]] BoundedMonotonic {
     static constexpr T kMax = T(Max);
 
 public:
-    using value_type      = T;
+    using value_type = T;
     using comparator_type = Cmp;
-    static constexpr T    max() noexcept { return kMax; }
+    static constexpr T max() noexcept { return kMax; }
 
-    constexpr explicit BoundedMonotonic(T initial)
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-        pre(!(T(Max) < initial))        // initial <= Max
+    constexpr explicit BoundedMonotonic(T initial) noexcept(std::is_nothrow_move_constructible_v<T>)
+        pre(!(T(Max) < initial))  // initial <= Max
         : inner_{std::move(initial)} {}
 
-    BoundedMonotonic(const BoundedMonotonic&)            = default;
-    BoundedMonotonic(BoundedMonotonic&&)                 = default;
+    BoundedMonotonic(const BoundedMonotonic&) = default;
+    BoundedMonotonic(BoundedMonotonic&&) = default;
     BoundedMonotonic& operator=(const BoundedMonotonic&) = default;
-    BoundedMonotonic& operator=(BoundedMonotonic&&)      = default;
+    BoundedMonotonic& operator=(BoundedMonotonic&&) = default;
 
-    [[nodiscard]] constexpr const T& get()     const noexcept { return inner_.get(); }
+    [[nodiscard]] constexpr const T& get() const noexcept { return inner_.get(); }
     [[nodiscard]] constexpr const T& current() const noexcept { return inner_.current(); }
 
     // Advance — must be both non-decreasing (Monotonic's rule) AND
     // within the bound.  The inner Monotonic's pre() covers the first;
     // this pre() adds the bound.
     constexpr void advance(T new_value) noexcept(std::is_nothrow_move_assignable_v<T>)
-        pre(!(T(Max) < new_value))      // new_value <= Max
+        pre(!(T(Max) < new_value))  // new_value <= Max
     {
         inner_.advance(std::move(new_value));
     }
 
     // try_advance returns false if either the monotonicity OR the bound
     // would be violated; the Monotonic still succeeds on equal values.
-    constexpr bool try_advance(T new_value)
-        noexcept(std::is_nothrow_move_assignable_v<T>)
-    {
+    constexpr bool try_advance(T new_value) noexcept(std::is_nothrow_move_assignable_v<T>) {
         if (T(Max) < new_value) return false;  // bound violation
         return inner_.try_advance(std::move(new_value));
     }
@@ -663,17 +641,16 @@ public:
 
     constexpr WriteOnce() = default;
 
-    WriteOnce(const WriteOnce&)            = default;
-    WriteOnce(WriteOnce&&)                 = default;
+    WriteOnce(const WriteOnce&) = default;
+    WriteOnce(WriteOnce&&) = default;
     WriteOnce& operator=(const WriteOnce&) = default;
-    WriteOnce& operator=(WriteOnce&&)      = default;
+    WriteOnce& operator=(WriteOnce&&) = default;
 
     // Set exactly once.  Contract-checks that value has not been set.
     // fixy-A1-007: this->-member pre migrated to body CRUCIBLE_PRE —
     // closes the GCC 16.1.1 §13.6 foldable-body consteval-bypass on
     // member-access predicates (cf. feedback_crucible_pre_post_macros).
-    constexpr void set(T v) noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    constexpr void set(T v) noexcept(std::is_nothrow_move_constructible_v<T>) {
         CRUCIBLE_PRE(!value_.has_value());
         value_.emplace(std::move(v));
         // CONTRACT-WriteOnce-Set-POST: state-mutation post (CRUCIBLE_POST
@@ -720,8 +697,7 @@ public:
 
     // Read the set value.  Contract-fails if not yet set.
     // fixy-A1-007: this->-member pre migrated to body CRUCIBLE_PRE.
-    [[nodiscard]] constexpr const T& get() const noexcept
-    {
+    [[nodiscard]] constexpr const T& get() const noexcept {
         CRUCIBLE_PRE(value_.has_value());
         return *value_;
     }
@@ -772,13 +748,12 @@ public:
 
 template <typename Ptr>
 class WriteOnceNonNull {
-    static_assert(std::is_pointer_v<Ptr>,
-        "[WriteOnceNonNull_NonPointer_Type] WriteOnceNonNull requires "
-        "a pointer type argument (e.g. WriteOnceNonNull<MyClass*>). "
-        "The nullptr-sentinel strategy that makes this primitive "
-        "zero-overhead is meaningful only for pointer types; for "
-        "single-set slots over non-pointer values use WriteOnce<T> "
-        "(sizeof(T) + 1 byte std::optional tag).  (#77)");
+    static_assert(std::is_pointer_v<Ptr>, "[WriteOnceNonNull_NonPointer_Type] WriteOnceNonNull requires "
+                                          "a pointer type argument (e.g. WriteOnceNonNull<MyClass*>). "
+                                          "The nullptr-sentinel strategy that makes this primitive "
+                                          "zero-overhead is meaningful only for pointer types; for "
+                                          "single-set slots over non-pointer values use WriteOnce<T> "
+                                          "(sizeof(T) + 1 byte std::optional tag).  (#77)");
 };
 
 template <typename T>
@@ -786,23 +761,22 @@ class [[nodiscard]] WriteOnceNonNull<T*> {
     T* ptr_ = nullptr;
 
 public:
-    using value_type   = T*;
+    using value_type = T*;
     using pointee_type = T;
 
     constexpr WriteOnceNonNull() noexcept = default;
 
-    WriteOnceNonNull(const WriteOnceNonNull&)            = default;
-    WriteOnceNonNull(WriteOnceNonNull&&)                 = default;
+    WriteOnceNonNull(const WriteOnceNonNull&) = default;
+    WriteOnceNonNull(WriteOnceNonNull&&) = default;
     WriteOnceNonNull& operator=(const WriteOnceNonNull&) = default;
-    WriteOnceNonNull& operator=(WriteOnceNonNull&&)      = default;
+    WriteOnceNonNull& operator=(WriteOnceNonNull&&) = default;
 
     // Set exactly once.  Contract fires on double-set (ptr_ already
     // non-null) and on null input (publishing null is indistinguishable
     // from "never set" in the sentinel model — always a caller bug).
     // fixy-A1-007: param + this->-member pres migrated to body
     // CRUCIBLE_PRE (clause-shape uniformity with double-set rail).
-    constexpr void set(T* p) noexcept
-    {
+    constexpr void set(T* p) noexcept {
         CRUCIBLE_PRE(p != nullptr);
         CRUCIBLE_PRE(ptr_ == nullptr);
         ptr_ = p;
@@ -850,19 +824,14 @@ public:
 
     // Read the set pointer.  Contract fires if not yet set.
     // fixy-A1-007: this->-member pre migrated to body CRUCIBLE_PRE.
-    [[nodiscard]] constexpr T* get() const noexcept
-    {
+    [[nodiscard]] constexpr T* get() const noexcept {
         CRUCIBLE_PRE(ptr_ != nullptr);
         return ptr_;
     }
 
-    [[nodiscard]] constexpr bool has_value() const noexcept {
-        return ptr_ != nullptr;
-    }
+    [[nodiscard]] constexpr bool has_value() const noexcept { return ptr_ != nullptr; }
 
-    [[nodiscard]] constexpr explicit operator bool() const noexcept {
-        return ptr_ != nullptr;
-    }
+    [[nodiscard]] constexpr explicit operator bool() const noexcept { return ptr_ != nullptr; }
 
     // Dereference — contract fires if not yet set.  Member function
     // template with a defaulted U=T parameter so the return type
@@ -872,17 +841,15 @@ public:
     // void" at class-instantiation time.
     // fixy-A1-007: this->-member pres migrated to body CRUCIBLE_PRE.
     template <typename U = T>
-        requires (!std::is_void_v<U>)
-    [[nodiscard]] constexpr U& operator*() const noexcept
-    {
+        requires(!std::is_void_v<U>)
+    [[nodiscard]] constexpr U& operator*() const noexcept {
         CRUCIBLE_PRE(ptr_ != nullptr);
         return *ptr_;
     }
 
     template <typename U = T>
-        requires (!std::is_void_v<U>)
-    [[nodiscard]] constexpr U* operator->() const noexcept
-    {
+        requires(!std::is_void_v<U>)
+    [[nodiscard]] constexpr U* operator->() const noexcept {
         CRUCIBLE_PRE(ptr_ != nullptr);
         return ptr_;
     }
@@ -892,7 +859,7 @@ public:
 // sizeof(T*), saving the optional tag byte + padding of WriteOnce<T*>.
 // Both typed and void-pointee forms are supported — operator* and
 // operator-> are SFINAE'd away for the void pointee.
-static_assert(sizeof(WriteOnceNonNull<int*>)  == sizeof(int*));
+static_assert(sizeof(WriteOnceNonNull<int*>) == sizeof(int*));
 static_assert(sizeof(WriteOnceNonNull<void*>) == sizeof(void*));
 
 // ── AtomicMonotonic<T> ─────────────────────────────────────────────
@@ -958,24 +925,17 @@ class [[nodiscard]] alignas(64) AtomicMonotonic : Pinned<AtomicMonotonic<T, Cmp>
     // (std::less<T>) and the transparent (std::less<>) forms.  The
     // transparent form lets future call sites use heterogeneous compares
     // without giving up the fetch_max fast path.
-    static constexpr bool kIsLess =
-        std::is_same_v<Cmp, std::less<T>> ||
-        std::is_same_v<Cmp, std::less<>>;
-    static constexpr bool kIsGreater =
-        std::is_same_v<Cmp, std::greater<T>> ||
-        std::is_same_v<Cmp, std::greater<>>;
-    static constexpr bool kFastPathEligible =
-        std::integral<T> && (kIsLess || kIsGreater);
+    static constexpr bool kIsLess = std::is_same_v<Cmp, std::less<T>> || std::is_same_v<Cmp, std::less<>>;
+    static constexpr bool kIsGreater = std::is_same_v<Cmp, std::greater<T>> || std::is_same_v<Cmp, std::greater<>>;
+    static constexpr bool kFastPathEligible = std::integral<T> && (kIsLess || kIsGreater);
 
 public:
-    using value_type      = T;
+    using value_type = T;
     using comparator_type = Cmp;
 
     constexpr explicit AtomicMonotonic(T initial) noexcept : value_{initial} {}
 
-    [[nodiscard]] T get() const noexcept {
-        return value_.load(std::memory_order_acquire);
-    }
+    [[nodiscard]] T get() const noexcept { return value_.load(std::memory_order_acquire); }
 
     // Own-thread relaxed read.  For the SPSC ring pattern where the
     // SOLE writer of this counter (producer for head, consumer for
@@ -996,9 +956,7 @@ public:
     // (MPSC/MPMC producers racing to CAS-advance a SHARED counter),
     // use load_relaxed() instead — the sole-writer claim is false in
     // that case and peek_relaxed mislabels the access discipline.
-    [[nodiscard]] T peek_relaxed() const noexcept {
-        return value_.load(std::memory_order_relaxed);
-    }
+    [[nodiscard]] T peek_relaxed() const noexcept { return value_.load(std::memory_order_relaxed); }
 
     // FIXY-FOUND-115: race-CAS expected-value read.  For the MPSC/
     // MPMC pattern where multiple writers race-CAS to advance a
@@ -1024,9 +982,7 @@ public:
     // The two methods exist purely as discipline markers; switching
     // call sites between them changes ZERO machine code but makes
     // the access pattern grep-discoverable.
-    [[nodiscard]] T load_relaxed() const noexcept {
-        return value_.load(std::memory_order_relaxed);
-    }
+    [[nodiscard]] T load_relaxed() const noexcept { return value_.load(std::memory_order_relaxed); }
 
     // Try to advance to new_value.  Returns true iff this call moved the
     // value forward (per Cmp); false if the atomic already held a value
@@ -1045,10 +1001,8 @@ public:
             Cmp cmp;
             T observed = value_.load(std::memory_order_acquire);
             while (cmp(observed, new_value)) {
-                if (value_.compare_exchange_weak(
-                        observed, new_value,
-                        std::memory_order_acq_rel,
-                        std::memory_order_acquire))
+                if (value_.compare_exchange_weak(observed, new_value, std::memory_order_acq_rel,
+                                                 std::memory_order_acquire))
                     return true;
             }
             return false;
@@ -1062,8 +1016,7 @@ public:
     // not consteval), so the consteval-bypass class doesn't apply
     // here — but routing through CRUCIBLE_PRE preserves runtime
     // diagnostic discipline and matches every other this->-member pre.
-    void advance(T new_value) noexcept
-    {
+    void advance(T new_value) noexcept {
         CRUCIBLE_PRE(Cmp{}(value_.load(std::memory_order_acquire), new_value));
         value_.store(new_value, std::memory_order_release);
     }
@@ -1090,8 +1043,7 @@ public:
     // backwards (against Cmp) and violate monotonicity.
     [[nodiscard]] T bump_by(T delta) noexcept
         requires std::integral<T> && (kIsLess || kIsGreater)
-        pre (::crucible::decide::non_negative(delta))
-    {
+    pre(::crucible::decide::non_negative(delta)) {
         if constexpr (kIsLess) {
             return value_.fetch_add(delta, std::memory_order_acq_rel);
         } else {
@@ -1124,9 +1076,7 @@ public:
     // reset value AND any prior writes the caller flushed.  Caller is
     // responsible for ensuring no concurrent writers race with this
     // call; the type system cannot prove quiescence.
-    void reset_under_quiescence(T value = T{}) noexcept {
-        value_.store(value, std::memory_order_release);
-    }
+    void reset_under_quiescence(T value = T{}) noexcept { value_.store(value, std::memory_order_release); }
 
     // ─── Explicit memory-order surface ──────────────────────────────
     //
@@ -1146,9 +1096,7 @@ public:
     // Explicit-order load.  Defaults to acquire (matching get()).
     // Use seq_cst when the caller is implementing a fence-pair
     // pattern (Chase-Lev pop_bottom, Lê 2013 algorithm 5 line 8).
-    [[nodiscard]] T load(std::memory_order order = std::memory_order_acquire)
-        const noexcept
-    {
+    [[nodiscard]] T load(std::memory_order order = std::memory_order_acquire) const noexcept {
         return value_.load(order);
     }
 
@@ -1157,9 +1105,7 @@ public:
     // step backward in Cmp's direction.  For unconditional stores
     // (reset, initialization), use reset_under_quiescence instead.
     // fixy-A1-007: this->-member pre migrated to body CRUCIBLE_PRE.
-    void store(T new_value,
-               std::memory_order order = std::memory_order_release) noexcept
-    {
+    void store(T new_value, std::memory_order order = std::memory_order_release) noexcept {
         CRUCIBLE_PRE(Cmp{}(value_.load(std::memory_order_acquire), new_value));
         value_.store(new_value, order);
     }
@@ -1195,30 +1141,24 @@ public:
     // CAS-on-monotonic patterns.  Chase-Lev's pop_bottom needs
     // seq_cst on success to act as the RMW fence — pass
     // std::memory_order_seq_cst explicitly.
-    [[nodiscard]] bool compare_exchange_advance(
-        T& expected, T desired,
-        std::memory_order success_order = std::memory_order_acq_rel,
-        std::memory_order failure_order = std::memory_order_acquire) noexcept
-        requires (kIsLess || kIsGreater)
-        pre (Cmp{}(expected, desired))
-    {
-        return value_.compare_exchange_strong(
-            expected, desired, success_order, failure_order);
+    [[nodiscard]] bool compare_exchange_advance(T& expected, T desired,
+                                                std::memory_order success_order = std::memory_order_acq_rel,
+                                                std::memory_order failure_order = std::memory_order_acquire) noexcept
+        requires(kIsLess || kIsGreater)
+    pre(Cmp{}(expected, desired)) {
+        return value_.compare_exchange_strong(expected, desired, success_order, failure_order);
     }
 
     // Weak CAS variant — for use inside retry loops.  Spurious
     // failures permitted by hardware (LL/SC architectures); caller
     // must check the return value AND inspect `expected` to decide
     // whether to recompute and retry.
-    [[nodiscard]] bool compare_exchange_advance_weak(
-        T& expected, T desired,
-        std::memory_order success_order = std::memory_order_acq_rel,
-        std::memory_order failure_order = std::memory_order_acquire) noexcept
-        requires (kIsLess || kIsGreater)
-        pre (Cmp{}(expected, desired))
-    {
-        return value_.compare_exchange_weak(
-            expected, desired, success_order, failure_order);
+    [[nodiscard]] bool
+    compare_exchange_advance_weak(T& expected, T desired, std::memory_order success_order = std::memory_order_acq_rel,
+                                  std::memory_order failure_order = std::memory_order_acquire) noexcept
+        requires(kIsLess || kIsGreater)
+    pre(Cmp{}(expected, desired)) {
+        return value_.compare_exchange_weak(expected, desired, success_order, failure_order);
     }
 
     // ─── Standalone seq_cst fence ───────────────────────────────────
@@ -1235,9 +1175,7 @@ public:
     // touch — so this is a static method.  Cost: zero on x86 for
     // load-load / store-store reordering; non-trivial only on weak
     // memory models (ARMv8 emits DMB ISH).
-    static void fence_seq_cst() noexcept {
-        std::atomic_thread_fence(std::memory_order_seq_cst);
-    }
+    static void fence_seq_cst() noexcept { std::atomic_thread_fence(std::memory_order_seq_cst); }
 };
 
 // Cache-line isolation: every AtomicMonotonic instance occupies a
@@ -1245,19 +1183,17 @@ public:
 // invalidates adjacent state (fixy-A1-003).  alignof claim is the
 // structural guarantee; sizeof follows from the standard rule that
 // sizeof is a multiple of alignof.
-static_assert(alignof(AtomicMonotonic<uint64_t>) >= 64,
-              "AtomicMonotonic must be cache-line aligned: repeated "
-              "advance/bump/CAS traffic invalidates the consumer's "
-              "cached line every iteration, so the counter must NOT "
-              "share a line with unrelated embedder state "
-              "(CLAUDE.md §IX).");
+static_assert(alignof(AtomicMonotonic<uint64_t>) >= 64, "AtomicMonotonic must be cache-line aligned: repeated "
+                                                        "advance/bump/CAS traffic invalidates the consumer's "
+                                                        "cached line every iteration, so the counter must NOT "
+                                                        "share a line with unrelated embedder state "
+                                                        "(CLAUDE.md §IX).");
 static_assert(alignof(AtomicMonotonic<uint32_t>) >= 64);
-static_assert(sizeof(AtomicMonotonic<uint64_t>)  >= 64,
-              "AtomicMonotonic occupies a full cache line by "
-              "construction; embedders rely on the counter NOT "
-              "sharing a line with any field touched on the "
-              "producer/consumer hot path.");
-static_assert(sizeof(AtomicMonotonic<uint32_t>)  >= 64);
+static_assert(sizeof(AtomicMonotonic<uint64_t>) >= 64, "AtomicMonotonic occupies a full cache line by "
+                                                       "construction; embedders rely on the counter NOT "
+                                                       "sharing a line with any field touched on the "
+                                                       "producer/consumer hot path.");
+static_assert(sizeof(AtomicMonotonic<uint32_t>) >= 64);
 
 // ── MaxObserved<T> ─────────────────────────────────────────────────
 //
@@ -1308,10 +1244,8 @@ using MaxObserved = AtomicMonotonic<T, std::less<T>>;
 // row) is rejected at compile time.
 template <typename Ctx>
 concept CtxFitsMonotonicClock =
-    ::crucible::effects::CtxOwnsAnyOf<Ctx,
-        ::crucible::effects::Effect::Bg,
-        ::crucible::effects::Effect::Init,
-        ::crucible::effects::Effect::Test>;
+    ::crucible::effects::CtxOwnsAnyOf<Ctx, ::crucible::effects::Effect::Bg, ::crucible::effects::Effect::Init,
+                                      ::crucible::effects::Effect::Test>;
 
 class MonotonicClock : Pinned<MonotonicClock> {
     AtomicMonotonic<uint64_t> last_ns_{0};
@@ -1328,12 +1262,9 @@ public:
     // Test row) is rejected.
     template <::crucible::effects::IsExecCtx Ctx>
         requires CtxFitsMonotonicClock<Ctx>
-    [[nodiscard]] auto now_ns(Ctx const&) noexcept
-        -> ::crucible::safety::MonotonicClockBytes<std::uint64_t>
-    {
+    [[nodiscard]] auto now_ns(Ctx const&) noexcept -> ::crucible::safety::MonotonicClockBytes<std::uint64_t> {
         const std::uint64_t raw = static_cast<std::uint64_t>(
-            std::chrono::duration_cast<std::chrono::nanoseconds>(
-                std::chrono::steady_clock::now().time_since_epoch())
+            std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
                 .count());
         // try_advance returns false if raw ≤ observed; in that case
         // we return the observed value (same-or-forward).  The caller
@@ -1341,9 +1272,8 @@ public:
         (void)last_ns_.try_advance(raw);
         const std::uint64_t observed = last_ns_.get();
         const std::uint64_t value = observed > raw ? observed : raw;
-        return ::crucible::safety::mint_clock_source<
-            ::crucible::safety::ClockSource_v::Monotonic,
-            std::uint64_t>(value);
+        return ::crucible::safety::mint_clock_source<::crucible::safety::ClockSource_v::Monotonic, std::uint64_t>(
+            value);
     }
 };
 
@@ -1364,7 +1294,7 @@ namespace detail::mutation_self_test {
 //   * WriteOnceNonNull's nullptr-sentinel pointer slot;
 //   * AtomicMonotonic's atomic CAS-loop on a fetch_max-style path.
 inline void runtime_smoke_test() {
-    int seed = 3;                                            // non-constant
+    int seed = 3;  // non-constant
 
     // AppendOnly<T> over default std::vector.
     AppendOnly<int> ao{};
@@ -1376,14 +1306,15 @@ inline void runtime_smoke_test() {
     if (ao.front() != 3 || ao.back() != 5) std::abort();
     if (ao.empty()) std::abort();
     int sum = 0;
-    for (auto it = ao.begin(); it != ao.end(); ++it) sum += *it;
+    for (auto it = ao.begin(); it != ao.end(); ++it)
+        sum += *it;
     if (sum != 12) std::abort();
 
     // OrderedAppendOnly — strict monotone via identity KeyFn.
     OrderedAppendOnly<int> oao{};
     oao.append(1);
-    oao.append(seed);            // 3 — strictly increasing.
-    oao.append(seed + 4);        // 7
+    oao.append(seed);  // 3 — strictly increasing.
+    oao.append(seed + 4);  // 7
     if (oao.size() != 3) std::abort();
     if (oao.back() != 7) std::abort();
 
@@ -1394,8 +1325,8 @@ inline void runtime_smoke_test() {
     if (mono.get() != 3u) std::abort();
     if (!mono.try_advance(useed + 5u)) std::abort();
     if (mono.get() != 8u) std::abort();
-    if (mono.try_advance(2u)) std::abort();   // 2 < 8 -> reject
-    mono.bump();                              // +1, integral T
+    if (mono.try_advance(2u)) std::abort();  // 2 < 8 -> reject
+    mono.bump();  // +1, integral T
     if (mono.get() != 9u) std::abort();
 
     // BoundedMonotonic — bound + monotone composition.
@@ -1404,7 +1335,7 @@ inline void runtime_smoke_test() {
     if (bm.get() != 3u) std::abort();
     if (!bm.try_advance(64u)) std::abort();
     if (bm.get() != 64u) std::abort();
-    if (bm.try_advance(200u)) std::abort();   // exceeds bound
+    if (bm.try_advance(200u)) std::abort();  // exceeds bound
 
     // WriteOnce<T>.
     WriteOnce<int> wo{};
@@ -1413,7 +1344,7 @@ inline void runtime_smoke_test() {
     if (!wo.has_value()) std::abort();
     if (wo.get() != 33) std::abort();
     if (wo.get_assuming_set() != 33) std::abort();
-    if (wo.try_set(99)) std::abort();         // already set -> reject
+    if (wo.try_set(99)) std::abort();  // already set -> reject
 
     // WriteOnceNonNull<T*>.
     int target = 42;
@@ -1430,7 +1361,7 @@ inline void runtime_smoke_test() {
     if (am.get() != 3u) std::abort();
     if (!am.try_advance(static_cast<uint64_t>(seed + 7))) std::abort();
     if (am.get() != 10u) std::abort();
-    auto prev = am.bump();                    // returns prev = 10, advances to 11
+    auto prev = am.bump();  // returns prev = 10, advances to 11
     if (prev != 10u || am.get() != 11u) std::abort();
 
     // FIXY-V-193: MonotonicClock — ctx-gated now_ns returning
@@ -1444,33 +1375,26 @@ inline void runtime_smoke_test() {
     // The wrapper is regime-1 (sizeof == sizeof(T)) and exposes
     // the underlying value via peek_mut after move-out; we use the
     // satisfies<> gate to confirm provenance at compile time.
-    static_assert(BytesT::template satisfies<
-        ::crucible::safety::ClockSource_v::Monotonic>,
-        "FIXY-V-193: MonotonicClock::now_ns return must carry the "
-        "Monotonic clock-source provenance.");
-    static_assert(!BytesT::template satisfies<
-        ::crucible::safety::ClockSource_v::Boot>,
-        "FIXY-V-193: MonotonicClock::now_ns return must NOT subsume "
-        "a Boot requirement (Monotonic pauses on suspend, Boot does "
-        "not).");
-    static_assert(sizeof(BytesT) == sizeof(std::uint64_t),
-        "FIXY-V-193: MonotonicClockBytes must be regime-1 (EBO).");
+    static_assert(BytesT::template satisfies<::crucible::safety::ClockSource_v::Monotonic>,
+                  "FIXY-V-193: MonotonicClock::now_ns return must carry the "
+                  "Monotonic clock-source provenance.");
+    static_assert(!BytesT::template satisfies<::crucible::safety::ClockSource_v::Boot>,
+                  "FIXY-V-193: MonotonicClock::now_ns return must NOT subsume "
+                  "a Boot requirement (Monotonic pauses on suspend, Boot does "
+                  "not).");
+    static_assert(sizeof(BytesT) == sizeof(std::uint64_t), "FIXY-V-193: MonotonicClockBytes must be regime-1 (EBO).");
     // Compile-time gate-shape assertions.
-    static_assert(CtxFitsMonotonicClock<
-        ::crucible::effects::BgDrainCtx>);
-    static_assert(CtxFitsMonotonicClock<
-        ::crucible::effects::ColdInitCtx>);
-    static_assert(CtxFitsMonotonicClock<
-        ::crucible::effects::TestRunnerCtx>);
-    static_assert(!CtxFitsMonotonicClock<
-        ::crucible::effects::HotFgCtx>);
+    static_assert(CtxFitsMonotonicClock<::crucible::effects::BgDrainCtx>);
+    static_assert(CtxFitsMonotonicClock<::crucible::effects::ColdInitCtx>);
+    static_assert(CtxFitsMonotonicClock<::crucible::effects::TestRunnerCtx>);
+    static_assert(!CtxFitsMonotonicClock<::crucible::effects::HotFgCtx>);
     (void)t0;
     (void)t1;
 }
 
 }  // namespace detail::mutation_self_test
 
-} // namespace crucible::safety
+}  // namespace crucible::safety
 
 // ── Round-4 CHEAT-1 opt-out for AppendOnly ─────────────────────────
 //
@@ -1485,7 +1409,6 @@ inline void runtime_smoke_test() {
 // add the same specialization at their own header's bottom.
 
 namespace crucible::algebra {
-    template <typename T, template <typename...> class Storage>
-    struct value_type_decoupled<::crucible::safety::AppendOnly<T, Storage>>
-        : std::true_type {};
+template <typename T, template <typename...> class Storage>
+struct value_type_decoupled<::crucible::safety::AppendOnly<T, Storage>> : std::true_type {};
 }  // namespace crucible::algebra

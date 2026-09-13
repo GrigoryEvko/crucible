@@ -92,25 +92,30 @@ namespace crucible::algebra::lattices {
 // Chain ordering: each tier is a strictly more disruptive stdio surface
 // than the one below it.  Ordinal 0 = NoStdio; 3 = InteractiveRead.
 enum class Stdio : std::uint8_t {
-    NoStdio         = 0,  // bottom — no console I/O
-    BufferedWrite   = 1,  // write to a buffered stream (deferred flush; format cost)
+    NoStdio = 0,  // bottom — no console I/O
+    BufferedWrite = 1,  // write to a buffered stream (deferred flush; format cost)
     UnbufferedWrite = 2,  // write to an unbuffered / flushed stream (syscall per call)
     InteractiveRead = 3,  // top — reads stdin / blocks on interactive input
 };
 
 [[nodiscard]] consteval std::string_view stdio_name(Stdio t) noexcept {
     switch (t) {
-        case Stdio::NoStdio:         return "NoStdio";
-        case Stdio::BufferedWrite:   return "BufferedWrite";
-        case Stdio::UnbufferedWrite: return "UnbufferedWrite";
-        case Stdio::InteractiveRead: return "InteractiveRead";
-        default:                     return std::string_view{"<unknown Stdio>"};
+        case Stdio::NoStdio:
+            return "NoStdio";
+        case Stdio::BufferedWrite:
+            return "BufferedWrite";
+        case Stdio::UnbufferedWrite:
+            return "UnbufferedWrite";
+        case Stdio::InteractiveRead:
+            return "InteractiveRead";
+        default:
+            return std::string_view{"<unknown Stdio>"};
     }
 }
 
 struct StdioLattice : ChainLatticeOps<Stdio> {
     [[nodiscard]] static constexpr Stdio bottom() noexcept { return Stdio::NoStdio; }
-    [[nodiscard]] static constexpr Stdio top()    noexcept { return Stdio::InteractiveRead; }
+    [[nodiscard]] static constexpr Stdio top() noexcept { return Stdio::InteractiveRead; }
     [[nodiscard]] static consteval std::string_view name() noexcept { return "StdioLattice"; }
 
     template <Stdio T>
@@ -122,17 +127,22 @@ struct StdioLattice : ChainLatticeOps<Stdio> {
         };
         static constexpr Stdio tier = T;
         [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-        [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
         [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static consteval std::string_view name() noexcept {
             switch (T) {
-                case Stdio::NoStdio:         return "StdioLattice::At<NoStdio>";
-                case Stdio::BufferedWrite:   return "StdioLattice::At<BufferedWrite>";
-                case Stdio::UnbufferedWrite: return "StdioLattice::At<UnbufferedWrite>";
-                case Stdio::InteractiveRead: return "StdioLattice::At<InteractiveRead>";
-                default:                     return "StdioLattice::At<?>";
+                case Stdio::NoStdio:
+                    return "StdioLattice::At<NoStdio>";
+                case Stdio::BufferedWrite:
+                    return "StdioLattice::At<BufferedWrite>";
+                case Stdio::UnbufferedWrite:
+                    return "StdioLattice::At<UnbufferedWrite>";
+                case Stdio::InteractiveRead:
+                    return "StdioLattice::At<InteractiveRead>";
+                default:
+                    return "StdioLattice::At<?>";
             }
         }
     };
@@ -141,66 +151,59 @@ struct StdioLattice : ChainLatticeOps<Stdio> {
 // ── Self-test (V-241 scaffolding sanity) ────────────────────────────
 namespace detail::stdio_lattice_self_test {
 
-inline constexpr std::size_t stdio_count =
-    std::meta::enumerators_of(^^Stdio).size();
+inline constexpr std::size_t stdio_count = std::meta::enumerators_of(^^Stdio).size();
 
-static_assert(stdio_count == 4,
-    "Stdio diverged from {NoStdio, BufferedWrite, UnbufferedWrite, "
-    "InteractiveRead} per V-241 §taxonomy.  Adding a new tier requires "
-    "(a) appending at the next free ordinal (append-only per FOUND-I04), "
-    "(b) the matching stdio_name() arm, (c) the matching At<T> name() arm.");
+static_assert(stdio_count == 4, "Stdio diverged from {NoStdio, BufferedWrite, UnbufferedWrite, "
+                                "InteractiveRead} per V-241 §taxonomy.  Adding a new tier requires "
+                                "(a) appending at the next free ordinal (append-only per FOUND-I04), "
+                                "(b) the matching stdio_name() arm, (c) the matching At<T> name() arm.");
 
-static_assert(std::to_underlying(Stdio::NoStdio)         == 0);
+static_assert(std::to_underlying(Stdio::NoStdio) == 0);
 static_assert(std::to_underlying(Stdio::InteractiveRead) == 3);
 static_assert(std::is_same_v<std::underlying_type_t<Stdio>, std::uint8_t>);
 
 [[nodiscard]] consteval bool every_stdio_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^Stdio));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Stdio));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
         const auto n = stdio_name([:en:]);
         if (n == std::string_view{"<unknown Stdio>"}) return false;
-        if (n.empty())                                return false;
+        if (n.empty()) return false;
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_stdio_has_name(),
-    "stdio_name() switch missing an arm for at least one Stdio enumerator.");
+static_assert(every_stdio_has_name(), "stdio_name() switch missing an arm for at least one Stdio enumerator.");
 
 static_assert(::crucible::algebra::Lattice<StdioLattice>);
 static_assert(::crucible::algebra::BoundedLattice<StdioLattice>);
 static_assert(!::crucible::algebra::Semiring<StdioLattice>);
 
 static_assert(verify_chain_lattice_exhaustive<StdioLattice>(),
-    "StdioLattice chain-order lattice axioms failed — leq/join/meet defect.");
+              "StdioLattice chain-order lattice axioms failed — leq/join/meet defect.");
 static_assert(verify_chain_lattice_distributive_exhaustive<StdioLattice>(),
-    "StdioLattice chain failed distributivity — leq/join/meet defect.");
+              "StdioLattice chain failed distributivity — leq/join/meet defect.");
 
 static_assert(StdioLattice::bottom() == Stdio::NoStdio);
-static_assert(StdioLattice::top()    == Stdio::InteractiveRead);
+static_assert(StdioLattice::top() == Stdio::InteractiveRead);
 static_assert(StdioLattice::name() == std::string_view{"StdioLattice"});
 
-static_assert( StdioLattice::leq(Stdio::NoStdio, Stdio::InteractiveRead));
+static_assert(StdioLattice::leq(Stdio::NoStdio, Stdio::InteractiveRead));
 static_assert(!StdioLattice::leq(Stdio::InteractiveRead, Stdio::NoStdio));
 
-static_assert(StdioLattice::leq(Stdio::NoStdio,         Stdio::BufferedWrite));
-static_assert(StdioLattice::leq(Stdio::BufferedWrite,   Stdio::UnbufferedWrite));
+static_assert(StdioLattice::leq(Stdio::NoStdio, Stdio::BufferedWrite));
+static_assert(StdioLattice::leq(Stdio::BufferedWrite, Stdio::UnbufferedWrite));
 static_assert(StdioLattice::leq(Stdio::UnbufferedWrite, Stdio::InteractiveRead));
 
-static_assert(!StdioLattice::leq(Stdio::BufferedWrite,   Stdio::NoStdio));
+static_assert(!StdioLattice::leq(Stdio::BufferedWrite, Stdio::NoStdio));
 static_assert(!StdioLattice::leq(Stdio::InteractiveRead, Stdio::UnbufferedWrite));
 
 // par=join (more-disruptive dominates); NoStdio is the join identity.
-static_assert(StdioLattice::join(Stdio::BufferedWrite, Stdio::UnbufferedWrite)
-              == Stdio::UnbufferedWrite);
-static_assert(StdioLattice::join(Stdio::NoStdio, Stdio::BufferedWrite)
-              == Stdio::BufferedWrite);
+static_assert(StdioLattice::join(Stdio::BufferedWrite, Stdio::UnbufferedWrite) == Stdio::UnbufferedWrite);
+static_assert(StdioLattice::join(Stdio::NoStdio, Stdio::BufferedWrite) == Stdio::BufferedWrite);
 // and=meet (less-disruptive floor).
-static_assert(StdioLattice::meet(Stdio::InteractiveRead, Stdio::BufferedWrite)
-              == Stdio::BufferedWrite);
+static_assert(StdioLattice::meet(Stdio::InteractiveRead, Stdio::BufferedWrite) == Stdio::BufferedWrite);
 
 // ── FIXY-FOUND-076 audit pin: cross-tree convention misalignment ─────
 //
@@ -222,19 +225,17 @@ static_assert(StdioLattice::meet(Stdio::InteractiveRead, Stdio::BufferedWrite)
 //
 // Polarity-witness pin: a refactor inverting the chain would red these
 // asserts.
-static_assert(StdioLattice::join(Stdio::NoStdio, Stdio::InteractiveRead)
-              == Stdio::InteractiveRead,
-    "FIXY-FOUND-076: StdioLattice's JOIN gives MOST-disruptive "
-    "(top=InteractiveRead).  A consumer treating compose as "
-    "'strictest-wins stdio-surface minimization' would silently admit "
-    "InteractiveRead.  Gates wanting NoStdio floor MUST call MEET — "
-    "SAME defect family as FOUND-009/010/076 PART A.");
-static_assert(StdioLattice::meet(Stdio::NoStdio, Stdio::InteractiveRead)
-              == Stdio::NoStdio,
-    "FIXY-FOUND-076: StdioLattice's MEET gives strictest-stdio-floor "
-    "(bottom=NoStdio).  Hot-path admission gates MUST call MEET — "
-    "calling JOIN silently admits the most-permissive participant's "
-    "stdio surface.");
+static_assert(StdioLattice::join(Stdio::NoStdio, Stdio::InteractiveRead) == Stdio::InteractiveRead,
+              "FIXY-FOUND-076: StdioLattice's JOIN gives MOST-disruptive "
+              "(top=InteractiveRead).  A consumer treating compose as "
+              "'strictest-wins stdio-surface minimization' would silently admit "
+              "InteractiveRead.  Gates wanting NoStdio floor MUST call MEET — "
+              "SAME defect family as FOUND-009/010/076 PART A.");
+static_assert(StdioLattice::meet(Stdio::NoStdio, Stdio::InteractiveRead) == Stdio::NoStdio,
+              "FIXY-FOUND-076: StdioLattice's MEET gives strictest-stdio-floor "
+              "(bottom=NoStdio).  Hot-path admission gates MUST call MEET — "
+              "calling JOIN silently admits the most-permissive participant's "
+              "stdio surface.");
 
 static_assert(std::is_empty_v<StdioLattice::At<Stdio::NoStdio>::element_type>);
 static_assert(std::is_empty_v<StdioLattice::At<Stdio::BufferedWrite>::element_type>);
@@ -246,7 +247,7 @@ static_assert(StdioLattice::At<Stdio::UnbufferedWrite>::tier == Stdio::Unbuffere
 inline void stdio_lattice_runtime_smoke_test() {
     Stdio a = Stdio::NoStdio;
     Stdio b = Stdio::InteractiveRead;
-    [[maybe_unused]] bool  rl = StdioLattice::leq(a, b);
+    [[maybe_unused]] bool rl = StdioLattice::leq(a, b);
     [[maybe_unused]] Stdio rj = StdioLattice::join(a, b);
     [[maybe_unused]] Stdio rm = StdioLattice::meet(a, b);
 

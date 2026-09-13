@@ -43,17 +43,13 @@ enum class AdmissionDecisionKind : std::uint8_t {
     RejectedResource,
 };
 
-[[nodiscard]] std::string_view
-backpressure_error_name(BackpressureError error) noexcept;
-[[nodiscard]] std::string_view
-admission_decision_kind_name(AdmissionDecisionKind kind) noexcept;
+[[nodiscard]] std::string_view backpressure_error_name(BackpressureError error) noexcept;
+[[nodiscard]] std::string_view admission_decision_kind_name(AdmissionDecisionKind kind) noexcept;
 
 using PositiveBackpressureBytes = safety::Positive<std::uint32_t>;
 using PositiveConnectionLimit = safety::Positive<std::uint16_t>;
-using ResourcePressurePpm =
-    safety::Bounded<std::uint32_t{0}, std::uint32_t{1'000'000}, std::uint32_t>;
-using ResourceLimitPpm =
-    safety::Bounded<std::uint32_t{1}, std::uint32_t{1'000'000}, std::uint32_t>;
+using ResourcePressurePpm = safety::Bounded<std::uint32_t{0}, std::uint32_t{1'000'000}, std::uint32_t>;
+using ResourceLimitPpm = safety::Bounded<std::uint32_t{1}, std::uint32_t{1'000'000}, std::uint32_t>;
 
 struct ConnectionRequest {
     SocketFd socket;
@@ -80,16 +76,14 @@ struct AdmissionDecision {
     std::uint64_t sequence = 0;
 };
 
-using DeclaredAdmissionDecision =
-    safety::Tagged<AdmissionDecision, safety::source::AdmissionDecision>;
+using DeclaredAdmissionDecision = safety::Tagged<AdmissionDecision, safety::source::AdmissionDecision>;
 
 [[nodiscard]] constexpr std::expected<PositiveBackpressureBytes, BackpressureError>
 admit_backpressure_credit(std::uint32_t bytes) noexcept {
     if (bytes == 0) {
         return std::unexpected(BackpressureError::InvalidCreditBytes);
     }
-    return PositiveBackpressureBytes{
-        bytes, typename PositiveBackpressureBytes::Trusted{}};
+    return PositiveBackpressureBytes{bytes, typename PositiveBackpressureBytes::Trusted{}};
 }
 
 [[nodiscard]] constexpr std::expected<PositiveConnectionLimit, BackpressureError>
@@ -97,8 +91,7 @@ admit_connection_limit(std::uint16_t limit) noexcept {
     if (limit == 0) {
         return std::unexpected(BackpressureError::InvalidConnectionLimit);
     }
-    return PositiveConnectionLimit{
-        limit, typename PositiveConnectionLimit::Trusted{}};
+    return PositiveConnectionLimit{limit, typename PositiveConnectionLimit::Trusted{}};
 }
 
 [[nodiscard]] constexpr std::expected<ResourcePressurePpm, BackpressureError>
@@ -146,24 +139,19 @@ mint_resource_limit(std::uint32_t reject_at_or_above_ppm) noexcept {
 }
 
 [[nodiscard]] constexpr std::expected<ConnectionRequest, BackpressureError>
-mint_connection_request(SocketFd socket,
-                        PositiveBackpressureBytes initial_credit) noexcept {
+mint_connection_request(SocketFd socket, PositiveBackpressureBytes initial_credit) noexcept {
     return ConnectionRequest{
         .socket = socket,
         .initial_credit = initial_credit,
     };
 }
 
-[[nodiscard]] constexpr DeclaredAdmissionDecision
-mint_admission_decision(AdmissionDecision decision) noexcept {
+[[nodiscard]] constexpr DeclaredAdmissionDecision mint_admission_decision(AdmissionDecision decision) noexcept {
     return DeclaredAdmissionDecision{decision};
 }
 
-[[nodiscard]] constexpr bool
-resource_pressure_exceeds(ResourcePressure pressure,
-                          ResourceLimit limit) noexcept {
-    return pressure.kind == limit.kind &&
-           pressure.used_ppm.value() >= limit.reject_at_or_above_ppm.value();
+[[nodiscard]] constexpr bool resource_pressure_exceeds(ResourcePressure pressure, ResourceLimit limit) noexcept {
+    return pressure.kind == limit.kind && pressure.used_ppm.value() >= limit.reject_at_or_above_ppm.value();
 }
 
 static_assert(sizeof(PositiveBackpressureBytes) == sizeof(std::uint32_t));

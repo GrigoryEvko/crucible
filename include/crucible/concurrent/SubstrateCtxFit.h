@@ -66,19 +66,19 @@
 // these floors, the bound must be tightened here AND callers
 // re-audited.
 
-#include <crucible/concurrent/ExecCtxBridge.h>         // ctx_residency_tier<Ctx>()
-#include <crucible/concurrent/ParallelismRule.h>       // Tier enum
-#include <crucible/concurrent/Substrate.h>             // ChannelTopology + extractors
-                                                       // + per_call_working_set_v
-#include <crucible/effects/ExecCtx.h>                  // IsExecCtx + ctx_residency_tier_of_t
+#include <crucible/concurrent/ExecCtxBridge.h>  // ctx_residency_tier<Ctx>()
+#include <crucible/concurrent/ParallelismRule.h>  // Tier enum
+#include <crucible/concurrent/Substrate.h>  // ChannelTopology + extractors
+// + per_call_working_set_v
+#include <crucible/effects/ExecCtx.h>  // IsExecCtx + ctx_residency_tier_of_t
 
 #include <cstddef>
 
 namespace crucible::concurrent {
 
-inline constexpr std::size_t conservative_l1d_per_core =      32 * 1024;   //  32 KB
-inline constexpr std::size_t conservative_l2_per_core  =     256 * 1024;   // 256 KB
-inline constexpr std::size_t conservative_l3_total     = 16 * 1024 * 1024; //  16 MB
+inline constexpr std::size_t conservative_l1d_per_core = 32 * 1024;  //  32 KB
+inline constexpr std::size_t conservative_l2_per_core = 256 * 1024;  // 256 KB
+inline constexpr std::size_t conservative_l3_total = 16 * 1024 * 1024;  //  16 MB
 
 // ── fits_in_tier_v ──────────────────────────────────────────────────
 //
@@ -116,10 +116,8 @@ inline constexpr bool fits_in_tier_v = [] consteval {
 // HotFgCtx legitimately fails).
 
 template <class S, class Ctx>
-concept SubstrateFitsCtxResidency =
-    IsSubstrate<S>
- && ::crucible::effects::IsExecCtx<Ctx>
- && fits_in_tier_v<per_call_working_set_v<S>, ctx_residency_tier<Ctx>()>;
+concept SubstrateFitsCtxResidency = IsSubstrate<S> && ::crucible::effects::IsExecCtx<Ctx>
+                                 && fits_in_tier_v<per_call_working_set_v<S>, ctx_residency_tier<Ctx>()>;
 
 // ── StorageFitsCtxResidency ────────────────────────────────────────
 //
@@ -135,10 +133,8 @@ concept SubstrateFitsCtxResidency =
 // ring fits L1d, which only tiny channels do).
 
 template <class S, class Ctx>
-concept StorageFitsCtxResidency =
-    IsSubstrate<S>
- && ::crucible::effects::IsExecCtx<Ctx>
- && fits_in_tier_v<channel_byte_footprint_v<S>, ctx_residency_tier<Ctx>()>;
+concept StorageFitsCtxResidency = IsSubstrate<S> && ::crucible::effects::IsExecCtx<Ctx>
+                               && fits_in_tier_v<channel_byte_footprint_v<S>, ctx_residency_tier<Ctx>()>;
 
 // ── SubstrateBenefitsFromParallelism ───────────────────────────────
 //
@@ -161,9 +157,7 @@ concept StorageFitsCtxResidency =
 // means the developer should be aware of the alternative.
 
 template <class S>
-concept SubstrateBenefitsFromParallelism =
-    IsSubstrate<S>
- && (channel_byte_footprint_v<S> > conservative_l2_per_core);
+concept SubstrateBenefitsFromParallelism = IsSubstrate<S> && (channel_byte_footprint_v<S> > conservative_l2_per_core);
 
 // ── Inverse: residency_tier_required_for ────────────────────────────
 //
@@ -175,23 +169,25 @@ concept SubstrateBenefitsFromParallelism =
 
 template <std::size_t Footprint>
 inline constexpr Tier required_tier_for_footprint = [] consteval {
-    if      (Footprint <= conservative_l1d_per_core) return Tier::L1Resident;
-    else if (Footprint <= conservative_l2_per_core)  return Tier::L2Resident;
-    else if (Footprint <= conservative_l3_total)     return Tier::L3Resident;
-    else                                              return Tier::DRAMBound;
+    if (Footprint <= conservative_l1d_per_core)
+        return Tier::L1Resident;
+    else if (Footprint <= conservative_l2_per_core)
+        return Tier::L2Resident;
+    else if (Footprint <= conservative_l3_total)
+        return Tier::L3Resident;
+    else
+        return Tier::DRAMBound;
 }();
 
 template <IsSubstrate S>
-inline constexpr Tier substrate_required_tier_v =
-    required_tier_for_footprint<channel_byte_footprint_v<S>>;
+inline constexpr Tier substrate_required_tier_v = required_tier_for_footprint<channel_byte_footprint_v<S>>;
 
 // Mirror for hot-path side: smallest Tier the per-call WS fits.
 // Almost always L1Resident for any Permissioned* substrate; useful
 // for completeness and as the inverse of SubstrateFitsCtxResidency.
 
 template <IsSubstrate S>
-inline constexpr Tier substrate_hot_path_required_tier_v =
-    required_tier_for_footprint<per_call_working_set_v<S>>;
+inline constexpr Tier substrate_hot_path_required_tier_v = required_tier_for_footprint<per_call_working_set_v<S>>;
 
 // ── Self-test block ─────────────────────────────────────────────────
 namespace detail::substrate_ctx_fit_self_test {
@@ -203,22 +199,22 @@ struct UserTag {};
 // SPSC<int, 1024> = 4 KB total / 192 B per-call.  Both L1-resident.
 using SmallSpsc = Substrate_t<ChannelTopology::OneToOne, int, 1024, UserTag>;
 static_assert(channel_byte_footprint_v<SmallSpsc> == 4 * 1024);
-static_assert( fits_in_tier_v<4 * 1024, Tier::L1Resident>);
-static_assert( fits_in_tier_v<4 * 1024, Tier::L2Resident>);
-static_assert( fits_in_tier_v<4 * 1024, Tier::DRAMBound>);
+static_assert(fits_in_tier_v<4 * 1024, Tier::L1Resident>);
+static_assert(fits_in_tier_v<4 * 1024, Tier::L2Resident>);
+static_assert(fits_in_tier_v<4 * 1024, Tier::DRAMBound>);
 
 // SPSC<int, 65536> = 256 KB total / 192 B per-call.
 using BoundarySpsc = Substrate_t<ChannelTopology::OneToOne, int, 65536, UserTag>;
 static_assert(channel_byte_footprint_v<BoundarySpsc> == 256 * 1024);
-static_assert(!fits_in_tier_v<256 * 1024, Tier::L1Resident>);   // > 32 KB
-static_assert( fits_in_tier_v<256 * 1024, Tier::L2Resident>);   // == 256 KB
+static_assert(!fits_in_tier_v<256 * 1024, Tier::L1Resident>);  // > 32 KB
+static_assert(fits_in_tier_v<256 * 1024, Tier::L2Resident>);  // == 256 KB
 
 // SPSC<int, 1M> = 4 MB total / 192 B per-call.
 using LargeSpsc = Substrate_t<ChannelTopology::OneToOne, int, 1024 * 1024, UserTag>;
 static_assert(channel_byte_footprint_v<LargeSpsc> == 4 * 1024 * 1024);
 static_assert(!fits_in_tier_v<4 * 1024 * 1024, Tier::L1Resident>);
 static_assert(!fits_in_tier_v<4 * 1024 * 1024, Tier::L2Resident>);
-static_assert( fits_in_tier_v<4 * 1024 * 1024, Tier::L3Resident>);
+static_assert(fits_in_tier_v<4 * 1024 * 1024, Tier::L3Resident>);
 
 // Snapshot<double> = 8 B → fits everywhere.
 using SnapT = Substrate_t<ChannelTopology::OneToMany_Latest, double, 0, UserTag>;
@@ -231,20 +227,20 @@ static_assert(fits_in_tier_v<sizeof(double), Tier::L1Resident>);
 // for every Permissioned* primitive in the zoo, INDEPENDENT of
 // total capacity.  All three (Small/Boundary/Large) fit HotFgCtx.
 
-static_assert( SubstrateFitsCtxResidency<SmallSpsc,    eff::HotFgCtx>);
-static_assert( SubstrateFitsCtxResidency<BoundarySpsc, eff::HotFgCtx>);
-static_assert( SubstrateFitsCtxResidency<LargeSpsc,    eff::HotFgCtx>);
+static_assert(SubstrateFitsCtxResidency<SmallSpsc, eff::HotFgCtx>);
+static_assert(SubstrateFitsCtxResidency<BoundarySpsc, eff::HotFgCtx>);
+static_assert(SubstrateFitsCtxResidency<LargeSpsc, eff::HotFgCtx>);
 
-static_assert( SubstrateFitsCtxResidency<SmallSpsc,    eff::BgDrainCtx>);
-static_assert( SubstrateFitsCtxResidency<BoundarySpsc, eff::BgDrainCtx>);
-static_assert( SubstrateFitsCtxResidency<LargeSpsc,    eff::BgDrainCtx>);
+static_assert(SubstrateFitsCtxResidency<SmallSpsc, eff::BgDrainCtx>);
+static_assert(SubstrateFitsCtxResidency<BoundarySpsc, eff::BgDrainCtx>);
+static_assert(SubstrateFitsCtxResidency<LargeSpsc, eff::BgDrainCtx>);
 
-static_assert( SubstrateFitsCtxResidency<SmallSpsc,    eff::ColdInitCtx>);
-static_assert( SubstrateFitsCtxResidency<BoundarySpsc, eff::ColdInitCtx>);
-static_assert( SubstrateFitsCtxResidency<LargeSpsc,    eff::ColdInitCtx>);
+static_assert(SubstrateFitsCtxResidency<SmallSpsc, eff::ColdInitCtx>);
+static_assert(SubstrateFitsCtxResidency<BoundarySpsc, eff::ColdInitCtx>);
+static_assert(SubstrateFitsCtxResidency<LargeSpsc, eff::ColdInitCtx>);
 
 // Snapshot<double> trivially fits everywhere.
-static_assert( SubstrateFitsCtxResidency<SnapT, eff::HotFgCtx>);
+static_assert(SubstrateFitsCtxResidency<SnapT, eff::HotFgCtx>);
 
 // ── Per-call WS gate FIRES when sizeof(value_type) is huge ─────────
 //
@@ -253,19 +249,19 @@ static_assert( SubstrateFitsCtxResidency<SnapT, eff::HotFgCtx>);
 // rejects — the kind of pairing that DOES degrade hot-path latency.
 
 struct alignas(64) Big {
-    char buf[64 * 1024];   // 64 KB cell — exceeds L1d alone
+    char buf[64 * 1024];  // 64 KB cell — exceeds L1d alone
     auto operator<=>(Big const&) const = default;
 };
 
 using BigCellSpsc = Substrate_t<ChannelTopology::OneToOne, Big, 4, UserTag>;
 // per-call WS: 2 lines (head/tail) + 64 KB cell padded = 65664 B
 //   → exceeds L1d (32 KB), exceeds L2 (256 KB)? no, 65 KB fits L2
-static_assert(per_call_working_set_v<BigCellSpsc> >  conservative_l1d_per_core);
+static_assert(per_call_working_set_v<BigCellSpsc> > conservative_l1d_per_core);
 static_assert(per_call_working_set_v<BigCellSpsc> <= conservative_l2_per_core);
 
 static_assert(!SubstrateFitsCtxResidency<BigCellSpsc, eff::HotFgCtx>);
-static_assert( SubstrateFitsCtxResidency<BigCellSpsc, eff::BgDrainCtx>);
-static_assert( SubstrateFitsCtxResidency<BigCellSpsc, eff::ColdInitCtx>);
+static_assert(SubstrateFitsCtxResidency<BigCellSpsc, eff::BgDrainCtx>);
+static_assert(SubstrateFitsCtxResidency<BigCellSpsc, eff::ColdInitCtx>);
 
 // ── StorageFitsCtxResidency on canonical contexts ──────────────────
 //
@@ -273,50 +269,50 @@ static_assert( SubstrateFitsCtxResidency<BigCellSpsc, eff::ColdInitCtx>);
 // Use this when the caller IS scanning / placing / hugepage-hinting
 // the whole channel.
 
-static_assert( StorageFitsCtxResidency<SmallSpsc,    eff::HotFgCtx>);     // 4 KB ≤ 32 KB
-static_assert(!StorageFitsCtxResidency<BoundarySpsc, eff::HotFgCtx>);     // 256 KB > 32 KB
-static_assert(!StorageFitsCtxResidency<LargeSpsc,    eff::HotFgCtx>);     // 4 MB > 32 KB
+static_assert(StorageFitsCtxResidency<SmallSpsc, eff::HotFgCtx>);  // 4 KB ≤ 32 KB
+static_assert(!StorageFitsCtxResidency<BoundarySpsc, eff::HotFgCtx>);  // 256 KB > 32 KB
+static_assert(!StorageFitsCtxResidency<LargeSpsc, eff::HotFgCtx>);  // 4 MB > 32 KB
 
-static_assert( StorageFitsCtxResidency<SmallSpsc,    eff::BgDrainCtx>);
-static_assert( StorageFitsCtxResidency<BoundarySpsc, eff::BgDrainCtx>);
-static_assert(!StorageFitsCtxResidency<LargeSpsc,    eff::BgDrainCtx>);
+static_assert(StorageFitsCtxResidency<SmallSpsc, eff::BgDrainCtx>);
+static_assert(StorageFitsCtxResidency<BoundarySpsc, eff::BgDrainCtx>);
+static_assert(!StorageFitsCtxResidency<LargeSpsc, eff::BgDrainCtx>);
 
-static_assert( StorageFitsCtxResidency<SmallSpsc,    eff::ColdInitCtx>);
-static_assert( StorageFitsCtxResidency<BoundarySpsc, eff::ColdInitCtx>);
-static_assert( StorageFitsCtxResidency<LargeSpsc,    eff::ColdInitCtx>);
+static_assert(StorageFitsCtxResidency<SmallSpsc, eff::ColdInitCtx>);
+static_assert(StorageFitsCtxResidency<BoundarySpsc, eff::ColdInitCtx>);
+static_assert(StorageFitsCtxResidency<LargeSpsc, eff::ColdInitCtx>);
 
 // ── SubstrateBenefitsFromParallelism — the cliff signal ────────────
 
-static_assert(!SubstrateBenefitsFromParallelism<SmallSpsc>);     // 4 KB < cliff
+static_assert(!SubstrateBenefitsFromParallelism<SmallSpsc>);  // 4 KB < cliff
 static_assert(!SubstrateBenefitsFromParallelism<BoundarySpsc>);  // 256 KB == cliff (not >)
-static_assert( SubstrateBenefitsFromParallelism<LargeSpsc>);     // 4 MB > cliff
-static_assert(!SubstrateBenefitsFromParallelism<SnapT>);         // 8 B < cliff
+static_assert(SubstrateBenefitsFromParallelism<LargeSpsc>);  // 4 MB > cliff
+static_assert(!SubstrateBenefitsFromParallelism<SnapT>);  // 8 B < cliff
 
 // ── required_tier_for_footprint inverse mapping ────────────────────
 
-static_assert(required_tier_for_footprint<sizeof(double)>     == Tier::L1Resident);
-static_assert(required_tier_for_footprint<32 * 1024>           == Tier::L1Resident);   // boundary
-static_assert(required_tier_for_footprint<32 * 1024 + 1>       == Tier::L2Resident);
-static_assert(required_tier_for_footprint<256 * 1024>          == Tier::L2Resident);
-static_assert(required_tier_for_footprint<256 * 1024 + 1>      == Tier::L3Resident);
-static_assert(required_tier_for_footprint<16 * 1024 * 1024>    == Tier::L3Resident);
-static_assert(required_tier_for_footprint<32 * 1024 * 1024>    == Tier::DRAMBound);
+static_assert(required_tier_for_footprint<sizeof(double)> == Tier::L1Resident);
+static_assert(required_tier_for_footprint<32 * 1024> == Tier::L1Resident);  // boundary
+static_assert(required_tier_for_footprint<32 * 1024 + 1> == Tier::L2Resident);
+static_assert(required_tier_for_footprint<256 * 1024> == Tier::L2Resident);
+static_assert(required_tier_for_footprint<256 * 1024 + 1> == Tier::L3Resident);
+static_assert(required_tier_for_footprint<16 * 1024 * 1024> == Tier::L3Resident);
+static_assert(required_tier_for_footprint<32 * 1024 * 1024> == Tier::DRAMBound);
 
 // substrate_required_tier_v: TOTAL-storage-driven (matches
 // StorageFitsCtxResidency).
-static_assert(substrate_required_tier_v<SmallSpsc>    == Tier::L1Resident);
+static_assert(substrate_required_tier_v<SmallSpsc> == Tier::L1Resident);
 static_assert(substrate_required_tier_v<BoundarySpsc> == Tier::L2Resident);
-static_assert(substrate_required_tier_v<LargeSpsc>    == Tier::L3Resident);
-static_assert(substrate_required_tier_v<SnapT>        == Tier::L1Resident);
+static_assert(substrate_required_tier_v<LargeSpsc> == Tier::L3Resident);
+static_assert(substrate_required_tier_v<SnapT> == Tier::L1Resident);
 
 // substrate_hot_path_required_tier_v: per-call-WS-driven.  All
 // "normal" cell-size primitives stay L1Resident regardless of N.
-static_assert(substrate_hot_path_required_tier_v<SmallSpsc>    == Tier::L1Resident);
+static_assert(substrate_hot_path_required_tier_v<SmallSpsc> == Tier::L1Resident);
 static_assert(substrate_hot_path_required_tier_v<BoundarySpsc> == Tier::L1Resident);
-static_assert(substrate_hot_path_required_tier_v<LargeSpsc>    == Tier::L1Resident);
-static_assert(substrate_hot_path_required_tier_v<SnapT>        == Tier::L1Resident);
+static_assert(substrate_hot_path_required_tier_v<LargeSpsc> == Tier::L1Resident);
+static_assert(substrate_hot_path_required_tier_v<SnapT> == Tier::L1Resident);
 // BigCellSpsc (64 KB cell) needs L2.
-static_assert(substrate_hot_path_required_tier_v<BigCellSpsc>  == Tier::L2Resident);
+static_assert(substrate_hot_path_required_tier_v<BigCellSpsc> == Tier::L2Resident);
 
 }  // namespace detail::substrate_ctx_fit_self_test
 

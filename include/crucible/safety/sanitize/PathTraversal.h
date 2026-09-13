@@ -126,9 +126,9 @@
 
 #pragma once
 
-#include <crucible/safety/Path.h>            // Path<Source>, PathTraversalError, MAX_PATH_BYTES
-#include <crucible/safety/source/Path.h>     // V-232: FromUserPath / FromEnvPath / FromConfigPath
-#include <crucible/safety/Tagged.h>          // RetagAllowed concept
+#include <crucible/safety/Path.h>  // Path<Source>, PathTraversalError, MAX_PATH_BYTES
+#include <crucible/safety/source/Path.h>  // V-232: FromUserPath / FromEnvPath / FromConfigPath
+#include <crucible/safety/Tagged.h>  // RetagAllowed concept
 
 #include <cstddef>
 #include <expected>
@@ -143,8 +143,8 @@ namespace crucible::safety::sanitize::path_traversal {
 // Marker types let `sanitize_path<Policy>(...)` overloads dispatch
 // without ADL surprises.  The `PathTraversal` tag from V-031 is the
 // inaugural family member; V-233's tags refine it.
-struct no_dotdot              {};
-struct absolute_root_locked   {};
+struct no_dotdot {};
+struct absolute_root_locked {};
 
 // ── check_no_dotdot(path) ──────────────────────────────────────────
 //
@@ -196,8 +196,7 @@ check_no_dotdot(std::filesystem::path const& candidate) noexcept {
 // On equality / proper-prefix match: success.  On any divergence:
 // EscapesAnchor.
 [[nodiscard]] inline std::expected<void, PathTraversalError>
-check_absolute_root_locked(std::filesystem::path const& candidate,
-                           std::filesystem::path const& root_anchor) noexcept {
+check_absolute_root_locked(std::filesystem::path const& candidate, std::filesystem::path const& root_anchor) noexcept {
     // Lexically normalize both — strip `.` components and redundant
     // separators.  STRING-level only; no filesystem syscall.
     const auto cand_norm = candidate.lexically_normal();
@@ -250,8 +249,7 @@ check_absolute_root_locked(std::filesystem::path const& candidate,
 // pointing at the catalog rather than a silent runtime sanitize.
 template <typename From>
     requires RetagAllowed<From, source::Sanitized>
-[[nodiscard]] inline
-std::expected<Path<source::Sanitized>, PathTraversalError>
+[[nodiscard]] inline std::expected<Path<source::Sanitized>, PathTraversalError>
 sanitize_path_no_dotdot(Path<From>&& tainted) noexcept {
     auto check = check_no_dotdot(tainted.value());
     if (!check) {
@@ -272,17 +270,14 @@ sanitize_path_no_dotdot(Path<From>&& tainted) noexcept {
 // catalog-admitted source tags can flow through.
 template <typename From>
     requires RetagAllowed<From, source::Sanitized>
-[[nodiscard]] inline
-std::expected<Path<source::Sanitized>, PathTraversalError>
-sanitize_path_root_locked(Path<From>&& tainted,
-                          std::filesystem::path const& root_anchor) noexcept {
+[[nodiscard]] inline std::expected<Path<source::Sanitized>, PathTraversalError>
+sanitize_path_root_locked(Path<From>&& tainted, std::filesystem::path const& root_anchor) noexcept {
     // No-dot-dot first — cheapest predicate; rules out most attack
     // vectors before the (slightly more expensive) anchor walk.
     if (auto check = check_no_dotdot(tainted.value()); !check) {
         return std::unexpected(check.error());
     }
-    if (auto check = check_absolute_root_locked(tainted.value(), root_anchor);
-        !check) {
+    if (auto check = check_absolute_root_locked(tainted.value(), root_anchor); !check) {
         return std::unexpected(check.error());
     }
     return std::move(tainted).template retag<source::Sanitized>();
@@ -322,8 +317,7 @@ namespace crucible::safety {
 
 [[nodiscard]] inline std::expected<Path<source::Sanitized>, PathTraversalError>
 sanitize_path(Path<source::External>&& external_path) noexcept {
-    return sanitize::path_traversal::sanitize_path_no_dotdot<source::External>(
-        std::move(external_path));
+    return sanitize::path_traversal::sanitize_path_no_dotdot<source::External>(std::move(external_path));
 }
 
 }  // namespace crucible::safety
@@ -339,30 +333,30 @@ namespace crucible::safety::sanitize::path_traversal::detail::v233_self_test {
 
 // ── (1) Policy tags are distinct types ─────────────────────────────
 static_assert(!std::is_same_v<no_dotdot, absolute_root_locked>,
-    "FIXY-V-233: no_dotdot and absolute_root_locked must be distinct "
-    "policy-marker types — different sanitize policies, different "
-    "dispatch.");
+              "FIXY-V-233: no_dotdot and absolute_root_locked must be distinct "
+              "policy-marker types — different sanitize policies, different "
+              "dispatch.");
 
 // ── (2) Catalog-admitted source tags flow through sanitize_path_* ──
 //
 // Verify the requires-clause accepts every source tag in the V-023
 // + V-232 catalog that admits → Sanitized.  Use the runtime-check
 // signature via decltype to avoid actually instantiating the body.
-static_assert(RetagAllowed<source::External,       source::Sanitized>,
-    "FIXY-V-233: source::External must launder to source::Sanitized "
-    "through sanitize_path_* (V-023 catalog admittance).");
-static_assert(RetagAllowed<source::FromUser,       source::Sanitized>,
-    "FIXY-V-233: source::FromUser must launder to source::Sanitized "
-    "(V-023 catalog admittance).");
-static_assert(RetagAllowed<source::FromUserPath,   source::Sanitized>,
-    "FIXY-V-233: V-232 source::FromUserPath must launder to "
-    "source::Sanitized via sanitize_path_*.");
-static_assert(RetagAllowed<source::FromEnvPath,    source::Sanitized>,
-    "FIXY-V-233: V-232 source::FromEnvPath must launder to "
-    "source::Sanitized via sanitize_path_*.");
+static_assert(RetagAllowed<source::External, source::Sanitized>,
+              "FIXY-V-233: source::External must launder to source::Sanitized "
+              "through sanitize_path_* (V-023 catalog admittance).");
+static_assert(RetagAllowed<source::FromUser, source::Sanitized>,
+              "FIXY-V-233: source::FromUser must launder to source::Sanitized "
+              "(V-023 catalog admittance).");
+static_assert(RetagAllowed<source::FromUserPath, source::Sanitized>,
+              "FIXY-V-233: V-232 source::FromUserPath must launder to "
+              "source::Sanitized via sanitize_path_*.");
+static_assert(RetagAllowed<source::FromEnvPath, source::Sanitized>,
+              "FIXY-V-233: V-232 source::FromEnvPath must launder to "
+              "source::Sanitized via sanitize_path_*.");
 static_assert(RetagAllowed<source::FromConfigPath, source::Sanitized>,
-    "FIXY-V-233: V-232 source::FromConfigPath must launder to "
-    "source::Sanitized via sanitize_path_*.");
+              "FIXY-V-233: V-232 source::FromConfigPath must launder to "
+              "source::Sanitized via sanitize_path_*.");
 
 // ── (3) Identity admitted (V-022 identity rule) ─────────────────────
 //
@@ -371,8 +365,8 @@ static_assert(RetagAllowed<source::FromConfigPath, source::Sanitized>,
 // failure) even though it would be a no-op.  This catches a
 // regression where the catalog accidentally rejects identity.
 static_assert(RetagAllowed<source::Sanitized, source::Sanitized>,
-    "FIXY-V-233: source::Sanitized → source::Sanitized identity must "
-    "remain admitted by V-022's identity rule.");
+              "FIXY-V-233: source::Sanitized → source::Sanitized identity must "
+              "remain admitted by V-022's identity rule.");
 
 // ── (4) Untagged-source rejection ──────────────────────────────────
 //
@@ -380,9 +374,8 @@ static_assert(RetagAllowed<source::Sanitized, source::Sanitized>,
 // pair must STAY rejected through the V-233 sanitize_path_*
 // requires-clause; admitting it would defeat the V-022 fail-closed
 // contract.
-static_assert(!RetagAllowed<crucible::safety::detail::retag_policy_test::NeverFrom,
-                            source::Sanitized>,
-    "FIXY-V-233: V-022 sentinel NeverFrom → source::Sanitized MUST "
-    "stay rejected; admittance would defeat fail-closed default.");
+static_assert(!RetagAllowed<crucible::safety::detail::retag_policy_test::NeverFrom, source::Sanitized>,
+              "FIXY-V-233: V-022 sentinel NeverFrom → source::Sanitized MUST "
+              "stay rejected; admittance would defeat fail-closed default.");
 
 }  // namespace crucible::safety::sanitize::path_traversal::detail::v233_self_test

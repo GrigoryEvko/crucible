@@ -53,9 +53,8 @@ using ::crucible::safety::mul_sat_checked;
 namespace crucible::sat {
 
 template <std::integral T>
-using DetSatPure = ::crucible::fixy::wrap::DetSafe<
-    ::crucible::fixy::wrap::DetSafeTier_v::Pure,
-    ::crucible::fixy::wrap::Saturated<T>>;
+using DetSatPure =
+    ::crucible::fixy::wrap::DetSafe<::crucible::fixy::wrap::DetSafeTier_v::Pure, ::crucible::fixy::wrap::Saturated<T>>;
 
 // gnu::const: takes two values, no memory access, no side effects.
 // Optimizer may CSE freely across statements (no aliasing concerns).
@@ -69,8 +68,7 @@ CRUCIBLE_CONST constexpr T add_sat(T a, T b) noexcept {
         if constexpr (std::is_signed_v<T>) {
             // Signed overflow direction: if a >= 0 → wrapped low → clamp MAX;
             // if a < 0 → wrapped high → clamp MIN.
-            return (a < T{0}) ? std::numeric_limits<T>::min()
-                              : std::numeric_limits<T>::max();
+            return (a < T{0}) ? std::numeric_limits<T>::min() : std::numeric_limits<T>::max();
         } else {
             return std::numeric_limits<T>::max();
         }
@@ -85,8 +83,7 @@ CRUCIBLE_CONST constexpr T sub_sat(T a, T b) noexcept {
         if constexpr (std::is_signed_v<T>) {
             // a - b wraps low iff a < 0 and result overshot MIN; wraps high
             // iff a >= 0 and result overshot MAX.
-            return (a < T{0}) ? std::numeric_limits<T>::min()
-                              : std::numeric_limits<T>::max();
+            return (a < T{0}) ? std::numeric_limits<T>::min() : std::numeric_limits<T>::max();
         } else {
             // Unsigned sub can only wrap below zero → clamp MIN (= 0).
             return std::numeric_limits<T>::min();
@@ -103,8 +100,7 @@ CRUCIBLE_CONST constexpr T mul_sat(T a, T b) noexcept {
             // Sign of the mathematical result: negative iff exactly one of
             // a, b is negative.  XOR of sign bits suffices.
             const bool neg = (a < T{0}) != (b < T{0});
-            return neg ? std::numeric_limits<T>::min()
-                       : std::numeric_limits<T>::max();
+            return neg ? std::numeric_limits<T>::min() : std::numeric_limits<T>::max();
         } else {
             return std::numeric_limits<T>::max();
         }
@@ -128,45 +124,39 @@ CRUCIBLE_CONST constexpr DetSatPure<T> mul_sat_det(T a, T b) noexcept {
 }
 
 template <std::integral T>
-CRUCIBLE_PURE constexpr ::crucible::fixy::wrap::Saturated<T>
-add_sat_from(T const& counter, T value) noexcept {
+CRUCIBLE_PURE constexpr ::crucible::fixy::wrap::Saturated<T> add_sat_from(T const& counter, T value) noexcept {
     return ::crucible::fixy::wrap::add_sat_checked(counter, value);
 }
 
 template <std::integral T>
-CRUCIBLE_PURE constexpr ::crucible::fixy::wrap::Saturated<T>
-sub_sat_from(T const& counter, T value) noexcept {
+CRUCIBLE_PURE constexpr ::crucible::fixy::wrap::Saturated<T> sub_sat_from(T const& counter, T value) noexcept {
     return ::crucible::fixy::wrap::sub_sat_checked(counter, value);
 }
 
 template <std::integral T>
-CRUCIBLE_PURE constexpr ::crucible::fixy::wrap::Saturated<T>
-mul_sat_from(T const& counter, T value) noexcept {
+CRUCIBLE_PURE constexpr ::crucible::fixy::wrap::Saturated<T> mul_sat_from(T const& counter, T value) noexcept {
     return ::crucible::fixy::wrap::mul_sat_checked(counter, value);
 }
 
 template <std::integral T>
-[[nodiscard]] constexpr ::crucible::fixy::wrap::Saturated<T>
-add_sat_into(T& dest, T value) noexcept {
+[[nodiscard]] constexpr ::crucible::fixy::wrap::Saturated<T> add_sat_into(T& dest, T value) noexcept {
     auto result = add_sat_from(dest, value);
     dest = result.value();
     return result;
 }
 
 template <std::integral T>
-[[nodiscard]] constexpr ::crucible::fixy::wrap::Saturated<T>
-sub_sat_into(T& dest, T value) noexcept {
+[[nodiscard]] constexpr ::crucible::fixy::wrap::Saturated<T> sub_sat_into(T& dest, T value) noexcept {
     auto result = sub_sat_from(dest, value);
     dest = result.value();
     return result;
 }
 
 template <std::integral T>
-[[nodiscard]] constexpr ::crucible::fixy::wrap::Saturated<T>
-mul_sat_into(T& dest, T value) noexcept {
+[[nodiscard]] constexpr ::crucible::fixy::wrap::Saturated<T> mul_sat_into(T& dest, T value) noexcept {
     auto result = mul_sat_from(dest, value);
     dest = result.value();
     return result;
 }
 
-} // namespace crucible::sat
+}  // namespace crucible::sat

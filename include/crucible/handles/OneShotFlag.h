@@ -78,28 +78,26 @@ class alignas(64) OneShotFlag {
 public:
     OneShotFlag() = default;
 
-    OneShotFlag(const OneShotFlag&)            = delete("OneShotFlag is an inter-thread signal; copy would split ownership");
-    OneShotFlag& operator=(const OneShotFlag&) = delete("OneShotFlag is an inter-thread signal; copy would split ownership");
-    OneShotFlag(OneShotFlag&&)                 = delete("OneShotFlag is an inter-thread signal; move breaks acquire/release");
-    OneShotFlag& operator=(OneShotFlag&&)      = delete("OneShotFlag is an inter-thread signal; move breaks acquire/release");
+    OneShotFlag(const OneShotFlag&) = delete("OneShotFlag is an inter-thread signal; copy would split ownership");
+    OneShotFlag&
+    operator=(const OneShotFlag&) = delete("OneShotFlag is an inter-thread signal; copy would split ownership");
+    OneShotFlag(OneShotFlag&&) = delete("OneShotFlag is an inter-thread signal; move breaks acquire/release");
+    OneShotFlag&
+    operator=(OneShotFlag&&) = delete("OneShotFlag is an inter-thread signal; move breaks acquire/release");
 
     // ── Producer side ──────────────────────────────────────────────
 
     // Signal the flag.  Release-ordered so state writes the producer
     // made before this call are visible to any consumer that observes
     // the flag set (via the acquire fence inside check_and_run).
-    CRUCIBLE_INLINE void signal() noexcept {
-        flag_.store(true, std::memory_order_release);
-    }
+    CRUCIBLE_INLINE void signal() noexcept { flag_.store(true, std::memory_order_release); }
 
     // ── Consumer side ──────────────────────────────────────────────
 
     // Relaxed peek — diagnostic only.  Callers that want to act on
     // the observed signal must use check_and_run so the acquire fence
     // is paired with the producer's release.
-    [[nodiscard]] CRUCIBLE_INLINE bool peek() const noexcept {
-        return flag_.load(std::memory_order_relaxed);
-    }
+    [[nodiscard]] CRUCIBLE_INLINE bool peek() const noexcept { return flag_.load(std::memory_order_relaxed); }
 
     // Consume the signal if set: relaxed-test, acquire-fence if set,
     // run body, release-clear.  Returns true iff body was invoked.
@@ -108,10 +106,9 @@ public:
     // (release-ordered so subsequent peek()s see the clear).
     template <typename F>
         requires std::is_invocable_v<F>
-    CRUCIBLE_INLINE bool check_and_run(F&& body)
-        noexcept(std::is_nothrow_invocable_v<F>)
-    {
-        if (!flag_.load(std::memory_order_relaxed)) [[likely]] return false;
+    CRUCIBLE_INLINE bool check_and_run(F&& body) noexcept(std::is_nothrow_invocable_v<F>) {
+        if (!flag_.load(std::memory_order_relaxed)) [[likely]]
+            return false;
         // Pair with signal()'s release store — any state the producer
         // wrote before signal() is now visible.
         std::atomic_thread_fence(std::memory_order_acquire);
@@ -163,9 +160,7 @@ public:
         explicit QuiescenceProof() = default;
     };
 
-    void reset_in_quiescent_context(QuiescenceProof) noexcept {
-        flag_.store(false, std::memory_order_relaxed);
-    }
+    void reset_in_quiescent_context(QuiescenceProof) noexcept { flag_.store(false, std::memory_order_relaxed); }
 
     // ═══════════════════════════════════════════════════════════════
     // FOUND-G62: Crash-pinned production surface
@@ -228,7 +223,7 @@ public:
     // Empty tag returned by signal_throw — encodes "the signal call
     // happened" without carrying a value.  Allows wrapping in
     // Crash<Throw, signal_marker> for type-level call-site auditing.
-    struct signal_marker { };
+    struct signal_marker {};
 
     // Steady-state consumer pin — peek returns Crash<NoThrow, bool>.
     // Acquire order (NOT relaxed): pairs with signal()'s release-store
@@ -236,20 +231,15 @@ public:
     // at the call site.  Diverges from the lower-level peek() primitive
     // by design — see the FOUND-G62 doc-block above and the audit in
     // fixy-A1-006 (#1548) / CLAUDE.md §II.6 ThreadSafe.
-    [[nodiscard]] CRUCIBLE_INLINE
-    Crash<CrashClass_v::NoThrow, bool>
-    peek_nothrow() const noexcept {
-        return Crash<CrashClass_v::NoThrow, bool>{
-            flag_.load(std::memory_order_acquire)};
+    [[nodiscard]] CRUCIBLE_INLINE Crash<CrashClass_v::NoThrow, bool> peek_nothrow() const noexcept {
+        return Crash<CrashClass_v::NoThrow, bool>{flag_.load(std::memory_order_acquire)};
     }
 
     // Producer-side signal — pins the action class as Throw.  The
     // returned marker is consumed (move-only) by the type system so
     // a refactor that drops the discriminator surfaces as an unused-
     // result diagnostic on the [[nodiscard]] Crash type.
-    [[nodiscard]] CRUCIBLE_INLINE
-    Crash<CrashClass_v::Throw, signal_marker>
-    signal_throw() noexcept {
+    [[nodiscard]] CRUCIBLE_INLINE Crash<CrashClass_v::Throw, signal_marker> signal_throw() noexcept {
         flag_.store(true, std::memory_order_release);
         return Crash<CrashClass_v::Throw, signal_marker>{signal_marker{}};
     }
@@ -258,13 +248,9 @@ public:
     // unlikely true path, so the call is pinned ErrorReturn.
     template <typename F>
         requires std::is_invocable_v<F>
-    [[nodiscard]] CRUCIBLE_INLINE
-    Crash<CrashClass_v::ErrorReturn, bool>
-    try_acknowledge_error_return(F&& body)
-        noexcept(std::is_nothrow_invocable_v<F>)
-    {
-        return Crash<CrashClass_v::ErrorReturn, bool>{
-            check_and_run(std::forward<F>(body))};
+    [[nodiscard]] CRUCIBLE_INLINE Crash<CrashClass_v::ErrorReturn, bool>
+    try_acknowledge_error_return(F&& body) noexcept(std::is_nothrow_invocable_v<F>) {
+        return Crash<CrashClass_v::ErrorReturn, bool>{check_and_run(std::forward<F>(body))};
     }
 };
 
@@ -272,12 +258,10 @@ public:
 // so cross-thread signal stores never invalidate adjacent state.
 // alignof claim is the structural guarantee; sizeof follows from the
 // standard rule that sizeof is a multiple of alignof.
-static_assert(alignof(OneShotFlag) >= 64,
-              "OneShotFlag must be cache-line aligned to prevent false "
-              "sharing on the cross-thread signal path (CLAUDE.md §IX).");
-static_assert(sizeof(OneShotFlag) >= 64,
-              "OneShotFlag occupies a full cache line by construction; "
-              "embedders rely on the flag NOT sharing a line with any "
-              "field touched on the consumer's hot path.");
+static_assert(alignof(OneShotFlag) >= 64, "OneShotFlag must be cache-line aligned to prevent false "
+                                          "sharing on the cross-thread signal path (CLAUDE.md §IX).");
+static_assert(sizeof(OneShotFlag) >= 64, "OneShotFlag occupies a full cache line by construction; "
+                                         "embedders rely on the flag NOT sharing a line with any "
+                                         "field touched on the consumer's hot path.");
 
-} // namespace crucible::safety
+}  // namespace crucible::safety

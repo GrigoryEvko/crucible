@@ -94,9 +94,18 @@ namespace crucible::decide::oracle {
 template <typename T>
 struct widen;
 
-template <> struct widen<std::uint8_t>  { using type = std::uint64_t; };
-template <> struct widen<std::uint16_t> { using type = std::uint64_t; };
-template <> struct widen<std::uint32_t> { using type = std::uint64_t; };
+template <>
+struct widen<std::uint8_t> {
+    using type = std::uint64_t;
+};
+template <>
+struct widen<std::uint16_t> {
+    using type = std::uint64_t;
+};
+template <>
+struct widen<std::uint32_t> {
+    using type = std::uint64_t;
+};
 
 // `__int128` is a GCC / Clang extension; ISO C++ does not yet ship a
 // 128-bit integer type.  This header is build-internal (test/oracle
@@ -105,12 +114,27 @@ template <> struct widen<std::uint32_t> { using type = std::uint64_t; };
 // declaration site.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
-template <> struct widen<std::uint64_t> { using type = unsigned __int128; };
+template <>
+struct widen<std::uint64_t> {
+    using type = unsigned __int128;
+};
 
-template <> struct widen<std::int8_t>   { using type = std::int64_t; };
-template <> struct widen<std::int16_t>  { using type = std::int64_t; };
-template <> struct widen<std::int32_t>  { using type = std::int64_t; };
-template <> struct widen<std::int64_t>  { using type = __int128; };
+template <>
+struct widen<std::int8_t> {
+    using type = std::int64_t;
+};
+template <>
+struct widen<std::int16_t> {
+    using type = std::int64_t;
+};
+template <>
+struct widen<std::int32_t> {
+    using type = std::int64_t;
+};
+template <>
+struct widen<std::int64_t> {
+    using type = __int128;
+};
 #pragma GCC diagnostic pop
 
 template <typename T>
@@ -149,9 +173,7 @@ template <std::integral T>
 //
 // Trivially obvious: iterate, return false on first out-of-range.
 template <std::integral T>
-[[nodiscard]] constexpr bool all_in_range_oracle(
-    std::span<const T> xs, T lo, T hi
-) noexcept {
+[[nodiscard]] constexpr bool all_in_range_oracle(std::span<const T> xs, T lo, T hi) noexcept {
     if (lo > hi) return xs.empty();
     for (T const& x : xs) {
         if (x < lo || x > hi) return false;
@@ -165,9 +187,7 @@ template <std::integral T>
 // to make the predicate definition unambiguous (no off-by-one in
 // adjacent comparisons).
 template <std::integral T>
-[[nodiscard]] constexpr bool strictly_increasing_oracle(
-    std::span<const T> xs
-) noexcept {
+[[nodiscard]] constexpr bool strictly_increasing_oracle(std::span<const T> xs) noexcept {
     std::size_t const n = xs.size();
     for (std::size_t i = 0; i < n; ++i) {
         for (std::size_t j = i + 1; j < n; ++j) {
@@ -182,9 +202,7 @@ template <std::integral T>
 // For every (i, j) with i < j, require xs[i] ≤ xs[j].  (Weakly =
 // non-strict, allows equal values.)
 template <std::integral T>
-[[nodiscard]] constexpr bool weakly_increasing_oracle(
-    std::span<const T> xs
-) noexcept {
+[[nodiscard]] constexpr bool weakly_increasing_oracle(std::span<const T> xs) noexcept {
     std::size_t const n = xs.size();
     for (std::size_t i = 0; i < n; ++i) {
         for (std::size_t j = i + 1; j < n; ++j) {
@@ -225,9 +243,7 @@ template <std::integral T>
 // the empty case; the fuzz harness avoids empty inputs to elide
 // that ambiguity.
 template <std::integral T>
-[[nodiscard]] constexpr bool factorization_eq_oracle(
-    std::span<const T> factors, T total
-) noexcept {
+[[nodiscard]] constexpr bool factorization_eq_oracle(std::span<const T> factors, T total) noexcept {
     using W = widen_t<T>;
     W product = 1;
     W const lo = static_cast<W>(std::numeric_limits<T>::min());
@@ -270,9 +286,7 @@ template <std::integral T>
 // SHAPE: a count-based form that checks for any-false (resp. any-
 // true).  An ALWAYS-TRUE buggy fast impl would still differ from
 // these oracles on negative inputs.
-[[nodiscard]] constexpr bool conjunction_oracle(
-    std::span<const bool> xs
-) noexcept {
+[[nodiscard]] constexpr bool conjunction_oracle(std::span<const bool> xs) noexcept {
     std::size_t false_count = 0;
     for (bool const& b : xs) {
         if (!b) ++false_count;
@@ -280,9 +294,7 @@ template <std::integral T>
     return false_count == 0;
 }
 
-[[nodiscard]] constexpr bool disjunction_oracle(
-    std::span<const bool> xs
-) noexcept {
+[[nodiscard]] constexpr bool disjunction_oracle(std::span<const bool> xs) noexcept {
     std::size_t true_count = 0;
     for (bool const& b : xs) {
         if (b) ++true_count;
@@ -297,12 +309,8 @@ template <std::integral T>
 // inputs to ensure the production formula's clause ORDER doesn't
 // trigger short-circuit bugs (e.g. modulo-by-zero if guard is
 // reordered).
-[[nodiscard]] constexpr bool aligned_in_range_oracle(
-    std::uint64_t value,
-    std::uint64_t low,
-    std::uint64_t high,
-    std::uint64_t alignment
-) noexcept {
+[[nodiscard]] constexpr bool aligned_in_range_oracle(std::uint64_t value, std::uint64_t low, std::uint64_t high,
+                                                     std::uint64_t alignment) noexcept {
     if (alignment == 0u) return false;
     if (value < low) return false;
     if (value > high) return false;

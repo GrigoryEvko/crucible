@@ -92,9 +92,9 @@ template <typename T>
 class [[nodiscard]] Stale {
 public:
     // ── Public type aliases ─────────────────────────────────────────
-    using value_type    = T;
+    using value_type = T;
     using semiring_type = ::crucible::algebra::lattices::StalenessSemiring;
-    using semiring_t    = semiring_type;
+    using semiring_t = semiring_type;
     // GRADED-CONCEPT-C3: family-uniform alias.  StalenessSemiring is
     // technically both a semiring AND a lattice (chain order ℕ ∪ ∞
     // under ≤); semiring_type is semantically accurate but breaks the
@@ -102,52 +102,43 @@ public:
     // GradedWrapper concept (algebra/GradedTrait.h) requires.  Both
     // aliases coexist — semiring_type for algebra-clarity, lattice_type
     // for family uniformity.
-    using lattice_type  = semiring_type;
-    using staleness_t   = typename semiring_type::element_type;
+    using lattice_type = semiring_type;
+    using staleness_t = typename semiring_type::element_type;
     // Modality declaration — Round-4 CHEAT-5; see safety/Linear.h.
-    static constexpr ::crucible::algebra::ModalityKind modality =
-        ::crucible::algebra::ModalityKind::Absolute;
+    static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::Absolute;
     // Public per GRADED-TRAIT-1 — see Linear.h for the rationale.
-    using graded_type   = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Absolute,
-        semiring_type,
-        T>;
+    using graded_type = ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Absolute, semiring_type, T>;
 
 private:
     graded_type impl_;
 
 public:
-
     // ── Construction ────────────────────────────────────────────────
     //
     // Default: value at T{}, staleness at fresh (τ=0).  The most
     // permissive starting position — the value is freshly produced
     // with no asynchronous lag accumulated.
-    constexpr Stale() noexcept(std::is_nothrow_default_constructible_v<T>)
-        : impl_{T{}, semiring_type::bottom()} {}
+    constexpr Stale() noexcept(std::is_nothrow_default_constructible_v<T>) : impl_{T{}, semiring_type::bottom()} {}
 
     // Explicit construction with both value and staleness.  The most
     // common production pattern — caller has a value freshly produced
     // at a known staleness and binds them.
-    constexpr Stale(T value, staleness_t tau) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    constexpr Stale(T value, staleness_t tau) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(value), tau} {}
 
     // In-place construction of T inside Stale, paired with a τ.
     // Mirrors the std::in_place_t pattern from Linear/TimeOrdered.
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr Stale(std::in_place_t, staleness_t tau, Args&&... args)
-        noexcept(std::is_nothrow_constructible_v<T, Args...>
-                 && std::is_nothrow_move_constructible_v<T>)
+    constexpr Stale(std::in_place_t, staleness_t tau,
+                    Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
+                                             && std::is_nothrow_move_constructible_v<T>)
         : impl_{T(std::forward<Args>(args)...), tau} {}
 
     // Convenience factory: value at fresh.  The most common
     // construction site — a freshly-produced value enters the
     // pipeline at τ=0.
-    [[nodiscard]] static constexpr Stale fresh(T value)
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] static constexpr Stale fresh(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
         return Stale{std::move(value), semiring_type::bottom()};
     }
 
@@ -155,38 +146,32 @@ public:
     // sentinel events where the value's staleness is genuinely
     // unbounded (e.g. a checkpoint loaded from cold storage with
     // unknown lag relative to the current step).
-    [[nodiscard]] static constexpr Stale at_infinity(T value)
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] static constexpr Stale at_infinity(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
         return Stale{std::move(value), semiring_type::top()};
     }
 
     // Convenience factory: value at finite τ=n.  pre via the
     // staleness::at constructor — rejects the ∞ sentinel value.
-    [[nodiscard]] static constexpr Stale at(T value, std::uint64_t n)
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
-        return Stale{std::move(value),
-                     ::crucible::algebra::lattices::staleness::at(n)};
+    [[nodiscard]] static constexpr Stale at(T value,
+                                            std::uint64_t n) noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return Stale{std::move(value), ::crucible::algebra::lattices::staleness::at(n)};
     }
 
     // Defaulted copy/move/destroy — Stale is COPYABLE (vs Linear<T>
     // which deletes copy).  Same rationale as TimeOrdered.
-    constexpr Stale(const Stale&)            = default;
-    constexpr Stale(Stale&&)                 = default;
+    constexpr Stale(const Stale&) = default;
+    constexpr Stale(Stale&&) = default;
     constexpr Stale& operator=(const Stale&) = default;
-    constexpr Stale& operator=(Stale&&)      = default;
-    ~Stale()                                 = default;
+    constexpr Stale& operator=(Stale&&) = default;
+    ~Stale() = default;
 
     // Equality: compares BOTH value and staleness, mirroring
     // TimeOrdered's discipline.  Two events at the same staleness with
     // different payloads are unequal; two events at different
     // staleness with the same payload are also unequal.
-    [[nodiscard]] friend constexpr bool operator==(
-        Stale const& a, Stale const& b) noexcept(
-        noexcept(a.peek() == b.peek())
-        && noexcept(a.staleness() == b.staleness()))
-    {
+    [[nodiscard]] friend constexpr bool
+    operator==(Stale const& a,
+               Stale const& b) noexcept(noexcept(a.peek() == b.peek()) && noexcept(a.staleness() == b.staleness())) {
         return a.peek() == b.peek() && a.staleness() == b.staleness();
     }
 
@@ -208,9 +193,7 @@ public:
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return graded_type::lattice_name();
-    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 
     // ── Swap (forwarded from Graded substrate) ─────────────────────
     //
@@ -223,47 +206,31 @@ public:
     //
     // The friend overload enables ADL-style `swap(a, b)` calls that
     // generic algorithms route through.
-    constexpr void swap(Stale& other)
-        noexcept(std::is_nothrow_swappable_v<T>
-                 && std::is_nothrow_swappable_v<staleness_t>)
-    {
+    constexpr void swap(Stale& other) noexcept(std::is_nothrow_swappable_v<T>
+                                               && std::is_nothrow_swappable_v<staleness_t>) {
         impl_.swap(other.impl_);
     }
 
-    friend constexpr void swap(Stale& a, Stale& b)
-        noexcept(std::is_nothrow_swappable_v<T>
-                 && std::is_nothrow_swappable_v<staleness_t>)
-    {
+    friend constexpr void swap(Stale& a, Stale& b) noexcept(std::is_nothrow_swappable_v<T>
+                                                            && std::is_nothrow_swappable_v<staleness_t>) {
         a.swap(b);
     }
 
     // ── Read-only access ────────────────────────────────────────────
-    [[nodiscard]] constexpr T const& peek() const& noexcept {
-        return impl_.peek();
-    }
+    [[nodiscard]] constexpr T const& peek() const& noexcept { return impl_.peek(); }
 
-    [[nodiscard]] constexpr T consume() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return std::move(impl_).consume();
     }
 
-    [[nodiscard]] constexpr staleness_t staleness() const noexcept {
-        return impl_.grade();
-    }
+    [[nodiscard]] constexpr staleness_t staleness() const noexcept { return impl_.grade(); }
 
     // Diagnostic predicates forwarded from staleness_t — read directly
     // for the §8 admission-gate's `if (s.is_finite()) admit(...)`
     // pattern without the caller needing to extract the grade.
-    [[nodiscard]] constexpr bool is_fresh() const noexcept {
-        return staleness() == semiring_type::bottom();
-    }
-    [[nodiscard]] constexpr bool is_finite() const noexcept {
-        return staleness().is_finite();
-    }
-    [[nodiscard]] constexpr bool is_infinite() const noexcept {
-        return staleness().is_infinite();
-    }
+    [[nodiscard]] constexpr bool is_fresh() const noexcept { return staleness() == semiring_type::bottom(); }
+    [[nodiscard]] constexpr bool is_finite() const noexcept { return staleness().is_finite(); }
+    [[nodiscard]] constexpr bool is_infinite() const noexcept { return staleness().is_infinite(); }
 
     // ── Mutable T access ────────────────────────────────────────────
     //
@@ -272,9 +239,7 @@ public:
     // bytes (τ records WHEN the value was produced relative to the
     // current step, not WHAT it contains; mutating the value doesn't
     // violate the staleness measurement).
-    [[nodiscard]] constexpr T& peek_mut() & noexcept {
-        return impl_.peek_mut();
-    }
+    [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(); }
 
     // ── Order discipline (chain order on staleness) ─────────────────
     //
@@ -285,8 +250,7 @@ public:
 
     // a.fresher_than(b) iff a's staleness < b's (strict).
     [[nodiscard]] constexpr bool fresher_than(Stale const& other) const noexcept {
-        return semiring_type::leq(staleness(), other.staleness())
-               && !(staleness() == other.staleness());
+        return semiring_type::leq(staleness(), other.staleness()) && !(staleness() == other.staleness());
     }
 
     // a.no_staler_than(b) iff a's staleness ≤ b's (non-strict).
@@ -303,17 +267,14 @@ public:
     //
     // Two overloads (const& / &&) mirror TimeOrdered's advance_at
     // pattern — copy or move T as appropriate.
-    [[nodiscard]] constexpr Stale combine_max(Stale const& other) const&
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
+    [[nodiscard]] constexpr Stale
+    combine_max(Stale const& other) const& noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
     {
-        return Stale{this->peek(),
-                     semiring_type::join(this->staleness(), other.staleness())};
+        return Stale{this->peek(), semiring_type::join(this->staleness(), other.staleness())};
     }
 
-    [[nodiscard]] constexpr Stale combine_max(Stale const& other) &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr Stale combine_max(Stale const& other) && noexcept(std::is_nothrow_move_constructible_v<T>) {
         staleness_t maxed = semiring_type::join(this->staleness(), other.staleness());
         return Stale{std::move(impl_).consume(), maxed};
     }
@@ -332,17 +293,14 @@ public:
     // admission gate's "pick the freshest available gradient
     // estimate" pattern when the aggregator has multiple replicas
     // to choose from.
-    [[nodiscard]] constexpr Stale combine_min(Stale const& other) const&
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
+    [[nodiscard]] constexpr Stale
+    combine_min(Stale const& other) const& noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
     {
-        return Stale{this->peek(),
-                     semiring_type::meet(this->staleness(), other.staleness())};
+        return Stale{this->peek(), semiring_type::meet(this->staleness(), other.staleness())};
     }
 
-    [[nodiscard]] constexpr Stale combine_min(Stale const& other) &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr Stale combine_min(Stale const& other) && noexcept(std::is_nothrow_move_constructible_v<T>) {
         staleness_t minned = semiring_type::meet(this->staleness(), other.staleness());
         return Stale{std::move(impl_).consume(), minned};
     }
@@ -362,17 +320,14 @@ public:
     // ∞ absorbs (∞+x = ∞ via saturation) — semantically correct: a
     // chain that includes ANY ∞-stale stage has unbounded composite
     // staleness.
-    [[nodiscard]] constexpr Stale compose_add(Stale const& other) const&
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
+    [[nodiscard]] constexpr Stale
+    compose_add(Stale const& other) const& noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
     {
-        return Stale{this->peek(),
-                     semiring_type::mul(this->staleness(), other.staleness())};
+        return Stale{this->peek(), semiring_type::mul(this->staleness(), other.staleness())};
     }
 
-    [[nodiscard]] constexpr Stale compose_add(Stale const& other) &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr Stale compose_add(Stale const& other) && noexcept(std::is_nothrow_move_constructible_v<T>) {
         staleness_t composed = semiring_type::mul(this->staleness(), other.staleness());
         return Stale{std::move(impl_).consume(), composed};
     }
@@ -394,29 +349,24 @@ public:
     //     crucible::sat::add_sat polyfill.  Semantically correct: a
     //     staleness that exceeds uint64_t IS unbounded for any
     //     practical purpose.
-    [[nodiscard]] constexpr Stale advance_by(std::uint64_t delta) const&
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
+    [[nodiscard]] constexpr Stale
+    advance_by(std::uint64_t delta) const& noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
     {
         return Stale{this->peek(),
-                     semiring_type::mul(this->staleness(),
-                                        ::crucible::algebra::lattices::staleness::at(delta))};
+                     semiring_type::mul(this->staleness(), ::crucible::algebra::lattices::staleness::at(delta))};
     }
 
-    [[nodiscard]] constexpr Stale advance_by(std::uint64_t delta) &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
-        staleness_t advanced = semiring_type::mul(
-            this->staleness(),
-            ::crucible::algebra::lattices::staleness::at(delta));
+    [[nodiscard]] constexpr Stale advance_by(std::uint64_t delta) && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        staleness_t advanced =
+            semiring_type::mul(this->staleness(), ::crucible::algebra::lattices::staleness::at(delta));
         return Stale{std::move(impl_).consume(), advanced};
     }
 };
 
 // ── CTAD: deduce T from the value argument ──────────────────────────
 template <typename T>
-Stale(T, ::crucible::algebra::lattices::StalenessSemiring::element_type)
-    -> Stale<T>;
+Stale(T, ::crucible::algebra::lattices::StalenessSemiring::element_type) -> Stale<T>;
 
 // ── Layout invariants ───────────────────────────────────────────────
 //
@@ -428,35 +378,35 @@ namespace detail::stale_layout {
 
 using S_int64 = Stale<std::int64_t>;
 using S_voidp = Stale<void*>;
-using S_dbl   = Stale<double>;
+using S_dbl = Stale<double>;
 
 // Each carries 8 bytes of staleness; T is 8 bytes; total ≤ 16 bytes
 // (no alignment padding needed — both fields are 8-byte aligned).
 static_assert(sizeof(S_int64) <= sizeof(std::int64_t) + sizeof(std::uint64_t) + 8,
-    "Stale<int64> exceeded sizeof(int64) + 8 + 8 bytes — the regime-#4 "
-    "storage discipline drifted.  Investigate StalenessSemiring::"
-    "element_type alignment OR Graded's grade_ field placement.");
-static_assert(sizeof(S_voidp) <= sizeof(void*)        + sizeof(std::uint64_t) + 8);
-static_assert(sizeof(S_dbl)   <= sizeof(double)       + sizeof(std::uint64_t) + 8);
+              "Stale<int64> exceeded sizeof(int64) + 8 + 8 bytes — the regime-#4 "
+              "storage discipline drifted.  Investigate StalenessSemiring::"
+              "element_type alignment OR Graded's grade_ field placement.");
+static_assert(sizeof(S_voidp) <= sizeof(void*) + sizeof(std::uint64_t) + 8);
+static_assert(sizeof(S_dbl) <= sizeof(double) + sizeof(std::uint64_t) + 8);
 
 }  // namespace detail::stale_layout
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::stale_self_test {
 
-using SS  = ::crucible::algebra::lattices::StalenessSemiring;
+using SS = ::crucible::algebra::lattices::StalenessSemiring;
 using S_i = Stale<int>;
 
 // Construction paths.
 inline constexpr S_i s_default{};
 static_assert(s_default.staleness() == SS::bottom());
-static_assert(s_default.peek()      == 0);
+static_assert(s_default.peek() == 0);
 static_assert(s_default.is_fresh());
 static_assert(s_default.is_finite());
 
 inline constexpr S_i s_fresh = S_i::fresh(42);
 static_assert(s_fresh.staleness() == SS::bottom());
-static_assert(s_fresh.peek()      == 42);
+static_assert(s_fresh.peek() == 42);
 
 inline constexpr S_i s_inf = S_i::at_infinity(99);
 static_assert(s_inf.is_infinite());
@@ -477,19 +427,19 @@ static_assert(!(s_at7 == S_i{999, ::crucible::algebra::lattices::staleness::at(7
 static_assert(!(s_at7 == S_i{123, ::crucible::algebra::lattices::staleness::at(3)}));
 
 // Order discipline.
-static_assert( s_fresh.fresher_than(s_at7));      // 0 < 7
-static_assert( s_at7.fresher_than(s_inf));         // 7 < ∞
-static_assert(!s_at7.fresher_than(s_fresh));       // 7 ⊏ 0 fails
-static_assert( s_fresh.no_staler_than(s_fresh));   // reflexive
-static_assert( s_fresh.no_staler_than(s_at7));     // 0 ≤ 7
-static_assert(!s_at7.no_staler_than(s_fresh));     // 7 ≤ 0 fails
+static_assert(s_fresh.fresher_than(s_at7));  // 0 < 7
+static_assert(s_at7.fresher_than(s_inf));  // 7 < ∞
+static_assert(!s_at7.fresher_than(s_fresh));  // 7 ⊏ 0 fails
+static_assert(s_fresh.no_staler_than(s_fresh));  // reflexive
+static_assert(s_fresh.no_staler_than(s_at7));  // 0 ≤ 7
+static_assert(!s_at7.no_staler_than(s_fresh));  // 7 ≤ 0 fails
 
 // combine_max: pessimistic watermark.
 inline constexpr S_i s_a = S_i::at(10, 3);
 inline constexpr S_i s_b = S_i::at(20, 8);
 inline constexpr S_i s_combined = s_a.combine_max(s_b);
-static_assert(s_combined.staleness().value == 8);   // max(3, 8) = 8
-static_assert(s_combined.peek()            == 10);  // payload from *this
+static_assert(s_combined.staleness().value == 8);  // max(3, 8) = 8
+static_assert(s_combined.peek() == 10);  // payload from *this
 
 // combine_max with ∞: ∞ wins (max).
 inline constexpr S_i s_combined_inf = s_a.combine_max(s_inf);
@@ -497,8 +447,8 @@ static_assert(s_combined_inf.is_infinite());
 
 // combine_min: optimistic freshest selection.
 inline constexpr S_i s_min_pair = s_a.combine_min(s_b);
-static_assert(s_min_pair.staleness().value == 3);   // min(3, 8) = 3
-static_assert(s_min_pair.peek()            == 10);  // payload from *this
+static_assert(s_min_pair.staleness().value == 3);  // min(3, 8) = 3
+static_assert(s_min_pair.peek() == 10);  // payload from *this
 
 // combine_min with ∞: the FINITE side wins (min).
 inline constexpr S_i s_min_with_inf = s_a.combine_min(s_inf);
@@ -511,7 +461,7 @@ static_assert(s_a.combine_min(s_a).staleness() == s_a.staleness());
 // compose_add: chain accumulation via saturating add.
 inline constexpr S_i s_composed = s_a.compose_add(s_b);
 static_assert(s_composed.staleness().value == 11);  // 3 + 8 = 11
-static_assert(s_composed.peek()            == 10);  // payload from *this
+static_assert(s_composed.peek() == 10);  // payload from *this
 
 // compose_add with ∞: ∞ absorbs.
 inline constexpr S_i s_composed_inf = s_a.compose_add(s_inf);
@@ -520,7 +470,7 @@ static_assert(s_composed_inf.is_infinite());
 // advance_by: tick staleness forward.
 inline constexpr S_i s_advanced = s_a.advance_by(5);
 static_assert(s_advanced.staleness().value == 8);  // 3 + 5 = 8
-static_assert(s_advanced.peek()            == 10);
+static_assert(s_advanced.peek() == 10);
 
 // advance_by(0) is identity on staleness (one is the multiplicative
 // identity in the tropical semiring).
@@ -529,7 +479,7 @@ static_assert(s_advanced_zero.staleness().value == 3);
 
 // Lattice/semiring identities preserved through the wrapper.
 static_assert(SS::bottom() == s_fresh.staleness());
-static_assert(SS::top()    == s_inf.staleness());
+static_assert(SS::top() == s_inf.staleness());
 
 // value_type_name forwards to Graded's reflection-derived T name.
 // Per the gcc16_c26_reflection_gotchas memory rule: use .ends_with()
@@ -547,8 +497,7 @@ static_assert(S_i::lattice_name() == "StalenessSemiring");
     S_i a = S_i::at(10, 3);
     S_i b = S_i::at(20, 8);
     a.swap(b);
-    return a.peek() == 20 && a.staleness().value == 8
-        && b.peek() == 10 && b.staleness().value == 3;
+    return a.peek() == 20 && a.staleness().value == 8 && b.peek() == 10 && b.staleness().value == 3;
 }
 static_assert(swap_exchanges_both_components());
 
@@ -574,17 +523,17 @@ inline void runtime_smoke_test() {
     Stale<int> b = Stale<int>::at(20, 8);
     Stale<int> inf = Stale<int>::at_infinity(99);
 
-    [[maybe_unused]] bool fa  = a.is_fresh();
-    [[maybe_unused]] bool fi  = a.is_finite();
-    [[maybe_unused]] bool ii  = inf.is_infinite();
+    [[maybe_unused]] bool fa = a.is_fresh();
+    [[maybe_unused]] bool fi = a.is_finite();
+    [[maybe_unused]] bool ii = inf.is_infinite();
 
     [[maybe_unused]] bool ord = a.fresher_than(b);
     [[maybe_unused]] bool nos = a.no_staler_than(b);
 
     Stale<int> watermark = a.combine_max(b);
-    Stale<int> freshest  = a.combine_min(b);
-    Stale<int> chain     = a.compose_add(b);
-    Stale<int> ticked    = a.advance_by(5);
+    Stale<int> freshest = a.combine_min(b);
+    Stale<int> chain = a.compose_add(b);
+    Stale<int> ticked = a.advance_by(5);
 
     [[maybe_unused]] auto v1 = watermark.peek();
     [[maybe_unused]] auto vf = freshest.peek();
@@ -600,8 +549,8 @@ inline void runtime_smoke_test() {
     Stale<int> fr = Stale<int>::fresh(42);
     Stale<int> ai = Stale<int>::at(7, 100);
     [[maybe_unused]] auto def_t = def.staleness();
-    [[maybe_unused]] auto fr_t  = fr.staleness();
-    [[maybe_unused]] auto ai_t  = ai.staleness();
+    [[maybe_unused]] auto fr_t = fr.staleness();
+    [[maybe_unused]] auto ai_t = ai.staleness();
 
     // peek_mut on lvalue.
     chain.peek_mut() = 99;

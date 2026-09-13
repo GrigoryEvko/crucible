@@ -123,16 +123,16 @@ namespace crucible::safety::proto {
 // Pure type markers; no runtime state.  Each tag corresponds to a
 // SessionHandle specialisation (or, for AtTerminal, a union of two).
 
-struct AtSend         {};
-struct AtRecv         {};
-struct AtSelect       {};
-struct AtOffer        {};
-struct AtEnd          {};
-struct AtStop         {};
-struct AtTerminal     {};   // End ∪ Stop — destruction-safe positions
+struct AtSend {};
+struct AtRecv {};
+struct AtSelect {};
+struct AtOffer {};
+struct AtEnd {};
+struct AtStop {};
+struct AtTerminal {};  // End ∪ Stop — destruction-safe positions
 struct AtCheckpointed {};
-struct AtDelegate     {};
-struct AtAccept       {};
+struct AtDelegate {};
+struct AtAccept {};
 
 // ═════════════════════════════════════════════════════════════════════
 // ── handle_is_at<Handle, Tag> — compile-time position predicate ────
@@ -148,38 +148,32 @@ struct handle_is_at : std::false_type {};
 // ─── AtSend ───────────────────────────────────────────────────────
 
 template <typename T, typename R, typename Resource, typename LoopCtx>
-struct handle_is_at<SessionHandle<Send<T, R>, Resource, LoopCtx>, AtSend>
-    : std::true_type {};
+struct handle_is_at<SessionHandle<Send<T, R>, Resource, LoopCtx>, AtSend> : std::true_type {};
 
 // ─── AtRecv ───────────────────────────────────────────────────────
 
 template <typename T, typename R, typename Resource, typename LoopCtx>
-struct handle_is_at<SessionHandle<Recv<T, R>, Resource, LoopCtx>, AtRecv>
-    : std::true_type {};
+struct handle_is_at<SessionHandle<Recv<T, R>, Resource, LoopCtx>, AtRecv> : std::true_type {};
 
 // ─── AtSelect ─────────────────────────────────────────────────────
 
 template <typename... Bs, typename Resource, typename LoopCtx>
-struct handle_is_at<SessionHandle<Select<Bs...>, Resource, LoopCtx>, AtSelect>
-    : std::true_type {};
+struct handle_is_at<SessionHandle<Select<Bs...>, Resource, LoopCtx>, AtSelect> : std::true_type {};
 
 // ─── AtOffer ──────────────────────────────────────────────────────
 
 template <typename... Bs, typename Resource, typename LoopCtx>
-struct handle_is_at<SessionHandle<Offer<Bs...>, Resource, LoopCtx>, AtOffer>
-    : std::true_type {};
+struct handle_is_at<SessionHandle<Offer<Bs...>, Resource, LoopCtx>, AtOffer> : std::true_type {};
 
 // ─── AtEnd ────────────────────────────────────────────────────────
 
 template <typename Resource, typename LoopCtx>
-struct handle_is_at<SessionHandle<End, Resource, LoopCtx>, AtEnd>
-    : std::true_type {};
+struct handle_is_at<SessionHandle<End, Resource, LoopCtx>, AtEnd> : std::true_type {};
 
 // ─── AtStop ───────────────────────────────────────────────────────
 
 template <CrashClass C, typename Resource, typename LoopCtx>
-struct handle_is_at<SessionHandle<Stop_g<C>, Resource, LoopCtx>, AtStop>
-    : std::true_type {};
+struct handle_is_at<SessionHandle<Stop_g<C>, Resource, LoopCtx>, AtStop> : std::true_type {};
 
 // ─── AtTerminal — End OR Stop ──────────────────────────────────────
 //
@@ -188,48 +182,34 @@ struct handle_is_at<SessionHandle<Stop_g<C>, Resource, LoopCtx>, AtStop>
 // the abandonment-check's viewpoint; the union admits either.
 
 template <typename Resource, typename LoopCtx>
-struct handle_is_at<SessionHandle<End,  Resource, LoopCtx>, AtTerminal>
-    : std::true_type {};
+struct handle_is_at<SessionHandle<End, Resource, LoopCtx>, AtTerminal> : std::true_type {};
 
 template <CrashClass C, typename Resource, typename LoopCtx>
-struct handle_is_at<SessionHandle<Stop_g<C>, Resource, LoopCtx>, AtTerminal>
-    : std::true_type {};
+struct handle_is_at<SessionHandle<Stop_g<C>, Resource, LoopCtx>, AtTerminal> : std::true_type {};
 
 // ─── AtCheckpointed ───────────────────────────────────────────────
 
 template <typename B, typename R, typename Resource, typename LoopCtx>
-struct handle_is_at<SessionHandle<CheckpointedSession<B, R>, Resource, LoopCtx>,
-                     AtCheckpointed>
-    : std::true_type {};
+struct handle_is_at<SessionHandle<CheckpointedSession<B, R>, Resource, LoopCtx>, AtCheckpointed> : std::true_type {};
 
 // ─── AtDelegate ───────────────────────────────────────────────────
 
 template <typename T, typename R, typename Resource, typename LoopCtx>
-struct handle_is_at<SessionHandle<Delegate<T, R>, Resource, LoopCtx>, AtDelegate>
-    : std::true_type {};
+struct handle_is_at<SessionHandle<Delegate<T, R>, Resource, LoopCtx>, AtDelegate> : std::true_type {};
 
-template <typename T, typename R,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
-          typename Resource, typename LoopCtx>
-struct handle_is_at<
-    SessionHandle<EpochedDelegate<T, R, MinEpoch, MinGeneration>,
-                  Resource, LoopCtx>,
-    AtDelegate>
+template <typename T, typename R, std::uint64_t MinEpoch, std::uint64_t MinGeneration, typename Resource,
+          typename LoopCtx>
+struct handle_is_at<SessionHandle<EpochedDelegate<T, R, MinEpoch, MinGeneration>, Resource, LoopCtx>, AtDelegate>
     : std::true_type {};
 
 // ─── AtAccept ─────────────────────────────────────────────────────
 
 template <typename T, typename R, typename Resource, typename LoopCtx>
-struct handle_is_at<SessionHandle<Accept<T, R>, Resource, LoopCtx>, AtAccept>
-    : std::true_type {};
+struct handle_is_at<SessionHandle<Accept<T, R>, Resource, LoopCtx>, AtAccept> : std::true_type {};
 
-template <typename T, typename R,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
-          typename Resource, typename LoopCtx>
-struct handle_is_at<
-    SessionHandle<EpochedAccept<T, R, MinEpoch, MinGeneration>,
-                  Resource, LoopCtx>,
-    AtAccept>
+template <typename T, typename R, std::uint64_t MinEpoch, std::uint64_t MinGeneration, typename Resource,
+          typename LoopCtx>
+struct handle_is_at<SessionHandle<EpochedAccept<T, R, MinEpoch, MinGeneration>, Resource, LoopCtx>, AtAccept>
     : std::true_type {};
 
 // ─── Trait + concept aliases ──────────────────────────────────────
@@ -253,10 +233,7 @@ concept HandleIsAt = handle_is_at_v<Handle, Tag>;
 // rejection sits one layer up in mint_session_view's requires-clause.
 
 template <typename Proto, typename Resource, typename LoopCtx, typename Tag>
-constexpr bool view_ok(
-    SessionHandle<Proto, Resource, LoopCtx> const& /*h*/,
-    std::type_identity<Tag>) noexcept
-{
+constexpr bool view_ok(SessionHandle<Proto, Resource, LoopCtx> const& /*h*/, std::type_identity<Tag>) noexcept {
     return handle_is_at_v<SessionHandle<Proto, Resource, LoopCtx>, Tag>;
 }
 
@@ -276,10 +253,8 @@ constexpr bool view_ok(
 
 template <typename Tag, typename Handle>
     requires HandleIsAt<Handle, Tag>
-[[nodiscard]] constexpr auto mint_session_view(
-    Handle const& handle CRUCIBLE_LIFETIMEBOUND) noexcept
-    -> safety::ScopedView<Handle, Tag>
-{
+[[nodiscard]] constexpr auto mint_session_view(Handle const& handle CRUCIBLE_LIFETIMEBOUND) noexcept
+    -> safety::ScopedView<Handle, Tag> {
     return safety::mint_view<Tag>(handle);
 }
 
@@ -313,22 +288,17 @@ template <typename View>
 struct session_view_message_type;
 
 template <typename T, typename R, typename Resource, typename LoopCtx>
-struct session_view_message_type<
-    safety::ScopedView<SessionHandle<Send<T, R>, Resource, LoopCtx>, AtSend>>
-{
+struct session_view_message_type<safety::ScopedView<SessionHandle<Send<T, R>, Resource, LoopCtx>, AtSend>> {
     using type = T;
 };
 
 template <typename T, typename R, typename Resource, typename LoopCtx>
-struct session_view_message_type<
-    safety::ScopedView<SessionHandle<Recv<T, R>, Resource, LoopCtx>, AtRecv>>
-{
+struct session_view_message_type<safety::ScopedView<SessionHandle<Recv<T, R>, Resource, LoopCtx>, AtRecv>> {
     using type = T;
 };
 
 template <typename View>
-using session_view_message_type_t =
-    typename session_view_message_type<View>::type;
+using session_view_message_type_t = typename session_view_message_type<View>::type;
 
 // session_view_branch_count — the branch count of a Select / Offer
 // view.  Defined only for AtSelect and AtOffer views.
@@ -337,18 +307,15 @@ template <typename View>
 struct session_view_branch_count;
 
 template <typename... Bs, typename Resource, typename LoopCtx>
-struct session_view_branch_count<
-    safety::ScopedView<SessionHandle<Select<Bs...>, Resource, LoopCtx>, AtSelect>>
+struct session_view_branch_count<safety::ScopedView<SessionHandle<Select<Bs...>, Resource, LoopCtx>, AtSelect>>
     : std::integral_constant<std::size_t, sizeof...(Bs)> {};
 
 template <typename... Bs, typename Resource, typename LoopCtx>
-struct session_view_branch_count<
-    safety::ScopedView<SessionHandle<Offer<Bs...>, Resource, LoopCtx>, AtOffer>>
+struct session_view_branch_count<safety::ScopedView<SessionHandle<Offer<Bs...>, Resource, LoopCtx>, AtOffer>>
     : std::integral_constant<std::size_t, sizeof...(Bs)> {};
 
 template <typename View>
-inline constexpr std::size_t session_view_branch_count_v =
-    session_view_branch_count<View>::value;
+inline constexpr std::size_t session_view_branch_count_v = session_view_branch_count<View>::value;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Framework self-test static_asserts ─────────────────────────────
@@ -362,45 +329,40 @@ inline constexpr std::size_t session_view_branch_count_v =
 namespace detail::sv_self_test {
 
 struct FakeRes {};
-struct Msg     {};
-struct Other   {};
+struct Msg {};
+struct Other {};
 
 // ─── Per-tag positive cases ───────────────────────────────────────
 
-static_assert( handle_is_at_v<SessionHandle<Send<Msg, End>, FakeRes>, AtSend>);
-static_assert( handle_is_at_v<SessionHandle<Recv<Msg, End>, FakeRes>, AtRecv>);
-static_assert( handle_is_at_v<SessionHandle<Select<Send<Msg, End>>, FakeRes>, AtSelect>);
-static_assert( handle_is_at_v<SessionHandle<Offer<Recv<Msg, End>>,  FakeRes>, AtOffer>);
-static_assert( handle_is_at_v<SessionHandle<End,  FakeRes>,                   AtEnd>);
-static_assert( handle_is_at_v<SessionHandle<Stop, FakeRes>,                   AtStop>);
-static_assert( handle_is_at_v<
-    SessionHandle<Stop_g<CrashClass::NoThrow>, FakeRes>, AtStop>);
-static_assert( handle_is_at_v<SessionHandle<End,  FakeRes>,                   AtTerminal>);
-static_assert( handle_is_at_v<SessionHandle<Stop, FakeRes>,                   AtTerminal>);
-static_assert( handle_is_at_v<
-    SessionHandle<Stop_g<CrashClass::NoThrow>, FakeRes>, AtTerminal>);
-static_assert( handle_is_at_v<SessionHandle<Delegate<Send<Msg, End>, End>, FakeRes>,
-                              AtDelegate>);
-static_assert( handle_is_at_v<SessionHandle<Accept<Send<Msg, End>,   End>, FakeRes>,
-                              AtAccept>);
-static_assert( handle_is_at_v<SessionHandle<CheckpointedSession<End, End>, FakeRes>,
-                              AtCheckpointed>);
+static_assert(handle_is_at_v<SessionHandle<Send<Msg, End>, FakeRes>, AtSend>);
+static_assert(handle_is_at_v<SessionHandle<Recv<Msg, End>, FakeRes>, AtRecv>);
+static_assert(handle_is_at_v<SessionHandle<Select<Send<Msg, End>>, FakeRes>, AtSelect>);
+static_assert(handle_is_at_v<SessionHandle<Offer<Recv<Msg, End>>, FakeRes>, AtOffer>);
+static_assert(handle_is_at_v<SessionHandle<End, FakeRes>, AtEnd>);
+static_assert(handle_is_at_v<SessionHandle<Stop, FakeRes>, AtStop>);
+static_assert(handle_is_at_v<SessionHandle<Stop_g<CrashClass::NoThrow>, FakeRes>, AtStop>);
+static_assert(handle_is_at_v<SessionHandle<End, FakeRes>, AtTerminal>);
+static_assert(handle_is_at_v<SessionHandle<Stop, FakeRes>, AtTerminal>);
+static_assert(handle_is_at_v<SessionHandle<Stop_g<CrashClass::NoThrow>, FakeRes>, AtTerminal>);
+static_assert(handle_is_at_v<SessionHandle<Delegate<Send<Msg, End>, End>, FakeRes>, AtDelegate>);
+static_assert(handle_is_at_v<SessionHandle<Accept<Send<Msg, End>, End>, FakeRes>, AtAccept>);
+static_assert(handle_is_at_v<SessionHandle<CheckpointedSession<End, End>, FakeRes>, AtCheckpointed>);
 
 // ─── Negative cases — wrong tag, wrong shape, wrong both ─────────
 
 static_assert(!handle_is_at_v<SessionHandle<Send<Msg, End>, FakeRes>, AtRecv>);
 static_assert(!handle_is_at_v<SessionHandle<Send<Msg, End>, FakeRes>, AtSelect>);
 static_assert(!handle_is_at_v<SessionHandle<Send<Msg, End>, FakeRes>, AtTerminal>);
-static_assert(!handle_is_at_v<SessionHandle<End,  FakeRes>,           AtSend>);
-static_assert(!handle_is_at_v<SessionHandle<End,  FakeRes>,           AtStop>);
-static_assert(!handle_is_at_v<SessionHandle<Stop, FakeRes>,           AtEnd>);
+static_assert(!handle_is_at_v<SessionHandle<End, FakeRes>, AtSend>);
+static_assert(!handle_is_at_v<SessionHandle<End, FakeRes>, AtStop>);
+static_assert(!handle_is_at_v<SessionHandle<Stop, FakeRes>, AtEnd>);
 static_assert(!handle_is_at_v<SessionHandle<Recv<Msg, End>, FakeRes>, AtCheckpointed>);
 static_assert(!handle_is_at_v<SessionHandle<Offer<Recv<Msg, End>>, FakeRes>, AtSelect>);
 static_assert(!handle_is_at_v<SessionHandle<Select<Send<Msg, End>>, FakeRes>, AtOffer>);
 
 // Non-SessionHandle types are rejected for every tag.
-static_assert(!handle_is_at_v<int,        AtSend>);
-static_assert(!handle_is_at_v<FakeRes,    AtTerminal>);
+static_assert(!handle_is_at_v<int, AtSend>);
+static_assert(!handle_is_at_v<FakeRes, AtTerminal>);
 static_assert(!handle_is_at_v<Send<Msg, End>, AtSend>);  // combinator, not handle
 
 // ─── view_ok / handle_is_at_v equivalence ────────────────────────
@@ -421,14 +383,12 @@ static_assert(!handle_is_at_v<Send<Msg, End>, AtSend>);  // combinator, not hand
 // overload resolution and the call site fails to find a match.
 
 template <typename H, typename Tag>
-concept can_mint_session_view = requires (H const& h) {
-    mint_session_view<Tag>(h);
-};
+concept can_mint_session_view = requires(H const& h) { mint_session_view<Tag>(h); };
 
-static_assert( can_mint_session_view<SessionHandle<Send<Msg, End>, FakeRes>, AtSend>);
+static_assert(can_mint_session_view<SessionHandle<Send<Msg, End>, FakeRes>, AtSend>);
 static_assert(!can_mint_session_view<SessionHandle<Send<Msg, End>, FakeRes>, AtRecv>);
-static_assert(!can_mint_session_view<SessionHandle<End,            FakeRes>, AtSend>);
-static_assert( can_mint_session_view<SessionHandle<End,            FakeRes>, AtTerminal>);
+static_assert(!can_mint_session_view<SessionHandle<End, FakeRes>, AtSend>);
+static_assert(can_mint_session_view<SessionHandle<End, FakeRes>, AtTerminal>);
 
 }  // namespace detail::sv_self_test
 #endif  // CRUCIBLE_SESSION_SELF_TESTS

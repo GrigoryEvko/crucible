@@ -28,32 +28,23 @@
 namespace crucible::canopy {
 
 template <std::size_t MaxPeers, std::size_t MaxKeys>
-concept ScuttlebuttShape =
-    MaxPeers > 0 &&
-    MaxKeys > 0 &&
-    MaxPeers <= static_cast<std::size_t>(
-        std::numeric_limits<std::uint16_t>::max()) &&
-    MaxKeys <= static_cast<std::size_t>(
-        std::numeric_limits<std::uint16_t>::max()) &&
-    MaxKeys <= static_cast<std::size_t>(
-        std::numeric_limits<std::uint16_t>::max()) / MaxPeers;
+concept ScuttlebuttShape = MaxPeers > 0 && MaxKeys > 0
+                        && MaxPeers <= static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max())
+                        && MaxKeys <= static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max())
+                        && MaxKeys <= static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max()) / MaxPeers;
 
 template <std::size_t MaxPeers, std::size_t MaxKeys>
     requires ScuttlebuttShape<MaxPeers, MaxKeys>
-inline constexpr std::size_t scuttlebutt_entry_capacity =
-    MaxPeers * MaxKeys;
+inline constexpr std::size_t scuttlebutt_entry_capacity = MaxPeers * MaxKeys;
 
 template <std::size_t MaxPeers, std::size_t MaxKeys>
     requires ScuttlebuttShape<MaxPeers, MaxKeys>
 using ScuttlebuttEntryCount =
-    safety::Refined<safety::bounded_above<static_cast<std::uint16_t>(
-                        scuttlebutt_entry_capacity<MaxPeers, MaxKeys>)>,
+    safety::Refined<safety::bounded_above<static_cast<std::uint16_t>(scuttlebutt_entry_capacity<MaxPeers, MaxKeys>)>,
                     std::uint16_t>;
 
-using ScuttlebuttDurationNs =
-    safety::Refined<safety::positive, std::uint64_t>;
-using ScuttlebuttPositiveCount =
-    safety::Refined<safety::positive, std::uint16_t>;
+using ScuttlebuttDurationNs = safety::Refined<safety::positive, std::uint64_t>;
+using ScuttlebuttPositiveCount = safety::Refined<safety::positive, std::uint16_t>;
 
 struct ScuttlebuttConfig {
     ScuttlebuttDurationNs period_ns{5'000'000'000ULL};
@@ -64,9 +55,7 @@ struct ScuttlebuttKey {
     std::uint64_t hash = 0;
     std::uint16_t length = 0;
 
-    [[nodiscard]] friend constexpr bool operator==(
-        ScuttlebuttKey const&,
-        ScuttlebuttKey const&) = default;
+    [[nodiscard]] friend constexpr bool operator==(ScuttlebuttKey const&, ScuttlebuttKey const&) = default;
 };
 
 using LocalScuttlebuttKey = LocalWrite<ScuttlebuttKey>;
@@ -89,8 +78,7 @@ enum class ScuttlebuttError : std::uint8_t {
 
 namespace detail {
 
-[[nodiscard]] constexpr std::uint64_t
-fnv1a64(std::string_view text) noexcept {
+[[nodiscard]] constexpr std::uint64_t fnv1a64(std::string_view text) noexcept {
     std::uint64_t hash = 14'695'981'039'346'656'037ULL;
     for (char raw : text) {
         auto const ch = static_cast<unsigned char>(raw);
@@ -115,8 +103,7 @@ admit_scuttlebutt_key(std::string_view key) noexcept {
     if (key.empty()) {
         return std::unexpected(ScuttlebuttError::EmptyKey);
     }
-    if (key.size() > static_cast<std::size_t>(
-            std::numeric_limits<std::uint16_t>::max())) {
+    if (key.size() > static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max())) {
         return std::unexpected(ScuttlebuttError::KeyTooLong);
     }
     return LocalScuttlebuttKey{ScuttlebuttKey{
@@ -126,14 +113,11 @@ admit_scuttlebutt_key(std::string_view key) noexcept {
 }
 
 template <typename C>
-concept ScuttlebuttCrdt =
-    requires(C& crdt, C const& const_crdt, typename C::state_type state) {
-        typename C::state_type;
-        { const_crdt.state() } -> std::same_as<typename C::state_type>;
-        { crdt.merge(GossipedState<typename C::state_type>{state}) }
-            -> std::same_as<bool>;
-    } &&
-    std::copyable<typename C::state_type>;
+concept ScuttlebuttCrdt = requires(C& crdt, C const& const_crdt, typename C::state_type state) {
+    typename C::state_type;
+    { const_crdt.state() } -> std::same_as<typename C::state_type>;
+    { crdt.merge(GossipedState<typename C::state_type>{state}) } -> std::same_as<bool>;
+} && std::copyable<typename C::state_type>;
 
 struct ScuttlebuttVersionEntry {
     cog::Uuid origin{};
@@ -150,41 +134,34 @@ struct ScuttlebuttDelta {
 };
 
 template <typename State>
-using LocalScuttlebuttDelta =
-    safety::Tagged<ScuttlebuttDelta<State>, safety::source::Local>;
+using LocalScuttlebuttDelta = safety::Tagged<ScuttlebuttDelta<State>, safety::source::Local>;
 
 template <typename State>
-using GossipedScuttlebuttDelta =
-    safety::Tagged<ScuttlebuttDelta<State>, safety::source::Gossiped>;
+using GossipedScuttlebuttDelta = safety::Tagged<ScuttlebuttDelta<State>, safety::source::Gossiped>;
 
 template <std::size_t MaxPeers, std::size_t MaxKeys>
     requires ScuttlebuttShape<MaxPeers, MaxKeys>
 struct ScuttlebuttDigest {
-    static constexpr std::size_t capacity =
-        scuttlebutt_entry_capacity<MaxPeers, MaxKeys>;
+    static constexpr std::size_t capacity = scuttlebutt_entry_capacity<MaxPeers, MaxKeys>;
 
     safety::FixedArray<ScuttlebuttVersionEntry, capacity> entries{};
     std::uint16_t count = 0;
 
-    [[nodiscard]] constexpr ScuttlebuttEntryCount<MaxPeers, MaxKeys>
-    size() const noexcept {
-        return ScuttlebuttEntryCount<MaxPeers, MaxKeys>{
-            count,
-            typename ScuttlebuttEntryCount<MaxPeers, MaxKeys>::Trusted{}};
+    [[nodiscard]] constexpr ScuttlebuttEntryCount<MaxPeers, MaxKeys> size() const noexcept {
+        return ScuttlebuttEntryCount<MaxPeers, MaxKeys>{count,
+                                                        typename ScuttlebuttEntryCount<MaxPeers, MaxKeys>::Trusted{}};
     }
 
     [[nodiscard]] bool push(ScuttlebuttVersionEntry entry) noexcept {
         if (entry.version == 0) {
             return true;
         }
-        if (entry.origin.is_zero() || entry.key.hash == 0 ||
-            entry.key.length == 0) {
+        if (entry.origin.is_zero() || entry.key.hash == 0 || entry.key.length == 0) {
             return false;
         }
         for (std::uint16_t i = 0; i < count; ++i) {
             auto& existing = entries[static_cast<std::size_t>(i)];
-            if (existing.origin == entry.origin &&
-                existing.key == entry.key) {
+            if (existing.origin == entry.origin && existing.key == entry.key) {
                 if (existing.version < entry.version) {
                     existing.version = entry.version;
                 }
@@ -205,12 +182,10 @@ struct ScuttlebuttDigest {
         }
         for (std::uint16_t i = 0; i < count; ++i) {
             auto const& a = entries[static_cast<std::size_t>(i)];
-            if (a.version == 0 || a.origin.is_zero() ||
-                a.key.hash == 0 || a.key.length == 0) {
+            if (a.version == 0 || a.origin.is_zero() || a.key.hash == 0 || a.key.length == 0) {
                 return false;
             }
-            const std::uint16_t j0 =
-                static_cast<std::uint16_t>(i + std::uint16_t{1});
+            const std::uint16_t j0 = static_cast<std::uint16_t>(i + std::uint16_t{1});
             for (std::uint16_t j = j0; j < count; ++j) {
                 auto const& b = entries[static_cast<std::size_t>(j)];
                 if (a.origin == b.origin && a.key == b.key) {
@@ -224,35 +199,28 @@ struct ScuttlebuttDigest {
 
 template <std::size_t MaxPeers, std::size_t MaxKeys>
     requires ScuttlebuttShape<MaxPeers, MaxKeys>
-using GossipedScuttlebuttDigest =
-    safety::Tagged<ScuttlebuttDigest<MaxPeers, MaxKeys>,
-                   safety::source::Gossiped>;
+using GossipedScuttlebuttDigest = safety::Tagged<ScuttlebuttDigest<MaxPeers, MaxKeys>, safety::source::Gossiped>;
 
 template <std::size_t MaxPeers, std::size_t MaxKeys>
     requires ScuttlebuttShape<MaxPeers, MaxKeys>
 struct ScuttlebuttRequestSet {
-    static constexpr std::size_t capacity =
-        scuttlebutt_entry_capacity<MaxPeers, MaxKeys>;
+    static constexpr std::size_t capacity = scuttlebutt_entry_capacity<MaxPeers, MaxKeys>;
 
     safety::FixedArray<ScuttlebuttVersionEntry, capacity> entries{};
     std::uint16_t count = 0;
 
-    [[nodiscard]] constexpr ScuttlebuttEntryCount<MaxPeers, MaxKeys>
-    size() const noexcept {
-        return ScuttlebuttEntryCount<MaxPeers, MaxKeys>{
-            count,
-            typename ScuttlebuttEntryCount<MaxPeers, MaxKeys>::Trusted{}};
+    [[nodiscard]] constexpr ScuttlebuttEntryCount<MaxPeers, MaxKeys> size() const noexcept {
+        return ScuttlebuttEntryCount<MaxPeers, MaxKeys>{count,
+                                                        typename ScuttlebuttEntryCount<MaxPeers, MaxKeys>::Trusted{}};
     }
 
     [[nodiscard]] bool push(ScuttlebuttVersionEntry entry) noexcept {
-        if (entry.version == 0 || entry.origin.is_zero() ||
-            entry.key.hash == 0 || entry.key.length == 0) {
+        if (entry.version == 0 || entry.origin.is_zero() || entry.key.hash == 0 || entry.key.length == 0) {
             return false;
         }
         for (std::uint16_t i = 0; i < count; ++i) {
             auto& existing = entries[static_cast<std::size_t>(i)];
-            if (existing.origin == entry.origin &&
-                existing.key == entry.key) {
+            if (existing.origin == entry.origin && existing.key == entry.key) {
                 if (existing.version < entry.version) {
                     existing.version = entry.version;
                 }
@@ -277,8 +245,7 @@ struct ScuttlebuttDiff {
 
 template <std::size_t MaxPeers = 128, std::size_t MaxKeys = 128>
     requires ScuttlebuttShape<MaxPeers, MaxKeys>
-class alignas(64) ScuttlebuttSync
-    : public safety::Pinned<ScuttlebuttSync<MaxPeers, MaxKeys>> {
+class alignas(64) ScuttlebuttSync : public safety::Pinned<ScuttlebuttSync<MaxPeers, MaxKeys>> {
 public:
     using peer_type = SwimPeer;
     using digest_type = ScuttlebuttDigest<MaxPeers, MaxKeys>;
@@ -286,10 +253,8 @@ public:
     using request_set_type = ScuttlebuttRequestSet<MaxPeers, MaxKeys>;
     using diff_type = ScuttlebuttDiff<MaxPeers, MaxKeys>;
 
-    explicit ScuttlebuttSync(
-        peer_type local_peer,
-        std::span<const peer_type> initial_peers = {},
-        ScuttlebuttConfig config = {}) noexcept
+    explicit ScuttlebuttSync(peer_type local_peer, std::span<const peer_type> initial_peers = {},
+                             ScuttlebuttConfig config = {}) noexcept
         : config_{config} {
         // FIXY-U-080 / fixy-A5-014: was __builtin_trap (silent SIGILL).
         CRUCIBLE_FATAL_INVARIANT(add_peer(local_peer).has_value());
@@ -299,8 +264,7 @@ public:
         }
     }
 
-    [[nodiscard]] std::expected<void, ScuttlebuttError>
-    add_peer(peer_type peer) noexcept {
+    [[nodiscard]] std::expected<void, ScuttlebuttError> add_peer(peer_type peer) noexcept {
         cog::CogIdentity const& id = peer.value();
         if (id.uuid.is_zero()) {
             return std::unexpected(ScuttlebuttError::ZeroUuid);
@@ -320,8 +284,7 @@ public:
     }
 
     template <ScuttlebuttCrdt C>
-    [[nodiscard]] std::expected<void, ScuttlebuttError>
-    register_state(LocalScuttlebuttKey key, C& state) noexcept {
+    [[nodiscard]] std::expected<void, ScuttlebuttError> register_state(LocalScuttlebuttKey key, C& state) noexcept {
         (void)state;
         ScuttlebuttKey const& raw_key = key.value();
         auto existing = find_key_(raw_key);
@@ -346,37 +309,31 @@ public:
     }
 
     template <ScuttlebuttCrdt C>
-    [[nodiscard]] std::expected<
-        LocalScuttlebuttDelta<typename C::state_type>,
-        ScuttlebuttError>
+    [[nodiscard]] std::expected<LocalScuttlebuttDelta<typename C::state_type>, ScuttlebuttError>
     publish_local_change(LocalScuttlebuttKey key, C const& state) noexcept {
         auto key_idx = require_key_<C>(key.value());
         if (!key_idx) {
             return std::unexpected(key_idx.error());
         }
-        std::uint64_t& version =
-            versions_[local_index_][static_cast<std::size_t>(*key_idx)];
+        std::uint64_t& version = versions_[local_index_][static_cast<std::size_t>(*key_idx)];
         if (version == std::numeric_limits<std::uint64_t>::max()) {
             return std::unexpected(ScuttlebuttError::VersionOverflow);
         }
         ++version;
         ++publish_count_;
-        return LocalScuttlebuttDelta<typename C::state_type>{
-            ScuttlebuttDelta<typename C::state_type>{
-                .origin = peers_[local_index_].id,
-                .key = key.value(),
-                .version = version,
-                .state = state.state(),
-            }};
+        return LocalScuttlebuttDelta<typename C::state_type>{ScuttlebuttDelta<typename C::state_type>{
+            .origin = peers_[local_index_].id,
+            .key = key.value(),
+            .version = version,
+            .state = state.state(),
+        }};
     }
 
     [[nodiscard]] digest_type digest() const noexcept {
         digest_type out{};
         for (std::uint16_t p = 0; p < peer_count_; ++p) {
             for (std::uint16_t k = 0; k < key_count_; ++k) {
-                const std::uint64_t version =
-                    versions_[static_cast<std::size_t>(p)]
-                             [static_cast<std::size_t>(k)];
+                const std::uint64_t version = versions_[static_cast<std::size_t>(p)][static_cast<std::size_t>(k)];
                 if (version == 0) {
                     continue;
                 }
@@ -409,19 +366,15 @@ public:
                 return std::unexpected(ScuttlebuttError::UnknownKey);
             }
             const std::uint64_t local_version =
-                versions_[static_cast<std::size_t>(*peer_idx)]
-                         [static_cast<std::size_t>(*key_idx)];
-            if (entry.version > local_version &&
-                !out.requests.push(entry)) {
+                versions_[static_cast<std::size_t>(*peer_idx)][static_cast<std::size_t>(*key_idx)];
+            if (entry.version > local_version && !out.requests.push(entry)) {
                 return std::unexpected(ScuttlebuttError::CapacityExceeded);
             }
         }
 
         for (std::uint16_t p = 0; p < peer_count_; ++p) {
             for (std::uint16_t k = 0; k < key_count_; ++k) {
-                const std::uint64_t local_version =
-                    versions_[static_cast<std::size_t>(p)]
-                             [static_cast<std::size_t>(k)];
+                const std::uint64_t local_version = versions_[static_cast<std::size_t>(p)][static_cast<std::size_t>(k)];
                 if (local_version == 0) {
                     continue;
                 }
@@ -430,11 +383,9 @@ public:
                     .key = keys_[static_cast<std::size_t>(k)].key,
                     .version = local_version,
                 };
-                if (version_in_digest_(incoming, entry.origin, entry.key) <
-                    local_version) {
+                if (version_in_digest_(incoming, entry.origin, entry.key) < local_version) {
                     if (!out.offers.push(entry)) {
-                        return std::unexpected(
-                            ScuttlebuttError::CapacityExceeded);
+                        return std::unexpected(ScuttlebuttError::CapacityExceeded);
                     }
                 }
             }
@@ -443,12 +394,8 @@ public:
     }
 
     template <ScuttlebuttCrdt C>
-    [[nodiscard]] std::expected<
-        LocalScuttlebuttDelta<typename C::state_type>,
-        ScuttlebuttError>
-    delta_for_request(
-        ScuttlebuttVersionEntry request,
-        C const& state) const noexcept {
+    [[nodiscard]] std::expected<LocalScuttlebuttDelta<typename C::state_type>, ScuttlebuttError>
+    delta_for_request(ScuttlebuttVersionEntry request, C const& state) const noexcept {
         auto peer_idx = find_peer_(request.origin);
         if (!peer_idx) {
             return std::unexpected(ScuttlebuttError::UnknownPeer);
@@ -458,27 +405,23 @@ public:
             return std::unexpected(key_idx.error());
         }
         const std::uint64_t local_version =
-            versions_[static_cast<std::size_t>(*peer_idx)]
-                     [static_cast<std::size_t>(*key_idx)];
+            versions_[static_cast<std::size_t>(*peer_idx)][static_cast<std::size_t>(*key_idx)];
         if (local_version < request.version || local_version == 0) {
             return std::unexpected(ScuttlebuttError::NotAvailable);
         }
-        return LocalScuttlebuttDelta<typename C::state_type>{
-            ScuttlebuttDelta<typename C::state_type>{
-                .origin = request.origin,
-                .key = request.key,
-                .version = local_version,
-                .state = state.state(),
-            }};
+        return LocalScuttlebuttDelta<typename C::state_type>{ScuttlebuttDelta<typename C::state_type>{
+            .origin = request.origin,
+            .key = request.key,
+            .version = local_version,
+            .state = state.state(),
+        }};
     }
 
     template <ScuttlebuttCrdt C>
     [[nodiscard]] std::expected<bool, ScuttlebuttError>
-    apply_delta(GossipedScuttlebuttDelta<typename C::state_type> delta,
-                C& state) noexcept {
+    apply_delta(GossipedScuttlebuttDelta<typename C::state_type> delta, C& state) noexcept {
         auto const& incoming = delta.value();
-        if (incoming.origin.is_zero() || incoming.key.hash == 0 ||
-            incoming.key.length == 0 || incoming.version == 0) {
+        if (incoming.origin.is_zero() || incoming.key.hash == 0 || incoming.key.length == 0 || incoming.version == 0) {
             return std::unexpected(ScuttlebuttError::MalformedDelta);
         }
         auto peer_idx = find_peer_(incoming.origin);
@@ -491,13 +434,11 @@ public:
         }
 
         std::uint64_t& local_version =
-            versions_[static_cast<std::size_t>(*peer_idx)]
-                     [static_cast<std::size_t>(*key_idx)];
+            versions_[static_cast<std::size_t>(*peer_idx)][static_cast<std::size_t>(*key_idx)];
         if (incoming.version <= local_version) {
             return false;
         }
-        if (!state.merge(GossipedState<typename C::state_type>{
-                incoming.state})) {
+        if (!state.merge(GossipedState<typename C::state_type>{incoming.state})) {
             return std::unexpected(ScuttlebuttError::MergeRejected);
         }
         local_version = incoming.version;
@@ -513,9 +454,7 @@ public:
         }
         std::uint16_t dropped = 0;
         for (std::uint16_t k = 0; k < key_count_; ++k) {
-            std::uint64_t& version =
-                versions_[static_cast<std::size_t>(*peer_idx)]
-                         [static_cast<std::size_t>(k)];
+            std::uint64_t& version = versions_[static_cast<std::size_t>(*peer_idx)][static_cast<std::size_t>(k)];
             if (version != 0 && version < version_floor) {
                 version = 0;
                 ++dropped;
@@ -524,25 +463,15 @@ public:
         return dropped;
     }
 
-    [[nodiscard]] ScuttlebuttConfig config() const noexcept {
-        return config_;
-    }
+    [[nodiscard]] ScuttlebuttConfig config() const noexcept { return config_; }
 
-    [[nodiscard]] std::uint16_t peer_count() const noexcept {
-        return peer_count_;
-    }
+    [[nodiscard]] std::uint16_t peer_count() const noexcept { return peer_count_; }
 
-    [[nodiscard]] std::uint16_t key_count() const noexcept {
-        return key_count_;
-    }
+    [[nodiscard]] std::uint16_t key_count() const noexcept { return key_count_; }
 
-    [[nodiscard]] std::uint64_t publish_count() const noexcept {
-        return publish_count_;
-    }
+    [[nodiscard]] std::uint64_t publish_count() const noexcept { return publish_count_; }
 
-    [[nodiscard]] std::uint64_t merge_count() const noexcept {
-        return merge_count_;
-    }
+    [[nodiscard]] std::uint64_t merge_count() const noexcept { return merge_count_; }
 
 private:
     struct PeerSlot {
@@ -556,8 +485,7 @@ private:
         void const* type_cookie = nullptr;
     };
 
-    [[nodiscard]] std::optional<std::uint16_t>
-    find_peer_(cog::Uuid peer) const noexcept {
+    [[nodiscard]] std::optional<std::uint16_t> find_peer_(cog::Uuid peer) const noexcept {
         for (std::uint16_t i = 0; i < peer_count_; ++i) {
             auto const& slot = peers_[static_cast<std::size_t>(i)];
             if (slot.occupied && slot.id == peer) {
@@ -567,8 +495,7 @@ private:
         return std::nullopt;
     }
 
-    [[nodiscard]] std::optional<std::uint16_t>
-    find_key_(ScuttlebuttKey key) const noexcept {
+    [[nodiscard]] std::optional<std::uint16_t> find_key_(ScuttlebuttKey key) const noexcept {
         for (std::uint16_t i = 0; i < key_count_; ++i) {
             auto const& slot = keys_[static_cast<std::size_t>(i)];
             if (slot.occupied && slot.key == key) {
@@ -579,23 +506,19 @@ private:
     }
 
     template <ScuttlebuttCrdt C>
-    [[nodiscard]] std::expected<std::uint16_t, ScuttlebuttError>
-    require_key_(ScuttlebuttKey key) const noexcept {
+    [[nodiscard]] std::expected<std::uint16_t, ScuttlebuttError> require_key_(ScuttlebuttKey key) const noexcept {
         auto idx = find_key_(key);
         if (!idx) {
             return std::unexpected(ScuttlebuttError::UnknownKey);
         }
-        if (keys_[static_cast<std::size_t>(*idx)].type_cookie !=
-            detail::crdt_type_cookie<C>()) {
+        if (keys_[static_cast<std::size_t>(*idx)].type_cookie != detail::crdt_type_cookie<C>()) {
             return std::unexpected(ScuttlebuttError::TypeMismatch);
         }
         return *idx;
     }
 
-    [[nodiscard]] static std::uint64_t version_in_digest_(
-        digest_type const& digest,
-        cog::Uuid origin,
-        ScuttlebuttKey key) noexcept {
+    [[nodiscard]] static std::uint64_t version_in_digest_(digest_type const& digest, cog::Uuid origin,
+                                                          ScuttlebuttKey key) noexcept {
         for (std::uint16_t i = 0; i < digest.count; ++i) {
             auto const& entry = digest.entries[static_cast<std::size_t>(i)];
             if (entry.origin == origin && entry.key == key) {
@@ -608,9 +531,7 @@ private:
     ScuttlebuttConfig config_{};
     safety::FixedArray<PeerSlot, MaxPeers> peers_{};
     safety::FixedArray<KeySlot, MaxKeys> keys_{};
-    safety::FixedArray<
-        safety::FixedArray<std::uint64_t, MaxKeys>,
-        MaxPeers> versions_{};
+    safety::FixedArray<safety::FixedArray<std::uint64_t, MaxKeys>, MaxPeers> versions_{};
     std::uint16_t peer_count_ = 0;
     std::uint16_t key_count_ = 0;
     std::uint16_t local_index_ = 0;
@@ -623,16 +544,10 @@ static_assert(!std::is_move_constructible_v<ScuttlebuttSync<4, 4>>);
 
 template <std::size_t MaxPeers = 128, std::size_t MaxKeys = 128>
     requires ScuttlebuttShape<MaxPeers, MaxKeys>
-[[nodiscard]] ScuttlebuttSync<MaxPeers, MaxKeys>
-mint_scuttlebutt(
-    effects::Init,
-    SwimPeer local_peer,
-    std::span<const SwimPeer> initial_peers = {},
-    ScuttlebuttConfig config = {}) noexcept {
-    return ScuttlebuttSync<MaxPeers, MaxKeys>{
-        local_peer,
-        initial_peers,
-        config};
+[[nodiscard]] ScuttlebuttSync<MaxPeers, MaxKeys> mint_scuttlebutt(effects::Init, SwimPeer local_peer,
+                                                                  std::span<const SwimPeer> initial_peers = {},
+                                                                  ScuttlebuttConfig config = {}) noexcept {
+    return ScuttlebuttSync<MaxPeers, MaxKeys>{local_peer, initial_peers, config};
 }
 
 }  // namespace crucible::canopy

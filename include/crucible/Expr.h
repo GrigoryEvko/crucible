@@ -4,7 +4,7 @@
 #include <crucible/Platform.h>
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/Pre.h>
-#include <crucible/safety/Tagged.h>     // WRAP-Expr-1 #911: Tagged<u64, hash_family::FamilyB>
+#include <crucible/safety/Tagged.h>  // WRAP-Expr-1 #911: Tagged<u64, hash_family::FamilyB>
 #include <crucible/Types.h>
 
 #include <bit>
@@ -36,176 +36,150 @@ namespace crucible {
 // placement-news an Expr into them using the full-args constructor.
 // Arena never calls destructors; Expr is trivially destructible.
 struct Expr {
-  const Op op = Op::INTEGER;          // 1 byte  — node type
-  const uint8_t nargs = 0;            // 1 byte  — number of children (0-255)
-  const uint16_t flags = 0;           // 2 bytes — ExprFlags bitfield
-  const SymbolId symbol_id;           // 4 bytes — unique id for symbols (SymbolId{} for non-symbols)
-  // `hash` is Family-B (process-local intern key) per Types.h taxonomy.
-  // MUST NOT be persisted, federated, or fed into any Cipher key /
-  // merkle_hash / content_hash computation.  ExprPool uses it as the
-  // Swiss-table probing key and mixes arg-pointer bits (ASLR) for
-  // speed — the same structural input hashes differently per process.
-  // If FORGE federation ever needs Expr identity, compute a separate
-  // structural `content_hash()` that ignores `args` pointer values.
-  //
-  // WRAP-Expr-1 #911: pinned as Tagged<uint64_t, hash_family::FamilyB>
-  // so the Family-B-ness is enforced at the TYPE level.  Builds on
-  // #1069's hash_family::FamilyB tag.  Regime-1 EBO-collapse preserves
-  // the 8B field width — the 32B Expr layout is unchanged (the
-  // static_assert at the file end pins this).  ExprPool::intern probe
-  // sites unwrap via .value() at the Swiss-table modular-probe step.
-  //
-  // The bug class this prevents: a maintainer accidentally feeding
-  // Expr::hash into a Family-A computation (merkle_hash, ContentHash,
-  // Cipher key) — Tagged<u64, FamilyB> cannot be implicitly converted
-  // to Tagged<u64, FamilyA>; the cross-family confusion fails to
-  // compile at the call site.
-  const ::crucible::safety::Tagged<std::uint64_t, hash_family::FamilyB>
-      hash{std::uint64_t{0}};         // 8 bytes — Family-B intern key
-                                      // Tagged has no default ctor; mint
-                                      // the zero hash explicitly.
-  const int64_t payload = 0;          // 8 bytes — integer value, or bitcast double, or symbol name ptr
-  const Expr* const* const args = nullptr;  // 8 bytes — pointer to arena-allocated array of children
-                                            // ──────────
-                                            // 32 bytes total
-
-  // Default constructor: yields a valid "integer 0" atom.  Value-init
-  // via NSDMI keeps default-constructed instances well-defined per the
-  // InitSafe axiom.  Primarily used by Arena zero-fill paths and by
-  // tests that build placeholder Exprs.
-  constexpr Expr() noexcept = default;
-
-  // Full-args constructor: the only way to create a non-default Expr.
-  // ExprPool::make_ uses this via placement-new into arena storage.
-  // hash_ and payload_ may legitimately be 0 (zero integer, zero-valued
-  // flag set).  args_ may be null iff nargs_ == 0.
-  //
-  // CONTRACT-115: the args-vs-nargs companionship discharges through
-  // the named predicate `crucible::decide::implies` (CONTRACT-081
-  // catalog) — `nargs_ > 0 ⇒ args_ != nullptr`.  Equivalent forms
-  // (`nargs_ == 0 || args_ != nullptr`, `args_ != nullptr || nargs_
-  // == 0`) are not used because the implication form is the natural
-  // mathematical reading of the doc-comment "args_ may be null iff
-  // nargs_ == 0".  Pure parameter ref — not consteval-bypass-vulnerable
-  // — so P2900 pre() is sufficient.  ExprPool::intern_node and the
-  // bool/int singleton paths are the only callers; neither passes
-  // nargs_ > 0 with args_ == nullptr in production, but the cite
-  // catches a future refactor that constructs an Expr from a partial
-  // arg-list initialization sequence (e.g., args_ = staging buffer
-  // before the staging is filled).
-  constexpr Expr(
-      Op           op_,
-      uint8_t      nargs_,
-      uint16_t     flags_,
-      SymbolId     symbol_id_,
-      uint64_t     hash_,
-      int64_t      payload_,
-      const Expr* const* args_) noexcept
-      pre (::crucible::decide::implies(::crucible::decide::positive(nargs_),
-                                       args_ != nullptr))
-      : op(op_)
-      , nargs(nargs_)
-      , flags(flags_)
-      , symbol_id(symbol_id_)
-      , hash(hash_)
-      , payload(payload_)
-      , args(args_)
-  {}
-
-  // Copy/move: deleted because const fields make assignment impossible
-  // and copying an interned Expr would break intern-table identity
-  // (two pointers referencing equivalent structures must be THE SAME
-  // pointer, not distinct copies).  Move is likewise nonsensical since
-  // the target is an identity-interned pointer.
-  Expr(const Expr&)            = delete("interned Exprs have identity equality; copying would break intern");
-  Expr& operator=(const Expr&) = delete("fields are const");
-  Expr(Expr&&)                 = delete("interned Exprs are arena-pinned");
-  Expr& operator=(Expr&&)      = delete("fields are const");
-
-  // ---- Payload accessors ----
-
-  [[nodiscard]] constexpr int64_t as_int() const {
-    return payload;
-  }
-
-  [[nodiscard]] double as_float() const {
-    return std::bit_cast<double>(payload);
-  }
-
-  [[nodiscard]] const char* as_symbol_name() const noexcept CRUCIBLE_LIFETIMEBOUND {
-    return std::bit_cast<const char*>(payload);
-  }
-
-  // ---- Flag queries (branchless, single AND instruction) ----
-
-  [[nodiscard, gnu::pure]] constexpr bool is_integer() const { return flags & ExprFlags::IS_INTEGER; }
-  [[nodiscard, gnu::pure]] constexpr bool is_real() const { return flags & ExprFlags::IS_REAL; }
-  [[nodiscard, gnu::pure]] constexpr bool is_finite() const { return flags & ExprFlags::IS_FINITE; }
-  [[nodiscard, gnu::pure]] constexpr bool is_positive() const { return flags & ExprFlags::IS_POSITIVE; }
-  [[nodiscard, gnu::pure]] constexpr bool is_negative() const { return flags & ExprFlags::IS_NEGATIVE; }
-  [[nodiscard, gnu::pure]] constexpr bool is_nonnegative() const { return flags & ExprFlags::IS_NONNEGATIVE; }
-  [[nodiscard, gnu::pure]] constexpr bool is_nonpositive() const { return flags & ExprFlags::IS_NONPOSITIVE; }
-  [[nodiscard, gnu::pure]] constexpr bool is_zero() const { return flags & ExprFlags::IS_ZERO; }
-  [[nodiscard, gnu::pure]] constexpr bool is_even() const { return flags & ExprFlags::IS_EVEN; }
-  [[nodiscard, gnu::pure]] constexpr bool is_odd() const { return flags & ExprFlags::IS_ODD; }
-  [[nodiscard, gnu::pure]] constexpr bool is_number() const { return flags & ExprFlags::IS_NUMBER; }
-  [[nodiscard, gnu::pure]] constexpr bool is_symbol() const { return flags & ExprFlags::IS_SYMBOL; }
-  [[nodiscard, gnu::pure]] constexpr bool is_boolean() const { return flags & ExprFlags::IS_BOOLEAN; }
-
-  // ---- Structural queries ----
-
-  [[nodiscard, gnu::pure]] constexpr bool is_atom() const { return nargs == 0; }
-
-  [[nodiscard, gnu::pure]] constexpr bool is_one() const {
-    return op == Op::INTEGER && payload == 1;
-  }
-
-  [[nodiscard, gnu::pure]] constexpr bool is_neg_one() const {
-    return op == Op::INTEGER && payload == -1;
-  }
-
-  [[nodiscard, gnu::pure]] constexpr bool is_zero_int() const {
-    return op == Op::INTEGER && payload == 0;
-  }
-
-  // ---- Child access ----
-
-  [[nodiscard]] const Expr* arg(uint8_t i) const CRUCIBLE_LIFETIMEBOUND
-  {
-    // CONTRACT-115: child-access bounds discharge through the named
-    // predicate `crucible::decide::in_range` (CONTRACT-102 catalog).
-    // The closed interval `[0, nargs - 1]` is reviewable as a single
-    // citation rather than a bare `<` (which conflates exclusive count
-    // with inclusive max — see decide.h anti-patterns).  Mirrors the
-    // ReplayEngine output_ptr / input_ptr migration pattern
-    // (CONTRACT-108, ReplayEngine.h:229-231 / 259-261).
+    const Op op = Op::INTEGER;  // 1 byte  — node type
+    const uint8_t nargs = 0;  // 1 byte  — number of children (0-255)
+    const uint16_t flags = 0;  // 2 bytes — ExprFlags bitfield
+    const SymbolId symbol_id;  // 4 bytes — unique id for symbols (SymbolId{} for non-symbols)
+    // `hash` is Family-B (process-local intern key) per Types.h taxonomy.
+    // MUST NOT be persisted, federated, or fed into any Cipher key /
+    // merkle_hash / content_hash computation.  ExprPool uses it as the
+    // Swiss-table probing key and mixes arg-pointer bits (ASLR) for
+    // speed — the same structural input hashes differently per process.
+    // If FORGE federation ever needs Expr identity, compute a separate
+    // structural `content_hash()` that ignores `args` pointer values.
     //
-    // The `nargs > 0u` companion guard is paired because
-    // `nargs - 1u` underflows to UINT8_MAX when nargs == 0, which
-    // would make `in_range(i, 0, UINT8_MAX)` accept every value;
-    // production never calls arg() on a zero-arg Expr (no valid
-    // index can exist) but defense-in-depth catches a future
-    // refactor that exposes this path (e.g. an iterator that walks
-    // children without first checking is_atom()).
+    // WRAP-Expr-1 #911: pinned as Tagged<uint64_t, hash_family::FamilyB>
+    // so the Family-B-ness is enforced at the TYPE level.  Builds on
+    // #1069's hash_family::FamilyB tag.  Regime-1 EBO-collapse preserves
+    // the 8B field width — the 32B Expr layout is unchanged (the
+    // static_assert at the file end pins this).  ExprPool::intern probe
+    // sites unwrap via .value() at the Swiss-table modular-probe step.
     //
-    // The pre clauses move from P2900 `pre()` to in-body CRUCIBLE_PRE
-    // because P2900 `pre()` referencing class members through `this->`
-    // (here: `this->nargs` and `this->args`) is silently bypassed at
-    // consteval in GCC 16.1.1 (same gotcha that drove
-    // CONTRACT-100..108-POST and the ReplayEngine port migration).
-    // CRUCIBLE_PRE fires symmetrically at consteval, runtime, and as
-    // `[[assume]]` for the optimizer.  The args != nullptr check
-    // remains as a separate clause: `nargs > 0u` companions only
-    // prevent the `nargs - 1u` underflow; the actual non-null
-    // dereference of args[] is the orthogonal NullSafe obligation
-    // that the constructor's `decide::implies(nargs_ > 0, args_ !=
-    // nullptr)` pre witnesses on every Expr construction.
-    CRUCIBLE_PRE(nargs > 0u);
-    CRUCIBLE_PRE(::crucible::decide::in_range<std::uint8_t>(
-        i, 0u, static_cast<std::uint8_t>(nargs - 1u)));
-    CRUCIBLE_PRE(args != nullptr);
-    return args[i];
-  }
+    // The bug class this prevents: a maintainer accidentally feeding
+    // Expr::hash into a Family-A computation (merkle_hash, ContentHash,
+    // Cipher key) — Tagged<u64, FamilyB> cannot be implicitly converted
+    // to Tagged<u64, FamilyA>; the cross-family confusion fails to
+    // compile at the call site.
+    const ::crucible::safety::Tagged<std::uint64_t, hash_family::FamilyB> hash{
+        std::uint64_t{0}};  // 8 bytes — Family-B intern key
+    // Tagged has no default ctor; mint
+    // the zero hash explicitly.
+    const int64_t payload = 0;  // 8 bytes — integer value, or bitcast double, or symbol name ptr
+    const Expr* const* const args = nullptr;  // 8 bytes — pointer to arena-allocated array of children
+    // ──────────
+    // 32 bytes total
+
+    // Default constructor: yields a valid "integer 0" atom.  Value-init
+    // via NSDMI keeps default-constructed instances well-defined per the
+    // InitSafe axiom.  Primarily used by Arena zero-fill paths and by
+    // tests that build placeholder Exprs.
+    constexpr Expr() noexcept = default;
+
+    // Full-args constructor: the only way to create a non-default Expr.
+    // ExprPool::make_ uses this via placement-new into arena storage.
+    // hash_ and payload_ may legitimately be 0 (zero integer, zero-valued
+    // flag set).  args_ may be null iff nargs_ == 0.
+    //
+    // CONTRACT-115: the args-vs-nargs companionship discharges through
+    // the named predicate `crucible::decide::implies` (CONTRACT-081
+    // catalog) — `nargs_ > 0 ⇒ args_ != nullptr`.  Equivalent forms
+    // (`nargs_ == 0 || args_ != nullptr`, `args_ != nullptr || nargs_
+    // == 0`) are not used because the implication form is the natural
+    // mathematical reading of the doc-comment "args_ may be null iff
+    // nargs_ == 0".  Pure parameter ref — not consteval-bypass-vulnerable
+    // — so P2900 pre() is sufficient.  ExprPool::intern_node and the
+    // bool/int singleton paths are the only callers; neither passes
+    // nargs_ > 0 with args_ == nullptr in production, but the cite
+    // catches a future refactor that constructs an Expr from a partial
+    // arg-list initialization sequence (e.g., args_ = staging buffer
+    // before the staging is filled).
+    constexpr Expr(Op op_, uint8_t nargs_, uint16_t flags_, SymbolId symbol_id_, uint64_t hash_, int64_t payload_,
+                   const Expr* const* args_) noexcept
+        pre(::crucible::decide::implies(::crucible::decide::positive(nargs_), args_ != nullptr))
+        : op(op_), nargs(nargs_), flags(flags_), symbol_id(symbol_id_), hash(hash_), payload(payload_), args(args_) {}
+
+    // Copy/move: deleted because const fields make assignment impossible
+    // and copying an interned Expr would break intern-table identity
+    // (two pointers referencing equivalent structures must be THE SAME
+    // pointer, not distinct copies).  Move is likewise nonsensical since
+    // the target is an identity-interned pointer.
+    Expr(const Expr&) = delete("interned Exprs have identity equality; copying would break intern");
+    Expr& operator=(const Expr&) = delete("fields are const");
+    Expr(Expr&&) = delete("interned Exprs are arena-pinned");
+    Expr& operator=(Expr&&) = delete("fields are const");
+
+    // ---- Payload accessors ----
+
+    [[nodiscard]] constexpr int64_t as_int() const { return payload; }
+
+    [[nodiscard]] double as_float() const { return std::bit_cast<double>(payload); }
+
+    [[nodiscard]] const char* as_symbol_name() const noexcept CRUCIBLE_LIFETIMEBOUND {
+        return std::bit_cast<const char*>(payload);
+    }
+
+    // ---- Flag queries (branchless, single AND instruction) ----
+
+    [[nodiscard, gnu::pure]] constexpr bool is_integer() const { return flags & ExprFlags::IS_INTEGER; }
+    [[nodiscard, gnu::pure]] constexpr bool is_real() const { return flags & ExprFlags::IS_REAL; }
+    [[nodiscard, gnu::pure]] constexpr bool is_finite() const { return flags & ExprFlags::IS_FINITE; }
+    [[nodiscard, gnu::pure]] constexpr bool is_positive() const { return flags & ExprFlags::IS_POSITIVE; }
+    [[nodiscard, gnu::pure]] constexpr bool is_negative() const { return flags & ExprFlags::IS_NEGATIVE; }
+    [[nodiscard, gnu::pure]] constexpr bool is_nonnegative() const { return flags & ExprFlags::IS_NONNEGATIVE; }
+    [[nodiscard, gnu::pure]] constexpr bool is_nonpositive() const { return flags & ExprFlags::IS_NONPOSITIVE; }
+    [[nodiscard, gnu::pure]] constexpr bool is_zero() const { return flags & ExprFlags::IS_ZERO; }
+    [[nodiscard, gnu::pure]] constexpr bool is_even() const { return flags & ExprFlags::IS_EVEN; }
+    [[nodiscard, gnu::pure]] constexpr bool is_odd() const { return flags & ExprFlags::IS_ODD; }
+    [[nodiscard, gnu::pure]] constexpr bool is_number() const { return flags & ExprFlags::IS_NUMBER; }
+    [[nodiscard, gnu::pure]] constexpr bool is_symbol() const { return flags & ExprFlags::IS_SYMBOL; }
+    [[nodiscard, gnu::pure]] constexpr bool is_boolean() const { return flags & ExprFlags::IS_BOOLEAN; }
+
+    // ---- Structural queries ----
+
+    [[nodiscard, gnu::pure]] constexpr bool is_atom() const { return nargs == 0; }
+
+    [[nodiscard, gnu::pure]] constexpr bool is_one() const { return op == Op::INTEGER && payload == 1; }
+
+    [[nodiscard, gnu::pure]] constexpr bool is_neg_one() const { return op == Op::INTEGER && payload == -1; }
+
+    [[nodiscard, gnu::pure]] constexpr bool is_zero_int() const { return op == Op::INTEGER && payload == 0; }
+
+    // ---- Child access ----
+
+    [[nodiscard]] const Expr* arg(uint8_t i) const CRUCIBLE_LIFETIMEBOUND {
+        // CONTRACT-115: child-access bounds discharge through the named
+        // predicate `crucible::decide::in_range` (CONTRACT-102 catalog).
+        // The closed interval `[0, nargs - 1]` is reviewable as a single
+        // citation rather than a bare `<` (which conflates exclusive count
+        // with inclusive max — see decide.h anti-patterns).  Mirrors the
+        // ReplayEngine output_ptr / input_ptr migration pattern
+        // (CONTRACT-108, ReplayEngine.h:229-231 / 259-261).
+        //
+        // The `nargs > 0u` companion guard is paired because
+        // `nargs - 1u` underflows to UINT8_MAX when nargs == 0, which
+        // would make `in_range(i, 0, UINT8_MAX)` accept every value;
+        // production never calls arg() on a zero-arg Expr (no valid
+        // index can exist) but defense-in-depth catches a future
+        // refactor that exposes this path (e.g. an iterator that walks
+        // children without first checking is_atom()).
+        //
+        // The pre clauses move from P2900 `pre()` to in-body CRUCIBLE_PRE
+        // because P2900 `pre()` referencing class members through `this->`
+        // (here: `this->nargs` and `this->args`) is silently bypassed at
+        // consteval in GCC 16.1.1 (same gotcha that drove
+        // CONTRACT-100..108-POST and the ReplayEngine port migration).
+        // CRUCIBLE_PRE fires symmetrically at consteval, runtime, and as
+        // `[[assume]]` for the optimizer.  The args != nullptr check
+        // remains as a separate clause: `nargs > 0u` companions only
+        // prevent the `nargs - 1u` underflow; the actual non-null
+        // dereference of args[] is the orthogonal NullSafe obligation
+        // that the constructor's `decide::implies(nargs_ > 0, args_ !=
+        // nullptr)` pre witnesses on every Expr construction.
+        CRUCIBLE_PRE(nargs > 0u);
+        CRUCIBLE_PRE(::crucible::decide::in_range<std::uint8_t>(i, 0u, static_cast<std::uint8_t>(nargs - 1u)));
+        CRUCIBLE_PRE(args != nullptr);
+        return args[i];
+    }
 };
 
 // Compile-time check: Expr must be 32 bytes for cache efficiency.
@@ -218,29 +192,25 @@ static_assert(sizeof(Expr) == 32, "Expr must be exactly 32 bytes");
 // static_assert above catches it.  Pin the field's exact type and
 // width so a future regression cannot silently drop the wrap (or
 // switch to FamilyA, allowing Cipher confusion).
-static_assert(
-    std::is_same_v<
-        decltype(std::declval<Expr>().hash),
-        const ::crucible::safety::Tagged<std::uint64_t, hash_family::FamilyB>>,
-    "WRAP-Expr-1 #911: Expr::hash must be "
-    "const Tagged<u64, hash_family::FamilyB> — Family-B intern key.");
-static_assert(
-    sizeof(::crucible::safety::Tagged<std::uint64_t, hash_family::FamilyB>) ==
-        sizeof(std::uint64_t),
-    "WRAP-Expr-1 #911: Tagged<u64, FamilyB> must be regime-1 EBO-"
-    "collapsible to preserve the 32B Expr layout.");
+static_assert(std::is_same_v<decltype(std::declval<Expr>().hash),
+                             const ::crucible::safety::Tagged<std::uint64_t, hash_family::FamilyB>>,
+              "WRAP-Expr-1 #911: Expr::hash must be "
+              "const Tagged<u64, hash_family::FamilyB> — Family-B intern key.");
+static_assert(sizeof(::crucible::safety::Tagged<std::uint64_t, hash_family::FamilyB>) == sizeof(std::uint64_t),
+              "WRAP-Expr-1 #911: Tagged<u64, FamilyB> must be regime-1 EBO-"
+              "collapsible to preserve the 32B Expr layout.");
 
 namespace detail {
 
 // MurmurHash3 64-bit finalizer — proven avalanche properties.
 // Shared by ExprPool (structural hashing) and ExprMap (pointer hashing).
 constexpr uint64_t fmix64(uint64_t k) {
-  k ^= k >> 33;
-  k *= 0xff51afd7ed558ccdULL;
-  k ^= k >> 33;
-  k *= 0xc4ceb9fe1a85ec53ULL;
-  k ^= k >> 33;
-  return k;
+    k ^= k >> 33;
+    k *= 0xff51afd7ed558ccdULL;
+    k ^= k >> 33;
+    k *= 0xc4ceb9fe1a85ec53ULL;
+    k ^= k >> 33;
+    return k;
 }
 
 // wyhash-style 64-bit mix: one 128-bit multiply, XOR halves.
@@ -249,11 +219,11 @@ constexpr uint64_t fmix64(uint64_t k) {
 // Used on the intern() hot path where every nanosecond matters.
 inline uint64_t wymix(uint64_t a, uint64_t b) {
 #ifdef __SIZEOF_INT128__
-  __uint128_t full = static_cast<__uint128_t>(a) * b;
-  return static_cast<uint64_t>(full) ^ static_cast<uint64_t>(full >> 64);
+    __uint128_t full = static_cast<__uint128_t>(a) * b;
+    return static_cast<uint64_t>(full) ^ static_cast<uint64_t>(full >> 64);
 #else
-  // Fallback: fmix64 when 128-bit multiply unavailable
-  return fmix64(a ^ b);
+    // Fallback: fmix64 when 128-bit multiply unavailable
+    return fmix64(a ^ b);
 #endif
 }
 
@@ -265,16 +235,12 @@ inline uint64_t wymix(uint64_t a, uint64_t b) {
 // multiplies break the serial wymix chain: ndim XOR-folds (1 cy each)
 // + 1 wymix (~5 cy) instead of ndim wymix calls (~5 cy each serial).
 inline constexpr uint64_t kDimMix[16] = {
-    0x9E3779B97F4A7C15ULL *  1, 0x9E3779B97F4A7C15ULL *  2,
-    0x9E3779B97F4A7C15ULL *  3, 0x9E3779B97F4A7C15ULL *  4,
-    0x9E3779B97F4A7C15ULL *  5, 0x9E3779B97F4A7C15ULL *  6,
-    0x9E3779B97F4A7C15ULL *  7, 0x9E3779B97F4A7C15ULL *  8,
-    0x9E3779B97F4A7C15ULL *  9, 0x9E3779B97F4A7C15ULL * 10,
-    0x9E3779B97F4A7C15ULL * 11, 0x9E3779B97F4A7C15ULL * 12,
-    0x9E3779B97F4A7C15ULL * 13, 0x9E3779B97F4A7C15ULL * 14,
-    0x9E3779B97F4A7C15ULL * 15, 0x9E3779B97F4A7C15ULL * 16,
+    0x9E3779B97F4A7C15ULL * 1,  0x9E3779B97F4A7C15ULL * 2,  0x9E3779B97F4A7C15ULL * 3,  0x9E3779B97F4A7C15ULL * 4,
+    0x9E3779B97F4A7C15ULL * 5,  0x9E3779B97F4A7C15ULL * 6,  0x9E3779B97F4A7C15ULL * 7,  0x9E3779B97F4A7C15ULL * 8,
+    0x9E3779B97F4A7C15ULL * 9,  0x9E3779B97F4A7C15ULL * 10, 0x9E3779B97F4A7C15ULL * 11, 0x9E3779B97F4A7C15ULL * 12,
+    0x9E3779B97F4A7C15ULL * 13, 0x9E3779B97F4A7C15ULL * 14, 0x9E3779B97F4A7C15ULL * 15, 0x9E3779B97F4A7C15ULL * 16,
 };
 
-} // namespace detail
+}  // namespace detail
 
-} // namespace crucible
+}  // namespace crucible

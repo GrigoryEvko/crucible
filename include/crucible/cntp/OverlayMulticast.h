@@ -8,7 +8,7 @@
 // config, deterministic per-stripe parent/child route construction, and
 // bounded message stripe planning.
 
-#include <crucible/Platform.h>   // CRUCIBLE_FATAL_INVARIANT
+#include <crucible/Platform.h>  // CRUCIBLE_FATAL_INVARIANT
 #include <crucible/cog/CogIdentity.h>
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>
@@ -41,73 +41,49 @@ enum class OverlayMulticastError : std::uint8_t {
     MessageTooLarge,
 };
 
-[[nodiscard]] std::string_view
-overlay_multicast_error_name(OverlayMulticastError error) noexcept;
+[[nodiscard]] std::string_view overlay_multicast_error_name(OverlayMulticastError error) noexcept;
 
-using OverlayStripeCount =
-    safety::Bounded<std::uint8_t{1}, std::uint8_t{64}, std::uint8_t>;
-using OverlayRecoveryThreshold =
-    safety::Bounded<std::uint8_t{1}, std::uint8_t{64}, std::uint8_t>;
-using OverlayFanout =
-    safety::Bounded<std::uint8_t{1}, std::uint8_t{16}, std::uint8_t>;
+using OverlayStripeCount = safety::Bounded<std::uint8_t{1}, std::uint8_t{64}, std::uint8_t>;
+using OverlayRecoveryThreshold = safety::Bounded<std::uint8_t{1}, std::uint8_t{64}, std::uint8_t>;
+using OverlayFanout = safety::Bounded<std::uint8_t{1}, std::uint8_t{16}, std::uint8_t>;
 using OverlayPayloadBytes = safety::Positive<std::uint32_t>;
 
 struct OverlayPeerRef {
     cog::Uuid uuid{};
 
-    [[nodiscard]] friend constexpr bool
-    operator==(OverlayPeerRef, OverlayPeerRef) noexcept = default;
+    [[nodiscard]] friend constexpr bool operator==(OverlayPeerRef, OverlayPeerRef) noexcept = default;
 };
 
-using DeclaredOverlayPeer =
-    safety::Tagged<OverlayPeerRef, safety::source::OverlayMulticast>;
+using DeclaredOverlayPeer = safety::Tagged<OverlayPeerRef, safety::source::OverlayMulticast>;
 
 struct OverlayMulticastConfig {
-    OverlayStripeCount stripe_count{
-        std::uint8_t{8}, typename OverlayStripeCount::Trusted{}};
-    OverlayRecoveryThreshold recovery_threshold{
-        std::uint8_t{5}, typename OverlayRecoveryThreshold::Trusted{}};
-    OverlayFanout fanout{
-        std::uint8_t{2}, typename OverlayFanout::Trusted{}};
+    OverlayStripeCount stripe_count{std::uint8_t{8}, typename OverlayStripeCount::Trusted{}};
+    OverlayRecoveryThreshold recovery_threshold{std::uint8_t{5}, typename OverlayRecoveryThreshold::Trusted{}};
+    OverlayFanout fanout{std::uint8_t{2}, typename OverlayFanout::Trusted{}};
     OverlayPayloadBytes max_payload_bytes{65'507U};
     bool use_fec_per_stripe = true;
 };
 
-template <std::size_t MaxPeers,
-          std::size_t MaxStripes,
-          std::size_t MaxFanout>
-concept OverlayMulticastShape =
-    MaxPeers > 0 &&
-    MaxStripes > 0 &&
-    MaxStripes <= 64 &&
-    MaxFanout > 0 &&
-    MaxFanout <= 16;
+template <std::size_t MaxPeers, std::size_t MaxStripes, std::size_t MaxFanout>
+concept OverlayMulticastShape = MaxPeers > 0 && MaxStripes > 0 && MaxStripes <= 64 && MaxFanout > 0 && MaxFanout <= 16;
 
 template <class Ctx>
-concept CtxFitsOverlayMulticastMint =
-       effects::IsExecCtx<Ctx>
-    && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
+concept CtxFitsOverlayMulticastMint = effects::IsExecCtx<Ctx> && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
 
-[[nodiscard]] constexpr std::expected<OverlayStripeCount,
-                                      OverlayMulticastError>
+[[nodiscard]] constexpr std::expected<OverlayStripeCount, OverlayMulticastError>
 admit_overlay_stripe_count(std::uint8_t stripes) noexcept {
     if (stripes == 0u || stripes > 64u) {
         return std::unexpected(OverlayMulticastError::InvalidStripeCount);
     }
-    return OverlayStripeCount{stripes,
-                              typename OverlayStripeCount::Trusted{}};
+    return OverlayStripeCount{stripes, typename OverlayStripeCount::Trusted{}};
 }
 
-[[nodiscard]] constexpr std::expected<OverlayRecoveryThreshold,
-                                      OverlayMulticastError>
-admit_overlay_recovery_threshold(std::uint8_t threshold,
-                                 OverlayStripeCount stripes) noexcept {
+[[nodiscard]] constexpr std::expected<OverlayRecoveryThreshold, OverlayMulticastError>
+admit_overlay_recovery_threshold(std::uint8_t threshold, OverlayStripeCount stripes) noexcept {
     if (threshold == 0u || threshold > stripes.value()) {
-        return std::unexpected(
-            OverlayMulticastError::InvalidRecoveryThreshold);
+        return std::unexpected(OverlayMulticastError::InvalidRecoveryThreshold);
     }
-    return OverlayRecoveryThreshold{
-        threshold, typename OverlayRecoveryThreshold::Trusted{}};
+    return OverlayRecoveryThreshold{threshold, typename OverlayRecoveryThreshold::Trusted{}};
 }
 
 [[nodiscard]] constexpr std::expected<OverlayFanout, OverlayMulticastError>
@@ -118,18 +94,15 @@ admit_overlay_fanout(std::uint8_t fanout) noexcept {
     return OverlayFanout{fanout, typename OverlayFanout::Trusted{}};
 }
 
-[[nodiscard]] constexpr std::expected<OverlayPayloadBytes,
-                                      OverlayMulticastError>
+[[nodiscard]] constexpr std::expected<OverlayPayloadBytes, OverlayMulticastError>
 admit_overlay_payload_bytes(std::uint32_t bytes) noexcept {
     if (bytes == 0u) {
         return std::unexpected(OverlayMulticastError::MessageTooLarge);
     }
-    return OverlayPayloadBytes{
-        bytes, typename OverlayPayloadBytes::Trusted{}};
+    return OverlayPayloadBytes{bytes, typename OverlayPayloadBytes::Trusted{}};
 }
 
-[[nodiscard]] constexpr std::expected<DeclaredOverlayPeer,
-                                      OverlayMulticastError>
+[[nodiscard]] constexpr std::expected<DeclaredOverlayPeer, OverlayMulticastError>
 admit_overlay_peer(cog::CogIdentity peer) noexcept {
     if (peer.uuid.is_zero()) {
         return std::unexpected(OverlayMulticastError::InvalidPeer);
@@ -138,7 +111,7 @@ admit_overlay_peer(cog::CogIdentity peer) noexcept {
 }
 
 template <std::size_t MaxFanout>
-    requires (MaxFanout > 0)
+    requires(MaxFanout > 0)
 struct OverlayStripeRoute {
     std::uint8_t stripe = 0;
     bool has_parent = false;
@@ -154,7 +127,7 @@ struct OverlayStripeSlice {
 };
 
 template <std::size_t MaxStripes>
-    requires (MaxStripes > 0)
+    requires(MaxStripes > 0)
 struct OverlayMessagePlan {
     safety::FixedArray<OverlayStripeSlice, MaxStripes> stripes{};
     std::uint8_t stripe_count = 0;
@@ -171,36 +144,26 @@ namespace overlay_detail {
     return x;
 }
 
-[[nodiscard]] constexpr std::uint64_t
-stripe_hash(OverlayPeerRef peer, std::uint8_t stripe) noexcept {
-    return mix64(peer.uuid.hi ^ mix64(peer.uuid.lo) ^
-                 (std::uint64_t{stripe} * 0x9e37'79b9'7f4a'7c15ULL));
+[[nodiscard]] constexpr std::uint64_t stripe_hash(OverlayPeerRef peer, std::uint8_t stripe) noexcept {
+    return mix64(peer.uuid.hi ^ mix64(peer.uuid.lo) ^ (std::uint64_t{stripe} * 0x9e37'79b9'7f4a'7c15ULL));
 }
 
 }  // namespace overlay_detail
 
-template <std::size_t MaxPeers,
-          std::size_t MaxStripes,
-          std::size_t MaxFanout>
+template <std::size_t MaxPeers, std::size_t MaxStripes, std::size_t MaxFanout>
     requires OverlayMulticastShape<MaxPeers, MaxStripes, MaxFanout>
-class OverlayMulticastPlan
-    : public safety::Pinned<
-          OverlayMulticastPlan<MaxPeers, MaxStripes, MaxFanout>> {
+class OverlayMulticastPlan : public safety::Pinned<OverlayMulticastPlan<MaxPeers, MaxStripes, MaxFanout>> {
 public:
     using route_type = OverlayStripeRoute<MaxFanout>;
     using message_plan_type = OverlayMessagePlan<MaxStripes>;
 
-    explicit OverlayMulticastPlan(
-        DeclaredOverlayPeer local_peer,
-        std::span<const DeclaredOverlayPeer> initial_peers = {},
-        OverlayMulticastConfig config = {}) noexcept
+    explicit OverlayMulticastPlan(DeclaredOverlayPeer local_peer,
+                                  std::span<const DeclaredOverlayPeer> initial_peers = {},
+                                  OverlayMulticastConfig config = {}) noexcept
         : config_{config} {
         // FIXY-U-080 / fixy-A5-014 + A5-035: was __builtin_trap (silent SIGILL).
-        CRUCIBLE_FATAL_INVARIANT(
-            config_.stripe_count.value() <= MaxStripes &&
-            config_.fanout.value() <= MaxFanout &&
-            config_.recovery_threshold.value() <=
-                config_.stripe_count.value());
+        CRUCIBLE_FATAL_INVARIANT(config_.stripe_count.value() <= MaxStripes && config_.fanout.value() <= MaxFanout
+                                 && config_.recovery_threshold.value() <= config_.stripe_count.value());
         local_ = local_peer.value();
         CRUCIBLE_FATAL_INVARIANT(add_peer(local_peer).has_value());
         for (DeclaredOverlayPeer const& peer : initial_peers) {
@@ -209,8 +172,7 @@ public:
         CRUCIBLE_FATAL_INVARIANT(rebuild_routes().has_value());
     }
 
-    [[nodiscard]] std::expected<void, OverlayMulticastError>
-    add_peer(DeclaredOverlayPeer peer) noexcept {
+    [[nodiscard]] std::expected<void, OverlayMulticastError> add_peer(DeclaredOverlayPeer peer) noexcept {
         OverlayPeerRef raw = peer.value();
         if (raw.uuid.is_zero()) {
             return std::unexpected(OverlayMulticastError::InvalidPeer);
@@ -226,20 +188,13 @@ public:
         return rebuild_routes();
     }
 
-    [[nodiscard]] constexpr OverlayMulticastConfig config() const noexcept {
-        return config_;
-    }
+    [[nodiscard]] constexpr OverlayMulticastConfig config() const noexcept { return config_; }
 
-    [[nodiscard]] constexpr std::uint16_t peer_count() const noexcept {
-        return peer_count_;
-    }
+    [[nodiscard]] constexpr std::uint16_t peer_count() const noexcept { return peer_count_; }
 
-    [[nodiscard]] constexpr OverlayPeerRef local_peer() const noexcept {
-        return local_;
-    }
+    [[nodiscard]] constexpr OverlayPeerRef local_peer() const noexcept { return local_; }
 
-    [[nodiscard]] std::expected<route_type, OverlayMulticastError>
-    route_for(std::uint8_t stripe) const noexcept {
+    [[nodiscard]] std::expected<route_type, OverlayMulticastError> route_for(std::uint8_t stripe) const noexcept {
         if (stripe >= config_.stripe_count.value()) {
             return std::unexpected(OverlayMulticastError::UnknownStripe);
         }
@@ -281,8 +236,7 @@ private:
     std::uint16_t peer_count_ = 0;
     safety::FixedArray<route_type, MaxStripes> routes_{};
 
-    [[nodiscard]] constexpr bool
-    contains_peer_(OverlayPeerRef peer) const noexcept {
+    [[nodiscard]] constexpr bool contains_peer_(OverlayPeerRef peer) const noexcept {
         for (std::uint16_t i = 0; i < peer_count_; ++i) {
             if (peers_[i] == peer) {
                 return true;
@@ -291,10 +245,7 @@ private:
         return false;
     }
 
-    [[nodiscard]] constexpr bool
-    route_less_(std::uint16_t lhs,
-                std::uint16_t rhs,
-                std::uint8_t stripe) const noexcept {
+    [[nodiscard]] constexpr bool route_less_(std::uint16_t lhs, std::uint16_t rhs, std::uint8_t stripe) const noexcept {
         const auto lhs_hash = overlay_detail::stripe_hash(peers_[lhs], stripe);
         const auto rhs_hash = overlay_detail::stripe_hash(peers_[rhs], stripe);
         if (lhs_hash != rhs_hash) {
@@ -306,19 +257,16 @@ private:
         return peers_[lhs].uuid.lo < peers_[rhs].uuid.lo;
     }
 
-    [[nodiscard]] std::expected<void, OverlayMulticastError>
-    rebuild_routes() noexcept {
+    [[nodiscard]] std::expected<void, OverlayMulticastError> rebuild_routes() noexcept {
         if (peer_count_ == 0) {
             return {};
         }
 
-        for (std::uint8_t stripe = 0; stripe < config_.stripe_count.value();
-             ++stripe) {
+        for (std::uint8_t stripe = 0; stripe < config_.stripe_count.value(); ++stripe) {
             safety::FixedArray<std::uint16_t, MaxPeers + 1u> order{};
             for (std::uint16_t i = 0; i < peer_count_; ++i) {
                 std::uint16_t pos = i;
-                while (pos > 0 &&
-                       route_less_(i, order[pos - 1u], stripe)) {
+                while (pos > 0 && route_less_(i, order[pos - 1u], stripe)) {
                     order[pos] = order[pos - 1u];
                     --pos;
                 }
@@ -335,20 +283,16 @@ private:
 
             route_type route{.stripe = stripe};
             if (local_pos > 0) {
-                const auto fanout =
-                    static_cast<std::size_t>(config_.fanout.value());
+                const auto fanout = static_cast<std::size_t>(config_.fanout.value());
                 const std::size_t parent_pos = (local_pos - 1u) / fanout;
                 route.has_parent = true;
                 route.parent = peers_[order[parent_pos]];
             }
 
-            const auto fanout =
-                static_cast<std::size_t>(config_.fanout.value());
+            const auto fanout = static_cast<std::size_t>(config_.fanout.value());
             const std::size_t first_child = local_pos * fanout + 1u;
             const std::size_t end_child = first_child + fanout;
-            for (std::size_t pos = first_child;
-                 pos < peer_count_ && pos < end_child;
-                 ++pos) {
+            for (std::size_t pos = first_child; pos < peer_count_ && pos < end_child; ++pos) {
                 route.children[route.child_count] = peers_[order[pos]];
                 ++route.child_count;
             }
@@ -358,19 +302,13 @@ private:
     }
 };
 
-template <std::size_t MaxPeers,
-          std::size_t MaxStripes,
-          std::size_t MaxFanout,
-          class Ctx>
-    requires OverlayMulticastShape<MaxPeers, MaxStripes, MaxFanout>
-          && CtxFitsOverlayMulticastMint<Ctx>
+template <std::size_t MaxPeers, std::size_t MaxStripes, std::size_t MaxFanout, class Ctx>
+    requires OverlayMulticastShape<MaxPeers, MaxStripes, MaxFanout> && CtxFitsOverlayMulticastMint<Ctx>
 [[nodiscard]] OverlayMulticastPlan<MaxPeers, MaxStripes, MaxFanout>
-mint_overlay_multicast(Ctx const&,
-                       DeclaredOverlayPeer local_peer,
+mint_overlay_multicast(Ctx const&, DeclaredOverlayPeer local_peer,
                        std::span<const DeclaredOverlayPeer> initial_peers = {},
                        OverlayMulticastConfig config = {}) noexcept {
-    return OverlayMulticastPlan<MaxPeers, MaxStripes, MaxFanout>{
-        local_peer, initial_peers, config};
+    return OverlayMulticastPlan<MaxPeers, MaxStripes, MaxFanout>{local_peer, initial_peers, config};
 }
 
 static_assert(sizeof(OverlayStripeCount) == sizeof(std::uint8_t));

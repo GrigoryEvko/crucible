@@ -165,17 +165,17 @@
 
 #include <crucible/algebra/lattices/SyscallFamilyLattice.h>  // FIXY-V-179
 #include <crucible/effects/Capabilities.h>  // effects::Init
-#include <crucible/effects/EffectRow.h>     // FIXY-U-083: row_contains_v
-#include <crucible/effects/ExecCtx.h>       // FIXY-U-083: IsExecCtx, row_type_of_t
-#include <crucible/fixy/syscall/Per.h>                       // FIXY-V-179
-#include <crucible/safety/Borrowed.h>       // safety::Borrowed
-#include <crucible/safety/Refined.h>        // safety::Refined / bounded_above
+#include <crucible/effects/EffectRow.h>  // FIXY-U-083: row_contains_v
+#include <crucible/effects/ExecCtx.h>  // FIXY-U-083: IsExecCtx, row_type_of_t
+#include <crucible/fixy/syscall/Per.h>  // FIXY-V-179
+#include <crucible/safety/Borrowed.h>  // safety::Borrowed
+#include <crucible/safety/Refined.h>  // safety::Refined / bounded_above
 
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <tuple>                            // FIXY-V-179
+#include <tuple>  // FIXY-V-179
 
 namespace crucible::perf {
 
@@ -185,14 +185,14 @@ namespace crucible::perf {
 enum class PmuEventType : uint8_t {
     // 0, 1 reserved (cycles, L1D miss flow through perf_event ring,
     // not BPF — they're too frequent).
-    LlcMiss          = 2,
-    BranchMiss       = 3,
-    DtlbMiss         = 4,
-    IbsOp            = 5,   // AMD precise (zero skid), non-AMD: skipped
-    IbsFetch         = 6,   // AMD precise instruction fetch
-    MajorPageFault   = 7,
-    CpuMigration     = 8,
-    AlignmentFault   = 9,
+    LlcMiss = 2,
+    BranchMiss = 3,
+    DtlbMiss = 4,
+    IbsOp = 5,  // AMD precise (zero skid), non-AMD: skipped
+    IbsFetch = 6,  // AMD precise instruction fetch
+    MajorPageFault = 7,
+    CpuMigration = 8,
+    AlignmentFault = 9,
 };
 
 // Mirrors `struct pmu_sample_event` in include/crucible/perf/bpf/common.h.
@@ -202,28 +202,26 @@ enum class PmuEventType : uint8_t {
 // reads would silently violate the "ts_ns LAST as completion
 // marker" contract for the slots crossing a boundary.
 struct PmuSampleEvent {
-    uint64_t ip;          //  8 B  userspace virtual address
-    uint32_t tid;         //  4 B  thread ID
-    uint8_t  event_type;  //  1 B  PmuEventType discriminator
-    uint8_t  _pad[3];     //  3 B  align ts_ns to 8 bytes
-    uint64_t ts_ns;       //  8 B  bpf_ktime_get_ns() — WRITTEN LAST
-    uint64_t _pad8;       //  8 B  cache-line-coresidence pad
+    uint64_t ip;  //  8 B  userspace virtual address
+    uint32_t tid;  //  4 B  thread ID
+    uint8_t event_type;  //  1 B  PmuEventType discriminator
+    uint8_t _pad[3];  //  3 B  align ts_ns to 8 bytes
+    uint64_t ts_ns;  //  8 B  bpf_ktime_get_ns() — WRITTEN LAST
+    uint64_t _pad8;  //  8 B  cache-line-coresidence pad
 };
-static_assert(sizeof(PmuSampleEvent) == 32,
-    "PmuSampleEvent must be 32 B = ip(8) + tid(4) + event_type(1) + "
-    "_pad[3] + ts_ns(8) + _pad8(8); the trailing pad makes 32 divide "
-    "64 evenly so each slot is cache-line-coresident");
+static_assert(sizeof(PmuSampleEvent) == 32, "PmuSampleEvent must be 32 B = ip(8) + tid(4) + event_type(1) + "
+                                            "_pad[3] + ts_ns(8) + _pad8(8); the trailing pad makes 32 divide "
+                                            "64 evenly so each slot is cache-line-coresident");
 
 // Same TimelineHeader shape as SchedSwitch.  Defined separately
 // here to keep the headers independent (GAPS-004x extraction will
 // unify).
 struct PmuSampleHeader {
-    uint64_t write_idx;   //  8 B  monotonically increasing
-    uint64_t _pad[7];     // 56 B  pad to one cache line
+    uint64_t write_idx;  //  8 B  monotonically increasing
+    uint64_t _pad[7];  // 56 B  pad to one cache line
 };
-static_assert(sizeof(PmuSampleHeader) == 64,
-    "PmuSampleHeader must be exactly one cache line so the events "
-    "array starts at offset 64");
+static_assert(sizeof(PmuSampleHeader) == 64, "PmuSampleHeader must be exactly one cache line so the events "
+                                             "array starts at offset 64");
 
 // 32K events × 32 B = 1 MB ring buffer.  Bigger than SchedSwitch's
 // 4K (96 KB) because PMU sampling rates can briefly burst much
@@ -233,7 +231,7 @@ constexpr uint32_t PMU_SAMPLE_CAPACITY = 32768;
 [[maybe_unused]] constexpr uint32_t PMU_SAMPLE_MASK = PMU_SAMPLE_CAPACITY - 1;
 
 class PmuSample {
- public:
+public:
     // ─── Snapshot — consumer-shaped delta semantics ──────────────────
     //
     // PmuSample's primary metric is the count of recorded perf samples,
@@ -249,8 +247,7 @@ class PmuSample {
 
         [[nodiscard]] Snapshot operator-(const Snapshot& older) const noexcept {
             Snapshot r;
-            if (__builtin_sub_overflow(samples, older.samples,
-                                        &r.samples)) [[unlikely]] {
+            if (__builtin_sub_overflow(samples, older.samples, &r.samples)) [[unlikely]] {
                 r.samples = 0;
             }
             return r;
@@ -277,8 +274,7 @@ class PmuSample {
     //
     // First parameter is `effects::Init` capability tag — same
     // hot-path-cannot-construct-it gate as SenseHub/SchedSwitch.
-    [[nodiscard]] static std::optional<PmuSample>
-        load(::crucible::effects::Init) noexcept;
+    [[nodiscard]] static std::optional<PmuSample> load(::crucible::effects::Init) noexcept;
 
     // Borrowed view over the timeline event ring buffer.  Spans
     // exactly PMU_SAMPLE_CAPACITY events; reader uses
@@ -290,8 +286,7 @@ class PmuSample {
     // `__atomic_load_n(&events[slot].ts_ns, __ATOMIC_ACQUIRE)`
     // first; ts_ns != 0 means the producer-side compiler-barrier
     // store has retired and other fields are safe.
-    [[nodiscard]] safety::Borrowed<const PmuSampleEvent, PmuSample>
-        timeline_view() const noexcept;
+    [[nodiscard]] safety::Borrowed<const PmuSampleEvent, PmuSample> timeline_view() const noexcept;
 
     // Volatile load of the ring header's write_idx (monotonically
     // increasing).  ~1 ns; no syscall.
@@ -309,24 +304,20 @@ class PmuSample {
     // and read the "[crucible::perf] pmu_sample attached <name> ..."
     // log lines on stderr at load time.  A future GAPS-004x
     // refactor may expose a per-type bitmask accessor.
-    [[nodiscard]] safety::Refined<safety::bounded_above<8>, std::size_t>
-        attached_programs() const noexcept;
+    [[nodiscard]] safety::Refined<safety::bounded_above<8>, std::size_t> attached_programs() const noexcept;
 
     // Number of perf_event_open + bpf_program__attach calls that
     // failed.  `attached_programs() + attach_failures()` ≤ 8.
     // Set CRUCIBLE_PERF_VERBOSE=1 to see why each one failed.
-    [[nodiscard]] safety::Refined<safety::bounded_above<8>, std::size_t>
-        attach_failures() const noexcept;
+    [[nodiscard]] safety::Refined<safety::bounded_above<8>, std::size_t> attach_failures() const noexcept;
 
-    PmuSample(const PmuSample&) =
-        delete("PmuSample owns unique BPF object + perf_event FDs + mmap");
-    PmuSample& operator=(const PmuSample&) =
-        delete("PmuSample owns unique BPF object + perf_event FDs + mmap");
+    PmuSample(const PmuSample&) = delete("PmuSample owns unique BPF object + perf_event FDs + mmap");
+    PmuSample& operator=(const PmuSample&) = delete("PmuSample owns unique BPF object + perf_event FDs + mmap");
     PmuSample(PmuSample&&) noexcept;
     PmuSample& operator=(PmuSample&&) noexcept;
     ~PmuSample();
 
- private:
+private:
     struct State;
     PmuSample() noexcept;
     std::unique_ptr<State> state_;
@@ -341,9 +332,8 @@ class PmuSample {
 // foreground and background-drain contexts must not engage this
 // surface; the Ctx-fit gate enforces that at the type level.
 template <class Ctx>
-concept CtxFitsPmuSampleMint =
-       ::crucible::effects::IsExecCtx<Ctx>
-    && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Init>;
+concept CtxFitsPmuSampleMint = ::crucible::effects::IsExecCtx<Ctx>
+                            && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Init>;
 
 // ── FIXY-V-179 — syscall-grant declaration ────────────────────────────
 //
@@ -355,25 +345,21 @@ concept CtxFitsPmuSampleMint =
 //   bpf             (41) → Privilege      → Row<IO, Block>     [V-179]
 //   perf_event_open (42) → Privilege      → Row<IO, Block>     [V-179]
 //   mmap            (21) → MemoryMapping  → Row<IO>
-using mint_pmu_sample_syscall_grants = std::tuple<
-    ::crucible::fixy::grant::syscall::per<
-        ::crucible::fixy::grant::syscall::SyscallId::bpf>,
-    ::crucible::fixy::grant::syscall::per<
-        ::crucible::fixy::grant::syscall::SyscallId::perf_event_open>,
-    ::crucible::fixy::grant::syscall::per<
-        ::crucible::fixy::grant::syscall::SyscallId::mmap>>;
+using mint_pmu_sample_syscall_grants =
+    std::tuple<::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::bpf>,
+               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::perf_event_open>,
+               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::mmap>>;
 
 namespace detail::v179_pmu_sample_grant_check {
 namespace fsc = ::crucible::fixy::grant::syscall;
 namespace fll = ::crucible::algebra::lattices;
-static_assert(::crucible::fixy::grant::family_tier_v<
-    fsc::per<fsc::SyscallId::bpf>>             == fll::SyscallFamily::Privilege);
-static_assert(::crucible::fixy::grant::family_tier_v<
-    fsc::per<fsc::SyscallId::perf_event_open>> == fll::SyscallFamily::Privilege);
-static_assert(::crucible::fixy::grant::family_tier_v<
-    fsc::per<fsc::SyscallId::mmap>>            == fll::SyscallFamily::MemoryMapping);
+static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::bpf>> == fll::SyscallFamily::Privilege);
+static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::perf_event_open>>
+              == fll::SyscallFamily::Privilege);
+static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::mmap>>
+              == fll::SyscallFamily::MemoryMapping);
 static_assert(std::tuple_size_v<mint_pmu_sample_syscall_grants> == 3,
-    "FIXY-V-179: mint_pmu_sample_syscall_grants drifted from 3 entries.");
+              "FIXY-V-179: mint_pmu_sample_syscall_grants drifted from 3 entries.");
 }  // namespace detail::v179_pmu_sample_grant_check
 
 template <::crucible::effects::IsExecCtx Ctx>
@@ -382,8 +368,7 @@ template <::crucible::effects::IsExecCtx Ctx>
 // perf_event_open file descriptors, mmaps the kernel sample ring,
 // and heap-allocates std::unique_ptr<State>.  CLAUDE.md §XXI:
 // compile-time evaluation would lie about the runtime cost.
-[[nodiscard]] inline std::optional<PmuSample>
-mint_pmu_sample(Ctx const&, ::crucible::effects::Init init) noexcept {
+[[nodiscard]] inline std::optional<PmuSample> mint_pmu_sample(Ctx const&, ::crucible::effects::Init init) noexcept {
     return PmuSample::load(init);
 }
 

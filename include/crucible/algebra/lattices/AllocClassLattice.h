@@ -155,72 +155,75 @@ namespace crucible::algebra::lattices {
 // the `AllocClass` wrapper.  The wrapper's `At<>` parameter is
 // `AllocClassTag::Stack` etc.
 enum class AllocClassTag : std::uint8_t {
-    HugePage = 0,    // bottom: mmap + huge-page hint (~20-100μs setup)
-    Mmap     = 1,    // mmap(2) syscall (~10-50μs)
-    Heap     = 2,    // jemalloc/malloc/new (~50-200ns)
-    Arena    = 3,    // bump-pointer arena (~2-3ns; cold-path risk)
-    Pool     = 4,    // preallocated freelist (~2-5ns; bounded)
-    Stack    = 5,    // top: instruction-level (~0-1ns; no allocator)
+    HugePage = 0,  // bottom: mmap + huge-page hint (~20-100μs setup)
+    Mmap = 1,  // mmap(2) syscall (~10-50μs)
+    Heap = 2,  // jemalloc/malloc/new (~50-200ns)
+    Arena = 3,  // bump-pointer arena (~2-3ns; cold-path risk)
+    Pool = 4,  // preallocated freelist (~2-5ns; bounded)
+    Stack = 5,  // top: instruction-level (~0-1ns; no allocator)
 };
 
 // Cardinality + diagnostic name via reflection.
-inline constexpr std::size_t alloc_class_tag_count =
-    std::meta::enumerators_of(^^AllocClassTag).size();
+inline constexpr std::size_t alloc_class_tag_count = std::meta::enumerators_of(^^AllocClassTag).size();
 
 [[nodiscard]] consteval std::string_view alloc_class_tag_name(AllocClassTag t) noexcept {
     switch (t) {
-        case AllocClassTag::HugePage: return "HugePage";
-        case AllocClassTag::Mmap:     return "Mmap";
-        case AllocClassTag::Heap:     return "Heap";
-        case AllocClassTag::Arena:    return "Arena";
-        case AllocClassTag::Pool:     return "Pool";
-        case AllocClassTag::Stack:    return "Stack";
-        default:                      return std::string_view{"<unknown AllocClassTag>"};
+        case AllocClassTag::HugePage:
+            return "HugePage";
+        case AllocClassTag::Mmap:
+            return "Mmap";
+        case AllocClassTag::Heap:
+            return "Heap";
+        case AllocClassTag::Arena:
+            return "Arena";
+        case AllocClassTag::Pool:
+            return "Pool";
+        case AllocClassTag::Stack:
+            return "Stack";
+        default:
+            return std::string_view{"<unknown AllocClassTag>"};
     }
 }
 
 // ── Full AllocClassLattice (chain order) ────────────────────────────
 struct AllocClassLattice : ChainLatticeOps<AllocClassTag> {
-    [[nodiscard]] static constexpr element_type bottom() noexcept {
-        return AllocClassTag::HugePage;
-    }
-    [[nodiscard]] static constexpr element_type top() noexcept {
-        return AllocClassTag::Stack;
-    }
+    [[nodiscard]] static constexpr element_type bottom() noexcept { return AllocClassTag::HugePage; }
+    [[nodiscard]] static constexpr element_type top() noexcept { return AllocClassTag::Stack; }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return "AllocClassLattice";
-    }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "AllocClassLattice"; }
 
     template <AllocClassTag T>
     struct At {
         struct element_type {
             using alloc_class_tag_value_type = AllocClassTag;
-            [[nodiscard]] constexpr operator alloc_class_tag_value_type() const noexcept {
-                return T;
-            }
-            [[nodiscard]] constexpr bool operator==(element_type) const noexcept {
-                return true;
-            }
+            [[nodiscard]] constexpr operator alloc_class_tag_value_type() const noexcept { return T; }
+            [[nodiscard]] constexpr bool operator==(element_type) const noexcept { return true; }
         };
 
         static constexpr AllocClassTag tag = T;
 
         [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-        [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
         [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
 
         [[nodiscard]] static consteval std::string_view name() noexcept {
             switch (T) {
-                case AllocClassTag::HugePage: return "AllocClassLattice::At<HugePage>";
-                case AllocClassTag::Mmap:     return "AllocClassLattice::At<Mmap>";
-                case AllocClassTag::Heap:     return "AllocClassLattice::At<Heap>";
-                case AllocClassTag::Arena:    return "AllocClassLattice::At<Arena>";
-                case AllocClassTag::Pool:     return "AllocClassLattice::At<Pool>";
-                case AllocClassTag::Stack:    return "AllocClassLattice::At<Stack>";
-                default:                      return "AllocClassLattice::At<?>";
+                case AllocClassTag::HugePage:
+                    return "AllocClassLattice::At<HugePage>";
+                case AllocClassTag::Mmap:
+                    return "AllocClassLattice::At<Mmap>";
+                case AllocClassTag::Heap:
+                    return "AllocClassLattice::At<Heap>";
+                case AllocClassTag::Arena:
+                    return "AllocClassLattice::At<Arena>";
+                case AllocClassTag::Pool:
+                    return "AllocClassLattice::At<Pool>";
+                case AllocClassTag::Stack:
+                    return "AllocClassLattice::At<Stack>";
+                default:
+                    return "AllocClassLattice::At<?>";
             }
         }
     };
@@ -228,38 +231,34 @@ struct AllocClassLattice : ChainLatticeOps<AllocClassTag> {
 
 // ── Convenience aliases ─────────────────────────────────────────────
 namespace alloc_class_tag {
-    using HugePageAlloc = AllocClassLattice::At<AllocClassTag::HugePage>;
-    using MmapAlloc     = AllocClassLattice::At<AllocClassTag::Mmap>;
-    using HeapAlloc     = AllocClassLattice::At<AllocClassTag::Heap>;
-    using ArenaAlloc    = AllocClassLattice::At<AllocClassTag::Arena>;
-    using PoolAlloc     = AllocClassLattice::At<AllocClassTag::Pool>;
-    using StackAlloc    = AllocClassLattice::At<AllocClassTag::Stack>;
+using HugePageAlloc = AllocClassLattice::At<AllocClassTag::HugePage>;
+using MmapAlloc = AllocClassLattice::At<AllocClassTag::Mmap>;
+using HeapAlloc = AllocClassLattice::At<AllocClassTag::Heap>;
+using ArenaAlloc = AllocClassLattice::At<AllocClassTag::Arena>;
+using PoolAlloc = AllocClassLattice::At<AllocClassTag::Pool>;
+using StackAlloc = AllocClassLattice::At<AllocClassTag::Stack>;
 }  // namespace alloc_class_tag
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::alloc_class_lattice_self_test {
 
-static_assert(alloc_class_tag_count == 6,
-    "AllocClassTag catalog diverged from {HugePage, Mmap, Heap, "
-    "Arena, Pool, Stack}; confirm intent and update the dispatcher's "
-    "hot-path admission gates.");
+static_assert(alloc_class_tag_count == 6, "AllocClassTag catalog diverged from {HugePage, Mmap, Heap, "
+                                          "Arena, Pool, Stack}; confirm intent and update the dispatcher's "
+                                          "hot-path admission gates.");
 
 [[nodiscard]] consteval bool every_alloc_class_tag_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^AllocClassTag));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^AllocClassTag));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
-        if (alloc_class_tag_name([:en:]) ==
-            std::string_view{"<unknown AllocClassTag>"}) {
+        if (alloc_class_tag_name([:en:]) == std::string_view{"<unknown AllocClassTag>"}) {
             return false;
         }
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_alloc_class_tag_has_name(),
-    "alloc_class_tag_name() switch missing arm for at least one tag.");
+static_assert(every_alloc_class_tag_has_name(), "alloc_class_tag_name() switch missing arm for at least one tag.");
 
 // Concept conformance.
 static_assert(Lattice<AllocClassLattice>);
@@ -282,78 +281,75 @@ static_assert(std::is_empty_v<alloc_class_tag::HugePageAlloc::element_type>);
 // EXHAUSTIVE lattice-axiom + distributivity coverage over
 // (AllocClassTag)³ = 216 triples each.
 static_assert(verify_chain_lattice_exhaustive<AllocClassLattice>(),
-    "AllocClassLattice's chain-order lattice axioms must hold at "
-    "every (AllocClassTag)³ triple.");
+              "AllocClassLattice's chain-order lattice axioms must hold at "
+              "every (AllocClassTag)³ triple.");
 static_assert(verify_chain_lattice_distributive_exhaustive<AllocClassLattice>(),
-    "AllocClassLattice's chain order must satisfy distributivity at "
-    "every (AllocClassTag)³ triple.");
+              "AllocClassLattice's chain order must satisfy distributivity at "
+              "every (AllocClassTag)³ triple.");
 
 // Direct order witnesses — chain is increasing, with Stack at top
 // (cheapest) and HugePage at bottom (most expensive setup).
-static_assert( AllocClassLattice::leq(AllocClassTag::HugePage, AllocClassTag::Mmap));
-static_assert( AllocClassLattice::leq(AllocClassTag::Mmap,     AllocClassTag::Heap));
-static_assert( AllocClassLattice::leq(AllocClassTag::Heap,     AllocClassTag::Arena));
-static_assert( AllocClassLattice::leq(AllocClassTag::Arena,    AllocClassTag::Pool));
-static_assert( AllocClassLattice::leq(AllocClassTag::Pool,     AllocClassTag::Stack));
-static_assert( AllocClassLattice::leq(AllocClassTag::HugePage, AllocClassTag::Stack)); // transitive
-static_assert(!AllocClassLattice::leq(AllocClassTag::Stack,    AllocClassTag::HugePage));
-static_assert(!AllocClassLattice::leq(AllocClassTag::Stack,    AllocClassTag::Pool));
-static_assert(!AllocClassLattice::leq(AllocClassTag::Pool,     AllocClassTag::Arena));
-static_assert(!AllocClassLattice::leq(AllocClassTag::Heap,     AllocClassTag::HugePage));
+static_assert(AllocClassLattice::leq(AllocClassTag::HugePage, AllocClassTag::Mmap));
+static_assert(AllocClassLattice::leq(AllocClassTag::Mmap, AllocClassTag::Heap));
+static_assert(AllocClassLattice::leq(AllocClassTag::Heap, AllocClassTag::Arena));
+static_assert(AllocClassLattice::leq(AllocClassTag::Arena, AllocClassTag::Pool));
+static_assert(AllocClassLattice::leq(AllocClassTag::Pool, AllocClassTag::Stack));
+static_assert(AllocClassLattice::leq(AllocClassTag::HugePage, AllocClassTag::Stack));  // transitive
+static_assert(!AllocClassLattice::leq(AllocClassTag::Stack, AllocClassTag::HugePage));
+static_assert(!AllocClassLattice::leq(AllocClassTag::Stack, AllocClassTag::Pool));
+static_assert(!AllocClassLattice::leq(AllocClassTag::Pool, AllocClassTag::Arena));
+static_assert(!AllocClassLattice::leq(AllocClassTag::Heap, AllocClassTag::HugePage));
 
 // Pin bottom / top.
 static_assert(AllocClassLattice::bottom() == AllocClassTag::HugePage);
-static_assert(AllocClassLattice::top()    == AllocClassTag::Stack);
+static_assert(AllocClassLattice::top() == AllocClassTag::Stack);
 
 // Join strengthens (max); meet weakens (min).
-static_assert(AllocClassLattice::join(AllocClassTag::HugePage, AllocClassTag::Stack)
-              == AllocClassTag::Stack);
-static_assert(AllocClassLattice::join(AllocClassTag::Heap, AllocClassTag::Arena)
-              == AllocClassTag::Arena);
-static_assert(AllocClassLattice::meet(AllocClassTag::HugePage, AllocClassTag::Stack)
-              == AllocClassTag::HugePage);
-static_assert(AllocClassLattice::meet(AllocClassTag::Pool, AllocClassTag::Stack)
-              == AllocClassTag::Pool);
+static_assert(AllocClassLattice::join(AllocClassTag::HugePage, AllocClassTag::Stack) == AllocClassTag::Stack);
+static_assert(AllocClassLattice::join(AllocClassTag::Heap, AllocClassTag::Arena) == AllocClassTag::Arena);
+static_assert(AllocClassLattice::meet(AllocClassTag::HugePage, AllocClassTag::Stack) == AllocClassTag::HugePage);
+static_assert(AllocClassLattice::meet(AllocClassTag::Pool, AllocClassTag::Stack) == AllocClassTag::Pool);
 
 // Diagnostic names.
 static_assert(AllocClassLattice::name() == "AllocClassLattice");
 static_assert(alloc_class_tag::HugePageAlloc::name() == "AllocClassLattice::At<HugePage>");
-static_assert(alloc_class_tag::MmapAlloc::name()     == "AllocClassLattice::At<Mmap>");
-static_assert(alloc_class_tag::HeapAlloc::name()     == "AllocClassLattice::At<Heap>");
-static_assert(alloc_class_tag::ArenaAlloc::name()    == "AllocClassLattice::At<Arena>");
-static_assert(alloc_class_tag::PoolAlloc::name()     == "AllocClassLattice::At<Pool>");
-static_assert(alloc_class_tag::StackAlloc::name()    == "AllocClassLattice::At<Stack>");
+static_assert(alloc_class_tag::MmapAlloc::name() == "AllocClassLattice::At<Mmap>");
+static_assert(alloc_class_tag::HeapAlloc::name() == "AllocClassLattice::At<Heap>");
+static_assert(alloc_class_tag::ArenaAlloc::name() == "AllocClassLattice::At<Arena>");
+static_assert(alloc_class_tag::PoolAlloc::name() == "AllocClassLattice::At<Pool>");
+static_assert(alloc_class_tag::StackAlloc::name() == "AllocClassLattice::At<Stack>");
 
 // Reflection-driven At<T>::name() coverage.
 [[nodiscard]] consteval bool every_at_alloc_class_tag_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^AllocClassTag));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^AllocClassTag));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
-        if (AllocClassLattice::At<([:en:])>::name() ==
-            std::string_view{"AllocClassLattice::At<?>"}) {
+        if (AllocClassLattice::At<([:en:])>::name() == std::string_view{"AllocClassLattice::At<?>"}) {
             return false;
         }
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_at_alloc_class_tag_has_name(),
-    "AllocClassLattice::At<T>::name() switch missing an arm for at "
-    "least one tag.");
+static_assert(every_at_alloc_class_tag_has_name(), "AllocClassLattice::At<T>::name() switch missing an arm for at "
+                                                   "least one tag.");
 
 // Convenience aliases resolve correctly.
 static_assert(alloc_class_tag::HugePageAlloc::tag == AllocClassTag::HugePage);
-static_assert(alloc_class_tag::MmapAlloc::tag     == AllocClassTag::Mmap);
-static_assert(alloc_class_tag::HeapAlloc::tag     == AllocClassTag::Heap);
-static_assert(alloc_class_tag::ArenaAlloc::tag    == AllocClassTag::Arena);
-static_assert(alloc_class_tag::PoolAlloc::tag     == AllocClassTag::Pool);
-static_assert(alloc_class_tag::StackAlloc::tag    == AllocClassTag::Stack);
+static_assert(alloc_class_tag::MmapAlloc::tag == AllocClassTag::Mmap);
+static_assert(alloc_class_tag::HeapAlloc::tag == AllocClassTag::Heap);
+static_assert(alloc_class_tag::ArenaAlloc::tag == AllocClassTag::Arena);
+static_assert(alloc_class_tag::PoolAlloc::tag == AllocClassTag::Pool);
+static_assert(alloc_class_tag::StackAlloc::tag == AllocClassTag::Stack);
 
 // ── Layout invariants on Graded<...,At<T>,T_> ───────────────────────
-struct OneByteValue   { char c{0}; };
-struct EightByteValue { unsigned long long v{0}; };
+struct OneByteValue {
+    char c{0};
+};
+struct EightByteValue {
+    unsigned long long v{0};
+};
 
 template <typename T_>
 using StackGraded = Graded<ModalityKind::Absolute, alloc_class_tag::StackAlloc, T_>;
@@ -374,26 +370,26 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(HeapGraded, EightByteValue);
 inline void runtime_smoke_test() {
     AllocClassTag a = AllocClassTag::HugePage;
     AllocClassTag b = AllocClassTag::Stack;
-    [[maybe_unused]] bool          l1   = AllocClassLattice::leq(a, b);
-    [[maybe_unused]] AllocClassTag j1   = AllocClassLattice::join(a, b);
-    [[maybe_unused]] AllocClassTag m1   = AllocClassLattice::meet(a, b);
-    [[maybe_unused]] AllocClassTag bot  = AllocClassLattice::bottom();
+    [[maybe_unused]] bool l1 = AllocClassLattice::leq(a, b);
+    [[maybe_unused]] AllocClassTag j1 = AllocClassLattice::join(a, b);
+    [[maybe_unused]] AllocClassTag m1 = AllocClassLattice::meet(a, b);
+    [[maybe_unused]] AllocClassTag bot = AllocClassLattice::bottom();
     [[maybe_unused]] AllocClassTag topv = AllocClassLattice::top();
 
     // Mid-tier ops — chain through Heap/Arena/Pool boundary.
-    AllocClassTag heap  = AllocClassTag::Heap;
+    AllocClassTag heap = AllocClassTag::Heap;
     AllocClassTag arena = AllocClassTag::Arena;
-    [[maybe_unused]] AllocClassTag j2 = AllocClassLattice::join(heap, arena);   // Arena
-    [[maybe_unused]] AllocClassTag m2 = AllocClassLattice::meet(heap, arena);   // Heap
+    [[maybe_unused]] AllocClassTag j2 = AllocClassLattice::join(heap, arena);  // Arena
+    [[maybe_unused]] AllocClassTag m2 = AllocClassLattice::meet(heap, arena);  // Heap
 
     // Graded<Absolute, StackAlloc, T> at runtime.
     OneByteValue v{42};
     StackGraded<OneByteValue> initial{v, alloc_class_tag::StackAlloc::bottom()};
-    auto widened   = initial.weaken(alloc_class_tag::StackAlloc::top());
-    auto composed  = initial.compose(widened);
-    auto rv_widen  = std::move(widened).weaken(alloc_class_tag::StackAlloc::top());
+    auto widened = initial.weaken(alloc_class_tag::StackAlloc::top());
+    auto composed = initial.compose(widened);
+    auto rv_widen = std::move(widened).weaken(alloc_class_tag::StackAlloc::top());
 
-    [[maybe_unused]] auto g  = rv_widen.grade();
+    [[maybe_unused]] auto g = rv_widen.grade();
     [[maybe_unused]] auto vc = composed.peek().c;
 
     alloc_class_tag::StackAlloc::element_type e{};

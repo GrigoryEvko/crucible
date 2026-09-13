@@ -19,60 +19,53 @@ namespace crucible::concurrent {
 
 namespace chainedge_tag {
 
-template <typename UserTag> struct Whole    {};
-template <typename UserTag> struct Signaler {};
-template <typename UserTag> struct Waiter   {};
+template <typename UserTag>
+struct Whole {};
+template <typename UserTag>
+struct Signaler {};
+template <typename UserTag>
+struct Waiter {};
 
 }  // namespace chainedge_tag
 
 template <VendorBackend Backend = VendorBackend::CPU, typename UserTag = void>
-class PermissionedChainEdge
-    : public safety::Pinned<PermissionedChainEdge<Backend, UserTag>> {
+class PermissionedChainEdge : public safety::Pinned<PermissionedChainEdge<Backend, UserTag>> {
 public:
-    using value_type   = SemaphoreSignal;
-    using user_tag     = UserTag;
-    using edge_type    = ChainEdge<Backend>;
-    using whole_tag    = chainedge_tag::Whole<UserTag>;
+    using value_type = SemaphoreSignal;
+    using user_tag = UserTag;
+    using edge_type = ChainEdge<Backend>;
+    using whole_tag = chainedge_tag::Whole<UserTag>;
     using signaler_tag = chainedge_tag::Signaler<UserTag>;
-    using waiter_tag   = chainedge_tag::Waiter<UserTag>;
+    using waiter_tag = chainedge_tag::Waiter<UserTag>;
 
     static constexpr VendorBackend backend = Backend;
 
-    PermissionedChainEdge(PlanId upstream,
-                          PlanId downstream,
-                          ChainEdgeId edge,
-                          std::uint64_t signal_value = 1) noexcept
-        : edge_{upstream, downstream, edge, signal_value}
-    {}
+    PermissionedChainEdge(PlanId upstream, PlanId downstream, ChainEdgeId edge, std::uint64_t signal_value = 1) noexcept
+        : edge_{upstream, downstream, edge, signal_value} {}
 
     class SignalerHandle {
         PermissionedChainEdge& owner_;
         [[no_unique_address]] safety::Permission<signaler_tag> perm_;
 
-        constexpr SignalerHandle(PermissionedChainEdge& owner,
-                                 safety::Permission<signaler_tag>&& perm) noexcept
+        constexpr SignalerHandle(PermissionedChainEdge& owner, safety::Permission<signaler_tag>&& perm) noexcept
             : owner_{owner}, perm_{std::move(perm)} {}
         friend class PermissionedChainEdge;
 
     public:
         using value_type = SemaphoreSignal;
-        using tag_type   = signaler_tag;
+        using tag_type = signaler_tag;
 
-        SignalerHandle(const SignalerHandle&)
-            = delete("ChainEdge SignalerHandle owns the Signaler Permission — copy would duplicate the linear token");
-        SignalerHandle& operator=(const SignalerHandle&)
-            = delete("ChainEdge SignalerHandle owns the Signaler Permission — assignment would overwrite the linear token");
+        SignalerHandle(const SignalerHandle&) =
+            delete("ChainEdge SignalerHandle owns the Signaler Permission — copy would duplicate the linear token");
+        SignalerHandle& operator=(const SignalerHandle&) = delete(
+            "ChainEdge SignalerHandle owns the Signaler Permission — assignment would overwrite the linear token");
         constexpr SignalerHandle(SignalerHandle&&) noexcept = default;
-        SignalerHandle& operator=(SignalerHandle&&)
-            = delete("ChainEdge SignalerHandle binds to one ChainEdge for life — rebinding would orphan the original Permission");
+        SignalerHandle& operator=(SignalerHandle&&) = delete(
+            "ChainEdge SignalerHandle binds to one ChainEdge for life — rebinding would orphan the original Permission");
 
-        [[nodiscard]] value_type expected_signal() const noexcept {
-            return owner_.edge_.expected_signal();
-        }
+        [[nodiscard]] value_type expected_signal() const noexcept { return owner_.edge_.expected_signal(); }
 
-        void signal(const value_type& signal) noexcept {
-            owner_.signal_substrate_(signal);
-        }
+        void signal(const value_type& signal) noexcept { owner_.signal_substrate_(signal); }
 
         [[nodiscard]] value_type signal() noexcept {
             value_type signal = expected_signal();
@@ -80,35 +73,30 @@ public:
             return signal;
         }
 
-        [[nodiscard]] std::uint64_t current_value() const noexcept {
-            return owner_.edge_.current_value();
-        }
+        [[nodiscard]] std::uint64_t current_value() const noexcept { return owner_.edge_.current_value(); }
     };
 
     class WaiterHandle {
         PermissionedChainEdge& owner_;
         [[no_unique_address]] safety::Permission<waiter_tag> perm_;
 
-        constexpr WaiterHandle(PermissionedChainEdge& owner,
-                               safety::Permission<waiter_tag>&& perm) noexcept
+        constexpr WaiterHandle(PermissionedChainEdge& owner, safety::Permission<waiter_tag>&& perm) noexcept
             : owner_{owner}, perm_{std::move(perm)} {}
         friend class PermissionedChainEdge;
 
     public:
         using value_type = SemaphoreSignal;
-        using tag_type   = waiter_tag;
+        using tag_type = waiter_tag;
 
-        WaiterHandle(const WaiterHandle&)
-            = delete("ChainEdge WaiterHandle owns the Waiter Permission — copy would duplicate the linear token");
-        WaiterHandle& operator=(const WaiterHandle&)
-            = delete("ChainEdge WaiterHandle owns the Waiter Permission — assignment would overwrite the linear token");
+        WaiterHandle(const WaiterHandle&) =
+            delete("ChainEdge WaiterHandle owns the Waiter Permission — copy would duplicate the linear token");
+        WaiterHandle& operator=(const WaiterHandle&) =
+            delete("ChainEdge WaiterHandle owns the Waiter Permission — assignment would overwrite the linear token");
         constexpr WaiterHandle(WaiterHandle&&) noexcept = default;
-        WaiterHandle& operator=(WaiterHandle&&)
-            = delete("ChainEdge WaiterHandle binds to one ChainEdge for life — rebinding would orphan the original Permission");
+        WaiterHandle& operator=(WaiterHandle&&) = delete(
+            "ChainEdge WaiterHandle binds to one ChainEdge for life — rebinding would orphan the original Permission");
 
-        [[nodiscard]] value_type expected_signal() const noexcept {
-            return owner_.edge_.expected_signal();
-        }
+        [[nodiscard]] value_type expected_signal() const noexcept { return owner_.edge_.expected_signal(); }
 
         // FIXY-FOUND-123: retry-contract documentation.
         //
@@ -152,44 +140,31 @@ public:
         // sessions/ChainEdgeSession.h::wait_transport implements this
         // shape directly — Session<> consumers inherit the correct
         // backoff by composition without copying the loop body.
-        [[nodiscard]] bool try_wait(const value_type& signal) const noexcept {
-            return owner_.wait_substrate_(signal);
-        }
+        [[nodiscard]] bool try_wait(const value_type& signal) const noexcept { return owner_.wait_substrate_(signal); }
 
-        [[nodiscard]] std::uint64_t current_value() const noexcept {
-            return owner_.edge_.current_value();
-        }
+        [[nodiscard]] std::uint64_t current_value() const noexcept { return owner_.edge_.current_value(); }
     };
 
-    [[nodiscard]] constexpr SignalerHandle
-    signaler(safety::Permission<signaler_tag>&& perm) noexcept {
+    [[nodiscard]] constexpr SignalerHandle signaler(safety::Permission<signaler_tag>&& perm) noexcept {
         return SignalerHandle{*this, std::move(perm)};
     }
 
-    [[nodiscard]] constexpr WaiterHandle
-    waiter(safety::Permission<waiter_tag>&& perm) noexcept {
+    [[nodiscard]] constexpr WaiterHandle waiter(safety::Permission<waiter_tag>&& perm) noexcept {
         return WaiterHandle{*this, std::move(perm)};
     }
 
-    [[nodiscard]] safety::Permission<whole_tag>
-    reset_under_quiescence(safety::Permission<whole_tag>&& perm,
-                           std::uint64_t value = 0) noexcept {
+    [[nodiscard]] safety::Permission<whole_tag> reset_under_quiescence(safety::Permission<whole_tag>&& perm,
+                                                                       std::uint64_t value = 0) noexcept {
         reset_substrate_(value);
         return std::move(perm);
     }
 
-    [[nodiscard]] edge_type& edge() noexcept {
-        return edge_;
-    }
+    [[nodiscard]] edge_type& edge() noexcept { return edge_; }
 
-    [[nodiscard]] const edge_type& edge() const noexcept {
-        return edge_;
-    }
+    [[nodiscard]] const edge_type& edge() const noexcept { return edge_; }
 
 private:
-    void signal_substrate_(const value_type& signal) noexcept {
-        edge_.signal(detail::ChainEdgeAccess{}, signal);
-    }
+    void signal_substrate_(const value_type& signal) noexcept { edge_.signal(detail::ChainEdgeAccess{}, signal); }
 
     [[nodiscard]] bool wait_substrate_(const value_type& signal) const noexcept {
         return edge_.wait(detail::ChainEdgeAccess{}, signal);
@@ -207,30 +182,22 @@ private:
 namespace crucible::safety {
 
 template <typename UserTag>
-struct splits_into<concurrent::chainedge_tag::Whole<UserTag>,
-                   concurrent::chainedge_tag::Signaler<UserTag>,
-                   concurrent::chainedge_tag::Waiter<UserTag>>
-    : std::true_type {};
+struct splits_into<concurrent::chainedge_tag::Whole<UserTag>, concurrent::chainedge_tag::Signaler<UserTag>,
+                   concurrent::chainedge_tag::Waiter<UserTag>> : std::true_type {};
 
 template <typename UserTag>
-struct splits_into_pack<concurrent::chainedge_tag::Whole<UserTag>,
-                        concurrent::chainedge_tag::Signaler<UserTag>,
-                        concurrent::chainedge_tag::Waiter<UserTag>>
-    : std::true_type {};
+struct splits_into_pack<concurrent::chainedge_tag::Whole<UserTag>, concurrent::chainedge_tag::Signaler<UserTag>,
+                        concurrent::chainedge_tag::Waiter<UserTag>> : std::true_type {};
 
 // fixy-M-29 authoring witnesses.
 template <typename UserTag>
-struct splits_into_authoring_witness<
-    concurrent::chainedge_tag::Whole<UserTag>,
-    concurrent::chainedge_tag::Signaler<UserTag>,
-    concurrent::chainedge_tag::Waiter<UserTag>>
-    : std::true_type {};
+struct splits_into_authoring_witness<concurrent::chainedge_tag::Whole<UserTag>,
+                                     concurrent::chainedge_tag::Signaler<UserTag>,
+                                     concurrent::chainedge_tag::Waiter<UserTag>> : std::true_type {};
 
 template <typename UserTag>
-struct splits_into_pack_authoring_witness<
-    concurrent::chainedge_tag::Whole<UserTag>,
-    concurrent::chainedge_tag::Signaler<UserTag>,
-    concurrent::chainedge_tag::Waiter<UserTag>>
-    : std::true_type {};
+struct splits_into_pack_authoring_witness<concurrent::chainedge_tag::Whole<UserTag>,
+                                          concurrent::chainedge_tag::Signaler<UserTag>,
+                                          concurrent::chainedge_tag::Waiter<UserTag>> : std::true_type {};
 
 }  // namespace crucible::safety

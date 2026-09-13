@@ -29,8 +29,7 @@ struct is_simd_width_pinned_impl : std::false_type {
 };
 
 template <SimdIsa_v W, typename U>
-struct is_simd_width_pinned_impl<::crucible::safety::SimdWidthPinned<W, U>>
-    : std::true_type {
+struct is_simd_width_pinned_impl<::crucible::safety::SimdWidthPinned<W, U>> : std::true_type {
     using value_type = U;
     static constexpr SimdIsa_v isa = W;
     static constexpr bool has_isa = true;
@@ -39,32 +38,29 @@ struct is_simd_width_pinned_impl<::crucible::safety::SimdWidthPinned<W, U>>
 }  // namespace detail
 
 template <typename T>
-inline constexpr bool is_simd_width_pinned_v =
-    detail::is_simd_width_pinned_impl<std::remove_cvref_t<T>>::value;
+inline constexpr bool is_simd_width_pinned_v = detail::is_simd_width_pinned_impl<std::remove_cvref_t<T>>::value;
 
 template <typename T>
 concept IsSimdWidthPinned = is_simd_width_pinned_v<T>;
 
 template <typename T>
     requires is_simd_width_pinned_v<T>
-using simd_width_pinned_value_t =
-    typename detail::is_simd_width_pinned_impl<std::remove_cvref_t<T>>::value_type;
+using simd_width_pinned_value_t = typename detail::is_simd_width_pinned_impl<std::remove_cvref_t<T>>::value_type;
 
 template <typename T>
     requires is_simd_width_pinned_v<T>
-inline constexpr SimdIsa_v simd_width_pinned_isa_v =
-    detail::is_simd_width_pinned_impl<std::remove_cvref_t<T>>::isa;
+inline constexpr SimdIsa_v simd_width_pinned_isa_v = detail::is_simd_width_pinned_impl<std::remove_cvref_t<T>>::isa;
 
 // ── Self-test ─────────────────────────────────────────────────────
 
 namespace detail::is_simd_width_pinned_self_test {
 
-using S_int_scalar = ::crucible::safety::SimdWidthPinned<SimdIsa_v::Scalar,   int>;
-using S_int_avx2   = ::crucible::safety::SimdWidthPinned<SimdIsa_v::Avx2,     int>;
+using S_int_scalar = ::crucible::safety::SimdWidthPinned<SimdIsa_v::Scalar, int>;
+using S_int_avx2 = ::crucible::safety::SimdWidthPinned<SimdIsa_v::Avx2, int>;
 using S_int_avx512 = ::crucible::safety::SimdWidthPinned<SimdIsa_v::Avx512Bw, int>;
-using S_int_neon   = ::crucible::safety::SimdWidthPinned<SimdIsa_v::Neon,     int>;
-using S_int_port   = ::crucible::safety::SimdWidthPinned<SimdIsa_v::Portable, int>;
-using S_double_avx = ::crucible::safety::SimdWidthPinned<SimdIsa_v::Avx2,     double>;
+using S_int_neon = ::crucible::safety::SimdWidthPinned<SimdIsa_v::Neon, int>;
+using S_int_port = ::crucible::safety::SimdWidthPinned<SimdIsa_v::Portable, int>;
+using S_double_avx = ::crucible::safety::SimdWidthPinned<SimdIsa_v::Avx2, double>;
 
 static_assert(is_simd_width_pinned_v<S_int_scalar>);
 static_assert(is_simd_width_pinned_v<S_int_avx2>);
@@ -81,7 +77,10 @@ static_assert(!is_simd_width_pinned_v<int*>);
 static_assert(!is_simd_width_pinned_v<void>);
 static_assert(!is_simd_width_pinned_v<S_int_avx2*>);
 
-struct LookalikeSimd { int value; SimdIsa_v isa; };
+struct LookalikeSimd {
+    int value;
+    SimdIsa_v isa;
+};
 static_assert(!is_simd_width_pinned_v<LookalikeSimd>);
 
 static_assert(IsSimdWidthPinned<S_int_avx2>);
@@ -91,10 +90,10 @@ static_assert(std::is_same_v<simd_width_pinned_value_t<S_int_avx2>, int>);
 static_assert(std::is_same_v<simd_width_pinned_value_t<S_double_avx>, double>);
 
 static_assert(simd_width_pinned_isa_v<S_int_scalar> == SimdIsa_v::Scalar);
-static_assert(simd_width_pinned_isa_v<S_int_avx2>   == SimdIsa_v::Avx2);
+static_assert(simd_width_pinned_isa_v<S_int_avx2> == SimdIsa_v::Avx2);
 static_assert(simd_width_pinned_isa_v<S_int_avx512> == SimdIsa_v::Avx512Bw);
-static_assert(simd_width_pinned_isa_v<S_int_neon>   == SimdIsa_v::Neon);
-static_assert(simd_width_pinned_isa_v<S_int_port>   == SimdIsa_v::Portable);
+static_assert(simd_width_pinned_isa_v<S_int_neon> == SimdIsa_v::Neon);
+static_assert(simd_width_pinned_isa_v<S_int_port> == SimdIsa_v::Portable);
 
 static_assert(simd_width_pinned_isa_v<S_int_avx2> != simd_width_pinned_isa_v<S_int_neon>);
 

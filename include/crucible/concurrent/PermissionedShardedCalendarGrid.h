@@ -92,7 +92,8 @@ concept ShardedCalendarKeyExtractorOf = requires(const T& v) {
 
 namespace sharded_calendar_tag {
 
-template <typename UserTag> struct Whole {};
+template <typename UserTag>
+struct Whole {};
 
 template <typename UserTag, std::size_t S>
 using Producer = safety::Producer<Whole<UserTag>, S>;
@@ -106,40 +107,33 @@ using Consumer = safety::Consumer<Whole<UserTag>, S>;
 //                                    BucketCap, KeyExtractor,
 //                                    QuantumNs, UserTag> ────────────
 
-template <SpscValue T,
-          std::size_t NumShards,
-          std::size_t NumBuckets,
-          std::size_t BucketCap,
-          typename KeyExtractor,
-          std::uint64_t QuantumNs,
-          typename UserTag = void>
+template <SpscValue T, std::size_t NumShards, std::size_t NumBuckets, std::size_t BucketCap, typename KeyExtractor,
+          std::uint64_t QuantumNs, typename UserTag = void>
 class PermissionedShardedCalendarGrid
-    : public safety::Pinned<PermissionedShardedCalendarGrid<
-          T, NumShards, NumBuckets, BucketCap, KeyExtractor, QuantumNs, UserTag>>
-{
-    static_assert(NumShards   > 0, "NumShards must be > 0");
-    static_assert(NumBuckets  > 0, "NumBuckets must be > 0");
-    static_assert(BucketCap   > 0, "BucketCap must be > 0");
-    static_assert(QuantumNs   > 0, "QuantumNs must be > 0");
-    static_assert(ShardedCalendarKeyExtractorOf<KeyExtractor, T>,
-                  "KeyExtractor must provide static "
-                  "uint64_t key(const T&) noexcept");
+    : public safety::Pinned<
+          PermissionedShardedCalendarGrid<T, NumShards, NumBuckets, BucketCap, KeyExtractor, QuantumNs, UserTag>> {
+    static_assert(NumShards > 0, "NumShards must be > 0");
+    static_assert(NumBuckets > 0, "NumBuckets must be > 0");
+    static_assert(BucketCap > 0, "BucketCap must be > 0");
+    static_assert(QuantumNs > 0, "QuantumNs must be > 0");
+    static_assert(ShardedCalendarKeyExtractorOf<KeyExtractor, T>, "KeyExtractor must provide static "
+                                                                  "uint64_t key(const T&) noexcept");
 
 public:
-    using value_type      = T;
-    using user_tag        = UserTag;
-    using whole_tag       = sharded_calendar_tag::Whole<UserTag>;
-    using key_extractor   = KeyExtractor;
+    using value_type = T;
+    using user_tag = UserTag;
+    using whole_tag = sharded_calendar_tag::Whole<UserTag>;
+    using key_extractor = KeyExtractor;
 
     template <std::size_t S>
     using shard_producer_tag = sharded_calendar_tag::Producer<UserTag, S>;
     template <std::size_t S>
     using shard_consumer_tag = sharded_calendar_tag::Consumer<UserTag, S>;
 
-    static constexpr std::size_t   num_shards    = NumShards;
-    static constexpr std::size_t   num_buckets   = NumBuckets;
-    static constexpr std::size_t   bucket_cap    = BucketCap;
-    static constexpr std::uint64_t quantum_ns    = QuantumNs;
+    static constexpr std::size_t num_shards = NumShards;
+    static constexpr std::size_t num_buckets = NumBuckets;
+    static constexpr std::size_t bucket_cap = BucketCap;
+    static constexpr std::uint64_t quantum_ns = QuantumNs;
 
     // ── Per-shard storage (heap-allocated; each is large) ──────────
     //
@@ -149,9 +143,8 @@ public:
 
 private:
     struct Shard {
-        std::array<SpscRing<T, BucketCap>, NumBuckets>      buckets;
-        safety::AtomicMonotonic<std::uint64_t,
-                                std::less<std::uint64_t>>   current_bucket{0};
+        std::array<SpscRing<T, BucketCap>, NumBuckets> buckets;
+        safety::AtomicMonotonic<std::uint64_t, std::less<std::uint64_t>> current_bucket{0};
     };
 
     std::array<std::unique_ptr<Shard>, NumShards> shards_;
@@ -159,13 +152,11 @@ private:
     // Bucket math — matches PermissionedCalendarGrid::bucket_for_.
     // Producer-side called from shard S; reads shards_[S].current_bucket
     // (SAME-CORE in well-pinned production code — no cross-thread cost).
-    [[nodiscard, gnu::hot]] std::size_t bucket_for_(std::size_t shard,
-                                                     const T& item) const noexcept
-    {
-        const std::uint64_t key        = KeyExtractor::key(item);
+    [[nodiscard, gnu::hot]] std::size_t bucket_for_(std::size_t shard, const T& item) const noexcept {
+        const std::uint64_t key = KeyExtractor::key(item);
         const std::uint64_t key_bucket = key / QuantumNs;
-        const std::uint64_t cur        = shards_[shard]->current_bucket.peek_relaxed();
-        const std::uint64_t b          = key_bucket > cur ? key_bucket : cur;
+        const std::uint64_t cur = shards_[shard]->current_bucket.peek_relaxed();
+        const std::uint64_t b = key_bucket > cur ? key_bucket : cur;
         return b % NumBuckets;
     }
 
@@ -184,8 +175,7 @@ public:
 
     template <std::size_t S>
     class ProducerHandle {
-        static_assert(S < NumShards,
-                      "ProducerHandle<S>: S must be < NumShards");
+        static_assert(S < NumShards, "ProducerHandle<S>: S must be < NumShards");
 
         PermissionedShardedCalendarGrid& grid_;
         [[no_unique_address]] safety::Permission<shard_producer_tag<S>> perm_;
@@ -196,16 +186,14 @@ public:
         friend class PermissionedShardedCalendarGrid;
 
     public:
-        ProducerHandle(const ProducerHandle&)
-            = delete("ProducerHandle owns the shard's Producer Permission — "
-                     "copy would duplicate the linear token");
-        ProducerHandle& operator=(const ProducerHandle&)
-            = delete("ProducerHandle owns the shard's Producer Permission — "
-                     "assignment would overwrite the linear token");
+        ProducerHandle(const ProducerHandle&) = delete("ProducerHandle owns the shard's Producer Permission — "
+                                                       "copy would duplicate the linear token");
+        ProducerHandle&
+        operator=(const ProducerHandle&) = delete("ProducerHandle owns the shard's Producer Permission — "
+                                                  "assignment would overwrite the linear token");
         constexpr ProducerHandle(ProducerHandle&&) noexcept = default;
-        ProducerHandle& operator=(ProducerHandle&&)
-            = delete("ProducerHandle binds to ONE shard for life — "
-                     "the shard index is part of the type");
+        ProducerHandle& operator=(ProducerHandle&&) = delete("ProducerHandle binds to ONE shard for life — "
+                                                             "the shard index is part of the type");
 
         static constexpr std::size_t shard_index = S;
 
@@ -223,15 +211,9 @@ public:
         }
 
         // Per-handle diagnostics — own-shard view (snapshot, NOT exact).
-        [[nodiscard]] std::size_t size_approx() const noexcept {
-            return grid_.size_approx(S);
-        }
-        [[nodiscard]] bool empty_approx() const noexcept {
-            return grid_.size_approx(S) == 0;
-        }
-        [[nodiscard]] static constexpr std::size_t capacity() noexcept {
-            return NumBuckets * BucketCap;
-        }
+        [[nodiscard]] std::size_t size_approx() const noexcept { return grid_.size_approx(S); }
+        [[nodiscard]] bool empty_approx() const noexcept { return grid_.size_approx(S) == 0; }
+        [[nodiscard]] static constexpr std::size_t capacity() noexcept { return NumBuckets * BucketCap; }
     };
 
     // ── ConsumerHandle<S> — linear ownership of shard S's consumer ─
@@ -243,8 +225,7 @@ public:
 
     template <std::size_t S>
     class ConsumerHandle {
-        static_assert(S < NumShards,
-                      "ConsumerHandle<S>: S must be < NumShards");
+        static_assert(S < NumShards, "ConsumerHandle<S>: S must be < NumShards");
 
         PermissionedShardedCalendarGrid& grid_;
         [[no_unique_address]] safety::Permission<shard_consumer_tag<S>> perm_;
@@ -255,13 +236,11 @@ public:
         friend class PermissionedShardedCalendarGrid;
 
     public:
-        ConsumerHandle(const ConsumerHandle&)
-            = delete("ConsumerHandle owns the shard's Consumer Permission");
-        ConsumerHandle& operator=(const ConsumerHandle&)
-            = delete("ConsumerHandle owns the shard's Consumer Permission");
+        ConsumerHandle(const ConsumerHandle&) = delete("ConsumerHandle owns the shard's Consumer Permission");
+        ConsumerHandle&
+        operator=(const ConsumerHandle&) = delete("ConsumerHandle owns the shard's Consumer Permission");
         constexpr ConsumerHandle(ConsumerHandle&&) noexcept = default;
-        ConsumerHandle& operator=(ConsumerHandle&&)
-            = delete("ConsumerHandle binds to ONE shard for life");
+        ConsumerHandle& operator=(ConsumerHandle&&) = delete("ConsumerHandle binds to ONE shard for life");
 
         static constexpr std::size_t shard_index = S;
 
@@ -293,40 +272,28 @@ public:
         }
 
         // Per-handle diagnostics — own-shard view (snapshot, NOT exact).
-        [[nodiscard]] std::size_t size_approx() const noexcept {
-            return grid_.size_approx(S);
-        }
-        [[nodiscard]] bool empty_approx() const noexcept {
-            return grid_.size_approx(S) == 0;
-        }
-        [[nodiscard]] static constexpr std::size_t capacity() noexcept {
-            return NumBuckets * BucketCap;
-        }
+        [[nodiscard]] std::size_t size_approx() const noexcept { return grid_.size_approx(S); }
+        [[nodiscard]] bool empty_approx() const noexcept { return grid_.size_approx(S) == 0; }
+        [[nodiscard]] static constexpr std::size_t capacity() noexcept { return NumBuckets * BucketCap; }
     };
 
     // ── Handle factories (linear; consume the Permission) ──────────
 
     template <std::size_t S>
-    [[nodiscard]] constexpr ProducerHandle<S> producer(
-        safety::Permission<shard_producer_tag<S>>&& perm) noexcept
-    {
+    [[nodiscard]] constexpr ProducerHandle<S> producer(safety::Permission<shard_producer_tag<S>>&& perm) noexcept {
         static_assert(S < NumShards, "producer<S>: S must be < NumShards");
         return ProducerHandle<S>{*this, std::move(perm)};
     }
 
     template <std::size_t S>
-    [[nodiscard]] constexpr ConsumerHandle<S> consumer(
-        safety::Permission<shard_consumer_tag<S>>&& perm) noexcept
-    {
+    [[nodiscard]] constexpr ConsumerHandle<S> consumer(safety::Permission<shard_consumer_tag<S>>&& perm) noexcept {
         static_assert(S < NumShards, "consumer<S>: S must be < NumShards");
         return ConsumerHandle<S>{*this, std::move(perm)};
     }
 
     // ── Diagnostics ────────────────────────────────────────────────
 
-    [[nodiscard]] static constexpr std::size_t capacity() noexcept {
-        return NumShards * NumBuckets * BucketCap;
-    }
+    [[nodiscard]] static constexpr std::size_t capacity() noexcept { return NumShards * NumBuckets * BucketCap; }
 
     [[nodiscard]] std::size_t size_approx() const noexcept {
         std::size_t total = 0;
@@ -346,21 +313,16 @@ public:
         return total;
     }
 
-    [[nodiscard]] bool empty_approx() const noexcept {
-        return size_approx() == 0;
-    }
+    [[nodiscard]] bool empty_approx() const noexcept { return size_approx() == 0; }
 
     // ── Mode transition (linear-only — no atomic pool to drain) ────
 
-    [[nodiscard]] static constexpr bool is_exclusive_active() noexcept {
-        return false;
-    }
+    [[nodiscard]] static constexpr bool is_exclusive_active() noexcept { return false; }
 
     template <typename Body>
     [[nodiscard]] safety::Permission<whole_tag>
-    with_recombined_access(safety::Permission<whole_tag>&& whole, Body&& body)
-        noexcept(noexcept(std::forward<Body>(body)()))
-    {
+    with_recombined_access(safety::Permission<whole_tag>&& whole,
+                           Body&& body) noexcept(noexcept(std::forward<Body>(body)())) {
         std::forward<Body>(body)();
         return std::move(whole);
     }

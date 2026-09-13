@@ -42,44 +42,40 @@ using ::crucible::algebra::lattices::CallShapeLattice;
 template <CallShape Tier, typename T>
 class [[nodiscard]] CallShapePinned {
 public:
-    using value_type   = T;
+    using value_type = T;
     using lattice_type = CallShapeLattice::At<Tier>;
-    using graded_type  = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
-    static constexpr ::crucible::algebra::ModalityKind modality =
-        ::crucible::algebra::ModalityKind::Absolute;
+    using graded_type = ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
+    static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::Absolute;
     static constexpr CallShape tier = Tier;
 
 private:
     graded_type impl_;
 
 public:
-    constexpr CallShapePinned() noexcept(
-        std::is_nothrow_default_constructible_v<T>)
+    constexpr CallShapePinned() noexcept(std::is_nothrow_default_constructible_v<T>)
         : impl_{T{}, typename lattice_type::element_type{}} {}
 
-    constexpr explicit CallShapePinned(T value) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    constexpr explicit CallShapePinned(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(value), typename lattice_type::element_type{}} {}
 
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr explicit CallShapePinned(std::in_place_t, Args&&... args)
-        noexcept(std::is_nothrow_constructible_v<T, Args...>
-                 && std::is_nothrow_move_constructible_v<T>)
-        : impl_{T(std::forward<Args>(args)...),
-                typename lattice_type::element_type{}} {}
+    constexpr explicit CallShapePinned(std::in_place_t,
+                                       Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
+                                                                && std::is_nothrow_move_constructible_v<T>)
+        : impl_{T(std::forward<Args>(args)...), typename lattice_type::element_type{}} {}
 
-    constexpr CallShapePinned(const CallShapePinned&)            = default;
-    constexpr CallShapePinned(CallShapePinned&&)                 = default;
+    constexpr CallShapePinned(const CallShapePinned&) = default;
+    constexpr CallShapePinned(CallShapePinned&&) = default;
     constexpr CallShapePinned& operator=(const CallShapePinned&) = default;
-    constexpr CallShapePinned& operator=(CallShapePinned&&)      = default;
-    ~CallShapePinned()                                           = default;
+    constexpr CallShapePinned& operator=(CallShapePinned&&) = default;
+    ~CallShapePinned() = default;
 
-    [[nodiscard]] friend constexpr bool operator==(
-        CallShapePinned const& a, CallShapePinned const& b) noexcept(
-        noexcept(a.peek() == b.peek()))
-        requires requires(T const& x, T const& y) { { x == y } -> std::convertible_to<bool>; }
+    [[nodiscard]] friend constexpr bool operator==(CallShapePinned const& a,
+                                                   CallShapePinned const& b) noexcept(noexcept(a.peek() == b.peek()))
+        requires requires(T const& x, T const& y) {
+            { x == y } -> std::convertible_to<bool>;
+        }
     {
         return a.peek() == b.peek();
     }
@@ -87,62 +83,65 @@ public:
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return graded_type::lattice_name();
-    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 
     [[nodiscard]] constexpr T const& peek() const& noexcept { return impl_.peek(); }
-    [[nodiscard]] constexpr T consume() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    { return std::move(impl_).consume(); }
+    [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return std::move(impl_).consume();
+    }
     [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(); }
 
-    constexpr void swap(CallShapePinned& other)
-        noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
-    friend constexpr void swap(CallShapePinned& a, CallShapePinned& b)
-        noexcept(std::is_nothrow_swappable_v<T>) { a.swap(b); }
+    constexpr void swap(CallShapePinned& other) noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
+    friend constexpr void swap(CallShapePinned& a, CallShapePinned& b) noexcept(std::is_nothrow_swappable_v<T>) {
+        a.swap(b);
+    }
 
     template <CallShape Ceiling>
     static constexpr bool satisfies = CallShapeLattice::leq(Tier, Ceiling);
 
     template <CallShape Higher>
-        requires (CallShapeLattice::leq(Tier, Higher))
-    [[nodiscard]] constexpr CallShapePinned<Higher, T> widen() const&
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
+        requires(CallShapeLattice::leq(Tier, Higher))
+    [[nodiscard]] constexpr CallShapePinned<Higher, T> widen() const& noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
-    { return CallShapePinned<Higher, T>{this->peek()}; }
+    {
+        return CallShapePinned<Higher, T>{this->peek()};
+    }
 
     template <CallShape Higher>
-        requires (CallShapeLattice::leq(Tier, Higher))
-    [[nodiscard]] constexpr CallShapePinned<Higher, T> widen() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    { return CallShapePinned<Higher, T>{std::move(impl_).consume()}; }
+        requires(CallShapeLattice::leq(Tier, Higher))
+    [[nodiscard]] constexpr CallShapePinned<Higher, T> widen() && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return CallShapePinned<Higher, T>{std::move(impl_).consume()};
+    }
 };
 
 template <CallShape Tier, typename T, typename... Args>
     requires std::is_constructible_v<T, Args...>
-[[nodiscard]] constexpr CallShapePinned<Tier, T> mint_call_shape(Args&&... args)
-    noexcept(std::is_nothrow_constructible_v<T, Args...>)
-{
+[[nodiscard]] constexpr CallShapePinned<Tier, T>
+mint_call_shape(Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>) {
     return CallShapePinned<Tier, T>{std::in_place, std::forward<Args>(args)...};
 }
 
 namespace call_shape_pin {
-    template <typename T> using Direct          = CallShapePinned<CallShape::Direct,          T>;
-    template <typename T> using BoundedRecurses = CallShapePinned<CallShape::BoundedRecurses, T>;
-    template <typename T> using Indirect        = CallShapePinned<CallShape::Indirect,        T>;
-    template <typename T> using Virtual         = CallShapePinned<CallShape::Virtual,         T>;
-    template <typename T> using Unbounded       = CallShapePinned<CallShape::Unbounded,       T>;
+template <typename T>
+using Direct = CallShapePinned<CallShape::Direct, T>;
+template <typename T>
+using BoundedRecurses = CallShapePinned<CallShape::BoundedRecurses, T>;
+template <typename T>
+using Indirect = CallShapePinned<CallShape::Indirect, T>;
+template <typename T>
+using Virtual = CallShapePinned<CallShape::Virtual, T>;
+template <typename T>
+using Unbounded = CallShapePinned<CallShape::Unbounded, T>;
 }  // namespace call_shape_pin
 
-static_assert(sizeof(CallShapePinned<CallShape::Direct,    int>)    == sizeof(int));
-static_assert(sizeof(CallShapePinned<CallShape::Unbounded, int>)    == sizeof(int));
-static_assert(sizeof(CallShapePinned<CallShape::Virtual,   double>) == sizeof(double));
-static_assert(sizeof(CallShapePinned<CallShape::Direct,    char>)   == sizeof(char));
+static_assert(sizeof(CallShapePinned<CallShape::Direct, int>) == sizeof(int));
+static_assert(sizeof(CallShapePinned<CallShape::Unbounded, int>) == sizeof(int));
+static_assert(sizeof(CallShapePinned<CallShape::Virtual, double>) == sizeof(double));
+static_assert(sizeof(CallShapePinned<CallShape::Direct, char>) == sizeof(char));
 
 namespace detail::call_shape_pinned_self_test {
 
-using DirectInt    = CallShapePinned<CallShape::Direct,    int>;
+using DirectInt = CallShapePinned<CallShape::Direct, int>;
 using UnboundedInt = CallShapePinned<CallShape::Unbounded, int>;
 
 inline constexpr DirectInt cs_default{};
@@ -153,7 +152,7 @@ static_assert(DirectInt::modality == ::crucible::algebra::ModalityKind::Absolute
 
 static_assert(DirectInt::satisfies<CallShape::Direct>);
 static_assert(DirectInt::satisfies<CallShape::Unbounded>);
-static_assert( UnboundedInt::satisfies<CallShape::Unbounded>);
+static_assert(UnboundedInt::satisfies<CallShape::Unbounded>);
 static_assert(!UnboundedInt::satisfies<CallShape::Direct>);
 static_assert(!UnboundedInt::satisfies<CallShape::Indirect>);
 

@@ -32,11 +32,11 @@
 
 #include <crucible/safety/Mutation.h>  // safety::WriteOnce / WriteOnceNonNull / Monotonic
 #include <crucible/safety/OwnedMmap.h>  // FIXY-V-236 — RAII mmap region
-#include <crucible/safety/Pinned.h>    // safety::NonMovable<T>
+#include <crucible/safety/Pinned.h>  // safety::NonMovable<T>
 
 #include <sys/mman.h>
 
-#include <bit>          // std::bit_cast — §III-clean volatile-strip on uint64_t*
+#include <bit>  // std::bit_cast — §III-clean volatile-strip on uint64_t*
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
@@ -45,11 +45,11 @@
 // 64 slots comfortably covers the 58 tracepoints shipped today with
 // headroom.  GCC 16 ships std::inplace_vector unconditionally.
 #include <inplace_vector>
-#include <optional>     // FIXY-V-236 — std::optional<OwnedMmap>
+#include <optional>  // FIXY-V-236 — std::optional<OwnedMmap>
 
 extern "C" {
 extern const unsigned char sense_hub_bpf_bytecode[];
-extern const unsigned int  sense_hub_bpf_bytecode_len;
+extern const unsigned int sense_hub_bpf_bytecode_len;
 }
 
 namespace crucible::perf {
@@ -89,7 +89,7 @@ using ::crucible::perf::detail::verbose;
 // NonMovable's own ctors/assigns.  Zero codegen cost (EBO collapses
 // the empty base).
 struct SenseHub::State : crucible::safety::NonMovable<SenseHub::State> {
-    struct bpf_object*                        obj   = nullptr;
+    struct bpf_object* obj = nullptr;
     std::inplace_vector<struct bpf_link*, 64> links{};
 
     // FIXY-V-236: single RAII OwnedMmap replaces the {WriteOnceNonNull
@@ -99,11 +99,10 @@ struct SenseHub::State : crucible::safety::NonMovable<SenseHub::State> {
     // engaged-optional doubles as the "Phase 7 committed" marker; the
     // dtor's explicit munmap clause is gone (OwnedMmap handles it).
     struct SenseHubCountersTag {};
-    struct ReadOnlyProt        {};
-    struct SharedShare         {};
-    using CountersMmap =
-        ::crucible::safety::OwnedMmap<SenseHubCountersTag, ReadOnlyProt, SharedShare>;
-    std::optional<CountersMmap>                  counters_mmap{};
+    struct ReadOnlyProt {};
+    struct SharedShare {};
+    using CountersMmap = ::crucible::safety::OwnedMmap<SenseHubCountersTag, ReadOnlyProt, SharedShare>;
+    std::optional<CountersMmap> counters_mmap{};
 
     // FIXY-V-236: mmap_len folded into counters_mmap (OwnedMmap owns
     // both addr and len); the separate WriteOnce<size_t> is deleted.
@@ -118,7 +117,7 @@ struct SenseHub::State : crucible::safety::NonMovable<SenseHub::State> {
     // invariant.  Total programs is bounded by 64 (links cap) so
     // overflow is structurally impossible, but the contract is
     // still load-bearing for "no accidental decrement" semantics.
-    safety::Monotonic<size_t>                    attach_fail_cnt{0};
+    safety::Monotonic<size_t> attach_fail_cnt{0};
 
     State() = default;
 
@@ -128,7 +127,8 @@ struct SenseHub::State : crucible::safety::NonMovable<SenseHub::State> {
     // diagnostic strings (worse).
 
     ~State() {
-        for (struct bpf_link* l : links) if (l != nullptr) bpf_link__destroy(l);
+        for (struct bpf_link* l : links)
+            if (l != nullptr) bpf_link__destroy(l);
         // FIXY-V-236: counters_mmap dtor unmaps automatically — the
         // explicit munmap clause and its paired-slot ordering note are
         // both gone (OwnedMmap owns the addr+len pair atomically).
@@ -147,12 +147,9 @@ std::optional<SenseHub> SenseHub::load(::crucible::effects::Init) noexcept {
     const auto report = [](const char* why, int err = 0) {
         if (quiet()) return;
         if (err != 0) {
-            std::fprintf(stderr,
-                "[crucible::perf] BPF sense hub unavailable: %s (%s)\n",
-                why, std::strerror(err));
+            std::fprintf(stderr, "[crucible::perf] BPF sense hub unavailable: %s (%s)\n", why, std::strerror(err));
         } else {
-            std::fprintf(stderr,
-                "[crucible::perf] BPF sense hub unavailable: %s\n", why);
+            std::fprintf(stderr, "[crucible::perf] BPF sense hub unavailable: %s\n", why);
         }
     };
 
@@ -166,12 +163,10 @@ std::optional<SenseHub> SenseHub::load(::crucible::effects::Init) noexcept {
     // never pass it to bpf_object__close (which would crash on an
     // IS_ERR pointer).
     struct bpf_object_open_opts opts{};
-    opts.sz          = sizeof(opts);
+    opts.sz = sizeof(opts);
     opts.object_name = "crucible_senses";
-    struct bpf_object* obj = bpf_object__open_mem(
-        sense_hub_bpf_bytecode,
-        static_cast<size_t>(sense_hub_bpf_bytecode_len),
-        &opts);
+    struct bpf_object* obj =
+        bpf_object__open_mem(sense_hub_bpf_bytecode, static_cast<size_t>(sense_hub_bpf_bytecode_len), &opts);
     if (obj == nullptr || libbpf_get_error(obj) != 0) {
         const int e = libbpf_errno(obj, errno);
         // Don't let state->~State() call bpf_object__close(IS_ERR_PTR).
@@ -190,9 +185,8 @@ std::optional<SenseHub> SenseHub::load(::crucible::effects::Init) noexcept {
             // layout (a handful of bytes in practice).  std::string
             // is fine here; it's off the hot path and the state
             // allocates maps anyway.
-            std::string rewritten(
-                static_cast<const char*>(current), vsz);
-            const Tgid   tgid = current_tgid();
+            std::string rewritten(static_cast<const char*>(current), vsz);
+            const Tgid tgid = current_tgid();
             const uint32_t tgid_raw = tgid.value();  // unwrap once; pass by addr below
             std::memcpy(rewritten.data(), &tgid_raw, sizeof(tgid_raw));  // offset 0
             (void)bpf_map__set_initial_value(rodata, rewritten.data(), vsz);
@@ -205,21 +199,21 @@ std::optional<SenseHub> SenseHub::load(::crucible::effects::Init) noexcept {
     // ── 4. Verify, JIT, allocate maps ──────────────────────────────
     if (const int err = bpf_object__load(state->obj); err != 0) {
         report("bpf_object__load failed (apply CAP_BPF+CAP_PERFMON+CAP_DAC_READ_SEARCH; "
-               "verifier rejected, missing CAP_BPF, or kernel too old)", -err);
+               "verifier rejected, missing CAP_BPF, or kernel too old)",
+               -err);
         return std::nullopt;
     }
 
     // ── 5. Register our main TID in our_tids ───────────────────────
-    if (struct bpf_map* m = bpf_object__find_map_by_name(state->obj, "our_tids");
-        m != nullptr) {
-        const Fd      fd  = map_fd(m);
-        const Tid     tid = current_tid();
+    if (struct bpf_map* m = bpf_object__find_map_by_name(state->obj, "our_tids"); m != nullptr) {
+        const Fd fd = map_fd(m);
+        const Tid tid = current_tid();
         const uint8_t one = 1;
         // Unwrap to lvalues so bpf_map_update_elem (C API) can take
         // their addresses.  Tagged<>::value() returns const T& so a
         // direct &tid.value() works, but a named local makes the
         // intent obvious to a reviewer.
-        const int      fd_raw  = fd.value();
+        const int fd_raw = fd.value();
         const uint32_t tid_raw = tid.value();
         (void)bpf_map_update_elem(fd_raw, &tid_raw, &one, BPF_ANY);
     }
@@ -236,15 +230,13 @@ std::optional<SenseHub> SenseHub::load(::crucible::effects::Init) noexcept {
     bpf_object__for_each_program(prog, state->obj) {
         if (!bpf_program__autoload(prog)) continue;
         struct bpf_link* link = bpf_program__attach(prog);
-        const long       lerr = libbpf_get_error(link);
+        const long lerr = libbpf_get_error(link);
         if (link == nullptr || lerr != 0) {
             state->attach_fail_cnt.bump();
             if (verbose()) {
                 const char* sec = bpf_program__section_name(prog);
-                std::fprintf(stderr,
-                    "[crucible::perf] BPF attach failed for %s (%s)\n",
-                    sec ? sec : "<anon>",
-                    std::strerror(lerr ? static_cast<int>(-lerr) : errno));
+                std::fprintf(stderr, "[crucible::perf] BPF attach failed for %s (%s)\n", sec ? sec : "<anon>",
+                             std::strerror(lerr ? static_cast<int>(-lerr) : errno));
             }
             continue;
         }
@@ -256,9 +248,8 @@ std::optional<SenseHub> SenseHub::load(::crucible::effects::Init) noexcept {
             bpf_link__destroy(link);
             state->attach_fail_cnt.bump();
             if (verbose()) {
-                std::fprintf(stderr,
-                    "[crucible::perf] BPF link capacity exhausted "
-                    "(bump inplace_vector size)\n");
+                std::fprintf(stderr, "[crucible::perf] BPF link capacity exhausted "
+                                     "(bump inplace_vector size)\n");
             }
             continue;
         }
@@ -286,14 +277,14 @@ std::optional<SenseHub> SenseHub::load(::crucible::effects::Init) noexcept {
         report("sysconf(_SC_PAGESIZE) failed (hardened sandbox blocking syscalls?)", errno);
         return std::nullopt;
     }
-    const size_t page             = static_cast<size_t>(page_l);
-    const size_t bytes            = NUM_COUNTERS * sizeof(uint64_t);
-    const size_t mmap_len_bytes   = (bytes + page - 1) & ~(page - 1);
-    void* mmap_address = ::mmap(nullptr, mmap_len_bytes, PROT_READ, MAP_SHARED,
-                                counters_fd.value(), 0);
+    const size_t page = static_cast<size_t>(page_l);
+    const size_t bytes = NUM_COUNTERS * sizeof(uint64_t);
+    const size_t mmap_len_bytes = (bytes + page - 1) & ~(page - 1);
+    void* mmap_address = ::mmap(nullptr, mmap_len_bytes, PROT_READ, MAP_SHARED, counters_fd.value(), 0);
     if (mmap_address == MAP_FAILED) {
         report("mmap of counters map failed (apply CAP_BPF; "
-               "BPF_F_MMAPABLE requires CAP_BPF or kernel ≥ 5.5)", errno);
+               "BPF_F_MMAPABLE requires CAP_BPF or kernel ≥ 5.5)",
+               errno);
         return std::nullopt;
     }
     // FIXY-V-236: single atomic commit via OwnedMmap.emplace — the
@@ -308,9 +299,9 @@ std::optional<SenseHub> SenseHub::load(::crucible::effects::Init) noexcept {
     // dark without having to diff an expected baseline.
     if (!quiet() && state->attach_fail_cnt.get() != 0) {
         std::fprintf(stderr,
-            "[crucible::perf] BPF sense hub partial: %zu program(s) failed to attach "
-            "(set CRUCIBLE_PERF_VERBOSE=1 to see which)\n",
-            state->attach_fail_cnt.get());
+                     "[crucible::perf] BPF sense hub partial: %zu program(s) failed to attach "
+                     "(set CRUCIBLE_PERF_VERBOSE=1 to see which)\n",
+                     state->attach_fail_cnt.get());
     }
 
     SenseHub h;
@@ -336,16 +327,14 @@ Snapshot SenseHub::read() const noexcept {
     // x86-64 (acquire is free on TSO).
     // FIXY-V-236: OwnedMmap void* data() bit_cast to the typed
     // const-volatile counter pointer the acquire-load loop expects.
-    const volatile uint64_t* __restrict src =
-        std::bit_cast<const volatile uint64_t*>(state_->counters_mmap->data());
+    const volatile uint64_t* __restrict src = std::bit_cast<const volatile uint64_t*>(state_->counters_mmap->data());
     for (uint32_t i = 0; i < NUM_COUNTERS; ++i) {
         snapshot.counters[i] = __atomic_load_n(&src[i], __ATOMIC_ACQUIRE);
     }
     return snapshot;
 }
 
-safety::Borrowed<const volatile uint64_t, SenseHub>
-SenseHub::counters_view() const noexcept {
+safety::Borrowed<const volatile uint64_t, SenseHub> SenseHub::counters_view() const noexcept {
     // Empty borrow when no live mmap (moved-from / un-loaded /
     // post-load-failure SenseHub).  span(nullptr, 0) is the
     // documented empty-borrow form per Borrowed<>'s constructor
@@ -362,8 +351,7 @@ SenseHub::counters_view() const noexcept {
         std::bit_cast<volatile uint64_t*>(state_->counters_mmap->data()), NUM_COUNTERS};
 }
 
-safety::Refined<safety::bounded_above<64>, std::size_t>
-SenseHub::attached_programs() const noexcept {
+safety::Refined<safety::bounded_above<64>, std::size_t> SenseHub::attached_programs() const noexcept {
     // Bound is structurally enforced: state_->links is
     // inplace_vector<bpf_link*, 64> — its .size() is in [0, 64]
     // by inplace_vector's own contract.  Wrapping in Refined
@@ -373,15 +361,13 @@ SenseHub::attached_programs() const noexcept {
     return R{(state_ != nullptr) ? state_->links.size() : std::size_t{0}};
 }
 
-safety::Refined<safety::bounded_above<64>, std::size_t>
-SenseHub::attach_failures() const noexcept {
+safety::Refined<safety::bounded_above<64>, std::size_t> SenseHub::attach_failures() const noexcept {
     // Same bound as attached_programs(): both counters partition
     // the same program-iteration loop — attach_fail_cnt records
     // the failures, links.size() records the successes, and
     // attach_fail_cnt + links.size() ≤ 64 (the inplace_vector cap).
     using R = safety::Refined<safety::bounded_above<64>, std::size_t>;
-    return R{(state_ != nullptr) ? state_->attach_fail_cnt.get()
-                                 : std::size_t{0}};
+    return R{(state_ != nullptr) ? state_->attach_fail_cnt.get() : std::size_t{0}};
 }
 
 }  // namespace crucible::perf

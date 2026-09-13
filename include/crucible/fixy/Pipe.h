@@ -46,8 +46,8 @@
 // Zero.  using-declarations are pure name-lookup directives.
 
 #include <crucible/concurrent/AdaptiveScheduler.h>  // V-215: Pool + dispatch
-#include <crucible/concurrent/AutoRouter.h>        // V-077: AutoRouter family
-#include <crucible/concurrent/AutoSplit.h>         // V-077: AutoSplit family
+#include <crucible/concurrent/AutoRouter.h>  // V-077: AutoRouter family
+#include <crucible/concurrent/AutoSplit.h>  // V-077: AutoSplit family
 #include <crucible/concurrent/Endpoint.h>
 #include <crucible/concurrent/ParallelismRule.h>  // V-076: WorkBudget / ParallelismRule / Tier / NumaPolicy
 #include <crucible/concurrent/Pipeline.h>
@@ -55,12 +55,12 @@
 #include <crucible/concurrent/StageEndpointBridge.h>
 #include <crucible/concurrent/SubstrateSessionBridge.h>
 #include <crucible/concurrent/TopologyConstexpr.h>  // V-223: build-time cache constants
-#include <crucible/concurrent/WorkingSet.h>        // V-076: working-set helpers
-#include <crucible/effects/Capabilities.h>         // V-215: Effect::Bg admission
-#include <crucible/effects/ExecCtx.h>              // V-215: IsExecCtx + CtxOwnsCapability
-#include <concepts>     // V-218: std::same_as in stance::HotPathInline
+#include <crucible/concurrent/WorkingSet.h>  // V-076: working-set helpers
+#include <crucible/effects/Capabilities.h>  // V-215: Effect::Bg admission
+#include <crucible/effects/ExecCtx.h>  // V-215: IsExecCtx + CtxOwnsCapability
+#include <concepts>  // V-218: std::same_as in stance::HotPathInline
 #include <type_traits>  // FIXY-U-103 sentinel uses std::is_same_v
-#include <utility>      // V-215: std::forward in mint bodies
+#include <utility>  // V-215: std::forward in mint bodies
 
 namespace crucible::fixy::pipe {
 
@@ -492,20 +492,17 @@ using ::crucible::concurrent::DispatchWithWorkloadResult;
 // scope.
 
 template <typename Job>
-concept PermissionFreeJob =
-    std::is_invocable_r_v<void, std::remove_reference_t<Job>&>
-    && std::is_copy_constructible_v<std::remove_reference_t<Job>>;
+concept PermissionFreeJob = std::is_invocable_r_v<void, std::remove_reference_t<Job>&>
+                         && std::is_copy_constructible_v<std::remove_reference_t<Job>>;
 
 // PermissionFreeJobWithShard — the dispatch_with_workload variant
 // admits BOTH `void(Job&)` AND `void(Job&, WorkShard)` per the
 // substrate's overload set; both forms must be permission-free.
 
 template <typename Job>
-concept PermissionFreeJobWithShard =
-    (std::is_invocable_r_v<void, std::remove_reference_t<Job>&>
-     || std::is_invocable_r_v<void, std::remove_reference_t<Job>&,
-                              WorkShard>)
-    && std::is_copy_constructible_v<std::remove_reference_t<Job>>;
+concept PermissionFreeJobWithShard = (std::is_invocable_r_v<void, std::remove_reference_t<Job>&>
+                                      || std::is_invocable_r_v<void, std::remove_reference_t<Job>&, WorkShard>)
+                                  && std::is_copy_constructible_v<std::remove_reference_t<Job>>;
 
 // ── CtxFitsPoolSubmit / CtxFitsPoolDispatch ─────────────────────────
 //
@@ -516,16 +513,12 @@ concept PermissionFreeJobWithShard =
 
 template <typename Ctx, typename Job>
 concept CtxFitsPoolSubmit =
-    ::crucible::effects::IsExecCtx<Ctx>
-    && ::crucible::effects::CtxOwnsCapability<
-           Ctx, ::crucible::effects::Effect::Bg>
+    ::crucible::effects::IsExecCtx<Ctx> && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Bg>
     && PermissionFreeJob<Job>;
 
 template <typename Ctx, typename Job>
 concept CtxFitsPoolDispatchWithWorkload =
-    ::crucible::effects::IsExecCtx<Ctx>
-    && ::crucible::effects::CtxOwnsCapability<
-           Ctx, ::crucible::effects::Effect::Bg>
+    ::crucible::effects::IsExecCtx<Ctx> && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Bg>
     && PermissionFreeJobWithShard<Job>;
 
 // ── pool_submit<Ctx, Policy, Job>(ctx, pool, job) ──────────────
@@ -535,11 +528,7 @@ concept CtxFitsPoolDispatchWithWorkload =
 
 template <typename Ctx, typename Policy, typename Job>
     requires CtxFitsPoolSubmit<Ctx, Job>
-void pool_submit(
-    Ctx const&,
-    Pool<Policy>& pool,
-    Job&& job) noexcept
-{
+void pool_submit(Ctx const&, Pool<Policy>& pool, Job&& job) noexcept {
     pool.submit(std::forward<Job>(job));
 }
 
@@ -553,13 +542,8 @@ void pool_submit(
 
 template <typename Ctx, typename Policy, typename Job>
     requires CtxFitsPoolDispatchWithWorkload<Ctx, Job>
-[[nodiscard]] DispatchWithWorkloadResult
-pool_dispatch_with_workload(
-    Ctx const&,
-    Pool<Policy>& pool,
-    WorkloadProfile profile,
-    Job&& job) noexcept
-{
+[[nodiscard]] DispatchWithWorkloadResult pool_dispatch_with_workload(Ctx const&, Pool<Policy>& pool,
+                                                                     WorkloadProfile profile, Job&& job) noexcept {
     return pool.dispatch_with_workload(profile, std::forward<Job>(job));
 }
 
@@ -659,15 +643,11 @@ using ::crucible::concurrent::topology_constexpr::is_l3_overridden_v;
 
 namespace stance {
 
-template <typename P,
-          std::size_t L1dBytes = ::crucible::fixy::pipe::topology::l1d_per_core_bytes_v,
-          std::size_t L2Bytes  = ::crucible::fixy::pipe::topology::l2_per_core_bytes_v>
-concept HotPathInline =
-    requires {
-        { P::template will_run_inline_v<L1dBytes, L2Bytes>() }
-            -> std::same_as<bool>;
-    }
-    && P::template will_run_inline_v<L1dBytes, L2Bytes>();
+template <typename P, std::size_t L1dBytes = ::crucible::fixy::pipe::topology::l1d_per_core_bytes_v,
+          std::size_t L2Bytes = ::crucible::fixy::pipe::topology::l2_per_core_bytes_v>
+concept HotPathInline = requires {
+    { P::template will_run_inline_v<L1dBytes, L2Bytes>() } -> std::same_as<bool>;
+} && P::template will_run_inline_v<L1dBytes, L2Bytes>();
 
 }  // namespace stance
 
@@ -689,78 +669,54 @@ concept HotPathInline =
 
 namespace crucible::fixy::pipe::self_test {
 
-template <typename, typename, typename> class StageProbe {};
-template <typename...> class PipelineProbe {};
+template <typename, typename, typename>
+class StageProbe {};
+template <typename...>
+class PipelineProbe {};
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::pipe::Direction,
-    ::crucible::concurrent::Direction>,
-    "fixy::pipe::Direction must alias substrate enum");
+static_assert(std::is_same_v<::crucible::fixy::pipe::Direction, ::crucible::concurrent::Direction>,
+              "fixy::pipe::Direction must alias substrate enum");
 
 // V-076 type-identity witnesses — type carriers must alias substrate.
-static_assert(std::is_same_v<
-    ::crucible::fixy::pipe::WorkBudget,
-    ::crucible::concurrent::WorkBudget>,
-    "fixy::pipe::WorkBudget must alias substrate struct");
-static_assert(std::is_same_v<
-    ::crucible::fixy::pipe::Tier,
-    ::crucible::concurrent::Tier>,
-    "fixy::pipe::Tier must alias substrate enum");
-static_assert(std::is_same_v<
-    ::crucible::fixy::pipe::NumaPolicy,
-    ::crucible::concurrent::NumaPolicy>,
-    "fixy::pipe::NumaPolicy must alias substrate enum");
-static_assert(std::is_same_v<
-    ::crucible::fixy::pipe::ParallelismDecision,
-    ::crucible::concurrent::ParallelismDecision>,
-    "fixy::pipe::ParallelismDecision must alias substrate struct");
-static_assert(std::is_same_v<
-    ::crucible::fixy::pipe::ParallelismRule,
-    ::crucible::concurrent::ParallelismRule>,
-    "fixy::pipe::ParallelismRule must alias substrate utility class");
+static_assert(std::is_same_v<::crucible::fixy::pipe::WorkBudget, ::crucible::concurrent::WorkBudget>,
+              "fixy::pipe::WorkBudget must alias substrate struct");
+static_assert(std::is_same_v<::crucible::fixy::pipe::Tier, ::crucible::concurrent::Tier>,
+              "fixy::pipe::Tier must alias substrate enum");
+static_assert(std::is_same_v<::crucible::fixy::pipe::NumaPolicy, ::crucible::concurrent::NumaPolicy>,
+              "fixy::pipe::NumaPolicy must alias substrate enum");
+static_assert(std::is_same_v<::crucible::fixy::pipe::ParallelismDecision, ::crucible::concurrent::ParallelismDecision>,
+              "fixy::pipe::ParallelismDecision must alias substrate struct");
+static_assert(std::is_same_v<::crucible::fixy::pipe::ParallelismRule, ::crucible::concurrent::ParallelismRule>,
+              "fixy::pipe::ParallelismRule must alias substrate utility class");
 // V-076 constant witnesses — the constexpr values must come from
 // substrate exactly (catches accidental re-definition rather than
 // re-export).
-static_assert(::crucible::fixy::pipe::hot_path_cache_line_bytes ==
-              ::crucible::concurrent::hot_path_cache_line_bytes);
-static_assert(::crucible::fixy::pipe::unknown_per_call_working_set ==
-              ::crucible::concurrent::unknown_per_call_working_set);
+static_assert(::crucible::fixy::pipe::hot_path_cache_line_bytes == ::crucible::concurrent::hot_path_cache_line_bytes);
+static_assert(::crucible::fixy::pipe::unknown_per_call_working_set
+              == ::crucible::concurrent::unknown_per_call_working_set);
 
 // V-077 type-identity witnesses — every AutoRouter + AutoSplit type
 // carrier must alias substrate exactly.  Pick one representative per
 // FAMILY (enum, decision struct, request shape, plan shape) so a
 // typedef regression on ANY of the families reds the sentinel.
-static_assert(std::is_same_v<
-    ::crucible::fixy::pipe::RouteIntent,
-    ::crucible::concurrent::RouteIntent>,
-    "fixy::pipe::RouteIntent must alias substrate enum");
-static_assert(std::is_same_v<
-    ::crucible::fixy::pipe::RouteKind,
-    ::crucible::concurrent::RouteKind>,
-    "fixy::pipe::RouteKind must alias substrate enum");
-static_assert(std::is_same_v<
-    ::crucible::fixy::pipe::AutoRouteDecision,
-    ::crucible::concurrent::AutoRouteDecision>,
-    "fixy::pipe::AutoRouteDecision must alias substrate struct");
-static_assert(std::is_same_v<
-    ::crucible::fixy::pipe::SchedulingIntent,
-    ::crucible::concurrent::SchedulingIntent>,
-    "fixy::pipe::SchedulingIntent must alias substrate enum");
-static_assert(std::is_same_v<
-    ::crucible::fixy::pipe::AutoSplitRequest,
-    ::crucible::concurrent::AutoSplitRequest>,
-    "fixy::pipe::AutoSplitRequest must alias substrate struct");
-static_assert(std::is_same_v<
-    ::crucible::fixy::pipe::AutoSplitPlan,
-    ::crucible::concurrent::AutoSplitPlan>,
-    "fixy::pipe::AutoSplitPlan must alias substrate struct");
+static_assert(std::is_same_v<::crucible::fixy::pipe::RouteIntent, ::crucible::concurrent::RouteIntent>,
+              "fixy::pipe::RouteIntent must alias substrate enum");
+static_assert(std::is_same_v<::crucible::fixy::pipe::RouteKind, ::crucible::concurrent::RouteKind>,
+              "fixy::pipe::RouteKind must alias substrate enum");
+static_assert(std::is_same_v<::crucible::fixy::pipe::AutoRouteDecision, ::crucible::concurrent::AutoRouteDecision>,
+              "fixy::pipe::AutoRouteDecision must alias substrate struct");
+static_assert(std::is_same_v<::crucible::fixy::pipe::SchedulingIntent, ::crucible::concurrent::SchedulingIntent>,
+              "fixy::pipe::SchedulingIntent must alias substrate enum");
+static_assert(std::is_same_v<::crucible::fixy::pipe::AutoSplitRequest, ::crucible::concurrent::AutoSplitRequest>,
+              "fixy::pipe::AutoSplitRequest must alias substrate struct");
+static_assert(std::is_same_v<::crucible::fixy::pipe::AutoSplitPlan, ::crucible::concurrent::AutoSplitPlan>,
+              "fixy::pipe::AutoSplitPlan must alias substrate struct");
 
 // V-077 distinct-enum witness — a regression that typedefs
 // AutoSplitPartitionStrategy ≡ AutoSplitScheduleMode would silently
 // admit cross-axis assignment (BOTH carry an Inline enumerator).
-static_assert(!std::is_same_v<
-    ::crucible::fixy::pipe::AutoSplitPartitionStrategy,
-    ::crucible::fixy::pipe::AutoSplitScheduleMode>,
+static_assert(
+    !std::is_same_v<::crucible::fixy::pipe::AutoSplitPartitionStrategy, ::crucible::fixy::pipe::AutoSplitScheduleMode>,
     "fixy::pipe::AutoSplitPartitionStrategy must be a DISTINCT type "
     "from AutoSplitScheduleMode — both have an Inline enumerator and "
     "a typedef collapse would let cross-axis values slip through.");
@@ -772,31 +728,20 @@ static_assert(!std::is_same_v<
 // every consumer's include time.  CoreCount + NumaNodeMask +
 // WorkloadProfile + WorkShard + DispatchWithWorkloadResult each pin
 // the surrounding ctor / dispatch shapes.
-static_assert(std::is_same_v<
-    ::crucible::fixy::pipe::Pool<>,
-    ::crucible::concurrent::Pool<>>,
-    "fixy::pipe::Pool must alias concurrent::Pool");
-static_assert(std::is_same_v<
-    ::crucible::fixy::pipe::CoreCount,
-    ::crucible::concurrent::CoreCount>,
-    "fixy::pipe::CoreCount must alias concurrent::CoreCount");
-static_assert(std::is_same_v<
-    ::crucible::fixy::pipe::NumaNodeMask,
-    ::crucible::concurrent::NumaNodeMask>,
-    "fixy::pipe::NumaNodeMask must alias concurrent::NumaNodeMask");
-static_assert(std::is_same_v<
-    ::crucible::fixy::pipe::WorkloadProfile,
-    ::crucible::concurrent::WorkloadProfile>,
-    "fixy::pipe::WorkloadProfile must alias concurrent::WorkloadProfile");
-static_assert(std::is_same_v<
-    ::crucible::fixy::pipe::WorkShard,
-    ::crucible::concurrent::WorkShard>,
-    "fixy::pipe::WorkShard must alias concurrent::WorkShard");
-static_assert(std::is_same_v<
-    ::crucible::fixy::pipe::DispatchWithWorkloadResult,
-    ::crucible::concurrent::DispatchWithWorkloadResult>,
-    "fixy::pipe::DispatchWithWorkloadResult must alias "
-    "concurrent::DispatchWithWorkloadResult");
+static_assert(std::is_same_v<::crucible::fixy::pipe::Pool<>, ::crucible::concurrent::Pool<>>,
+              "fixy::pipe::Pool must alias concurrent::Pool");
+static_assert(std::is_same_v<::crucible::fixy::pipe::CoreCount, ::crucible::concurrent::CoreCount>,
+              "fixy::pipe::CoreCount must alias concurrent::CoreCount");
+static_assert(std::is_same_v<::crucible::fixy::pipe::NumaNodeMask, ::crucible::concurrent::NumaNodeMask>,
+              "fixy::pipe::NumaNodeMask must alias concurrent::NumaNodeMask");
+static_assert(std::is_same_v<::crucible::fixy::pipe::WorkloadProfile, ::crucible::concurrent::WorkloadProfile>,
+              "fixy::pipe::WorkloadProfile must alias concurrent::WorkloadProfile");
+static_assert(std::is_same_v<::crucible::fixy::pipe::WorkShard, ::crucible::concurrent::WorkShard>,
+              "fixy::pipe::WorkShard must alias concurrent::WorkShard");
+static_assert(std::is_same_v<::crucible::fixy::pipe::DispatchWithWorkloadResult,
+                             ::crucible::concurrent::DispatchWithWorkloadResult>,
+              "fixy::pipe::DispatchWithWorkloadResult must alias "
+              "concurrent::DispatchWithWorkloadResult");
 
 // V-215 concept-level witnesses — PermissionFreeJob MUST reject
 // closures capturing a move-only type by value.  Build a probe
@@ -810,14 +755,12 @@ struct probe_move_only_token_ {
     probe_move_only_token_(probe_move_only_token_&&) noexcept = default;
 };
 // A copyable, no-arg, void-returning closure — the canonical safe shape.
-inline constexpr auto copyable_no_capture_job_ = [](){};
+inline constexpr auto copyable_no_capture_job_ = []() {};
 }  // namespace v215_witness
 
-static_assert(
-    ::crucible::fixy::pipe::PermissionFreeJob<
-        decltype(v215_witness::copyable_no_capture_job_)>,
-    "PermissionFreeJob<copyable-no-capture-closure> MUST hold — "
-    "the canonical safe submission shape.");
+static_assert(::crucible::fixy::pipe::PermissionFreeJob<decltype(v215_witness::copyable_no_capture_job_)>,
+              "PermissionFreeJob<copyable-no-capture-closure> MUST hold — "
+              "the canonical safe submission shape.");
 
 // Negative direction: a closure capturing a move-only token by value
 // has a deleted copy ctor → PermissionFreeJob must REJECT.  We can't
@@ -825,14 +768,11 @@ static_assert(
 // goes through a one-shot decltype on a type-only construct: the type
 // of `lambda` (capturing probe_move_only_token_ by-value) is move-only
 // even though no instance is materialised.
-static_assert(
-    !::crucible::fixy::pipe::PermissionFreeJob<
-        decltype([t = v215_witness::probe_move_only_token_{}]() mutable {
-            (void)t;
-        })>,
-    "PermissionFreeJob<move-only-capture-closure> MUST FAIL — "
-    "this is the canonical Pool::submit permission-bypass shape "
-    "that V-215's gate exists to reject.");
+static_assert(!::crucible::fixy::pipe::PermissionFreeJob<
+                  decltype([t = v215_witness::probe_move_only_token_{}]() mutable { (void)t; })>,
+              "PermissionFreeJob<move-only-capture-closure> MUST FAIL — "
+              "this is the canonical Pool::submit permission-bypass shape "
+              "that V-215's gate exists to reject.");
 
 // V-218 stance witness — the requires-clause that gates
 // `will_run_inline_v<L1d, L2>()` plus the value-conjunct (the body
@@ -848,15 +788,13 @@ namespace v218_witness {
 struct TinyPipelineProbe {
     static constexpr bool inline_safe = true;
     static constexpr bool aggregate_working_set_known = true;
-    static constexpr std::size_t aggregate_per_call_working_set =
-        12ULL * 1024ULL;
+    static constexpr std::size_t aggregate_per_call_working_set = 12ULL * 1024ULL;
     template <std::size_t L1d, std::size_t L2 = L1d>
     static consteval bool will_run_inline_v() noexcept {
         if constexpr (!inline_safe || !aggregate_working_set_known) {
             return false;
         } else {
-            return (aggregate_per_call_working_set <= L1d)
-                || (aggregate_per_call_working_set <= L2);
+            return (aggregate_per_call_working_set <= L1d) || (aggregate_per_call_working_set <= L2);
         }
     }
 };
@@ -866,15 +804,13 @@ struct TinyPipelineProbe {
 struct HugePipelineProbe {
     static constexpr bool inline_safe = true;
     static constexpr bool aggregate_working_set_known = true;
-    static constexpr std::size_t aggregate_per_call_working_set =
-        600ULL * 1024ULL * 1024ULL;
+    static constexpr std::size_t aggregate_per_call_working_set = 600ULL * 1024ULL * 1024ULL;
     template <std::size_t L1d, std::size_t L2 = L1d>
     static consteval bool will_run_inline_v() noexcept {
         if constexpr (!inline_safe || !aggregate_working_set_known) {
             return false;
         } else {
-            return (aggregate_per_call_working_set <= L1d)
-                || (aggregate_per_call_working_set <= L2);
+            return (aggregate_per_call_working_set <= L1d) || (aggregate_per_call_working_set <= L2);
         }
     }
 };
@@ -886,58 +822,47 @@ struct HugePipelineProbe {
 struct UnsafePipelineProbe {
     static constexpr bool inline_safe = false;
     static constexpr bool aggregate_working_set_known = true;
-    static constexpr std::size_t aggregate_per_call_working_set =
-        4ULL * 1024ULL;
+    static constexpr std::size_t aggregate_per_call_working_set = 4ULL * 1024ULL;
     template <std::size_t L1d, std::size_t L2 = L1d>
     static consteval bool will_run_inline_v() noexcept {
         if constexpr (!inline_safe || !aggregate_working_set_known) {
             return false;
         } else {
-            return (aggregate_per_call_working_set <= L1d)
-                || (aggregate_per_call_working_set <= L2);
+            return (aggregate_per_call_working_set <= L1d) || (aggregate_per_call_working_set <= L2);
         }
     }
 };
 
 }  // namespace v218_witness
 
-static_assert(
-    ::crucible::fixy::pipe::stance::HotPathInline<
-        v218_witness::TinyPipelineProbe>,
-    "V-218: 12KiB inline-safe pipeline MUST satisfy "
-    "stance::HotPathInline at the 32KiB/1MiB cache budget.");
+static_assert(::crucible::fixy::pipe::stance::HotPathInline<v218_witness::TinyPipelineProbe>,
+              "V-218: 12KiB inline-safe pipeline MUST satisfy "
+              "stance::HotPathInline at the 32KiB/1MiB cache budget.");
 
-static_assert(
-    !::crucible::fixy::pipe::stance::HotPathInline<
-        v218_witness::HugePipelineProbe>,
-    "V-218: 600MiB inline-safe pipeline MUST FAIL "
-    "stance::HotPathInline — aggregate exceeds both L1d and L2.");
+static_assert(!::crucible::fixy::pipe::stance::HotPathInline<v218_witness::HugePipelineProbe>,
+              "V-218: 600MiB inline-safe pipeline MUST FAIL "
+              "stance::HotPathInline — aggregate exceeds both L1d and L2.");
 
-static_assert(
-    !::crucible::fixy::pipe::stance::HotPathInline<
-        v218_witness::UnsafePipelineProbe>,
-    "V-218: !inline_safe pipeline MUST FAIL HotPathInline — "
-    "the early-out branch fires regardless of working-set size.");
+static_assert(!::crucible::fixy::pipe::stance::HotPathInline<v218_witness::UnsafePipelineProbe>,
+              "V-218: !inline_safe pipeline MUST FAIL HotPathInline — "
+              "the early-out branch fires regardless of working-set size.");
 
 // Custom NTTP path — explicit cache budget defeats the rejection
 // when the budget is wide enough to admit the aggregate.  Pins
 // that the NTTPs actually flow through to will_run_inline_v.
-static_assert(
-    ::crucible::fixy::pipe::stance::HotPathInline<
-        v218_witness::HugePipelineProbe,
-        /*L1dBytes=*/4ULL * 1024ULL * 1024ULL * 1024ULL,
-        /*L2Bytes =*/8ULL * 1024ULL * 1024ULL * 1024ULL>,
-    "V-218: HugePipelineProbe MUST satisfy HotPathInline under a "
-    "4GiB/8GiB cache budget — NTTPs must reach will_run_inline_v.");
+static_assert(::crucible::fixy::pipe::stance::HotPathInline<v218_witness::HugePipelineProbe,
+                                                            /*L1dBytes=*/4ULL * 1024ULL * 1024ULL * 1024ULL,
+                                                            /*L2Bytes =*/8ULL * 1024ULL * 1024ULL * 1024ULL>,
+              "V-218: HugePipelineProbe MUST satisfy HotPathInline under a "
+              "4GiB/8GiB cache budget — NTTPs must reach will_run_inline_v.");
 
 // Non-Pipeline type — the requires-clause that gates
 // `will_run_inline_v<L1d, L2>()` must reject NON-Pipeline shapes
 // (which lack the template static method) cleanly via SFINAE
 // rather than hard-erroring.  `int` is the canonical probe.
-static_assert(
-    !::crucible::fixy::pipe::stance::HotPathInline<int>,
-    "V-218: non-Pipeline type MUST fail HotPathInline via the "
-    "requires-clause SFINAE — not via hard error.");
+static_assert(!::crucible::fixy::pipe::stance::HotPathInline<int>,
+              "V-218: non-Pipeline type MUST fail HotPathInline via the "
+              "requires-clause SFINAE — not via hard error.");
 
 // Cardinality witness — surface count of using-decls in this header.
 // Any add/remove of a using-decl above must update this number.
@@ -968,8 +893,7 @@ static_assert(
 //  2 §XXI mints: pool_submit, pool_dispatch_with_workload).
 // V-218 extension: +1 stance::HotPathInline concept.
 constexpr int pipe_surface_cardinality = 88;
-static_assert(pipe_surface_cardinality == 88,
-    "fixy::pipe:: surface drifted — update Pipe.h using-decls + "
-    "this sentinel + test_fixy_pipe.cpp coverage in lockstep.");
+static_assert(pipe_surface_cardinality == 88, "fixy::pipe:: surface drifted — update Pipe.h using-decls + "
+                                              "this sentinel + test_fixy_pipe.cpp coverage in lockstep.");
 
 }  // namespace crucible::fixy::pipe::self_test

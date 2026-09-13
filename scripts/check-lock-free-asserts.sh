@@ -243,10 +243,32 @@ for file in "${files[@]}"; do
             *'static_assert'*'is_always_lock_free'*) continue ;;
         esac
 
-        # Inline suppression — `// LOCK-FREE-OK: <reason>`.
-        case "$text" in
-            *'LOCK-FREE-OK'*) continue ;;
-        esac
+        # Inline suppression — `// LOCK-FREE-OK: <reason>`.  The marker scopes
+        # to the declaration, not the line: a reformat may wrap a braced
+        # initializer so the trailing comment lands below the `std::atomic<T>`
+        # token.  Scan to the first line bearing ';', '{' or '}' (that line
+        # included, since it is where a wrapped declaration ends) so a later
+        # declaration's marker cannot leak backwards.
+        lf_suppressed=0
+        lf_probe=$line_num
+        lf_limit=$((line_num + 12))
+        while (( lf_probe <= lf_limit )); do
+            lf_text="$(sed -n "${lf_probe}p" "$file" 2>/dev/null)"
+            case "$lf_text" in
+                *'LOCK-FREE-OK'*) lf_suppressed=1; break ;;
+            esac
+            # A ';' ends the declaration.  A line ENDING in '}' closes a body
+            # (`void f() {}`), which means the next construct has begun.  A '{'
+            # merely opening a braced initializer does not terminate anything.
+            case "$lf_text" in
+                *';'*) break ;;
+            esac
+            case "${lf_text%"${lf_text##*[![:space:]]}"}" in
+                *'}') break ;;
+            esac
+            lf_probe=$((lf_probe + 1))
+        done
+        (( lf_suppressed )) && continue
 
         # Extract the type between `std::atomic<` and the matching `>`.
         # Simple capture: everything up to the first `>` after `<`.

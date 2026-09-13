@@ -142,13 +142,13 @@ inline constexpr std::uint16_t FEDERATION_PROTOCOL_V1 = 1u;
 // ── Header struct (32 bytes, byte-stable) ───────────────────────────
 
 struct FederationEntryHeader {
-    std::uint32_t magic                = 0;     // FEDERATION_MAGIC
-    std::uint16_t protocol_version     = 0;     // FEDERATION_PROTOCOL_V1
-    std::uint16_t universe_cardinality = 0;     // OsUniverse::cardinality at write
-    ContentHash   content_hash{};               // strong ID (Types.h)
-    RowHash       row_hash{};                   // strong ID (Types.h)
-    std::uint32_t payload_size         = 0;     // bytes of payload following
-    std::uint32_t reserved             = 0;     // must be 0
+    std::uint32_t magic = 0;  // FEDERATION_MAGIC
+    std::uint16_t protocol_version = 0;  // FEDERATION_PROTOCOL_V1
+    std::uint16_t universe_cardinality = 0;  // OsUniverse::cardinality at write
+    ContentHash content_hash{};  // strong ID (Types.h)
+    RowHash row_hash{};  // strong ID (Types.h)
+    std::uint32_t payload_size = 0;  // bytes of payload following
+    std::uint32_t reserved = 0;  // must be 0
 };
 
 // ── Layout invariants ───────────────────────────────────────────────
@@ -159,30 +159,28 @@ struct FederationEntryHeader {
 // reach into the bytes by offset without re-parsing the struct
 // declaration.
 static_assert(sizeof(FederationEntryHeader) == 32,
-    "FederationEntryHeader must be exactly 32 bytes — the wire-format "
-    "header size.  Adding a field requires bumping FEDERATION_PROTOCOL_V1 "
-    "and updating every receiver — see the V2 migration discipline.");
-static_assert(alignof(FederationEntryHeader) == 8,
-    "FederationEntryHeader must be 8-byte aligned (the natural "
-    "alignment of the embedded ContentHash + RowHash).");
+              "FederationEntryHeader must be exactly 32 bytes — the wire-format "
+              "header size.  Adding a field requires bumping FEDERATION_PROTOCOL_V1 "
+              "and updating every receiver — see the V2 migration discipline.");
+static_assert(alignof(FederationEntryHeader) == 8, "FederationEntryHeader must be 8-byte aligned (the natural "
+                                                   "alignment of the embedded ContentHash + RowHash).");
 static_assert(std::is_standard_layout_v<FederationEntryHeader>,
-    "FederationEntryHeader must be standard-layout to permit "
-    "offsetof + std::memcpy-based wire codec.");
+              "FederationEntryHeader must be standard-layout to permit "
+              "offsetof + std::memcpy-based wire codec.");
 static_assert(std::is_trivially_copyable_v<FederationEntryHeader>,
-    "FederationEntryHeader must be trivially copyable to permit "
-    "std::memcpy round-trip through the byte buffer.");
+              "FederationEntryHeader must be trivially copyable to permit "
+              "std::memcpy round-trip through the byte buffer.");
 
-static_assert(offsetof(FederationEntryHeader, magic)                ==  0);
-static_assert(offsetof(FederationEntryHeader, protocol_version)     ==  4);
-static_assert(offsetof(FederationEntryHeader, universe_cardinality) ==  6);
-static_assert(offsetof(FederationEntryHeader, content_hash)         ==  8);
-static_assert(offsetof(FederationEntryHeader, row_hash)             == 16);
-static_assert(offsetof(FederationEntryHeader, payload_size)         == 24);
-static_assert(offsetof(FederationEntryHeader, reserved)             == 28);
+static_assert(offsetof(FederationEntryHeader, magic) == 0);
+static_assert(offsetof(FederationEntryHeader, protocol_version) == 4);
+static_assert(offsetof(FederationEntryHeader, universe_cardinality) == 6);
+static_assert(offsetof(FederationEntryHeader, content_hash) == 8);
+static_assert(offsetof(FederationEntryHeader, row_hash) == 16);
+static_assert(offsetof(FederationEntryHeader, payload_size) == 24);
+static_assert(offsetof(FederationEntryHeader, reserved) == 28);
 
 // ── Header byte-size constant ───────────────────────────────────────
-inline constexpr std::size_t FEDERATION_HEADER_BYTES =
-    sizeof(FederationEntryHeader);
+inline constexpr std::size_t FEDERATION_HEADER_BYTES = sizeof(FederationEntryHeader);
 
 // ── Cold blob byte-region layout predicate ─────────────────────────
 //
@@ -200,9 +198,7 @@ struct ColdBlobRegion {
 };
 
 template <std::size_t MaxRegions>
-[[nodiscard]] constexpr bool cold_blob_regions_pairwise_disjoint(
-    std::span<const ColdBlobRegion> regions) noexcept
-{
+[[nodiscard]] constexpr bool cold_blob_regions_pairwise_disjoint(std::span<const ColdBlobRegion> regions) noexcept {
     if (regions.size() > MaxRegions) return false;
 
     std::array<decide::Interval<std::size_t>, MaxRegions> intervals{};
@@ -217,13 +213,10 @@ template <std::size_t MaxRegions>
         };
     }
     return decide::intervals_pairwise_disjoint(
-        std::span<const decide::Interval<std::size_t>>{
-            intervals.data(), regions.size()});
+        std::span<const decide::Interval<std::size_t>>{intervals.data(), regions.size()});
 }
 
-[[nodiscard]] constexpr bool federation_entry_blob_layout_disjoint(
-    std::size_t payload_bytes) noexcept
-{
+[[nodiscard]] constexpr bool federation_entry_blob_layout_disjoint(std::size_t payload_bytes) noexcept {
     if (!decide::no_overflow_sum(FEDERATION_HEADER_BYTES, payload_bytes)) {
         return false;
     }
@@ -233,8 +226,7 @@ template <std::size_t MaxRegions>
         {.offset_bytes = FEDERATION_HEADER_BYTES, .nbytes = payload_bytes},
     }};
     return payload_end >= FEDERATION_HEADER_BYTES
-        && cold_blob_regions_pairwise_disjoint<regions.size()>(
-            std::span<const ColdBlobRegion>{regions});
+        && cold_blob_regions_pairwise_disjoint<regions.size()>(std::span<const ColdBlobRegion>{regions});
 }
 
 // ── Magic byte order witness ────────────────────────────────────────
@@ -244,14 +236,10 @@ template <std::size_t MaxRegions>
 // time.  The bytes in memory MUST be 'C','F','E','D' in increasing
 // address order — that's the order a receiver scanning a wire stream
 // sees them.
-static_assert((FEDERATION_MAGIC      & 0xFFu) == 'C',
-    "FEDERATION_MAGIC byte 0 must be 'C'.");
-static_assert(((FEDERATION_MAGIC>> 8) & 0xFFu) == 'F',
-    "FEDERATION_MAGIC byte 1 must be 'F'.");
-static_assert(((FEDERATION_MAGIC>>16) & 0xFFu) == 'E',
-    "FEDERATION_MAGIC byte 2 must be 'E'.");
-static_assert(((FEDERATION_MAGIC>>24) & 0xFFu) == 'D',
-    "FEDERATION_MAGIC byte 3 must be 'D'.");
+static_assert((FEDERATION_MAGIC & 0xFFu) == 'C', "FEDERATION_MAGIC byte 0 must be 'C'.");
+static_assert(((FEDERATION_MAGIC >> 8) & 0xFFu) == 'F', "FEDERATION_MAGIC byte 1 must be 'F'.");
+static_assert(((FEDERATION_MAGIC >> 16) & 0xFFu) == 'E', "FEDERATION_MAGIC byte 2 must be 'E'.");
+static_assert(((FEDERATION_MAGIC >> 24) & 0xFFu) == 'D', "FEDERATION_MAGIC byte 3 must be 'D'.");
 
 // ── Universe cardinality field width witness ────────────────────────
 //
@@ -260,9 +248,8 @@ static_assert(((FEDERATION_MAGIC>>24) & 0xFFu) == 'D',
 // EffectRowLattice.h:97 static_assert).  64 fits comfortably; the
 // 2-byte field gives ~3 orders of magnitude of headroom for future
 // universes that compose multiple lattices into a wider catalog.
-static_assert(::crucible::effects::OsUniverse::cardinality
-              <= std::uint16_t{0xFFFF},
-    "OsUniverse::cardinality must fit in the uint16_t wire field.");
+static_assert(::crucible::effects::OsUniverse::cardinality <= std::uint16_t{0xFFFF},
+              "OsUniverse::cardinality must fit in the uint16_t wire field.");
 
 // ── Defensive cross-stream magic collision guard ────────────────────
 //
@@ -282,10 +269,9 @@ static_assert(::crucible::effects::OsUniverse::cardinality
 // side's cross-magic table.  If CDAG_MAGIC is ever reassigned to a
 // value matching FEDERATION_MAGIC, the runtime witness in
 // test_federation_protocol.cpp::test_magic_collision_with_cdag fails.
-static_assert(FEDERATION_MAGIC != 0x43444147u,
-    "FEDERATION_MAGIC must not collide with CDAG_MAGIC ('GDAG' LE) — "
-    "a federation stream and a Merkle DAG snapshot must dispatch to "
-    "different codecs at the magic-check step.  See Serialize.h:27.");
+static_assert(FEDERATION_MAGIC != 0x43444147u, "FEDERATION_MAGIC must not collide with CDAG_MAGIC ('GDAG' LE) — "
+                                               "a federation stream and a Merkle DAG snapshot must dispatch to "
+                                               "different codecs at the magic-check step.  See Serialize.h:27.");
 
 // ── Payload-size field cap pin ──────────────────────────────────────
 //
@@ -298,22 +284,21 @@ static_assert(FEDERATION_MAGIC != 0x43444147u,
 // this static_assert pins the structural cap so the compile-time
 // invariant cannot drift if the field width ever changes.
 static_assert(sizeof(FederationEntryHeader::payload_size) == 4,
-    "payload_size MUST be a 32-bit field — caps the per-entry "
-    "payload at 4 GiB.  Larger payloads must fragment into multiple "
-    "entries or bump to a V2 protocol with 64-bit payload_size.");
+              "payload_size MUST be a 32-bit field — caps the per-entry "
+              "payload at 4 GiB.  Larger payloads must fragment into multiple "
+              "entries or bump to a V2 protocol with 64-bit payload_size.");
 static_assert(sizeof(FederationEntryHeader::universe_cardinality) == 2,
-    "universe_cardinality MUST be a 16-bit field — caps the Effect "
-    "atom catalog at 65535 entries (well above EffectRowLattice's "
-    "structural cap of 64 from the uint64_t carrier).");
-static_assert(sizeof(FederationEntryHeader::magic) == 4,
-    "magic MUST be a 32-bit field — pinned for byte-stable cross-"
-    "platform protocol identification.");
+              "universe_cardinality MUST be a 16-bit field — caps the Effect "
+              "atom catalog at 65535 entries (well above EffectRowLattice's "
+              "structural cap of 64 from the uint64_t carrier).");
+static_assert(sizeof(FederationEntryHeader::magic) == 4, "magic MUST be a 32-bit field — pinned for byte-stable cross-"
+                                                         "platform protocol identification.");
 static_assert(sizeof(FederationEntryHeader::protocol_version) == 2,
-    "protocol_version MUST be a 16-bit field — supports up to 65536 "
-    "wire-format revisions.");
+              "protocol_version MUST be a 16-bit field — supports up to 65536 "
+              "wire-format revisions.");
 static_assert(sizeof(FederationEntryHeader::reserved) == 4,
-    "reserved MUST be a 32-bit field — preserves V1 → V2 layout "
-    "compatibility (V2 fields can use this slot).");
+              "reserved MUST be a 32-bit field — preserves V1 → V2 layout "
+              "compatibility (V2 fields can use this slot).");
 
 // ── Error codes ─────────────────────────────────────────────────────
 //
@@ -323,33 +308,43 @@ static_assert(sizeof(FederationEntryHeader::reserved) == 4,
 // std::expected<size_t, FederationError> return value compact.
 
 enum class FederationError : std::uint8_t {
-    None                       = 0,
-    BadMagic                   = 1,  // header magic != FEDERATION_MAGIC
-    UnsupportedVersion         = 2,  // protocol_version != V1
+    None = 0,
+    BadMagic = 1,  // header magic != FEDERATION_MAGIC
+    UnsupportedVersion = 2,  // protocol_version != V1
     UniverseCardinalityTooHigh = 3,  // sender used atoms receiver lacks
-    SentinelKey                = 4,  // KernelCacheKey is sentinel()
-    ZeroKey                    = 5,  // KernelCacheKey is_zero()
-    ReservedNonZero            = 6,  // reserved field != 0
-    TruncatedHeader            = 7,  // out_buf < FEDERATION_HEADER_BYTES
-    TruncatedPayload           = 8,  // declared payload_size > remaining bytes
-    OutputBufferTooSmall       = 9,  // out_buf < header + payload_size
+    SentinelKey = 4,  // KernelCacheKey is sentinel()
+    ZeroKey = 5,  // KernelCacheKey is_zero()
+    ReservedNonZero = 6,  // reserved field != 0
+    TruncatedHeader = 7,  // out_buf < FEDERATION_HEADER_BYTES
+    TruncatedPayload = 8,  // declared payload_size > remaining bytes
+    OutputBufferTooSmall = 9,  // out_buf < header + payload_size
 };
 
 // ── Diagnostic name forwarder (FOUND-E18 row-mismatch surface) ──────
-[[nodiscard]] inline constexpr std::string_view
-federation_error_name(FederationError e) noexcept {
+[[nodiscard]] inline constexpr std::string_view federation_error_name(FederationError e) noexcept {
     switch (e) {
-        case FederationError::None:                       return "None";
-        case FederationError::BadMagic:                   return "BadMagic";
-        case FederationError::UnsupportedVersion:         return "UnsupportedVersion";
-        case FederationError::UniverseCardinalityTooHigh: return "UniverseCardinalityTooHigh";
-        case FederationError::SentinelKey:                return "SentinelKey";
-        case FederationError::ZeroKey:                    return "ZeroKey";
-        case FederationError::ReservedNonZero:            return "ReservedNonZero";
-        case FederationError::TruncatedHeader:            return "TruncatedHeader";
-        case FederationError::TruncatedPayload:           return "TruncatedPayload";
-        case FederationError::OutputBufferTooSmall:       return "OutputBufferTooSmall";
-        default:                                          return "<unknown FederationError>";
+        case FederationError::None:
+            return "None";
+        case FederationError::BadMagic:
+            return "BadMagic";
+        case FederationError::UnsupportedVersion:
+            return "UnsupportedVersion";
+        case FederationError::UniverseCardinalityTooHigh:
+            return "UniverseCardinalityTooHigh";
+        case FederationError::SentinelKey:
+            return "SentinelKey";
+        case FederationError::ZeroKey:
+            return "ZeroKey";
+        case FederationError::ReservedNonZero:
+            return "ReservedNonZero";
+        case FederationError::TruncatedHeader:
+            return "TruncatedHeader";
+        case FederationError::TruncatedPayload:
+            return "TruncatedPayload";
+        case FederationError::OutputBufferTooSmall:
+            return "OutputBufferTooSmall";
+        default:
+            return "<unknown FederationError>";
     }
 }
 
@@ -373,8 +368,7 @@ federation_error_name(FederationError e) noexcept {
 // OsUniverse; receivers compare against their own cardinality.
 
 [[nodiscard]] inline std::expected<std::size_t, FederationError>
-serialize_federation_entry(std::span<std::uint8_t> out_buf,
-                           const KernelCacheKey&    key,
+serialize_federation_entry(std::span<std::uint8_t> out_buf, const KernelCacheKey& key,
                            std::span<const std::uint8_t> payload) noexcept {
     // Sentinel + zero rejection — must not appear in federation traffic.
     if (key.is_sentinel()) {
@@ -392,22 +386,20 @@ serialize_federation_entry(std::span<std::uint8_t> out_buf,
     CRUCIBLE_PRE(federation_entry_blob_layout_disjoint(payload.size()));
 
     // Total bytes required = 32 (header) + payload.size().
-    const std::size_t total_bytes =
-        FEDERATION_HEADER_BYTES + payload.size();
+    const std::size_t total_bytes = FEDERATION_HEADER_BYTES + payload.size();
     if (out_buf.size() < total_bytes) {
         return std::unexpected(FederationError::OutputBufferTooSmall);
     }
 
     // Build the header.
     FederationEntryHeader hdr{};
-    hdr.magic                = FEDERATION_MAGIC;
-    hdr.protocol_version     = FEDERATION_PROTOCOL_V1;
-    hdr.universe_cardinality =
-        static_cast<std::uint16_t>(::crucible::effects::OsUniverse::cardinality);
-    hdr.content_hash         = key.content_hash;
-    hdr.row_hash             = key.row_hash;
-    hdr.payload_size         = static_cast<std::uint32_t>(payload.size());
-    hdr.reserved             = 0;
+    hdr.magic = FEDERATION_MAGIC;
+    hdr.protocol_version = FEDERATION_PROTOCOL_V1;
+    hdr.universe_cardinality = static_cast<std::uint16_t>(::crucible::effects::OsUniverse::cardinality);
+    hdr.content_hash = key.content_hash;
+    hdr.row_hash = key.row_hash;
+    hdr.payload_size = static_cast<std::uint32_t>(payload.size());
+    hdr.reserved = 0;
 
     // Header → buffer.  std::memcpy is the only legal way under
     // -fno-strict-aliasing-violations for non-byte structs (CLAUDE.md
@@ -421,9 +413,7 @@ serialize_federation_entry(std::span<std::uint8_t> out_buf,
     // the artifact via content_hash from its own store, e.g. for
     // dedup confirmation).
     if (!payload.empty()) {
-        std::memcpy(out_buf.data() + FEDERATION_HEADER_BYTES,
-                    payload.data(),
-                    payload.size());
+        std::memcpy(out_buf.data() + FEDERATION_HEADER_BYTES, payload.data(), payload.size());
     }
 
     return total_bytes;
@@ -445,8 +435,7 @@ serialize_federation_entry(std::span<std::uint8_t> out_buf,
 // short-circuited; the first rejection wins.
 
 [[nodiscard]] inline std::expected<FederationEntryHeader, FederationError>
-deserialize_federation_header(std::span<const std::uint8_t> in_buf,
-                              std::uint16_t receiver_cardinality) noexcept {
+deserialize_federation_header(std::span<const std::uint8_t> in_buf, std::uint16_t receiver_cardinality) noexcept {
     // Truncation: the buffer must hold at least the 32-byte header.
     if (in_buf.size() < FEDERATION_HEADER_BYTES) {
         return std::unexpected(FederationError::TruncatedHeader);
@@ -489,8 +478,7 @@ deserialize_federation_header(std::span<const std::uint8_t> in_buf,
     }
 
     // Truncated payload: declared size > bytes remaining after header.
-    const std::size_t bytes_after_header =
-        in_buf.size() - FEDERATION_HEADER_BYTES;
+    const std::size_t bytes_after_header = in_buf.size() - FEDERATION_HEADER_BYTES;
     CRUCIBLE_PRE(federation_entry_blob_layout_disjoint(hdr.payload_size));
     if (static_cast<std::size_t>(hdr.payload_size) > bytes_after_header) {
         return std::unexpected(FederationError::TruncatedPayload);
@@ -507,51 +495,38 @@ deserialize_federation_header(std::span<const std::uint8_t> in_buf,
 // the payload.
 
 struct FederationEntryView {
-    FederationEntryHeader            header{};
-    std::span<const std::uint8_t>    payload{};
+    FederationEntryHeader header{};
+    std::span<const std::uint8_t> payload{};
 };
 
 [[nodiscard]] inline std::expected<FederationEntryView, FederationError>
-deserialize_untrusted_federation_entry(
-    std::span<const std::uint8_t> in_buf,
-    std::uint16_t receiver_cardinality) noexcept
-{
-    auto hdr_or_err =
-        deserialize_federation_header(in_buf, receiver_cardinality);
+deserialize_untrusted_federation_entry(std::span<const std::uint8_t> in_buf,
+                                       std::uint16_t receiver_cardinality) noexcept {
+    auto hdr_or_err = deserialize_federation_header(in_buf, receiver_cardinality);
     if (!hdr_or_err) {
         return std::unexpected(hdr_or_err.error());
     }
 
     const std::size_t payload_offset = FEDERATION_HEADER_BYTES;
-    const std::size_t payload_size   =
-        static_cast<std::size_t>(hdr_or_err->payload_size);
+    const std::size_t payload_size = static_cast<std::size_t>(hdr_or_err->payload_size);
     return FederationEntryView{
-        .header  = *hdr_or_err,
+        .header = *hdr_or_err,
         .payload = in_buf.subspan(payload_offset, payload_size),
     };
 }
 
 template <typename Org>
 [[nodiscard]] inline std::expected<
-    ::crucible::safety::Tagged<
-        FederationEntryView,
-        ::crucible::safety::source::FederatedPeer<Org>>,
-    FederationError>
-deserialize_federation_entry(
-    const ::crucible::permissions::FederatedPeerPermission<Org>& peer_permission,
-    std::span<const std::uint8_t> in_buf,
-    std::uint16_t receiver_cardinality) noexcept
-{
+    ::crucible::safety::Tagged<FederationEntryView, ::crucible::safety::source::FederatedPeer<Org>>, FederationError>
+deserialize_federation_entry(const ::crucible::permissions::FederatedPeerPermission<Org>& peer_permission,
+                             std::span<const std::uint8_t> in_buf, std::uint16_t receiver_cardinality) noexcept {
     (void)peer_permission;
 
-    auto view = deserialize_untrusted_federation_entry(
-        in_buf, receiver_cardinality);
+    auto view = deserialize_untrusted_federation_entry(in_buf, receiver_cardinality);
     if (!view) {
         return std::unexpected(view.error());
     }
-    return ::crucible::safety::Tagged<
-        FederationEntryView,
-        ::crucible::safety::source::FederatedPeer<Org>>{*view};
+    return ::crucible::safety::Tagged<FederationEntryView, ::crucible::safety::source::FederatedPeer<Org>>{*view};
 }
 
 // ── Federation-acceptance predicate (helper) ────────────────────────
@@ -560,9 +535,8 @@ deserialize_federation_entry(
 // Pure consteval-friendly predicate for compile-time validation in
 // scenarios where the cardinality is statically known on both sides
 // (typical for fleet-wide same-binary federation).
-[[nodiscard]] inline constexpr bool
-federation_accepts_cardinality(std::uint16_t sender_cardinality,
-                               std::uint16_t receiver_cardinality) noexcept {
+[[nodiscard]] inline constexpr bool federation_accepts_cardinality(std::uint16_t sender_cardinality,
+                                                                   std::uint16_t receiver_cardinality) noexcept {
     return sender_cardinality <= receiver_cardinality;
 }
 

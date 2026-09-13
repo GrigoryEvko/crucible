@@ -96,7 +96,7 @@
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
 #include <bpf/libbpf_legacy.h>  // libbpf_get_error (IS_ERR detection)
-#include <fcntl.h>        // AT_FDCWD, AT_EACCESS for faccessat (cap-honoring probe)
+#include <fcntl.h>  // AT_FDCWD, AT_EACCESS for faccessat (cap-honoring probe)
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -117,40 +117,36 @@ namespace crucible::perf::detail {
 // empty, so sizeof(Tagged<T, source::*>) == sizeof(T) under EBO.
 // See safety/Tagged.h zero-cost guarantee block.
 namespace source {
-    struct Kernel {};  // value originated from a kernel syscall
-                       // (getpid / gettid).
-    struct BpfMap {};  // file descriptor returned by libbpf for an
-                       // eBPF map handle.
+struct Kernel {};  // value originated from a kernel syscall
+// (getpid / gettid).
+struct BpfMap {};  // file descriptor returned by libbpf for an
+// eBPF map handle.
 }  // namespace source
 
 using Tgid = ::crucible::safety::Tagged<uint32_t, source::Kernel>;
-using Tid  = ::crucible::safety::Tagged<uint32_t, source::Kernel>;
-using Fd   = ::crucible::safety::Tagged<int,      source::BpfMap>;
+using Tid = ::crucible::safety::Tagged<uint32_t, source::Kernel>;
+using Fd = ::crucible::safety::Tagged<int, source::BpfMap>;
 
 // EBO collapse witness — the empty TrustLattice element MUST collapse
 // to zero bytes, so Tagged<T, source::*> is the same width as T.  If
 // this asserts, Tagged.h's regime-1 path regressed and every facade
 // would silently grow a byte per Tgid/Tid/Fd member.
-static_assert(sizeof(Tgid) == sizeof(uint32_t),
-    "Tagged<uint32_t, source::Kernel> must EBO-collapse the empty "
-    "TrustLattice element to sizeof(uint32_t) — see Tagged.h zero-cost "
-    "guarantee block");
-static_assert(sizeof(Tid)  == sizeof(uint32_t));
-static_assert(sizeof(Fd)   == sizeof(int));
+static_assert(sizeof(Tgid) == sizeof(uint32_t), "Tagged<uint32_t, source::Kernel> must EBO-collapse the empty "
+                                                "TrustLattice element to sizeof(uint32_t) — see Tagged.h zero-cost "
+                                                "guarantee block");
+static_assert(sizeof(Tid) == sizeof(uint32_t));
+static_assert(sizeof(Fd) == sizeof(int));
 
 // ── Kernel-syscall wrappers ───────────────────────────────────────────
 
-[[nodiscard]] inline Tgid current_tgid() noexcept {
-    return Tgid{static_cast<uint32_t>(::getpid())};
-}
+[[nodiscard]] inline Tgid current_tgid() noexcept { return Tgid{static_cast<uint32_t>(::getpid())}; }
 
 [[nodiscard]] inline Tid current_tid() noexcept {
-    return Tid{static_cast<uint32_t>(::syscall(SYS_gettid))};  // SYSCALL-CAP-OK: fixy-A5-016 — effects::Init via Senses load; gettid is identity-only, no capability
+    return Tid{static_cast<uint32_t>(::syscall(
+        SYS_gettid))};  // SYSCALL-CAP-OK: fixy-A5-016 — effects::Init via Senses load; gettid is identity-only, no capability
 }
 
-[[nodiscard]] inline Fd map_fd(struct bpf_map* m) noexcept {
-    return Fd{bpf_map__fd(m)};
-}
+[[nodiscard]] inline Fd map_fd(struct bpf_map* m) noexcept { return Fd{bpf_map__fd(m)}; }
 
 // ── Env-var caches (function-local-static = single global instance) ──
 //
@@ -186,8 +182,7 @@ static_assert(sizeof(Fd)   == sizeof(int));
 // a one-shot install; safety::Once avoids std::call_once's pthread
 // backing while preserving a single global flag across all TUs.
 
-inline int libbpf_log_cb(enum libbpf_print_level,
-                         const char* fmt, va_list args) noexcept {
+inline int libbpf_log_cb(enum libbpf_print_level, const char* fmt, va_list args) noexcept {
     if (!verbose()) return 0;
     return std::vfprintf(stderr, fmt, args);
 }
@@ -205,8 +200,7 @@ inline void install_libbpf_log_cb_once() noexcept {
 // match (NOT ==) because libbpf prepends the BPF object name —
 // e.g. "sense_hub.rodata", "sched_switch.rodata".
 
-[[nodiscard]] inline struct bpf_map*
-find_rodata(struct bpf_object* obj) noexcept {
+[[nodiscard]] inline struct bpf_map* find_rodata(struct bpf_object* obj) noexcept {
     struct bpf_map* map = nullptr;
     bpf_object__for_each_map(map, obj) {
         const char* n = bpf_map__name(map);
@@ -244,16 +238,17 @@ find_rodata(struct bpf_object* obj) noexcept {
 // NOT strip caps, so the file-capability path works as intended without
 // root.  (Root still works either way — uid 0 bypasses DAC.)
 
-[[nodiscard]] inline bool
-tracepoint_exists(const char* category_slash_event) noexcept {
+[[nodiscard]] inline bool tracepoint_exists(const char* category_slash_event) noexcept {
     std::string path = "/sys/kernel/tracing/events/";
     path.append(category_slash_event);
     path.append("/id");
-    if (::faccessat(AT_FDCWD, path.c_str(), F_OK, AT_EACCESS) == 0) return true;  // SYSCALL-CAP-OK: fixy-A5-016 — effects::Init via Senses load; existence-only probe, AT_EACCESS honors caps
+    if (::faccessat(AT_FDCWD, path.c_str(), F_OK, AT_EACCESS) == 0)
+        return true;  // SYSCALL-CAP-OK: fixy-A5-016 — effects::Init via Senses load; existence-only probe, AT_EACCESS honors caps
     path.assign("/sys/kernel/debug/tracing/events/");
     path.append(category_slash_event);
     path.append("/id");
-    return ::faccessat(AT_FDCWD, path.c_str(), F_OK, AT_EACCESS) == 0;  // SYSCALL-CAP-OK: fixy-A5-016 — effects::Init via Senses load; debugfs-fallback existence probe, AT_EACCESS honors caps
+    return ::faccessat(AT_FDCWD, path.c_str(), F_OK, AT_EACCESS)
+        == 0;  // SYSCALL-CAP-OK: fixy-A5-016 — effects::Init via Senses load; debugfs-fallback existence probe, AT_EACCESS honors caps
 }
 
 inline void disable_unavailable_programs(struct bpf_object* obj) noexcept {

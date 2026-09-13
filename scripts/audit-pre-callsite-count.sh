@@ -95,18 +95,15 @@ common_globs=(--type=cpp \
               --glob '!bench/**')
 
 count_pattern() {
-    # Sum match counts across all matching files.  rg -c emits one
-    # `file:count` line per file with ≥ 1 match; we strip the file
-    # prefix with `cut -d:` (POSIX, not awk/sed) and accumulate in
-    # bash arithmetic.  No matches → empty stdout → total stays 0.
+    # Count OCCURRENCES, not lines.  `rg -c` reports one line per file with at
+    # least one match, so two cites sharing a line count as one and the total
+    # moves whenever a reformat joins or splits lines.  `rg -o` emits one line
+    # per match, which is the quantity this audit actually claims to report.
     local pattern="$1"
-    local total=0 line n
-    while IFS= read -r line; do
-        n="${line##*:}"
-        total=$((total + n))
-    done < <(
-        rg -cP "$pattern" "${common_globs[@]}" \
-           "$root/include" "$root/src" 2>/dev/null || true
+    local total=0
+    total=$(
+        rg -oP "$pattern" "${common_globs[@]}" \
+           "$root/include" "$root/src" 2>/dev/null | wc -l
     )
     printf '%s' "$total"
 }
@@ -116,8 +113,12 @@ count_pattern() {
 #   CRUCIBLE_PRE\b — word boundary so CRUCIBLE_PRE_FAST / CRUCIBLE_PRE_MSG
 #                    are counted separately (they're variants of the same
 #                    cite class but distinct mechanisms).
-#   ^\s*pre\s*\(   — parser-position pre() at line start (after whitespace);
-#                    excludes occurrences in identifiers like `prepare`.
+#   (?<![\w:])pre\s*\( — a pre() clause anywhere on the line.  Anchoring to
+#                    line start was wrong: whether the clause shares a line
+#                    with the signature is a formatting choice, not a change
+#                    in contract adoption.  The lookbehind excludes both
+#                    identifiers ending in "pre" (`prepare`) and qualified
+#                    names (`ns::pre`).
 #   contract_assert\b — same boundary discipline.
 crucible_pre=$(count_pattern 'CRUCIBLE_PRE\b')
 crucible_pre_fast=$(count_pattern 'CRUCIBLE_PRE_FAST\b')
@@ -126,8 +127,8 @@ crucible_post=$(count_pattern 'CRUCIBLE_POST\b')
 crucible_post_fast=$(count_pattern 'CRUCIBLE_POST_FAST\b')
 crucible_post_msg=$(count_pattern 'CRUCIBLE_POST_MSG\b')
 
-p2900_pre=$(count_pattern '^\s*pre\s*\(')
-p2900_post=$(count_pattern '^\s*post\s*\(')
+p2900_pre=$(count_pattern '(?<![\w:])pre\s*\(')
+p2900_post=$(count_pattern '(?<![\w:])post\s*\(')
 contract_assert=$(count_pattern 'contract_assert\b')
 
 decide_total=$(count_pattern 'decide::')
@@ -200,13 +201,13 @@ HEADER
         # itself (which contains the canonical declarations).  Excluding
         # safety/Decide.h gives the "production cite" count, mirroring
         # the CONTRACT-124 docstring cross-reference discipline.
-        local n=0 line
-        while IFS= read -r line; do
-            n=$((n + ${line##*:}))
-        done < <(
-            rg -cP "decide::${proc}\b" "${common_globs[@]}" \
+        # -o counts occurrences; -c would count lines and drop a cite whenever
+        # two land on one line.
+        local n=0
+        n=$(
+            rg -oP "decide::${proc}\b" "${common_globs[@]}" \
                --glob '!include/crucible/safety/Decide.h' \
-               "$root/include" "$root/src" 2>/dev/null || true
+               "$root/include" "$root/src" 2>/dev/null | wc -l
         )
         printf '  %-30s %s\n' "decide::$proc" "$n"
     done
@@ -266,13 +267,12 @@ print_json() {
     printf '"decide_per_procedure":{'
     local first=1
     for proc in "${decide_procedures[@]}"; do
-        local n=0 line
-        while IFS= read -r line; do
-            n=$((n + ${line##*:}))
-        done < <(
-            rg -cP "decide::${proc}\b" "${common_globs[@]}" \
+        # -o counts occurrences; see the human-summary loop above.
+        local n=0
+        n=$(
+            rg -oP "decide::${proc}\b" "${common_globs[@]}" \
                --glob '!include/crucible/safety/Decide.h' \
-               "$root/include" "$root/src" 2>/dev/null || true
+               "$root/include" "$root/src" 2>/dev/null | wc -l
         )
         if [[ $first -eq 0 ]]; then printf ','; fi
         first=0

@@ -55,8 +55,7 @@ concept ValidRoceDscp = Dscp <= 63u;
 
 using PfcPriorityMask = safety::Refined<safety::non_zero, std::uint8_t>;
 using RoceDscp = safety::Bounded<std::uint8_t{0}, std::uint8_t{63}, std::uint8_t>;
-using DcqcnAlphaPpm =
-    safety::Bounded<std::uint32_t{1}, std::uint32_t{1'000'000}, std::uint32_t>;
+using DcqcnAlphaPpm = safety::Bounded<std::uint32_t{1}, std::uint32_t{1'000'000}, std::uint32_t>;
 using DcqcnTargetPackets = safety::Positive<std::uint16_t>;
 using DcqcnCeThresholdBytes = safety::Positive<std::uint32_t>;
 
@@ -78,24 +77,21 @@ struct RoceConfig {
     bool allow_privileged_apply = false;
 };
 
-using DeclaredRoceConfig =
-    safety::Tagged<RoceConfig, safety::source::RoceConfig>;
+using DeclaredRoceConfig = safety::Tagged<RoceConfig, safety::source::RoceConfig>;
 
 struct PfcPauseStats {
     std::uint64_t rx_pause_frames = 0;
     std::uint64_t tx_pause_frames = 0;
 };
 
-[[nodiscard]] constexpr std::expected<PfcPriorityMask, RoceError>
-admit_pfc_priorities(std::uint8_t mask) noexcept {
+[[nodiscard]] constexpr std::expected<PfcPriorityMask, RoceError> admit_pfc_priorities(std::uint8_t mask) noexcept {
     if (mask == 0u) {
         return std::unexpected(RoceError::InvalidPfcPriorityMask);
     }
     return PfcPriorityMask{mask, typename PfcPriorityMask::Trusted{}};
 }
 
-[[nodiscard]] constexpr std::expected<RoceDscp, RoceError>
-admit_roce_dscp(std::uint8_t dscp) noexcept {
+[[nodiscard]] constexpr std::expected<RoceDscp, RoceError> admit_roce_dscp(std::uint8_t dscp) noexcept {
     if (dscp > 63u) {
         return std::unexpected(RoceError::InvalidDscp);
     }
@@ -115,8 +111,7 @@ admit_dcqcn_target_packets(std::uint16_t packets) noexcept {
     if (packets == 0u) {
         return std::unexpected(RoceError::InvalidDcqcnTargetPackets);
     }
-    return DcqcnTargetPackets{
-        packets, typename DcqcnTargetPackets::Trusted{}};
+    return DcqcnTargetPackets{packets, typename DcqcnTargetPackets::Trusted{}};
 }
 
 [[nodiscard]] constexpr std::expected<DcqcnCeThresholdBytes, RoceError>
@@ -124,22 +119,17 @@ admit_dcqcn_ce_threshold_bytes(std::uint32_t bytes) noexcept {
     if (bytes == 0u) {
         return std::unexpected(RoceError::InvalidCeThresholdBytes);
     }
-    return DcqcnCeThresholdBytes{
-        bytes, typename DcqcnCeThresholdBytes::Trusted{}};
+    return DcqcnCeThresholdBytes{bytes, typename DcqcnCeThresholdBytes::Trusted{}};
 }
 
-template <std::uint8_t PfcPriorities = 0b0000'1000,
-          std::uint8_t Dscp = 26>
+template <std::uint8_t PfcPriorities = 0b0000'1000, std::uint8_t Dscp = 26>
     requires ValidPfcPriorityMask<PfcPriorities> && ValidRoceDscp<Dscp>
-[[nodiscard]] constexpr DeclaredRoceConfig
-mint_roce_config(NicInterfaceName iface,
-                 DcqcnParams dcqcn = {},
-                 bool allow_privileged_apply = false) noexcept {
+[[nodiscard]] constexpr DeclaredRoceConfig mint_roce_config(NicInterfaceName iface, DcqcnParams dcqcn = {},
+                                                            bool allow_privileged_apply = false) noexcept {
     return DeclaredRoceConfig{RoceConfig{
         .interface = iface,
         .enable_pfc = true,
-        .pfc_priorities = PfcPriorityMask{
-            PfcPriorities, typename PfcPriorityMask::Trusted{}},
+        .pfc_priorities = PfcPriorityMask{PfcPriorities, typename PfcPriorityMask::Trusted{}},
         .trust_dscp = true,
         .enable_ecn = true,
         .enable_dcqcn = true,
@@ -149,8 +139,7 @@ mint_roce_config(NicInterfaceName iface,
     }};
 }
 
-[[nodiscard]] constexpr std::expected<void, RoceError>
-validate_roce_config(DeclaredRoceConfig config) noexcept {
+[[nodiscard]] constexpr std::expected<void, RoceError> validate_roce_config(DeclaredRoceConfig config) noexcept {
     auto const& raw = config.value();
     if (raw.enable_pfc && raw.pfc_priorities.value() == 0u) {
         return std::unexpected(RoceError::InvalidPfcPriorityMask);
@@ -169,18 +158,15 @@ validate_roce_config(DeclaredRoceConfig config) noexcept {
 // suppress the warning with `#pragma GCC diagnostic push/ignored
 // "-Wdeprecated-declarations"/pop`.
 [[nodiscard, deprecated("CRUCIBLE_STUB: privileged sysfs/vendor-tool RoCEv2 "
-    "policy install (Mellanox mlxconfig / Broadcom bnxt_re) not yet attached; "
-    "returns PrivilegedApplyDeferred or VendorBackendUnavailable; see "
-    "fixy-A5-002 / FIXY-U-087")]]
-std::expected<void, RoceError>
-apply_roce_config(DeclaredRoceConfig config) noexcept;
+                        "policy install (Mellanox mlxconfig / Broadcom bnxt_re) not yet attached; "
+                        "returns PrivilegedApplyDeferred or VendorBackendUnavailable; see "
+                        "fixy-A5-002 / FIXY-U-087")]]
+std::expected<void, RoceError> apply_roce_config(DeclaredRoceConfig config) noexcept;
 
-[[nodiscard]] std::expected<PfcPauseStats, RoceError>
-parse_pfc_pause_counters(std::string_view rx_text,
-                         std::string_view tx_text) noexcept;
+[[nodiscard]] std::expected<PfcPauseStats, RoceError> parse_pfc_pause_counters(std::string_view rx_text,
+                                                                               std::string_view tx_text) noexcept;
 
-[[nodiscard]] std::expected<PfcPauseStats, RoceError>
-query_pfc_pause_counters(NicInterfaceName iface) noexcept;
+[[nodiscard]] std::expected<PfcPauseStats, RoceError> query_pfc_pause_counters(NicInterfaceName iface) noexcept;
 
 // fixy-A5-042: explicit unknown discriminator.  Pre-fix
 // `verify_dcqcn_active` returned `std::expected<bool, RoceError>`
@@ -205,10 +191,9 @@ enum class DcqcnState : std::uint8_t {
 // (today the body returns `DcqcnState::BackendUnavailable` for every
 // interface — the explicit-unknown sentinel of fixy-A5-042).
 [[nodiscard, deprecated("CRUCIBLE_STUB: DCQCN state probe (vendor sysfs / "
-    "ethtool) not yet wired; returns DcqcnState::BackendUnavailable; see "
-    "fixy-A5-002 / fixy-A5-042 / FIXY-U-087")]]
-DcqcnState
-query_dcqcn_state(NicInterfaceName iface) noexcept;
+                        "ethtool) not yet wired; returns DcqcnState::BackendUnavailable; see "
+                        "fixy-A5-002 / fixy-A5-042 / FIXY-U-087")]]
+DcqcnState query_dcqcn_state(NicInterfaceName iface) noexcept;
 
 // Pure mapping from queried state to the legacy `bool, RoceError`
 // expected shape.  Extracted from `verify_dcqcn_active` so the
@@ -216,11 +201,12 @@ query_dcqcn_state(NicInterfaceName iface) noexcept;
 // requiring a working backend — the Active→true / Inactive→false
 // branches stay dead until a vendor probe ships, but the mapping
 // must remain correct for that future ship-day.
-[[nodiscard]] constexpr std::expected<bool, RoceError>
-dcqcn_state_to_bool(DcqcnState state) noexcept {
+[[nodiscard]] constexpr std::expected<bool, RoceError> dcqcn_state_to_bool(DcqcnState state) noexcept {
     switch (state) {
-        case DcqcnState::Active:   return true;
-        case DcqcnState::Inactive: return false;
+        case DcqcnState::Active:
+            return true;
+        case DcqcnState::Inactive:
+            return false;
         case DcqcnState::BackendUnavailable:
         default:
             return std::unexpected(RoceError::DcqcnStatusUnavailable);
@@ -235,11 +221,10 @@ dcqcn_state_to_bool(DcqcnState state) noexcept {
 // so the only attainable return today is
 // `unexpected(DcqcnStatusUnavailable)`.
 [[nodiscard, deprecated("CRUCIBLE_STUB: DCQCN active-state verification not "
-    "yet wired (transitively, via query_dcqcn_state); returns "
-    "RoceError::DcqcnStatusUnavailable; see fixy-A5-002 / fixy-A5-042 / "
-    "FIXY-U-087")]]
-std::expected<bool, RoceError>
-verify_dcqcn_active(NicInterfaceName iface) noexcept;
+                        "yet wired (transitively, via query_dcqcn_state); returns "
+                        "RoceError::DcqcnStatusUnavailable; see fixy-A5-002 / fixy-A5-042 / "
+                        "FIXY-U-087")]]
+std::expected<bool, RoceError> verify_dcqcn_active(NicInterfaceName iface) noexcept;
 
 // fixy-A5-042 follow-up: prove the back-compat mapping covers all
 // three DcqcnState discriminators correctly.  Branches stay dead
@@ -248,8 +233,7 @@ verify_dcqcn_active(NicInterfaceName iface) noexcept;
 static_assert(dcqcn_state_to_bool(DcqcnState::Active).value() == true);
 static_assert(dcqcn_state_to_bool(DcqcnState::Inactive).value() == false);
 static_assert(!dcqcn_state_to_bool(DcqcnState::BackendUnavailable).has_value());
-static_assert(dcqcn_state_to_bool(DcqcnState::BackendUnavailable).error() ==
-              RoceError::DcqcnStatusUnavailable);
+static_assert(dcqcn_state_to_bool(DcqcnState::BackendUnavailable).error() == RoceError::DcqcnStatusUnavailable);
 
 static_assert(sizeof(PfcPriorityMask) == sizeof(std::uint8_t));
 static_assert(sizeof(RoceDscp) == sizeof(std::uint8_t));

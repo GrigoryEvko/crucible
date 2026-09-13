@@ -33,8 +33,7 @@
 namespace crucible::observe {
 
 using PositiveSdcReplicaCount = safety::Positive<std::uint8_t>;
-using SdcSamplingRatePpm =
-    safety::Refined<safety::in_range<1u, 1'000'000u>, std::uint32_t>;
+using SdcSamplingRatePpm = safety::Refined<safety::in_range<1u, 1'000'000u>, std::uint32_t>;
 using PositiveSdcMismatchThreshold = safety::Positive<std::uint16_t>;
 
 template <typename T>
@@ -45,13 +44,14 @@ enum class SdcComparisonStrategy : std::uint8_t {
     ArithmeticTolerance = 1,
 };
 
-[[nodiscard]] constexpr std::string_view
-sdc_comparison_strategy_name(SdcComparisonStrategy strategy) noexcept {
+[[nodiscard]] constexpr std::string_view sdc_comparison_strategy_name(SdcComparisonStrategy strategy) noexcept {
     switch (strategy) {
-        case SdcComparisonStrategy::BitwiseEqual: return "BitwiseEqual";
+        case SdcComparisonStrategy::BitwiseEqual:
+            return "BitwiseEqual";
         case SdcComparisonStrategy::ArithmeticTolerance:
             return "ArithmeticTolerance";
-        default: return "<unknown SdcComparisonStrategy>";
+        default:
+            return "<unknown SdcComparisonStrategy>";
     }
 }
 
@@ -61,23 +61,24 @@ enum class SdcEventKind : std::uint8_t {
     InsufficientReplicas = 2,
 };
 
-[[nodiscard]] constexpr std::string_view
-sdc_event_kind_name(SdcEventKind kind) noexcept {
+[[nodiscard]] constexpr std::string_view sdc_event_kind_name(SdcEventKind kind) noexcept {
     switch (kind) {
-        case SdcEventKind::Verified: return "Verified";
-        case SdcEventKind::Mismatch: return "Mismatch";
-        case SdcEventKind::InsufficientReplicas: return "InsufficientReplicas";
-        default: return "<unknown SdcEventKind>";
+        case SdcEventKind::Verified:
+            return "Verified";
+        case SdcEventKind::Mismatch:
+            return "Mismatch";
+        case SdcEventKind::InsufficientReplicas:
+            return "InsufficientReplicas";
+        default:
+            return "<unknown SdcEventKind>";
     }
 }
 
 struct SdcMismatch : safety::diag::tag_base {
     static constexpr std::string_view name = "SdcMismatch";
-    static constexpr std::string_view description =
-        "Redundant execution produced non-equivalent results.";
-    static constexpr std::string_view remediation =
-        "Retry the operation and route repeated mismatches into Warden "
-        "quarantine policy for the implicated Cogs.";
+    static constexpr std::string_view description = "Redundant execution produced non-equivalent results.";
+    static constexpr std::string_view remediation = "Retry the operation and route repeated mismatches into Warden "
+                                                    "quarantine policy for the implicated Cogs.";
 };
 
 struct SdcConfig {
@@ -106,19 +107,14 @@ static_assert(std::is_trivially_copyable_v<SdcConfig>);
 static_assert(std::is_trivially_copyable_v<SdcEvent>);
 
 template <class Ctx>
-concept CtxFitsSdcMint =
-    effects::IsExecCtx<Ctx>
-    && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Init>>;
+concept CtxFitsSdcMint = effects::IsExecCtx<Ctx> && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Init>>;
 
 template <class Ctx>
-concept CtxFitsSdcRun =
-    effects::IsExecCtx<Ctx>
-    && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Bg>>;
+concept CtxFitsSdcRun = effects::IsExecCtx<Ctx> && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Bg>>;
 
 namespace detail {
 
-[[nodiscard]] constexpr std::uint64_t
-mix_sequence(std::uint64_t value) noexcept {
+[[nodiscard]] constexpr std::uint64_t mix_sequence(std::uint64_t value) noexcept {
     value ^= value >> 30u;
     value *= 0xbf58'476d'1ce4'e5b9ull;
     value ^= value >> 27u;
@@ -129,15 +125,12 @@ mix_sequence(std::uint64_t value) noexcept {
 
 template <typename T>
 [[nodiscard]] bool bitwise_equal(T const& a, T const& b) noexcept {
-    static_assert(std::is_trivially_copyable_v<T>,
-        "SDC bitwise comparison requires trivially copyable results.");
+    static_assert(std::is_trivially_copyable_v<T>, "SDC bitwise comparison requires trivially copyable results.");
     return std::memcmp(std::addressof(a), std::addressof(b), sizeof(T)) == 0;
 }
 
 template <typename T>
-[[nodiscard]] bool tolerance_equal(T const& a,
-                                   T const& b,
-                                   std::uint64_t tolerance) noexcept {
+[[nodiscard]] bool tolerance_equal(T const& a, T const& b, std::uint64_t tolerance) noexcept {
     if constexpr (std::integral<T>) {
         using U = std::make_unsigned_t<T>;
         // Explicit U return + static_cast keeps the abs-diff in the unsigned
@@ -148,9 +141,8 @@ template <typename T>
         // compiles for EVERY integral width, not only those ≥ int.
         U const delta = [&]() -> U {
             if constexpr (std::signed_integral<T>) {
-                return a >= b
-                    ? static_cast<U>(static_cast<U>(a) - static_cast<U>(b))
-                    : static_cast<U>(static_cast<U>(b) - static_cast<U>(a));
+                return a >= b ? static_cast<U>(static_cast<U>(a) - static_cast<U>(b))
+                              : static_cast<U>(static_cast<U>(b) - static_cast<U>(a));
             } else {
                 return a >= b ? static_cast<U>(a - b) : static_cast<U>(b - a);
             }
@@ -165,9 +157,7 @@ template <typename T>
 }
 
 template <typename T>
-[[nodiscard]] bool equivalent(T const& a,
-                              T const& b,
-                              SdcComparisonStrategy strategy,
+[[nodiscard]] bool equivalent(T const& a, T const& b, SdcComparisonStrategy strategy,
                               std::uint64_t tolerance) noexcept {
     switch (strategy) {
         case SdcComparisonStrategy::BitwiseEqual:
@@ -221,8 +211,7 @@ private:
     }
 
 public:
-    explicit SdcDetector(SdcConfig config = {}) noexcept
-        : config_{config} {}
+    explicit SdcDetector(SdcConfig config = {}) noexcept : config_{config} {}
 
     [[nodiscard]] SdcConfig config() const noexcept { return config_; }
 
@@ -234,9 +223,7 @@ public:
         return std::span<const SdcEvent, MaxEvents>{events_};
     }
 
-    [[nodiscard]] std::size_t active_cog_count() const noexcept {
-        return active_cogs_;
-    }
+    [[nodiscard]] std::size_t active_cog_count() const noexcept { return active_cogs_; }
 
     [[nodiscard]] constexpr bool should_sample(std::uint64_t sequence) const noexcept {
         std::uint64_t const bucket = detail::mix_sequence(sequence) % 1'000'000ull;
@@ -257,15 +244,12 @@ public:
 
     template <class Ctx, class Work>
         requires CtxFitsSdcRun<Ctx>
-    [[nodiscard]] auto run_with_redundancy(Ctx const&, Work&& work)
-        noexcept(noexcept(std::forward<Work>(work)(cogs_[0].cog)))
-        -> std::expected<
-            SdcVerified<std::remove_cvref_t<decltype(std::forward<Work>(work)(cogs_[0].cog))>>,
-            SdcEvent>
-    {
+    [[nodiscard]] auto run_with_redundancy(Ctx const&,
+                                           Work&& work) noexcept(noexcept(std::forward<Work>(work)(cogs_[0].cog)))
+        -> std::expected<SdcVerified<std::remove_cvref_t<decltype(std::forward<Work>(work)(cogs_[0].cog))>>, SdcEvent> {
         using Result = std::remove_cvref_t<decltype(std::forward<Work>(work)(cogs_[0].cog))>;
         static_assert(std::is_trivially_copyable_v<Result>,
-            "SdcDetector results must be trivially copyable for deterministic comparison.");
+                      "SdcDetector results must be trivially copyable for deterministic comparison.");
 
         std::size_t const required = config_.redundancy_factor.value();
         if (active_cogs_ < required) {
@@ -281,8 +265,7 @@ public:
         Result primary = body(cogs_[0].cog);
         for (std::size_t i = 1; i < required; ++i) {
             Result replica = body(cogs_[i].cog);
-            if (!detail::equivalent(primary, replica, config_.strategy,
-                                    config_.tolerance_units)) {
+            if (!detail::equivalent(primary, replica, config_.strategy, config_.tolerance_units)) {
                 auto& primary_slot = cogs_[0];
                 auto& comparison_slot = cogs_[i];
                 ++primary_slot.mismatch_count;
@@ -317,31 +300,25 @@ public:
         if (index == cogs_.size()) {
             return false;
         }
-        return cogs_[index].mismatch_count
-            >= config_.suspect_after_mismatches.value();
+        return cogs_[index].mismatch_count >= config_.suspect_after_mismatches.value();
     }
 
     [[nodiscard]] bool publish_latest(ObservationSnapshot& sink) const noexcept {
         if (event_sequence_ == 0) {
             return false;
         }
-        std::size_t const cursor =
-            event_cursor_ == 0 ? events_.size() - 1u : event_cursor_ - 1u;
+        std::size_t const cursor = event_cursor_ == 0 ? events_.size() - 1u : event_cursor_ - 1u;
         SdcEvent const& event = events_[cursor];
-        record_observation(sink, make_observation(
-            ObservationKind::Metric,
-            ObservationSource::Runtime,
-            config_.metric_id_base,
-            static_cast<std::uint64_t>(event.kind),
-            event.sequence));
+        record_observation(sink,
+                           make_observation(ObservationKind::Metric, ObservationSource::Runtime, config_.metric_id_base,
+                                            static_cast<std::uint64_t>(event.kind), event.sequence));
         return true;
     }
 };
 
 template <class Ctx, std::size_t MaxCogs, std::size_t MaxEvents>
     requires CtxFitsSdcMint<Ctx>
-[[nodiscard]] SdcDetector<MaxCogs, MaxEvents>
-mint_sdc_detector(Ctx const&, SdcConfig config = {}) noexcept {
+[[nodiscard]] SdcDetector<MaxCogs, MaxEvents> mint_sdc_detector(Ctx const&, SdcConfig config = {}) noexcept {
     return SdcDetector<MaxCogs, MaxEvents>{config};
 }
 

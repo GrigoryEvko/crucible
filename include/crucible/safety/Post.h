@@ -110,9 +110,9 @@
 
 #pragma once
 
-#include <crucible/safety/Pre.h>   // CRUCIBLE_PRE — the actual check
-                                   // (also brings crucible::detail::contract_failed
-                                   // declaration for the runtime path)
+#include <crucible/safety/Pre.h>  // CRUCIBLE_PRE — the actual check
+// (also brings crucible::detail::contract_failed
+// declaration for the runtime path)
 
 // ─── CRUCIBLE_POST ─────────────────────────────────────────────────
 //
@@ -122,10 +122,10 @@
 // belt-and-braces unused-variable suppression for predicates that
 // reference `retvar` only through a member or method call.
 
-#define CRUCIBLE_POST(retvar, cond)                                     \
-    do {                                                                \
-        (void)(retvar);                                                 \
-        CRUCIBLE_PRE(cond);                                             \
+#define CRUCIBLE_POST(retvar, cond) \
+    do {                            \
+        (void)(retvar);             \
+        CRUCIBLE_PRE(cond);         \
     } while (0)
 
 // ─── CRUCIBLE_POST_FAST ────────────────────────────────────────────
@@ -135,10 +135,10 @@
 // violation.  Use on hot return paths where the ~µs of stderr-flush
 // + breakpoint-hook overhead matters.  Diagnostic loss is acceptable;
 // production debugging falls back to the core dump's stack trace.
-#define CRUCIBLE_POST_FAST(retvar, cond)                                \
-    do {                                                                \
-        (void)(retvar);                                                 \
-        CRUCIBLE_PRE_FAST(cond);                                        \
+#define CRUCIBLE_POST_FAST(retvar, cond) \
+    do {                                 \
+        (void)(retvar);                  \
+        CRUCIBLE_PRE_FAST(cond);         \
     } while (0)
 
 // ─── CRUCIBLE_POST_MSG ─────────────────────────────────────────────
@@ -152,8 +152,8 @@
 //
 // At consteval the message is unused; the macro behaves identically
 // to CRUCIBLE_POST for static_assert-fired neg-compile fixtures.
-#define CRUCIBLE_POST_MSG(retvar, cond, msg)                            \
-    do {                                                                \
-        (void)(retvar);                                                 \
-        CRUCIBLE_PRE_MSG(cond, msg);                                    \
+#define CRUCIBLE_POST_MSG(retvar, cond, msg) \
+    do {                                     \
+        (void)(retvar);                      \
+        CRUCIBLE_PRE_MSG(cond, msg);         \
     } while (0)

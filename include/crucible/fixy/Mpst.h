@@ -55,21 +55,17 @@ namespace crucible::fixy::sess::mpst::v068_shim_test {
 // would break.
 
 struct ShimProbe {};
-using EndAlias_via_shim =
-    ::crucible::fixy::sess::mpst::End_G;
+using EndAlias_via_shim = ::crucible::fixy::sess::mpst::End_G;
 using TransmissionAlias_via_shim =
-    ::crucible::fixy::sess::mpst::Transmission<ShimProbe, ShimProbe,
-                                                ShimProbe,
-                                                ::crucible::fixy::sess::mpst::End_G>;
+    ::crucible::fixy::sess::mpst::Transmission<ShimProbe, ShimProbe, ShimProbe, ::crucible::fixy::sess::mpst::End_G>;
 
 // The substrate type SessGlobal.h re-exports IS the same type the
 // shim path resolves to.  Wave any future refactorer's "let me make
 // the shim a real namespace" idea red.
-static_assert(std::is_same_v<EndAlias_via_shim,
-                             ::crucible::safety::proto::End_G>,
-    "fixy/Mpst.h shim must resolve End_G to the same substrate type "
-    "as fixy/SessGlobal.h.  If this red-lights, the shim was rewritten "
-    "to re-declare types instead of re-include them — restore the "
-    "single-include form.");
+static_assert(std::is_same_v<EndAlias_via_shim, ::crucible::safety::proto::End_G>,
+              "fixy/Mpst.h shim must resolve End_G to the same substrate type "
+              "as fixy/SessGlobal.h.  If this red-lights, the shim was rewritten "
+              "to re-declare types instead of re-include them — restore the "
+              "single-include form.");
 
 }  // namespace crucible::fixy::sess::mpst::v068_shim_test

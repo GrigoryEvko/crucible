@@ -2,8 +2,7 @@
 
 namespace crucible::cntp {
 
-std::string_view
-overlay_multicast_error_name(OverlayMulticastError error) noexcept {
+std::string_view overlay_multicast_error_name(OverlayMulticastError error) noexcept {
     switch (error) {
         case OverlayMulticastError::InvalidPeer:
             return "InvalidPeer";

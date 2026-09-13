@@ -106,10 +106,8 @@ namespace crucible::safety {
 // header (the framework cannot prove it structurally without an
 // algebraic decision procedure).
 template <typename Op, typename R>
-concept is_reduction_op_v =
-    std::is_invocable_v<Op const&, R const&, R const&>
- && std::is_convertible_v<
-        std::invoke_result_t<Op const&, R const&, R const&>, R>;
+concept is_reduction_op_v = std::is_invocable_v<Op const&, R const&, R const&>
+                         && std::is_convertible_v<std::invoke_result_t<Op const&, R const&, R const&>, R>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── reduce_into<R, Op> ──────────────────────────────────────────────
@@ -120,54 +118,41 @@ template <typename R, typename Op>
 class [[nodiscard]] reduce_into {
 public:
     using accumulator_type = R;
-    using reducer_type     = Op;
+    using reducer_type = Op;
 
     // ── Construction ────────────────────────────────────────────────
-    constexpr reduce_into(R init, Op op)
-        noexcept(std::is_nothrow_move_constructible_v<R>
-              && std::is_nothrow_move_constructible_v<Op>)
+    constexpr reduce_into(R init, Op op) noexcept(std::is_nothrow_move_constructible_v<R>
+                                                  && std::is_nothrow_move_constructible_v<Op>)
         : acc_{std::move(init)}, op_{std::move(op)} {}
 
     // Move-only: the accumulator is unique state.  Copying would
     // duplicate the unique accumulator, breaking the linearity that
     // makes parallel-reduce safe.
-    reduce_into(reduce_into const&)            = delete;
+    reduce_into(reduce_into const&) = delete;
     reduce_into& operator=(reduce_into const&) = delete;
 
-    constexpr reduce_into(reduce_into&&)            = default;
+    constexpr reduce_into(reduce_into&&) = default;
     constexpr reduce_into& operator=(reduce_into&&) = default;
 
     ~reduce_into() = default;
 
     // ── Read access ─────────────────────────────────────────────────
-    [[nodiscard]] constexpr R const& peek() const& noexcept {
-        return acc_;
-    }
+    [[nodiscard]] constexpr R const& peek() const& noexcept { return acc_; }
 
-    [[nodiscard]] constexpr R& peek_mut() & noexcept {
-        return acc_;
-    }
+    [[nodiscard]] constexpr R& peek_mut() & noexcept { return acc_; }
 
-    [[nodiscard]] constexpr R consume() &&
-        noexcept(std::is_nothrow_move_constructible_v<R>)
-    {
-        return std::move(acc_);
-    }
+    [[nodiscard]] constexpr R consume() && noexcept(std::is_nothrow_move_constructible_v<R>) { return std::move(acc_); }
 
-    [[nodiscard]] constexpr Op const& reducer() const& noexcept {
-        return op_;
-    }
+    [[nodiscard]] constexpr Op const& reducer() const& noexcept { return op_; }
 
     // ── combine — fold a partial / element into the accumulator ────
-    constexpr void combine(R const& partial)
-        noexcept(noexcept(std::declval<Op const&>()(
-            std::declval<R const&>(), std::declval<R const&>())))
-    {
+    constexpr void combine(R const& partial) noexcept(noexcept(std::declval<Op const&>()(std::declval<R const&>(),
+                                                                                         std::declval<R const&>()))) {
         acc_ = op_(acc_, partial);
     }
 
 private:
-    R  acc_;
+    R acc_;
     Op op_;
 };
 
@@ -178,20 +163,16 @@ private:
 namespace detail::reduce_into_self_test {
 
 struct PlusOp {
-    constexpr int operator()(int const& a, int const& b) const noexcept {
-        return a + b;
-    }
+    constexpr int operator()(int const& a, int const& b) const noexcept { return a + b; }
 };
 
 struct MaxOp {
-    constexpr int operator()(int const& a, int const& b) const noexcept {
-        return a > b ? a : b;
-    }
+    constexpr int operator()(int const& a, int const& b) const noexcept { return a > b ? a : b; }
 };
 
 // is_reduction_op_v positives.
 static_assert(is_reduction_op_v<PlusOp, int>);
-static_assert(is_reduction_op_v<MaxOp,  int>);
+static_assert(is_reduction_op_v<MaxOp, int>);
 
 // Negatives: callable shape mismatches.
 struct NotInvocable {};
@@ -234,8 +215,8 @@ static_assert(consume_extracts());
 // Move-only — copy ctor / copy assign deleted.
 static_assert(!std::is_copy_constructible_v<reduce_into<int, PlusOp>>);
 static_assert(!std::is_copy_assignable_v<reduce_into<int, PlusOp>>);
-static_assert( std::is_move_constructible_v<reduce_into<int, PlusOp>>);
-static_assert( std::is_move_assignable_v<reduce_into<int, PlusOp>>);
+static_assert(std::is_move_constructible_v<reduce_into<int, PlusOp>>);
+static_assert(std::is_move_assignable_v<reduce_into<int, PlusOp>>);
 
 }  // namespace detail::reduce_into_self_test
 

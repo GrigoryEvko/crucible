@@ -82,8 +82,7 @@ struct SharpDispatchResult {
 };
 
 using SharpParticipantCount = safety::Positive<std::uint16_t>;
-using DeclaredSharpDispatch =
-    safety::Tagged<SharpDispatchResult, wip_source::Sharp>;
+using DeclaredSharpDispatch = safety::Tagged<SharpDispatchResult, wip_source::Sharp>;
 
 struct SharpFabricPlan {
     cog::CogIdentity fabric_switch{};
@@ -92,8 +91,7 @@ struct SharpFabricPlan {
     bool allow_backend_dispatch = false;
 };
 
-using DeclaredSharpFabricPlan =
-    safety::Tagged<SharpFabricPlan, wip_source::Sharp>;
+using DeclaredSharpFabricPlan = safety::Tagged<SharpFabricPlan, wip_source::Sharp>;
 
 struct SharpContextHandle {
     cog::Uuid switch_uuid{};
@@ -105,41 +103,30 @@ struct SharpContextHandle {
 using SharpContext = safety::Linear<SharpContextHandle>;
 
 template <class Ctx>
-concept CtxFitsSharpMint =
-    effects::IsExecCtx<Ctx>
-    && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Init>>;
+concept CtxFitsSharpMint = effects::IsExecCtx<Ctx> && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Init>>;
 
 template <class Ctx>
-concept CtxFitsSharpDispatch =
-    effects::IsExecCtx<Ctx>
-    && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Bg>>;
+concept CtxFitsSharpDispatch = effects::IsExecCtx<Ctx> && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Bg>>;
 
 template <class Recipe>
-concept DeclaresAssociative =
-    requires {
-        { Recipe::associative } -> std::convertible_to<bool>;
-    };
+concept DeclaresAssociative = requires {
+    { Recipe::associative } -> std::convertible_to<bool>;
+};
 
 template <class Recipe>
-concept DeclaresCommutative =
-    requires {
-        { Recipe::commutative } -> std::convertible_to<bool>;
-    };
+concept DeclaresCommutative = requires {
+    { Recipe::commutative } -> std::convertible_to<bool>;
+};
 
 template <class Recipe>
-concept DeclaresReductionDeterminism =
-    requires {
-        { Recipe::determinism } -> std::convertible_to<ReductionDeterminism>;
-    };
+concept DeclaresReductionDeterminism = requires {
+    { Recipe::determinism } -> std::convertible_to<ReductionDeterminism>;
+};
 
 template <class Recipe>
 concept SharpEligibleRecipe =
-    DeclaresAssociative<Recipe>
-    && DeclaresCommutative<Recipe>
-    && DeclaresReductionDeterminism<Recipe>
-    && Recipe::associative
-    && Recipe::commutative
-    && Recipe::determinism != ReductionDeterminism::BITEXACT_STRICT;
+    DeclaresAssociative<Recipe> && DeclaresCommutative<Recipe> && DeclaresReductionDeterminism<Recipe>
+    && Recipe::associative && Recipe::commutative && Recipe::determinism != ReductionDeterminism::BITEXACT_STRICT;
 
 [[nodiscard]] std::string_view sharp_error_name(SharpError error) noexcept;
 [[nodiscard]] std::string_view sharp_fallback_name(SharpFallback fb) noexcept;
@@ -161,13 +148,11 @@ admit_sharp_participant_count(std::uint16_t count) noexcept {
     if (count == 0u) {
         return std::unexpected(SharpError::EmptyParticipantSet);
     }
-    return SharpParticipantCount{
-        count, typename SharpParticipantCount::Trusted{}};
+    return SharpParticipantCount{count, typename SharpParticipantCount::Trusted{}};
 }
 
 [[nodiscard]] constexpr std::expected<void, SharpError>
-validate_sharp_switch(cog::CogIdentity fabric_switch,
-                      cog::NvSwitchTargetCaps const& caps) noexcept {
+validate_sharp_switch(cog::CogIdentity fabric_switch, cog::NvSwitchTargetCaps const& caps) noexcept {
     if (fabric_switch.uuid.is_zero()) {
         return std::unexpected(SharpError::ZeroSwitchCog);
     }
@@ -180,9 +165,8 @@ validate_sharp_switch(cog::CogIdentity fabric_switch,
     return {};
 }
 
-[[nodiscard]] constexpr std::expected<void, SharpError>
-validate_sharp_recipe(SharpRecipeLaws laws,
-                      NumericalRecipe const& recipe) noexcept {
+[[nodiscard]] constexpr std::expected<void, SharpError> validate_sharp_recipe(SharpRecipeLaws laws,
+                                                                              NumericalRecipe const& recipe) noexcept {
     if (!laws.associative) {
         return std::unexpected(SharpError::RecipeNotAssociative);
     }
@@ -198,8 +182,7 @@ validate_sharp_recipe(SharpRecipeLaws laws,
     return {};
 }
 
-[[nodiscard]] constexpr SharpFallback fallback_for_ineligible(
-    SharpError error) noexcept {
+[[nodiscard]] constexpr SharpFallback fallback_for_ineligible(SharpError error) noexcept {
     switch (error) {
         case SharpError::BitexactStrictForbidden:
             return SharpFallback::BitexactTree;
@@ -226,8 +209,7 @@ template <class Recipe>
 }
 
 [[nodiscard]] constexpr std::expected<DeclaredSharpFabricPlan, SharpError>
-validate_sharp_fabric_plan(SharpFabricPlan plan,
-                           cog::NvSwitchTargetCaps const& caps) noexcept {
+validate_sharp_fabric_plan(SharpFabricPlan plan, cog::NvSwitchTargetCaps const& caps) noexcept {
     auto switch_valid = validate_sharp_switch(plan.fabric_switch, caps);
     if (!switch_valid.has_value()) {
         return std::unexpected(switch_valid.error());
@@ -241,18 +223,17 @@ validate_sharp_fabric_plan(SharpFabricPlan plan,
 template <class Ctx>
     requires CtxFitsSharpMint<Ctx>
 [[nodiscard]] constexpr std::expected<DeclaredSharpFabricPlan, SharpError>
-mint_sharp_fabric_plan(Ctx const&,
-                       cog::CogIdentity fabric_switch,
-                       cog::NvSwitchTargetCaps caps,
-                       SharpParticipantCount participant_count,
-                       bool runtime_loaded = false,
+mint_sharp_fabric_plan(Ctx const&, cog::CogIdentity fabric_switch, cog::NvSwitchTargetCaps caps,
+                       SharpParticipantCount participant_count, bool runtime_loaded = false,
                        bool allow_backend_dispatch = false) noexcept {
-    return validate_sharp_fabric_plan(SharpFabricPlan{
-        .fabric_switch = fabric_switch,
-        .participant_count = participant_count,
-        .runtime_loaded = runtime_loaded,
-        .allow_backend_dispatch = allow_backend_dispatch,
-    }, caps);
+    return validate_sharp_fabric_plan(
+        SharpFabricPlan{
+            .fabric_switch = fabric_switch,
+            .participant_count = participant_count,
+            .runtime_loaded = runtime_loaded,
+            .allow_backend_dispatch = allow_backend_dispatch,
+        },
+        caps);
 }
 
 template <class Ctx>
@@ -275,9 +256,7 @@ mint_sharp_context(Ctx const&, DeclaredSharpFabricPlan plan) noexcept {
 }
 
 [[nodiscard]] constexpr std::expected<DeclaredSharpDispatch, SharpError>
-eligibility_check(NumericalRecipe const& recipe,
-                  SharpRecipeLaws laws,
-                  DeclaredSharpFabricPlan plan) noexcept {
+eligibility_check(NumericalRecipe const& recipe, SharpRecipeLaws laws, DeclaredSharpFabricPlan plan) noexcept {
     auto recipe_valid = validate_sharp_recipe(laws, recipe);
     if (!recipe_valid.has_value()) {
         return std::unexpected(recipe_valid.error());
@@ -289,10 +268,8 @@ eligibility_check(NumericalRecipe const& recipe,
     }};
 }
 
-[[nodiscard]] constexpr DeclaredSharpDispatch
-fallback_dispatch(SharpError reason,
-                  DeclaredSharpFabricPlan plan,
-                  std::uint64_t element_count = 0) noexcept {
+[[nodiscard]] constexpr DeclaredSharpDispatch fallback_dispatch(SharpError reason, DeclaredSharpFabricPlan plan,
+                                                                std::uint64_t element_count = 0) noexcept {
     return DeclaredSharpDispatch{SharpDispatchResult{
         .fallback = fallback_for_ineligible(reason),
         .participant_count = plan.value().participant_count.value(),
@@ -304,18 +281,13 @@ class SharpReducer : public safety::Pinned<SharpReducer> {
     SharpContext context_;
 
 public:
-    explicit SharpReducer(SharpContext context) noexcept
-        : context_{std::move(context)} {}
+    explicit SharpReducer(SharpContext context) noexcept : context_{std::move(context)} {}
 
     template <class Ctx>
         requires CtxFitsSharpDispatch<Ctx>
     [[nodiscard]] std::expected<DeclaredSharpDispatch, SharpError>
-    allreduce_via_sharp(Ctx const&,
-                        std::span<const float> input,
-                        std::span<float> output,
-                        NumericalRecipe const& recipe,
-                        SharpRecipeLaws laws,
-                        DeclaredSharpFabricPlan plan) noexcept {
+    allreduce_via_sharp(Ctx const&, std::span<const float> input, std::span<float> output,
+                        NumericalRecipe const& recipe, SharpRecipeLaws laws, DeclaredSharpFabricPlan plan) noexcept {
         if (input.size() != output.size()) {
             return std::unexpected(SharpError::OutputShapeMismatch);
         }
@@ -325,8 +297,7 @@ public:
         }
         auto const& handle = context_.peek();
         if (handle.switch_uuid != plan.value().fabric_switch.uuid
-            || handle.participant_count.value()
-                != plan.value().participant_count.value()) {
+            || handle.participant_count.value() != plan.value().participant_count.value()) {
             return std::unexpected(SharpError::ParticipantCountMismatch);
         }
         if (!handle.runtime_loaded) {
@@ -340,11 +311,8 @@ public:
 };
 
 [[nodiscard]] std::expected<DeclaredSharpDispatch, SharpError>
-dispatch_sharp_allreduce(std::span<const float> input,
-                         std::span<float> output,
-                         NumericalRecipe const& recipe,
-                         SharpRecipeLaws laws,
-                         DeclaredSharpFabricPlan plan) noexcept;
+dispatch_sharp_allreduce(std::span<const float> input, std::span<float> output, NumericalRecipe const& recipe,
+                         SharpRecipeLaws laws, DeclaredSharpFabricPlan plan) noexcept;
 
 static_assert(sizeof(SharpParticipantCount) == sizeof(std::uint16_t));
 static_assert(sizeof(DeclaredSharpFabricPlan) == sizeof(SharpFabricPlan));

@@ -92,10 +92,10 @@ namespace crucible::detail {
 // — no spill on x86-64.
 
 struct PhiloxBatch8 {
-  simd::u32x8 r0;
-  simd::u32x8 r1;
-  simd::u32x8 r2;
-  simd::u32x8 r3;
+    simd::u32x8 r0;
+    simd::u32x8 r1;
+    simd::u32x8 r2;
+    simd::u32x8 r3;
 };
 
 // ── philox_batch8 ─────────────────────────────────────────────────
@@ -115,64 +115,62 @@ struct PhiloxBatch8 {
 // gnu::const: pure function of by-value SIMD args, no side effects,
 // no memory access.  Safe to CSE.
 
-[[nodiscard, gnu::const]] CRUCIBLE_INLINE
-PhiloxBatch8 philox_batch8(
-    simd::u32x8 ctr0, simd::u32x8 ctr1,
-    simd::u32x8 ctr2, simd::u32x8 ctr3,
-    simd::u32x8 key0, simd::u32x8 key1) noexcept {
-  using simd::u32x8;
-  using simd::u64x8;
+[[nodiscard, gnu::const]] CRUCIBLE_INLINE PhiloxBatch8 philox_batch8(simd::u32x8 ctr0, simd::u32x8 ctr1,
+                                                                     simd::u32x8 ctr2, simd::u32x8 ctr3,
+                                                                     simd::u32x8 key0, simd::u32x8 key1) noexcept {
+    using simd::u32x8;
+    using simd::u64x8;
 
-  // Broadcast Philox constants across all 8 lanes.  Compile-time
-  // constants — the compiler keeps these in vector registers across
-  // the unrolled rounds (no per-round reload).
-  const u32x8 m0(Philox::M0);
-  const u32x8 m1(Philox::M1);
-  const u32x8 w0(Philox::W0);
-  const u32x8 w1(Philox::W1);
+    // Broadcast Philox constants across all 8 lanes.  Compile-time
+    // constants — the compiler keeps these in vector registers across
+    // the unrolled rounds (no per-round reload).
+    const u32x8 m0(Philox::M0);
+    const u32x8 m1(Philox::M1);
+    const u32x8 w0(Philox::W0);
+    const u32x8 w1(Philox::W1);
 
-  // 10 unrolled rounds.  The trip count is fixed at compile time,
-  // and -O2 unrolls deterministically; the round body is small
-  // enough that the unrolled body still fits comfortably in L1i.
-  for (int round = 0; round < 10; ++round) {
-    // Truncating multiplies (low 32 bits of u32 × u32).
-    const u32x8 lo0 = ctr0 * m0;
-    const u32x8 lo1 = ctr2 * m1;
+    // 10 unrolled rounds.  The trip count is fixed at compile time,
+    // and -O2 unrolls deterministically; the round body is small
+    // enough that the unrolled body still fits comfortably in L1i.
+    for (int round = 0; round < 10; ++round) {
+        // Truncating multiplies (low 32 bits of u32 × u32).
+        const u32x8 lo0 = ctr0 * m0;
+        const u32x8 lo1 = ctr2 * m1;
 
-    // High-32 multiplies via the cast-multiply-shift idiom.  The
-    // basic_vec converting ctor u64x8(u32x8) zero-extends per lane;
-    // multiplying two u64x8 then shifting right by 32 yields the
-    // high 32 bits of the unsigned 32×32→64 product, identical to
-    // scalar Philox::mulhi_.
-    const u64x8 prod0 = u64x8(ctr0) * u64x8(m0);
-    const u64x8 prod1 = u64x8(ctr2) * u64x8(m1);
-    const u32x8 hi0 = static_cast<u32x8>(prod0 >> 32);
-    const u32x8 hi1 = static_cast<u32x8>(prod1 >> 32);
+        // High-32 multiplies via the cast-multiply-shift idiom.  The
+        // basic_vec converting ctor u64x8(u32x8) zero-extends per lane;
+        // multiplying two u64x8 then shifting right by 32 yields the
+        // high 32 bits of the unsigned 32×32→64 product, identical to
+        // scalar Philox::mulhi_.
+        const u64x8 prod0 = u64x8(ctr0) * u64x8(m0);
+        const u64x8 prod1 = u64x8(ctr2) * u64x8(m1);
+        const u32x8 hi0 = static_cast<u32x8>(prod0 >> 32);
+        const u32x8 hi1 = static_cast<u32x8>(prod1 >> 32);
 
-    // Lane permutation matching scalar:
-    //   ctr = { hi1 ^ ctr[1] ^ key[0],
-    //           lo1,
-    //           hi0 ^ ctr[3] ^ key[1],
-    //           lo0 }
-    // Read all of ctr1/ctr3 BEFORE writing ctr0/ctr2 — the four new
-    // values are computed into named locals so the assignment order
-    // can't accidentally clobber inputs.
-    const u32x8 nctr0 = hi1 ^ ctr1 ^ key0;
-    const u32x8 nctr1 = lo1;
-    const u32x8 nctr2 = hi0 ^ ctr3 ^ key1;
-    const u32x8 nctr3 = lo0;
-    ctr0 = nctr0;
-    ctr1 = nctr1;
-    ctr2 = nctr2;
-    ctr3 = nctr3;
+        // Lane permutation matching scalar:
+        //   ctr = { hi1 ^ ctr[1] ^ key[0],
+        //           lo1,
+        //           hi0 ^ ctr[3] ^ key[1],
+        //           lo0 }
+        // Read all of ctr1/ctr3 BEFORE writing ctr0/ctr2 — the four new
+        // values are computed into named locals so the assignment order
+        // can't accidentally clobber inputs.
+        const u32x8 nctr0 = hi1 ^ ctr1 ^ key0;
+        const u32x8 nctr1 = lo1;
+        const u32x8 nctr2 = hi0 ^ ctr3 ^ key1;
+        const u32x8 nctr3 = lo0;
+        ctr0 = nctr0;
+        ctr1 = nctr1;
+        ctr2 = nctr2;
+        ctr3 = nctr3;
 
-    // Key schedule: Weyl sequence bump.  Broadcast adds, one per
-    // key half.
-    key0 = key0 + w0;
-    key1 = key1 + w1;
-  }
+        // Key schedule: Weyl sequence bump.  Broadcast adds, one per
+        // key half.
+        key0 = key0 + w0;
+        key1 = key1 + w1;
+    }
 
-  return {ctr0, ctr1, ctr2, ctr3};
+    return {ctr0, ctr1, ctr2, ctr3};
 }
 
 }  // namespace crucible::detail

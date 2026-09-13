@@ -140,21 +140,24 @@ namespace crucible::algebra::lattices {
 // semantic contract (Hot satisfies any consumer) is preserved.  See
 // lattice docblock above for the divergence rationale.
 enum class HotPathTier : std::uint8_t {
-    Cold = 0,    // bottom: block / IO / syscall OK without bound
-    Warm = 1,    // background-but-bounded: alloc OK, no syscall on hot loop
-    Hot  = 2,    // top: foreground hot path; no alloc / syscall / block
+    Cold = 0,  // bottom: block / IO / syscall OK without bound
+    Warm = 1,  // background-but-bounded: alloc OK, no syscall on hot loop
+    Hot = 2,  // top: foreground hot path; no alloc / syscall / block
 };
 
 // Cardinality + diagnostic name via reflection.
-inline constexpr std::size_t hot_path_tier_count =
-    std::meta::enumerators_of(^^HotPathTier).size();
+inline constexpr std::size_t hot_path_tier_count = std::meta::enumerators_of(^^HotPathTier).size();
 
 [[nodiscard]] consteval std::string_view hot_path_tier_name(HotPathTier t) noexcept {
     switch (t) {
-        case HotPathTier::Cold: return "Cold";
-        case HotPathTier::Warm: return "Warm";
-        case HotPathTier::Hot:  return "Hot";
-        default:                return std::string_view{"<unknown HotPathTier>"};
+        case HotPathTier::Cold:
+            return "Cold";
+        case HotPathTier::Warm:
+            return "Warm";
+        case HotPathTier::Hot:
+            return "Hot";
+        default:
+            return std::string_view{"<unknown HotPathTier>"};
     }
 }
 
@@ -163,16 +166,10 @@ inline constexpr std::size_t hot_path_tier_count =
 // Inherits leq/join/meet from ChainLatticeOps<HotPathTier> — see
 // ChainLattice.h for the rationale.
 struct HotPathLattice : ChainLatticeOps<HotPathTier> {
-    [[nodiscard]] static constexpr element_type bottom() noexcept {
-        return HotPathTier::Cold;
-    }
-    [[nodiscard]] static constexpr element_type top() noexcept {
-        return HotPathTier::Hot;
-    }
+    [[nodiscard]] static constexpr element_type bottom() noexcept { return HotPathTier::Cold; }
+    [[nodiscard]] static constexpr element_type top() noexcept { return HotPathTier::Hot; }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return "HotPathLattice";
-    }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "HotPathLattice"; }
 
     // ── At<T>: singleton sub-lattice at a fixed type-level tier ─────
     //
@@ -183,28 +180,28 @@ struct HotPathLattice : ChainLatticeOps<HotPathTier> {
     struct At {
         struct element_type {
             using hot_path_tier_value_type = HotPathTier;
-            [[nodiscard]] constexpr operator hot_path_tier_value_type() const noexcept {
-                return T;
-            }
-            [[nodiscard]] constexpr bool operator==(element_type) const noexcept {
-                return true;
-            }
+            [[nodiscard]] constexpr operator hot_path_tier_value_type() const noexcept { return T; }
+            [[nodiscard]] constexpr bool operator==(element_type) const noexcept { return true; }
         };
 
         static constexpr HotPathTier tier = T;
 
         [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-        [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
         [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
 
         [[nodiscard]] static consteval std::string_view name() noexcept {
             switch (T) {
-                case HotPathTier::Cold: return "HotPathLattice::At<Cold>";
-                case HotPathTier::Warm: return "HotPathLattice::At<Warm>";
-                case HotPathTier::Hot:  return "HotPathLattice::At<Hot>";
-                default:                return "HotPathLattice::At<?>";
+                case HotPathTier::Cold:
+                    return "HotPathLattice::At<Cold>";
+                case HotPathTier::Warm:
+                    return "HotPathLattice::At<Warm>";
+                case HotPathTier::Hot:
+                    return "HotPathLattice::At<Hot>";
+                default:
+                    return "HotPathLattice::At<?>";
             }
         }
     };
@@ -212,38 +209,34 @@ struct HotPathLattice : ChainLatticeOps<HotPathTier> {
 
 // ── Convenience aliases ─────────────────────────────────────────────
 namespace hot_path_tier {
-    using ColdTier = HotPathLattice::At<HotPathTier::Cold>;
-    using WarmTier = HotPathLattice::At<HotPathTier::Warm>;
-    using HotTier  = HotPathLattice::At<HotPathTier::Hot>;
+using ColdTier = HotPathLattice::At<HotPathTier::Cold>;
+using WarmTier = HotPathLattice::At<HotPathTier::Warm>;
+using HotTier = HotPathLattice::At<HotPathTier::Hot>;
 }  // namespace hot_path_tier
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::hot_path_lattice_self_test {
 
 // Cardinality + reflection-based name coverage.
-static_assert(hot_path_tier_count == 3,
-    "HotPathTier catalog diverged from {Cold, Warm, Hot}; confirm "
-    "intent and update the dispatcher's hot-path admission gates + "
-    "scheduler-policy plumbing.");
+static_assert(hot_path_tier_count == 3, "HotPathTier catalog diverged from {Cold, Warm, Hot}; confirm "
+                                        "intent and update the dispatcher's hot-path admission gates + "
+                                        "scheduler-policy plumbing.");
 
 [[nodiscard]] consteval bool every_hot_path_tier_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^HotPathTier));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^HotPathTier));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
-        if (hot_path_tier_name([:en:]) ==
-            std::string_view{"<unknown HotPathTier>"}) {
+        if (hot_path_tier_name([:en:]) == std::string_view{"<unknown HotPathTier>"}) {
             return false;
         }
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_hot_path_tier_has_name(),
-    "hot_path_tier_name() switch missing arm for at least one tier — "
-    "add the arm or the new tier leaks the '<unknown HotPathTier>' "
-    "sentinel into runtime observer's debug output.");
+static_assert(every_hot_path_tier_has_name(), "hot_path_tier_name() switch missing arm for at least one tier — "
+                                              "add the arm or the new tier leaks the '<unknown HotPathTier>' "
+                                              "sentinel into runtime observer's debug output.");
 
 // Concept conformance — full lattice + each At<T> sub-lattice.
 static_assert(Lattice<HotPathLattice>);
@@ -266,71 +259,68 @@ static_assert(std::is_empty_v<hot_path_tier::HotTier::element_type>);
 // (HotPathTier)³ = 27 triples each.  Both verifiers extracted into
 // ChainLattice.h — adding a new tier auto-extends coverage.
 static_assert(verify_chain_lattice_exhaustive<HotPathLattice>(),
-    "HotPathLattice's chain-order lattice axioms must hold at every "
-    "(HotPathTier)³ triple — failure indicates a defect in leq/join/meet "
-    "or in the underlying enum encoding.");
+              "HotPathLattice's chain-order lattice axioms must hold at every "
+              "(HotPathTier)³ triple — failure indicates a defect in leq/join/meet "
+              "or in the underlying enum encoding.");
 static_assert(verify_chain_lattice_distributive_exhaustive<HotPathLattice>(),
-    "HotPathLattice's chain order must satisfy distributivity at every "
-    "(HotPathTier)³ triple — a chain order always does, so failure "
-    "would indicate a defect in join or meet.");
+              "HotPathLattice's chain order must satisfy distributivity at every "
+              "(HotPathTier)³ triple — a chain order always does, so failure "
+              "would indicate a defect in join or meet.");
 
 // Direct order witnesses — the entire chain is increasing, with Hot
 // at the top (strongest budget) and Cold at the bottom.
-static_assert( HotPathLattice::leq(HotPathTier::Cold, HotPathTier::Warm));
-static_assert( HotPathLattice::leq(HotPathTier::Warm, HotPathTier::Hot));
-static_assert( HotPathLattice::leq(HotPathTier::Cold, HotPathTier::Hot));    // transitive endpoints
-static_assert(!HotPathLattice::leq(HotPathTier::Hot,  HotPathTier::Cold));
-static_assert(!HotPathLattice::leq(HotPathTier::Hot,  HotPathTier::Warm));
+static_assert(HotPathLattice::leq(HotPathTier::Cold, HotPathTier::Warm));
+static_assert(HotPathLattice::leq(HotPathTier::Warm, HotPathTier::Hot));
+static_assert(HotPathLattice::leq(HotPathTier::Cold, HotPathTier::Hot));  // transitive endpoints
+static_assert(!HotPathLattice::leq(HotPathTier::Hot, HotPathTier::Cold));
+static_assert(!HotPathLattice::leq(HotPathTier::Hot, HotPathTier::Warm));
 static_assert(!HotPathLattice::leq(HotPathTier::Warm, HotPathTier::Cold));
 
 // Pin bottom / top to the chain endpoints.
 static_assert(HotPathLattice::bottom() == HotPathTier::Cold);
-static_assert(HotPathLattice::top()    == HotPathTier::Hot);
+static_assert(HotPathLattice::top() == HotPathTier::Hot);
 
 // Join strengthens (max); meet weakens (min).
-static_assert(HotPathLattice::join(HotPathTier::Cold, HotPathTier::Hot)
-              == HotPathTier::Hot);
-static_assert(HotPathLattice::join(HotPathTier::Warm, HotPathTier::Cold)
-              == HotPathTier::Warm);
-static_assert(HotPathLattice::meet(HotPathTier::Cold, HotPathTier::Hot)
-              == HotPathTier::Cold);
-static_assert(HotPathLattice::meet(HotPathTier::Warm, HotPathTier::Hot)
-              == HotPathTier::Warm);
+static_assert(HotPathLattice::join(HotPathTier::Cold, HotPathTier::Hot) == HotPathTier::Hot);
+static_assert(HotPathLattice::join(HotPathTier::Warm, HotPathTier::Cold) == HotPathTier::Warm);
+static_assert(HotPathLattice::meet(HotPathTier::Cold, HotPathTier::Hot) == HotPathTier::Cold);
+static_assert(HotPathLattice::meet(HotPathTier::Warm, HotPathTier::Hot) == HotPathTier::Warm);
 
 // Diagnostic names.
 static_assert(HotPathLattice::name() == "HotPathLattice");
 static_assert(hot_path_tier::ColdTier::name() == "HotPathLattice::At<Cold>");
 static_assert(hot_path_tier::WarmTier::name() == "HotPathLattice::At<Warm>");
-static_assert(hot_path_tier::HotTier::name()  == "HotPathLattice::At<Hot>");
+static_assert(hot_path_tier::HotTier::name() == "HotPathLattice::At<Hot>");
 
 // Reflection-driven coverage check on At<T>::name().
 [[nodiscard]] consteval bool every_at_hot_path_tier_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^HotPathTier));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^HotPathTier));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
-        if (HotPathLattice::At<([:en:])>::name() ==
-            std::string_view{"HotPathLattice::At<?>"}) {
+        if (HotPathLattice::At<([:en:])>::name() == std::string_view{"HotPathLattice::At<?>"}) {
             return false;
         }
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_at_hot_path_tier_has_name(),
-    "HotPathLattice::At<T>::name() switch missing an arm for at "
-    "least one tier — add the arm or the new tier leaks the "
-    "'HotPathLattice::At<?>' sentinel.");
+static_assert(every_at_hot_path_tier_has_name(), "HotPathLattice::At<T>::name() switch missing an arm for at "
+                                                 "least one tier — add the arm or the new tier leaks the "
+                                                 "'HotPathLattice::At<?>' sentinel.");
 
 // Convenience aliases resolve correctly.
 static_assert(hot_path_tier::ColdTier::tier == HotPathTier::Cold);
 static_assert(hot_path_tier::WarmTier::tier == HotPathTier::Warm);
-static_assert(hot_path_tier::HotTier::tier  == HotPathTier::Hot);
+static_assert(hot_path_tier::HotTier::tier == HotPathTier::Hot);
 
 // ── Layout invariants on Graded<...,At<T>,T_> ───────────────────────
-struct OneByteValue   { char c{0}; };
-struct EightByteValue { unsigned long long v{0}; };
+struct OneByteValue {
+    char c{0};
+};
+struct EightByteValue {
+    unsigned long long v{0};
+};
 
 // HotTier — the most semantically-loaded tier (foreground hot-path
 // dispatch + scheduler admission gate).  Witnessed against arithmetic
@@ -361,25 +351,25 @@ inline void runtime_smoke_test() {
     // Full HotPathLattice ops at runtime.
     HotPathTier a = HotPathTier::Cold;
     HotPathTier b = HotPathTier::Hot;
-    [[maybe_unused]] bool        l1   = HotPathLattice::leq(a, b);
-    [[maybe_unused]] HotPathTier j1   = HotPathLattice::join(a, b);
-    [[maybe_unused]] HotPathTier m1   = HotPathLattice::meet(a, b);
-    [[maybe_unused]] HotPathTier bot  = HotPathLattice::bottom();
+    [[maybe_unused]] bool l1 = HotPathLattice::leq(a, b);
+    [[maybe_unused]] HotPathTier j1 = HotPathLattice::join(a, b);
+    [[maybe_unused]] HotPathTier m1 = HotPathLattice::meet(a, b);
+    [[maybe_unused]] HotPathTier bot = HotPathLattice::bottom();
     [[maybe_unused]] HotPathTier topv = HotPathLattice::top();
 
     // Mid-tier ops — chain through the warm boundary.
     HotPathTier warm = HotPathTier::Warm;
-    [[maybe_unused]] HotPathTier j2 = HotPathLattice::join(warm, a);    // Warm
-    [[maybe_unused]] HotPathTier m2 = HotPathLattice::meet(warm, b);    // Warm
+    [[maybe_unused]] HotPathTier j2 = HotPathLattice::join(warm, a);  // Warm
+    [[maybe_unused]] HotPathTier m2 = HotPathLattice::meet(warm, b);  // Warm
 
     // Graded<Absolute, HotTier, T> at runtime.
     OneByteValue v{42};
     HotGraded<OneByteValue> initial{v, hot_path_tier::HotTier::bottom()};
-    auto widened   = initial.weaken(hot_path_tier::HotTier::top());
-    auto composed  = initial.compose(widened);
-    auto rv_widen  = std::move(widened).weaken(hot_path_tier::HotTier::top());
+    auto widened = initial.weaken(hot_path_tier::HotTier::top());
+    auto composed = initial.compose(widened);
+    auto rv_widen = std::move(widened).weaken(hot_path_tier::HotTier::top());
 
-    [[maybe_unused]] auto g  = rv_widen.grade();
+    [[maybe_unused]] auto g = rv_widen.grade();
     [[maybe_unused]] auto vc = composed.peek().c;
 
     // Conversion: At<HotPathTier>::element_type → HotPathTier at runtime.

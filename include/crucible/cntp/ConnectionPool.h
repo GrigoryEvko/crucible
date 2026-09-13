@@ -25,10 +25,10 @@ namespace crucible::cntp {
 enum class TransportClass : std::uint8_t {
     RdmaRcQp = 0,
     RdmaUdQp = 1,
-    MtlsTcp  = 2,
-    Quic     = 3,
-    AfXdp    = 4,
-    Tcp      = 5,
+    MtlsTcp = 2,
+    Quic = 3,
+    AfXdp = 4,
+    Tcp = 5,
 };
 
 enum class PoolError : std::uint8_t {
@@ -60,12 +60,8 @@ enum class PoolEventKind : std::uint8_t {
 
 template <TransportClass T>
 concept PoolTransportClass =
-       T == TransportClass::RdmaRcQp
-    || T == TransportClass::RdmaUdQp
-    || T == TransportClass::MtlsTcp
-    || T == TransportClass::Quic
-    || T == TransportClass::AfXdp
-    || T == TransportClass::Tcp;
+    T == TransportClass::RdmaRcQp || T == TransportClass::RdmaUdQp || T == TransportClass::MtlsTcp
+    || T == TransportClass::Quic || T == TransportClass::AfXdp || T == TransportClass::Tcp;
 
 using PositivePoolSize = safety::Positive<std::uint16_t>;
 using PositiveIdleTimeoutNs = safety::Positive<std::uint64_t>;
@@ -99,11 +95,9 @@ struct PoolEvent {
     std::uint64_t sequence = 0;
 };
 
-using DeclaredPoolEvent =
-    safety::Tagged<PoolEvent, safety::source::ConnectionPool>;
+using DeclaredPoolEvent = safety::Tagged<PoolEvent, safety::source::ConnectionPool>;
 
-[[nodiscard]] constexpr std::expected<PositivePoolSize, PoolError>
-admit_pool_size(std::uint16_t size) noexcept {
+[[nodiscard]] constexpr std::expected<PositivePoolSize, PoolError> admit_pool_size(std::uint16_t size) noexcept {
     if (size == 0) {
         return std::unexpected(PoolError::InvalidPoolSize);
     }
@@ -115,28 +109,22 @@ admit_idle_timeout_ns(std::uint64_t ns) noexcept {
     if (ns == 0) {
         return std::unexpected(PoolError::InvalidIdleTimeout);
     }
-    return PositiveIdleTimeoutNs{
-        ns, typename PositiveIdleTimeoutNs::Trusted{}};
+    return PositiveIdleTimeoutNs{ns, typename PositiveIdleTimeoutNs::Trusted{}};
 }
 
-[[nodiscard]] constexpr std::expected<PositiveConnectionId, PoolError>
-admit_connection_id(std::uint64_t id) noexcept {
+[[nodiscard]] constexpr std::expected<PositiveConnectionId, PoolError> admit_connection_id(std::uint64_t id) noexcept {
     if (id == 0) {
         return std::unexpected(PoolError::InvalidConnectionId);
     }
     return PositiveConnectionId{id, typename PositiveConnectionId::Trusted{}};
 }
 
-[[nodiscard]] constexpr bool valid_remote(cog::CogIdentity const& remote) noexcept {
-    return !remote.uuid.is_zero();
-}
+[[nodiscard]] constexpr bool valid_remote(cog::CogIdentity const& remote) noexcept { return !remote.uuid.is_zero(); }
 
 template <TransportClass T>
     requires PoolTransportClass<T>
 [[nodiscard]] constexpr std::expected<LinearConnection<T>, PoolError>
-mint_connection(SocketFd socket,
-                cog::CogIdentity const& remote,
-                PositiveConnectionId connection_id) noexcept {
+mint_connection(SocketFd socket, cog::CogIdentity const& remote, PositiveConnectionId connection_id) noexcept {
     if (!valid_remote(remote)) {
         return std::unexpected(PoolError::InvalidRemoteCog);
     }
@@ -148,10 +136,7 @@ mint_connection(SocketFd socket,
     }};
 }
 
-[[nodiscard]] constexpr DeclaredPoolEvent
-mint_pool_event(PoolEvent event) noexcept {
-    return DeclaredPoolEvent{event};
-}
+[[nodiscard]] constexpr DeclaredPoolEvent mint_pool_event(PoolEvent event) noexcept { return DeclaredPoolEvent{event}; }
 
 static_assert(PoolTransportClass<TransportClass::RdmaRcQp>);
 static_assert(PoolTransportClass<TransportClass::Tcp>);

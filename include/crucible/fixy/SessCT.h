@@ -178,12 +178,10 @@ struct NotCt {  // not opted into requires_ct — used to prove rejection
 namespace crucible::safety::ct {
 
 template <>
-struct requires_ct<::crucible::fixy::sess::ct::u052b_self_test::TokenA>
-    : std::true_type {};
+struct requires_ct<::crucible::fixy::sess::ct::u052b_self_test::TokenA> : std::true_type {};
 
 template <>
-struct requires_ct<::crucible::fixy::sess::ct::u052b_self_test::TokenB>
-    : std::true_type {};
+struct requires_ct<::crucible::fixy::sess::ct::u052b_self_test::TokenB> : std::true_type {};
 
 }  // namespace crucible::safety::ct
 
@@ -199,38 +197,34 @@ using TokenBPayload = CTPayload<TokenB>;
 // or relocated to a different namespace), the next lines fail to
 // compile with a recognisable substrate-rename diagnostic.
 
-static_assert(std::is_same_v<
-    CTPayload<TokenA>,
-    ::crucible::safety::ct::CTPayload<TokenA>>,
-    "fixy::sess::ct::CTPayload must alias safety::ct::CTPayload.");
+static_assert(std::is_same_v<CTPayload<TokenA>, ::crucible::safety::ct::CTPayload<TokenA>>,
+              "fixy::sess::ct::CTPayload must alias safety::ct::CTPayload.");
 
-static_assert(std::is_same_v<
-    requires_ct<TokenA>,
-    ::crucible::safety::ct::requires_ct<TokenA>>,
-    "fixy::sess::ct::requires_ct must alias safety::ct::requires_ct.");
+static_assert(std::is_same_v<requires_ct<TokenA>, ::crucible::safety::ct::requires_ct<TokenA>>,
+              "fixy::sess::ct::requires_ct must alias safety::ct::requires_ct.");
 
 // ── C. requires_ct trait fires for opted-in types ──────────────────
 
-static_assert( requires_ct_v<TokenA>);
-static_assert( requires_ct_v<TokenB>);
+static_assert(requires_ct_v<TokenA>);
+static_assert(requires_ct_v<TokenB>);
 static_assert(!requires_ct_v<NotCt>);
 static_assert(!requires_ct_v<int>);
 
 // RequiresCT also requires trivial copyability — sanity-check that
 // the concept matches the trait + triviality conjunction.
-static_assert( RequiresCT<TokenA>);
-static_assert(!RequiresCT<NotCt>);   // trait not opted in
-static_assert(!RequiresCT<int>);     // trait not opted in
+static_assert(RequiresCT<TokenA>);
+static_assert(!RequiresCT<NotCt>);  // trait not opted in
+static_assert(!RequiresCT<int>);  // trait not opted in
 
 // ── D. is_ct_payload shape predicates discriminate wrapper vs raw ─
 
-static_assert( is_ct_payload_v<TokenAPayload>);
-static_assert( is_ct_payload_v<TokenBPayload>);
-static_assert(!is_ct_payload_v<TokenA>);       // bare payload, not wrapper
+static_assert(is_ct_payload_v<TokenAPayload>);
+static_assert(is_ct_payload_v<TokenBPayload>);
+static_assert(!is_ct_payload_v<TokenA>);  // bare payload, not wrapper
 static_assert(!is_ct_payload_v<int>);
 static_assert(!is_ct_payload_v<NotCt>);
 
-static_assert( CTPayloadType<TokenAPayload>);
+static_assert(CTPayloadType<TokenAPayload>);
 static_assert(!CTPayloadType<TokenA>);
 
 // ── E. ct_payload_value_type_t extracts inner T (with passthrough) ─
@@ -241,8 +235,8 @@ static_assert(!CTPayloadType<TokenA>);
 
 static_assert(std::is_same_v<ct_payload_value_type_t<TokenAPayload>, TokenA>);
 static_assert(std::is_same_v<ct_payload_value_type_t<TokenBPayload>, TokenB>);
-static_assert(std::is_same_v<ct_payload_value_type_t<TokenA>,        TokenA>);
-static_assert(std::is_same_v<ct_payload_value_type_t<int>,           int>);
+static_assert(std::is_same_v<ct_payload_value_type_t<TokenA>, TokenA>);
+static_assert(std::is_same_v<ct_payload_value_type_t<int>, int>);
 
 // ── F. eq overload-set reach (consteval-only shape check) ──────────
 //
@@ -255,7 +249,7 @@ concept has_fixy_ct_eq = requires(A const& a, B const& b) {
     { eq(a, b) } -> std::same_as<bool>;
 };
 
-static_assert( has_fixy_ct_eq<TokenAPayload, TokenAPayload>);
+static_assert(has_fixy_ct_eq<TokenAPayload, TokenAPayload>);
 
 // Cross-T comparison must NOT compile — eq is constrained to
 // matching T on both sides.  This is the substrate's safety net
@@ -286,15 +280,15 @@ static_assert(!std::is_same_v<TokenAPayload, TokenBPayload>);
 
 static_assert(!std::is_copy_constructible_v<TokenAPayload>);
 static_assert(!std::is_copy_assignable_v<TokenAPayload>);
-static_assert( std::is_move_constructible_v<TokenAPayload>);
-static_assert( std::is_move_assignable_v<TokenAPayload>);
+static_assert(std::is_move_constructible_v<TokenAPayload>);
+static_assert(std::is_move_assignable_v<TokenAPayload>);
 
 template <typename A, typename B>
 concept has_operator_eq = requires(A const& a, B const& b) { a == b; };
 template <typename A, typename B>
 concept has_operator_neq = requires(A const& a, B const& b) { a != b; };
 
-static_assert(!has_operator_eq <TokenAPayload, TokenAPayload>);
+static_assert(!has_operator_eq<TokenAPayload, TokenAPayload>);
 static_assert(!has_operator_neq<TokenAPayload, TokenAPayload>);
 
 // Zero-cost size guarantee — wrapper is layout-identical to T.
@@ -315,9 +309,8 @@ static_assert(sizeof(TokenAPayload) == sizeof(TokenA));
 //                                                       ────
 //                                                        10
 constexpr int u052b_surface_cardinality = 10;
-static_assert(u052b_surface_cardinality == 10,
-    "fixy::sess::ct:: U-052b surface cardinality drifted — update "
-    "SessCT.h using-decls AND this sentinel in lockstep.");
+static_assert(u052b_surface_cardinality == 10, "fixy::sess::ct:: U-052b surface cardinality drifted — update "
+                                               "SessCT.h using-decls AND this sentinel in lockstep.");
 
 }  // namespace crucible::fixy::sess::ct::u052b_self_test
 
@@ -339,14 +332,14 @@ inline void runtime_smoke_test() noexcept {
     using ::crucible::fixy::sess::ct::u052b_self_test::TokenA;
     using P = CTPayload<TokenA>;
 
-    [[maybe_unused]] constexpr bool isP    = is_ct_payload_v<P>;
-    [[maybe_unused]] constexpr bool notP   = is_ct_payload_v<int>;
-    [[maybe_unused]] constexpr bool cap    = CTPayloadType<P>;
-    [[maybe_unused]] constexpr bool trait  = requires_ct_v<TokenA>;
+    [[maybe_unused]] constexpr bool isP = is_ct_payload_v<P>;
+    [[maybe_unused]] constexpr bool notP = is_ct_payload_v<int>;
+    [[maybe_unused]] constexpr bool cap = CTPayloadType<P>;
+    [[maybe_unused]] constexpr bool trait = requires_ct_v<TokenA>;
     [[maybe_unused]] constexpr bool concpt = RequiresCT<TokenA>;
 
     using InnerT = ct_payload_value_type_t<P>;
-    using PassT  = ct_payload_value_type_t<int>;
+    using PassT = ct_payload_value_type_t<int>;
 
     // Exercise the eq chokepoint against runtime values.  TokenA is
     // trivially copyable and zero-initialized; eq returns true on
@@ -356,10 +349,14 @@ inline void runtime_smoke_test() noexcept {
     P rhs{TokenA{}};
     [[maybe_unused]] bool equal = eq(lhs, rhs);
 
-    (void) isP; (void) notP; (void) cap; (void) trait; (void) concpt;
-    (void) static_cast<InnerT*>(nullptr);
-    (void) static_cast<PassT*>(nullptr);
-    (void) equal;
+    (void)isP;
+    (void)notP;
+    (void)cap;
+    (void)trait;
+    (void)concpt;
+    (void)static_cast<InnerT*>(nullptr);
+    (void)static_cast<PassT*>(nullptr);
+    (void)equal;
 }
 
 }  // namespace crucible::fixy::sess::ct

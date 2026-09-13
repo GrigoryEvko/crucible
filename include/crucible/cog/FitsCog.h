@@ -206,16 +206,24 @@ struct cog_max_capacity<CogKind::Gpu> {
         using effects::ResourceKind;
         switch (k) {
             // GPU compute substrate
-            case ResourceKind::Sm:                return 320ULL;                       // Blackwell B200=256, headroom
-            case ResourceKind::WarpScheduler:     return 320ULL * 4;                   // 4 schedulers/SM
-            case ResourceKind::RegistersPerWarp:  return 65'536ULL;                    // 256 KB regs / 4 B
-            case ResourceKind::Smem:              return 320ULL * 256ULL * 1024;       // sm * 256 KB
-            case ResourceKind::L2:                return 100ULL * 1024 * 1024;         // 100 MB (B200)
+            case ResourceKind::Sm:
+                return 320ULL;  // Blackwell B200=256, headroom
+            case ResourceKind::WarpScheduler:
+                return 320ULL * 4;  // 4 schedulers/SM
+            case ResourceKind::RegistersPerWarp:
+                return 65'536ULL;  // 256 KB regs / 4 B
+            case ResourceKind::Smem:
+                return 320ULL * 256ULL * 1024;  // sm * 256 KB
+            case ResourceKind::L2:
+                return 100ULL * 1024 * 1024;  // 100 MB (B200)
             // GPU memory substrate
-            case ResourceKind::HbmBytes:          return 384ULL * 1024 * 1024 * 1024;  // 384 GB (MI325X=288GB+headroom)
-            case ResourceKind::HbmBw:             return 9ULL * 1024 * 1024 * 1024 * 1024;  // 9 TB/s
+            case ResourceKind::HbmBytes:
+                return 384ULL * 1024 * 1024 * 1024;  // 384 GB (MI325X=288GB+headroom)
+            case ResourceKind::HbmBw:
+                return 9ULL * 1024 * 1024 * 1024 * 1024;  // 9 TB/s
             // Inter-device
-            case ResourceKind::NvlinkBw:          return 1'800ULL * 1024 * 1024 * 1024;  // 1.8 TB/s (NVL5)
+            case ResourceKind::NvlinkBw:
+                return 1'800ULL * 1024 * 1024 * 1024;  // 1.8 TB/s (NVL5)
             // PcieBw deliberately = 0 here.  PCIe bandwidth is computed
             // from caps.pcie_gen + caps.pcie_lanes; no derived field
             // ships in TargetCaps yet.  Setting the compile-time
@@ -227,13 +235,17 @@ struct cog_max_capacity<CogKind::Gpu> {
             // ceiling to PCIe6 x16 raw rate and update the runtime
             // mapping to read the derived field.  Until then,
             // refusing PcieBw demand is conservatively-correct.
-            case ResourceKind::PcieBw:            return 0ULL;
+            case ResourceKind::PcieBw:
+                return 0ULL;
             // Power / thermal
-            case ResourceKind::PowerWatts:        return 1'500ULL;                     // B200 = 1000W, headroom
-            case ResourceKind::ThermalCelsius:    return 95ULL;                        // common throttle
+            case ResourceKind::PowerWatts:
+                return 1'500ULL;  // B200 = 1000W, headroom
+            case ResourceKind::ThermalCelsius:
+                return 95ULL;  // common throttle
             // GPU does not expose: NIC*, Switch*, Tcam, CpuCore, Llc,
             // RackPowerKw, CarbonGramsPerKwh — all default 0.
-            default: return 0ULL;
+            default:
+                return 0ULL;
         }
     }
 };
@@ -252,19 +264,28 @@ struct cog_max_capacity<CogKind::NicPort> {
             // rationale.  Both compile-time ceiling and runtime helper
             // refuse PcieBw demand consistently until Calibrate.h
             // ships the derived field.
-            case ResourceKind::PcieBw:            return 0ULL;
+            case ResourceKind::PcieBw:
+                return 0ULL;
             // NIC substrate
-            case ResourceKind::NicQ:              return 256ULL;                        // tx+rx queues
-            case ResourceKind::NicRing:           return 64ULL * 1024;                  // ring slots
-            case ResourceKind::NicQp:             return 16ULL * 1024 * 1024;           // ConnectX-7 max
-            case ResourceKind::NicCq:             return 16ULL * 1024 * 1024;           // matches QP
-            case ResourceKind::NicMr:             return 64ULL * 1024;                  // memory regions
+            case ResourceKind::NicQ:
+                return 256ULL;  // tx+rx queues
+            case ResourceKind::NicRing:
+                return 64ULL * 1024;  // ring slots
+            case ResourceKind::NicQp:
+                return 16ULL * 1024 * 1024;  // ConnectX-7 max
+            case ResourceKind::NicCq:
+                return 16ULL * 1024 * 1024;  // matches QP
+            case ResourceKind::NicMr:
+                return 64ULL * 1024;  // memory regions
             // Power / thermal
-            case ResourceKind::PowerWatts:        return 50ULL;                         // NIC TDP envelope
-            case ResourceKind::ThermalCelsius:    return 85ULL;
+            case ResourceKind::PowerWatts:
+                return 50ULL;  // NIC TDP envelope
+            case ResourceKind::ThermalCelsius:
+                return 85ULL;
             // NIC does not expose: GPU compute, GPU memory, NvlinkBw,
             // Switch*, Tcam, CpuCore, Llc, RackPowerKw — default 0.
-            default: return 0ULL;
+            default:
+                return 0ULL;
         }
     }
 };
@@ -279,14 +300,20 @@ struct cog_max_capacity<CogKind::NvSwitch> {
         using effects::ResourceKind;
         switch (k) {
             // Switch / fabric
-            case ResourceKind::SwitchEgressBw:    return 32ULL * 1024 * 1024 * 1024 * 1024;  // 32 TB/s headroom
-            case ResourceKind::SwitchBuffer:      return 128ULL * 1024;                       // 128K cells
-            case ResourceKind::Tcam:              return 64ULL * 1024;                        // 64K entries
+            case ResourceKind::SwitchEgressBw:
+                return 32ULL * 1024 * 1024 * 1024 * 1024;  // 32 TB/s headroom
+            case ResourceKind::SwitchBuffer:
+                return 128ULL * 1024;  // 128K cells
+            case ResourceKind::Tcam:
+                return 64ULL * 1024;  // 64K entries
             // Power / thermal
-            case ResourceKind::PowerWatts:        return 1'500ULL;
-            case ResourceKind::ThermalCelsius:    return 90ULL;
+            case ResourceKind::PowerWatts:
+                return 1'500ULL;
+            case ResourceKind::ThermalCelsius:
+                return 90ULL;
             // Switch does not expose compute, memory, NIC*, host axes.
-            default: return 0ULL;
+            default:
+                return 0ULL;
         }
     }
 };
@@ -300,11 +327,16 @@ struct cog_max_capacity<CogKind::CpuCore> {
     static constexpr std::uint64_t for_kind(effects::ResourceKind k) noexcept {
         using effects::ResourceKind;
         switch (k) {
-            case ResourceKind::CpuCore:           return 1ULL;                          // atomic = 1
-            case ResourceKind::L2:                return 4ULL * 1024 * 1024;            // 4 MB private L2
-            case ResourceKind::PowerWatts:        return 50ULL;                          // per-core envelope
-            case ResourceKind::ThermalCelsius:    return 100ULL;                         // CPU Tjmax
-            default: return 0ULL;
+            case ResourceKind::CpuCore:
+                return 1ULL;  // atomic = 1
+            case ResourceKind::L2:
+                return 4ULL * 1024 * 1024;  // 4 MB private L2
+            case ResourceKind::PowerWatts:
+                return 50ULL;  // per-core envelope
+            case ResourceKind::ThermalCelsius:
+                return 100ULL;  // CPU Tjmax
+            default:
+                return 0ULL;
         }
     }
 };
@@ -318,12 +350,18 @@ struct cog_max_capacity<CogKind::CpuSocket> {
     static constexpr std::uint64_t for_kind(effects::ResourceKind k) noexcept {
         using effects::ResourceKind;
         switch (k) {
-            case ResourceKind::CpuCore:           return 256ULL;                        // current max + headroom
-            case ResourceKind::Llc:               return 1024ULL * 1024 * 1024;         // 1 GB headroom
-            case ResourceKind::L2:                return 256ULL * 4ULL * 1024 * 1024;   // socket * 4MB
-            case ResourceKind::PowerWatts:        return 800ULL;                        // EPYC 600W + headroom
-            case ResourceKind::ThermalCelsius:    return 100ULL;
-            default: return 0ULL;
+            case ResourceKind::CpuCore:
+                return 256ULL;  // current max + headroom
+            case ResourceKind::Llc:
+                return 1024ULL * 1024 * 1024;  // 1 GB headroom
+            case ResourceKind::L2:
+                return 256ULL * 4ULL * 1024 * 1024;  // socket * 4MB
+            case ResourceKind::PowerWatts:
+                return 800ULL;  // EPYC 600W + headroom
+            case ResourceKind::ThermalCelsius:
+                return 100ULL;
+            default:
+                return 0ULL;
         }
     }
 };
@@ -344,7 +382,8 @@ struct cog_max_capacity<CogKind::DramChannel> {
             // class budget axis exists yet for "host DRAM bytes" — when
             // that axis lands (effects::Resources extension), update
             // here.  Until then, DRAM has no exposed budget axis.
-            default: return 0ULL;
+            default:
+                return 0ULL;
         }
     }
 };
@@ -389,16 +428,13 @@ namespace detail {
 // the broader IsMimicSubstrate gate.
 template <typename Row, CogKind K>
 [[nodiscard]] consteval bool evaluate_row_fits_cog() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^effects::ResourceKind));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^effects::ResourceKind));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
         constexpr effects::ResourceKind axis = [:en:];
-        constexpr std::uint64_t demand =
-            effects::concurrent_row_value_v<axis, Row>;
-        constexpr std::uint64_t ceiling =
-            cog_max_capacity<K>::for_kind(axis);
+        constexpr std::uint64_t demand = effects::concurrent_row_value_v<axis, Row>;
+        constexpr std::uint64_t ceiling = cog_max_capacity<K>::for_kind(axis);
         if (demand > ceiling) {
             return false;
         }
@@ -417,10 +453,7 @@ inline constexpr bool row_fits_cog_v = evaluate_row_fits_cog<Row, K>();
 //   2. K HasCogCapacity (substrate CogKind we recognise);
 //   3. every axis demand ≤ ceiling.
 template <typename Row, CogKind K>
-concept FitsCog =
-    effects::IsConcurrentRow<Row> &&
-    HasCogCapacity<K> &&
-    detail::row_fits_cog_v<Row, K>;
+concept FitsCog = effects::IsConcurrentRow<Row> && HasCogCapacity<K> && detail::row_fits_cog_v<Row, K>;
 
 // ────────────────────────────────────────────────────────────────────
 // fits_cog_caps_runtime — runtime overload for measured caps
@@ -452,22 +485,18 @@ struct caps_runtime_capacity;  // primary undefined
 
 template <>
 struct caps_runtime_capacity<CogKind::Gpu> {
-    [[nodiscard]] static constexpr std::uint64_t
-    for_kind(GpuTargetCaps const& caps,
-             effects::ResourceKind axis) noexcept {
+    [[nodiscard]] static constexpr std::uint64_t for_kind(GpuTargetCaps const& caps,
+                                                          effects::ResourceKind axis) noexcept {
         using effects::ResourceKind;
         switch (axis) {
             case ResourceKind::Sm:
                 return std::uint64_t{caps.sm_count.value()};
             case ResourceKind::WarpScheduler:
-                return std::uint64_t{caps.sm_count.value()} *
-                       std::uint64_t{caps.warp_schedulers_per_sm.value()};
+                return std::uint64_t{caps.sm_count.value()} * std::uint64_t{caps.warp_schedulers_per_sm.value()};
             case ResourceKind::RegistersPerWarp:
-                return std::uint64_t{caps.max_regs_per_thread.value()} *
-                       std::uint64_t{caps.warp_size.value()};
+                return std::uint64_t{caps.max_regs_per_thread.value()} * std::uint64_t{caps.warp_size.value()};
             case ResourceKind::Smem:
-                return std::uint64_t{caps.sm_count.value()} *
-                       std::uint64_t{caps.smem_per_sm_bytes.value()};
+                return std::uint64_t{caps.sm_count.value()} * std::uint64_t{caps.smem_per_sm_bytes.value()};
             case ResourceKind::L2:
                 return caps.l2_bytes.value();
             case ResourceKind::HbmBytes:
@@ -488,21 +517,20 @@ struct caps_runtime_capacity<CogKind::Gpu> {
                 return std::uint64_t{caps.tdp_watts.value()};
             case ResourceKind::ThermalCelsius:
                 return std::uint64_t{caps.thermal_throttle_celsius.value()};
-            default: return 0ULL;
+            default:
+                return 0ULL;
         }
     }
 };
 
 template <>
 struct caps_runtime_capacity<CogKind::NicPort> {
-    [[nodiscard]] static constexpr std::uint64_t
-    for_kind(NicPortTargetCaps const& caps,
-             effects::ResourceKind axis) noexcept {
+    [[nodiscard]] static constexpr std::uint64_t for_kind(NicPortTargetCaps const& caps,
+                                                          effects::ResourceKind axis) noexcept {
         using effects::ResourceKind;
         switch (axis) {
             case ResourceKind::NicQ:
-                return std::uint64_t{caps.max_tx_queues.value()} +
-                       std::uint64_t{caps.max_rx_queues.value()};
+                return std::uint64_t{caps.max_tx_queues.value()} + std::uint64_t{caps.max_rx_queues.value()};
             case ResourceKind::NicQp:
                 return std::uint64_t{caps.max_qp_count.value()};
             case ResourceKind::NicCq:
@@ -513,16 +541,16 @@ struct caps_runtime_capacity<CogKind::NicPort> {
                 return std::uint64_t{caps.tcam_entries.value()};
             case ResourceKind::PcieBw:
                 return 0ULL;  // see GpuTargetCaps comment above
-            default: return 0ULL;
+            default:
+                return 0ULL;
         }
     }
 };
 
 template <>
 struct caps_runtime_capacity<CogKind::NvSwitch> {
-    [[nodiscard]] static constexpr std::uint64_t
-    for_kind(NvSwitchTargetCaps const& caps,
-             effects::ResourceKind axis) noexcept {
+    [[nodiscard]] static constexpr std::uint64_t for_kind(NvSwitchTargetCaps const& caps,
+                                                          effects::ResourceKind axis) noexcept {
         using effects::ResourceKind;
         switch (axis) {
             case ResourceKind::SwitchEgressBw:
@@ -531,32 +559,32 @@ struct caps_runtime_capacity<CogKind::NvSwitch> {
                 return caps.buffer_bytes.value();
             case ResourceKind::Tcam:
                 return std::uint64_t{caps.tcam_entries.value()};
-            default: return 0ULL;
+            default:
+                return 0ULL;
         }
     }
 };
 
 template <>
 struct caps_runtime_capacity<CogKind::CpuCore> {
-    [[nodiscard]] static constexpr std::uint64_t
-    for_kind(CpuCoreTargetCaps const& caps,
-             effects::ResourceKind axis) noexcept {
+    [[nodiscard]] static constexpr std::uint64_t for_kind(CpuCoreTargetCaps const& caps,
+                                                          effects::ResourceKind axis) noexcept {
         using effects::ResourceKind;
         switch (axis) {
             case ResourceKind::CpuCore:
                 return 1ULL;
             case ResourceKind::L2:
                 return std::uint64_t{caps.l2_bytes.value()};
-            default: return 0ULL;
+            default:
+                return 0ULL;
         }
     }
 };
 
 template <>
 struct caps_runtime_capacity<CogKind::CpuSocket> {
-    [[nodiscard]] static constexpr std::uint64_t
-    for_kind(CpuSocketTargetCaps const& caps,
-             effects::ResourceKind axis) noexcept {
+    [[nodiscard]] static constexpr std::uint64_t for_kind(CpuSocketTargetCaps const& caps,
+                                                          effects::ResourceKind axis) noexcept {
         using effects::ResourceKind;
         switch (axis) {
             case ResourceKind::CpuCore:
@@ -567,16 +595,16 @@ struct caps_runtime_capacity<CogKind::CpuSocket> {
                 return std::uint64_t{caps.tdp_watts.value()};
             case ResourceKind::ThermalCelsius:
                 return std::uint64_t{caps.thermal_throttle_celsius.value()};
-            default: return 0ULL;
+            default:
+                return 0ULL;
         }
     }
 };
 
 template <>
 struct caps_runtime_capacity<CogKind::DramChannel> {
-    [[nodiscard]] static constexpr std::uint64_t
-    for_kind(DramChannelTargetCaps const& /*caps*/,
-             effects::ResourceKind /*axis*/) noexcept {
+    [[nodiscard]] static constexpr std::uint64_t for_kind(DramChannelTargetCaps const& /*caps*/,
+                                                          effects::ResourceKind /*axis*/) noexcept {
         // No first-class budget axis maps to DramChannel today.  Future
         // "HostDramBytes" axis would land here.
         return 0ULL;
@@ -598,20 +626,16 @@ struct caps_runtime_capacity<CogKind::DramChannel> {
 // fails — conservatively-correct).
 template <typename Row, CogKind K>
     requires effects::IsConcurrentRow<Row> && HasCogCapacity<K>
-[[nodiscard]] constexpr bool
-fits_cog_caps_runtime(caps_for_t<K> const& caps) noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^effects::ResourceKind));
+[[nodiscard]] constexpr bool fits_cog_caps_runtime(caps_for_t<K> const& caps) noexcept {
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^effects::ResourceKind));
     bool fits = true;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
         constexpr effects::ResourceKind axis = [:en:];
-        constexpr std::uint64_t demand =
-            effects::concurrent_row_value_v<axis, Row>;
+        constexpr std::uint64_t demand = effects::concurrent_row_value_v<axis, Row>;
         if (demand > 0) {
-            const std::uint64_t capacity =
-                detail::caps_runtime_capacity<K>::for_kind(caps, axis);
+            const std::uint64_t capacity = detail::caps_runtime_capacity<K>::for_kind(caps, axis);
             if (demand > capacity) {
                 fits = false;
             }
@@ -688,10 +712,8 @@ static_assert(HasCaps<CogKind::PsuRail> == HasCogCapacity<CogKind::PsuRail>);
 // (false witness on a substrate we expect to ship).  A non-
 // substrate K fails because caps_for_t<K> doesn't resolve.
 template <CogKind K>
-inline constexpr bool has_caps_runtime_capacity_v = requires(caps_for_t<K> const& caps,
-                                                              effects::ResourceKind axis) {
-    { detail::caps_runtime_capacity<K>::for_kind(caps, axis) }
-        -> std::same_as<std::uint64_t>;
+inline constexpr bool has_caps_runtime_capacity_v = requires(caps_for_t<K> const& caps, effects::ResourceKind axis) {
+    { detail::caps_runtime_capacity<K>::for_kind(caps, axis) } -> std::same_as<std::uint64_t>;
 };
 static_assert(has_caps_runtime_capacity_v<CogKind::Gpu>);
 static_assert(has_caps_runtime_capacity_v<CogKind::NicPort>);
@@ -741,28 +763,20 @@ static_assert(cog_max_capacity<CogKind::CpuCore>::for_kind(effects::ResourceKind
 //
 // Realistic Hopper-sized row admits.  H100 = 132 SMs, 80 GB HBM, 3.35
 // TB/s HBM bw; well under the GPU ceiling.
-using H100ComputeRow = effects::ConcurrentRow<
-    effects::SmBudget<132>,
-    effects::HbmBytes<80'000'000'000ULL>>;
+using H100ComputeRow = effects::ConcurrentRow<effects::SmBudget<132>, effects::HbmBytes<80'000'000'000ULL>>;
 static_assert(FitsCog<H100ComputeRow, CogKind::Gpu>);
 
 // Realistic 400G NIC row admits.
-using NicAllReduceRow = effects::ConcurrentRow<
-    effects::NicQp<4>,
-    effects::NicCq<4>,
-    effects::NicMr<8>>;
+using NicAllReduceRow = effects::ConcurrentRow<effects::NicQp<4>, effects::NicCq<4>, effects::NicMr<8>>;
 static_assert(FitsCog<NicAllReduceRow, CogKind::NicPort>);
 
 // NVSwitch fabric row admits.
-using SwitchRow = effects::ConcurrentRow<
-    effects::SwitchEgressBw<400'000'000'000ULL>,  // 400 GB/s
-    effects::SwitchBufferCells<32 * 1024>>;
+using SwitchRow = effects::ConcurrentRow<effects::SwitchEgressBw<400'000'000'000ULL>,  // 400 GB/s
+                                         effects::SwitchBufferCells<32 * 1024>>;
 static_assert(FitsCog<SwitchRow, CogKind::NvSwitch>);
 
 // CPU socket row.
-using SocketRow = effects::ConcurrentRow<
-    effects::CpuCoreBudget<64>,
-    effects::LlcBytes<128 * 1024 * 1024>>;
+using SocketRow = effects::ConcurrentRow<effects::CpuCoreBudget<64>, effects::LlcBytes<128 * 1024 * 1024>>;
 static_assert(FitsCog<SocketRow, CogKind::CpuSocket>);
 
 // Empty row admits anywhere (vacuously satisfies every axis).
@@ -777,20 +791,18 @@ using OversubscribedSmRow = effects::ConcurrentRow<effects::SmBudget<999>>;
 static_assert(!FitsCog<OversubscribedSmRow, CogKind::Gpu>);
 
 // HBM > ceiling.
-using OversubscribedHbmRow = effects::ConcurrentRow<
-    effects::HbmBytes<512ULL * 1024 * 1024 * 1024>>;  // 512 GB > 384 GB ceiling
+using OversubscribedHbmRow =
+    effects::ConcurrentRow<effects::HbmBytes<512ULL * 1024 * 1024 * 1024>>;  // 512 GB > 384 GB ceiling
 static_assert(!FitsCog<OversubscribedHbmRow, CogKind::Gpu>);
 
 // Two summed budgets that together exceed ceiling: SmBudget<200> +
 // SmBudget<200> in concurrent-schedule sum = 400 > 320 ceiling.  Note
 // FitsCog itself takes a Row (already-summed); the GAPS-190 layer is
 // what computes the sum.  We exercise post-sum here.
-using ConcurrentOverSubRow = effects::concurrent_row_sum_t<
-    effects::ConcurrentRow<effects::SmBudget<200>>,
-    effects::ConcurrentRow<effects::SmBudget<200>>>;
+using ConcurrentOverSubRow = effects::concurrent_row_sum_t<effects::ConcurrentRow<effects::SmBudget<200>>,
+                                                           effects::ConcurrentRow<effects::SmBudget<200>>>;
 static_assert(!FitsCog<ConcurrentOverSubRow, CogKind::Gpu>);
-static_assert(effects::concurrent_row_value_v<effects::ResourceKind::Sm,
-              ConcurrentOverSubRow> == 400);
+static_assert(effects::concurrent_row_value_v<effects::ResourceKind::Sm, ConcurrentOverSubRow> == 400);
 
 // ── FitsCog: cross-substrate axis-mismatch rejection (HS14 Class B
 //            in-header) ───────────────────────────────────────────
@@ -806,8 +818,7 @@ static_assert(!FitsCog<GpuDemandOnNic, CogKind::NicPort>);
 
 // Row demanding switch egress bw on a CPU socket — CpuSocket's
 // SwitchEgressBw ceiling is 0.
-using SwitchDemandOnCpu = effects::ConcurrentRow<
-    effects::SwitchEgressBw<100'000'000'000ULL>>;
+using SwitchDemandOnCpu = effects::ConcurrentRow<effects::SwitchEgressBw<100'000'000'000ULL>>;
 static_assert(!FitsCog<SwitchDemandOnCpu, CogKind::CpuSocket>);
 
 // ── FitsCog: substrate-validity rejection (HS14 Class B underlying) ─
@@ -837,8 +848,7 @@ static_assert(!FitsCog<effects::resource::SmBudget<32>, CogKind::Gpu>);
 using SaturateGpuSm = effects::ConcurrentRow<effects::SmBudget<320>>;
 static_assert(FitsCog<SaturateGpuSm, CogKind::Gpu>);
 
-using SaturateGpuHbm = effects::ConcurrentRow<
-    effects::HbmBytes<384ULL * 1024 * 1024 * 1024>>;
+using SaturateGpuHbm = effects::ConcurrentRow<effects::HbmBytes<384ULL * 1024 * 1024 * 1024>>;
 static_assert(FitsCog<SaturateGpuHbm, CogKind::Gpu>);
 
 // ── Boundary: demand = ceiling + 1 fails ───────────────────────────

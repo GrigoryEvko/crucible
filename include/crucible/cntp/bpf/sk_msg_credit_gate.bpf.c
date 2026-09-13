@@ -13,8 +13,7 @@
 #endif
 
 SEC("sk_msg")
-int crucible_cntp_sk_msg_credit_gate(struct sk_msg_md *msg)
-{
+int crucible_cntp_sk_msg_credit_gate(struct sk_msg_md* msg) {
     (void)msg;
     return SK_PASS;
 }

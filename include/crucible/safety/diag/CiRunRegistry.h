@@ -55,16 +55,15 @@ namespace crucible::safety::diag {
 
 template <auto Id>
 struct CiRunEntry final {
-    static constexpr auto             id_v           = Id;
-    static constexpr std::string_view name           {"<unregistered>"};
-    static constexpr std::string_view ci_run_url     {""};
-    static constexpr WitnessStatus    status         = WitnessStatus::Active;
-    static constexpr std::uint64_t    expiry_epoch   = 0;
+    static constexpr auto id_v = Id;
+    static constexpr std::string_view name{"<unregistered>"};
+    static constexpr std::string_view ci_run_url{""};
+    static constexpr WitnessStatus status = WitnessStatus::Active;
+    static constexpr std::uint64_t expiry_epoch = 0;
 };
 
 template <auto Id>
-inline constexpr bool is_valid_ci_run_v =
-    CiRunEntry<Id>::status == WitnessStatus::Active;
+inline constexpr bool is_valid_ci_run_v = CiRunEntry<Id>::status == WitnessStatus::Active;
 
 // Sentinel for "unnamed CI run" — used when an internal promotion
 // to CrossValidated does not pin a specific run.
@@ -76,41 +75,39 @@ inline constexpr std::uint64_t UnnamedCiRunId = 0;
 
 namespace ci_id {
 
-inline constexpr std::uint64_t fixy_cross_vendor_smoke    = 0xCFE0'55AA'5750'C001ULL;
-inline constexpr std::uint64_t fixy_aarch64_x86_pairwise  = 0xA4'1A'AC'EA'5750'A887ULL;
+inline constexpr std::uint64_t fixy_cross_vendor_smoke = 0xCFE0'55AA'5750'C001ULL;
+inline constexpr std::uint64_t fixy_aarch64_x86_pairwise = 0xA4'1A'AC'EA'5750'A887ULL;
 
 // Sentinel for Followup C neg fixture — Revoked status.
-inline constexpr std::uint64_t fixy_revoked_ci_demo       = 0xBAD0'C1BAD0'C1BADULL;
+inline constexpr std::uint64_t fixy_revoked_ci_demo = 0xBAD0'C1BAD0'C1BADULL;
 
 }  // namespace ci_id
 
 template <>
 struct CiRunEntry<ci_id::fixy_cross_vendor_smoke> final {
-    static constexpr auto             id_v           = ci_id::fixy_cross_vendor_smoke;
-    static constexpr std::string_view name           = "fixy_cross_vendor_smoke";
-    static constexpr std::string_view ci_run_url     =
-        "internal://ci/fixy_cross_vendor_smoke/latest";
-    static constexpr WitnessStatus    status         = WitnessStatus::Active;
-    static constexpr std::uint64_t    expiry_epoch   = 0;
+    static constexpr auto id_v = ci_id::fixy_cross_vendor_smoke;
+    static constexpr std::string_view name = "fixy_cross_vendor_smoke";
+    static constexpr std::string_view ci_run_url = "internal://ci/fixy_cross_vendor_smoke/latest";
+    static constexpr WitnessStatus status = WitnessStatus::Active;
+    static constexpr std::uint64_t expiry_epoch = 0;
 };
 
 template <>
 struct CiRunEntry<ci_id::fixy_aarch64_x86_pairwise> final {
-    static constexpr auto             id_v           = ci_id::fixy_aarch64_x86_pairwise;
-    static constexpr std::string_view name           = "fixy_aarch64_x86_pairwise";
-    static constexpr std::string_view ci_run_url     =
-        "internal://ci/fixy_aarch64_x86_pairwise/latest";
-    static constexpr WitnessStatus    status         = WitnessStatus::Active;
-    static constexpr std::uint64_t    expiry_epoch   = 0;
+    static constexpr auto id_v = ci_id::fixy_aarch64_x86_pairwise;
+    static constexpr std::string_view name = "fixy_aarch64_x86_pairwise";
+    static constexpr std::string_view ci_run_url = "internal://ci/fixy_aarch64_x86_pairwise/latest";
+    static constexpr WitnessStatus status = WitnessStatus::Active;
+    static constexpr std::uint64_t expiry_epoch = 0;
 };
 
 template <>
 struct CiRunEntry<ci_id::fixy_revoked_ci_demo> final {
-    static constexpr auto             id_v           = ci_id::fixy_revoked_ci_demo;
-    static constexpr std::string_view name           = "fixy_revoked_ci_demo (synthetic)";
-    static constexpr std::string_view ci_run_url     = "<synthetic>";
-    static constexpr WitnessStatus    status         = WitnessStatus::Revoked;
-    static constexpr std::uint64_t    expiry_epoch   = 0;
+    static constexpr auto id_v = ci_id::fixy_revoked_ci_demo;
+    static constexpr std::string_view name = "fixy_revoked_ci_demo (synthetic)";
+    static constexpr std::string_view ci_run_url = "<synthetic>";
+    static constexpr WitnessStatus status = WitnessStatus::Revoked;
+    static constexpr std::uint64_t expiry_epoch = 0;
 };
 
 // ── Self-tests ──────────────────────────────────────────────────────

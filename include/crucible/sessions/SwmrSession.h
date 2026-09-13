@@ -49,50 +49,41 @@ template <typename T>
 using ReaderRuntimeProto = Loop<Recv<T, Continue>>;
 
 template <typename S>
-concept SwmrSessionSurface = requires {
-    typename S::value_type;
-    typename S::writer_tag;
-    typename S::reader_tag;
-    typename S::WriterHandle;
-    typename S::ReaderHandle;
-    { std::declval<S&>().writer(
-          std::declval<::crucible::safety::Permission<typename S::writer_tag>&&>()) }
-        -> std::same_as<typename S::WriterHandle>;
-    { std::declval<S&>().reader() }
-        -> std::same_as<std::optional<typename S::ReaderHandle>>;
-} && ::crucible::safety::extract::IsSwmrWriter<typename S::WriterHandle>
-  && ::crucible::safety::extract::IsSwmrReader<typename S::ReaderHandle>
-  && std::is_same_v<
-         ::crucible::safety::extract::swmr_writer_value_t<typename S::WriterHandle>,
-         typename S::value_type>
-  && std::is_same_v<
-         ::crucible::safety::extract::swmr_reader_value_t<typename S::ReaderHandle>,
-         typename S::value_type>;
+concept SwmrSessionSurface =
+    requires {
+        typename S::value_type;
+        typename S::writer_tag;
+        typename S::reader_tag;
+        typename S::WriterHandle;
+        typename S::ReaderHandle;
+        {
+            std::declval<S&>().writer(std::declval<::crucible::safety::Permission<typename S::writer_tag>&&>())
+        } -> std::same_as<typename S::WriterHandle>;
+        { std::declval<S&>().reader() } -> std::same_as<std::optional<typename S::ReaderHandle>>;
+    } && ::crucible::safety::extract::IsSwmrWriter<typename S::WriterHandle>
+    && ::crucible::safety::extract::IsSwmrReader<typename S::ReaderHandle>
+    && std::is_same_v<::crucible::safety::extract::swmr_writer_value_t<typename S::WriterHandle>,
+                      typename S::value_type>
+    && std::is_same_v<::crucible::safety::extract::swmr_reader_value_t<typename S::ReaderHandle>,
+                      typename S::value_type>;
 
-template <::crucible::concurrent::SnapshotValue T,
-          typename WriterTag,
-          typename ReaderTag>
-class SwmrSession : public ::crucible::safety::Pinned<
-    SwmrSession<T, WriterTag, ReaderTag>> {
+template <::crucible::concurrent::SnapshotValue T, typename WriterTag, typename ReaderTag>
+class SwmrSession : public ::crucible::safety::Pinned<SwmrSession<T, WriterTag, ReaderTag>> {
 public:
     using value_type = T;
     using writer_tag = WriterTag;
     using reader_tag = ReaderTag;
 
-    SwmrSession() noexcept
-        : snapshot_{}
-        , reader_pool_{::crucible::safety::mint_permission_root<reader_tag>()} {}
+    SwmrSession() noexcept : snapshot_{}, reader_pool_{::crucible::safety::mint_permission_root<reader_tag>()} {}
 
     explicit SwmrSession(T const& initial) noexcept
-        : snapshot_{initial}
-        , reader_pool_{::crucible::safety::mint_permission_root<reader_tag>()} {}
+        : snapshot_{initial}, reader_pool_{::crucible::safety::mint_permission_root<reader_tag>()} {}
 
     class WriterHandle {
         SwmrSession* session_ = nullptr;
         [[no_unique_address]] ::crucible::safety::Permission<writer_tag> perm_;
 
-        constexpr WriterHandle(SwmrSession& session,
-                               ::crucible::safety::Permission<writer_tag>&& perm) noexcept
+        constexpr WriterHandle(SwmrSession& session, ::crucible::safety::Permission<writer_tag>&& perm) noexcept
             : session_{&session}, perm_{std::move(perm)} {}
 
         friend class SwmrSession;
@@ -101,18 +92,15 @@ public:
         using value_type = T;
         using tag_type = writer_tag;
 
-        WriterHandle(WriterHandle const&)
-            = delete("SwmrSession::WriterHandle owns the linear writer permission");
-        WriterHandle& operator=(WriterHandle const&)
-            = delete("SwmrSession::WriterHandle owns the linear writer permission");
+        WriterHandle(WriterHandle const&) = delete("SwmrSession::WriterHandle owns the linear writer permission");
+        WriterHandle&
+        operator=(WriterHandle const&) = delete("SwmrSession::WriterHandle owns the linear writer permission");
         constexpr WriterHandle(WriterHandle&&) noexcept = default;
         constexpr WriterHandle& operator=(WriterHandle&&) noexcept = default;
 
         void publish(T const& value) noexcept { session_->snapshot_.publish(value); }
 
-        [[nodiscard]] std::uint64_t version() const noexcept {
-            return session_->snapshot_.version();
-        }
+        [[nodiscard]] std::uint64_t version() const noexcept { return session_->snapshot_.version(); }
     };
 
     class ReaderHandle {
@@ -129,34 +117,25 @@ public:
         using value_type = T;
         using tag_type = reader_tag;
 
-        ReaderHandle(ReaderHandle const&)
-            = delete("SwmrSession::ReaderHandle owns one SharedPermissionPool share");
-        ReaderHandle& operator=(ReaderHandle const&)
-            = delete("SwmrSession::ReaderHandle owns one SharedPermissionPool share");
+        ReaderHandle(ReaderHandle const&) = delete("SwmrSession::ReaderHandle owns one SharedPermissionPool share");
+        ReaderHandle&
+        operator=(ReaderHandle const&) = delete("SwmrSession::ReaderHandle owns one SharedPermissionPool share");
         constexpr ReaderHandle(ReaderHandle&&) noexcept = default;
-        ReaderHandle& operator=(ReaderHandle&&)
-            = delete("SwmrSession::ReaderHandle share lifetime is fixed at construction");
+        ReaderHandle&
+        operator=(ReaderHandle&&) = delete("SwmrSession::ReaderHandle share lifetime is fixed at construction");
 
         [[nodiscard]] T load() const noexcept { return session_->snapshot_.load(); }
 
-        [[nodiscard]] std::optional<T> try_load() const noexcept {
-            return session_->snapshot_.try_load();
-        }
+        [[nodiscard]] std::optional<T> try_load() const noexcept { return session_->snapshot_.try_load(); }
 
-        [[nodiscard]] std::uint64_t version() const noexcept {
-            return session_->snapshot_.version();
-        }
+        [[nodiscard]] std::uint64_t version() const noexcept { return session_->snapshot_.version(); }
 
-        [[nodiscard]] constexpr auto token() const noexcept
-            -> ::crucible::safety::SharedPermission<reader_tag>
-        {
+        [[nodiscard]] constexpr auto token() const noexcept -> ::crucible::safety::SharedPermission<reader_tag> {
             return guard_.token();
         }
     };
 
-    [[nodiscard]] constexpr WriterHandle writer(
-        ::crucible::safety::Permission<writer_tag>&& perm) noexcept
-    {
+    [[nodiscard]] constexpr WriterHandle writer(::crucible::safety::Permission<writer_tag>&& perm) noexcept {
         return WriterHandle{*this, std::move(perm)};
     }
 
@@ -168,9 +147,7 @@ public:
 
     template <typename Body>
         requires std::is_invocable_v<Body>
-    bool with_drained_access(Body&& body)
-        noexcept(std::is_nothrow_invocable_v<Body>)
-    {
+    bool with_drained_access(Body&& body) noexcept(std::is_nothrow_invocable_v<Body>) {
         auto upgrade = reader_pool_.try_upgrade();
         if (!upgrade) return false;
         std::forward<Body>(body)();
@@ -178,17 +155,11 @@ public:
         return true;
     }
 
-    [[nodiscard]] std::uint64_t outstanding_readers() const noexcept {
-        return reader_pool_.outstanding();
-    }
+    [[nodiscard]] std::uint64_t outstanding_readers() const noexcept { return reader_pool_.outstanding(); }
 
-    [[nodiscard]] bool is_exclusive_active() const noexcept {
-        return reader_pool_.is_exclusive_out();
-    }
+    [[nodiscard]] bool is_exclusive_active() const noexcept { return reader_pool_.is_exclusive_out(); }
 
-    [[nodiscard]] std::uint64_t version() const noexcept {
-        return snapshot_.version();
-    }
+    [[nodiscard]] std::uint64_t version() const noexcept { return snapshot_.version(); }
 
 private:
     ::crucible::concurrent::AtomicSnapshot<T> snapshot_;
@@ -196,10 +167,8 @@ private:
 };
 
 template <SwmrSessionSurface Swmr>
-[[nodiscard]] constexpr auto mint_swmr_writer(
-    Swmr& session,
-    ::crucible::safety::Permission<typename Swmr::writer_tag>&& perm) noexcept
-{
+[[nodiscard]] constexpr auto
+mint_swmr_writer(Swmr& session, ::crucible::safety::Permission<typename Swmr::writer_tag>&& perm) noexcept {
     return session.writer(std::move(perm));
 }
 
@@ -209,47 +178,32 @@ template <SwmrSessionSurface Swmr>
 }
 
 template <SwmrSessionSurface Swmr>
-[[nodiscard]] auto mint_swmr_reader(
-    Swmr& session,
-    ::crucible::safety::SharedPermission<typename Swmr::reader_tag> proof) noexcept
-{
+[[nodiscard]] auto mint_swmr_reader(Swmr& session,
+                                    ::crucible::safety::SharedPermission<typename Swmr::reader_tag> proof) noexcept {
     (void)proof;
     return session.reader();
 }
 
 template <SwmrSessionSurface Swmr, ::crucible::effects::IsExecCtx Ctx>
-[[nodiscard]] constexpr auto
-mint_writer_session(Ctx const& ctx,
-                    typename Swmr::WriterHandle& handle) noexcept
-{
+[[nodiscard]] constexpr auto mint_writer_session(Ctx const& ctx, typename Swmr::WriterHandle& handle) noexcept {
     using T = typename Swmr::value_type;
     return mint_permissioned_session<WriterProto<T>>(ctx, &handle);
 }
 
 template <SwmrSessionSurface Swmr, ::crucible::effects::IsExecCtx Ctx>
-[[nodiscard]] constexpr auto
-mint_reader_session(Ctx const& ctx,
-                    typename Swmr::ReaderHandle& handle) noexcept
-{
+[[nodiscard]] constexpr auto mint_reader_session(Ctx const& ctx, typename Swmr::ReaderHandle& handle) noexcept {
     using T = typename Swmr::value_type;
-    return mint_permissioned_session<ReaderProto<T, typename Swmr::reader_tag>>(
-        ctx, &handle);
+    return mint_permissioned_session<ReaderProto<T, typename Swmr::reader_tag>>(ctx, &handle);
 }
 
 template <SwmrSessionSurface Swmr, ::crucible::effects::IsExecCtx Ctx>
-[[nodiscard]] constexpr auto
-mint_writer_runtime_session(Ctx const& ctx,
-                            typename Swmr::WriterHandle& handle) noexcept
-{
+[[nodiscard]] constexpr auto mint_writer_runtime_session(Ctx const& ctx, typename Swmr::WriterHandle& handle) noexcept {
     using T = typename Swmr::value_type;
     return mint_permissioned_session<WriterRuntimeProto<T>>(ctx, &handle);
 }
 
 template <SwmrSessionSurface Swmr, ::crucible::effects::IsExecCtx Ctx>
-[[nodiscard]] constexpr auto
-mint_reader_runtime_session(Ctx const& ctx,
-                            typename Swmr::ReaderHandle& handle) noexcept
-{
+[[nodiscard]] constexpr auto mint_reader_runtime_session(Ctx const& ctx, typename Swmr::ReaderHandle& handle) noexcept {
     using T = typename Swmr::value_type;
     return mint_permissioned_session<ReaderRuntimeProto<T>>(ctx, &handle);
 }
@@ -258,9 +212,7 @@ inline constexpr auto publish_value = [](auto& hp, auto&& value) noexcept {
     hp->publish(std::forward<decltype(value)>(value));
 };
 
-inline constexpr auto load_value = [](auto& hp) noexcept {
-    return hp->load();
-};
+inline constexpr auto load_value = [](auto& hp) noexcept { return hp->load(); };
 
 inline constexpr auto load_borrowed_value = [](auto& hp) noexcept {
     using handle_pointer = std::remove_reference_t<decltype(hp)>;
@@ -279,22 +231,17 @@ using WriterHandle = SmallSession::WriterHandle;
 using ReaderHandle = SmallSession::ReaderHandle;
 
 static_assert(sizeof(WriterHandle) == sizeof(SmallSession*),
-    "SwmrSession::WriterHandle must EBO-collapse the writer Permission.");
-static_assert(sizeof(ReaderHandle) ==
-              sizeof(SmallSession*) +
-              sizeof(::crucible::safety::SharedPermissionGuard<ReaderTag>),
-    "SwmrSession::ReaderHandle must only store a session pointer plus guard.");
+              "SwmrSession::WriterHandle must EBO-collapse the writer Permission.");
+static_assert(sizeof(ReaderHandle)
+                  == sizeof(SmallSession*) + sizeof(::crucible::safety::SharedPermissionGuard<ReaderTag>),
+              "SwmrSession::ReaderHandle must only store a session pointer plus guard.");
 static_assert(!std::is_copy_constructible_v<WriterHandle>);
 static_assert(!std::is_copy_constructible_v<ReaderHandle>);
 static_assert(std::is_move_constructible_v<WriterHandle>);
 static_assert(std::is_move_constructible_v<ReaderHandle>);
 
-static_assert(std::is_same_v<
-    WriterProto<int>,
-    Loop<Send<ContentAddressed<int>, Continue>>>);
-static_assert(std::is_same_v<
-    ReaderProto<int, ReaderTag>,
-    Loop<Recv<Borrowed<int, ReaderTag>, Continue>>>);
+static_assert(std::is_same_v<WriterProto<int>, Loop<Send<ContentAddressed<int>, Continue>>>);
+static_assert(std::is_same_v<ReaderProto<int, ReaderTag>, Loop<Recv<Borrowed<int, ReaderTag>, Continue>>>);
 static_assert(std::is_same_v<WriterRuntimeProto<int>, Loop<Send<int, Continue>>>);
 static_assert(std::is_same_v<ReaderRuntimeProto<int>, Loop<Recv<int, Continue>>>);
 

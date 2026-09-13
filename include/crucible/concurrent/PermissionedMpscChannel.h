@@ -135,21 +135,23 @@ namespace crucible::concurrent {
 
 namespace mpsc_tag {
 
-template <typename UserTag> struct Whole    {};
-template <typename UserTag> struct Producer {};
-template <typename UserTag> struct Consumer {};
+template <typename UserTag>
+struct Whole {};
+template <typename UserTag>
+struct Producer {};
+template <typename UserTag>
+struct Consumer {};
 
 }  // namespace mpsc_tag
 
 // ── PermissionedMpscChannel<T, Capacity, UserTag> ──────────────────
 
 template <RingValue T, std::size_t Capacity, typename UserTag = void>
-class PermissionedMpscChannel
-    : public safety::Pinned<PermissionedMpscChannel<T, Capacity, UserTag>> {
+class PermissionedMpscChannel : public safety::Pinned<PermissionedMpscChannel<T, Capacity, UserTag>> {
 public:
-    using value_type   = T;
-    using user_tag     = UserTag;
-    using whole_tag    = mpsc_tag::Whole<UserTag>;
+    using value_type = T;
+    using user_tag = UserTag;
+    using whole_tag = mpsc_tag::Whole<UserTag>;
     using producer_tag = mpsc_tag::Producer<UserTag>;
     using consumer_tag = mpsc_tag::Consumer<UserTag>;
 
@@ -171,8 +173,7 @@ public:
     // permissions in the wrong Pool.  Internal minting keeps the
     // Pool the single mint site for its tag.
 
-    PermissionedMpscChannel() noexcept
-        : producer_pool_{safety::mint_permission_root<producer_tag>()} {}
+    PermissionedMpscChannel() noexcept : producer_pool_{safety::mint_permission_root<producer_tag>()} {}
 
     // ── ProducerHandle ────────────────────────────────────────────
     //
@@ -187,19 +188,17 @@ public:
         PermissionedMpscChannel* ch_ = nullptr;
         safety::SharedPermissionGuard<producer_tag> guard_;
 
-        constexpr ProducerHandle(PermissionedMpscChannel& c,
-                                 safety::SharedPermissionGuard<producer_tag>&& g) noexcept
+        constexpr ProducerHandle(PermissionedMpscChannel& c, safety::SharedPermissionGuard<producer_tag>&& g) noexcept
             : ch_{&c}, guard_{std::move(g)} {}
         friend class PermissionedMpscChannel;
 
     public:
-        static constexpr std::size_t per_call_working_set =
-            lines_plus_cell_working_set_v<3, T>;
+        static constexpr std::size_t per_call_working_set = lines_plus_cell_working_set_v<3, T>;
 
-        ProducerHandle(const ProducerHandle&)
-            = delete("ProducerHandle owns a Pool refcount share — copy would double-count");
-        ProducerHandle& operator=(const ProducerHandle&)
-            = delete("ProducerHandle owns a Pool refcount share — assignment would double-count");
+        ProducerHandle(const ProducerHandle&) =
+            delete("ProducerHandle owns a Pool refcount share — copy would double-count");
+        ProducerHandle& operator=(const ProducerHandle&) =
+            delete("ProducerHandle owns a Pool refcount share — assignment would double-count");
         constexpr ProducerHandle(ProducerHandle&&) noexcept = default;
         // Move-assignment deleted because Guard's lifetime is fixed
         // at construction (Guard rejects move-assign).
@@ -207,20 +206,12 @@ public:
         // Push — many producers may call concurrently.  Returns false
         // iff the ring is full; caller decides backpressure.
         // ~12-15 ns under low contention, scales by FAA bandwidth.
-        [[nodiscard, gnu::hot]] bool try_push(T item) noexcept {
-            return ch_->ring_.try_push(std::move(item));
-        }
+        [[nodiscard, gnu::hot]] bool try_push(T item) noexcept { return ch_->ring_.try_push(std::move(item)); }
 
         // Diagnostics — snapshot reads, NOT exact.
-        [[nodiscard]] bool empty_approx() const noexcept {
-            return ch_->ring_.empty_approx();
-        }
-        [[nodiscard]] std::size_t size_approx() const noexcept {
-            return ch_->ring_.size_approx();
-        }
-        [[nodiscard]] static constexpr std::size_t capacity() noexcept {
-            return Capacity;
-        }
+        [[nodiscard]] bool empty_approx() const noexcept { return ch_->ring_.empty_approx(); }
+        [[nodiscard]] std::size_t size_approx() const noexcept { return ch_->ring_.size_approx(); }
+        [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
     };
 
     // ── ConsumerHandle ────────────────────────────────────────────
@@ -242,40 +233,30 @@ public:
         PermissionedMpscChannel& ch_;
         [[no_unique_address]] safety::Permission<consumer_tag> perm_;
 
-        constexpr ConsumerHandle(PermissionedMpscChannel& c,
-                                 safety::Permission<consumer_tag>&& p) noexcept
+        constexpr ConsumerHandle(PermissionedMpscChannel& c, safety::Permission<consumer_tag>&& p) noexcept
             : ch_{c}, perm_{std::move(p)} {}
         friend class PermissionedMpscChannel;
 
     public:
-        static constexpr std::size_t per_call_working_set =
-            lines_plus_cell_working_set_v<3, T>;
+        static constexpr std::size_t per_call_working_set = lines_plus_cell_working_set_v<3, T>;
 
-        ConsumerHandle(const ConsumerHandle&)
-            = delete("ConsumerHandle owns the Consumer Permission — copy would duplicate the linear token");
-        ConsumerHandle& operator=(const ConsumerHandle&)
-            = delete("ConsumerHandle owns the Consumer Permission — assignment would overwrite the linear token");
+        ConsumerHandle(const ConsumerHandle&) =
+            delete("ConsumerHandle owns the Consumer Permission — copy would duplicate the linear token");
+        ConsumerHandle& operator=(const ConsumerHandle&) =
+            delete("ConsumerHandle owns the Consumer Permission — assignment would overwrite the linear token");
         constexpr ConsumerHandle(ConsumerHandle&&) noexcept = default;
-        ConsumerHandle& operator=(ConsumerHandle&&)
-            = delete("ConsumerHandle binds to ONE channel for life — rebinding would orphan the original Permission and silently allow a second consumer to coexist (MpscRing's try_pop is single-consumer-only)");
+        ConsumerHandle& operator=(ConsumerHandle&&) = delete(
+            "ConsumerHandle binds to ONE channel for life — rebinding would orphan the original Permission and silently allow a second consumer to coexist (MpscRing's try_pop is single-consumer-only)");
 
         // Pop — single consumer ONLY (caller ensures via Permission
         // linearity).  Returns nullopt iff the ring is empty.
         // ~5-10 ns uncontended.
-        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept {
-            return ch_.ring_.try_pop();
-        }
+        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept { return ch_.ring_.try_pop(); }
 
         // Diagnostics — snapshot reads, NOT exact.
-        [[nodiscard]] bool empty_approx() const noexcept {
-            return ch_.ring_.empty_approx();
-        }
-        [[nodiscard]] std::size_t size_approx() const noexcept {
-            return ch_.ring_.size_approx();
-        }
-        [[nodiscard]] static constexpr std::size_t capacity() noexcept {
-            return Capacity;
-        }
+        [[nodiscard]] bool empty_approx() const noexcept { return ch_.ring_.empty_approx(); }
+        [[nodiscard]] std::size_t size_approx() const noexcept { return ch_.ring_.size_approx(); }
+        [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
     };
 
     // ── Factories ─────────────────────────────────────────────────
@@ -312,9 +293,7 @@ public:
     // Subsequent producer() calls succeed once body returns.
     template <typename Body>
         requires std::is_invocable_v<Body>
-    bool with_drained_access(Body&& body)
-        noexcept(std::is_nothrow_invocable_v<Body>)
-    {
+    bool with_drained_access(Body&& body) noexcept(std::is_nothrow_invocable_v<Body>) {
         auto upgrade = producer_pool_.try_upgrade();
         if (!upgrade) return false;
         std::forward<Body>(body)();
@@ -324,27 +303,17 @@ public:
 
     // ── Diagnostics ───────────────────────────────────────────────
 
-    [[nodiscard]] std::uint64_t outstanding_producers() const noexcept {
-        return producer_pool_.outstanding();
-    }
+    [[nodiscard]] std::uint64_t outstanding_producers() const noexcept { return producer_pool_.outstanding(); }
 
-    [[nodiscard]] bool is_exclusive_active() const noexcept {
-        return producer_pool_.is_exclusive_out();
-    }
+    [[nodiscard]] bool is_exclusive_active() const noexcept { return producer_pool_.is_exclusive_out(); }
 
-    [[nodiscard]] bool empty_approx() const noexcept {
-        return ring_.empty_approx();
-    }
-    [[nodiscard]] std::size_t size_approx() const noexcept {
-        return ring_.size_approx();
-    }
-    [[nodiscard]] static constexpr std::size_t capacity() noexcept {
-        return Capacity;
-    }
+    [[nodiscard]] bool empty_approx() const noexcept { return ring_.empty_approx(); }
+    [[nodiscard]] std::size_t size_approx() const noexcept { return ring_.size_approx(); }
+    [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
 private:
-    MpscRing<T, Capacity>                            ring_;
-    safety::SharedPermissionPool<producer_tag>       producer_pool_;
+    MpscRing<T, Capacity> ring_;
+    safety::SharedPermissionPool<producer_tag> producer_pool_;
 };
 
 }  // namespace crucible::concurrent
@@ -359,30 +328,20 @@ private:
 namespace crucible::safety {
 
 template <typename UserTag>
-struct splits_into<concurrent::mpsc_tag::Whole<UserTag>,
-                   concurrent::mpsc_tag::Producer<UserTag>,
-                   concurrent::mpsc_tag::Consumer<UserTag>>
-    : std::true_type {};
+struct splits_into<concurrent::mpsc_tag::Whole<UserTag>, concurrent::mpsc_tag::Producer<UserTag>,
+                   concurrent::mpsc_tag::Consumer<UserTag>> : std::true_type {};
 
 template <typename UserTag>
-struct splits_into_pack<concurrent::mpsc_tag::Whole<UserTag>,
-                        concurrent::mpsc_tag::Producer<UserTag>,
-                        concurrent::mpsc_tag::Consumer<UserTag>>
-    : std::true_type {};
+struct splits_into_pack<concurrent::mpsc_tag::Whole<UserTag>, concurrent::mpsc_tag::Producer<UserTag>,
+                        concurrent::mpsc_tag::Consumer<UserTag>> : std::true_type {};
 
 // fixy-M-29 authoring witnesses.
 template <typename UserTag>
-struct splits_into_authoring_witness<
-    concurrent::mpsc_tag::Whole<UserTag>,
-    concurrent::mpsc_tag::Producer<UserTag>,
-    concurrent::mpsc_tag::Consumer<UserTag>>
-    : std::true_type {};
+struct splits_into_authoring_witness<concurrent::mpsc_tag::Whole<UserTag>, concurrent::mpsc_tag::Producer<UserTag>,
+                                     concurrent::mpsc_tag::Consumer<UserTag>> : std::true_type {};
 
 template <typename UserTag>
-struct splits_into_pack_authoring_witness<
-    concurrent::mpsc_tag::Whole<UserTag>,
-    concurrent::mpsc_tag::Producer<UserTag>,
-    concurrent::mpsc_tag::Consumer<UserTag>>
-    : std::true_type {};
+struct splits_into_pack_authoring_witness<concurrent::mpsc_tag::Whole<UserTag>, concurrent::mpsc_tag::Producer<UserTag>,
+                                          concurrent::mpsc_tag::Consumer<UserTag>> : std::true_type {};
 
 }  // namespace crucible::safety

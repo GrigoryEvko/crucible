@@ -190,17 +190,14 @@ struct PlatformBounded final {
 namespace detail {
 
 template <typename... Platforms>
-inline constexpr bool platform_bounded_active_v =
-    (std::is_same_v<arch::current_arch_tag, Platforms> || ...);
+inline constexpr bool platform_bounded_active_v = (std::is_same_v<arch::current_arch_tag, Platforms> || ...);
 
 // Out-of-band tier for inactive PlatformBounded — falls back to the
 // Asserted floor (tier 1).  An inactive PlatformBounded with tier 1
 // cannot satisfy a Tested-or-higher floor gate.
 template <typename W, typename... Platforms>
 inline constexpr std::uint8_t witness_tier_v_impl<PlatformBounded<W, Platforms...>> =
-    platform_bounded_active_v<Platforms...>
-        ? witness_tier_v_impl<W>
-        : std::uint8_t{1};
+    platform_bounded_active_v<Platforms...> ? witness_tier_v_impl<W> : std::uint8_t{1};
 
 }  // namespace detail
 
@@ -214,8 +211,7 @@ inline constexpr std::uint8_t witness_tier_v = detail::witness_tier_v_impl<W>;
 // W1 ⊑ W2 iff witness_tier_v<W1> ≤ witness_tier_v<W2>.
 
 template <typename W1, typename W2>
-inline constexpr bool witness_leq_v =
-    witness_tier_v<W1> <= witness_tier_v<W2>;
+inline constexpr bool witness_leq_v = witness_tier_v<W1> <= witness_tier_v<W2>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Self-tests ─────────────────────────────────────────────────────
@@ -256,24 +252,24 @@ static_assert(!witness_leq_v<FormallyVerified<int>, Asserted<>>);
 // PlatformBounded — active on current arch.
 using AnyArch = arch::current_arch_tag;
 static_assert(witness_tier_v<PlatformBounded<Tested<0>, AnyArch>> == 2,
-    "PlatformBounded with current arch in pack must report W's tier.");
+              "PlatformBounded with current arch in pack must report W's tier.");
 
 // PlatformBounded — inactive falls back to Asserted floor.
 // We pick a single other arch tag that ISN'T current_arch_tag, so this
 // specialization runs the inactive arm.
 namespace pb_inactive_arch {
-    // Choose an arch that's NOT current.  On x86 → AArch64; on AArch64 → X86_64.
+// Choose an arch that's NOT current.  On x86 → AArch64; on AArch64 → X86_64.
 #if defined(__x86_64__)
-    using other = arch::AArch64;
+using other = arch::AArch64;
 #elif defined(__aarch64__)
-    using other = arch::X86_64;
+using other = arch::X86_64;
 #elif defined(__riscv)
-    using other = arch::X86_64;
+using other = arch::X86_64;
 #endif
-}
+}  // namespace pb_inactive_arch
 static_assert(witness_tier_v<PlatformBounded<Tested<0>, pb_inactive_arch::other>> == 1,
-    "PlatformBounded with current arch NOT in pack must fall back to "
-    "Asserted floor (tier 1).");
+              "PlatformBounded with current arch NOT in pack must fall back to "
+              "Asserted floor (tier 1).");
 
 // DefaultWitness round-trip.
 static_assert(std::is_same_v<DefaultWitness, Asserted<UnnamedRationale>>);

@@ -86,8 +86,10 @@ namespace crucible::safety {
 // (1345 LOC + transitive ExecCtx infrastructure) into every Linear
 // consumer.  This is the same forward-declare pattern Permission.h
 // itself uses for `class Linear` references.
-template <typename Tag> class Permission;
-template <typename Tag> class SharedPermission;
+template <typename Tag>
+class Permission;
+template <typename Tag>
+class SharedPermission;
 
 // is_already_linear<T> — type-system witness that T's value-level
 // discipline already encodes the exactly-once obligation.  Default
@@ -119,8 +121,7 @@ struct is_already_linear_impl<SharedPermission<Tag>> : std::true_type {};
 }  // namespace detail
 
 template <typename T>
-struct is_already_linear
-    : detail::is_already_linear_impl<std::remove_cvref_t<T>> {};
+struct is_already_linear : detail::is_already_linear_impl<std::remove_cvref_t<T>> {};
 
 template <typename T>
 inline constexpr bool is_already_linear_v = is_already_linear<T>::value;
@@ -136,33 +137,30 @@ class [[nodiscard]] Linear {
     // `Linear<Permission<MyTag>>{...}`) rather than deep inside the
     // Graded substrate's later checks.  Single grep target:
     // grep "is_already_linear" finds every type the rejection covers.
-    static_assert(!is_already_linear_v<T>,
-        "Linear<Permission<Tag>> / Linear<SharedPermission<Tag>> is "
-        "redundant: Permission IS already a move-only linearity token "
-        "(deleted copy, [[nodiscard]], sizeof = 1, EBO-collapsible).  "
-        "Wrapping it in Linear<> stacks two disciplines without adding "
-        "a new bug class and defeats the §XXI mint-grep discipline.  "
-        "Use Permission<Tag> directly; pass via mint_permission_root / "
-        "mint_permission_split / permission_fork (CLAUDE.md §XVI).");
+    static_assert(!is_already_linear_v<T>, "Linear<Permission<Tag>> / Linear<SharedPermission<Tag>> is "
+                                           "redundant: Permission IS already a move-only linearity token "
+                                           "(deleted copy, [[nodiscard]], sizeof = 1, EBO-collapsible).  "
+                                           "Wrapping it in Linear<> stacks two disciplines without adding "
+                                           "a new bug class and defeats the §XXI mint-grep discipline.  "
+                                           "Use Permission<Tag> directly; pass via mint_permission_root / "
+                                           "mint_permission_split / permission_fork (CLAUDE.md §XVI).");
+
 public:
     using value_type = T;
     // The QTT grade-1 lattice (singleton "exactly one ownership").
-    using lattice_type = ::crucible::algebra::lattices::QttSemiring::At<
-        ::crucible::algebra::lattices::QttGrade::One>;
+    using lattice_type = ::crucible::algebra::lattices::QttSemiring::At<::crucible::algebra::lattices::QttGrade::One>;
 
     // Modality declaration — Round-4 CHEAT-5: the GradedWrapper
     // concept verifies this matches graded_type's modality template
     // parameter.  Linear is Absolute (uniform-grade-known-at-type-
     // level, no extract/inject monadic operations).
-    static constexpr ::crucible::algebra::ModalityKind modality =
-        ::crucible::algebra::ModalityKind::Absolute;
+    static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::Absolute;
 
     // Public per GRADED-TRAIT-1 — external code (GradedWrapper concept,
     // test_migration_verification, future SealedRefined-of-Linear,
     // mCRL2 export) needs to introspect the migration mapping.  Zero
     // behavioral change vs the prior private declaration.
-    using graded_type  = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
+    using graded_type = ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
 
 private:
     // Empty-lattice grade_type collapses via [[no_unique_address]] in
@@ -171,16 +169,13 @@ private:
 
     // Helper: the singleton element_type value.  QttSemiring::At<One>
     // has an empty element_type, so this is a zero-cost {} construction.
-    [[nodiscard]] static constexpr typename lattice_type::element_type
-    grade_one() noexcept {
+    [[nodiscard]] static constexpr typename lattice_type::element_type grade_one() noexcept {
         return typename lattice_type::element_type{};
     }
 
 public:
-
     // Move-from-T construction.  Forwards to Graded(value, grade).
-    constexpr explicit Linear(T v)
-        noexcept(std::is_nothrow_move_constructible_v<T>)
+    constexpr explicit Linear(T v) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(v), grade_one()} {}
 
     // In-place construction: build T directly inside the Linear.
@@ -191,30 +186,25 @@ public:
     // construction happens in-situ via guaranteed copy elision.
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr explicit Linear(std::in_place_t, Args&&... args)
-        noexcept(std::is_nothrow_constructible_v<T, Args...>
-                 && std::is_nothrow_move_constructible_v<T>)
+    constexpr explicit Linear(std::in_place_t, Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
+                                                                        && std::is_nothrow_move_constructible_v<T>)
         : impl_{T(std::forward<Args>(args)...), grade_one()} {}
 
-    Linear(const Linear&)            = delete("Linear<T> is move-only; use std::move or drop()");
+    Linear(const Linear&) = delete("Linear<T> is move-only; use std::move or drop()");
     Linear& operator=(const Linear&) = delete("Linear<T> is move-only; use std::move or drop()");
-    Linear(Linear&&)                 = default;
-    Linear& operator=(Linear&&)      = default;
-    ~Linear()                        = default;
+    Linear(Linear&&) = default;
+    Linear& operator=(Linear&&) = default;
+    ~Linear() = default;
 
     // Ownership transfer — must be called on rvalue.  Compile error
     // on lvalue.  Forwards to Graded::consume().
-    [[nodiscard]] constexpr T consume() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return std::move(impl_).consume();
     }
 
     // Shared borrow — Linear keeps the value.  Forwards to
     // Graded::peek().
-    [[nodiscard]] constexpr const T& peek() const & noexcept {
-        return impl_.peek();
-    }
+    [[nodiscard]] constexpr const T& peek() const& noexcept { return impl_.peek(); }
 
     // Mutable borrow — Linear keeps the value but caller may mutate.
     // Prefer consume+reconstruct over this when the change is
@@ -222,19 +212,13 @@ public:
     // AbsoluteModality<M> in Graded — the QTT-At-One grade is a
     // static property of the wrapper (linearity is about ownership,
     // not value identity), so raw mutation is sound.
-    [[nodiscard]] constexpr T& peek_mut() & noexcept {
-        return impl_.peek_mut();
-    }
+    [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(); }
 
     // Swap — preserves linearity on both sides.  Forwards to
     // Graded::swap (also gated on AbsoluteModality).
-    constexpr void swap(Linear& other) noexcept(std::is_nothrow_swappable_v<T>) {
-        impl_.swap(other.impl_);
-    }
+    constexpr void swap(Linear& other) noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
 
-    friend constexpr void swap(Linear& a, Linear& b) noexcept(std::is_nothrow_swappable_v<T>) {
-        a.swap(b);
-    }
+    friend constexpr void swap(Linear& a, Linear& b) noexcept(std::is_nothrow_swappable_v<T>) { a.swap(b); }
 
     // ── Diagnostic names (forwarded from Graded substrate) ─────────
     //
@@ -252,9 +236,7 @@ public:
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return graded_type::lattice_name();
-    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 };
 
 template <typename T>
@@ -272,17 +254,13 @@ Linear(T) -> Linear<T>;
 // ambiguously.
 template <typename T, typename... Args>
     requires std::is_constructible_v<T, Args...>
-[[nodiscard]] constexpr Linear<T> mint_linear(Args&&... args)
-    noexcept(std::is_nothrow_constructible_v<T, Args...>)
-{
+[[nodiscard]] constexpr Linear<T> mint_linear(Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>) {
     return Linear<T>{std::in_place, std::forward<Args>(args)...};
 }
 
 // Explicit discard — equivalent to `let _ = std::move(x).consume();`
 template <typename T>
-constexpr void drop(Linear<T>&& x)
-    noexcept(std::is_nothrow_move_constructible_v<T>)
-{
+constexpr void drop(Linear<T>&& x) noexcept(std::is_nothrow_move_constructible_v<T>) {
     (void)std::move(x).consume();
 }
 
@@ -290,9 +268,9 @@ constexpr void drop(Linear<T>&& x)
 // the lattice's empty element_type + Graded's [[no_unique_address]]
 // on grade_.  If this fires after a Graded refactor, the EBO
 // discipline regressed.
-static_assert(sizeof(Linear<int>)        == sizeof(int));
-static_assert(sizeof(Linear<void*>)      == sizeof(void*));
-static_assert(sizeof(Linear<long long>)  == sizeof(long long));
+static_assert(sizeof(Linear<int>) == sizeof(int));
+static_assert(sizeof(Linear<void*>) == sizeof(void*));
+static_assert(sizeof(Linear<long long>) == sizeof(long long));
 
 namespace detail::linear_self_test {
 
@@ -307,7 +285,7 @@ namespace detail::linear_self_test {
 //      in-place constructor's emplace path);
 //   3. swap's noexcept propagation through Graded::swap.
 inline void runtime_smoke_test() {
-    int seed = 41;                       // non-constant
+    int seed = 41;  // non-constant
     Linear<int> a{std::in_place, seed + 1};
     if (a.peek() != 42) std::abort();
 
@@ -336,9 +314,9 @@ inline void runtime_smoke_test() {
     // Move-only T witness — verifies in-place construction path.
     struct only_move {
         only_move(int v) : p{std::make_unique<int>(v)} {}
-        only_move(only_move&&)                 = default;
-        only_move& operator=(only_move&&)      = default;
-        only_move(const only_move&)            = delete;
+        only_move(only_move&&) = default;
+        only_move& operator=(only_move&&) = default;
+        only_move(const only_move&) = delete;
         only_move& operator=(const only_move&) = delete;
         std::unique_ptr<int> p;
     };
@@ -352,4 +330,4 @@ inline void runtime_smoke_test() {
 
 }  // namespace detail::linear_self_test
 
-} // namespace crucible::safety
+}  // namespace crucible::safety

@@ -184,29 +184,35 @@ namespace crucible::algebra::lattices {
 
 // ── JoinPolicy tier ─────────────────────────────────────────────────
 enum class JoinPolicy : std::uint8_t {
-    FORGET         = 0,   // weakest  — no handle, no observation
-    DETACH         = 1,   // handle returned then explicitly released
-    ABANDON        = 2,   // handle held to scope exit, abandoned
-    CANCEL         = 3,   // handle held to scope exit, cancel requested
-    WAIT_DEADLINE  = 4,   // bounded wait, degrade on timeout
-    JOIN_ALL       = 5,   // strongest — unconditional wait for every child
+    FORGET = 0,  // weakest  — no handle, no observation
+    DETACH = 1,  // handle returned then explicitly released
+    ABANDON = 2,  // handle held to scope exit, abandoned
+    CANCEL = 3,  // handle held to scope exit, cancel requested
+    WAIT_DEADLINE = 4,  // bounded wait, degrade on timeout
+    JOIN_ALL = 5,  // strongest — unconditional wait for every child
 };
 
 // Cardinality + diagnostic name via reflection — auto-bumps on
 // future tier extensions; reflection-based name-coverage assertion
 // catches missing switch arms.
-inline constexpr std::size_t join_policy_count =
-    std::meta::enumerators_of(^^JoinPolicy).size();
+inline constexpr std::size_t join_policy_count = std::meta::enumerators_of(^^JoinPolicy).size();
 
 [[nodiscard]] consteval std::string_view join_policy_name(JoinPolicy p) noexcept {
     switch (p) {
-        case JoinPolicy::FORGET:        return "FORGET";
-        case JoinPolicy::DETACH:        return "DETACH";
-        case JoinPolicy::ABANDON:       return "ABANDON";
-        case JoinPolicy::CANCEL:        return "CANCEL";
-        case JoinPolicy::WAIT_DEADLINE: return "WAIT_DEADLINE";
-        case JoinPolicy::JOIN_ALL:      return "JOIN_ALL";
-        default:                        return std::string_view{"<unknown JoinPolicy>"};
+        case JoinPolicy::FORGET:
+            return "FORGET";
+        case JoinPolicy::DETACH:
+            return "DETACH";
+        case JoinPolicy::ABANDON:
+            return "ABANDON";
+        case JoinPolicy::CANCEL:
+            return "CANCEL";
+        case JoinPolicy::WAIT_DEADLINE:
+            return "WAIT_DEADLINE";
+        case JoinPolicy::JOIN_ALL:
+            return "JOIN_ALL";
+        default:
+            return std::string_view{"<unknown JoinPolicy>"};
     }
 }
 
@@ -216,16 +222,10 @@ inline constexpr std::size_t join_policy_count =
 // ChainLattice.h dedup convention (audit Tier-2 dedup; see
 // WitnessLattice / ConsistencyLattice for the same shape).
 struct JoinPolicyLattice : ChainLatticeOps<JoinPolicy> {
-    [[nodiscard]] static constexpr element_type bottom() noexcept {
-        return JoinPolicy::FORGET;
-    }
-    [[nodiscard]] static constexpr element_type top() noexcept {
-        return JoinPolicy::JOIN_ALL;
-    }
+    [[nodiscard]] static constexpr element_type bottom() noexcept { return JoinPolicy::FORGET; }
+    [[nodiscard]] static constexpr element_type top() noexcept { return JoinPolicy::JOIN_ALL; }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return "JoinPolicyLattice";
-    }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "JoinPolicyLattice"; }
 
     // ── At<P>: singleton sub-lattice at a fixed type-level tier ─────
     //
@@ -240,31 +240,34 @@ struct JoinPolicyLattice : ChainLatticeOps<JoinPolicy> {
     struct At {
         struct element_type {
             using join_policy_value_type = JoinPolicy;
-            [[nodiscard]] constexpr operator join_policy_value_type() const noexcept {
-                return P;
-            }
-            [[nodiscard]] constexpr bool operator==(element_type) const noexcept {
-                return true;
-            }
+            [[nodiscard]] constexpr operator join_policy_value_type() const noexcept { return P; }
+            [[nodiscard]] constexpr bool operator==(element_type) const noexcept { return true; }
         };
 
         static constexpr JoinPolicy tier = P;
 
         [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-        [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
         [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
 
         [[nodiscard]] static consteval std::string_view name() noexcept {
             switch (P) {
-                case JoinPolicy::FORGET:        return "JoinPolicyLattice::At<FORGET>";
-                case JoinPolicy::DETACH:        return "JoinPolicyLattice::At<DETACH>";
-                case JoinPolicy::ABANDON:       return "JoinPolicyLattice::At<ABANDON>";
-                case JoinPolicy::CANCEL:        return "JoinPolicyLattice::At<CANCEL>";
-                case JoinPolicy::WAIT_DEADLINE: return "JoinPolicyLattice::At<WAIT_DEADLINE>";
-                case JoinPolicy::JOIN_ALL:      return "JoinPolicyLattice::At<JOIN_ALL>";
-                default:                        return "JoinPolicyLattice::At<?>";
+                case JoinPolicy::FORGET:
+                    return "JoinPolicyLattice::At<FORGET>";
+                case JoinPolicy::DETACH:
+                    return "JoinPolicyLattice::At<DETACH>";
+                case JoinPolicy::ABANDON:
+                    return "JoinPolicyLattice::At<ABANDON>";
+                case JoinPolicy::CANCEL:
+                    return "JoinPolicyLattice::At<CANCEL>";
+                case JoinPolicy::WAIT_DEADLINE:
+                    return "JoinPolicyLattice::At<WAIT_DEADLINE>";
+                case JoinPolicy::JOIN_ALL:
+                    return "JoinPolicyLattice::At<JOIN_ALL>";
+                default:
+                    return "JoinPolicyLattice::At<?>";
             }
         }
     };
@@ -277,28 +280,26 @@ struct JoinPolicyLattice : ChainLatticeOps<JoinPolicy> {
 // user code that does `using namespace ...`.  Matches the
 // witness::FormallyVerifiedTier / consistency::EventualTier convention.
 namespace join_policy {
-    using ForgetTier         = JoinPolicyLattice::At<JoinPolicy::FORGET>;
-    using DetachTier         = JoinPolicyLattice::At<JoinPolicy::DETACH>;
-    using AbandonTier        = JoinPolicyLattice::At<JoinPolicy::ABANDON>;
-    using CancelTier         = JoinPolicyLattice::At<JoinPolicy::CANCEL>;
-    using WaitDeadlineTier   = JoinPolicyLattice::At<JoinPolicy::WAIT_DEADLINE>;
-    using JoinAllTier        = JoinPolicyLattice::At<JoinPolicy::JOIN_ALL>;
+using ForgetTier = JoinPolicyLattice::At<JoinPolicy::FORGET>;
+using DetachTier = JoinPolicyLattice::At<JoinPolicy::DETACH>;
+using AbandonTier = JoinPolicyLattice::At<JoinPolicy::ABANDON>;
+using CancelTier = JoinPolicyLattice::At<JoinPolicy::CANCEL>;
+using WaitDeadlineTier = JoinPolicyLattice::At<JoinPolicy::WAIT_DEADLINE>;
+using JoinAllTier = JoinPolicyLattice::At<JoinPolicy::JOIN_ALL>;
 }  // namespace join_policy
 
 // ── Self-test (compile-time + reflection-driven name coverage) ──────
 namespace detail::join_policy_lattice_self_test {
 
 // Cardinality + reflection-based name coverage.
-static_assert(join_policy_count == 6,
-    "JoinPolicy catalog diverged from {FORGET, DETACH, ABANDON, CANCEL, "
-    "WAIT_DEADLINE, JOIN_ALL}; confirm intent.  Adding a tier between "
-    "CANCEL and WAIT_DEADLINE (e.g. CANCEL_WAIT_BOUNDED) requires "
-    "updating the V-079 JoinPolicy<> alias' tier shortcuts AND any "
-    "downstream consumer's CollisionCatalog rule.");
+static_assert(join_policy_count == 6, "JoinPolicy catalog diverged from {FORGET, DETACH, ABANDON, CANCEL, "
+                                      "WAIT_DEADLINE, JOIN_ALL}; confirm intent.  Adding a tier between "
+                                      "CANCEL and WAIT_DEADLINE (e.g. CANCEL_WAIT_BOUNDED) requires "
+                                      "updating the V-079 JoinPolicy<> alias' tier shortcuts AND any "
+                                      "downstream consumer's CollisionCatalog rule.");
 
 [[nodiscard]] consteval bool every_join_policy_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^JoinPolicy));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^JoinPolicy));
     // -Wshadow fires on `template for` bodies because GCC 16 unrolls
     // the loop into successive scopes that each declare the same
     // induction variable; suppress locally for the loop body only.
@@ -312,10 +313,9 @@ static_assert(join_policy_count == 6,
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_join_policy_has_name(),
-    "join_policy_name() switch missing arm for at least one JoinPolicy "
-    "tier — add the arm or the new tier leaks the '<unknown JoinPolicy>' "
-    "sentinel into runtime observer's debug output.");
+static_assert(every_join_policy_has_name(), "join_policy_name() switch missing arm for at least one JoinPolicy "
+                                            "tier — add the arm or the new tier leaks the '<unknown JoinPolicy>' "
+                                            "sentinel into runtime observer's debug output.");
 
 // Concept conformance — full lattice + each At<P> sub-lattice.
 static_assert(Lattice<JoinPolicyLattice>);
@@ -347,88 +347,85 @@ static_assert(std::is_empty_v<join_policy::JoinAllTier::element_type>);
 // over the underlying enum, so adding a new JoinPolicy tier auto-
 // extends coverage with no per-lattice code change.
 static_assert(verify_chain_lattice_exhaustive<JoinPolicyLattice>(),
-    "JoinPolicyLattice's chain-order lattice axioms must hold at every "
-    "(JoinPolicy)³ triple — failure indicates a defect in leq/join/meet "
-    "or in the underlying enum encoding.");
+              "JoinPolicyLattice's chain-order lattice axioms must hold at every "
+              "(JoinPolicy)³ triple — failure indicates a defect in leq/join/meet "
+              "or in the underlying enum encoding.");
 static_assert(verify_chain_lattice_distributive_exhaustive<JoinPolicyLattice>(),
-    "JoinPolicyLattice's chain order must satisfy distributivity at every "
-    "(JoinPolicy)³ triple — a chain order always does, so failure would "
-    "indicate a defect in join or meet.");
+              "JoinPolicyLattice's chain order must satisfy distributivity at every "
+              "(JoinPolicy)³ triple — a chain order always does, so failure would "
+              "indicate a defect in join or meet.");
 
 // Direct order witnesses — the entire chain is strictly increasing.
-static_assert( JoinPolicyLattice::leq(JoinPolicy::FORGET,        JoinPolicy::DETACH));
-static_assert( JoinPolicyLattice::leq(JoinPolicy::DETACH,        JoinPolicy::ABANDON));
-static_assert( JoinPolicyLattice::leq(JoinPolicy::ABANDON,       JoinPolicy::CANCEL));
-static_assert( JoinPolicyLattice::leq(JoinPolicy::CANCEL,        JoinPolicy::WAIT_DEADLINE));
-static_assert( JoinPolicyLattice::leq(JoinPolicy::WAIT_DEADLINE, JoinPolicy::JOIN_ALL));
-static_assert( JoinPolicyLattice::leq(JoinPolicy::FORGET,        JoinPolicy::JOIN_ALL));  // transitive endpoints
-static_assert(!JoinPolicyLattice::leq(JoinPolicy::JOIN_ALL,      JoinPolicy::FORGET));
+static_assert(JoinPolicyLattice::leq(JoinPolicy::FORGET, JoinPolicy::DETACH));
+static_assert(JoinPolicyLattice::leq(JoinPolicy::DETACH, JoinPolicy::ABANDON));
+static_assert(JoinPolicyLattice::leq(JoinPolicy::ABANDON, JoinPolicy::CANCEL));
+static_assert(JoinPolicyLattice::leq(JoinPolicy::CANCEL, JoinPolicy::WAIT_DEADLINE));
+static_assert(JoinPolicyLattice::leq(JoinPolicy::WAIT_DEADLINE, JoinPolicy::JOIN_ALL));
+static_assert(JoinPolicyLattice::leq(JoinPolicy::FORGET, JoinPolicy::JOIN_ALL));  // transitive endpoints
+static_assert(!JoinPolicyLattice::leq(JoinPolicy::JOIN_ALL, JoinPolicy::FORGET));
 static_assert(!JoinPolicyLattice::leq(JoinPolicy::WAIT_DEADLINE, JoinPolicy::CANCEL));
-static_assert(!JoinPolicyLattice::leq(JoinPolicy::JOIN_ALL,      JoinPolicy::WAIT_DEADLINE));
-static_assert(!JoinPolicyLattice::leq(JoinPolicy::ABANDON,       JoinPolicy::DETACH));
+static_assert(!JoinPolicyLattice::leq(JoinPolicy::JOIN_ALL, JoinPolicy::WAIT_DEADLINE));
+static_assert(!JoinPolicyLattice::leq(JoinPolicy::ABANDON, JoinPolicy::DETACH));
 
 // Pin bottom / top to the chain endpoints.
 static_assert(JoinPolicyLattice::bottom() == JoinPolicy::FORGET);
-static_assert(JoinPolicyLattice::top()    == JoinPolicy::JOIN_ALL);
+static_assert(JoinPolicyLattice::top() == JoinPolicy::JOIN_ALL);
 
 // Join strengthens (max); meet weakens (min).
-static_assert(JoinPolicyLattice::join(JoinPolicy::FORGET,        JoinPolicy::JOIN_ALL)      == JoinPolicy::JOIN_ALL);
-static_assert(JoinPolicyLattice::join(JoinPolicy::DETACH,        JoinPolicy::CANCEL)        == JoinPolicy::CANCEL);
-static_assert(JoinPolicyLattice::join(JoinPolicy::ABANDON,       JoinPolicy::WAIT_DEADLINE) == JoinPolicy::WAIT_DEADLINE);
-static_assert(JoinPolicyLattice::meet(JoinPolicy::FORGET,        JoinPolicy::JOIN_ALL)      == JoinPolicy::FORGET);
-static_assert(JoinPolicyLattice::meet(JoinPolicy::CANCEL,        JoinPolicy::JOIN_ALL)      == JoinPolicy::CANCEL);
-static_assert(JoinPolicyLattice::meet(JoinPolicy::WAIT_DEADLINE, JoinPolicy::JOIN_ALL)      == JoinPolicy::WAIT_DEADLINE);
+static_assert(JoinPolicyLattice::join(JoinPolicy::FORGET, JoinPolicy::JOIN_ALL) == JoinPolicy::JOIN_ALL);
+static_assert(JoinPolicyLattice::join(JoinPolicy::DETACH, JoinPolicy::CANCEL) == JoinPolicy::CANCEL);
+static_assert(JoinPolicyLattice::join(JoinPolicy::ABANDON, JoinPolicy::WAIT_DEADLINE) == JoinPolicy::WAIT_DEADLINE);
+static_assert(JoinPolicyLattice::meet(JoinPolicy::FORGET, JoinPolicy::JOIN_ALL) == JoinPolicy::FORGET);
+static_assert(JoinPolicyLattice::meet(JoinPolicy::CANCEL, JoinPolicy::JOIN_ALL) == JoinPolicy::CANCEL);
+static_assert(JoinPolicyLattice::meet(JoinPolicy::WAIT_DEADLINE, JoinPolicy::JOIN_ALL) == JoinPolicy::WAIT_DEADLINE);
 
 // Diagnostic names — full lattice + per-tier At<P>::name() coverage.
 static_assert(JoinPolicyLattice::name() == "JoinPolicyLattice");
-static_assert(join_policy::ForgetTier::name()       == "JoinPolicyLattice::At<FORGET>");
-static_assert(join_policy::DetachTier::name()       == "JoinPolicyLattice::At<DETACH>");
-static_assert(join_policy::AbandonTier::name()      == "JoinPolicyLattice::At<ABANDON>");
-static_assert(join_policy::CancelTier::name()       == "JoinPolicyLattice::At<CANCEL>");
+static_assert(join_policy::ForgetTier::name() == "JoinPolicyLattice::At<FORGET>");
+static_assert(join_policy::DetachTier::name() == "JoinPolicyLattice::At<DETACH>");
+static_assert(join_policy::AbandonTier::name() == "JoinPolicyLattice::At<ABANDON>");
+static_assert(join_policy::CancelTier::name() == "JoinPolicyLattice::At<CANCEL>");
 static_assert(join_policy::WaitDeadlineTier::name() == "JoinPolicyLattice::At<WAIT_DEADLINE>");
-static_assert(join_policy::JoinAllTier::name()      == "JoinPolicyLattice::At<JOIN_ALL>");
-static_assert(join_policy_name(JoinPolicy::FORGET)        == "FORGET");
-static_assert(join_policy_name(JoinPolicy::DETACH)        == "DETACH");
-static_assert(join_policy_name(JoinPolicy::ABANDON)       == "ABANDON");
-static_assert(join_policy_name(JoinPolicy::CANCEL)        == "CANCEL");
+static_assert(join_policy::JoinAllTier::name() == "JoinPolicyLattice::At<JOIN_ALL>");
+static_assert(join_policy_name(JoinPolicy::FORGET) == "FORGET");
+static_assert(join_policy_name(JoinPolicy::DETACH) == "DETACH");
+static_assert(join_policy_name(JoinPolicy::ABANDON) == "ABANDON");
+static_assert(join_policy_name(JoinPolicy::CANCEL) == "CANCEL");
 static_assert(join_policy_name(JoinPolicy::WAIT_DEADLINE) == "WAIT_DEADLINE");
-static_assert(join_policy_name(JoinPolicy::JOIN_ALL)      == "JOIN_ALL");
+static_assert(join_policy_name(JoinPolicy::JOIN_ALL) == "JOIN_ALL");
 
 // Reflection-driven coverage check on At<P>::name().
 [[nodiscard]] consteval bool every_at_join_policy_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^JoinPolicy));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^JoinPolicy));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
-        if (JoinPolicyLattice::At<([:en:])>::name() ==
-            std::string_view{"JoinPolicyLattice::At<?>"}) {
+        if (JoinPolicyLattice::At<([:en:])>::name() == std::string_view{"JoinPolicyLattice::At<?>"}) {
             return false;
         }
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_at_join_policy_has_name(),
-    "JoinPolicyLattice::At<P>::name() switch missing an arm for at "
-    "least one tier — add the arm or the new tier leaks the "
-    "'JoinPolicyLattice::At<?>' sentinel.");
+static_assert(every_at_join_policy_has_name(), "JoinPolicyLattice::At<P>::name() switch missing an arm for at "
+                                               "least one tier — add the arm or the new tier leaks the "
+                                               "'JoinPolicyLattice::At<?>' sentinel.");
 
 // Convenience aliases resolve correctly.
-static_assert(join_policy::ForgetTier::tier        == JoinPolicy::FORGET);
-static_assert(join_policy::DetachTier::tier        == JoinPolicy::DETACH);
-static_assert(join_policy::AbandonTier::tier       == JoinPolicy::ABANDON);
-static_assert(join_policy::CancelTier::tier        == JoinPolicy::CANCEL);
-static_assert(join_policy::WaitDeadlineTier::tier  == JoinPolicy::WAIT_DEADLINE);
-static_assert(join_policy::JoinAllTier::tier       == JoinPolicy::JOIN_ALL);
+static_assert(join_policy::ForgetTier::tier == JoinPolicy::FORGET);
+static_assert(join_policy::DetachTier::tier == JoinPolicy::DETACH);
+static_assert(join_policy::AbandonTier::tier == JoinPolicy::ABANDON);
+static_assert(join_policy::CancelTier::tier == JoinPolicy::CANCEL);
+static_assert(join_policy::WaitDeadlineTier::tier == JoinPolicy::WAIT_DEADLINE);
+static_assert(join_policy::JoinAllTier::tier == JoinPolicy::JOIN_ALL);
 
 // At<P>::element_type → JoinPolicy conversion recovers the type-level tier.
-static_assert(static_cast<JoinPolicy>(join_policy::ForgetTier::element_type{})        == JoinPolicy::FORGET);
-static_assert(static_cast<JoinPolicy>(join_policy::DetachTier::element_type{})        == JoinPolicy::DETACH);
-static_assert(static_cast<JoinPolicy>(join_policy::AbandonTier::element_type{})       == JoinPolicy::ABANDON);
-static_assert(static_cast<JoinPolicy>(join_policy::CancelTier::element_type{})        == JoinPolicy::CANCEL);
-static_assert(static_cast<JoinPolicy>(join_policy::WaitDeadlineTier::element_type{})  == JoinPolicy::WAIT_DEADLINE);
-static_assert(static_cast<JoinPolicy>(join_policy::JoinAllTier::element_type{})       == JoinPolicy::JOIN_ALL);
+static_assert(static_cast<JoinPolicy>(join_policy::ForgetTier::element_type{}) == JoinPolicy::FORGET);
+static_assert(static_cast<JoinPolicy>(join_policy::DetachTier::element_type{}) == JoinPolicy::DETACH);
+static_assert(static_cast<JoinPolicy>(join_policy::AbandonTier::element_type{}) == JoinPolicy::ABANDON);
+static_assert(static_cast<JoinPolicy>(join_policy::CancelTier::element_type{}) == JoinPolicy::CANCEL);
+static_assert(static_cast<JoinPolicy>(join_policy::WaitDeadlineTier::element_type{}) == JoinPolicy::WAIT_DEADLINE);
+static_assert(static_cast<JoinPolicy>(join_policy::JoinAllTier::element_type{}) == JoinPolicy::JOIN_ALL);
 
 // ── Layout invariants on Graded<Comonad, At<P>, T> ──────────────────
 //
@@ -437,12 +434,15 @@ static_assert(static_cast<JoinPolicy>(join_policy::JoinAllTier::element_type{}) 
 // wrapper's zero-overhead guarantee across arithmetic and aggregate
 // payload types.  Critical for permission_fork-shaped sites where the
 // policy must not bloat the child-result tuple.
-struct OneByteValue   { char c{0}; };
-struct EightByteValue { unsigned long long v{0}; };
+struct OneByteValue {
+    char c{0};
+};
+struct EightByteValue {
+    unsigned long long v{0};
+};
 
 template <typename T>
-using JoinAllGraded =
-    Graded<ModalityKind::Comonad, join_policy::JoinAllTier, T>;
+using JoinAllGraded = Graded<ModalityKind::Comonad, join_policy::JoinAllTier, T>;
 
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(JoinAllGraded, OneByteValue);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(JoinAllGraded, EightByteValue);
@@ -457,8 +457,7 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(JoinAllGraded, double);
 // chain (not just the top).  CANCEL is the canonical mid-tier
 // CSL engagement (request-but-don't-wait).
 template <typename T>
-using CancelGraded =
-    Graded<ModalityKind::Comonad, join_policy::CancelTier, T>;
+using CancelGraded = Graded<ModalityKind::Comonad, join_policy::CancelTier, T>;
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(CancelGraded, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(CancelGraded, EightByteValue);
 
@@ -466,8 +465,7 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(CancelGraded, EightByteValue);
 // the carrier even though it claims nothing; load-bearing for the
 // V-079 default-policy ergonomic (fire-and-forget workers).
 template <typename T>
-using ForgetGraded =
-    Graded<ModalityKind::Comonad, join_policy::ForgetTier, T>;
+using ForgetGraded = Graded<ModalityKind::Comonad, join_policy::ForgetTier, T>;
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(ForgetGraded, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(ForgetGraded, EightByteValue);
 
@@ -483,34 +481,32 @@ inline void runtime_smoke_test() {
     // Full JoinPolicyLattice ops at runtime.
     JoinPolicy a = JoinPolicy::FORGET;
     JoinPolicy b = JoinPolicy::JOIN_ALL;
-    [[maybe_unused]] bool       l1   = JoinPolicyLattice::leq(a, b);
-    [[maybe_unused]] JoinPolicy j1   = JoinPolicyLattice::join(a, b);
-    [[maybe_unused]] JoinPolicy m1   = JoinPolicyLattice::meet(a, b);
-    [[maybe_unused]] JoinPolicy bot  = JoinPolicyLattice::bottom();
-    [[maybe_unused]] JoinPolicy top  = JoinPolicyLattice::top();
+    [[maybe_unused]] bool l1 = JoinPolicyLattice::leq(a, b);
+    [[maybe_unused]] JoinPolicy j1 = JoinPolicyLattice::join(a, b);
+    [[maybe_unused]] JoinPolicy m1 = JoinPolicyLattice::meet(a, b);
+    [[maybe_unused]] JoinPolicy bot = JoinPolicyLattice::bottom();
+    [[maybe_unused]] JoinPolicy top = JoinPolicyLattice::top();
 
     // Mid-tier ops — chains through the middle of the lattice.
-    JoinPolicy mid_cancel  = JoinPolicy::CANCEL;
+    JoinPolicy mid_cancel = JoinPolicy::CANCEL;
     JoinPolicy mid_abandon = JoinPolicy::ABANDON;
-    [[maybe_unused]] JoinPolicy j2 = JoinPolicyLattice::join(mid_cancel, b);            // JOIN_ALL
-    [[maybe_unused]] JoinPolicy m2 = JoinPolicyLattice::meet(mid_cancel, a);            // FORGET
+    [[maybe_unused]] JoinPolicy j2 = JoinPolicyLattice::join(mid_cancel, b);  // JOIN_ALL
+    [[maybe_unused]] JoinPolicy m2 = JoinPolicyLattice::meet(mid_cancel, a);  // FORGET
     [[maybe_unused]] JoinPolicy j3 = JoinPolicyLattice::join(mid_abandon, mid_cancel);  // CANCEL
     [[maybe_unused]] JoinPolicy m3 = JoinPolicyLattice::meet(mid_abandon, mid_cancel);  // ABANDON
 
     // Graded<Comonad, JoinAllTier, T> at runtime.
     OneByteValue v{42};
-    JoinAllGraded<OneByteValue> initial{
-        v, join_policy::JoinAllTier::bottom()};
-    auto widened   = initial.weaken(join_policy::JoinAllTier::top());
-    auto composed  = initial.compose(widened);
-    auto rv_widen  = std::move(widened).weaken(
-                         join_policy::JoinAllTier::top());
+    JoinAllGraded<OneByteValue> initial{v, join_policy::JoinAllTier::bottom()};
+    auto widened = initial.weaken(join_policy::JoinAllTier::top());
+    auto composed = initial.compose(widened);
+    auto rv_widen = std::move(widened).weaken(join_policy::JoinAllTier::top());
 
     // Comonad counit (extract) — always available, observing the
     // value as plain T does NOT require declassifying the policy.
     auto extracted = std::move(composed).extract();
 
-    [[maybe_unused]] auto g  = rv_widen.grade();
+    [[maybe_unused]] auto g = rv_widen.grade();
     [[maybe_unused]] auto vc = extracted.c;
 
     // Conversion: At<JoinPolicy::JOIN_ALL>::element_type →

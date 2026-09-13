@@ -58,9 +58,7 @@ struct is_consistency_impl : std::false_type {
 };
 
 template <Consistency_v Level, typename U>
-struct is_consistency_impl<::crucible::safety::Consistency<Level, U>>
-    : std::true_type
-{
+struct is_consistency_impl<::crucible::safety::Consistency<Level, U>> : std::true_type {
     using value_type = U;
     static constexpr Consistency_v level = Level;
     static constexpr bool has_level = true;
@@ -73,22 +71,18 @@ struct is_consistency_impl<::crucible::safety::Consistency<Level, U>>
 // ═════════════════════════════════════════════════════════════════════
 
 template <typename T>
-inline constexpr bool is_consistency_v =
-    detail::is_consistency_impl<std::remove_cvref_t<T>>::value;
+inline constexpr bool is_consistency_v = detail::is_consistency_impl<std::remove_cvref_t<T>>::value;
 
 template <typename T>
 concept IsConsistency = is_consistency_v<T>;
 
 template <typename T>
     requires is_consistency_v<T>
-using consistency_value_t =
-    typename detail::is_consistency_impl<
-        std::remove_cvref_t<T>>::value_type;
+using consistency_value_t = typename detail::is_consistency_impl<std::remove_cvref_t<T>>::value_type;
 
 template <typename T>
     requires is_consistency_v<T>
-inline constexpr Consistency_v consistency_level_v =
-    detail::is_consistency_impl<std::remove_cvref_t<T>>::level;
+inline constexpr Consistency_v consistency_level_v = detail::is_consistency_impl<std::remove_cvref_t<T>>::level;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Self-test block ────────────────────────────────────────────────
@@ -96,12 +90,9 @@ inline constexpr Consistency_v consistency_level_v =
 
 namespace detail::is_consistency_self_test {
 
-using C_int_strong =
-    ::crucible::safety::Consistency<Consistency_v::STRONG, int>;
-using C_double_eventual =
-    ::crucible::safety::Consistency<Consistency_v::EVENTUAL, double>;
-using C_int_causal =
-    ::crucible::safety::Consistency<Consistency_v::CAUSAL_PREFIX, int>;
+using C_int_strong = ::crucible::safety::Consistency<Consistency_v::STRONG, int>;
+using C_double_eventual = ::crucible::safety::Consistency<Consistency_v::EVENTUAL, double>;
+using C_int_causal = ::crucible::safety::Consistency<Consistency_v::CAUSAL_PREFIX, int>;
 
 // ── Positive cases ────────────────────────────────────────────────
 
@@ -123,7 +114,10 @@ static_assert(!is_consistency_v<int*>);
 static_assert(!is_consistency_v<int&>);
 static_assert(!is_consistency_v<void>);
 
-struct LookalikeConsistency { int value; Consistency_v level; };
+struct LookalikeConsistency {
+    int value;
+    Consistency_v level;
+};
 static_assert(!is_consistency_v<LookalikeConsistency>);
 
 static_assert(!is_consistency_v<C_int_strong*>);
@@ -137,28 +131,19 @@ static_assert(!IsConsistency<int>);
 // ── Element type / level extraction ──────────────────────────────
 
 static_assert(std::is_same_v<consistency_value_t<C_int_strong>, int>);
-static_assert(std::is_same_v<
-    consistency_value_t<C_double_eventual>, double>);
+static_assert(std::is_same_v<consistency_value_t<C_double_eventual>, double>);
 
-static_assert(std::is_same_v<
-    consistency_value_t<C_int_strong const&>, int>);
-static_assert(std::is_same_v<
-    consistency_value_t<C_int_strong&&>, int>);
+static_assert(std::is_same_v<consistency_value_t<C_int_strong const&>, int>);
+static_assert(std::is_same_v<consistency_value_t<C_int_strong&&>, int>);
 
 static_assert(consistency_level_v<C_int_strong> == Consistency_v::STRONG);
-static_assert(consistency_level_v<C_double_eventual>
-              == Consistency_v::EVENTUAL);
-static_assert(consistency_level_v<C_int_causal>
-              == Consistency_v::CAUSAL_PREFIX);
-static_assert(consistency_level_v<C_int_strong const&>
-              == Consistency_v::STRONG);
+static_assert(consistency_level_v<C_double_eventual> == Consistency_v::EVENTUAL);
+static_assert(consistency_level_v<C_int_causal> == Consistency_v::CAUSAL_PREFIX);
+static_assert(consistency_level_v<C_int_strong const&> == Consistency_v::STRONG);
 
 // Distinct (Level, U) → distinct trait specializations.
-static_assert(std::is_same_v<
-    consistency_value_t<C_int_strong>,
-    consistency_value_t<C_int_causal>>);
-static_assert(consistency_level_v<C_int_strong>
-              != consistency_level_v<C_int_causal>);
+static_assert(std::is_same_v<consistency_value_t<C_int_strong>, consistency_value_t<C_int_causal>>);
+static_assert(consistency_level_v<C_int_strong> != consistency_level_v<C_int_causal>);
 
 }  // namespace detail::is_consistency_self_test
 
@@ -175,8 +160,7 @@ inline bool is_consistency_smoke_test() noexcept {
         ok = ok && is_consistency_v<C_int_strong>;
         ok = ok && !is_consistency_v<int>;
         ok = ok && IsConsistency<C_int_strong&&>;
-        ok = ok && (consistency_level_v<C_int_strong>
-                    == Consistency_v::STRONG);
+        ok = ok && (consistency_level_v<C_int_strong> == Consistency_v::STRONG);
     }
     return ok;
 }

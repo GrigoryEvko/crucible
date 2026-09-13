@@ -11,7 +11,13 @@
 # silently move the style.  Two knobs are deliberately inert in this first pass
 # and marked INERT below: include sorting and brace insertion both change more
 # than whitespace, and belong in their own commit.
-Language: Cpp
+# No `Language:` key on purpose.  clang-format guesses the language of a .h
+# file from its contents, and the C++26 reflect operator `^^` looks like the
+# Objective-C block sigil, so 57 headers here are detected as Objective-C.  An
+# explicit `Language: Cpp` makes clang-format refuse those files outright
+# ("Configuration file(s) do(es) not support Objective-C") and silently leave
+# them unformatted.  Omitting the key applies these settings to every language
+# instead, which costs nothing: no Objective-C is built here.
 Standard: Latest
 BasedOnStyle: LLVM
 
@@ -48,13 +54,14 @@ RequiresExpressionIndentation: OuterScope
 IndentRequiresClause: true
 
 # ── Wrapping ─────────────────────────────────────────────────────────────────
-# Break after `(` on a call that does not fit, rather than aligning arguments
-# to the paren column: alignment columns shift whenever a name changes, which
-# turns an unrelated rename into a multi-line diff.  Written in the v22 native
-# per-context form; the legacy `AlignAfterOpenBracket: AlwaysBreak` spelling is
-# equivalent today but is a deprecated shim that dumps as a bare bool.
-# Control-statement parens are left alone — breaking after `if (` is unreadable.
-BreakAfterOpenBracketFunction: true
+# Align continuation arguments to the paren column rather than breaking after
+# `(`.  Breaking after `(` gives more diff-stable output in principle, but it
+# mangles long attributes — `[[nodiscard, deprecated("...")]]` becomes
+# `deprecated(` followed by a deep indent — and that split also hides the
+# string from the stub-discipline guard, which matches
+# `deprecated("CRUCIBLE_STUB:` on one line.  Written in the v22 native
+# per-context form; `AlignAfterOpenBracket` is a deprecated shim.
+BreakAfterOpenBracketFunction: false
 BreakAfterOpenBracketBracedList: false
 BreakAfterOpenBracketIf: false
 BreakAfterOpenBracketLoop: false
@@ -111,7 +118,24 @@ QualifierAlignment: Leave    # the tree mixes `const T` and `T const`; normalisi
                              # that reads as a semantic edit and needs its own pass
 
 # ── Spaces ───────────────────────────────────────────────────────────────────
-SpaceBeforeParens: ControlStatements
+# Custom rather than ControlStatements for one reason: ControlStatements leaves
+# AfterPlacementOperator on, which rewrites `= delete("reason")` into
+# `= delete ("reason")` at 319 sites.  That spelling is a documented convention
+# and several guard scripts grep for it.  Every other field below reproduces
+# ControlStatements exactly.
+SpaceBeforeParens: Custom
+SpaceBeforeParensOptions:
+  AfterControlStatements: true
+  AfterForeachMacros: true
+  AfterIfMacros: true
+  AfterPlacementOperator: false
+  AfterFunctionDeclarationName: false
+  AfterFunctionDefinitionName: false
+  AfterOverloadedOperator: false
+  AfterNot: false
+  AfterRequiresInClause: false
+  AfterRequiresInExpression: false
+  BeforeNonEmptyParentheses: false
 SpaceBeforeRangeBasedForLoopColon: true
 SpaceBeforeCpp11BracedList: false
 SpaceBeforeCtorInitializerColon: true

@@ -27,31 +27,18 @@
 namespace crucible::canopy {
 
 template <std::size_t MaxPeers, std::size_t MaxHistory>
-concept PlumtreeShape =
-    MaxPeers > 0 &&
-    MaxHistory > 0 &&
-    MaxPeers <= static_cast<std::size_t>(
-        std::numeric_limits<std::uint16_t>::max()) &&
-    MaxHistory <= static_cast<std::size_t>(
-        std::numeric_limits<std::uint16_t>::max());
+concept PlumtreeShape = MaxPeers > 0 && MaxHistory > 0
+                     && MaxPeers <= static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max())
+                     && MaxHistory <= static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max());
 
 template <std::size_t Capacity>
-    requires (Capacity > 0 &&
-              Capacity <= static_cast<std::size_t>(
-                  std::numeric_limits<std::uint16_t>::max()))
-using PlumtreeCount =
-    safety::Refined<safety::bounded_above<
-                        static_cast<std::uint16_t>(Capacity)>,
-                    std::uint16_t>;
+    requires(Capacity > 0 && Capacity <= static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max()))
+using PlumtreeCount = safety::Refined<safety::bounded_above<static_cast<std::uint16_t>(Capacity)>, std::uint16_t>;
 
-using PlumtreeDurationNs =
-    safety::Refined<safety::positive, std::uint64_t>;
-using PlumtreePositiveCount =
-    safety::Refined<safety::positive, std::uint16_t>;
-using PlumtreePayloadBytes =
-    safety::Refined<safety::positive, std::uint32_t>;
-using PlumtreeMessageId =
-    safety::Tagged<cntp::IntegrityHash, safety::source::Plumtree>;
+using PlumtreeDurationNs = safety::Refined<safety::positive, std::uint64_t>;
+using PlumtreePositiveCount = safety::Refined<safety::positive, std::uint16_t>;
+using PlumtreePayloadBytes = safety::Refined<safety::positive, std::uint32_t>;
+using PlumtreeMessageId = safety::Tagged<cntp::IntegrityHash, safety::source::Plumtree>;
 using PlumtreeMessageHash = std::uint64_t;
 
 enum class PlumtreeLinkState : std::uint8_t {
@@ -82,8 +69,7 @@ enum class PlumtreeError : std::uint8_t {
     ZeroUuid,
 };
 
-[[nodiscard]] std::string_view
-plumtree_error_name(PlumtreeError error) noexcept;
+[[nodiscard]] std::string_view plumtree_error_name(PlumtreeError error) noexcept;
 
 struct PlumtreeConfig {
     PlumtreeDurationNs ihave_timeout_ns{100'000'000ULL};
@@ -97,27 +83,22 @@ struct PlumtreeMessage {
     std::uint32_t payload_bytes = 0;
 };
 
-using GossipedPlumtreeMessage =
-    safety::Tagged<PlumtreeMessage, safety::source::Gossiped>;
+using GossipedPlumtreeMessage = safety::Tagged<PlumtreeMessage, safety::source::Gossiped>;
 
 template <std::size_t MaxHistory>
-    requires (MaxHistory > 0)
+    requires(MaxHistory > 0)
 struct PlumtreeIHave {
     safety::FixedArray<PlumtreeMessageHash, MaxHistory> ids{};
     std::uint16_t count = 0;
 
-    [[nodiscard]] constexpr PlumtreeCount<MaxHistory>
-    size() const noexcept {
-        return PlumtreeCount<MaxHistory>{
-            count,
-            typename PlumtreeCount<MaxHistory>::Trusted{}};
+    [[nodiscard]] constexpr PlumtreeCount<MaxHistory> size() const noexcept {
+        return PlumtreeCount<MaxHistory>{count, typename PlumtreeCount<MaxHistory>::Trusted{}};
     }
 };
 
 template <std::size_t MaxHistory>
-    requires (MaxHistory > 0)
-using GossipedPlumtreeIHave =
-    safety::Tagged<PlumtreeIHave<MaxHistory>, safety::source::Gossiped>;
+    requires(MaxHistory > 0)
+using GossipedPlumtreeIHave = safety::Tagged<PlumtreeIHave<MaxHistory>, safety::source::Gossiped>;
 
 template <std::size_t MaxPeers, std::size_t MaxHistory>
     requires PlumtreeShape<MaxPeers, MaxHistory>
@@ -128,18 +109,12 @@ struct PlumtreeBroadcastPlan {
     std::uint16_t eager_count = 0;
     std::uint16_t lazy_count = 0;
 
-    [[nodiscard]] constexpr PlumtreeCount<MaxPeers>
-    eager_size() const noexcept {
-        return PlumtreeCount<MaxPeers>{
-            eager_count,
-            typename PlumtreeCount<MaxPeers>::Trusted{}};
+    [[nodiscard]] constexpr PlumtreeCount<MaxPeers> eager_size() const noexcept {
+        return PlumtreeCount<MaxPeers>{eager_count, typename PlumtreeCount<MaxPeers>::Trusted{}};
     }
 
-    [[nodiscard]] constexpr PlumtreeCount<MaxPeers>
-    lazy_size() const noexcept {
-        return PlumtreeCount<MaxPeers>{
-            lazy_count,
-            typename PlumtreeCount<MaxPeers>::Trusted{}};
+    [[nodiscard]] constexpr PlumtreeCount<MaxPeers> lazy_size() const noexcept {
+        return PlumtreeCount<MaxPeers>{lazy_count, typename PlumtreeCount<MaxPeers>::Trusted{}};
     }
 };
 
@@ -151,17 +126,14 @@ struct PlumtreeReceivePlan {
 };
 
 template <std::size_t MaxHistory>
-    requires (MaxHistory > 0)
+    requires(MaxHistory > 0)
 struct PlumtreeRepairPlan {
     safety::FixedArray<PlumtreeMessageHash, MaxHistory> requested{};
     std::uint16_t count = 0;
     cog::CogIdentity source{};
 
-    [[nodiscard]] constexpr PlumtreeCount<MaxHistory>
-    size() const noexcept {
-        return PlumtreeCount<MaxHistory>{
-            count,
-            typename PlumtreeCount<MaxHistory>::Trusted{}};
+    [[nodiscard]] constexpr PlumtreeCount<MaxHistory> size() const noexcept {
+        return PlumtreeCount<MaxHistory>{count, typename PlumtreeCount<MaxHistory>::Trusted{}};
     }
 };
 
@@ -177,23 +149,20 @@ plumtree_message_id(std::span<const std::byte> payload) noexcept {
     return PlumtreeMessageId{*id};
 }
 
-[[nodiscard]] constexpr PlumtreeMessageHash
-plumtree_message_hash(PlumtreeMessageId id) noexcept {
+[[nodiscard]] constexpr PlumtreeMessageHash plumtree_message_hash(PlumtreeMessageId id) noexcept {
     return id.value().value();
 }
 
 template <std::size_t MaxPeers = 128, std::size_t MaxHistory = 1024>
     requires PlumtreeShape<MaxPeers, MaxHistory>
-class alignas(64) PlumtreeBroadcast
-    : public safety::Pinned<PlumtreeBroadcast<MaxPeers, MaxHistory>> {
+class alignas(64) PlumtreeBroadcast : public safety::Pinned<PlumtreeBroadcast<MaxPeers, MaxHistory>> {
 public:
     using broadcast_plan_type = PlumtreeBroadcastPlan<MaxPeers, MaxHistory>;
     using receive_plan_type = PlumtreeReceivePlan<MaxPeers, MaxHistory>;
     using repair_plan_type = PlumtreeRepairPlan<MaxHistory>;
     using ihave_type = PlumtreeIHave<MaxHistory>;
 
-    explicit PlumtreeBroadcast(PlumtreeConfig config = {}) noexcept
-        : config_{config} {
+    explicit PlumtreeBroadcast(PlumtreeConfig config = {}) noexcept : config_{config} {
         // FIXY-U-080 / fixy-A5-014: was __builtin_trap (silent SIGILL).
         CRUCIBLE_FATAL_INVARIANT(config_fits_shape_());
     }
@@ -210,46 +179,34 @@ public:
     // can rebuild after the HyParView shuffle settles.
     template <std::size_t HyMaxActive, std::size_t HyMaxPassive>
         requires HyParViewShape<HyMaxActive, HyMaxPassive>
-    explicit PlumtreeBroadcast(
-        HyParViewMembership<HyMaxActive, HyMaxPassive> const& membership,
-        PlumtreeConfig config = {}) noexcept
+    explicit PlumtreeBroadcast(HyParViewMembership<HyMaxActive, HyMaxPassive> const& membership,
+                               PlumtreeConfig config = {}) noexcept
         : config_{config} {
         CRUCIBLE_FATAL_INVARIANT(config_fits_shape_());
         auto active = membership.active_view();
         for (cog::CogIdentity const& peer : active.as_span()) {
             auto rc = add_link_(peer, PlumtreeLinkState::Eager);
             if (!rc.has_value()) {
-                if (transient_skipped_count_ <
-                    std::numeric_limits<std::uint16_t>::max()) {
+                if (transient_skipped_count_ < std::numeric_limits<std::uint16_t>::max()) {
                     ++transient_skipped_count_;
                 }
             }
         }
     }
 
-    [[nodiscard]] PlumtreeConfig config() const noexcept {
-        return config_;
+    [[nodiscard]] PlumtreeConfig config() const noexcept { return config_; }
+
+    [[nodiscard]] PlumtreeCount<MaxPeers> link_count() const noexcept {
+        return PlumtreeCount<MaxPeers>{link_count_, typename PlumtreeCount<MaxPeers>::Trusted{}};
     }
 
-    [[nodiscard]] PlumtreeCount<MaxPeers>
-    link_count() const noexcept {
-        return PlumtreeCount<MaxPeers>{
-            link_count_,
-            typename PlumtreeCount<MaxPeers>::Trusted{}};
+    [[nodiscard]] PlumtreeCount<MaxPeers> eager_count() const noexcept {
+        return PlumtreeCount<MaxPeers>{eager_count_, typename PlumtreeCount<MaxPeers>::Trusted{}};
     }
 
-    [[nodiscard]] PlumtreeCount<MaxPeers>
-    eager_count() const noexcept {
-        return PlumtreeCount<MaxPeers>{
-            eager_count_,
-            typename PlumtreeCount<MaxPeers>::Trusted{}};
-    }
-
-    [[nodiscard]] PlumtreeCount<MaxPeers>
-    lazy_count() const noexcept {
-        return PlumtreeCount<MaxPeers>{
-            static_cast<std::uint16_t>(link_count_ - eager_count_),
-            typename PlumtreeCount<MaxPeers>::Trusted{}};
+    [[nodiscard]] PlumtreeCount<MaxPeers> lazy_count() const noexcept {
+        return PlumtreeCount<MaxPeers>{static_cast<std::uint16_t>(link_count_ - eager_count_),
+                                       typename PlumtreeCount<MaxPeers>::Trusted{}};
     }
 
     // fixy-A5-032: how many active-view peers were rejected by
@@ -257,30 +214,21 @@ public:
     // the HyParView snapshot was inconsistent at capture time
     // (concurrent join+shuffle race); rebuild after the shuffle
     // settles.  Stays zero for the in-bounds steady-state.
-    [[nodiscard]] std::uint16_t
-    transient_skipped_count() const noexcept {
-        return transient_skipped_count_;
+    [[nodiscard]] std::uint16_t transient_skipped_count() const noexcept { return transient_skipped_count_; }
+
+    [[nodiscard]] PlumtreeCount<MaxHistory> history_size() const noexcept {
+        return PlumtreeCount<MaxHistory>{history_count_, typename PlumtreeCount<MaxHistory>::Trusted{}};
     }
 
-    [[nodiscard]] PlumtreeCount<MaxHistory>
-    history_size() const noexcept {
-        return PlumtreeCount<MaxHistory>{
-            history_count_,
-            typename PlumtreeCount<MaxHistory>::Trusted{}};
-    }
-
-    [[nodiscard]] std::expected<void, PlumtreeError>
-    add_eager_peer(HyParViewPeer peer) noexcept {
+    [[nodiscard]] std::expected<void, PlumtreeError> add_eager_peer(HyParViewPeer peer) noexcept {
         return add_link_(peer.value(), PlumtreeLinkState::Eager);
     }
 
-    [[nodiscard]] std::expected<void, PlumtreeError>
-    add_lazy_peer(HyParViewPeer peer) noexcept {
+    [[nodiscard]] std::expected<void, PlumtreeError> add_lazy_peer(HyParViewPeer peer) noexcept {
         return add_link_(peer.value(), PlumtreeLinkState::Lazy);
     }
 
-    [[nodiscard]] std::expected<PlumtreeLinkState, PlumtreeError>
-    link_state(cog::Uuid peer) const noexcept {
+    [[nodiscard]] std::expected<PlumtreeLinkState, PlumtreeError> link_state(cog::Uuid peer) const noexcept {
         auto idx = find_link_(peer);
         if (!idx) {
             return std::unexpected(PlumtreeError::PeerNotFound);
@@ -299,8 +247,7 @@ public:
     }
 
     [[nodiscard]] std::expected<receive_plan_type, PlumtreeError>
-    receive_message(HyParViewPeer from,
-                    GossipedPlumtreeMessage message) noexcept {
+    receive_message(HyParViewPeer from, GossipedPlumtreeMessage message) noexcept {
         auto peer_idx = find_link_(from.value().uuid);
         if (!peer_idx) {
             return std::unexpected(PlumtreeError::UnknownPeer);
@@ -329,8 +276,7 @@ public:
     }
 
     [[nodiscard]] std::expected<repair_plan_type, PlumtreeError>
-    receive_ihave(HyParViewPeer from,
-                  GossipedPlumtreeIHave<MaxHistory> ihave) noexcept {
+    receive_ihave(HyParViewPeer from, GossipedPlumtreeIHave<MaxHistory> ihave) noexcept {
         auto peer_idx = find_link_(from.value().uuid);
         if (!peer_idx) {
             return std::unexpected(PlumtreeError::UnknownPeer);
@@ -361,11 +307,10 @@ public:
     [[nodiscard]] ihave_type ihave_summary() const noexcept {
         ihave_type out{};
         for (std::uint16_t i = 0; i < history_count_; ++i) {
-            const std::uint16_t idx = static_cast<std::uint16_t>(
-                (static_cast<std::size_t>(history_cursor_) + MaxHistory -
-                 static_cast<std::size_t>(history_count_) +
-                 static_cast<std::size_t>(i)) %
-                MaxHistory);
+            const std::uint16_t idx =
+                static_cast<std::uint16_t>((static_cast<std::size_t>(history_cursor_) + MaxHistory
+                                            - static_cast<std::size_t>(history_count_) + static_cast<std::size_t>(i))
+                                           % MaxHistory);
             out.ids[out.count] = history_[idx];
             ++out.count;
         }
@@ -379,17 +324,14 @@ private:
         PlumtreeLinkState state = PlumtreeLinkState::Lazy;
     };
 
-    [[nodiscard]] bool config_fits_shape_() const noexcept {
-        return config_.max_eager_fanout.value() <= MaxPeers;
-    }
+    [[nodiscard]] bool config_fits_shape_() const noexcept { return config_.max_eager_fanout.value() <= MaxPeers; }
 
     [[nodiscard]] std::expected<PlumtreeMessage, PlumtreeError>
     make_message_(std::span<const std::byte> payload) const noexcept {
         if (payload.empty()) {
             return std::unexpected(PlumtreeError::EmptyMessage);
         }
-        if (payload.size() >
-            static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())) {
+        if (payload.size() > static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())) {
             return std::unexpected(PlumtreeError::InvalidConfig);
         }
         auto id = plumtree_message_id(payload);
@@ -402,8 +344,8 @@ private:
         };
     }
 
-    [[nodiscard]] std::expected<void, PlumtreeError>
-    add_link_(cog::CogIdentity peer, PlumtreeLinkState state) noexcept {
+    [[nodiscard]] std::expected<void, PlumtreeError> add_link_(cog::CogIdentity peer,
+                                                               PlumtreeLinkState state) noexcept {
         if (peer.uuid.is_zero()) {
             return std::unexpected(PlumtreeError::ZeroUuid);
         }
@@ -413,8 +355,7 @@ private:
         if (link_count_ == MaxPeers) {
             return std::unexpected(PlumtreeError::CapacityExceeded);
         }
-        if (state == PlumtreeLinkState::Eager &&
-            eager_count_ == config_.max_eager_fanout.value()) {
+        if (state == PlumtreeLinkState::Eager && eager_count_ == config_.max_eager_fanout.value()) {
             state = PlumtreeLinkState::Lazy;
         }
         links_[link_count_] = LinkSlot{
@@ -429,8 +370,7 @@ private:
         return {};
     }
 
-    [[nodiscard]] std::expected<std::uint16_t, PlumtreeError>
-    find_link_(cog::Uuid peer) const noexcept {
+    [[nodiscard]] std::expected<std::uint16_t, PlumtreeError> find_link_(cog::Uuid peer) const noexcept {
         for (std::uint16_t i = 0; i < link_count_; ++i) {
             if (links_[i].occupied && links_[i].peer.uuid == peer) {
                 return i;
@@ -445,8 +385,7 @@ private:
         }
         if (eager_count_ == config_.max_eager_fanout.value()) {
             for (std::uint16_t i = 0; i < link_count_; ++i) {
-                if (i != idx &&
-                    links_[i].state == PlumtreeLinkState::Eager) {
+                if (i != idx && links_[i].state == PlumtreeLinkState::Eager) {
                     links_[i].state = PlumtreeLinkState::Lazy;
                     --eager_count_;
                     break;
@@ -474,17 +413,14 @@ private:
             return;
         }
         history_[history_cursor_] = id;
-        history_cursor_ = static_cast<std::uint16_t>(
-            (static_cast<std::size_t>(history_cursor_) + std::size_t{1}) %
-            MaxHistory);
+        history_cursor_ =
+            static_cast<std::uint16_t>((static_cast<std::size_t>(history_cursor_) + std::size_t{1}) % MaxHistory);
         if (history_count_ < MaxHistory) {
             ++history_count_;
         }
     }
 
-    [[nodiscard]] broadcast_plan_type
-    build_broadcast_plan_(PlumtreeMessage message,
-                          cog::Uuid except) const noexcept {
+    [[nodiscard]] broadcast_plan_type build_broadcast_plan_(PlumtreeMessage message, cog::Uuid except) const noexcept {
         broadcast_plan_type out{.message = message};
         for (std::uint16_t i = 0; i < link_count_; ++i) {
             LinkSlot const& link = links_[i];
@@ -519,17 +455,11 @@ private:
 static_assert(!std::is_copy_constructible_v<PlumtreeBroadcast<4, 8>>);
 static_assert(!std::is_move_constructible_v<PlumtreeBroadcast<4, 8>>);
 
-template <std::size_t MaxPeers = 128,
-          std::size_t MaxHistory = 1024,
-          std::size_t HyMaxActive,
-          std::size_t HyMaxPassive>
-    requires PlumtreeShape<MaxPeers, MaxHistory> &&
-             HyParViewShape<HyMaxActive, HyMaxPassive>
+template <std::size_t MaxPeers = 128, std::size_t MaxHistory = 1024, std::size_t HyMaxActive, std::size_t HyMaxPassive>
+    requires PlumtreeShape<MaxPeers, MaxHistory> && HyParViewShape<HyMaxActive, HyMaxPassive>
 [[nodiscard]] PlumtreeBroadcast<MaxPeers, MaxHistory>
-mint_plumtree(
-    effects::Init,
-    HyParViewMembership<HyMaxActive, HyMaxPassive> const& membership,
-    PlumtreeConfig config = {}) noexcept {
+mint_plumtree(effects::Init, HyParViewMembership<HyMaxActive, HyMaxPassive> const& membership,
+              PlumtreeConfig config = {}) noexcept {
     return PlumtreeBroadcast<MaxPeers, MaxHistory>{membership, config};
 }
 
@@ -547,7 +477,7 @@ mint_plumtree(
 //   auto pop = populate_plumtree_from_membership(b, membership);
 //   if (!pop) { return diagnose(pop.error()); }
 template <std::size_t MaxPeers>
-    requires (MaxPeers > 0)
+    requires(MaxPeers > 0)
 [[nodiscard]] constexpr std::expected<PlumtreeConfig, PlumtreeError>
 admit_plumtree_config(PlumtreeConfig config) noexcept {
     if (config.max_eager_fanout.value() > MaxPeers) {
@@ -556,16 +486,11 @@ admit_plumtree_config(PlumtreeConfig config) noexcept {
     return config;
 }
 
-template <std::size_t MaxPeers,
-          std::size_t MaxHistory,
-          std::size_t HyMaxActive,
-          std::size_t HyMaxPassive>
-    requires PlumtreeShape<MaxPeers, MaxHistory> &&
-             HyParViewShape<HyMaxActive, HyMaxPassive>
+template <std::size_t MaxPeers, std::size_t MaxHistory, std::size_t HyMaxActive, std::size_t HyMaxPassive>
+    requires PlumtreeShape<MaxPeers, MaxHistory> && HyParViewShape<HyMaxActive, HyMaxPassive>
 [[nodiscard]] std::expected<void, PlumtreeError>
-populate_plumtree_from_membership(
-    PlumtreeBroadcast<MaxPeers, MaxHistory>& broadcast,
-    HyParViewMembership<HyMaxActive, HyMaxPassive> const& membership) noexcept {
+populate_plumtree_from_membership(PlumtreeBroadcast<MaxPeers, MaxHistory>& broadcast,
+                                  HyParViewMembership<HyMaxActive, HyMaxPassive> const& membership) noexcept {
     auto active = membership.active_view();
     if (active.as_span().size() > MaxPeers) {
         // Static overshoot — caller's config is wrong, not a race.
@@ -580,13 +505,11 @@ populate_plumtree_from_membership(
     for (cog::CogIdentity const& peer : active.as_span()) {
         auto admitted = admit_hyparview_peer(peer);
         if (!admitted.has_value()) {
-            return std::unexpected(
-                PlumtreeError::TransientShapeInconsistency);
+            return std::unexpected(PlumtreeError::TransientShapeInconsistency);
         }
         auto rc = broadcast.add_eager_peer(*admitted);
         if (!rc.has_value()) {
-            return std::unexpected(
-                PlumtreeError::TransientShapeInconsistency);
+            return std::unexpected(PlumtreeError::TransientShapeInconsistency);
         }
     }
     return {};

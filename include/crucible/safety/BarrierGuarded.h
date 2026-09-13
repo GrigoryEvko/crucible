@@ -75,7 +75,7 @@
 #include <crucible/algebra/lattices/BarrierStrengthLattice.h>
 
 #include <concepts>
-#include <cstdlib>      // std::abort in the runtime smoke test
+#include <cstdlib>  // std::abort in the runtime smoke test
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -89,12 +89,10 @@ template <BarrierStrength_v Tier, typename T>
 class [[nodiscard]] BarrierGuarded {
 public:
     // ── Public type aliases (GradedWrapper uniform surface) ─────────
-    using value_type   = T;
+    using value_type = T;
     using lattice_type = BarrierStrengthLattice::At<Tier>;
-    using graded_type  = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
-    static constexpr ::crucible::algebra::ModalityKind modality =
-        ::crucible::algebra::ModalityKind::Absolute;
+    using graded_type = ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
+    static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::Absolute;
 
     // The pinned publication fence — exposed for callers doing
     // strength-aware dispatch without instantiating the wrapper.
@@ -108,30 +106,29 @@ public:
     constexpr BarrierGuarded() noexcept(std::is_nothrow_default_constructible_v<T>)
         : impl_{T{}, typename lattice_type::element_type{}} {}
 
-    constexpr explicit BarrierGuarded(T value) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    constexpr explicit BarrierGuarded(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(value), typename lattice_type::element_type{}} {}
 
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr explicit BarrierGuarded(std::in_place_t, Args&&... args)
-        noexcept(std::is_nothrow_constructible_v<T, Args...>
-                 && std::is_nothrow_move_constructible_v<T>)
-        : impl_{T(std::forward<Args>(args)...),
-                typename lattice_type::element_type{}} {}
+    constexpr explicit BarrierGuarded(std::in_place_t,
+                                      Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
+                                                               && std::is_nothrow_move_constructible_v<T>)
+        : impl_{T(std::forward<Args>(args)...), typename lattice_type::element_type{}} {}
 
-    constexpr BarrierGuarded(const BarrierGuarded&)            = default;
-    constexpr BarrierGuarded(BarrierGuarded&&)                 = default;
+    constexpr BarrierGuarded(const BarrierGuarded&) = default;
+    constexpr BarrierGuarded(BarrierGuarded&&) = default;
     constexpr BarrierGuarded& operator=(const BarrierGuarded&) = default;
-    constexpr BarrierGuarded& operator=(BarrierGuarded&&)      = default;
-    ~BarrierGuarded()                                          = default;
+    constexpr BarrierGuarded& operator=(BarrierGuarded&&) = default;
+    ~BarrierGuarded() = default;
 
     // Equality: compares value bytes within the SAME fence pin.
     // Cross-tier comparison rejected at overload resolution.
-    [[nodiscard]] friend constexpr bool operator==(
-        BarrierGuarded const& a, BarrierGuarded const& b)
-        noexcept(noexcept(a.peek() == b.peek()))
-        requires requires(T const& x, T const& y) { { x == y } -> std::convertible_to<bool>; }
+    [[nodiscard]] friend constexpr bool operator==(BarrierGuarded const& a,
+                                                   BarrierGuarded const& b) noexcept(noexcept(a.peek() == b.peek()))
+        requires requires(T const& x, T const& y) {
+            { x == y } -> std::convertible_to<bool>;
+        }
     {
         return a.peek() == b.peek();
     }
@@ -140,23 +137,20 @@ public:
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return graded_type::lattice_name();
-    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 
     // ── Read-only / mutable access ──────────────────────────────────
     [[nodiscard]] constexpr T const& peek() const& noexcept { return impl_.peek(); }
-    [[nodiscard]] constexpr T consume() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    { return std::move(impl_).consume(); }
+    [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return std::move(impl_).consume();
+    }
     [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(); }
 
     // ── swap ────────────────────────────────────────────────────────
-    constexpr void swap(BarrierGuarded& other) noexcept(std::is_nothrow_swappable_v<T>) {
-        impl_.swap(other.impl_);
+    constexpr void swap(BarrierGuarded& other) noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
+    friend constexpr void swap(BarrierGuarded& a, BarrierGuarded& b) noexcept(std::is_nothrow_swappable_v<T>) {
+        a.swap(b);
     }
-    friend constexpr void swap(BarrierGuarded& a, BarrierGuarded& b)
-        noexcept(std::is_nothrow_swappable_v<T>) { a.swap(b); }
 
     // ── satisfies<Required> — FLOOR subsumption ────────────────────
     //
@@ -175,75 +169,86 @@ public:
     // was actually published under (e.g. relabel an AcquireLoad value as
     // SeqCst), fooling a consumer that requires the stronger ordering.
     template <BarrierStrength_v Lower>
-        requires (BarrierStrengthLattice::leq(Lower, Tier))
-    [[nodiscard]] constexpr BarrierGuarded<Lower, T> weaken() const&
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
+        requires(BarrierStrengthLattice::leq(Lower, Tier))
+    [[nodiscard]] constexpr BarrierGuarded<Lower, T> weaken() const& noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
-    { return BarrierGuarded<Lower, T>{this->peek()}; }
+    {
+        return BarrierGuarded<Lower, T>{this->peek()};
+    }
 
     template <BarrierStrength_v Lower>
-        requires (BarrierStrengthLattice::leq(Lower, Tier))
-    [[nodiscard]] constexpr BarrierGuarded<Lower, T> weaken() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    { return BarrierGuarded<Lower, T>{std::move(impl_).consume()}; }
+        requires(BarrierStrengthLattice::leq(Lower, Tier))
+    [[nodiscard]] constexpr BarrierGuarded<Lower, T> weaken() && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return BarrierGuarded<Lower, T>{std::move(impl_).consume()};
+    }
 };
 
 // ── §XXI mint factory ───────────────────────────────────────────────
 template <BarrierStrength_v Tier, typename T, typename... Args>
     requires std::is_constructible_v<T, Args...>
-[[nodiscard]] constexpr BarrierGuarded<Tier, T> mint_barrier_guarded(Args&&... args)
-    noexcept(std::is_nothrow_constructible_v<T, Args...>)
-{
+[[nodiscard]] constexpr BarrierGuarded<Tier, T>
+mint_barrier_guarded(Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>) {
     return BarrierGuarded<Tier, T>{std::in_place, std::forward<Args>(args)...};
 }
 
 // ── Convenience aliases ─────────────────────────────────────────────
 namespace barrier_pin {
-    template <typename T> using None            = BarrierGuarded<BarrierStrength_v::None,            T>;
-    template <typename T> using CompilerBarrier = BarrierGuarded<BarrierStrength_v::CompilerBarrier, T>;
-    template <typename T> using AcquireLoad     = BarrierGuarded<BarrierStrength_v::AcquireLoad,     T>;
-    template <typename T> using ReleaseStore    = BarrierGuarded<BarrierStrength_v::ReleaseStore,    T>;
-    template <typename T> using AcqRel          = BarrierGuarded<BarrierStrength_v::AcqRel,          T>;
-    template <typename T> using SeqCst          = BarrierGuarded<BarrierStrength_v::SeqCst,          T>;
-    template <typename T> using FullFence       = BarrierGuarded<BarrierStrength_v::FullFence,       T>;
+template <typename T>
+using None = BarrierGuarded<BarrierStrength_v::None, T>;
+template <typename T>
+using CompilerBarrier = BarrierGuarded<BarrierStrength_v::CompilerBarrier, T>;
+template <typename T>
+using AcquireLoad = BarrierGuarded<BarrierStrength_v::AcquireLoad, T>;
+template <typename T>
+using ReleaseStore = BarrierGuarded<BarrierStrength_v::ReleaseStore, T>;
+template <typename T>
+using AcqRel = BarrierGuarded<BarrierStrength_v::AcqRel, T>;
+template <typename T>
+using SeqCst = BarrierGuarded<BarrierStrength_v::SeqCst, T>;
+template <typename T>
+using FullFence = BarrierGuarded<BarrierStrength_v::FullFence, T>;
 }  // namespace barrier_pin
 
 // ── Layout invariants — regime-1 EBO collapse ───────────────────────
 namespace detail::barrier_guarded_layout {
 
-template <typename T> using NoneBg      = BarrierGuarded<BarrierStrength_v::None,      T>;
-template <typename T> using AcqRelBg    = BarrierGuarded<BarrierStrength_v::AcqRel,    T>;
-template <typename T> using SeqCstBg     = BarrierGuarded<BarrierStrength_v::SeqCst,    T>;
-template <typename T> using FullFenceBg = BarrierGuarded<BarrierStrength_v::FullFence, T>;
+template <typename T>
+using NoneBg = BarrierGuarded<BarrierStrength_v::None, T>;
+template <typename T>
+using AcqRelBg = BarrierGuarded<BarrierStrength_v::AcqRel, T>;
+template <typename T>
+using SeqCstBg = BarrierGuarded<BarrierStrength_v::SeqCst, T>;
+template <typename T>
+using FullFenceBg = BarrierGuarded<BarrierStrength_v::FullFence, T>;
 
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoneBg,      char);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoneBg,      int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(AcqRelBg,    int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(AcqRelBg,    double);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(SeqCstBg,    int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoneBg, char);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoneBg, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(AcqRelBg, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(AcqRelBg, double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(SeqCstBg, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(FullFenceBg, int);
 
 }  // namespace detail::barrier_guarded_layout
 
-static_assert(sizeof(BarrierGuarded<BarrierStrength_v::None,            int>)    == sizeof(int));
-static_assert(sizeof(BarrierGuarded<BarrierStrength_v::CompilerBarrier, int>)    == sizeof(int));
-static_assert(sizeof(BarrierGuarded<BarrierStrength_v::AcquireLoad,     int>)    == sizeof(int));
-static_assert(sizeof(BarrierGuarded<BarrierStrength_v::ReleaseStore,    int>)    == sizeof(int));
-static_assert(sizeof(BarrierGuarded<BarrierStrength_v::AcqRel,          int>)    == sizeof(int));
-static_assert(sizeof(BarrierGuarded<BarrierStrength_v::SeqCst,          int>)    == sizeof(int));
-static_assert(sizeof(BarrierGuarded<BarrierStrength_v::FullFence,       int>)    == sizeof(int));
-static_assert(sizeof(BarrierGuarded<BarrierStrength_v::AcqRel,          double>) == sizeof(double));
-static_assert(sizeof(BarrierGuarded<BarrierStrength_v::None,            char>)   == sizeof(char));
+static_assert(sizeof(BarrierGuarded<BarrierStrength_v::None, int>) == sizeof(int));
+static_assert(sizeof(BarrierGuarded<BarrierStrength_v::CompilerBarrier, int>) == sizeof(int));
+static_assert(sizeof(BarrierGuarded<BarrierStrength_v::AcquireLoad, int>) == sizeof(int));
+static_assert(sizeof(BarrierGuarded<BarrierStrength_v::ReleaseStore, int>) == sizeof(int));
+static_assert(sizeof(BarrierGuarded<BarrierStrength_v::AcqRel, int>) == sizeof(int));
+static_assert(sizeof(BarrierGuarded<BarrierStrength_v::SeqCst, int>) == sizeof(int));
+static_assert(sizeof(BarrierGuarded<BarrierStrength_v::FullFence, int>) == sizeof(int));
+static_assert(sizeof(BarrierGuarded<BarrierStrength_v::AcqRel, double>) == sizeof(double));
+static_assert(sizeof(BarrierGuarded<BarrierStrength_v::None, char>) == sizeof(char));
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::barrier_guarded_self_test {
 
-using NoneInt    = BarrierGuarded<BarrierStrength_v::None,            int>;
-using CompInt    = BarrierGuarded<BarrierStrength_v::CompilerBarrier, int>;
-using AcqInt     = BarrierGuarded<BarrierStrength_v::AcquireLoad,     int>;
-using AcqRelInt  = BarrierGuarded<BarrierStrength_v::AcqRel,          int>;
-using SeqCstInt  = BarrierGuarded<BarrierStrength_v::SeqCst,          int>;
-using FullInt    = BarrierGuarded<BarrierStrength_v::FullFence,       int>;
+using NoneInt = BarrierGuarded<BarrierStrength_v::None, int>;
+using CompInt = BarrierGuarded<BarrierStrength_v::CompilerBarrier, int>;
+using AcqInt = BarrierGuarded<BarrierStrength_v::AcquireLoad, int>;
+using AcqRelInt = BarrierGuarded<BarrierStrength_v::AcqRel, int>;
+using SeqCstInt = BarrierGuarded<BarrierStrength_v::SeqCst, int>;
+using FullInt = BarrierGuarded<BarrierStrength_v::FullFence, int>;
 
 // ── Construction paths ─────────────────────────────────────────────
 inline constexpr AcqRelInt a_default{};
@@ -272,24 +277,24 @@ static_assert(FullInt::satisfies<BarrierStrength_v::FullFence>);
 // (a SeqCst publication genuinely provides AcqRel ordering).
 static_assert(SeqCstInt::satisfies<BarrierStrength_v::SeqCst>);
 static_assert(SeqCstInt::satisfies<BarrierStrength_v::AcqRel>,
-    "BarrierGuarded<SeqCst>::satisfies<AcqRel> MUST be TRUE — a SeqCst "
-    "publication subsumes an AcqRel floor (AcqRel ⊑ SeqCst).  This is "
-    "the subsumption HS14 fixture.");
+              "BarrierGuarded<SeqCst>::satisfies<AcqRel> MUST be TRUE — a SeqCst "
+              "publication subsumes an AcqRel floor (AcqRel ⊑ SeqCst).  This is "
+              "the subsumption HS14 fixture.");
 static_assert(!SeqCstInt::satisfies<BarrierStrength_v::FullFence>,
-    "BarrierGuarded<SeqCst>::satisfies<FullFence> MUST be FALSE — a "
-    "SeqCst-ordered value does NOT provide a standalone full fence.");
+              "BarrierGuarded<SeqCst>::satisfies<FullFence> MUST be FALSE — a "
+              "SeqCst-ordered value does NOT provide a standalone full fence.");
 
 // None satisfies ONLY the None floor (it is the bottom — no barrier).
-static_assert( NoneInt::satisfies<BarrierStrength_v::None>);
+static_assert(NoneInt::satisfies<BarrierStrength_v::None>);
 static_assert(!NoneInt::satisfies<BarrierStrength_v::CompilerBarrier>);
 static_assert(!NoneInt::satisfies<BarrierStrength_v::AcqRel>);
 
 // AcquireLoad does NOT meet an AcqRel floor — the consumer-too-weak case.
 static_assert(!AcqInt::satisfies<BarrierStrength_v::AcqRel>,
-    "BarrierGuarded<AcquireLoad>::satisfies<AcqRel> MUST be FALSE — an "
-    "acquire-only value lacks the release half an AcqRel floor needs.  "
-    "This is the consumer-floor-not-met rejection that "
-    "neg_barrier_consumer_too_weak.cpp pins at a real gate.");
+              "BarrierGuarded<AcquireLoad>::satisfies<AcqRel> MUST be FALSE — an "
+              "acquire-only value lacks the release half an AcqRel floor needs.  "
+              "This is the consumer-floor-not-met rejection that "
+              "neg_barrier_consumer_too_weak.cpp pins at a real gate.");
 
 // ── weaken<Lower>() — DOWN-the-chain conversion ────────────────────
 inline constexpr auto full_to_acqrel = FullInt{42}.weaken<BarrierStrength_v::AcqRel>();
@@ -303,29 +308,32 @@ static_assert(acqrel_reflexive.peek() == 55);
 
 // ── weaken SFINAE detector — chain-direction check ─────────────────
 template <typename W, BarrierStrength_v Target>
-concept can_weaken = requires(W w) { { std::move(w).template weaken<Target>() }; };
+concept can_weaken = requires(W w) {
+    { std::move(w).template weaken<Target>() };
+};
 
-static_assert( can_weaken<FullInt,   BarrierStrength_v::None>);
-static_assert( can_weaken<SeqCstInt, BarrierStrength_v::AcqRel>);
-static_assert( can_weaken<AcqRelInt, BarrierStrength_v::AcqRel>);
+static_assert(can_weaken<FullInt, BarrierStrength_v::None>);
+static_assert(can_weaken<SeqCstInt, BarrierStrength_v::AcqRel>);
+static_assert(can_weaken<AcqRelInt, BarrierStrength_v::AcqRel>);
 // Strengthen UP the chain REJECTED — the load-bearing negative.
-static_assert(!can_weaken<AcqInt,    BarrierStrength_v::SeqCst>,
-    "weaken<SeqCst> on a BarrierGuarded<AcquireLoad> wrapper MUST be "
-    "REJECTED — strengthening UP would claim a fence stronger than was "
-    "issued, fooling a consumer that requires SeqCst.  See "
-    "neg_barrier_strengthen_up.cpp.");
-static_assert(!can_weaken<NoneInt,   BarrierStrength_v::CompilerBarrier>);
-static_assert(!can_weaken<CompInt,   BarrierStrength_v::AcqRel>);
+static_assert(!can_weaken<AcqInt, BarrierStrength_v::SeqCst>,
+              "weaken<SeqCst> on a BarrierGuarded<AcquireLoad> wrapper MUST be "
+              "REJECTED — strengthening UP would claim a fence stronger than was "
+              "issued, fooling a consumer that requires SeqCst.  See "
+              "neg_barrier_strengthen_up.cpp.");
+static_assert(!can_weaken<NoneInt, BarrierStrength_v::CompilerBarrier>);
+static_assert(!can_weaken<CompInt, BarrierStrength_v::AcqRel>);
 
 // ── Diagnostic forwarders ──────────────────────────────────────────
 static_assert(AcqRelInt::value_type_name().ends_with("int"));
 static_assert(AcqRelInt::lattice_name() == "BarrierStrengthLattice::At<AcqRel>");
 static_assert(SeqCstInt::lattice_name() == "BarrierStrengthLattice::At<SeqCst>");
-static_assert(FullInt::lattice_name()   == "BarrierStrengthLattice::At<FullFence>");
+static_assert(FullInt::lattice_name() == "BarrierStrengthLattice::At<FullFence>");
 
 // ── swap / peek_mut / operator== ───────────────────────────────────
 [[nodiscard]] consteval bool swap_exchanges_within_same_tier() noexcept {
-    AcqRelInt a{10}; AcqRelInt b{20};
+    AcqRelInt a{10};
+    AcqRelInt b{20};
     a.swap(b);
     return a.peek() == 20 && b.peek() == 10;
 }
@@ -339,7 +347,9 @@ static_assert(swap_exchanges_within_same_tier());
 static_assert(peek_mut_works());
 
 [[nodiscard]] consteval bool equality_compares_value_bytes() noexcept {
-    AcqRelInt a{42}; AcqRelInt b{42}; AcqRelInt c{43};
+    AcqRelInt a{42};
+    AcqRelInt b{42};
+    AcqRelInt c{43};
     return (a == b) && !(a == c);
 }
 static_assert(equality_compares_value_bytes());
@@ -363,17 +373,13 @@ static_assert(minted.peek() == 99 && minted.tier == BarrierStrength_v::SeqCst);
 template <typename W>
 concept needs_acquire_floor = W::template satisfies<BarrierStrength_v::AcquireLoad>;
 
-static_assert( needs_acquire_floor<AcqInt>,
-    "An acquire-published value MUST pass an acquire-floor gate.");
-static_assert( needs_acquire_floor<SeqCstInt>,
-    "A SeqCst-published value MUST pass an acquire-floor gate "
-    "(AcquireLoad ⊑ SeqCst).");
-static_assert(!needs_acquire_floor<NoneInt>,
-    "A no-barrier value MUST be REJECTED at an acquire-floor gate — it "
-    "carries no cross-thread ordering guarantee.");
-static_assert(!needs_acquire_floor<CompInt>,
-    "A compiler-barrier-only value MUST be REJECTED at an acquire-floor "
-    "gate — an optimizer barrier issues no hardware ordering.");
+static_assert(needs_acquire_floor<AcqInt>, "An acquire-published value MUST pass an acquire-floor gate.");
+static_assert(needs_acquire_floor<SeqCstInt>, "A SeqCst-published value MUST pass an acquire-floor gate "
+                                              "(AcquireLoad ⊑ SeqCst).");
+static_assert(!needs_acquire_floor<NoneInt>, "A no-barrier value MUST be REJECTED at an acquire-floor gate — it "
+                                             "carries no cross-thread ordering guarantee.");
+static_assert(!needs_acquire_floor<CompInt>, "A compiler-barrier-only value MUST be REJECTED at an acquire-floor "
+                                             "gate — an optimizer barrier issues no hardware ordering.");
 
 // ── Runtime smoke test ─────────────────────────────────────────────
 //
@@ -402,7 +408,7 @@ inline void runtime_smoke_test() {
     if (!s1 || s2) std::abort();
 
     // Convenience-alias instantiation.
-    barrier_pin::None<int>      alias_none{0};
+    barrier_pin::None<int> alias_none{0};
     barrier_pin::FullFence<int> alias_full{456};
     if (alias_none.peek() != 0 || alias_full.peek() != 456) std::abort();
 }

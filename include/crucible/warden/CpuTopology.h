@@ -23,7 +23,7 @@
 //     filesystems). Moves the body out of the hot icache.
 
 #include <crucible/safety/Decide.h>
-#include <crucible/fixy/Handle.h>       // FIXY-V-033-audit: route OwnedFile via fixy::handle::
+#include <crucible/fixy/Handle.h>  // FIXY-V-033-audit: route OwnedFile via fixy::handle::
 
 #include <algorithm>
 #include <cstdint>
@@ -35,8 +35,8 @@
 #include <vector>
 
 #ifdef __linux__
-#  include <sched.h>
-#  include <unistd.h>
+#include <sched.h>
+#include <unistd.h>
 #endif
 
 namespace crucible::warden {
@@ -58,9 +58,11 @@ namespace detail {
     ::crucible::fixy::handle::OwnedFile f{std::fopen(path, "r")};
     if (!f.is_open()) return out;
     char buf[512];
-    while (std::fgets(buf, sizeof(buf), f.get())) out.append(buf);
+    while (std::fgets(buf, sizeof(buf), f.get()))
+        out.append(buf);
     // strip trailing newline(s)
-    while (!out.empty() && (out.back() == '\n' || out.back() == '\r')) out.pop_back();
+    while (!out.empty() && (out.back() == '\n' || out.back() == '\r'))
+        out.pop_back();
     return out;
 }
 
@@ -70,20 +72,27 @@ namespace detail {
     size_t i = 0;
     while (i < s.size()) {
         // skip whitespace/commas
-        while (i < s.size() && (s[i] == ',' || s[i] == ' ' || s[i] == '\t')) ++i;
+        while (i < s.size() && (s[i] == ',' || s[i] == ' ' || s[i] == '\t'))
+            ++i;
         if (i >= s.size()) break;
         const size_t num_start = i;
-        while (i < s.size() && s[i] >= '0' && s[i] <= '9') ++i;
-        if (i == num_start) { ++i; continue; }
+        while (i < s.size() && s[i] >= '0' && s[i] <= '9')
+            ++i;
+        if (i == num_start) {
+            ++i;
+            continue;
+        }
         const int lo = std::atoi(s.data() + num_start);
         int hi = lo;
         if (i < s.size() && s[i] == '-') {
             ++i;
             const size_t hi_start = i;
-            while (i < s.size() && s[i] >= '0' && s[i] <= '9') ++i;
+            while (i < s.size() && s[i] >= '0' && s[i] <= '9')
+                ++i;
             if (i > hi_start) hi = std::atoi(s.data() + hi_start);
         }
-        for (int c = lo; c <= hi; ++c) out.push_back(c);
+        for (int c = lo; c <= hi; ++c)
+            out.push_back(c);
     }
     // dedup + sort
     std::sort(out.begin(), out.end());
@@ -102,7 +111,7 @@ namespace detail {
     return parse_cpulist(rest);
 }
 
-} // namespace detail
+}  // namespace detail
 
 // ── Platform invariants ────────────────────────────────────────────
 //
@@ -112,8 +121,7 @@ namespace detail {
 // which we don't attempt here. If some libc ships with a smaller value,
 // the fallback silently truncates — assert hard so we catch at build time.
 #ifdef __linux__
-static_assert(CPU_SETSIZE >= 1024,
-              "crucible::warden::allowed_cpus fallback assumes CPU_SETSIZE >= 1024");
+static_assert(CPU_SETSIZE >= 1024, "crucible::warden::allowed_cpus fallback assumes CPU_SETSIZE >= 1024");
 #endif
 
 // ── Public API ─────────────────────────────────────────────────────
@@ -146,11 +154,12 @@ namespace detail {
 #endif
     std::vector<int> out;
     const int n = num_online_cpus();
-    for (int c = 0; c < n; ++c) out.push_back(c);
+    for (int c = 0; c < n; ++c)
+        out.push_back(c);
     return out;
 }
 
-} // namespace detail
+}  // namespace detail
 
 // CPUs granted to this task by the orchestrator / cpuset cgroup.
 // Sourced from /proc/self/status:Cpus_allowed_list (authoritative).
@@ -169,8 +178,7 @@ namespace detail {
 // /sys/devices/system/cpu/cpuN/topology/thread_siblings_list
 [[nodiscard, gnu::pure]] inline std::vector<int> smt_siblings(int cpu) noexcept {
     char path[128];
-    std::snprintf(path, sizeof(path),
-        "/sys/devices/system/cpu/cpu%d/topology/thread_siblings_list", cpu);
+    std::snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/topology/thread_siblings_list", cpu);
     return detail::parse_cpulist(detail::read_small_file(path));
 }
 
@@ -179,8 +187,7 @@ namespace detail {
 // absence as "Core" so homogeneous hosts default to true.
 [[nodiscard, gnu::pure]] inline bool is_p_core(int cpu) noexcept {
     char path[128];
-    std::snprintf(path, sizeof(path),
-        "/sys/devices/system/cpu/cpu%d/topology/core_type", cpu);
+    std::snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/topology/core_type", cpu);
     const auto s = detail::read_small_file(path);
     if (s.empty()) return true;
     return s.find("Core") != std::string::npos;
@@ -192,8 +199,7 @@ namespace detail {
     // Try /sys/devices/system/cpu/cpuN/node<M> symlink first (cheaper).
     for (int n = 0; n < 64; ++n) {
         char path[128];
-        std::snprintf(path, sizeof(path),
-            "/sys/devices/system/cpu/cpu%d/node%d", cpu, n);
+        std::snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/node%d", cpu, n);
         if (::access(path, F_OK) == 0) return n;
     }
     return -1;
@@ -211,8 +217,7 @@ namespace detail {
 // Current CPU frequency (kHz) from cpufreq sysfs. 0 on failure.
 [[nodiscard, gnu::pure]] inline uint64_t cpu_cur_freq_khz(int cpu) noexcept {
     char path[128];
-    std::snprintf(path, sizeof(path),
-        "/sys/devices/system/cpu/cpu%d/cpufreq/scaling_cur_freq", cpu);
+    std::snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/cpufreq/scaling_cur_freq", cpu);
     const auto s = detail::read_small_file(path);
     if (s.empty()) return 0;
     const long v = std::atol(s.c_str());
@@ -222,8 +227,7 @@ namespace detail {
 // Max achievable frequency (kHz). 0 on failure.
 [[nodiscard, gnu::pure]] inline uint64_t cpu_max_freq_khz(int cpu) noexcept {
     char path[128];
-    std::snprintf(path, sizeof(path),
-        "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", cpu);
+    std::snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", cpu);
     const auto s = detail::read_small_file(path);
     if (s.empty()) return 0;
     const long v = std::atol(s.c_str());
@@ -233,10 +237,10 @@ namespace detail {
 // ── Core selection for the HOT thread ──────────────────────────────
 
 struct CoreSelector {
-    bool prefer_isolcpu    = true;   // pick from (allowed ∩ isolated) first
-    bool prefer_p_core     = true;   // Intel hybrid: avoid E-cores
-    bool avoid_smt_sibling = true;   // skip siblings of already-pinned cores
-    int  explicit_cpu      = -1;     // if >=0, short-circuit to this CPU iff allowed
+    bool prefer_isolcpu = true;  // pick from (allowed ∩ isolated) first
+    bool prefer_p_core = true;  // Intel hybrid: avoid E-cores
+    bool avoid_smt_sibling = true;  // skip siblings of already-pinned cores
+    int explicit_cpu = -1;  // if >=0, short-circuit to this CPU iff allowed
 
     // Penalize cpu0 (and its SMT sibling) during scoring. Rationale: on
     // Linux, cpu0 is the default landing pad for the timer-tick IRQ, the
@@ -249,18 +253,17 @@ struct CoreSelector {
     // The final allowed-fallback at the end of select_hot_cpu still
     // returns cpu0 when it's the only choice, so this is strictly a
     // preference, not a hard exclusion.
-    bool avoid_cpu0        = true;
+    bool avoid_cpu0 = true;
 
     // NUMA hint: if >=0, prefer cores on this node. -1 = no preference.
     // Typical source: numa_node_of_device("/sys/class/drm/card0/device/numa_node").
-    int  numa_hint         = -1;
+    int numa_hint = -1;
 };
 
 // Pick one CPU for the HOT dispatch thread. Returns -1 if the current
 // cgroup has no CPUs at all (catastrophic; caller should refuse to
 // start the Keeper).
-[[nodiscard]] inline int select_hot_cpu(const CoreSelector& sel,
-                                        const std::vector<int>& exclude = {}) noexcept {
+[[nodiscard]] inline int select_hot_cpu(const CoreSelector& sel, const std::vector<int>& exclude = {}) noexcept {
     // Scoring weight: the P-core/NUMA bonuses are scaled by this factor
     // so the tie-break subtraction of the CPU index (lowest wins) stays
     // strictly below one bonus unit. 1024 comfortably bounds any plausible
@@ -272,8 +275,7 @@ struct CoreSelector {
     if (allowed.empty()) return -1;
 
     // Explicit override (bench benchmarks / manual pinning).
-    if (sel.explicit_cpu >= 0 &&
-        std::find(allowed.begin(), allowed.end(), sel.explicit_cpu) != allowed.end()) {
+    if (sel.explicit_cpu >= 0 && std::find(allowed.begin(), allowed.end(), sel.explicit_cpu) != allowed.end()) {
         return sel.explicit_cpu;
     }
 
@@ -288,9 +290,7 @@ struct CoreSelector {
     if (sel.prefer_isolcpu) {
         std::vector<int> iso = isolated_cpus();
         std::vector<int> inter;
-        std::set_intersection(allowed.begin(), allowed.end(),
-                              iso.begin(), iso.end(),
-                              std::back_inserter(inter));
+        std::set_intersection(allowed.begin(), allowed.end(), iso.begin(), iso.end(), std::back_inserter(inter));
         if (!inter.empty()) pools.push_back(std::move(inter));
     }
     // Pool 2: all allowed (fallback).
@@ -310,13 +310,15 @@ struct CoreSelector {
                 const auto sibs = smt_siblings(c);
                 bool clash = false;
                 for (const int s : sibs)
-                    if (s != c && is_excluded(s)) { clash = true; break; }
+                    if (s != c && is_excluded(s)) {
+                        clash = true;
+                        break;
+                    }
                 if (clash) continue;
             }
             int score = 0;
-            if (sel.prefer_p_core && is_p_core(c))          score += 4;
-            if (sel.numa_hint >= 0 &&
-                numa_node_of(c) == sel.numa_hint)           score += 2;
+            if (sel.prefer_p_core && is_p_core(c)) score += 4;
+            if (sel.numa_hint >= 0 && numa_node_of(c) == sel.numa_hint) score += 2;
             // Steer away from cpu0 and its SMT sibling (see CoreSelector
             // doc). -8 on cpu0 itself dominates the P-core bonus (+4) so
             // a non-cpu0 E-core beats a cpu0 P-core. -4 on cpu0's sibling
@@ -328,13 +330,15 @@ struct CoreSelector {
                     score -= 8;
                 } else {
                     const auto sibs = smt_siblings(c);
-                    if (std::find(sibs.begin(), sibs.end(), 0) != sibs.end())
-                        score -= 4;
+                    if (std::find(sibs.begin(), sibs.end(), 0) != sibs.end()) score -= 4;
                 }
             }
             // Lower CPU index = tie-break (stable, predictable).
             score = score * kScoreScale - c;
-            if (score > best_score) { best_score = score; best = c; }
+            if (score > best_score) {
+                best_score = score;
+                best = c;
+            }
         }
         return best;
     };
@@ -345,16 +349,15 @@ struct CoreSelector {
     }
     // Nothing matched the scoring criteria — return any allowed CPU
     // that isn't in `exclude`.
-    for (const int c : allowed) if (!is_excluded(c)) return c;
+    for (const int c : allowed)
+        if (!is_excluded(c)) return c;
     return -1;
 }
 
 // Pick a set of CPUs for WARM threads (same NUMA node as hot, NOT
 // including the hot CPU itself). Empty on failure.
-[[nodiscard]] inline std::vector<int> select_warm_cpus(int hot_cpu,
-                                                       int count) noexcept
-    pre (::crucible::decide::non_negative(count))
-{
+[[nodiscard]] inline std::vector<int> select_warm_cpus(int hot_cpu, int count) noexcept
+    pre(::crucible::decide::non_negative(count)) {
     const auto allowed = allowed_cpus();
     const int hot_numa = (hot_cpu >= 0) ? numa_node_of(hot_cpu) : -1;
 
@@ -363,13 +366,21 @@ struct CoreSelector {
     for (const int c : allowed) {
         if (c == hot_cpu) continue;
         const int n = numa_node_of(c);
-        if (hot_numa >= 0 && n == hot_numa) same_numa.push_back(c);
-        else other.push_back(c);
+        if (hot_numa >= 0 && n == hot_numa)
+            same_numa.push_back(c);
+        else
+            other.push_back(c);
     }
     std::vector<int> out;
-    for (const int c : same_numa) { if (static_cast<int>(out.size()) >= count) break; out.push_back(c); }
-    for (const int c : other)     { if (static_cast<int>(out.size()) >= count) break; out.push_back(c); }
+    for (const int c : same_numa) {
+        if (static_cast<int>(out.size()) >= count) break;
+        out.push_back(c);
+    }
+    for (const int c : other) {
+        if (static_cast<int>(out.size()) >= count) break;
+        out.push_back(c);
+    }
     return out;
 }
 
-} // namespace crucible::warden
+}  // namespace crucible::warden

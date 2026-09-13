@@ -143,8 +143,7 @@ template <typename G>
 struct is_leak_grant : std::false_type {};
 
 template <typename G>
-inline constexpr bool is_leak_grant_v =
-    is_leak_grant<std::remove_cv_t<std::remove_reference_t<G>>>::value;
+inline constexpr bool is_leak_grant_v = is_leak_grant<std::remove_cv_t<std::remove_reference_t<G>>>::value;
 
 template <typename G>
 concept IsLeakGrant = is_leak_grant_v<G>;
@@ -163,12 +162,12 @@ concept IsLeakGrant = is_leak_grant_v<G>;
 
 template <typename Tag, typename Prot, typename Share>
 class [[nodiscard]] OwnedMmap {
-    void*       addr_ = MAP_FAILED;
-    std::size_t len_  = 0;
+    void* addr_ = MAP_FAILED;
+    std::size_t len_ = 0;
 
 public:
-    using tag_type   = Tag;
-    using prot_type  = Prot;
+    using tag_type = Tag;
+    using prot_type = Prot;
     using share_type = Share;
 
     OwnedMmap() noexcept = default;
@@ -178,21 +177,19 @@ public:
     // ::mmap() and ignore failure pass the result in and let
     // is_mapped() report).  Length must be the SAME length passed to
     // ::mmap(); munmap uses it verbatim.
-    explicit OwnedMmap(void* address, std::size_t length) noexcept
-        : addr_{address}, len_{length} {}
+    explicit OwnedMmap(void* address, std::size_t length) noexcept : addr_{address}, len_{length} {}
 
-    OwnedMmap(const OwnedMmap&)            = delete("mmap region is unique; copy would double-unmap on destruction");
+    OwnedMmap(const OwnedMmap&) = delete("mmap region is unique; copy would double-unmap on destruction");
     OwnedMmap& operator=(const OwnedMmap&) = delete("mmap region is unique; copy would double-unmap on destruction");
 
     OwnedMmap(OwnedMmap&& other) noexcept
-        : addr_{std::exchange(other.addr_, MAP_FAILED)},
-          len_ {std::exchange(other.len_, 0)} {}
+        : addr_{std::exchange(other.addr_, MAP_FAILED)}, len_{std::exchange(other.len_, 0)} {}
 
     OwnedMmap& operator=(OwnedMmap&& other) noexcept {
         if (this != &other) {
             release_();
             addr_ = std::exchange(other.addr_, MAP_FAILED);
-            len_  = std::exchange(other.len_, 0);
+            len_ = std::exchange(other.len_, 0);
         }
         return *this;
     }
@@ -200,11 +197,9 @@ public:
     ~OwnedMmap() noexcept { release_(); }
 
     // ── Observation surface ────────────────────────────────────────
-    [[nodiscard]] void*       data()      const noexcept { return addr_; }
-    [[nodiscard]] std::size_t size()      const noexcept { return len_; }
-    [[nodiscard]] bool        is_mapped() const noexcept {
-        return addr_ != MAP_FAILED && addr_ != nullptr;
-    }
+    [[nodiscard]] void* data() const noexcept { return addr_; }
+    [[nodiscard]] std::size_t size() const noexcept { return len_; }
+    [[nodiscard]] bool is_mapped() const noexcept { return addr_ != MAP_FAILED && addr_ != nullptr; }
 
     // Yield ownership — caller becomes responsible for ::munmap.
     // Returns the {addr, length} pair and leaves *this in the
@@ -239,10 +234,8 @@ public:
     // than at runtime.  Zero runtime cost beyond the sentinel swap.
     template <typename LeakGrant>
         requires IsLeakGrant<LeakGrant>
-    [[nodiscard]] std::pair<void*, std::size_t>
-    release(LeakGrant) && noexcept {
-        return {std::exchange(addr_, MAP_FAILED),
-                std::exchange(len_,  0)};
+    [[nodiscard]] std::pair<void*, std::size_t> release(LeakGrant) && noexcept {
+        return {std::exchange(addr_, MAP_FAILED), std::exchange(len_, 0)};
     }
 
 private:
@@ -250,7 +243,7 @@ private:
         if (is_mapped()) {
             ::munmap(addr_, len_);
             addr_ = MAP_FAILED;
-            len_  = 0;
+            len_ = 0;
         }
     }
 };
@@ -263,13 +256,12 @@ private:
 // x86_64 / aarch64 is 8, so no implicit padding.
 
 namespace self_test {
-struct DummyTag   {};
-struct DummyProt  {};
+struct DummyTag {};
+struct DummyProt {};
 struct DummyShare {};
 using SmokeOwnedMmap = OwnedMmap<DummyTag, DummyProt, DummyShare>;
 
-static_assert(!std::is_copy_constructible_v<SmokeOwnedMmap>,
-              "OwnedMmap must be move-only — copy would double-unmap");
+static_assert(!std::is_copy_constructible_v<SmokeOwnedMmap>, "OwnedMmap must be move-only — copy would double-unmap");
 static_assert(!std::is_copy_assignable_v<SmokeOwnedMmap>);
 static_assert(std::is_nothrow_move_constructible_v<SmokeOwnedMmap>);
 static_assert(std::is_nothrow_move_assignable_v<SmokeOwnedMmap>);

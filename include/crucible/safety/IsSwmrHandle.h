@@ -174,8 +174,7 @@ template <typename T>
 struct load_shape<T, std::void_t<decltype(&T::load)>> {
     using mptr_t = decltype(&T::load);
     using decomp = load_signature_decomp<mptr_t>;
-    static constexpr bool matches = decomp::matches
-        && !std::is_void_v<typename decomp::payload>;
+    static constexpr bool matches = decomp::matches && !std::is_void_v<typename decomp::payload>;
     using payload = typename decomp::payload;
 };
 
@@ -184,17 +183,13 @@ template <typename T, typename = void>
 struct has_publish : std::false_type {};
 
 template <typename T>
-struct has_publish<T, std::void_t<decltype(&T::publish)>>
-    : std::true_type
-{};
+struct has_publish<T, std::void_t<decltype(&T::publish)>> : std::true_type {};
 
 template <typename T, typename = void>
 struct has_load : std::false_type {};
 
 template <typename T>
-struct has_load<T, std::void_t<decltype(&T::load)>>
-    : std::true_type
-{};
+struct has_load<T, std::void_t<decltype(&T::load)>> : std::true_type {};
 
 }  // namespace detail
 
@@ -204,29 +199,25 @@ struct has_load<T, std::void_t<decltype(&T::load)>>
 
 template <typename T>
 inline constexpr bool is_swmr_writer_v =
-    detail::publish_shape<std::remove_cvref_t<T>>::matches
- && !detail::has_load<std::remove_cvref_t<T>>::value;
+    detail::publish_shape<std::remove_cvref_t<T>>::matches && !detail::has_load<std::remove_cvref_t<T>>::value;
 
 template <typename T>
 concept IsSwmrWriter = is_swmr_writer_v<T>;
 
 template <typename T>
     requires is_swmr_writer_v<T>
-using swmr_writer_value_t =
-    typename detail::publish_shape<std::remove_cvref_t<T>>::payload;
+using swmr_writer_value_t = typename detail::publish_shape<std::remove_cvref_t<T>>::payload;
 
 template <typename T>
 inline constexpr bool is_swmr_reader_v =
-    detail::load_shape<std::remove_cvref_t<T>>::matches
- && !detail::has_publish<std::remove_cvref_t<T>>::value;
+    detail::load_shape<std::remove_cvref_t<T>>::matches && !detail::has_publish<std::remove_cvref_t<T>>::value;
 
 template <typename T>
 concept IsSwmrReader = is_swmr_reader_v<T>;
 
 template <typename T>
     requires is_swmr_reader_v<T>
-using swmr_reader_value_t =
-    typename detail::load_shape<std::remove_cvref_t<T>>::payload;
+using swmr_reader_value_t = typename detail::load_shape<std::remove_cvref_t<T>>::payload;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Self-test block ────────────────────────────────────────────────
@@ -328,19 +319,13 @@ static_assert(!is_swmr_reader_v<synthetic_reader*>);
 
 // ── Payload extraction ────────────────────────────────────────────
 
-static_assert(std::is_same_v<
-    swmr_writer_value_t<synthetic_writer>, int>);
-static_assert(std::is_same_v<
-    swmr_writer_value_t<synthetic_double_writer>, double>);
-static_assert(std::is_same_v<
-    swmr_writer_value_t<synthetic_writer const&>, int>);
+static_assert(std::is_same_v<swmr_writer_value_t<synthetic_writer>, int>);
+static_assert(std::is_same_v<swmr_writer_value_t<synthetic_double_writer>, double>);
+static_assert(std::is_same_v<swmr_writer_value_t<synthetic_writer const&>, int>);
 
-static_assert(std::is_same_v<
-    swmr_reader_value_t<synthetic_reader>, int>);
-static_assert(std::is_same_v<
-    swmr_reader_value_t<synthetic_double_reader>, double>);
-static_assert(std::is_same_v<
-    swmr_reader_value_t<synthetic_reader const&>, int>);
+static_assert(std::is_same_v<swmr_reader_value_t<synthetic_reader>, int>);
+static_assert(std::is_same_v<swmr_reader_value_t<synthetic_double_reader>, double>);
+static_assert(std::is_same_v<swmr_reader_value_t<synthetic_reader const&>, int>);
 
 }  // namespace detail::is_swmr_handle_self_test
 

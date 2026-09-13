@@ -9,8 +9,7 @@
 #include "common.h"
 
 SEC("tracepoint/tcp/tcp_probe")
-int crucible_observe_tcp_flow_sample(void *ctx)
-{
+int crucible_observe_tcp_flow_sample(void* ctx) {
     (void)ctx;
     return 0;
 }

@@ -53,8 +53,7 @@ template <typename P>
 inline constexpr bool is_canonical_witness_v<FormallyVerified<P>> = true;
 
 template <typename W, typename... Platforms>
-inline constexpr bool is_canonical_witness_v<PlatformBounded<W, Platforms...>> =
-    is_canonical_witness_v<W>;
+inline constexpr bool is_canonical_witness_v<PlatformBounded<W, Platforms...>> = is_canonical_witness_v<W>;
 
 }  // namespace detail
 
@@ -62,8 +61,7 @@ template <typename W>
 concept IsWitness = detail::is_canonical_witness_v<std::remove_cvref_t<W>>;
 
 template <typename W, typename Min>
-concept WitnessAtLeast =
-    IsWitness<W> && IsWitness<Min> && witness_leq_v<Min, W>;
+concept WitnessAtLeast = IsWitness<W> && IsWitness<Min> && witness_leq_v<Min, W>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── is_valid_witness_v (Followup C) ────────────────────────────────
@@ -97,27 +95,23 @@ template <typename R>
 inline constexpr bool is_valid_witness_v_impl<Asserted<R>> = true;
 
 template <auto Id>
-inline constexpr bool is_valid_witness_v_impl<Tested<Id>> =
-    ::crucible::safety::diag::is_active_test_v<Id>;
+inline constexpr bool is_valid_witness_v_impl<Tested<Id>> = ::crucible::safety::diag::is_active_test_v<Id>;
 
 template <auto Id>
-inline constexpr bool is_valid_witness_v_impl<CrossValidated<Id>> =
-    ::crucible::safety::diag::is_valid_ci_run_v<Id>;
+inline constexpr bool is_valid_witness_v_impl<CrossValidated<Id>> = ::crucible::safety::diag::is_valid_ci_run_v<Id>;
 
 template <typename P>
 inline constexpr bool is_valid_witness_v_impl<FormallyVerified<P>> = true;
 
 template <typename W, typename... Platforms>
 inline constexpr bool is_valid_witness_v_impl<PlatformBounded<W, Platforms...>> =
-    platform_bounded_active_v<Platforms...>
-        ? is_valid_witness_v_impl<W>
-        : true;  // inactive on current platform => degrades to Asserted floor
+    platform_bounded_active_v<Platforms...> ? is_valid_witness_v_impl<W>
+                                            : true;  // inactive on current platform => degrades to Asserted floor
 
 }  // namespace detail
 
 template <typename W>
-inline constexpr bool is_valid_witness_v =
-    detail::is_valid_witness_v_impl<std::remove_cvref_t<W>>;
+inline constexpr bool is_valid_witness_v = detail::is_valid_witness_v_impl<std::remove_cvref_t<W>>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Self-tests ─────────────────────────────────────────────────────
@@ -135,7 +129,7 @@ static_assert(IsWitness<PlatformBounded<Tested<0>, arch::X86_64>>);
 static_assert(!IsWitness<int>);
 static_assert(!IsWitness<void>);
 static_assert(!IsWitness<UnnamedRationale>);  // rationale is NOT a witness
-static_assert(!IsWitness<arch::X86_64>);     // arch is NOT a witness
+static_assert(!IsWitness<arch::X86_64>);  // arch is NOT a witness
 
 // WitnessAtLeast — same-tier passes.
 static_assert(WitnessAtLeast<Asserted<>, Asserted<>>);
@@ -155,7 +149,7 @@ static_assert(!WitnessAtLeast<CrossValidated<0>, FormallyVerified<int>>);
 // Followup C — is_valid_witness_v.
 static_assert(is_valid_witness_v<Asserted<>>);
 static_assert(is_valid_witness_v<Asserted<UnnamedRationale>>);
-static_assert(is_valid_witness_v<Tested<0>>);                     // primary template = Active
+static_assert(is_valid_witness_v<Tested<0>>);  // primary template = Active
 static_assert(is_valid_witness_v<Tested<::crucible::safety::diag::id::fixy_custom_optimizer>>);
 static_assert(!is_valid_witness_v<Tested<::crucible::safety::diag::id::fixy_revoked_demo>>);
 static_assert(is_valid_witness_v<CrossValidated<::crucible::safety::diag::ci_id::fixy_cross_vendor_smoke>>);

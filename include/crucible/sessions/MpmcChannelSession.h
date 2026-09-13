@@ -199,33 +199,26 @@ using ConsumerProto = Loop<Recv<T, Continue>>;
 //      FOUND-A24 unified-surface convention.
 
 template <typename Channel>
-concept MpmcChannelSessionSurface = requires(
-    Channel& ch,
-    typename Channel::ProducerHandle& producer_handle,
-    typename Channel::ConsumerHandle& consumer_handle,
-    const typename Channel::value_type& sample_payload)
-{
-    typename Channel::value_type;
-    typename Channel::user_tag;
-    typename Channel::producer_tag;
-    typename Channel::consumer_tag;
-    typename Channel::ProducerHandle;
-    typename Channel::ConsumerHandle;
+concept MpmcChannelSessionSurface =
+    requires(Channel& ch, typename Channel::ProducerHandle& producer_handle,
+             typename Channel::ConsumerHandle& consumer_handle, const typename Channel::value_type& sample_payload) {
+        typename Channel::value_type;
+        typename Channel::user_tag;
+        typename Channel::producer_tag;
+        typename Channel::consumer_tag;
+        typename Channel::ProducerHandle;
+        typename Channel::ConsumerHandle;
 
-    // Endpoint factories — pool-mediated, may refuse via nullopt.
-    { ch.producer() }
-        -> std::same_as<std::optional<typename Channel::ProducerHandle>>;
-    { ch.consumer() }
-        -> std::same_as<std::optional<typename Channel::ConsumerHandle>>;
+        // Endpoint factories — pool-mediated, may refuse via nullopt.
+        { ch.producer() } -> std::same_as<std::optional<typename Channel::ProducerHandle>>;
+        { ch.consumer() } -> std::same_as<std::optional<typename Channel::ConsumerHandle>>;
 
-    // Producer-side method shape.
-    { producer_handle.try_push(sample_payload) }
-        -> std::same_as<bool>;
+        // Producer-side method shape.
+        { producer_handle.try_push(sample_payload) } -> std::same_as<bool>;
 
-    // Consumer-side method shape — try_pop returns optional<value>.
-    { consumer_handle.try_pop() }
-        -> std::same_as<std::optional<typename Channel::value_type>>;
-};
+        // Consumer-side method shape — try_pop returns optional<value>.
+        { consumer_handle.try_pop() } -> std::same_as<std::optional<typename Channel::value_type>>;
+    };
 
 // ── Endpoint mint helpers ────────────────────────────────────────────
 //
@@ -237,15 +230,13 @@ concept MpmcChannelSessionSurface = requires(
 
 template <MpmcChannelSessionSurface Channel>
 [[nodiscard]] auto mint_mpmc_producer_endpoint(Channel& ch) noexcept
-    -> std::optional<typename Channel::ProducerHandle>
-{
+    -> std::optional<typename Channel::ProducerHandle> {
     return ch.producer();
 }
 
 template <MpmcChannelSessionSurface Channel>
 [[nodiscard]] auto mint_mpmc_consumer_endpoint(Channel& ch) noexcept
-    -> std::optional<typename Channel::ConsumerHandle>
-{
+    -> std::optional<typename Channel::ConsumerHandle> {
     return ch.consumer();
 }
 
@@ -265,22 +256,16 @@ template <MpmcChannelSessionSurface Channel>
 // but is not the shape MPMC streaming channels need (no permissions
 // to transfer through the wire).
 
-template <MpmcChannelSessionSurface Channel,
-          ::crucible::effects::IsExecCtx Ctx>
-[[nodiscard]] constexpr auto
-mint_mpmc_producer_session(Ctx const& ctx,
-                           typename Channel::ProducerHandle& handle) noexcept
-{
+template <MpmcChannelSessionSurface Channel, ::crucible::effects::IsExecCtx Ctx>
+[[nodiscard]] constexpr auto mint_mpmc_producer_session(Ctx const& ctx,
+                                                        typename Channel::ProducerHandle& handle) noexcept {
     using T = typename Channel::value_type;
     return mint_permissioned_session<ProducerProto<T>>(ctx, &handle);
 }
 
-template <MpmcChannelSessionSurface Channel,
-          ::crucible::effects::IsExecCtx Ctx>
-[[nodiscard]] constexpr auto
-mint_mpmc_consumer_session(Ctx const& ctx,
-                           typename Channel::ConsumerHandle& handle) noexcept
-{
+template <MpmcChannelSessionSurface Channel, ::crucible::effects::IsExecCtx Ctx>
+[[nodiscard]] constexpr auto mint_mpmc_consumer_session(Ctx const& ctx,
+                                                        typename Channel::ConsumerHandle& handle) noexcept {
     using T = typename Channel::value_type;
     return mint_permissioned_session<ConsumerProto<T>>(ctx, &handle);
 }
@@ -292,19 +277,13 @@ mint_mpmc_consumer_session(Ctx const& ctx,
 // up at the mint call; these aliases exist for the witness blocks
 // below and for ergonomic decltype-based handle declarations.
 
-template <MpmcChannelSessionSurface Channel,
-          ::crucible::effects::IsExecCtx Ctx = ::crucible::effects::HotFgCtx>
-using ProducerSessionHandle = decltype(
-    mint_mpmc_producer_session<Channel>(
-        std::declval<Ctx const&>(),
-        std::declval<typename Channel::ProducerHandle&>()));
+template <MpmcChannelSessionSurface Channel, ::crucible::effects::IsExecCtx Ctx = ::crucible::effects::HotFgCtx>
+using ProducerSessionHandle = decltype(mint_mpmc_producer_session<Channel>(
+    std::declval<Ctx const&>(), std::declval<typename Channel::ProducerHandle&>()));
 
-template <MpmcChannelSessionSurface Channel,
-          ::crucible::effects::IsExecCtx Ctx = ::crucible::effects::HotFgCtx>
-using ConsumerSessionHandle = decltype(
-    mint_mpmc_consumer_session<Channel>(
-        std::declval<Ctx const&>(),
-        std::declval<typename Channel::ConsumerHandle&>()));
+template <MpmcChannelSessionSurface Channel, ::crucible::effects::IsExecCtx Ctx = ::crucible::effects::HotFgCtx>
+using ConsumerSessionHandle = decltype(mint_mpmc_consumer_session<Channel>(
+    std::declval<Ctx const&>(), std::declval<typename Channel::ConsumerHandle&>()));
 
 // ── Transport helpers ────────────────────────────────────────────────
 //
@@ -348,8 +327,8 @@ namespace crucible::safety::proto::mpmc_channel_session::detail::sizeof_witness 
 // match the SpscSession witness pattern.
 struct Tag {};
 using SmallChannel = ::crucible::concurrent::PermissionedMpmcChannel<int, 16, Tag>;
-using ProdHandle   = SmallChannel::ProducerHandle;
-using ConsHandle   = SmallChannel::ConsumerHandle;
+using ProdHandle = SmallChannel::ProducerHandle;
+using ConsHandle = SmallChannel::ConsumerHandle;
 
 // Surface concept must accept the canonical instantiation.
 static_assert(MpmcChannelSessionSurface<SmallChannel>,
@@ -359,10 +338,8 @@ static_assert(MpmcChannelSessionSurface<SmallChannel>,
               "has drifted and the session facade can no longer wrap it.");
 
 // Protocol-shape pinning.
-static_assert(std::is_same_v<ProducerProto<int>,
-                             Loop<Send<int, Continue>>>);
-static_assert(std::is_same_v<ConsumerProto<int>,
-                             Loop<Recv<int, Continue>>>);
+static_assert(std::is_same_v<ProducerProto<int>, Loop<Send<int, Continue>>>);
+static_assert(std::is_same_v<ConsumerProto<int>, Loop<Recv<int, Continue>>>);
 
 // Sizeof-equality is asserted on the CONCRETE HEAD types that
 // mint_mpmc_*_session<...>(...) actually returns after Loop unrolling,
@@ -383,31 +360,27 @@ static_assert(std::is_same_v<ConsumerProto<int>,
 //      regressions where PS or LoopContext accidentally gain a
 //      non-empty member.
 
-static_assert(sizeof(PermissionedSessionHandle<End, EmptyPermSet,
-                                                ProdHandle*>)
-              == sizeof(SessionHandle<End, ProdHandle*>),
+static_assert(sizeof(PermissionedSessionHandle<End, EmptyPermSet, ProdHandle*>)
+                  == sizeof(SessionHandle<End, ProdHandle*>),
               "mpmc_channel_session: PSH<End, EmptyPermSet, ProdHandle*> "
               "must be same size as bare SessionHandle<End, ProdHandle*> — "
               "if this fails, EBO collapse of EmptyPermSet has been broken "
               "or the abandonment tracker grew asymmetrically between PSH "
               "and bare.");
 
-static_assert(sizeof(PermissionedSessionHandle<End, EmptyPermSet,
-                                                ConsHandle*>)
-              == sizeof(SessionHandle<End, ConsHandle*>),
+static_assert(sizeof(PermissionedSessionHandle<End, EmptyPermSet, ConsHandle*>)
+                  == sizeof(SessionHandle<End, ConsHandle*>),
               "mpmc_channel_session: PSH<End, EmptyPermSet, ConsHandle*> "
               "must be same size as bare SessionHandle<End, ConsHandle*>.");
 
-static_assert(sizeof(PermissionedSessionHandle<Send<int, End>, EmptyPermSet,
-                                                ProdHandle*>)
-              == sizeof(SessionHandle<Send<int, End>, ProdHandle*>),
+static_assert(sizeof(PermissionedSessionHandle<Send<int, End>, EmptyPermSet, ProdHandle*>)
+                  == sizeof(SessionHandle<Send<int, End>, ProdHandle*>),
               "mpmc_channel_session: PSH<Send<int, End>, EmptyPermSet, "
               "ProdHandle*> must be same size as bare SessionHandle for "
               "the same head.");
 
-static_assert(sizeof(PermissionedSessionHandle<Recv<int, End>, EmptyPermSet,
-                                                ConsHandle*>)
-              == sizeof(SessionHandle<Recv<int, End>, ConsHandle*>),
+static_assert(sizeof(PermissionedSessionHandle<Recv<int, End>, EmptyPermSet, ConsHandle*>)
+                  == sizeof(SessionHandle<Recv<int, End>, ConsHandle*>),
               "mpmc_channel_session: PSH<Recv<int, End>, EmptyPermSet, "
               "ConsHandle*> must be same size as bare SessionHandle for "
               "the same head.");

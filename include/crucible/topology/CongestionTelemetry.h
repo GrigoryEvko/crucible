@@ -93,8 +93,7 @@ struct CongestionState {
     bool has_dctcp = false;
 };
 
-using TcpInfoSnapshot =
-    safety::Tagged<CongestionState, safety::source::TcpInfo>;
+using TcpInfoSnapshot = safety::Tagged<CongestionState, safety::source::TcpInfo>;
 
 struct CongestionAggregate {
     cog::Uuid nic_uuid{};
@@ -135,8 +134,7 @@ admit_sample_period_ns(std::uint64_t ns) noexcept {
 }
 
 [[nodiscard]] constexpr bool is_nic_cog(cog::CogIdentity const& identity) noexcept {
-    return identity.kind == cog::CogKind::NicPort ||
-           identity.kind == cog::CogKind::NicCard;
+    return identity.kind == cog::CogKind::NicPort || identity.kind == cog::CogKind::NicCard;
 }
 
 [[nodiscard]] constexpr std::expected<TcpInfoSnapshot, TelemetryError>
@@ -144,33 +142,26 @@ tag_tcp_info_for_test(CongestionState state) noexcept {
     return TcpInfoSnapshot{state};
 }
 
-[[nodiscard, gnu::hot]] std::expected<TcpInfoSnapshot, TelemetryError>
-harvest_socket(cntp::SocketFd fd) noexcept;
+[[nodiscard, gnu::hot]] std::expected<TcpInfoSnapshot, TelemetryError> harvest_socket(cntp::SocketFd fd) noexcept;
 
-[[nodiscard]] CongestionAggregate
-aggregate_congestion(cog::CogIdentity const& nic,
-                     std::span<const TcpInfoSnapshot> samples) noexcept;
+[[nodiscard]] CongestionAggregate aggregate_congestion(cog::CogIdentity const& nic,
+                                                       std::span<const TcpInfoSnapshot> samples) noexcept;
 
 [[nodiscard]] std::expected<CongestionAggregate, TelemetryError>
-harvest_per_link(cog::CogIdentity const& nic,
-                 std::span<const cntp::SocketFd> active_fds) noexcept;
+harvest_per_link(cog::CogIdentity const& nic, std::span<const cntp::SocketFd> active_fds) noexcept;
 
-[[nodiscard]] constexpr CongestionDrift
-detect_congestion_drift(CongestionAggregate const& observed,
-                        PositiveBandwidthBps baseline_bps,
-                        CongestionDriftPolicy policy = {}) noexcept {
+[[nodiscard]] constexpr CongestionDrift detect_congestion_drift(CongestionAggregate const& observed,
+                                                                PositiveBandwidthBps baseline_bps,
+                                                                CongestionDriftPolicy policy = {}) noexcept {
     CongestionDrift drift{
         .observed_samples = observed.sample_count,
     };
-    if (observed.sample_count < policy.min_samples ||
-        observed.p95_btl_bw_bps >= baseline_bps.value()) {
+    if (observed.sample_count < policy.min_samples || observed.p95_btl_bw_bps >= baseline_bps.value()) {
         return drift;
     }
     const std::uint64_t missing = baseline_bps.value() - observed.p95_btl_bw_bps;
     drift.bandwidth_drop_ppm = static_cast<std::uint32_t>(
-        std::min<std::uint64_t>(
-            1'000'000,
-            (missing * std::uint64_t{1'000'000}) / baseline_bps.value()));
+        std::min<std::uint64_t>(1'000'000, (missing * std::uint64_t{1'000'000}) / baseline_bps.value()));
     drift.degraded = drift.bandwidth_drop_ppm >= policy.bandwidth_drop_ppm;
     return drift;
 }

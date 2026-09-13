@@ -98,28 +98,23 @@ enum class Mode : uint8_t {
     DIVERGED,
 };
 
-[[nodiscard]] consteval bool mode_transition_allowed(Mode from,
-                                                     Mode to) noexcept {
-    return (from == Mode::RECORDING && to == Mode::COMPILED)
-        || (from == Mode::COMPILED && to == Mode::RECORDING);
+[[nodiscard]] consteval bool mode_transition_allowed(Mode from, Mode to) noexcept {
+    return (from == Mode::RECORDING && to == Mode::COMPILED) || (from == Mode::COMPILED && to == Mode::RECORDING);
 }
 
 template <Mode From, Mode To>
 struct ModeTransition {
-    static_assert(mode_transition_allowed(From, To),
-        "crucible::vigil::diagnostic "
-        "[VigilModeBridge_IllegalTransition]: persistent Vigil mode "
-        "transitions are RECORDING -> COMPILED and COMPILED -> "
-        "RECORDING only. DIVERGED is a replay status, not a persistent "
-        "mode; SERVING/REPLAYING are stale design-doc modes.");
+    static_assert(mode_transition_allowed(From, To), "crucible::vigil::diagnostic "
+                                                     "[VigilModeBridge_IllegalTransition]: persistent Vigil mode "
+                                                     "transitions are RECORDING -> COMPILED and COMPILED -> "
+                                                     "RECORDING only. DIVERGED is a replay status, not a persistent "
+                                                     "mode; SERVING/REPLAYING are stale design-doc modes.");
     static constexpr Mode from = From;
-    static constexpr Mode to   = To;
+    static constexpr Mode to = To;
 };
 
-using ModeRecordingToCompiled =
-    ModeTransition<Mode::RECORDING, Mode::COMPILED>;
-using ModeCompiledToRecording =
-    ModeTransition<Mode::COMPILED, Mode::RECORDING>;
+using ModeRecordingToCompiled = ModeTransition<Mode::RECORDING, Mode::COMPILED>;
+using ModeCompiledToRecording = ModeTransition<Mode::COMPILED, Mode::RECORDING>;
 
 // ─── Session-typed protocol over the cell ──────────────────────────
 //
@@ -127,10 +122,9 @@ using ModeCompiledToRecording =
 // telemetry, replay bisimulator) reads the cell's state through the
 // SessionHandle, picks one of the three branches, and either drives
 // a typed transition (Send) or terminates (End).
-using ModeProtocol = safety::proto::Loop<safety::proto::Select<
-    safety::proto::Send<ModeRecordingToCompiled, safety::proto::Continue>,
-    safety::proto::Send<ModeCompiledToRecording, safety::proto::Continue>,
-    safety::proto::End>>;
+using ModeProtocol = safety::proto::Loop<
+    safety::proto::Select<safety::proto::Send<ModeRecordingToCompiled, safety::proto::Continue>,
+                          safety::proto::Send<ModeCompiledToRecording, safety::proto::Continue>, safety::proto::End>>;
 
 static_assert(safety::proto::is_well_formed_v<ModeProtocol>);
 
@@ -146,37 +140,25 @@ public:
 
     constexpr ModeCell() noexcept = default;
 
-    ModeCell(const ModeCell&)            = delete("Vigil mode cell is process-local state");
+    ModeCell(const ModeCell&) = delete("Vigil mode cell is process-local state");
     ModeCell& operator=(const ModeCell&) = delete("Vigil mode cell is process-local state");
-    ModeCell(ModeCell&&)                 = delete("atomic mode cell is the channel identity");
-    ModeCell& operator=(ModeCell&&)      = delete("atomic mode cell is the channel identity");
+    ModeCell(ModeCell&&) = delete("atomic mode cell is the channel identity");
+    ModeCell& operator=(ModeCell&&) = delete("atomic mode cell is the channel identity");
 
-    [[nodiscard]] Mode load(std::memory_order order = std::memory_order_relaxed)
-        const noexcept
-    {
+    [[nodiscard]] Mode load(std::memory_order order = std::memory_order_relaxed) const noexcept {
         return value_.load(order);
     }
 
-    void publish_compiled() noexcept {
-        value_.store(Mode::COMPILED, std::memory_order_relaxed);
-    }
+    void publish_compiled() noexcept { value_.store(Mode::COMPILED, std::memory_order_relaxed); }
 
-    void publish_recording_after_divergence() noexcept {
-        value_.store(Mode::RECORDING, std::memory_order_relaxed);
-    }
+    void publish_recording_after_divergence() noexcept { value_.store(Mode::RECORDING, std::memory_order_relaxed); }
 
-    bool publish_from_session(
-        ModeRecordingToCompiled,
-        std::memory_order order = std::memory_order_release) noexcept
-    {
+    bool publish_from_session(ModeRecordingToCompiled, std::memory_order order = std::memory_order_release) noexcept {
         value_.store(Mode::COMPILED, order);
         return true;
     }
 
-    bool publish_from_session(
-        ModeCompiledToRecording,
-        std::memory_order order = std::memory_order_release) noexcept
-    {
+    bool publish_from_session(ModeCompiledToRecording, std::memory_order order = std::memory_order_release) noexcept {
         value_.store(Mode::RECORDING, order);
         return true;
     }
@@ -190,12 +172,9 @@ static_assert(safety::AtomicMachineCell<ModeCell>);
 // Names the concrete SessionHandle returned by
 // `safety::mint_atomic_session<ModeProtocol>(modecell)`.  fixy
 // consumers reach this alias without including Vigil.h.
-using ModeSessionHandle = decltype(
-    safety::mint_atomic_session<ModeProtocol>(
-        std::declval<const ModeCell&>()));
+using ModeSessionHandle = decltype(safety::mint_atomic_session<ModeProtocol>(std::declval<const ModeCell&>()));
 
-static_assert(std::is_same_v<
-    typename ModeSessionHandle::resource_type, const ModeCell*>);
+static_assert(std::is_same_v<typename ModeSessionHandle::resource_type, const ModeCell*>);
 
 // ─── §XXI Universal Mint Pattern — token mint ──────────────────────
 //
@@ -210,14 +189,11 @@ static_assert(std::is_same_v<
 // substitution failure through mint_atomic_session.
 
 template <class Cell>
-concept CanMintVigilModeBridge =
-    std::same_as<std::remove_cvref_t<Cell>, ModeCell>;
+concept CanMintVigilModeBridge = std::same_as<std::remove_cvref_t<Cell>, ModeCell>;
 
 template <class Cell>
     requires CanMintVigilModeBridge<Cell>
-[[nodiscard]] constexpr ModeSessionHandle mint_vigil_mode_bridge(
-    Cell const& cell) noexcept
-{
+[[nodiscard]] constexpr ModeSessionHandle mint_vigil_mode_bridge(Cell const& cell) noexcept {
     return safety::mint_atomic_session<ModeProtocol>(cell);
 }
 

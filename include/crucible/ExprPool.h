@@ -5,9 +5,9 @@
 #include <crucible/Ops.h>
 #include <crucible/Platform.h>
 #include <crucible/SwissTable.h>
-#include <crucible/fixy/Source.h>     // FIXY-U-096n: source::Interned through fixy::tags::source::
-#include <crucible/fixy/Wrap.h>        // FIXY-U-096n: Refined/Monotonic/PowerOfTwo/Tagged/SwissTableBuffer/det_safe::Pure
-#include <crucible/safety/Decide.h>    // decide::in_range / bounded_above / is_power_of_two_le predicates
+#include <crucible/fixy/Source.h>  // FIXY-U-096n: source::Interned through fixy::tags::source::
+#include <crucible/fixy/Wrap.h>  // FIXY-U-096n: Refined/Monotonic/PowerOfTwo/Tagged/SwissTableBuffer/det_safe::Pure
+#include <crucible/safety/Decide.h>  // decide::in_range / bounded_above / is_power_of_two_le predicates
 #include <crucible/safety/Post.h>
 
 #include <algorithm>
@@ -72,203 +72,182 @@ namespace detail {
 // §18.6 federation), it would be a SECOND function operating on an
 // already-interned `const Expr&` and could cleanly use reflect_hash
 // without the API or perf constraints listed above.
-[[nodiscard, gnu::pure]] inline uint64_t expr_hash(
-    Op op,
-    int64_t payload,
-    SymbolId symbol_id,
-    uint16_t flags,
-    const Expr* const* args,
-    uint8_t nargs) {
-  // Pack small fields (op, nargs, flags, symbol_id) into one 64-bit word.
-  // This avoids separate mix operations for each tiny field.
-  uint64_t packed_metadata = static_cast<uint64_t>(std::to_underlying(op))
-                           | (static_cast<uint64_t>(nargs) << 8)
-                           | (static_cast<uint64_t>(flags) << 16)
-                           | (static_cast<uint64_t>(symbol_id.raw()) << 32);
+[[nodiscard, gnu::pure]] inline uint64_t expr_hash(Op op, int64_t payload, SymbolId symbol_id, uint16_t flags,
+                                                   const Expr* const* args, uint8_t nargs) {
+    // Pack small fields (op, nargs, flags, symbol_id) into one 64-bit word.
+    // This avoids separate mix operations for each tiny field.
+    uint64_t packed_metadata = static_cast<uint64_t>(std::to_underlying(op)) | (static_cast<uint64_t>(nargs) << 8)
+                             | (static_cast<uint64_t>(flags) << 16) | (static_cast<uint64_t>(symbol_id.raw()) << 32);
 
-  // Mix packed metadata with payload — one 128-bit multiply
-  uint64_t mixed_hash = wymix(
-      packed_metadata ^ 0x9E3779B97F4A7C15ULL,
-      static_cast<uint64_t>(payload) ^ 0x517CC1B727220A95ULL);
+    // Mix packed metadata with payload — one 128-bit multiply
+    uint64_t mixed_hash =
+        wymix(packed_metadata ^ 0x9E3779B97F4A7C15ULL, static_cast<uint64_t>(payload) ^ 0x517CC1B727220A95ULL);
 
-  // Mix in child pointers. Common cases (0, 1, 2 args) are unrolled
-  // to avoid loop overhead. Each child is already interned → unique
-  // pointer → good entropy without additional mixing per-pointer.
-  switch (nargs) {
-    case 0:
-      break;
-    case 1:
-      mixed_hash = wymix(mixed_hash, std::bit_cast<uintptr_t>(args[0]));
-      break;
-    case 2:
-      mixed_hash = wymix(mixed_hash ^ std::bit_cast<uintptr_t>(args[0]),
-                         std::bit_cast<uintptr_t>(args[1]));
-      break;
-    default:
-      for (uint8_t i = 0; i < nargs; ++i)
-        mixed_hash = wymix(mixed_hash, std::bit_cast<uintptr_t>(args[i]));
-      break;
-  }
-  return mixed_hash;
+    // Mix in child pointers. Common cases (0, 1, 2 args) are unrolled
+    // to avoid loop overhead. Each child is already interned → unique
+    // pointer → good entropy without additional mixing per-pointer.
+    switch (nargs) {
+        case 0:
+            break;
+        case 1:
+            mixed_hash = wymix(mixed_hash, std::bit_cast<uintptr_t>(args[0]));
+            break;
+        case 2:
+            mixed_hash = wymix(mixed_hash ^ std::bit_cast<uintptr_t>(args[0]), std::bit_cast<uintptr_t>(args[1]));
+            break;
+        default:
+            for (uint8_t i = 0; i < nargs; ++i)
+                mixed_hash = wymix(mixed_hash, std::bit_cast<uintptr_t>(args[i]));
+            break;
+    }
+    return mixed_hash;
 }
 
 [[nodiscard]] constexpr uint16_t integer_flags(int64_t val) {
-  uint16_t flag_bits = ExprFlags::IS_INTEGER | ExprFlags::IS_REAL |
-                       ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER;
-  if (val > 0)
-    flag_bits |= ExprFlags::IS_POSITIVE | ExprFlags::IS_NONNEGATIVE;
-  else if (val < 0)
-    flag_bits |= ExprFlags::IS_NEGATIVE | ExprFlags::IS_NONPOSITIVE;
-  else
-    flag_bits |= ExprFlags::IS_ZERO | ExprFlags::IS_NONNEGATIVE |
-                 ExprFlags::IS_NONPOSITIVE;
-  flag_bits |= (val % 2 == 0) ? ExprFlags::IS_EVEN : ExprFlags::IS_ODD;
-  return flag_bits;
+    uint16_t flag_bits = ExprFlags::IS_INTEGER | ExprFlags::IS_REAL | ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER;
+    if (val > 0)
+        flag_bits |= ExprFlags::IS_POSITIVE | ExprFlags::IS_NONNEGATIVE;
+    else if (val < 0)
+        flag_bits |= ExprFlags::IS_NEGATIVE | ExprFlags::IS_NONPOSITIVE;
+    else
+        flag_bits |= ExprFlags::IS_ZERO | ExprFlags::IS_NONNEGATIVE | ExprFlags::IS_NONPOSITIVE;
+    flag_bits |= (val % 2 == 0) ? ExprFlags::IS_EVEN : ExprFlags::IS_ODD;
+    return flag_bits;
 }
 
 // Derive flags for a composite node from its op and children.
-[[nodiscard]] constexpr uint16_t composite_flags(
-    Op op,
-    const Expr* const* args,
-    uint8_t nargs) {
-  switch (op) {
-    // Variadic: intersect numeric type flags of all children
-    case Op::ADD:
-    case Op::MUL:
-    case Op::MIN:
-    case Op::MAX: {
-      uint16_t intersected_flags = 0xFFFF;
-      for (uint8_t i = 0; i < nargs; ++i)
-        intersected_flags &= args[i]->flags;
-      return intersected_flags &
-          (ExprFlags::IS_INTEGER | ExprFlags::IS_REAL | ExprFlags::IS_FINITE |
-           ExprFlags::IS_NUMBER);
+[[nodiscard]] constexpr uint16_t composite_flags(Op op, const Expr* const* args, uint8_t nargs) {
+    switch (op) {
+        // Variadic: intersect numeric type flags of all children
+        case Op::ADD:
+        case Op::MUL:
+        case Op::MIN:
+        case Op::MAX: {
+            uint16_t intersected_flags = 0xFFFF;
+            for (uint8_t i = 0; i < nargs; ++i)
+                intersected_flags &= args[i]->flags;
+            return intersected_flags
+                 & (ExprFlags::IS_INTEGER | ExprFlags::IS_REAL | ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER);
+        }
+
+        case Op::POW:
+            return (args[0]->flags & args[1]->flags) & (ExprFlags::IS_REAL | ExprFlags::IS_FINITE);
+
+        // Always boolean
+        case Op::EQ:
+        case Op::NE:
+        case Op::LT:
+        case Op::LE:
+        case Op::GT:
+        case Op::GE:
+        case Op::AND:
+        case Op::OR:
+        case Op::NOT:
+            return ExprFlags::IS_BOOLEAN;
+
+        // Always integer
+        case Op::FLOOR_DIV:
+        case Op::CLEAN_DIV:
+        case Op::CEIL_DIV:
+        case Op::MOD:
+        case Op::PYTHON_MOD:
+        case Op::MODULAR_INDEXING:
+        case Op::LSHIFT:
+        case Op::RSHIFT:
+        case Op::CEIL_TO_INT:
+        case Op::FLOOR_TO_INT:
+        case Op::TRUNC_TO_INT:
+        case Op::ROUND_TO_INT:
+        case Op::BITWISE_AND:
+        case Op::BITWISE_OR:
+        case Op::POW_BY_NATURAL:
+        case Op::IS_NON_OVERLAPPING_AND_DENSE:
+            return ExprFlags::IS_INTEGER | ExprFlags::IS_REAL | ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER;
+
+        // Always real (float result)
+        case Op::FLOAT_TRUE_DIV:
+        case Op::INT_TRUE_DIV:
+        case Op::TO_FLOAT:
+        case Op::TRUNC_TO_FLOAT:
+        case Op::FLOAT_POW:
+        case Op::ROUND_DECIMAL:
+        case Op::SQRT:
+        case Op::COS:
+        case Op::SIN:
+        case Op::TAN:
+        case Op::COSH:
+        case Op::SINH:
+        case Op::TANH:
+        case Op::ASIN:
+        case Op::ACOS:
+        case Op::ATAN:
+        case Op::EXP:
+        case Op::LOG:
+        case Op::ASINH:
+        case Op::LOG2:
+            return ExprFlags::IS_REAL | ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER;
+
+        case Op::WHERE:
+            if (nargs >= 3)
+                return (args[1]->flags & args[2]->flags)
+                     & (ExprFlags::IS_INTEGER | ExprFlags::IS_REAL | ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER);
+            return 0;
+
+        case Op::IDENTITY:
+            return (nargs >= 1) ? args[0]->flags : 0;
+
+        case Op::NEG:
+            if (nargs >= 1)
+                return args[0]->flags
+                     & (ExprFlags::IS_INTEGER | ExprFlags::IS_REAL | ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER);
+            return 0;
+
+        // ABS: propagates input's numeric kind AND guarantees non-negative.
+        // Before this case existed, ABS hit default:return 0 and silently
+        // lost its integer/real classification, breaking downstream
+        // simplifiers that branch on is_integer/is_real.
+        case Op::ABS:
+            if (nargs >= 1)
+                return (args[0]->flags
+                        & (ExprFlags::IS_INTEGER | ExprFlags::IS_REAL | ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER))
+                     | ExprFlags::IS_NONNEGATIVE;
+            return 0;
+
+        // BITWISE_XOR: integer like AND/OR.  Its absence from the old
+        // switch meant BITWISE_XOR expressions lost IS_INTEGER / IS_REAL /
+        // IS_FINITE / IS_NUMBER — a correctness hole in every simplifier
+        // that consulted the flags.
+        case Op::BITWISE_XOR:
+            return ExprFlags::IS_INTEGER | ExprFlags::IS_REAL | ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER;
+
+        // ── Atoms reach composite_flags only under caller bug ──
+        //
+        // integer(), float_(), symbol(), bool_true(), bool_false() populate
+        // flags directly via intern_node; composite_flags is invoked only
+        // on composite (nargs>0) construction paths.  Receiving an atom op
+        // here means a caller bypassed the dedicated constructor and fed
+        // raw args through make()/intern_node with atom-kind — a bug.
+        case Op::INTEGER:
+        case Op::FLOAT:
+        case Op::SYMBOL:
+        case Op::BOOL_TRUE:
+        case Op::BOOL_FALSE:
+            std::unreachable();
+
+        // ── NUM_OPS is the enum sentinel ──
+        case Op::NUM_OPS:
+            std::unreachable();
+
+        // Required by -Werror=switch-default.  Every enumerator is handled
+        // above.  Reaching this arm implies the op value was read from
+        // out-of-range memory (cast from a corrupted uint8_t).  A new Op
+        // added without a case here still fires -Werror=switch first.
+        default:
+            std::unreachable();
     }
-
-    case Op::POW:
-      return (args[0]->flags & args[1]->flags) &
-          (ExprFlags::IS_REAL | ExprFlags::IS_FINITE);
-
-    // Always boolean
-    case Op::EQ:
-    case Op::NE:
-    case Op::LT:
-    case Op::LE:
-    case Op::GT:
-    case Op::GE:
-    case Op::AND:
-    case Op::OR:
-    case Op::NOT:
-      return ExprFlags::IS_BOOLEAN;
-
-    // Always integer
-    case Op::FLOOR_DIV:
-    case Op::CLEAN_DIV:
-    case Op::CEIL_DIV:
-    case Op::MOD:
-    case Op::PYTHON_MOD:
-    case Op::MODULAR_INDEXING:
-    case Op::LSHIFT:
-    case Op::RSHIFT:
-    case Op::CEIL_TO_INT:
-    case Op::FLOOR_TO_INT:
-    case Op::TRUNC_TO_INT:
-    case Op::ROUND_TO_INT:
-    case Op::BITWISE_AND:
-    case Op::BITWISE_OR:
-    case Op::POW_BY_NATURAL:
-    case Op::IS_NON_OVERLAPPING_AND_DENSE:
-      return ExprFlags::IS_INTEGER | ExprFlags::IS_REAL |
-             ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER;
-
-    // Always real (float result)
-    case Op::FLOAT_TRUE_DIV:
-    case Op::INT_TRUE_DIV:
-    case Op::TO_FLOAT:
-    case Op::TRUNC_TO_FLOAT:
-    case Op::FLOAT_POW:
-    case Op::ROUND_DECIMAL:
-    case Op::SQRT:
-    case Op::COS:
-    case Op::SIN:
-    case Op::TAN:
-    case Op::COSH:
-    case Op::SINH:
-    case Op::TANH:
-    case Op::ASIN:
-    case Op::ACOS:
-    case Op::ATAN:
-    case Op::EXP:
-    case Op::LOG:
-    case Op::ASINH:
-    case Op::LOG2:
-      return ExprFlags::IS_REAL | ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER;
-
-    case Op::WHERE:
-      if (nargs >= 3)
-        return (args[1]->flags & args[2]->flags) &
-            (ExprFlags::IS_INTEGER | ExprFlags::IS_REAL |
-             ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER);
-      return 0;
-
-    case Op::IDENTITY:
-      return (nargs >= 1) ? args[0]->flags : 0;
-
-    case Op::NEG:
-      if (nargs >= 1)
-        return args[0]->flags &
-            (ExprFlags::IS_INTEGER | ExprFlags::IS_REAL |
-             ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER);
-      return 0;
-
-    // ABS: propagates input's numeric kind AND guarantees non-negative.
-    // Before this case existed, ABS hit default:return 0 and silently
-    // lost its integer/real classification, breaking downstream
-    // simplifiers that branch on is_integer/is_real.
-    case Op::ABS:
-      if (nargs >= 1)
-        return (args[0]->flags &
-                (ExprFlags::IS_INTEGER | ExprFlags::IS_REAL |
-                 ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER))
-             | ExprFlags::IS_NONNEGATIVE;
-      return 0;
-
-    // BITWISE_XOR: integer like AND/OR.  Its absence from the old
-    // switch meant BITWISE_XOR expressions lost IS_INTEGER / IS_REAL /
-    // IS_FINITE / IS_NUMBER — a correctness hole in every simplifier
-    // that consulted the flags.
-    case Op::BITWISE_XOR:
-      return ExprFlags::IS_INTEGER | ExprFlags::IS_REAL |
-             ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER;
-
-    // ── Atoms reach composite_flags only under caller bug ──
-    //
-    // integer(), float_(), symbol(), bool_true(), bool_false() populate
-    // flags directly via intern_node; composite_flags is invoked only
-    // on composite (nargs>0) construction paths.  Receiving an atom op
-    // here means a caller bypassed the dedicated constructor and fed
-    // raw args through make()/intern_node with atom-kind — a bug.
-    case Op::INTEGER:
-    case Op::FLOAT:
-    case Op::SYMBOL:
-    case Op::BOOL_TRUE:
-    case Op::BOOL_FALSE:
-      std::unreachable();
-
-    // ── NUM_OPS is the enum sentinel ──
-    case Op::NUM_OPS:
-      std::unreachable();
-
-    // Required by -Werror=switch-default.  Every enumerator is handled
-    // above.  Reaching this arm implies the op value was read from
-    // out-of-range memory (cast from a corrupted uint8_t).  A new Op
-    // added without a case here still fires -Werror=switch first.
-    default:
-      std::unreachable();
-  }
 }
 
-} // namespace detail
+}  // namespace detail
 
 // Arena-based expression factory with Swiss-table interning.
 //
@@ -290,1467 +269,1311 @@ namespace detail {
 //   - Canonical ordering: add(b, a) → add(a, b) by pointer
 //   - Term combining: add(a, 2a) → 3a (via coefficient decomposition)
 class CRUCIBLE_OWNER ExprPool {
- public:
-  static constexpr int64_t kIntCacheLow = -128;
-  static constexpr int64_t kIntCacheHigh = 127;
-  static constexpr size_t kIntCacheSize =
-      static_cast<size_t>(kIntCacheHigh - kIntCacheLow + 1);
+public:
+    static constexpr int64_t kIntCacheLow = -128;
+    static constexpr int64_t kIntCacheHigh = 127;
+    static constexpr size_t kIntCacheSize = static_cast<size_t>(kIntCacheHigh - kIntCacheLow + 1);
 
-  using IntCacheLiteral = fixy::wrap::Refined<
-      fixy::wrap::in_range<kIntCacheLow, kIntCacheHigh>, int64_t>;
-  using IntCacheIndex = fixy::wrap::Refined<
-      fixy::wrap::bounded_above<kIntCacheSize - 1>, size_t>;
-  using Capacity = fixy::wrap::PowerOfTwo<size_t>;
-  using InternCount = fixy::wrap::Monotonic<size_t>;
-  using InternedExpr =
-      fixy::wrap::Tagged<const Expr*, fixy::tags::source::Interned>;
-  using PureInternedExpr = fixy::wrap::det_safe::Pure<InternedExpr>;
+    using IntCacheLiteral = fixy::wrap::Refined<fixy::wrap::in_range<kIntCacheLow, kIntCacheHigh>, int64_t>;
+    using IntCacheIndex = fixy::wrap::Refined<fixy::wrap::bounded_above<kIntCacheSize - 1>, size_t>;
+    using Capacity = fixy::wrap::PowerOfTwo<size_t>;
+    using InternCount = fixy::wrap::Monotonic<size_t>;
+    using InternedExpr = fixy::wrap::Tagged<const Expr*, fixy::tags::source::Interned>;
+    using PureInternedExpr = fixy::wrap::det_safe::Pure<InternedExpr>;
 
-  static_assert(sizeof(IntCacheLiteral) == sizeof(int64_t));
-  static_assert(sizeof(IntCacheIndex) == sizeof(size_t));
-  static_assert(sizeof(Capacity) == sizeof(size_t));
-  static_assert(sizeof(InternCount) == sizeof(size_t));
-  static_assert(sizeof(InternedExpr) == sizeof(const Expr*));
-  static_assert(sizeof(PureInternedExpr) == sizeof(const Expr*));
+    static_assert(sizeof(IntCacheLiteral) == sizeof(int64_t));
+    static_assert(sizeof(IntCacheIndex) == sizeof(size_t));
+    static_assert(sizeof(Capacity) == sizeof(size_t));
+    static_assert(sizeof(InternCount) == sizeof(size_t));
+    static_assert(sizeof(InternedExpr) == sizeof(const Expr*));
+    static_assert(sizeof(PureInternedExpr) == sizeof(const Expr*));
 
-  // Default `initial_capacity` sized for real production graphs — ViT
-  // forward+backward+optimizer is ~15k DAG ops, SD1.5 is ~30k. Each op
-  // contributes 1-3 non-cached Exprs (shape polynomials, symbolic dims,
-  // composites; concrete ints are served by the separate 256-entry
-  // integer cache). 16384 slots holds 14k user entries at 87.5% load
-  // → covers ViT-scale graphs with zero rehashes.
-  //
-  // Capacity math:
-  //   16384 slots × 7/8 threshold  = 14336 entries max
-  //   258 seeded by ctor           = 14078 user Exprs budget
-  //
-  // Memory cost: 144 KB (16384 ctrl + 16384*8 slots). This is the
-  // first capacity above glibc's default 128 KB mmap threshold, so the
-  // single backing_ allocation goes through mmap/munmap directly —
-  // clean return to the OS on dtor (no heap-pool growth).
-  //
-  // Ctor cost (measured AVX2): ~30 µs for the two memsets + mmap + the
-  // 258 initial inserts. Negligible for long-lived pools; bench harness
-  // wall-cap keeps short-lived test scopes bounded.
-  //
-  // Callers with known bounded size call `reserve(n)` explicitly:
-  //   - Production KernelCache: reserve(expected_kernel_count)
-  //   - Large graphs (>14k exprs): reserve(approximate_final_size)
-  //
-  // History: original default was 1<<16 = 65536 (576 KB up-front, ~25
-  // cold-page faults per ctor, 7M faults across bench_graph's 65k-iter
-  // loop). First reduction went to 512 (optimal for tiny benches but
-  // forced 5+ rehashes on real graphs). 16384 is the measured sweet
-  // spot — covers the user-declared minimum baseline (10k+ node real
-  // networks) while staying at a clean mmap-backed allocation size.
-  static constexpr size_t kDefaultInitialCapacity = 16384;
+    // Default `initial_capacity` sized for real production graphs — ViT
+    // forward+backward+optimizer is ~15k DAG ops, SD1.5 is ~30k. Each op
+    // contributes 1-3 non-cached Exprs (shape polynomials, symbolic dims,
+    // composites; concrete ints are served by the separate 256-entry
+    // integer cache). 16384 slots holds 14k user entries at 87.5% load
+    // → covers ViT-scale graphs with zero rehashes.
+    //
+    // Capacity math:
+    //   16384 slots × 7/8 threshold  = 14336 entries max
+    //   258 seeded by ctor           = 14078 user Exprs budget
+    //
+    // Memory cost: 144 KB (16384 ctrl + 16384*8 slots). This is the
+    // first capacity above glibc's default 128 KB mmap threshold, so the
+    // single backing_ allocation goes through mmap/munmap directly —
+    // clean return to the OS on dtor (no heap-pool growth).
+    //
+    // Ctor cost (measured AVX2): ~30 µs for the two memsets + mmap + the
+    // 258 initial inserts. Negligible for long-lived pools; bench harness
+    // wall-cap keeps short-lived test scopes bounded.
+    //
+    // Callers with known bounded size call `reserve(n)` explicitly:
+    //   - Production KernelCache: reserve(expected_kernel_count)
+    //   - Large graphs (>14k exprs): reserve(approximate_final_size)
+    //
+    // History: original default was 1<<16 = 65536 (576 KB up-front, ~25
+    // cold-page faults per ctor, 7M faults across bench_graph's 65k-iter
+    // loop). First reduction went to 512 (optimal for tiny benches but
+    // forced 5+ rehashes on real graphs). 16384 is the measured sweet
+    // spot — covers the user-declared minimum baseline (10k+ node real
+    // networks) while staying at a clean mmap-backed allocation size.
+    static constexpr size_t kDefaultInitialCapacity = 16384;
 
-  // CONTRACT-109: pin the structural pow2 invariant at the constant's
-  // definition site through `decide::is_power_of_two_le` (CONTRACT-050).
-  // 16384 = 2^14 is the measured sweet spot; the cite is the discipline
-  // gate ensuring future edits to the constant preserve the Swiss-table
-  // probe invariant (capacity_ - 1 = slot_mask requires pow2).  Upper
-  // bound 1 << 30 (~1 G slots, ~8 GB pointer table) is the structural
-  // ceiling — past that the single mmap allocation no longer fits in the
-  // address-space budget the rest of Crucible reserves.
-  static_assert(::crucible::decide::is_power_of_two_le<std::size_t>(
-                    kDefaultInitialCapacity, std::size_t{1} << 30),
-                "kDefaultInitialCapacity must be a power of two ≤ 1<<30");
+    // CONTRACT-109: pin the structural pow2 invariant at the constant's
+    // definition site through `decide::is_power_of_two_le` (CONTRACT-050).
+    // 16384 = 2^14 is the measured sweet spot; the cite is the discipline
+    // gate ensuring future edits to the constant preserve the Swiss-table
+    // probe invariant (capacity_ - 1 = slot_mask requires pow2).  Upper
+    // bound 1 << 30 (~1 G slots, ~8 GB pointer table) is the structural
+    // ceiling — past that the single mmap allocation no longer fits in the
+    // address-space budget the rest of Crucible reserves.
+    static_assert(::crucible::decide::is_power_of_two_le<std::size_t>(kDefaultInitialCapacity, std::size_t{1} << 30),
+                  "kDefaultInitialCapacity must be a power of two ≤ 1<<30");
 
-  explicit ExprPool(effects::Alloc a,
-                    size_t initial_capacity = kDefaultInitialCapacity)
-      pre (initial_capacity <= (std::size_t{1} << 30))
-      : arena_()
-      , capacity_{rounded_capacity_(initial_capacity)}
-      , intern_count_{0} {
-    alloc_tables_(capacity_.value());
+    explicit ExprPool(effects::Alloc a, size_t initial_capacity = kDefaultInitialCapacity)
+        pre(initial_capacity <= (std::size_t{1} << 30))
+        : arena_(), capacity_{rounded_capacity_(initial_capacity)}, intern_count_{0} {
+        alloc_tables_(capacity_.value());
 
-    // Boolean singletons
-    true_ = intern_node(a, Op::BOOL_TRUE, nullptr, 0, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
-    false_ =
-        intern_node(a, Op::BOOL_FALSE, nullptr, 0, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
+        // Boolean singletons
+        true_ = intern_node(a, Op::BOOL_TRUE, nullptr, 0, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
+        false_ = intern_node(a, Op::BOOL_FALSE, nullptr, 0, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
 
-    // Integer cache: -128..127 for O(1) access to common constants
-    for (int64_t i = kIntCacheLow; i <= kIntCacheHigh; ++i) {
-      const IntCacheLiteral literal{i};
-      int_cache_[raw_int_cache_index(int_cache_index(literal))] =
-          make_integer(a, i);
-    }
-  }
-
-  ~ExprPool() = default;  // backing_ owns the alloc via SwissTableBuffer RAII (#915 WRAP-ExprPool-1)
-
-  ExprPool(const ExprPool&) = delete("ExprPool owns arena + Swiss table with interior pointers");
-  ExprPool& operator=(const ExprPool&) = delete("ExprPool owns arena + Swiss table with interior pointers");
-  ExprPool(ExprPool&&) = delete("interned Expr* pointers would dangle after arena move");
-  ExprPool& operator=(ExprPool&&) = delete("interned Expr* pointers would dangle after arena move");
-
-  // Pre-grow the Swiss table to hold at least `n_entries` without
-  // triggering rehash during subsequent intern_node calls. No-op if the
-  // table already has the capacity. Safe to call multiple times.
-  //
-  // A production KernelCache that will register ~10k sub-computations
-  // calls `pool.reserve(10'000)` right after construction and skips the
-  // ~5 doublings (256→512→1024→2048→4096→8192→16384) that would
-  // otherwise land on its insertion path.
-  void reserve(size_t n_entries)
-      pre (n_entries <= (((std::size_t{1} << 30) * 7) / 8))
-  {
-    // Need capacity such that n_entries * 8 <= capacity * 7 (87.5% LF).
-    // Solve: capacity >= ceil(n_entries * 8 / 7).
-    const size_t needed = (n_entries * 8 + 6) / 7;
-    size_t target = detail::group_width();
-    while (target < needed) target <<= 1;
-    if (target > capacity_.value()) grow_to_(target);
-  }
-
-  // ---- Atom construction ----
-
-  [[nodiscard]] const Expr* integer(effects::Alloc a, int64_t val) {
-    if (val >= kIntCacheLow && val <= kIntCacheHigh)
-      return cached_integer(IntCacheLiteral{val});
-    return make_integer(a, val);
-  }
-
-  [[nodiscard]] const Expr* float_(effects::Alloc a, double val) {
-    int64_t bit_payload = std::bit_cast<int64_t>(val);
-    uint16_t assumption_flags_combined =
-        ExprFlags::IS_REAL | ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER;
-    if (val > 0)
-      assumption_flags_combined |=
-          ExprFlags::IS_POSITIVE | ExprFlags::IS_NONNEGATIVE;
-    else if (val < 0)
-      assumption_flags_combined |=
-          ExprFlags::IS_NEGATIVE | ExprFlags::IS_NONPOSITIVE;
-    else if ((static_cast<uint64_t>(bit_payload) << 1) == 0) {
-      // ±0 but not NaN — shift-out-sign catches both signed zeros.
-      assumption_flags_combined |= ExprFlags::IS_ZERO |
-          ExprFlags::IS_NONNEGATIVE | ExprFlags::IS_NONPOSITIVE;
-    }
-    return intern_node(
-        a, Op::FLOAT, nullptr, 0, assumption_flags_combined,
-        SymbolId{}, bit_payload);
-  }
-
-  [[nodiscard]] const Expr* symbol(effects::Alloc a, const char* name, SymbolId id, uint16_t assumption_flags) {
-    if (id.raw() >= symbol_names_.size())
-      symbol_names_.resize(id.raw() + 1, nullptr);
-    if (symbol_names_[id.raw()] == nullptr) {
-      size_t name_len_with_null = std::strlen(name) + 1;
-      char* name_buf = static_cast<char*>(arena_.alloc(a,
-          crucible::fixy::wrap::Positive<size_t>{name_len_with_null},
-          crucible::fixy::wrap::PowerOfTwo<size_t>{1}));
-      std::memcpy(name_buf, name, name_len_with_null);
-      symbol_names_[id.raw()] = name_buf;
-    }
-    int64_t name_ptr_payload = std::bit_cast<int64_t>(symbol_names_[id.raw()]);
-    const Expr* result = intern_node(
-        a, Op::SYMBOL, nullptr, 0,
-        assumption_flags | ExprFlags::IS_SYMBOL, id, name_ptr_payload);
-
-    // PERF-2: populate the SymbolId-indexed fast-lookup cache.
-    // After this call returns, fast_symbol(id) hits a parallel-array
-    // load (~1.5 ns) instead of a full Swiss-table probe (~6.7 ns).
-    // Same Expr pointer in both paths — they're interchangeable.
-    if (id.raw() >= symbol_exprs_.size())
-      symbol_exprs_.resize(id.raw() + 1, nullptr);
-    symbol_exprs_[id.raw()] = result;
-
-    return result;
-  }
-
-  // ── fast_symbol — O(1) SymbolId-indexed lookup ───────────────────
-  //
-  // Returns the interned Expr* for `sid` if it has been registered
-  // via a prior symbol(name, sid, flags) call.  Otherwise returns
-  // nullptr — caller MUST fall back to symbol(name, sid, flags) to
-  // register first.
-  //
-  // No Swiss-table probe.  No hashing.  Single bounds-checked
-  // load from the parallel array — typically ~1.5 ns vs ~6.7 ns
-  // for the full symbol() path.  Use this for hot paths that
-  // already have a SymbolId in hand: TraceGraph rebuild, replay
-  // engine, ExprPool::make(SYMBOL, …) routing.
-  //
-  // gnu::pure: depends only on caller-visible memory (the
-  // symbol_exprs_ vector); no side effects.  Safe to CSE within
-  // a sequence of fast_symbol calls on the same pool.
-  [[nodiscard, gnu::hot, gnu::pure]] const Expr* fast_symbol(SymbolId sid) const noexcept {
-    if (sid.raw() < symbol_exprs_.size() && symbol_exprs_[sid.raw()] != nullptr) [[likely]]
-      return symbol_exprs_[sid.raw()];
-    return nullptr;
-  }
-
-  [[nodiscard]] const Expr* bool_true() const {
-    return true_;
-  }
-  [[nodiscard]] const Expr* bool_false() const {
-    return false_;
-  }
-
-  // ---- Arithmetic ----
-
-  [[nodiscard]] const Expr* add(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
-    // Fast path: two children that don't need canonicalization.
-    // Excluded ops: ADD (needs flattening), MUL (needs coefficient
-    // extraction for term combining), INTEGER/FLOAT (needs folding).
-    // Symbols, POW, FLOOR_DIV, etc. go straight to intern.
-    if (lhs->op != Op::ADD && rhs->op != Op::ADD &&
-        lhs->op != Op::MUL && rhs->op != Op::MUL &&
-        lhs->op != Op::INTEGER && rhs->op != Op::INTEGER &&
-        lhs->op != Op::FLOAT && rhs->op != Op::FLOAT) [[likely]] {
-      // Same base detection: a + a → 2a
-      if (lhs == rhs) [[unlikely]]
-        return mul(a, integer(a, 2), lhs);
-      // Canonical ordering by pointer address
-      if (lhs > rhs)
-        std::swap(lhs, rhs);
-      const Expr* args[] = {lhs, rhs};
-      uint16_t composite_flag_bits = detail::composite_flags(Op::ADD, args, 2);
-      return intern_node(a, Op::ADD, args, 2, composite_flag_bits, SymbolId{}, 0);
-    }
-    // Constant folding
-    if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
-      return integer(a, lhs->payload + rhs->payload);
-    if (lhs->op == Op::FLOAT && rhs->op == Op::FLOAT)
-      return float_(a, lhs->as_float() + rhs->as_float());
-    // Identity
-    if (lhs->is_zero_int())
-      return rhs;
-    if (rhs->is_zero_int())
-      return lhs;
-    // Slow path: flatten + fold + sort + coefficient combining
-    const Expr* binary_args[] = {lhs, rhs};
-    return add_n(a, binary_args);
-  }
-
-  [[nodiscard]] const Expr* mul(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
-    // Fast path: two non-constant, non-MUL children.
-    // Skip the full mul_n() canonicalization (flatten, fold, sort).
-    // Most symbolic expressions (x * y, a * b) hit this directly.
-    if (lhs->op != Op::MUL && rhs->op != Op::MUL &&
-        lhs->op != Op::INTEGER && rhs->op != Op::INTEGER &&
-        lhs->op != Op::FLOAT && rhs->op != Op::FLOAT) [[likely]] {
-      // Canonical ordering by pointer address
-      if (lhs > rhs)
-        std::swap(lhs, rhs);
-      const Expr* args[] = {lhs, rhs};
-      uint16_t composite_flag_bits = detail::composite_flags(Op::MUL, args, 2);
-      return intern_node(a, Op::MUL, args, 2, composite_flag_bits, SymbolId{}, 0);
-    }
-    // Constant folding
-    if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
-      return integer(a, lhs->payload * rhs->payload);
-    if (lhs->op == Op::FLOAT && rhs->op == Op::FLOAT)
-      return float_(a, lhs->as_float() * rhs->as_float());
-    // Zero annihilation
-    if (lhs->is_zero_int() || rhs->is_zero_int())
-      return integer(a, 0);
-    // Identity
-    if (lhs->is_one())
-      return rhs;
-    if (rhs->is_one())
-      return lhs;
-    // Slow path: flatten + fold + sort
-    const Expr* binary_args[] = {lhs, rhs};
-    return mul_n(a, binary_args);
-  }
-
-  [[nodiscard]] const Expr* pow(effects::Alloc a, const Expr* base, const Expr* exp) {
-    // x^0 → 1
-    if (exp->is_zero_int())
-      return integer(a, 1);
-    // x^1 → x
-    if (exp->is_one())
-      return base;
-    // Concrete integer power (small exponents only to avoid overflow)
-    if (base->op == Op::INTEGER && exp->op == Op::INTEGER &&
-        exp->payload >= 0 && exp->payload <= 62) {
-      int64_t accumulated_product = 1;
-      int64_t base_value = base->payload;
-      int64_t exponent_value = exp->payload;
-      for (int64_t i = 0; i < exponent_value; ++i)
-        accumulated_product *= base_value;
-      return integer(a, accumulated_product);
-    }
-    const Expr* args[] = {base, exp};
-    uint16_t composite_flag_bits = detail::composite_flags(Op::POW, args, 2);
-    return intern_node(a, Op::POW, args, 2, composite_flag_bits, SymbolId{}, 0);
-  }
-
-  // Canonical form: MUL(-1, x). No NEG nodes in output.
-  [[nodiscard]] const Expr* neg(effects::Alloc a, const Expr* expr) {
-    if (expr->op == Op::INTEGER)
-      return integer(a, -expr->payload);
-    if (expr->op == Op::FLOAT)
-      return float_(a, -expr->as_float());
-    return mul(a, integer(a, -1), expr);
-  }
-
-  // ---- Relational ----
-
-  [[nodiscard]] const Expr* eq(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
-    if (lhs == rhs)
-      return true_;
-    if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
-      return (lhs->payload == rhs->payload) ? true_ : false_;
-    // Eq is commutative: canonical order by pointer
-    if (lhs > rhs)
-      std::swap(lhs, rhs);
-    const Expr* args[] = {lhs, rhs};
-    return intern_node(a, Op::EQ, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
-  }
-
-  [[nodiscard]] const Expr* ne(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
-    if (lhs == rhs)
-      return false_;
-    if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
-      return (lhs->payload != rhs->payload) ? true_ : false_;
-    if (lhs > rhs)
-      std::swap(lhs, rhs);
-    const Expr* args[] = {lhs, rhs};
-    return intern_node(a, Op::NE, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
-  }
-
-  [[nodiscard]] const Expr* lt(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
-    if (lhs == rhs)
-      return false_;
-    if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
-      return (lhs->payload < rhs->payload) ? true_ : false_;
-    const Expr* args[] = {lhs, rhs};
-    return intern_node(a, Op::LT, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
-  }
-
-  [[nodiscard]] const Expr* le(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
-    if (lhs == rhs)
-      return true_;
-    if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
-      return (lhs->payload <= rhs->payload) ? true_ : false_;
-    const Expr* args[] = {lhs, rhs};
-    return intern_node(a, Op::LE, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
-  }
-
-  [[nodiscard]] const Expr* gt(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
-    if (lhs == rhs)
-      return false_;
-    if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
-      return (lhs->payload > rhs->payload) ? true_ : false_;
-    const Expr* args[] = {lhs, rhs};
-    return intern_node(a, Op::GT, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
-  }
-
-  [[nodiscard]] const Expr* ge(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
-    if (lhs == rhs)
-      return true_;
-    if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
-      return (lhs->payload >= rhs->payload) ? true_ : false_;
-    const Expr* args[] = {lhs, rhs};
-    return intern_node(a, Op::GE, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
-  }
-
-  // ---- Logic ----
-
-  [[nodiscard]] const Expr* and_(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
-    if (lhs == false_ || rhs == false_)
-      return false_;
-    if (lhs == true_)
-      return rhs;
-    if (rhs == true_)
-      return lhs;
-    if (lhs == rhs)
-      return lhs;
-    const Expr* binary_args[] = {lhs, rhs};
-    return and_n(a, binary_args);
-  }
-
-  [[nodiscard]] const Expr* or_(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
-    if (lhs == true_ || rhs == true_)
-      return true_;
-    if (lhs == false_)
-      return rhs;
-    if (rhs == false_)
-      return lhs;
-    if (lhs == rhs)
-      return lhs;
-    const Expr* binary_args[] = {lhs, rhs};
-    return or_n(a, binary_args);
-  }
-
-  [[nodiscard]] const Expr* not_(effects::Alloc a, const Expr* expr) {
-    if (expr == true_)
-      return false_;
-    if (expr == false_)
-      return true_;
-    // Double negation elimination
-    if (expr->op == Op::NOT)
-      return expr->args[0];
-    const Expr* args[] = {expr};
-    return intern_node(a, Op::NOT, args, 1, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
-  }
-
-  // ---- Division / Modular ----
-
-  [[nodiscard]] const Expr* floor_div(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
-    if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER && rhs->as_int() != 0) {
-      int64_t dividend = lhs->as_int();
-      int64_t divisor = rhs->as_int();
-      int64_t quotient = dividend / divisor;
-      int64_t remainder = dividend % divisor;
-      // Floor adjustment: C truncates toward zero; floor() rounds toward
-      // -inf when the remainder has the opposite sign of the divisor.
-      if (remainder != 0 && ((remainder ^ divisor) < 0)) --quotient;
-      return integer(a, quotient);
-    }
-    if (lhs->is_zero_int()) return integer(a, 0);
-    if (rhs->is_one()) return lhs;
-    if (rhs->is_neg_one()) return neg(a, lhs);
-    if (lhs == rhs) return integer(a, 1);
-    // FloorDiv(FloorDiv(x, c1), c2) → FloorDiv(x, c1*c2)
-    if (lhs->op == Op::FLOOR_DIV || lhs->op == Op::CLEAN_DIV)
-      return floor_div(a, lhs->arg(0), mul(a, lhs->arg(1), rhs));
-    // Extract divisible terms from ADD when divisor is constant
-    if (lhs->op == Op::ADD && rhs->op == Op::INTEGER && rhs->as_int() != 0) {
-      int64_t divisor = rhs->as_int();
-      const Expr* quotients[256];
-      const Expr* remainders[256];
-      uint8_t num_quotients = 0;
-      uint8_t num_remainders = 0;
-      for (uint8_t i = 0; i < lhs->nargs; ++i) {
-        int64_t coeff = integer_coefficient_(lhs->arg(i));
-        if (coeff != 0 && coeff % divisor == 0)
-          quotients[num_quotients++] = divide_coefficients_(a, lhs->arg(i), divisor);
-        else
-          remainders[num_remainders++] = lhs->arg(i);
-      }
-      if (num_quotients > 0) {
-        const Expr* quotient_sum = (num_quotients == 1) ? quotients[0]
-            : add_n(a, std::span{quotients, num_quotients});
-        if (num_remainders == 0) return quotient_sum;
-        const Expr* remainder_sum = (num_remainders == 1) ? remainders[0]
-            : add_n(a, std::span{remainders, num_remainders});
-        return add(a, quotient_sum, floor_div(a, remainder_sum, rhs));
-      }
-    }
-    // Integer GCD cancellation
-    {
-      int64_t common_divisor = gcd_(integer_factor_(lhs), integer_factor_(rhs));
-      if (common_divisor > 1)
-        return floor_div(a,
-            divide_coefficients_(a, lhs, common_divisor),
-            divide_coefficients_(a, rhs, common_divisor));
-    }
-    const Expr* args[] = {lhs, rhs};
-    uint16_t composite_flag_bits = ExprFlags::IS_INTEGER;
-    if (lhs->is_nonnegative() && rhs->is_positive())
-      composite_flag_bits |= ExprFlags::IS_NONNEGATIVE;
-    return intern_node(a, Op::FLOOR_DIV, args, 2, composite_flag_bits, SymbolId{}, 0);
-  }
-
-  [[nodiscard]] const Expr* clean_div(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
-    return floor_div(a, lhs, rhs);
-  }
-
-  [[nodiscard]] const Expr* ceil_div(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
-    if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER && rhs->as_int() != 0) {
-      int64_t dividend = lhs->as_int();
-      int64_t divisor = rhs->as_int();
-      int64_t quotient = dividend / divisor;
-      int64_t remainder = dividend % divisor;
-      // Ceil adjustment: when the remainder shares the divisor's sign,
-      // C truncation already rounded down; bump up to round toward +inf.
-      if (remainder != 0 && ((remainder ^ divisor) > 0)) ++quotient;
-      return integer(a, quotient);
-    }
-    // ceil(a/b) = floor((a + b - 1) / b) for positive b
-    return floor_div(a, add(a, lhs, add(a, rhs, integer(a, -1))), rhs);
-  }
-
-  [[nodiscard]] const Expr* mod(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
-    if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER && rhs->as_int() > 0)
-      return integer(a, lhs->as_int() % rhs->as_int());
-    if (lhs->is_zero_int() || lhs == rhs || rhs->is_one()) return integer(a, 0);
-    if (rhs->op == Op::INTEGER && rhs->as_int() == 2) {
-      if (lhs->is_even()) return integer(a, 0);
-      if (lhs->is_odd()) return integer(a, 1);
-    }
-    const Expr* args[] = {lhs, rhs};
-    uint16_t composite_flag_bits = ExprFlags::IS_INTEGER | ExprFlags::IS_NONNEGATIVE;
-    return intern_node(a, Op::MOD, args, 2, composite_flag_bits, SymbolId{}, 0);
-  }
-
-  [[nodiscard]] const Expr* python_mod(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
-    if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER && rhs->as_int() != 0) {
-      int64_t dividend = lhs->as_int();
-      int64_t divisor = rhs->as_int();
-      int64_t remainder = dividend % divisor;
-      // Python modulo: result has the same sign as the divisor; C truncation
-      // gives the wrong sign when remainder and divisor disagree.
-      if (remainder != 0 && ((remainder ^ divisor) < 0)) remainder += divisor;
-      return integer(a, remainder);
-    }
-    if (lhs->is_zero_int() || lhs == rhs || rhs->is_one()) return integer(a, 0);
-    if (rhs->op == Op::INTEGER && rhs->as_int() == 2) {
-      if (lhs->is_even()) return integer(a, 0);
-      if (lhs->is_odd()) return integer(a, 1);
-    }
-    const Expr* args[] = {lhs, rhs};
-    uint16_t composite_flag_bits = ExprFlags::IS_INTEGER;
-    return intern_node(a, Op::PYTHON_MOD, args, 2, composite_flag_bits, SymbolId{}, 0);
-  }
-
-  [[nodiscard]] const Expr* modular_indexing(
-      effects::Alloc a,
-      const Expr* base,
-      const Expr* div,
-      const Expr* modulus) {
-    if (base->is_zero_int() || modulus->is_one()) return integer(a, 0);
-    // All concrete
-    if (base->op == Op::INTEGER && div->op == Op::INTEGER &&
-        modulus->op == Op::INTEGER && div->as_int() != 0 &&
-        modulus->as_int() != 0) {
-      int64_t base_value = base->as_int();
-      int64_t divisor_value = div->as_int();
-      int64_t modulus_value = modulus->as_int();
-      int64_t quotient = base_value / divisor_value;
-      int64_t remainder = base_value % divisor_value;
-      // Floor adjustment for negative dividend (matches Python //).
-      if (remainder != 0 && ((remainder ^ divisor_value) < 0)) --quotient;
-      int64_t mod_result = quotient % modulus_value;
-      if (mod_result < 0) mod_result += modulus_value;
-      return integer(a, mod_result);
-    }
-    // GCD on (base, divisor)
-    if (!(div->op == Op::INTEGER && div->as_int() == 1)) {
-      int64_t common_divisor = gcd_(integer_factor_(base), integer_factor_(div));
-      if (common_divisor > 1)
-        return modular_indexing(a,
-            divide_coefficients_(a, base, common_divisor),
-            divide_coefficients_(a, div, common_divisor), modulus);
-    }
-    // Drop ADD terms divisible by modulus*divisor
-    if (base->op == Op::ADD && modulus->op == Op::INTEGER &&
-        div->op == Op::INTEGER) {
-      int64_t mod_div_product = modulus->as_int() * div->as_int();
-      if (mod_div_product > 0) {
-        const Expr* kept_terms[256];
-        uint8_t num_kept = 0;
-        bool any_dropped = false;
-        for (uint8_t i = 0; i < base->nargs; ++i) {
-          int64_t coeff = integer_coefficient_(base->arg(i));
-          if (coeff != 0 && coeff % mod_div_product == 0)
-            any_dropped = true;
-          else
-            kept_terms[num_kept++] = base->arg(i);
+        // Integer cache: -128..127 for O(1) access to common constants
+        for (int64_t i = kIntCacheLow; i <= kIntCacheHigh; ++i) {
+            const IntCacheLiteral literal{i};
+            int_cache_[raw_int_cache_index(int_cache_index(literal))] = make_integer(a, i);
         }
-        if (any_dropped) {
-          if (num_kept == 0) return integer(a, 0);
-          const Expr* reduced_base =
-              (num_kept == 1) ? kept_terms[0]
-                              : add_n(a, std::span{kept_terms, num_kept});
-          return modular_indexing(a, reduced_base, div, modulus);
+    }
+
+    ~ExprPool() = default;  // backing_ owns the alloc via SwissTableBuffer RAII (#915 WRAP-ExprPool-1)
+
+    ExprPool(const ExprPool&) = delete("ExprPool owns arena + Swiss table with interior pointers");
+    ExprPool& operator=(const ExprPool&) = delete("ExprPool owns arena + Swiss table with interior pointers");
+    ExprPool(ExprPool&&) = delete("interned Expr* pointers would dangle after arena move");
+    ExprPool& operator=(ExprPool&&) = delete("interned Expr* pointers would dangle after arena move");
+
+    // Pre-grow the Swiss table to hold at least `n_entries` without
+    // triggering rehash during subsequent intern_node calls. No-op if the
+    // table already has the capacity. Safe to call multiple times.
+    //
+    // A production KernelCache that will register ~10k sub-computations
+    // calls `pool.reserve(10'000)` right after construction and skips the
+    // ~5 doublings (256→512→1024→2048→4096→8192→16384) that would
+    // otherwise land on its insertion path.
+    void reserve(size_t n_entries) pre(n_entries <= (((std::size_t{1} << 30) * 7) / 8)) {
+        // Need capacity such that n_entries * 8 <= capacity * 7 (87.5% LF).
+        // Solve: capacity >= ceil(n_entries * 8 / 7).
+        const size_t needed = (n_entries * 8 + 6) / 7;
+        size_t target = detail::group_width();
+        while (target < needed)
+            target <<= 1;
+        if (target > capacity_.value()) grow_to_(target);
+    }
+
+    // ---- Atom construction ----
+
+    [[nodiscard]] const Expr* integer(effects::Alloc a, int64_t val) {
+        if (val >= kIntCacheLow && val <= kIntCacheHigh) return cached_integer(IntCacheLiteral{val});
+        return make_integer(a, val);
+    }
+
+    [[nodiscard]] const Expr* float_(effects::Alloc a, double val) {
+        int64_t bit_payload = std::bit_cast<int64_t>(val);
+        uint16_t assumption_flags_combined = ExprFlags::IS_REAL | ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER;
+        if (val > 0)
+            assumption_flags_combined |= ExprFlags::IS_POSITIVE | ExprFlags::IS_NONNEGATIVE;
+        else if (val < 0)
+            assumption_flags_combined |= ExprFlags::IS_NEGATIVE | ExprFlags::IS_NONPOSITIVE;
+        else if ((static_cast<uint64_t>(bit_payload) << 1) == 0) {
+            // ±0 but not NaN — shift-out-sign catches both signed zeros.
+            assumption_flags_combined |= ExprFlags::IS_ZERO | ExprFlags::IS_NONNEGATIVE | ExprFlags::IS_NONPOSITIVE;
         }
-      }
+        return intern_node(a, Op::FLOAT, nullptr, 0, assumption_flags_combined, SymbolId{}, bit_payload);
     }
-    // FloorDiv as base: ModIdx(x//a, d, m) → ModIdx(x, a*d, m)
-    if (base->op == Op::FLOOR_DIV || base->op == Op::CLEAN_DIV)
-      return modular_indexing(a, base->arg(0), mul(a, base->arg(1), div), modulus);
 
-    const Expr* args[] = {base, div, modulus};
-    uint16_t composite_flag_bits = ExprFlags::IS_INTEGER | ExprFlags::IS_NONNEGATIVE;
-    return intern_node(a, Op::MODULAR_INDEXING, args, 3, composite_flag_bits, SymbolId{}, 0);
-  }
-
-  // ---- Conditional ----
-
-  [[nodiscard]] const Expr* where(
-      effects::Alloc a,
-      const Expr* cond,
-      const Expr* then_branch,
-      const Expr* else_branch) {
-    if (cond == true_) return then_branch;
-    if (cond == false_) return else_branch;
-    if (then_branch == else_branch) return then_branch;
-    const Expr* args[] = {cond, then_branch, else_branch};
-    uint16_t intersected_flags = then_branch->flags & else_branch->flags;
-    return intern_node(a, Op::WHERE, args, 3, intersected_flags, SymbolId{}, 0);
-  }
-
-  // ---- Min / Max ----
-
-  [[nodiscard]] const Expr* min_expr(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
-    if (lhs == rhs) return lhs;
-    if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
-      return integer(a, std::min(lhs->as_int(), rhs->as_int()));
-    const Expr* binary_args[] = {lhs, rhs};
-    return min_n(a, binary_args);
-  }
-
-  [[nodiscard]] const Expr* max_expr(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
-    if (lhs == rhs) return lhs;
-    if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
-      return integer(a, std::max(lhs->as_int(), rhs->as_int()));
-    const Expr* binary_args[] = {lhs, rhs};
-    return max_n(a, binary_args);
-  }
-
-  // ---- Generic construction ----
-  // Dispatches to canonical constructors for ops that have them,
-  // generic interning for everything else.
-  //
-  // Variadic ops (ADD/MUL/AND/OR/MIN/MAX) take an n-ary args span.  When
-  // size() == 2, dispatching to the binary helper (add/mul/and_/or_/
-  // min_expr/max_expr) bypasses the *_n slow path's flatten + sort +
-  // coefficient-combining work that the binary fast paths skip via
-  // their early-return identity checks (e.g. add(x,0) -> x without
-  // touching the intern table).  The binary helpers are inline and
-  // hot — the compiler inlines them into make() naturally without
-  // gnu::flatten (attempted initially, reverted: flatten also inlined
-  // the bulky add_n/mul_n/and_n/... slow-path bodies into make(),
-  // bloating the function to ~900 B of stack frame + icache pressure
-  // and REGRESSING the hit-path benchmark from 138 ns to 690 ns).
-  // Relying on default inlining keeps make() lean.
-  [[nodiscard]] PureInternedExpr make(
-      effects::Alloc a, Op op, std::span<const Expr* const> args) {
-    return PureInternedExpr{InternedExpr{make_raw_(a, op, args)}};
-  }
-
- private:
-  [[nodiscard]] const Expr* make_raw_(
-      effects::Alloc a, Op op, std::span<const Expr* const> args) {
-    switch (op) {
-      case Op::ADD:
-        if (args.size() == 2) [[likely]] return add(a, args[0], args[1]);
-        return add_n(a, args);
-      case Op::MUL:
-        if (args.size() == 2) [[likely]] return mul(a, args[0], args[1]);
-        return mul_n(a, args);
-      case Op::AND:
-        if (args.size() == 2) [[likely]] return and_(a, args[0], args[1]);
-        return and_n(a, args);
-      case Op::OR:
-        if (args.size() == 2) [[likely]] return or_(a, args[0], args[1]);
-        return or_n(a, args);
-      case Op::POW:
-        return pow(a, args[0], args[1]);
-      case Op::NEG:
-        return neg(a, args[0]);
-      case Op::EQ:
-        return eq(a, args[0], args[1]);
-      case Op::NE:
-        return ne(a, args[0], args[1]);
-      case Op::LT:
-        return lt(a, args[0], args[1]);
-      case Op::LE:
-        return le(a, args[0], args[1]);
-      case Op::GT:
-        return gt(a, args[0], args[1]);
-      case Op::GE:
-        return ge(a, args[0], args[1]);
-      case Op::NOT:
-        return not_(a, args[0]);
-      case Op::FLOOR_DIV:
-        return floor_div(a, args[0], args[1]);
-      case Op::CLEAN_DIV:
-        return clean_div(a, args[0], args[1]);
-      case Op::CEIL_DIV:
-        return ceil_div(a, args[0], args[1]);
-      case Op::MOD:
-        return mod(a, args[0], args[1]);
-      case Op::PYTHON_MOD:
-        return python_mod(a, args[0], args[1]);
-      case Op::MODULAR_INDEXING:
-        return modular_indexing(a, args[0], args[1], args[2]);
-      case Op::WHERE:
-        return where(a, args[0], args[1], args[2]);
-      case Op::MIN:
-        if (args.size() == 2) [[likely]] return min_expr(a, args[0], args[1]);
-        return min_n(a, args);
-      case Op::MAX:
-        if (args.size() == 2) [[likely]] return max_expr(a, args[0], args[1]);
-        return max_n(a, args);
-
-      // Atoms must be built via the dedicated constructors
-      // (integer()/float()/symbol()/bool_true()/bool_false()); they
-      // carry a payload, not child args, and the args.data() vector
-      // would be silently ignored by intern_node.  make(atom, ...) is
-      // a caller bug, not a runtime-dispatchable condition.
-      case Op::INTEGER:
-      case Op::FLOAT:
-      case Op::SYMBOL:
-      case Op::BOOL_TRUE:
-      case Op::BOOL_FALSE:
-        std::unreachable();
-
-      // Sentinel: not a valid op value.  Reached only via corrupted
-      // input or a caller passing a cast-from-int out-of-range value.
-      case Op::NUM_OPS:
-        std::unreachable();
-
-      // Opaque math (SIN, COS, LOG, …), type conversions, bitwise,
-      // shift, identity, and IS_NON_OVERLAPPING_AND_DENSE all share
-      // the generic interning path — no canonical simplifier required.
-      // Listed explicitly-as-fallthrough so adding a new op surfaces
-      // here (via -Wswitch) rather than disappearing into a catch-all.
-      case Op::INT_TRUE_DIV:
-      case Op::FLOAT_TRUE_DIV:
-      case Op::CEIL_TO_INT:
-      case Op::FLOOR_TO_INT:
-      case Op::TRUNC_TO_FLOAT:
-      case Op::TRUNC_TO_INT:
-      case Op::ROUND_TO_INT:
-      case Op::ROUND_DECIMAL:
-      case Op::TO_FLOAT:
-      case Op::LSHIFT:
-      case Op::RSHIFT:
-      case Op::POW_BY_NATURAL:
-      case Op::FLOAT_POW:
-      case Op::IDENTITY:
-      case Op::IS_NON_OVERLAPPING_AND_DENSE:
-      case Op::SQRT:
-      case Op::COS:
-      case Op::COSH:
-      case Op::SIN:
-      case Op::SINH:
-      case Op::TAN:
-      case Op::TANH:
-      case Op::ASIN:
-      case Op::ACOS:
-      case Op::ATAN:
-      case Op::EXP:
-      case Op::LOG:
-      case Op::ASINH:
-      case Op::LOG2:
-      case Op::ABS:
-      case Op::BITWISE_AND:
-      case Op::BITWISE_OR:
-      case Op::BITWISE_XOR:
-        break;  // fall through to intern_node below
-
-      // Required by -Wswitch-default even though every enumerator is
-      // handled above.  Reaching this arm implies Op was read from
-      // out-of-range memory (e.g. casting a corrupted uint8_t to Op).
-      default:
-        std::unreachable();
-    }
-    uint16_t f = detail::composite_flags(op, args.data(),
-                                         static_cast<uint8_t>(args.size()));
-    return intern_node(a, op, args.data(),
-                       static_cast<uint8_t>(args.size()), f, SymbolId{}, 0);
-  }
-
- public:
-  // ---- Stats ----
-
-  [[nodiscard]] size_t intern_size() const {
-    return intern_count_.get();
-  }
-  [[nodiscard]] size_t intern_capacity() const {
-    return capacity_.value();
-  }
-  [[nodiscard]] size_t arena_bytes() const {
-    return arena_.total_allocated();
-  }
-  [[nodiscard]] const char* symbol_name(SymbolId id) const CRUCIBLE_LIFETIMEBOUND {
-    return (id.raw() < symbol_names_.size()) ? symbol_names_[id.raw()] : nullptr;
-  }
-
- private:
-  // CONTRACT-109: kIntCacheSize = 256 = 2^8.  The pow2 cite is structural
-  // (the kIntCacheLow / kIntCacheHigh range is inclusive on both ends, so
-  // the `+ 1` produces 256), but if either bound shifts by an odd offset
-  // the pow2 property silently breaks and direct-index lookups
-  // (`int_cache_[val - kIntCacheLow]`) get sloppy bounds.  The
-  // `decide::is_power_of_two_le` cite (CONTRACT-050) pins the invariant
-  // at the constant's definition site so future edits to the bounds trip
-  // the static_assert.  Upper bound 1024 leaves room for a 4× expansion
-  // without requiring a re-audit; past that the cache table itself stops
-  // fitting cleanly in two cache lines.
-  static_assert(::crucible::decide::is_power_of_two_le<std::size_t>(
-                    kIntCacheSize, std::size_t{1024}),
-                "kIntCacheSize must be a power of two ≤ 1024");
-
-  // Round up to a power-of-two table capacity, with at least one SIMD
-  // control group. The documented constructor ceiling is 1<<30, so the
-  // left shift cannot overflow for admitted callers.
-  [[nodiscard, gnu::const]] static constexpr size_t
-  rounded_capacity_(size_t initial_capacity) noexcept {
-    size_t cap = detail::group_width();
-    while (cap < initial_capacity) cap <<= 1;
-    return cap;
-  }
-
-  [[nodiscard, gnu::const]] static constexpr IntCacheIndex
-  int_cache_index(IntCacheLiteral literal) noexcept {
-    return IntCacheIndex{
-        static_cast<size_t>(literal.value() - kIntCacheLow)};
-  }
-
-  [[nodiscard, gnu::const]] static constexpr size_t
-  raw_int_cache_index(IntCacheIndex index) noexcept {
-    return index.value();
-  }
-
-  [[nodiscard]] const Expr*
-  cached_integer(IntCacheLiteral literal) const noexcept {
-    return int_cache_[raw_int_cache_index(int_cache_index(literal))];
-  }
-
-  const Expr* make_integer(effects::Alloc a, int64_t val) {
-    return intern_node(
-        a, Op::INTEGER, nullptr, 0, detail::integer_flags(val), SymbolId{}, val);
-  }
-
-  // ---- GCD / coefficient helpers for division rules ----
-
-  [[nodiscard]] static int64_t gcd_(int64_t a, int64_t b) {
-    // Note: -INT64_MIN is UB; callers route absolute-value inputs through
-    // safe_abs_() which clamps INT64_MIN → INT64_MAX, so the unary
-    // negations below never observe INT64_MIN.
-    a = (a < 0) ? -a : a;
-    b = (b < 0) ? -b : b;
-    while (b) {
-      int64_t t = b;
-      b = a % b;
-      a = t;
-    }
-    return a;
-  }
-
-  // Integer coefficient of a term: MUL(3,x,y) → 3, INTEGER(5) → 5, x → 1
-  [[nodiscard, gnu::pure]] static int64_t integer_coefficient_(const Expr* expr) {
-    if (expr->op == Op::INTEGER) return expr->as_int();
-    if (expr->op == Op::MUL) {
-      for (uint8_t i = 0; i < expr->nargs; ++i)
-        if (expr->args[i]->op == Op::INTEGER) return expr->args[i]->as_int();
-    }
-    return 1;
-  }
-
-  // GCD of |integer coefficients| across all ADD terms.
-  //
-  // Overflow trap: unary negation on INT64_MIN (-(-2^63)) is
-  // undefined behavior (the positive value 2^63 doesn't fit in
-  // int64_t).  Adversarial or corrupt ADD arms could carry
-  // INT64_MIN coefficients; the GCD walk below would UB through
-  // the negation.  Use bit-twiddle absolute value that treats
-  // INT64_MIN → INT64_MAX (one off, acceptable for GCD — the loss
-  // of 1 unit cannot change the resulting GCD since all other
-  // coefficients are ≤ INT64_MAX anyway).
-  [[nodiscard]] static constexpr int64_t safe_abs_(int64_t value) noexcept {
-    // For value == INT64_MIN: cast to uint64_t, negate (legal in
-    // unsigned), cast back.  Result is INT64_MIN in two's comp
-    // (still negative).  That would poison GCD; instead clamp to
-    // INT64_MAX for the GCD walk.
-    if (value == std::numeric_limits<int64_t>::min())
-      return std::numeric_limits<int64_t>::max();
-    return (value < 0) ? -value : value;
-  }
-
-  [[nodiscard, gnu::pure]] int64_t integer_factor_(const Expr* expr) const {
-    if (expr->op == Op::ADD) {
-      int64_t accumulated_gcd = 0;
-      for (uint8_t i = 0; i < expr->nargs; ++i) {
-        int64_t abs_coeff = safe_abs_(integer_coefficient_(expr->args[i]));
-        accumulated_gcd =
-            (accumulated_gcd == 0) ? abs_coeff : gcd_(accumulated_gcd, abs_coeff);
-      }
-      return (accumulated_gcd == 0) ? 1 : accumulated_gcd;
-    }
-    return safe_abs_(integer_coefficient_(expr));
-  }
-
-  // Divide all integer coefficients in expression by `divisor`.
-  const Expr* divide_coefficients_(effects::Alloc a, const Expr* expr, int64_t divisor) {
-    if (divisor <= 1) return expr;
-    if (expr->op == Op::INTEGER) return integer(a, expr->as_int() / divisor);
-    if (expr->op == Op::MUL) {
-      for (uint8_t i = 0; i < expr->nargs; ++i) {
-        if (expr->args[i]->op == Op::INTEGER) {
-          int64_t new_coeff = expr->args[i]->as_int() / divisor;
-          // Coefficient collapsed to 1 in a binary MUL: drop the integer,
-          // return the only remaining factor directly.
-          if (new_coeff == 1 && expr->nargs == 2)
-            return expr->args[1 - i];
-          const Expr* rebuilt_factors[255];
-          uint8_t num_rebuilt = 0;
-          for (uint8_t j = 0; j < expr->nargs; ++j)
-            rebuilt_factors[num_rebuilt++] =
-                (j == i) ? integer(a, new_coeff) : expr->args[j];
-          return mul_n(a, std::span{rebuilt_factors, num_rebuilt});
+    [[nodiscard]] const Expr* symbol(effects::Alloc a, const char* name, SymbolId id, uint16_t assumption_flags) {
+        if (id.raw() >= symbol_names_.size()) symbol_names_.resize(id.raw() + 1, nullptr);
+        if (symbol_names_[id.raw()] == nullptr) {
+            size_t name_len_with_null = std::strlen(name) + 1;
+            char* name_buf =
+                static_cast<char*>(arena_.alloc(a, crucible::fixy::wrap::Positive<size_t>{name_len_with_null},
+                                                crucible::fixy::wrap::PowerOfTwo<size_t>{1}));
+            std::memcpy(name_buf, name, name_len_with_null);
+            symbol_names_[id.raw()] = name_buf;
         }
-      }
-      return expr; // no integer factor
-    }
-    if (expr->op == Op::ADD) {
-      const Expr* divided_terms[255];
-      for (uint8_t i = 0; i < expr->nargs; ++i)
-        divided_terms[i] = divide_coefficients_(a, expr->args[i], divisor);
-      return add_n(a, std::span{divided_terms, expr->nargs});
-    }
-    return expr;
-  }
+        int64_t name_ptr_payload = std::bit_cast<int64_t>(symbol_names_[id.raw()]);
+        const Expr* result =
+            intern_node(a, Op::SYMBOL, nullptr, 0, assumption_flags | ExprFlags::IS_SYMBOL, id, name_ptr_payload);
 
-  // Flatten MIN/MAX + dedup + sort
-  const Expr* min_n(effects::Alloc a, std::span<const Expr* const> inputs) {
-    const Expr* scratch_buf[64];
-    uint8_t num_args = 0;
-    for (auto* input_expr : inputs) {
-      if (input_expr->op == Op::MIN) {
-        for (uint8_t i = 0; i < input_expr->nargs; ++i)
-          scratch_buf[num_args++] = input_expr->arg(i);
-      } else {
-        scratch_buf[num_args++] = input_expr;
-      }
+        // PERF-2: populate the SymbolId-indexed fast-lookup cache.
+        // After this call returns, fast_symbol(id) hits a parallel-array
+        // load (~1.5 ns) instead of a full Swiss-table probe (~6.7 ns).
+        // Same Expr pointer in both paths — they're interchangeable.
+        if (id.raw() >= symbol_exprs_.size()) symbol_exprs_.resize(id.raw() + 1, nullptr);
+        symbol_exprs_[id.raw()] = result;
+
+        return result;
     }
-    std::ranges::sort(std::span{scratch_buf, num_args});
-    uint8_t num_unique = 1;
-    for (uint8_t i = 1; i < num_args; ++i)
-      if (scratch_buf[i] != scratch_buf[num_unique - 1])
-        scratch_buf[num_unique++] = scratch_buf[i];
-    if (num_unique == 1) return scratch_buf[0];
-    uint16_t composite_flag_bits =
-        detail::composite_flags(Op::MIN, scratch_buf, num_unique);
-    return intern_node(
-        a, Op::MIN, scratch_buf, num_unique, composite_flag_bits, SymbolId{}, 0);
-  }
 
-  const Expr* max_n(effects::Alloc a, std::span<const Expr* const> inputs) {
-    const Expr* scratch_buf[64];
-    uint8_t num_args = 0;
-    for (auto* input_expr : inputs) {
-      if (input_expr->op == Op::MAX) {
-        for (uint8_t i = 0; i < input_expr->nargs; ++i)
-          scratch_buf[num_args++] = input_expr->arg(i);
-      } else {
-        scratch_buf[num_args++] = input_expr;
-      }
+    // ── fast_symbol — O(1) SymbolId-indexed lookup ───────────────────
+    //
+    // Returns the interned Expr* for `sid` if it has been registered
+    // via a prior symbol(name, sid, flags) call.  Otherwise returns
+    // nullptr — caller MUST fall back to symbol(name, sid, flags) to
+    // register first.
+    //
+    // No Swiss-table probe.  No hashing.  Single bounds-checked
+    // load from the parallel array — typically ~1.5 ns vs ~6.7 ns
+    // for the full symbol() path.  Use this for hot paths that
+    // already have a SymbolId in hand: TraceGraph rebuild, replay
+    // engine, ExprPool::make(SYMBOL, …) routing.
+    //
+    // gnu::pure: depends only on caller-visible memory (the
+    // symbol_exprs_ vector); no side effects.  Safe to CSE within
+    // a sequence of fast_symbol calls on the same pool.
+    [[nodiscard, gnu::hot, gnu::pure]] const Expr* fast_symbol(SymbolId sid) const noexcept {
+        if (sid.raw() < symbol_exprs_.size() && symbol_exprs_[sid.raw()] != nullptr) [[likely]]
+            return symbol_exprs_[sid.raw()];
+        return nullptr;
     }
-    std::ranges::sort(std::span{scratch_buf, num_args});
-    uint8_t num_unique = 1;
-    for (uint8_t i = 1; i < num_args; ++i)
-      if (scratch_buf[i] != scratch_buf[num_unique - 1])
-        scratch_buf[num_unique++] = scratch_buf[i];
-    if (num_unique == 1) return scratch_buf[0];
-    uint16_t composite_flag_bits =
-        detail::composite_flags(Op::MAX, scratch_buf, num_unique);
-    return intern_node(
-        a, Op::MAX, scratch_buf, num_unique, composite_flag_bits, SymbolId{}, 0);
-  }
 
-  // Flatten ADD children, fold integer constants, combine like terms,
-  // sort, intern. Term combining: ADD(MUL(a,b), MUL(3,a,b)) → ADD(MUL(4,a,b)).
-  // Critical for expand(): (a+b)^n produces n+1 binomial terms, not 2^n.
-  const Expr* add_n(effects::Alloc a, std::span<const Expr* const> inputs) {
-    const Expr* term_scratch_buf[256];
-    uint8_t num_args = 0;
-    int64_t int_sum = 0;
+    [[nodiscard]] const Expr* bool_true() const { return true_; }
+    [[nodiscard]] const Expr* bool_false() const { return false_; }
 
-    // Phase 1: Flatten nested ADD, separate integer constants
-    for (auto* arg_expr : inputs) {
-      if (arg_expr->op == Op::ADD) {
-        for (uint8_t i = 0; i < arg_expr->nargs; ++i) {
-          if (arg_expr->args[i]->op == Op::INTEGER)
-            int_sum += arg_expr->args[i]->payload;
-          else {
-            assert(num_args < 255 && "too many ADD terms");
-            term_scratch_buf[num_args++] = arg_expr->args[i];
-          }
+    // ---- Arithmetic ----
+
+    [[nodiscard]] const Expr* add(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+        // Fast path: two children that don't need canonicalization.
+        // Excluded ops: ADD (needs flattening), MUL (needs coefficient
+        // extraction for term combining), INTEGER/FLOAT (needs folding).
+        // Symbols, POW, FLOOR_DIV, etc. go straight to intern.
+        if (lhs->op != Op::ADD && rhs->op != Op::ADD && lhs->op != Op::MUL && rhs->op != Op::MUL
+            && lhs->op != Op::INTEGER && rhs->op != Op::INTEGER && lhs->op != Op::FLOAT && rhs->op != Op::FLOAT)
+            [[likely]] {
+            // Same base detection: a + a → 2a
+            if (lhs == rhs) [[unlikely]]
+                return mul(a, integer(a, 2), lhs);
+            // Canonical ordering by pointer address
+            if (lhs > rhs) std::swap(lhs, rhs);
+            const Expr* args[] = {lhs, rhs};
+            uint16_t composite_flag_bits = detail::composite_flags(Op::ADD, args, 2);
+            return intern_node(a, Op::ADD, args, 2, composite_flag_bits, SymbolId{}, 0);
         }
-      } else if (arg_expr->op == Op::INTEGER) {
-        int_sum += arg_expr->payload;
-      } else {
-        assert(num_args < 255 && "too many ADD terms");
-        term_scratch_buf[num_args++] = arg_expr;
-      }
+        // Constant folding
+        if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER) return integer(a, lhs->payload + rhs->payload);
+        if (lhs->op == Op::FLOAT && rhs->op == Op::FLOAT) return float_(a, lhs->as_float() + rhs->as_float());
+        // Identity
+        if (lhs->is_zero_int()) return rhs;
+        if (rhs->is_zero_int()) return lhs;
+        // Slow path: flatten + fold + sort + coefficient combining
+        const Expr* binary_args[] = {lhs, rhs};
+        return add_n(a, binary_args);
     }
 
-    if (num_args == 0)
-      return integer(a, int_sum);
-
-    // Phase 2: Decompose each term into (coefficient, base).
-    // MUL(3, a, b) → coeff=3, base=MUL(a,b)
-    // MUL(a, b)    → coeff=1, base=MUL(a,b)   [same base!]
-    // a            → coeff=1, base=a
-    // The "base" is the coefficient-free interned form. Two terms with
-    // the same base get their coefficients summed: a + 2a → 3a.
-    struct CoeffTerm {
-      int64_t coeff;
-      const Expr* base;
-    };
-    CoeffTerm decomposed_terms[256];
-    uint8_t num_decomposed = 0;
-
-    for (uint8_t j = 0; j < num_args; ++j) {
-      int64_t combined_coefficient = 1;
-      const Expr* base = term_scratch_buf[j];
-
-      if (term_scratch_buf[j]->op == Op::MUL) {
-        // Strip integer coefficient from MUL
-        const Expr* mul_factors[256];
-        uint8_t num_factors = 0;
-        for (uint8_t k = 0; k < term_scratch_buf[j]->nargs; ++k) {
-          if (term_scratch_buf[j]->args[k]->op == Op::INTEGER)
-            combined_coefficient = term_scratch_buf[j]->args[k]->payload;
-          else
-            mul_factors[num_factors++] = term_scratch_buf[j]->args[k];
+    [[nodiscard]] const Expr* mul(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+        // Fast path: two non-constant, non-MUL children.
+        // Skip the full mul_n() canonicalization (flatten, fold, sort).
+        // Most symbolic expressions (x * y, a * b) hit this directly.
+        if (lhs->op != Op::MUL && rhs->op != Op::MUL && lhs->op != Op::INTEGER && rhs->op != Op::INTEGER
+            && lhs->op != Op::FLOAT && rhs->op != Op::FLOAT) [[likely]] {
+            // Canonical ordering by pointer address
+            if (lhs > rhs) std::swap(lhs, rhs);
+            const Expr* args[] = {lhs, rhs};
+            uint16_t composite_flag_bits = detail::composite_flags(Op::MUL, args, 2);
+            return intern_node(a, Op::MUL, args, 2, composite_flag_bits, SymbolId{}, 0);
         }
-        if (num_factors == 0) {
-          // Pure integer MUL (shouldn't happen after phase 1, but be safe)
-          int_sum += combined_coefficient;
-          continue;
-        } else if (num_factors == 1) {
-          base = mul_factors[0];
-        } else {
-          // Re-intern coefficient-free MUL as the grouping key.
-          // mul_factors[] are already sorted (came from a canonical MUL).
-          uint16_t composite_flag_bits =
-              detail::composite_flags(Op::MUL, mul_factors, num_factors);
-          base = intern_node(
-              a, Op::MUL, mul_factors, num_factors,
-              composite_flag_bits, SymbolId{}, 0);
+        // Constant folding
+        if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER) return integer(a, lhs->payload * rhs->payload);
+        if (lhs->op == Op::FLOAT && rhs->op == Op::FLOAT) return float_(a, lhs->as_float() * rhs->as_float());
+        // Zero annihilation
+        if (lhs->is_zero_int() || rhs->is_zero_int()) return integer(a, 0);
+        // Identity
+        if (lhs->is_one()) return rhs;
+        if (rhs->is_one()) return lhs;
+        // Slow path: flatten + fold + sort
+        const Expr* binary_args[] = {lhs, rhs};
+        return mul_n(a, binary_args);
+    }
+
+    [[nodiscard]] const Expr* pow(effects::Alloc a, const Expr* base, const Expr* exp) {
+        // x^0 → 1
+        if (exp->is_zero_int()) return integer(a, 1);
+        // x^1 → x
+        if (exp->is_one()) return base;
+        // Concrete integer power (small exponents only to avoid overflow)
+        if (base->op == Op::INTEGER && exp->op == Op::INTEGER && exp->payload >= 0 && exp->payload <= 62) {
+            int64_t accumulated_product = 1;
+            int64_t base_value = base->payload;
+            int64_t exponent_value = exp->payload;
+            for (int64_t i = 0; i < exponent_value; ++i)
+                accumulated_product *= base_value;
+            return integer(a, accumulated_product);
         }
-      }
-      decomposed_terms[num_decomposed++] =
-          {.coeff = combined_coefficient, .base = base};
+        const Expr* args[] = {base, exp};
+        uint16_t composite_flag_bits = detail::composite_flags(Op::POW, args, 2);
+        return intern_node(a, Op::POW, args, 2, composite_flag_bits, SymbolId{}, 0);
     }
 
-    // Phase 3: Sort by base pointer, merge adjacent same-base entries
-    std::ranges::sort(
-        std::span{decomposed_terms, num_decomposed},
-        [](const CoeffTerm& lhs, const CoeffTerm& rhs) {
-          return lhs.base < rhs.base;
-        });
-
-    const Expr* collected_terms[256];
-    uint8_t num_collected = 0;
-    uint8_t i = 0;
-    while (i < num_decomposed) {
-      int64_t total_coeff = decomposed_terms[i].coeff;
-      const Expr* base = decomposed_terms[i].base;
-      auto j = static_cast<uint8_t>(i + 1);
-      while (j < num_decomposed && decomposed_terms[j].base == base) {
-        total_coeff += decomposed_terms[j].coeff;
-        ++j;
-      }
-
-      if (total_coeff == 0) {
-        // Terms cancelled out (e.g., a + (-a))
-      } else if (total_coeff == 1) {
-        collected_terms[num_collected++] = base;
-      } else {
-        const Expr* mul_args[] = {integer(a, total_coeff), base};
-        collected_terms[num_collected++] = mul_n(a, mul_args);
-      }
-      i = j;
+    // Canonical form: MUL(-1, x). No NEG nodes in output.
+    [[nodiscard]] const Expr* neg(effects::Alloc a, const Expr* expr) {
+        if (expr->op == Op::INTEGER) return integer(a, -expr->payload);
+        if (expr->op == Op::FLOAT) return float_(a, -expr->as_float());
+        return mul(a, integer(a, -1), expr);
     }
 
-    // Reattach integer sum (omit zero unless it's the only term)
-    if (int_sum != 0 || num_collected == 0) {
-      assert(num_collected < 255);
-      collected_terms[num_collected++] = integer(a, int_sum);
+    // ---- Relational ----
+
+    [[nodiscard]] const Expr* eq(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+        if (lhs == rhs) return true_;
+        if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER) return (lhs->payload == rhs->payload) ? true_ : false_;
+        // Eq is commutative: canonical order by pointer
+        if (lhs > rhs) std::swap(lhs, rhs);
+        const Expr* args[] = {lhs, rhs};
+        return intern_node(a, Op::EQ, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
     }
-    if (num_collected == 1)
-      return collected_terms[0];
 
-    // Final sort for canonical ordering
-    std::ranges::sort(std::span{collected_terms, num_collected});
-    uint16_t composite_flag_bits =
-        detail::composite_flags(Op::ADD, collected_terms, num_collected);
-    return intern_node(
-        a, Op::ADD, collected_terms, num_collected,
-        composite_flag_bits, SymbolId{}, 0);
-  }
+    [[nodiscard]] const Expr* ne(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+        if (lhs == rhs) return false_;
+        if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER) return (lhs->payload != rhs->payload) ? true_ : false_;
+        if (lhs > rhs) std::swap(lhs, rhs);
+        const Expr* args[] = {lhs, rhs};
+        return intern_node(a, Op::NE, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
+    }
 
-  // Flatten MUL children, fold integer constants, sort, intern.
-  const Expr* mul_n(effects::Alloc a, std::span<const Expr* const> inputs) {
-    const Expr* factor_scratch_buf[256];
-    uint8_t num_args = 0;
-    int64_t int_prod = 1;
+    [[nodiscard]] const Expr* lt(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+        if (lhs == rhs) return false_;
+        if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER) return (lhs->payload < rhs->payload) ? true_ : false_;
+        const Expr* args[] = {lhs, rhs};
+        return intern_node(a, Op::LT, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
+    }
 
-    for (auto* arg_expr : inputs) {
-      if (arg_expr->op == Op::MUL) {
-        for (uint8_t i = 0; i < arg_expr->nargs; ++i) {
-          if (arg_expr->args[i]->op == Op::INTEGER)
-            int_prod *= arg_expr->args[i]->payload;
-          else {
-            assert(num_args < 255 && "too many MUL terms");
-            factor_scratch_buf[num_args++] = arg_expr->args[i];
-          }
+    [[nodiscard]] const Expr* le(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+        if (lhs == rhs) return true_;
+        if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER) return (lhs->payload <= rhs->payload) ? true_ : false_;
+        const Expr* args[] = {lhs, rhs};
+        return intern_node(a, Op::LE, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
+    }
+
+    [[nodiscard]] const Expr* gt(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+        if (lhs == rhs) return false_;
+        if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER) return (lhs->payload > rhs->payload) ? true_ : false_;
+        const Expr* args[] = {lhs, rhs};
+        return intern_node(a, Op::GT, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
+    }
+
+    [[nodiscard]] const Expr* ge(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+        if (lhs == rhs) return true_;
+        if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER) return (lhs->payload >= rhs->payload) ? true_ : false_;
+        const Expr* args[] = {lhs, rhs};
+        return intern_node(a, Op::GE, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
+    }
+
+    // ---- Logic ----
+
+    [[nodiscard]] const Expr* and_(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+        if (lhs == false_ || rhs == false_) return false_;
+        if (lhs == true_) return rhs;
+        if (rhs == true_) return lhs;
+        if (lhs == rhs) return lhs;
+        const Expr* binary_args[] = {lhs, rhs};
+        return and_n(a, binary_args);
+    }
+
+    [[nodiscard]] const Expr* or_(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+        if (lhs == true_ || rhs == true_) return true_;
+        if (lhs == false_) return rhs;
+        if (rhs == false_) return lhs;
+        if (lhs == rhs) return lhs;
+        const Expr* binary_args[] = {lhs, rhs};
+        return or_n(a, binary_args);
+    }
+
+    [[nodiscard]] const Expr* not_(effects::Alloc a, const Expr* expr) {
+        if (expr == true_) return false_;
+        if (expr == false_) return true_;
+        // Double negation elimination
+        if (expr->op == Op::NOT) return expr->args[0];
+        const Expr* args[] = {expr};
+        return intern_node(a, Op::NOT, args, 1, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
+    }
+
+    // ---- Division / Modular ----
+
+    [[nodiscard]] const Expr* floor_div(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+        if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER && rhs->as_int() != 0) {
+            int64_t dividend = lhs->as_int();
+            int64_t divisor = rhs->as_int();
+            int64_t quotient = dividend / divisor;
+            int64_t remainder = dividend % divisor;
+            // Floor adjustment: C truncates toward zero; floor() rounds toward
+            // -inf when the remainder has the opposite sign of the divisor.
+            if (remainder != 0 && ((remainder ^ divisor) < 0)) --quotient;
+            return integer(a, quotient);
         }
-      } else if (arg_expr->op == Op::INTEGER) {
-        int_prod *= arg_expr->payload;
-      } else {
-        assert(num_args < 255 && "too many MUL terms");
-        factor_scratch_buf[num_args++] = arg_expr;
-      }
-    }
-
-    if (int_prod == 0)
-      return integer(a, 0);
-    // Reattach integer product (omit 1 unless it's the only term)
-    if (int_prod != 1 || num_args == 0) {
-      assert(num_args < 255);
-      factor_scratch_buf[num_args++] = integer(a, int_prod);
-    }
-    if (num_args == 1)
-      return factor_scratch_buf[0];
-
-    std::ranges::sort(std::span{factor_scratch_buf, num_args});
-    uint16_t composite_flag_bits =
-        detail::composite_flags(Op::MUL, factor_scratch_buf, num_args);
-    return intern_node(
-        a, Op::MUL, factor_scratch_buf, num_args,
-        composite_flag_bits, SymbolId{}, 0);
-  }
-
-  // Flatten AND children, short-circuit on FALSE, filter TRUE, sort, intern.
-  const Expr* and_n(effects::Alloc a, std::span<const Expr* const> inputs) {
-    const Expr* operand_scratch_buf[64];
-    uint8_t num_operands = 0;
-
-    for (auto* input_expr : inputs) {
-      if (input_expr == false_)
-        return false_;
-      if (input_expr == true_)
-        continue;
-      if (input_expr->op == Op::AND) {
-        for (uint8_t i = 0; i < input_expr->nargs; ++i) {
-          if (input_expr->args[i] == false_)
-            return false_;
-          if (input_expr->args[i] == true_)
-            continue;
-          assert(num_operands < 64);
-          operand_scratch_buf[num_operands++] = input_expr->args[i];
-        }
-      } else {
-        assert(num_operands < 64);
-        operand_scratch_buf[num_operands++] = input_expr;
-      }
-    }
-
-    if (num_operands == 0)
-      return true_;
-    if (num_operands == 1)
-      return operand_scratch_buf[0];
-    std::ranges::sort(std::span{operand_scratch_buf, num_operands});
-    return intern_node(a, Op::AND, operand_scratch_buf, num_operands,
-                       ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
-  }
-
-  // Flatten OR children, short-circuit on TRUE, filter FALSE, sort, intern.
-  const Expr* or_n(effects::Alloc a, std::span<const Expr* const> inputs) {
-    const Expr* operand_scratch_buf[64];
-    uint8_t num_operands = 0;
-
-    for (auto* input_expr : inputs) {
-      if (input_expr == true_)
-        return true_;
-      if (input_expr == false_)
-        continue;
-      if (input_expr->op == Op::OR) {
-        for (uint8_t i = 0; i < input_expr->nargs; ++i) {
-          if (input_expr->args[i] == true_)
-            return true_;
-          if (input_expr->args[i] == false_)
-            continue;
-          assert(num_operands < 64);
-          operand_scratch_buf[num_operands++] = input_expr->args[i];
-        }
-      } else {
-        assert(num_operands < 64);
-        operand_scratch_buf[num_operands++] = input_expr;
-      }
-    }
-
-    if (num_operands == 0)
-      return false_;
-    if (num_operands == 1)
-      return operand_scratch_buf[0];
-    std::ranges::sort(std::span{operand_scratch_buf, num_operands});
-    return intern_node(a, Op::OR, operand_scratch_buf, num_operands,
-                       ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
-  }
-
-  // Swiss table probe + insert. Returns existing interned node or creates new.
-  //
-  // Probing: SIMD-compare kGroupWidth H2 tags → bitmask → iterate matches.
-  // H2 filters 127/128 candidates; full hash rejects the rest.
-  // Expected structural comparisons per lookup: ~0.01 (virtually zero
-  // false positives). Insert-only: no tombstones, empty-stop is sound.
-  //
-  // Hot path optimization: hash check (64-bit compare) is the primary
-  // filter. After hash match (P(collision) ≈ 2^-57), we only need
-  // args pointer comparison. The hash encodes op/nargs/flags/symbol_id/
-  // payload, so re-checking those is redundant on a hash match.
-  // We still verify all fields as a safety net — the compiler optimizes
-  // the packed comparison into a single 64-bit op.
-  CRUCIBLE_UNSAFE_BUFFER_USAGE
-  CRUCIBLE_INLINE const Expr* intern_node(
-      effects::Alloc a,
-      Op op,
-      const Expr* const* args,
-      uint8_t nargs,
-      uint16_t flags,
-      SymbolId symbol_id,
-      int64_t payload) {
-    // Load factor 87.5% (7/8). Swiss table tolerates higher load than
-    // linear probing because SIMD amortizes the cost of denser groups.
-    const size_t cap = capacity_.value();
-    if (intern_count_.get() * 8 >= cap * 7) [[unlikely]]
-      rehash();
-
-    uint64_t expr_full_hash =
-        detail::expr_hash(op, payload, symbol_id, flags, args, nargs);
-    int8_t slot_match_tag = detail::h2_tag(expr_full_hash);
-
-    // Pack small fields for a single 64-bit comparison instead of
-    // 4 separate branches. Same packing as expr_hash uses.
-    uint64_t query_packed_metadata =
-        static_cast<uint64_t>(std::to_underlying(op))
-      | (static_cast<uint64_t>(nargs) << 8)
-      | (static_cast<uint64_t>(flags) << 16)
-      | (static_cast<uint64_t>(symbol_id.raw()) << 32);
-
-    // Operate directly on slot indices (probe_base_slot) instead of
-    // group indices.  Eliminates the g*kGroupWidth multiply on every
-    // probe iteration.
-    size_t slot_mask = cap - 1;
-    size_t probe_base_slot = (expr_full_hash * detail::group_width()) & slot_mask;
-    size_t probe_iteration = 0;
-
-    while (true) {
-      auto group = detail::CtrlGroup::load(&ctrl_[probe_base_slot]);
-
-      // Phase 1: Check H2 tag matches within the group.
-      // SIMD produces a bitmask; iterate only the ~0.11 expected matches.
-      auto matches = group.match(slot_match_tag);
-      while (matches) {
-        size_t match_slot_index = probe_base_slot + matches.lowest();
-        const Expr* existing_expr = slots_[match_slot_index];
-        // Full hash compare: rejects with P(false positive) ≈ 2^-57.
-        // Packed metadata compare: catches the astronomically rare hash
-        // collision where different (op,nargs,flags,symbol_id) produce
-        // the same 64-bit hash.
-        // WRAP-Expr-1 #911: Expr::hash is Tagged<u64, FamilyB>; .value()
-        // unwraps to the raw u64 for the Swiss-table full-hash compare.
-        if (existing_expr->hash.value() == expr_full_hash &&
-            existing_expr->payload == payload) [[likely]] {
-          // Pack the existing expr's metadata the same way for single compare
-          uint64_t existing_packed_metadata =
-              static_cast<uint64_t>(std::to_underlying(existing_expr->op))
-              | (static_cast<uint64_t>(existing_expr->nargs) << 8)
-              | (static_cast<uint64_t>(existing_expr->flags) << 16)
-              | (static_cast<uint64_t>(existing_expr->symbol_id.raw()) << 32);
-          if (existing_packed_metadata == query_packed_metadata) [[likely]] {
-            // Args comparison — specialized for common arities
-            switch (nargs) {
-              case 0:
-                return existing_expr;
-              case 1:
-                if (existing_expr->args[0] == args[0])
-                  return existing_expr;
-                break;
-              case 2:
-                if (existing_expr->args[0] == args[0] &&
-                    existing_expr->args[1] == args[1])
-                  return existing_expr;
-                break;
-              case 3:
-                if (existing_expr->args[0] == args[0] &&
-                    existing_expr->args[1] == args[1] &&
-                    existing_expr->args[2] == args[2])
-                  return existing_expr;
-                break;
-              default: {
-                bool all_args_match = true;
-                for (uint8_t i = 0; i < nargs; ++i) {
-                  if (existing_expr->args[i] != args[i]) {
-                    all_args_match = false;
-                    break;
-                  }
-                }
-                if (all_args_match)
-                  return existing_expr;
-                break;
-              }
+        if (lhs->is_zero_int()) return integer(a, 0);
+        if (rhs->is_one()) return lhs;
+        if (rhs->is_neg_one()) return neg(a, lhs);
+        if (lhs == rhs) return integer(a, 1);
+        // FloorDiv(FloorDiv(x, c1), c2) → FloorDiv(x, c1*c2)
+        if (lhs->op == Op::FLOOR_DIV || lhs->op == Op::CLEAN_DIV)
+            return floor_div(a, lhs->arg(0), mul(a, lhs->arg(1), rhs));
+        // Extract divisible terms from ADD when divisor is constant
+        if (lhs->op == Op::ADD && rhs->op == Op::INTEGER && rhs->as_int() != 0) {
+            int64_t divisor = rhs->as_int();
+            const Expr* quotients[256];
+            const Expr* remainders[256];
+            uint8_t num_quotients = 0;
+            uint8_t num_remainders = 0;
+            for (uint8_t i = 0; i < lhs->nargs; ++i) {
+                int64_t coeff = integer_coefficient_(lhs->arg(i));
+                if (coeff != 0 && coeff % divisor == 0)
+                    quotients[num_quotients++] = divide_coefficients_(a, lhs->arg(i), divisor);
+                else
+                    remainders[num_remainders++] = lhs->arg(i);
             }
-          }
+            if (num_quotients > 0) {
+                const Expr* quotient_sum =
+                    (num_quotients == 1) ? quotients[0] : add_n(a, std::span{quotients, num_quotients});
+                if (num_remainders == 0) return quotient_sum;
+                const Expr* remainder_sum =
+                    (num_remainders == 1) ? remainders[0] : add_n(a, std::span{remainders, num_remainders});
+                return add(a, quotient_sum, floor_div(a, remainder_sum, rhs));
+            }
         }
-        matches.clear_lowest();
-      }
-
-      // Phase 2: If any empty slot exists in this group, the entry
-      // is definitively not in the table (insert-only, no tombstones).
-      auto empties = group.match_empty();
-      if (empties) [[likely]] {
-        size_t match_slot_index = probe_base_slot + empties.lowest();
-
-        // Copy args into the arena BEFORE constructing the Expr — the
-        // Expr's args pointer is const, so it can only be set via the
-        // constructor (not assigned later).  For nargs == 0 we pass
-        // nullptr, matching the legacy null-args contract.
-        const Expr** arena_owned_args = nullptr;
-        if (nargs > 0) {
-          arena_owned_args = arena_.alloc_array<const Expr*>(a, nargs);
-          std::memcpy(arena_owned_args, args, nargs * sizeof(const Expr*));
+        // Integer GCD cancellation
+        {
+            int64_t common_divisor = gcd_(integer_factor_(lhs), integer_factor_(rhs));
+            if (common_divisor > 1)
+                return floor_div(a, divide_coefficients_(a, lhs, common_divisor),
+                                 divide_coefficients_(a, rhs, common_divisor));
         }
-
-        // Placement-new into arena storage via the full-args
-        // constructor.  The const fields of Expr are initialized
-        // in-place; no post-construction mutation is possible
-        // (or desired — Expr is immutable by contract).
-        void* arena_expr_storage = arena_.alloc_obj<Expr>(a);
-        Expr* interned_expr = ::new (arena_expr_storage)
-            Expr(op, nargs, flags, symbol_id,
-                 expr_full_hash, payload, arena_owned_args);
-
-        ctrl_[match_slot_index] = slot_match_tag;
-        slots_[match_slot_index] = interned_expr;
-        intern_count_.bump();
-        return interned_expr;
-      }
-
-      // Triangular probing: visits all groups before repeating.
-      // Sequence: probe_base_slot, +G, +3G, +6G, ...
-      ++probe_iteration;
-      probe_base_slot =
-          (probe_base_slot + probe_iteration * detail::group_width()) & slot_mask;
-
-      // PERF-3: prefetch the NEXT probe's control group.  Issued
-      // ONLY here — after we've decided to iterate (current group
-      // had no empty slots, current matches all rejected) — so the
-      // dominant first-probe-hit case never pays the prefetch tax.
-      //
-      // Cost: ~1 cycle on the iterate path, where it's amortized
-      // against a ~50-cycle memory fetch on the next CtrlGroup::load.
-      // The prefetch is in flight while the loop branch back to top
-      // executes and the optimizer may interleave the load.
-      //
-      // Locality hint = 0 (streaming, no L1 retention).  Probe
-      // tables are large (~64-512 KB); evicting useful data with
-      // speculative prefetches would cost more than it saves.
-      __builtin_prefetch(&ctrl_[probe_base_slot], 0, 0);
+        const Expr* args[] = {lhs, rhs};
+        uint16_t composite_flag_bits = ExprFlags::IS_INTEGER;
+        if (lhs->is_nonnegative() && rhs->is_positive()) composite_flag_bits |= ExprFlags::IS_NONNEGATIVE;
+        return intern_node(a, Op::FLOOR_DIV, args, 2, composite_flag_bits, SymbolId{}, 0);
     }
-  }
 
-  // Allocate `ctrl_` + `slots_` in a single contiguous backing buffer
-  // via fixy::wrap::SwissTableBuffer<const Expr*> (#915 WRAP-ExprPool-1).
-  // The wrapper owns the aligned_alloc lifetime as move-only RAII;
-  // ctrl_ and slots_ remain raw projections cached on the hot probe
-  // path so SwissTable::CtrlGroup::load(&ctrl_[i]) and slots_[i] keep
-  // their single-load shape with no indirection.
-  // Layout (preserved):
-  //   [ctrl_: `cap` bytes] [slots_: `cap * 8` bytes]
-  // slots_ starts at offset `cap`, which is always a multiple of
-  // kGroupWidth (≥ 16) → trivially 8-byte aligned for the pointer array.
-  void alloc_tables_(size_t cap) {
-    const size_t slot_bytes = cap * sizeof(const Expr*);
-    backing_ = ::crucible::fixy::wrap::SwissTableBuffer<const Expr*>::allocate(cap);
-    ctrl_  = backing_.ctrl();
-    slots_ = backing_.slots();
-    std::memset(ctrl_, 0x80, cap);          // kEmpty = 0x80
-    std::memset(slots_, 0, slot_bytes);     // null-init slot pointers
-  }
-
-  CRUCIBLE_UNSAFE_BUFFER_USAGE
-  void rehash() { grow_to_(capacity_.value() * 2); }
-
-  // Core resize: allocate new ctrl_/slots_ of `new_capacity`, re-insert
-  // every live entry at its new home, free the old buffer. Called both
-  // by rehash() (implicit doubling at 87.5% load) and reserve() (caller-
-  // directed pre-growth). new_capacity must be a power of 2 and a
-  // multiple of kGroupWidth — the public entrypoints enforce that.
-  //
-  // CONTRACT-109: discharge the pow2 invariant through the named
-  // `decide::is_power_of_two_le` cite (CONTRACT-050 catalog) plus an
-  // explicit `>= kGroupWidth` lower bound.  The downstream SIMD probe
-  // depends on `(slot_mask = capacity_ - 1) & probe_index`, which
-  // requires both invariants to hold: a non-pow2 capacity corrupts the
-  // mask; a sub-kGroupWidth capacity walks the SIMD load past the
-  // allocated control-byte buffer.  Both call sites preserve the
-  // invariants (rehash doubles a pow2; reserve ratchets up from
-  // kGroupWidth via `<<= 1`); the precondition is the grep-discoverable
-  // VC-discharge anchor for any future caller addition.  Upper bound
-  // 1 << 30 matches the kDefaultInitialCapacity ceiling above.
-  CRUCIBLE_UNSAFE_BUFFER_USAGE
-  void grow_to_(size_t new_capacity)
-      pre (::crucible::decide::is_power_of_two_le<std::size_t>(
-              new_capacity, std::size_t{1} << 30))
-      pre (new_capacity >= detail::group_width())
-  {
-    size_t old_capacity = capacity_.value();
-    size_t old_count = intern_count_.get();
-    // #915 WRAP-ExprPool-1: move the old SwissTableBuffer into a local;
-    // its dtor frees the backing alloc when this function returns,
-    // replacing the explicit std::free(old_backing) at the bottom.
-    auto old_backing = std::move(backing_);
-    int8_t* old_ctrl = old_backing.ctrl();
-    const Expr** old_slots = old_backing.slots();
-
-    capacity_ = Capacity{new_capacity};
-    alloc_tables_(capacity_.value());
-
-    size_t slot_mask = capacity_.value() - 1;
-    size_t reinserted = 0;
-
-    for (size_t i = 0; i < old_capacity; ++i) {
-      if (old_ctrl[i] == detail::kEmpty)
-        continue;
-
-      const Expr* existing_expr = old_slots[i];
-      // WRAP-Expr-1 #911: Expr::hash is Tagged<u64, FamilyB>; .value()
-      // unwraps for Swiss-table rehash (h2_tag + modular probe-base).
-      const std::uint64_t existing_hash_raw = existing_expr->hash.value();
-      int8_t slot_match_tag = detail::h2_tag(existing_hash_raw);
-      size_t probe_base_slot =
-          (existing_hash_raw * detail::group_width()) & slot_mask;
-      size_t probe_iteration = 0;
-
-      while (true) {
-        auto group = detail::CtrlGroup::load(&ctrl_[probe_base_slot]);
-        auto empties = group.match_empty();
-        if (empties) {
-          size_t insert_slot_index = probe_base_slot + empties.lowest();
-          ctrl_[insert_slot_index] = slot_match_tag;
-          slots_[insert_slot_index] = existing_expr;
-          ++reinserted;
-          break;
-        }
-        ++probe_iteration;
-        probe_base_slot =
-            (probe_base_slot + probe_iteration * detail::group_width()) & slot_mask;
-      }
+    [[nodiscard]] const Expr* clean_div(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+        return floor_div(a, lhs, rhs);
     }
-    CRUCIBLE_POST(0, reinserted == old_count);
-    intern_count_.advance(reinserted);
-    // old_backing.~SwissTableBuffer() frees old alloc via RAII.
-  }
 
-  Arena arena_;
-  // #915 WRAP-ExprPool-1: SwissTableBuffer owns the aligned coupled
-  // ctrl+slots backing as move-only RAII.  ctrl_/slots_ remain raw
-  // projections cached on the hot probe path so SIMD probes keep
-  // their single-load shape.
-  ::crucible::fixy::wrap::SwissTableBuffer<const Expr*> backing_;
-  int8_t* ctrl_;                // Points into backing_ at offset 0.
-  const Expr** slots_;          // Points into backing_ at offset capacity_.
-  Capacity capacity_;           // Total slots (always power of 2, multiple of kGroupWidth)
-  InternCount intern_count_;    // Number of occupied slots
-  std::vector<const char*> symbol_names_;
+    [[nodiscard]] const Expr* ceil_div(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+        if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER && rhs->as_int() != 0) {
+            int64_t dividend = lhs->as_int();
+            int64_t divisor = rhs->as_int();
+            int64_t quotient = dividend / divisor;
+            int64_t remainder = dividend % divisor;
+            // Ceil adjustment: when the remainder shares the divisor's sign,
+            // C truncation already rounded down; bump up to round toward +inf.
+            if (remainder != 0 && ((remainder ^ divisor) > 0)) ++quotient;
+            return integer(a, quotient);
+        }
+        // ceil(a/b) = floor((a + b - 1) / b) for positive b
+        return floor_div(a, add(a, lhs, add(a, rhs, integer(a, -1))), rhs);
+    }
 
-  // PERF-2: SymbolId → const Expr* parallel to symbol_names_.
-  // After symbol() registers a SymbolId, the (Op::SYMBOL, sid) pair
-  // uniquely identifies the interned Expr — no Swiss-table probe
-  // needed for subsequent lookups by sid.  fast_symbol(sid) reads
-  // this cache directly: ~1.5 ns vs ~6.7 ns for the full symbol()
-  // probe.  Per-symbol cost is one parallel-array entry; symbols
-  // are sparse (typically dozens, not thousands) so the cache stays
-  // cache-line-friendly.
-  std::vector<const Expr*> symbol_exprs_;
+    [[nodiscard]] const Expr* mod(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+        if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER && rhs->as_int() > 0)
+            return integer(a, lhs->as_int() % rhs->as_int());
+        if (lhs->is_zero_int() || lhs == rhs || rhs->is_one()) return integer(a, 0);
+        if (rhs->op == Op::INTEGER && rhs->as_int() == 2) {
+            if (lhs->is_even()) return integer(a, 0);
+            if (lhs->is_odd()) return integer(a, 1);
+        }
+        const Expr* args[] = {lhs, rhs};
+        uint16_t composite_flag_bits = ExprFlags::IS_INTEGER | ExprFlags::IS_NONNEGATIVE;
+        return intern_node(a, Op::MOD, args, 2, composite_flag_bits, SymbolId{}, 0);
+    }
 
-  std::array<const Expr*, kIntCacheSize> int_cache_{};
-  const Expr* true_;
-  const Expr* false_;
+    [[nodiscard]] const Expr* python_mod(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+        if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER && rhs->as_int() != 0) {
+            int64_t dividend = lhs->as_int();
+            int64_t divisor = rhs->as_int();
+            int64_t remainder = dividend % divisor;
+            // Python modulo: result has the same sign as the divisor; C truncation
+            // gives the wrong sign when remainder and divisor disagree.
+            if (remainder != 0 && ((remainder ^ divisor) < 0)) remainder += divisor;
+            return integer(a, remainder);
+        }
+        if (lhs->is_zero_int() || lhs == rhs || rhs->is_one()) return integer(a, 0);
+        if (rhs->op == Op::INTEGER && rhs->as_int() == 2) {
+            if (lhs->is_even()) return integer(a, 0);
+            if (lhs->is_odd()) return integer(a, 1);
+        }
+        const Expr* args[] = {lhs, rhs};
+        uint16_t composite_flag_bits = ExprFlags::IS_INTEGER;
+        return intern_node(a, Op::PYTHON_MOD, args, 2, composite_flag_bits, SymbolId{}, 0);
+    }
+
+    [[nodiscard]] const Expr* modular_indexing(effects::Alloc a, const Expr* base, const Expr* div,
+                                               const Expr* modulus) {
+        if (base->is_zero_int() || modulus->is_one()) return integer(a, 0);
+        // All concrete
+        if (base->op == Op::INTEGER && div->op == Op::INTEGER && modulus->op == Op::INTEGER && div->as_int() != 0
+            && modulus->as_int() != 0) {
+            int64_t base_value = base->as_int();
+            int64_t divisor_value = div->as_int();
+            int64_t modulus_value = modulus->as_int();
+            int64_t quotient = base_value / divisor_value;
+            int64_t remainder = base_value % divisor_value;
+            // Floor adjustment for negative dividend (matches Python //).
+            if (remainder != 0 && ((remainder ^ divisor_value) < 0)) --quotient;
+            int64_t mod_result = quotient % modulus_value;
+            if (mod_result < 0) mod_result += modulus_value;
+            return integer(a, mod_result);
+        }
+        // GCD on (base, divisor)
+        if (!(div->op == Op::INTEGER && div->as_int() == 1)) {
+            int64_t common_divisor = gcd_(integer_factor_(base), integer_factor_(div));
+            if (common_divisor > 1)
+                return modular_indexing(a, divide_coefficients_(a, base, common_divisor),
+                                        divide_coefficients_(a, div, common_divisor), modulus);
+        }
+        // Drop ADD terms divisible by modulus*divisor
+        if (base->op == Op::ADD && modulus->op == Op::INTEGER && div->op == Op::INTEGER) {
+            int64_t mod_div_product = modulus->as_int() * div->as_int();
+            if (mod_div_product > 0) {
+                const Expr* kept_terms[256];
+                uint8_t num_kept = 0;
+                bool any_dropped = false;
+                for (uint8_t i = 0; i < base->nargs; ++i) {
+                    int64_t coeff = integer_coefficient_(base->arg(i));
+                    if (coeff != 0 && coeff % mod_div_product == 0)
+                        any_dropped = true;
+                    else
+                        kept_terms[num_kept++] = base->arg(i);
+                }
+                if (any_dropped) {
+                    if (num_kept == 0) return integer(a, 0);
+                    const Expr* reduced_base =
+                        (num_kept == 1) ? kept_terms[0] : add_n(a, std::span{kept_terms, num_kept});
+                    return modular_indexing(a, reduced_base, div, modulus);
+                }
+            }
+        }
+        // FloorDiv as base: ModIdx(x//a, d, m) → ModIdx(x, a*d, m)
+        if (base->op == Op::FLOOR_DIV || base->op == Op::CLEAN_DIV)
+            return modular_indexing(a, base->arg(0), mul(a, base->arg(1), div), modulus);
+
+        const Expr* args[] = {base, div, modulus};
+        uint16_t composite_flag_bits = ExprFlags::IS_INTEGER | ExprFlags::IS_NONNEGATIVE;
+        return intern_node(a, Op::MODULAR_INDEXING, args, 3, composite_flag_bits, SymbolId{}, 0);
+    }
+
+    // ---- Conditional ----
+
+    [[nodiscard]] const Expr* where(effects::Alloc a, const Expr* cond, const Expr* then_branch,
+                                    const Expr* else_branch) {
+        if (cond == true_) return then_branch;
+        if (cond == false_) return else_branch;
+        if (then_branch == else_branch) return then_branch;
+        const Expr* args[] = {cond, then_branch, else_branch};
+        uint16_t intersected_flags = then_branch->flags & else_branch->flags;
+        return intern_node(a, Op::WHERE, args, 3, intersected_flags, SymbolId{}, 0);
+    }
+
+    // ---- Min / Max ----
+
+    [[nodiscard]] const Expr* min_expr(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+        if (lhs == rhs) return lhs;
+        if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER) return integer(a, std::min(lhs->as_int(), rhs->as_int()));
+        const Expr* binary_args[] = {lhs, rhs};
+        return min_n(a, binary_args);
+    }
+
+    [[nodiscard]] const Expr* max_expr(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
+        if (lhs == rhs) return lhs;
+        if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER) return integer(a, std::max(lhs->as_int(), rhs->as_int()));
+        const Expr* binary_args[] = {lhs, rhs};
+        return max_n(a, binary_args);
+    }
+
+    // ---- Generic construction ----
+    // Dispatches to canonical constructors for ops that have them,
+    // generic interning for everything else.
+    //
+    // Variadic ops (ADD/MUL/AND/OR/MIN/MAX) take an n-ary args span.  When
+    // size() == 2, dispatching to the binary helper (add/mul/and_/or_/
+    // min_expr/max_expr) bypasses the *_n slow path's flatten + sort +
+    // coefficient-combining work that the binary fast paths skip via
+    // their early-return identity checks (e.g. add(x,0) -> x without
+    // touching the intern table).  The binary helpers are inline and
+    // hot — the compiler inlines them into make() naturally without
+    // gnu::flatten (attempted initially, reverted: flatten also inlined
+    // the bulky add_n/mul_n/and_n/... slow-path bodies into make(),
+    // bloating the function to ~900 B of stack frame + icache pressure
+    // and REGRESSING the hit-path benchmark from 138 ns to 690 ns).
+    // Relying on default inlining keeps make() lean.
+    [[nodiscard]] PureInternedExpr make(effects::Alloc a, Op op, std::span<const Expr* const> args) {
+        return PureInternedExpr{InternedExpr{make_raw_(a, op, args)}};
+    }
+
+private:
+    [[nodiscard]] const Expr* make_raw_(effects::Alloc a, Op op, std::span<const Expr* const> args) {
+        switch (op) {
+            case Op::ADD:
+                if (args.size() == 2) [[likely]]
+                    return add(a, args[0], args[1]);
+                return add_n(a, args);
+            case Op::MUL:
+                if (args.size() == 2) [[likely]]
+                    return mul(a, args[0], args[1]);
+                return mul_n(a, args);
+            case Op::AND:
+                if (args.size() == 2) [[likely]]
+                    return and_(a, args[0], args[1]);
+                return and_n(a, args);
+            case Op::OR:
+                if (args.size() == 2) [[likely]]
+                    return or_(a, args[0], args[1]);
+                return or_n(a, args);
+            case Op::POW:
+                return pow(a, args[0], args[1]);
+            case Op::NEG:
+                return neg(a, args[0]);
+            case Op::EQ:
+                return eq(a, args[0], args[1]);
+            case Op::NE:
+                return ne(a, args[0], args[1]);
+            case Op::LT:
+                return lt(a, args[0], args[1]);
+            case Op::LE:
+                return le(a, args[0], args[1]);
+            case Op::GT:
+                return gt(a, args[0], args[1]);
+            case Op::GE:
+                return ge(a, args[0], args[1]);
+            case Op::NOT:
+                return not_(a, args[0]);
+            case Op::FLOOR_DIV:
+                return floor_div(a, args[0], args[1]);
+            case Op::CLEAN_DIV:
+                return clean_div(a, args[0], args[1]);
+            case Op::CEIL_DIV:
+                return ceil_div(a, args[0], args[1]);
+            case Op::MOD:
+                return mod(a, args[0], args[1]);
+            case Op::PYTHON_MOD:
+                return python_mod(a, args[0], args[1]);
+            case Op::MODULAR_INDEXING:
+                return modular_indexing(a, args[0], args[1], args[2]);
+            case Op::WHERE:
+                return where(a, args[0], args[1], args[2]);
+            case Op::MIN:
+                if (args.size() == 2) [[likely]]
+                    return min_expr(a, args[0], args[1]);
+                return min_n(a, args);
+            case Op::MAX:
+                if (args.size() == 2) [[likely]]
+                    return max_expr(a, args[0], args[1]);
+                return max_n(a, args);
+
+            // Atoms must be built via the dedicated constructors
+            // (integer()/float()/symbol()/bool_true()/bool_false()); they
+            // carry a payload, not child args, and the args.data() vector
+            // would be silently ignored by intern_node.  make(atom, ...) is
+            // a caller bug, not a runtime-dispatchable condition.
+            case Op::INTEGER:
+            case Op::FLOAT:
+            case Op::SYMBOL:
+            case Op::BOOL_TRUE:
+            case Op::BOOL_FALSE:
+                std::unreachable();
+
+            // Sentinel: not a valid op value.  Reached only via corrupted
+            // input or a caller passing a cast-from-int out-of-range value.
+            case Op::NUM_OPS:
+                std::unreachable();
+
+            // Opaque math (SIN, COS, LOG, …), type conversions, bitwise,
+            // shift, identity, and IS_NON_OVERLAPPING_AND_DENSE all share
+            // the generic interning path — no canonical simplifier required.
+            // Listed explicitly-as-fallthrough so adding a new op surfaces
+            // here (via -Wswitch) rather than disappearing into a catch-all.
+            case Op::INT_TRUE_DIV:
+            case Op::FLOAT_TRUE_DIV:
+            case Op::CEIL_TO_INT:
+            case Op::FLOOR_TO_INT:
+            case Op::TRUNC_TO_FLOAT:
+            case Op::TRUNC_TO_INT:
+            case Op::ROUND_TO_INT:
+            case Op::ROUND_DECIMAL:
+            case Op::TO_FLOAT:
+            case Op::LSHIFT:
+            case Op::RSHIFT:
+            case Op::POW_BY_NATURAL:
+            case Op::FLOAT_POW:
+            case Op::IDENTITY:
+            case Op::IS_NON_OVERLAPPING_AND_DENSE:
+            case Op::SQRT:
+            case Op::COS:
+            case Op::COSH:
+            case Op::SIN:
+            case Op::SINH:
+            case Op::TAN:
+            case Op::TANH:
+            case Op::ASIN:
+            case Op::ACOS:
+            case Op::ATAN:
+            case Op::EXP:
+            case Op::LOG:
+            case Op::ASINH:
+            case Op::LOG2:
+            case Op::ABS:
+            case Op::BITWISE_AND:
+            case Op::BITWISE_OR:
+            case Op::BITWISE_XOR:
+                break;  // fall through to intern_node below
+
+            // Required by -Wswitch-default even though every enumerator is
+            // handled above.  Reaching this arm implies Op was read from
+            // out-of-range memory (e.g. casting a corrupted uint8_t to Op).
+            default:
+                std::unreachable();
+        }
+        uint16_t f = detail::composite_flags(op, args.data(), static_cast<uint8_t>(args.size()));
+        return intern_node(a, op, args.data(), static_cast<uint8_t>(args.size()), f, SymbolId{}, 0);
+    }
+
+public:
+    // ---- Stats ----
+
+    [[nodiscard]] size_t intern_size() const { return intern_count_.get(); }
+    [[nodiscard]] size_t intern_capacity() const { return capacity_.value(); }
+    [[nodiscard]] size_t arena_bytes() const { return arena_.total_allocated(); }
+    [[nodiscard]] const char* symbol_name(SymbolId id) const CRUCIBLE_LIFETIMEBOUND {
+        return (id.raw() < symbol_names_.size()) ? symbol_names_[id.raw()] : nullptr;
+    }
+
+private:
+    // CONTRACT-109: kIntCacheSize = 256 = 2^8.  The pow2 cite is structural
+    // (the kIntCacheLow / kIntCacheHigh range is inclusive on both ends, so
+    // the `+ 1` produces 256), but if either bound shifts by an odd offset
+    // the pow2 property silently breaks and direct-index lookups
+    // (`int_cache_[val - kIntCacheLow]`) get sloppy bounds.  The
+    // `decide::is_power_of_two_le` cite (CONTRACT-050) pins the invariant
+    // at the constant's definition site so future edits to the bounds trip
+    // the static_assert.  Upper bound 1024 leaves room for a 4× expansion
+    // without requiring a re-audit; past that the cache table itself stops
+    // fitting cleanly in two cache lines.
+    static_assert(::crucible::decide::is_power_of_two_le<std::size_t>(kIntCacheSize, std::size_t{1024}),
+                  "kIntCacheSize must be a power of two ≤ 1024");
+
+    // Round up to a power-of-two table capacity, with at least one SIMD
+    // control group. The documented constructor ceiling is 1<<30, so the
+    // left shift cannot overflow for admitted callers.
+    [[nodiscard, gnu::const]] static constexpr size_t rounded_capacity_(size_t initial_capacity) noexcept {
+        size_t cap = detail::group_width();
+        while (cap < initial_capacity)
+            cap <<= 1;
+        return cap;
+    }
+
+    [[nodiscard, gnu::const]] static constexpr IntCacheIndex int_cache_index(IntCacheLiteral literal) noexcept {
+        return IntCacheIndex{static_cast<size_t>(literal.value() - kIntCacheLow)};
+    }
+
+    [[nodiscard, gnu::const]] static constexpr size_t raw_int_cache_index(IntCacheIndex index) noexcept {
+        return index.value();
+    }
+
+    [[nodiscard]] const Expr* cached_integer(IntCacheLiteral literal) const noexcept {
+        return int_cache_[raw_int_cache_index(int_cache_index(literal))];
+    }
+
+    const Expr* make_integer(effects::Alloc a, int64_t val) {
+        return intern_node(a, Op::INTEGER, nullptr, 0, detail::integer_flags(val), SymbolId{}, val);
+    }
+
+    // ---- GCD / coefficient helpers for division rules ----
+
+    [[nodiscard]] static int64_t gcd_(int64_t a, int64_t b) {
+        // Note: -INT64_MIN is UB; callers route absolute-value inputs through
+        // safe_abs_() which clamps INT64_MIN → INT64_MAX, so the unary
+        // negations below never observe INT64_MIN.
+        a = (a < 0) ? -a : a;
+        b = (b < 0) ? -b : b;
+        while (b) {
+            int64_t t = b;
+            b = a % b;
+            a = t;
+        }
+        return a;
+    }
+
+    // Integer coefficient of a term: MUL(3,x,y) → 3, INTEGER(5) → 5, x → 1
+    [[nodiscard, gnu::pure]] static int64_t integer_coefficient_(const Expr* expr) {
+        if (expr->op == Op::INTEGER) return expr->as_int();
+        if (expr->op == Op::MUL) {
+            for (uint8_t i = 0; i < expr->nargs; ++i)
+                if (expr->args[i]->op == Op::INTEGER) return expr->args[i]->as_int();
+        }
+        return 1;
+    }
+
+    // GCD of |integer coefficients| across all ADD terms.
+    //
+    // Overflow trap: unary negation on INT64_MIN (-(-2^63)) is
+    // undefined behavior (the positive value 2^63 doesn't fit in
+    // int64_t).  Adversarial or corrupt ADD arms could carry
+    // INT64_MIN coefficients; the GCD walk below would UB through
+    // the negation.  Use bit-twiddle absolute value that treats
+    // INT64_MIN → INT64_MAX (one off, acceptable for GCD — the loss
+    // of 1 unit cannot change the resulting GCD since all other
+    // coefficients are ≤ INT64_MAX anyway).
+    [[nodiscard]] static constexpr int64_t safe_abs_(int64_t value) noexcept {
+        // For value == INT64_MIN: cast to uint64_t, negate (legal in
+        // unsigned), cast back.  Result is INT64_MIN in two's comp
+        // (still negative).  That would poison GCD; instead clamp to
+        // INT64_MAX for the GCD walk.
+        if (value == std::numeric_limits<int64_t>::min()) return std::numeric_limits<int64_t>::max();
+        return (value < 0) ? -value : value;
+    }
+
+    [[nodiscard, gnu::pure]] int64_t integer_factor_(const Expr* expr) const {
+        if (expr->op == Op::ADD) {
+            int64_t accumulated_gcd = 0;
+            for (uint8_t i = 0; i < expr->nargs; ++i) {
+                int64_t abs_coeff = safe_abs_(integer_coefficient_(expr->args[i]));
+                accumulated_gcd = (accumulated_gcd == 0) ? abs_coeff : gcd_(accumulated_gcd, abs_coeff);
+            }
+            return (accumulated_gcd == 0) ? 1 : accumulated_gcd;
+        }
+        return safe_abs_(integer_coefficient_(expr));
+    }
+
+    // Divide all integer coefficients in expression by `divisor`.
+    const Expr* divide_coefficients_(effects::Alloc a, const Expr* expr, int64_t divisor) {
+        if (divisor <= 1) return expr;
+        if (expr->op == Op::INTEGER) return integer(a, expr->as_int() / divisor);
+        if (expr->op == Op::MUL) {
+            for (uint8_t i = 0; i < expr->nargs; ++i) {
+                if (expr->args[i]->op == Op::INTEGER) {
+                    int64_t new_coeff = expr->args[i]->as_int() / divisor;
+                    // Coefficient collapsed to 1 in a binary MUL: drop the integer,
+                    // return the only remaining factor directly.
+                    if (new_coeff == 1 && expr->nargs == 2) return expr->args[1 - i];
+                    const Expr* rebuilt_factors[255];
+                    uint8_t num_rebuilt = 0;
+                    for (uint8_t j = 0; j < expr->nargs; ++j)
+                        rebuilt_factors[num_rebuilt++] = (j == i) ? integer(a, new_coeff) : expr->args[j];
+                    return mul_n(a, std::span{rebuilt_factors, num_rebuilt});
+                }
+            }
+            return expr;  // no integer factor
+        }
+        if (expr->op == Op::ADD) {
+            const Expr* divided_terms[255];
+            for (uint8_t i = 0; i < expr->nargs; ++i)
+                divided_terms[i] = divide_coefficients_(a, expr->args[i], divisor);
+            return add_n(a, std::span{divided_terms, expr->nargs});
+        }
+        return expr;
+    }
+
+    // Flatten MIN/MAX + dedup + sort
+    const Expr* min_n(effects::Alloc a, std::span<const Expr* const> inputs) {
+        const Expr* scratch_buf[64];
+        uint8_t num_args = 0;
+        for (auto* input_expr : inputs) {
+            if (input_expr->op == Op::MIN) {
+                for (uint8_t i = 0; i < input_expr->nargs; ++i)
+                    scratch_buf[num_args++] = input_expr->arg(i);
+            } else {
+                scratch_buf[num_args++] = input_expr;
+            }
+        }
+        std::ranges::sort(std::span{scratch_buf, num_args});
+        uint8_t num_unique = 1;
+        for (uint8_t i = 1; i < num_args; ++i)
+            if (scratch_buf[i] != scratch_buf[num_unique - 1]) scratch_buf[num_unique++] = scratch_buf[i];
+        if (num_unique == 1) return scratch_buf[0];
+        uint16_t composite_flag_bits = detail::composite_flags(Op::MIN, scratch_buf, num_unique);
+        return intern_node(a, Op::MIN, scratch_buf, num_unique, composite_flag_bits, SymbolId{}, 0);
+    }
+
+    const Expr* max_n(effects::Alloc a, std::span<const Expr* const> inputs) {
+        const Expr* scratch_buf[64];
+        uint8_t num_args = 0;
+        for (auto* input_expr : inputs) {
+            if (input_expr->op == Op::MAX) {
+                for (uint8_t i = 0; i < input_expr->nargs; ++i)
+                    scratch_buf[num_args++] = input_expr->arg(i);
+            } else {
+                scratch_buf[num_args++] = input_expr;
+            }
+        }
+        std::ranges::sort(std::span{scratch_buf, num_args});
+        uint8_t num_unique = 1;
+        for (uint8_t i = 1; i < num_args; ++i)
+            if (scratch_buf[i] != scratch_buf[num_unique - 1]) scratch_buf[num_unique++] = scratch_buf[i];
+        if (num_unique == 1) return scratch_buf[0];
+        uint16_t composite_flag_bits = detail::composite_flags(Op::MAX, scratch_buf, num_unique);
+        return intern_node(a, Op::MAX, scratch_buf, num_unique, composite_flag_bits, SymbolId{}, 0);
+    }
+
+    // Flatten ADD children, fold integer constants, combine like terms,
+    // sort, intern. Term combining: ADD(MUL(a,b), MUL(3,a,b)) → ADD(MUL(4,a,b)).
+    // Critical for expand(): (a+b)^n produces n+1 binomial terms, not 2^n.
+    const Expr* add_n(effects::Alloc a, std::span<const Expr* const> inputs) {
+        const Expr* term_scratch_buf[256];
+        uint8_t num_args = 0;
+        int64_t int_sum = 0;
+
+        // Phase 1: Flatten nested ADD, separate integer constants
+        for (auto* arg_expr : inputs) {
+            if (arg_expr->op == Op::ADD) {
+                for (uint8_t i = 0; i < arg_expr->nargs; ++i) {
+                    if (arg_expr->args[i]->op == Op::INTEGER)
+                        int_sum += arg_expr->args[i]->payload;
+                    else {
+                        assert(num_args < 255 && "too many ADD terms");
+                        term_scratch_buf[num_args++] = arg_expr->args[i];
+                    }
+                }
+            } else if (arg_expr->op == Op::INTEGER) {
+                int_sum += arg_expr->payload;
+            } else {
+                assert(num_args < 255 && "too many ADD terms");
+                term_scratch_buf[num_args++] = arg_expr;
+            }
+        }
+
+        if (num_args == 0) return integer(a, int_sum);
+
+        // Phase 2: Decompose each term into (coefficient, base).
+        // MUL(3, a, b) → coeff=3, base=MUL(a,b)
+        // MUL(a, b)    → coeff=1, base=MUL(a,b)   [same base!]
+        // a            → coeff=1, base=a
+        // The "base" is the coefficient-free interned form. Two terms with
+        // the same base get their coefficients summed: a + 2a → 3a.
+        struct CoeffTerm {
+            int64_t coeff;
+            const Expr* base;
+        };
+        CoeffTerm decomposed_terms[256];
+        uint8_t num_decomposed = 0;
+
+        for (uint8_t j = 0; j < num_args; ++j) {
+            int64_t combined_coefficient = 1;
+            const Expr* base = term_scratch_buf[j];
+
+            if (term_scratch_buf[j]->op == Op::MUL) {
+                // Strip integer coefficient from MUL
+                const Expr* mul_factors[256];
+                uint8_t num_factors = 0;
+                for (uint8_t k = 0; k < term_scratch_buf[j]->nargs; ++k) {
+                    if (term_scratch_buf[j]->args[k]->op == Op::INTEGER)
+                        combined_coefficient = term_scratch_buf[j]->args[k]->payload;
+                    else
+                        mul_factors[num_factors++] = term_scratch_buf[j]->args[k];
+                }
+                if (num_factors == 0) {
+                    // Pure integer MUL (shouldn't happen after phase 1, but be safe)
+                    int_sum += combined_coefficient;
+                    continue;
+                } else if (num_factors == 1) {
+                    base = mul_factors[0];
+                } else {
+                    // Re-intern coefficient-free MUL as the grouping key.
+                    // mul_factors[] are already sorted (came from a canonical MUL).
+                    uint16_t composite_flag_bits = detail::composite_flags(Op::MUL, mul_factors, num_factors);
+                    base = intern_node(a, Op::MUL, mul_factors, num_factors, composite_flag_bits, SymbolId{}, 0);
+                }
+            }
+            decomposed_terms[num_decomposed++] = {.coeff = combined_coefficient, .base = base};
+        }
+
+        // Phase 3: Sort by base pointer, merge adjacent same-base entries
+        std::ranges::sort(std::span{decomposed_terms, num_decomposed},
+                          [](const CoeffTerm& lhs, const CoeffTerm& rhs) { return lhs.base < rhs.base; });
+
+        const Expr* collected_terms[256];
+        uint8_t num_collected = 0;
+        uint8_t i = 0;
+        while (i < num_decomposed) {
+            int64_t total_coeff = decomposed_terms[i].coeff;
+            const Expr* base = decomposed_terms[i].base;
+            auto j = static_cast<uint8_t>(i + 1);
+            while (j < num_decomposed && decomposed_terms[j].base == base) {
+                total_coeff += decomposed_terms[j].coeff;
+                ++j;
+            }
+
+            if (total_coeff == 0) {
+                // Terms cancelled out (e.g., a + (-a))
+            } else if (total_coeff == 1) {
+                collected_terms[num_collected++] = base;
+            } else {
+                const Expr* mul_args[] = {integer(a, total_coeff), base};
+                collected_terms[num_collected++] = mul_n(a, mul_args);
+            }
+            i = j;
+        }
+
+        // Reattach integer sum (omit zero unless it's the only term)
+        if (int_sum != 0 || num_collected == 0) {
+            assert(num_collected < 255);
+            collected_terms[num_collected++] = integer(a, int_sum);
+        }
+        if (num_collected == 1) return collected_terms[0];
+
+        // Final sort for canonical ordering
+        std::ranges::sort(std::span{collected_terms, num_collected});
+        uint16_t composite_flag_bits = detail::composite_flags(Op::ADD, collected_terms, num_collected);
+        return intern_node(a, Op::ADD, collected_terms, num_collected, composite_flag_bits, SymbolId{}, 0);
+    }
+
+    // Flatten MUL children, fold integer constants, sort, intern.
+    const Expr* mul_n(effects::Alloc a, std::span<const Expr* const> inputs) {
+        const Expr* factor_scratch_buf[256];
+        uint8_t num_args = 0;
+        int64_t int_prod = 1;
+
+        for (auto* arg_expr : inputs) {
+            if (arg_expr->op == Op::MUL) {
+                for (uint8_t i = 0; i < arg_expr->nargs; ++i) {
+                    if (arg_expr->args[i]->op == Op::INTEGER)
+                        int_prod *= arg_expr->args[i]->payload;
+                    else {
+                        assert(num_args < 255 && "too many MUL terms");
+                        factor_scratch_buf[num_args++] = arg_expr->args[i];
+                    }
+                }
+            } else if (arg_expr->op == Op::INTEGER) {
+                int_prod *= arg_expr->payload;
+            } else {
+                assert(num_args < 255 && "too many MUL terms");
+                factor_scratch_buf[num_args++] = arg_expr;
+            }
+        }
+
+        if (int_prod == 0) return integer(a, 0);
+        // Reattach integer product (omit 1 unless it's the only term)
+        if (int_prod != 1 || num_args == 0) {
+            assert(num_args < 255);
+            factor_scratch_buf[num_args++] = integer(a, int_prod);
+        }
+        if (num_args == 1) return factor_scratch_buf[0];
+
+        std::ranges::sort(std::span{factor_scratch_buf, num_args});
+        uint16_t composite_flag_bits = detail::composite_flags(Op::MUL, factor_scratch_buf, num_args);
+        return intern_node(a, Op::MUL, factor_scratch_buf, num_args, composite_flag_bits, SymbolId{}, 0);
+    }
+
+    // Flatten AND children, short-circuit on FALSE, filter TRUE, sort, intern.
+    const Expr* and_n(effects::Alloc a, std::span<const Expr* const> inputs) {
+        const Expr* operand_scratch_buf[64];
+        uint8_t num_operands = 0;
+
+        for (auto* input_expr : inputs) {
+            if (input_expr == false_) return false_;
+            if (input_expr == true_) continue;
+            if (input_expr->op == Op::AND) {
+                for (uint8_t i = 0; i < input_expr->nargs; ++i) {
+                    if (input_expr->args[i] == false_) return false_;
+                    if (input_expr->args[i] == true_) continue;
+                    assert(num_operands < 64);
+                    operand_scratch_buf[num_operands++] = input_expr->args[i];
+                }
+            } else {
+                assert(num_operands < 64);
+                operand_scratch_buf[num_operands++] = input_expr;
+            }
+        }
+
+        if (num_operands == 0) return true_;
+        if (num_operands == 1) return operand_scratch_buf[0];
+        std::ranges::sort(std::span{operand_scratch_buf, num_operands});
+        return intern_node(a, Op::AND, operand_scratch_buf, num_operands, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
+    }
+
+    // Flatten OR children, short-circuit on TRUE, filter FALSE, sort, intern.
+    const Expr* or_n(effects::Alloc a, std::span<const Expr* const> inputs) {
+        const Expr* operand_scratch_buf[64];
+        uint8_t num_operands = 0;
+
+        for (auto* input_expr : inputs) {
+            if (input_expr == true_) return true_;
+            if (input_expr == false_) continue;
+            if (input_expr->op == Op::OR) {
+                for (uint8_t i = 0; i < input_expr->nargs; ++i) {
+                    if (input_expr->args[i] == true_) return true_;
+                    if (input_expr->args[i] == false_) continue;
+                    assert(num_operands < 64);
+                    operand_scratch_buf[num_operands++] = input_expr->args[i];
+                }
+            } else {
+                assert(num_operands < 64);
+                operand_scratch_buf[num_operands++] = input_expr;
+            }
+        }
+
+        if (num_operands == 0) return false_;
+        if (num_operands == 1) return operand_scratch_buf[0];
+        std::ranges::sort(std::span{operand_scratch_buf, num_operands});
+        return intern_node(a, Op::OR, operand_scratch_buf, num_operands, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
+    }
+
+    // Swiss table probe + insert. Returns existing interned node or creates new.
+    //
+    // Probing: SIMD-compare kGroupWidth H2 tags → bitmask → iterate matches.
+    // H2 filters 127/128 candidates; full hash rejects the rest.
+    // Expected structural comparisons per lookup: ~0.01 (virtually zero
+    // false positives). Insert-only: no tombstones, empty-stop is sound.
+    //
+    // Hot path optimization: hash check (64-bit compare) is the primary
+    // filter. After hash match (P(collision) ≈ 2^-57), we only need
+    // args pointer comparison. The hash encodes op/nargs/flags/symbol_id/
+    // payload, so re-checking those is redundant on a hash match.
+    // We still verify all fields as a safety net — the compiler optimizes
+    // the packed comparison into a single 64-bit op.
+    CRUCIBLE_UNSAFE_BUFFER_USAGE CRUCIBLE_INLINE const Expr* intern_node(effects::Alloc a, Op op,
+                                                                         const Expr* const* args, uint8_t nargs,
+                                                                         uint16_t flags, SymbolId symbol_id,
+                                                                         int64_t payload) {
+        // Load factor 87.5% (7/8). Swiss table tolerates higher load than
+        // linear probing because SIMD amortizes the cost of denser groups.
+        const size_t cap = capacity_.value();
+        if (intern_count_.get() * 8 >= cap * 7) [[unlikely]]
+            rehash();
+
+        uint64_t expr_full_hash = detail::expr_hash(op, payload, symbol_id, flags, args, nargs);
+        int8_t slot_match_tag = detail::h2_tag(expr_full_hash);
+
+        // Pack small fields for a single 64-bit comparison instead of
+        // 4 separate branches. Same packing as expr_hash uses.
+        uint64_t query_packed_metadata = static_cast<uint64_t>(std::to_underlying(op))
+                                       | (static_cast<uint64_t>(nargs) << 8) | (static_cast<uint64_t>(flags) << 16)
+                                       | (static_cast<uint64_t>(symbol_id.raw()) << 32);
+
+        // Operate directly on slot indices (probe_base_slot) instead of
+        // group indices.  Eliminates the g*kGroupWidth multiply on every
+        // probe iteration.
+        size_t slot_mask = cap - 1;
+        size_t probe_base_slot = (expr_full_hash * detail::group_width()) & slot_mask;
+        size_t probe_iteration = 0;
+
+        while (true) {
+            auto group = detail::CtrlGroup::load(&ctrl_[probe_base_slot]);
+
+            // Phase 1: Check H2 tag matches within the group.
+            // SIMD produces a bitmask; iterate only the ~0.11 expected matches.
+            auto matches = group.match(slot_match_tag);
+            while (matches) {
+                size_t match_slot_index = probe_base_slot + matches.lowest();
+                const Expr* existing_expr = slots_[match_slot_index];
+                // Full hash compare: rejects with P(false positive) ≈ 2^-57.
+                // Packed metadata compare: catches the astronomically rare hash
+                // collision where different (op,nargs,flags,symbol_id) produce
+                // the same 64-bit hash.
+                // WRAP-Expr-1 #911: Expr::hash is Tagged<u64, FamilyB>; .value()
+                // unwraps to the raw u64 for the Swiss-table full-hash compare.
+                if (existing_expr->hash.value() == expr_full_hash && existing_expr->payload == payload) [[likely]] {
+                    // Pack the existing expr's metadata the same way for single compare
+                    uint64_t existing_packed_metadata = static_cast<uint64_t>(std::to_underlying(existing_expr->op))
+                                                      | (static_cast<uint64_t>(existing_expr->nargs) << 8)
+                                                      | (static_cast<uint64_t>(existing_expr->flags) << 16)
+                                                      | (static_cast<uint64_t>(existing_expr->symbol_id.raw()) << 32);
+                    if (existing_packed_metadata == query_packed_metadata) [[likely]] {
+                        // Args comparison — specialized for common arities
+                        switch (nargs) {
+                            case 0:
+                                return existing_expr;
+                            case 1:
+                                if (existing_expr->args[0] == args[0]) return existing_expr;
+                                break;
+                            case 2:
+                                if (existing_expr->args[0] == args[0] && existing_expr->args[1] == args[1])
+                                    return existing_expr;
+                                break;
+                            case 3:
+                                if (existing_expr->args[0] == args[0] && existing_expr->args[1] == args[1]
+                                    && existing_expr->args[2] == args[2])
+                                    return existing_expr;
+                                break;
+                            default: {
+                                bool all_args_match = true;
+                                for (uint8_t i = 0; i < nargs; ++i) {
+                                    if (existing_expr->args[i] != args[i]) {
+                                        all_args_match = false;
+                                        break;
+                                    }
+                                }
+                                if (all_args_match) return existing_expr;
+                                break;
+                            }
+                        }
+                    }
+                }
+                matches.clear_lowest();
+            }
+
+            // Phase 2: If any empty slot exists in this group, the entry
+            // is definitively not in the table (insert-only, no tombstones).
+            auto empties = group.match_empty();
+            if (empties) [[likely]] {
+                size_t match_slot_index = probe_base_slot + empties.lowest();
+
+                // Copy args into the arena BEFORE constructing the Expr — the
+                // Expr's args pointer is const, so it can only be set via the
+                // constructor (not assigned later).  For nargs == 0 we pass
+                // nullptr, matching the legacy null-args contract.
+                const Expr** arena_owned_args = nullptr;
+                if (nargs > 0) {
+                    arena_owned_args = arena_.alloc_array<const Expr*>(a, nargs);
+                    std::memcpy(arena_owned_args, args, nargs * sizeof(const Expr*));
+                }
+
+                // Placement-new into arena storage via the full-args
+                // constructor.  The const fields of Expr are initialized
+                // in-place; no post-construction mutation is possible
+                // (or desired — Expr is immutable by contract).
+                void* arena_expr_storage = arena_.alloc_obj<Expr>(a);
+                Expr* interned_expr = ::new(arena_expr_storage)
+                    Expr(op, nargs, flags, symbol_id, expr_full_hash, payload, arena_owned_args);
+
+                ctrl_[match_slot_index] = slot_match_tag;
+                slots_[match_slot_index] = interned_expr;
+                intern_count_.bump();
+                return interned_expr;
+            }
+
+            // Triangular probing: visits all groups before repeating.
+            // Sequence: probe_base_slot, +G, +3G, +6G, ...
+            ++probe_iteration;
+            probe_base_slot = (probe_base_slot + probe_iteration * detail::group_width()) & slot_mask;
+
+            // PERF-3: prefetch the NEXT probe's control group.  Issued
+            // ONLY here — after we've decided to iterate (current group
+            // had no empty slots, current matches all rejected) — so the
+            // dominant first-probe-hit case never pays the prefetch tax.
+            //
+            // Cost: ~1 cycle on the iterate path, where it's amortized
+            // against a ~50-cycle memory fetch on the next CtrlGroup::load.
+            // The prefetch is in flight while the loop branch back to top
+            // executes and the optimizer may interleave the load.
+            //
+            // Locality hint = 0 (streaming, no L1 retention).  Probe
+            // tables are large (~64-512 KB); evicting useful data with
+            // speculative prefetches would cost more than it saves.
+            __builtin_prefetch(&ctrl_[probe_base_slot], 0, 0);
+        }
+    }
+
+    // Allocate `ctrl_` + `slots_` in a single contiguous backing buffer
+    // via fixy::wrap::SwissTableBuffer<const Expr*> (#915 WRAP-ExprPool-1).
+    // The wrapper owns the aligned_alloc lifetime as move-only RAII;
+    // ctrl_ and slots_ remain raw projections cached on the hot probe
+    // path so SwissTable::CtrlGroup::load(&ctrl_[i]) and slots_[i] keep
+    // their single-load shape with no indirection.
+    // Layout (preserved):
+    //   [ctrl_: `cap` bytes] [slots_: `cap * 8` bytes]
+    // slots_ starts at offset `cap`, which is always a multiple of
+    // kGroupWidth (≥ 16) → trivially 8-byte aligned for the pointer array.
+    void alloc_tables_(size_t cap) {
+        const size_t slot_bytes = cap * sizeof(const Expr*);
+        backing_ = ::crucible::fixy::wrap::SwissTableBuffer<const Expr*>::allocate(cap);
+        ctrl_ = backing_.ctrl();
+        slots_ = backing_.slots();
+        std::memset(ctrl_, 0x80, cap);  // kEmpty = 0x80
+        std::memset(slots_, 0, slot_bytes);  // null-init slot pointers
+    }
+
+    CRUCIBLE_UNSAFE_BUFFER_USAGE void rehash() { grow_to_(capacity_.value() * 2); }
+
+    // Core resize: allocate new ctrl_/slots_ of `new_capacity`, re-insert
+    // every live entry at its new home, free the old buffer. Called both
+    // by rehash() (implicit doubling at 87.5% load) and reserve() (caller-
+    // directed pre-growth). new_capacity must be a power of 2 and a
+    // multiple of kGroupWidth — the public entrypoints enforce that.
+    //
+    // CONTRACT-109: discharge the pow2 invariant through the named
+    // `decide::is_power_of_two_le` cite (CONTRACT-050 catalog) plus an
+    // explicit `>= kGroupWidth` lower bound.  The downstream SIMD probe
+    // depends on `(slot_mask = capacity_ - 1) & probe_index`, which
+    // requires both invariants to hold: a non-pow2 capacity corrupts the
+    // mask; a sub-kGroupWidth capacity walks the SIMD load past the
+    // allocated control-byte buffer.  Both call sites preserve the
+    // invariants (rehash doubles a pow2; reserve ratchets up from
+    // kGroupWidth via `<<= 1`); the precondition is the grep-discoverable
+    // VC-discharge anchor for any future caller addition.  Upper bound
+    // 1 << 30 matches the kDefaultInitialCapacity ceiling above.
+    CRUCIBLE_UNSAFE_BUFFER_USAGE void grow_to_(size_t new_capacity)
+        pre(::crucible::decide::is_power_of_two_le<std::size_t>(new_capacity, std::size_t{1} << 30))
+            pre(new_capacity >= detail::group_width()) {
+        size_t old_capacity = capacity_.value();
+        size_t old_count = intern_count_.get();
+        // #915 WRAP-ExprPool-1: move the old SwissTableBuffer into a local;
+        // its dtor frees the backing alloc when this function returns,
+        // replacing the explicit std::free(old_backing) at the bottom.
+        auto old_backing = std::move(backing_);
+        int8_t* old_ctrl = old_backing.ctrl();
+        const Expr** old_slots = old_backing.slots();
+
+        capacity_ = Capacity{new_capacity};
+        alloc_tables_(capacity_.value());
+
+        size_t slot_mask = capacity_.value() - 1;
+        size_t reinserted = 0;
+
+        for (size_t i = 0; i < old_capacity; ++i) {
+            if (old_ctrl[i] == detail::kEmpty) continue;
+
+            const Expr* existing_expr = old_slots[i];
+            // WRAP-Expr-1 #911: Expr::hash is Tagged<u64, FamilyB>; .value()
+            // unwraps for Swiss-table rehash (h2_tag + modular probe-base).
+            const std::uint64_t existing_hash_raw = existing_expr->hash.value();
+            int8_t slot_match_tag = detail::h2_tag(existing_hash_raw);
+            size_t probe_base_slot = (existing_hash_raw * detail::group_width()) & slot_mask;
+            size_t probe_iteration = 0;
+
+            while (true) {
+                auto group = detail::CtrlGroup::load(&ctrl_[probe_base_slot]);
+                auto empties = group.match_empty();
+                if (empties) {
+                    size_t insert_slot_index = probe_base_slot + empties.lowest();
+                    ctrl_[insert_slot_index] = slot_match_tag;
+                    slots_[insert_slot_index] = existing_expr;
+                    ++reinserted;
+                    break;
+                }
+                ++probe_iteration;
+                probe_base_slot = (probe_base_slot + probe_iteration * detail::group_width()) & slot_mask;
+            }
+        }
+        CRUCIBLE_POST(0, reinserted == old_count);
+        intern_count_.advance(reinserted);
+        // old_backing.~SwissTableBuffer() frees old alloc via RAII.
+    }
+
+    Arena arena_;
+    // #915 WRAP-ExprPool-1: SwissTableBuffer owns the aligned coupled
+    // ctrl+slots backing as move-only RAII.  ctrl_/slots_ remain raw
+    // projections cached on the hot probe path so SIMD probes keep
+    // their single-load shape.
+    ::crucible::fixy::wrap::SwissTableBuffer<const Expr*> backing_;
+    int8_t* ctrl_;  // Points into backing_ at offset 0.
+    const Expr** slots_;  // Points into backing_ at offset capacity_.
+    Capacity capacity_;  // Total slots (always power of 2, multiple of kGroupWidth)
+    InternCount intern_count_;  // Number of occupied slots
+    std::vector<const char*> symbol_names_;
+
+    // PERF-2: SymbolId → const Expr* parallel to symbol_names_.
+    // After symbol() registers a SymbolId, the (Op::SYMBOL, sid) pair
+    // uniquely identifies the interned Expr — no Swiss-table probe
+    // needed for subsequent lookups by sid.  fast_symbol(sid) reads
+    // this cache directly: ~1.5 ns vs ~6.7 ns for the full symbol()
+    // probe.  Per-symbol cost is one parallel-array entry; symbols
+    // are sparse (typically dozens, not thousands) so the cache stays
+    // cache-line-friendly.
+    std::vector<const Expr*> symbol_exprs_;
+
+    std::array<const Expr*, kIntCacheSize> int_cache_{};
+    const Expr* true_;
+    const Expr* false_;
 };
 
-} // namespace crucible
+}  // namespace crucible

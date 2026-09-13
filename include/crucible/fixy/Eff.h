@@ -121,18 +121,18 @@
 // Zero.  A namespace alias is a pure name-lookup directive; no new
 // symbols, no new instantiations, no new ABI surface.
 
-#include <crucible/effects/Effects.h>        // umbrella: Capabilities,
-                                             //   EffectRow, Computation,
-                                             //   ComputationGraded,
-                                             //   EffectRowLattice,
-                                             //   EffectRowProjection,
-                                             //   OsUniverse
-#include <crucible/effects/Capability.h>     // Capability<E, S>
-#include <crucible/effects/ExecCtx.h>        // ExecCtx + concepts
-#include <crucible/effects/Resources.h>      // 21+ resource tags
-#include <crucible/effects/Concurrent.h>     // ConcurrentRow
-#include <crucible/effects/CtxWrapperLift.h> // HotPath/AllocClass/Residency from ctx
-#include <crucible/effects/FxAliases.h>      // Pure/Tot/Ghost/Div/ST/All rows
+#include <crucible/effects/Effects.h>  // umbrella: Capabilities,
+//   EffectRow, Computation,
+//   ComputationGraded,
+//   EffectRowLattice,
+//   EffectRowProjection,
+//   OsUniverse
+#include <crucible/effects/Capability.h>  // Capability<E, S>
+#include <crucible/effects/ExecCtx.h>  // ExecCtx + concepts
+#include <crucible/effects/Resources.h>  // 21+ resource tags
+#include <crucible/effects/Concurrent.h>  // ConcurrentRow
+#include <crucible/effects/CtxWrapperLift.h>  // HotPath/AllocClass/Residency from ctx
+#include <crucible/effects/FxAliases.h>  // Pure/Tot/Ghost/Div/ST/All rows
 
 #include <type_traits>
 
@@ -149,38 +149,28 @@ namespace eff = ::crucible::effects;
 namespace crucible::fixy::eff_self_test {
 
 // Effect enum identity through the alias.
-static_assert(::crucible::fixy::eff::Effect::Alloc
-           == ::crucible::effects::Effect::Alloc);
-static_assert(::crucible::fixy::eff::Effect::Bg
-           == ::crucible::effects::Effect::Bg);
-static_assert(::crucible::fixy::eff::effect_count
-           == ::crucible::effects::effect_count);
+static_assert(::crucible::fixy::eff::Effect::Alloc == ::crucible::effects::Effect::Alloc);
+static_assert(::crucible::fixy::eff::Effect::Bg == ::crucible::effects::Effect::Bg);
+static_assert(::crucible::fixy::eff::effect_count == ::crucible::effects::effect_count);
 
 // Row template identity through the alias.
-static_assert(std::is_same_v<
-    ::crucible::fixy::eff::Row<::crucible::effects::Effect::Alloc>,
-    ::crucible::effects::Row<::crucible::effects::Effect::Alloc>>,
-    "fixy::eff::Row must BE effects::Row under the namespace alias.");
+static_assert(std::is_same_v<::crucible::fixy::eff::Row<::crucible::effects::Effect::Alloc>,
+                             ::crucible::effects::Row<::crucible::effects::Effect::Alloc>>,
+              "fixy::eff::Row must BE effects::Row under the namespace alias.");
 
 // Subrow concept passes through.
-static_assert(::crucible::fixy::eff::Subrow<
-    ::crucible::fixy::eff::Row<>,
-    ::crucible::fixy::eff::Row<::crucible::effects::Effect::Alloc>>);
+static_assert(::crucible::fixy::eff::Subrow<::crucible::fixy::eff::Row<>,
+                                            ::crucible::fixy::eff::Row<::crucible::effects::Effect::Alloc>>);
 
 // Computation carrier identity through the alias.
-static_assert(std::is_same_v<
-    ::crucible::fixy::eff::Computation<::crucible::fixy::eff::Row<>, int>,
-    ::crucible::effects::Computation<::crucible::effects::Row<>, int>>,
-    "fixy::eff::Computation must BE effects::Computation.");
+static_assert(std::is_same_v<::crucible::fixy::eff::Computation<::crucible::fixy::eff::Row<>, int>,
+                             ::crucible::effects::Computation<::crucible::effects::Row<>, int>>,
+              "fixy::eff::Computation must BE effects::Computation.");
 
 // Capability identity.
-static_assert(std::is_same_v<
-    ::crucible::fixy::eff::Capability<
-        ::crucible::effects::Effect::Alloc,
-        ::crucible::fixy::eff::Bg>,
-    ::crucible::effects::Capability<
-        ::crucible::effects::Effect::Alloc,
-        ::crucible::effects::Bg>>,
+static_assert(
+    std::is_same_v<::crucible::fixy::eff::Capability<::crucible::effects::Effect::Alloc, ::crucible::fixy::eff::Bg>,
+                   ::crucible::effects::Capability<::crucible::effects::Effect::Alloc, ::crucible::effects::Bg>>,
     "fixy::eff::Capability must BE effects::Capability.");
 
 // F* aliases preserved.
@@ -196,7 +186,7 @@ static_assert(::crucible::fixy::eff::IsBgCtx<::crucible::fixy::eff::BgDrainCtx>)
 static_assert(::crucible::fixy::eff::IsFgCtx<::crucible::fixy::eff::HotFgCtx>);
 
 // Context layout invariants preserved (one byte each).
-static_assert(sizeof(::crucible::fixy::eff::Bg)   == 1);
+static_assert(sizeof(::crucible::fixy::eff::Bg) == 1);
 static_assert(sizeof(::crucible::fixy::eff::Init) == 1);
 static_assert(sizeof(::crucible::fixy::eff::Test) == 1);
 
@@ -209,10 +199,10 @@ static_assert(sizeof(::crucible::fixy::eff::Test) == 1);
 // removed from substrate without parallel docstring trim here.
 // Growth (a 24th ResourceKind) auto-tracks without touching this floor.
 static_assert(::crucible::fixy::eff::resource_kind_count >= 23,
-    "fixy::eff::resource_kind_count floor: regressed below 23 — a "
-    "ResourceKind enumerator was removed from effects/Resources.h "
-    "without updating both the colocated ceiling pin AND this floor "
-    "witness.");
+              "fixy::eff::resource_kind_count floor: regressed below 23 — a "
+              "ResourceKind enumerator was removed from effects/Resources.h "
+              "without updating both the colocated ceiling pin AND this floor "
+              "witness.");
 
 // Per-tag identity for every resource::* budget template — proves
 // the namespace alias surfaces every shipped tag (not just a sampled
@@ -220,28 +210,44 @@ static_assert(::crucible::fixy::eff::resource_kind_count >= 23,
 // for the new fixy::eff::resource::*<N> instantiation to resolve.
 // Each tag is instantiated with N=1 as a witness — the structural
 // identity holds independent of N.
-static_assert(std::is_same_v<::crucible::fixy::eff::resource::SmBudget<1>,           ::crucible::effects::resource::SmBudget<1>>);
-static_assert(std::is_same_v<::crucible::fixy::eff::resource::WarpSchedulerSlots<1>, ::crucible::effects::resource::WarpSchedulerSlots<1>>);
-static_assert(std::is_same_v<::crucible::fixy::eff::resource::RegistersPerWarp<1>,   ::crucible::effects::resource::RegistersPerWarp<1>>);
-static_assert(std::is_same_v<::crucible::fixy::eff::resource::SmemBytes<1>,          ::crucible::effects::resource::SmemBytes<1>>);
-static_assert(std::is_same_v<::crucible::fixy::eff::resource::L2Bytes<1>,            ::crucible::effects::resource::L2Bytes<1>>);
-static_assert(std::is_same_v<::crucible::fixy::eff::resource::HbmBytes<1>,           ::crucible::effects::resource::HbmBytes<1>>);
-static_assert(std::is_same_v<::crucible::fixy::eff::resource::HbmBandwidth<1>,       ::crucible::effects::resource::HbmBandwidth<1>>);
-static_assert(std::is_same_v<::crucible::fixy::eff::resource::NvlinkBandwidth<1>,    ::crucible::effects::resource::NvlinkBandwidth<1>>);
-static_assert(std::is_same_v<::crucible::fixy::eff::resource::PcieBandwidth<1>,      ::crucible::effects::resource::PcieBandwidth<1>>);
-static_assert(std::is_same_v<::crucible::fixy::eff::resource::NicQueueBudget<1>,     ::crucible::effects::resource::NicQueueBudget<1>>);
-static_assert(std::is_same_v<::crucible::fixy::eff::resource::NicRingDepth<1>,       ::crucible::effects::resource::NicRingDepth<1>>);
-static_assert(std::is_same_v<::crucible::fixy::eff::resource::NicQp<1>,              ::crucible::effects::resource::NicQp<1>>);
-static_assert(std::is_same_v<::crucible::fixy::eff::resource::NicCq<1>,              ::crucible::effects::resource::NicCq<1>>);
-static_assert(std::is_same_v<::crucible::fixy::eff::resource::NicMr<1>,              ::crucible::effects::resource::NicMr<1>>);
-static_assert(std::is_same_v<::crucible::fixy::eff::resource::SwitchEgressBw<1>,     ::crucible::effects::resource::SwitchEgressBw<1>>);
-static_assert(std::is_same_v<::crucible::fixy::eff::resource::SwitchBufferCells<1>,  ::crucible::effects::resource::SwitchBufferCells<1>>);
-static_assert(std::is_same_v<::crucible::fixy::eff::resource::TcamEntries<1>,        ::crucible::effects::resource::TcamEntries<1>>);
-static_assert(std::is_same_v<::crucible::fixy::eff::resource::CpuCoreBudget<1>,      ::crucible::effects::resource::CpuCoreBudget<1>>);
-static_assert(std::is_same_v<::crucible::fixy::eff::resource::LlcBytes<1>,           ::crucible::effects::resource::LlcBytes<1>>);
-static_assert(std::is_same_v<::crucible::fixy::eff::resource::PowerWatts<1>,         ::crucible::effects::resource::PowerWatts<1>>);
-static_assert(std::is_same_v<::crucible::fixy::eff::resource::ThermalCelsius<1>,     ::crucible::effects::resource::ThermalCelsius<1>>);
-static_assert(std::is_same_v<::crucible::fixy::eff::resource::RackPowerKw<1>,        ::crucible::effects::resource::RackPowerKw<1>>);
-static_assert(std::is_same_v<::crucible::fixy::eff::resource::CarbonGramsPerKwh<1>,  ::crucible::effects::resource::CarbonGramsPerKwh<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::SmBudget<1>, ::crucible::effects::resource::SmBudget<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::WarpSchedulerSlots<1>,
+                             ::crucible::effects::resource::WarpSchedulerSlots<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::RegistersPerWarp<1>,
+                             ::crucible::effects::resource::RegistersPerWarp<1>>);
+static_assert(
+    std::is_same_v<::crucible::fixy::eff::resource::SmemBytes<1>, ::crucible::effects::resource::SmemBytes<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::L2Bytes<1>, ::crucible::effects::resource::L2Bytes<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::HbmBytes<1>, ::crucible::effects::resource::HbmBytes<1>>);
+static_assert(
+    std::is_same_v<::crucible::fixy::eff::resource::HbmBandwidth<1>, ::crucible::effects::resource::HbmBandwidth<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::NvlinkBandwidth<1>,
+                             ::crucible::effects::resource::NvlinkBandwidth<1>>);
+static_assert(
+    std::is_same_v<::crucible::fixy::eff::resource::PcieBandwidth<1>, ::crucible::effects::resource::PcieBandwidth<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::NicQueueBudget<1>,
+                             ::crucible::effects::resource::NicQueueBudget<1>>);
+static_assert(
+    std::is_same_v<::crucible::fixy::eff::resource::NicRingDepth<1>, ::crucible::effects::resource::NicRingDepth<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::NicQp<1>, ::crucible::effects::resource::NicQp<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::NicCq<1>, ::crucible::effects::resource::NicCq<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::NicMr<1>, ::crucible::effects::resource::NicMr<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::SwitchEgressBw<1>,
+                             ::crucible::effects::resource::SwitchEgressBw<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::SwitchBufferCells<1>,
+                             ::crucible::effects::resource::SwitchBufferCells<1>>);
+static_assert(
+    std::is_same_v<::crucible::fixy::eff::resource::TcamEntries<1>, ::crucible::effects::resource::TcamEntries<1>>);
+static_assert(
+    std::is_same_v<::crucible::fixy::eff::resource::CpuCoreBudget<1>, ::crucible::effects::resource::CpuCoreBudget<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::LlcBytes<1>, ::crucible::effects::resource::LlcBytes<1>>);
+static_assert(
+    std::is_same_v<::crucible::fixy::eff::resource::PowerWatts<1>, ::crucible::effects::resource::PowerWatts<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::ThermalCelsius<1>,
+                             ::crucible::effects::resource::ThermalCelsius<1>>);
+static_assert(
+    std::is_same_v<::crucible::fixy::eff::resource::RackPowerKw<1>, ::crucible::effects::resource::RackPowerKw<1>>);
+static_assert(std::is_same_v<::crucible::fixy::eff::resource::CarbonGramsPerKwh<1>,
+                             ::crucible::effects::resource::CarbonGramsPerKwh<1>>);
 
 }  // namespace crucible::fixy::eff_self_test

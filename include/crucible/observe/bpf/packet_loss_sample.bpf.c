@@ -9,8 +9,7 @@
 #include "common.h"
 
 SEC("tracepoint/tcp/tcp_retransmit_skb")
-int crucible_observe_packet_loss_sample(void *ctx)
-{
+int crucible_observe_packet_loss_sample(void* ctx) {
     (void)ctx;
     return 0;
 }

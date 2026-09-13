@@ -36,35 +36,30 @@ struct is_recipe_spec_impl : std::false_type {
 };
 
 template <typename U>
-struct is_recipe_spec_impl<::crucible::safety::RecipeSpec<U>>
-    : std::true_type
-{
+struct is_recipe_spec_impl<::crucible::safety::RecipeSpec<U>> : std::true_type {
     using value_type = U;
 };
 
 }  // namespace detail
 
 template <typename T>
-inline constexpr bool is_recipe_spec_v =
-    detail::is_recipe_spec_impl<std::remove_cvref_t<T>>::value;
+inline constexpr bool is_recipe_spec_v = detail::is_recipe_spec_impl<std::remove_cvref_t<T>>::value;
 
 template <typename T>
 concept IsRecipeSpec = is_recipe_spec_v<T>;
 
 template <typename T>
     requires is_recipe_spec_v<T>
-using recipe_spec_value_t =
-    typename detail::is_recipe_spec_impl<
-        std::remove_cvref_t<T>>::value_type;
+using recipe_spec_value_t = typename detail::is_recipe_spec_impl<std::remove_cvref_t<T>>::value_type;
 
 // ── Self-test ─────────────────────────────────────────────────────
 
 namespace detail::is_recipe_spec_self_test {
 
-using RS_int      = ::crucible::safety::RecipeSpec<int>;
-using RS_double   = ::crucible::safety::RecipeSpec<double>;
-using RS_char     = ::crucible::safety::RecipeSpec<char>;
-using RS_uint64   = ::crucible::safety::RecipeSpec<std::uint64_t>;
+using RS_int = ::crucible::safety::RecipeSpec<int>;
+using RS_double = ::crucible::safety::RecipeSpec<double>;
+using RS_char = ::crucible::safety::RecipeSpec<char>;
+using RS_uint64 = ::crucible::safety::RecipeSpec<std::uint64_t>;
 
 static_assert(is_recipe_spec_v<RS_int>);
 static_assert(is_recipe_spec_v<RS_double>);
@@ -90,13 +85,13 @@ static_assert(!is_recipe_spec_v<RS_int*>);
 static_assert(IsRecipeSpec<RS_int>);
 static_assert(!IsRecipeSpec<int>);
 
-static_assert(std::is_same_v<recipe_spec_value_t<RS_int>,    int>);
+static_assert(std::is_same_v<recipe_spec_value_t<RS_int>, int>);
 static_assert(std::is_same_v<recipe_spec_value_t<RS_double>, double>);
 static_assert(std::is_same_v<recipe_spec_value_t<RS_uint64>, std::uint64_t>);
 
 // Layout invariant — SMALLEST product wrapper grade in the D30 batch.
 // 2-byte runtime grade pair (1 byte Tolerance + 1 byte RecipeFamily).
-static_assert(sizeof(RS_int)    >= sizeof(int)    + 2);
+static_assert(sizeof(RS_int) >= sizeof(int) + 2);
 static_assert(sizeof(RS_double) >= sizeof(double) + 2);
 
 }  // namespace detail::is_recipe_spec_self_test

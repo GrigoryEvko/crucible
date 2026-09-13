@@ -32,32 +32,28 @@ struct is_cpu_pinned_impl : std::false_type {
 };
 
 template <AffinityMask Mask, PinningPosture Posture, typename U>
-struct is_cpu_pinned_impl<::crucible::safety::CpuPinned<Mask, Posture, U>>
-    : std::true_type {
+struct is_cpu_pinned_impl<::crucible::safety::CpuPinned<Mask, Posture, U>> : std::true_type {
     using value_type = U;
-    static constexpr AffinityMask   mask    = Mask;
+    static constexpr AffinityMask mask = Mask;
     static constexpr PinningPosture posture = Posture;
-    static constexpr bool           has_pin = true;
+    static constexpr bool has_pin = true;
 };
 
 }  // namespace detail
 
 template <typename T>
-inline constexpr bool is_cpu_pinned_v =
-    detail::is_cpu_pinned_impl<std::remove_cvref_t<T>>::value;
+inline constexpr bool is_cpu_pinned_v = detail::is_cpu_pinned_impl<std::remove_cvref_t<T>>::value;
 
 template <typename T>
 concept IsCpuPinned = is_cpu_pinned_v<T>;
 
 template <typename T>
     requires is_cpu_pinned_v<T>
-using cpu_pinned_value_t =
-    typename detail::is_cpu_pinned_impl<std::remove_cvref_t<T>>::value_type;
+using cpu_pinned_value_t = typename detail::is_cpu_pinned_impl<std::remove_cvref_t<T>>::value_type;
 
 template <typename T>
     requires is_cpu_pinned_v<T>
-inline constexpr PinningPosture cpu_pinned_posture_v =
-    detail::is_cpu_pinned_impl<std::remove_cvref_t<T>>::posture;
+inline constexpr PinningPosture cpu_pinned_posture_v = detail::is_cpu_pinned_impl<std::remove_cvref_t<T>>::posture;
 
 // ── Self-test ─────────────────────────────────────────────────────
 
@@ -67,7 +63,7 @@ inline constexpr AffinityMask kC0 = AffinityMask::single(0);
 inline constexpr AffinityMask kC3 = AffinityMask::single(3);
 
 using P_int = ::crucible::safety::CpuPinned<kC0, PinningPosture::PinnedExplicit, int>;
-using A_int = ::crucible::safety::CpuPinned<kC0, PinningPosture::PinnedAuto,     int>;
+using A_int = ::crucible::safety::CpuPinned<kC0, PinningPosture::PinnedAuto, int>;
 using P_dbl = ::crucible::safety::CpuPinned<kC3, PinningPosture::PinnedExplicit, double>;
 
 static_assert(is_cpu_pinned_v<P_int>);
@@ -79,7 +75,10 @@ static_assert(!is_cpu_pinned_v<int>);
 static_assert(!is_cpu_pinned_v<void>);
 static_assert(!is_cpu_pinned_v<P_int*>);
 
-struct LookalikePin { int value; PinningPosture posture; };
+struct LookalikePin {
+    int value;
+    PinningPosture posture;
+};
 static_assert(!is_cpu_pinned_v<LookalikePin>);
 
 static_assert(IsCpuPinned<P_int>);

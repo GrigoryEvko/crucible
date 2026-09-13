@@ -167,12 +167,10 @@ concept ScopedEnum = std::is_scoped_enum_v<E>;
 template <ScopedEnum EnumType>
 class [[nodiscard]] Bits {
 public:
-    using enum_type       = EnumType;
+    using enum_type = EnumType;
     using underlying_type = std::underlying_type_t<EnumType>;
 
-    static constexpr std::string_view wrapper_kind() noexcept {
-        return "structural::Bits";
-    }
+    static constexpr std::string_view wrapper_kind() noexcept { return "structural::Bits"; }
 
 private:
     underlying_type bits_{0};
@@ -206,45 +204,33 @@ public:
     // word from disk, or when initializing from a precomputed mask.
     // Named factory makes the escape grep-discoverable
     // (`grep "Bits<.*>::from_raw"`) so reviewers can audit every site.
-    [[nodiscard]] static constexpr Bits from_raw(underlying_type b) noexcept {
-        return Bits{from_raw_tag_t{}, b};
-    }
+    [[nodiscard]] static constexpr Bits from_raw(underlying_type b) noexcept { return Bits{from_raw_tag_t{}, b}; }
 
     // Defaulted copy/move/destroy — value type.
-    constexpr Bits(Bits const&)            = default;
-    constexpr Bits(Bits&&)                 = default;
+    constexpr Bits(Bits const&) = default;
+    constexpr Bits(Bits&&) = default;
     constexpr Bits& operator=(Bits const&) = default;
-    constexpr Bits& operator=(Bits&&)      = default;
-    ~Bits()                                = default;
+    constexpr Bits& operator=(Bits&&) = default;
+    ~Bits() = default;
 
     // ── Mutation ────────────────────────────────────────────────────
-    constexpr void set(EnumType f) noexcept {
-        bits_ = static_cast<underlying_type>(bits_ | to_underlying(f));
-    }
+    constexpr void set(EnumType f) noexcept { bits_ = static_cast<underlying_type>(bits_ | to_underlying(f)); }
     constexpr void unset(EnumType f) noexcept {
-        bits_ = static_cast<underlying_type>(
-            bits_ & static_cast<underlying_type>(~to_underlying(f)));
+        bits_ = static_cast<underlying_type>(bits_ & static_cast<underlying_type>(~to_underlying(f)));
     }
-    constexpr void toggle(EnumType f) noexcept {
-        bits_ = static_cast<underlying_type>(bits_ ^ to_underlying(f));
-    }
+    constexpr void toggle(EnumType f) noexcept { bits_ = static_cast<underlying_type>(bits_ ^ to_underlying(f)); }
     constexpr void clear() noexcept { bits_ = 0; }
 
     // ── Query ───────────────────────────────────────────────────────
     [[nodiscard]] constexpr bool test(EnumType f) const noexcept {
         return (bits_ & to_underlying(f)) != underlying_type{0};
     }
-    [[nodiscard]] constexpr bool none() const noexcept {
-        return bits_ == underlying_type{0};
-    }
-    [[nodiscard]] constexpr bool any() const noexcept {
-        return bits_ != underlying_type{0};
-    }
+    [[nodiscard]] constexpr bool none() const noexcept { return bits_ == underlying_type{0}; }
+    [[nodiscard]] constexpr bool any() const noexcept { return bits_ != underlying_type{0}; }
     [[nodiscard]] constexpr int popcount() const noexcept {
         // std::popcount selects the appropriate POPCNT (x86) / CNT
         // (AArch64) instruction per ISA at -O3.
-        return std::popcount(
-            static_cast<std::make_unsigned_t<underlying_type>>(bits_));
+        return std::popcount(static_cast<std::make_unsigned_t<underlying_type>>(bits_));
     }
 
     // ── Explicit raw escape (audit-discoverable) ────────────────────
@@ -260,33 +246,25 @@ public:
     // operators are class-scoped friends, so different template
     // instantiations are different overload sets).
     [[nodiscard]] friend constexpr Bits operator|(Bits a, Bits b) noexcept {
-        return Bits{from_raw_tag_t{},
-                    static_cast<underlying_type>(a.bits_ | b.bits_)};
+        return Bits{from_raw_tag_t{}, static_cast<underlying_type>(a.bits_ | b.bits_)};
     }
     [[nodiscard]] friend constexpr Bits operator&(Bits a, Bits b) noexcept {
-        return Bits{from_raw_tag_t{},
-                    static_cast<underlying_type>(a.bits_ & b.bits_)};
+        return Bits{from_raw_tag_t{}, static_cast<underlying_type>(a.bits_ & b.bits_)};
     }
     [[nodiscard]] friend constexpr Bits operator^(Bits a, Bits b) noexcept {
-        return Bits{from_raw_tag_t{},
-                    static_cast<underlying_type>(a.bits_ ^ b.bits_)};
+        return Bits{from_raw_tag_t{}, static_cast<underlying_type>(a.bits_ ^ b.bits_)};
     }
     [[nodiscard]] friend constexpr Bits operator~(Bits a) noexcept {
-        return Bits{from_raw_tag_t{},
-                    static_cast<underlying_type>(~a.bits_)};
+        return Bits{from_raw_tag_t{}, static_cast<underlying_type>(~a.bits_)};
     }
 
     // ── EnumType-mixed forms (convenience) ─────────────────────────
     [[nodiscard]] friend constexpr Bits operator|(Bits a, EnumType e) noexcept {
-        return Bits{from_raw_tag_t{},
-                    static_cast<underlying_type>(a.bits_ | to_underlying(e))};
+        return Bits{from_raw_tag_t{}, static_cast<underlying_type>(a.bits_ | to_underlying(e))};
     }
-    [[nodiscard]] friend constexpr Bits operator|(EnumType e, Bits b) noexcept {
-        return b | e;
-    }
+    [[nodiscard]] friend constexpr Bits operator|(EnumType e, Bits b) noexcept { return b | e; }
     [[nodiscard]] friend constexpr Bits operator&(Bits a, EnumType e) noexcept {
-        return Bits{from_raw_tag_t{},
-                    static_cast<underlying_type>(a.bits_ & to_underlying(e))};
+        return Bits{from_raw_tag_t{}, static_cast<underlying_type>(a.bits_ & to_underlying(e))};
     }
 
     // ── Compound assignment ────────────────────────────────────────
@@ -314,14 +292,27 @@ public:
 
 namespace detail::bits_layout {
 
-enum class TestU8  : std::uint8_t  { A = 0x01, B = 0x02, C = 0x04, D = 0x08 };
-enum class TestU16 : std::uint16_t { X = 0x0001, Y = 0x0100 };
-enum class TestU32 : std::uint32_t { K = 0x00010000U, L = 0x80000000U };
-enum class TestU64 : std::uint64_t { M = 0x0000000100000000ULL };
+enum class TestU8 : std::uint8_t {
+    A = 0x01,
+    B = 0x02,
+    C = 0x04,
+    D = 0x08
+};
+enum class TestU16 : std::uint16_t {
+    X = 0x0001,
+    Y = 0x0100
+};
+enum class TestU32 : std::uint32_t {
+    K = 0x00010000U,
+    L = 0x80000000U
+};
+enum class TestU64 : std::uint64_t {
+    M = 0x0000000100000000ULL
+};
 
 }  // namespace detail::bits_layout
 
-static_assert(sizeof(Bits<detail::bits_layout::TestU8>)  == sizeof(std::uint8_t));
+static_assert(sizeof(Bits<detail::bits_layout::TestU8>) == sizeof(std::uint8_t));
 static_assert(sizeof(Bits<detail::bits_layout::TestU16>) == sizeof(std::uint16_t));
 static_assert(sizeof(Bits<detail::bits_layout::TestU32>) == sizeof(std::uint32_t));
 static_assert(sizeof(Bits<detail::bits_layout::TestU64>) == sizeof(std::uint64_t));
@@ -391,7 +382,7 @@ static_assert(mutate_works());
 // Equality — same-instantiation only, order-independent semantics.
 [[nodiscard]] consteval bool equality_works() noexcept {
     B x{F::A, F::B};
-    B y{F::B, F::A};   // initializer-list order does NOT matter
+    B y{F::B, F::A};  // initializer-list order does NOT matter
     B z{F::A, F::C};
     return (x == y) && !(x == z);
 }
@@ -413,7 +404,7 @@ static_assert(bitwise_works());
 
 // operator~ over the underlying — full-width complement.
 [[nodiscard]] consteval bool complement_works() noexcept {
-    B a{F::A};                     // 0x01
+    B a{F::A};  // 0x01
     B na = ~a;
     return na.raw() == static_cast<std::uint8_t>(~static_cast<std::uint8_t>(0x01));
 }
@@ -447,40 +438,42 @@ static_assert(enum_or_bits());
 
 // Different enum types do NOT compose via |.
 template <class B1, class B2>
-concept can_or = requires(B1 a, B2 b) { { a | b }; };
+concept can_or = requires(B1 a, B2 b) {
+    { a | b };
+};
 
 using OtherB = Bits<::crucible::safety::detail::bits_layout::TestU16>;
-static_assert(!can_or<B, OtherB>,
-    "Bits<E1> | Bits<E2> MUST be a compile error.  Different enum-typed "
-    "bitfields are different template instantiations and the friend "
-    "operators only see same-instantiation pairs.  Without this rejection, "
-    "two unrelated flag enums could be silently mixed at the call site.");
+static_assert(!can_or<B, OtherB>, "Bits<E1> | Bits<E2> MUST be a compile error.  Different enum-typed "
+                                  "bitfields are different template instantiations and the friend "
+                                  "operators only see same-instantiation pairs.  Without this rejection, "
+                                  "two unrelated flag enums could be silently mixed at the call site.");
 
 // Cross-instantiation equality is also rejected.
 template <class B1, class B2>
-concept can_eq = requires(B1 a, B2 b) { { a == b } -> std::convertible_to<bool>; };
+concept can_eq = requires(B1 a, B2 b) {
+    { a == b } -> std::convertible_to<bool>;
+};
 static_assert(!can_eq<B, OtherB>);
 
 // Integer literal ctor must NOT be reachable.
 template <class W, class Lit>
 concept can_construct_from = requires { W{std::declval<Lit>()}; };
 
-static_assert(!can_construct_from<B, int>,
-    "Bits<E>{42} (raw integer) MUST NOT compile — only "
-    "initializer_list<E> ctor is the public one; from_raw is the only "
-    "raw escape.  Without this rejection, raw integers leak into the "
-    "typed surface.");
+static_assert(!can_construct_from<B, int>, "Bits<E>{42} (raw integer) MUST NOT compile — only "
+                                           "initializer_list<E> ctor is the public one; from_raw is the only "
+                                           "raw escape.  Without this rejection, raw integers leak into the "
+                                           "typed surface.");
 
 static_assert(!can_construct_from<B, std::uint8_t>,
-    "Bits<E>{static_cast<uint8_t>(0x05)} MUST NOT compile — even the "
-    "exact underlying type cannot enter via brace-init.  Only the "
-    "explicit static factory from_raw() admits underlying-type values.");
+              "Bits<E>{static_cast<uint8_t>(0x05)} MUST NOT compile — even the "
+              "exact underlying type cannot enter via brace-init.  Only the "
+              "explicit static factory from_raw() admits underlying-type values.");
 
 // Construction from a different scoped-enum type also rejected
 // (initializer-list element type does NOT auto-convert).
 static_assert(!can_construct_from<B, ::crucible::safety::detail::bits_layout::TestU16>,
-    "Bits<TestU8>{TestU16::X} MUST NOT compile — initializer_list "
-    "element type is fixed to the wrapper's enum_type.");
+              "Bits<TestU8>{TestU16::X} MUST NOT compile — initializer_list "
+              "element type is fixed to the wrapper's enum_type.");
 
 // raw() escape works.
 [[nodiscard]] consteval bool raw_escape_works() noexcept {
@@ -549,7 +542,7 @@ inline void runtime_smoke_test() {
     B e{F::A};
     B ne = ~e;
     if (ne.test(F::A)) std::abort();
-    if (ne.popcount() != 7) std::abort();   // 8 bits - 1 set
+    if (ne.popcount() != 7) std::abort();  // 8 bits - 1 set
 
     // raw() escape.
     if (B{F::A, F::C}.raw() != 0x05) std::abort();

@@ -67,8 +67,7 @@ struct is_owned_mmap_impl<OwnedMmap<Tag, Prot, Share>> : std::true_type {};
 }  // namespace detail
 
 template <typename T>
-inline constexpr bool is_owned_mmap_v =
-    detail::is_owned_mmap_impl<std::remove_cv_t<T>>::value;
+inline constexpr bool is_owned_mmap_v = detail::is_owned_mmap_impl<std::remove_cv_t<T>>::value;
 
 // ── Concept: IsOwnedMmap<T> ──────────────────────────────────────────
 //
@@ -82,28 +81,22 @@ concept IsOwnedMmap = is_owned_mmap_v<T>;
 // ── Self-test — pin the trait at compile time ────────────────────────
 
 namespace self_test {
-struct ProbeTag    {};
-struct ProbeProt   {};
-struct ProbeShare  {};
+struct ProbeTag {};
+struct ProbeProt {};
+struct ProbeShare {};
 using ProbeOwnedMmap = OwnedMmap<ProbeTag, ProbeProt, ProbeShare>;
 
-static_assert(is_owned_mmap_v<ProbeOwnedMmap>,
-              "OwnedMmap<...> must satisfy is_owned_mmap_v");
-static_assert(is_owned_mmap_v<const ProbeOwnedMmap>,
-              "const-qualified OwnedMmap<...> must satisfy is_owned_mmap_v");
-static_assert(!is_owned_mmap_v<int>,
-              "int must NOT satisfy is_owned_mmap_v");
-static_assert(!is_owned_mmap_v<void*>,
-              "raw void* must NOT satisfy is_owned_mmap_v");
+static_assert(is_owned_mmap_v<ProbeOwnedMmap>, "OwnedMmap<...> must satisfy is_owned_mmap_v");
+static_assert(is_owned_mmap_v<const ProbeOwnedMmap>, "const-qualified OwnedMmap<...> must satisfy is_owned_mmap_v");
+static_assert(!is_owned_mmap_v<int>, "int must NOT satisfy is_owned_mmap_v");
+static_assert(!is_owned_mmap_v<void*>, "raw void* must NOT satisfy is_owned_mmap_v");
 
-static_assert(IsOwnedMmap<ProbeOwnedMmap>,
-              "OwnedMmap<...> must satisfy IsOwnedMmap concept");
-static_assert(!IsOwnedMmap<int>,
-              "int must NOT satisfy IsOwnedMmap concept");
+static_assert(IsOwnedMmap<ProbeOwnedMmap>, "OwnedMmap<...> must satisfy IsOwnedMmap concept");
+static_assert(!IsOwnedMmap<int>, "int must NOT satisfy IsOwnedMmap concept");
 
 // Member typedef access — guaranteed by IsOwnedMmap satisfaction.
-static_assert(std::is_same_v<ProbeOwnedMmap::tag_type,   ProbeTag>);
-static_assert(std::is_same_v<ProbeOwnedMmap::prot_type,  ProbeProt>);
+static_assert(std::is_same_v<ProbeOwnedMmap::tag_type, ProbeTag>);
+static_assert(std::is_same_v<ProbeOwnedMmap::prot_type, ProbeProt>);
 static_assert(std::is_same_v<ProbeOwnedMmap::share_type, ProbeShare>);
 }  // namespace self_test
 

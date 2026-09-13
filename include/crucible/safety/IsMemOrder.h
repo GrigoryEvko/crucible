@@ -18,9 +18,7 @@ struct is_mem_order_impl : std::false_type {
 };
 
 template <MemOrderTag_v Tag, typename U>
-struct is_mem_order_impl<::crucible::safety::MemOrder<Tag, U>>
-    : std::true_type
-{
+struct is_mem_order_impl<::crucible::safety::MemOrder<Tag, U>> : std::true_type {
     using value_type = U;
     static constexpr MemOrderTag_v tag = Tag;
 };
@@ -28,27 +26,24 @@ struct is_mem_order_impl<::crucible::safety::MemOrder<Tag, U>>
 }  // namespace detail
 
 template <typename T>
-inline constexpr bool is_mem_order_v =
-    detail::is_mem_order_impl<std::remove_cvref_t<T>>::value;
+inline constexpr bool is_mem_order_v = detail::is_mem_order_impl<std::remove_cvref_t<T>>::value;
 
 template <typename T>
 concept IsMemOrder = is_mem_order_v<T>;
 
 template <typename T>
     requires is_mem_order_v<T>
-using mem_order_value_t =
-    typename detail::is_mem_order_impl<std::remove_cvref_t<T>>::value_type;
+using mem_order_value_t = typename detail::is_mem_order_impl<std::remove_cvref_t<T>>::value_type;
 
 template <typename T>
     requires is_mem_order_v<T>
-inline constexpr MemOrderTag_v mem_order_tag_v =
-    detail::is_mem_order_impl<std::remove_cvref_t<T>>::tag;
+inline constexpr MemOrderTag_v mem_order_tag_v = detail::is_mem_order_impl<std::remove_cvref_t<T>>::tag;
 
 namespace detail::is_mem_order_self_test {
 
 using MO_int_relaxed = ::crucible::safety::MemOrder<MemOrderTag_v::Relaxed, int>;
-using MO_int_seqcst  = ::crucible::safety::MemOrder<MemOrderTag_v::SeqCst,  int>;
-using MO_dbl_acqrel  = ::crucible::safety::MemOrder<MemOrderTag_v::AcqRel,  double>;
+using MO_int_seqcst = ::crucible::safety::MemOrder<MemOrderTag_v::SeqCst, int>;
+using MO_dbl_acqrel = ::crucible::safety::MemOrder<MemOrderTag_v::AcqRel, double>;
 
 static_assert(is_mem_order_v<MO_int_relaxed>);
 static_assert(is_mem_order_v<MO_int_seqcst>);
@@ -60,7 +55,10 @@ static_assert(!is_mem_order_v<int>);
 static_assert(!is_mem_order_v<int*>);
 static_assert(!is_mem_order_v<MO_int_relaxed*>);
 
-struct LookalikeMemOrder { int v; MemOrderTag_v t; };
+struct LookalikeMemOrder {
+    int v;
+    MemOrderTag_v t;
+};
 static_assert(!is_mem_order_v<LookalikeMemOrder>);
 
 static_assert(IsMemOrder<MO_int_relaxed>);
@@ -69,7 +67,7 @@ static_assert(!IsMemOrder<int>);
 static_assert(std::is_same_v<mem_order_value_t<MO_int_relaxed>, int>);
 static_assert(std::is_same_v<mem_order_value_t<MO_dbl_acqrel>, double>);
 static_assert(mem_order_tag_v<MO_int_relaxed> == MemOrderTag_v::Relaxed);
-static_assert(mem_order_tag_v<MO_int_seqcst>  == MemOrderTag_v::SeqCst);
+static_assert(mem_order_tag_v<MO_int_seqcst> == MemOrderTag_v::SeqCst);
 
 }  // namespace detail::is_mem_order_self_test
 

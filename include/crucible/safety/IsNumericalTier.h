@@ -77,9 +77,7 @@ struct is_numerical_tier_impl : std::false_type {
 };
 
 template <Tolerance T_at, typename U>
-struct is_numerical_tier_impl<::crucible::safety::NumericalTier<T_at, U>>
-    : std::true_type
-{
+struct is_numerical_tier_impl<::crucible::safety::NumericalTier<T_at, U>> : std::true_type {
     using value_type = U;
     static constexpr Tolerance tier = T_at;
     static constexpr bool has_tier = true;
@@ -92,8 +90,7 @@ struct is_numerical_tier_impl<::crucible::safety::NumericalTier<T_at, U>>
 // ═════════════════════════════════════════════════════════════════════
 
 template <typename T>
-inline constexpr bool is_numerical_tier_v =
-    detail::is_numerical_tier_impl<std::remove_cvref_t<T>>::value;
+inline constexpr bool is_numerical_tier_v = detail::is_numerical_tier_impl<std::remove_cvref_t<T>>::value;
 
 template <typename T>
 concept IsNumericalTier = is_numerical_tier_v<T>;
@@ -104,14 +101,11 @@ concept IsNumericalTier = is_numerical_tier_v<T>;
 
 template <typename T>
     requires is_numerical_tier_v<T>
-using numerical_tier_value_t =
-    typename detail::is_numerical_tier_impl<
-        std::remove_cvref_t<T>>::value_type;
+using numerical_tier_value_t = typename detail::is_numerical_tier_impl<std::remove_cvref_t<T>>::value_type;
 
 template <typename T>
     requires is_numerical_tier_v<T>
-inline constexpr Tolerance numerical_tier_v =
-    detail::is_numerical_tier_impl<std::remove_cvref_t<T>>::tier;
+inline constexpr Tolerance numerical_tier_v = detail::is_numerical_tier_impl<std::remove_cvref_t<T>>::tier;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Self-test block ────────────────────────────────────────────────
@@ -123,12 +117,9 @@ inline constexpr Tolerance numerical_tier_v =
 
 namespace detail::is_numerical_tier_self_test {
 
-using NT_int_bitexact =
-    ::crucible::safety::NumericalTier<Tolerance::BITEXACT, int>;
-using NT_double_relaxed =
-    ::crucible::safety::NumericalTier<Tolerance::RELAXED, double>;
-using NT_int_fp32 =
-    ::crucible::safety::NumericalTier<Tolerance::ULP_FP32, int>;
+using NT_int_bitexact = ::crucible::safety::NumericalTier<Tolerance::BITEXACT, int>;
+using NT_double_relaxed = ::crucible::safety::NumericalTier<Tolerance::RELAXED, double>;
+using NT_int_fp32 = ::crucible::safety::NumericalTier<Tolerance::ULP_FP32, int>;
 
 // ── Positive cases ────────────────────────────────────────────────
 
@@ -151,7 +142,10 @@ static_assert(!is_numerical_tier_v<int&>);
 static_assert(!is_numerical_tier_v<void>);
 
 // A struct that has the same shape but is not NumericalTier is rejected.
-struct LookalikeNumericalTier { int value; Tolerance tier; };
+struct LookalikeNumericalTier {
+    int value;
+    Tolerance tier;
+};
 static_assert(!is_numerical_tier_v<LookalikeNumericalTier>);
 
 // Pointer-to-NumericalTier is NOT a NumericalTier.
@@ -166,29 +160,22 @@ static_assert(!IsNumericalTier<int>);
 // ── Element type / tier extraction ────────────────────────────────
 
 static_assert(std::is_same_v<numerical_tier_value_t<NT_int_bitexact>, int>);
-static_assert(std::is_same_v<
-    numerical_tier_value_t<NT_double_relaxed>, double>);
+static_assert(std::is_same_v<numerical_tier_value_t<NT_double_relaxed>, double>);
 
 // Cv-ref stripping — value_type unwraps consistently.
-static_assert(std::is_same_v<
-    numerical_tier_value_t<NT_int_bitexact const&>, int>);
-static_assert(std::is_same_v<
-    numerical_tier_value_t<NT_int_bitexact&&>, int>);
+static_assert(std::is_same_v<numerical_tier_value_t<NT_int_bitexact const&>, int>);
+static_assert(std::is_same_v<numerical_tier_value_t<NT_int_bitexact&&>, int>);
 
 // Tier extraction — pinned NTTP recovered.
 static_assert(numerical_tier_v<NT_int_bitexact> == Tolerance::BITEXACT);
 static_assert(numerical_tier_v<NT_double_relaxed> == Tolerance::RELAXED);
 static_assert(numerical_tier_v<NT_int_fp32> == Tolerance::ULP_FP32);
-static_assert(numerical_tier_v<NT_int_bitexact const&>
-              == Tolerance::BITEXACT);
+static_assert(numerical_tier_v<NT_int_bitexact const&> == Tolerance::BITEXACT);
 
 // Distinct (T_at, U) → distinct trait specializations; element types
 // agree only when they actually do.
-static_assert(std::is_same_v<
-    numerical_tier_value_t<NT_int_bitexact>,
-    numerical_tier_value_t<NT_int_fp32>>);
-static_assert(numerical_tier_v<NT_int_bitexact>
-              != numerical_tier_v<NT_int_fp32>);
+static_assert(std::is_same_v<numerical_tier_value_t<NT_int_bitexact>, numerical_tier_value_t<NT_int_fp32>>);
+static_assert(numerical_tier_v<NT_int_bitexact> != numerical_tier_v<NT_int_fp32>);
 
 }  // namespace detail::is_numerical_tier_self_test
 
@@ -205,8 +192,7 @@ inline bool is_numerical_tier_smoke_test() noexcept {
         ok = ok && is_numerical_tier_v<NT_int_bitexact>;
         ok = ok && !is_numerical_tier_v<int>;
         ok = ok && IsNumericalTier<NT_int_bitexact&&>;
-        ok = ok && (numerical_tier_v<NT_int_bitexact>
-                    == Tolerance::BITEXACT);
+        ok = ok && (numerical_tier_v<NT_int_bitexact> == Tolerance::BITEXACT);
     }
     return ok;
 }

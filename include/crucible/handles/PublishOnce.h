@@ -103,23 +103,20 @@ namespace crucible::safety {
 // publish() hot path: the failure branch is `[[unlikely]]` and
 // outlined per CLAUDE.md §VIII cold-path-outlining mandate.
 
-[[noreturn]] CRUCIBLE_COLD
-inline void publish_once_double_publish_abort_() noexcept {
+[[noreturn]] CRUCIBLE_COLD inline void publish_once_double_publish_abort_() noexcept {
     using Tag = ::crucible::safety::diag::PublishOnceDoublePublish;
     std::fprintf(stderr,
-        "crucible: fatal: %.*s\n"
-        "  description: %.*s\n"
-        "  remediation: %.*s\n",
-        static_cast<int>(Tag::name.size()),        Tag::name.data(),
-        static_cast<int>(Tag::description.size()), Tag::description.data(),
-        static_cast<int>(Tag::remediation.size()), Tag::remediation.data());
+                 "crucible: fatal: %.*s\n"
+                 "  description: %.*s\n"
+                 "  remediation: %.*s\n",
+                 static_cast<int>(Tag::name.size()), Tag::name.data(), static_cast<int>(Tag::description.size()),
+                 Tag::description.data(), static_cast<int>(Tag::remediation.size()), Tag::remediation.data());
     std::abort();
 }
 
 template <typename T>
 class CRUCIBLE_OWNER PublishOnce {
-    static_assert(std::is_pointer_v<T*> || std::is_same_v<T, T>,
-                  "PublishOnce<T> is for pointer handoff — use T*");
+    static_assert(std::is_pointer_v<T*> || std::is_same_v<T, T>, "PublishOnce<T> is for pointer handoff — use T*");
 
     // Atomic pointer; default-constructed nullptr encodes "not yet
     // published".  release / acquire ordering gives the publisher
@@ -131,10 +128,11 @@ public:
     constexpr PublishOnce() noexcept = default;
     ~PublishOnce() = default;
 
-    PublishOnce(const PublishOnce&)            = delete("one publisher, one slot — copies would duplicate channel state");
-    PublishOnce& operator=(const PublishOnce&) = delete("one publisher, one slot — copies would duplicate channel state");
-    PublishOnce(PublishOnce&&)                 = delete("atomic is the channel identity");
-    PublishOnce& operator=(PublishOnce&&)      = delete("atomic is the channel identity");
+    PublishOnce(const PublishOnce&) = delete("one publisher, one slot — copies would duplicate channel state");
+    PublishOnce&
+    operator=(const PublishOnce&) = delete("one publisher, one slot — copies would duplicate channel state");
+    PublishOnce(PublishOnce&&) = delete("atomic is the channel identity");
+    PublishOnce& operator=(PublishOnce&&) = delete("atomic is the channel identity");
 
     // Publish.  Caller must hold the sole right to publish on this
     // channel (enforced by convention, since the publisher is the
@@ -154,19 +152,15 @@ public:
     // gate independent of the contract-evaluation semantic; the cost
     // (one predicted-true branch on the CAS bool plus an outlined
     // CRUCIBLE_COLD helper) is below noise in the success path.
-    CRUCIBLE_INLINE void publish(T* ptr) noexcept
-        pre (ptr != nullptr)
-    {
+    CRUCIBLE_INLINE void publish(T* ptr) noexcept pre(ptr != nullptr) {
         T* expected = nullptr;
         // compare_exchange with release on success, relaxed on
         // failure: failure means "already published", which the
         // abort path below converts into a termination.  The relaxed
         // failure load is enough — we don't synchronize with the
         // other publisher, we just detect it.
-        const bool claimed = slot_.compare_exchange_strong(
-            expected, ptr,
-            std::memory_order_release,
-            std::memory_order_relaxed);
+        const bool claimed =
+            slot_.compare_exchange_strong(expected, ptr, std::memory_order_release, std::memory_order_relaxed);
         if (!claimed) [[unlikely]] {
             publish_once_double_publish_abort_();
         }
@@ -199,9 +193,7 @@ public:
     // before publish.  Non-nullptr return synchronizes with the
     // publisher's store-release — the published object's contents
     // are visible to this thread.
-    [[nodiscard]] CRUCIBLE_INLINE T* observe() const noexcept {
-        return slot_.load(std::memory_order_acquire);
-    }
+    [[nodiscard]] CRUCIBLE_INLINE T* observe() const noexcept { return slot_.load(std::memory_order_acquire); }
 
     // Relaxed: fast-path diagnostic check.  A `true` return still
     // requires a matching observe() for synchronization if the
@@ -219,7 +211,7 @@ public:
 // at O(instances) one-time invalidations, and dense embedders
 // (RegionNode is layout-locked to 80B at MerkleDag.h:770) rely on
 // this footprint.  See the class doc-block for the differentiation.
-static_assert(sizeof(PublishOnce<int>)  == sizeof(std::atomic<int*>));
+static_assert(sizeof(PublishOnce<int>) == sizeof(std::atomic<int*>));
 static_assert(sizeof(PublishOnce<void>) == sizeof(std::atomic<void*>));
 
 template <typename T>
@@ -234,24 +226,16 @@ public:
     constexpr PublishSlot() noexcept = default;
     ~PublishSlot() = default;
 
-    PublishSlot(const PublishSlot&)            = delete("publication slot identity cannot be copied");
+    PublishSlot(const PublishSlot&) = delete("publication slot identity cannot be copied");
     PublishSlot& operator=(const PublishSlot&) = delete("publication slot identity cannot be copied");
-    PublishSlot(PublishSlot&&)                 = delete("atomic slot is the channel identity");
-    PublishSlot& operator=(PublishSlot&&)      = delete("atomic slot is the channel identity");
+    PublishSlot(PublishSlot&&) = delete("atomic slot is the channel identity");
+    PublishSlot& operator=(PublishSlot&&) = delete("atomic slot is the channel identity");
 
-    CRUCIBLE_INLINE void publish(T* ptr) noexcept
-        pre (ptr != nullptr)
-    {
-        slot_.store(ptr, std::memory_order_release);
-    }
+    CRUCIBLE_INLINE void publish(T* ptr) noexcept pre(ptr != nullptr) { slot_.store(ptr, std::memory_order_release); }
 
-    [[nodiscard]] CRUCIBLE_INLINE T* observe() const noexcept {
-        return slot_.load(std::memory_order_acquire);
-    }
+    [[nodiscard]] CRUCIBLE_INLINE T* observe() const noexcept { return slot_.load(std::memory_order_acquire); }
 
-    [[nodiscard]] CRUCIBLE_INLINE T* consume() noexcept {
-        return slot_.exchange(nullptr, std::memory_order_acq_rel);
-    }
+    [[nodiscard]] CRUCIBLE_INLINE T* consume() noexcept { return slot_.exchange(nullptr, std::memory_order_acq_rel); }
 
     [[nodiscard]] CRUCIBLE_INLINE bool has_pending() const noexcept {
         return slot_.load(std::memory_order_relaxed) != nullptr;
@@ -261,13 +245,12 @@ public:
 // PublishSlot occupies a full cache line by construction (fixy-A1-002).
 // alignof claim is the structural guarantee; sizeof follows from the
 // standard rule that sizeof is a multiple of alignof.
-static_assert(alignof(PublishSlot<int>)  >= 64,
-              "PublishSlot must be cache-line aligned: repeated publish/"
-              "exchange traffic invalidates the consumer's cached line "
-              "every iteration, so the slot must NOT share a line with "
-              "unrelated embedder state (CLAUDE.md §IX).");
+static_assert(alignof(PublishSlot<int>) >= 64, "PublishSlot must be cache-line aligned: repeated publish/"
+                                               "exchange traffic invalidates the consumer's cached line "
+                                               "every iteration, so the slot must NOT share a line with "
+                                               "unrelated embedder state (CLAUDE.md §IX).");
 static_assert(alignof(PublishSlot<void>) >= 64);
-static_assert(sizeof(PublishSlot<int>)   >= 64);
-static_assert(sizeof(PublishSlot<void>)  >= 64);
+static_assert(sizeof(PublishSlot<int>) >= 64);
+static_assert(sizeof(PublishSlot<void>) >= 64);
 
-} // namespace crucible::safety
+}  // namespace crucible::safety

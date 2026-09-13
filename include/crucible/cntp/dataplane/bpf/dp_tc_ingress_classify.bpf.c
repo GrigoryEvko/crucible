@@ -13,8 +13,7 @@
 #endif
 
 SEC("tc")
-int crucible_dp_tc_ingress_classify(struct __sk_buff *skb)
-{
+int crucible_dp_tc_ingress_classify(struct __sk_buff* skb) {
     (void)skb;
     return TC_ACT_OK;
 }

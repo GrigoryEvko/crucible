@@ -95,7 +95,7 @@ namespace crucible::safety::proto {
 struct SessionTagId {
     uint64_t value = 0;
     constexpr auto operator<=>(const SessionTagId&) const noexcept = default;
-    constexpr bool operator==(const SessionTagId&)  const noexcept = default;
+    constexpr bool operator==(const SessionTagId&) const noexcept = default;
 };
 
 // Identifier for a participant role — typically derived from the
@@ -105,7 +105,7 @@ struct SessionTagId {
 struct RoleTagId {
     uint64_t value = 0;
     constexpr auto operator<=>(const RoleTagId&) const noexcept = default;
-    constexpr bool operator==(const RoleTagId&)  const noexcept = default;
+    constexpr bool operator==(const RoleTagId&) const noexcept = default;
 };
 
 // Hash of the payload's compile-time type — typically derived from a
@@ -115,7 +115,7 @@ struct RoleTagId {
 struct SchemaHash {
     uint64_t value = 0;
     constexpr auto operator<=>(const SchemaHash&) const noexcept = default;
-    constexpr bool operator==(const SchemaHash&)  const noexcept = default;
+    constexpr bool operator==(const SchemaHash&) const noexcept = default;
 };
 
 // Hash of the payload value — opt-in.  The recording wrapper defaults
@@ -125,7 +125,7 @@ struct SchemaHash {
 struct PayloadHash {
     uint64_t value = 0;
     constexpr auto operator<=>(const PayloadHash&) const noexcept = default;
-    constexpr bool operator==(const PayloadHash&)  const noexcept = default;
+    constexpr bool operator==(const PayloadHash&) const noexcept = default;
 };
 
 // Hash of the recovery path chosen after a Stop event.  Zero is the
@@ -133,7 +133,7 @@ struct PayloadHash {
 struct RecoveryPathHash {
     uint64_t value = 0;
     constexpr auto operator<=>(const RecoveryPathHash&) const noexcept = default;
-    constexpr bool operator==(const RecoveryPathHash&)  const noexcept = default;
+    constexpr bool operator==(const RecoveryPathHash&) const noexcept = default;
 };
 
 // Identifier for an application-level checkpoint.  The event log does
@@ -142,7 +142,7 @@ struct RecoveryPathHash {
 struct CheckpointId {
     uint64_t value = 0;
     constexpr auto operator<=>(const CheckpointId&) const noexcept = default;
-    constexpr bool operator==(const CheckpointId&)  const noexcept = default;
+    constexpr bool operator==(const CheckpointId&) const noexcept = default;
 };
 
 // Hash of the permission set transferred with a delegated session.
@@ -151,7 +151,7 @@ struct CheckpointId {
 struct InnerPermSetHash {
     uint64_t value = 0;
     constexpr auto operator<=>(const InnerPermSetHash&) const noexcept = default;
-    constexpr bool operator==(const InnerPermSetHash&)  const noexcept = default;
+    constexpr bool operator==(const InnerPermSetHash&) const noexcept = default;
 };
 
 // Monotonic per-log step counter.  Strictly non-decreasing within a
@@ -160,7 +160,7 @@ struct InnerPermSetHash {
 struct StepId {
     uint64_t value = 0;
     constexpr auto operator<=>(const StepId&) const noexcept = default;
-    constexpr bool operator==(const StepId&)  const noexcept = default;
+    constexpr bool operator==(const StepId&) const noexcept = default;
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -170,25 +170,25 @@ struct StepId {
 namespace event_detail {
 
 enum class SessionOp : uint8_t {
-    Send   = 1,   // Send<T, K>::send() — payload sent to peer
-    Recv   = 2,   // Recv<T, K>::recv() — payload received from peer
-    Select = 3,   // Select<Bs...>::select<I>() — branch chosen by self
-    Offer  = 4,   // Offer<Bs...>::pick<I>() — branch chosen by peer
-    Close  = 5,   // End::close() — terminal, session completed
-    Detach = 6,   // SessionHandle::detach(reason) — abandoned at non-terminal
-    Stop   = 7,   // Stop_g<C>::close() — crash-stop terminal observed
-    Checkpoint_Base     = 8,  // CheckpointedSession::base()
+    Send = 1,  // Send<T, K>::send() — payload sent to peer
+    Recv = 2,  // Recv<T, K>::recv() — payload received from peer
+    Select = 3,  // Select<Bs...>::select<I>() — branch chosen by self
+    Offer = 4,  // Offer<Bs...>::pick<I>() — branch chosen by peer
+    Close = 5,  // End::close() — terminal, session completed
+    Detach = 6,  // SessionHandle::detach(reason) — abandoned at non-terminal
+    Stop = 7,  // Stop_g<C>::close() — crash-stop terminal observed
+    Checkpoint_Base = 8,  // CheckpointedSession::base()
     Checkpoint_Rollback = 9,  // CheckpointedSession::rollback()
-    Delegate = 10, // Delegate<T, K>::delegate()
-    Accept   = 11, // Accept<T, K>::accept()
-    StorePending   = 12, // Cipher store observed before durable commit
-    StoreCommitted = 13, // Cipher HEAD/log commit
-    LoadFromTier   = 14, // Cipher load from hot/warm/cold tier
-    TierPromote    = 15, // Cipher tier promotion boundary
-    TierDemote     = 16, // Cipher tier demotion boundary
-    TierRestore    = 17, // Cipher cold restore into warm/hot tier
-    EpochedDelegate = 18, // EpochedDelegate<T, K, MinEpoch, MinGen>::delegate()
-    EpochedAccept   = 19, // EpochedAccept<T, K, MinEpoch, MinGen>::accept()
+    Delegate = 10,  // Delegate<T, K>::delegate()
+    Accept = 11,  // Accept<T, K>::accept()
+    StorePending = 12,  // Cipher store observed before durable commit
+    StoreCommitted = 13,  // Cipher HEAD/log commit
+    LoadFromTier = 14,  // Cipher load from hot/warm/cold tier
+    TierPromote = 15,  // Cipher tier promotion boundary
+    TierDemote = 16,  // Cipher tier demotion boundary
+    TierRestore = 17,  // Cipher cold restore into warm/hot tier
+    EpochedDelegate = 18,  // EpochedDelegate<T, K, MinEpoch, MinGen>::delegate()
+    EpochedAccept = 19,  // EpochedAccept<T, K, MinEpoch, MinGen>::accept()
 };
 
 }  // namespace event_detail
@@ -197,26 +197,46 @@ using SessionOp = event_detail::SessionOp;
 
 [[nodiscard]] constexpr std::string_view session_op_name(SessionOp op) noexcept {
     switch (op) {
-        case SessionOp::Send:   return "Send";
-        case SessionOp::Recv:   return "Recv";
-        case SessionOp::Select: return "Select";
-        case SessionOp::Offer:  return "Offer";
-        case SessionOp::Close:  return "Close";
-        case SessionOp::Detach: return "Detach";
-        case SessionOp::Stop:   return "Stop";
-        case SessionOp::Checkpoint_Base:     return "Checkpoint_Base";
-        case SessionOp::Checkpoint_Rollback: return "Checkpoint_Rollback";
-        case SessionOp::Delegate: return "Delegate";
-        case SessionOp::Accept:   return "Accept";
-        case SessionOp::StorePending:   return "StorePending";
-        case SessionOp::StoreCommitted: return "StoreCommitted";
-        case SessionOp::LoadFromTier:   return "LoadFromTier";
-        case SessionOp::TierPromote:    return "TierPromote";
-        case SessionOp::TierDemote:     return "TierDemote";
-        case SessionOp::TierRestore:    return "TierRestore";
-        case SessionOp::EpochedDelegate: return "EpochedDelegate";
-        case SessionOp::EpochedAccept:   return "EpochedAccept";
-        default:                return "?";
+        case SessionOp::Send:
+            return "Send";
+        case SessionOp::Recv:
+            return "Recv";
+        case SessionOp::Select:
+            return "Select";
+        case SessionOp::Offer:
+            return "Offer";
+        case SessionOp::Close:
+            return "Close";
+        case SessionOp::Detach:
+            return "Detach";
+        case SessionOp::Stop:
+            return "Stop";
+        case SessionOp::Checkpoint_Base:
+            return "Checkpoint_Base";
+        case SessionOp::Checkpoint_Rollback:
+            return "Checkpoint_Rollback";
+        case SessionOp::Delegate:
+            return "Delegate";
+        case SessionOp::Accept:
+            return "Accept";
+        case SessionOp::StorePending:
+            return "StorePending";
+        case SessionOp::StoreCommitted:
+            return "StoreCommitted";
+        case SessionOp::LoadFromTier:
+            return "LoadFromTier";
+        case SessionOp::TierPromote:
+            return "TierPromote";
+        case SessionOp::TierDemote:
+            return "TierDemote";
+        case SessionOp::TierRestore:
+            return "TierRestore";
+        case SessionOp::EpochedDelegate:
+            return "EpochedDelegate";
+        case SessionOp::EpochedAccept:
+            return "EpochedAccept";
+        default:
+            return "?";
     }
 }
 
@@ -249,17 +269,17 @@ using SessionOp = event_detail::SessionOp;
 // Reason classifier for SessionOp::Stop.  Kept as a one-byte enum so
 // the fixed-size SessionEvent layout survives the Stop extension.
 enum class StopReasonKind : uint8_t {
-    Unknown     = 0,
+    Unknown = 0,
     PeerCrashed = 1,
-    LocalAbort  = 2,
-    Recovery    = 3,
+    LocalAbort = 2,
+    Recovery = 3,
 };
 
 // Choice classifier for CheckpointedSession events.  Stored in the
 // same one-byte control slot as StopReasonKind; the SessionOp selects
 // which interpretation is valid.
 enum class CheckpointChoice : uint8_t {
-    Base     = 1,
+    Base = 1,
     Rollback = 2,
 };
 
@@ -271,12 +291,12 @@ enum class CheckpointChoice : uint8_t {
 // the matching `payload_schema` lane (default_schema_hash<Reason>)
 // still identifies the exact type for offline audit.
 enum class DetachReasonKind : uint8_t {
-    Unknown                    = 0,
-    InfiniteLoopProtocol       = 1,  // detach_reason::InfiniteLoopProtocol
-    TransportClosedOutOfBand   = 2,  // detach_reason::TransportClosedOutOfBand
-    TestInstrumentation        = 3,  // detach_reason::TestInstrumentation
-    AsyncCancellation          = 4,  // detach_reason::AsyncCancellation
-    OwnerLifetimeBoundEarlyExit = 5, // detach_reason::OwnerLifetimeBoundEarlyExit
+    Unknown = 0,
+    InfiniteLoopProtocol = 1,  // detach_reason::InfiniteLoopProtocol
+    TransportClosedOutOfBand = 2,  // detach_reason::TransportClosedOutOfBand
+    TestInstrumentation = 3,  // detach_reason::TestInstrumentation
+    AsyncCancellation = 4,  // detach_reason::AsyncCancellation
+    OwnerLifetimeBoundEarlyExit = 5,  // detach_reason::OwnerLifetimeBoundEarlyExit
 };
 
 // Cipher uses the same SessionEvent record.  These payload structs
@@ -284,9 +304,9 @@ enum class DetachReasonKind : uint8_t {
 // one-byte control lanes; they do not add storage to SessionEvent.
 struct CipherEventPayload {
     ::crucible::ContentHash content_hash{};
-    uint64_t                timestamp_ns = 0;
-    uint8_t                 from_tier = 0;
-    uint8_t                 to_tier = 0;
+    uint64_t timestamp_ns = 0;
+    uint8_t from_tier = 0;
+    uint8_t to_tier = 0;
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -333,18 +353,18 @@ struct CipherEventPayload {
 // adding storage or runtime dispatch.
 
 struct SessionEvent {
-    StepId       step_id              {};
-    SessionTagId session              {};
-    RoleTagId    from_role            {};
-    RoleTagId    to_role              {};
-    SchemaHash   payload_schema       {};
-    PayloadHash  payload_hash         {};
-    uint64_t     epoch_threshold      = 0; // Epoched*: MinEpoch NTTP; else 0
-    uint64_t     generation_threshold = 0; // Epoched*: MinGen NTTP;   else 0
-    SessionOp    op                   = SessionOp::Send;
-    uint8_t      branch_index         = 0; // Select/Offer: chosen index; else 0
-    uint8_t      reason_kind          = 0; // Stop: StopReasonKind; else 0
-    uint8_t      pad[5]{};                 // explicit zero-init padding
+    StepId step_id{};
+    SessionTagId session{};
+    RoleTagId from_role{};
+    RoleTagId to_role{};
+    SchemaHash payload_schema{};
+    PayloadHash payload_hash{};
+    uint64_t epoch_threshold = 0;  // Epoched*: MinEpoch NTTP; else 0
+    uint64_t generation_threshold = 0;  // Epoched*: MinGen NTTP;   else 0
+    SessionOp op = SessionOp::Send;
+    uint8_t branch_index = 0;  // Select/Offer: chosen index; else 0
+    uint8_t reason_kind = 0;  // Stop: StopReasonKind; else 0
+    uint8_t pad[5]{};  // explicit zero-init padding
 
     // fixy-A2-008: `crash_class` defaults to Abort to preserve source
     // compatibility with pre-A2-008 callers (the original four-arg
@@ -355,56 +375,44 @@ struct SessionEvent {
     // BSYZ22 §3 for why losing the tier silently breaks recovery
     // semantics (NoThrow rejects CrashWatchedHandle outright per
     // CrashTransport.h while Abort/Throw require unwind-aware paths).
-    [[nodiscard]] static constexpr SessionEvent stop(
-        RoleTagId self,
-        RoleTagId peer,
-        RoleTagId stopped_peer,
-        StopReasonKind reason = StopReasonKind::PeerCrashed,
-        RecoveryPathHash recovery_path = {},
-        ::crucible::algebra::lattices::CrashClass crash_class =
-            ::crucible::algebra::lattices::CrashClass::Abort) noexcept
-    {
+    [[nodiscard]] static constexpr SessionEvent stop(RoleTagId self, RoleTagId peer, RoleTagId stopped_peer,
+                                                     StopReasonKind reason = StopReasonKind::PeerCrashed,
+                                                     RecoveryPathHash recovery_path = {},
+                                                     ::crucible::algebra::lattices::CrashClass crash_class =
+                                                         ::crucible::algebra::lattices::CrashClass::Abort) noexcept {
         return SessionEvent{
-            .from_role      = self,
-            .to_role        = peer,
+            .from_role = self,
+            .to_role = peer,
             .payload_schema = SchemaHash{stopped_peer.value},
-            .payload_hash   = PayloadHash{recovery_path.value},
-            .op             = SessionOp::Stop,
-            .reason_kind    = static_cast<uint8_t>(reason),
-            .pad            = { static_cast<uint8_t>(crash_class),
-                                0, 0, 0, 0 },
+            .payload_hash = PayloadHash{recovery_path.value},
+            .op = SessionOp::Stop,
+            .reason_kind = static_cast<uint8_t>(reason),
+            .pad = {static_cast<uint8_t>(crash_class), 0, 0, 0, 0},
         };
     }
 
-    [[nodiscard]] static constexpr SessionEvent checkpoint_base(
-        RoleTagId self,
-        RoleTagId peer,
-        CheckpointId checkpoint,
-        ::crucible::ContentHash saved_state = {}) noexcept
-    {
+    [[nodiscard]] static constexpr SessionEvent checkpoint_base(RoleTagId self, RoleTagId peer, CheckpointId checkpoint,
+                                                                ::crucible::ContentHash saved_state = {}) noexcept {
         return SessionEvent{
-            .from_role      = self,
-            .to_role        = peer,
+            .from_role = self,
+            .to_role = peer,
             .payload_schema = SchemaHash{checkpoint.value},
-            .payload_hash   = PayloadHash{saved_state.raw()},
-            .op             = SessionOp::Checkpoint_Base,
-            .reason_kind    = static_cast<uint8_t>(CheckpointChoice::Base),
+            .payload_hash = PayloadHash{saved_state.raw()},
+            .op = SessionOp::Checkpoint_Base,
+            .reason_kind = static_cast<uint8_t>(CheckpointChoice::Base),
         };
     }
 
-    [[nodiscard]] static constexpr SessionEvent checkpoint_rollback(
-        RoleTagId self,
-        RoleTagId peer,
-        CheckpointId checkpoint,
-        ::crucible::ContentHash saved_state = {}) noexcept
-    {
+    [[nodiscard]] static constexpr SessionEvent checkpoint_rollback(RoleTagId self, RoleTagId peer,
+                                                                    CheckpointId checkpoint,
+                                                                    ::crucible::ContentHash saved_state = {}) noexcept {
         return SessionEvent{
-            .from_role      = self,
-            .to_role        = peer,
+            .from_role = self,
+            .to_role = peer,
             .payload_schema = SchemaHash{checkpoint.value},
-            .payload_hash   = PayloadHash{saved_state.raw()},
-            .op             = SessionOp::Checkpoint_Rollback,
-            .reason_kind    = static_cast<uint8_t>(CheckpointChoice::Rollback),
+            .payload_hash = PayloadHash{saved_state.raw()},
+            .op = SessionOp::Checkpoint_Rollback,
+            .reason_kind = static_cast<uint8_t>(CheckpointChoice::Rollback),
         };
     }
 
@@ -432,48 +440,38 @@ struct SessionEvent {
     // role information through (similar to RecordingSessionHandle's
     // self_role_/peer_role_ fields), call sites can supply real
     // RoleTagId values.
-    [[nodiscard]] static constexpr SessionEvent detach(
-        RoleTagId self,
-        RoleTagId peer,
-        DetachReasonKind reason_kind,
-        SchemaHash reason_schema = {}) noexcept
-    {
+    [[nodiscard]] static constexpr SessionEvent detach(RoleTagId self, RoleTagId peer, DetachReasonKind reason_kind,
+                                                       SchemaHash reason_schema = {}) noexcept {
         return SessionEvent{
-            .from_role      = self,
-            .to_role        = peer,
+            .from_role = self,
+            .to_role = peer,
             .payload_schema = reason_schema,
-            .op             = SessionOp::Detach,
-            .reason_kind    = static_cast<uint8_t>(reason_kind),
+            .op = SessionOp::Detach,
+            .reason_kind = static_cast<uint8_t>(reason_kind),
         };
     }
 
-    [[nodiscard]] static constexpr SessionEvent delegate_handoff(
-        RoleTagId sender,
-        RoleTagId recipient,
-        ::crucible::ContentHash delegated_proto_hash,
-        InnerPermSetHash inner_perm_set = {}) noexcept
-    {
+    [[nodiscard]] static constexpr SessionEvent delegate_handoff(RoleTagId sender, RoleTagId recipient,
+                                                                 ::crucible::ContentHash delegated_proto_hash,
+                                                                 InnerPermSetHash inner_perm_set = {}) noexcept {
         return SessionEvent{
-            .from_role      = sender,
-            .to_role        = recipient,
+            .from_role = sender,
+            .to_role = recipient,
             .payload_schema = SchemaHash{delegated_proto_hash.raw()},
-            .payload_hash   = PayloadHash{inner_perm_set.value},
-            .op             = SessionOp::Delegate,
+            .payload_hash = PayloadHash{inner_perm_set.value},
+            .op = SessionOp::Delegate,
         };
     }
 
-    [[nodiscard]] static constexpr SessionEvent accept_handoff(
-        RoleTagId recipient,
-        RoleTagId sender,
-        ::crucible::ContentHash accepted_proto_hash,
-        InnerPermSetHash inner_perm_set = {}) noexcept
-    {
+    [[nodiscard]] static constexpr SessionEvent accept_handoff(RoleTagId recipient, RoleTagId sender,
+                                                               ::crucible::ContentHash accepted_proto_hash,
+                                                               InnerPermSetHash inner_perm_set = {}) noexcept {
         return SessionEvent{
-            .from_role      = sender,
-            .to_role        = recipient,
+            .from_role = sender,
+            .to_role = recipient,
             .payload_schema = SchemaHash{accepted_proto_hash.raw()},
-            .payload_hash   = PayloadHash{inner_perm_set.value},
-            .op             = SessionOp::Accept,
+            .payload_hash = PayloadHash{inner_perm_set.value},
+            .op = SessionOp::Accept,
         };
     }
 
@@ -483,128 +481,88 @@ struct SessionEvent {
     // replay reconstructs them losslessly — replay can re-validate
     // `session_epoch_threshold_valid_v` against the live Cipher epoch
     // chain without consulting the original source TU.
-    [[nodiscard]] static constexpr SessionEvent epoched_delegate_handoff(
-        RoleTagId sender,
-        RoleTagId recipient,
-        ::crucible::ContentHash delegated_proto_hash,
-        std::uint64_t min_epoch,
-        std::uint64_t min_generation,
-        InnerPermSetHash inner_perm_set = {}) noexcept
-    {
+    [[nodiscard]] static constexpr SessionEvent
+    epoched_delegate_handoff(RoleTagId sender, RoleTagId recipient, ::crucible::ContentHash delegated_proto_hash,
+                             std::uint64_t min_epoch, std::uint64_t min_generation,
+                             InnerPermSetHash inner_perm_set = {}) noexcept {
         return SessionEvent{
-            .from_role            = sender,
-            .to_role              = recipient,
-            .payload_schema       = SchemaHash{delegated_proto_hash.raw()},
-            .payload_hash         = PayloadHash{inner_perm_set.value},
-            .epoch_threshold      = min_epoch,
+            .from_role = sender,
+            .to_role = recipient,
+            .payload_schema = SchemaHash{delegated_proto_hash.raw()},
+            .payload_hash = PayloadHash{inner_perm_set.value},
+            .epoch_threshold = min_epoch,
             .generation_threshold = min_generation,
-            .op                   = SessionOp::EpochedDelegate,
+            .op = SessionOp::EpochedDelegate,
         };
     }
 
     // fixy-A2-005: symmetric peer-side accept of an EpochedDelegate.
-    [[nodiscard]] static constexpr SessionEvent epoched_accept_handoff(
-        RoleTagId recipient,
-        RoleTagId sender,
-        ::crucible::ContentHash accepted_proto_hash,
-        std::uint64_t min_epoch,
-        std::uint64_t min_generation,
-        InnerPermSetHash inner_perm_set = {}) noexcept
-    {
+    [[nodiscard]] static constexpr SessionEvent epoched_accept_handoff(RoleTagId recipient, RoleTagId sender,
+                                                                       ::crucible::ContentHash accepted_proto_hash,
+                                                                       std::uint64_t min_epoch,
+                                                                       std::uint64_t min_generation,
+                                                                       InnerPermSetHash inner_perm_set = {}) noexcept {
         return SessionEvent{
-            .from_role            = sender,
-            .to_role              = recipient,
-            .payload_schema       = SchemaHash{accepted_proto_hash.raw()},
-            .payload_hash         = PayloadHash{inner_perm_set.value},
-            .epoch_threshold      = min_epoch,
+            .from_role = sender,
+            .to_role = recipient,
+            .payload_schema = SchemaHash{accepted_proto_hash.raw()},
+            .payload_hash = PayloadHash{inner_perm_set.value},
+            .epoch_threshold = min_epoch,
             .generation_threshold = min_generation,
-            .op                   = SessionOp::EpochedAccept,
+            .op = SessionOp::EpochedAccept,
         };
     }
 
-    [[nodiscard]] static constexpr SessionEvent cipher_event(
-        SessionOp op,
-        StepId step,
-        ::crucible::ContentHash content_hash,
-        uint64_t timestamp_ns,
-        uint8_t from_tier = 0,
-        uint8_t to_tier = 0) noexcept
-    {
+    [[nodiscard]] static constexpr SessionEvent cipher_event(SessionOp op, StepId step,
+                                                             ::crucible::ContentHash content_hash,
+                                                             uint64_t timestamp_ns, uint8_t from_tier = 0,
+                                                             uint8_t to_tier = 0) noexcept {
         return SessionEvent{
-            .step_id        = step,
-            .session        = SessionTagId{0},
+            .step_id = step,
+            .session = SessionTagId{0},
             .payload_schema = SchemaHash{timestamp_ns},
-            .payload_hash   = PayloadHash{content_hash.raw()},
-            .op             = op,
-            .branch_index   = from_tier,
-            .reason_kind    = to_tier,
+            .payload_hash = PayloadHash{content_hash.raw()},
+            .op = op,
+            .branch_index = from_tier,
+            .reason_kind = to_tier,
         };
     }
 
-    [[nodiscard]] static constexpr SessionEvent cipher_store_pending(
-        StepId step,
-        ::crucible::ContentHash content_hash,
-        uint64_t timestamp_ns = 0) noexcept
-    {
-        return cipher_event(SessionOp::StorePending, step, content_hash,
-                            timestamp_ns);
+    [[nodiscard]] static constexpr SessionEvent cipher_store_pending(StepId step, ::crucible::ContentHash content_hash,
+                                                                     uint64_t timestamp_ns = 0) noexcept {
+        return cipher_event(SessionOp::StorePending, step, content_hash, timestamp_ns);
     }
 
-    [[nodiscard]] static constexpr SessionEvent cipher_store_committed(
-        StepId step,
-        ::crucible::ContentHash content_hash,
-        uint64_t timestamp_ns = 0) noexcept
-    {
-        return cipher_event(SessionOp::StoreCommitted, step, content_hash,
-                            timestamp_ns);
+    [[nodiscard]] static constexpr SessionEvent
+    cipher_store_committed(StepId step, ::crucible::ContentHash content_hash, uint64_t timestamp_ns = 0) noexcept {
+        return cipher_event(SessionOp::StoreCommitted, step, content_hash, timestamp_ns);
     }
 
-    [[nodiscard]] static constexpr SessionEvent cipher_load_from_tier(
-        StepId step,
-        ::crucible::ContentHash content_hash,
-        uint8_t from_tier,
-        uint64_t timestamp_ns = 0) noexcept
-    {
-        return cipher_event(SessionOp::LoadFromTier, step, content_hash,
-                            timestamp_ns, from_tier, from_tier);
+    [[nodiscard]] static constexpr SessionEvent cipher_load_from_tier(StepId step, ::crucible::ContentHash content_hash,
+                                                                      uint8_t from_tier,
+                                                                      uint64_t timestamp_ns = 0) noexcept {
+        return cipher_event(SessionOp::LoadFromTier, step, content_hash, timestamp_ns, from_tier, from_tier);
     }
 
-    [[nodiscard]] static constexpr SessionEvent cipher_tier_promote(
-        StepId step,
-        ::crucible::ContentHash content_hash,
-        uint8_t from_tier,
-        uint8_t to_tier,
-        uint64_t timestamp_ns = 0) noexcept
-    {
-        return cipher_event(SessionOp::TierPromote, step, content_hash,
-                            timestamp_ns, from_tier, to_tier);
+    [[nodiscard]] static constexpr SessionEvent cipher_tier_promote(StepId step, ::crucible::ContentHash content_hash,
+                                                                    uint8_t from_tier, uint8_t to_tier,
+                                                                    uint64_t timestamp_ns = 0) noexcept {
+        return cipher_event(SessionOp::TierPromote, step, content_hash, timestamp_ns, from_tier, to_tier);
     }
 
-    [[nodiscard]] static constexpr SessionEvent cipher_tier_demote(
-        StepId step,
-        ::crucible::ContentHash content_hash,
-        uint8_t from_tier,
-        uint8_t to_tier,
-        uint64_t timestamp_ns = 0) noexcept
-    {
-        return cipher_event(SessionOp::TierDemote, step, content_hash,
-                            timestamp_ns, from_tier, to_tier);
+    [[nodiscard]] static constexpr SessionEvent cipher_tier_demote(StepId step, ::crucible::ContentHash content_hash,
+                                                                   uint8_t from_tier, uint8_t to_tier,
+                                                                   uint64_t timestamp_ns = 0) noexcept {
+        return cipher_event(SessionOp::TierDemote, step, content_hash, timestamp_ns, from_tier, to_tier);
     }
 
-    [[nodiscard]] static constexpr SessionEvent cipher_tier_restore(
-        StepId step,
-        ::crucible::ContentHash content_hash,
-        uint8_t from_tier,
-        uint8_t to_tier,
-        uint64_t timestamp_ns = 0) noexcept
-    {
-        return cipher_event(SessionOp::TierRestore, step, content_hash,
-                            timestamp_ns, from_tier, to_tier);
+    [[nodiscard]] static constexpr SessionEvent cipher_tier_restore(StepId step, ::crucible::ContentHash content_hash,
+                                                                    uint8_t from_tier, uint8_t to_tier,
+                                                                    uint64_t timestamp_ns = 0) noexcept {
+        return cipher_event(SessionOp::TierRestore, step, content_hash, timestamp_ns, from_tier, to_tier);
     }
 
-    [[nodiscard]] constexpr RoleTagId stop_peer_tag() const noexcept {
-        return RoleTagId{payload_schema.value};
-    }
+    [[nodiscard]] constexpr RoleTagId stop_peer_tag() const noexcept { return RoleTagId{payload_schema.value}; }
 
     [[nodiscard]] constexpr StopReasonKind stop_reason_kind() const noexcept {
         return static_cast<StopReasonKind>(reason_kind);
@@ -618,36 +576,27 @@ struct SessionEvent {
     // tier preserved in pad[0].  Replay consults `op == Stop` first;
     // for non-Stop events the byte is zero-initialised (= Abort) and
     // the accessor is not meaningful.
-    [[nodiscard]] constexpr ::crucible::algebra::lattices::CrashClass
-    stop_crash_class() const noexcept {
+    [[nodiscard]] constexpr ::crucible::algebra::lattices::CrashClass stop_crash_class() const noexcept {
         return static_cast<::crucible::algebra::lattices::CrashClass>(pad[0]);
     }
 
-    [[nodiscard]] constexpr CheckpointId checkpoint_id() const noexcept {
-        return CheckpointId{payload_schema.value};
-    }
+    [[nodiscard]] constexpr CheckpointId checkpoint_id() const noexcept { return CheckpointId{payload_schema.value}; }
 
     [[nodiscard]] constexpr CheckpointChoice checkpoint_choice() const noexcept {
         return static_cast<CheckpointChoice>(reason_kind);
     }
 
-    [[nodiscard]] constexpr ::crucible::ContentHash
-    checkpoint_saved_state_content_hash() const noexcept {
+    [[nodiscard]] constexpr ::crucible::ContentHash checkpoint_saved_state_content_hash() const noexcept {
         return ::crucible::ContentHash::from_raw(payload_hash.value);
     }
 
-    [[nodiscard]] constexpr ::crucible::ContentHash
-    delegated_proto_hash() const noexcept {
+    [[nodiscard]] constexpr ::crucible::ContentHash delegated_proto_hash() const noexcept {
         return ::crucible::ContentHash::from_raw(payload_schema.value);
     }
 
-    [[nodiscard]] constexpr RoleTagId delegate_recipient_role_tag() const noexcept {
-        return to_role;
-    }
+    [[nodiscard]] constexpr RoleTagId delegate_recipient_role_tag() const noexcept { return to_role; }
 
-    [[nodiscard]] constexpr RoleTagId accept_sender_role_tag() const noexcept {
-        return from_role;
-    }
+    [[nodiscard]] constexpr RoleTagId accept_sender_role_tag() const noexcept { return from_role; }
 
     [[nodiscard]] constexpr InnerPermSetHash inner_perm_set_hash() const noexcept {
         return InnerPermSetHash{payload_hash.value};
@@ -658,38 +607,23 @@ struct SessionEvent {
     // return 0 on plain Delegate/Accept (and on every non-Epoched op)
     // because the lanes are zero-initialised — replay code must consult
     // `op` first when threshold semantics matter.
-    [[nodiscard]] constexpr std::uint64_t epoched_min_epoch() const noexcept {
-        return epoch_threshold;
-    }
+    [[nodiscard]] constexpr std::uint64_t epoched_min_epoch() const noexcept { return epoch_threshold; }
 
-    [[nodiscard]] constexpr std::uint64_t epoched_min_generation() const noexcept {
-        return generation_threshold;
-    }
+    [[nodiscard]] constexpr std::uint64_t epoched_min_generation() const noexcept { return generation_threshold; }
 
-    [[nodiscard]] constexpr bool is_cipher_event() const noexcept {
-        return session_op_is_cipher(op);
-    }
+    [[nodiscard]] constexpr bool is_cipher_event() const noexcept { return session_op_is_cipher(op); }
 
-    [[nodiscard]] constexpr bool commits_cipher_head() const noexcept {
-        return session_op_commits_cipher_head(op);
-    }
+    [[nodiscard]] constexpr bool commits_cipher_head() const noexcept { return session_op_commits_cipher_head(op); }
 
-    [[nodiscard]] constexpr ::crucible::ContentHash
-    cipher_content_hash() const noexcept {
+    [[nodiscard]] constexpr ::crucible::ContentHash cipher_content_hash() const noexcept {
         return ::crucible::ContentHash::from_raw(payload_hash.value);
     }
 
-    [[nodiscard]] constexpr uint64_t cipher_timestamp_ns() const noexcept {
-        return payload_schema.value;
-    }
+    [[nodiscard]] constexpr uint64_t cipher_timestamp_ns() const noexcept { return payload_schema.value; }
 
-    [[nodiscard]] constexpr uint8_t cipher_from_tier() const noexcept {
-        return branch_index;
-    }
+    [[nodiscard]] constexpr uint8_t cipher_from_tier() const noexcept { return branch_index; }
 
-    [[nodiscard]] constexpr uint8_t cipher_to_tier() const noexcept {
-        return reason_kind;
-    }
+    [[nodiscard]] constexpr uint8_t cipher_to_tier() const noexcept { return reason_kind; }
 
     [[nodiscard]] constexpr CipherEventPayload cipher_payload() const noexcept {
         return CipherEventPayload{
@@ -701,14 +635,13 @@ struct SessionEvent {
     }
 };
 
-static_assert(sizeof(SessionEvent) == 72,
-    "SessionEvent layout must be exactly 72 bytes — Cipher cold-tier "
-    "serialisation depends on the fixed size.  The fixy-A2-005 "
-    "EpochedDelegate/EpochedAccept extension added two dedicated 64-bit "
-    "threshold lanes; if a field changes again, bump the layout version "
-    "and update the deserialiser.");
+static_assert(sizeof(SessionEvent) == 72, "SessionEvent layout must be exactly 72 bytes — Cipher cold-tier "
+                                          "serialisation depends on the fixed size.  The fixy-A2-005 "
+                                          "EpochedDelegate/EpochedAccept extension added two dedicated 64-bit "
+                                          "threshold lanes; if a field changes again, bump the layout version "
+                                          "and update the deserialiser.");
 static_assert(std::is_trivially_copyable_v<SessionEvent>,
-    "SessionEvent must be TriviallyCopyable for fast bulk drain.");
+              "SessionEvent must be TriviallyCopyable for fast bulk drain.");
 
 // ═════════════════════════════════════════════════════════════════════
 // ── KeyFn / Cmp for OrderedAppendOnly<SessionEvent, ...> ────────────
@@ -719,15 +652,11 @@ static_assert(std::is_trivially_copyable_v<SessionEvent>,
 // underlying value.
 
 struct StepIdKeyFn {
-    constexpr StepId operator()(const SessionEvent& e) const noexcept {
-        return e.step_id;
-    }
+    constexpr StepId operator()(const SessionEvent& e) const noexcept { return e.step_id; }
 };
 
 struct StepIdLess {
-    constexpr bool operator()(StepId a, StepId b) const noexcept {
-        return a.value < b.value;
-    }
+    constexpr bool operator()(StepId a, StepId b) const noexcept { return a.value < b.value; }
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -745,7 +674,7 @@ namespace detail {
 // FNV-1a over a string view at consteval.
 [[nodiscard]] inline consteval uint64_t fnv1a_64(std::string_view s) noexcept {
     constexpr uint64_t kFnvOffsetBasis = 0xcbf29ce484222325ULL;
-    constexpr uint64_t kFnvPrime       = 0x100000001b3ULL;
+    constexpr uint64_t kFnvPrime = 0x100000001b3ULL;
     uint64_t h = kFnvOffsetBasis;
     for (char c : s) {
         h ^= static_cast<uint64_t>(static_cast<unsigned char>(c));
@@ -762,9 +691,7 @@ template <typename T>
 }  // namespace detail
 
 template <typename T>
-inline constexpr SchemaHash default_schema_hash{
-    detail::fnv1a_64(detail::pretty_function_for<T>())
-};
+inline constexpr SchemaHash default_schema_hash{detail::fnv1a_64(detail::pretty_function_for<T>())};
 
 template <typename T>
 inline constexpr ::crucible::ContentHash default_proto_hash =
@@ -789,10 +716,7 @@ inline constexpr ::crucible::ContentHash default_proto_hash =
 // (defaulted to a sentinel that does no work).
 
 template <typename T>
-inline constexpr auto default_payload_hash_fn =
-    [](const T& /*v*/) noexcept -> PayloadHash {
-        return PayloadHash{0};
-    };
+inline constexpr auto default_payload_hash_fn = [](const T& /*v*/) noexcept -> PayloadHash { return PayloadHash{0}; };
 
 // ═════════════════════════════════════════════════════════════════════
 // ── SessionEventLog — the append-only log ───────────────────────────
@@ -804,11 +728,11 @@ inline constexpr auto default_payload_hash_fn =
 
 class [[nodiscard]] SessionEventLog : Pinned<SessionEventLog> {
     OrderedAppendOnly<SessionEvent, StepIdKeyFn, StepIdLess> log_{};
-    SessionTagId               session_id_{};
-    AtomicMonotonic<uint64_t>  step_counter_{0};
+    SessionTagId session_id_{};
+    AtomicMonotonic<uint64_t> step_counter_{0};
 
 public:
-    using event_type   = SessionEvent;
+    using event_type = SessionEvent;
     using storage_type = std::vector<SessionEvent>;
 
     // Construct with an explicit session identifier — typically derived
@@ -816,8 +740,7 @@ public:
     // establishment site.  Default (SessionTagId{0}) is permitted for
     // single-session test code where the identifier carries no
     // information.
-    constexpr explicit SessionEventLog(SessionTagId id = {}) noexcept
-        : session_id_{id} {}
+    constexpr explicit SessionEventLog(SessionTagId id = {}) noexcept : session_id_{id} {}
 
     // Mint the next monotonic step_id.  Safe to call concurrently from
     // multiple recording threads — AtomicMonotonic guarantees strictly-
@@ -846,9 +769,7 @@ public:
     // next_step() to mint a fresh step_id; manual step_ids are
     // permitted for replay-from-snapshot scenarios where the caller
     // controls ordering.
-    void record(SessionEvent ev) {
-        log_.append(std::move(ev));
-    }
+    void record(SessionEvent ev) { log_.append(std::move(ev)); }
 
     // Convenience: stamp + record in one call.  Most callers want
     // this; the manual `next_step() + record` split exists for
@@ -862,46 +783,38 @@ public:
     // Canonical event append entrypoint used by replay-facing wrappers.
     // It preserves the same stamping semantics as record_now while
     // making the call site read in protocol-event vocabulary.
-    void append_event(SessionEvent ev) {
-        record_now(std::move(ev));
-    }
+    void append_event(SessionEvent ev) { record_now(std::move(ev)); }
 
     struct ReplayRange {
         using const_iterator = SessionEventLog::storage_type::const_iterator;
 
         const_iterator first{};
-        const_iterator last {};
+        const_iterator last{};
 
         [[nodiscard]] const_iterator begin() const noexcept { return first; }
-        [[nodiscard]] const_iterator end()   const noexcept { return last;  }
+        [[nodiscard]] const_iterator end() const noexcept { return last; }
     };
 
-    [[nodiscard]] ReplayRange replay_iter() const noexcept {
-        return ReplayRange{log_.begin(), log_.end()};
-    }
+    [[nodiscard]] ReplayRange replay_iter() const noexcept { return ReplayRange{log_.begin(), log_.end()}; }
 
     // Read-only accessors.
     [[nodiscard]] SessionTagId session() const noexcept { return session_id_; }
-    [[nodiscard]] std::size_t  size()    const noexcept { return log_.size(); }
-    [[nodiscard]] bool         empty()   const noexcept { return log_.empty(); }
+    [[nodiscard]] std::size_t size() const noexcept { return log_.size(); }
+    [[nodiscard]] bool empty() const noexcept { return log_.empty(); }
 
-    [[nodiscard]] const SessionEvent& operator[](std::size_t i) const noexcept {
-        return log_[i];
-    }
+    [[nodiscard]] const SessionEvent& operator[](std::size_t i) const noexcept { return log_[i]; }
     [[nodiscard]] const SessionEvent& front() const noexcept { return log_.front(); }
-    [[nodiscard]] const SessionEvent& back()  const noexcept { return log_.back();  }
+    [[nodiscard]] const SessionEvent& back() const noexcept { return log_.back(); }
 
     [[nodiscard]] auto begin() const noexcept { return log_.begin(); }
-    [[nodiscard]] auto end()   const noexcept { return log_.end();   }
+    [[nodiscard]] auto end() const noexcept { return log_.end(); }
 
     // Consuming drain — yield the underlying storage and leave *this
     // empty.  Used at end-of-session to ship the log to durable
     // storage (Cipher cold tier).  The Pinned constraint forbids
     // moving the log itself, but draining yields the backing vector,
     // which is freely movable.
-    [[nodiscard]] storage_type drain() && noexcept(
-        std::is_nothrow_move_constructible_v<storage_type>)
-    {
+    [[nodiscard]] storage_type drain() && noexcept(std::is_nothrow_move_constructible_v<storage_type>) {
         return std::move(log_).drain();
     }
 };

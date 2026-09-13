@@ -128,63 +128,44 @@ namespace crucible::fixy::perf::v2::self_test {
 
 // ─── Type-identity witnesses ─────────────────────────────────────
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::perf::v2::SenseHubV2,
-    ::crucible::perf::SenseHubV2>,
-    "fixy::perf::v2::SenseHubV2 must alias substrate.");
+static_assert(std::is_same_v<::crucible::fixy::perf::v2::SenseHubV2, ::crucible::perf::SenseHubV2>,
+              "fixy::perf::v2::SenseHubV2 must alias substrate.");
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::perf::v2::CounterSnapshot,
-    ::crucible::perf::CounterSnapshot>,
-    "fixy::perf::v2::CounterSnapshot must alias substrate.");
+static_assert(std::is_same_v<::crucible::fixy::perf::v2::CounterSnapshot, ::crucible::perf::CounterSnapshot>,
+              "fixy::perf::v2::CounterSnapshot must alias substrate.");
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::perf::v2::CounterDelta,
-    ::crucible::perf::CounterDelta>,
-    "fixy::perf::v2::CounterDelta must alias substrate.");
+static_assert(std::is_same_v<::crucible::fixy::perf::v2::CounterDelta, ::crucible::perf::CounterDelta>,
+              "fixy::perf::v2::CounterDelta must alias substrate.");
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::perf::v2::GaugeSnapshot,
-    ::crucible::perf::GaugeSnapshot>,
-    "fixy::perf::v2::GaugeSnapshot must alias substrate.");
+static_assert(std::is_same_v<::crucible::fixy::perf::v2::GaugeSnapshot, ::crucible::perf::GaugeSnapshot>,
+              "fixy::perf::v2::GaugeSnapshot must alias substrate.");
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::perf::v2::FullSnapshot,
-    ::crucible::perf::FullSnapshot>,
-    "fixy::perf::v2::FullSnapshot must alias substrate.");
+static_assert(std::is_same_v<::crucible::fixy::perf::v2::FullSnapshot, ::crucible::perf::FullSnapshot>,
+              "fixy::perf::v2::FullSnapshot must alias substrate.");
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::perf::v2::LoadReport,
-    ::crucible::perf::LoadReport>,
-    "fixy::perf::v2::LoadReport must alias substrate.");
+static_assert(std::is_same_v<::crucible::fixy::perf::v2::LoadReport, ::crucible::perf::LoadReport>,
+              "fixy::perf::v2::LoadReport must alias substrate.");
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::perf::v2::Idx,
-    ::crucible::perf::Idx>,
-    "fixy::perf::v2::Idx must alias substrate.");
+static_assert(std::is_same_v<::crucible::fixy::perf::v2::Idx, ::crucible::perf::Idx>,
+              "fixy::perf::v2::Idx must alias substrate.");
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::perf::v2::Gauge,
-    ::crucible::perf::Gauge>,
-    "fixy::perf::v2::Gauge must alias substrate.");
+static_assert(std::is_same_v<::crucible::fixy::perf::v2::Gauge, ::crucible::perf::Gauge>,
+              "fixy::perf::v2::Gauge must alias substrate.");
 
 // ─── Positive concept admittance (ColdInitCtx carries Init) ──────
 
-static_assert(::crucible::fixy::perf::v2::CtxFitsSenseHubV2Mint<
-    ::crucible::effects::ColdInitCtx>,
-    "fixy::perf::v2::CtxFitsSenseHubV2Mint must admit ColdInitCtx.");
+static_assert(::crucible::fixy::perf::v2::CtxFitsSenseHubV2Mint<::crucible::effects::ColdInitCtx>,
+              "fixy::perf::v2::CtxFitsSenseHubV2Mint must admit ColdInitCtx.");
 
 // ─── Negative concept rejection (BgDrainCtx — Bg+Alloc, no Init) ──
 
-static_assert(!::crucible::fixy::perf::v2::CtxFitsSenseHubV2Mint<
-    ::crucible::effects::BgDrainCtx>,
-    "fixy::perf::v2::CtxFitsSenseHubV2Mint must reject BgDrainCtx.");
+static_assert(!::crucible::fixy::perf::v2::CtxFitsSenseHubV2Mint<::crucible::effects::BgDrainCtx>,
+              "fixy::perf::v2::CtxFitsSenseHubV2Mint must reject BgDrainCtx.");
 
 // ─── Negative concept rejection (HotFgCtx — empty row, no Init) ──
 
-static_assert(!::crucible::fixy::perf::v2::CtxFitsSenseHubV2Mint<
-    ::crucible::effects::HotFgCtx>,
-    "fixy::perf::v2::CtxFitsSenseHubV2Mint must reject HotFgCtx.");
+static_assert(!::crucible::fixy::perf::v2::CtxFitsSenseHubV2Mint<::crucible::effects::HotFgCtx>,
+              "fixy::perf::v2::CtxFitsSenseHubV2Mint must reject HotFgCtx.");
 
 // ─── Cardinality witness ─────────────────────────────────────────
 //
@@ -202,12 +183,11 @@ static_assert(!::crucible::fixy::perf::v2::CtxFitsSenseHubV2Mint<
 
 inline constexpr int v2_mint_cardinality = 1;
 
-static_assert(v2_mint_cardinality == 1,
-    "ceiling: fixy::perf::v2:: re-exports exactly 1 v2 mint factory "
-    "— mint_sense_hub_v2.  If you add or remove a v2 mint, update "
-    "BOTH the constant AND this colocated ceiling pin in the same "
-    "edit.  The sibling test_fixy_perf_v2.cpp holds only a >= floor "
-    "and auto-tracks growth — see feedback_catalog_cardinality_test_drift.");
+static_assert(v2_mint_cardinality == 1, "ceiling: fixy::perf::v2:: re-exports exactly 1 v2 mint factory "
+                                        "— mint_sense_hub_v2.  If you add or remove a v2 mint, update "
+                                        "BOTH the constant AND this colocated ceiling pin in the same "
+                                        "edit.  The sibling test_fixy_perf_v2.cpp holds only a >= floor "
+                                        "and auto-tracks growth — see feedback_catalog_cardinality_test_drift.");
 
 }  // namespace crucible::fixy::perf::v2::self_test
 
@@ -224,12 +204,9 @@ static_assert(v2_mint_cardinality == 1,
 namespace crucible::fixy::perf::v2 {
 
 inline void runtime_smoke_test() noexcept {
-    constexpr bool admits_cold = CtxFitsSenseHubV2Mint<
-        ::crucible::effects::ColdInitCtx>;
-    constexpr bool rejects_bg = !CtxFitsSenseHubV2Mint<
-        ::crucible::effects::BgDrainCtx>;
-    constexpr bool rejects_hot = !CtxFitsSenseHubV2Mint<
-        ::crucible::effects::HotFgCtx>;
+    constexpr bool admits_cold = CtxFitsSenseHubV2Mint<::crucible::effects::ColdInitCtx>;
+    constexpr bool rejects_bg = !CtxFitsSenseHubV2Mint<::crucible::effects::BgDrainCtx>;
+    constexpr bool rejects_hot = !CtxFitsSenseHubV2Mint<::crucible::effects::HotFgCtx>;
     (void)admits_cold;
     (void)rejects_bg;
     (void)rejects_hot;

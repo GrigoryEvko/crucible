@@ -185,20 +185,20 @@ namespace u013_self_test {
 
 // ── A. Role tags (anonymous-namespace placeholders for sentinel use) ─
 struct Alice {};
-struct Bob   {};
+struct Bob {};
 struct Carol {};
-struct Ping  {};   // payload
-struct Pong  {};   // payload
+struct Ping {};  // payload
+struct Pong {};  // payload
 
 // ── B. Form predicates discriminate the six tag families ────────────
-static_assert( is_end_g_v<End_G>);
+static_assert(is_end_g_v<End_G>);
 static_assert(!is_end_g_v<Var_G>);
-static_assert( is_var_g_v<Var_G>);
-static_assert( is_transmission_v<Transmission<Alice, Bob, Ping, End_G>>);
+static_assert(is_var_g_v<Var_G>);
+static_assert(is_transmission_v<Transmission<Alice, Bob, Ping, End_G>>);
 static_assert(!is_transmission_v<End_G>);
-static_assert( is_choice_v<Choice<Alice, Bob, BranchG<Ping, End_G>>>);
-static_assert( is_rec_g_v<Rec_G<End_G>>);
-static_assert( is_stop_g_v<StopG<Alice>>);
+static_assert(is_choice_v<Choice<Alice, Bob, BranchG<Ping, End_G>>>);
+static_assert(is_rec_g_v<Rec_G<End_G>>);
+static_assert(is_stop_g_v<StopG<Alice>>);
 
 // ── C. Well-formedness — positive + negative probes ────────────────
 //
@@ -208,21 +208,18 @@ static_assert(is_global_well_formed_v<End_G>);
 static_assert(!is_global_well_formed_v<Var_G>);
 // 3. A canonical 3-party Transmission with End_G continuation is
 //    well-formed.
-static_assert(is_global_well_formed_v<
-    Transmission<Alice, Bob, Ping, End_G>>);
+static_assert(is_global_well_formed_v<Transmission<Alice, Bob, Ping, End_G>>);
 // 4. A self-Transmission (Alice → Alice) is ill-formed per the
 //    "From ≠ To" axiom (#363).
-static_assert(!is_global_well_formed_v<
-    Transmission<Alice, Alice, Ping, End_G>>);
+static_assert(!is_global_well_formed_v<Transmission<Alice, Alice, Ping, End_G>>);
 
 // ── D. Self-loop detection — pinpoints the From == To bug ──────────
-static_assert( has_self_loop_v<Transmission<Alice, Alice, Ping, End_G>>);
-static_assert(!has_self_loop_v<Transmission<Alice, Bob,   Ping, End_G>>);
+static_assert(has_self_loop_v<Transmission<Alice, Alice, Ping, End_G>>);
+static_assert(!has_self_loop_v<Transmission<Alice, Bob, Ping, End_G>>);
 
 // ── E. Empty-Choice detection — pinpoints the zero-branch Choice bug
-static_assert( has_empty_choice_v<Choice<Alice, Bob>>);
-static_assert(!has_empty_choice_v<
-    Choice<Alice, Bob, BranchG<Ping, End_G>>>);
+static_assert(has_empty_choice_v<Choice<Alice, Bob>>);
+static_assert(!has_empty_choice_v<Choice<Alice, Bob, BranchG<Ping, End_G>>>);
 
 // ── F. Role machinery — RoleList, insert, union, roles_of ──────────
 //
@@ -230,27 +227,22 @@ static_assert(!has_empty_choice_v<
 // SessionGlobal.h:282 (RoleList<R, Rs...> when absent; RoleList<Rs...>
 // when present).  union_roles_t folds insert_unique_t right-to-left,
 // so the order ends up reverse-of-encounter on the absent additions.
-using RL_A    = RoleList<Alice>;
-using RL_AB   = RoleList<Alice, Bob>;
-using RL_BC   = RoleList<Bob, Carol>;
-static_assert( std::is_same_v<insert_unique_t<Carol, RL_AB>,
-                               RoleList<Carol, Alice, Bob>>);
+using RL_A = RoleList<Alice>;
+using RL_AB = RoleList<Alice, Bob>;
+using RL_BC = RoleList<Bob, Carol>;
+static_assert(std::is_same_v<insert_unique_t<Carol, RL_AB>, RoleList<Carol, Alice, Bob>>);
 // insert_unique is idempotent on already-present role.
-static_assert( std::is_same_v<insert_unique_t<Alice, RL_AB>, RL_AB>);
+static_assert(std::is_same_v<insert_unique_t<Alice, RL_AB>, RL_AB>);
 // union_roles_t<RL_AB, RL_BC>: walks RL_BC = (Bob, Carol).  Bob already
 // present → RL_AB unchanged; Carol absent → prepend → RoleList<Carol,
 // Alice, Bob>.
-static_assert( std::is_same_v<union_roles_t<RL_AB, RL_BC>,
-                               RoleList<Carol, Alice, Bob>>);
+static_assert(std::is_same_v<union_roles_t<RL_AB, RL_BC>, RoleList<Carol, Alice, Bob>>);
 // EmptyRoleList alias resolves identically.
-static_assert( std::is_same_v<EmptyRoleList, RoleList<>>);
+static_assert(std::is_same_v<EmptyRoleList, RoleList<>>);
 
 // roles_of_t extracts every distinct role from a global type tree.
-using G_ternary =
-    Transmission<Alice, Bob, Ping,
-        Transmission<Bob, Carol, Pong, End_G>>;
-static_assert( std::is_same_v<roles_of_t<G_ternary>,
-                               RoleList<Alice, Bob, Carol>>);
+using G_ternary = Transmission<Alice, Bob, Ping, Transmission<Bob, Carol, Pong, End_G>>;
+static_assert(std::is_same_v<roles_of_t<G_ternary>, RoleList<Alice, Bob, Carol>>);
 
 // ── G. Projection — three-case dispatch ────────────────────────────
 //
@@ -260,27 +252,18 @@ static_assert( std::is_same_v<roles_of_t<G_ternary>,
 //   Carol (third)    → End   (no involvement in this 2-party G)
 using G_2p = Transmission<Alice, Bob, Ping, End_G>;
 using L_Alice = project_t<G_2p, Alice>;
-using L_Bob   = project_t<G_2p, Bob>;
+using L_Bob = project_t<G_2p, Bob>;
 using L_Carol = project_t<G_2p, Carol>;
 
-static_assert(std::is_same_v<L_Alice,
-    ::crucible::safety::proto::Send<Ping,
-        ::crucible::safety::proto::End>>);
-static_assert(std::is_same_v<L_Bob,
-    ::crucible::safety::proto::Recv<Ping,
-        ::crucible::safety::proto::End>>);
-static_assert(std::is_same_v<L_Carol,
-    ::crucible::safety::proto::End>);
+static_assert(std::is_same_v<L_Alice, ::crucible::safety::proto::Send<Ping, ::crucible::safety::proto::End>>);
+static_assert(std::is_same_v<L_Bob, ::crucible::safety::proto::Recv<Ping, ::crucible::safety::proto::End>>);
+static_assert(std::is_same_v<L_Carol, ::crucible::safety::proto::End>);
 
 // ── H. plain_merge_t identity on a singleton + trivial homogeneous
 //      pack matches expected definition (Honda 2008 plain merging).
-static_assert(std::is_same_v<
-    plain_merge_t<::crucible::safety::proto::End>,
-    ::crucible::safety::proto::End>);
-static_assert(std::is_same_v<
-    plain_merge_t<::crucible::safety::proto::End,
-                   ::crucible::safety::proto::End>,
-    ::crucible::safety::proto::End>);
+static_assert(std::is_same_v<plain_merge_t<::crucible::safety::proto::End>, ::crucible::safety::proto::End>);
+static_assert(std::is_same_v<plain_merge_t<::crucible::safety::proto::End, ::crucible::safety::proto::End>,
+                             ::crucible::safety::proto::End>);
 
 // ── I. Cardinality witness — count of items U-013 surfaces.
 //
@@ -302,9 +285,8 @@ static_assert(std::is_same_v<
 //                                                       ───
 //                                                       27
 constexpr int u013_surface_cardinality = 27;
-static_assert(u013_surface_cardinality == 27,
-    "fixy::sess::mpst:: U-013 surface cardinality drifted — update "
-    "SessGlobal.h using-decls AND this sentinel in lockstep.");
+static_assert(u013_surface_cardinality == 27, "fixy::sess::mpst:: U-013 surface cardinality drifted — update "
+                                              "SessGlobal.h using-decls AND this sentinel in lockstep.");
 
 }  // namespace u013_self_test
 
@@ -320,12 +302,14 @@ static_assert(u013_surface_cardinality == 27,
 // Cost: instantiations only.  No runtime code path is executed.
 
 inline void runtime_smoke_test() noexcept {
-    struct A {}; struct B {}; struct P {};
+    struct A {};
+    struct B {};
+    struct P {};
     using G_AB = Transmission<A, B, P, End_G>;
 
-    [[maybe_unused]] constexpr bool wf  = is_global_well_formed_v<G_AB>;
-    [[maybe_unused]] constexpr bool sl  = has_self_loop_v<G_AB>;
-    [[maybe_unused]] constexpr bool ec  = has_empty_choice_v<G_AB>;
+    [[maybe_unused]] constexpr bool wf = is_global_well_formed_v<G_AB>;
+    [[maybe_unused]] constexpr bool sl = has_self_loop_v<G_AB>;
+    [[maybe_unused]] constexpr bool ec = has_empty_choice_v<G_AB>;
     [[maybe_unused]] constexpr bool isT = is_transmission_v<G_AB>;
 
     using LA = project_t<G_AB, A>;
@@ -335,7 +319,10 @@ inline void runtime_smoke_test() noexcept {
     using UR = union_roles_t<RoleList<A>, RoleList<B>>;
     using PM = plain_merge_t<::crucible::safety::proto::End>;
 
-    (void)wf; (void)sl; (void)ec; (void)isT;
+    (void)wf;
+    (void)sl;
+    (void)ec;
+    (void)isT;
     (void)static_cast<LA*>(nullptr);
     (void)static_cast<LB*>(nullptr);
     (void)static_cast<RL*>(nullptr);

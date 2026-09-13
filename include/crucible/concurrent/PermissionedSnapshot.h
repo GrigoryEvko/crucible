@@ -94,21 +94,23 @@ namespace crucible::concurrent {
 
 namespace snapshot_tag {
 
-template <typename UserTag> struct Whole  {};
-template <typename UserTag> struct Writer {};
-template <typename UserTag> struct Reader {};
+template <typename UserTag>
+struct Whole {};
+template <typename UserTag>
+struct Writer {};
+template <typename UserTag>
+struct Reader {};
 
 }  // namespace snapshot_tag
 
 // ── PermissionedSnapshot<T, UserTag> ─────────────────────────────────
 
 template <SnapshotValue T, typename UserTag = void>
-class PermissionedSnapshot
-    : public safety::Pinned<PermissionedSnapshot<T, UserTag>> {
+class PermissionedSnapshot : public safety::Pinned<PermissionedSnapshot<T, UserTag>> {
 public:
     using value_type = T;
-    using user_tag   = UserTag;
-    using whole_tag  = snapshot_tag::Whole<UserTag>;
+    using user_tag = UserTag;
+    using whole_tag = snapshot_tag::Whole<UserTag>;
     using writer_tag = snapshot_tag::Writer<UserTag>;
     using reader_tag = snapshot_tag::Reader<UserTag>;
 
@@ -120,13 +122,10 @@ public:
     // separately (mint with mint_permission_root<writer_tag>(),
     // hand to writer() factory below).
 
-    PermissionedSnapshot() noexcept
-        : snap_{}
-        , reader_pool_{safety::mint_permission_root<reader_tag>()} {}
+    PermissionedSnapshot() noexcept : snap_{}, reader_pool_{safety::mint_permission_root<reader_tag>()} {}
 
     explicit PermissionedSnapshot(const T& initial) noexcept
-        : snap_{initial}
-        , reader_pool_{safety::mint_permission_root<reader_tag>()} {}
+        : snap_{initial}, reader_pool_{safety::mint_permission_root<reader_tag>()} {}
 
     // ── WriterHandle ──────────────────────────────────────────────
     //
@@ -137,19 +136,17 @@ public:
         PermissionedSnapshot* snap_ = nullptr;
         [[no_unique_address]] safety::Permission<writer_tag> perm_;
 
-        constexpr WriterHandle(PermissionedSnapshot& s,
-                               safety::Permission<writer_tag>&& p) noexcept
+        constexpr WriterHandle(PermissionedSnapshot& s, safety::Permission<writer_tag>&& p) noexcept
             : snap_{&s}, perm_{std::move(p)} {}
         friend class PermissionedSnapshot;
 
     public:
-        static constexpr std::size_t per_call_working_set =
-            hot_path_cache_line_bytes + cell_line_footprint(sizeof(T));
+        static constexpr std::size_t per_call_working_set = hot_path_cache_line_bytes + cell_line_footprint(sizeof(T));
 
-        WriterHandle(const WriterHandle&)
-            = delete("WriterHandle owns the Writer Permission — copy would duplicate the linear token");
-        WriterHandle& operator=(const WriterHandle&)
-            = delete("WriterHandle owns the Writer Permission — assignment would overwrite the linear token");
+        WriterHandle(const WriterHandle&) =
+            delete("WriterHandle owns the Writer Permission — copy would duplicate the linear token");
+        WriterHandle& operator=(const WriterHandle&) =
+            delete("WriterHandle owns the Writer Permission — assignment would overwrite the linear token");
         constexpr WriterHandle(WriterHandle&&) noexcept = default;
         constexpr WriterHandle& operator=(WriterHandle&&) noexcept = default;
 
@@ -157,9 +154,7 @@ public:
         void publish(const T& value) noexcept { snap_->snap_.publish(value); }
 
         // Diagnostic: the snapshot's publish version (post-publish count).
-        [[nodiscard]] std::uint64_t version() const noexcept {
-            return snap_->snap_.version();
-        }
+        [[nodiscard]] std::uint64_t version() const noexcept { return snap_->snap_.version(); }
 
         // FIXY-FOUND-113-AUDIT: release the writer Permission so the
         // caller can pass it to PermissionedSnapshot::with_recombined_
@@ -176,10 +171,7 @@ public:
         //   auto r = snap.with_recombined_access(std::move(perm_back),
         //                                       [&]() noexcept { ... });
         //   handle = snap.writer(std::move(r.writer_perm));
-        [[nodiscard]] safety::Permission<writer_tag>
-        release_permission() && noexcept {
-            return std::move(perm_);
-        }
+        [[nodiscard]] safety::Permission<writer_tag> release_permission() && noexcept { return std::move(perm_); }
     };
 
     // ── ReaderHandle ──────────────────────────────────────────────
@@ -192,19 +184,16 @@ public:
         PermissionedSnapshot* snap_ = nullptr;
         safety::SharedPermissionGuard<reader_tag> guard_;
 
-        constexpr ReaderHandle(PermissionedSnapshot& s,
-                               safety::SharedPermissionGuard<reader_tag>&& g) noexcept
+        constexpr ReaderHandle(PermissionedSnapshot& s, safety::SharedPermissionGuard<reader_tag>&& g) noexcept
             : snap_{&s}, guard_{std::move(g)} {}
         friend class PermissionedSnapshot;
 
     public:
-        static constexpr std::size_t per_call_working_set =
-            hot_path_cache_line_bytes + cell_line_footprint(sizeof(T));
+        static constexpr std::size_t per_call_working_set = hot_path_cache_line_bytes + cell_line_footprint(sizeof(T));
 
-        ReaderHandle(const ReaderHandle&)
-            = delete("ReaderHandle owns a Pool refcount share — copy would double-count");
-        ReaderHandle& operator=(const ReaderHandle&)
-            = delete("ReaderHandle owns a Pool refcount share — assignment would double-count");
+        ReaderHandle(const ReaderHandle&) = delete("ReaderHandle owns a Pool refcount share — copy would double-count");
+        ReaderHandle& operator=(const ReaderHandle&) =
+            delete("ReaderHandle owns a Pool refcount share — assignment would double-count");
         constexpr ReaderHandle(ReaderHandle&&) noexcept = default;
         // Move assignment deleted because Guard's lifetime is fixed
         // at construction (Guard itself rejects move-assignment).
@@ -213,14 +202,10 @@ public:
         [[nodiscard]] T load() const noexcept { return snap_->snap_.load(); }
 
         // Try-load — non-blocking; nullopt iff in-progress write detected.
-        [[nodiscard]] std::optional<T> try_load() const noexcept {
-            return snap_->snap_.try_load();
-        }
+        [[nodiscard]] std::optional<T> try_load() const noexcept { return snap_->snap_.try_load(); }
 
         // Diagnostic: snapshot's publish version.
-        [[nodiscard]] std::uint64_t version() const noexcept {
-            return snap_->snap_.version();
-        }
+        [[nodiscard]] std::uint64_t version() const noexcept { return snap_->snap_.version(); }
     };
 
     // ── Factories ─────────────────────────────────────────────────
@@ -274,9 +259,7 @@ public:
     // rest.  Subsequent reader() calls succeed once body returns.
     template <typename Body>
         requires std::is_invocable_v<Body>
-    bool with_drained_access(Body&& body)
-        noexcept(std::is_nothrow_invocable_v<Body>)
-    {
+    bool with_drained_access(Body&& body) noexcept(std::is_nothrow_invocable_v<Body>) {
         auto upgrade = reader_pool_.try_upgrade();
         if (!upgrade) return false;
         std::forward<Body>(body)();
@@ -308,16 +291,13 @@ public:
     // one release-store to deposit back.
     struct WithRecombinedResult {
         [[no_unique_address]] safety::Permission<writer_tag> writer_perm;
-        bool                                                 body_ran;
+        bool body_ran;
     };
 
     template <typename Body>
         requires std::is_invocable_v<Body>
-    [[nodiscard]] WithRecombinedResult
-    with_recombined_access(safety::Permission<writer_tag>&& writer_perm,
-                           Body&& body)
-        noexcept(std::is_nothrow_invocable_v<Body>)
-    {
+    [[nodiscard]] WithRecombinedResult with_recombined_access(safety::Permission<writer_tag>&& writer_perm,
+                                                              Body&& body) noexcept(std::is_nothrow_invocable_v<Body>) {
         auto upgrade = reader_pool_.try_upgrade();
         if (!upgrade) {
             // Reader-pool busy; return writer permission unchanged
@@ -355,13 +335,9 @@ public:
     // call sites that perform single-threaded snapshot inspection
     // (where the race is structurally absent).
 
-    [[nodiscard]] std::uint64_t outstanding_readers() const noexcept {
-        return reader_pool_.outstanding();
-    }
+    [[nodiscard]] std::uint64_t outstanding_readers() const noexcept { return reader_pool_.outstanding(); }
 
-    [[nodiscard]] bool is_exclusive_active() const noexcept {
-        return reader_pool_.is_exclusive_out();
-    }
+    [[nodiscard]] bool is_exclusive_active() const noexcept { return reader_pool_.is_exclusive_out(); }
 
     // FIXY-FOUND-122: Stale-wrapped companions.  Same semantics as
     // the bare-scalar accessors above, but the return type carries
@@ -370,28 +346,22 @@ public:
     // if it were synchronized with the writer/readers.  Mirrors the
     // TraceRing::size() / MetaLog::size() precedent (WRAP-TraceRing
     // S2b of #1736).
-    [[nodiscard]] ::crucible::safety::Stale<std::uint64_t>
-    outstanding_readers_stale() const noexcept {
-        return ::crucible::safety::Stale<std::uint64_t>::at_infinity(
-            reader_pool_.outstanding());
+    [[nodiscard]] ::crucible::safety::Stale<std::uint64_t> outstanding_readers_stale() const noexcept {
+        return ::crucible::safety::Stale<std::uint64_t>::at_infinity(reader_pool_.outstanding());
     }
 
-    [[nodiscard]] ::crucible::safety::Stale<bool>
-    is_exclusive_active_stale() const noexcept {
-        return ::crucible::safety::Stale<bool>::at_infinity(
-            reader_pool_.is_exclusive_out());
+    [[nodiscard]] ::crucible::safety::Stale<bool> is_exclusive_active_stale() const noexcept {
+        return ::crucible::safety::Stale<bool>::at_infinity(reader_pool_.is_exclusive_out());
     }
 
     // Snapshot's publish version (count of completed publishes).
     // Useful for "did the snapshot change?" cache-invalidation
     // decisions in monitoring code.
-    [[nodiscard]] std::uint64_t version() const noexcept {
-        return snap_.version();
-    }
+    [[nodiscard]] std::uint64_t version() const noexcept { return snap_.version(); }
 
 private:
-    AtomicSnapshot<T>                              snap_;
-    safety::SharedPermissionPool<reader_tag>       reader_pool_;
+    AtomicSnapshot<T> snap_;
+    safety::SharedPermissionPool<reader_tag> reader_pool_;
 };
 
 }  // namespace crucible::concurrent
@@ -405,30 +375,22 @@ private:
 namespace crucible::safety {
 
 template <typename UserTag>
-struct splits_into<concurrent::snapshot_tag::Whole<UserTag>,
-                   concurrent::snapshot_tag::Writer<UserTag>,
-                   concurrent::snapshot_tag::Reader<UserTag>>
-    : std::true_type {};
+struct splits_into<concurrent::snapshot_tag::Whole<UserTag>, concurrent::snapshot_tag::Writer<UserTag>,
+                   concurrent::snapshot_tag::Reader<UserTag>> : std::true_type {};
 
 template <typename UserTag>
-struct splits_into_pack<concurrent::snapshot_tag::Whole<UserTag>,
-                        concurrent::snapshot_tag::Writer<UserTag>,
-                        concurrent::snapshot_tag::Reader<UserTag>>
-    : std::true_type {};
+struct splits_into_pack<concurrent::snapshot_tag::Whole<UserTag>, concurrent::snapshot_tag::Writer<UserTag>,
+                        concurrent::snapshot_tag::Reader<UserTag>> : std::true_type {};
 
 // fixy-M-29 authoring witnesses.
 template <typename UserTag>
-struct splits_into_authoring_witness<
-    concurrent::snapshot_tag::Whole<UserTag>,
-    concurrent::snapshot_tag::Writer<UserTag>,
-    concurrent::snapshot_tag::Reader<UserTag>>
-    : std::true_type {};
+struct splits_into_authoring_witness<concurrent::snapshot_tag::Whole<UserTag>,
+                                     concurrent::snapshot_tag::Writer<UserTag>,
+                                     concurrent::snapshot_tag::Reader<UserTag>> : std::true_type {};
 
 template <typename UserTag>
-struct splits_into_pack_authoring_witness<
-    concurrent::snapshot_tag::Whole<UserTag>,
-    concurrent::snapshot_tag::Writer<UserTag>,
-    concurrent::snapshot_tag::Reader<UserTag>>
-    : std::true_type {};
+struct splits_into_pack_authoring_witness<concurrent::snapshot_tag::Whole<UserTag>,
+                                          concurrent::snapshot_tag::Writer<UserTag>,
+                                          concurrent::snapshot_tag::Reader<UserTag>> : std::true_type {};
 
 }  // namespace crucible::safety

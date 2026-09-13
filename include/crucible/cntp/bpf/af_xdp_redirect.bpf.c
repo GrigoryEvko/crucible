@@ -13,8 +13,7 @@
 #endif
 
 SEC("xdp")
-int crucible_cntp_af_xdp_redirect(struct xdp_md *ctx)
-{
+int crucible_cntp_af_xdp_redirect(struct xdp_md* ctx) {
     (void)ctx;
     return XDP_PASS;
 }

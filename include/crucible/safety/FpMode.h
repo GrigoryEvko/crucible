@@ -148,19 +148,53 @@ namespace detail::fp_mode_traits {
 // class uses this to compute its lattice_type from the NTTP Mode's
 // enum type at instantiation site.
 
-template <typename E> struct fp_axis_lattice_for;  // primary undefined
+template <typename E>
+struct fp_axis_lattice_for;  // primary undefined
 
-template <> struct fp_axis_lattice_for<FpRounding>          { using type = FpRoundingLattice;          };
-template <> struct fp_axis_lattice_for<FpFtz>               { using type = FpFtzLattice;               };
-template <> struct fp_axis_lattice_for<FpContract>          { using type = FpContractLattice;          };
-template <> struct fp_axis_lattice_for<FpTrapMask>          { using type = FpTrapMaskLattice;          };
-template <> struct fp_axis_lattice_for<FpDenormalInput>     { using type = FpDenormalInputLattice;     };
-template <> struct fp_axis_lattice_for<FpNanPolicy>         { using type = FpNanPolicyLattice;         };
-template <> struct fp_axis_lattice_for<FpInfPolicy>         { using type = FpInfPolicyLattice;         };
-template <> struct fp_axis_lattice_for<FpComplexLayout>     { using type = FpComplexLayoutLattice;     };
-template <> struct fp_axis_lattice_for<FpLibmPolicy>        { using type = FpLibmPolicyLattice;        };
-template <> struct fp_axis_lattice_for<FpReassociate>       { using type = FpReassociateLattice;       };
-template <> struct fp_axis_lattice_for<FpConstantRounding>  { using type = FpConstantRoundingLattice;  };
+template <>
+struct fp_axis_lattice_for<FpRounding> {
+    using type = FpRoundingLattice;
+};
+template <>
+struct fp_axis_lattice_for<FpFtz> {
+    using type = FpFtzLattice;
+};
+template <>
+struct fp_axis_lattice_for<FpContract> {
+    using type = FpContractLattice;
+};
+template <>
+struct fp_axis_lattice_for<FpTrapMask> {
+    using type = FpTrapMaskLattice;
+};
+template <>
+struct fp_axis_lattice_for<FpDenormalInput> {
+    using type = FpDenormalInputLattice;
+};
+template <>
+struct fp_axis_lattice_for<FpNanPolicy> {
+    using type = FpNanPolicyLattice;
+};
+template <>
+struct fp_axis_lattice_for<FpInfPolicy> {
+    using type = FpInfPolicyLattice;
+};
+template <>
+struct fp_axis_lattice_for<FpComplexLayout> {
+    using type = FpComplexLayoutLattice;
+};
+template <>
+struct fp_axis_lattice_for<FpLibmPolicy> {
+    using type = FpLibmPolicyLattice;
+};
+template <>
+struct fp_axis_lattice_for<FpReassociate> {
+    using type = FpReassociateLattice;
+};
+template <>
+struct fp_axis_lattice_for<FpConstantRounding> {
+    using type = FpConstantRoundingLattice;
+};
 
 template <typename E>
 using fp_axis_lattice_for_t = typename fp_axis_lattice_for<E>::type;
@@ -185,15 +219,12 @@ concept IsFpAxisMode = requires { typename fp_axis_lattice_for<E>::type; };
 template <auto Mode, typename T>
 class [[nodiscard]] FpModePinned {
 public:
-    using mode_type     = decltype(Mode);
+    using mode_type = decltype(Mode);
     using outer_lattice = detail::fp_mode_traits::fp_axis_lattice_for_t<mode_type>;
-    using value_type    = T;
-    using lattice_type  = typename outer_lattice::template At<Mode>;
-    using graded_type   = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Absolute,
-        lattice_type, T>;
-    static constexpr ::crucible::algebra::ModalityKind modality =
-        ::crucible::algebra::ModalityKind::Absolute;
+    using value_type = T;
+    using lattice_type = typename outer_lattice::template At<Mode>;
+    using graded_type = ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
+    static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::Absolute;
     static constexpr mode_type mode = Mode;
 
 private:
@@ -203,44 +234,35 @@ public:
     // Default: T{} at the pinned mode.  Production callers should
     // prefer the explicit-T constructor or `mint_fp_<axis><...>(args)`
     // factories at sites that actually establish the FP regime.
-    constexpr FpModePinned() noexcept(
-        std::is_nothrow_default_constructible_v<T>)
+    constexpr FpModePinned() noexcept(std::is_nothrow_default_constructible_v<T>)
         : impl_{T{}, typename lattice_type::element_type{}} {}
 
-    constexpr explicit FpModePinned(T value) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    constexpr explicit FpModePinned(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(value), typename lattice_type::element_type{}} {}
 
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr explicit FpModePinned(std::in_place_t, Args&&... args)
-        noexcept(std::is_nothrow_constructible_v<T, Args...>
-                 && std::is_nothrow_move_constructible_v<T>)
-        : impl_{T(std::forward<Args>(args)...),
-                typename lattice_type::element_type{}} {}
+    constexpr explicit FpModePinned(std::in_place_t,
+                                    Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
+                                                             && std::is_nothrow_move_constructible_v<T>)
+        : impl_{T(std::forward<Args>(args)...), typename lattice_type::element_type{}} {}
 
-    constexpr FpModePinned(const FpModePinned&)            = default;
-    constexpr FpModePinned(FpModePinned&&)                 = default;
+    constexpr FpModePinned(const FpModePinned&) = default;
+    constexpr FpModePinned(FpModePinned&&) = default;
     constexpr FpModePinned& operator=(const FpModePinned&) = default;
-    constexpr FpModePinned& operator=(FpModePinned&&)      = default;
-    ~FpModePinned()                                        = default;
+    constexpr FpModePinned& operator=(FpModePinned&&) = default;
+    ~FpModePinned() = default;
 
     // ── Diagnostic surface (per GradedWrapper concept) ─────────────
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return graded_type::lattice_name();
-    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 
     // ── Read-only access ────────────────────────────────────────────
-    [[nodiscard]] constexpr T const& peek() const& noexcept {
-        return impl_.peek();
-    }
+    [[nodiscard]] constexpr T const& peek() const& noexcept { return impl_.peek(); }
 
-    [[nodiscard]] constexpr T consume() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return std::move(impl_).consume();
     }
 
@@ -250,30 +272,19 @@ public:
     // pinned mode is a TYPE-level fact about how the value was produced,
     // not a content-derived invariant.  In-place computation under the
     // pinned mode (e.g., reduction accumulator updates) is sound.
-    [[nodiscard]] constexpr T& peek_mut() & noexcept {
-        return impl_.peek_mut();
-    }
+    [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(); }
 
-    constexpr void swap(FpModePinned& other)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
-        impl_.swap(other.impl_);
-    }
+    constexpr void swap(FpModePinned& other) noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
 
-    friend constexpr void swap(FpModePinned& a, FpModePinned& b)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
-        a.swap(b);
-    }
+    friend constexpr void swap(FpModePinned& a, FpModePinned& b) noexcept(std::is_nothrow_swappable_v<T>) { a.swap(b); }
 
     // ── Equality (same-mode only) ───────────────────────────────────
     //
     // The friend signature pins both args to the SAME <Mode, T>
     // instantiation; cross-mode equality is rejected at overload
     // resolution.  HS14 mismatch class 1 fixtures witness this.
-    [[nodiscard]] friend constexpr bool operator==(
-        FpModePinned const& a, FpModePinned const& b) noexcept(
-        noexcept(a.peek() == b.peek()))
+    [[nodiscard]] friend constexpr bool operator==(FpModePinned const& a,
+                                                   FpModePinned const& b) noexcept(noexcept(a.peek() == b.peek()))
         requires requires(T const& x, T const& y) {
             { x == y } -> std::convertible_to<bool>;
         }
@@ -288,40 +299,49 @@ public:
 // axis enum's NTTP type.  Distinct enum types → distinct template
 // instantiations → 11 disjoint types per (Mode, T).
 
-template <FpRounding         Mode, typename T> using FpRoundingPinned         = FpModePinned<Mode, T>;
-template <FpFtz              Mode, typename T> using FpFtzPinned              = FpModePinned<Mode, T>;
-template <FpContract         Mode, typename T> using FpContractPinned         = FpModePinned<Mode, T>;
-template <FpTrapMask         Mode, typename T> using FpTrapMaskPinned         = FpModePinned<Mode, T>;
-template <FpDenormalInput    Mode, typename T> using FpDenormalInputPinned    = FpModePinned<Mode, T>;
-template <FpNanPolicy        Mode, typename T> using FpNanPolicyPinned        = FpModePinned<Mode, T>;
-template <FpInfPolicy        Mode, typename T> using FpInfPolicyPinned        = FpModePinned<Mode, T>;
-template <FpComplexLayout    Mode, typename T> using FpComplexLayoutPinned    = FpModePinned<Mode, T>;
-template <FpLibmPolicy       Mode, typename T> using FpLibmPolicyPinned       = FpModePinned<Mode, T>;
-template <FpReassociate      Mode, typename T> using FpReassociatePinned      = FpModePinned<Mode, T>;
-template <FpConstantRounding Mode, typename T> using FpConstantRoundingPinned = FpModePinned<Mode, T>;
+template <FpRounding Mode, typename T>
+using FpRoundingPinned = FpModePinned<Mode, T>;
+template <FpFtz Mode, typename T>
+using FpFtzPinned = FpModePinned<Mode, T>;
+template <FpContract Mode, typename T>
+using FpContractPinned = FpModePinned<Mode, T>;
+template <FpTrapMask Mode, typename T>
+using FpTrapMaskPinned = FpModePinned<Mode, T>;
+template <FpDenormalInput Mode, typename T>
+using FpDenormalInputPinned = FpModePinned<Mode, T>;
+template <FpNanPolicy Mode, typename T>
+using FpNanPolicyPinned = FpModePinned<Mode, T>;
+template <FpInfPolicy Mode, typename T>
+using FpInfPolicyPinned = FpModePinned<Mode, T>;
+template <FpComplexLayout Mode, typename T>
+using FpComplexLayoutPinned = FpModePinned<Mode, T>;
+template <FpLibmPolicy Mode, typename T>
+using FpLibmPolicyPinned = FpModePinned<Mode, T>;
+template <FpReassociate Mode, typename T>
+using FpReassociatePinned = FpModePinned<Mode, T>;
+template <FpConstantRounding Mode, typename T>
+using FpConstantRoundingPinned = FpModePinned<Mode, T>;
 
 // ── §XXI Universal Mint factories (11 per-axis + 1 composite) ──────
 
-#define CRUCIBLE_FP_AXIS_MINT(MintName, AliasName, ModeEnum)               \
-    template <ModeEnum Mode, typename T, typename... Args>                 \
-        requires std::is_constructible_v<T, Args...>                       \
-    [[nodiscard]] constexpr AliasName<Mode, T> MintName(Args&&... args)    \
-        noexcept(std::is_nothrow_constructible_v<T, Args...>)              \
-    {                                                                      \
-        return AliasName<Mode, T>{std::in_place,                           \
-                                  std::forward<Args>(args)...};            \
+#define CRUCIBLE_FP_AXIS_MINT(MintName, AliasName, ModeEnum)                      \
+    template <ModeEnum Mode, typename T, typename... Args>                        \
+        requires std::is_constructible_v<T, Args...>                              \
+    [[nodiscard]] constexpr AliasName<Mode, T> MintName(Args&&... args) noexcept( \
+        std::is_nothrow_constructible_v<T, Args...>) {                            \
+        return AliasName<Mode, T>{std::in_place, std::forward<Args>(args)...};    \
     }
 
-CRUCIBLE_FP_AXIS_MINT(mint_fp_rounding,          FpRoundingPinned,         FpRounding)
-CRUCIBLE_FP_AXIS_MINT(mint_fp_ftz,               FpFtzPinned,              FpFtz)
-CRUCIBLE_FP_AXIS_MINT(mint_fp_contract,          FpContractPinned,         FpContract)
-CRUCIBLE_FP_AXIS_MINT(mint_fp_trap_mask,         FpTrapMaskPinned,         FpTrapMask)
-CRUCIBLE_FP_AXIS_MINT(mint_fp_denormal_input,    FpDenormalInputPinned,    FpDenormalInput)
-CRUCIBLE_FP_AXIS_MINT(mint_fp_nan_policy,        FpNanPolicyPinned,        FpNanPolicy)
-CRUCIBLE_FP_AXIS_MINT(mint_fp_inf_policy,        FpInfPolicyPinned,        FpInfPolicy)
-CRUCIBLE_FP_AXIS_MINT(mint_fp_complex_layout,    FpComplexLayoutPinned,    FpComplexLayout)
-CRUCIBLE_FP_AXIS_MINT(mint_fp_libm_policy,       FpLibmPolicyPinned,       FpLibmPolicy)
-CRUCIBLE_FP_AXIS_MINT(mint_fp_reassociate,       FpReassociatePinned,      FpReassociate)
+CRUCIBLE_FP_AXIS_MINT(mint_fp_rounding, FpRoundingPinned, FpRounding)
+CRUCIBLE_FP_AXIS_MINT(mint_fp_ftz, FpFtzPinned, FpFtz)
+CRUCIBLE_FP_AXIS_MINT(mint_fp_contract, FpContractPinned, FpContract)
+CRUCIBLE_FP_AXIS_MINT(mint_fp_trap_mask, FpTrapMaskPinned, FpTrapMask)
+CRUCIBLE_FP_AXIS_MINT(mint_fp_denormal_input, FpDenormalInputPinned, FpDenormalInput)
+CRUCIBLE_FP_AXIS_MINT(mint_fp_nan_policy, FpNanPolicyPinned, FpNanPolicy)
+CRUCIBLE_FP_AXIS_MINT(mint_fp_inf_policy, FpInfPolicyPinned, FpInfPolicy)
+CRUCIBLE_FP_AXIS_MINT(mint_fp_complex_layout, FpComplexLayoutPinned, FpComplexLayout)
+CRUCIBLE_FP_AXIS_MINT(mint_fp_libm_policy, FpLibmPolicyPinned, FpLibmPolicy)
+CRUCIBLE_FP_AXIS_MINT(mint_fp_reassociate, FpReassociatePinned, FpReassociate)
 CRUCIBLE_FP_AXIS_MINT(mint_fp_constant_rounding, FpConstantRoundingPinned, FpConstantRounding)
 
 #undef CRUCIBLE_FP_AXIS_MINT
@@ -337,62 +357,30 @@ CRUCIBLE_FP_AXIS_MINT(mint_fp_constant_rounding, FpConstantRoundingPinned, FpCon
 // T>) == sizeof(T).  row_hash composes automatically through the 11
 // per-axis row_hash_contribution specializations.
 
-template <FpRounding         R,
-          FpFtz              F,
-          FpContract         C,
-          FpTrapMask         Tr,
-          FpDenormalInput    D,
-          FpNanPolicy        N,
-          FpInfPolicy        I,
-          FpComplexLayout    Cl,
-          FpLibmPolicy       L,
-          FpReassociate      Re,
-          FpConstantRounding Cr,
-          typename T>
-using FpModeComposite =
-    FpRoundingPinned<R,
-        FpFtzPinned<F,
-            FpContractPinned<C,
-                FpTrapMaskPinned<Tr,
-                    FpDenormalInputPinned<D,
-                        FpNanPolicyPinned<N,
-                            FpInfPolicyPinned<I,
-                                FpComplexLayoutPinned<Cl,
-                                    FpLibmPolicyPinned<L,
-                                        FpReassociatePinned<Re,
-                                            FpConstantRoundingPinned<Cr, T>
-                                        >
-                                    >
-                                >
-                            >
-                        >
-                    >
-                >
-            >
-        >
-    >;
+template <FpRounding R, FpFtz F, FpContract C, FpTrapMask Tr, FpDenormalInput D, FpNanPolicy N, FpInfPolicy I,
+          FpComplexLayout Cl, FpLibmPolicy L, FpReassociate Re, FpConstantRounding Cr, typename T>
+using FpModeComposite = FpRoundingPinned<
+    R,
+    FpFtzPinned<
+        F,
+        FpContractPinned<
+            C,
+            FpTrapMaskPinned<
+                Tr, FpDenormalInputPinned<
+                        D, FpNanPolicyPinned<
+                               N, FpInfPolicyPinned<
+                                      I, FpComplexLayoutPinned<
+                                             Cl, FpLibmPolicyPinned<L, FpReassociatePinned<Re, FpConstantRoundingPinned<
+                                                                                                   Cr, T>>>>>>>>>>>;
 
 // Composite mint — synthesizes the full 11-axis nest from inside out.
 // Each layer's explicit-T constructor accepts the inner-layer value;
 // the recursive expansion builds bottom-up and folds outward.
-template <FpRounding         R,
-          FpFtz              F,
-          FpContract         C,
-          FpTrapMask         Tr,
-          FpDenormalInput    D,
-          FpNanPolicy        N,
-          FpInfPolicy        I,
-          FpComplexLayout    Cl,
-          FpLibmPolicy       L,
-          FpReassociate      Re,
-          FpConstantRounding Cr,
-          typename T,
-          typename... Args>
+template <FpRounding R, FpFtz F, FpContract C, FpTrapMask Tr, FpDenormalInput D, FpNanPolicy N, FpInfPolicy I,
+          FpComplexLayout Cl, FpLibmPolicy L, FpReassociate Re, FpConstantRounding Cr, typename T, typename... Args>
     requires std::is_constructible_v<T, Args...>
 [[nodiscard]] constexpr FpModeComposite<R, F, C, Tr, D, N, I, Cl, L, Re, Cr, T>
-mint_fp_mode_composite(Args&&... args)
-    noexcept(std::is_nothrow_constructible_v<T, Args...>)
-{
+mint_fp_mode_composite(Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>) {
     using L11 = FpConstantRoundingPinned<Cr, T>;
     using L10 = FpReassociatePinned<Re, L11>;
     using L09 = FpLibmPolicyPinned<L, L10>;
@@ -404,28 +392,7 @@ mint_fp_mode_composite(Args&&... args)
     using L03 = FpContractPinned<C, L04>;
     using L02 = FpFtzPinned<F, L03>;
     using L01 = FpRoundingPinned<R, L02>;
-    return L01{
-        L02{
-            L03{
-                L04{
-                    L05{
-                        L06{
-                            L07{
-                                L08{
-                                    L09{
-                                        L10{
-                                            L11{std::in_place,
-                                                std::forward<Args>(args)...}
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    };
+    return L01{L02{L03{L04{L05{L06{L07{L08{L09{L10{L11{std::in_place, std::forward<Args>(args)...}}}}}}}}}}};
 }
 
 // ── Runtime smoke test ──────────────────────────────────────────────
@@ -486,26 +453,16 @@ inline void fp_mode_runtime_smoke_test() {
     // Composite stack — build inside out then move-out the value.
     {
         FpConstantRoundingPinned<FpConstantRounding::SameAsRuntime, int> inner{99};
-        FpReassociatePinned<FpReassociate::Forbidden,
-            decltype(inner)> e{std::move(inner)};
-        FpLibmPolicyPinned<FpLibmPolicy::ScalarLibm,
-            decltype(e)> l{std::move(e)};
-        FpComplexLayoutPinned<FpComplexLayout::Interleaved,
-            decltype(l)> x{std::move(l)};
-        FpInfPolicyPinned<FpInfPolicy::PropagateInfinity,
-            decltype(x)> i{std::move(x)};
-        FpNanPolicyPinned<FpNanPolicy::PropagateQuiet,
-            decltype(i)> n{std::move(i)};
-        FpDenormalInputPinned<FpDenormalInput::HonorDenormals,
-            decltype(n)> d{std::move(n)};
-        FpTrapMaskPinned<FpTrapMask::AllMasked,
-            decltype(d)> t{std::move(d)};
-        FpContractPinned<FpContract::Off,
-            decltype(t)> c{std::move(t)};
-        FpFtzPinned<FpFtz::PreserveSubnormals,
-            decltype(c)> f{std::move(c)};
-        FpRoundingPinned<FpRounding::RoundToZero,
-            decltype(f)> r{std::move(f)};
+        FpReassociatePinned<FpReassociate::Forbidden, decltype(inner)> e{std::move(inner)};
+        FpLibmPolicyPinned<FpLibmPolicy::ScalarLibm, decltype(e)> l{std::move(e)};
+        FpComplexLayoutPinned<FpComplexLayout::Interleaved, decltype(l)> x{std::move(l)};
+        FpInfPolicyPinned<FpInfPolicy::PropagateInfinity, decltype(x)> i{std::move(x)};
+        FpNanPolicyPinned<FpNanPolicy::PropagateQuiet, decltype(i)> n{std::move(i)};
+        FpDenormalInputPinned<FpDenormalInput::HonorDenormals, decltype(n)> d{std::move(n)};
+        FpTrapMaskPinned<FpTrapMask::AllMasked, decltype(d)> t{std::move(d)};
+        FpContractPinned<FpContract::Off, decltype(t)> c{std::move(t)};
+        FpFtzPinned<FpFtz::PreserveSubnormals, decltype(c)> f{std::move(c)};
+        FpRoundingPinned<FpRounding::RoundToZero, decltype(f)> r{std::move(f)};
         // The composite is byte-equivalent to the bare int.
         static_assert(sizeof(decltype(r)) == sizeof(int));
         [[maybe_unused]] auto out = std::move(r).consume();
@@ -525,16 +482,16 @@ namespace detail::fp_mode_safety_self_test {
 // with Graded's [[no_unique_address]] grade_, the wrapper is
 // byte-equivalent to T.  If any of the 11 lattices' At<> regresses,
 // this assertion lights.
-static_assert(sizeof(FpRoundingPinned<FpRounding::RoundToNearestEven, int>)         == sizeof(int));
-static_assert(sizeof(FpFtzPinned<FpFtz::FlushToZero, int>)                          == sizeof(int));
-static_assert(sizeof(FpContractPinned<FpContract::Off, int>)                        == sizeof(int));
-static_assert(sizeof(FpTrapMaskPinned<FpTrapMask::AllMasked, int>)                  == sizeof(int));
-static_assert(sizeof(FpDenormalInputPinned<FpDenormalInput::HonorDenormals, int>)   == sizeof(int));
-static_assert(sizeof(FpNanPolicyPinned<FpNanPolicy::PropagateQuiet, int>)           == sizeof(int));
-static_assert(sizeof(FpInfPolicyPinned<FpInfPolicy::PropagateInfinity, int>)        == sizeof(int));
-static_assert(sizeof(FpComplexLayoutPinned<FpComplexLayout::Interleaved, int>)      == sizeof(int));
-static_assert(sizeof(FpLibmPolicyPinned<FpLibmPolicy::ScalarLibm, int>)             == sizeof(int));
-static_assert(sizeof(FpReassociatePinned<FpReassociate::Forbidden, int>)            == sizeof(int));
+static_assert(sizeof(FpRoundingPinned<FpRounding::RoundToNearestEven, int>) == sizeof(int));
+static_assert(sizeof(FpFtzPinned<FpFtz::FlushToZero, int>) == sizeof(int));
+static_assert(sizeof(FpContractPinned<FpContract::Off, int>) == sizeof(int));
+static_assert(sizeof(FpTrapMaskPinned<FpTrapMask::AllMasked, int>) == sizeof(int));
+static_assert(sizeof(FpDenormalInputPinned<FpDenormalInput::HonorDenormals, int>) == sizeof(int));
+static_assert(sizeof(FpNanPolicyPinned<FpNanPolicy::PropagateQuiet, int>) == sizeof(int));
+static_assert(sizeof(FpInfPolicyPinned<FpInfPolicy::PropagateInfinity, int>) == sizeof(int));
+static_assert(sizeof(FpComplexLayoutPinned<FpComplexLayout::Interleaved, int>) == sizeof(int));
+static_assert(sizeof(FpLibmPolicyPinned<FpLibmPolicy::ScalarLibm, int>) == sizeof(int));
+static_assert(sizeof(FpReassociatePinned<FpReassociate::Forbidden, int>) == sizeof(int));
 static_assert(sizeof(FpConstantRoundingPinned<FpConstantRounding::SameAsRuntime, int>) == sizeof(int));
 
 // ── Cross-axis type distinctness (NTTP-keyed instantiations) ────────
@@ -542,12 +499,12 @@ static_assert(sizeof(FpConstantRoundingPinned<FpConstantRounding::SameAsRuntime,
 // Two FpModePinned<...> with NTTPs of different enum types instantiate
 // to DIFFERENT class types.  This is what makes the per-axis row_hash
 // salts and DimensionTraits specializations dispatch cleanly.
-static_assert(!std::is_same_v<FpRoundingPinned<FpRounding::RoundToZero, int>,
-                              FpFtzPinned<FpFtz::PreserveSubnormals, int>>);
-static_assert(!std::is_same_v<FpContractPinned<FpContract::Off, int>,
-                              FpReassociatePinned<FpReassociate::Forbidden, int>>);
-static_assert(!std::is_same_v<FpTrapMaskPinned<FpTrapMask::AllMasked, int>,
-                              FpNanPolicyPinned<FpNanPolicy::PropagateQuiet, int>>);
+static_assert(
+    !std::is_same_v<FpRoundingPinned<FpRounding::RoundToZero, int>, FpFtzPinned<FpFtz::PreserveSubnormals, int>>);
+static_assert(
+    !std::is_same_v<FpContractPinned<FpContract::Off, int>, FpReassociatePinned<FpReassociate::Forbidden, int>>);
+static_assert(
+    !std::is_same_v<FpTrapMaskPinned<FpTrapMask::AllMasked, int>, FpNanPolicyPinned<FpNanPolicy::PropagateQuiet, int>>);
 
 // ── Cross-MODE type distinctness within same axis ───────────────────
 //
@@ -555,32 +512,27 @@ static_assert(!std::is_same_v<FpTrapMaskPinned<FpTrapMask::AllMasked, int>,
 // types — the HS14 cross_mode neg-compile fixtures rely on this.
 static_assert(!std::is_same_v<FpRoundingPinned<FpRounding::RoundToZero, int>,
                               FpRoundingPinned<FpRounding::RoundToNearestEven, int>>);
-static_assert(!std::is_same_v<FpFtzPinned<FpFtz::PreserveSubnormals, int>,
-                              FpFtzPinned<FpFtz::FlushToZero, int>>);
+static_assert(!std::is_same_v<FpFtzPinned<FpFtz::PreserveSubnormals, int>, FpFtzPinned<FpFtz::FlushToZero, int>>);
 
 // ── Static `mode` accessor returns the pinned NTTP ──────────────────
 //
 // Per-wrapper `mode` exposes the NTTP for dispatch / introspection at
 // downstream consumer sites.  Pinning the recovery here guards against
 // a class-body refactor that silently changes the spelling.
-static_assert(FpRoundingPinned<FpRounding::RoundToNearestEven, int>::mode
-              == FpRounding::RoundToNearestEven);
-static_assert(FpFtzPinned<FpFtz::FlushToZero, int>::mode
-              == FpFtz::FlushToZero);
-static_assert(FpContractPinned<FpContract::Fast, int>::mode
-              == FpContract::Fast);
+static_assert(FpRoundingPinned<FpRounding::RoundToNearestEven, int>::mode == FpRounding::RoundToNearestEven);
+static_assert(FpFtzPinned<FpFtz::FlushToZero, int>::mode == FpFtz::FlushToZero);
+static_assert(FpContractPinned<FpContract::Fast, int>::mode == FpContract::Fast);
 
 // ── Composite EBO collapse ──────────────────────────────────────────
 //
 // The 11-deep canonical nest collapses to sizeof(T).  This pins the
 // load-bearing claim that V-090 incurs ZERO runtime cost per axis.
-static_assert(sizeof(FpModeComposite<
-    FpRounding::RoundToZero, FpFtz::PreserveSubnormals,
-    FpContract::Off, FpTrapMask::AllMasked,
-    FpDenormalInput::HonorDenormals, FpNanPolicy::PropagateQuiet,
-    FpInfPolicy::PropagateInfinity, FpComplexLayout::Interleaved,
-    FpLibmPolicy::ScalarLibm, FpReassociate::Forbidden,
-    FpConstantRounding::SameAsRuntime, int>) == sizeof(int));
+static_assert(
+    sizeof(FpModeComposite<FpRounding::RoundToZero, FpFtz::PreserveSubnormals, FpContract::Off, FpTrapMask::AllMasked,
+                           FpDenormalInput::HonorDenormals, FpNanPolicy::PropagateQuiet, FpInfPolicy::PropagateInfinity,
+                           FpComplexLayout::Interleaved, FpLibmPolicy::ScalarLibm, FpReassociate::Forbidden,
+                           FpConstantRounding::SameAsRuntime, int>)
+    == sizeof(int));
 
 }  // namespace detail::fp_mode_safety_self_test
 

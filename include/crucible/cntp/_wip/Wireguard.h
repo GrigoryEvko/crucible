@@ -55,20 +55,15 @@ enum class WireguardError : std::uint8_t {
     BackendUnavailable,
 };
 
-[[nodiscard]] std::string_view
-wireguard_error_name(WireguardError error) noexcept;
+[[nodiscard]] std::string_view wireguard_error_name(WireguardError error) noexcept;
 
-using WireguardPort =
-    safety::Bounded<std::uint16_t{1}, std::uint16_t{65'535}, std::uint16_t>;
-using WireguardCidrPrefix =
-    safety::Bounded<std::uint8_t{0}, std::uint8_t{32}, std::uint8_t>;
+using WireguardPort = safety::Bounded<std::uint16_t{1}, std::uint16_t{65'535}, std::uint16_t>;
+using WireguardCidrPrefix = safety::Bounded<std::uint8_t{0}, std::uint8_t{32}, std::uint8_t>;
 
 struct WireguardKeyB64 {
     std::array<char, kWireguardKeyBase64Bytes> bytes{};
 
-    [[nodiscard]] constexpr std::string_view view() const noexcept {
-        return {bytes.data(), bytes.size()};
-    }
+    [[nodiscard]] constexpr std::string_view view() const noexcept { return {bytes.data(), bytes.size()}; }
 };
 
 struct WireguardSecretKeyBytes {
@@ -84,8 +79,7 @@ struct WireguardSecretKeyBytes {
         other.zeroize();
     }
 
-    constexpr WireguardSecretKeyBytes&
-    operator=(WireguardSecretKeyBytes&& other) noexcept {
+    constexpr WireguardSecretKeyBytes& operator=(WireguardSecretKeyBytes&& other) noexcept {
         if (this != &other) {
             zeroize();
             bytes = other.bytes;
@@ -97,17 +91,11 @@ struct WireguardSecretKeyBytes {
 
     constexpr ~WireguardSecretKeyBytes() noexcept { zeroize(); }
 
-    [[nodiscard]] constexpr std::string_view view() const noexcept {
-        return {bytes.data(), nbytes};
-    }
+    [[nodiscard]] constexpr std::string_view view() const noexcept { return {bytes.data(), nbytes}; }
 
-    [[nodiscard]] constexpr std::size_t size_bytes() const noexcept {
-        return nbytes;
-    }
+    [[nodiscard]] constexpr std::size_t size_bytes() const noexcept { return nbytes; }
 
-    [[nodiscard]] constexpr std::size_t size() const noexcept {
-        return nbytes;
-    }
+    [[nodiscard]] constexpr std::size_t size() const noexcept { return nbytes; }
 
     constexpr void zeroize() noexcept {
         for (char& b : bytes) {
@@ -117,20 +105,17 @@ struct WireguardSecretKeyBytes {
     }
 };
 
-using DeclaredWireguardPublicKey =
-    safety::Tagged<WireguardKeyB64, wip_source::Wireguard>;
+using DeclaredWireguardPublicKey = safety::Tagged<WireguardKeyB64, wip_source::Wireguard>;
 using WireguardSecretKey = safety::Secret<WireguardSecretKeyBytes>;
 
 struct WireguardEndpoint {
     std::uint32_t ipv4_be = 0;
-    WireguardPort port{std::uint16_t{1},
-                       typename WireguardPort::Trusted{}};
+    WireguardPort port{std::uint16_t{1}, typename WireguardPort::Trusted{}};
 };
 
 struct WireguardAllowedIp {
     std::uint32_t ipv4_be = 0;
-    WireguardCidrPrefix prefix_bits{
-        std::uint8_t{32}, typename WireguardCidrPrefix::Trusted{}};
+    WireguardCidrPrefix prefix_bits{std::uint8_t{32}, typename WireguardCidrPrefix::Trusted{}};
 };
 
 struct WireguardPeer {
@@ -141,8 +126,7 @@ struct WireguardPeer {
     bool persistent_keepalive = false;
 };
 
-using DeclaredWireguardPeer =
-    safety::Tagged<WireguardPeer, wip_source::Wireguard>;
+using DeclaredWireguardPeer = safety::Tagged<WireguardPeer, wip_source::Wireguard>;
 
 struct WireguardTunnelHandle {
     NicInterfaceName interface{};
@@ -154,19 +138,15 @@ using OwnedWireguardTunnel = safety::Linear<WireguardTunnelHandle>;
 
 struct WireguardConfig {
     NicInterfaceName interface{};
-    WireguardPort listen_port{std::uint16_t{1},
-                              typename WireguardPort::Trusted{}};
+    WireguardPort listen_port{std::uint16_t{1}, typename WireguardPort::Trusted{}};
     WireguardSecretKey private_key;
     WireguardSecretKey preshared_key;
     bool has_preshared_key = false;
     std::array<WireguardPeer, kWireguardMaxPeers> peers{};
     std::uint8_t peer_count = 0;
 
-    constexpr WireguardConfig(NicInterfaceName iface,
-                              WireguardPort port,
-                              WireguardSecretKey private_key_in,
-                              WireguardSecretKey preshared_key_in,
-                              bool has_psk) noexcept
+    constexpr WireguardConfig(NicInterfaceName iface, WireguardPort port, WireguardSecretKey private_key_in,
+                              WireguardSecretKey preshared_key_in, bool has_psk) noexcept
         : interface{iface},
           listen_port{port},
           private_key{std::move(private_key_in)},
@@ -180,34 +160,23 @@ struct WireguardConfig {
     ~WireguardConfig() = default;
 };
 
-using DeclaredWireguardConfig =
-    safety::Tagged<WireguardConfig, wip_source::Wireguard>;
+using DeclaredWireguardConfig = safety::Tagged<WireguardConfig, wip_source::Wireguard>;
 
 template <class Ctx>
-concept CtxFitsWireguardMint =
-    effects::IsExecCtx<Ctx>
-    && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Init>>;
+concept CtxFitsWireguardMint = effects::IsExecCtx<Ctx> && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Init>>;
 
 template <std::size_t N>
-concept WireguardAllowedIpShape =
-    N > 0u && N <= kWireguardMaxAllowedIps;
+concept WireguardAllowedIpShape = N > 0u && N <= kWireguardMaxAllowedIps;
 
 template <std::size_t N>
-concept WireguardPeerSetShape =
-    N > 0u && N <= kWireguardMaxPeers;
+concept WireguardPeerSetShape = N > 0u && N <= kWireguardMaxPeers;
 
-[[nodiscard]] constexpr bool
-wireguard_key_char_ok(char c) noexcept {
-    return (c >= 'A' && c <= 'Z') ||
-           (c >= 'a' && c <= 'z') ||
-           (c >= '0' && c <= '9') ||
-           c == '+' ||
-           c == '/' ||
-           c == '=';
+[[nodiscard]] constexpr bool wireguard_key_char_ok(char c) noexcept {
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '+' || c == '/'
+        || c == '=';
 }
 
-[[nodiscard]] constexpr std::expected<void, WireguardError>
-validate_wireguard_key_text(std::string_view key) noexcept {
+[[nodiscard]] constexpr std::expected<void, WireguardError> validate_wireguard_key_text(std::string_view key) noexcept {
     if (key.empty()) {
         return std::unexpected(WireguardError::EmptyKey);
     }
@@ -255,13 +224,11 @@ admit_wireguard_secret_key_b64(std::string_view key) noexcept {
     return WireguardSecretKey{std::move(out)};
 }
 
-[[nodiscard]] constexpr WireguardSecretKey
-empty_wireguard_secret_key() noexcept {
+[[nodiscard]] constexpr WireguardSecretKey empty_wireguard_secret_key() noexcept {
     return WireguardSecretKey{WireguardSecretKeyBytes{}};
 }
 
-[[nodiscard]] constexpr std::expected<WireguardPort, WireguardError>
-admit_wireguard_port(std::uint16_t port) noexcept {
+[[nodiscard]] constexpr std::expected<WireguardPort, WireguardError> admit_wireguard_port(std::uint16_t port) noexcept {
     if (port == 0u) {
         return std::unexpected(WireguardError::InvalidPort);
     }
@@ -273,18 +240,14 @@ admit_wireguard_cidr_prefix(std::uint8_t prefix) noexcept {
     if (prefix > 32u) {
         return std::unexpected(WireguardError::InvalidCidrPrefix);
     }
-    return WireguardCidrPrefix{
-        prefix, typename WireguardCidrPrefix::Trusted{}};
+    return WireguardCidrPrefix{prefix, typename WireguardCidrPrefix::Trusted{}};
 }
 
-[[nodiscard]] constexpr bool
-same_wireguard_key(WireguardKeyB64 const& lhs,
-                   WireguardKeyB64 const& rhs) noexcept {
+[[nodiscard]] constexpr bool same_wireguard_key(WireguardKeyB64 const& lhs, WireguardKeyB64 const& rhs) noexcept {
     unsigned diff = 0;
     for (std::size_t i = 0; i < lhs.bytes.size(); ++i) {
-        diff |= static_cast<unsigned>(
-            static_cast<unsigned char>(lhs.bytes[i]) ^
-            static_cast<unsigned char>(rhs.bytes[i]));
+        diff |=
+            static_cast<unsigned>(static_cast<unsigned char>(lhs.bytes[i]) ^ static_cast<unsigned char>(rhs.bytes[i]));
     }
     return diff == 0u;
 }
@@ -292,10 +255,8 @@ same_wireguard_key(WireguardKeyB64 const& lhs,
 template <std::size_t N>
     requires WireguardAllowedIpShape<N>
 [[nodiscard]] constexpr DeclaredWireguardPeer
-declare_wireguard_peer(DeclaredWireguardPublicKey public_key,
-                       WireguardEndpoint endpoint,
-                       std::array<WireguardAllowedIp, N> allowed_ips,
-                       bool persistent_keepalive = false) noexcept {
+declare_wireguard_peer(DeclaredWireguardPublicKey public_key, WireguardEndpoint endpoint,
+                       std::array<WireguardAllowedIp, N> allowed_ips, bool persistent_keepalive = false) noexcept {
     WireguardPeer peer{
         .public_key = public_key,
         .endpoint = endpoint,
@@ -337,9 +298,7 @@ validate_wireguard_peer(WireguardPeer const& peer) noexcept {
 template <std::size_t PeerCount>
     requires WireguardPeerSetShape<PeerCount>
 [[nodiscard]] constexpr std::expected<void, WireguardError>
-copy_wireguard_peers(
-    WireguardConfig& config,
-    std::array<DeclaredWireguardPeer, PeerCount> const& peers) noexcept {
+copy_wireguard_peers(WireguardConfig& config, std::array<DeclaredWireguardPeer, PeerCount> const& peers) noexcept {
     for (std::size_t i = 0; i < PeerCount; ++i) {
         auto const& peer = peers[i].value();
         auto valid = validate_wireguard_peer(peer);
@@ -347,8 +306,7 @@ copy_wireguard_peers(
             return std::unexpected(valid.error());
         }
         for (std::size_t j = 0; j < i; ++j) {
-            if (same_wireguard_key(config.peers[j].public_key.value(),
-                                   peer.public_key.value())) {
+            if (same_wireguard_key(config.peers[j].public_key.value(), peer.public_key.value())) {
                 return std::unexpected(WireguardError::DuplicatePeer);
             }
         }
@@ -361,13 +319,9 @@ copy_wireguard_peers(
 template <std::size_t PeerCount>
     requires WireguardPeerSetShape<PeerCount>
 [[nodiscard]] constexpr std::expected<DeclaredWireguardConfig, WireguardError>
-mint_wireguard_config(NicInterfaceName iface,
-                      WireguardPort listen_port,
-                      WireguardSecretKey private_key,
+mint_wireguard_config(NicInterfaceName iface, WireguardPort listen_port, WireguardSecretKey private_key,
                       std::array<DeclaredWireguardPeer, PeerCount> peers) noexcept {
-    WireguardConfig config{
-        iface, listen_port, std::move(private_key),
-        empty_wireguard_secret_key(), false};
+    WireguardConfig config{iface, listen_port, std::move(private_key), empty_wireguard_secret_key(), false};
     auto copied = copy_wireguard_peers(config, peers);
     if (!copied.has_value()) {
         return std::unexpected(copied.error());
@@ -378,18 +332,13 @@ mint_wireguard_config(NicInterfaceName iface,
 template <std::size_t PeerCount>
     requires WireguardPeerSetShape<PeerCount>
 [[nodiscard]] constexpr std::expected<DeclaredWireguardConfig, WireguardError>
-mint_wireguard_config_with_psk(
-    NicInterfaceName iface,
-    WireguardPort listen_port,
-    WireguardSecretKey private_key,
-    WireguardSecretKey preshared_key,
-    std::array<DeclaredWireguardPeer, PeerCount> peers) noexcept {
+mint_wireguard_config_with_psk(NicInterfaceName iface, WireguardPort listen_port, WireguardSecretKey private_key,
+                               WireguardSecretKey preshared_key,
+                               std::array<DeclaredWireguardPeer, PeerCount> peers) noexcept {
     if (preshared_key.size() == 0u) {
         return std::unexpected(WireguardError::EmptyKey);
     }
-    WireguardConfig config{
-        iface, listen_port, std::move(private_key),
-        std::move(preshared_key), true};
+    WireguardConfig config{iface, listen_port, std::move(private_key), std::move(preshared_key), true};
     auto copied = copy_wireguard_peers(config, peers);
     if (!copied.has_value()) {
         return std::unexpected(copied.error());
@@ -425,16 +374,14 @@ validate_wireguard_config(DeclaredWireguardConfig const& config) noexcept {
 }
 
 template <std::uint8_t MaxPeers = kWireguardMaxPeers>
-    requires (MaxPeers > 0u && MaxPeers <= kWireguardMaxPeers)
+    requires(MaxPeers > 0u && MaxPeers <= kWireguardMaxPeers)
 class WireguardTunnel : public safety::Pinned<WireguardTunnel<MaxPeers>> {
     WireguardConfig config_;
     std::uint32_t generation_ = 1;
 
-    [[nodiscard]] constexpr std::uint8_t
-    peer_index(DeclaredWireguardPublicKey public_key) const noexcept {
+    [[nodiscard]] constexpr std::uint8_t peer_index(DeclaredWireguardPublicKey public_key) const noexcept {
         for (std::uint8_t i = 0; i < config_.peer_count; ++i) {
-            if (same_wireguard_key(config_.peers[i].public_key.value(),
-                                   public_key.value())) {
+            if (same_wireguard_key(config_.peers[i].public_key.value(), public_key.value())) {
                 return i;
             }
         }
@@ -442,23 +389,15 @@ class WireguardTunnel : public safety::Pinned<WireguardTunnel<MaxPeers>> {
     }
 
 public:
-    explicit constexpr WireguardTunnel(DeclaredWireguardConfig config) noexcept
-        : config_{std::move(config).into()} {}
+    explicit constexpr WireguardTunnel(DeclaredWireguardConfig config) noexcept : config_{std::move(config).into()} {}
 
-    [[nodiscard]] constexpr NicInterfaceName interface() const noexcept {
-        return config_.interface;
-    }
+    [[nodiscard]] constexpr NicInterfaceName interface() const noexcept { return config_.interface; }
 
-    [[nodiscard]] constexpr std::uint8_t peer_count() const noexcept {
-        return config_.peer_count;
-    }
+    [[nodiscard]] constexpr std::uint8_t peer_count() const noexcept { return config_.peer_count; }
 
-    [[nodiscard]] constexpr std::uint32_t generation() const noexcept {
-        return generation_;
-    }
+    [[nodiscard]] constexpr std::uint32_t generation() const noexcept { return generation_; }
 
-    [[nodiscard]] constexpr std::expected<void, WireguardError>
-    add_peer(DeclaredWireguardPeer peer) noexcept {
+    [[nodiscard]] constexpr std::expected<void, WireguardError> add_peer(DeclaredWireguardPeer peer) noexcept {
         auto valid = validate_wireguard_peer(peer.value());
         if (!valid.has_value()) {
             return std::unexpected(valid.error());
@@ -466,8 +405,7 @@ public:
         if (peer_index(peer.value().public_key) != UINT8_MAX) {
             return std::unexpected(WireguardError::DuplicatePeer);
         }
-        if (config_.peer_count >= MaxPeers ||
-            config_.peer_count >= kWireguardMaxPeers) {
+        if (config_.peer_count >= MaxPeers || config_.peer_count >= kWireguardMaxPeers) {
             return std::unexpected(WireguardError::TooManyPeers);
         }
         config_.peers[config_.peer_count] = peer.value();
@@ -490,8 +428,7 @@ public:
         return {};
     }
 
-    [[nodiscard]] constexpr std::expected<OwnedWireguardTunnel, WireguardError>
-    plan_handle() const noexcept {
+    [[nodiscard]] constexpr std::expected<OwnedWireguardTunnel, WireguardError> plan_handle() const noexcept {
         if (config_.peer_count == 0u) {
             return std::unexpected(WireguardError::EmptyPeerSet);
         }
@@ -514,20 +451,17 @@ mint_wireguard_tunnel(Ctx const&, DeclaredWireguardConfig config) noexcept {
     if (config.value().peer_count > MaxPeers) {
         return std::unexpected(WireguardError::TooManyPeers);
     }
-    return std::expected<WireguardTunnel<MaxPeers>, WireguardError>{
-        std::in_place, std::move(config)};
+    return std::expected<WireguardTunnel<MaxPeers>, WireguardError>{std::in_place, std::move(config)};
 }
 
 [[nodiscard]] std::expected<OwnedWireguardTunnel, WireguardError>
 bring_up_wireguard(DeclaredWireguardConfig const& config) noexcept;
 
-[[nodiscard]] std::expected<void, WireguardError>
-apply_wireguard_peer_add(DeclaredWireguardConfig const& config,
-                         DeclaredWireguardPeer peer) noexcept;
+[[nodiscard]] std::expected<void, WireguardError> apply_wireguard_peer_add(DeclaredWireguardConfig const& config,
+                                                                           DeclaredWireguardPeer peer) noexcept;
 
-[[nodiscard]] std::expected<void, WireguardError>
-apply_wireguard_peer_remove(DeclaredWireguardConfig const& config,
-                            DeclaredWireguardPublicKey peer) noexcept;
+[[nodiscard]] std::expected<void, WireguardError> apply_wireguard_peer_remove(DeclaredWireguardConfig const& config,
+                                                                              DeclaredWireguardPublicKey peer) noexcept;
 
 static_assert(sizeof(DeclaredWireguardPublicKey) == sizeof(WireguardKeyB64));
 static_assert(sizeof(WireguardPort) == sizeof(std::uint16_t));

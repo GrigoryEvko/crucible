@@ -133,24 +133,23 @@ namespace crucible::safety::extract {
 // ═════════════════════════════════════════════════════════════════════
 
 template <auto FnPtr>
-concept SwmrWriter =
-    arity_v<FnPtr> == 2
-    // Parameter 0: non-const rvalue reference to a SWMR writer
-    // handle (D07 IsSwmrWriter on the underlying type).
-    && std::is_rvalue_reference_v<param_type_t<FnPtr, 0>>
-    && !std::is_const_v<std::remove_reference_t<param_type_t<FnPtr, 0>>>
-    && is_swmr_writer_v<std::remove_cvref_t<param_type_t<FnPtr, 0>>>
-    // Parameter 1: by-value (NOT a reference) AND NOT an
-    // OwnedRegion (to preserve mutual exclusion with
-    // ProducerEndpoint).  Pointers are not categorically rejected
-    // here — a pointer-to-T is `T*`, which is also "by value of
-    // pointer type" and admissible per §3.6's literal `T value`
-    // wording.  The dispatcher will then call publish(value) which
-    // will pass the pointer through.
-    && !std::is_reference_v<param_type_t<FnPtr, 1>>
-    && !is_owned_region_v<param_type_t<FnPtr, 1>>
-    // Return type — void per §3.6 ("publish and forget").
-    && std::is_void_v<return_type_t<FnPtr>>;
+concept SwmrWriter = arity_v<FnPtr> == 2
+                  // Parameter 0: non-const rvalue reference to a SWMR writer
+                  // handle (D07 IsSwmrWriter on the underlying type).
+                  && std::is_rvalue_reference_v<param_type_t<FnPtr, 0>>
+                  && !std::is_const_v<std::remove_reference_t<param_type_t<FnPtr, 0>>>
+                  && is_swmr_writer_v<std::remove_cvref_t<param_type_t<FnPtr, 0>>>
+                  // Parameter 1: by-value (NOT a reference) AND NOT an
+                  // OwnedRegion (to preserve mutual exclusion with
+                  // ProducerEndpoint).  Pointers are not categorically rejected
+                  // here — a pointer-to-T is `T*`, which is also "by value of
+                  // pointer type" and admissible per §3.6's literal `T value`
+                  // wording.  The dispatcher will then call publish(value) which
+                  // will pass the pointer through.
+                  && !std::is_reference_v<param_type_t<FnPtr, 1>>
+                  && !is_owned_region_v<param_type_t<FnPtr, 1>>
+                  // Return type — void per §3.6 ("publish and forget").
+                  && std::is_void_v<return_type_t<FnPtr>>;
 
 template <auto FnPtr>
 inline constexpr bool is_swmr_writer_function_v = SwmrWriter<FnPtr>;
@@ -162,14 +161,12 @@ inline constexpr bool is_swmr_writer_function_v = SwmrWriter<FnPtr>;
 // SWMR writer handle's payload type (the type publish accepts).
 template <auto FnPtr>
     requires SwmrWriter<FnPtr>
-using swmr_writer_handle_value_t =
-    swmr_writer_value_t<std::remove_cvref_t<param_type_t<FnPtr, 0>>>;
+using swmr_writer_handle_value_t = swmr_writer_value_t<std::remove_cvref_t<param_type_t<FnPtr, 0>>>;
 
 // The user-passed value type at param 1, after cv-ref strip.
 template <auto FnPtr>
     requires SwmrWriter<FnPtr>
-using swmr_writer_published_value_t =
-    std::remove_cv_t<param_type_t<FnPtr, 1>>;
+using swmr_writer_published_value_t = std::remove_cv_t<param_type_t<FnPtr, 1>>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Value-consistency predicate ────────────────────────────────────
@@ -185,8 +182,7 @@ using swmr_writer_published_value_t =
 template <auto FnPtr>
     requires SwmrWriter<FnPtr>
 inline constexpr bool swmr_writer_value_consistent_v =
-    std::is_same_v<swmr_writer_handle_value_t<FnPtr>,
-                   swmr_writer_published_value_t<FnPtr>>;
+    std::is_same_v<swmr_writer_handle_value_t<FnPtr>, swmr_writer_published_value_t<FnPtr>>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Self-test block ────────────────────────────────────────────────

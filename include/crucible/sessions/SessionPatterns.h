@@ -156,18 +156,15 @@ struct DelegateCompatible {};
 struct DelegateCompatibilityPending {};
 struct PatternHasNoDelegateBoundaryConstraints {};
 
-template <typename Proto, typename R, typename Status,
-          typename Reason = BaselinePatternNeedsCrashAwareVariant>
+template <typename Proto, typename R, typename Status, typename Reason = BaselinePatternNeedsCrashAwareVariant>
 struct PatternCrashSafety {
-    using protocol     = Proto;
+    using protocol = Proto;
     using reliable_set = R;
-    using status       = Status;
-    using reason       = Reason;
+    using status = Status;
+    using reason = Reason;
 
-    static constexpr bool verified =
-        std::is_same_v<Status, CrashSafetyVerified>;
-    static constexpr bool pending =
-        std::is_same_v<Status, CrashSafetyPending>;
+    static constexpr bool verified = std::is_same_v<Status, CrashSafetyVerified>;
+    static constexpr bool pending = std::is_same_v<Status, CrashSafetyPending>;
 };
 
 template <typename Contract>
@@ -176,17 +173,14 @@ inline constexpr bool pattern_crash_safety_verified_v = Contract::verified;
 template <typename Contract>
 inline constexpr bool pattern_crash_safety_pending_v = Contract::pending;
 
-template <typename Proto, typename Status,
-          typename Reason = PatternHasNoDelegateBoundaryConstraints>
+template <typename Proto, typename Status, typename Reason = PatternHasNoDelegateBoundaryConstraints>
 struct PatternDelegateCompatibility {
     using protocol = Proto;
-    using status   = Status;
-    using reason   = Reason;
+    using status = Status;
+    using reason = Reason;
 
-    static constexpr bool compatible =
-        std::is_same_v<Status, DelegateCompatible>;
-    static constexpr bool pending =
-        std::is_same_v<Status, DelegateCompatibilityPending>;
+    static constexpr bool compatible = std::is_same_v<Status, DelegateCompatible>;
+    static constexpr bool pending = std::is_same_v<Status, DelegateCompatibilityPending>;
 };
 
 template <typename Contract>
@@ -227,15 +221,11 @@ using RequestResponse_Server = Loop<Recv<Req, Send<Resp, Continue>>>;
 // Gives graceful termination — protocol end is in-band and visible
 // to both peers, not a transport-layer surprise.
 template <typename Req, typename Resp>
-using RequestResponseLoop_Client = Loop<Select<
-    Send<Req, Recv<Resp, Continue>>,
-    End>>;
+using RequestResponseLoop_Client = Loop<Select<Send<Req, Recv<Resp, Continue>>, End>>;
 
 // Peer of RequestResponseLoop_Client.
 template <typename Req, typename Resp>
-using RequestResponseLoop_Server = Loop<Offer<
-    Recv<Req, Send<Resp, Continue>>,
-    End>>;
+using RequestResponseLoop_Server = Loop<Offer<Recv<Req, Send<Resp, Continue>>, End>>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Pipeline ───────────────────────────────────────────────────────
@@ -292,16 +282,12 @@ using PipelineStage = RequestResponse_Server<In, Out>;
 //   index 2 = Rollback  (abandon, no ack)
 
 template <typename Begin, typename Op, typename Commit, typename Ack, typename Rollback>
-using Transaction_Client = Send<Begin, Loop<Select<
-    Send<Op, Continue>,
-    Send<Commit, Recv<Ack, End>>,
-    Send<Rollback, End>>>>;
+using Transaction_Client =
+    Send<Begin, Loop<Select<Send<Op, Continue>, Send<Commit, Recv<Ack, End>>, Send<Rollback, End>>>>;
 
 template <typename Begin, typename Op, typename Commit, typename Ack, typename Rollback>
-using Transaction_Server = Recv<Begin, Loop<Offer<
-    Recv<Op, Continue>,
-    Recv<Commit, Send<Ack, End>>,
-    Recv<Rollback, End>>>>;
+using Transaction_Server =
+    Recv<Begin, Loop<Offer<Recv<Op, Continue>, Recv<Commit, Send<Ack, End>>, Recv<Rollback, End>>>>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Fan-out / fan-in ───────────────────────────────────────────────
@@ -365,28 +351,36 @@ struct chain_send_with_tail {
     // Tail), then build the left portion (Half copies) on top of
     // the right's result.
     using right = typename chain_send_with_tail<Rest, Msg, Tail>::type;
-    using type  = typename chain_send_with_tail<Half, Msg, right>::type;
+    using type = typename chain_send_with_tail<Half, Msg, right>::type;
 };
 
 template <typename Msg, typename Tail>
-struct chain_send_with_tail<0, Msg, Tail> { using type = Tail; };
+struct chain_send_with_tail<0, Msg, Tail> {
+    using type = Tail;
+};
 
 template <typename Msg, typename Tail>
-struct chain_send_with_tail<1, Msg, Tail> { using type = Send<Msg, Tail>; };
+struct chain_send_with_tail<1, Msg, Tail> {
+    using type = Send<Msg, Tail>;
+};
 
 template <std::size_t N, typename Msg, typename Tail>
 struct chain_recv_with_tail {
     static constexpr std::size_t Half = N / 2;
     static constexpr std::size_t Rest = N - Half;
     using right = typename chain_recv_with_tail<Rest, Msg, Tail>::type;
-    using type  = typename chain_recv_with_tail<Half, Msg, right>::type;
+    using type = typename chain_recv_with_tail<Half, Msg, right>::type;
 };
 
 template <typename Msg, typename Tail>
-struct chain_recv_with_tail<0, Msg, Tail> { using type = Tail; };
+struct chain_recv_with_tail<0, Msg, Tail> {
+    using type = Tail;
+};
 
 template <typename Msg, typename Tail>
-struct chain_recv_with_tail<1, Msg, Tail> { using type = Recv<Msg, Tail>; };
+struct chain_recv_with_tail<1, Msg, Tail> {
+    using type = Recv<Msg, Tail>;
+};
 
 }  // namespace detail
 
@@ -437,15 +431,11 @@ using ScatterGather = compose_t<FanOut<N, Task>, FanIn<N, Result>>;
 // waiting for consumer delivery — under the SISO decomposition of
 // ⩽_a (task SEPLOG-I6).
 template <typename T>
-using MpmcProducer = Loop<Select<
-    Send<T, Continue>,
-    End>>;
+using MpmcProducer = Loop<Select<Send<T, Continue>, End>>;
 
 // Consumer's local view — accepts either a delivery or a close signal.
 template <typename T>
-using MpmcConsumer = Loop<Offer<
-    Recv<T, Continue>,
-    End>>;
+using MpmcConsumer = Loop<Offer<Recv<T, Continue>, End>>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Two-phase commit (NBAC binary fragment, BSYZ22) ────────────────
@@ -464,23 +454,13 @@ using MpmcConsumer = Loop<Offer<
 // crash-oblivious wire shape; crash-aware 2PC wraps the Vote/decision
 // points in Sender<>-annotated Offer branches carrying Crash<Peer>.
 template <typename Prepare, typename Vote, typename Commit, typename Abort>
-using TwoPhaseCommit_Coord =
-    Send<Prepare,
-    Recv<Vote,
-    Select<
-        Send<Commit, End>,
-        Send<Abort,  End>>>>;
+using TwoPhaseCommit_Coord = Send<Prepare, Recv<Vote, Select<Send<Commit, End>, Send<Abort, End>>>>;
 
 // Follower side — dual of coordinator.  Written out literally (rather
 // than as dual_of_t<...>) so the shape is readable at a glance and
 // so the alias is stable even if dual_of_t's implementation changes.
 template <typename Prepare, typename Vote, typename Commit, typename Abort>
-using TwoPhaseCommit_Follower =
-    Recv<Prepare,
-    Send<Vote,
-    Offer<
-        Recv<Commit, End>,
-        Recv<Abort,  End>>>>;
+using TwoPhaseCommit_Follower = Recv<Prepare, Send<Vote, Offer<Recv<Commit, End>, Recv<Abort, End>>>>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── SWIM gossip probe ──────────────────────────────────────────────
@@ -506,16 +486,12 @@ using SwimProbe_Server = RequestResponseOnce_Server<Probe, Ack>;
 // session ends.  For a handshake-then-run-protocol shape, compose
 // with the subsequent protocol via compose_t.
 template <typename Hello, typename Welcome, typename Reject>
-using Handshake_Client = Send<Hello, Offer<
-    Recv<Welcome, End>,
-    Recv<Reject,  End>>>;
+using Handshake_Client = Send<Hello, Offer<Recv<Welcome, End>, Recv<Reject, End>>>;
 
 // Server side — receives Hello, then selects between welcoming or
 // rejecting.
 template <typename Hello, typename Welcome, typename Reject>
-using Handshake_Server = Recv<Hello, Select<
-    Send<Welcome, End>,
-    Send<Reject,  End>>>;
+using Handshake_Server = Recv<Hello, Select<Send<Welcome, End>, Send<Reject, End>>>;
 
 }  // namespace crucible::safety::proto::pattern
 
@@ -529,12 +505,9 @@ using Handshake_Server = Recv<Hello, Select<
 // aliases fail compilation at the first TU that pulls us in.
 
 #ifdef CRUCIBLE_SESSION_SELF_TESTS
-#if !defined(CRUCIBLE_SESSION_PATTERN_SELF_TESTS_BASIC) && \
-    !defined(CRUCIBLE_SESSION_PATTERN_SELF_TESTS_FAN) && \
-    !defined(CRUCIBLE_SESSION_PATTERN_SELF_TESTS_SUBTYPE) && \
-    !defined(CRUCIBLE_SESSION_PATTERN_SELF_TESTS_CRASH) && \
-    !defined(CRUCIBLE_SESSION_PATTERN_SELF_TESTS_DELEGATE) && \
-    !defined(CRUCIBLE_SESSION_PATTERN_SELF_TESTS_COMPOSE)
+#if !defined(CRUCIBLE_SESSION_PATTERN_SELF_TESTS_BASIC) && !defined(CRUCIBLE_SESSION_PATTERN_SELF_TESTS_FAN)        \
+    && !defined(CRUCIBLE_SESSION_PATTERN_SELF_TESTS_SUBTYPE) && !defined(CRUCIBLE_SESSION_PATTERN_SELF_TESTS_CRASH) \
+    && !defined(CRUCIBLE_SESSION_PATTERN_SELF_TESTS_DELEGATE) && !defined(CRUCIBLE_SESSION_PATTERN_SELF_TESTS_COMPOSE)
 #define CRUCIBLE_SESSION_PATTERN_SELF_TESTS_BASIC 1
 #define CRUCIBLE_SESSION_PATTERN_SELF_TESTS_FAN 1
 #define CRUCIBLE_SESSION_PATTERN_SELF_TESTS_SUBTYPE 1
@@ -546,78 +519,59 @@ namespace crucible::safety::proto::pattern::detail::pattern_self_test {
 
 // Fixture types — distinct empty structs so the type system can tell
 // them apart in positional-branch tests.
-struct Req     {};
-struct Resp    {};
-struct Task    {};
-struct Result  {};
+struct Req {};
+struct Resp {};
+struct Task {};
+struct Result {};
 struct Prepare {};
-struct Vote    {};
-struct Commit  {};
-struct Abort   {};
-struct Job     {};
-struct Probe   {};
-struct Ack     {};
-struct Hello   {};
+struct Vote {};
+struct Commit {};
+struct Abort {};
+struct Job {};
+struct Probe {};
+struct Ack {};
+struct Hello {};
 struct Welcome {};
-struct Reject  {};
-struct Cancel  {};
-struct Retry   {};
+struct Reject {};
+struct Cancel {};
+struct Retry {};
 
-struct ClientRole      {};
-struct ServerRole      {};
-struct SourceRole      {};
-struct SinkRole        {};
-struct StageRole       {};
+struct ClientRole {};
+struct ServerRole {};
+struct SourceRole {};
+struct SinkRole {};
+struct StageRole {};
 struct CoordinatorRole {};
-struct CollectorRole   {};
-struct ProducerRole    {};
-struct ConsumerRole    {};
-struct FollowerRole    {};
+struct CollectorRole {};
+struct ProducerRole {};
+struct ConsumerRole {};
+struct FollowerRole {};
 struct DelegatedRecipientRole {};
 
 using TxClient = Transaction_Client<Prepare, Req, Commit, Ack, Abort>;
 using TxServer = Transaction_Server<Prepare, Req, Commit, Ack, Abort>;
-using ConcreteCoord    = TwoPhaseCommit_Coord<Prepare, Vote, Commit, Abort>;
+using ConcreteCoord = TwoPhaseCommit_Coord<Prepare, Vote, Commit, Abort>;
 using ConcreteFollower = TwoPhaseCommit_Follower<Prepare, Vote, Commit, Abort>;
 
 #ifdef CRUCIBLE_SESSION_PATTERN_SELF_TESTS_BASIC
 // ─── RequestResponse family ────────────────────────────────────────
 
 // Once-variants: single round trip.
-static_assert(std::is_same_v<
-    RequestResponseOnce_Client<Req, Resp>,
-    Send<Req, Recv<Resp, End>>>);
-static_assert(std::is_same_v<
-    RequestResponseOnce_Server<Req, Resp>,
-    Recv<Req, Send<Resp, End>>>);
-static_assert(std::is_same_v<
-    dual_of_t<RequestResponseOnce_Client<Req, Resp>>,
-    RequestResponseOnce_Server<Req, Resp>>);
-static_assert(std::is_same_v<
-    dual_of_t<RequestResponseOnce_Server<Req, Resp>>,
-    RequestResponseOnce_Client<Req, Resp>>);
+static_assert(std::is_same_v<RequestResponseOnce_Client<Req, Resp>, Send<Req, Recv<Resp, End>>>);
+static_assert(std::is_same_v<RequestResponseOnce_Server<Req, Resp>, Recv<Req, Send<Resp, End>>>);
+static_assert(std::is_same_v<dual_of_t<RequestResponseOnce_Client<Req, Resp>>, RequestResponseOnce_Server<Req, Resp>>);
+static_assert(std::is_same_v<dual_of_t<RequestResponseOnce_Server<Req, Resp>>, RequestResponseOnce_Client<Req, Resp>>);
 
 // Looping variants: forever.
-static_assert(std::is_same_v<
-    RequestResponse_Client<Req, Resp>,
-    Loop<Send<Req, Recv<Resp, Continue>>>>);
-static_assert(std::is_same_v<
-    RequestResponse_Server<Req, Resp>,
-    Loop<Recv<Req, Send<Resp, Continue>>>>);
-static_assert(std::is_same_v<
-    dual_of_t<RequestResponse_Client<Req, Resp>>,
-    RequestResponse_Server<Req, Resp>>);
+static_assert(std::is_same_v<RequestResponse_Client<Req, Resp>, Loop<Send<Req, Recv<Resp, Continue>>>>);
+static_assert(std::is_same_v<RequestResponse_Server<Req, Resp>, Loop<Recv<Req, Send<Resp, Continue>>>>);
+static_assert(std::is_same_v<dual_of_t<RequestResponse_Client<Req, Resp>>, RequestResponse_Server<Req, Resp>>);
 
 // Loop-with-close variants.
-static_assert(std::is_same_v<
-    RequestResponseLoop_Client<Req, Resp>,
-    Loop<Select<Send<Req, Recv<Resp, Continue>>, End>>>);
-static_assert(std::is_same_v<
-    RequestResponseLoop_Server<Req, Resp>,
-    Loop<Offer<Recv<Req, Send<Resp, Continue>>, End>>>);
-static_assert(std::is_same_v<
-    dual_of_t<RequestResponseLoop_Client<Req, Resp>>,
-    RequestResponseLoop_Server<Req, Resp>>);
+static_assert(
+    std::is_same_v<RequestResponseLoop_Client<Req, Resp>, Loop<Select<Send<Req, Recv<Resp, Continue>>, End>>>);
+static_assert(std::is_same_v<RequestResponseLoop_Server<Req, Resp>, Loop<Offer<Recv<Req, Send<Resp, Continue>>, End>>>);
+static_assert(std::is_same_v<dual_of_t<RequestResponseLoop_Client<Req, Resp>>, RequestResponseLoop_Server<Req, Resp>>);
 
 // Well-formedness — every variant passes.
 static_assert(is_well_formed_v<RequestResponseOnce_Client<Req, Resp>>);
@@ -628,34 +582,25 @@ static_assert(is_well_formed_v<RequestResponseLoop_Client<Req, Resp>>);
 static_assert(is_well_formed_v<RequestResponseLoop_Server<Req, Resp>>);
 
 // Involution under dual for every *_Client pattern.
-static_assert(std::is_same_v<
-    dual_of_t<dual_of_t<RequestResponseOnce_Client<Req, Resp>>>,
-    RequestResponseOnce_Client<Req, Resp>>);
-static_assert(std::is_same_v<
-    dual_of_t<dual_of_t<RequestResponse_Client<Req, Resp>>>,
-    RequestResponse_Client<Req, Resp>>);
-static_assert(std::is_same_v<
-    dual_of_t<dual_of_t<RequestResponseLoop_Client<Req, Resp>>>,
-    RequestResponseLoop_Client<Req, Resp>>);
+static_assert(
+    std::is_same_v<dual_of_t<dual_of_t<RequestResponseOnce_Client<Req, Resp>>>, RequestResponseOnce_Client<Req, Resp>>);
+static_assert(
+    std::is_same_v<dual_of_t<dual_of_t<RequestResponse_Client<Req, Resp>>>, RequestResponse_Client<Req, Resp>>);
+static_assert(
+    std::is_same_v<dual_of_t<dual_of_t<RequestResponseLoop_Client<Req, Resp>>>, RequestResponseLoop_Client<Req, Resp>>);
 
 // ─── PipelineSource / PipelineSink / PipelineStage ────────────────
 
 // Source: forever-loop of Send.
-static_assert(std::is_same_v<
-    PipelineSource<Job>,
-    Loop<Send<Job, Continue>>>);
-static_assert(std::is_same_v<
-    PipelineSink<Job>,
-    Loop<Recv<Job, Continue>>>);
+static_assert(std::is_same_v<PipelineSource<Job>, Loop<Send<Job, Continue>>>);
+static_assert(std::is_same_v<PipelineSink<Job>, Loop<Recv<Job, Continue>>>);
 
 // Source's dual is Sink, and vice versa (both directions).
 static_assert(std::is_same_v<dual_of_t<PipelineSource<Job>>, PipelineSink<Job>>);
-static_assert(std::is_same_v<dual_of_t<PipelineSink<Job>>,   PipelineSource<Job>>);
+static_assert(std::is_same_v<dual_of_t<PipelineSink<Job>>, PipelineSource<Job>>);
 
 // Involution.
-static_assert(std::is_same_v<
-    dual_of_t<dual_of_t<PipelineSource<Job>>>,
-    PipelineSource<Job>>);
+static_assert(std::is_same_v<dual_of_t<dual_of_t<PipelineSource<Job>>>, PipelineSource<Job>>);
 
 // Well-formed: Continue is inside Loop.
 static_assert(is_well_formed_v<PipelineSource<Job>>);
@@ -663,36 +608,24 @@ static_assert(is_well_formed_v<PipelineSink<Job>>);
 
 // PipelineStage IS RequestResponse_Server structurally — the alias
 // names the intent.
-static_assert(std::is_same_v<
-    PipelineStage<Req, Resp>,
-    RequestResponse_Server<Req, Resp>>);
+static_assert(std::is_same_v<PipelineStage<Req, Resp>, RequestResponse_Server<Req, Resp>>);
 
 // Dual of a pipeline stage is the "source" that drives it.
-static_assert(std::is_same_v<
-    dual_of_t<PipelineStage<Req, Resp>>,
-    RequestResponse_Client<Req, Resp>>);
+static_assert(std::is_same_v<dual_of_t<PipelineStage<Req, Resp>>, RequestResponse_Client<Req, Resp>>);
 // And the reverse direction.
-static_assert(std::is_same_v<
-    dual_of_t<RequestResponse_Client<Req, Resp>>,
-    PipelineStage<Req, Resp>>);
+static_assert(std::is_same_v<dual_of_t<RequestResponse_Client<Req, Resp>>, PipelineStage<Req, Resp>>);
 
 static_assert(is_well_formed_v<PipelineStage<Req, Resp>>);
 
 // ─── Transaction ──────────────────────────────────────────────────
 
 // Structural expansion — matches the doc-comment sequence exactly.
-static_assert(std::is_same_v<
-    TxClient,
-    Send<Prepare, Loop<Select<
-        Send<Req, Continue>,
-        Send<Commit, Recv<Ack, End>>,
-        Send<Abort, End>>>>>);
-static_assert(std::is_same_v<
-    TxServer,
-    Recv<Prepare, Loop<Offer<
-        Recv<Req, Continue>,
-        Recv<Commit, Send<Ack, End>>,
-        Recv<Abort, End>>>>>);
+static_assert(
+    std::is_same_v<TxClient,
+                   Send<Prepare, Loop<Select<Send<Req, Continue>, Send<Commit, Recv<Ack, End>>, Send<Abort, End>>>>>);
+static_assert(
+    std::is_same_v<TxServer,
+                   Recv<Prepare, Loop<Offer<Recv<Req, Continue>, Recv<Commit, Send<Ack, End>>, Recv<Abort, End>>>>>);
 
 // Bidirectional duality — catches asymmetric dual bugs in either
 // Session.h or in our hand-written dual pair.
@@ -717,26 +650,20 @@ static_assert(std::is_same_v<FanIn<0, Job>, End>);
 
 // Single send/recv.
 static_assert(std::is_same_v<FanOut<1, Job>, Send<Job, End>>);
-static_assert(std::is_same_v<FanIn<1, Job>,  Recv<Job, End>>);
+static_assert(std::is_same_v<FanIn<1, Job>, Recv<Job, End>>);
 
 // Three-element expansion.
-static_assert(std::is_same_v<
-    FanOut<3, Job>,
-    Send<Job, Send<Job, Send<Job, End>>>>);
-static_assert(std::is_same_v<
-    FanIn<3, Job>,
-    Recv<Job, Recv<Job, Recv<Job, End>>>>);
+static_assert(std::is_same_v<FanOut<3, Job>, Send<Job, Send<Job, Send<Job, End>>>>);
+static_assert(std::is_same_v<FanIn<3, Job>, Recv<Job, Recv<Job, Recv<Job, End>>>>);
 
 // Duality mirror:  dual(FanOut<N, Msg>) = FanIn<N, Msg>  for any N.
 static_assert(std::is_same_v<dual_of_t<FanOut<0, Job>>, FanIn<0, Job>>);
 static_assert(std::is_same_v<dual_of_t<FanOut<1, Job>>, FanIn<1, Job>>);
 static_assert(std::is_same_v<dual_of_t<FanOut<3, Job>>, FanIn<3, Job>>);
-static_assert(std::is_same_v<dual_of_t<FanIn<5, Job>>,  FanOut<5, Job>>);
+static_assert(std::is_same_v<dual_of_t<FanIn<5, Job>>, FanOut<5, Job>>);
 
 // Involution.
-static_assert(std::is_same_v<
-    dual_of_t<dual_of_t<FanOut<7, Job>>>,
-    FanOut<7, Job>>);
+static_assert(std::is_same_v<dual_of_t<dual_of_t<FanOut<7, Job>>>, FanOut<7, Job>>);
 
 // Broadcast == FanOut at the type level.
 static_assert(std::is_same_v<Broadcast<0, Job>, FanOut<0, Job>>);
@@ -757,15 +684,9 @@ static_assert(is_well_formed_v<FanIn<32, Job>>);
 // Two-element-at-a-time expansion checks the recursion's correctness
 // at boundaries where Half == Rest (even N) and Half + 1 == Rest
 // (odd N).
-static_assert(std::is_same_v<
-    FanOut<2, Job>,
-    Send<Job, Send<Job, End>>>);
-static_assert(std::is_same_v<
-    FanOut<4, Job>,
-    Send<Job, Send<Job, Send<Job, Send<Job, End>>>>>);
-static_assert(std::is_same_v<
-    FanOut<5, Job>,
-    Send<Job, Send<Job, Send<Job, Send<Job, Send<Job, End>>>>>>);
+static_assert(std::is_same_v<FanOut<2, Job>, Send<Job, Send<Job, End>>>);
+static_assert(std::is_same_v<FanOut<4, Job>, Send<Job, Send<Job, Send<Job, Send<Job, End>>>>>);
+static_assert(std::is_same_v<FanOut<5, Job>, Send<Job, Send<Job, Send<Job, Send<Job, Send<Job, End>>>>>>);
 
 // Large-N witnesses: instantiating these forces O(log₂ N) chain-
 // construction depth = 11, while still crossing the old linear
@@ -779,17 +700,19 @@ static_assert(std::is_same_v<
 // shape proves the construction succeeded; tail correctness is
 // established by the small-N exact-match asserts above.
 namespace large_n_witness {
-template <typename T> struct head_is_send : std::false_type {};
+template <typename T>
+struct head_is_send : std::false_type {};
 template <typename M, typename K>
 struct head_is_send<Send<M, K>> : std::true_type {};
 
-template <typename T> struct head_is_recv : std::false_type {};
+template <typename T>
+struct head_is_recv : std::false_type {};
 template <typename M, typename K>
 struct head_is_recv<Recv<M, K>> : std::true_type {};
 }  // namespace large_n_witness
 
-static_assert( large_n_witness::head_is_send<FanOut<2048, Job>>::value);
-static_assert( large_n_witness::head_is_recv<FanIn <2048, Job>>::value);
+static_assert(large_n_witness::head_is_send<FanOut<2048, Job>>::value);
+static_assert(large_n_witness::head_is_recv<FanIn<2048, Job>>::value);
 
 // Note: a `dual_of_t<FanOut<2048, Job>>` witness would be natural
 // here but would itself hit the template-depth limit — `dual_of` is
@@ -801,29 +724,20 @@ static_assert( large_n_witness::head_is_recv<FanIn <2048, Job>>::value);
 // ─── ScatterGather ─────────────────────────────────────────────────
 
 // N=2: send Task Task, then recv Result Result.
-static_assert(std::is_same_v<
-    ScatterGather<2, Task, Result>,
-    Send<Task, Send<Task,
-         Recv<Result, Recv<Result, End>>>>>);
+static_assert(std::is_same_v<ScatterGather<2, Task, Result>, Send<Task, Send<Task, Recv<Result, Recv<Result, End>>>>>);
 
 // N=0: degenerate — empty compose = End.
 static_assert(std::is_same_v<ScatterGather<0, Task, Result>, End>);
 
 // N=1: single round trip — structurally equal to RequestResponseOnce.
-static_assert(std::is_same_v<
-    ScatterGather<1, Task, Result>,
-    RequestResponseOnce_Client<Task, Result>>);
+static_assert(std::is_same_v<ScatterGather<1, Task, Result>, RequestResponseOnce_Client<Task, Result>>);
 
 // Duality: scatter-gather coordinator's dual is gather-scatter follower.
-static_assert(std::is_same_v<
-    dual_of_t<ScatterGather<2, Task, Result>>,
-    Recv<Task, Recv<Task,
-         Send<Result, Send<Result, End>>>>>);
+static_assert(
+    std::is_same_v<dual_of_t<ScatterGather<2, Task, Result>>, Recv<Task, Recv<Task, Send<Result, Send<Result, End>>>>>);
 
 // Involution.
-static_assert(std::is_same_v<
-    dual_of_t<dual_of_t<ScatterGather<4, Task, Result>>>,
-    ScatterGather<4, Task, Result>>);
+static_assert(std::is_same_v<dual_of_t<dual_of_t<ScatterGather<4, Task, Result>>>, ScatterGather<4, Task, Result>>);
 
 static_assert(is_well_formed_v<ScatterGather<8, Task, Result>>);
 #endif  // CRUCIBLE_SESSION_PATTERN_SELF_TESTS_FAN
@@ -831,21 +745,15 @@ static_assert(is_well_formed_v<ScatterGather<8, Task, Result>>);
 #ifdef CRUCIBLE_SESSION_PATTERN_SELF_TESTS_BASIC
 // ─── MpmcProducer / MpmcConsumer ───────────────────────────────────
 
-static_assert(std::is_same_v<
-    MpmcProducer<Job>,
-    Loop<Select<Send<Job, Continue>, End>>>);
-static_assert(std::is_same_v<
-    MpmcConsumer<Job>,
-    Loop<Offer<Recv<Job, Continue>, End>>>);
+static_assert(std::is_same_v<MpmcProducer<Job>, Loop<Select<Send<Job, Continue>, End>>>);
+static_assert(std::is_same_v<MpmcConsumer<Job>, Loop<Offer<Recv<Job, Continue>, End>>>);
 
 // Duality.
 static_assert(std::is_same_v<dual_of_t<MpmcProducer<Job>>, MpmcConsumer<Job>>);
 static_assert(std::is_same_v<dual_of_t<MpmcConsumer<Job>>, MpmcProducer<Job>>);
 
 // Involution.
-static_assert(std::is_same_v<
-    dual_of_t<dual_of_t<MpmcProducer<Job>>>,
-    MpmcProducer<Job>>);
+static_assert(std::is_same_v<dual_of_t<dual_of_t<MpmcProducer<Job>>>, MpmcProducer<Job>>);
 
 // Well-formed (Continue is guarded by Loop).
 static_assert(is_well_formed_v<MpmcProducer<Job>>);
@@ -854,25 +762,13 @@ static_assert(is_well_formed_v<MpmcConsumer<Job>>);
 // ─── TwoPhaseCommit ────────────────────────────────────────────────
 
 // Structural expansion.
-static_assert(std::is_same_v<
-    ConcreteCoord,
-    Send<Prepare,
-    Recv<Vote,
-    Select<
-        Send<Commit, End>,
-        Send<Abort,  End>>>>>);
-static_assert(std::is_same_v<
-    ConcreteFollower,
-    Recv<Prepare,
-    Send<Vote,
-    Offer<
-        Recv<Commit, End>,
-        Recv<Abort,  End>>>>>);
+static_assert(std::is_same_v<ConcreteCoord, Send<Prepare, Recv<Vote, Select<Send<Commit, End>, Send<Abort, End>>>>>);
+static_assert(std::is_same_v<ConcreteFollower, Recv<Prepare, Send<Vote, Offer<Recv<Commit, End>, Recv<Abort, End>>>>>);
 
 // Duality — critical: the written-out TwoPhaseCommit_Follower IS
 // precisely dual(TwoPhaseCommit_Coord).  If dual_of_t changes, this
 // catches the divergence.
-static_assert(std::is_same_v<dual_of_t<ConcreteCoord>,    ConcreteFollower>);
+static_assert(std::is_same_v<dual_of_t<ConcreteCoord>, ConcreteFollower>);
 static_assert(std::is_same_v<dual_of_t<ConcreteFollower>, ConcreteCoord>);
 
 // Involution.
@@ -886,17 +782,11 @@ static_assert(is_well_formed_v<ConcreteFollower>);
 
 // SwimProbe is intentionally identical to RequestResponseOnce —
 // structurally equal at the type level.
-static_assert(std::is_same_v<
-    SwimProbe_Client<Probe, Ack>,
-    RequestResponseOnce_Client<Probe, Ack>>);
-static_assert(std::is_same_v<
-    SwimProbe_Server<Probe, Ack>,
-    RequestResponseOnce_Server<Probe, Ack>>);
+static_assert(std::is_same_v<SwimProbe_Client<Probe, Ack>, RequestResponseOnce_Client<Probe, Ack>>);
+static_assert(std::is_same_v<SwimProbe_Server<Probe, Ack>, RequestResponseOnce_Server<Probe, Ack>>);
 
 // Duality.
-static_assert(std::is_same_v<
-    dual_of_t<SwimProbe_Client<Probe, Ack>>,
-    SwimProbe_Server<Probe, Ack>>);
+static_assert(std::is_same_v<dual_of_t<SwimProbe_Client<Probe, Ack>>, SwimProbe_Server<Probe, Ack>>);
 
 static_assert(is_well_formed_v<SwimProbe_Client<Probe, Ack>>);
 static_assert(is_well_formed_v<SwimProbe_Server<Probe, Ack>>);
@@ -904,29 +794,20 @@ static_assert(is_well_formed_v<SwimProbe_Server<Probe, Ack>>);
 // ─── Handshake ─────────────────────────────────────────────────────
 
 // Structural expansion.
-static_assert(std::is_same_v<
-    Handshake_Client<Hello, Welcome, Reject>,
-    Send<Hello, Offer<
-        Recv<Welcome, End>,
-        Recv<Reject,  End>>>>);
-static_assert(std::is_same_v<
-    Handshake_Server<Hello, Welcome, Reject>,
-    Recv<Hello, Select<
-        Send<Welcome, End>,
-        Send<Reject,  End>>>>);
+static_assert(std::is_same_v<Handshake_Client<Hello, Welcome, Reject>,
+                             Send<Hello, Offer<Recv<Welcome, End>, Recv<Reject, End>>>>);
+static_assert(std::is_same_v<Handshake_Server<Hello, Welcome, Reject>,
+                             Recv<Hello, Select<Send<Welcome, End>, Send<Reject, End>>>>);
 
 // Duality.
-static_assert(std::is_same_v<
-    dual_of_t<Handshake_Client<Hello, Welcome, Reject>>,
-    Handshake_Server<Hello, Welcome, Reject>>);
-static_assert(std::is_same_v<
-    dual_of_t<Handshake_Server<Hello, Welcome, Reject>>,
-    Handshake_Client<Hello, Welcome, Reject>>);
+static_assert(
+    std::is_same_v<dual_of_t<Handshake_Client<Hello, Welcome, Reject>>, Handshake_Server<Hello, Welcome, Reject>>);
+static_assert(
+    std::is_same_v<dual_of_t<Handshake_Server<Hello, Welcome, Reject>>, Handshake_Client<Hello, Welcome, Reject>>);
 
 // Involution.
-static_assert(std::is_same_v<
-    dual_of_t<dual_of_t<Handshake_Client<Hello, Welcome, Reject>>>,
-    Handshake_Client<Hello, Welcome, Reject>>);
+static_assert(std::is_same_v<dual_of_t<dual_of_t<Handshake_Client<Hello, Welcome, Reject>>>,
+                             Handshake_Client<Hello, Welcome, Reject>>);
 
 static_assert(is_well_formed_v<Handshake_Client<Hello, Welcome, Reject>>);
 static_assert(is_well_formed_v<Handshake_Server<Hello, Welcome, Reject>>);
@@ -958,24 +839,16 @@ static_assert(is_well_formed_v<Handshake_Server<Hello, Welcome, Reject>>);
 // structural subtype check.
 template <typename P>
 inline constexpr bool refines_self_and_double_dual_v =
-    is_dual_involutive_v<P> &&
-    is_subtype_sync_v<P, P> &&
-    is_subtype_sync_v<P, dual_of_t<dual_of_t<P>>>;
+    is_dual_involutive_v<P> && is_subtype_sync_v<P, P> && is_subtype_sync_v<P, dual_of_t<dual_of_t<P>>>;
 
 // Every public named pattern refines its own double dual.  This is the
 // subtype-strengthened form of the dual-involution checks above.
-static_assert(refines_self_and_double_dual_v<
-    RequestResponseOnce_Client<Req, Resp>>);
-static_assert(refines_self_and_double_dual_v<
-    RequestResponseOnce_Server<Req, Resp>>);
-static_assert(refines_self_and_double_dual_v<
-    RequestResponse_Client<Req, Resp>>);
-static_assert(refines_self_and_double_dual_v<
-    RequestResponse_Server<Req, Resp>>);
-static_assert(refines_self_and_double_dual_v<
-    RequestResponseLoop_Client<Req, Resp>>);
-static_assert(refines_self_and_double_dual_v<
-    RequestResponseLoop_Server<Req, Resp>>);
+static_assert(refines_self_and_double_dual_v<RequestResponseOnce_Client<Req, Resp>>);
+static_assert(refines_self_and_double_dual_v<RequestResponseOnce_Server<Req, Resp>>);
+static_assert(refines_self_and_double_dual_v<RequestResponse_Client<Req, Resp>>);
+static_assert(refines_self_and_double_dual_v<RequestResponse_Server<Req, Resp>>);
+static_assert(refines_self_and_double_dual_v<RequestResponseLoop_Client<Req, Resp>>);
+static_assert(refines_self_and_double_dual_v<RequestResponseLoop_Server<Req, Resp>>);
 
 static_assert(refines_self_and_double_dual_v<PipelineSource<Job>>);
 static_assert(refines_self_and_double_dual_v<PipelineSink<Job>>);
@@ -987,8 +860,7 @@ static_assert(refines_self_and_double_dual_v<TxServer>);
 static_assert(refines_self_and_double_dual_v<FanOut<3, Job>>);
 static_assert(refines_self_and_double_dual_v<FanIn<3, Job>>);
 static_assert(refines_self_and_double_dual_v<Broadcast<3, Job>>);
-static_assert(refines_self_and_double_dual_v<
-    ScatterGather<2, Task, Result>>);
+static_assert(refines_self_and_double_dual_v<ScatterGather<2, Task, Result>>);
 
 static_assert(refines_self_and_double_dual_v<MpmcProducer<Job>>);
 static_assert(refines_self_and_double_dual_v<MpmcConsumer<Job>>);
@@ -996,140 +868,77 @@ static_assert(refines_self_and_double_dual_v<MpmcConsumer<Job>>);
 static_assert(refines_self_and_double_dual_v<ConcreteCoord>);
 static_assert(refines_self_and_double_dual_v<ConcreteFollower>);
 
-static_assert(refines_self_and_double_dual_v<
-    SwimProbe_Client<Probe, Ack>>);
-static_assert(refines_self_and_double_dual_v<
-    SwimProbe_Server<Probe, Ack>>);
+static_assert(refines_self_and_double_dual_v<SwimProbe_Client<Probe, Ack>>);
+static_assert(refines_self_and_double_dual_v<SwimProbe_Server<Probe, Ack>>);
 
-static_assert(refines_self_and_double_dual_v<
-    Handshake_Client<Hello, Welcome, Reject>>);
-static_assert(refines_self_and_double_dual_v<
-    Handshake_Server<Hello, Welcome, Reject>>);
+static_assert(refines_self_and_double_dual_v<Handshake_Client<Hello, Welcome, Reject>>);
+static_assert(refines_self_and_double_dual_v<Handshake_Server<Hello, Welcome, Reject>>);
 
 // Alias families are not merely syntactically equal; they are pinned
 // as bidirectional subtype equivalents.
-static_assert(equivalent_sync_v<
-    PipelineStage<Req, Resp>,
-    RequestResponse_Server<Req, Resp>>);
+static_assert(equivalent_sync_v<PipelineStage<Req, Resp>, RequestResponse_Server<Req, Resp>>);
 static_assert(equivalent_sync_v<Broadcast<4, Job>, FanOut<4, Job>>);
-static_assert(equivalent_sync_v<
-    ScatterGather<1, Task, Result>,
-    RequestResponseOnce_Client<Task, Result>>);
-static_assert(equivalent_sync_v<
-    SwimProbe_Client<Probe, Ack>,
-    RequestResponseOnce_Client<Probe, Ack>>);
-static_assert(equivalent_sync_v<
-    SwimProbe_Server<Probe, Ack>,
-    RequestResponseOnce_Server<Probe, Ack>>);
+static_assert(equivalent_sync_v<ScatterGather<1, Task, Result>, RequestResponseOnce_Client<Task, Result>>);
+static_assert(equivalent_sync_v<SwimProbe_Client<Probe, Ack>, RequestResponseOnce_Client<Probe, Ack>>);
+static_assert(equivalent_sync_v<SwimProbe_Server<Probe, Ack>, RequestResponseOnce_Server<Probe, Ack>>);
 
 // The close-free and in-band-close request/response variants are
 // intentionally distinct shapes, not a subtype ladder.
-static_assert(!is_subtype_sync_v<
-    RequestResponse_Client<Req, Resp>,
-    RequestResponseLoop_Client<Req, Resp>>);
-static_assert(!is_subtype_sync_v<
-    RequestResponseLoop_Client<Req, Resp>,
-    RequestResponse_Client<Req, Resp>>);
-static_assert(!is_subtype_sync_v<
-    RequestResponse_Server<Req, Resp>,
-    RequestResponseLoop_Server<Req, Resp>>);
-static_assert(!is_subtype_sync_v<
-    RequestResponseLoop_Server<Req, Resp>,
-    RequestResponse_Server<Req, Resp>>);
+static_assert(!is_subtype_sync_v<RequestResponse_Client<Req, Resp>, RequestResponseLoop_Client<Req, Resp>>);
+static_assert(!is_subtype_sync_v<RequestResponseLoop_Client<Req, Resp>, RequestResponse_Client<Req, Resp>>);
+static_assert(!is_subtype_sync_v<RequestResponse_Server<Req, Resp>, RequestResponseLoop_Server<Req, Resp>>);
+static_assert(!is_subtype_sync_v<RequestResponseLoop_Server<Req, Resp>, RequestResponse_Server<Req, Resp>>);
 
 // RequestResponseLoop: client-side Select narrowing and server-side
 // Offer widening are the proper strict refinement directions.
-using RRLoopClientSendOnly = Loop<Select<
-    Send<Req, Recv<Resp, Continue>>>>;
-static_assert(is_strict_subtype_sync_v<
-    RRLoopClientSendOnly,
-    RequestResponseLoop_Client<Req, Resp>>);
-static_assert(!is_subtype_sync_v<
-    RequestResponseLoop_Client<Req, Resp>,
-    RRLoopClientSendOnly>);
+using RRLoopClientSendOnly = Loop<Select<Send<Req, Recv<Resp, Continue>>>>;
+static_assert(is_strict_subtype_sync_v<RRLoopClientSendOnly, RequestResponseLoop_Client<Req, Resp>>);
+static_assert(!is_subtype_sync_v<RequestResponseLoop_Client<Req, Resp>, RRLoopClientSendOnly>);
 
-using RRLoopServerWithRetry = Loop<Offer<
-    Recv<Req, Send<Resp, Continue>>,
-    End,
-    Recv<Retry, End>>>;
-static_assert(is_strict_subtype_sync_v<
-    RRLoopServerWithRetry,
-    RequestResponseLoop_Server<Req, Resp>>);
-static_assert(!is_subtype_sync_v<
-    RequestResponseLoop_Server<Req, Resp>,
-    RRLoopServerWithRetry>);
+using RRLoopServerWithRetry = Loop<Offer<Recv<Req, Send<Resp, Continue>>, End, Recv<Retry, End>>>;
+static_assert(is_strict_subtype_sync_v<RRLoopServerWithRetry, RequestResponseLoop_Server<Req, Resp>>);
+static_assert(!is_subtype_sync_v<RequestResponseLoop_Server<Req, Resp>, RRLoopServerWithRetry>);
 
 // Transaction: a client may narrow choices; a server may handle more
 // choices while preserving the documented first three branch positions.
-using TxClientOpsOnly = Send<Prepare, Loop<Select<
-    Send<Req, Continue>>>>;
+using TxClientOpsOnly = Send<Prepare, Loop<Select<Send<Req, Continue>>>>;
 static_assert(is_strict_subtype_sync_v<TxClientOpsOnly, TxClient>);
 static_assert(!is_subtype_sync_v<TxClient, TxClientOpsOnly>);
 
-using TxServerWithCancel = Recv<Prepare, Loop<Offer<
-    Recv<Req, Continue>,
-    Recv<Commit, Send<Ack, End>>,
-    Recv<Abort, End>,
-    Recv<Cancel, End>>>>;
+using TxServerWithCancel =
+    Recv<Prepare, Loop<Offer<Recv<Req, Continue>, Recv<Commit, Send<Ack, End>>, Recv<Abort, End>, Recv<Cancel, End>>>>;
 static_assert(is_strict_subtype_sync_v<TxServerWithCancel, TxServer>);
 static_assert(!is_subtype_sync_v<TxServer, TxServerWithCancel>);
 
 // MPMC: producer push-only is a Select narrowing; consumer extra close
 // handling is an Offer widening.
 using MpmcProducerPushOnly = Loop<Select<Send<Job, Continue>>>;
-static_assert(is_strict_subtype_sync_v<
-    MpmcProducerPushOnly,
-    MpmcProducer<Job>>);
-static_assert(!is_subtype_sync_v<
-    MpmcProducer<Job>,
-    MpmcProducerPushOnly>);
+static_assert(is_strict_subtype_sync_v<MpmcProducerPushOnly, MpmcProducer<Job>>);
+static_assert(!is_subtype_sync_v<MpmcProducer<Job>, MpmcProducerPushOnly>);
 
-using MpmcConsumerWithCancel = Loop<Offer<
-    Recv<Job, Continue>,
-    End,
-    Recv<Cancel, End>>>;
-static_assert(is_strict_subtype_sync_v<
-    MpmcConsumerWithCancel,
-    MpmcConsumer<Job>>);
-static_assert(!is_subtype_sync_v<
-    MpmcConsumer<Job>,
-    MpmcConsumerWithCancel>);
+using MpmcConsumerWithCancel = Loop<Offer<Recv<Job, Continue>, End, Recv<Cancel, End>>>;
+static_assert(is_strict_subtype_sync_v<MpmcConsumerWithCancel, MpmcConsumer<Job>>);
+static_assert(!is_subtype_sync_v<MpmcConsumer<Job>, MpmcConsumerWithCancel>);
 
 // Two-phase commit: coordinator narrows the final decision; follower
 // accepts a compatible future extension branch.
-using CoordCommitOnly = Send<Prepare, Recv<Vote, Select<
-    Send<Commit, End>>>>;
+using CoordCommitOnly = Send<Prepare, Recv<Vote, Select<Send<Commit, End>>>>;
 static_assert(is_strict_subtype_sync_v<CoordCommitOnly, ConcreteCoord>);
 static_assert(!is_subtype_sync_v<ConcreteCoord, CoordCommitOnly>);
 
-using FollowerWithRetry = Recv<Prepare, Send<Vote, Offer<
-    Recv<Commit, End>,
-    Recv<Abort, End>,
-    Recv<Retry, End>>>>;
+using FollowerWithRetry = Recv<Prepare, Send<Vote, Offer<Recv<Commit, End>, Recv<Abort, End>, Recv<Retry, End>>>>;
 static_assert(is_strict_subtype_sync_v<FollowerWithRetry, ConcreteFollower>);
 static_assert(!is_subtype_sync_v<ConcreteFollower, FollowerWithRetry>);
 
 // Handshake: the client may handle an extra offered outcome; the
 // server may narrow its selected outcome.
-using HandshakeClientWithRetry = Send<Hello, Offer<
-    Recv<Welcome, End>,
-    Recv<Reject, End>,
-    Recv<Retry, End>>>;
-static_assert(is_strict_subtype_sync_v<
-    HandshakeClientWithRetry,
-    Handshake_Client<Hello, Welcome, Reject>>);
-static_assert(!is_subtype_sync_v<
-    Handshake_Client<Hello, Welcome, Reject>,
-    HandshakeClientWithRetry>);
+using HandshakeClientWithRetry = Send<Hello, Offer<Recv<Welcome, End>, Recv<Reject, End>, Recv<Retry, End>>>;
+static_assert(is_strict_subtype_sync_v<HandshakeClientWithRetry, Handshake_Client<Hello, Welcome, Reject>>);
+static_assert(!is_subtype_sync_v<Handshake_Client<Hello, Welcome, Reject>, HandshakeClientWithRetry>);
 
-using HandshakeServerWelcomeOnly = Recv<Hello, Select<
-    Send<Welcome, End>>>;
-static_assert(is_strict_subtype_sync_v<
-    HandshakeServerWelcomeOnly,
-    Handshake_Server<Hello, Welcome, Reject>>);
-static_assert(!is_subtype_sync_v<
-    Handshake_Server<Hello, Welcome, Reject>,
-    HandshakeServerWelcomeOnly>);
+using HandshakeServerWelcomeOnly = Recv<Hello, Select<Send<Welcome, End>>>;
+static_assert(is_strict_subtype_sync_v<HandshakeServerWelcomeOnly, Handshake_Server<Hello, Welcome, Reject>>);
+static_assert(!is_subtype_sync_v<Handshake_Server<Hello, Welcome, Reject>, HandshakeServerWelcomeOnly>);
 #endif  // CRUCIBLE_SESSION_PATTERN_SELF_TESTS_SUBTYPE
 
 #ifdef CRUCIBLE_SESSION_PATTERN_SELF_TESTS_CRASH
@@ -1141,161 +950,103 @@ static_assert(!is_subtype_sync_v<
 // Sender<>-annotated Offer branches from SessionCrash.h.
 
 template <typename Proto, typename SelfRole>
-using PendingCrashContract = PatternCrashSafety<
-    Proto,
-    ReliableSet<SelfRole>,
-    CrashSafetyPending,
-    BaselinePatternNeedsCrashAwareVariant>;
+using PendingCrashContract =
+    PatternCrashSafety<Proto, ReliableSet<SelfRole>, CrashSafetyPending, BaselinePatternNeedsCrashAwareVariant>;
 
 template <typename Proto, typename SelfRole>
-using VerifiedCrashContract = PatternCrashSafety<
-    Proto,
-    ReliableSet<SelfRole>,
-    CrashSafetyVerified>;
+using VerifiedCrashContract = PatternCrashSafety<Proto, ReliableSet<SelfRole>, CrashSafetyVerified>;
 
 template <typename Contract>
 consteval bool pending_contract_ok() {
-    return pattern_crash_safety_pending_v<Contract> &&
-           !pattern_crash_safety_verified_v<Contract>;
+    return pattern_crash_safety_pending_v<Contract> && !pattern_crash_safety_verified_v<Contract>;
 }
 
 template <typename Contract>
 consteval bool verified_contract_ok() {
-    return pattern_crash_safety_verified_v<Contract> &&
-           !pattern_crash_safety_pending_v<Contract>;
+    return pattern_crash_safety_verified_v<Contract> && !pattern_crash_safety_pending_v<Contract>;
 }
 
 // Baseline pattern contracts.  Reliability set R is the local role
 // assumed reliable for this endpoint; the peer side is not assumed
 // reliable and needs an explicit Crash<Peer> branch in a crash-aware
 // variant.
-static_assert(pending_contract_ok<PendingCrashContract<
-    RequestResponseOnce_Client<Req, Resp>, ClientRole>>());
-static_assert(pending_contract_ok<PendingCrashContract<
-    RequestResponseOnce_Server<Req, Resp>, ServerRole>>());
-static_assert(pending_contract_ok<PendingCrashContract<
-    RequestResponse_Client<Req, Resp>, ClientRole>>());
-static_assert(pending_contract_ok<PendingCrashContract<
-    RequestResponse_Server<Req, Resp>, ServerRole>>());
-static_assert(pending_contract_ok<PendingCrashContract<
-    RequestResponseLoop_Client<Req, Resp>, ClientRole>>());
-static_assert(pending_contract_ok<PendingCrashContract<
-    RequestResponseLoop_Server<Req, Resp>, ServerRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<RequestResponseOnce_Client<Req, Resp>, ClientRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<RequestResponseOnce_Server<Req, Resp>, ServerRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<RequestResponse_Client<Req, Resp>, ClientRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<RequestResponse_Server<Req, Resp>, ServerRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<RequestResponseLoop_Client<Req, Resp>, ClientRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<RequestResponseLoop_Server<Req, Resp>, ServerRole>>());
 
-static_assert(pending_contract_ok<PendingCrashContract<
-    PipelineSource<Job>, SourceRole>>());
-static_assert(pending_contract_ok<PendingCrashContract<
-    PipelineSink<Job>, SinkRole>>());
-static_assert(pending_contract_ok<PendingCrashContract<
-    PipelineStage<Req, Resp>, StageRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<PipelineSource<Job>, SourceRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<PipelineSink<Job>, SinkRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<PipelineStage<Req, Resp>, StageRole>>());
 
 static_assert(pending_contract_ok<PendingCrashContract<TxClient, ClientRole>>());
 static_assert(pending_contract_ok<PendingCrashContract<TxServer, ServerRole>>());
 
-static_assert(pending_contract_ok<PendingCrashContract<
-    FanOut<3, Job>, CoordinatorRole>>());
-static_assert(pending_contract_ok<PendingCrashContract<
-    FanIn<3, Job>, CollectorRole>>());
-static_assert(pending_contract_ok<PendingCrashContract<
-    Broadcast<3, Job>, CoordinatorRole>>());
-static_assert(pending_contract_ok<PendingCrashContract<
-    ScatterGather<2, Task, Result>, CoordinatorRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<FanOut<3, Job>, CoordinatorRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<FanIn<3, Job>, CollectorRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<Broadcast<3, Job>, CoordinatorRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<ScatterGather<2, Task, Result>, CoordinatorRole>>());
 
-static_assert(pending_contract_ok<PendingCrashContract<
-    MpmcProducer<Job>, ProducerRole>>());
-static_assert(pending_contract_ok<PendingCrashContract<
-    MpmcConsumer<Job>, ConsumerRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<MpmcProducer<Job>, ProducerRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<MpmcConsumer<Job>, ConsumerRole>>());
 
-static_assert(pending_contract_ok<PendingCrashContract<
-    ConcreteCoord, CoordinatorRole>>());
-static_assert(pending_contract_ok<PendingCrashContract<
-    ConcreteFollower, FollowerRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<ConcreteCoord, CoordinatorRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<ConcreteFollower, FollowerRole>>());
 
-static_assert(pending_contract_ok<PendingCrashContract<
-    SwimProbe_Client<Probe, Ack>, ClientRole>>());
-static_assert(pending_contract_ok<PendingCrashContract<
-    SwimProbe_Server<Probe, Ack>, ServerRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<SwimProbe_Client<Probe, Ack>, ClientRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<SwimProbe_Server<Probe, Ack>, ServerRole>>());
 
-static_assert(pending_contract_ok<PendingCrashContract<
-    Handshake_Client<Hello, Welcome, Reject>, ClientRole>>());
-static_assert(pending_contract_ok<PendingCrashContract<
-    Handshake_Server<Hello, Welcome, Reject>, ServerRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<Handshake_Client<Hello, Welcome, Reject>, ClientRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<Handshake_Server<Hello, Welcome, Reject>, ServerRole>>());
 
 // The Offer walker catches the currently-unprotected branch protocols.
 // Protocols without Offer nodes are still marked pending above: the
 // local type lacks sender-role context, so an Offer-only predicate has
 // no sound way to infer "this Recv came from an unreliable peer."
-static_assert(!every_offer_has_crash_branch_for_peer_v<
-    RequestResponseLoop_Server<Req, Resp>, ClientRole>);
+static_assert(!every_offer_has_crash_branch_for_peer_v<RequestResponseLoop_Server<Req, Resp>, ClientRole>);
 static_assert(!every_offer_has_crash_branch_for_peer_v<TxServer, ClientRole>);
-static_assert(!every_offer_has_crash_branch_for_peer_v<
-    MpmcConsumer<Job>, ProducerRole>);
-static_assert(!every_offer_has_crash_branch_for_peer_v<
-    ConcreteFollower, CoordinatorRole>);
-static_assert(!every_offer_has_crash_branch_for_peer_v<
-    Handshake_Client<Hello, Welcome, Reject>, ServerRole>);
+static_assert(!every_offer_has_crash_branch_for_peer_v<MpmcConsumer<Job>, ProducerRole>);
+static_assert(!every_offer_has_crash_branch_for_peer_v<ConcreteFollower, CoordinatorRole>);
+static_assert(!every_offer_has_crash_branch_for_peer_v<Handshake_Client<Hello, Welcome, Reject>, ServerRole>);
 
-using CrashAwareOnceClient = Send<Req, Offer<Sender<ServerRole>,
-    Recv<Resp, End>,
-    Recv<Crash<ServerRole>, End>>>;
-static_assert(every_offer_has_crash_branch_for_peer_v<
-    CrashAwareOnceClient, ServerRole>);
-static_assert(verified_contract_ok<VerifiedCrashContract<
-    CrashAwareOnceClient, ClientRole>>());
+using CrashAwareOnceClient = Send<Req, Offer<Sender<ServerRole>, Recv<Resp, End>, Recv<Crash<ServerRole>, End>>>;
+static_assert(every_offer_has_crash_branch_for_peer_v<CrashAwareOnceClient, ServerRole>);
+static_assert(verified_contract_ok<VerifiedCrashContract<CrashAwareOnceClient, ClientRole>>());
 
-using CrashAwareLoopServer = Loop<Offer<Sender<ClientRole>,
-    Recv<Req, Send<Resp, Continue>>,
-    End,
-    Recv<Crash<ClientRole>, End>>>;
-static_assert(every_offer_has_crash_branch_for_peer_v<
-    CrashAwareLoopServer, ClientRole>);
-static_assert(verified_contract_ok<VerifiedCrashContract<
-    CrashAwareLoopServer, ServerRole>>());
+using CrashAwareLoopServer =
+    Loop<Offer<Sender<ClientRole>, Recv<Req, Send<Resp, Continue>>, End, Recv<Crash<ClientRole>, End>>>;
+static_assert(every_offer_has_crash_branch_for_peer_v<CrashAwareLoopServer, ClientRole>);
+static_assert(verified_contract_ok<VerifiedCrashContract<CrashAwareLoopServer, ServerRole>>());
 
-using CrashAwareTxServer = Recv<Prepare, Loop<Offer<Sender<ClientRole>,
-    Recv<Req, Continue>,
-    Recv<Commit, Send<Ack, End>>,
-    Recv<Abort, End>,
-    Recv<Crash<ClientRole>, End>>>>;
-static_assert(every_offer_has_crash_branch_for_peer_v<
-    CrashAwareTxServer, ClientRole>);
-static_assert(verified_contract_ok<VerifiedCrashContract<
-    CrashAwareTxServer, ServerRole>>());
+using CrashAwareTxServer =
+    Recv<Prepare, Loop<Offer<Sender<ClientRole>, Recv<Req, Continue>, Recv<Commit, Send<Ack, End>>, Recv<Abort, End>,
+                             Recv<Crash<ClientRole>, End>>>>;
+static_assert(every_offer_has_crash_branch_for_peer_v<CrashAwareTxServer, ClientRole>);
+static_assert(verified_contract_ok<VerifiedCrashContract<CrashAwareTxServer, ServerRole>>());
 
-using CrashAwareMpmcConsumer = Loop<Offer<Sender<ProducerRole>,
-    Recv<Job, Continue>,
-    End,
-    Recv<Crash<ProducerRole>, End>>>;
-static_assert(every_offer_has_crash_branch_for_peer_v<
-    CrashAwareMpmcConsumer, ProducerRole>);
-static_assert(verified_contract_ok<VerifiedCrashContract<
-    CrashAwareMpmcConsumer, ConsumerRole>>());
+using CrashAwareMpmcConsumer =
+    Loop<Offer<Sender<ProducerRole>, Recv<Job, Continue>, End, Recv<Crash<ProducerRole>, End>>>;
+static_assert(every_offer_has_crash_branch_for_peer_v<CrashAwareMpmcConsumer, ProducerRole>);
+static_assert(verified_contract_ok<VerifiedCrashContract<CrashAwareMpmcConsumer, ConsumerRole>>());
 
-using CrashAwareCoord = Send<Prepare, Offer<Sender<FollowerRole>,
-    Recv<Vote, Select<Send<Commit, End>, Send<Abort, End>>>,
-    Recv<Crash<FollowerRole>, End>>>;
-static_assert(every_offer_has_crash_branch_for_peer_v<
-    CrashAwareCoord, FollowerRole>);
-static_assert(verified_contract_ok<VerifiedCrashContract<
-    CrashAwareCoord, CoordinatorRole>>());
+using CrashAwareCoord =
+    Send<Prepare, Offer<Sender<FollowerRole>, Recv<Vote, Select<Send<Commit, End>, Send<Abort, End>>>,
+                        Recv<Crash<FollowerRole>, End>>>;
+static_assert(every_offer_has_crash_branch_for_peer_v<CrashAwareCoord, FollowerRole>);
+static_assert(verified_contract_ok<VerifiedCrashContract<CrashAwareCoord, CoordinatorRole>>());
 
-using CrashAwareFollower = Recv<Prepare, Send<Vote, Offer<Sender<CoordinatorRole>,
-    Recv<Commit, End>,
-    Recv<Abort, End>,
-    Recv<Crash<CoordinatorRole>, End>>>>;
-static_assert(every_offer_has_crash_branch_for_peer_v<
-    CrashAwareFollower, CoordinatorRole>);
-static_assert(verified_contract_ok<VerifiedCrashContract<
-    CrashAwareFollower, FollowerRole>>());
+using CrashAwareFollower = Recv<
+    Prepare,
+    Send<Vote, Offer<Sender<CoordinatorRole>, Recv<Commit, End>, Recv<Abort, End>, Recv<Crash<CoordinatorRole>, End>>>>;
+static_assert(every_offer_has_crash_branch_for_peer_v<CrashAwareFollower, CoordinatorRole>);
+static_assert(verified_contract_ok<VerifiedCrashContract<CrashAwareFollower, FollowerRole>>());
 
-using CrashAwareHandshakeClient = Send<Hello, Offer<Sender<ServerRole>,
-    Recv<Welcome, End>,
-    Recv<Reject, End>,
-    Recv<Crash<ServerRole>, End>>>;
-static_assert(every_offer_has_crash_branch_for_peer_v<
-    CrashAwareHandshakeClient, ServerRole>);
-static_assert(verified_contract_ok<VerifiedCrashContract<
-    CrashAwareHandshakeClient, ClientRole>>());
+using CrashAwareHandshakeClient =
+    Send<Hello, Offer<Sender<ServerRole>, Recv<Welcome, End>, Recv<Reject, End>, Recv<Crash<ServerRole>, End>>>;
+static_assert(every_offer_has_crash_branch_for_peer_v<CrashAwareHandshakeClient, ServerRole>);
+static_assert(verified_contract_ok<VerifiedCrashContract<CrashAwareHandshakeClient, ClientRole>>());
 #endif  // CRUCIBLE_SESSION_PATTERN_SELF_TESTS_CRASH
 
 #ifdef CRUCIBLE_SESSION_PATTERN_SELF_TESTS_DELEGATE
@@ -1307,12 +1058,10 @@ static_assert(verified_contract_ok<VerifiedCrashContract<
 // layer; this section only proves ordinary Delegate/Accept compatibility
 // and delegated-recipient crash propagation for the local protocols.
 
-using DelegateRecoveryK = Offer<Sender<DelegatedRecipientRole>,
-    Recv<Crash<DelegatedRecipientRole>, End>>;
+using DelegateRecoveryK = Offer<Sender<DelegatedRecipientRole>, Recv<Crash<DelegatedRecipientRole>, End>>;
 
 template <typename Proto>
-using CompatibleDelegateContract =
-    PatternDelegateCompatibility<Proto, DelegateCompatible>;
+using CompatibleDelegateContract = PatternDelegateCompatibility<Proto, DelegateCompatible>;
 
 template <typename Proto>
 consteval bool delegate_compatible_pattern_ok() {
@@ -1324,30 +1073,18 @@ consteval bool delegate_compatible_pattern_ok() {
     static_assert(DelegatesTo<Delegate<Proto, End>, Proto>);
     static_assert(AcceptsFrom<Accept<Proto, End>, Proto>);
 
-    using Propagation = delegated_crash_propagation_t<
-        Proto,
-        DelegatedRecipientRole,
-        DelegateRecoveryK>;
+    using Propagation = delegated_crash_propagation_t<Proto, DelegatedRecipientRole, DelegateRecoveryK>;
     static_assert(!std::is_same_v<Propagation, IllFormed>);
-    assert_delegated_crash_propagates<
-        Proto,
-        DelegatedRecipientRole,
-        DelegateRecoveryK>();
+    assert_delegated_crash_propagates<Proto, DelegatedRecipientRole, DelegateRecoveryK>();
     return true;
 }
 
-static_assert(delegate_compatible_pattern_ok<
-    RequestResponseOnce_Client<Req, Resp>>());
-static_assert(delegate_compatible_pattern_ok<
-    RequestResponseOnce_Server<Req, Resp>>());
-static_assert(delegate_compatible_pattern_ok<
-    RequestResponse_Client<Req, Resp>>());
-static_assert(delegate_compatible_pattern_ok<
-    RequestResponse_Server<Req, Resp>>());
-static_assert(delegate_compatible_pattern_ok<
-    RequestResponseLoop_Client<Req, Resp>>());
-static_assert(delegate_compatible_pattern_ok<
-    RequestResponseLoop_Server<Req, Resp>>());
+static_assert(delegate_compatible_pattern_ok<RequestResponseOnce_Client<Req, Resp>>());
+static_assert(delegate_compatible_pattern_ok<RequestResponseOnce_Server<Req, Resp>>());
+static_assert(delegate_compatible_pattern_ok<RequestResponse_Client<Req, Resp>>());
+static_assert(delegate_compatible_pattern_ok<RequestResponse_Server<Req, Resp>>());
+static_assert(delegate_compatible_pattern_ok<RequestResponseLoop_Client<Req, Resp>>());
+static_assert(delegate_compatible_pattern_ok<RequestResponseLoop_Server<Req, Resp>>());
 
 static_assert(delegate_compatible_pattern_ok<PipelineSource<Job>>());
 static_assert(delegate_compatible_pattern_ok<PipelineSink<Job>>());
@@ -1359,8 +1096,7 @@ static_assert(delegate_compatible_pattern_ok<TxServer>());
 static_assert(delegate_compatible_pattern_ok<FanOut<3, Job>>());
 static_assert(delegate_compatible_pattern_ok<FanIn<3, Job>>());
 static_assert(delegate_compatible_pattern_ok<Broadcast<3, Job>>());
-static_assert(delegate_compatible_pattern_ok<
-    ScatterGather<2, Task, Result>>());
+static_assert(delegate_compatible_pattern_ok<ScatterGather<2, Task, Result>>());
 
 static_assert(delegate_compatible_pattern_ok<MpmcProducer<Job>>());
 static_assert(delegate_compatible_pattern_ok<MpmcConsumer<Job>>());
@@ -1368,45 +1104,30 @@ static_assert(delegate_compatible_pattern_ok<MpmcConsumer<Job>>());
 static_assert(delegate_compatible_pattern_ok<ConcreteCoord>());
 static_assert(delegate_compatible_pattern_ok<ConcreteFollower>());
 
-static_assert(delegate_compatible_pattern_ok<
-    SwimProbe_Client<Probe, Ack>>());
-static_assert(delegate_compatible_pattern_ok<
-    SwimProbe_Server<Probe, Ack>>());
+static_assert(delegate_compatible_pattern_ok<SwimProbe_Client<Probe, Ack>>());
+static_assert(delegate_compatible_pattern_ok<SwimProbe_Server<Probe, Ack>>());
 
-static_assert(delegate_compatible_pattern_ok<
-    Handshake_Client<Hello, Welcome, Reject>>());
-static_assert(delegate_compatible_pattern_ok<
-    Handshake_Server<Hello, Welcome, Reject>>());
+static_assert(delegate_compatible_pattern_ok<Handshake_Client<Hello, Welcome, Reject>>());
+static_assert(delegate_compatible_pattern_ok<Handshake_Server<Hello, Welcome, Reject>>());
 
 // Representative higher-order compositions from the task.  The first
 // hands a request-response server endpoint to a worker and then waits
 // for a final Result on the carrier.  The second stands in for a
 // three-party MPST projection with the local-view patterns available
 // in this header: scatter/gather plus a three-peer fan-out unit.
-using DelegateRequestResponseServer =
-    Delegate<RequestResponse_Server<Req, Resp>, Recv<Result, End>>;
+using DelegateRequestResponseServer = Delegate<RequestResponse_Server<Req, Resp>, Recv<Result, End>>;
 using AcceptRequestResponseServer = dual_of_t<DelegateRequestResponseServer>;
 
-static_assert(DelegatesTo<
-    DelegateRequestResponseServer,
-    RequestResponse_Server<Req, Resp>>);
-static_assert(AcceptsFrom<
-    AcceptRequestResponseServer,
-    RequestResponse_Server<Req, Resp>>);
+static_assert(DelegatesTo<DelegateRequestResponseServer, RequestResponse_Server<Req, Resp>>);
+static_assert(AcceptsFrom<AcceptRequestResponseServer, RequestResponse_Server<Req, Resp>>);
 static_assert(is_well_formed_v<DelegateRequestResponseServer>);
 static_assert(is_well_formed_v<AcceptRequestResponseServer>);
 
-using DelegateThreePartyProjection = Delegate<
-    ScatterGather<2, Task, Result>,
-    Delegate<FanOut<3, Job>, End>>;
+using DelegateThreePartyProjection = Delegate<ScatterGather<2, Task, Result>, Delegate<FanOut<3, Job>, End>>;
 using AcceptThreePartyProjection = dual_of_t<DelegateThreePartyProjection>;
 
-static_assert(DelegatesTo<
-    DelegateThreePartyProjection,
-    ScatterGather<2, Task, Result>>);
-static_assert(AcceptsFrom<
-    AcceptThreePartyProjection,
-    ScatterGather<2, Task, Result>>);
+static_assert(DelegatesTo<DelegateThreePartyProjection, ScatterGather<2, Task, Result>>);
+static_assert(AcceptsFrom<AcceptThreePartyProjection, ScatterGather<2, Task, Result>>);
 static_assert(is_well_formed_v<DelegateThreePartyProjection>);
 static_assert(is_well_formed_v<AcceptThreePartyProjection>);
 #endif  // CRUCIBLE_SESSION_PATTERN_SELF_TESTS_DELEGATE
@@ -1427,13 +1148,9 @@ static_assert(is_well_formed_v<AcceptThreePartyProjection>);
 // to the same continuation, so compose's every-End-replacement is the
 // correct behaviour:
 
-using HandshakeThenLoop_Client = compose_t<
-    Handshake_Client<Hello, Welcome, Reject>,
-    RequestResponse_Client<Req, Resp>>;
+using HandshakeThenLoop_Client = compose_t<Handshake_Client<Hello, Welcome, Reject>, RequestResponse_Client<Req, Resp>>;
 
-using HandshakeThenLoop_Server = compose_t<
-    Handshake_Server<Hello, Welcome, Reject>,
-    RequestResponse_Server<Req, Resp>>;
+using HandshakeThenLoop_Server = compose_t<Handshake_Server<Hello, Welcome, Reject>, RequestResponse_Server<Req, Resp>>;
 
 static_assert(is_well_formed_v<HandshakeThenLoop_Client>);
 static_assert(is_well_formed_v<HandshakeThenLoop_Server>);
@@ -1442,14 +1159,10 @@ static_assert(is_well_formed_v<HandshakeThenLoop_Server>);
 // dual(compose(A, B)).  This IS the compose/dual commutativity lemma
 // and the test catches regressions in either Session.h's compose or
 // dual_of implementation.
-static_assert(std::is_same_v<
-    dual_of_t<HandshakeThenLoop_Client>,
-    HandshakeThenLoop_Server>);
+static_assert(std::is_same_v<dual_of_t<HandshakeThenLoop_Client>, HandshakeThenLoop_Server>);
 
 // Involution still holds through composition.
-static_assert(std::is_same_v<
-    dual_of_t<dual_of_t<HandshakeThenLoop_Client>>,
-    HandshakeThenLoop_Client>);
+static_assert(std::is_same_v<dual_of_t<dual_of_t<HandshakeThenLoop_Client>>, HandshakeThenLoop_Client>);
 
 // ─── Compose identity: End is the identity element for compose ────
 //
@@ -1458,34 +1171,20 @@ static_assert(std::is_same_v<
 // End), these tests catch it before any pattern using compose_t is
 // silently wrong.
 
-static_assert(std::is_same_v<
-    compose_t<RequestResponseOnce_Client<Req, Resp>, End>,
-    RequestResponseOnce_Client<Req, Resp>>);
-static_assert(std::is_same_v<
-    compose_t<FanOut<5, Job>, End>,
-    FanOut<5, Job>>);
-static_assert(std::is_same_v<
-    compose_t<FanIn<3, Job>, End>,
-    FanIn<3, Job>>);
-static_assert(std::is_same_v<
-    compose_t<Handshake_Client<Hello, Welcome, Reject>, End>,
-    Handshake_Client<Hello, Welcome, Reject>>);
-static_assert(std::is_same_v<
-    compose_t<ConcreteCoord, End>,
-    ConcreteCoord>);
+static_assert(
+    std::is_same_v<compose_t<RequestResponseOnce_Client<Req, Resp>, End>, RequestResponseOnce_Client<Req, Resp>>);
+static_assert(std::is_same_v<compose_t<FanOut<5, Job>, End>, FanOut<5, Job>>);
+static_assert(std::is_same_v<compose_t<FanIn<3, Job>, End>, FanIn<3, Job>>);
+static_assert(
+    std::is_same_v<compose_t<Handshake_Client<Hello, Welcome, Reject>, End>, Handshake_Client<Hello, Welcome, Reject>>);
+static_assert(std::is_same_v<compose_t<ConcreteCoord, End>, ConcreteCoord>);
 
 // Compose identity through Loop + Continue: Continue MUST stay Continue
 // under compose (not replace-with-Q).  If this regresses, every Loop
 // protocol composing with a sub-protocol would be silently incorrect.
-static_assert(std::is_same_v<
-    compose_t<RequestResponse_Client<Req, Resp>, End>,
-    RequestResponse_Client<Req, Resp>>);
-static_assert(std::is_same_v<
-    compose_t<MpmcProducer<Job>, End>,
-    MpmcProducer<Job>>);
-static_assert(std::is_same_v<
-    compose_t<TxClient, End>,
-    TxClient>);
+static_assert(std::is_same_v<compose_t<RequestResponse_Client<Req, Resp>, End>, RequestResponse_Client<Req, Resp>>);
+static_assert(std::is_same_v<compose_t<MpmcProducer<Job>, End>, MpmcProducer<Job>>);
+static_assert(std::is_same_v<compose_t<TxClient, End>, TxClient>);
 
 // ─── Deep template recursion ──────────────────────────────────────
 //
@@ -1497,9 +1196,7 @@ static_assert(std::is_same_v<
 static_assert(is_well_formed_v<FanOut<64, Job>>);
 static_assert(is_well_formed_v<FanIn<64, Job>>);
 static_assert(is_well_formed_v<ScatterGather<32, Task, Result>>);
-static_assert(std::is_same_v<
-    dual_of_t<FanOut<64, Job>>,
-    FanIn<64, Job>>);
+static_assert(std::is_same_v<dual_of_t<FanOut<64, Job>>, FanIn<64, Job>>);
 #endif  // CRUCIBLE_SESSION_PATTERN_SELF_TESTS_COMPOSE
 
 }  // namespace crucible::safety::proto::pattern::detail::pattern_self_test

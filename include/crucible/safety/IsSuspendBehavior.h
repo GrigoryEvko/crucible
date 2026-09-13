@@ -26,8 +26,7 @@ struct is_suspend_behavior_impl : std::false_type {
 };
 
 template <SuspendBehavior_v Behavior, typename U>
-struct is_suspend_behavior_impl<::crucible::safety::SuspendBehavior<Behavior, U>>
-    : std::true_type {
+struct is_suspend_behavior_impl<::crucible::safety::SuspendBehavior<Behavior, U>> : std::true_type {
     using value_type = U;
     static constexpr SuspendBehavior_v behavior = Behavior;
     static constexpr bool has_behavior = true;
@@ -36,16 +35,14 @@ struct is_suspend_behavior_impl<::crucible::safety::SuspendBehavior<Behavior, U>
 }  // namespace detail
 
 template <typename T>
-inline constexpr bool is_suspend_behavior_v =
-    detail::is_suspend_behavior_impl<std::remove_cvref_t<T>>::value;
+inline constexpr bool is_suspend_behavior_v = detail::is_suspend_behavior_impl<std::remove_cvref_t<T>>::value;
 
 template <typename T>
 concept IsSuspendBehavior = is_suspend_behavior_v<T>;
 
 template <typename T>
     requires is_suspend_behavior_v<T>
-using suspend_behavior_value_t =
-    typename detail::is_suspend_behavior_impl<std::remove_cvref_t<T>>::value_type;
+using suspend_behavior_value_t = typename detail::is_suspend_behavior_impl<std::remove_cvref_t<T>>::value_type;
 
 template <typename T>
     requires is_suspend_behavior_v<T>
@@ -56,9 +53,9 @@ inline constexpr SuspendBehavior_v suspend_behavior_v =
 
 namespace detail::is_suspend_behavior_self_test {
 
-using K_u64 = ::crucible::safety::SuspendBehavior<SuspendBehavior_v::KeepsTicking,    unsigned long long>;
+using K_u64 = ::crucible::safety::SuspendBehavior<SuspendBehavior_v::KeepsTicking, unsigned long long>;
 using P_u64 = ::crucible::safety::SuspendBehavior<SuspendBehavior_v::PausesOnSuspend, unsigned long long>;
-using U_int = ::crucible::safety::SuspendBehavior<SuspendBehavior_v::Unknown,         int>;
+using U_int = ::crucible::safety::SuspendBehavior<SuspendBehavior_v::Unknown, int>;
 
 static_assert(is_suspend_behavior_v<K_u64>);
 static_assert(is_suspend_behavior_v<P_u64>);
@@ -70,7 +67,10 @@ static_assert(!is_suspend_behavior_v<int>);
 static_assert(!is_suspend_behavior_v<void>);
 static_assert(!is_suspend_behavior_v<K_u64*>);
 
-struct LookalikeWitness { unsigned long long value; SuspendBehavior_v behavior; };
+struct LookalikeWitness {
+    unsigned long long value;
+    SuspendBehavior_v behavior;
+};
 static_assert(!is_suspend_behavior_v<LookalikeWitness>);
 
 static_assert(IsSuspendBehavior<K_u64>);

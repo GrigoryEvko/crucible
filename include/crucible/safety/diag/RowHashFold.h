@@ -175,12 +175,12 @@
 //
 // FOUND-I02 — RowHash recursive fmix64 fold over wrapper stack.
 
-#include <crucible/Expr.h>                       // detail::fmix64
+#include <crucible/Expr.h>  // detail::fmix64
 #include <crucible/Platform.h>
-#include <crucible/Types.h>                      // RowHash strong type
-#include <crucible/effects/Capabilities.h>       // Effect enum
-#include <crucible/effects/EffectRow.h>          // Row<Es...>
-#include <crucible/safety/diag/StableName.h>     // FNV1A_OFFSET_BASIS, combine_ids
+#include <crucible/Types.h>  // RowHash strong type
+#include <crucible/effects/Capabilities.h>  // Effect enum
+#include <crucible/effects/EffectRow.h>  // Row<Es...>
+#include <crucible/safety/diag/StableName.h>  // FNV1A_OFFSET_BASIS, combine_ids
 
 #include <array>
 #include <cstddef>
@@ -197,89 +197,124 @@
 // type must include effects/Computation.h itself — that's the standard
 // IWYU rule, not a constraint we add here.
 namespace crucible::effects {
-template <typename R, typename T> class Computation;
+template <typename R, typename T>
+class Computation;
 }  // namespace crucible::effects
 
 namespace crucible::algebra::lattices {
 enum class AllocClassTag : std::uint8_t;
 enum class CipherTierTag : std::uint8_t;
-enum class Consistency : std::uint8_t;       // A3-003
-enum class CrashClass : std::uint8_t;        // A3-003
+enum class Consistency : std::uint8_t;  // A3-003
+enum class CrashClass : std::uint8_t;  // A3-003
 enum class DetSafeTier : std::uint8_t;
 enum class HotPathTier : std::uint8_t;
-enum class Lifetime : std::uint8_t;          // A3-003
+enum class Lifetime : std::uint8_t;  // A3-003
 enum class MemOrderTag : std::uint8_t;
 enum class ProgressClass : std::uint8_t;
 enum class ResidencyHeatTag : std::uint8_t;
 enum class Tolerance : std::uint8_t;
 enum class VendorBackend : std::uint8_t;
 enum class WaitStrategy : std::uint8_t;
-enum class Witness : std::uint8_t;            // FIXY-V-053
-enum class JoinPolicy : std::uint8_t;         // FIXY-V-078
+enum class Witness : std::uint8_t;  // FIXY-V-053
+enum class JoinPolicy : std::uint8_t;  // FIXY-V-078
 // FIXY-V-088 — 11 FP-mode sub-axis enums.  Forward-declared here so
 // the V-090 row_hash_contribution specializations below can dispatch
 // on the NTTP type without pulling FpModeLattice.h.
-enum class FpRounding         : std::uint8_t;
-enum class FpFtz              : std::uint8_t;
-enum class FpContract         : std::uint8_t;
-enum class FpTrapMask         : std::uint8_t;
-enum class FpDenormalInput    : std::uint8_t;
-enum class FpNanPolicy        : std::uint8_t;
-enum class FpInfPolicy        : std::uint8_t;
-enum class FpComplexLayout    : std::uint8_t;
-enum class FpLibmPolicy       : std::uint8_t;
-enum class FpReassociate      : std::uint8_t;
+enum class FpRounding : std::uint8_t;
+enum class FpFtz : std::uint8_t;
+enum class FpContract : std::uint8_t;
+enum class FpTrapMask : std::uint8_t;
+enum class FpDenormalInput : std::uint8_t;
+enum class FpNanPolicy : std::uint8_t;
+enum class FpInfPolicy : std::uint8_t;
+enum class FpComplexLayout : std::uint8_t;
+enum class FpLibmPolicy : std::uint8_t;
+enum class FpReassociate : std::uint8_t;
 enum class FpConstantRounding : std::uint8_t;
-enum class HwInstruction       : std::uint8_t;  // FIXY-V-251 (wrapper V-254)
-enum class BarrierStrength     : std::uint8_t;  // FIXY-V-252 (wrapper V-255)
-enum class SimdIsa             : std::uint8_t;  // FIXY-V-250 (wrapper V-256)
-enum class MemoryScope         : std::uint8_t;  // FIXY-V-265 (wrapper V-267)
-enum class ClockSource         : std::uint8_t;  // FIXY-V-184 (wrapper V-185)
-enum class SchedulerPolicy     : std::uint8_t;  // FIXY-V-183 (wrapper V-186)
-enum class SuspendBehavior     : std::uint8_t;  // FIXY-V-181 (wrapper V-188)
+enum class HwInstruction : std::uint8_t;  // FIXY-V-251 (wrapper V-254)
+enum class BarrierStrength : std::uint8_t;  // FIXY-V-252 (wrapper V-255)
+enum class SimdIsa : std::uint8_t;  // FIXY-V-250 (wrapper V-256)
+enum class MemoryScope : std::uint8_t;  // FIXY-V-265 (wrapper V-267)
+enum class ClockSource : std::uint8_t;  // FIXY-V-184 (wrapper V-185)
+enum class SchedulerPolicy : std::uint8_t;  // FIXY-V-183 (wrapper V-186)
+enum class SuspendBehavior : std::uint8_t;  // FIXY-V-181 (wrapper V-188)
 }  // namespace crucible::algebra::lattices
 
 namespace crucible::safety {
-template <algebra::lattices::AllocClassTag Tag, typename T> class AllocClass;
-template <algebra::lattices::CipherTierTag Tier, typename T> class CipherTier;
-template <algebra::lattices::DetSafeTier Tier, typename T> class DetSafe;
-template <algebra::lattices::HotPathTier Tier, typename T> class HotPath;
-template <algebra::lattices::HwInstruction Tier, typename T> class Hw;
-template <algebra::lattices::BarrierStrength Tier, typename T> class BarrierGuarded;
-template <algebra::lattices::SimdIsa W, typename T> class SimdWidthPinned;
-template <algebra::lattices::MemoryScope S, typename T> class ScopedFence;
-template <algebra::lattices::ClockSource Source, typename T> class ClockSource;
-template <algebra::lattices::SchedulerPolicy Policy, typename T,
-          std::uint64_t RuntimeNs, std::uint64_t DeadlineNs, std::uint64_t PeriodNs>
+template <algebra::lattices::AllocClassTag Tag, typename T>
+class AllocClass;
+template <algebra::lattices::CipherTierTag Tier, typename T>
+class CipherTier;
+template <algebra::lattices::DetSafeTier Tier, typename T>
+class DetSafe;
+template <algebra::lattices::HotPathTier Tier, typename T>
+class HotPath;
+template <algebra::lattices::HwInstruction Tier, typename T>
+class Hw;
+template <algebra::lattices::BarrierStrength Tier, typename T>
+class BarrierGuarded;
+template <algebra::lattices::SimdIsa W, typename T>
+class SimdWidthPinned;
+template <algebra::lattices::MemoryScope S, typename T>
+class ScopedFence;
+template <algebra::lattices::ClockSource Source, typename T>
+class ClockSource;
+template <algebra::lattices::SchedulerPolicy Policy, typename T, std::uint64_t RuntimeNs, std::uint64_t DeadlineNs,
+          std::uint64_t PeriodNs>
 class SchedClass;
-template <algebra::lattices::SuspendBehavior Behavior, typename T> class SuspendBehavior;
-template <algebra::lattices::MemOrderTag Tag, typename T> class MemOrder;
-template <algebra::lattices::ProgressClass Class, typename T> class Progress;
-template <algebra::lattices::ResidencyHeatTag Tier, typename T> class ResidencyHeat;
-template <algebra::lattices::Tolerance Tier, typename T> class NumericalTier;
-template <algebra::lattices::VendorBackend Backend, typename T> class Vendor;
-template <algebra::lattices::WaitStrategy Strategy, typename T> class Wait;
-template <typename T> class Linear;
-template <auto Pred, typename T> class Refined;
-template <typename T> class Secret;
-template <typename T> class Stale;
-template <typename T, typename Tag> class Tagged;
+template <algebra::lattices::SuspendBehavior Behavior, typename T>
+class SuspendBehavior;
+template <algebra::lattices::MemOrderTag Tag, typename T>
+class MemOrder;
+template <algebra::lattices::ProgressClass Class, typename T>
+class Progress;
+template <algebra::lattices::ResidencyHeatTag Tier, typename T>
+class ResidencyHeat;
+template <algebra::lattices::Tolerance Tier, typename T>
+class NumericalTier;
+template <algebra::lattices::VendorBackend Backend, typename T>
+class Vendor;
+template <algebra::lattices::WaitStrategy Strategy, typename T>
+class Wait;
+template <typename T>
+class Linear;
+template <auto Pred, typename T>
+class Refined;
+template <typename T>
+class Secret;
+template <typename T>
+class Stale;
+template <typename T, typename Tag>
+class Tagged;
 // ── A3-003 — 11 Graded-bearing wrappers ────────────────────────────
-template <auto Pred, typename T> class SealedRefined;
-template <typename T, std::size_t N, typename Tag> class TimeOrdered;
-template <typename T, typename Cmp> class Monotonic;
-template <typename T, template <typename...> class Storage> class AppendOnly;
-template <algebra::lattices::Consistency Level, typename T> class Consistency;
-template <algebra::lattices::Lifetime Scope, typename T> class OpaqueLifetime;
-template <algebra::lattices::CrashClass Class, typename T> class Crash;
-template <typename T> class Budgeted;
-template <typename T> class EpochVersioned;
-template <typename T> class NumaPlacement;
-template <typename T> class RecipeSpec;
+template <auto Pred, typename T>
+class SealedRefined;
+template <typename T, std::size_t N, typename Tag>
+class TimeOrdered;
+template <typename T, typename Cmp>
+class Monotonic;
+template <typename T, template <typename...> class Storage>
+class AppendOnly;
+template <algebra::lattices::Consistency Level, typename T>
+class Consistency;
+template <algebra::lattices::Lifetime Scope, typename T>
+class OpaqueLifetime;
+template <algebra::lattices::CrashClass Class, typename T>
+class Crash;
+template <typename T>
+class Budgeted;
+template <typename T>
+class EpochVersioned;
+template <typename T>
+class NumaPlacement;
+template <typename T>
+class RecipeSpec;
 // ── FIXY-V-054 — Witness (Comonad over WitnessLattice chain) ───────
-template <algebra::lattices::Witness Tier, typename T> class Witness;
+template <algebra::lattices::Witness Tier, typename T>
+class Witness;
 // ── FIXY-V-079 — JoinPolicy (Comonad over JoinPolicyLattice chain) ─
-template <algebra::lattices::JoinPolicy Tier, typename T> class JoinPolicy;
+template <algebra::lattices::JoinPolicy Tier, typename T>
+class JoinPolicy;
 // ── FIXY-V-090 — FpModePinned<auto Mode, T> (Absolute, regime-1) ───
 // The 11 type aliases (FpRoundingPinned, FpFtzPinned, ...) instantiate
 // this template with different NTTP enum types — the partial
@@ -302,21 +337,21 @@ namespace crucible::safety::diag {
 
 namespace detail {
 
-inline constexpr std::uint64_t WRAPPER_HOTPATH_TAG        = 0x0100'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_DETSAFE_TAG        = 0x0200'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_HOTPATH_TAG = 0x0100'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_DETSAFE_TAG = 0x0200'0000'0000'0000ULL;
 inline constexpr std::uint64_t WRAPPER_NUMERICAL_TIER_TAG = 0x0300'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_VENDOR_TAG         = 0x0400'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_VENDOR_TAG = 0x0400'0000'0000'0000ULL;
 inline constexpr std::uint64_t WRAPPER_RESIDENCY_HEAT_TAG = 0x0500'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_CIPHER_TIER_TAG    = 0x0600'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_ALLOC_CLASS_TAG    = 0x0700'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_WAIT_TAG           = 0x0800'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_MEM_ORDER_TAG      = 0x0900'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_PROGRESS_TAG       = 0x0A00'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_STALE_TAG          = 0x0B00'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_TAGGED_TAG         = 0x0C00'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_REFINED_TAG        = 0x0D00'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_SECRET_TAG         = 0x0E00'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_LINEAR_TAG         = 0x0F00'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_CIPHER_TIER_TAG = 0x0600'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_ALLOC_CLASS_TAG = 0x0700'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_WAIT_TAG = 0x0800'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_MEM_ORDER_TAG = 0x0900'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_PROGRESS_TAG = 0x0A00'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_STALE_TAG = 0x0B00'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_TAGGED_TAG = 0x0C00'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_REFINED_TAG = 0x0D00'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_SECRET_TAG = 0x0E00'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_LINEAR_TAG = 0x0F00'0000'0000'0000ULL;
 // ── A3-002: ResourceTag + ConcurrentRow row-hash salts ─────────────
 //
 // ResourceTag and ConcurrentRow live in the OS-effect-row neighborhood
@@ -329,7 +364,7 @@ inline constexpr std::uint64_t WRAPPER_LINEAR_TAG         = 0x0F00'0000'0000'000
 // the existing 15 §XVI-canonical-wrapper salts above.  Specializations live
 // in effects/Resources.h and effects/Concurrent.h (per A1-018 "spec
 // next to declaration") and refer back to these constants.
-inline constexpr std::uint64_t WRAPPER_RESOURCE_TAG_TAG   = 0x1000'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_RESOURCE_TAG_TAG = 0x1000'0000'0000'0000ULL;
 inline constexpr std::uint64_t WRAPPER_CONCURRENT_ROW_TAG = 0x1100'0000'0000'0000ULL;
 
 // ── A3-003: 11 Graded-bearing wrappers from DimensionTraits.h ──────
@@ -349,17 +384,17 @@ inline constexpr std::uint64_t WRAPPER_CONCURRENT_ROW_TAG = 0x1100'0000'0000'000
 // the §XVI-canonical 15 (centralized convention for safety::*
 // wrappers).  Tier-L Representation + FpMode sub-axis salts are
 // allocated further below (0x21-0x33).
-inline constexpr std::uint64_t WRAPPER_SEALED_REFINED_TAG   = 0x1200'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_TIME_ORDERED_TAG     = 0x1300'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_MONOTONIC_TAG        = 0x1400'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_APPEND_ONLY_TAG      = 0x1500'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_CONSISTENCY_TAG      = 0x1600'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_OPAQUE_LIFETIME_TAG  = 0x1700'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_CRASH_TAG            = 0x1800'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_BUDGETED_TAG         = 0x1900'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_EPOCH_VERSIONED_TAG  = 0x1A00'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_NUMA_PLACEMENT_TAG   = 0x1B00'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_RECIPE_SPEC_TAG      = 0x1C00'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_SEALED_REFINED_TAG = 0x1200'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_TIME_ORDERED_TAG = 0x1300'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_MONOTONIC_TAG = 0x1400'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_APPEND_ONLY_TAG = 0x1500'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_CONSISTENCY_TAG = 0x1600'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_OPAQUE_LIFETIME_TAG = 0x1700'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_CRASH_TAG = 0x1800'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_BUDGETED_TAG = 0x1900'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_EPOCH_VERSIONED_TAG = 0x1A00'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_NUMA_PLACEMENT_TAG = 0x1B00'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_RECIPE_SPEC_TAG = 0x1C00'0000'0000'0000ULL;
 
 // ── FIXY-FOUND-049: StorageProbe — phantom for AppendOnly Storage ──
 //
@@ -414,8 +449,8 @@ struct StorageProbe {};
 // Salts 0x1D / 0x1E are disjoint from each other AND from the existing
 // 0x01-0x1C canonical-wrapper salts AND from the resource family
 // (0x10-0x11) — same separation discipline as A3-002 / A3-003.
-inline constexpr std::uint64_t WRAPPER_SAFETY_FN_TAG        = 0x1D00'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_FIXY_FN_TAG          = 0x1E00'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_SAFETY_FN_TAG = 0x1D00'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_FIXY_FN_TAG = 0x1E00'0000'0000'0000ULL;
 
 // ── FIXY-V-054 / V-055: Witness (Comonad over WitnessLattice chain) ─
 //
@@ -433,7 +468,7 @@ inline constexpr std::uint64_t WRAPPER_FIXY_FN_TAG          = 0x1E00'0000'0000'0
 // dimension-traits family (0x12-0x1C) AND from the Fn aggregator family
 // (0x1D-0x1E).  Low-byte folds the Tier enumerator the same way
 // Consistency / OpaqueLifetime / Crash / Wait / MemOrder / Progress do.
-inline constexpr std::uint64_t WRAPPER_WITNESS_TAG          = 0x1F00'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_WITNESS_TAG = 0x1F00'0000'0000'0000ULL;
 
 // ── FIXY-V-079: JoinPolicy (Comonad over JoinPolicyLattice chain) ───
 //
@@ -452,7 +487,7 @@ inline constexpr std::uint64_t WRAPPER_WITNESS_TAG          = 0x1F00'0000'0000'0
 // existing 0x01-0x1F salts (Witness occupies 0x1F).  Low-byte folds
 // the Tier enumerator the same way Witness / Wait / MemOrder /
 // Progress / Crash / Consistency do.
-inline constexpr std::uint64_t WRAPPER_JOIN_POLICY_TAG      = 0x2000'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_JOIN_POLICY_TAG = 0x2000'0000'0000'0000ULL;
 
 // FIXY-V-090 — 11 FP-mode sub-axis carriers + 1 composite mint slot.
 // Each sub-axis lives at its own salt so a downstream consumer
@@ -466,38 +501,38 @@ inline constexpr std::uint64_t WRAPPER_JOIN_POLICY_TAG      = 0x2000'0000'0000'0
 // FpModeComposite alias).  The Agent-11 HW-axis wrappers continue the
 // sequence: 0x2C = Hw (V-254), 0x2D = BarrierGuarded (V-255),
 // 0x2E = SimdWidthPinned (V-256).
-inline constexpr std::uint64_t WRAPPER_FP_ROUNDING_TAG          = 0x2100'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_FP_FTZ_TAG               = 0x2200'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_FP_CONTRACT_TAG          = 0x2300'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_FP_TRAP_MASK_TAG         = 0x2400'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_FP_DENORMAL_INPUT_TAG    = 0x2500'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_FP_NAN_POLICY_TAG        = 0x2600'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_FP_INF_POLICY_TAG        = 0x2700'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_FP_COMPLEX_LAYOUT_TAG    = 0x2800'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_FP_LIBM_POLICY_TAG       = 0x2900'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_FP_REASSOCIATE_TAG       = 0x2A00'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_FP_ROUNDING_TAG = 0x2100'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_FP_FTZ_TAG = 0x2200'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_FP_CONTRACT_TAG = 0x2300'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_FP_TRAP_MASK_TAG = 0x2400'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_FP_DENORMAL_INPUT_TAG = 0x2500'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_FP_NAN_POLICY_TAG = 0x2600'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_FP_INF_POLICY_TAG = 0x2700'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_FP_COMPLEX_LAYOUT_TAG = 0x2800'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_FP_LIBM_POLICY_TAG = 0x2900'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_FP_REASSOCIATE_TAG = 0x2A00'0000'0000'0000ULL;
 inline constexpr std::uint64_t WRAPPER_FP_CONSTANT_ROUNDING_TAG = 0x2B00'0000'0000'0000ULL;
 // FIXY-V-254 — Hw<HwInstruction Tier, T> federation-cache discriminator.
-inline constexpr std::uint64_t WRAPPER_HW_INSTRUCTION_TAG       = 0x2C00'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_HW_INSTRUCTION_TAG = 0x2C00'0000'0000'0000ULL;
 // FIXY-V-255 — BarrierGuarded<BarrierStrength Tier, T> discriminator.
-inline constexpr std::uint64_t WRAPPER_BARRIER_STRENGTH_TAG     = 0x2D00'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_BARRIER_STRENGTH_TAG = 0x2D00'0000'0000'0000ULL;
 // FIXY-V-256 — SimdWidthPinned<SimdIsa W, T> discriminator.
-inline constexpr std::uint64_t WRAPPER_SIMD_ISA_TAG            = 0x2E00'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_SIMD_ISA_TAG = 0x2E00'0000'0000'0000ULL;
 // FIXY-V-267 — ScopedFence<MemoryScope S, T> discriminator.
-inline constexpr std::uint64_t WRAPPER_MEMORY_SCOPE_TAG       = 0x2F00'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_MEMORY_SCOPE_TAG = 0x2F00'0000'0000'0000ULL;
 // FIXY-V-185 — ClockSource<ClockSource Source, T> discriminator.  Salt
 // 0x30 is the next free high-byte after 0x2F (MemoryScope); the low byte
 // folds the ClockSource enumerator (0..8) so distinct sources land in
 // disjoint slots.  The composite ClockSourceLattice (V-184) carries NO
 // salt of its own — the federation-cache contribution lives HERE, on the
 // wrapper, exactly as V-184 deferred it.
-inline constexpr std::uint64_t WRAPPER_CLOCK_SOURCE_TAG       = 0x3000'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_CLOCK_SOURCE_TAG = 0x3000'0000'0000'0000ULL;
 // FIXY-V-186 — SchedClass<SchedulerPolicy Policy, T, R, D, P> discriminator.
 // Salt 0x31 is the next free high-byte after 0x30 (ClockSource); the low
 // byte folds the SchedulerPolicy enumerator (0..5) and the SCHED_DEADLINE
 // budget NTTPs are mixed in so distinct CBS budgets occupy distinct slots
 // (non-DEADLINE policies carry a zero budget → the mix vanishes).
-inline constexpr std::uint64_t WRAPPER_SCHED_CLASS_TAG       = 0x3100'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_SCHED_CLASS_TAG = 0x3100'0000'0000'0000ULL;
 // FIXY-V-187 — CpuPinned<AffinityMask Mask, PinningPosture Posture, T>
 // discriminator.  Salt 0x32 is the next free high-byte after 0x31
 // (SchedClass).  UNLIKE every other wrapper, CpuPinned's `Mask` is a CLASS
@@ -507,7 +542,7 @@ inline constexpr std::uint64_t WRAPPER_SCHED_CLASS_TAG       = 0x3100'0000'0000'
 // RowHashFold lean, the `row_hash_contribution<CpuPinned<...>>`
 // specialization lives in safety/CpuPinned.h (which already has AffinityMask
 // complete); only the collision-checked salt constant is centralized here.
-inline constexpr std::uint64_t WRAPPER_CPU_PINNED_TAG       = 0x3200'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_CPU_PINNED_TAG = 0x3200'0000'0000'0000ULL;
 // FIXY-V-188 — SuspendBehavior<SuspendBehavior Behavior, T> discriminator.
 // Salt 0x33 is the next free high-byte after 0x32 (CpuPinned); the low byte
 // folds the SuspendBehavior enumerator (0..2).  This is the row_hash the
@@ -520,8 +555,7 @@ inline constexpr std::uint64_t WRAPPER_SUSPEND_BEHAVIOR_TAG = 0x3300'0000'0000'0
 // O(N²) is fine and cheaper than introducing <algorithm> dependence
 // for a bounded compile-time problem.
 template <std::size_t N>
-[[nodiscard]] consteval std::array<std::uint64_t, N>
-sorted_uints(std::array<std::uint64_t, N> xs) noexcept {
+[[nodiscard]] consteval std::array<std::uint64_t, N> sorted_uints(std::array<std::uint64_t, N> xs) noexcept {
     for (std::size_t i = 0; i < N; ++i) {
         for (std::size_t j = i + 1; j < N; ++j) {
             if (xs[j] < xs[i]) {
@@ -539,9 +573,7 @@ sorted_uints(std::array<std::uint64_t, N> xs) noexcept {
 // effect with underlying value 0 (currently `Effect::Alloc`) silently
 // collides with `EmptyRow`: `fmix64(seed ^ 0) == fmix64(seed)`.
 template <std::size_t N>
-[[nodiscard]] consteval std::uint64_t
-fmix64_fold(std::array<std::uint64_t, N> const& xs,
-            std::uint64_t seed) noexcept {
+[[nodiscard]] consteval std::uint64_t fmix64_fold(std::array<std::uint64_t, N> const& xs, std::uint64_t seed) noexcept {
     std::uint64_t h = seed;
     for (std::size_t i = 0; i < N; ++i) {
         h = ::crucible::detail::fmix64(h ^ xs[i]);
@@ -557,8 +589,7 @@ fmix64_fold(std::array<std::uint64_t, N> const& xs,
 // size — otherwise `Row<IO, IO>` and `Row<IO>` would differ in seed
 // even though the body's dedup-fold renders the rest identical.
 template <std::size_t N>
-[[nodiscard]] consteval std::size_t
-unique_count_sorted(std::array<std::uint64_t, N> const& xs) noexcept {
+[[nodiscard]] consteval std::size_t unique_count_sorted(std::array<std::uint64_t, N> const& xs) noexcept {
     if constexpr (N == 0) {
         return 0;
     } else {
@@ -580,9 +611,8 @@ unique_count_sorted(std::array<std::uint64_t, N> const& xs) noexcept {
 // The seed MUST encode UNIQUE-cardinality (caller's responsibility);
 // see unique_count_sorted() for the rationale.
 template <std::size_t N>
-[[nodiscard]] consteval std::uint64_t
-fmix64_fold_unique_sorted(std::array<std::uint64_t, N> const& xs,
-                          std::uint64_t seed) noexcept {
+[[nodiscard]] consteval std::uint64_t fmix64_fold_unique_sorted(std::array<std::uint64_t, N> const& xs,
+                                                                std::uint64_t seed) noexcept {
     if constexpr (N == 0) {
         return seed;
     } else {
@@ -601,8 +631,7 @@ fmix64_fold_unique_sorted(std::array<std::uint64_t, N> const& xs,
 // cardinality) and then mixed.  This guarantees Row<X> with N
 // effects and Row<Y> with M ≠ N effects cannot collide regardless of
 // XOR-fold coincidences inside the body.
-[[nodiscard]] consteval std::uint64_t
-cardinality_seed(std::uint64_t cardinality) noexcept {
+[[nodiscard]] consteval std::uint64_t cardinality_seed(std::uint64_t cardinality) noexcept {
     return ::crucible::detail::fmix64(FNV1A_OFFSET_BASIS ^ cardinality);
 }
 
@@ -651,8 +680,7 @@ inline constexpr std::uint64_t EMPTY_ROW_HASH = cardinality_seed(0);
     return h;
 }
 
-inline constexpr std::uint64_t FEDERATION_TOOLCHAIN_TAG =
-    federation_toolchain_id();
+inline constexpr std::uint64_t FEDERATION_TOOLCHAIN_TAG = federation_toolchain_id();
 
 }  // namespace detail
 
@@ -684,8 +712,7 @@ struct row_hash_contribution {
 };
 
 template <typename T>
-inline constexpr std::uint64_t row_hash_contribution_v =
-    row_hash_contribution<T>::value;
+inline constexpr std::uint64_t row_hash_contribution_v = row_hash_contribution<T>::value;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Row<Es...> specialization — set-semantic sort+dedup fold ───────
@@ -722,9 +749,7 @@ struct row_hash_contribution<effects::Row<Es...>> {
             return detail::cardinality_seed(0);
         } else {
             std::array<std::uint64_t, N> const raw_vals{
-                static_cast<std::uint64_t>(
-                    static_cast<std::underlying_type_t<effects::Effect>>(Es))...
-            };
+                static_cast<std::uint64_t>(static_cast<std::underlying_type_t<effects::Effect>>(Es))...};
             auto const sorted = detail::sorted_uints(raw_vals);
             // Cardinality is mixed FIRST as the SET-cardinality (the
             // number of distinct atoms), NOT the raw pack size — see
@@ -814,10 +839,7 @@ struct row_hash_contribution<effects::Row<Es...>> {
 
 template <typename R, typename T>
 struct row_hash_contribution<effects::Computation<R, T>> {
-    static constexpr std::uint64_t value =
-        detail::combine_ids(
-            row_hash_contribution_v<R>,
-            row_hash_contribution_v<T>);
+    static constexpr std::uint64_t value = detail::combine_ids(row_hash_contribution_v<R>, row_hash_contribution_v<T>);
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -834,29 +856,25 @@ struct row_hash_contribution<effects::Computation<R, T>> {
 template <algebra::lattices::HotPathTier Tier, typename Inner>
 struct row_hash_contribution<safety::HotPath<Tier, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_HOTPATH_TAG | static_cast<std::uint64_t>(Tier),
-        row_hash_contribution_v<Inner>);
+        detail::WRAPPER_HOTPATH_TAG | static_cast<std::uint64_t>(Tier), row_hash_contribution_v<Inner>);
 };
 
 template <algebra::lattices::DetSafeTier Tier, typename Inner>
 struct row_hash_contribution<safety::DetSafe<Tier, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_DETSAFE_TAG | static_cast<std::uint64_t>(Tier),
-        row_hash_contribution_v<Inner>);
+        detail::WRAPPER_DETSAFE_TAG | static_cast<std::uint64_t>(Tier), row_hash_contribution_v<Inner>);
 };
 
 template <algebra::lattices::Tolerance Tier, typename Inner>
 struct row_hash_contribution<safety::NumericalTier<Tier, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_NUMERICAL_TIER_TAG | static_cast<std::uint64_t>(Tier),
-        row_hash_contribution_v<Inner>);
+        detail::WRAPPER_NUMERICAL_TIER_TAG | static_cast<std::uint64_t>(Tier), row_hash_contribution_v<Inner>);
 };
 
 template <algebra::lattices::VendorBackend Backend, typename Inner>
 struct row_hash_contribution<safety::Vendor<Backend, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_VENDOR_TAG | static_cast<std::uint64_t>(Backend),
-        row_hash_contribution_v<Inner>);
+        detail::WRAPPER_VENDOR_TAG | static_cast<std::uint64_t>(Backend), row_hash_contribution_v<Inner>);
 };
 
 // FIXY-V-254 — Hw sits between Vendor (which backend) and ResidencyHeat
@@ -864,8 +882,7 @@ struct row_hash_contribution<safety::Vendor<Backend, Inner>> {
 template <algebra::lattices::HwInstruction Tier, typename Inner>
 struct row_hash_contribution<safety::Hw<Tier, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_HW_INSTRUCTION_TAG | static_cast<std::uint64_t>(Tier),
-        row_hash_contribution_v<Inner>);
+        detail::WRAPPER_HW_INSTRUCTION_TAG | static_cast<std::uint64_t>(Tier), row_hash_contribution_v<Inner>);
 };
 
 // FIXY-V-255 — BarrierGuarded is a Repr-neighborhood wrapper peer to Hw;
@@ -873,8 +890,7 @@ struct row_hash_contribution<safety::Hw<Tier, Inner>> {
 template <algebra::lattices::BarrierStrength Tier, typename Inner>
 struct row_hash_contribution<safety::BarrierGuarded<Tier, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_BARRIER_STRENGTH_TAG | static_cast<std::uint64_t>(Tier),
-        row_hash_contribution_v<Inner>);
+        detail::WRAPPER_BARRIER_STRENGTH_TAG | static_cast<std::uint64_t>(Tier), row_hash_contribution_v<Inner>);
 };
 
 // FIXY-V-256 — SimdWidthPinned is a Repr-neighborhood wrapper (Tier-L
@@ -882,8 +898,7 @@ struct row_hash_contribution<safety::BarrierGuarded<Tier, Inner>> {
 template <algebra::lattices::SimdIsa W, typename Inner>
 struct row_hash_contribution<safety::SimdWidthPinned<W, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_SIMD_ISA_TAG | static_cast<std::uint64_t>(W),
-        row_hash_contribution_v<Inner>);
+        detail::WRAPPER_SIMD_ISA_TAG | static_cast<std::uint64_t>(W), row_hash_contribution_v<Inner>);
 };
 
 // FIXY-V-267 — ScopedFence is a Repr-neighborhood wrapper (Tier-L Lattice)
@@ -895,8 +910,7 @@ struct row_hash_contribution<safety::SimdWidthPinned<W, Inner>> {
 template <algebra::lattices::MemoryScope S, typename Inner>
 struct row_hash_contribution<safety::ScopedFence<S, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_MEMORY_SCOPE_TAG | static_cast<std::uint64_t>(S),
-        row_hash_contribution_v<Inner>);
+        detail::WRAPPER_MEMORY_SCOPE_TAG | static_cast<std::uint64_t>(S), row_hash_contribution_v<Inner>);
 };
 
 // FIXY-V-185 — ClockSource is a Representation-neighborhood wrapper
@@ -909,8 +923,7 @@ struct row_hash_contribution<safety::ScopedFence<S, Inner>> {
 template <algebra::lattices::ClockSource Source, typename Inner>
 struct row_hash_contribution<safety::ClockSource<Source, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_CLOCK_SOURCE_TAG | static_cast<std::uint64_t>(Source),
-        row_hash_contribution_v<Inner>);
+        detail::WRAPPER_CLOCK_SOURCE_TAG | static_cast<std::uint64_t>(Source), row_hash_contribution_v<Inner>);
 };
 
 // FIXY-V-186 — SchedClass is a Synchronization-neighborhood wrapper (peer
@@ -930,16 +943,13 @@ struct row_hash_contribution<safety::ClockSource<Source, Inner>> {
 // happened in the pre-mix.  Per-field combine_ids is order-sensitive and
 // golden-ratio mixed, so each NTTP contributes collision-resistantly and
 // distinct triples land in distinct federation-cache slots.
-template <algebra::lattices::SchedulerPolicy Policy, typename Inner,
-          std::uint64_t RuntimeNs, std::uint64_t DeadlineNs, std::uint64_t PeriodNs>
-struct row_hash_contribution<
-    safety::SchedClass<Policy, Inner, RuntimeNs, DeadlineNs, PeriodNs>> {
+template <algebra::lattices::SchedulerPolicy Policy, typename Inner, std::uint64_t RuntimeNs, std::uint64_t DeadlineNs,
+          std::uint64_t PeriodNs>
+struct row_hash_contribution<safety::SchedClass<Policy, Inner, RuntimeNs, DeadlineNs, PeriodNs>> {
     static constexpr std::uint64_t value = detail::combine_ids(
         detail::combine_ids(
             detail::combine_ids(
-                detail::combine_ids(
-                    detail::WRAPPER_SCHED_CLASS_TAG | static_cast<std::uint64_t>(Policy),
-                    RuntimeNs),
+                detail::combine_ids(detail::WRAPPER_SCHED_CLASS_TAG | static_cast<std::uint64_t>(Policy), RuntimeNs),
                 DeadlineNs),
             PeriodNs),
         row_hash_contribution_v<Inner>);
@@ -951,66 +961,55 @@ struct row_hash_contribution<
 template <algebra::lattices::SuspendBehavior Behavior, typename Inner>
 struct row_hash_contribution<safety::SuspendBehavior<Behavior, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_SUSPEND_BEHAVIOR_TAG | static_cast<std::uint64_t>(Behavior),
-        row_hash_contribution_v<Inner>);
+        detail::WRAPPER_SUSPEND_BEHAVIOR_TAG | static_cast<std::uint64_t>(Behavior), row_hash_contribution_v<Inner>);
 };
 
 template <algebra::lattices::ResidencyHeatTag Tier, typename Inner>
 struct row_hash_contribution<safety::ResidencyHeat<Tier, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_RESIDENCY_HEAT_TAG | static_cast<std::uint64_t>(Tier),
-        row_hash_contribution_v<Inner>);
+        detail::WRAPPER_RESIDENCY_HEAT_TAG | static_cast<std::uint64_t>(Tier), row_hash_contribution_v<Inner>);
 };
 
 template <algebra::lattices::CipherTierTag Tier, typename Inner>
 struct row_hash_contribution<safety::CipherTier<Tier, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_CIPHER_TIER_TAG | static_cast<std::uint64_t>(Tier),
-        row_hash_contribution_v<Inner>);
+        detail::WRAPPER_CIPHER_TIER_TAG | static_cast<std::uint64_t>(Tier), row_hash_contribution_v<Inner>);
 };
 
 template <algebra::lattices::AllocClassTag Tag, typename Inner>
 struct row_hash_contribution<safety::AllocClass<Tag, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_ALLOC_CLASS_TAG | static_cast<std::uint64_t>(Tag),
-        row_hash_contribution_v<Inner>);
+        detail::WRAPPER_ALLOC_CLASS_TAG | static_cast<std::uint64_t>(Tag), row_hash_contribution_v<Inner>);
 };
 
 template <algebra::lattices::WaitStrategy Strategy, typename Inner>
 struct row_hash_contribution<safety::Wait<Strategy, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_WAIT_TAG | static_cast<std::uint64_t>(Strategy),
-        row_hash_contribution_v<Inner>);
+        detail::WRAPPER_WAIT_TAG | static_cast<std::uint64_t>(Strategy), row_hash_contribution_v<Inner>);
 };
 
 template <algebra::lattices::MemOrderTag Tag, typename Inner>
 struct row_hash_contribution<safety::MemOrder<Tag, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_MEM_ORDER_TAG | static_cast<std::uint64_t>(Tag),
-        row_hash_contribution_v<Inner>);
+        detail::WRAPPER_MEM_ORDER_TAG | static_cast<std::uint64_t>(Tag), row_hash_contribution_v<Inner>);
 };
 
 template <algebra::lattices::ProgressClass Class, typename Inner>
 struct row_hash_contribution<safety::Progress<Class, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_PROGRESS_TAG | static_cast<std::uint64_t>(Class),
-        row_hash_contribution_v<Inner>);
+        detail::WRAPPER_PROGRESS_TAG | static_cast<std::uint64_t>(Class), row_hash_contribution_v<Inner>);
 };
 
 template <typename Inner>
 struct row_hash_contribution<safety::Stale<Inner>> {
-    static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_STALE_TAG,
-        row_hash_contribution_v<Inner>);
+    static constexpr std::uint64_t value =
+        detail::combine_ids(detail::WRAPPER_STALE_TAG, row_hash_contribution_v<Inner>);
 };
 
 template <typename Inner, typename Source>
 struct row_hash_contribution<safety::Tagged<Inner, Source>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::combine_ids(
-            detail::WRAPPER_TAGGED_TAG,
-            stable_type_id<Source>),
-        row_hash_contribution_v<Inner>);
+        detail::combine_ids(detail::WRAPPER_TAGGED_TAG, stable_type_id<Source>), row_hash_contribution_v<Inner>);
 };
 
 // ─── pred_canonical_id — predicate identity extension point (FOUND-058) ───
@@ -1058,35 +1057,28 @@ struct row_hash_contribution<safety::Tagged<Inner, Source>> {
 // audit signal.
 template <auto Pred>
 struct pred_canonical_id {
-    static constexpr std::uint64_t value =
-        stable_type_id<std::remove_cvref_t<decltype(Pred)>>;
+    static constexpr std::uint64_t value = stable_type_id<std::remove_cvref_t<decltype(Pred)>>;
 };
 
 template <auto Pred>
-inline constexpr std::uint64_t pred_canonical_id_v =
-    pred_canonical_id<Pred>::value;
+inline constexpr std::uint64_t pred_canonical_id_v = pred_canonical_id<Pred>::value;
 
 template <auto Pred, typename Inner>
 struct row_hash_contribution<safety::Refined<Pred, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::combine_ids(
-            detail::WRAPPER_REFINED_TAG,
-            pred_canonical_id_v<Pred>),
-        row_hash_contribution_v<Inner>);
+        detail::combine_ids(detail::WRAPPER_REFINED_TAG, pred_canonical_id_v<Pred>), row_hash_contribution_v<Inner>);
 };
 
 template <typename Inner>
 struct row_hash_contribution<safety::Secret<Inner>> {
-    static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_SECRET_TAG,
-        row_hash_contribution_v<Inner>);
+    static constexpr std::uint64_t value =
+        detail::combine_ids(detail::WRAPPER_SECRET_TAG, row_hash_contribution_v<Inner>);
 };
 
 template <typename Inner>
 struct row_hash_contribution<safety::Linear<Inner>> {
-    static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_LINEAR_TAG,
-        row_hash_contribution_v<Inner>);
+    static constexpr std::uint64_t value =
+        detail::combine_ids(detail::WRAPPER_LINEAR_TAG, row_hash_contribution_v<Inner>);
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -1112,11 +1104,9 @@ struct row_hash_contribution<safety::Linear<Inner>> {
 // keys in lockstep.
 template <auto Pred, typename Inner>
 struct row_hash_contribution<safety::SealedRefined<Pred, Inner>> {
-    static constexpr std::uint64_t value = detail::combine_ids(
-        detail::combine_ids(
-            detail::WRAPPER_SEALED_REFINED_TAG,
-            pred_canonical_id_v<Pred>),
-        row_hash_contribution_v<Inner>);
+    static constexpr std::uint64_t value =
+        detail::combine_ids(detail::combine_ids(detail::WRAPPER_SEALED_REFINED_TAG, pred_canonical_id_v<Pred>),
+                            row_hash_contribution_v<Inner>);
 };
 
 // TimeOrdered<T, N, Tag> — bucket count N and lane tag both
@@ -1129,11 +1119,7 @@ struct row_hash_contribution<safety::SealedRefined<Pred, Inner>> {
 template <typename Inner, std::size_t N, typename Tag>
 struct row_hash_contribution<safety::TimeOrdered<Inner, N, Tag>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::combine_ids(
-            detail::combine_ids(
-                detail::WRAPPER_TIME_ORDERED_TAG,
-                N),
-            stable_type_id<Tag>),
+        detail::combine_ids(detail::combine_ids(detail::WRAPPER_TIME_ORDERED_TAG, N), stable_type_id<Tag>),
         row_hash_contribution_v<Inner>);
 };
 
@@ -1144,10 +1130,7 @@ struct row_hash_contribution<safety::TimeOrdered<Inner, N, Tag>> {
 template <typename Inner, typename Cmp>
 struct row_hash_contribution<safety::Monotonic<Inner, Cmp>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::combine_ids(
-            detail::WRAPPER_MONOTONIC_TAG,
-            stable_type_id<Cmp>),
-        row_hash_contribution_v<Inner>);
+        detail::combine_ids(detail::WRAPPER_MONOTONIC_TAG, stable_type_id<Cmp>), row_hash_contribution_v<Inner>);
 };
 
 // AppendOnly<T, Storage> — Storage IS row-relevant (FIXY-FOUND-049):
@@ -1174,9 +1157,7 @@ struct row_hash_contribution<safety::Monotonic<Inner, Cmp>> {
 template <typename Inner, template <typename...> class Storage>
 struct row_hash_contribution<safety::AppendOnly<Inner, Storage>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::combine_ids(
-            detail::WRAPPER_APPEND_ONLY_TAG,
-            stable_type_id<Storage<detail::StorageProbe>>),
+        detail::combine_ids(detail::WRAPPER_APPEND_ONLY_TAG, stable_type_id<Storage<detail::StorageProbe>>),
         row_hash_contribution_v<Inner>);
 };
 
@@ -1184,8 +1165,7 @@ struct row_hash_contribution<safety::AppendOnly<Inner, Storage>> {
 template <algebra::lattices::Consistency Level, typename Inner>
 struct row_hash_contribution<safety::Consistency<Level, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_CONSISTENCY_TAG | static_cast<std::uint64_t>(Level),
-        row_hash_contribution_v<Inner>);
+        detail::WRAPPER_CONSISTENCY_TAG | static_cast<std::uint64_t>(Level), row_hash_contribution_v<Inner>);
 };
 
 // OpaqueLifetime<Scope, T> — enum-encoded scope in the salt's low
@@ -1194,8 +1174,7 @@ struct row_hash_contribution<safety::Consistency<Level, Inner>> {
 template <algebra::lattices::Lifetime Scope, typename Inner>
 struct row_hash_contribution<safety::OpaqueLifetime<Scope, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_OPAQUE_LIFETIME_TAG | static_cast<std::uint64_t>(Scope),
-        row_hash_contribution_v<Inner>);
+        detail::WRAPPER_OPAQUE_LIFETIME_TAG | static_cast<std::uint64_t>(Scope), row_hash_contribution_v<Inner>);
 };
 
 // Crash<Class, T> — enum-encoded BSYZ22 crash class.  NoThrow /
@@ -1204,8 +1183,7 @@ struct row_hash_contribution<safety::OpaqueLifetime<Scope, Inner>> {
 template <algebra::lattices::CrashClass Class, typename Inner>
 struct row_hash_contribution<safety::Crash<Class, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_CRASH_TAG | static_cast<std::uint64_t>(Class),
-        row_hash_contribution_v<Inner>);
+        detail::WRAPPER_CRASH_TAG | static_cast<std::uint64_t>(Class), row_hash_contribution_v<Inner>);
 };
 
 // Budgeted<T> / EpochVersioned<T> / NumaPlacement<T> / RecipeSpec<T>
@@ -1226,30 +1204,26 @@ struct row_hash_contribution<safety::Crash<Class, Inner>> {
 // replace this type-level hash for federation cache slot routing.
 template <typename Inner>
 struct row_hash_contribution<safety::Budgeted<Inner>> {
-    static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_BUDGETED_TAG,
-        row_hash_contribution_v<Inner>);
+    static constexpr std::uint64_t value =
+        detail::combine_ids(detail::WRAPPER_BUDGETED_TAG, row_hash_contribution_v<Inner>);
 };
 
 template <typename Inner>
 struct row_hash_contribution<safety::EpochVersioned<Inner>> {
-    static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_EPOCH_VERSIONED_TAG,
-        row_hash_contribution_v<Inner>);
+    static constexpr std::uint64_t value =
+        detail::combine_ids(detail::WRAPPER_EPOCH_VERSIONED_TAG, row_hash_contribution_v<Inner>);
 };
 
 template <typename Inner>
 struct row_hash_contribution<safety::NumaPlacement<Inner>> {
-    static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_NUMA_PLACEMENT_TAG,
-        row_hash_contribution_v<Inner>);
+    static constexpr std::uint64_t value =
+        detail::combine_ids(detail::WRAPPER_NUMA_PLACEMENT_TAG, row_hash_contribution_v<Inner>);
 };
 
 template <typename Inner>
 struct row_hash_contribution<safety::RecipeSpec<Inner>> {
-    static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_RECIPE_SPEC_TAG,
-        row_hash_contribution_v<Inner>);
+    static constexpr std::uint64_t value =
+        detail::combine_ids(detail::WRAPPER_RECIPE_SPEC_TAG, row_hash_contribution_v<Inner>);
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -1271,8 +1245,7 @@ struct row_hash_contribution<safety::RecipeSpec<Inner>> {
 template <algebra::lattices::Witness Tier, typename Inner>
 struct row_hash_contribution<safety::Witness<Tier, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_WITNESS_TAG | static_cast<std::uint64_t>(Tier),
-        row_hash_contribution_v<Inner>);
+        detail::WRAPPER_WITNESS_TAG | static_cast<std::uint64_t>(Tier), row_hash_contribution_v<Inner>);
 };
 
 // ── FIXY-V-079 — JoinPolicy<Tier, T> federation hash ────────────────
@@ -1290,8 +1263,7 @@ struct row_hash_contribution<safety::Witness<Tier, Inner>> {
 template <algebra::lattices::JoinPolicy Tier, typename Inner>
 struct row_hash_contribution<safety::JoinPolicy<Tier, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_JOIN_POLICY_TAG | static_cast<std::uint64_t>(Tier),
-        row_hash_contribution_v<Inner>);
+        detail::WRAPPER_JOIN_POLICY_TAG | static_cast<std::uint64_t>(Tier), row_hash_contribution_v<Inner>);
 };
 
 // ── FIXY-V-090 — 11 FP-mode sub-axis wrappers ──────────────────────
@@ -1311,78 +1283,67 @@ struct row_hash_contribution<safety::JoinPolicy<Tier, Inner>> {
 template <algebra::lattices::FpRounding Mode, typename Inner>
 struct row_hash_contribution<safety::FpModePinned<Mode, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_FP_ROUNDING_TAG | static_cast<std::uint64_t>(Mode),
-        row_hash_contribution_v<Inner>);
+        detail::WRAPPER_FP_ROUNDING_TAG | static_cast<std::uint64_t>(Mode), row_hash_contribution_v<Inner>);
 };
 
 template <algebra::lattices::FpFtz Mode, typename Inner>
 struct row_hash_contribution<safety::FpModePinned<Mode, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_FP_FTZ_TAG | static_cast<std::uint64_t>(Mode),
-        row_hash_contribution_v<Inner>);
+        detail::WRAPPER_FP_FTZ_TAG | static_cast<std::uint64_t>(Mode), row_hash_contribution_v<Inner>);
 };
 
 template <algebra::lattices::FpContract Mode, typename Inner>
 struct row_hash_contribution<safety::FpModePinned<Mode, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_FP_CONTRACT_TAG | static_cast<std::uint64_t>(Mode),
-        row_hash_contribution_v<Inner>);
+        detail::WRAPPER_FP_CONTRACT_TAG | static_cast<std::uint64_t>(Mode), row_hash_contribution_v<Inner>);
 };
 
 template <algebra::lattices::FpTrapMask Mode, typename Inner>
 struct row_hash_contribution<safety::FpModePinned<Mode, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_FP_TRAP_MASK_TAG | static_cast<std::uint64_t>(Mode),
-        row_hash_contribution_v<Inner>);
+        detail::WRAPPER_FP_TRAP_MASK_TAG | static_cast<std::uint64_t>(Mode), row_hash_contribution_v<Inner>);
 };
 
 template <algebra::lattices::FpDenormalInput Mode, typename Inner>
 struct row_hash_contribution<safety::FpModePinned<Mode, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_FP_DENORMAL_INPUT_TAG | static_cast<std::uint64_t>(Mode),
-        row_hash_contribution_v<Inner>);
+        detail::WRAPPER_FP_DENORMAL_INPUT_TAG | static_cast<std::uint64_t>(Mode), row_hash_contribution_v<Inner>);
 };
 
 template <algebra::lattices::FpNanPolicy Mode, typename Inner>
 struct row_hash_contribution<safety::FpModePinned<Mode, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_FP_NAN_POLICY_TAG | static_cast<std::uint64_t>(Mode),
-        row_hash_contribution_v<Inner>);
+        detail::WRAPPER_FP_NAN_POLICY_TAG | static_cast<std::uint64_t>(Mode), row_hash_contribution_v<Inner>);
 };
 
 template <algebra::lattices::FpInfPolicy Mode, typename Inner>
 struct row_hash_contribution<safety::FpModePinned<Mode, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_FP_INF_POLICY_TAG | static_cast<std::uint64_t>(Mode),
-        row_hash_contribution_v<Inner>);
+        detail::WRAPPER_FP_INF_POLICY_TAG | static_cast<std::uint64_t>(Mode), row_hash_contribution_v<Inner>);
 };
 
 template <algebra::lattices::FpComplexLayout Mode, typename Inner>
 struct row_hash_contribution<safety::FpModePinned<Mode, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_FP_COMPLEX_LAYOUT_TAG | static_cast<std::uint64_t>(Mode),
-        row_hash_contribution_v<Inner>);
+        detail::WRAPPER_FP_COMPLEX_LAYOUT_TAG | static_cast<std::uint64_t>(Mode), row_hash_contribution_v<Inner>);
 };
 
 template <algebra::lattices::FpLibmPolicy Mode, typename Inner>
 struct row_hash_contribution<safety::FpModePinned<Mode, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_FP_LIBM_POLICY_TAG | static_cast<std::uint64_t>(Mode),
-        row_hash_contribution_v<Inner>);
+        detail::WRAPPER_FP_LIBM_POLICY_TAG | static_cast<std::uint64_t>(Mode), row_hash_contribution_v<Inner>);
 };
 
 template <algebra::lattices::FpReassociate Mode, typename Inner>
 struct row_hash_contribution<safety::FpModePinned<Mode, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_FP_REASSOCIATE_TAG | static_cast<std::uint64_t>(Mode),
-        row_hash_contribution_v<Inner>);
+        detail::WRAPPER_FP_REASSOCIATE_TAG | static_cast<std::uint64_t>(Mode), row_hash_contribution_v<Inner>);
 };
 
 template <algebra::lattices::FpConstantRounding Mode, typename Inner>
 struct row_hash_contribution<safety::FpModePinned<Mode, Inner>> {
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::WRAPPER_FP_CONSTANT_ROUNDING_TAG | static_cast<std::uint64_t>(Mode),
-        row_hash_contribution_v<Inner>);
+        detail::WRAPPER_FP_CONSTANT_ROUNDING_TAG | static_cast<std::uint64_t>(Mode), row_hash_contribution_v<Inner>);
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -1424,19 +1385,15 @@ inline constexpr RowHash row_hash_of_v = row_hash_of<T>();
 // matched.  Peers that genuinely intend to share a slot must agree on
 // a toolchain (or ship a V2 canonical type-walker — see StableName.h
 // "What V1 DOES NOT guarantee").
-[[nodiscard]] consteval std::uint64_t federation_toolchain_tag() noexcept {
-    return detail::FEDERATION_TOOLCHAIN_TAG;
-}
+[[nodiscard]] consteval std::uint64_t federation_toolchain_tag() noexcept { return detail::FEDERATION_TOOLCHAIN_TAG; }
 
 template <typename T>
 [[nodiscard]] consteval RowHash federation_key_with_toolchain() noexcept {
-    return RowHash{detail::combine_ids(detail::FEDERATION_TOOLCHAIN_TAG,
-                                       row_hash_contribution_v<T>)};
+    return RowHash{detail::combine_ids(detail::FEDERATION_TOOLCHAIN_TAG, row_hash_contribution_v<T>)};
 }
 
 template <typename T>
-inline constexpr RowHash federation_key_with_toolchain_v =
-    federation_key_with_toolchain<T>();
+inline constexpr RowHash federation_key_with_toolchain_v = federation_key_with_toolchain<T>();
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Self-test block — invariants asserted at header inclusion ──────
@@ -1450,13 +1407,13 @@ using effects::Row;
 
 // ─── Bare types contribute 0 ───────────────────────────────────────
 
-static_assert(row_hash_contribution_v<int>      == 0);
-static_assert(row_hash_contribution_v<float>    == 0);
-static_assert(row_hash_contribution_v<double>   == 0);
-static_assert(row_hash_contribution_v<void>     == 0);
+static_assert(row_hash_contribution_v<int> == 0);
+static_assert(row_hash_contribution_v<float> == 0);
+static_assert(row_hash_contribution_v<double> == 0);
+static_assert(row_hash_contribution_v<void> == 0);
 static_assert(row_hash_contribution_v<unsigned> == 0);
 
-static_assert(row_hash_of_v<int>   == RowHash{0});
+static_assert(row_hash_of_v<int> == RowHash{0});
 static_assert(row_hash_of_v<float> == RowHash{0});
 
 // Bare-type RowHash is_zero() — flows through to KernelCacheKey
@@ -1467,61 +1424,45 @@ static_assert(!row_hash_of_v<int>.is_sentinel());
 // ─── Singleton rows produce non-zero, distinct hashes ──────────────
 
 static_assert(row_hash_contribution_v<Row<Effect::Alloc>> != 0);
-static_assert(row_hash_contribution_v<Row<Effect::IO>>    != 0);
+static_assert(row_hash_contribution_v<Row<Effect::IO>> != 0);
 static_assert(row_hash_contribution_v<Row<Effect::Block>> != 0);
-static_assert(row_hash_contribution_v<Row<Effect::Bg>>    != 0);
-static_assert(row_hash_contribution_v<Row<Effect::Init>>  != 0);
-static_assert(row_hash_contribution_v<Row<Effect::Test>>  != 0);
+static_assert(row_hash_contribution_v<Row<Effect::Bg>> != 0);
+static_assert(row_hash_contribution_v<Row<Effect::Init>> != 0);
+static_assert(row_hash_contribution_v<Row<Effect::Test>> != 0);
 
-static_assert(row_hash_contribution_v<Row<Effect::Alloc>>
-           != row_hash_contribution_v<Row<Effect::IO>>);
-static_assert(row_hash_contribution_v<Row<Effect::Alloc>>
-           != row_hash_contribution_v<Row<Effect::Block>>);
-static_assert(row_hash_contribution_v<Row<Effect::IO>>
-           != row_hash_contribution_v<Row<Effect::Bg>>);
+static_assert(row_hash_contribution_v<Row<Effect::Alloc>> != row_hash_contribution_v<Row<Effect::IO>>);
+static_assert(row_hash_contribution_v<Row<Effect::Alloc>> != row_hash_contribution_v<Row<Effect::Block>>);
+static_assert(row_hash_contribution_v<Row<Effect::IO>> != row_hash_contribution_v<Row<Effect::Bg>>);
 
 // ─── Permutation invariance — pair, triple, full sextuple ──────────
 
 // 2-way: Row<A,B> ≡ Row<B,A>.
 static_assert(row_hash_contribution_v<Row<Effect::Alloc, Effect::IO>>
-           == row_hash_contribution_v<Row<Effect::IO, Effect::Alloc>>);
+              == row_hash_contribution_v<Row<Effect::IO, Effect::Alloc>>);
 
 static_assert(row_hash_contribution_v<Row<Effect::Block, Effect::Bg>>
-           == row_hash_contribution_v<Row<Effect::Bg, Effect::Block>>);
+              == row_hash_contribution_v<Row<Effect::Bg, Effect::Block>>);
 
 // 3-way: all 6 permutations of {Alloc, IO, Block} hash identically.
-static_assert(
-    row_hash_contribution_v<Row<Effect::Alloc, Effect::IO, Effect::Block>>
- == row_hash_contribution_v<Row<Effect::Alloc, Effect::Block, Effect::IO>>);
-static_assert(
-    row_hash_contribution_v<Row<Effect::Alloc, Effect::IO, Effect::Block>>
- == row_hash_contribution_v<Row<Effect::IO, Effect::Alloc, Effect::Block>>);
-static_assert(
-    row_hash_contribution_v<Row<Effect::Alloc, Effect::IO, Effect::Block>>
- == row_hash_contribution_v<Row<Effect::IO, Effect::Block, Effect::Alloc>>);
-static_assert(
-    row_hash_contribution_v<Row<Effect::Alloc, Effect::IO, Effect::Block>>
- == row_hash_contribution_v<Row<Effect::Block, Effect::Alloc, Effect::IO>>);
-static_assert(
-    row_hash_contribution_v<Row<Effect::Alloc, Effect::IO, Effect::Block>>
- == row_hash_contribution_v<Row<Effect::Block, Effect::IO, Effect::Alloc>>);
+static_assert(row_hash_contribution_v<Row<Effect::Alloc, Effect::IO, Effect::Block>>
+              == row_hash_contribution_v<Row<Effect::Alloc, Effect::Block, Effect::IO>>);
+static_assert(row_hash_contribution_v<Row<Effect::Alloc, Effect::IO, Effect::Block>>
+              == row_hash_contribution_v<Row<Effect::IO, Effect::Alloc, Effect::Block>>);
+static_assert(row_hash_contribution_v<Row<Effect::Alloc, Effect::IO, Effect::Block>>
+              == row_hash_contribution_v<Row<Effect::IO, Effect::Block, Effect::Alloc>>);
+static_assert(row_hash_contribution_v<Row<Effect::Alloc, Effect::IO, Effect::Block>>
+              == row_hash_contribution_v<Row<Effect::Block, Effect::Alloc, Effect::IO>>);
+static_assert(row_hash_contribution_v<Row<Effect::Alloc, Effect::IO, Effect::Block>>
+              == row_hash_contribution_v<Row<Effect::Block, Effect::IO, Effect::Alloc>>);
 
 // 6-way (full universe): a permutation of all six atoms hashes the
 // same as the canonical declaration order.
-using FullRow_canonical =
-    Row<Effect::Alloc, Effect::IO, Effect::Block,
-        Effect::Bg,    Effect::Init, Effect::Test>;
-using FullRow_reversed =
-    Row<Effect::Test,  Effect::Init, Effect::Bg,
-        Effect::Block, Effect::IO,   Effect::Alloc>;
-using FullRow_shuffled =
-    Row<Effect::Block, Effect::Alloc, Effect::Test,
-        Effect::IO,    Effect::Init,  Effect::Bg>;
+using FullRow_canonical = Row<Effect::Alloc, Effect::IO, Effect::Block, Effect::Bg, Effect::Init, Effect::Test>;
+using FullRow_reversed = Row<Effect::Test, Effect::Init, Effect::Bg, Effect::Block, Effect::IO, Effect::Alloc>;
+using FullRow_shuffled = Row<Effect::Block, Effect::Alloc, Effect::Test, Effect::IO, Effect::Init, Effect::Bg>;
 
-static_assert(row_hash_contribution_v<FullRow_canonical>
-           == row_hash_contribution_v<FullRow_reversed>);
-static_assert(row_hash_contribution_v<FullRow_canonical>
-           == row_hash_contribution_v<FullRow_shuffled>);
+static_assert(row_hash_contribution_v<FullRow_canonical> == row_hash_contribution_v<FullRow_reversed>);
+static_assert(row_hash_contribution_v<FullRow_canonical> == row_hash_contribution_v<FullRow_shuffled>);
 
 // ─── Set-semantic dedup — Row is a set, not a multiset ─────────────
 //
@@ -1538,41 +1479,33 @@ static_assert(row_hash_contribution_v<FullRow_canonical>
 
 // Singletons: dedup is a no-op (already unique) — Row<X, X> ≡ Row<X>.
 static_assert(row_hash_contribution_v<Row<Effect::Alloc, Effect::Alloc>>
-           == row_hash_contribution_v<Row<Effect::Alloc>>);
-static_assert(row_hash_contribution_v<Row<Effect::IO, Effect::IO>>
-           == row_hash_contribution_v<Row<Effect::IO>>);
+              == row_hash_contribution_v<Row<Effect::Alloc>>);
+static_assert(row_hash_contribution_v<Row<Effect::IO, Effect::IO>> == row_hash_contribution_v<Row<Effect::IO>>);
 static_assert(row_hash_contribution_v<Row<Effect::Block, Effect::Block>>
-           == row_hash_contribution_v<Row<Effect::Block>>);
-static_assert(row_hash_contribution_v<Row<Effect::Bg, Effect::Bg>>
-           == row_hash_contribution_v<Row<Effect::Bg>>);
+              == row_hash_contribution_v<Row<Effect::Block>>);
+static_assert(row_hash_contribution_v<Row<Effect::Bg, Effect::Bg>> == row_hash_contribution_v<Row<Effect::Bg>>);
 
 // Triple-replicated atom collapses to singleton.
 static_assert(row_hash_contribution_v<Row<Effect::IO, Effect::IO, Effect::IO>>
-           == row_hash_contribution_v<Row<Effect::IO>>);
+              == row_hash_contribution_v<Row<Effect::IO>>);
 
 // Pair + leading or trailing duplicate collapses to the pair.
-static_assert(row_hash_contribution_v<
-                  Row<Effect::Alloc, Effect::Alloc, Effect::IO>>
-           == row_hash_contribution_v<Row<Effect::Alloc, Effect::IO>>);
-static_assert(row_hash_contribution_v<
-                  Row<Effect::Alloc, Effect::IO, Effect::IO>>
-           == row_hash_contribution_v<Row<Effect::Alloc, Effect::IO>>);
+static_assert(row_hash_contribution_v<Row<Effect::Alloc, Effect::Alloc, Effect::IO>>
+              == row_hash_contribution_v<Row<Effect::Alloc, Effect::IO>>);
+static_assert(row_hash_contribution_v<Row<Effect::Alloc, Effect::IO, Effect::IO>>
+              == row_hash_contribution_v<Row<Effect::Alloc, Effect::IO>>);
 
 // Interleaved duplicates: order before dedup doesn't matter.
-static_assert(row_hash_contribution_v<
-                  Row<Effect::Bg, Effect::IO, Effect::Bg, Effect::IO>>
-           == row_hash_contribution_v<Row<Effect::IO, Effect::Bg>>);
-static_assert(row_hash_contribution_v<
-                  Row<Effect::IO, Effect::Bg, Effect::Bg, Effect::IO>>
-           == row_hash_contribution_v<Row<Effect::IO, Effect::Bg>>);
+static_assert(row_hash_contribution_v<Row<Effect::Bg, Effect::IO, Effect::Bg, Effect::IO>>
+              == row_hash_contribution_v<Row<Effect::IO, Effect::Bg>>);
+static_assert(row_hash_contribution_v<Row<Effect::IO, Effect::Bg, Effect::Bg, Effect::IO>>
+              == row_hash_contribution_v<Row<Effect::IO, Effect::Bg>>);
 
 // Cardinality-seed dedup: a 4-pack with 2 unique atoms must seed
 // with unique-count=2, NOT raw-count=4 — pins that the seed factory
 // is fed unique_count_sorted, not the raw pack size.
-static_assert(row_hash_contribution_v<
-                  Row<Effect::Alloc, Effect::Alloc,
-                      Effect::IO,    Effect::IO>>
-           == row_hash_contribution_v<Row<Effect::Alloc, Effect::IO>>);
+static_assert(row_hash_contribution_v<Row<Effect::Alloc, Effect::Alloc, Effect::IO, Effect::IO>>
+              == row_hash_contribution_v<Row<Effect::Alloc, Effect::IO>>);
 
 // ─── Cardinality discriminates ─────────────────────────────────────
 //
@@ -1580,18 +1513,16 @@ static_assert(row_hash_contribution_v<
 // algebra has Row<A> ⊊ Row<A, B>, and the cache must reflect the
 // strictly stronger capability claim.
 
-static_assert(row_hash_contribution_v<Row<Effect::Alloc>>
-           != row_hash_contribution_v<Row<Effect::Alloc, Effect::IO>>);
+static_assert(row_hash_contribution_v<Row<Effect::Alloc>> != row_hash_contribution_v<Row<Effect::Alloc, Effect::IO>>);
 
 static_assert(row_hash_contribution_v<Row<Effect::Alloc, Effect::IO>>
-           != row_hash_contribution_v<Row<Effect::Alloc, Effect::IO, Effect::Block>>);
+              != row_hash_contribution_v<Row<Effect::Alloc, Effect::IO, Effect::Block>>);
 
-static_assert(row_hash_contribution_v<Row<Effect::Alloc>>
-           != row_hash_contribution_v<Row<Effect::IO>>);
+static_assert(row_hash_contribution_v<Row<Effect::Alloc>> != row_hash_contribution_v<Row<Effect::IO>>);
 
 // Disjoint pairs hash differently.
 static_assert(row_hash_contribution_v<Row<Effect::Alloc, Effect::IO>>
-           != row_hash_contribution_v<Row<Effect::Block, Effect::Bg>>);
+              != row_hash_contribution_v<Row<Effect::Block, Effect::Bg>>);
 
 // ─── EmptyRow is non-zero, distinct from bare-type 0 ───────────────
 
@@ -1600,8 +1531,7 @@ static_assert(row_hash_contribution_v<EmptyRow> == detail::EMPTY_ROW_HASH);
 
 // EmptyRow ≢ bare-type 0 — the row carrier must always discriminate
 // from a non-row T.
-static_assert(row_hash_contribution_v<EmptyRow>
-           != row_hash_contribution_v<int>);
+static_assert(row_hash_contribution_v<EmptyRow> != row_hash_contribution_v<int>);
 
 // EmptyRow ≢ any singleton row — the empty effect set is not the
 // same as a single-effect set.  REGRESSION ANCHOR: this enumeration
@@ -1610,54 +1540,33 @@ static_assert(row_hash_contribution_v<EmptyRow>
 // `seed ^ 0 == seed` identity made `Row<Alloc>` alias `EmptyRow`
 // before the cardinality_seed() fix.  Every singleton over the full
 // Effect universe is now pinned distinct from EmptyRow.
-static_assert(row_hash_contribution_v<EmptyRow>
-           != row_hash_contribution_v<Row<Effect::Alloc>>);
-static_assert(row_hash_contribution_v<EmptyRow>
-           != row_hash_contribution_v<Row<Effect::IO>>);
-static_assert(row_hash_contribution_v<EmptyRow>
-           != row_hash_contribution_v<Row<Effect::Block>>);
-static_assert(row_hash_contribution_v<EmptyRow>
-           != row_hash_contribution_v<Row<Effect::Bg>>);
-static_assert(row_hash_contribution_v<EmptyRow>
-           != row_hash_contribution_v<Row<Effect::Init>>);
-static_assert(row_hash_contribution_v<EmptyRow>
-           != row_hash_contribution_v<Row<Effect::Test>>);
+static_assert(row_hash_contribution_v<EmptyRow> != row_hash_contribution_v<Row<Effect::Alloc>>);
+static_assert(row_hash_contribution_v<EmptyRow> != row_hash_contribution_v<Row<Effect::IO>>);
+static_assert(row_hash_contribution_v<EmptyRow> != row_hash_contribution_v<Row<Effect::Block>>);
+static_assert(row_hash_contribution_v<EmptyRow> != row_hash_contribution_v<Row<Effect::Bg>>);
+static_assert(row_hash_contribution_v<EmptyRow> != row_hash_contribution_v<Row<Effect::Init>>);
+static_assert(row_hash_contribution_v<EmptyRow> != row_hash_contribution_v<Row<Effect::Test>>);
 
 // All 15 distinct singleton-pair comparisons — every pair of
 // singleton rows must hash to different values.  Exhaustive over
 // Effect × Effect (modulo symmetry).  Catches any future Effect
 // renumbering that creates a value-collision.
 
-static_assert(row_hash_contribution_v<Row<Effect::Alloc>>
-           != row_hash_contribution_v<Row<Effect::IO>>);
-static_assert(row_hash_contribution_v<Row<Effect::Alloc>>
-           != row_hash_contribution_v<Row<Effect::Block>>);
-static_assert(row_hash_contribution_v<Row<Effect::Alloc>>
-           != row_hash_contribution_v<Row<Effect::Bg>>);
-static_assert(row_hash_contribution_v<Row<Effect::Alloc>>
-           != row_hash_contribution_v<Row<Effect::Init>>);
-static_assert(row_hash_contribution_v<Row<Effect::Alloc>>
-           != row_hash_contribution_v<Row<Effect::Test>>);
-static_assert(row_hash_contribution_v<Row<Effect::IO>>
-           != row_hash_contribution_v<Row<Effect::Block>>);
-static_assert(row_hash_contribution_v<Row<Effect::IO>>
-           != row_hash_contribution_v<Row<Effect::Bg>>);
-static_assert(row_hash_contribution_v<Row<Effect::IO>>
-           != row_hash_contribution_v<Row<Effect::Init>>);
-static_assert(row_hash_contribution_v<Row<Effect::IO>>
-           != row_hash_contribution_v<Row<Effect::Test>>);
-static_assert(row_hash_contribution_v<Row<Effect::Block>>
-           != row_hash_contribution_v<Row<Effect::Bg>>);
-static_assert(row_hash_contribution_v<Row<Effect::Block>>
-           != row_hash_contribution_v<Row<Effect::Init>>);
-static_assert(row_hash_contribution_v<Row<Effect::Block>>
-           != row_hash_contribution_v<Row<Effect::Test>>);
-static_assert(row_hash_contribution_v<Row<Effect::Bg>>
-           != row_hash_contribution_v<Row<Effect::Init>>);
-static_assert(row_hash_contribution_v<Row<Effect::Bg>>
-           != row_hash_contribution_v<Row<Effect::Test>>);
-static_assert(row_hash_contribution_v<Row<Effect::Init>>
-           != row_hash_contribution_v<Row<Effect::Test>>);
+static_assert(row_hash_contribution_v<Row<Effect::Alloc>> != row_hash_contribution_v<Row<Effect::IO>>);
+static_assert(row_hash_contribution_v<Row<Effect::Alloc>> != row_hash_contribution_v<Row<Effect::Block>>);
+static_assert(row_hash_contribution_v<Row<Effect::Alloc>> != row_hash_contribution_v<Row<Effect::Bg>>);
+static_assert(row_hash_contribution_v<Row<Effect::Alloc>> != row_hash_contribution_v<Row<Effect::Init>>);
+static_assert(row_hash_contribution_v<Row<Effect::Alloc>> != row_hash_contribution_v<Row<Effect::Test>>);
+static_assert(row_hash_contribution_v<Row<Effect::IO>> != row_hash_contribution_v<Row<Effect::Block>>);
+static_assert(row_hash_contribution_v<Row<Effect::IO>> != row_hash_contribution_v<Row<Effect::Bg>>);
+static_assert(row_hash_contribution_v<Row<Effect::IO>> != row_hash_contribution_v<Row<Effect::Init>>);
+static_assert(row_hash_contribution_v<Row<Effect::IO>> != row_hash_contribution_v<Row<Effect::Test>>);
+static_assert(row_hash_contribution_v<Row<Effect::Block>> != row_hash_contribution_v<Row<Effect::Bg>>);
+static_assert(row_hash_contribution_v<Row<Effect::Block>> != row_hash_contribution_v<Row<Effect::Init>>);
+static_assert(row_hash_contribution_v<Row<Effect::Block>> != row_hash_contribution_v<Row<Effect::Test>>);
+static_assert(row_hash_contribution_v<Row<Effect::Bg>> != row_hash_contribution_v<Row<Effect::Init>>);
+static_assert(row_hash_contribution_v<Row<Effect::Bg>> != row_hash_contribution_v<Row<Effect::Test>>);
+static_assert(row_hash_contribution_v<Row<Effect::Init>> != row_hash_contribution_v<Row<Effect::Test>>);
 
 // ─── row_hash_of_v wraps the raw u64 in a RowHash strongly typed ───
 
@@ -1665,8 +1574,7 @@ static_assert(std::is_same_v<decltype(row_hash_of_v<int>), const RowHash>);
 static_assert(row_hash_of_v<EmptyRow>.raw() == detail::EMPTY_ROW_HASH);
 
 // Round-trip: row_hash_of equals raw RowHash construction.
-static_assert(row_hash_of_v<Row<Effect::Alloc>>
-           == RowHash{row_hash_contribution_v<Row<Effect::Alloc>>});
+static_assert(row_hash_of_v<Row<Effect::Alloc>> == RowHash{row_hash_contribution_v<Row<Effect::Alloc>>});
 
 // ─── No accidental sentinel collision ──────────────────────────────
 //
@@ -1675,27 +1583,19 @@ static_assert(row_hash_of_v<Row<Effect::Alloc>>
 // over the full 64-bit range; the probability of any specific value
 // is ~2^-64 per row.  Spot-check the rows we actually use.
 
-static_assert(row_hash_contribution_v<EmptyRow>
-           != static_cast<std::uint64_t>(-1));
-static_assert(row_hash_contribution_v<Row<Effect::Alloc>>
-           != static_cast<std::uint64_t>(-1));
-static_assert(row_hash_contribution_v<FullRow_canonical>
-           != static_cast<std::uint64_t>(-1));
+static_assert(row_hash_contribution_v<EmptyRow> != static_cast<std::uint64_t>(-1));
+static_assert(row_hash_contribution_v<Row<Effect::Alloc>> != static_cast<std::uint64_t>(-1));
+static_assert(row_hash_contribution_v<FullRow_canonical> != static_cast<std::uint64_t>(-1));
 
 // Same sentinel discipline for every singleton — any future Effect
 // renumbering that lands a row hash on UINT64_MAX would silently
 // poison the cache (real row claims an EMPTY slot).  Cheap to check,
 // catastrophic to miss.
-static_assert(row_hash_contribution_v<Row<Effect::IO>>
-           != static_cast<std::uint64_t>(-1));
-static_assert(row_hash_contribution_v<Row<Effect::Block>>
-           != static_cast<std::uint64_t>(-1));
-static_assert(row_hash_contribution_v<Row<Effect::Bg>>
-           != static_cast<std::uint64_t>(-1));
-static_assert(row_hash_contribution_v<Row<Effect::Init>>
-           != static_cast<std::uint64_t>(-1));
-static_assert(row_hash_contribution_v<Row<Effect::Test>>
-           != static_cast<std::uint64_t>(-1));
+static_assert(row_hash_contribution_v<Row<Effect::IO>> != static_cast<std::uint64_t>(-1));
+static_assert(row_hash_contribution_v<Row<Effect::Block>> != static_cast<std::uint64_t>(-1));
+static_assert(row_hash_contribution_v<Row<Effect::Bg>> != static_cast<std::uint64_t>(-1));
+static_assert(row_hash_contribution_v<Row<Effect::Init>> != static_cast<std::uint64_t>(-1));
+static_assert(row_hash_contribution_v<Row<Effect::Test>> != static_cast<std::uint64_t>(-1));
 
 // ─── Computation<R, T> — payload-blind, row-discriminating ─────────
 //
@@ -1707,8 +1607,7 @@ static_assert(row_hash_contribution_v<Row<Effect::Test>>
 
 // (a) Distinct from bare types.  A Computation<EmptyRow, int> is a
 // row-typed carrier; a bare int has no row.  Cache must distinguish.
-static_assert(row_hash_contribution_v<effects::Computation<EmptyRow, int>>
-           != row_hash_contribution_v<int>);
+static_assert(row_hash_contribution_v<effects::Computation<EmptyRow, int>> != row_hash_contribution_v<int>);
 static_assert(row_hash_contribution_v<effects::Computation<EmptyRow, int>> != 0);
 
 // (b) Distinct from the bare row.  Combining the row with the (zero-
@@ -1716,55 +1615,44 @@ static_assert(row_hash_contribution_v<effects::Computation<EmptyRow, int>> != 0)
 // exactly what (combine_ids(X, 0) ≠ X) buys us — without it,
 // Computation<EmptyRow, int> would alias EmptyRow and the cache could
 // not tell "the carrier" from "the row metadata".
-static_assert(row_hash_contribution_v<effects::Computation<EmptyRow, int>>
-           != row_hash_contribution_v<EmptyRow>);
-static_assert(
-    row_hash_contribution_v<effects::Computation<Row<Effect::Alloc>, int>>
- != row_hash_contribution_v<Row<Effect::Alloc>>);
-static_assert(
-    row_hash_contribution_v<effects::Computation<Row<Effect::IO>, int>>
- != row_hash_contribution_v<Row<Effect::IO>>);
+static_assert(row_hash_contribution_v<effects::Computation<EmptyRow, int>> != row_hash_contribution_v<EmptyRow>);
+static_assert(row_hash_contribution_v<effects::Computation<Row<Effect::Alloc>, int>>
+              != row_hash_contribution_v<Row<Effect::Alloc>>);
+static_assert(row_hash_contribution_v<effects::Computation<Row<Effect::IO>, int>>
+              != row_hash_contribution_v<Row<Effect::IO>>);
 
 // (c) Payload-blind for bare T.  ContentHash carries payload identity;
 // row_hash MUST be payload-blind so a kernel that returns int and one
 // that returns double share row signatures (different cache slots
 // thanks to ContentHash, same row).
 static_assert(row_hash_contribution_v<effects::Computation<EmptyRow, int>>
-           == row_hash_contribution_v<effects::Computation<EmptyRow, double>>);
+              == row_hash_contribution_v<effects::Computation<EmptyRow, double>>);
 static_assert(row_hash_contribution_v<effects::Computation<EmptyRow, int>>
-           == row_hash_contribution_v<effects::Computation<EmptyRow, float>>);
-static_assert(
-    row_hash_contribution_v<effects::Computation<Row<Effect::Alloc>, int>>
- == row_hash_contribution_v<effects::Computation<Row<Effect::Alloc>, char>>);
+              == row_hash_contribution_v<effects::Computation<EmptyRow, float>>);
+static_assert(row_hash_contribution_v<effects::Computation<Row<Effect::Alloc>, int>>
+              == row_hash_contribution_v<effects::Computation<Row<Effect::Alloc>, char>>);
 
 // (d) Row-discriminating.  Same payload, different row → different
 // hash.  Federation correctness depends on this: an Alloc-row kernel
 // and an IO-row kernel that compute the same int must NOT share a
 // cache slot.
-static_assert(
-    row_hash_contribution_v<effects::Computation<Row<Effect::Alloc>, int>>
- != row_hash_contribution_v<effects::Computation<Row<Effect::IO>, int>>);
-static_assert(
-    row_hash_contribution_v<effects::Computation<Row<Effect::Alloc>, int>>
- != row_hash_contribution_v<effects::Computation<EmptyRow, int>>);
+static_assert(row_hash_contribution_v<effects::Computation<Row<Effect::Alloc>, int>>
+              != row_hash_contribution_v<effects::Computation<Row<Effect::IO>, int>>);
+static_assert(row_hash_contribution_v<effects::Computation<Row<Effect::Alloc>, int>>
+              != row_hash_contribution_v<effects::Computation<EmptyRow, int>>);
 
 // (e) Permutation invariance lifts through Computation — Row<A,B> and
 // Row<B,A> hash identically inside the carrier.  Direct corollary of
 // the inner Row<Es...> specialization, but pin it explicitly so a
 // future combine_ids implementation change can't silently break it.
-static_assert(
-    row_hash_contribution_v<
-        effects::Computation<Row<Effect::Alloc, Effect::IO>, int>>
- == row_hash_contribution_v<
-        effects::Computation<Row<Effect::IO, Effect::Alloc>, int>>);
+static_assert(row_hash_contribution_v<effects::Computation<Row<Effect::Alloc, Effect::IO>, int>>
+              == row_hash_contribution_v<effects::Computation<Row<Effect::IO, Effect::Alloc>, int>>);
 
 // (f) Cardinality discrimination lifts through Computation — Row<A>
 // strictly less than Row<A,B>, so wrapping each in Computation cannot
 // alias.  Direct corollary, pinned explicitly.
-static_assert(
-    row_hash_contribution_v<effects::Computation<Row<Effect::Alloc>, int>>
- != row_hash_contribution_v<
-        effects::Computation<Row<Effect::Alloc, Effect::IO>, int>>);
+static_assert(row_hash_contribution_v<effects::Computation<Row<Effect::Alloc>, int>>
+              != row_hash_contribution_v<effects::Computation<Row<Effect::Alloc, Effect::IO>, int>>);
 
 // (g) Nested Computation — the inner row participates.  This is the
 // "monad-in-monad" non-collapsing guarantee: a `Computation<EmptyRow,
@@ -1773,23 +1661,14 @@ static_assert(
 // `Computation<EmptyRow, int>`.  This protects the cache against
 // pathological nested stashes that semantically differ even before
 // `then` flattens them.
-static_assert(
-    row_hash_contribution_v<
-        effects::Computation<EmptyRow,
-            effects::Computation<Row<Effect::IO>, int>>>
- != row_hash_contribution_v<effects::Computation<EmptyRow, int>>);
-static_assert(
-    row_hash_contribution_v<
-        effects::Computation<EmptyRow,
-            effects::Computation<Row<Effect::IO>, int>>>
- != row_hash_contribution_v<effects::Computation<Row<Effect::IO>, int>>);
+static_assert(row_hash_contribution_v<effects::Computation<EmptyRow, effects::Computation<Row<Effect::IO>, int>>>
+              != row_hash_contribution_v<effects::Computation<EmptyRow, int>>);
+static_assert(row_hash_contribution_v<effects::Computation<EmptyRow, effects::Computation<Row<Effect::IO>, int>>>
+              != row_hash_contribution_v<effects::Computation<Row<Effect::IO>, int>>);
 
 // (h) Computation<R, T> never sentinel-collides on common rows.
-static_assert(row_hash_contribution_v<effects::Computation<EmptyRow, int>>
-           != static_cast<std::uint64_t>(-1));
-static_assert(
-    row_hash_contribution_v<effects::Computation<FullRow_canonical, int>>
- != static_cast<std::uint64_t>(-1));
+static_assert(row_hash_contribution_v<effects::Computation<EmptyRow, int>> != static_cast<std::uint64_t>(-1));
+static_assert(row_hash_contribution_v<effects::Computation<FullRow_canonical, int>> != static_cast<std::uint64_t>(-1));
 
 // ─── Federation hash stability — the wire-format pin (FOUND-I04) ───
 //
@@ -1813,34 +1692,26 @@ static_assert(
 // for additional rows is fine; CHANGING existing pins is the
 // wire-format break.
 
-static_assert(row_hash_contribution_v<EmptyRow>
-           == 0xEFD01F60BA992926ULL,
-    "EmptyRow row_hash drifted — federation wire-format break.  "
-    "See FOUND-I04 ceremony in Capabilities.h.");
-static_assert(row_hash_contribution_v<Row<Effect::Alloc>>
-           == 0x436DAF9EDCB565C3ULL,
-    "Row<Alloc> row_hash drifted — federation wire-format break.");
-static_assert(row_hash_contribution_v<Row<Effect::IO>>
-           == 0x6FBFD0F707B63BECULL,
-    "Row<IO> row_hash drifted — federation wire-format break.");
-static_assert(row_hash_contribution_v<Row<Effect::Block>>
-           == 0x3117F06B828C9247ULL,
-    "Row<Block> row_hash drifted — federation wire-format break.");
-static_assert(row_hash_contribution_v<Row<Effect::Bg>>
-           == 0x008A519814C8FC81ULL,
-    "Row<Bg> row_hash drifted — federation wire-format break.");
-static_assert(row_hash_contribution_v<Row<Effect::Init>>
-           == 0x9E23FC5AC81DA675ULL,
-    "Row<Init> row_hash drifted — federation wire-format break.");
-static_assert(row_hash_contribution_v<Row<Effect::Test>>
-           == 0x26A9EB08E748D58FULL,
-    "Row<Test> row_hash drifted — federation wire-format break.");
-static_assert(row_hash_contribution_v<Row<Effect::Alloc, Effect::IO>>
-           == 0x6CC046F52E6D7663ULL,
-    "Row<Alloc, IO> row_hash drifted — federation wire-format break.");
-static_assert(row_hash_contribution_v<Row<Effect::Alloc, Effect::IO,
-                Effect::Block, Effect::Bg, Effect::Init, Effect::Test>>
-           == 0x1C9D0E4F548FAAD6ULL,
+static_assert(row_hash_contribution_v<EmptyRow> == 0xEFD01F60BA992926ULL,
+              "EmptyRow row_hash drifted — federation wire-format break.  "
+              "See FOUND-I04 ceremony in Capabilities.h.");
+static_assert(row_hash_contribution_v<Row<Effect::Alloc>> == 0x436DAF9EDCB565C3ULL,
+              "Row<Alloc> row_hash drifted — federation wire-format break.");
+static_assert(row_hash_contribution_v<Row<Effect::IO>> == 0x6FBFD0F707B63BECULL,
+              "Row<IO> row_hash drifted — federation wire-format break.");
+static_assert(row_hash_contribution_v<Row<Effect::Block>> == 0x3117F06B828C9247ULL,
+              "Row<Block> row_hash drifted — federation wire-format break.");
+static_assert(row_hash_contribution_v<Row<Effect::Bg>> == 0x008A519814C8FC81ULL,
+              "Row<Bg> row_hash drifted — federation wire-format break.");
+static_assert(row_hash_contribution_v<Row<Effect::Init>> == 0x9E23FC5AC81DA675ULL,
+              "Row<Init> row_hash drifted — federation wire-format break.");
+static_assert(row_hash_contribution_v<Row<Effect::Test>> == 0x26A9EB08E748D58FULL,
+              "Row<Test> row_hash drifted — federation wire-format break.");
+static_assert(row_hash_contribution_v<Row<Effect::Alloc, Effect::IO>> == 0x6CC046F52E6D7663ULL,
+              "Row<Alloc, IO> row_hash drifted — federation wire-format break.");
+static_assert(
+    row_hash_contribution_v<Row<Effect::Alloc, Effect::IO, Effect::Block, Effect::Bg, Effect::Init, Effect::Test>>
+        == 0x1C9D0E4F548FAAD6ULL,
     "Full-Universe row row_hash drifted — federation wire-format break.");
 
 // ─── Computation<R, T> hash pins (FOUND-I04 + FOUND-I02-AUDIT) ─────
@@ -1861,27 +1732,20 @@ static_assert(row_hash_contribution_v<Row<Effect::Alloc, Effect::IO,
 //
 // Same federation-wire-format-break severity as the Row pins above.
 
-static_assert(row_hash_contribution_v<effects::Computation<EmptyRow, int>>
-           == 0x49A55BE1CFC23FB0ULL,
-    "Computation<EmptyRow, int> row_hash drifted — federation wire-"
-    "format break.  Either combine_ids or Computation<R, T> "
-    "specialization changed.");
-static_assert(
-    row_hash_contribution_v<effects::Computation<Row<Effect::Bg>, int>>
- == 0x3ACE35615F0F9243ULL,
-    "Computation<Row<Bg>, int> row_hash drifted — wire-format break.");
-static_assert(
-    row_hash_contribution_v<effects::Computation<
-        Row<Effect::Alloc, Effect::IO>, int>>
- == 0x83D432DE6CDEACA7ULL,
-    "Computation<Row<Alloc, IO>, int> row_hash drifted — break.");
-static_assert(
-    row_hash_contribution_v<effects::Computation<EmptyRow,
-        effects::Computation<Row<Effect::IO>, int>>>
- == 0x94EC56B861A6B8FDULL,
-    "Nested Computation<EmptyRow, Computation<Row<IO>, int>> "
-    "row_hash drifted — wire-format break.  Inner-row "
-    "non-collapsing through combine_ids must remain bit-stable.");
+static_assert(row_hash_contribution_v<effects::Computation<EmptyRow, int>> == 0x49A55BE1CFC23FB0ULL,
+              "Computation<EmptyRow, int> row_hash drifted — federation wire-"
+              "format break.  Either combine_ids or Computation<R, T> "
+              "specialization changed.");
+static_assert(row_hash_contribution_v<effects::Computation<Row<Effect::Bg>, int>> == 0x3ACE35615F0F9243ULL,
+              "Computation<Row<Bg>, int> row_hash drifted — wire-format break.");
+static_assert(row_hash_contribution_v<effects::Computation<Row<Effect::Alloc, Effect::IO>, int>>
+                  == 0x83D432DE6CDEACA7ULL,
+              "Computation<Row<Alloc, IO>, int> row_hash drifted — break.");
+static_assert(row_hash_contribution_v<effects::Computation<EmptyRow, effects::Computation<Row<Effect::IO>, int>>>
+                  == 0x94EC56B861A6B8FDULL,
+              "Nested Computation<EmptyRow, Computation<Row<IO>, int>> "
+              "row_hash drifted — wire-format break.  Inner-row "
+              "non-collapsing through combine_ids must remain bit-stable.");
 
 // ─── FIXY-FOUND-053 — expanded Computation pins ───────────────────
 //
@@ -1898,96 +1762,70 @@ static_assert(
 // every Effect enum value so a per-Effect routing regression would not
 // silently drift the cache slot for kernels declaring that effect.
 
-static_assert(
-    row_hash_contribution_v<effects::Computation<Row<Effect::Alloc>, int>>
- == 0x058CA6EFB434D439ULL,
-    "Computation<Row<Alloc>, int> row_hash drifted — wire-format break.");
-static_assert(
-    row_hash_contribution_v<effects::Computation<Row<Effect::IO>, int>>
- == 0xCCFE717213BBA49CULL,
-    "Computation<Row<IO>, int> row_hash drifted — wire-format break.");
-static_assert(
-    row_hash_contribution_v<effects::Computation<Row<Effect::Block>, int>>
- == 0x6D28A236D0E146C7ULL,
-    "Computation<Row<Block>, int> row_hash drifted — wire-format break.");
-static_assert(
-    row_hash_contribution_v<effects::Computation<Row<Effect::Init>, int>>
- == 0x64EF4D0126C4A4E3ULL,
-    "Computation<Row<Init>, int> row_hash drifted — wire-format break.");
-static_assert(
-    row_hash_contribution_v<effects::Computation<Row<Effect::Test>, int>>
- == 0xF4060D16B464EFDEULL,
-    "Computation<Row<Test>, int> row_hash drifted — wire-format break.");
+static_assert(row_hash_contribution_v<effects::Computation<Row<Effect::Alloc>, int>> == 0x058CA6EFB434D439ULL,
+              "Computation<Row<Alloc>, int> row_hash drifted — wire-format break.");
+static_assert(row_hash_contribution_v<effects::Computation<Row<Effect::IO>, int>> == 0xCCFE717213BBA49CULL,
+              "Computation<Row<IO>, int> row_hash drifted — wire-format break.");
+static_assert(row_hash_contribution_v<effects::Computation<Row<Effect::Block>, int>> == 0x6D28A236D0E146C7ULL,
+              "Computation<Row<Block>, int> row_hash drifted — wire-format break.");
+static_assert(row_hash_contribution_v<effects::Computation<Row<Effect::Init>, int>> == 0x64EF4D0126C4A4E3ULL,
+              "Computation<Row<Init>, int> row_hash drifted — wire-format break.");
+static_assert(row_hash_contribution_v<effects::Computation<Row<Effect::Test>, int>> == 0xF4060D16B464EFDEULL,
+              "Computation<Row<Test>, int> row_hash drifted — wire-format break.");
 
 // Nested EmptyRow-over-singleton (IO already pinned above) — exercises
 // the inner-row-engaged-outer-row-empty composition, which is the
 // shape that an outer caller wraps in a top-level no-effect frame.
 
-static_assert(
-    row_hash_contribution_v<effects::Computation<EmptyRow,
-        effects::Computation<Row<Effect::Alloc>, int>>>
- == 0x0BECBF75AD6D7A0CULL,
-    "Computation<EmptyRow, Computation<Row<Alloc>, int>> drifted.");
-static_assert(
-    row_hash_contribution_v<effects::Computation<EmptyRow,
-        effects::Computation<Row<Effect::Block>, int>>>
- == 0x32894FE89819DEA1ULL,
-    "Computation<EmptyRow, Computation<Row<Block>, int>> drifted.");
-static_assert(
-    row_hash_contribution_v<effects::Computation<EmptyRow,
-        effects::Computation<Row<Effect::Bg>, int>>>
- == 0xEDF6E609659BD93CULL,
-    "Computation<EmptyRow, Computation<Row<Bg>, int>> drifted.");
-static_assert(
-    row_hash_contribution_v<effects::Computation<EmptyRow,
-        effects::Computation<Row<Effect::Init>, int>>>
- == 0x93C6E9DAD4DDF07AULL,
-    "Computation<EmptyRow, Computation<Row<Init>, int>> drifted.");
-static_assert(
-    row_hash_contribution_v<effects::Computation<EmptyRow,
-        effects::Computation<Row<Effect::Test>, int>>>
- == 0x792A21E2C4F20C13ULL,
-    "Computation<EmptyRow, Computation<Row<Test>, int>> drifted.");
+static_assert(row_hash_contribution_v<effects::Computation<EmptyRow, effects::Computation<Row<Effect::Alloc>, int>>>
+                  == 0x0BECBF75AD6D7A0CULL,
+              "Computation<EmptyRow, Computation<Row<Alloc>, int>> drifted.");
+static_assert(row_hash_contribution_v<effects::Computation<EmptyRow, effects::Computation<Row<Effect::Block>, int>>>
+                  == 0x32894FE89819DEA1ULL,
+              "Computation<EmptyRow, Computation<Row<Block>, int>> drifted.");
+static_assert(row_hash_contribution_v<effects::Computation<EmptyRow, effects::Computation<Row<Effect::Bg>, int>>>
+                  == 0xEDF6E609659BD93CULL,
+              "Computation<EmptyRow, Computation<Row<Bg>, int>> drifted.");
+static_assert(row_hash_contribution_v<effects::Computation<EmptyRow, effects::Computation<Row<Effect::Init>, int>>>
+                  == 0x93C6E9DAD4DDF07AULL,
+              "Computation<EmptyRow, Computation<Row<Init>, int>> drifted.");
+static_assert(row_hash_contribution_v<effects::Computation<EmptyRow, effects::Computation<Row<Effect::Test>, int>>>
+                  == 0x792A21E2C4F20C13ULL,
+              "Computation<EmptyRow, Computation<Row<Test>, int>> drifted.");
 
 // Asymmetric reverse — outer-engaged, inner-empty.  Pinned because
 // combine_ids is non-commutative, so this MUST hash differently from
 // the EmptyRow-outer/Row-inner forms above.
 
-static_assert(
-    row_hash_contribution_v<effects::Computation<Row<Effect::Bg>,
-        effects::Computation<EmptyRow, int>>>
- == 0x40D0E7791202A526ULL,
-    "Computation<Row<Bg>, Computation<EmptyRow, int>> drifted — "
-    "asymmetric-reverse order pinning.");
+static_assert(row_hash_contribution_v<effects::Computation<Row<Effect::Bg>, effects::Computation<EmptyRow, int>>>
+                  == 0x40D0E7791202A526ULL,
+              "Computation<Row<Bg>, Computation<EmptyRow, int>> drifted — "
+              "asymmetric-reverse order pinning.");
 
 // Same-row nested — pins that doubled-up engaged rows don't
 // accidentally collapse via combine_ids.
 
-static_assert(
-    row_hash_contribution_v<effects::Computation<Row<Effect::Bg>,
-        effects::Computation<Row<Effect::Bg>, int>>>
- == 0xAFCB34F7B12A2F95ULL,
-    "Computation<Row<Bg>, Computation<Row<Bg>, int>> drifted — "
-    "same-row nested must remain distinct from single-Bg via "
-    "combine_ids non-collapsing fold.");
+static_assert(row_hash_contribution_v<effects::Computation<Row<Effect::Bg>, effects::Computation<Row<Effect::Bg>, int>>>
+                  == 0xAFCB34F7B12A2F95ULL,
+              "Computation<Row<Bg>, Computation<Row<Bg>, int>> drifted — "
+              "same-row nested must remain distinct from single-Bg via "
+              "combine_ids non-collapsing fold.");
 
 // Cross-row nested — pins the canonical two-distinct-Effect carrier
 // composition (e.g. Alloc-outer wrapping IO-inner kernel result).
 
 static_assert(
-    row_hash_contribution_v<effects::Computation<Row<Effect::Alloc>,
-        effects::Computation<Row<Effect::IO>, int>>>
- == 0xB25AFEA0CE322A7EULL,
+    row_hash_contribution_v<effects::Computation<Row<Effect::Alloc>, effects::Computation<Row<Effect::IO>, int>>>
+        == 0xB25AFEA0CE322A7EULL,
     "Computation<Row<Alloc>, Computation<Row<IO>, int>> drifted.");
 
 // Triple-nested — pins the chained combine_ids fold over three
 // engaged rows.
 
 static_assert(
-    row_hash_contribution_v<effects::Computation<Row<Effect::Alloc>,
-        effects::Computation<Row<Effect::IO>,
-            effects::Computation<Row<Effect::Block>, int>>>>
- == 0xAC3F22322B23C1FEULL,
+    row_hash_contribution_v<effects::Computation<
+            Row<Effect::Alloc>, effects::Computation<Row<Effect::IO>, effects::Computation<Row<Effect::Block>, int>>>>
+        == 0xAC3F22322B23C1FEULL,
     "Triple-nested Computation<Alloc, IO, Block> drifted — "
     "chained combine_ids fold must remain bit-stable.");
 
@@ -2005,16 +1843,13 @@ static_assert(
 
 // ─── Bubble-sort helper correctness ────────────────────────────────
 
-static_assert(detail::sorted_uints(std::array<std::uint64_t, 0>{})
-           == std::array<std::uint64_t, 0>{});
-static_assert(detail::sorted_uints(std::array<std::uint64_t, 1>{42})
-           == std::array<std::uint64_t, 1>{42});
-static_assert(detail::sorted_uints(std::array<std::uint64_t, 3>{3, 1, 2})
-           == std::array<std::uint64_t, 3>{1, 2, 3});
+static_assert(detail::sorted_uints(std::array<std::uint64_t, 0>{}) == std::array<std::uint64_t, 0>{});
+static_assert(detail::sorted_uints(std::array<std::uint64_t, 1>{42}) == std::array<std::uint64_t, 1>{42});
+static_assert(detail::sorted_uints(std::array<std::uint64_t, 3>{3, 1, 2}) == std::array<std::uint64_t, 3>{1, 2, 3});
 static_assert(detail::sorted_uints(std::array<std::uint64_t, 4>{4, 3, 2, 1})
-           == std::array<std::uint64_t, 4>{1, 2, 3, 4});
+              == std::array<std::uint64_t, 4>{1, 2, 3, 4});
 static_assert(detail::sorted_uints(std::array<std::uint64_t, 4>{1, 1, 1, 1})
-           == std::array<std::uint64_t, 4>{1, 1, 1, 1});
+              == std::array<std::uint64_t, 4>{1, 1, 1, 1});
 
 // ─── unique_count_sorted helper correctness ─────────────────────────
 
@@ -2034,22 +1869,17 @@ static_assert(detail::unique_count_sorted(std::array<std::uint64_t, 6>{0, 0, 1, 
 // canonical singleton ([X]).  These two invariants pin that the
 // helper's "skip xs[i] == xs[i-1]" branch is wired the right way.
 
-static_assert(
-    detail::fmix64_fold_unique_sorted(std::array<std::uint64_t, 1>{7}, 0xAA)
- == detail::fmix64_fold(std::array<std::uint64_t, 1>{7}, 0xAA));
+static_assert(detail::fmix64_fold_unique_sorted(std::array<std::uint64_t, 1>{7}, 0xAA)
+              == detail::fmix64_fold(std::array<std::uint64_t, 1>{7}, 0xAA));
 
-static_assert(
-    detail::fmix64_fold_unique_sorted(std::array<std::uint64_t, 2>{7, 7}, 0xAA)
- == detail::fmix64_fold(std::array<std::uint64_t, 1>{7}, 0xAA));
+static_assert(detail::fmix64_fold_unique_sorted(std::array<std::uint64_t, 2>{7, 7}, 0xAA)
+              == detail::fmix64_fold(std::array<std::uint64_t, 1>{7}, 0xAA));
 
-static_assert(
-    detail::fmix64_fold_unique_sorted(std::array<std::uint64_t, 3>{1, 1, 2}, 0xBB)
- == detail::fmix64_fold(std::array<std::uint64_t, 2>{1, 2}, 0xBB));
+static_assert(detail::fmix64_fold_unique_sorted(std::array<std::uint64_t, 3>{1, 1, 2}, 0xBB)
+              == detail::fmix64_fold(std::array<std::uint64_t, 2>{1, 2}, 0xBB));
 
 // Empty array — fold returns the seed verbatim regardless of dedup.
-static_assert(
-    detail::fmix64_fold_unique_sorted(std::array<std::uint64_t, 0>{}, 0xCC)
- == 0xCC);
+static_assert(detail::fmix64_fold_unique_sorted(std::array<std::uint64_t, 0>{}, 0xCC) == 0xCC);
 
 // ─── FIXY-FOUND-049 — AppendOnly Storage discrimination ─────────────
 //
@@ -2063,20 +1893,24 @@ static_assert(
 // Local probe templates — distinct identities, same arity.  Defined
 // HERE (in the self-test namespace) rather than at <vector>/<deque>
 // to keep RowHashFold.h free of heavy STL container includes.
-template <typename T> class FoundO49_ProbeA { T x_{}; };
-template <typename T> class FoundO49_ProbeB { T x_{}; };
+template <typename T>
+class FoundO49_ProbeA {
+    T x_{};
+};
+template <typename T>
+class FoundO49_ProbeB {
+    T x_{};
+};
 
 // (1) Distinct Storage policies ⇒ distinct row hashes.
-static_assert(
-    row_hash_contribution_v<safety::AppendOnly<int, FoundO49_ProbeA>> !=
-    row_hash_contribution_v<safety::AppendOnly<int, FoundO49_ProbeB>>,
-    "FIXY-FOUND-049: AppendOnly<T, ProbeA> and AppendOnly<T, ProbeB> "
-    "MUST produce DISTINCT row hashes — Storage IS row-relevant.");
+static_assert(row_hash_contribution_v<safety::AppendOnly<int, FoundO49_ProbeA>>
+                  != row_hash_contribution_v<safety::AppendOnly<int, FoundO49_ProbeB>>,
+              "FIXY-FOUND-049: AppendOnly<T, ProbeA> and AppendOnly<T, ProbeB> "
+              "MUST produce DISTINCT row hashes — Storage IS row-relevant.");
 
 // (2) Idempotence: same instantiation ⇒ same hash (sanity).
-static_assert(
-    row_hash_contribution_v<safety::AppendOnly<int, FoundO49_ProbeA>> ==
-    row_hash_contribution_v<safety::AppendOnly<int, FoundO49_ProbeA>>);
+static_assert(row_hash_contribution_v<safety::AppendOnly<int, FoundO49_ProbeA>>
+              == row_hash_contribution_v<safety::AppendOnly<int, FoundO49_ProbeA>>);
 
 // (3) Inner discriminates via its OWN row_hash_contribution.  Bare
 //     fundamentals (int vs long) contribute 0 each — both inner
@@ -2086,22 +1920,19 @@ static_assert(
 //     Stale<int> has WRAPPER_STALE_TAG, so their contributions
 //     differ — and that difference propagates through AppendOnly's
 //     final fold.
-static_assert(
-    row_hash_contribution_v<safety::AppendOnly<safety::Linear<int>, FoundO49_ProbeA>> !=
-    row_hash_contribution_v<safety::AppendOnly<safety::Stale<int>,  FoundO49_ProbeA>>,
-    "FIXY-FOUND-049: AppendOnly<Linear<T>, P> and AppendOnly<Stale<T>, P> "
-    "MUST produce DISTINCT row hashes — Inner wrapper discriminates "
-    "within a single Storage policy.");
+static_assert(row_hash_contribution_v<safety::AppendOnly<safety::Linear<int>, FoundO49_ProbeA>>
+                  != row_hash_contribution_v<safety::AppendOnly<safety::Stale<int>, FoundO49_ProbeA>>,
+              "FIXY-FOUND-049: AppendOnly<Linear<T>, P> and AppendOnly<Stale<T>, P> "
+              "MUST produce DISTINCT row hashes — Inner wrapper discriminates "
+              "within a single Storage policy.");
 
 // (4) The WRAPPER_APPEND_ONLY_TAG salt is still applied — hash != 0.
-static_assert(
-    row_hash_contribution_v<safety::AppendOnly<int, FoundO49_ProbeA>> != 0);
+static_assert(row_hash_contribution_v<safety::AppendOnly<int, FoundO49_ProbeA>> != 0);
 
 // (5) Cross-product: changing BOTH Inner-wrapper AND Storage yields
 //     a hash distinct from either single-axis change.
-static_assert(
-    row_hash_contribution_v<safety::AppendOnly<safety::Linear<int>, FoundO49_ProbeA>> !=
-    row_hash_contribution_v<safety::AppendOnly<safety::Stale<int>,  FoundO49_ProbeB>>);
+static_assert(row_hash_contribution_v<safety::AppendOnly<safety::Linear<int>, FoundO49_ProbeA>>
+              != row_hash_contribution_v<safety::AppendOnly<safety::Stale<int>, FoundO49_ProbeB>>);
 
 // ─── fix-23 — federation toolchain discriminator ───────────────────
 //
@@ -2122,27 +1953,21 @@ static_assert(federation_toolchain_tag() == detail::FEDERATION_TOOLCHAIN_TAG);
 // (a) toolchain-keyed ≠ bare row hash — combine_ids(tag, X) ≠ X for the
 //     golden-ratio mixer, so cross-toolchain keys are disjoint from the
 //     same-toolchain keys that omit the tag.
-static_assert(federation_key_with_toolchain_v<EmptyRow>.raw()
-           != row_hash_contribution_v<EmptyRow>);
-static_assert(federation_key_with_toolchain_v<Row<Effect::Alloc>>.raw()
-           != row_hash_contribution_v<Row<Effect::Alloc>>);
+static_assert(federation_key_with_toolchain_v<EmptyRow>.raw() != row_hash_contribution_v<EmptyRow>);
+static_assert(federation_key_with_toolchain_v<Row<Effect::Alloc>>.raw() != row_hash_contribution_v<Row<Effect::Alloc>>);
 
 // (b) row-discriminating through the toolchain key.
-static_assert(federation_key_with_toolchain_v<Row<Effect::Alloc>>
-           != federation_key_with_toolchain_v<Row<Effect::IO>>);
-static_assert(federation_key_with_toolchain_v<Row<Effect::Alloc>>
-           != federation_key_with_toolchain_v<EmptyRow>);
+static_assert(federation_key_with_toolchain_v<Row<Effect::Alloc>> != federation_key_with_toolchain_v<Row<Effect::IO>>);
+static_assert(federation_key_with_toolchain_v<Row<Effect::Alloc>> != federation_key_with_toolchain_v<EmptyRow>);
 
 // (c) payload-blind for bare payload T (row-shape only, exactly like
 //     the bare hash — payload identity lives in ContentHash).
 static_assert(federation_key_with_toolchain_v<effects::Computation<EmptyRow, int>>
-           == federation_key_with_toolchain_v<effects::Computation<EmptyRow, double>>);
+              == federation_key_with_toolchain_v<effects::Computation<EmptyRow, double>>);
 
 // (d) no sentinel collision on common rows.
-static_assert(federation_key_with_toolchain_v<EmptyRow>.raw()
-           != static_cast<std::uint64_t>(-1));
-static_assert(federation_key_with_toolchain_v<Row<Effect::Alloc>>.raw()
-           != static_cast<std::uint64_t>(-1));
+static_assert(federation_key_with_toolchain_v<EmptyRow>.raw() != static_cast<std::uint64_t>(-1));
+static_assert(federation_key_with_toolchain_v<Row<Effect::Alloc>>.raw() != static_cast<std::uint64_t>(-1));
 
 }  // namespace detail::row_hash_self_test
 

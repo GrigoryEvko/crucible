@@ -144,39 +144,33 @@ namespace crucible::safety::proto {
 template <typename T, typename K>
 struct Delegate {
     using delegated_proto = T;
-    using next            = K;
+    using next = K;
 };
 
 // Receive an endpoint of a T-typed channel; continue as K.
 template <typename T, typename K>
 struct Accept {
     using delegated_proto = T;
-    using next            = K;
+    using next = K;
 };
 
 // Send my endpoint of a T-typed channel; continue as K.  The peer's
 // matching EpochedAccept requires an EpochCtx whose compile-time
 // (epoch, generation) meets the declared minimum.
-template <typename T,
-          typename K,
-          std::uint64_t MinEpoch,
-          std::uint64_t MinGeneration>
+template <typename T, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
 struct EpochedDelegate {
     using delegated_proto = T;
-    using next            = K;
+    using next = K;
     static constexpr std::uint64_t min_epoch = MinEpoch;
     static constexpr std::uint64_t min_generation = MinGeneration;
 };
 
 // Receive an endpoint of a T-typed channel under an epoch/generation
 // freshness proof; continue as K.
-template <typename T,
-          typename K,
-          std::uint64_t MinEpoch,
-          std::uint64_t MinGeneration>
+template <typename T, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
 struct EpochedAccept {
     using delegated_proto = T;
-    using next            = K;
+    using next = K;
     static constexpr std::uint64_t min_epoch = MinEpoch;
     static constexpr std::uint64_t min_generation = MinGeneration;
 };
@@ -222,15 +216,13 @@ template <typename RecoveryProto>
 struct propagation_is_recoverable<Recovers<RecoveryProto>> : std::true_type {};
 
 template <typename Result>
-inline constexpr bool propagation_is_recoverable_v =
-    propagation_is_recoverable<Result>::value;
+inline constexpr bool propagation_is_recoverable_v = propagation_is_recoverable<Result>::value;
 
 template <typename Branch, typename RecipientTag>
 struct crash_recovery_branch : std::false_type {};
 
 template <typename RecipientTag, typename RecoveryProto>
-struct crash_recovery_branch<Recv<Crash<RecipientTag>, RecoveryProto>,
-                             RecipientTag> : std::true_type {
+struct crash_recovery_branch<Recv<Crash<RecipientTag>, RecoveryProto>, RecipientTag> : std::true_type {
     using recovery_proto = RecoveryProto;
 };
 
@@ -247,49 +239,40 @@ struct first_crash_recovery_step;
 
 template <typename RecipientTag, typename Head, typename... Tail>
 struct first_crash_recovery_step<true, RecipientTag, Head, Tail...> {
-    using type = Recovers<
-        typename crash_recovery_branch<Head, RecipientTag>::recovery_proto>;
+    using type = Recovers<typename crash_recovery_branch<Head, RecipientTag>::recovery_proto>;
 };
 
 template <typename RecipientTag, typename Head, typename... Tail>
-struct first_crash_recovery_step<false, RecipientTag, Head, Tail...>
-    : first_crash_recovery<RecipientTag, Tail...> {};
+struct first_crash_recovery_step<false, RecipientTag, Head, Tail...> : first_crash_recovery<RecipientTag, Tail...> {};
 
 template <typename RecipientTag, typename Head, typename... Tail>
 struct first_crash_recovery<RecipientTag, Head, Tail...>
-    : first_crash_recovery_step<
-          crash_recovery_branch<Head, RecipientTag>::value,
-          RecipientTag, Head, Tail...> {};
+    : first_crash_recovery_step<crash_recovery_branch<Head, RecipientTag>::value, RecipientTag, Head, Tail...> {};
 
 template <typename CarrierK, typename RecipientTag>
 struct carrier_crash_recovery : std::type_identity<MustAbort> {};
 
 template <typename RecipientTag, typename... Branches>
-struct carrier_crash_recovery<Offer<Branches...>, RecipientTag>
-    : first_crash_recovery<RecipientTag, Branches...> {};
+struct carrier_crash_recovery<Offer<Branches...>, RecipientTag> : first_crash_recovery<RecipientTag, Branches...> {};
 
 template <typename Role, typename RecipientTag, typename... Branches>
 struct carrier_crash_recovery<Offer<Sender<Role>, Branches...>, RecipientTag>
     : first_crash_recovery<RecipientTag, Branches...> {};
 
 template <typename Body, typename RecipientTag>
-struct carrier_crash_recovery<Loop<Body>, RecipientTag>
-    : carrier_crash_recovery<Body, RecipientTag> {};
+struct carrier_crash_recovery<Loop<Body>, RecipientTag> : carrier_crash_recovery<Body, RecipientTag> {};
 
 template <typename T, typename RecipientTag, typename CarrierK>
 struct delegated_crash_propagation_impl : std::type_identity<IllFormed> {};
 
 template <typename RecipientTag, typename CarrierK>
-struct delegated_crash_propagation_impl<End, RecipientTag, CarrierK>
-    : std::type_identity<Recovers<CarrierK>> {};
+struct delegated_crash_propagation_impl<End, RecipientTag, CarrierK> : std::type_identity<Recovers<CarrierK>> {};
 
 template <CrashClass C, typename RecipientTag, typename CarrierK>
-struct delegated_crash_propagation_impl<Stop_g<C>, RecipientTag, CarrierK>
-    : std::type_identity<IllFormed> {};
+struct delegated_crash_propagation_impl<Stop_g<C>, RecipientTag, CarrierK> : std::type_identity<IllFormed> {};
 
 template <typename RecipientTag, typename CarrierK>
-struct delegated_crash_propagation_impl<Continue, RecipientTag, CarrierK>
-    : std::type_identity<Recovers<CarrierK>> {};
+struct delegated_crash_propagation_impl<Continue, RecipientTag, CarrierK> : std::type_identity<Recovers<CarrierK>> {};
 
 template <typename Msg, typename Next, typename RecipientTag, typename CarrierK>
 struct delegated_crash_propagation_impl<Recv<Msg, Next>, RecipientTag, CarrierK>
@@ -302,23 +285,17 @@ struct delegated_crash_propagation_impl<Send<Msg, Next>, RecipientTag, CarrierK>
 template <typename... Branches, typename RecipientTag, typename CarrierK>
 struct delegated_crash_propagation_impl<Offer<Branches...>, RecipientTag, CarrierK> {
     using type = std::conditional_t<
-        (propagation_is_recoverable_v<
-             typename delegated_crash_propagation_impl<
-                 Branches, RecipientTag, CarrierK>::type> && ...),
-        Recovers<CarrierK>,
-        typename carrier_crash_recovery<CarrierK, RecipientTag>::type>;
+        (propagation_is_recoverable_v<typename delegated_crash_propagation_impl<Branches, RecipientTag, CarrierK>::type>
+         && ...),
+        Recovers<CarrierK>, typename carrier_crash_recovery<CarrierK, RecipientTag>::type>;
 };
 
-template <typename Role, typename... Branches,
-          typename RecipientTag, typename CarrierK>
-struct delegated_crash_propagation_impl<
-    Offer<Sender<Role>, Branches...>, RecipientTag, CarrierK> {
+template <typename Role, typename... Branches, typename RecipientTag, typename CarrierK>
+struct delegated_crash_propagation_impl<Offer<Sender<Role>, Branches...>, RecipientTag, CarrierK> {
     using type = std::conditional_t<
-        (propagation_is_recoverable_v<
-             typename delegated_crash_propagation_impl<
-                 Branches, RecipientTag, CarrierK>::type> && ...),
-        Recovers<CarrierK>,
-        typename carrier_crash_recovery<CarrierK, RecipientTag>::type>;
+        (propagation_is_recoverable_v<typename delegated_crash_propagation_impl<Branches, RecipientTag, CarrierK>::type>
+         && ...),
+        Recovers<CarrierK>, typename carrier_crash_recovery<CarrierK, RecipientTag>::type>;
 };
 
 template <typename... Branches, typename RecipientTag, typename CarrierK>
@@ -337,34 +314,24 @@ template <typename T, typename K, typename RecipientTag, typename CarrierK>
 struct delegated_crash_propagation_impl<Accept<T, K>, RecipientTag, CarrierK>
     : delegated_crash_propagation_impl<K, RecipientTag, CarrierK> {};
 
-template <typename T, typename K,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
-          typename RecipientTag, typename CarrierK>
-struct delegated_crash_propagation_impl<
-    EpochedDelegate<T, K, MinEpoch, MinGeneration>,
-    RecipientTag,
-    CarrierK>
+template <typename T, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration, typename RecipientTag,
+          typename CarrierK>
+struct delegated_crash_propagation_impl<EpochedDelegate<T, K, MinEpoch, MinGeneration>, RecipientTag, CarrierK>
     : carrier_crash_recovery<CarrierK, RecipientTag> {};
 
-template <typename T, typename K,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
-          typename RecipientTag, typename CarrierK>
-struct delegated_crash_propagation_impl<
-    EpochedAccept<T, K, MinEpoch, MinGeneration>,
-    RecipientTag,
-    CarrierK>
+template <typename T, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration, typename RecipientTag,
+          typename CarrierK>
+struct delegated_crash_propagation_impl<EpochedAccept<T, K, MinEpoch, MinGeneration>, RecipientTag, CarrierK>
     : delegated_crash_propagation_impl<K, RecipientTag, CarrierK> {};
 
 }  // namespace detail::delegate_crash
 
 template <typename T, typename RecipientTag, typename CarrierK>
 struct delegated_crash_propagation
-    : detail::delegate_crash::delegated_crash_propagation_impl<
-          T, RecipientTag, CarrierK> {};
+    : detail::delegate_crash::delegated_crash_propagation_impl<T, RecipientTag, CarrierK> {};
 
 template <typename T, typename RecipientTag, typename CarrierK>
-using delegated_crash_propagation_t =
-    typename delegated_crash_propagation<T, RecipientTag, CarrierK>::type;
+using delegated_crash_propagation_t = typename delegated_crash_propagation<T, RecipientTag, CarrierK>::type;
 
 namespace detail::delegate_crash {
 
@@ -375,12 +342,11 @@ template <typename Result>
 struct propagation_assertion {
     template <typename Actual = Result>
     static consteval void check() noexcept {
-        static_assert(dependent_false_v<Actual>,
-            "crucible::session::diagnostic "
-            "[DelegatedCrashPropagation_UnknownResult]: "
-            "delegated_crash_propagation returned an unsupported "
-            "classification.  Expected Recovers<RecoveryProto>, "
-            "MustAbort, or IllFormed.");
+        static_assert(dependent_false_v<Actual>, "crucible::session::diagnostic "
+                                                 "[DelegatedCrashPropagation_UnknownResult]: "
+                                                 "delegated_crash_propagation returned an unsupported "
+                                                 "classification.  Expected Recovers<RecoveryProto>, "
+                                                 "MustAbort, or IllFormed.");
     }
 };
 
@@ -393,11 +359,10 @@ template <>
 struct propagation_assertion<MustAbort> {
     template <typename Actual = MustAbort>
     static consteval void check() noexcept {
-        static_assert(dependent_false_v<Actual>,
-            "crucible::session::diagnostic "
-            "[DelegatedCrashPropagation_MissingRecovery]: "
-            "delegated_crash_propagation rejects: recipient is "
-            "unreliable but carrier K has no crash-recovery branch.");
+        static_assert(dependent_false_v<Actual>, "crucible::session::diagnostic "
+                                                 "[DelegatedCrashPropagation_MissingRecovery]: "
+                                                 "delegated_crash_propagation rejects: recipient is "
+                                                 "unreliable but carrier K has no crash-recovery branch.");
     }
 };
 
@@ -405,11 +370,10 @@ template <>
 struct propagation_assertion<IllFormed> {
     template <typename Actual = IllFormed>
     static consteval void check() noexcept {
-        static_assert(dependent_false_v<Actual>,
-            "crucible::session::diagnostic "
-            "[DelegatedCrashPropagation_PrimaryTemplate]: "
-            "delegated_crash_propagation<T, R, K> primary template "
-            "fires -- specialize for your delegated type.");
+        static_assert(dependent_false_v<Actual>, "crucible::session::diagnostic "
+                                                 "[DelegatedCrashPropagation_PrimaryTemplate]: "
+                                                 "delegated_crash_propagation<T, R, K> primary template "
+                                                 "fires -- specialize for your delegated type.");
     }
 };
 
@@ -436,33 +400,20 @@ namespace crucible::safety::proto::detail::crash {
 template <typename T, typename K, typename PeerTag>
 struct all_offers_have_crash_branch<Delegate<T, K>, PeerTag>
     : std::bool_constant<
-          all_offers_have_crash_branch<K, PeerTag>::value &&
-          ::crucible::safety::proto::detail::delegate_crash::
-              propagation_is_recoverable_v<
-              delegated_crash_propagation_t<T, PeerTag, K>>
-      > {};
+          all_offers_have_crash_branch<K, PeerTag>::value&& ::crucible::safety::proto::detail::delegate_crash::
+              propagation_is_recoverable_v<delegated_crash_propagation_t<T, PeerTag, K>>> {};
 
 template <typename T, typename K, typename PeerTag>
-struct all_offers_have_crash_branch<Accept<T, K>, PeerTag>
-    : all_offers_have_crash_branch<K, PeerTag> {};
+struct all_offers_have_crash_branch<Accept<T, K>, PeerTag> : all_offers_have_crash_branch<K, PeerTag> {};
 
-template <typename T, typename K,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
-          typename PeerTag>
-struct all_offers_have_crash_branch<
-    EpochedDelegate<T, K, MinEpoch, MinGeneration>, PeerTag>
+template <typename T, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration, typename PeerTag>
+struct all_offers_have_crash_branch<EpochedDelegate<T, K, MinEpoch, MinGeneration>, PeerTag>
     : std::bool_constant<
-          all_offers_have_crash_branch<K, PeerTag>::value &&
-          ::crucible::safety::proto::detail::delegate_crash::
-              propagation_is_recoverable_v<
-              delegated_crash_propagation_t<T, PeerTag, K>>
-      > {};
+          all_offers_have_crash_branch<K, PeerTag>::value&& ::crucible::safety::proto::detail::delegate_crash::
+              propagation_is_recoverable_v<delegated_crash_propagation_t<T, PeerTag, K>>> {};
 
-template <typename T, typename K,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
-          typename PeerTag>
-struct all_offers_have_crash_branch<
-    EpochedAccept<T, K, MinEpoch, MinGeneration>, PeerTag>
+template <typename T, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration, typename PeerTag>
+struct all_offers_have_crash_branch<EpochedAccept<T, K, MinEpoch, MinGeneration>, PeerTag>
     : all_offers_have_crash_branch<K, PeerTag> {};
 
 }  // namespace crucible::safety::proto::detail::crash
@@ -479,20 +430,26 @@ namespace crucible::safety::proto {
 
 namespace detail {
 
-template <typename... Ts> struct delegate_seq_helper;
+template <typename... Ts>
+struct delegate_seq_helper;
 
 template <typename K>
-struct delegate_seq_helper<K> { using type = K; };
+struct delegate_seq_helper<K> {
+    using type = K;
+};
 
 template <typename Head, typename... Rest>
 struct delegate_seq_helper<Head, Rest...> {
     using type = Delegate<Head, typename delegate_seq_helper<Rest...>::type>;
 };
 
-template <typename... Ts> struct accept_seq_helper;
+template <typename... Ts>
+struct accept_seq_helper;
 
 template <typename K>
-struct accept_seq_helper<K> { using type = K; };
+struct accept_seq_helper<K> {
+    using type = K;
+};
 
 template <typename Head, typename... Rest>
 struct accept_seq_helper<Head, Rest...> {
@@ -552,31 +509,30 @@ using AcceptWithAck = Accept<T, Send<Ack, K>>;
 
 // ─── Shape traits ───────────────────────────────────────────────────
 
-template <typename P> struct is_delegate : std::false_type {};
+template <typename P>
+struct is_delegate : std::false_type {};
 template <typename T, typename K>
 struct is_delegate<Delegate<T, K>> : std::true_type {};
-template <typename T, typename K,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
-struct is_delegate<EpochedDelegate<T, K, MinEpoch, MinGeneration>>
-    : std::true_type {};
+template <typename T, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct is_delegate<EpochedDelegate<T, K, MinEpoch, MinGeneration>> : std::true_type {};
 
-template <typename P> struct is_accept : std::false_type {};
+template <typename P>
+struct is_accept : std::false_type {};
 template <typename T, typename K>
 struct is_accept<Accept<T, K>> : std::true_type {};
-template <typename T, typename K,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
-struct is_accept<EpochedAccept<T, K, MinEpoch, MinGeneration>>
-    : std::true_type {};
+template <typename T, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct is_accept<EpochedAccept<T, K, MinEpoch, MinGeneration>> : std::true_type {};
 
-template <typename P> inline constexpr bool is_delegate_v = is_delegate<P>::value;
-template <typename P> inline constexpr bool is_accept_v   = is_accept<P>::value;
+template <typename P>
+inline constexpr bool is_delegate_v = is_delegate<P>::value;
+template <typename P>
+inline constexpr bool is_accept_v = is_accept<P>::value;
 
 // Head-shape predicate (extends Session.h's is_head_v with delegate
 // and accept — these ARE valid protocol heads, i.e., states the
 // SessionHandle can be positioned at).
 template <typename P>
-inline constexpr bool is_delegation_head_v =
-    is_delegate_v<P> || is_accept_v<P>;
+inline constexpr bool is_delegation_head_v = is_delegate_v<P> || is_accept_v<P>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Duality ────────────────────────────────────────────────────────
@@ -596,24 +552,14 @@ struct dual_of<Accept<T, K>> {
     using type = Delegate<T, typename dual_of<K>::type>;
 };
 
-template <typename T, typename K,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+template <typename T, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
 struct dual_of<EpochedDelegate<T, K, MinEpoch, MinGeneration>> {
-    using type = EpochedAccept<
-        T,
-        typename dual_of<K>::type,
-        MinEpoch,
-        MinGeneration>;
+    using type = EpochedAccept<T, typename dual_of<K>::type, MinEpoch, MinGeneration>;
 };
 
-template <typename T, typename K,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+template <typename T, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
 struct dual_of<EpochedAccept<T, K, MinEpoch, MinGeneration>> {
-    using type = EpochedDelegate<
-        T,
-        typename dual_of<K>::type,
-        MinEpoch,
-        MinGeneration>;
+    using type = EpochedDelegate<T, typename dual_of<K>::type, MinEpoch, MinGeneration>;
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -650,27 +596,21 @@ struct dual_of<EpochedAccept<T, K, MinEpoch, MinGeneration>> {
 
 template <typename T, typename K>
 struct is_dual_involutive<Delegate<T, K>>
-    : std::bool_constant<is_dual_involutive<T>::value &&
-                         is_dual_involutive<K>::value> {};
+    : std::bool_constant<is_dual_involutive<T>::value && is_dual_involutive<K>::value> {};
 
 template <typename T, typename K>
 struct is_dual_involutive<Accept<T, K>>
-    : std::bool_constant<is_dual_involutive<T>::value &&
-                         is_dual_involutive<K>::value> {};
+    : std::bool_constant<is_dual_involutive<T>::value && is_dual_involutive<K>::value> {};
 
 // MinEpoch / MinGeneration are NTTPs and do not contribute to
 // involution — only the carried session protocols T and K do.
-template <typename T, typename K,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+template <typename T, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
 struct is_dual_involutive<EpochedDelegate<T, K, MinEpoch, MinGeneration>>
-    : std::bool_constant<is_dual_involutive<T>::value &&
-                         is_dual_involutive<K>::value> {};
+    : std::bool_constant<is_dual_involutive<T>::value && is_dual_involutive<K>::value> {};
 
-template <typename T, typename K,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+template <typename T, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
 struct is_dual_involutive<EpochedAccept<T, K, MinEpoch, MinGeneration>>
-    : std::bool_constant<is_dual_involutive<T>::value &&
-                         is_dual_involutive<K>::value> {};
+    : std::bool_constant<is_dual_involutive<T>::value && is_dual_involutive<K>::value> {};
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Sequential composition ─────────────────────────────────────────
@@ -746,52 +686,38 @@ struct compose<End, Accept<Stop_g<C>, K>> {
     using type = Stop_g<C>;
 };
 
-template <typename T, typename K, typename Q,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+template <typename T, typename K, typename Q, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
 struct compose<EpochedDelegate<T, K, MinEpoch, MinGeneration>, Q> {
-    using type = EpochedDelegate<
-        T,
-        typename compose<K, Q>::type,
-        MinEpoch,
-        MinGeneration>;
+    using type = EpochedDelegate<T, typename compose<K, Q>::type, MinEpoch, MinGeneration>;
 };
 
-template <CrashClass C, typename K, typename Q,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+template <CrashClass C, typename K, typename Q, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
 struct compose<EpochedDelegate<Stop_g<C>, K, MinEpoch, MinGeneration>, Q> {
     using type = typename compose<Stop_g<C>, Q>::type;
 };
 
-template <CrashClass C, typename K,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+template <CrashClass C, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
 struct compose<End, EpochedDelegate<Stop_g<C>, K, MinEpoch, MinGeneration>> {
     using type = Stop_g<C>;
 };
 
-template <typename T, typename K, typename Q,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+template <typename T, typename K, typename Q, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
 struct compose<EpochedAccept<T, K, MinEpoch, MinGeneration>, Q> {
-    using type = EpochedAccept<
-        T,
-        typename compose<K, Q>::type,
-        MinEpoch,
-        MinGeneration>;
+    using type = EpochedAccept<T, typename compose<K, Q>::type, MinEpoch, MinGeneration>;
 };
 
 // fixy-A2-002 — EpochedAccept-of-Stop_g<C> composition bottom-preserved
 // (symmetric to compose<EpochedDelegate<Stop_g<C>, ...>, Q>).  MinEpoch
 // and MinGeneration are dropped because the result is Stop_g<C>: a
 // crashed channel has no epoch/generation discipline left to enforce.
-template <CrashClass C, typename K, typename Q,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+template <CrashClass C, typename K, typename Q, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
 struct compose<EpochedAccept<Stop_g<C>, K, MinEpoch, MinGeneration>, Q> {
     using type = typename compose<Stop_g<C>, Q>::type;
 };
 
 // fixy-A2-002 — right-substitution termination for EpochedAccept<...>.
 // Mirrors compose<End, EpochedDelegate<Stop_g<C>, ...>> = Stop_g<C>.
-template <CrashClass C, typename K,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+template <CrashClass C, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
 struct compose<End, EpochedAccept<Stop_g<C>, K, MinEpoch, MinGeneration>> {
     using type = Stop_g<C>;
 };
@@ -807,66 +733,38 @@ struct compose<End, EpochedAccept<Stop_g<C>, K, MinEpoch, MinGeneration>> {
 // Delegate<Stop, K> state to manufacture a live K continuation.
 
 template <CrashClass C, typename K>
-struct is_subtype_sync_structural<Delegate<Stop_g<C>, K>, K>
-    : std::true_type {};
+struct is_subtype_sync_structural<Delegate<Stop_g<C>, K>, K> : std::true_type {};
 
-template <CrashClass C, typename K,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
-struct is_subtype_sync_structural<
-    EpochedDelegate<Stop_g<C>, K, MinEpoch, MinGeneration>, K>
-    : std::true_type {};
+template <CrashClass C, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct is_subtype_sync_structural<EpochedDelegate<Stop_g<C>, K, MinEpoch, MinGeneration>, K> : std::true_type {};
 
-template <typename T1, typename K1, typename T2, typename K2,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
-struct is_subtype_sync_structural<
-    EpochedDelegate<T1, K1, MinEpoch, MinGeneration>,
-    EpochedDelegate<T2, K2, MinEpoch, MinGeneration>>
-    : std::bool_constant<
-          is_subtype_sync_structural<T1, T2>::value &&
-          is_subtype_sync_structural<K1, K2>::value
-      > {};
+template <typename T1, typename K1, typename T2, typename K2, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct is_subtype_sync_structural<EpochedDelegate<T1, K1, MinEpoch, MinGeneration>,
+                                  EpochedDelegate<T2, K2, MinEpoch, MinGeneration>>
+    : std::bool_constant<is_subtype_sync_structural<T1, T2>::value && is_subtype_sync_structural<K1, K2>::value> {};
 
-template <typename T1, typename K1, typename T2, typename K2,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
-struct is_subtype_sync_structural<
-    EpochedAccept<T1, K1, MinEpoch, MinGeneration>,
-    EpochedAccept<T2, K2, MinEpoch, MinGeneration>>
-    : std::bool_constant<
-          is_subtype_sync_structural<T1, T2>::value &&
-          is_subtype_sync_structural<K1, K2>::value
-      > {};
+template <typename T1, typename K1, typename T2, typename K2, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct is_subtype_sync_structural<EpochedAccept<T1, K1, MinEpoch, MinGeneration>,
+                                  EpochedAccept<T2, K2, MinEpoch, MinGeneration>>
+    : std::bool_constant<is_subtype_sync_structural<T1, T2>::value && is_subtype_sync_structural<K1, K2>::value> {};
 
 namespace detail::subtype {
 
 template <CrashClass C, typename K>
-struct protocol_grade_satisfies<Delegate<Stop_g<C>, K>, K>
-    : std::true_type {};
+struct protocol_grade_satisfies<Delegate<Stop_g<C>, K>, K> : std::true_type {};
 
-template <CrashClass C, typename K,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
-struct protocol_grade_satisfies<
-    EpochedDelegate<Stop_g<C>, K, MinEpoch, MinGeneration>, K>
-    : std::true_type {};
+template <CrashClass C, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct protocol_grade_satisfies<EpochedDelegate<Stop_g<C>, K, MinEpoch, MinGeneration>, K> : std::true_type {};
 
-template <typename T1, typename K1, typename T2, typename K2,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
-struct protocol_grade_satisfies<
-    EpochedDelegate<T1, K1, MinEpoch, MinGeneration>,
-    EpochedDelegate<T2, K2, MinEpoch, MinGeneration>>
-    : std::bool_constant<
-          protocol_grade_satisfies<T1, T2>::value &&
-          protocol_grade_satisfies<K1, K2>::value
-      > {};
+template <typename T1, typename K1, typename T2, typename K2, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct protocol_grade_satisfies<EpochedDelegate<T1, K1, MinEpoch, MinGeneration>,
+                                EpochedDelegate<T2, K2, MinEpoch, MinGeneration>>
+    : std::bool_constant<protocol_grade_satisfies<T1, T2>::value && protocol_grade_satisfies<K1, K2>::value> {};
 
-template <typename T1, typename K1, typename T2, typename K2,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
-struct protocol_grade_satisfies<
-    EpochedAccept<T1, K1, MinEpoch, MinGeneration>,
-    EpochedAccept<T2, K2, MinEpoch, MinGeneration>>
-    : std::bool_constant<
-          protocol_grade_satisfies<T1, T2>::value &&
-          protocol_grade_satisfies<K1, K2>::value
-      > {};
+template <typename T1, typename K1, typename T2, typename K2, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct protocol_grade_satisfies<EpochedAccept<T1, K1, MinEpoch, MinGeneration>,
+                                EpochedAccept<T2, K2, MinEpoch, MinGeneration>>
+    : std::bool_constant<protocol_grade_satisfies<T1, T2>::value && protocol_grade_satisfies<K1, K2>::value> {};
 
 }  // namespace detail::subtype
 
@@ -888,41 +786,24 @@ struct protocol_grade_satisfies<
 
 template <typename T, typename K, typename LoopCtx>
 struct is_well_formed<Delegate<T, K>, LoopCtx>
-    : std::bool_constant<
-          is_well_formed<T, void>::value &&
-          is_well_formed<K, LoopCtx>::value
-      > {};
+    : std::bool_constant<is_well_formed<T, void>::value && is_well_formed<K, LoopCtx>::value> {};
 
 template <typename T, typename K, typename LoopCtx>
 struct is_well_formed<Accept<T, K>, LoopCtx>
-    : std::bool_constant<
-          is_well_formed<T, void>::value &&
-          is_well_formed<K, LoopCtx>::value
-      > {};
+    : std::bool_constant<is_well_formed<T, void>::value && is_well_formed<K, LoopCtx>::value> {};
 
-template <typename T, typename K,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
-          typename LoopCtx>
+template <typename T, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration, typename LoopCtx>
 struct is_well_formed<EpochedDelegate<T, K, MinEpoch, MinGeneration>, LoopCtx>
-    : std::bool_constant<
-          session_epoch_threshold_valid_v<LoopCtx, MinEpoch, MinGeneration> &&
-          is_well_formed<T, void>::value &&
-          is_well_formed<K, LoopCtx>::value &&
-          (!session_loop_ctx_has_explicit_epoch_v<LoopCtx> ||
-           session_loop_ctx_epoch_matches_v<LoopCtx, MinEpoch, MinGeneration>)
-      > {};
+    : std::bool_constant<session_epoch_threshold_valid_v<LoopCtx, MinEpoch, MinGeneration>
+                         && is_well_formed<T, void>::value && is_well_formed<K, LoopCtx>::value
+                         && (!session_loop_ctx_has_explicit_epoch_v<LoopCtx>
+                             || session_loop_ctx_epoch_matches_v<LoopCtx, MinEpoch, MinGeneration>)> {};
 
-template <typename T, typename K,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
-          typename LoopCtx>
+template <typename T, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration, typename LoopCtx>
 struct is_well_formed<EpochedAccept<T, K, MinEpoch, MinGeneration>, LoopCtx>
-    : std::bool_constant<
-          session_epoch_threshold_valid_v<LoopCtx, MinEpoch, MinGeneration> &&
-          is_well_formed<T, void>::value &&
-          is_well_formed<K, LoopCtx>::value &&
-          session_loop_ctx_epoch_satisfies_v<
-              LoopCtx, MinEpoch, MinGeneration>
-      > {};
+    : std::bool_constant<session_epoch_threshold_valid_v<LoopCtx, MinEpoch, MinGeneration>
+                         && is_well_formed<T, void>::value && is_well_formed<K, LoopCtx>::value
+                         && session_loop_ctx_epoch_satisfies_v<LoopCtx, MinEpoch, MinGeneration>> {};
 
 // ── fixy-CR-14: recursive is_empty_choice ──────────────────────────
 //
@@ -935,26 +816,18 @@ struct is_well_formed<EpochedAccept<T, K, MinEpoch, MinGeneration>, LoopCtx>
 // itself.  Mirror is_well_formed's "both arms" treatment.
 
 template <typename T, typename K>
-struct is_empty_choice<Delegate<T, K>>
-    : std::bool_constant<is_empty_choice<T>::value
-                          || is_empty_choice<K>::value> {};
+struct is_empty_choice<Delegate<T, K>> : std::bool_constant<is_empty_choice<T>::value || is_empty_choice<K>::value> {};
 
 template <typename T, typename K>
-struct is_empty_choice<Accept<T, K>>
-    : std::bool_constant<is_empty_choice<T>::value
-                          || is_empty_choice<K>::value> {};
+struct is_empty_choice<Accept<T, K>> : std::bool_constant<is_empty_choice<T>::value || is_empty_choice<K>::value> {};
 
-template <typename T, typename K,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+template <typename T, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
 struct is_empty_choice<EpochedDelegate<T, K, MinEpoch, MinGeneration>>
-    : std::bool_constant<is_empty_choice<T>::value
-                          || is_empty_choice<K>::value> {};
+    : std::bool_constant<is_empty_choice<T>::value || is_empty_choice<K>::value> {};
 
-template <typename T, typename K,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+template <typename T, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
 struct is_empty_choice<EpochedAccept<T, K, MinEpoch, MinGeneration>>
-    : std::bool_constant<is_empty_choice<T>::value
-                          || is_empty_choice<K>::value> {};
+    : std::bool_constant<is_empty_choice<T>::value || is_empty_choice<K>::value> {};
 
 // ═════════════════════════════════════════════════════════════════════
 // ── SessionHandle specialisations ──────────────────────────────────
@@ -971,41 +844,37 @@ struct is_empty_choice<EpochedAccept<T, K, MinEpoch, MinGeneration>>
 
 template <typename T, typename K, typename Resource, typename LoopCtx>
 class [[nodiscard]] SessionHandle<Delegate<T, K>, Resource, LoopCtx>
-    : public SessionHandleBase<Delegate<T, K>,
-                               SessionHandle<Delegate<T, K>, Resource, LoopCtx>>
-{
+    : public SessionHandleBase<Delegate<T, K>, SessionHandle<Delegate<T, K>, Resource, LoopCtx>> {
     Resource resource_;
 
-    template <typename P, typename Res, typename L> friend class SessionHandle;
+    template <typename P, typename Res, typename L>
+    friend class SessionHandle;
     // detail::make_session_handle (Session.h) is the SOLE authorized
     // constructor (fix-04) — direct `SessionHandle<Delegate<T,K>, Res,
     // Ctx>{res}` is rejected ("is private"), so mint_session_handle /
     // step_to_next gates cannot be bypassed.  Friend reaches across
     // headers: the factory lives in Session.h, included above.
     template <typename FProto, typename FRes, typename FLoop>
-    friend constexpr auto detail::make_session_handle(FRes, std::source_location)
-        noexcept(std::is_nothrow_move_constructible_v<FRes>)
-        -> SessionHandle<FProto, FRes, FLoop>;
+    friend constexpr auto
+        detail::make_session_handle(FRes, std::source_location) noexcept(std::is_nothrow_move_constructible_v<FRes>)
+            -> SessionHandle<FProto, FRes, FLoop>;
 
     // ── Construction (used by detail::make_session_handle only) ────
-    constexpr explicit SessionHandle(
-        Resource r,
-        std::source_location loc = std::source_location::current())
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : SessionHandleBase<Delegate<T, K>,
-                            SessionHandle<Delegate<T, K>, Resource, LoopCtx>>{loc}
-        , resource_{std::move(r)} {}
+    constexpr explicit SessionHandle(Resource r, std::source_location loc = std::source_location::current()) noexcept(
+        std::is_nothrow_move_constructible_v<Resource>)
+        : SessionHandleBase<Delegate<T, K>, SessionHandle<Delegate<T, K>, Resource, LoopCtx>>{loc},
+          resource_{std::move(r)} {}
 
 public:
-    using protocol        = Delegate<T, K>;
+    using protocol = Delegate<T, K>;
     using delegated_proto = T;
-    using continuation    = K;
-    using resource_type   = Resource;
-    using loop_ctx        = LoopCtx;
+    using continuation = K;
+    using resource_type = Resource;
+    using loop_ctx = LoopCtx;
 
-    constexpr SessionHandle(SessionHandle&&) noexcept            = default;
+    constexpr SessionHandle(SessionHandle&&) noexcept = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
-    ~SessionHandle()                                             = default;
+    ~SessionHandle() = default;
 
     // Hand off a session endpoint of type T to the peer.  Both this
     // delegator-handle AND the delegated handle are consumed; returns
@@ -1018,35 +887,28 @@ public:
     // appropriate for the transport).  The delegated handle's
     // resource is moved into the transport call; the delegated
     // handle's type-state is consumed by the && overload guarantee.
-    template <typename DelegatedResource, typename DelegatedLoopCtx,
-              typename Transport>
-        requires (!is_stop_v<T> &&
-                  std::is_invocable_v<Transport, Resource&, DelegatedResource&&>)
-    [[nodiscard]] constexpr auto delegate(
-        SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&& delegated,
-        Transport transport) &&
-        noexcept(std::is_nothrow_invocable_v<Transport, Resource&, DelegatedResource&&>
-                 && std::is_nothrow_move_constructible_v<Resource>)
-    {
+    template <typename DelegatedResource, typename DelegatedLoopCtx, typename Transport>
+        requires(!is_stop_v<T> && std::is_invocable_v<Transport, Resource&, DelegatedResource &&>)
+    [[nodiscard]] constexpr auto
+    delegate(SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&& delegated,
+             Transport transport) && noexcept(std::is_nothrow_invocable_v<Transport, Resource&, DelegatedResource&&>
+                                              && std::is_nothrow_move_constructible_v<Resource>) {
         // Physically transfer the delegated endpoint.  The peer now
         // owns a SessionHandle<T, DelegatedResource, DelegatedLoopCtx>.
         std::invoke(transport, resource_, std::move(delegated.resource_));
-        delegated.mark_consumed_();   // caller's delegated handle consumed
+        delegated.mark_consumed_();  // caller's delegated handle consumed
         this->mark_consumed_();
         return detail::step_to_next<K, Resource, LoopCtx>(std::move(resource_));
     }
 
-    template <typename DelegatedResource, typename DelegatedLoopCtx,
-              typename Transport>
+    template <typename DelegatedResource, typename DelegatedLoopCtx, typename Transport>
         requires is_stop_v<T>
-    void delegate(
-        SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&&,
-        Transport) && = delete(
-        "[DelegateStop_NoContinuation] SessionHandle<Delegate<Stop, K>> "
-        "cannot delegate an already-crashed endpoint and continue as K.  "
-        "The type-level compose rule collapses Delegate<Stop, K> to Stop; "
-        "recover by handling Stop/crash before this handoff point instead "
-        "of expecting K's continuation-side authority.");
+    void delegate(SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&&,
+                  Transport) && = delete("[DelegateStop_NoContinuation] SessionHandle<Delegate<Stop, K>> "
+                                         "cannot delegate an already-crashed endpoint and continue as K.  "
+                                         "The type-level compose rule collapses Delegate<Stop, K> to Stop; "
+                                         "recover by handling Stop/crash before this handoff point instead "
+                                         "of expecting K's continuation-side authority.");
 
     // Transport-less variant (#369 / #377 parallel): renamed from
     // bare `delegate(handle)` to `delegate_local(handle)` so the wire
@@ -1073,12 +935,10 @@ public:
     //   grep "delegate_local("    — every wire-omitting delegation
     //   grep "\.delegate(.*,.*)"  — every wire-based delegation
     template <typename DelegatedResource, typename DelegatedLoopCtx>
-        requires (!is_stop_v<T>)
-    [[nodiscard]] constexpr auto delegate_local(
-        SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&& delegated) &&
-        noexcept(std::is_nothrow_move_constructible_v<Resource>
-                 && std::is_nothrow_destructible_v<DelegatedResource>)
-    {
+        requires(!is_stop_v<T>)
+    [[nodiscard]] constexpr auto
+    delegate_local(SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&& delegated) && noexcept(
+        std::is_nothrow_move_constructible_v<Resource> && std::is_nothrow_destructible_v<DelegatedResource>) {
         // Consume the delegated handle (its resource's dtor fires
         // when this lambda scope ends; its consumed_ flag is
         // marked so the base's destructor check skips).
@@ -1090,12 +950,11 @@ public:
 
     template <typename DelegatedResource, typename DelegatedLoopCtx>
         requires is_stop_v<T>
-    void delegate_local(
-        SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&&) && = delete(
-        "[DelegateStop_NoContinuation] SessionHandle<Delegate<Stop, K>> "
-        "cannot locally delegate an already-crashed endpoint and continue "
-        "as K.  Delegate<Stop, K> collapses to Stop; handle recovery "
-        "before this state.");
+    void delegate_local(SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&&) && =
+        delete("[DelegateStop_NoContinuation] SessionHandle<Delegate<Stop, K>> "
+               "cannot locally delegate an already-crashed endpoint and continue "
+               "as K.  Delegate<Stop, K> collapses to Stop; handle recovery "
+               "before this state.");
 
     // Deleted bare `delegate(handle)` overload (#369) — forces every
     // call site to make the wire-vs-in-memory distinction explicit.
@@ -1103,24 +962,23 @@ public:
     // delegation-specific footgun (peer stuck waiting for the
     // endpoint that was never shipped).
     template <typename DelegatedResource, typename DelegatedLoopCtx>
-    void delegate(
-        SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&&) && = delete(
-        "[Wire_Variant_Required] SessionHandle<Delegate<T, K>>::"
-        "delegate(handle) without a transport is no longer allowed "
-        "(#369).  The Delegate combinator's semantic is \"ship the "
-        "delegated endpoint to the peer\"; omitting the transport "
-        "means nothing is shipped and the peer's corresponding Accept "
-        "call hangs forever.  Choose one: "
-        "(a) `.delegate(handle, transport)` — the transport callable "
-        "physically ships the endpoint (RDMA put, fd passing, bytes "
-        "over the wire, etc.) and the peer's Accept receives it, OR "
-        "(b) `.delegate_local(handle)` — explicitly no wire transfer, "
-        "for in-memory channels or test stubs where the peer obtains "
-        "the endpoint via a separate path or doesn't need it at all.  "
-        "Per #369, the framework refuses to guess which you meant.");
+    void delegate(SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&&) && =
+        delete("[Wire_Variant_Required] SessionHandle<Delegate<T, K>>::"
+               "delegate(handle) without a transport is no longer allowed "
+               "(#369).  The Delegate combinator's semantic is \"ship the "
+               "delegated endpoint to the peer\"; omitting the transport "
+               "means nothing is shipped and the peer's corresponding Accept "
+               "call hangs forever.  Choose one: "
+               "(a) `.delegate(handle, transport)` — the transport callable "
+               "physically ships the endpoint (RDMA put, fd passing, bytes "
+               "over the wire, etc.) and the peer's Accept receives it, OR "
+               "(b) `.delegate_local(handle)` — explicitly no wire transfer, "
+               "for in-memory channels or test stubs where the peer obtains "
+               "the endpoint via a separate path or doesn't need it at all.  "
+               "Per #369, the framework refuses to guess which you meant.");
 
-    [[nodiscard]] constexpr Resource&       resource() &        noexcept { return resource_; }
-    [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return resource_; }
+    [[nodiscard]] constexpr Resource& resource() & noexcept { return resource_; }
+    [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
 
 // ── SessionHandle<Accept<T, K>, Resource, LoopCtx> ─────────────────
@@ -1138,59 +996,51 @@ public:
 
 template <typename T, typename K, typename Resource, typename LoopCtx>
 class [[nodiscard]] SessionHandle<Accept<T, K>, Resource, LoopCtx>
-    : public SessionHandleBase<Accept<T, K>,
-                               SessionHandle<Accept<T, K>, Resource, LoopCtx>>
-{
+    : public SessionHandleBase<Accept<T, K>, SessionHandle<Accept<T, K>, Resource, LoopCtx>> {
     Resource resource_;
 
-    template <typename P, typename Res, typename L> friend class SessionHandle;
+    template <typename P, typename Res, typename L>
+    friend class SessionHandle;
     // detail::make_session_handle (Session.h) is the SOLE authorized
     // constructor (fix-04) — direct `SessionHandle<Accept<T,K>, Res,
     // Ctx>{res}` is rejected ("is private"), so mint_session_handle /
     // step_to_next gates cannot be bypassed.
     template <typename FProto, typename FRes, typename FLoop>
-    friend constexpr auto detail::make_session_handle(FRes, std::source_location)
-        noexcept(std::is_nothrow_move_constructible_v<FRes>)
-        -> SessionHandle<FProto, FRes, FLoop>;
+    friend constexpr auto
+        detail::make_session_handle(FRes, std::source_location) noexcept(std::is_nothrow_move_constructible_v<FRes>)
+            -> SessionHandle<FProto, FRes, FLoop>;
 
     // ── Construction (used by detail::make_session_handle only) ────
-    constexpr explicit SessionHandle(
-        Resource r,
-        std::source_location loc = std::source_location::current())
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : SessionHandleBase<Accept<T, K>,
-                            SessionHandle<Accept<T, K>, Resource, LoopCtx>>{loc}
-        , resource_{std::move(r)} {}
+    constexpr explicit SessionHandle(Resource r, std::source_location loc = std::source_location::current()) noexcept(
+        std::is_nothrow_move_constructible_v<Resource>)
+        : SessionHandleBase<Accept<T, K>, SessionHandle<Accept<T, K>, Resource, LoopCtx>>{loc},
+          resource_{std::move(r)} {}
 
 public:
-    using protocol        = Accept<T, K>;
+    using protocol = Accept<T, K>;
     using delegated_proto = T;
-    using continuation    = K;
-    using resource_type   = Resource;
-    using loop_ctx        = LoopCtx;
+    using continuation = K;
+    using resource_type = Resource;
+    using loop_ctx = LoopCtx;
 
-    constexpr SessionHandle(SessionHandle&&) noexcept            = default;
+    constexpr SessionHandle(SessionHandle&&) noexcept = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
-    ~SessionHandle()                                             = default;
+    ~SessionHandle() = default;
 
     // Receive the delegated endpoint + advance past Accept.  Returns
     // (delegated_handle, continuation_handle).  The DelegatedResource
     // type is deduced from the Transport's return type.
-    template <typename Transport,
-              typename DelegatedResource = std::invoke_result_t<Transport, Resource&>>
+    template <typename Transport, typename DelegatedResource = std::invoke_result_t<Transport, Resource&>>
         requires std::is_invocable_v<Transport, Resource&>
-    [[nodiscard]] constexpr auto accept(Transport transport) &&
-        noexcept(std::is_nothrow_invocable_v<Transport, Resource&>
-                 && std::is_nothrow_move_constructible_v<Resource>
-                 && std::is_nothrow_move_constructible_v<DelegatedResource>)
-    {
+    [[nodiscard]] constexpr auto
+    accept(Transport transport) && noexcept(std::is_nothrow_invocable_v<Transport, Resource&>
+                                            && std::is_nothrow_move_constructible_v<Resource>
+                                            && std::is_nothrow_move_constructible_v<DelegatedResource>) {
         DelegatedResource delegated_res = std::invoke(transport, resource_);
         this->mark_consumed_();
         auto delegated_handle = mint_session_handle<T>(std::move(delegated_res));
-        auto continuation_handle =
-            detail::step_to_next<K, Resource, LoopCtx>(std::move(resource_));
-        return std::pair{std::move(delegated_handle),
-                         std::move(continuation_handle)};
+        auto continuation_handle = detail::step_to_next<K, Resource, LoopCtx>(std::move(resource_));
+        return std::pair{std::move(delegated_handle), std::move(continuation_handle)};
     }
 
     // Transport-less variant: caller provides the DelegatedResource
@@ -1199,20 +1049,16 @@ public:
     // transport where the "receive" is really just a type-state
     // advance).  Mirrors delegate()'s transport-less form.
     template <typename DelegatedResource>
-    [[nodiscard]] constexpr auto accept_with(DelegatedResource delegated_res) &&
-        noexcept(std::is_nothrow_move_constructible_v<Resource>
-                 && std::is_nothrow_move_constructible_v<DelegatedResource>)
-    {
+    [[nodiscard]] constexpr auto accept_with(DelegatedResource delegated_res) && noexcept(
+        std::is_nothrow_move_constructible_v<Resource> && std::is_nothrow_move_constructible_v<DelegatedResource>) {
         this->mark_consumed_();
         auto delegated_handle = mint_session_handle<T>(std::move(delegated_res));
-        auto continuation_handle =
-            detail::step_to_next<K, Resource, LoopCtx>(std::move(resource_));
-        return std::pair{std::move(delegated_handle),
-                         std::move(continuation_handle)};
+        auto continuation_handle = detail::step_to_next<K, Resource, LoopCtx>(std::move(resource_));
+        return std::pair{std::move(delegated_handle), std::move(continuation_handle)};
     }
 
-    [[nodiscard]] constexpr Resource&       resource() &        noexcept { return resource_; }
-    [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return resource_; }
+    [[nodiscard]] constexpr Resource& resource() & noexcept { return resource_; }
+    [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
 
 // ── SessionHandle<EpochedDelegate<T, K, MinEpoch, MinGen>, ...> ───
@@ -1222,89 +1068,69 @@ public:
 // carries it so duality, event logs, and diagnostics keep the reshard
 // freshness requirement visible in the protocol type.
 
-template <typename T, typename K,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
-          typename Resource, typename LoopCtx>
-class [[nodiscard]] SessionHandle<
-    EpochedDelegate<T, K, MinEpoch, MinGeneration>, Resource, LoopCtx>
-    : public SessionHandleBase<
-          EpochedDelegate<T, K, MinEpoch, MinGeneration>,
-          SessionHandle<
-              EpochedDelegate<T, K, MinEpoch, MinGeneration>,
-              Resource,
-              LoopCtx>>
-{
+template <typename T, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration, typename Resource,
+          typename LoopCtx>
+class [[nodiscard]] SessionHandle<EpochedDelegate<T, K, MinEpoch, MinGeneration>, Resource, LoopCtx>
+    : public SessionHandleBase<EpochedDelegate<T, K, MinEpoch, MinGeneration>,
+                               SessionHandle<EpochedDelegate<T, K, MinEpoch, MinGeneration>, Resource, LoopCtx>> {
     using Protocol = EpochedDelegate<T, K, MinEpoch, MinGeneration>;
 
     Resource resource_;
 
-    template <typename P, typename Res, typename L> friend class SessionHandle;
+    template <typename P, typename Res, typename L>
+    friend class SessionHandle;
     // detail::make_session_handle (Session.h) is the SOLE authorized
     // constructor (fix-04) — direct `SessionHandle<EpochedDelegate<...>,
     // Res, Ctx>{res}` is rejected ("is private"), so mint_session_handle
     // / step_to_next gates cannot be bypassed.
     template <typename FProto, typename FRes, typename FLoop>
-    friend constexpr auto detail::make_session_handle(FRes, std::source_location)
-        noexcept(std::is_nothrow_move_constructible_v<FRes>)
-        -> SessionHandle<FProto, FRes, FLoop>;
+    friend constexpr auto
+        detail::make_session_handle(FRes, std::source_location) noexcept(std::is_nothrow_move_constructible_v<FRes>)
+            -> SessionHandle<FProto, FRes, FLoop>;
 
     // ── Construction (used by detail::make_session_handle only) ────
-    constexpr explicit SessionHandle(
-        Resource r,
-        std::source_location loc = std::source_location::current())
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : SessionHandleBase<
-              Protocol,
-              SessionHandle<Protocol, Resource, LoopCtx>>{loc}
-        , resource_{std::move(r)} {}
+    constexpr explicit SessionHandle(Resource r, std::source_location loc = std::source_location::current()) noexcept(
+        std::is_nothrow_move_constructible_v<Resource>)
+        : SessionHandleBase<Protocol, SessionHandle<Protocol, Resource, LoopCtx>>{loc}, resource_{std::move(r)} {}
 
 public:
-    using protocol        = Protocol;
+    using protocol = Protocol;
     using delegated_proto = T;
-    using continuation    = K;
-    using resource_type   = Resource;
-    using loop_ctx        = LoopCtx;
+    using continuation = K;
+    using resource_type = Resource;
+    using loop_ctx = LoopCtx;
     static constexpr std::uint64_t min_epoch = MinEpoch;
     static constexpr std::uint64_t min_generation = MinGeneration;
 
-    constexpr SessionHandle(SessionHandle&&) noexcept            = default;
+    constexpr SessionHandle(SessionHandle&&) noexcept = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
-    ~SessionHandle()                                             = default;
+    ~SessionHandle() = default;
 
-    template <typename DelegatedResource, typename DelegatedLoopCtx,
-              typename Transport>
-        requires (!is_stop_v<T> &&
-                  std::is_invocable_v<Transport, Resource&, DelegatedResource&&>)
-    [[nodiscard]] constexpr auto delegate(
-        SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&& delegated,
-        Transport transport) &&
-        noexcept(std::is_nothrow_invocable_v<Transport, Resource&, DelegatedResource&&>
-                 && std::is_nothrow_move_constructible_v<Resource>)
-    {
+    template <typename DelegatedResource, typename DelegatedLoopCtx, typename Transport>
+        requires(!is_stop_v<T> && std::is_invocable_v<Transport, Resource&, DelegatedResource &&>)
+    [[nodiscard]] constexpr auto
+    delegate(SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&& delegated,
+             Transport transport) && noexcept(std::is_nothrow_invocable_v<Transport, Resource&, DelegatedResource&&>
+                                              && std::is_nothrow_move_constructible_v<Resource>) {
         std::invoke(transport, resource_, std::move(delegated.resource_));
         delegated.mark_consumed_();
         this->mark_consumed_();
         return detail::step_to_next<K, Resource, LoopCtx>(std::move(resource_));
     }
 
-    template <typename DelegatedResource, typename DelegatedLoopCtx,
-              typename Transport>
+    template <typename DelegatedResource, typename DelegatedLoopCtx, typename Transport>
         requires is_stop_v<T>
-    void delegate(
-        SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&&,
-        Transport) && = delete(
-        "[DelegateStop_NoContinuation] SessionHandle<EpochedDelegate<"
-        "Stop, K, MinEpoch, MinGeneration>> cannot delegate an already-"
-        "crashed endpoint and continue as K.  Handle Stop/crash before "
-        "this epoch-versioned handoff point.");
+    void delegate(SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&&,
+                  Transport) && = delete("[DelegateStop_NoContinuation] SessionHandle<EpochedDelegate<"
+                                         "Stop, K, MinEpoch, MinGeneration>> cannot delegate an already-"
+                                         "crashed endpoint and continue as K.  Handle Stop/crash before "
+                                         "this epoch-versioned handoff point.");
 
     template <typename DelegatedResource, typename DelegatedLoopCtx>
-        requires (!is_stop_v<T>)
-    [[nodiscard]] constexpr auto delegate_local(
-        SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&& delegated) &&
-        noexcept(std::is_nothrow_move_constructible_v<Resource>
-                 && std::is_nothrow_destructible_v<DelegatedResource>)
-    {
+        requires(!is_stop_v<T>)
+    [[nodiscard]] constexpr auto
+    delegate_local(SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&& delegated) && noexcept(
+        std::is_nothrow_move_constructible_v<Resource> && std::is_nothrow_destructible_v<DelegatedResource>) {
         delegated.mark_consumed_();
         (void)std::move(delegated);
         this->mark_consumed_();
@@ -1313,22 +1139,20 @@ public:
 
     template <typename DelegatedResource, typename DelegatedLoopCtx>
         requires is_stop_v<T>
-    void delegate_local(
-        SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&&) && = delete(
-        "[DelegateStop_NoContinuation] SessionHandle<EpochedDelegate<"
-        "Stop, K, MinEpoch, MinGeneration>> cannot locally delegate an "
-        "already-crashed endpoint and continue as K.");
+    void delegate_local(SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&&) && =
+        delete("[DelegateStop_NoContinuation] SessionHandle<EpochedDelegate<"
+               "Stop, K, MinEpoch, MinGeneration>> cannot locally delegate an "
+               "already-crashed endpoint and continue as K.");
 
     template <typename DelegatedResource, typename DelegatedLoopCtx>
-    void delegate(
-        SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&&) && = delete(
-        "[Wire_Variant_Required] SessionHandle<EpochedDelegate<T, K, "
-        "MinEpoch, MinGeneration>>::delegate(handle) without a transport "
-        "is not allowed.  Choose delegate(handle, transport) for wire "
-        "handoff or delegate_local(handle) for explicit in-memory tests.");
+    void delegate(SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&&) && =
+        delete("[Wire_Variant_Required] SessionHandle<EpochedDelegate<T, K, "
+               "MinEpoch, MinGeneration>>::delegate(handle) without a transport "
+               "is not allowed.  Choose delegate(handle, transport) for wire "
+               "handoff or delegate_local(handle) for explicit in-memory tests.");
 
-    [[nodiscard]] constexpr Resource&       resource() &        noexcept { return resource_; }
-    [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return resource_; }
+    [[nodiscard]] constexpr Resource& resource() & noexcept { return resource_; }
+    [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
 
 // ── SessionHandle<EpochedAccept<T, K, MinEpoch, MinGen>, ...> ──────
@@ -1337,32 +1161,25 @@ public:
 // compile-time admission fact: LoopCtx must carry EpochCtx<E, G> and
 // E/G must satisfy the declared threshold.
 
-template <typename T, typename K,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
-          typename Resource, typename LoopCtx>
-class [[nodiscard]] SessionHandle<
-    EpochedAccept<T, K, MinEpoch, MinGeneration>, Resource, LoopCtx>
-    : public SessionHandleBase<
-          EpochedAccept<T, K, MinEpoch, MinGeneration>,
-          SessionHandle<
-              EpochedAccept<T, K, MinEpoch, MinGeneration>,
-              Resource,
-              LoopCtx>>
-{
+template <typename T, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration, typename Resource,
+          typename LoopCtx>
+class [[nodiscard]] SessionHandle<EpochedAccept<T, K, MinEpoch, MinGeneration>, Resource, LoopCtx>
+    : public SessionHandleBase<EpochedAccept<T, K, MinEpoch, MinGeneration>,
+                               SessionHandle<EpochedAccept<T, K, MinEpoch, MinGeneration>, Resource, LoopCtx>> {
     using Protocol = EpochedAccept<T, K, MinEpoch, MinGeneration>;
 
-    static_assert(session_loop_ctx_epoch_satisfies_v<
-        LoopCtx, MinEpoch, MinGeneration>,
-        "crucible::session::diagnostic [EpochCtx_StaleRecipient]: "
-        "SessionHandle<EpochedAccept<T, K, MinEpoch, MinGeneration>> "
-        "requires LoopCtx = EpochCtx<CurrentEpoch, CurrentGeneration, ...> "
-        "with CurrentEpoch >= MinEpoch and CurrentGeneration >= "
-        "MinGeneration.  A stale or unannotated recipient cannot accept "
-        "this delegated endpoint.");
+    static_assert(session_loop_ctx_epoch_satisfies_v<LoopCtx, MinEpoch, MinGeneration>,
+                  "crucible::session::diagnostic [EpochCtx_StaleRecipient]: "
+                  "SessionHandle<EpochedAccept<T, K, MinEpoch, MinGeneration>> "
+                  "requires LoopCtx = EpochCtx<CurrentEpoch, CurrentGeneration, ...> "
+                  "with CurrentEpoch >= MinEpoch and CurrentGeneration >= "
+                  "MinGeneration.  A stale or unannotated recipient cannot accept "
+                  "this delegated endpoint.");
 
     Resource resource_;
 
-    template <typename P, typename Res, typename L> friend class SessionHandle;
+    template <typename P, typename Res, typename L>
+    friend class SessionHandle;
     // detail::make_session_handle (Session.h) is the SOLE authorized
     // constructor (fix-04) — direct `SessionHandle<EpochedAccept<...>,
     // Res, EpochCtx<E,G>>{res}` is rejected ("is private").  This is
@@ -1372,65 +1189,52 @@ class [[nodiscard]] SessionHandle<
     // it via detail::make_session_handle<EpochedAccept<...>, Res,
     // EpochCtx<E,G>>(res).  The factory is the sanctioned site.
     template <typename FProto, typename FRes, typename FLoop>
-    friend constexpr auto detail::make_session_handle(FRes, std::source_location)
-        noexcept(std::is_nothrow_move_constructible_v<FRes>)
-        -> SessionHandle<FProto, FRes, FLoop>;
+    friend constexpr auto
+        detail::make_session_handle(FRes, std::source_location) noexcept(std::is_nothrow_move_constructible_v<FRes>)
+            -> SessionHandle<FProto, FRes, FLoop>;
 
     // ── Construction (used by detail::make_session_handle only) ────
-    constexpr explicit SessionHandle(
-        Resource r,
-        std::source_location loc = std::source_location::current())
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : SessionHandleBase<
-              Protocol,
-              SessionHandle<Protocol, Resource, LoopCtx>>{loc}
-        , resource_{std::move(r)} {}
+    constexpr explicit SessionHandle(Resource r, std::source_location loc = std::source_location::current()) noexcept(
+        std::is_nothrow_move_constructible_v<Resource>)
+        : SessionHandleBase<Protocol, SessionHandle<Protocol, Resource, LoopCtx>>{loc}, resource_{std::move(r)} {}
 
 public:
-    using protocol        = Protocol;
+    using protocol = Protocol;
     using delegated_proto = T;
-    using continuation    = K;
-    using resource_type   = Resource;
-    using loop_ctx        = LoopCtx;
+    using continuation = K;
+    using resource_type = Resource;
+    using loop_ctx = LoopCtx;
     static constexpr std::uint64_t min_epoch = MinEpoch;
     static constexpr std::uint64_t min_generation = MinGeneration;
 
-    constexpr SessionHandle(SessionHandle&&) noexcept            = default;
+    constexpr SessionHandle(SessionHandle&&) noexcept = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
-    ~SessionHandle()                                             = default;
+    ~SessionHandle() = default;
 
-    template <typename Transport,
-              typename DelegatedResource = std::invoke_result_t<Transport, Resource&>>
+    template <typename Transport, typename DelegatedResource = std::invoke_result_t<Transport, Resource&>>
         requires std::is_invocable_v<Transport, Resource&>
-    [[nodiscard]] constexpr auto accept(Transport transport) &&
-        noexcept(std::is_nothrow_invocable_v<Transport, Resource&>
-                 && std::is_nothrow_move_constructible_v<Resource>
-                 && std::is_nothrow_move_constructible_v<DelegatedResource>)
-    {
+    [[nodiscard]] constexpr auto
+    accept(Transport transport) && noexcept(std::is_nothrow_invocable_v<Transport, Resource&>
+                                            && std::is_nothrow_move_constructible_v<Resource>
+                                            && std::is_nothrow_move_constructible_v<DelegatedResource>) {
         DelegatedResource delegated_res = std::invoke(transport, resource_);
         this->mark_consumed_();
         auto delegated_handle = mint_session_handle<T>(std::move(delegated_res));
-        auto continuation_handle =
-            detail::step_to_next<K, Resource, LoopCtx>(std::move(resource_));
-        return std::pair{std::move(delegated_handle),
-                         std::move(continuation_handle)};
+        auto continuation_handle = detail::step_to_next<K, Resource, LoopCtx>(std::move(resource_));
+        return std::pair{std::move(delegated_handle), std::move(continuation_handle)};
     }
 
     template <typename DelegatedResource>
-    [[nodiscard]] constexpr auto accept_with(DelegatedResource delegated_res) &&
-        noexcept(std::is_nothrow_move_constructible_v<Resource>
-                 && std::is_nothrow_move_constructible_v<DelegatedResource>)
-    {
+    [[nodiscard]] constexpr auto accept_with(DelegatedResource delegated_res) && noexcept(
+        std::is_nothrow_move_constructible_v<Resource> && std::is_nothrow_move_constructible_v<DelegatedResource>) {
         this->mark_consumed_();
         auto delegated_handle = mint_session_handle<T>(std::move(delegated_res));
-        auto continuation_handle =
-            detail::step_to_next<K, Resource, LoopCtx>(std::move(resource_));
-        return std::pair{std::move(delegated_handle),
-                         std::move(continuation_handle)};
+        auto continuation_handle = detail::step_to_next<K, Resource, LoopCtx>(std::move(resource_));
+        return std::pair{std::move(delegated_handle), std::move(continuation_handle)};
     }
 
-    [[nodiscard]] constexpr Resource&       resource() &        noexcept { return resource_; }
-    [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return resource_; }
+    [[nodiscard]] constexpr Resource& resource() & noexcept { return resource_; }
+    [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -1447,12 +1251,10 @@ template <typename Proto>
 struct is_delegate_compatible : std::bool_constant<is_well_formed_v<Proto>> {};
 
 template <typename Proto>
-inline constexpr bool is_delegate_compatible_v =
-    is_delegate_compatible<Proto>::value;
+inline constexpr bool is_delegate_compatible_v = is_delegate_compatible<Proto>::value;
 
 template <typename Proto, typename RecipientTag>
-inline constexpr bool can_delegate_v =
-    is_delegate_compatible_v<Proto> && is_well_formed_v<Proto>;
+inline constexpr bool can_delegate_v = is_delegate_compatible_v<Proto> && is_well_formed_v<Proto>;
 
 template <typename Proto, typename RecipientTag>
 concept CanDelegate = can_delegate_v<Proto, RecipientTag>;
@@ -1462,13 +1264,11 @@ concept CanDelegate = can_delegate_v<Proto, RecipientTag>;
 // delegation contract.
 template <typename CarrierProto, typename DelegatedProto>
 concept DelegatesTo =
-    is_delegate_v<CarrierProto>
-    && std::is_same_v<typename CarrierProto::delegated_proto, DelegatedProto>;
+    is_delegate_v<CarrierProto> && std::is_same_v<typename CarrierProto::delegated_proto, DelegatedProto>;
 
 template <typename CarrierProto, typename DelegatedProto>
 concept AcceptsFrom =
-    is_accept_v<CarrierProto>
-    && std::is_same_v<typename CarrierProto::delegated_proto, DelegatedProto>;
+    is_accept_v<CarrierProto> && std::is_same_v<typename CarrierProto::delegated_proto, DelegatedProto>;
 
 // Concept describing a callable usable as the Transport argument to
 // SessionHandle<Delegate<T, K>, Resource>::delegate(delegated, transport).
@@ -1487,8 +1287,7 @@ concept AcceptsFrom =
 //
 // Zero runtime cost; composable with the other session-type concepts.
 template <typename Transport, typename CarrierRes, typename DelegatedRes>
-concept TransportForDelegate =
-    std::is_invocable_v<Transport, CarrierRes&, DelegatedRes&&>;
+concept TransportForDelegate = std::is_invocable_v<Transport, CarrierRes&, DelegatedRes&&>;
 
 // Concept describing a callable usable as the Transport argument to
 // SessionHandle<Accept<T, K>, Resource>::accept(transport).  Required:
@@ -1499,10 +1298,8 @@ concept TransportForDelegate =
 // silently changing the deduced DelegatedResource of accept() through
 // template argument deduction on the default template parameter.
 template <typename Transport, typename CarrierRes, typename DelegatedRes>
-concept TransportForAccept =
-    std::is_invocable_v<Transport, CarrierRes&>
-    && std::is_same_v<std::invoke_result_t<Transport, CarrierRes&>,
-                       DelegatedRes>;
+concept TransportForAccept = std::is_invocable_v<Transport, CarrierRes&>
+                          && std::is_same_v<std::invoke_result_t<Transport, CarrierRes&>, DelegatedRes>;
 
 // Assertion helpers — one-liner at call sites that demand a specific
 // delegation contract.  Emits the diagnostic right at the assert site
@@ -1510,22 +1307,21 @@ concept TransportForAccept =
 template <typename CarrierProto, typename DelegatedProto>
 consteval void assert_delegates_to() noexcept {
     static_assert(DelegatesTo<CarrierProto, DelegatedProto>,
-        "crucible::session::diagnostic [ProtocolViolation_State]: "
-        "assert_delegates_to: CarrierProto must be "
-        "Delegate<DelegatedProto, K> for some K.  Check the template-"
-        "instantiation context for the actual CarrierProto and "
-        "DelegatedProto types; common mismatches are (a) CarrierProto "
-        "starts with Send/Recv/Select/Offer instead of Delegate, or "
-        "(b) the delegated_proto nested alias does not equal the "
-        "requested DelegatedProto.");
+                  "crucible::session::diagnostic [ProtocolViolation_State]: "
+                  "assert_delegates_to: CarrierProto must be "
+                  "Delegate<DelegatedProto, K> for some K.  Check the template-"
+                  "instantiation context for the actual CarrierProto and "
+                  "DelegatedProto types; common mismatches are (a) CarrierProto "
+                  "starts with Send/Recv/Select/Offer instead of Delegate, or "
+                  "(b) the delegated_proto nested alias does not equal the "
+                  "requested DelegatedProto.");
 }
 
 template <typename CarrierProto, typename DelegatedProto>
 consteval void assert_accepts_from() noexcept {
-    static_assert(AcceptsFrom<CarrierProto, DelegatedProto>,
-        "crucible::session::diagnostic [ProtocolViolation_State]: "
-        "assert_accepts_from: CarrierProto must be "
-        "Accept<DelegatedProto, K> for some K.");
+    static_assert(AcceptsFrom<CarrierProto, DelegatedProto>, "crucible::session::diagnostic [ProtocolViolation_State]: "
+                                                             "assert_accepts_from: CarrierProto must be "
+                                                             "Accept<DelegatedProto, K> for some K.");
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -1547,106 +1343,73 @@ using DelegatedProto = Send<Req, Recv<Ack, End>>;
 // ── Duality ────────────────────────────────────────────────────────
 
 // dual(Delegate<T, End>) = Accept<T, End>
-static_assert(std::is_same_v<
-    dual_of_t<Delegate<DelegatedProto, End>>,
-    Accept<DelegatedProto, End>>);
+static_assert(std::is_same_v<dual_of_t<Delegate<DelegatedProto, End>>, Accept<DelegatedProto, End>>);
 
 // dual(Accept<T, End>) = Delegate<T, End>
-static_assert(std::is_same_v<
-    dual_of_t<Accept<DelegatedProto, End>>,
-    Delegate<DelegatedProto, End>>);
+static_assert(std::is_same_v<dual_of_t<Accept<DelegatedProto, End>>, Delegate<DelegatedProto, End>>);
 
 // Involution: dual(dual(Delegate<T, K>)) == Delegate<T, K>
-static_assert(std::is_same_v<
-    dual_of_t<dual_of_t<Delegate<DelegatedProto, Send<int, End>>>>,
-    Delegate<DelegatedProto, Send<int, End>>>);
+static_assert(std::is_same_v<dual_of_t<dual_of_t<Delegate<DelegatedProto, Send<int, End>>>>,
+                             Delegate<DelegatedProto, Send<int, End>>>);
 
 // T is NOT dualised — critical invariant: the delegated endpoint's
 // protocol stays as-is through the dual operation.
 using DelegatedAsymmetric = Send<Req, End>;  // dual would be Recv<Req, End>
-static_assert(std::is_same_v<
-    dual_of_t<Delegate<DelegatedAsymmetric, End>>,
-    Accept<DelegatedAsymmetric, End>>);
+static_assert(std::is_same_v<dual_of_t<Delegate<DelegatedAsymmetric, End>>, Accept<DelegatedAsymmetric, End>>);
 // Note the Accept still references DelegatedAsymmetric (not its dual).
 
 // Dual interacts with continuation dual (the K side flips, T does not).
-static_assert(std::is_same_v<
-    dual_of_t<Delegate<DelegatedProto, Send<int, End>>>,
-    Accept<DelegatedProto, Recv<int, End>>>);
+static_assert(
+    std::is_same_v<dual_of_t<Delegate<DelegatedProto, Send<int, End>>>, Accept<DelegatedProto, Recv<int, End>>>);
 
 // Epoched delegation preserves T, dualises only K, and carries the
 // reshard freshness threshold to the peer-side accept state.
-using EpochedDelegator =
-    EpochedDelegate<DelegatedProto, Recv<Ack, End>, 5, 3>;
-using EpochedAcceptor =
-    EpochedAccept<DelegatedProto, Send<Ack, End>, 5, 3>;
+using EpochedDelegator = EpochedDelegate<DelegatedProto, Recv<Ack, End>, 5, 3>;
+using EpochedAcceptor = EpochedAccept<DelegatedProto, Send<Ack, End>, 5, 3>;
 
 static_assert(std::is_same_v<dual_of_t<EpochedDelegator>, EpochedAcceptor>);
 static_assert(std::is_same_v<dual_of_t<EpochedAcceptor>, EpochedDelegator>);
-static_assert(std::is_same_v<
-    dual_of_t<dual_of_t<EpochedDelegator>>,
-    EpochedDelegator>);
+static_assert(std::is_same_v<dual_of_t<dual_of_t<EpochedDelegator>>, EpochedDelegator>);
 static_assert(EpochedDelegator::min_epoch == 5);
 static_assert(EpochedDelegator::min_generation == 3);
 
 // ── Composition ────────────────────────────────────────────────────
 
 // compose<Delegate<T, End>, Q> = Delegate<T, Q>
-static_assert(std::is_same_v<
-    compose_t<Delegate<DelegatedProto, End>, Send<int, End>>,
-    Delegate<DelegatedProto, Send<int, End>>>);
+static_assert(
+    std::is_same_v<compose_t<Delegate<DelegatedProto, End>, Send<int, End>>, Delegate<DelegatedProto, Send<int, End>>>);
 
 // compose<Delegate<T, Send<int, End>>, Recv<bool, End>>
 //   = Delegate<T, Send<int, Recv<bool, End>>>
-static_assert(std::is_same_v<
-    compose_t<Delegate<DelegatedProto, Send<int, End>>, Recv<bool, End>>,
-    Delegate<DelegatedProto, Send<int, Recv<bool, End>>>>);
+static_assert(std::is_same_v<compose_t<Delegate<DelegatedProto, Send<int, End>>, Recv<bool, End>>,
+                             Delegate<DelegatedProto, Send<int, Recv<bool, End>>>>);
 
 // Composition leaves T untouched (same semantics as Send/Recv — the
 // composition-Q only flows into the continuation).
-static_assert(std::is_same_v<
-    compose_t<Accept<DelegatedAsymmetric, End>, End>,
-    Accept<DelegatedAsymmetric, End>>);
+static_assert(std::is_same_v<compose_t<Accept<DelegatedAsymmetric, End>, End>, Accept<DelegatedAsymmetric, End>>);
 
-static_assert(std::is_same_v<
-    compose_t<EpochedDelegator, Send<int, End>>,
-    EpochedDelegate<DelegatedProto,
-                    Recv<Ack, Send<int, End>>,
-                    5,
-                    3>>);
+static_assert(std::is_same_v<compose_t<EpochedDelegator, Send<int, End>>,
+                             EpochedDelegate<DelegatedProto, Recv<Ack, Send<int, End>>, 5, 3>>);
 
 // Delegate<Stop, K> composition: the delegated endpoint is already
 // crashed, so the handoff does not enter K.
-static_assert(std::is_same_v<
-    compose_t<Delegate<Stop, Send<int, End>>, Recv<Ack, End>>,
-    Stop>);
-static_assert(std::is_same_v<
-    compose_t<Delegate<Stop_g<CrashClass::Throw>, Send<int, End>>,
-              Recv<Ack, End>>,
-    Stop_g<CrashClass::Throw>>);
+static_assert(std::is_same_v<compose_t<Delegate<Stop, Send<int, End>>, Recv<Ack, End>>, Stop>);
+static_assert(std::is_same_v<compose_t<Delegate<Stop_g<CrashClass::Throw>, Send<int, End>>, Recv<Ack, End>>,
+                             Stop_g<CrashClass::Throw>>);
 
 // Right-side Delegate<Stop, K> is sequenced as Q;;Stop by the End
 // substitution rule.
-using ComposeThenDelegateStop =
-    compose_t<Send<int, End>, Delegate<Stop, Recv<Ack, End>>>;
+using ComposeThenDelegateStop = compose_t<Send<int, End>, Delegate<Stop, Recv<Ack, End>>>;
 static_assert(std::is_same_v<ComposeThenDelegateStop, Send<int, Stop>>);
 static_assert(is_well_formed_v<ComposeThenDelegateStop>);
 
-using ComposeThenDelegateStopG =
-    compose_t<Send<int, End>,
-              Delegate<Stop_g<CrashClass::ErrorReturn>, Recv<Ack, End>>>;
-static_assert(std::is_same_v<
-    ComposeThenDelegateStopG,
-    Send<int, Stop_g<CrashClass::ErrorReturn>>>);
+using ComposeThenDelegateStopG = compose_t<Send<int, End>, Delegate<Stop_g<CrashClass::ErrorReturn>, Recv<Ack, End>>>;
+static_assert(std::is_same_v<ComposeThenDelegateStopG, Send<int, Stop_g<CrashClass::ErrorReturn>>>);
 static_assert(is_well_formed_v<ComposeThenDelegateStopG>);
 
 // Stop on either side stays Stop.
-static_assert(std::is_same_v<
-    compose_t<Stop, Delegate<Stop, Recv<Ack, End>>>,
-    Stop>);
-static_assert(std::is_same_v<
-    compose_t<Delegate<Stop, Send<int, End>>, Stop>,
-    Stop>);
+static_assert(std::is_same_v<compose_t<Stop, Delegate<Stop, Recv<Ack, End>>>, Stop>);
+static_assert(std::is_same_v<compose_t<Delegate<Stop, Send<int, End>>, Stop>, Stop>);
 
 // ─── Accept<Stop_g<C>, K> composition (fixy-A2-002) ──────────────
 //
@@ -1657,67 +1420,42 @@ static_assert(std::is_same_v<
 // the bottom-preserving rule fires.
 
 // Plain Accept<Stop, K> bottom-collapse (default Abort tier).
-static_assert(std::is_same_v<
-    compose_t<Accept<Stop, Send<int, End>>, Recv<Ack, End>>,
-    Stop>);
+static_assert(std::is_same_v<compose_t<Accept<Stop, Send<int, End>>, Recv<Ack, End>>, Stop>);
 
 // All four CrashClass tiers round-trip through Accept-side compose.
-static_assert(std::is_same_v<
-    compose_t<Accept<Stop_g<CrashClass::Abort>, Send<int, End>>,
-              Recv<Ack, End>>,
-    Stop_g<CrashClass::Abort>>);
-static_assert(std::is_same_v<
-    compose_t<Accept<Stop_g<CrashClass::Throw>, Send<int, End>>,
-              Recv<Ack, End>>,
-    Stop_g<CrashClass::Throw>>);
-static_assert(std::is_same_v<
-    compose_t<Accept<Stop_g<CrashClass::ErrorReturn>, Send<int, End>>,
-              Recv<Ack, End>>,
-    Stop_g<CrashClass::ErrorReturn>>);
-static_assert(std::is_same_v<
-    compose_t<Accept<Stop_g<CrashClass::NoThrow>, Send<int, End>>,
-              Recv<Ack, End>>,
-    Stop_g<CrashClass::NoThrow>>);
+static_assert(std::is_same_v<compose_t<Accept<Stop_g<CrashClass::Abort>, Send<int, End>>, Recv<Ack, End>>,
+                             Stop_g<CrashClass::Abort>>);
+static_assert(std::is_same_v<compose_t<Accept<Stop_g<CrashClass::Throw>, Send<int, End>>, Recv<Ack, End>>,
+                             Stop_g<CrashClass::Throw>>);
+static_assert(std::is_same_v<compose_t<Accept<Stop_g<CrashClass::ErrorReturn>, Send<int, End>>, Recv<Ack, End>>,
+                             Stop_g<CrashClass::ErrorReturn>>);
+static_assert(std::is_same_v<compose_t<Accept<Stop_g<CrashClass::NoThrow>, Send<int, End>>, Recv<Ack, End>>,
+                             Stop_g<CrashClass::NoThrow>>);
 
 // Right-side Accept<Stop, K> sequenced as Q;;Stop_g<C> via the
 // End-substitution rule.
-using ComposeThenAcceptStop =
-    compose_t<Send<int, End>, Accept<Stop, Recv<Ack, End>>>;
+using ComposeThenAcceptStop = compose_t<Send<int, End>, Accept<Stop, Recv<Ack, End>>>;
 static_assert(std::is_same_v<ComposeThenAcceptStop, Send<int, Stop>>);
 static_assert(is_well_formed_v<ComposeThenAcceptStop>);
 
-using ComposeThenAcceptStopG =
-    compose_t<Send<int, End>,
-              Accept<Stop_g<CrashClass::NoThrow>, Recv<Ack, End>>>;
-static_assert(std::is_same_v<
-    ComposeThenAcceptStopG,
-    Send<int, Stop_g<CrashClass::NoThrow>>>);
+using ComposeThenAcceptStopG = compose_t<Send<int, End>, Accept<Stop_g<CrashClass::NoThrow>, Recv<Ack, End>>>;
+static_assert(std::is_same_v<ComposeThenAcceptStopG, Send<int, Stop_g<CrashClass::NoThrow>>>);
 static_assert(is_well_formed_v<ComposeThenAcceptStopG>);
 
 // Stop on either side stays Stop (analogous to the Delegate-side
 // pair above).
-static_assert(std::is_same_v<
-    compose_t<Stop, Accept<Stop, Recv<Ack, End>>>,
-    Stop>);
-static_assert(std::is_same_v<
-    compose_t<Accept<Stop, Send<int, End>>, Stop>,
-    Stop>);
+static_assert(std::is_same_v<compose_t<Stop, Accept<Stop, Recv<Ack, End>>>, Stop>);
+static_assert(std::is_same_v<compose_t<Accept<Stop, Send<int, End>>, Stop>, Stop>);
 
 // EpochedAccept<Stop_g<C>, K, E, G> bottom-collapse — mirrors
 // EpochedDelegate-of-Stop_g.  Epoch/Generation are dropped because the
 // result is Stop_g<C>: a crashed channel has no epoch discipline.
-static_assert(std::is_same_v<
-    compose_t<EpochedAccept<Stop_g<CrashClass::Throw>, End, 5, 3>,
-              Recv<Ack, End>>,
-    Stop_g<CrashClass::Throw>>);
-static_assert(std::is_same_v<
-    compose_t<EpochedAccept<Stop_g<CrashClass::Abort>, Send<int, End>, 7, 2>,
-              Recv<Ack, End>>,
-    Stop_g<CrashClass::Abort>>);
-static_assert(std::is_same_v<
-    compose_t<Send<int, End>,
-              EpochedAccept<Stop_g<CrashClass::ErrorReturn>, End, 5, 3>>,
-    Send<int, Stop_g<CrashClass::ErrorReturn>>>);
+static_assert(std::is_same_v<compose_t<EpochedAccept<Stop_g<CrashClass::Throw>, End, 5, 3>, Recv<Ack, End>>,
+                             Stop_g<CrashClass::Throw>>);
+static_assert(std::is_same_v<compose_t<EpochedAccept<Stop_g<CrashClass::Abort>, Send<int, End>, 7, 2>, Recv<Ack, End>>,
+                             Stop_g<CrashClass::Abort>>);
+static_assert(std::is_same_v<compose_t<Send<int, End>, EpochedAccept<Stop_g<CrashClass::ErrorReturn>, End, 5, 3>>,
+                             Send<int, Stop_g<CrashClass::ErrorReturn>>>);
 
 // Duality coherence: dual(compose<Delegate<Stop_g<C>, K>, Q>) ≡
 // compose<dual<Delegate<Stop_g<C>, K>>, dual<Q>>.
@@ -1726,16 +1464,12 @@ static_assert(std::is_same_v<
 // compose<dual<Delegate<...>>, dual<Q>> == Accept<Stop_g<C>, compose<...>>
 // — duality and composition stopped commuting.  Post-fix the identity
 // holds (Stop_g<C> is self-dual; both sides reduce to Stop_g<C>).
-static_assert(std::is_same_v<
-    dual_of_t<compose_t<Delegate<Stop_g<CrashClass::Throw>, End>,
-                        Send<int, End>>>,
-    compose_t<dual_of_t<Delegate<Stop_g<CrashClass::Throw>, End>>,
-              dual_of_t<Send<int, End>>>>);
+static_assert(
+    std::is_same_v<dual_of_t<compose_t<Delegate<Stop_g<CrashClass::Throw>, End>, Send<int, End>>>,
+                   compose_t<dual_of_t<Delegate<Stop_g<CrashClass::Throw>, End>>, dual_of_t<Send<int, End>>>>);
 
 // Subtype rule: delegate-of-Stop is no more demanding than K.
-static_assert(is_subtype_sync_v<
-    Delegate<Stop, Send<int, End>>,
-    Send<int, End>>);
+static_assert(is_subtype_sync_v<Delegate<Stop, Send<int, End>>, Send<int, End>>);
 
 // ── is_dual_involutive distribution (fixy-A2-003) ─────────────────
 //
@@ -1755,23 +1489,23 @@ static_assert(is_dual_involutive_v<EpochedAccept<Send<int, End>, End, 5, 3>>);
 // Sender-Offer non-involution propagates through T (the delegated
 // channel itself).  Each combinator's conjunction reports FALSE.
 namespace fixy_a2_003_sender_offer_inner_T {
-    struct RoleA {};
-    using NonInvolutiveT = Offer<Sender<RoleA>, Recv<int, End>>;
-    static_assert(!is_dual_involutive_v<NonInvolutiveT>);
-    static_assert(!is_dual_involutive_v<Delegate<NonInvolutiveT, End>>);
-    static_assert(!is_dual_involutive_v<Accept<NonInvolutiveT, End>>);
-    static_assert(!is_dual_involutive_v<EpochedDelegate<NonInvolutiveT, End, 5, 3>>);
-    static_assert(!is_dual_involutive_v<EpochedAccept<NonInvolutiveT, End, 5, 3>>);
-}
+struct RoleA {};
+using NonInvolutiveT = Offer<Sender<RoleA>, Recv<int, End>>;
+static_assert(!is_dual_involutive_v<NonInvolutiveT>);
+static_assert(!is_dual_involutive_v<Delegate<NonInvolutiveT, End>>);
+static_assert(!is_dual_involutive_v<Accept<NonInvolutiveT, End>>);
+static_assert(!is_dual_involutive_v<EpochedDelegate<NonInvolutiveT, End, 5, 3>>);
+static_assert(!is_dual_involutive_v<EpochedAccept<NonInvolutiveT, End, 5, 3>>);
+}  // namespace fixy_a2_003_sender_offer_inner_T
 
 // Non-involution also propagates through K (the continuation), since
 // the Conservative T ∧ K conjunction sees BOTH components.
 namespace fixy_a2_003_sender_offer_inner_K {
-    struct RoleA {};
-    using NonInvolutiveK = Offer<Sender<RoleA>, Recv<int, End>>;
-    static_assert(!is_dual_involutive_v<Delegate<Send<int, End>, NonInvolutiveK>>);
-    static_assert(!is_dual_involutive_v<Accept<Send<int, End>, NonInvolutiveK>>);
-}
+struct RoleA {};
+using NonInvolutiveK = Offer<Sender<RoleA>, Recv<int, End>>;
+static_assert(!is_dual_involutive_v<Delegate<Send<int, End>, NonInvolutiveK>>);
+static_assert(!is_dual_involutive_v<Accept<Send<int, End>, NonInvolutiveK>>);
+}  // namespace fixy_a2_003_sender_offer_inner_K
 
 // ── Well-formedness ────────────────────────────────────────────────
 
@@ -1779,26 +1513,15 @@ namespace fixy_a2_003_sender_offer_inner_K {
 static_assert(is_well_formed_v<Delegate<DelegatedProto, End>>);
 static_assert(is_well_formed_v<Accept<DelegatedProto, End>>);
 static_assert(is_well_formed_v<EpochedDelegate<DelegatedProto, End, 5, 3>>);
-static_assert(is_well_formed<
-    EpochedDelegate<DelegatedProto, End, 5, 3>,
-    EpochCtx<5, 3>>::value);
-static_assert(!is_well_formed<
-    EpochedDelegate<DelegatedProto, End, 5, 3>,
-    EpochCtx<5, 2>>::value);
-static_assert(is_well_formed<
-    EpochedAccept<DelegatedProto, End, 5, 3>,
-    EpochCtx<5, 3>>::value);
-static_assert(is_well_formed<
-    EpochedAccept<DelegatedProto, End, 5, 3>,
-    EpochCtx<6, 3>>::value);
-static_assert(!is_well_formed<
-    EpochedAccept<DelegatedProto, End, 5, 3>,
-    EpochCtx<4, 3>>::value);
+static_assert(is_well_formed<EpochedDelegate<DelegatedProto, End, 5, 3>, EpochCtx<5, 3>>::value);
+static_assert(!is_well_formed<EpochedDelegate<DelegatedProto, End, 5, 3>, EpochCtx<5, 2>>::value);
+static_assert(is_well_formed<EpochedAccept<DelegatedProto, End, 5, 3>, EpochCtx<5, 3>>::value);
+static_assert(is_well_formed<EpochedAccept<DelegatedProto, End, 5, 3>, EpochCtx<6, 3>>::value);
+static_assert(!is_well_formed<EpochedAccept<DelegatedProto, End, 5, 3>, EpochCtx<4, 3>>::value);
 static_assert(!is_well_formed_v<EpochedAccept<DelegatedProto, End, 5, 3>>);
 
 // Nested delegation: Delegate<Delegate<A, End>, End> is well-formed.
-static_assert(is_well_formed_v<
-    Delegate<Delegate<Send<Req, End>, End>, End>>);
+static_assert(is_well_formed_v<Delegate<Delegate<Send<Req, End>, End>, End>>);
 
 // T WF but K has a free Continue (no enclosing Loop) → ill-formed.
 static_assert(!is_well_formed_v<Delegate<DelegatedProto, Continue>>);
@@ -1809,8 +1532,7 @@ static_assert(!is_well_formed_v<Delegate<DelegatedProto, Continue>>);
 static_assert(!is_well_formed_v<Delegate<Continue, End>>);
 
 // Delegate inside a Loop is fine (the Loop gives Continue a binding).
-static_assert(is_well_formed_v<
-    Loop<Delegate<DelegatedProto, Continue>>>);
+static_assert(is_well_formed_v<Loop<Delegate<DelegatedProto, Continue>>>);
 
 // ── Shape predicates ───────────────────────────────────────────────
 
@@ -1833,52 +1555,43 @@ static_assert(!is_delegation_head_v<Send<int, End>>);
 // layer sessions via delegation.  Verify the type-level shape:
 
 namespace cntp_cross_layer_example {
-    // Upper-layer protocols (opaque to Layer 1)
-    struct SwimProbe {};
-    struct SwimAck   {};
-    using SwimProto = Loop<Send<SwimProbe, Recv<SwimAck, Continue>>>;
+// Upper-layer protocols (opaque to Layer 1)
+struct SwimProbe {};
+struct SwimAck {};
+using SwimProto = Loop<Send<SwimProbe, Recv<SwimAck, Continue>>>;
 
-    struct RaftAppend {};
-    struct RaftAck    {};
-    using RaftProto = Loop<Recv<RaftAppend, Send<RaftAck, Continue>>>;
+struct RaftAppend {};
+struct RaftAck {};
+using RaftProto = Loop<Recv<RaftAppend, Send<RaftAck, Continue>>>;
 
-    struct CollectiveChunk {};
-    struct CollectiveAck   {};
-    using CollectiveProto =
-        Loop<Send<CollectiveChunk, Recv<CollectiveAck, Continue>>>;
-    using NvCollectiveProto =
-        VendorPinned<VendorBackend::NV, CollectiveProto>;
-    using PortableCollectiveProto =
-        VendorPinned<VendorBackend::Portable, CollectiveProto>;
+struct CollectiveChunk {};
+struct CollectiveAck {};
+using CollectiveProto = Loop<Send<CollectiveChunk, Recv<CollectiveAck, Continue>>>;
+using NvCollectiveProto = VendorPinned<VendorBackend::NV, CollectiveProto>;
+using PortableCollectiveProto = VendorPinned<VendorBackend::Portable, CollectiveProto>;
 
-    // Layer 1's protocol: a loop that either delegates a SWIM endpoint
-    // OR delegates a Raft endpoint OR delegates a vendor-pinned
-    // collective endpoint OR terminates.
-    using CntpLayer1 = VendorPinned<VendorBackend::Portable, Loop<Select<
-        Delegate<SwimProto, Continue>,
-        Delegate<RaftProto, Continue>,
-        Delegate<NvCollectiveProto, Continue>,
-        End
-    >>>;
+// Layer 1's protocol: a loop that either delegates a SWIM endpoint
+// OR delegates a Raft endpoint OR delegates a vendor-pinned
+// collective endpoint OR terminates.
+using CntpLayer1 =
+    VendorPinned<VendorBackend::Portable, Loop<Select<Delegate<SwimProto, Continue>, Delegate<RaftProto, Continue>,
+                                                      Delegate<NvCollectiveProto, Continue>, End>>>;
 
-    static_assert(is_well_formed_v<CntpLayer1>);
-    static_assert(is_well_formed_v<PortableCollectiveProto>);
+static_assert(is_well_formed_v<CntpLayer1>);
+static_assert(is_well_formed_v<PortableCollectiveProto>);
 
-    // Dual is Offer<Accept<…>, Accept<…>, End> — the peer OFFERS to
-    // accept whatever session the sender delegates.
-    using CntpLayer1Peer = dual_of_t<CntpLayer1>;
-    static_assert(std::is_same_v<CntpLayer1Peer,
-        VendorPinned<VendorBackend::Portable, Loop<Offer<
-            Accept<SwimProto, Continue>,
-            Accept<RaftProto, Continue>,
-            Accept<NvCollectiveProto, Continue>,
-            End
-        >>>>);
-    static_assert(is_well_formed_v<CntpLayer1Peer>);
+// Dual is Offer<Accept<…>, Accept<…>, End> — the peer OFFERS to
+// accept whatever session the sender delegates.
+using CntpLayer1Peer = dual_of_t<CntpLayer1>;
+static_assert(
+    std::is_same_v<CntpLayer1Peer, VendorPinned<VendorBackend::Portable,
+                                                Loop<Offer<Accept<SwimProto, Continue>, Accept<RaftProto, Continue>,
+                                                           Accept<NvCollectiveProto, Continue>, End>>>>);
+static_assert(is_well_formed_v<CntpLayer1Peer>);
 
-    // Involution holds through the nested delegation structure.
-    static_assert(std::is_same_v<dual_of_t<CntpLayer1Peer>, CntpLayer1>);
-}
+// Involution holds through the nested delegation structure.
+static_assert(std::is_same_v<dual_of_t<CntpLayer1Peer>, CntpLayer1>);
+}  // namespace cntp_cross_layer_example
 
 // ── Loop<Delegate<…>> duality ──────────────────────────────────────
 //
@@ -1889,26 +1602,26 @@ namespace cntp_cross_layer_example {
 // The T stays un-dualised even under Loop; regression test.
 
 using LoopedDelegator = Loop<Delegate<DelegatedProto, Continue>>;
-using LoopedAcceptor  = Loop<Accept<DelegatedProto,  Continue>>;
+using LoopedAcceptor = Loop<Accept<DelegatedProto, Continue>>;
 
 static_assert(std::is_same_v<dual_of_t<LoopedDelegator>, LoopedAcceptor>);
-static_assert(std::is_same_v<dual_of_t<LoopedAcceptor>,  LoopedDelegator>);
+static_assert(std::is_same_v<dual_of_t<LoopedAcceptor>, LoopedDelegator>);
 static_assert(std::is_same_v<dual_of_t<dual_of_t<LoopedDelegator>>,
-                              LoopedDelegator>);  // involution under Loop
+                             LoopedDelegator>);  // involution under Loop
 static_assert(is_well_formed_v<LoopedDelegator>);
 static_assert(is_well_formed_v<LoopedAcceptor>);
 
 // ── Concept / assert-helper compile test ───────────────────────────
 static_assert(DelegatesTo<Delegate<DelegatedProto, End>, DelegatedProto>);
 static_assert(!DelegatesTo<Delegate<DelegatedProto, End>, Send<int, End>>);  // wrong T
-static_assert(!DelegatesTo<Accept<DelegatedProto, End>, DelegatedProto>);    // wrong head
+static_assert(!DelegatesTo<Accept<DelegatedProto, End>, DelegatedProto>);  // wrong head
 static_assert(AcceptsFrom<Accept<DelegatedProto, End>, DelegatedProto>);
 static_assert(DelegatesTo<EpochedDelegator, DelegatedProto>);
 static_assert(AcceptsFrom<EpochedAcceptor, DelegatedProto>);
 
 consteval bool check_assert_delegates() {
     assert_delegates_to<Delegate<DelegatedProto, End>, DelegatedProto>();
-    assert_accepts_from<Accept<DelegatedProto, End>,   DelegatedProto>();
+    assert_accepts_from<Accept<DelegatedProto, End>, DelegatedProto>();
     return true;
 }
 static_assert(check_assert_delegates());
@@ -1917,17 +1630,13 @@ static_assert(check_assert_delegates());
 // continuation has an immediate Crash<Recipient> recovery branch for
 // delegated protocols that can emit before finishing.
 struct DelegatedRecipient {};
-using CarrierCrashRecovery =
-    Offer<Recv<Ack, End>, Recv<Crash<DelegatedRecipient>, End>>;
+using CarrierCrashRecovery = Offer<Recv<Ack, End>, Recv<Crash<DelegatedRecipient>, End>>;
 
-static_assert(std::is_same_v<
-    delegated_crash_propagation_t<
-        Send<Req, End>, DelegatedRecipient, CarrierCrashRecovery>,
-    Recovers<End>>);
+static_assert(std::is_same_v<delegated_crash_propagation_t<Send<Req, End>, DelegatedRecipient, CarrierCrashRecovery>,
+                             Recovers<End>>);
 
 consteval bool check_assert_delegated_crash_propagates() {
-    assert_delegated_crash_propagates<
-        Send<Req, End>, DelegatedRecipient, CarrierCrashRecovery>();
+    assert_delegated_crash_propagates<Send<Req, End>, DelegatedRecipient, CarrierCrashRecovery>();
     return true;
 }
 static_assert(check_assert_delegated_crash_propagates());
@@ -1936,64 +1645,47 @@ static_assert(check_assert_delegated_crash_propagates());
 
 // Single-argument form is the identity — the bare continuation.
 static_assert(std::is_same_v<Delegate_seq<End>, End>);
-static_assert(std::is_same_v<Accept_seq<End>,   End>);
+static_assert(std::is_same_v<Accept_seq<End>, End>);
 
 // Two-argument form expands to exactly one Delegate / Accept wrap.
-static_assert(std::is_same_v<
-    Delegate_seq<DelegatedProto, End>,
-    Delegate<DelegatedProto, End>>);
-static_assert(std::is_same_v<
-    Accept_seq<DelegatedProto, End>,
-    Accept<DelegatedProto, End>>);
+static_assert(std::is_same_v<Delegate_seq<DelegatedProto, End>, Delegate<DelegatedProto, End>>);
+static_assert(std::is_same_v<Accept_seq<DelegatedProto, End>, Accept<DelegatedProto, End>>);
 
 // Three-argument form — two hand-offs then the continuation.
-static_assert(std::is_same_v<
-    Delegate_seq<Send<Req, End>, Recv<Ack, End>, End>,
-    Delegate<Send<Req, End>, Delegate<Recv<Ack, End>, End>>>);
+static_assert(std::is_same_v<Delegate_seq<Send<Req, End>, Recv<Ack, End>, End>,
+                             Delegate<Send<Req, End>, Delegate<Recv<Ack, End>, End>>>);
 
 // Four-argument form — three hand-offs then the continuation.
-static_assert(std::is_same_v<
-    Delegate_seq<DelegatedProto, DelegatedProto, DelegatedProto, End>,
-    Delegate<DelegatedProto,
-        Delegate<DelegatedProto,
-            Delegate<DelegatedProto, End>>>>);
+static_assert(std::is_same_v<Delegate_seq<DelegatedProto, DelegatedProto, DelegatedProto, End>,
+                             Delegate<DelegatedProto, Delegate<DelegatedProto, Delegate<DelegatedProto, End>>>>);
 
 // Duality:  dual(Delegate_seq<Ts..., K>) = Accept_seq<Ts..., dual(K)>.
 // Ts (delegated protocols) NOT dualised; final continuation K IS.
-static_assert(std::is_same_v<
-    dual_of_t<Delegate_seq<DelegatedProto, DelegatedProto, End>>,
-    Accept_seq<DelegatedProto, DelegatedProto, End>>);
-static_assert(std::is_same_v<
-    dual_of_t<Delegate_seq<DelegatedProto, Send<int, End>>>,
-    Accept_seq<DelegatedProto, Recv<int, End>>>);
+static_assert(std::is_same_v<dual_of_t<Delegate_seq<DelegatedProto, DelegatedProto, End>>,
+                             Accept_seq<DelegatedProto, DelegatedProto, End>>);
+static_assert(std::is_same_v<dual_of_t<Delegate_seq<DelegatedProto, Send<int, End>>>,
+                             Accept_seq<DelegatedProto, Recv<int, End>>>);
 
 // Involution under dual:  dual(dual(Delegate_seq<...>)) == original.
-static_assert(std::is_same_v<
-    dual_of_t<dual_of_t<Delegate_seq<DelegatedProto, DelegatedProto, End>>>,
-    Delegate_seq<DelegatedProto, DelegatedProto, End>>);
+static_assert(std::is_same_v<dual_of_t<dual_of_t<Delegate_seq<DelegatedProto, DelegatedProto, End>>>,
+                             Delegate_seq<DelegatedProto, DelegatedProto, End>>);
 
 // Well-formedness propagates from each component.
-static_assert(is_well_formed_v<
-    Delegate_seq<DelegatedProto, DelegatedProto, End>>);
-static_assert(is_well_formed_v<
-    Accept_seq<DelegatedProto, DelegatedProto, End>>);
+static_assert(is_well_formed_v<Delegate_seq<DelegatedProto, DelegatedProto, End>>);
+static_assert(is_well_formed_v<Accept_seq<DelegatedProto, DelegatedProto, End>>);
 
 // ── Redelegate ─────────────────────────────────────────────────────
 
 // Structural expansion:  accept then delegate on the same carrier.
-static_assert(std::is_same_v<
-    Redelegate<DelegatedProto, End>,
-    Accept<DelegatedProto, Delegate<DelegatedProto, End>>>);
+static_assert(std::is_same_v<Redelegate<DelegatedProto, End>, Accept<DelegatedProto, Delegate<DelegatedProto, End>>>);
 
 // Dual flips each combinator in place; T stays un-dualised.
-static_assert(std::is_same_v<
-    dual_of_t<Redelegate<DelegatedProto, End>>,
-    Delegate<DelegatedProto, Accept<DelegatedProto, End>>>);
+static_assert(
+    std::is_same_v<dual_of_t<Redelegate<DelegatedProto, End>>, Delegate<DelegatedProto, Accept<DelegatedProto, End>>>);
 
 // Involution.
-static_assert(std::is_same_v<
-    dual_of_t<dual_of_t<Redelegate<DelegatedProto, Send<int, End>>>>,
-    Redelegate<DelegatedProto, Send<int, End>>>);
+static_assert(std::is_same_v<dual_of_t<dual_of_t<Redelegate<DelegatedProto, Send<int, End>>>>,
+                             Redelegate<DelegatedProto, Send<int, End>>>);
 
 // Well-formed when T and K are.
 static_assert(is_well_formed_v<Redelegate<DelegatedProto, End>>);
@@ -2003,30 +1695,24 @@ static_assert(is_well_formed_v<Redelegate<DelegatedProto, End>>);
 struct AckFixture {};
 
 // Structural expansion.
-static_assert(std::is_same_v<
-    DelegateWithAck<DelegatedProto, AckFixture, End>,
-    Delegate<DelegatedProto, Recv<AckFixture, End>>>);
+static_assert(
+    std::is_same_v<DelegateWithAck<DelegatedProto, AckFixture, End>, Delegate<DelegatedProto, Recv<AckFixture, End>>>);
 
-static_assert(std::is_same_v<
-    AcceptWithAck<DelegatedProto, AckFixture, End>,
-    Accept<DelegatedProto, Send<AckFixture, End>>>);
+static_assert(
+    std::is_same_v<AcceptWithAck<DelegatedProto, AckFixture, End>, Accept<DelegatedProto, Send<AckFixture, End>>>);
 
 // Duality:  DelegateWithAck ↔ AcceptWithAck.  T preserved; Recv/Send
 // flipped; tail End unchanged.
-static_assert(std::is_same_v<
-    dual_of_t<DelegateWithAck<DelegatedProto, AckFixture, End>>,
-    AcceptWithAck<DelegatedProto, AckFixture, End>>);
+static_assert(std::is_same_v<dual_of_t<DelegateWithAck<DelegatedProto, AckFixture, End>>,
+                             AcceptWithAck<DelegatedProto, AckFixture, End>>);
 
 // Involution.
-static_assert(std::is_same_v<
-    dual_of_t<dual_of_t<DelegateWithAck<DelegatedProto, AckFixture, End>>>,
-    DelegateWithAck<DelegatedProto, AckFixture, End>>);
+static_assert(std::is_same_v<dual_of_t<dual_of_t<DelegateWithAck<DelegatedProto, AckFixture, End>>>,
+                             DelegateWithAck<DelegatedProto, AckFixture, End>>);
 
 // Well-formed.
-static_assert(is_well_formed_v<
-    DelegateWithAck<DelegatedProto, AckFixture, End>>);
-static_assert(is_well_formed_v<
-    AcceptWithAck<DelegatedProto, AckFixture, End>>);
+static_assert(is_well_formed_v<DelegateWithAck<DelegatedProto, AckFixture, End>>);
+static_assert(is_well_formed_v<AcceptWithAck<DelegatedProto, AckFixture, End>>);
 
 // ── TransportForDelegate / TransportForAccept concepts ─────────────
 //
@@ -2035,24 +1721,24 @@ static_assert(is_well_formed_v<
 // warning that lambdas trigger when their body might throw.
 
 namespace transport_concept_test {
-    struct CarrierRes   {};
-    struct DelegatedRes {};
+struct CarrierRes {};
+struct DelegatedRes {};
 
-    using ValidDelegateTransport = void (*)(CarrierRes&, DelegatedRes&&);
-    using ValidAcceptTransport   = DelegatedRes (*)(CarrierRes&);
-    using WrongArityTransport    = void (*)(int, int, int);
-    using WrongReturnTransport   = int  (*)(CarrierRes&);
+using ValidDelegateTransport = void (*)(CarrierRes&, DelegatedRes&&);
+using ValidAcceptTransport = DelegatedRes (*)(CarrierRes&);
+using WrongArityTransport = void (*)(int, int, int);
+using WrongReturnTransport = int (*)(CarrierRes&);
 
-    // TransportForDelegate: requires 2-arg signature (CarrierRes&, DelegatedRes&&)
-    static_assert( TransportForDelegate<ValidDelegateTransport, CarrierRes, DelegatedRes>);
-    static_assert(!TransportForDelegate<ValidAcceptTransport,   CarrierRes, DelegatedRes>);
-    static_assert(!TransportForDelegate<WrongArityTransport,    CarrierRes, DelegatedRes>);
+// TransportForDelegate: requires 2-arg signature (CarrierRes&, DelegatedRes&&)
+static_assert(TransportForDelegate<ValidDelegateTransport, CarrierRes, DelegatedRes>);
+static_assert(!TransportForDelegate<ValidAcceptTransport, CarrierRes, DelegatedRes>);
+static_assert(!TransportForDelegate<WrongArityTransport, CarrierRes, DelegatedRes>);
 
-    // TransportForAccept: requires 1-arg signature + exact return type
-    static_assert( TransportForAccept<ValidAcceptTransport,    CarrierRes, DelegatedRes>);
-    static_assert(!TransportForAccept<ValidDelegateTransport,  CarrierRes, DelegatedRes>);
-    static_assert(!TransportForAccept<WrongReturnTransport,    CarrierRes, DelegatedRes>);
-}
+// TransportForAccept: requires 1-arg signature + exact return type
+static_assert(TransportForAccept<ValidAcceptTransport, CarrierRes, DelegatedRes>);
+static_assert(!TransportForAccept<ValidDelegateTransport, CarrierRes, DelegatedRes>);
+static_assert(!TransportForAccept<WrongReturnTransport, CarrierRes, DelegatedRes>);
+}  // namespace transport_concept_test
 
 // ── delegated_crash_propagation ───────────────────────────────────
 
@@ -2062,42 +1748,28 @@ struct Result {};
 using RecvOnlyDelegated = Recv<int, End>;
 using CleanCarrierK = Loop<Send<Result, Continue>>;
 
-static_assert(std::is_same_v<
-    delegated_crash_propagation_t<
-        RecvOnlyDelegated, RecipientTag, CleanCarrierK>,
-    Recovers<CleanCarrierK>>);
+static_assert(std::is_same_v<delegated_crash_propagation_t<RecvOnlyDelegated, RecipientTag, CleanCarrierK>,
+                             Recovers<CleanCarrierK>>);
 
 using SendingDelegated = Send<int, End>;
 using NoCrashRecoveryK = Recv<Ack, End>;
 
-static_assert(std::is_same_v<
-    delegated_crash_propagation_t<
-        SendingDelegated, RecipientTag, NoCrashRecoveryK>,
-    MustAbort>);
+static_assert(
+    std::is_same_v<delegated_crash_propagation_t<SendingDelegated, RecipientTag, NoCrashRecoveryK>, MustAbort>);
 
-using CrashRecoveringK = Offer<
-    Recv<Ack, End>,
-    Recv<Crash<RecipientTag>, Send<Result, End>>>;
+using CrashRecoveringK = Offer<Recv<Ack, End>, Recv<Crash<RecipientTag>, Send<Result, End>>>;
 
-static_assert(std::is_same_v<
-    delegated_crash_propagation_t<
-        SendingDelegated, RecipientTag, CrashRecoveringK>,
-    Recovers<Send<Result, End>>>);
+static_assert(std::is_same_v<delegated_crash_propagation_t<SendingDelegated, RecipientTag, CrashRecoveringK>,
+                             Recovers<Send<Result, End>>>);
 
-using SenderAnnotatedCrashRecoveringK = Offer<
-    Sender<RecipientTag>,
-    Recv<Ack, End>,
-    Recv<Crash<RecipientTag>, Send<Result, End>>>;
+using SenderAnnotatedCrashRecoveringK =
+    Offer<Sender<RecipientTag>, Recv<Ack, End>, Recv<Crash<RecipientTag>, Send<Result, End>>>;
 
-static_assert(std::is_same_v<
-    delegated_crash_propagation_t<
-        SendingDelegated, RecipientTag, SenderAnnotatedCrashRecoveringK>,
-    Recovers<Send<Result, End>>>);
+static_assert(
+    std::is_same_v<delegated_crash_propagation_t<SendingDelegated, RecipientTag, SenderAnnotatedCrashRecoveringK>,
+                   Recovers<Send<Result, End>>>);
 
-static_assert(std::is_same_v<
-    delegated_crash_propagation_t<
-        Stop, RecipientTag, CrashRecoveringK>,
-    IllFormed>);
+static_assert(std::is_same_v<delegated_crash_propagation_t<Stop, RecipientTag, CrashRecoveringK>, IllFormed>);
 
 }  // namespace detail::delegate_self_test
 #endif  // CRUCIBLE_SESSION_SELF_TESTS

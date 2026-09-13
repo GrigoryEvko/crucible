@@ -9,8 +9,7 @@
 #include "common.h"
 
 SEC("sockops")
-int crucible_cntp_sock_ops_telemetry(struct bpf_sock_ops *ops)
-{
+int crucible_cntp_sock_ops_telemetry(struct bpf_sock_ops* ops) {
     (void)ops;
     return 0;
 }

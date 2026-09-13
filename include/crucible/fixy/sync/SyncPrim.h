@@ -157,20 +157,20 @@ struct banned_sync_prim_base {};
 // through any chain), so the safety property is preserved either
 // way; `final` is documentation + lattice closure.
 
-struct permit_mutex                  final : banned_sync_prim_base {};
-struct permit_shared_mutex           final : banned_sync_prim_base {};
-struct permit_recursive_mutex        final : banned_sync_prim_base {};
-struct permit_timed_mutex            final : banned_sync_prim_base {};
-struct permit_condition_variable     final : banned_sync_prim_base {};
+struct permit_mutex final : banned_sync_prim_base {};
+struct permit_shared_mutex final : banned_sync_prim_base {};
+struct permit_recursive_mutex final : banned_sync_prim_base {};
+struct permit_timed_mutex final : banned_sync_prim_base {};
+struct permit_condition_variable final : banned_sync_prim_base {};
 struct permit_condition_variable_any final : banned_sync_prim_base {};
-struct permit_pthread_cond           final : banned_sync_prim_base {};
-struct permit_futex                  final : banned_sync_prim_base {};
-struct permit_eventfd                final : banned_sync_prim_base {};
-struct permit_poll                   final : banned_sync_prim_base {};
-struct permit_epoll                  final : banned_sync_prim_base {};
-struct permit_atomic_wait            final : banned_sync_prim_base {};
-struct permit_sleep_for              final : banned_sync_prim_base {};
-struct permit_thread_yield           final : banned_sync_prim_base {};
+struct permit_pthread_cond final : banned_sync_prim_base {};
+struct permit_futex final : banned_sync_prim_base {};
+struct permit_eventfd final : banned_sync_prim_base {};
+struct permit_poll final : banned_sync_prim_base {};
+struct permit_epoll final : banned_sync_prim_base {};
+struct permit_atomic_wait final : banned_sync_prim_base {};
+struct permit_sleep_for final : banned_sync_prim_base {};
+struct permit_thread_yield final : banned_sync_prim_base {};
 
 // ─── IsBannedSyncPrim concept ──────────────────────────────────────
 //
@@ -181,8 +181,7 @@ struct permit_thread_yield           final : banned_sync_prim_base {};
 // `permit_mutex`.
 
 template <typename T>
-concept IsBannedSyncPrim =
-    std::is_base_of_v<banned_sync_prim_base, std::remove_cvref_t<T>>;
+concept IsBannedSyncPrim = std::is_base_of_v<banned_sync_prim_base, std::remove_cvref_t<T>>;
 
 template <typename T>
 inline constexpr bool is_banned_sync_prim_v = IsBannedSyncPrim<T>;
@@ -194,8 +193,7 @@ inline constexpr bool is_banned_sync_prim_v = IsBannedSyncPrim<T>;
 // banned match ⇒ true.
 
 template <typename... Ts>
-inline constexpr bool pack_contains_banned_sync_prim_v =
-    (IsBannedSyncPrim<Ts> || ...);
+inline constexpr bool pack_contains_banned_sync_prim_v = (IsBannedSyncPrim<Ts> || ...);
 
 // ─── HotPathSyncPrimSafe<Tier, Ts...> — load-bearing gate ──────────
 //
@@ -211,8 +209,7 @@ inline constexpr bool pack_contains_banned_sync_prim_v =
 
 template <::crucible::safety::HotPathTier_v Tier, typename... Ts>
 concept HotPathSyncPrimSafe =
-    !(Tier == ::crucible::safety::HotPathTier_v::Hot &&
-      pack_contains_banned_sync_prim_v<Ts...>);
+    !(Tier == ::crucible::safety::HotPathTier_v::Hot && pack_contains_banned_sync_prim_v<Ts...>);
 
 // ─── Convenience tier-bound aliases ─────────────────────────────────
 //
@@ -220,16 +217,13 @@ concept HotPathSyncPrimSafe =
 // hot-path function signatures spell the gate at Hot tier.
 
 template <typename... Ts>
-concept HotSyncPrimSafe =
-    HotPathSyncPrimSafe<::crucible::safety::HotPathTier_v::Hot, Ts...>;
+concept HotSyncPrimSafe = HotPathSyncPrimSafe<::crucible::safety::HotPathTier_v::Hot, Ts...>;
 
 template <typename... Ts>
-concept WarmSyncPrimSafe =
-    HotPathSyncPrimSafe<::crucible::safety::HotPathTier_v::Warm, Ts...>;
+concept WarmSyncPrimSafe = HotPathSyncPrimSafe<::crucible::safety::HotPathTier_v::Warm, Ts...>;
 
 template <typename... Ts>
-concept ColdSyncPrimSafe =
-    HotPathSyncPrimSafe<::crucible::safety::HotPathTier_v::Cold, Ts...>;
+concept ColdSyncPrimSafe = HotPathSyncPrimSafe<::crucible::safety::HotPathTier_v::Cold, Ts...>;
 
 }  // namespace sync_prim
 
@@ -282,8 +276,8 @@ static_assert(!IsBannedSyncPrim<unrelated_tag>);
 static_assert(std::is_empty_v<permit_mutex>);
 static_assert(std::is_empty_v<permit_futex>);
 static_assert(std::is_empty_v<permit_atomic_wait>);
-static_assert(sizeof(permit_mutex)        == 1);
-static_assert(sizeof(permit_atomic_wait)  == 1);
+static_assert(sizeof(permit_mutex) == 1);
+static_assert(sizeof(permit_atomic_wait) == 1);
 static_assert(sizeof(permit_thread_yield) == 1);
 
 // `final` lock — a downstream may not subclass to fake-pass the
@@ -325,8 +319,8 @@ static_assert(IsBannedSyncPrim<permit_atomic_wait const volatile&>);
 static_assert(!pack_contains_banned_sync_prim_v<>);
 
 // Single banned permit: present.
-static_assert( pack_contains_banned_sync_prim_v<permit_mutex>);
-static_assert( pack_contains_banned_sync_prim_v<permit_futex>);
+static_assert(pack_contains_banned_sync_prim_v<permit_mutex>);
+static_assert(pack_contains_banned_sync_prim_v<permit_futex>);
 
 // All-clean pack: absent.
 static_assert(!pack_contains_banned_sync_prim_v<int, double, void*>);
@@ -346,14 +340,10 @@ static_assert(pack_contains_banned_sync_prim_v<int, permit_mutex const&, double>
 // Hot tier × banned permit ⇒ UNSAFE (concept FALSE).  This is the
 // load-bearing rejection that V-085's HS14 fixture #2 pins via
 // neg-compile.
-static_assert(!HotPathSyncPrimSafe<::crucible::safety::HotPathTier_v::Hot,
-                                    permit_mutex>);
-static_assert(!HotPathSyncPrimSafe<::crucible::safety::HotPathTier_v::Hot,
-                                    permit_futex>);
-static_assert(!HotPathSyncPrimSafe<::crucible::safety::HotPathTier_v::Hot,
-                                    permit_atomic_wait>);
-static_assert(!HotPathSyncPrimSafe<::crucible::safety::HotPathTier_v::Hot,
-                                    int, permit_mutex, double>);
+static_assert(!HotPathSyncPrimSafe<::crucible::safety::HotPathTier_v::Hot, permit_mutex>);
+static_assert(!HotPathSyncPrimSafe<::crucible::safety::HotPathTier_v::Hot, permit_futex>);
+static_assert(!HotPathSyncPrimSafe<::crucible::safety::HotPathTier_v::Hot, permit_atomic_wait>);
+static_assert(!HotPathSyncPrimSafe<::crucible::safety::HotPathTier_v::Hot, int, permit_mutex, double>);
 static_assert(!HotSyncPrimSafe<permit_mutex>);
 static_assert(!HotSyncPrimSafe<permit_condition_variable>);
 
@@ -362,20 +352,17 @@ static_assert(HotPathSyncPrimSafe<::crucible::safety::HotPathTier_v::Hot>);
 static_assert(HotSyncPrimSafe<>);
 
 // Hot tier × non-banned pack ⇒ SAFE.
-static_assert(HotPathSyncPrimSafe<::crucible::safety::HotPathTier_v::Hot,
-                                   int, double, unrelated_tag>);
+static_assert(HotPathSyncPrimSafe<::crucible::safety::HotPathTier_v::Hot, int, double, unrelated_tag>);
 static_assert(HotSyncPrimSafe<int, double>);
 
 // Warm tier × banned permit ⇒ SAFE.  Background-bounded contexts
 // genuinely use std::mutex / condvars / futexes.
-static_assert(HotPathSyncPrimSafe<::crucible::safety::HotPathTier_v::Warm,
-                                   permit_mutex>);
+static_assert(HotPathSyncPrimSafe<::crucible::safety::HotPathTier_v::Warm, permit_mutex>);
 static_assert(WarmSyncPrimSafe<permit_mutex>);
 static_assert(WarmSyncPrimSafe<permit_futex, permit_atomic_wait>);
 
 // Cold tier × banned permit ⇒ SAFE.  Cold paths may block freely.
-static_assert(HotPathSyncPrimSafe<::crucible::safety::HotPathTier_v::Cold,
-                                   permit_mutex>);
+static_assert(HotPathSyncPrimSafe<::crucible::safety::HotPathTier_v::Cold, permit_mutex>);
 static_assert(ColdSyncPrimSafe<permit_mutex, permit_poll, permit_epoll>);
 
 // ─── (5) Cardinality — exact 14 permit tags ─────────────────────────
@@ -393,18 +380,15 @@ inline constexpr std::size_t permit_tag_count = []() consteval -> std::size_t {
     // Reference every tag once — drift in either direction trips a
     // hard compile error in this lambda.  The count value is then
     // available for downstream assertions.
-    using all_permits = std::tuple<
-        permit_mutex, permit_shared_mutex, permit_recursive_mutex,
-        permit_timed_mutex, permit_condition_variable,
-        permit_condition_variable_any, permit_pthread_cond,
-        permit_futex, permit_eventfd, permit_poll, permit_epoll,
-        permit_atomic_wait, permit_sleep_for, permit_thread_yield>;
+    using all_permits = std::tuple<permit_mutex, permit_shared_mutex, permit_recursive_mutex, permit_timed_mutex,
+                                   permit_condition_variable, permit_condition_variable_any, permit_pthread_cond,
+                                   permit_futex, permit_eventfd, permit_poll, permit_epoll, permit_atomic_wait,
+                                   permit_sleep_for, permit_thread_yield>;
     return std::tuple_size_v<all_permits>;
 }();
 
-static_assert(permit_tag_count == 14,
-    "FIXY-V-085: sync_prim permit-tag cardinality drift.  Update the "
-    "cardinality witness AND the sentinel cells AND the doc-block.");
+static_assert(permit_tag_count == 14, "FIXY-V-085: sync_prim permit-tag cardinality drift.  Update the "
+                                      "cardinality witness AND the sentinel cells AND the doc-block.");
 
 // ─── (6) Inheritance closure — base_of walks the chain ──────────────
 //
@@ -424,4 +408,3 @@ static_assert(IsBannedSyncPrim<banned_sync_prim_base>);
 }  // namespace detail::sync_prim_sentinel
 
 }  // namespace crucible::fixy::sync
-

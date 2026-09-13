@@ -51,7 +51,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
-#include <crucible/fixy/Wrap.h>   // FIXY-U-096q: DetSafe / DetSafeTier_v / DetSafeLattice via the fixy umbrella
+#include <crucible/fixy/Wrap.h>  // FIXY-U-096q: DetSafe / DetSafeTier_v / DetSafeLattice via the fixy umbrella
 #include <crucible/fixy/fp/Polynomial.h>  // FIXY-V-095: box_muller_polynomial_det implementation
 
 #include <array>
@@ -110,7 +110,8 @@ struct Philox {
         Ctr ctr = {
             static_cast<uint32_t>(offset),
             static_cast<uint32_t>(offset >> 32),
-            0, 0,
+            0,
+            0,
         };
         Key k = {
             static_cast<uint32_t>(key),
@@ -135,8 +136,7 @@ struct Philox {
     // Box-Muller transform: two uniform → two normal N(0,1).
     // Consumes 2 uint32 values, produces 2 floats.
     // Uses the polar form for better numerical stability.
-    [[nodiscard]] static std::pair<float, float>
-    box_muller(uint32_t u1_raw, uint32_t u2_raw) {
+    [[nodiscard]] static std::pair<float, float> box_muller(uint32_t u1_raw, uint32_t u2_raw) {
         // Map to (0, 1] to avoid log(0). Use (x+1) * 2^-32.
         float u1 = (static_cast<float>(u1_raw) + 1.0f) * 2.3283064365386963e-10f;
         float u2 = (static_cast<float>(u2_raw) + 1.0f) * 2.3283064365386963e-10f;
@@ -223,12 +223,9 @@ struct Philox {
     // caveat: they perform a single IEEE 754 multiplication that
     // is bit-stable across all conforming implementations.
 
-    using DetSafePhiloxCtr = crucible::fixy::wrap::DetSafe<
-        crucible::fixy::wrap::DetSafeTier_v::PhiloxRng, Ctr>;
-    using DetSafePhiloxFloat = crucible::fixy::wrap::DetSafe<
-        crucible::fixy::wrap::DetSafeTier_v::PhiloxRng, float>;
-    using DetSafePhiloxDouble = crucible::fixy::wrap::DetSafe<
-        crucible::fixy::wrap::DetSafeTier_v::PhiloxRng, double>;
+    using DetSafePhiloxCtr = crucible::fixy::wrap::DetSafe<crucible::fixy::wrap::DetSafeTier_v::PhiloxRng, Ctr>;
+    using DetSafePhiloxFloat = crucible::fixy::wrap::DetSafe<crucible::fixy::wrap::DetSafeTier_v::PhiloxRng, float>;
+    using DetSafePhiloxDouble = crucible::fixy::wrap::DetSafe<crucible::fixy::wrap::DetSafeTier_v::PhiloxRng, double>;
     // FIXY-V-095: box_muller_det's libm call (sin/cos/log) is NOT bit-
     // stable across glibc/musl/Apple libm/MSVC CRT — bytes are only
     // same-fleet/same-platform deterministic.  Downgraded to
@@ -236,24 +233,20 @@ struct Philox {
     // one Relay).  Cipher write-fence REJECTS this tier; production
     // call sites that record samples to the replay chain MUST route
     // through box_muller_polynomial_det (PhiloxRng tier — see below).
-    using DetSafeMonoClockFloatPair = crucible::fixy::wrap::DetSafe<
-        crucible::fixy::wrap::DetSafeTier_v::MonotonicClockRead,
-        std::pair<float, float>>;
+    using DetSafeMonoClockFloatPair =
+        crucible::fixy::wrap::DetSafe<crucible::fixy::wrap::DetSafeTier_v::MonotonicClockRead, std::pair<float, float>>;
     // FIXY-V-095: PhiloxRng-tier float pair from polynomial Box-Muller.
     // Bit-stable across vendors via crucible-source polynomial sin/cos/
     // log (see fixy/fp/Polynomial.h).  Admissible to Cipher write-fence.
-    using DetSafePhiloxFloatPair = crucible::fixy::wrap::DetSafe<
-        crucible::fixy::wrap::DetSafeTier_v::PhiloxRng, std::pair<float, float>>;
-    using DetSafePureKey = crucible::fixy::wrap::DetSafe<
-        crucible::fixy::wrap::DetSafeTier_v::Pure, uint64_t>;
+    using DetSafePhiloxFloatPair =
+        crucible::fixy::wrap::DetSafe<crucible::fixy::wrap::DetSafeTier_v::PhiloxRng, std::pair<float, float>>;
+    using DetSafePureKey = crucible::fixy::wrap::DetSafe<crucible::fixy::wrap::DetSafeTier_v::Pure, uint64_t>;
 
-    [[nodiscard]] static constexpr DetSafePhiloxCtr
-    generate_det(Ctr ctr, Key key) {
+    [[nodiscard]] static constexpr DetSafePhiloxCtr generate_det(Ctr ctr, Key key) {
         return DetSafePhiloxCtr{generate(ctr, key)};
     }
 
-    [[nodiscard]] static constexpr DetSafePhiloxCtr
-    generate_det(uint64_t offset, uint64_t key) {
+    [[nodiscard]] static constexpr DetSafePhiloxCtr generate_det(uint64_t offset, uint64_t key) {
         return DetSafePhiloxCtr{generate(offset, key)};
     }
 
@@ -275,21 +268,17 @@ struct Philox {
     // chain composition surface.
 
     template <crucible::fixy::wrap::DetSafeTier_v KeyTier>
-        requires (crucible::fixy::wrap::DetSafeLattice::leq(
-            crucible::fixy::wrap::DetSafeTier_v::PhiloxRng, KeyTier))
-    [[nodiscard]] static constexpr DetSafePhiloxCtr
-    generate_det(uint64_t offset,
-                 crucible::fixy::wrap::DetSafe<KeyTier, uint64_t> key) {
+        requires(crucible::fixy::wrap::DetSafeLattice::leq(crucible::fixy::wrap::DetSafeTier_v::PhiloxRng, KeyTier))
+    [[nodiscard]] static constexpr DetSafePhiloxCtr generate_det(uint64_t offset,
+                                                                 crucible::fixy::wrap::DetSafe<KeyTier, uint64_t> key) {
         return DetSafePhiloxCtr{generate(offset, std::move(key).consume())};
     }
 
-    [[nodiscard]] static constexpr DetSafePhiloxFloat
-    to_uniform_det(uint32_t x) {
+    [[nodiscard]] static constexpr DetSafePhiloxFloat to_uniform_det(uint32_t x) {
         return DetSafePhiloxFloat{to_uniform(x)};
     }
 
-    [[nodiscard]] static constexpr DetSafePhiloxDouble
-    to_uniform_d_det(uint32_t x) {
+    [[nodiscard]] static constexpr DetSafePhiloxDouble to_uniform_d_det(uint32_t x) {
         return DetSafePhiloxDouble{to_uniform_d(x)};
     }
 
@@ -299,8 +288,7 @@ struct Philox {
     // Production callers that need cross-fleet replay admissibility
     // MUST use box_muller_polynomial_det instead.  The Cipher write-
     // fence REJECTS MonotonicClockRead-tier bytes.
-    [[nodiscard]] static DetSafeMonoClockFloatPair
-    box_muller_det(uint32_t u1_raw, uint32_t u2_raw) {
+    [[nodiscard]] static DetSafeMonoClockFloatPair box_muller_det(uint32_t u1_raw, uint32_t u2_raw) {
         return DetSafeMonoClockFloatPair{box_muller(u1_raw, u2_raw)};
     }
 
@@ -311,23 +299,19 @@ struct Philox {
     // Cipher write-fence; safe for cross-fleet replay logs.  Defined
     // in Philox.h (not Polynomial.h) because the DetSafe<PhiloxRng,...>
     // type-level promise lives next to the rest of the Philox surface.
-    [[nodiscard]] static DetSafePhiloxFloatPair
-    box_muller_polynomial_det(uint32_t u1_raw, uint32_t u2_raw) {
-        return DetSafePhiloxFloatPair{
-            crucible::fixy::fp::box_muller_polynomial(u1_raw, u2_raw)};
+    [[nodiscard]] static DetSafePhiloxFloatPair box_muller_polynomial_det(uint32_t u1_raw, uint32_t u2_raw) {
+        return DetSafePhiloxFloatPair{crucible::fixy::fp::box_muller_polynomial(u1_raw, u2_raw)};
     }
 
-    [[nodiscard]] static constexpr DetSafePureKey
-    op_key_det(uint64_t master_counter, uint32_t op_index, ContentHash content_hash) {
-        return DetSafePureKey{
-            op_key_bytes_(master_counter, op_index, content_hash)};
+    [[nodiscard]] static constexpr DetSafePureKey op_key_det(uint64_t master_counter, uint32_t op_index,
+                                                             ContentHash content_hash) {
+        return DetSafePureKey{op_key_bytes_(master_counter, op_index, content_hash)};
     }
 
- private:
+private:
     // High 32 bits of a 32×32→64 multiply.
     [[nodiscard]] static constexpr uint32_t mulhi_(uint32_t a, uint32_t b) {
-        return static_cast<uint32_t>(
-            (static_cast<uint64_t>(a) * static_cast<uint64_t>(b)) >> 32);
+        return static_cast<uint32_t>((static_cast<uint64_t>(a) * static_cast<uint64_t>(b)) >> 32);
     }
 
     // FNV-1a mix of a 64-bit value into hash state.
@@ -343,10 +327,8 @@ struct Philox {
     // Same (master, op_index, content_hash) → same key → same sequence.
     // Different ops or iterations → statistically independent. Private so
     // production callers cannot erase the DetSafe<Pure> key provenance.
-    [[nodiscard]] static constexpr uint64_t
-    op_key_bytes_(uint64_t master_counter,
-                  uint32_t op_index,
-                  ContentHash content_hash) {
+    [[nodiscard]] static constexpr uint64_t op_key_bytes_(uint64_t master_counter, uint32_t op_index,
+                                                          ContentHash content_hash) {
         // FNV-1a–style mixing. Not cryptographic, but sufficient
         // for decorrelating Philox streams across ops.
         uint64_t h = 0xcbf29ce484222325ULL;
@@ -357,4 +339,4 @@ struct Philox {
     }
 };
 
-} // namespace crucible
+}  // namespace crucible

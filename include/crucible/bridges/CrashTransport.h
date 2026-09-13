@@ -153,12 +153,8 @@ namespace crucible::safety::proto {
 
 // Forward-declared so the pass-key class can friend it (#430).  Real
 // definition appears below CrashEvent.
-template <typename PeerTag,
-          typename InnerHandle,
-          typename Resource,
-          typename Reason>
-[[nodiscard]] constexpr auto wrap_crash_return(
-    InnerHandle&& inner, Reason reason_tag, Resource recovered) noexcept;
+template <typename PeerTag, typename InnerHandle, typename Resource, typename Reason>
+[[nodiscard]] constexpr auto wrap_crash_return(InnerHandle&& inner, Reason reason_tag, Resource recovered) noexcept;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── CrashEvent<PeerTag, Resource, SurvivorTags...> ─────────────────
@@ -211,7 +207,9 @@ template <typename PeerTag,
 // CrashEvent construction sites.  The fix routes minting through a
 // non-template authorizer struct in `detail::` — friendship matches
 // by class identity, immune to parameter-pack drift.
-namespace detail { struct WrapCrashReturnAuthorizer; }
+namespace detail {
+struct WrapCrashReturnAuthorizer;
+}  // namespace detail
 
 class WrapCrashReturnKey {
     constexpr WrapCrashReturnKey() noexcept = default;
@@ -230,10 +228,8 @@ class WrapCrashReturnKey {
     // (PermissionInherit.h) and fixy-A2-021 (the non-template
     // authorizer routing) — together they make the H-25 closure
     // structurally unforgeable rather than discipline-only.
-    WrapCrashReturnKey(const WrapCrashReturnKey&) =
-        delete("fixy-A2-032: passkey cannot be copied");
-    WrapCrashReturnKey(WrapCrashReturnKey&&) =
-        delete("fixy-A2-032: passkey cannot be moved");
+    WrapCrashReturnKey(const WrapCrashReturnKey&) = delete("fixy-A2-032: passkey cannot be copied");
+    WrapCrashReturnKey(WrapCrashReturnKey&&) = delete("fixy-A2-032: passkey cannot be moved");
 
     // Only `detail::WrapCrashReturnAuthorizer::mint()` can produce a
     // key — and that helper is itself only callable from inside
@@ -272,9 +268,7 @@ namespace detail {
 // parameter-pack drift per fixy-A2-021) and pins the §XXI ctor
 // privacy gate inside CrashEvent's class body.
 struct WrapCrashReturnAuthorizer {
-    [[nodiscard]] static constexpr WrapCrashReturnKey mint() noexcept {
-        return WrapCrashReturnKey{};
-    }
+    [[nodiscard]] static constexpr WrapCrashReturnKey mint() noexcept { return WrapCrashReturnKey{}; }
 
     // V-013: only authorized constructor for CrashEvent.  Because
     // CrashEvent's ctor is private and `WrapCrashReturnAuthorizer` is
@@ -283,13 +277,8 @@ struct WrapCrashReturnAuthorizer {
     // CrashEvent type is supplied by the caller (`wrap_crash_return`)
     // via the `crash_event_for_t<PeerTag, Resource>` alias.
     template <typename Event, typename Resource, typename Perms>
-    [[nodiscard]] static constexpr Event mint_event_(
-        Resource&& r, Perms&& perms) noexcept
-    {
-        return Event{
-            WrapCrashReturnKey{},
-            std::forward<Resource>(r),
-            std::forward<Perms>(perms)};
+    [[nodiscard]] static constexpr Event mint_event_(Resource&& r, Perms&& perms) noexcept {
+        return Event{WrapCrashReturnKey{}, std::forward<Resource>(r), std::forward<Perms>(perms)};
     }
 };
 
@@ -298,11 +287,10 @@ struct WrapCrashReturnAuthorizer {
 template <typename PeerTag, typename Resource, typename... SurvivorTags>
 class CrashEvent {
 public:
-    using peer          = PeerTag;
+    using peer = PeerTag;
     using resource_type = Resource;
-    using survivors     = ::crucible::permissions::inheritance_list<SurvivorTags...>;
-    using permissions_type =
-        std::tuple<::crucible::safety::Permission<SurvivorTags>...>;
+    using survivors = ::crucible::permissions::inheritance_list<SurvivorTags...>;
+    using permissions_type = std::tuple<::crucible::safety::Permission<SurvivorTags>...>;
 
     // Public read-access for handlers that inspect recovered resource state.
     Resource resource;
@@ -317,9 +305,9 @@ public:
     // (e.g., a refactor that adds a non-noexcept member) is caught at
     // compile time instead of at the crash-recovery moment.
     static_assert(std::is_nothrow_move_constructible_v<Resource>,
-        "fixy-A2-033: CrashEvent Resource must be nothrow-move-"
-        "constructible.  The crash-path is noexcept and a throwing "
-        "move would call std::terminate during recovery.");
+                  "fixy-A2-033: CrashEvent Resource must be nothrow-move-"
+                  "constructible.  The crash-path is noexcept and a throwing "
+                  "move would call std::terminate during recovery.");
 
 private:
     // ── Construction (used by detail::WrapCrashReturnAuthorizer::mint_event_;
@@ -372,72 +360,56 @@ template <typename PeerTag, typename Resource, typename Survivors>
 struct crash_event_from_survivors;
 
 template <typename PeerTag, typename Resource, typename... SurvivorTags>
-struct crash_event_from_survivors<
-    PeerTag,
-    Resource,
-    ::crucible::permissions::inheritance_list<SurvivorTags...>>
-{
+struct crash_event_from_survivors<PeerTag, Resource, ::crucible::permissions::inheritance_list<SurvivorTags...>> {
     using type = CrashEvent<PeerTag, Resource, SurvivorTags...>;
 };
 
 template <typename PeerTag, typename Resource>
-using crash_event_for_t = typename crash_event_from_survivors<
-    PeerTag,
-    Resource,
-    ::crucible::permissions::survivors_t<PeerTag>>::type;
+using crash_event_for_t =
+    typename crash_event_from_survivors<PeerTag, Resource, ::crucible::permissions::survivors_t<PeerTag>>::type;
 
 template <typename Event>
 struct crash_event_matches_survivors : std::false_type {};
 
 template <typename PeerTag, typename Resource, typename... SurvivorTags>
-struct crash_event_matches_survivors<
-    CrashEvent<PeerTag, Resource, SurvivorTags...>>
-    : std::is_same<
-          CrashEvent<PeerTag, Resource, SurvivorTags...>,
-          crash_event_for_t<PeerTag, Resource>> {};
+struct crash_event_matches_survivors<CrashEvent<PeerTag, Resource, SurvivorTags...>>
+    : std::is_same<CrashEvent<PeerTag, Resource, SurvivorTags...>, crash_event_for_t<PeerTag, Resource>> {};
 
 template <typename Event>
-inline constexpr bool crash_event_matches_survivors_v =
-    crash_event_matches_survivors<Event>::value;
+inline constexpr bool crash_event_matches_survivors_v = crash_event_matches_survivors<Event>::value;
 
 template <typename PeerTag>
 consteval void require_crash_survivors_declared_() {
-    static_assert(!::crucible::permissions::inheritance_list_empty_v<
-        ::crucible::permissions::survivors_t<PeerTag>>,
-        "CrashWatchedHandle requires mint_permission_inherit survivors for "
-        "PeerTag. Specialize survivor_registry<PeerTag> at the peer tag "
-        "declaration site before enabling crash recovery.");
+    static_assert(!::crucible::permissions::inheritance_list_empty_v<::crucible::permissions::survivors_t<PeerTag>>,
+                  "CrashWatchedHandle requires mint_permission_inherit survivors for "
+                  "PeerTag. Specialize survivor_registry<PeerTag> at the peer tag "
+                  "declaration site before enabling crash recovery.");
 }
 
 template <CrashClass C>
-inline constexpr bool crash_watched_class_admissible_v =
-    C != CrashClass::NoThrow;
+inline constexpr bool crash_watched_class_admissible_v = C != CrashClass::NoThrow;
 
 template <CrashClass C>
 consteval void require_crash_watched_class_admissible_() {
-    static_assert(crash_watched_class_admissible_v<C>,
-        "crucible::session::diagnostic "
-        "[CrashWatched_NoThrow_Rejected]: "
-        "CrashWatchedHandle cannot be parameterized with "
-        "CrashClass::NoThrow for an unreliable watched peer. Remove the "
-        "watcher for genuinely no-throw peers, or declare Abort/Throw/"
-        "ErrorReturn recovery.");
+    static_assert(crash_watched_class_admissible_v<C>, "crucible::session::diagnostic "
+                                                       "[CrashWatched_NoThrow_Rejected]: "
+                                                       "CrashWatchedHandle cannot be parameterized with "
+                                                       "CrashClass::NoThrow for an unreliable watched peer. Remove the "
+                                                       "watcher for genuinely no-throw peers, or declare Abort/Throw/"
+                                                       "ErrorReturn recovery.");
 }
 
 template <typename Proto, CrashClass C>
 struct stop_class_compatible : std::true_type {};
 
 template <CrashClass StopC, CrashClass C>
-struct stop_class_compatible<Stop_g<StopC>, C>
-    : std::bool_constant<StopC == C> {};
+struct stop_class_compatible<Stop_g<StopC>, C> : std::bool_constant<StopC == C> {};
 
 template <typename T, typename R, CrashClass C>
-struct stop_class_compatible<Send<T, R>, C>
-    : stop_class_compatible<R, C> {};
+struct stop_class_compatible<Send<T, R>, C> : stop_class_compatible<R, C> {};
 
 template <typename T, typename R, CrashClass C>
-struct stop_class_compatible<Recv<T, R>, C>
-    : stop_class_compatible<R, C> {};
+struct stop_class_compatible<Recv<T, R>, C> : stop_class_compatible<R, C> {};
 
 template <typename... Branches, CrashClass C>
 struct stop_class_compatible<Select<Branches...>, C>
@@ -448,47 +420,34 @@ struct stop_class_compatible<Offer<Branches...>, C>
     : std::bool_constant<(stop_class_compatible<Branches, C>::value && ...)> {};
 
 template <typename Body, CrashClass C>
-struct stop_class_compatible<Loop<Body>, C>
-    : stop_class_compatible<Body, C> {};
+struct stop_class_compatible<Loop<Body>, C> : stop_class_compatible<Body, C> {};
 
 template <typename Inner, typename K, CrashClass C>
 struct stop_class_compatible<Delegate<Inner, K>, C>
-    : std::bool_constant<stop_class_compatible<Inner, C>::value &&
-                         stop_class_compatible<K, C>::value> {};
+    : std::bool_constant<stop_class_compatible<Inner, C>::value && stop_class_compatible<K, C>::value> {};
 
 template <typename Inner, typename K, CrashClass C>
 struct stop_class_compatible<Accept<Inner, K>, C>
-    : std::bool_constant<stop_class_compatible<Inner, C>::value &&
-                         stop_class_compatible<K, C>::value> {};
+    : std::bool_constant<stop_class_compatible<Inner, C>::value && stop_class_compatible<K, C>::value> {};
 
-template <typename Inner, typename K,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
-          CrashClass C>
-struct stop_class_compatible<
-    EpochedDelegate<Inner, K, MinEpoch, MinGeneration>, C>
-    : std::bool_constant<stop_class_compatible<Inner, C>::value &&
-                         stop_class_compatible<K, C>::value> {};
+template <typename Inner, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration, CrashClass C>
+struct stop_class_compatible<EpochedDelegate<Inner, K, MinEpoch, MinGeneration>, C>
+    : std::bool_constant<stop_class_compatible<Inner, C>::value && stop_class_compatible<K, C>::value> {};
 
-template <typename Inner, typename K,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
-          CrashClass C>
-struct stop_class_compatible<
-    EpochedAccept<Inner, K, MinEpoch, MinGeneration>, C>
-    : std::bool_constant<stop_class_compatible<Inner, C>::value &&
-                         stop_class_compatible<K, C>::value> {};
+template <typename Inner, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration, CrashClass C>
+struct stop_class_compatible<EpochedAccept<Inner, K, MinEpoch, MinGeneration>, C>
+    : std::bool_constant<stop_class_compatible<Inner, C>::value && stop_class_compatible<K, C>::value> {};
 
 template <typename Proto, CrashClass C>
-inline constexpr bool stop_class_compatible_v =
-    stop_class_compatible<Proto, C>::value;
+inline constexpr bool stop_class_compatible_v = stop_class_compatible<Proto, C>::value;
 
 template <typename Proto, CrashClass C>
 consteval void require_stop_class_compatible_() {
-    static_assert(stop_class_compatible_v<Proto, C>,
-        "crucible::session::diagnostic "
-        "[CrashWatched_StopClass_Mismatch]: "
-        "CrashWatchedHandle's declared CrashClass does not match a "
-        "Stop_g<C> reachable in the watched protocol. Align the handle "
-        "CrashClass with the protocol Stop_g grade.");
+    static_assert(stop_class_compatible_v<Proto, C>, "crucible::session::diagnostic "
+                                                     "[CrashWatched_StopClass_Mismatch]: "
+                                                     "CrashWatchedHandle's declared CrashClass does not match a "
+                                                     "Stop_g<C> reachable in the watched protocol. Align the handle "
+                                                     "CrashClass with the protocol Stop_g grade.");
 }
 
 template <typename Proto, CrashClass C>
@@ -500,8 +459,7 @@ consteval void require_crash_watched_contract_() {
 }  // namespace detail
 
 template <typename Event>
-concept CrashEventMatchesSurvivors =
-    detail::crash_event_matches_survivors_v<Event>;
+concept CrashEventMatchesSurvivors = detail::crash_event_matches_survivors_v<Event>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── wrap_crash_return — wrapper-side crash-path bundler (#430) ─────
@@ -540,20 +498,12 @@ concept CrashEventMatchesSurvivors =
 //                                 hit is a wrapper trying to bypass
 //                                 the discipline (review-reject)
 
-template <typename PeerTag,
-          typename InnerHandle,
-          typename Resource,
-          typename Reason>
-[[nodiscard]] constexpr auto wrap_crash_return(
-    InnerHandle&& inner,
-    Reason reason_tag,
-    Resource recovered) noexcept
-{
+template <typename PeerTag, typename InnerHandle, typename Resource, typename Reason>
+[[nodiscard]] constexpr auto wrap_crash_return(InnerHandle&& inner, Reason reason_tag, Resource recovered) noexcept {
     using Inner = std::remove_cvref_t<InnerHandle>;
-    static_assert(std::is_same_v<std::remove_cvref_t<Resource>,
-                                 typename Inner::resource_type>,
-        "wrap_crash_return recovered resource type must match inner "
-        "resource_type.");
+    static_assert(std::is_same_v<std::remove_cvref_t<Resource>, typename Inner::resource_type>,
+                  "wrap_crash_return recovered resource type must match inner "
+                  "resource_type.");
 
     // The detach call is what saves the inner from firing its
     // destructor's abandonment abort.  detach()'s `requires
@@ -578,23 +528,18 @@ template <typename PeerTag,
     // helper.  CrashEvent's ctor is now private (per §XXI); the
     // authorizer is friended and provides the sole grep-discoverable
     // construction site for CrashEvent in the entire tree.
-    return std::unexpected{
-        detail::WrapCrashReturnAuthorizer::mint_event_<
-            detail::crash_event_for_t<PeerTag, Resource>>(
-            std::move(recovered),
-            ::crucible::permissions::mint_permission_inherit<PeerTag>(
-                ::crucible::permissions::crash_witness_key{
-                    detail::WrapCrashReturnAuthorizer::mint()}))};
+    return std::unexpected{detail::WrapCrashReturnAuthorizer::mint_event_<detail::crash_event_for_t<PeerTag, Resource>>(
+        std::move(recovered),
+        ::crucible::permissions::mint_permission_inherit<PeerTag>(
+            ::crucible::permissions::crash_witness_key{detail::WrapCrashReturnAuthorizer::mint()}))};
 }
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Forward declaration + factory ──────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 
-template <typename Proto, typename Resource,
-          typename PeerTag, CrashClass C = CrashClass::Abort,
-          typename LoopCtx = void,
-          typename PS = EmptyPermSet>
+template <typename Proto, typename Resource, typename PeerTag, CrashClass C = CrashClass::Abort,
+          typename LoopCtx = void, typename PS = EmptyPermSet>
 class CrashWatchedHandle;
 
 namespace detail {
@@ -619,44 +564,30 @@ struct permissioned_loop_ctx_from_bare<LoopContext<Body, EntryPS>, PS> {
     using type = LoopContext<Body, EntryPS>;
 };
 
-template <std::uint64_t CurrentEpoch,
-          std::uint64_t CurrentGeneration,
-          typename InnerLoopCtx,
-          typename PS>
-struct permissioned_loop_ctx_from_bare<
-    EpochCtx<CurrentEpoch, CurrentGeneration, InnerLoopCtx>,
-    PS> {
-    using type = EpochCtx<
-        CurrentEpoch,
-        CurrentGeneration,
-        typename permissioned_loop_ctx_from_bare<InnerLoopCtx, PS>::type>;
+template <std::uint64_t CurrentEpoch, std::uint64_t CurrentGeneration, typename InnerLoopCtx, typename PS>
+struct permissioned_loop_ctx_from_bare<EpochCtx<CurrentEpoch, CurrentGeneration, InnerLoopCtx>, PS> {
+    using type =
+        EpochCtx<CurrentEpoch, CurrentGeneration, typename permissioned_loop_ctx_from_bare<InnerLoopCtx, PS>::type>;
 };
 
 template <VendorBackend V, typename InnerLoopCtx, typename PS>
 struct permissioned_loop_ctx_from_bare<VendorCtx<V, InnerLoopCtx>, PS> {
-    using type = VendorCtx<V,
-        typename permissioned_loop_ctx_from_bare<InnerLoopCtx, PS>::type>;
+    using type = VendorCtx<V, typename permissioned_loop_ctx_from_bare<InnerLoopCtx, PS>::type>;
 };
 
 template <typename LoopCtx, typename PS>
-using permissioned_loop_ctx_from_bare_t =
-    typename permissioned_loop_ctx_from_bare<LoopCtx, PS>::type;
+using permissioned_loop_ctx_from_bare_t = typename permissioned_loop_ctx_from_bare<LoopCtx, PS>::type;
 
 // Build a CrashWatchedHandle around a freshly-stepped inner handle,
 // preserving the framework's Continue / Loop resolution.  Mirrors
 // safety/RecordingSessionHandle.h's wrap_next_.
 template <typename PeerTag, CrashClass C, typename NextHandle>
-[[nodiscard]] constexpr auto wrap_crash_next_(
-    NextHandle inner,
-    OneShotFlag& flag) noexcept
-{
-    using NextProto    = typename NextHandle::protocol;
+[[nodiscard]] constexpr auto wrap_crash_next_(NextHandle inner, OneShotFlag& flag) noexcept {
+    using NextProto = typename NextHandle::protocol;
     using NextResource = typename NextHandle::resource_type;
-    using NextLoopCtx  = typename NextHandle::loop_ctx;
-    using NextPS       = typename NextHandle::perm_set;
-    return CrashWatchedHandle<
-        NextProto, NextResource, PeerTag, C, NextLoopCtx, NextPS>{
-        std::move(inner), flag};
+    using NextLoopCtx = typename NextHandle::loop_ctx;
+    using NextPS = typename NextHandle::perm_set;
+    return CrashWatchedHandle<NextProto, NextResource, PeerTag, C, NextLoopCtx, NextPS>{std::move(inner), flag};
 }
 
 }  // namespace detail
@@ -671,58 +602,50 @@ template <typename PeerTag, CrashClass C, typename NextHandle>
 // can't actually deliver the next message.)  Still peek for symmetry
 // in the audit trail; do not gate on it.
 
-template <typename Resource, typename PeerTag,
-          CrashClass C, typename LoopCtx, typename PS>
+template <typename Resource, typename PeerTag, CrashClass C, typename LoopCtx, typename PS>
 class [[nodiscard]] CrashWatchedHandle<End, Resource, PeerTag, C, LoopCtx, PS>
-    : public SessionHandleBase<End,
-                               CrashWatchedHandle<End, Resource, PeerTag, C, LoopCtx, PS>>
-{
+    : public SessionHandleBase<End, CrashWatchedHandle<End, Resource, PeerTag, C, LoopCtx, PS>> {
     PermissionedSessionHandle<End, PS, Resource, LoopCtx> inner_;
     OneShotFlag* flag_ = nullptr;
 
 public:
     static_assert(detail::crash_watched_class_admissible_v<C>,
-        "crucible::session::diagnostic [CrashWatched_NoThrow_Rejected]: "
-        "CrashWatchedHandle cannot be parameterized with CrashClass::NoThrow.");
+                  "crucible::session::diagnostic [CrashWatched_NoThrow_Rejected]: "
+                  "CrashWatchedHandle cannot be parameterized with CrashClass::NoThrow.");
     static_assert(detail::stop_class_compatible_v<End, C>,
-        "crucible::session::diagnostic [CrashWatched_StopClass_Mismatch]: "
-        "CrashWatchedHandle CrashClass must match reachable Stop_g<C>.");
+                  "crucible::session::diagnostic [CrashWatched_StopClass_Mismatch]: "
+                  "CrashWatchedHandle CrashClass must match reachable Stop_g<C>.");
 
-    using protocol      = End;
+    using protocol = End;
     using resource_type = Resource;
-    using loop_ctx      = LoopCtx;
-    using peer          = PeerTag;
-    using perm_set      = PS;
-    using inner_type    = PermissionedSessionHandle<End, PS, Resource, LoopCtx>;
-    using stop_type     = Stop_g<C>;
+    using loop_ctx = LoopCtx;
+    using peer = PeerTag;
+    using perm_set = PS;
+    using inner_type = PermissionedSessionHandle<End, PS, Resource, LoopCtx>;
+    using stop_type = Stop_g<C>;
     static constexpr CrashClass crash_class = C;
 
-    constexpr CrashWatchedHandle(
-        inner_type inner,
-        OneShotFlag& flag,
-        std::source_location loc = std::source_location::current()) noexcept
-        : SessionHandleBase<End,
-                            CrashWatchedHandle<End, Resource, PeerTag, C, LoopCtx, PS>>{loc}
-        , inner_{std::move(inner)}, flag_{&flag}
-    {
+    constexpr CrashWatchedHandle(inner_type inner, OneShotFlag& flag,
+                                 std::source_location loc = std::source_location::current()) noexcept
+        : SessionHandleBase<End, CrashWatchedHandle<End, Resource, PeerTag, C, LoopCtx, PS>>{loc},
+          inner_{std::move(inner)},
+          flag_{&flag} {
         detail::require_crash_watched_contract_<End, C>();
         detail::require_crash_survivors_declared_<PeerTag>();
     }
 
-    constexpr CrashWatchedHandle(CrashWatchedHandle&&) noexcept            = default;
+    constexpr CrashWatchedHandle(CrashWatchedHandle&&) noexcept = default;
     constexpr CrashWatchedHandle& operator=(CrashWatchedHandle&&) noexcept = default;
     ~CrashWatchedHandle() = default;
 
-    [[nodiscard]] constexpr Resource close() &&
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-    {
+    [[nodiscard]] constexpr Resource close() && noexcept(std::is_nothrow_move_constructible_v<Resource>) {
         this->mark_consumed_();
         return std::move(inner_).close();
     }
 
-    [[nodiscard]] constexpr Resource&       resource() &        noexcept { return inner_.resource(); }
-    [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return inner_.resource(); }
-    [[nodiscard]] constexpr OneShotFlag&    crash_flag() const  noexcept { return *flag_; }
+    [[nodiscard]] constexpr Resource& resource() & noexcept { return inner_.resource(); }
+    [[nodiscard]] constexpr const Resource& resource() const& noexcept { return inner_.resource(); }
+    [[nodiscard]] constexpr OneShotFlag& crash_flag() const noexcept { return *flag_; }
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -733,121 +656,100 @@ public:
 // a watched handle declared with CrashClass::Throw must terminate in
 // Stop_g<Throw>, not a silently widened Stop_g<Abort>.
 
-template <CrashClass StopC, typename Resource, typename PeerTag,
-          CrashClass C, typename LoopCtx, typename PS>
+template <CrashClass StopC, typename Resource, typename PeerTag, CrashClass C, typename LoopCtx, typename PS>
 class [[nodiscard]]
 CrashWatchedHandle<Stop_g<StopC>, Resource, PeerTag, C, LoopCtx, PS>
-    : public SessionHandleBase<
-          Stop_g<StopC>,
-          CrashWatchedHandle<Stop_g<StopC>, Resource, PeerTag, C, LoopCtx, PS>>
-{
+    : public SessionHandleBase<Stop_g<StopC>, CrashWatchedHandle<Stop_g<StopC>, Resource, PeerTag, C, LoopCtx, PS>> {
     PermissionedSessionHandle<Stop_g<StopC>, PS, Resource, LoopCtx> inner_;
     OneShotFlag* flag_ = nullptr;
 
 public:
     static_assert(detail::crash_watched_class_admissible_v<C>,
-        "crucible::session::diagnostic [CrashWatched_NoThrow_Rejected]: "
-        "CrashWatchedHandle cannot be parameterized with CrashClass::NoThrow.");
-    static_assert(StopC == C,
-        "crucible::session::diagnostic [CrashWatched_StopClass_Mismatch]: "
-        "CrashWatchedHandle CrashClass must match reachable Stop_g<C>.");
+                  "crucible::session::diagnostic [CrashWatched_NoThrow_Rejected]: "
+                  "CrashWatchedHandle cannot be parameterized with CrashClass::NoThrow.");
+    static_assert(StopC == C, "crucible::session::diagnostic [CrashWatched_StopClass_Mismatch]: "
+                              "CrashWatchedHandle CrashClass must match reachable Stop_g<C>.");
 
-    using protocol      = Stop_g<StopC>;
+    using protocol = Stop_g<StopC>;
     using resource_type = Resource;
-    using loop_ctx      = LoopCtx;
-    using peer          = PeerTag;
-    using perm_set      = PS;
-    using inner_type    = PermissionedSessionHandle<Stop_g<StopC>, PS, Resource, LoopCtx>;
-    using stop_type     = Stop_g<C>;
+    using loop_ctx = LoopCtx;
+    using peer = PeerTag;
+    using perm_set = PS;
+    using inner_type = PermissionedSessionHandle<Stop_g<StopC>, PS, Resource, LoopCtx>;
+    using stop_type = Stop_g<C>;
     static constexpr CrashClass crash_class = C;
 
-    constexpr CrashWatchedHandle(
-        inner_type inner,
-        OneShotFlag& flag,
-        std::source_location loc = std::source_location::current()) noexcept
-        : SessionHandleBase<
-              Stop_g<StopC>,
-              CrashWatchedHandle<
-                  Stop_g<StopC>, Resource, PeerTag, C, LoopCtx, PS>>{loc}
-        , inner_{std::move(inner)}, flag_{&flag}
-    {
+    constexpr CrashWatchedHandle(inner_type inner, OneShotFlag& flag,
+                                 std::source_location loc = std::source_location::current()) noexcept
+        : SessionHandleBase<Stop_g<StopC>, CrashWatchedHandle<Stop_g<StopC>, Resource, PeerTag, C, LoopCtx, PS>>{loc},
+          inner_{std::move(inner)},
+          flag_{&flag} {
         detail::require_crash_watched_contract_<Stop_g<StopC>, C>();
         detail::require_crash_survivors_declared_<PeerTag>();
     }
 
-    constexpr CrashWatchedHandle(CrashWatchedHandle&&) noexcept            = default;
+    constexpr CrashWatchedHandle(CrashWatchedHandle&&) noexcept = default;
     constexpr CrashWatchedHandle& operator=(CrashWatchedHandle&&) noexcept = default;
     ~CrashWatchedHandle() = default;
 
-    [[nodiscard]] constexpr Resource close() &&
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-    {
+    [[nodiscard]] constexpr Resource close() && noexcept(std::is_nothrow_move_constructible_v<Resource>) {
         this->mark_consumed_();
         return std::move(inner_).close();
     }
 
-    [[nodiscard]] constexpr Resource&       resource() &        noexcept { return inner_.resource(); }
-    [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return inner_.resource(); }
-    [[nodiscard]] constexpr OneShotFlag&    crash_flag() const  noexcept { return *flag_; }
+    [[nodiscard]] constexpr Resource& resource() & noexcept { return inner_.resource(); }
+    [[nodiscard]] constexpr const Resource& resource() const& noexcept { return inner_.resource(); }
+    [[nodiscard]] constexpr OneShotFlag& crash_flag() const noexcept { return *flag_; }
 };
 
 // ═════════════════════════════════════════════════════════════════════
 // ── CrashWatchedHandle<Send<T, R>, …> ──────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 
-template <typename T, typename R, typename Resource,
-          typename PeerTag, CrashClass C, typename LoopCtx, typename PS>
+template <typename T, typename R, typename Resource, typename PeerTag, CrashClass C, typename LoopCtx, typename PS>
 class [[nodiscard]] CrashWatchedHandle<Send<T, R>, Resource, PeerTag, C, LoopCtx, PS>
-    : public SessionHandleBase<Send<T, R>,
-                               CrashWatchedHandle<Send<T, R>, Resource, PeerTag, C, LoopCtx, PS>>
-{
+    : public SessionHandleBase<Send<T, R>, CrashWatchedHandle<Send<T, R>, Resource, PeerTag, C, LoopCtx, PS>> {
     PermissionedSessionHandle<Send<T, R>, PS, Resource, LoopCtx> inner_;
     OneShotFlag* flag_ = nullptr;
 
 public:
     static_assert(detail::crash_watched_class_admissible_v<C>,
-        "crucible::session::diagnostic [CrashWatched_NoThrow_Rejected]: "
-        "CrashWatchedHandle cannot be parameterized with CrashClass::NoThrow.");
+                  "crucible::session::diagnostic [CrashWatched_NoThrow_Rejected]: "
+                  "CrashWatchedHandle cannot be parameterized with CrashClass::NoThrow.");
     static_assert(detail::stop_class_compatible_v<Send<T, R>, C>,
-        "crucible::session::diagnostic [CrashWatched_StopClass_Mismatch]: "
-        "CrashWatchedHandle CrashClass must match reachable Stop_g<C>.");
+                  "crucible::session::diagnostic [CrashWatched_StopClass_Mismatch]: "
+                  "CrashWatchedHandle CrashClass must match reachable Stop_g<C>.");
 
-    using protocol      = Send<T, R>;
-    using message_type  = T;
-    using continuation  = R;
+    using protocol = Send<T, R>;
+    using message_type = T;
+    using continuation = R;
     using resource_type = Resource;
-    using loop_ctx      = LoopCtx;
-    using peer          = PeerTag;
-    using perm_set      = PS;
-    using inner_type    = PermissionedSessionHandle<Send<T, R>, PS, Resource, LoopCtx>;
-    using stop_type     = Stop_g<C>;
+    using loop_ctx = LoopCtx;
+    using peer = PeerTag;
+    using perm_set = PS;
+    using inner_type = PermissionedSessionHandle<Send<T, R>, PS, Resource, LoopCtx>;
+    using stop_type = Stop_g<C>;
     static constexpr CrashClass crash_class = C;
 
-    constexpr CrashWatchedHandle(
-        inner_type inner,
-        OneShotFlag& flag,
-        std::source_location loc = std::source_location::current()) noexcept
-        : SessionHandleBase<Send<T, R>,
-                            CrashWatchedHandle<Send<T, R>, Resource, PeerTag, C, LoopCtx, PS>>{loc}
-        , inner_{std::move(inner)}, flag_{&flag}
-    {
+    constexpr CrashWatchedHandle(inner_type inner, OneShotFlag& flag,
+                                 std::source_location loc = std::source_location::current()) noexcept
+        : SessionHandleBase<Send<T, R>, CrashWatchedHandle<Send<T, R>, Resource, PeerTag, C, LoopCtx, PS>>{loc},
+          inner_{std::move(inner)},
+          flag_{&flag} {
         detail::require_crash_watched_contract_<Send<T, R>, C>();
         detail::require_crash_survivors_declared_<PeerTag>();
     }
 
-    constexpr CrashWatchedHandle(CrashWatchedHandle&&) noexcept            = default;
+    constexpr CrashWatchedHandle(CrashWatchedHandle&&) noexcept = default;
     constexpr CrashWatchedHandle& operator=(CrashWatchedHandle&&) noexcept = default;
     ~CrashWatchedHandle() = default;
 
     template <typename Transport>
         requires std::is_invocable_v<Transport, Resource&, T&&>
-    [[nodiscard]] constexpr auto send(T value, Transport transport) &&
-        -> std::expected<
-            decltype(detail::wrap_crash_next_<PeerTag, C>(
-                std::declval<inner_type>().send(std::move(value), std::move(transport)),
-                std::declval<OneShotFlag&>())),
-            detail::crash_event_for_t<PeerTag, Resource>>
-    {
+    [[nodiscard]] constexpr auto send(T value, Transport transport) && -> std::expected<
+        decltype(detail::wrap_crash_next_<PeerTag, C>(
+            std::declval<inner_type>().send(std::move(value), std::move(transport)), std::declval<OneShotFlag&>())),
+        detail::crash_event_for_t<PeerTag, Resource>> {
         // Hot-path peek: one relaxed atomic load.  No fence on the
         // happy path.
         if (flag_->peek()) [[unlikely]] {
@@ -864,66 +766,58 @@ public:
             // ctor is private; this helper is its only friend, so a
             // wrapper that returned unexpected without detaching would
             // not compile (the bug from #400's first replace_all).
-            return wrap_crash_return<PeerTag>(
-                std::move(inner_),
-                detach_reason::TransportClosedOutOfBand{},
-                std::move(recovered));
+            return wrap_crash_return<PeerTag>(std::move(inner_), detach_reason::TransportClosedOutOfBand{},
+                                              std::move(recovered));
         }
         auto next = std::move(inner_).send(std::move(value), std::move(transport));
         this->mark_consumed_();
         return detail::wrap_crash_next_<PeerTag, C>(std::move(next), *flag_);
     }
 
-    [[nodiscard]] constexpr Resource&       resource() &        noexcept { return inner_.resource(); }
-    [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return inner_.resource(); }
-    [[nodiscard]] constexpr OneShotFlag&    crash_flag() const  noexcept { return *flag_; }
+    [[nodiscard]] constexpr Resource& resource() & noexcept { return inner_.resource(); }
+    [[nodiscard]] constexpr const Resource& resource() const& noexcept { return inner_.resource(); }
+    [[nodiscard]] constexpr OneShotFlag& crash_flag() const noexcept { return *flag_; }
 };
 
 // ═════════════════════════════════════════════════════════════════════
 // ── CrashWatchedHandle<Recv<T, R>, …> ──────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 
-template <typename T, typename R, typename Resource,
-          typename PeerTag, CrashClass C, typename LoopCtx, typename PS>
+template <typename T, typename R, typename Resource, typename PeerTag, CrashClass C, typename LoopCtx, typename PS>
 class [[nodiscard]] CrashWatchedHandle<Recv<T, R>, Resource, PeerTag, C, LoopCtx, PS>
-    : public SessionHandleBase<Recv<T, R>,
-                               CrashWatchedHandle<Recv<T, R>, Resource, PeerTag, C, LoopCtx, PS>>
-{
+    : public SessionHandleBase<Recv<T, R>, CrashWatchedHandle<Recv<T, R>, Resource, PeerTag, C, LoopCtx, PS>> {
     PermissionedSessionHandle<Recv<T, R>, PS, Resource, LoopCtx> inner_;
     OneShotFlag* flag_ = nullptr;
 
 public:
     static_assert(detail::crash_watched_class_admissible_v<C>,
-        "crucible::session::diagnostic [CrashWatched_NoThrow_Rejected]: "
-        "CrashWatchedHandle cannot be parameterized with CrashClass::NoThrow.");
+                  "crucible::session::diagnostic [CrashWatched_NoThrow_Rejected]: "
+                  "CrashWatchedHandle cannot be parameterized with CrashClass::NoThrow.");
     static_assert(detail::stop_class_compatible_v<Recv<T, R>, C>,
-        "crucible::session::diagnostic [CrashWatched_StopClass_Mismatch]: "
-        "CrashWatchedHandle CrashClass must match reachable Stop_g<C>.");
+                  "crucible::session::diagnostic [CrashWatched_StopClass_Mismatch]: "
+                  "CrashWatchedHandle CrashClass must match reachable Stop_g<C>.");
 
-    using protocol      = Recv<T, R>;
-    using message_type  = T;
-    using continuation  = R;
+    using protocol = Recv<T, R>;
+    using message_type = T;
+    using continuation = R;
     using resource_type = Resource;
-    using loop_ctx      = LoopCtx;
-    using peer          = PeerTag;
-    using perm_set      = PS;
-    using inner_type    = PermissionedSessionHandle<Recv<T, R>, PS, Resource, LoopCtx>;
-    using stop_type     = Stop_g<C>;
+    using loop_ctx = LoopCtx;
+    using peer = PeerTag;
+    using perm_set = PS;
+    using inner_type = PermissionedSessionHandle<Recv<T, R>, PS, Resource, LoopCtx>;
+    using stop_type = Stop_g<C>;
     static constexpr CrashClass crash_class = C;
 
-    constexpr CrashWatchedHandle(
-        inner_type inner,
-        OneShotFlag& flag,
-        std::source_location loc = std::source_location::current()) noexcept
-        : SessionHandleBase<Recv<T, R>,
-                            CrashWatchedHandle<Recv<T, R>, Resource, PeerTag, C, LoopCtx, PS>>{loc}
-        , inner_{std::move(inner)}, flag_{&flag}
-    {
+    constexpr CrashWatchedHandle(inner_type inner, OneShotFlag& flag,
+                                 std::source_location loc = std::source_location::current()) noexcept
+        : SessionHandleBase<Recv<T, R>, CrashWatchedHandle<Recv<T, R>, Resource, PeerTag, C, LoopCtx, PS>>{loc},
+          inner_{std::move(inner)},
+          flag_{&flag} {
         detail::require_crash_watched_contract_<Recv<T, R>, C>();
         detail::require_crash_survivors_declared_<PeerTag>();
     }
 
-    constexpr CrashWatchedHandle(CrashWatchedHandle&&) noexcept            = default;
+    constexpr CrashWatchedHandle(CrashWatchedHandle&&) noexcept = default;
     constexpr CrashWatchedHandle& operator=(CrashWatchedHandle&&) noexcept = default;
     ~CrashWatchedHandle() = default;
 
@@ -932,13 +826,10 @@ public:
     // NextHandle>, CrashEvent>.
     template <typename Transport>
         requires std::is_invocable_r_v<T, Transport, Resource&>
-    [[nodiscard]] constexpr auto recv(Transport transport) &&
-        -> std::expected<
-            std::pair<T, decltype(detail::wrap_crash_next_<PeerTag, C>(
-                std::declval<inner_type>().recv(std::move(transport)).second,
-                std::declval<OneShotFlag&>()))>,
-            detail::crash_event_for_t<PeerTag, Resource>>
-    {
+    [[nodiscard]] constexpr auto recv(Transport transport) && -> std::expected<
+        std::pair<T, decltype(detail::wrap_crash_next_<PeerTag, C>(
+                         std::declval<inner_type>().recv(std::move(transport)).second, std::declval<OneShotFlag&>()))>,
+        detail::crash_event_for_t<PeerTag, Resource>> {
         if (flag_->peek()) [[unlikely]] {
             std::atomic_thread_fence(std::memory_order_acquire);
             // Recover Resource then explicitly detach the inner
@@ -950,82 +841,70 @@ public:
             // ctor is private; this helper is its only friend, so a
             // wrapper that returned unexpected without detaching would
             // not compile (the bug from #400's first replace_all).
-            return wrap_crash_return<PeerTag>(
-                std::move(inner_),
-                detach_reason::TransportClosedOutOfBand{},
-                std::move(recovered));
+            return wrap_crash_return<PeerTag>(std::move(inner_), detach_reason::TransportClosedOutOfBand{},
+                                              std::move(recovered));
         }
         auto [value, next] = std::move(inner_).recv(std::move(transport));
         this->mark_consumed_();
-        return std::pair{
-            std::move(value),
-            detail::wrap_crash_next_<PeerTag, C>(std::move(next), *flag_)};
+        return std::pair{std::move(value), detail::wrap_crash_next_<PeerTag, C>(std::move(next), *flag_)};
     }
 
-    [[nodiscard]] constexpr Resource&       resource() &        noexcept { return inner_.resource(); }
-    [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return inner_.resource(); }
-    [[nodiscard]] constexpr OneShotFlag&    crash_flag() const  noexcept { return *flag_; }
+    [[nodiscard]] constexpr Resource& resource() & noexcept { return inner_.resource(); }
+    [[nodiscard]] constexpr const Resource& resource() const& noexcept { return inner_.resource(); }
+    [[nodiscard]] constexpr OneShotFlag& crash_flag() const noexcept { return *flag_; }
 };
 
 // ═════════════════════════════════════════════════════════════════════
 // ── CrashWatchedHandle<Select<Bs...>, …> ───────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 
-template <typename... Branches, typename Resource,
-          typename PeerTag, CrashClass C, typename LoopCtx, typename PS>
+template <typename... Branches, typename Resource, typename PeerTag, CrashClass C, typename LoopCtx, typename PS>
 class [[nodiscard]] CrashWatchedHandle<Select<Branches...>, Resource, PeerTag, C, LoopCtx, PS>
     : public SessionHandleBase<Select<Branches...>,
-                               CrashWatchedHandle<Select<Branches...>, Resource, PeerTag, C, LoopCtx, PS>>
-{
+                               CrashWatchedHandle<Select<Branches...>, Resource, PeerTag, C, LoopCtx, PS>> {
     PermissionedSessionHandle<Select<Branches...>, PS, Resource, LoopCtx> inner_;
     OneShotFlag* flag_ = nullptr;
 
 public:
     static_assert(detail::crash_watched_class_admissible_v<C>,
-        "crucible::session::diagnostic [CrashWatched_NoThrow_Rejected]: "
-        "CrashWatchedHandle cannot be parameterized with CrashClass::NoThrow.");
+                  "crucible::session::diagnostic [CrashWatched_NoThrow_Rejected]: "
+                  "CrashWatchedHandle cannot be parameterized with CrashClass::NoThrow.");
     static_assert(detail::stop_class_compatible_v<Select<Branches...>, C>,
-        "crucible::session::diagnostic [CrashWatched_StopClass_Mismatch]: "
-        "CrashWatchedHandle CrashClass must match reachable Stop_g<C>.");
+                  "crucible::session::diagnostic [CrashWatched_StopClass_Mismatch]: "
+                  "CrashWatchedHandle CrashClass must match reachable Stop_g<C>.");
 
-    using protocol      = Select<Branches...>;
+    using protocol = Select<Branches...>;
     using resource_type = Resource;
-    using loop_ctx      = LoopCtx;
-    using peer          = PeerTag;
-    using perm_set      = PS;
-    using inner_type    = PermissionedSessionHandle<Select<Branches...>, PS, Resource, LoopCtx>;
-    using stop_type     = Stop_g<C>;
+    using loop_ctx = LoopCtx;
+    using peer = PeerTag;
+    using perm_set = PS;
+    using inner_type = PermissionedSessionHandle<Select<Branches...>, PS, Resource, LoopCtx>;
+    using stop_type = Stop_g<C>;
     static constexpr CrashClass crash_class = C;
 
     static constexpr std::size_t branch_count = sizeof...(Branches);
 
-    constexpr CrashWatchedHandle(
-        inner_type inner,
-        OneShotFlag& flag,
-        std::source_location loc = std::source_location::current()) noexcept
+    constexpr CrashWatchedHandle(inner_type inner, OneShotFlag& flag,
+                                 std::source_location loc = std::source_location::current()) noexcept
         : SessionHandleBase<Select<Branches...>,
-                            CrashWatchedHandle<Select<Branches...>, Resource, PeerTag, C, LoopCtx, PS>>{loc}
-        , inner_{std::move(inner)}, flag_{&flag}
-    {
+                            CrashWatchedHandle<Select<Branches...>, Resource, PeerTag, C, LoopCtx, PS>>{loc},
+          inner_{std::move(inner)},
+          flag_{&flag} {
         detail::require_crash_watched_contract_<Select<Branches...>, C>();
         detail::require_crash_survivors_declared_<PeerTag>();
     }
 
-    constexpr CrashWatchedHandle(CrashWatchedHandle&&) noexcept            = default;
+    constexpr CrashWatchedHandle(CrashWatchedHandle&&) noexcept = default;
     constexpr CrashWatchedHandle& operator=(CrashWatchedHandle&&) noexcept = default;
     ~CrashWatchedHandle() = default;
 
     // Transport-driven select: signal choice; route to crash if flag set.
     template <std::size_t I, typename Transport>
-        requires (I < sizeof...(Branches))
-              && std::is_invocable_v<Transport, Resource&, std::size_t>
-    [[nodiscard]] constexpr auto select(Transport transport) &&
-        -> std::expected<
-            decltype(detail::wrap_crash_next_<PeerTag, C>(
-                std::declval<inner_type>().template select<I>(std::move(transport)),
-                std::declval<OneShotFlag&>())),
-            detail::crash_event_for_t<PeerTag, Resource>>
-    {
+        requires(I < sizeof...(Branches)) && std::is_invocable_v<Transport, Resource&, std::size_t>
+    [[nodiscard]] constexpr auto select(Transport transport) && -> std::expected<
+        decltype(detail::wrap_crash_next_<PeerTag, C>(
+            std::declval<inner_type>().template select<I>(std::move(transport)), std::declval<OneShotFlag&>())),
+        detail::crash_event_for_t<PeerTag, Resource>> {
         if (flag_->peek()) [[unlikely]] {
             std::atomic_thread_fence(std::memory_order_acquire);
             // Recover Resource then explicitly detach the inner
@@ -1037,10 +916,8 @@ public:
             // ctor is private; this helper is its only friend, so a
             // wrapper that returned unexpected without detaching would
             // not compile (the bug from #400's first replace_all).
-            return wrap_crash_return<PeerTag>(
-                std::move(inner_),
-                detach_reason::TransportClosedOutOfBand{},
-                std::move(recovered));
+            return wrap_crash_return<PeerTag>(std::move(inner_), detach_reason::TransportClosedOutOfBand{},
+                                              std::move(recovered));
         }
         auto next = std::move(inner_).template select<I>(std::move(transport));
         this->mark_consumed_();
@@ -1054,14 +931,11 @@ public:
     // .select_local<I>() call returns crash event; otherwise the
     // local handle advances to branch I without signalling the peer.
     template <std::size_t I>
-        requires (I < sizeof...(Branches))
-    [[nodiscard]] constexpr auto select_local() &&
-        -> std::expected<
-            decltype(detail::wrap_crash_next_<PeerTag, C>(
-                std::declval<inner_type>().template select_local<I>(),
-                std::declval<OneShotFlag&>())),
-            detail::crash_event_for_t<PeerTag, Resource>>
-    {
+        requires(I < sizeof...(Branches))
+    [[nodiscard]] constexpr auto select_local() && -> std::expected<
+        decltype(detail::wrap_crash_next_<PeerTag, C>(std::declval<inner_type>().template select_local<I>(),
+                                                      std::declval<OneShotFlag&>())),
+        detail::crash_event_for_t<PeerTag, Resource>> {
         if (flag_->peek()) [[unlikely]] {
             std::atomic_thread_fence(std::memory_order_acquire);
             // Recover Resource then explicitly detach the inner
@@ -1073,10 +947,8 @@ public:
             // ctor is private; this helper is its only friend, so a
             // wrapper that returned unexpected without detaching would
             // not compile (the bug from #400's first replace_all).
-            return wrap_crash_return<PeerTag>(
-                std::move(inner_),
-                detach_reason::TransportClosedOutOfBand{},
-                std::move(recovered));
+            return wrap_crash_return<PeerTag>(std::move(inner_), detach_reason::TransportClosedOutOfBand{},
+                                              std::move(recovered));
         }
         auto next = std::move(inner_).template select_local<I>();
         this->mark_consumed_();
@@ -1087,16 +959,15 @@ public:
     // to choose between the wire variant `.select<I>(transport)` and
     // the wire-omitting `.select_local<I>()`.
     template <std::size_t I>
-    void select() && = delete(
-        "[Wire_Variant_Required] CrashWatchedHandle<Select<...>>::"
-        "select<I>() without arguments is no longer allowed (#377).  "
-        "Choose `select<I>(transport)` for the wire path, or "
-        "`select_local<I>()` for the in-memory variant.  See "
-        "SessionHandle<Select<...>>::select for the full discipline.");
+    void select() && = delete("[Wire_Variant_Required] CrashWatchedHandle<Select<...>>::"
+                              "select<I>() without arguments is no longer allowed (#377).  "
+                              "Choose `select<I>(transport)` for the wire path, or "
+                              "`select_local<I>()` for the in-memory variant.  See "
+                              "SessionHandle<Select<...>>::select for the full discipline.");
 
-    [[nodiscard]] constexpr Resource&       resource() &        noexcept { return inner_.resource(); }
-    [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return inner_.resource(); }
-    [[nodiscard]] constexpr OneShotFlag&    crash_flag() const  noexcept { return *flag_; }
+    [[nodiscard]] constexpr Resource& resource() & noexcept { return inner_.resource(); }
+    [[nodiscard]] constexpr const Resource& resource() const& noexcept { return inner_.resource(); }
+    [[nodiscard]] constexpr OneShotFlag& crash_flag() const noexcept { return *flag_; }
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -1110,47 +981,43 @@ public:
 //   branches is the natural Phase 2 (combines #368's "walk every
 //   Offer for crash branches" with this header's runtime wire).
 
-template <typename... Branches, typename Resource,
-          typename PeerTag, CrashClass C, typename LoopCtx, typename PS>
+template <typename... Branches, typename Resource, typename PeerTag, CrashClass C, typename LoopCtx, typename PS>
 class [[nodiscard]] CrashWatchedHandle<Offer<Branches...>, Resource, PeerTag, C, LoopCtx, PS>
     : public SessionHandleBase<Offer<Branches...>,
-                               CrashWatchedHandle<Offer<Branches...>, Resource, PeerTag, C, LoopCtx, PS>>
-{
+                               CrashWatchedHandle<Offer<Branches...>, Resource, PeerTag, C, LoopCtx, PS>> {
     PermissionedSessionHandle<Offer<Branches...>, PS, Resource, LoopCtx> inner_;
     OneShotFlag* flag_ = nullptr;
 
 public:
     static_assert(detail::crash_watched_class_admissible_v<C>,
-        "crucible::session::diagnostic [CrashWatched_NoThrow_Rejected]: "
-        "CrashWatchedHandle cannot be parameterized with CrashClass::NoThrow.");
+                  "crucible::session::diagnostic [CrashWatched_NoThrow_Rejected]: "
+                  "CrashWatchedHandle cannot be parameterized with CrashClass::NoThrow.");
     static_assert(detail::stop_class_compatible_v<Offer<Branches...>, C>,
-        "crucible::session::diagnostic [CrashWatched_StopClass_Mismatch]: "
-        "CrashWatchedHandle CrashClass must match reachable Stop_g<C>.");
+                  "crucible::session::diagnostic [CrashWatched_StopClass_Mismatch]: "
+                  "CrashWatchedHandle CrashClass must match reachable Stop_g<C>.");
 
-    using protocol      = Offer<Branches...>;
+    using protocol = Offer<Branches...>;
     using resource_type = Resource;
-    using loop_ctx      = LoopCtx;
-    using peer          = PeerTag;
-    using perm_set      = PS;
-    using inner_type    = PermissionedSessionHandle<Offer<Branches...>, PS, Resource, LoopCtx>;
-    using stop_type     = Stop_g<C>;
+    using loop_ctx = LoopCtx;
+    using peer = PeerTag;
+    using perm_set = PS;
+    using inner_type = PermissionedSessionHandle<Offer<Branches...>, PS, Resource, LoopCtx>;
+    using stop_type = Stop_g<C>;
     static constexpr CrashClass crash_class = C;
 
     static constexpr std::size_t branch_count = sizeof...(Branches);
 
-    constexpr CrashWatchedHandle(
-        inner_type inner,
-        OneShotFlag& flag,
-        std::source_location loc = std::source_location::current()) noexcept
+    constexpr CrashWatchedHandle(inner_type inner, OneShotFlag& flag,
+                                 std::source_location loc = std::source_location::current()) noexcept
         : SessionHandleBase<Offer<Branches...>,
-                            CrashWatchedHandle<Offer<Branches...>, Resource, PeerTag, C, LoopCtx, PS>>{loc}
-        , inner_{std::move(inner)}, flag_{&flag}
-    {
+                            CrashWatchedHandle<Offer<Branches...>, Resource, PeerTag, C, LoopCtx, PS>>{loc},
+          inner_{std::move(inner)},
+          flag_{&flag} {
         detail::require_crash_watched_contract_<Offer<Branches...>, C>();
         detail::require_crash_survivors_declared_<PeerTag>();
     }
 
-    constexpr CrashWatchedHandle(CrashWatchedHandle&&) noexcept            = default;
+    constexpr CrashWatchedHandle(CrashWatchedHandle&&) noexcept = default;
     constexpr CrashWatchedHandle& operator=(CrashWatchedHandle&&) noexcept = default;
     ~CrashWatchedHandle() = default;
 
@@ -1158,14 +1025,11 @@ public:
     // for the Offer side too.  Same crash-detection semantics; the
     // local handle assumes branch I without receiving the peer label.
     template <std::size_t I>
-        requires (I < sizeof...(Branches))
-    [[nodiscard]] constexpr auto pick_local() &&
-        -> std::expected<
-            decltype(detail::wrap_crash_next_<PeerTag, C>(
-                std::declval<inner_type>().template pick_local<I>(),
-                std::declval<OneShotFlag&>())),
-            detail::crash_event_for_t<PeerTag, Resource>>
-    {
+        requires(I < sizeof...(Branches))
+    [[nodiscard]] constexpr auto pick_local() && -> std::expected<
+        decltype(detail::wrap_crash_next_<PeerTag, C>(std::declval<inner_type>().template pick_local<I>(),
+                                                      std::declval<OneShotFlag&>())),
+        detail::crash_event_for_t<PeerTag, Resource>> {
         if (flag_->peek()) [[unlikely]] {
             std::atomic_thread_fence(std::memory_order_acquire);
             // Recover Resource then explicitly detach the inner
@@ -1177,10 +1041,8 @@ public:
             // ctor is private; this helper is its only friend, so a
             // wrapper that returned unexpected without detaching would
             // not compile (the bug from #400's first replace_all).
-            return wrap_crash_return<PeerTag>(
-                std::move(inner_),
-                detach_reason::TransportClosedOutOfBand{},
-                std::move(recovered));
+            return wrap_crash_return<PeerTag>(std::move(inner_), detach_reason::TransportClosedOutOfBand{},
+                                              std::move(recovered));
         }
         auto next = std::move(inner_).template pick_local<I>();
         this->mark_consumed_();
@@ -1191,17 +1053,16 @@ public:
     // CrashWatchedHandle<Select<...>>::select; force every call site
     // to make the wire choice explicit.
     template <std::size_t I>
-    void pick() && = delete(
-        "[Wire_Variant_Required] CrashWatchedHandle<Offer<...>>::"
-        "pick<I>() without arguments is no longer allowed (#377).  "
-        "Use `pick_local<I>()` to advance without receiving a peer "
-        "label, or call the peer-receiving variant when one is "
-        "available.  See SessionHandle<Offer<...>>::pick for the "
-        "full discipline.");
+    void pick() && = delete("[Wire_Variant_Required] CrashWatchedHandle<Offer<...>>::"
+                            "pick<I>() without arguments is no longer allowed (#377).  "
+                            "Use `pick_local<I>()` to advance without receiving a peer "
+                            "label, or call the peer-receiving variant when one is "
+                            "available.  See SessionHandle<Offer<...>>::pick for the "
+                            "full discipline.");
 
-    [[nodiscard]] constexpr Resource&       resource() &        noexcept { return inner_.resource(); }
-    [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return inner_.resource(); }
-    [[nodiscard]] constexpr OneShotFlag&    crash_flag() const  noexcept { return *flag_; }
+    [[nodiscard]] constexpr Resource& resource() & noexcept { return inner_.resource(); }
+    [[nodiscard]] constexpr const Resource& resource() const& noexcept { return inner_.resource(); }
+    [[nodiscard]] constexpr OneShotFlag& crash_flag() const noexcept { return *flag_; }
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -1258,41 +1119,31 @@ public:
 // continue to fire via parameter-type SFINAE; the requires-clause is
 // additive.
 
-template <typename PeerTag, CrashClass C = CrashClass::Abort,
-          typename Proto, typename Resource, typename LoopCtx>
-    requires ::crucible::safety::extract::IsSessionHandle<
-        SessionHandle<Proto, Resource, LoopCtx>>
-[[nodiscard]] constexpr auto mint_crash_watched_session(
-    SessionHandle<Proto, Resource, LoopCtx> handle,
-    OneShotFlag& flag) noexcept
-{
+template <typename PeerTag, CrashClass C = CrashClass::Abort, typename Proto, typename Resource, typename LoopCtx>
+    requires ::crucible::safety::extract::IsSessionHandle<SessionHandle<Proto, Resource, LoopCtx>>
+[[nodiscard]] constexpr auto mint_crash_watched_session(SessionHandle<Proto, Resource, LoopCtx> handle,
+                                                        OneShotFlag& flag) noexcept {
     detail::require_crash_watched_contract_<Proto, C>();
     detail::require_crash_survivors_declared_<PeerTag>();
 
     Resource recovered = std::move(handle.resource());
     std::move(handle).detach(detach_reason::OwnerLifetimeBoundEarlyExit{});
-    using PSLoopCtx =
-        detail::permissioned_loop_ctx_from_bare_t<LoopCtx, EmptyPermSet>;
+    using PSLoopCtx = detail::permissioned_loop_ctx_from_bare_t<LoopCtx, EmptyPermSet>;
     return CrashWatchedHandle<Proto, Resource, PeerTag, C, PSLoopCtx, EmptyPermSet>{
-        detail::permissioned_session_with_loc_<
-            Proto, EmptyPermSet, Resource, PSLoopCtx>(
+        detail::permissioned_session_with_loc_<Proto, EmptyPermSet, Resource, PSLoopCtx>(
             std::move(recovered), std::source_location::current()),
         flag};
 }
 
-template <typename PeerTag, CrashClass C = CrashClass::Abort,
-          typename Proto, typename PS, typename Resource, typename LoopCtx>
-    requires ::crucible::safety::extract::IsSessionHandle<
-        PermissionedSessionHandle<Proto, PS, Resource, LoopCtx>>
-[[nodiscard]] constexpr auto mint_crash_watched_session(
-    PermissionedSessionHandle<Proto, PS, Resource, LoopCtx> handle,
-    OneShotFlag& flag) noexcept
-{
+template <typename PeerTag, CrashClass C = CrashClass::Abort, typename Proto, typename PS, typename Resource,
+          typename LoopCtx>
+    requires ::crucible::safety::extract::IsSessionHandle<PermissionedSessionHandle<Proto, PS, Resource, LoopCtx>>
+[[nodiscard]] constexpr auto mint_crash_watched_session(PermissionedSessionHandle<Proto, PS, Resource, LoopCtx> handle,
+                                                        OneShotFlag& flag) noexcept {
     detail::require_crash_watched_contract_<Proto, C>();
     detail::require_crash_survivors_declared_<PeerTag>();
 
-    return CrashWatchedHandle<Proto, Resource, PeerTag, C, LoopCtx, PS>{
-        std::move(handle), flag};
+    return CrashWatchedHandle<Proto, Resource, PeerTag, C, LoopCtx, PS>{std::move(handle), flag};
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -1349,14 +1200,10 @@ template <typename PeerTag, CrashClass C = CrashClass::Abort,
 // (void is not assignable, void has no members).
 
 template <typename Expected, typename CrashHandler>
-constexpr void on_crash(Expected&& result, CrashHandler&& handler)
-    noexcept(std::is_nothrow_invocable_v<
-                CrashHandler&&,
-                typename std::remove_cvref_t<Expected>::error_type>)
-{
+constexpr void on_crash(Expected&& result, CrashHandler&& handler) noexcept(
+    std::is_nothrow_invocable_v<CrashHandler&&, typename std::remove_cvref_t<Expected>::error_type>) {
     using Error = typename std::remove_cvref_t<Expected>::error_type;
-    static_assert(CrashEventMatchesSurvivors<Error>,
-        "CrashEvent survivor list must match survivors_t<PeerTag>.");
+    static_assert(CrashEventMatchesSurvivors<Error>, "CrashEvent survivor list must match survivors_t<PeerTag>.");
 
     if (!result) {
         std::forward<CrashHandler>(handler)(std::move(result.error()));

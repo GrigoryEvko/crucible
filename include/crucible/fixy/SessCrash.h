@@ -207,8 +207,7 @@ using ::crucible::safety::proto::assert_every_offer_has_crash_branch_for;
 // single `requires` clause.
 template <typename Proto, typename PeerTag>
 concept CrashAwareForTransport =
-    ::crucible::safety::proto::is_well_formed_v<Proto> &&
-    every_offer_has_crash_branch_for_peer_v<Proto, PeerTag>;
+    ::crucible::safety::proto::is_well_formed_v<Proto> && every_offer_has_crash_branch_for_peer_v<Proto, PeerTag>;
 
 }  // namespace crucible::fixy::sess::crash
 
@@ -229,42 +228,38 @@ namespace proto = ::crucible::safety::proto;
 
 // Fixture role + payload tags.
 struct Alice {};
-struct Bob   {};
-struct Msg   {};
-struct Ack   {};
+struct Bob {};
+struct Msg {};
+struct Ack {};
 
-using SendInt   = proto::Send<int, proto::End>;
-using RecvInt   = proto::Recv<int, proto::End>;
-using EndProto  = proto::End;
+using SendInt = proto::Send<int, proto::End>;
+using RecvInt = proto::Recv<int, proto::End>;
+using EndProto = proto::End;
 using StopProto = Stop;
 
 // ── A. Stop combinator identity reach ──────────────────────────────
 // Substrate identity preserved through fixy::.  Each Stop_g<C>
 // alias resolves to the substrate ordinal exactly.
 static_assert(std::is_same_v<Stop, proto::Stop>);
-static_assert(std::is_same_v<Stop_g<CrashClass::Abort>,
-                             proto::Stop_g<proto::CrashClass::Abort>>);
-static_assert(std::is_same_v<Stop_g<CrashClass::NoThrow>,
-                             proto::Stop_g<proto::CrashClass::NoThrow>>);
-static_assert(std::is_same_v<CrashClass,
-                             proto::CrashClass>,
+static_assert(std::is_same_v<Stop_g<CrashClass::Abort>, proto::Stop_g<proto::CrashClass::Abort>>);
+static_assert(std::is_same_v<Stop_g<CrashClass::NoThrow>, proto::Stop_g<proto::CrashClass::NoThrow>>);
+static_assert(std::is_same_v<CrashClass, proto::CrashClass>,
               "fixy::sess::crash::CrashClass must alias substrate exactly.");
 
 // ── B. is_stop / is_stop_v identity ────────────────────────────────
 // Trait positive + negative cells through fixy::.
-static_assert( is_stop_v<Stop>);
-static_assert( is_stop_v<Stop_g<CrashClass::Throw>>);
+static_assert(is_stop_v<Stop>);
+static_assert(is_stop_v<Stop_g<CrashClass::Throw>>);
 static_assert(!is_stop_v<EndProto>);
 static_assert(!is_stop_v<SendInt>);
 // Identity reach: fixy:: trait identical to substrate's.
-static_assert(is_stop_v<Stop> == proto::is_stop_v<Stop>,
-              "is_stop_v must reach identically through fixy::");
+static_assert(is_stop_v<Stop> == proto::is_stop_v<Stop>, "is_stop_v must reach identically through fixy::");
 
 // ── C. Crash payload + is_crash reach ──────────────────────────────
 // Payload marker identity and shape trait.
 static_assert(std::is_same_v<Crash<Alice>, proto::Crash<Alice>>);
-static_assert( is_crash_v<Crash<Alice>>);
-static_assert( is_crash_v<Crash<Bob>>);
+static_assert(is_crash_v<Crash<Alice>>);
+static_assert(is_crash_v<Crash<Bob>>);
 static_assert(!is_crash_v<Msg>);
 static_assert(!is_crash_v<Stop>);
 // Peer-tag extraction reach.
@@ -272,36 +267,32 @@ static_assert(std::is_same_v<typename Crash<Alice>::peer, Alice>);
 
 // ── D. ReliableSet + is_reliable reach ─────────────────────────────
 // Set membership predicate through fixy::.
-using NoneReliable  = ReliableSet<>;
+using NoneReliable = ReliableSet<>;
 using AliceReliable = ReliableSet<Alice>;
-using AliceBob      = ReliableSet<Alice, Bob>;
+using AliceBob = ReliableSet<Alice, Bob>;
 
-static_assert(NoneReliable::size  == 0);
+static_assert(NoneReliable::size == 0);
 static_assert(AliceReliable::size == 1);
-static_assert(AliceBob::size      == 2);
+static_assert(AliceBob::size == 2);
 static_assert(std::is_same_v<UnreliableAll, NoneReliable>);
-static_assert(!is_reliable_v<NoneReliable,  Alice>);
-static_assert( is_reliable_v<AliceReliable, Alice>);
+static_assert(!is_reliable_v<NoneReliable, Alice>);
+static_assert(is_reliable_v<AliceReliable, Alice>);
 static_assert(!is_reliable_v<AliceReliable, Bob>);
-static_assert( is_reliable_v<AliceBob,      Alice>);
-static_assert( is_reliable_v<AliceBob,      Bob>);
+static_assert(is_reliable_v<AliceBob, Alice>);
+static_assert(is_reliable_v<AliceBob, Bob>);
 
 // ── E. Per-Offer crash-branch trait reach ──────────────────────────
 // `has_crash_branch_for_peer_v` on Offer<...> shapes.
-using NormalOffer = proto::Offer<proto::Recv<Msg, EndProto>,
-                                 proto::Recv<Ack, EndProto>>;
-using AliceCrashOffer = proto::Offer<
-    proto::Recv<Msg,          EndProto>,
-    proto::Recv<Crash<Alice>, EndProto>>;
+using NormalOffer = proto::Offer<proto::Recv<Msg, EndProto>, proto::Recv<Ack, EndProto>>;
+using AliceCrashOffer = proto::Offer<proto::Recv<Msg, EndProto>, proto::Recv<Crash<Alice>, EndProto>>;
 
-static_assert(!has_crash_branch_for_peer_v<NormalOffer,     Alice>);
-static_assert( has_crash_branch_for_peer_v<AliceCrashOffer, Alice>);
+static_assert(!has_crash_branch_for_peer_v<NormalOffer, Alice>);
+static_assert(has_crash_branch_for_peer_v<AliceCrashOffer, Alice>);
 static_assert(!has_crash_branch_for_peer_v<AliceCrashOffer, Bob>);
 // Identity reach through fixy::.
-static_assert(
-    has_crash_branch_for_peer_v<AliceCrashOffer, Alice>
-    == proto::has_crash_branch_for_peer_v<AliceCrashOffer, Alice>,
-    "has_crash_branch_for_peer_v must reach identically through fixy::");
+static_assert(has_crash_branch_for_peer_v<AliceCrashOffer, Alice>
+                  == proto::has_crash_branch_for_peer_v<AliceCrashOffer, Alice>,
+              "has_crash_branch_for_peer_v must reach identically through fixy::");
 
 // ── F. Per-tree crash-branch walker reach ──────────────────────────
 // `every_offer_has_crash_branch_for_peer_v` over a multi-Offer tree.
@@ -309,13 +300,11 @@ static_assert(
 using CrashAwareClient = proto::Send<Msg, AliceCrashOffer>;
 using CrashOblivClient = proto::Send<Msg, NormalOffer>;
 
-static_assert( every_offer_has_crash_branch_for_peer_v<
-    CrashAwareClient, Alice>);
-static_assert(!every_offer_has_crash_branch_for_peer_v<
-    CrashOblivClient, Alice>);
+static_assert(every_offer_has_crash_branch_for_peer_v<CrashAwareClient, Alice>);
+static_assert(!every_offer_has_crash_branch_for_peer_v<CrashOblivClient, Alice>);
 // Send / Recv / End / Stop are terminals — no Offer obligation.
-static_assert( every_offer_has_crash_branch_for_peer_v<EndProto,  Alice>);
-static_assert( every_offer_has_crash_branch_for_peer_v<StopProto, Alice>);
+static_assert(every_offer_has_crash_branch_for_peer_v<EndProto, Alice>);
+static_assert(every_offer_has_crash_branch_for_peer_v<StopProto, Alice>);
 
 // ── G. CrashAwareForTransport synthesis concept ────────────────────
 // The synthesis concept fires only when BOTH the well-formedness
@@ -323,18 +312,15 @@ static_assert( every_offer_has_crash_branch_for_peer_v<StopProto, Alice>);
 // well-formed crash-aware client satisfies the concept.  Negative:
 // a well-formed but crash-oblivious client REJECTS — well-formed
 // alone is not enough.
-static_assert(CrashAwareForTransport<CrashAwareClient, Alice>,
-    "Well-formed crash-aware client must satisfy "
-    "CrashAwareForTransport<Proto, Alice>.");
+static_assert(CrashAwareForTransport<CrashAwareClient, Alice>, "Well-formed crash-aware client must satisfy "
+                                                               "CrashAwareForTransport<Proto, Alice>.");
 static_assert(!CrashAwareForTransport<CrashOblivClient, Alice>,
-    "Well-formed crash-OBLIVIOUS client must REJECT "
-    "CrashAwareForTransport<Proto, Alice> — the per-tree crash-branch "
-    "walker fires even when well-formedness passes.");
+              "Well-formed crash-OBLIVIOUS client must REJECT "
+              "CrashAwareForTransport<Proto, Alice> — the per-tree crash-branch "
+              "walker fires even when well-formedness passes.");
 // Substrate-only protocols still satisfy via the substrate gates.
-static_assert(CrashAwareForTransport<EndProto, Alice>,
-    "End has no Offer<> — vacuously crash-aware for every peer.");
-static_assert(CrashAwareForTransport<StopProto, Alice>,
-    "Stop has no Offer<> — vacuously crash-aware for every peer.");
+static_assert(CrashAwareForTransport<EndProto, Alice>, "End has no Offer<> — vacuously crash-aware for every peer.");
+static_assert(CrashAwareForTransport<StopProto, Alice>, "Stop has no Offer<> — vacuously crash-aware for every peer.");
 
 // ── H. Cardinality witness ─────────────────────────────────────────
 // Re-export surface IS 18 + 1 synthesis concept = 19 entries.  This
@@ -342,11 +328,10 @@ static_assert(CrashAwareForTransport<StopProto, Alice>,
 // added or dropped, the count drifts and a coordinated update (this
 // cell + the doc-block header above) is forced.
 inline constexpr std::size_t v064_reexport_cardinality = 19;
-static_assert(v064_reexport_cardinality == 19,
-    "FIXY-V-064 ships exactly 18 substrate re-exports + 1 synthesis "
-    "concept = 19 entries in fixy::sess::crash::.  Any drift requires "
-    "a coordinated update of the doc-block surface enumeration AND "
-    "this cardinality witness.");
+static_assert(v064_reexport_cardinality == 19, "FIXY-V-064 ships exactly 18 substrate re-exports + 1 synthesis "
+                                               "concept = 19 entries in fixy::sess::crash::.  Any drift requires "
+                                               "a coordinated update of the doc-block surface enumeration AND "
+                                               "this cardinality witness.");
 
 }  // namespace crucible::fixy::sess::crash::v064_self_test
 
@@ -365,16 +350,11 @@ inline void runtime_smoke_test() noexcept {
     // Force concept evaluation at non-constant call site.
     // Each branch path exercises the synthesis concept's two-part
     // gate independently of the static_asserts above.
-    constexpr bool aware_ok =
-        CrashAwareForTransport<v064_self_test::CrashAwareClient,
-                               v064_self_test::Alice>;
-    constexpr bool obliv_rejects =
-        !CrashAwareForTransport<v064_self_test::CrashOblivClient,
-                                v064_self_test::Alice>;
-    static_assert(aware_ok && obliv_rejects,
-        "runtime_smoke_test: CrashAwareForTransport synthesis concept "
-        "must accept crash-aware clients and reject crash-oblivious "
-        "clients at the fixy:: re-export boundary.");
+    constexpr bool aware_ok = CrashAwareForTransport<v064_self_test::CrashAwareClient, v064_self_test::Alice>;
+    constexpr bool obliv_rejects = !CrashAwareForTransport<v064_self_test::CrashOblivClient, v064_self_test::Alice>;
+    static_assert(aware_ok && obliv_rejects, "runtime_smoke_test: CrashAwareForTransport synthesis concept "
+                                             "must accept crash-aware clients and reject crash-oblivious "
+                                             "clients at the fixy:: re-export boundary.");
 }
 
 }  // namespace crucible::fixy::sess::crash

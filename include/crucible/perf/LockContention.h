@@ -113,17 +113,17 @@
 
 #include <crucible/algebra/lattices/SyscallFamilyLattice.h>  // FIXY-V-179
 #include <crucible/effects/Capabilities.h>  // effects::Init capability tag
-#include <crucible/effects/EffectRow.h>     // FIXY-U-083: row_contains_v
-#include <crucible/effects/ExecCtx.h>       // FIXY-U-083: IsExecCtx, row_type_of_t
-#include <crucible/fixy/syscall/Per.h>                       // FIXY-V-179
-#include <crucible/safety/Borrowed.h>       // safety::Borrowed<T, Source>
-#include <crucible/safety/Refined.h>        // safety::Refined / bounded_above
+#include <crucible/effects/EffectRow.h>  // FIXY-U-083: row_contains_v
+#include <crucible/effects/ExecCtx.h>  // FIXY-U-083: IsExecCtx, row_type_of_t
+#include <crucible/fixy/syscall/Per.h>  // FIXY-V-179
+#include <crucible/safety/Borrowed.h>  // safety::Borrowed<T, Source>
+#include <crucible/safety/Refined.h>  // safety::Refined / bounded_above
 
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <tuple>                            // FIXY-V-179
+#include <tuple>  // FIXY-V-179
 
 namespace crucible::perf {
 
@@ -147,17 +147,16 @@ namespace crucible::perf {
 // ts_ns committed while other fields straddled a stale cache line).
 struct TimelineLockEvent {
     uint64_t futex_addr;  //  8 B  futex address (userspace VA)
-    uint64_t wait_ns;     //  8 B  duration in futex_wait (ns)
-    uint32_t tid;         //  4 B  thread that returned from futex_wait
-    uint32_t _pad;        //  4 B  pads ts_ns to 8-byte alignment
-    uint64_t ts_ns;       //  8 B  bpf_ktime_get_ns() — WRITTEN LAST
+    uint64_t wait_ns;  //  8 B  duration in futex_wait (ns)
+    uint32_t tid;  //  4 B  thread that returned from futex_wait
+    uint32_t _pad;  //  4 B  pads ts_ns to 8-byte alignment
+    uint64_t ts_ns;  //  8 B  bpf_ktime_get_ns() — WRITTEN LAST
 };
-static_assert(sizeof(TimelineLockEvent) == 32,
-    "TimelineLockEvent must be 32 B (futex_addr 8 + wait_ns 8 + "
-    "tid 4 + _pad 4 + ts_ns 8) to match the BPF program's "
-    "struct timeline_lock_event in common.h — wire contract with "
-    "BPF_F_MMAPABLE map.  32 divides 64 evenly, so events[N] never "
-    "spans two cache lines.");
+static_assert(sizeof(TimelineLockEvent) == 32, "TimelineLockEvent must be 32 B (futex_addr 8 + wait_ns 8 + "
+                                               "tid 4 + _pad 4 + ts_ns 8) to match the BPF program's "
+                                               "struct timeline_lock_event in common.h — wire contract with "
+                                               "BPF_F_MMAPABLE map.  32 divides 64 evenly, so events[N] never "
+                                               "spans two cache lines.");
 
 }  // namespace crucible::perf
 
@@ -173,7 +172,7 @@ static_assert(sizeof(TimelineLockEvent) == 32,
 namespace crucible::perf {
 
 class LockContention {
- public:
+public:
     // ─── Snapshot — consumer-shaped delta semantics ──────────────────
     //
     // Same shape as SchedSwitch::Snapshot: scalar (wait_count) plus
@@ -181,17 +180,15 @@ class LockContention {
     // accumulated in the window; `delta.timeline_index` = events
     // produced into the ring (caps at TIMELINE_CAPACITY-overwrite).
     struct Snapshot {
-        uint64_t wait_count     = 0;  // matches wait_count() at snapshot
+        uint64_t wait_count = 0;  // matches wait_count() at snapshot
         uint64_t timeline_index = 0;  // matches timeline_write_index() at snapshot
 
         [[nodiscard]] Snapshot operator-(const Snapshot& older) const noexcept {
             Snapshot r;
-            if (__builtin_sub_overflow(wait_count, older.wait_count,
-                                        &r.wait_count)) [[unlikely]] {
+            if (__builtin_sub_overflow(wait_count, older.wait_count, &r.wait_count)) [[unlikely]] {
                 r.wait_count = 0;
             }
-            if (__builtin_sub_overflow(timeline_index, older.timeline_index,
-                                        &r.timeline_index)) [[unlikely]] {
+            if (__builtin_sub_overflow(timeline_index, older.timeline_index, &r.timeline_index)) [[unlikely]] {
                 r.timeline_index = 0;
             }
             return r;
@@ -220,8 +217,7 @@ class LockContention {
     // Diagnostic line printed to stderr unless CRUCIBLE_PERF_QUIET=1 is
     // set in the environment.  CRUCIBLE_PERF_VERBOSE=1 forwards libbpf's
     // INFO/WARN messages.
-    [[nodiscard]] static std::optional<LockContention>
-        load(::crucible::effects::Init) noexcept;
+    [[nodiscard]] static std::optional<LockContention> load(::crucible::effects::Init) noexcept;
 
     // Total futex-wait events recorded for our process since load().
     // Cost: one bpf_map_lookup_elem syscall (~1 µs) — the
@@ -264,8 +260,7 @@ class LockContention {
     // lifetime is a use-after-free.  CRUCIBLE_LIFETIMEBOUND on
     // Borrowed's ctor catches the simple temporary-bind cases at
     // compile time.
-    [[nodiscard]] safety::Borrowed<const TimelineLockEvent, LockContention>
-        timeline_view() const noexcept;
+    [[nodiscard]] safety::Borrowed<const TimelineLockEvent, LockContention> timeline_view() const noexcept;
 
     // Current value of the lock_timeline ring buffer's write_idx
     // (monotonically increasing).  Reader uses this to identify the
@@ -285,15 +280,13 @@ class LockContention {
     // load() returns nullopt if either program fails to attach.
     // Cap of 8 matches the inplace_vector<...,8> shape used by
     // SchedSwitch / SenseHub.
-    [[nodiscard]] safety::Refined<safety::bounded_above<8>, std::size_t>
-        attached_programs() const noexcept;
+    [[nodiscard]] safety::Refined<safety::bounded_above<8>, std::size_t> attached_programs() const noexcept;
 
     // Number of bpf_program__attach calls that failed (returned
     // NULL or an ERR_PTR).  Same bound as attached_programs().
     // Non-zero means at least one tracepoint was unavailable — set
     // CRUCIBLE_PERF_VERBOSE=1 to see which.
-    [[nodiscard]] safety::Refined<safety::bounded_above<8>, std::size_t>
-        attach_failures() const noexcept;
+    [[nodiscard]] safety::Refined<safety::bounded_above<8>, std::size_t> attach_failures() const noexcept;
 
     LockContention(const LockContention&) =
         delete("LockContention owns unique BPF object + mmap — copying would double-close");
@@ -303,7 +296,7 @@ class LockContention {
     LockContention& operator=(LockContention&&) noexcept;
     ~LockContention();
 
- private:
+private:
     struct State;
     LockContention() noexcept;
 
@@ -319,9 +312,8 @@ class LockContention {
 // row.  Hot foreground and background-drain contexts must not engage
 // this surface; the Ctx-fit gate enforces that at the type level.
 template <class Ctx>
-concept CtxFitsLockContentionMint =
-       ::crucible::effects::IsExecCtx<Ctx>
-    && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Init>;
+concept CtxFitsLockContentionMint = ::crucible::effects::IsExecCtx<Ctx>
+                                 && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Init>;
 
 // ── FIXY-V-179 — syscall-grant declaration ────────────────────────────
 //
@@ -333,25 +325,21 @@ concept CtxFitsLockContentionMint =
 //   bpf             (41) → Privilege      → Row<IO, Block>     [V-179]
 //   perf_event_open (42) → Privilege      → Row<IO, Block>     [V-179]
 //   mmap            (21) → MemoryMapping  → Row<IO>
-using mint_lock_contention_syscall_grants = std::tuple<
-    ::crucible::fixy::grant::syscall::per<
-        ::crucible::fixy::grant::syscall::SyscallId::bpf>,
-    ::crucible::fixy::grant::syscall::per<
-        ::crucible::fixy::grant::syscall::SyscallId::perf_event_open>,
-    ::crucible::fixy::grant::syscall::per<
-        ::crucible::fixy::grant::syscall::SyscallId::mmap>>;
+using mint_lock_contention_syscall_grants =
+    std::tuple<::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::bpf>,
+               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::perf_event_open>,
+               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::mmap>>;
 
 namespace detail::v179_lock_contention_grant_check {
 namespace fsc = ::crucible::fixy::grant::syscall;
 namespace fll = ::crucible::algebra::lattices;
-static_assert(::crucible::fixy::grant::family_tier_v<
-    fsc::per<fsc::SyscallId::bpf>>             == fll::SyscallFamily::Privilege);
-static_assert(::crucible::fixy::grant::family_tier_v<
-    fsc::per<fsc::SyscallId::perf_event_open>> == fll::SyscallFamily::Privilege);
-static_assert(::crucible::fixy::grant::family_tier_v<
-    fsc::per<fsc::SyscallId::mmap>>            == fll::SyscallFamily::MemoryMapping);
+static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::bpf>> == fll::SyscallFamily::Privilege);
+static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::perf_event_open>>
+              == fll::SyscallFamily::Privilege);
+static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::mmap>>
+              == fll::SyscallFamily::MemoryMapping);
 static_assert(std::tuple_size_v<mint_lock_contention_syscall_grants> == 3,
-    "FIXY-V-179: mint_lock_contention_syscall_grants drifted from 3 entries.");
+              "FIXY-V-179: mint_lock_contention_syscall_grants drifted from 3 entries.");
 }  // namespace detail::v179_lock_contention_grant_check
 
 template <::crucible::effects::IsExecCtx Ctx>
@@ -360,8 +348,8 @@ template <::crucible::effects::IsExecCtx Ctx>
 // program loading + perf_event_open + mmap + heap allocation
 // (std::unique_ptr<State>).  CLAUDE.md §XXI: compile-time
 // evaluation would lie about the runtime cost.
-[[nodiscard]] inline std::optional<LockContention>
-mint_lock_contention(Ctx const&, ::crucible::effects::Init init) noexcept {
+[[nodiscard]] inline std::optional<LockContention> mint_lock_contention(Ctx const&,
+                                                                        ::crucible::effects::Init init) noexcept {
     return LockContention::load(init);
 }
 

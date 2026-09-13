@@ -111,8 +111,7 @@ struct row_hash_grade_extractor;
 // wrapper with no specialization is rejected at the call site.
 template <typename W>
 concept HasRowHashGradeExtractor = requires(const W& w) {
-    { row_hash_grade_extractor<W>::extract(w) }
-        -> std::convertible_to<std::uint64_t>;
+    { row_hash_grade_extractor<W>::extract(w) } -> std::convertible_to<std::uint64_t>;
 };
 
 // ── Free function: runtime hash including grade ──────────────────────
@@ -123,9 +122,7 @@ concept HasRowHashGradeExtractor = requires(const W& w) {
 template <typename W>
     requires HasRowHashGradeExtractor<W>
 [[nodiscard]] constexpr std::uint64_t row_hash_with_grade(const W& w) noexcept {
-    return detail::combine_ids(
-        row_hash_contribution_v<W>,
-        row_hash_grade_extractor<W>::extract(w));
+    return detail::combine_ids(row_hash_contribution_v<W>, row_hash_grade_extractor<W>::extract(w));
 }
 
 // ── Specializations for the four Regime-4 wrappers ──────────────────
@@ -135,12 +132,9 @@ template <typename W>
 // from each and fold via combine_ids in canonical (bits, peak) order.
 template <typename Inner>
 struct row_hash_grade_extractor<safety::Budgeted<Inner>> {
-    [[nodiscard]] static constexpr std::uint64_t extract(
-        const safety::Budgeted<Inner>& w) noexcept
-    {
-        return detail::combine_ids(
-            static_cast<std::uint64_t>(w.bits().value),
-            static_cast<std::uint64_t>(w.peak_bytes().value));
+    [[nodiscard]] static constexpr std::uint64_t extract(const safety::Budgeted<Inner>& w) noexcept {
+        return detail::combine_ids(static_cast<std::uint64_t>(w.bits().value),
+                                   static_cast<std::uint64_t>(w.peak_bytes().value));
     }
 };
 
@@ -148,12 +142,9 @@ struct row_hash_grade_extractor<safety::Budgeted<Inner>> {
 // Canonical fold order: epoch first, then generation.
 template <typename Inner>
 struct row_hash_grade_extractor<safety::EpochVersioned<Inner>> {
-    [[nodiscard]] static constexpr std::uint64_t extract(
-        const safety::EpochVersioned<Inner>& w) noexcept
-    {
-        return detail::combine_ids(
-            static_cast<std::uint64_t>(w.epoch().value),
-            static_cast<std::uint64_t>(w.generation().value));
+    [[nodiscard]] static constexpr std::uint64_t extract(const safety::EpochVersioned<Inner>& w) noexcept {
+        return detail::combine_ids(static_cast<std::uint64_t>(w.epoch().value),
+                                   static_cast<std::uint64_t>(w.generation().value));
     }
 };
 
@@ -163,11 +154,8 @@ struct row_hash_grade_extractor<safety::EpochVersioned<Inner>> {
 //   then combine with each of the 4 affinity words in order.
 template <typename Inner>
 struct row_hash_grade_extractor<safety::NumaPlacement<Inner>> {
-    [[nodiscard]] static constexpr std::uint64_t extract(
-        const safety::NumaPlacement<Inner>& w) noexcept
-    {
-        std::uint64_t h = static_cast<std::uint64_t>(
-            std::to_underlying(w.numa_node()));
+    [[nodiscard]] static constexpr std::uint64_t extract(const safety::NumaPlacement<Inner>& w) noexcept {
+        std::uint64_t h = static_cast<std::uint64_t>(std::to_underlying(w.numa_node()));
         auto const& aff = w.affinity();
         for (std::size_t i = 0; i < safety::AffinityMask::kWords; ++i) {
             h = detail::combine_ids(h, aff.words[i]);
@@ -181,14 +169,9 @@ struct row_hash_grade_extractor<safety::NumaPlacement<Inner>> {
 // tolerance first, then family.
 template <typename Inner>
 struct row_hash_grade_extractor<safety::RecipeSpec<Inner>> {
-    [[nodiscard]] static constexpr std::uint64_t extract(
-        const safety::RecipeSpec<Inner>& w) noexcept
-    {
-        return detail::combine_ids(
-            static_cast<std::uint64_t>(
-                std::to_underlying(w.tolerance())),
-            static_cast<std::uint64_t>(
-                std::to_underlying(w.recipe_family())));
+    [[nodiscard]] static constexpr std::uint64_t extract(const safety::RecipeSpec<Inner>& w) noexcept {
+        return detail::combine_ids(static_cast<std::uint64_t>(std::to_underlying(w.tolerance())),
+                                   static_cast<std::uint64_t>(std::to_underlying(w.recipe_family())));
     }
 };
 

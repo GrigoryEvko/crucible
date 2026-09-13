@@ -127,15 +127,15 @@
 //                Same (FnPtr, Args...) → same slot → same cached
 //                pointer.
 
-#include <crucible/safety/diag/StableName.h>   // stable_function_id, stable_type_id, combine_ids, hash_name
+#include <crucible/safety/diag/StableName.h>  // stable_function_id, stable_type_id, combine_ids, hash_name
 #include <crucible/safety/diag/RowHashFold.h>  // row_hash_contribution_v (FOUND-I02 / F11)
-#include <crucible/effects/EffectRow.h>        // effects::Row<Es...> (FOUND-H02 / F11)
+#include <crucible/effects/EffectRow.h>  // effects::Row<Es...> (FOUND-H02 / F11)
 
 #include <atomic>
-#include <bit>                                 // std::bit_cast (synthetic-pointer cookies)
+#include <bit>  // std::bit_cast (synthetic-pointer cookies)
 #include <chrono>
 #include <cstdint>
-#include <meta>                                // std::meta::reflect_constant
+#include <meta>  // std::meta::reflect_constant
 
 namespace crucible::cipher {
 
@@ -180,8 +180,7 @@ struct CompiledBody;
 
 template <auto FnPtr>
 concept IsCacheableFunction =
-    std::is_pointer_v<decltype(FnPtr)>
-    && std::is_function_v<std::remove_pointer_t<decltype(FnPtr)>>;
+    std::is_pointer_v<decltype(FnPtr)> && std::is_function_v<std::remove_pointer_t<decltype(FnPtr)>>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── IsEffectRow — concept fence on Row template parameter (FOUND-F11)
@@ -278,17 +277,14 @@ template <auto FnPtr, typename... Args>
     // identity functions.  reflect_constant materializes the NTTP
     // as a meta::info for which display_string_of returns the
     // identifier.
-    std::uint64_t k = ::crucible::safety::diag::detail::hash_name(
-        std::meta::display_string_of(std::meta::reflect_constant(FnPtr)));
+    std::uint64_t k =
+        ::crucible::safety::diag::detail::hash_name(std::meta::display_string_of(std::meta::reflect_constant(FnPtr)));
     // Combine with function-TYPE hash — guards against future
     // refactors that might canonicalize the name string but not
     // the type.
-    k = ::crucible::safety::diag::detail::combine_ids(
-        k, ::crucible::safety::diag::stable_function_id<FnPtr>);
+    k = ::crucible::safety::diag::detail::combine_ids(k, ::crucible::safety::diag::stable_function_id<FnPtr>);
     // Fold-expression: combine_ids(k, stable_type_id<Arg_i>) for each Arg_i.
-    ((k = ::crucible::safety::diag::detail::combine_ids(
-              k, ::crucible::safety::diag::stable_type_id<Args>)),
-     ...);
+    ((k = ::crucible::safety::diag::detail::combine_ids(k, ::crucible::safety::diag::stable_type_id<Args>)), ...);
     return k;
 }
 
@@ -296,8 +292,7 @@ template <auto FnPtr, typename... Args>
 
 template <auto FnPtr, typename... Args>
     requires IsCacheableFunction<FnPtr>
-inline constexpr std::uint64_t computation_cache_key =
-    detail::computation_cache_key_impl<FnPtr, Args...>();
+inline constexpr std::uint64_t computation_cache_key = detail::computation_cache_key_impl<FnPtr, Args...>();
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Per-instantiation atomic slot ──────────────────────────────────
@@ -324,10 +319,8 @@ inline std::atomic<CompiledBody*> compiled_body_slot{nullptr};
 
 template <auto FnPtr, typename... Args>
     requires IsCacheableFunction<FnPtr>
-[[nodiscard]] CompiledBody*
-lookup_computation_cache() noexcept {
-    return detail::compiled_body_slot<FnPtr, Args...>
-        .load(std::memory_order_acquire);
+[[nodiscard]] CompiledBody* lookup_computation_cache() noexcept {
+    return detail::compiled_body_slot<FnPtr, Args...>.load(std::memory_order_acquire);
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -344,14 +337,10 @@ lookup_computation_cache() noexcept {
 
 template <auto FnPtr, typename... Args>
     requires IsCacheableFunction<FnPtr>
-void insert_computation_cache(CompiledBody* body) noexcept
-    pre (body != nullptr)
-{
+void insert_computation_cache(CompiledBody* body) noexcept pre(body != nullptr) {
     CompiledBody* expected = nullptr;
-    detail::compiled_body_slot<FnPtr, Args...>
-        .compare_exchange_strong(expected, body,
-                                  std::memory_order_acq_rel,
-                                  std::memory_order_acquire);
+    detail::compiled_body_slot<FnPtr, Args...>.compare_exchange_strong(expected, body, std::memory_order_acq_rel,
+                                                                       std::memory_order_acquire);
     // Idempotent: if expected was non-null, CAS failed and we leave
     // the existing entry alone.  The caller can re-lookup to
     // discover the actual cached pointer.
@@ -406,25 +395,19 @@ namespace detail {
 // the row-blind impl (above) but folds the Row's content hash in
 // after the function-type seed.
 template <auto FnPtr, typename Row, typename... Args>
-    requires ::crucible::cipher::IsCacheableFunction<FnPtr>
-          && ::crucible::cipher::IsEffectRow<Row>
-[[nodiscard]] consteval std::uint64_t
-computation_cache_key_in_row_impl() noexcept {
-    std::uint64_t k = ::crucible::safety::diag::detail::hash_name(
-        std::meta::display_string_of(std::meta::reflect_constant(FnPtr)));
-    k = ::crucible::safety::diag::detail::combine_ids(
-        k, ::crucible::safety::diag::stable_function_id<FnPtr>);
+    requires ::crucible::cipher::IsCacheableFunction<FnPtr> && ::crucible::cipher::IsEffectRow<Row>
+[[nodiscard]] consteval std::uint64_t computation_cache_key_in_row_impl() noexcept {
+    std::uint64_t k =
+        ::crucible::safety::diag::detail::hash_name(std::meta::display_string_of(std::meta::reflect_constant(FnPtr)));
+    k = ::crucible::safety::diag::detail::combine_ids(k, ::crucible::safety::diag::stable_function_id<FnPtr>);
     // Row contribution — the F11 differentiator.  combine_ids is
     // order-sensitive and Boost-style mixed; even a zero-row
     // contribution (impossible for valid Row<Es...> per RowHashFold's
     // cardinality-seed) would still differ from the row-blind key
     // because the position of the row-hash slot in the fold is
     // unique to the row-aware variant.
-    k = ::crucible::safety::diag::detail::combine_ids(
-        k, ::crucible::safety::diag::row_hash_contribution_v<Row>);
-    ((k = ::crucible::safety::diag::detail::combine_ids(
-              k, ::crucible::safety::diag::stable_type_id<Args>)),
-     ...);
+    k = ::crucible::safety::diag::detail::combine_ids(k, ::crucible::safety::diag::row_hash_contribution_v<Row>);
+    ((k = ::crucible::safety::diag::detail::combine_ids(k, ::crucible::safety::diag::stable_type_id<Args>)), ...);
     return k;
 }
 
@@ -441,30 +424,23 @@ namespace detail {
 // `compiled_body_slot<FnPtr, Args...>` — different template, different
 // linker-deduplicated symbol.
 template <auto FnPtr, typename Row, typename... Args>
-    requires ::crucible::cipher::IsCacheableFunction<FnPtr>
-          && ::crucible::cipher::IsEffectRow<Row>
+    requires ::crucible::cipher::IsCacheableFunction<FnPtr> && ::crucible::cipher::IsEffectRow<Row>
 inline std::atomic<CompiledBody*> compiled_body_slot_in_row{nullptr};
 
 }  // namespace detail
 
 template <auto FnPtr, typename Row, typename... Args>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
-[[nodiscard]] CompiledBody*
-lookup_computation_cache_in_row() noexcept {
-    return detail::compiled_body_slot_in_row<FnPtr, Row, Args...>
-        .load(std::memory_order_acquire);
+[[nodiscard]] CompiledBody* lookup_computation_cache_in_row() noexcept {
+    return detail::compiled_body_slot_in_row<FnPtr, Row, Args...>.load(std::memory_order_acquire);
 }
 
 template <auto FnPtr, typename Row, typename... Args>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
-void insert_computation_cache_in_row(CompiledBody* body) noexcept
-    pre (body != nullptr)
-{
+void insert_computation_cache_in_row(CompiledBody* body) noexcept pre(body != nullptr) {
     CompiledBody* expected = nullptr;
-    detail::compiled_body_slot_in_row<FnPtr, Row, Args...>
-        .compare_exchange_strong(expected, body,
-                                  std::memory_order_acq_rel,
-                                  std::memory_order_acquire);
+    detail::compiled_body_slot_in_row<FnPtr, Row, Args...>.compare_exchange_strong(
+        expected, body, std::memory_order_acq_rel, std::memory_order_acquire);
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -479,8 +455,7 @@ void insert_computation_cache_in_row(CompiledBody* body) noexcept
 // production call sites already invoke `drain_computation_cache(...)`
 // and the Phase 5 wiring is a body change without an API change.
 
-inline void drain_computation_cache(
-    [[maybe_unused]] std::chrono::seconds max_age) noexcept {
+inline void drain_computation_cache([[maybe_unused]] std::chrono::seconds max_age) noexcept {
     // Phase 5: walk global slot registry, evict stale entries.
     // Today: no-op.
 }
@@ -493,7 +468,7 @@ namespace detail::computation_cache_self_test {
 
 inline void p_unary(int) noexcept {}
 inline void p_binary(int, double) noexcept {}
-inline int  p_returning(int) noexcept { return 0; }
+inline int p_returning(int) noexcept { return 0; }
 
 // Zero-args function — exercises the empty-fold case in the cache
 // key (no Args... contributions, just the function-name +
@@ -546,7 +521,7 @@ namespace fnames_collision_check {
 inline void s_fn_one(int) noexcept {}
 inline void s_fn_two(int) noexcept {}
 static_assert(::crucible::cipher::computation_cache_key<&s_fn_one>
-              != ::crucible::cipher::computation_cache_key<&s_fn_two>,
+                  != ::crucible::cipher::computation_cache_key<&s_fn_two>,
               "computation_cache_key MUST distinguish same-signature "
               "different-name functions; otherwise federation aliases "
               "unrelated compiled bodies on the wire.");
@@ -581,7 +556,7 @@ static_assert(::crucible::cipher::computation_cache_key<&p_unary>
 // `noexcept` re-keys its compiled body so the dispatcher cannot
 // dispatch a maybe-throwing body through a noexcept call site.
 static_assert(::crucible::cipher::computation_cache_key<&p_throwing, int>
-              != ::crucible::cipher::computation_cache_key<&p_noexcept, int>,
+                  != ::crucible::cipher::computation_cache_key<&p_noexcept, int>,
               "noexcept-vs-throwing function-pointer types MUST "
               "produce different cache keys; otherwise the "
               "dispatcher can dispatch a maybe-throwing compiled "
@@ -617,11 +592,9 @@ static_assert(!::crucible::cipher::IsCacheableFunction<nullptr>);
 //
 // Positive: every concrete `effects::Row<Es...>` satisfies.
 static_assert(::crucible::cipher::IsEffectRow<::crucible::effects::Row<>>);
+static_assert(::crucible::cipher::IsEffectRow<::crucible::effects::Row<::crucible::effects::Effect::Bg>>);
 static_assert(::crucible::cipher::IsEffectRow<
-              ::crucible::effects::Row<::crucible::effects::Effect::Bg>>);
-static_assert(::crucible::cipher::IsEffectRow<
-              ::crucible::effects::Row<::crucible::effects::Effect::Bg,
-                                       ::crucible::effects::Effect::IO>>);
+              ::crucible::effects::Row<::crucible::effects::Effect::Bg, ::crucible::effects::Effect::IO>>);
 
 // FOUND-F11-AUDIT — EmptyRow alias transparency.  `EmptyRow` is the
 // header-defined alias for `Row<>`; concept satisfaction must see
@@ -632,14 +605,10 @@ static_assert(::crucible::cipher::IsEffectRow<
 static_assert(::crucible::cipher::IsEffectRow<::crucible::effects::EmptyRow>);
 // Same key from EmptyRow alias and Row<>: alias transparency at
 // the cache-key level.
-static_assert(
-    ::crucible::cipher::computation_cache_key_in_row<
-        &p_unary, ::crucible::effects::EmptyRow, int>
-    ==
-    ::crucible::cipher::computation_cache_key_in_row<
-        &p_unary, ::crucible::effects::Row<>, int>,
-    "EmptyRow and Row<> must hash to the same key — the alias is "
-    "transparent through the cache.");
+static_assert(::crucible::cipher::computation_cache_key_in_row<&p_unary, ::crucible::effects::EmptyRow, int>
+                  == ::crucible::cipher::computation_cache_key_in_row<&p_unary, ::crucible::effects::Row<>, int>,
+              "EmptyRow and Row<> must hash to the same key — the alias is "
+              "transparent through the cache.");
 
 // Negative: bare types do NOT.
 static_assert(!::crucible::cipher::IsEffectRow<int>);
@@ -653,31 +622,20 @@ static_assert(!::crucible::cipher::IsEffectRow<::crucible::effects::Effect>);
 // F11 invariant — the dispatcher MUST differentiate "same fn,
 // different effect row" or it would alias semantically distinct
 // compiled bodies).
-static_assert(
-    ::crucible::cipher::computation_cache_key_in_row<
-        &p_unary, ::crucible::effects::Row<>, int>
-    !=
-    ::crucible::cipher::computation_cache_key_in_row<
-        &p_unary, ::crucible::effects::Row<::crucible::effects::Effect::Bg>, int>,
-    "F11: row-aware cache must distinguish keys for same FnPtr+Args "
-    "but different Row.");
+static_assert(::crucible::cipher::computation_cache_key_in_row<&p_unary, ::crucible::effects::Row<>, int>
+                  != ::crucible::cipher::computation_cache_key_in_row<
+                      &p_unary, ::crucible::effects::Row<::crucible::effects::Effect::Bg>, int>,
+              "F11: row-aware cache must distinguish keys for same FnPtr+Args "
+              "but different Row.");
 
 // Different FnPtr, same Row, same Args → different key (FnPtr still
 // load-bearing).
-static_assert(
-    ::crucible::cipher::computation_cache_key_in_row<
-        &p_unary, ::crucible::effects::Row<>, int>
-    !=
-    ::crucible::cipher::computation_cache_key_in_row<
-        &p_binary, ::crucible::effects::Row<>, int, double>);
+static_assert(::crucible::cipher::computation_cache_key_in_row<&p_unary, ::crucible::effects::Row<>, int>
+              != ::crucible::cipher::computation_cache_key_in_row<&p_binary, ::crucible::effects::Row<>, int, double>);
 
 // Same FnPtr, same Row, same Args → same key (deterministic).
-static_assert(
-    ::crucible::cipher::computation_cache_key_in_row<
-        &p_unary, ::crucible::effects::Row<>, int>
-    ==
-    ::crucible::cipher::computation_cache_key_in_row<
-        &p_unary, ::crucible::effects::Row<>, int>);
+static_assert(::crucible::cipher::computation_cache_key_in_row<&p_unary, ::crucible::effects::Row<>, int>
+              == ::crucible::cipher::computation_cache_key_in_row<&p_unary, ::crucible::effects::Row<>, int>);
 
 // Permutation invariance: row_hash_contribution<Row<Es...>> is a
 // sort-fold over the effect underlying values, so re-ordering the
@@ -686,14 +644,9 @@ static_assert(
 // FOUND-I02).
 static_assert(
     ::crucible::cipher::computation_cache_key_in_row<
-        &p_unary,
-        ::crucible::effects::Row<::crucible::effects::Effect::Bg,
-                                 ::crucible::effects::Effect::IO>, int>
-    ==
-    ::crucible::cipher::computation_cache_key_in_row<
-        &p_unary,
-        ::crucible::effects::Row<::crucible::effects::Effect::IO,
-                                 ::crucible::effects::Effect::Bg>, int>,
+        &p_unary, ::crucible::effects::Row<::crucible::effects::Effect::Bg, ::crucible::effects::Effect::IO>, int>
+        == ::crucible::cipher::computation_cache_key_in_row<
+            &p_unary, ::crucible::effects::Row<::crucible::effects::Effect::IO, ::crucible::effects::Effect::Bg>, int>,
     "F11: row-aware cache key must be permutation-invariant in the "
     "Row's effect pack — row_hash is sort-fold over Effect underlying "
     "values per FOUND-I02.");
@@ -702,26 +655,17 @@ static_assert(
 // (FnPtr, Args...) — even when the row is EmptyRow.  This pins the
 // disjoint-slot invariant: a row-blind insert into <&fn, int> never
 // aliases a row-aware <&fn, EmptyRow, int>.
-static_assert(
-    ::crucible::cipher::computation_cache_key<&p_unary, int>
-    !=
-    ::crucible::cipher::computation_cache_key_in_row<
-        &p_unary, ::crucible::effects::Row<>, int>,
-    "F11: row-aware cache key MUST differ from row-blind key even "
-    "for EmptyRow — otherwise migration would silently alias legacy "
-    "and row-typed compiled bodies.");
+static_assert(::crucible::cipher::computation_cache_key<&p_unary, int>
+                  != ::crucible::cipher::computation_cache_key_in_row<&p_unary, ::crucible::effects::Row<>, int>,
+              "F11: row-aware cache key MUST differ from row-blind key even "
+              "for EmptyRow — otherwise migration would silently alias legacy "
+              "and row-typed compiled bodies.");
 
 // Empty Args fold edge — row-aware variant.  `<&p_void, EmptyRow>`
 // must produce a non-zero, distinct-from-row-blind-empty-args key.
-static_assert(
-    ::crucible::cipher::computation_cache_key_in_row<
-        &p_void, ::crucible::effects::Row<>>
-    != 0);
-static_assert(
-    ::crucible::cipher::computation_cache_key_in_row<
-        &p_void, ::crucible::effects::Row<>>
-    !=
-    ::crucible::cipher::computation_cache_key<&p_void>);
+static_assert(::crucible::cipher::computation_cache_key_in_row<&p_void, ::crucible::effects::Row<>> != 0);
+static_assert(::crucible::cipher::computation_cache_key_in_row<&p_void, ::crucible::effects::Row<>>
+              != ::crucible::cipher::computation_cache_key<&p_void>);
 
 // ── Structural-cost asserts (FOUND-F09-AUDIT) ─────────────────────
 //
@@ -747,8 +691,7 @@ static_assert(std::atomic<::crucible::cipher::CompiledBody*>::is_always_lock_fre
               "ComputationCache slot must be lock-free; otherwise "
               "lookup is no longer the documented ~1-3 ns hot path.");
 
-static_assert(sizeof(std::atomic<::crucible::cipher::CompiledBody*>)
-              == sizeof(::crucible::cipher::CompiledBody*),
+static_assert(sizeof(std::atomic<::crucible::cipher::CompiledBody*>) == sizeof(::crucible::cipher::CompiledBody*),
               "ComputationCache slot must be exactly pointer-sized; "
               "otherwise BSS-per-instantiation cost is silently inflated.");
 
@@ -807,44 +750,36 @@ inline bool computation_cache_smoke_test() noexcept {
     // pointers opaquely and never dereferences these stub values; we only
     // need distinct non-null bit-patterns.  std::bit_cast is the §III-clean
     // integer→pointer conversion for runtime code.
-    auto* body_a = std::bit_cast<CompiledBody*>(
-        static_cast<std::uintptr_t>(0x1));
-    auto* body_b = std::bit_cast<CompiledBody*>(
-        static_cast<std::uintptr_t>(0x2));
+    auto* body_a = std::bit_cast<CompiledBody*>(static_cast<std::uintptr_t>(0x1));
+    auto* body_b = std::bit_cast<CompiledBody*>(static_cast<std::uintptr_t>(0x2));
 
     bool ok = true;
 
     // ── (1) Lookup-before-insert: miss returns nullptr ───────────
-    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_unary, int>()
-                == nullptr);
-    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_unary, float>()
-                == nullptr);
-    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_binary, int, double>()
-                == nullptr);
+    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_unary, int>() == nullptr);
+    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_unary, float>() == nullptr);
+    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_binary, int, double>() == nullptr);
 
     // ── (2) Insert-then-lookup: round-trips ──────────────────────
     ::crucible::cipher::insert_computation_cache<&p_unary, int>(body_a);
-    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_unary, int>()
-                == body_a);
+    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_unary, int>() == body_a);
 
     // ── (3) Second insert: idempotent (first writer wins) ────────
     ::crucible::cipher::insert_computation_cache<&p_unary, int>(body_b);
-    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_unary, int>()
-                == body_a);  // body_a still cached; body_b ignored.
+    ok = ok
+      && (::crucible::cipher::lookup_computation_cache<&p_unary, int>()
+          == body_a);  // body_a still cached; body_b ignored.
 
     // ── (4) Distinct instantiations: isolated slots ──────────────
     // p_unary<float> still misses (different slot from p_unary<int>).
-    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_unary, float>()
-                == nullptr);
+    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_unary, float>() == nullptr);
     // p_binary still misses (different function).
-    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_binary, int, double>()
-                == nullptr);
+    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_binary, int, double>() == nullptr);
 
     // ── (5) drain_computation_cache: no-op stub today ────────────
     // Calls without exception; doesn't evict the body_a entry.
     ::crucible::cipher::drain_computation_cache(std::chrono::seconds{0});
-    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_unary, int>()
-                == body_a);
+    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_unary, int>() == body_a);
 
     // ── (6) FOUND-F09-AUDIT-4: empty-Args round-trip ─────────────
     // Pins the runtime side of the empty-fold case (AUDIT-3 covered
@@ -853,16 +788,12 @@ inline bool computation_cache_smoke_test() noexcept {
     // miss/insert/hit cycle behaves identically with no Args, and
     // that the empty-pack instantiation didn't accidentally collapse
     // to a non-template overload.
-    auto* body_c = std::bit_cast<CompiledBody*>(
-        static_cast<std::uintptr_t>(0x3));
-    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_void>()
-                == nullptr);                      // miss before insert
+    auto* body_c = std::bit_cast<CompiledBody*>(static_cast<std::uintptr_t>(0x3));
+    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_void>() == nullptr);  // miss before insert
     ::crucible::cipher::insert_computation_cache<&p_void>(body_c);
-    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_void>()
-                == body_c);                       // hit after insert
+    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_void>() == body_c);  // hit after insert
     // p_unary<int> slot still has body_a, untouched by p_void insert.
-    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_unary, int>()
-                == body_a);
+    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_unary, int>() == body_a);
 
     // ── (7) FOUND-F09-AUDIT-4: noexcept slot isolation runtime ───
     // Compile-time invariant (key<&p_throwing,int> != key<&p_noexcept,int>)
@@ -871,18 +802,13 @@ inline bool computation_cache_smoke_test() noexcept {
     // Insert into the throwing slot only; verify the noexcept slot
     // still misses.  If the inline-atomic deduplication ever broke
     // such that throwing and noexcept aliased, this would fail.
-    auto* body_d = std::bit_cast<CompiledBody*>(
-        static_cast<std::uintptr_t>(0x4));
-    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_throwing, int>()
-                == nullptr);                      // throwing miss
-    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_noexcept, int>()
-                == nullptr);                      // noexcept miss
+    auto* body_d = std::bit_cast<CompiledBody*>(static_cast<std::uintptr_t>(0x4));
+    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_throwing, int>() == nullptr);  // throwing miss
+    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_noexcept, int>() == nullptr);  // noexcept miss
     ::crucible::cipher::insert_computation_cache<&p_throwing, int>(body_d);
-    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_throwing, int>()
-                == body_d);                       // throwing hit
-    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_noexcept, int>()
-                == nullptr);                      // noexcept STILL miss
-                                                  // — slot isolation holds.
+    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_throwing, int>() == body_d);  // throwing hit
+    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_noexcept, int>() == nullptr);  // noexcept STILL miss
+    // — slot isolation holds.
 
     return ok;
 }

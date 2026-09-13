@@ -127,7 +127,7 @@
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/lattices/CrashLattice.h>
 
-#include <cstdlib>      // std::abort in the runtime smoke test
+#include <cstdlib>  // std::abort in the runtime smoke test
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -145,14 +145,10 @@ template <CrashClass_v Class, typename T>
 class [[nodiscard]] Crash {
 public:
     // ── Public type aliases ─────────────────────────────────────────
-    using value_type   = T;
+    using value_type = T;
     using lattice_type = CrashLattice::At<Class>;
-    using graded_type  = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Absolute,
-        lattice_type,
-        T>;
-    static constexpr ::crucible::algebra::ModalityKind modality =
-        ::crucible::algebra::ModalityKind::Absolute;
+    using graded_type = ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
+    static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::Absolute;
 
     // The pinned class — exposed as a static constexpr for callers
     // doing class-aware dispatch without instantiating the wrapper.
@@ -162,7 +158,6 @@ private:
     graded_type impl_;
 
 public:
-
     // ── Construction ────────────────────────────────────────────────
     //
     // Default: T{} at the pinned class.
@@ -178,40 +173,37 @@ public:
     // production sites; the default ctor exists for compatibility
     // with std::array<Crash<NoThrow, T>, N> / struct-field
     // default-init contexts.
-    constexpr Crash() noexcept(
-        std::is_nothrow_default_constructible_v<T>)
+    constexpr Crash() noexcept(std::is_nothrow_default_constructible_v<T>)
         : impl_{T{}, typename lattice_type::element_type{}} {}
 
     // Explicit construction from a T value.  The most common
     // production pattern — a class-anchored production site
     // constructs the wrapper at the appropriate failure-mode class.
-    constexpr explicit Crash(T value) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    constexpr explicit Crash(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(value), typename lattice_type::element_type{}} {}
 
     // In-place construction.
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr explicit Crash(std::in_place_t, Args&&... args)
-        noexcept(std::is_nothrow_constructible_v<T, Args...>
-                 && std::is_nothrow_move_constructible_v<T>)
-        : impl_{T(std::forward<Args>(args)...),
-                typename lattice_type::element_type{}} {}
+    constexpr explicit Crash(std::in_place_t, Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
+                                                                       && std::is_nothrow_move_constructible_v<T>)
+        : impl_{T(std::forward<Args>(args)...), typename lattice_type::element_type{}} {}
 
     // Defaulted copy/move/destroy — Crash IS COPYABLE within the
     // same class pin.
-    constexpr Crash(const Crash&)            = default;
-    constexpr Crash(Crash&&)                 = default;
+    constexpr Crash(const Crash&) = default;
+    constexpr Crash(Crash&&) = default;
     constexpr Crash& operator=(const Crash&) = default;
-    constexpr Crash& operator=(Crash&&)      = default;
-    ~Crash()                                 = default;
+    constexpr Crash& operator=(Crash&&) = default;
+    ~Crash() = default;
 
     // Equality: compares value bytes within the SAME class pin.
     // Cross-class comparison rejected at overload resolution.
-    [[nodiscard]] friend constexpr bool operator==(
-        Crash const& a, Crash const& b) noexcept(
-        noexcept(a.peek() == b.peek()))
-        requires requires(T const& x, T const& y) { { x == y } -> std::convertible_to<bool>; }
+    [[nodiscard]] friend constexpr bool operator==(Crash const& a,
+                                                   Crash const& b) noexcept(noexcept(a.peek() == b.peek()))
+        requires requires(T const& x, T const& y) {
+            { x == y } -> std::convertible_to<bool>;
+        }
     {
         return a.peek() == b.peek();
     }
@@ -220,37 +212,21 @@ public:
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return graded_type::lattice_name();
-    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 
     // ── Read-only access ────────────────────────────────────────────
-    [[nodiscard]] constexpr T const& peek() const& noexcept {
-        return impl_.peek();
-    }
+    [[nodiscard]] constexpr T const& peek() const& noexcept { return impl_.peek(); }
 
-    [[nodiscard]] constexpr T consume() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return std::move(impl_).consume();
     }
 
-    [[nodiscard]] constexpr T& peek_mut() & noexcept {
-        return impl_.peek_mut();
-    }
+    [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(); }
 
     // ── swap ────────────────────────────────────────────────────────
-    constexpr void swap(Crash& other)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
-        impl_.swap(other.impl_);
-    }
+    constexpr void swap(Crash& other) noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
 
-    friend constexpr void swap(Crash& a, Crash& b)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
-        a.swap(b);
-    }
+    friend constexpr void swap(Crash& a, Crash& b) noexcept(std::is_nothrow_swappable_v<T>) { a.swap(b); }
 
     // ── satisfies<RequiredClass> — static subsumption check ───────
     //
@@ -269,8 +245,7 @@ public:
     //                      ::satisfies<CrashClass_v::NoThrow>);
     //   // ✓ — Abort does NOT subsume NoThrow
     template <CrashClass_v RequiredClass>
-    static constexpr bool satisfies =
-        CrashLattice::leq(RequiredClass, Class);
+    static constexpr bool satisfies = CrashLattice::leq(RequiredClass, Class);
 
     // ── relax<WeakerClass> — convert to a less-strict class ───────
     //
@@ -282,75 +257,79 @@ public:
     // Compile error when WeakerClass > Class — would CLAIM a stronger
     // failure-mode guarantee than the source provides.
     template <CrashClass_v WeakerClass>
-        requires (CrashLattice::leq(WeakerClass, Class))
-    [[nodiscard]] constexpr Crash<WeakerClass, T> relax() const&
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
+        requires(CrashLattice::leq(WeakerClass, Class))
+    [[nodiscard]] constexpr Crash<WeakerClass, T> relax() const& noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
     {
         return Crash<WeakerClass, T>{this->peek()};
     }
 
     template <CrashClass_v WeakerClass>
-        requires (CrashLattice::leq(WeakerClass, Class))
-    [[nodiscard]] constexpr Crash<WeakerClass, T> relax() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
-        return Crash<WeakerClass, T>{
-            std::move(impl_).consume()};
+        requires(CrashLattice::leq(WeakerClass, Class))
+    [[nodiscard]] constexpr Crash<WeakerClass, T> relax() && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return Crash<WeakerClass, T>{std::move(impl_).consume()};
     }
 };
 
 // ── Convenience aliases ─────────────────────────────────────────────
 namespace crash {
-    template <typename T> using Abort       = Crash<CrashClass_v::Abort,       T>;
-    template <typename T> using Throw       = Crash<CrashClass_v::Throw,       T>;
-    template <typename T> using ErrorReturn = Crash<CrashClass_v::ErrorReturn, T>;
-    template <typename T> using NoThrow     = Crash<CrashClass_v::NoThrow,     T>;
+template <typename T>
+using Abort = Crash<CrashClass_v::Abort, T>;
+template <typename T>
+using Throw = Crash<CrashClass_v::Throw, T>;
+template <typename T>
+using ErrorReturn = Crash<CrashClass_v::ErrorReturn, T>;
+template <typename T>
+using NoThrow = Crash<CrashClass_v::NoThrow, T>;
 }  // namespace crash
 
 // ── Layout invariants ───────────────────────────────────────────────
 namespace detail::crash_layout {
 
-template <typename T> using NoThrowC     = Crash<CrashClass_v::NoThrow,     T>;
-template <typename T> using ErrorReturnC = Crash<CrashClass_v::ErrorReturn, T>;
-template <typename T> using ThrowC       = Crash<CrashClass_v::Throw,       T>;
-template <typename T> using AbortC       = Crash<CrashClass_v::Abort,       T>;
+template <typename T>
+using NoThrowC = Crash<CrashClass_v::NoThrow, T>;
+template <typename T>
+using ErrorReturnC = Crash<CrashClass_v::ErrorReturn, T>;
+template <typename T>
+using ThrowC = Crash<CrashClass_v::Throw, T>;
+template <typename T>
+using AbortC = Crash<CrashClass_v::Abort, T>;
 
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoThrowC,     char);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoThrowC,     int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoThrowC,     double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoThrowC, char);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoThrowC, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoThrowC, double);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(ErrorReturnC, char);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(ErrorReturnC, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(ErrorReturnC, double);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(ThrowC,       char);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(ThrowC,       int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(ThrowC,       double);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(AbortC,       char);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(AbortC,       int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(AbortC,       double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(ThrowC, char);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(ThrowC, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(ThrowC, double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(AbortC, char);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(AbortC, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(AbortC, double);
 
 }  // namespace detail::crash_layout
 
-static_assert(sizeof(Crash<CrashClass_v::NoThrow,     char>)   == sizeof(char));
-static_assert(sizeof(Crash<CrashClass_v::NoThrow,     int>)    == sizeof(int));
-static_assert(sizeof(Crash<CrashClass_v::NoThrow,     double>) == sizeof(double));
-static_assert(sizeof(Crash<CrashClass_v::ErrorReturn, char>)   == sizeof(char));
-static_assert(sizeof(Crash<CrashClass_v::ErrorReturn, int>)    == sizeof(int));
+static_assert(sizeof(Crash<CrashClass_v::NoThrow, char>) == sizeof(char));
+static_assert(sizeof(Crash<CrashClass_v::NoThrow, int>) == sizeof(int));
+static_assert(sizeof(Crash<CrashClass_v::NoThrow, double>) == sizeof(double));
+static_assert(sizeof(Crash<CrashClass_v::ErrorReturn, char>) == sizeof(char));
+static_assert(sizeof(Crash<CrashClass_v::ErrorReturn, int>) == sizeof(int));
 static_assert(sizeof(Crash<CrashClass_v::ErrorReturn, double>) == sizeof(double));
-static_assert(sizeof(Crash<CrashClass_v::Throw,       char>)   == sizeof(char));
-static_assert(sizeof(Crash<CrashClass_v::Throw,       int>)    == sizeof(int));
-static_assert(sizeof(Crash<CrashClass_v::Throw,       double>) == sizeof(double));
-static_assert(sizeof(Crash<CrashClass_v::Abort,       char>)   == sizeof(char));
-static_assert(sizeof(Crash<CrashClass_v::Abort,       int>)    == sizeof(int));
-static_assert(sizeof(Crash<CrashClass_v::Abort,       double>) == sizeof(double));
+static_assert(sizeof(Crash<CrashClass_v::Throw, char>) == sizeof(char));
+static_assert(sizeof(Crash<CrashClass_v::Throw, int>) == sizeof(int));
+static_assert(sizeof(Crash<CrashClass_v::Throw, double>) == sizeof(double));
+static_assert(sizeof(Crash<CrashClass_v::Abort, char>) == sizeof(char));
+static_assert(sizeof(Crash<CrashClass_v::Abort, int>) == sizeof(int));
+static_assert(sizeof(Crash<CrashClass_v::Abort, double>) == sizeof(double));
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::crash_self_test {
 
-using NoThrowInt     = Crash<CrashClass_v::NoThrow,     int>;
+using NoThrowInt = Crash<CrashClass_v::NoThrow, int>;
 using ErrorReturnInt = Crash<CrashClass_v::ErrorReturn, int>;
-using ThrowInt       = Crash<CrashClass_v::Throw,       int>;
-using AbortInt       = Crash<CrashClass_v::Abort,       int>;
+using ThrowInt = Crash<CrashClass_v::Throw, int>;
+using AbortInt = Crash<CrashClass_v::Abort, int>;
 
 // ── Construction paths ─────────────────────────────────────────────
 inline constexpr NoThrowInt n_default{};
@@ -364,10 +343,10 @@ inline constexpr NoThrowInt n_in_place{std::in_place, 7};
 static_assert(n_in_place.peek() == 7);
 
 // ── Pinned class accessor ────────────────────────────────────────
-static_assert(NoThrowInt::crash_class     == CrashClass_v::NoThrow);
+static_assert(NoThrowInt::crash_class == CrashClass_v::NoThrow);
 static_assert(ErrorReturnInt::crash_class == CrashClass_v::ErrorReturn);
-static_assert(ThrowInt::crash_class       == CrashClass_v::Throw);
-static_assert(AbortInt::crash_class       == CrashClass_v::Abort);
+static_assert(ThrowInt::crash_class == CrashClass_v::Throw);
+static_assert(AbortInt::crash_class == CrashClass_v::Abort);
 
 // ── satisfies<RequiredClass> — subsumption-up direction ──────────
 //
@@ -378,46 +357,42 @@ static_assert(NoThrowInt::satisfies<CrashClass_v::Throw>);
 static_assert(NoThrowInt::satisfies<CrashClass_v::Abort>);
 
 // ErrorReturn satisfies ErrorReturn / Throw / Abort; FAILS on NoThrow.
-static_assert( ErrorReturnInt::satisfies<CrashClass_v::ErrorReturn>);   // self
-static_assert( ErrorReturnInt::satisfies<CrashClass_v::Throw>);         // weaker
-static_assert( ErrorReturnInt::satisfies<CrashClass_v::Abort>);         // weakest
-static_assert(!ErrorReturnInt::satisfies<CrashClass_v::NoThrow>,        // STRONGER fails ✓
-    "ErrorReturn MUST NOT satisfy NoThrow — this is the load-bearing "
-    "rejection that the OneShotFlag-skipping NoThrow-only admission "
-    "gate depends on.  If this fires, an error-returning function's "
-    "value could enter a fast path that assumes no failure recovery "
-    "is needed, defeating the type-fenced 8th-axiom-style discipline "
-    "Crash provides.");
+static_assert(ErrorReturnInt::satisfies<CrashClass_v::ErrorReturn>);  // self
+static_assert(ErrorReturnInt::satisfies<CrashClass_v::Throw>);  // weaker
+static_assert(ErrorReturnInt::satisfies<CrashClass_v::Abort>);  // weakest
+static_assert(!ErrorReturnInt::satisfies<CrashClass_v::NoThrow>,  // STRONGER fails ✓
+              "ErrorReturn MUST NOT satisfy NoThrow — this is the load-bearing "
+              "rejection that the OneShotFlag-skipping NoThrow-only admission "
+              "gate depends on.  If this fires, an error-returning function's "
+              "value could enter a fast path that assumes no failure recovery "
+              "is needed, defeating the type-fenced 8th-axiom-style discipline "
+              "Crash provides.");
 
 // Throw satisfies Throw + Abort.
-static_assert( ThrowInt::satisfies<CrashClass_v::Throw>);
-static_assert( ThrowInt::satisfies<CrashClass_v::Abort>);
+static_assert(ThrowInt::satisfies<CrashClass_v::Throw>);
+static_assert(ThrowInt::satisfies<CrashClass_v::Abort>);
 static_assert(!ThrowInt::satisfies<CrashClass_v::ErrorReturn>);
 static_assert(!ThrowInt::satisfies<CrashClass_v::NoThrow>);
 
 // Abort satisfies only Abort.
-static_assert( AbortInt::satisfies<CrashClass_v::Abort>);
+static_assert(AbortInt::satisfies<CrashClass_v::Abort>);
 static_assert(!AbortInt::satisfies<CrashClass_v::Throw>);
 static_assert(!AbortInt::satisfies<CrashClass_v::ErrorReturn>);
 static_assert(!AbortInt::satisfies<CrashClass_v::NoThrow>);
 
 // ── relax<WeakerClass> — DOWN-the-lattice conversion ─────────────
-inline constexpr auto from_nothrow_to_errorreturn =
-    NoThrowInt{42}.relax<CrashClass_v::ErrorReturn>();
+inline constexpr auto from_nothrow_to_errorreturn = NoThrowInt{42}.relax<CrashClass_v::ErrorReturn>();
 static_assert(from_nothrow_to_errorreturn.peek() == 42);
 static_assert(from_nothrow_to_errorreturn.crash_class == CrashClass_v::ErrorReturn);
 
-inline constexpr auto from_nothrow_to_abort =
-    NoThrowInt{99}.relax<CrashClass_v::Abort>();
+inline constexpr auto from_nothrow_to_abort = NoThrowInt{99}.relax<CrashClass_v::Abort>();
 static_assert(from_nothrow_to_abort.peek() == 99);
 static_assert(from_nothrow_to_abort.crash_class == CrashClass_v::Abort);
 
-inline constexpr auto from_errorreturn_to_throw =
-    ErrorReturnInt{7}.relax<CrashClass_v::Throw>();
+inline constexpr auto from_errorreturn_to_throw = ErrorReturnInt{7}.relax<CrashClass_v::Throw>();
 static_assert(from_errorreturn_to_throw.peek() == 7);
 
-inline constexpr auto from_errorreturn_to_self =
-    ErrorReturnInt{8}.relax<CrashClass_v::ErrorReturn>();   // identity
+inline constexpr auto from_errorreturn_to_self = ErrorReturnInt{8}.relax<CrashClass_v::ErrorReturn>();  // identity
 static_assert(from_errorreturn_to_self.peek() == 8);
 
 // SFINAE-style detector — proves the requires-clause's correctness.
@@ -427,44 +402,44 @@ concept can_relax = requires(W w) {
 };
 
 // NoThrow can relax to anything.
-static_assert( can_relax<NoThrowInt,     CrashClass_v::NoThrow>);
-static_assert( can_relax<NoThrowInt,     CrashClass_v::ErrorReturn>);
-static_assert( can_relax<NoThrowInt,     CrashClass_v::Throw>);
-static_assert( can_relax<NoThrowInt,     CrashClass_v::Abort>);
+static_assert(can_relax<NoThrowInt, CrashClass_v::NoThrow>);
+static_assert(can_relax<NoThrowInt, CrashClass_v::ErrorReturn>);
+static_assert(can_relax<NoThrowInt, CrashClass_v::Throw>);
+static_assert(can_relax<NoThrowInt, CrashClass_v::Abort>);
 
 // ErrorReturn can relax to ErrorReturn / Throw / Abort.
-static_assert( can_relax<ErrorReturnInt, CrashClass_v::ErrorReturn>);
-static_assert( can_relax<ErrorReturnInt, CrashClass_v::Throw>);
-static_assert( can_relax<ErrorReturnInt, CrashClass_v::Abort>);
+static_assert(can_relax<ErrorReturnInt, CrashClass_v::ErrorReturn>);
+static_assert(can_relax<ErrorReturnInt, CrashClass_v::Throw>);
+static_assert(can_relax<ErrorReturnInt, CrashClass_v::Abort>);
 static_assert(!can_relax<ErrorReturnInt, CrashClass_v::NoThrow>,
-    "relax<NoThrow> on an ErrorReturn-pinned wrapper MUST be "
-    "rejected — claiming NoThrow from an ErrorReturn source would "
-    "defeat the recovery-aware admission discipline (the consumer "
-    "would skip checking std::expected error states).");
+              "relax<NoThrow> on an ErrorReturn-pinned wrapper MUST be "
+              "rejected — claiming NoThrow from an ErrorReturn source would "
+              "defeat the recovery-aware admission discipline (the consumer "
+              "would skip checking std::expected error states).");
 
 // Throw can relax to Throw / Abort.
-static_assert( can_relax<ThrowInt, CrashClass_v::Throw>);
-static_assert( can_relax<ThrowInt, CrashClass_v::Abort>);
+static_assert(can_relax<ThrowInt, CrashClass_v::Throw>);
+static_assert(can_relax<ThrowInt, CrashClass_v::Abort>);
 static_assert(!can_relax<ThrowInt, CrashClass_v::ErrorReturn>);
 static_assert(!can_relax<ThrowInt, CrashClass_v::NoThrow>);
 
 // Abort can relax only to Abort (reflexive at the bottom).
-static_assert( can_relax<AbortInt, CrashClass_v::Abort>);
+static_assert(can_relax<AbortInt, CrashClass_v::Abort>);
 static_assert(!can_relax<AbortInt, CrashClass_v::Throw>);
 static_assert(!can_relax<AbortInt, CrashClass_v::ErrorReturn>);
 static_assert(!can_relax<AbortInt, CrashClass_v::NoThrow>,
-    "relax<NoThrow> on an Abort-pinned wrapper MUST be rejected — "
-    "an abort-prone value claiming NoThrow guarantees would defeat "
-    "the entire recovery discipline; OneShotFlag-guarded boundaries "
-    "would silently admit values from functions that may have "
-    "killed the process.");
+              "relax<NoThrow> on an Abort-pinned wrapper MUST be rejected — "
+              "an abort-prone value claiming NoThrow guarantees would defeat "
+              "the entire recovery discipline; OneShotFlag-guarded boundaries "
+              "would silently admit values from functions that may have "
+              "killed the process.");
 
 // ── Diagnostic forwarders ─────────────────────────────────────────
 static_assert(NoThrowInt::value_type_name().ends_with("int"));
-static_assert(NoThrowInt::lattice_name()     == "CrashLattice::At<NoThrow>");
+static_assert(NoThrowInt::lattice_name() == "CrashLattice::At<NoThrow>");
 static_assert(ErrorReturnInt::lattice_name() == "CrashLattice::At<ErrorReturn>");
-static_assert(ThrowInt::lattice_name()       == "CrashLattice::At<Throw>");
-static_assert(AbortInt::lattice_name()       == "CrashLattice::At<Abort>");
+static_assert(ThrowInt::lattice_name() == "CrashLattice::At<Throw>");
+static_assert(AbortInt::lattice_name() == "CrashLattice::At<Abort>");
 
 // ── swap exchanges T values within the same class pin ───────────
 //
@@ -544,15 +519,15 @@ concept can_equality_compare = requires(W const& a, W const& b) {
     { a == b } -> std::convertible_to<bool>;
 };
 
-static_assert( can_equality_compare<NoThrowInt>);
+static_assert(can_equality_compare<NoThrowInt>);
 static_assert(!can_equality_compare<Crash<CrashClass_v::NoThrow, NoEqualityT>>);
 
 // NoEqualityT has DELETED copy ctor — Crash<NoThrow, NoEqualityT>
 // must inherit that deletion.
 static_assert(!std::is_copy_constructible_v<Crash<CrashClass_v::NoThrow, NoEqualityT>>,
-    "Crash<Class, T> must transitively inherit T's copy-deletion. "
-    "If this fires, NoEqualityT's deleted copy ctor is no longer "
-    "visible through the wrapper.");
+              "Crash<Class, T> must transitively inherit T's copy-deletion. "
+              "If this fires, NoEqualityT's deleted copy ctor is no longer "
+              "visible through the wrapper.");
 static_assert(std::is_move_constructible_v<Crash<CrashClass_v::NoThrow, NoEqualityT>>);
 
 // ── relax reflexivity ─────────────────────────────────────────────
@@ -584,12 +559,12 @@ concept can_relax_lvalue = requires(W const& w) {
 };
 
 using NoThrowMoveOnly = Crash<CrashClass_v::NoThrow, MoveOnlyT>;
-static_assert( can_relax_rvalue<NoThrowMoveOnly, CrashClass_v::ErrorReturn>,
-    "relax<>() && MUST work for move-only T — the rvalue overload "
-    "moves through consume(), no copy required.");
+static_assert(can_relax_rvalue<NoThrowMoveOnly, CrashClass_v::ErrorReturn>,
+              "relax<>() && MUST work for move-only T — the rvalue overload "
+              "moves through consume(), no copy required.");
 static_assert(!can_relax_lvalue<NoThrowMoveOnly, CrashClass_v::ErrorReturn>,
-    "relax<>() const& on move-only T MUST be rejected — the const& "
-    "overload requires copy_constructible<T>.");
+              "relax<>() const& on move-only T MUST be rejected — the const& "
+              "overload requires copy_constructible<T>.");
 
 [[nodiscard]] consteval bool relax_move_only_works() noexcept {
     NoThrowMoveOnly src{MoveOnlyT{77}};
@@ -604,13 +579,12 @@ static_assert(NoThrowInt::lattice_name().size() > 0);
 static_assert(NoThrowInt::lattice_name().starts_with("CrashLattice::At<"));
 
 // ── Convenience aliases resolve correctly ────────────────────────
-static_assert(crash::NoThrow<int>::crash_class     == CrashClass_v::NoThrow);
+static_assert(crash::NoThrow<int>::crash_class == CrashClass_v::NoThrow);
 static_assert(crash::ErrorReturn<int>::crash_class == CrashClass_v::ErrorReturn);
-static_assert(crash::Throw<int>::crash_class       == CrashClass_v::Throw);
-static_assert(crash::Abort<int>::crash_class       == CrashClass_v::Abort);
+static_assert(crash::Throw<int>::crash_class == CrashClass_v::Throw);
+static_assert(crash::Abort<int>::crash_class == CrashClass_v::Abort);
 
-static_assert(std::is_same_v<crash::NoThrow<double>,
-                             Crash<CrashClass_v::NoThrow, double>>);
+static_assert(std::is_same_v<crash::NoThrow<double>, Crash<CrashClass_v::NoThrow, double>>);
 
 // ── OneShotFlag-skipping admission simulation — load-bearing ─────
 //
@@ -623,19 +597,16 @@ static_assert(std::is_same_v<crash::NoThrow<double>,
 template <typename W>
 concept is_nothrow_admissible = W::template satisfies<CrashClass_v::NoThrow>;
 
-static_assert( is_nothrow_admissible<NoThrowInt>,
-    "NoThrow value MUST pass the OneShotFlag-skipping NoThrow gate.");
-static_assert(!is_nothrow_admissible<ErrorReturnInt>,
-    "ErrorReturn value MUST be REJECTED at the NoThrow-only gate — "
-    "this is the LOAD-BEARING TEST.  Without this rejection, an "
-    "error-returning function's value could enter the OneShotFlag-"
-    "skipping fast path and the dispatcher would silently admit "
-    "a possibly-failed std::expected.");
+static_assert(is_nothrow_admissible<NoThrowInt>, "NoThrow value MUST pass the OneShotFlag-skipping NoThrow gate.");
+static_assert(!is_nothrow_admissible<ErrorReturnInt>, "ErrorReturn value MUST be REJECTED at the NoThrow-only gate — "
+                                                      "this is the LOAD-BEARING TEST.  Without this rejection, an "
+                                                      "error-returning function's value could enter the OneShotFlag-"
+                                                      "skipping fast path and the dispatcher would silently admit "
+                                                      "a possibly-failed std::expected.");
 static_assert(!is_nothrow_admissible<ThrowInt>);
-static_assert(!is_nothrow_admissible<AbortInt>,
-    "Abort value MUST be REJECTED at the NoThrow-only gate — admitting "
-    "a possibly-aborted value would defeat the entire recovery "
-    "discipline.");
+static_assert(!is_nothrow_admissible<AbortInt>, "Abort value MUST be REJECTED at the NoThrow-only gate — admitting "
+                                                "a possibly-aborted value would defeat the entire recovery "
+                                                "discipline.");
 
 // ── Recovery-required admission simulation ────────────────────────
 //
@@ -647,14 +618,12 @@ static_assert(!is_nothrow_admissible<AbortInt>,
 template <typename W>
 concept is_recovery_admissible = W::template satisfies<CrashClass_v::Abort>;
 
-static_assert( is_recovery_admissible<NoThrowInt>,
-    "NoThrow value MUST pass the recovery-admissible gate (NoThrow "
-    "subsumes Abort — a never-fails value is trivially admissible "
-    "even at the most permissive recovery gate).");
-static_assert( is_recovery_admissible<ErrorReturnInt>);
-static_assert( is_recovery_admissible<ThrowInt>);
-static_assert( is_recovery_admissible<AbortInt>,
-    "Abort value MUST pass the recovery-admissible gate (self).");
+static_assert(is_recovery_admissible<NoThrowInt>, "NoThrow value MUST pass the recovery-admissible gate (NoThrow "
+                                                  "subsumes Abort — a never-fails value is trivially admissible "
+                                                  "even at the most permissive recovery gate).");
+static_assert(is_recovery_admissible<ErrorReturnInt>);
+static_assert(is_recovery_admissible<ThrowInt>);
+static_assert(is_recovery_admissible<AbortInt>, "Abort value MUST pass the recovery-admissible gate (self).");
 
 // ── Runtime smoke test ─────────────────────────────────────────────
 inline void runtime_smoke_test() {
@@ -705,17 +674,17 @@ inline void runtime_smoke_test() {
     if (extracted != 55) std::abort();
 
     // Convenience-alias instantiation.
-    crash::NoThrow<int>     alias_nothrow{123};
+    crash::NoThrow<int> alias_nothrow{123};
     crash::ErrorReturn<int> alias_errret{456};
-    crash::Throw<int>       alias_throw{789};
-    crash::Abort<int>       alias_abort{0};
+    crash::Throw<int> alias_throw{789};
+    crash::Abort<int> alias_abort{0};
     [[maybe_unused]] auto vn = alias_nothrow.peek();
     [[maybe_unused]] auto ve = alias_errret.peek();
     [[maybe_unused]] auto vt = alias_throw.peek();
     [[maybe_unused]] auto vab = alias_abort.peek();
 
     // Admission simulations at runtime.
-    [[maybe_unused]] bool can_nothrow_pass  = is_nothrow_admissible<NoThrowInt>;
+    [[maybe_unused]] bool can_nothrow_pass = is_nothrow_admissible<NoThrowInt>;
     [[maybe_unused]] bool can_recovery_pass = is_recovery_admissible<AbortInt>;
 }
 

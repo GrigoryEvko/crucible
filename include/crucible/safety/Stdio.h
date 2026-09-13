@@ -40,44 +40,39 @@ using ::crucible::algebra::lattices::StdioLattice;
 template <Stdio Tier, typename T>
 class [[nodiscard]] StdioPinned {
 public:
-    using value_type   = T;
+    using value_type = T;
     using lattice_type = StdioLattice::At<Tier>;
-    using graded_type  = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
-    static constexpr ::crucible::algebra::ModalityKind modality =
-        ::crucible::algebra::ModalityKind::Absolute;
+    using graded_type = ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
+    static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::Absolute;
     static constexpr Stdio tier = Tier;
 
 private:
     graded_type impl_;
 
 public:
-    constexpr StdioPinned() noexcept(
-        std::is_nothrow_default_constructible_v<T>)
+    constexpr StdioPinned() noexcept(std::is_nothrow_default_constructible_v<T>)
         : impl_{T{}, typename lattice_type::element_type{}} {}
 
-    constexpr explicit StdioPinned(T value) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    constexpr explicit StdioPinned(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(value), typename lattice_type::element_type{}} {}
 
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr explicit StdioPinned(std::in_place_t, Args&&... args)
-        noexcept(std::is_nothrow_constructible_v<T, Args...>
-                 && std::is_nothrow_move_constructible_v<T>)
-        : impl_{T(std::forward<Args>(args)...),
-                typename lattice_type::element_type{}} {}
+    constexpr explicit StdioPinned(std::in_place_t, Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
+                                                                             && std::is_nothrow_move_constructible_v<T>)
+        : impl_{T(std::forward<Args>(args)...), typename lattice_type::element_type{}} {}
 
-    constexpr StdioPinned(const StdioPinned&)            = default;
-    constexpr StdioPinned(StdioPinned&&)                 = default;
+    constexpr StdioPinned(const StdioPinned&) = default;
+    constexpr StdioPinned(StdioPinned&&) = default;
     constexpr StdioPinned& operator=(const StdioPinned&) = default;
-    constexpr StdioPinned& operator=(StdioPinned&&)      = default;
-    ~StdioPinned()                                       = default;
+    constexpr StdioPinned& operator=(StdioPinned&&) = default;
+    ~StdioPinned() = default;
 
-    [[nodiscard]] friend constexpr bool operator==(
-        StdioPinned const& a, StdioPinned const& b) noexcept(
-        noexcept(a.peek() == b.peek()))
-        requires requires(T const& x, T const& y) { { x == y } -> std::convertible_to<bool>; }
+    [[nodiscard]] friend constexpr bool operator==(StdioPinned const& a,
+                                                   StdioPinned const& b) noexcept(noexcept(a.peek() == b.peek()))
+        requires requires(T const& x, T const& y) {
+            { x == y } -> std::convertible_to<bool>;
+        }
     {
         return a.peek() == b.peek();
     }
@@ -85,62 +80,62 @@ public:
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return graded_type::lattice_name();
-    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 
     [[nodiscard]] constexpr T const& peek() const& noexcept { return impl_.peek(); }
-    [[nodiscard]] constexpr T consume() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    { return std::move(impl_).consume(); }
+    [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return std::move(impl_).consume();
+    }
     [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(); }
 
-    constexpr void swap(StdioPinned& other)
-        noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
-    friend constexpr void swap(StdioPinned& a, StdioPinned& b)
-        noexcept(std::is_nothrow_swappable_v<T>) { a.swap(b); }
+    constexpr void swap(StdioPinned& other) noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
+    friend constexpr void swap(StdioPinned& a, StdioPinned& b) noexcept(std::is_nothrow_swappable_v<T>) { a.swap(b); }
 
     template <Stdio Ceiling>
     static constexpr bool satisfies = StdioLattice::leq(Tier, Ceiling);
 
     template <Stdio Higher>
-        requires (StdioLattice::leq(Tier, Higher))
-    [[nodiscard]] constexpr StdioPinned<Higher, T> widen() const&
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
+        requires(StdioLattice::leq(Tier, Higher))
+    [[nodiscard]] constexpr StdioPinned<Higher, T> widen() const& noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
-    { return StdioPinned<Higher, T>{this->peek()}; }
+    {
+        return StdioPinned<Higher, T>{this->peek()};
+    }
 
     template <Stdio Higher>
-        requires (StdioLattice::leq(Tier, Higher))
-    [[nodiscard]] constexpr StdioPinned<Higher, T> widen() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    { return StdioPinned<Higher, T>{std::move(impl_).consume()}; }
+        requires(StdioLattice::leq(Tier, Higher))
+    [[nodiscard]] constexpr StdioPinned<Higher, T> widen() && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return StdioPinned<Higher, T>{std::move(impl_).consume()};
+    }
 };
 
 template <Stdio Tier, typename T, typename... Args>
     requires std::is_constructible_v<T, Args...>
-[[nodiscard]] constexpr StdioPinned<Tier, T> mint_stdio(Args&&... args)
-    noexcept(std::is_nothrow_constructible_v<T, Args...>)
-{
+[[nodiscard]] constexpr StdioPinned<Tier, T>
+mint_stdio(Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>) {
     return StdioPinned<Tier, T>{std::in_place, std::forward<Args>(args)...};
 }
 
 namespace stdio_pin {
-    template <typename T> using NoStdio         = StdioPinned<Stdio::NoStdio,         T>;
-    template <typename T> using BufferedWrite   = StdioPinned<Stdio::BufferedWrite,   T>;
-    template <typename T> using UnbufferedWrite = StdioPinned<Stdio::UnbufferedWrite, T>;
-    template <typename T> using InteractiveRead = StdioPinned<Stdio::InteractiveRead, T>;
+template <typename T>
+using NoStdio = StdioPinned<Stdio::NoStdio, T>;
+template <typename T>
+using BufferedWrite = StdioPinned<Stdio::BufferedWrite, T>;
+template <typename T>
+using UnbufferedWrite = StdioPinned<Stdio::UnbufferedWrite, T>;
+template <typename T>
+using InteractiveRead = StdioPinned<Stdio::InteractiveRead, T>;
 }  // namespace stdio_pin
 
-static_assert(sizeof(StdioPinned<Stdio::NoStdio,         int>)    == sizeof(int));
-static_assert(sizeof(StdioPinned<Stdio::InteractiveRead, int>)    == sizeof(int));
+static_assert(sizeof(StdioPinned<Stdio::NoStdio, int>) == sizeof(int));
+static_assert(sizeof(StdioPinned<Stdio::InteractiveRead, int>) == sizeof(int));
 static_assert(sizeof(StdioPinned<Stdio::UnbufferedWrite, double>) == sizeof(double));
-static_assert(sizeof(StdioPinned<Stdio::NoStdio,         char>)   == sizeof(char));
+static_assert(sizeof(StdioPinned<Stdio::NoStdio, char>) == sizeof(char));
 
 namespace detail::stdio_pinned_self_test {
 
-using NoStdioInt      = StdioPinned<Stdio::NoStdio,         int>;
-using InteractiveInt  = StdioPinned<Stdio::InteractiveRead, int>;
+using NoStdioInt = StdioPinned<Stdio::NoStdio, int>;
+using InteractiveInt = StdioPinned<Stdio::InteractiveRead, int>;
 
 inline constexpr NoStdioInt sd_default{};
 static_assert(sd_default.peek() == 0);
@@ -150,7 +145,7 @@ static_assert(NoStdioInt::modality == ::crucible::algebra::ModalityKind::Absolut
 
 static_assert(NoStdioInt::satisfies<Stdio::NoStdio>);
 static_assert(NoStdioInt::satisfies<Stdio::InteractiveRead>);
-static_assert( InteractiveInt::satisfies<Stdio::InteractiveRead>);
+static_assert(InteractiveInt::satisfies<Stdio::InteractiveRead>);
 static_assert(!InteractiveInt::satisfies<Stdio::NoStdio>);
 static_assert(!InteractiveInt::satisfies<Stdio::BufferedWrite>);
 

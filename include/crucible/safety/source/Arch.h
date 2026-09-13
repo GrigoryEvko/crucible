@@ -104,8 +104,8 @@ namespace crucible::safety::source {
 // trunks (X86, Arm) plus Portable (⊤): arch-agnostic code that runs on
 // either trunk.  One enum class for grep-discoverability.
 enum class ArchTag : unsigned char {
-    X86      = 0,  // x86-64 host: mfence/lfence/sfence, SSE..AVX-512
-    Arm      = 1,  // aarch64 host: DMB ISH, NEON/SVE
+    X86 = 0,  // x86-64 host: mfence/lfence/sfence, SSE..AVX-512
+    Arm = 1,  // aarch64 host: DMB ISH, NEON/SVE
     Portable = 2,  // arch-agnostic ⊤: runs on either trunk
 };
 
@@ -126,8 +126,8 @@ struct ArchPinned {
 };
 
 // Canonical aliases — the ergonomic spelling used at composition sites.
-using X86Pinned      = ArchPinned<ArchTag::X86>;
-using ArmPinned      = ArchPinned<ArchTag::Arm>;
+using X86Pinned = ArchPinned<ArchTag::X86>;
+using ArmPinned = ArchPinned<ArchTag::Arm>;
 using PortablePinned = ArchPinned<ArchTag::Portable>;
 
 }  // namespace crucible::safety::source
@@ -161,8 +161,7 @@ inline constexpr bool is_arch_pinned_v<source::ArchPinned<Arch>> = true;
 // composes with anything; non-arch-pinned sources (Portable by default)
 // impose no constraint.
 template <typename SourceA, typename SourceB>
-inline constexpr bool arch_composable_v =
-    source::arch_compatible(arch_pin_v<SourceA>, arch_pin_v<SourceB>);
+inline constexpr bool arch_composable_v = source::arch_compatible(arch_pin_v<SourceA>, arch_pin_v<SourceB>);
 
 template <typename SourceA, typename SourceB>
 concept ArchComposable = arch_composable_v<SourceA, SourceB>;
@@ -172,12 +171,14 @@ concept ArchComposable = arch_composable_v<SourceA, SourceB>;
 // Only the sound WEAKENING direction (Portable → concrete trunk) is
 // admitted.  Widening (concrete → Portable) and cross-trunk relabel
 // (X86 ↔ Arm) stay REJECTED by the V-022 fail-closed primary template.
-template <> struct retag_policy<source::PortablePinned, source::X86Pinned> {
+template <>
+struct retag_policy<source::PortablePinned, source::X86Pinned> {
     // Sound: a value claiming "runs on every trunk" may be relabelled to
     // claim only "runs on x86" — that claims LESS than the value provides.
     static constexpr bool allowed = true;
 };
-template <> struct retag_policy<source::PortablePinned, source::ArmPinned> {
+template <>
+struct retag_policy<source::PortablePinned, source::ArmPinned> {
     // Symmetric: Portable → Arm is the same sound weakening.
     static constexpr bool allowed = true;
 };
@@ -199,84 +200,74 @@ namespace crucible::safety::source::detail::v261_self_test {
 namespace ss = ::crucible::safety;
 
 // ── (1) Tag distinctness ───────────────────────────────────────────
-static_assert(!std::is_same_v<X86Pinned, ArmPinned>,
-    "FIXY-V-261: X86Pinned and ArmPinned must be distinct types — "
-    "an x86 binary does not run on ARM and vice versa.");
+static_assert(!std::is_same_v<X86Pinned, ArmPinned>, "FIXY-V-261: X86Pinned and ArmPinned must be distinct types — "
+                                                     "an x86 binary does not run on ARM and vice versa.");
 static_assert(!std::is_same_v<X86Pinned, PortablePinned>,
-    "FIXY-V-261: X86Pinned and PortablePinned must be distinct types.");
+              "FIXY-V-261: X86Pinned and PortablePinned must be distinct types.");
 static_assert(!std::is_same_v<ArmPinned, PortablePinned>,
-    "FIXY-V-261: ArmPinned and PortablePinned must be distinct types.");
+              "FIXY-V-261: ArmPinned and PortablePinned must be distinct types.");
 
 // ArchPinned<Arch>::arch member round-trips the template parameter.
-static_assert(X86Pinned::arch      == ArchTag::X86);
-static_assert(ArmPinned::arch      == ArchTag::Arm);
+static_assert(X86Pinned::arch == ArchTag::X86);
+static_assert(ArmPinned::arch == ArchTag::Arm);
 static_assert(PortablePinned::arch == ArchTag::Portable);
 
 // ── (2) arch_compatible truth table ────────────────────────────────
-static_assert(arch_compatible(ArchTag::X86, ArchTag::X86),
-    "FIXY-V-261: same trunk must compose.");
-static_assert(arch_compatible(ArchTag::Arm, ArchTag::Arm),
-    "FIXY-V-261: same trunk must compose.");
+static_assert(arch_compatible(ArchTag::X86, ArchTag::X86), "FIXY-V-261: same trunk must compose.");
+static_assert(arch_compatible(ArchTag::Arm, ArchTag::Arm), "FIXY-V-261: same trunk must compose.");
 static_assert(!arch_compatible(ArchTag::X86, ArchTag::Arm),
-    "FIXY-V-261: x86 × ARM must NOT compose — the binary would #UD.");
+              "FIXY-V-261: x86 × ARM must NOT compose — the binary would #UD.");
 static_assert(!arch_compatible(ArchTag::Arm, ArchTag::X86),
-    "FIXY-V-261: cross-trunk is symmetric — ARM × x86 must NOT compose.");
-static_assert(arch_compatible(ArchTag::X86, ArchTag::Portable),
-    "FIXY-V-261: Portable ⊤ composes with x86.");
-static_assert(arch_compatible(ArchTag::Portable, ArchTag::Arm),
-    "FIXY-V-261: Portable ⊤ composes with ARM.");
-static_assert(arch_compatible(ArchTag::Portable, ArchTag::Portable),
-    "FIXY-V-261: Portable composes with itself.");
+              "FIXY-V-261: cross-trunk is symmetric — ARM × x86 must NOT compose.");
+static_assert(arch_compatible(ArchTag::X86, ArchTag::Portable), "FIXY-V-261: Portable ⊤ composes with x86.");
+static_assert(arch_compatible(ArchTag::Portable, ArchTag::Arm), "FIXY-V-261: Portable ⊤ composes with ARM.");
+static_assert(arch_compatible(ArchTag::Portable, ArchTag::Portable), "FIXY-V-261: Portable composes with itself.");
 
 // ── (3) arch_pin_v extraction ──────────────────────────────────────
-static_assert(ss::arch_pin_v<X86Pinned>      == ArchTag::X86);
-static_assert(ss::arch_pin_v<ArmPinned>      == ArchTag::Arm);
+static_assert(ss::arch_pin_v<X86Pinned> == ArchTag::X86);
+static_assert(ss::arch_pin_v<ArmPinned> == ArchTag::Arm);
 static_assert(ss::arch_pin_v<PortablePinned> == ArchTag::Portable);
 // Non-arch-pinned sources default to Portable (no constraint).
-static_assert(ss::arch_pin_v<External>       == ArchTag::Portable,
-    "FIXY-V-261: a non-arch-pinned source must default to Portable so "
-    "it imposes no trunk constraint on composition.");
-static_assert(ss::is_arch_pinned_v<X86Pinned>,
-    "FIXY-V-261: X86Pinned IS an arch pin.");
-static_assert(!ss::is_arch_pinned_v<External>,
-    "FIXY-V-261: a generic provenance tag is NOT an arch pin.");
+static_assert(ss::arch_pin_v<External> == ArchTag::Portable,
+              "FIXY-V-261: a non-arch-pinned source must default to Portable so "
+              "it imposes no trunk constraint on composition.");
+static_assert(ss::is_arch_pinned_v<X86Pinned>, "FIXY-V-261: X86Pinned IS an arch pin.");
+static_assert(!ss::is_arch_pinned_v<External>, "FIXY-V-261: a generic provenance tag is NOT an arch pin.");
 
 // ── (4) ArchComposable concept ─────────────────────────────────────
-static_assert(ss::ArchComposable<X86Pinned, X86Pinned>,
-    "FIXY-V-261: same-trunk composition must be admitted.");
-static_assert(ss::ArchComposable<X86Pinned, PortablePinned>,
-    "FIXY-V-261: concrete × Portable must be admitted.");
+static_assert(ss::ArchComposable<X86Pinned, X86Pinned>, "FIXY-V-261: same-trunk composition must be admitted.");
+static_assert(ss::ArchComposable<X86Pinned, PortablePinned>, "FIXY-V-261: concrete × Portable must be admitted.");
 static_assert(ss::ArchComposable<X86Pinned, External>,
-    "FIXY-V-261: a concrete pin × a non-arch source must be admitted "
-    "(the non-arch source imposes no trunk constraint).");
+              "FIXY-V-261: a concrete pin × a non-arch source must be admitted "
+              "(the non-arch source imposes no trunk constraint).");
 static_assert(!ss::ArchComposable<X86Pinned, ArmPinned>,
-    "FIXY-V-261: x86 × ARM composition MUST be rejected by the gate.");
+              "FIXY-V-261: x86 × ARM composition MUST be rejected by the gate.");
 static_assert(!ss::ArchComposable<ArmPinned, X86Pinned>,
-    "FIXY-V-261: the gate is symmetric — ARM × x86 must be rejected.");
+              "FIXY-V-261: the gate is symmetric — ARM × x86 must be rejected.");
 
 // ── (5) retag_policy direction discipline ──────────────────────────
 // Sound weakening admitted.
 static_assert(ss::retag_policy<PortablePinned, X86Pinned>::allowed,
-    "FIXY-V-261: Portable → x86 is a sound weakening; must be admitted.");
+              "FIXY-V-261: Portable → x86 is a sound weakening; must be admitted.");
 static_assert(ss::retag_policy<PortablePinned, ArmPinned>::allowed,
-    "FIXY-V-261: Portable → ARM is a sound weakening; must be admitted.");
+              "FIXY-V-261: Portable → ARM is a sound weakening; must be admitted.");
 static_assert(ss::RetagAllowed<PortablePinned, X86Pinned>,
-    "FIXY-V-261: the V-024 RetagAllowed concept must see the Portable → "
-    "x86 admittance.");
+              "FIXY-V-261: the V-024 RetagAllowed concept must see the Portable → "
+              "x86 admittance.");
 // Identity admitted by V-022's identity specialization.
 static_assert(ss::retag_policy<X86Pinned, X86Pinned>::allowed,
-    "FIXY-V-261: identity retag (X → X) must be admitted by V-022.");
+              "FIXY-V-261: identity retag (X → X) must be admitted by V-022.");
 // Widening rejected (false claim that x86 code runs everywhere).
 static_assert(!ss::retag_policy<X86Pinned, PortablePinned>::allowed,
-    "FIXY-V-261: x86 → Portable is a false widening (x86 code #UDs on "
-    "ARM); must stay rejected by the fail-closed primary.");
+              "FIXY-V-261: x86 → Portable is a false widening (x86 code #UDs on "
+              "ARM); must stay rejected by the fail-closed primary.");
 // Cross-trunk relabel rejected.
 static_assert(!ss::retag_policy<X86Pinned, ArmPinned>::allowed,
-    "FIXY-V-261: x86 → ARM cross-trunk relabel must stay rejected.");
+              "FIXY-V-261: x86 → ARM cross-trunk relabel must stay rejected.");
 static_assert(!ss::retag_policy<ArmPinned, X86Pinned>::allowed,
-    "FIXY-V-261: ARM → x86 cross-trunk relabel must stay rejected.");
+              "FIXY-V-261: ARM → x86 cross-trunk relabel must stay rejected.");
 static_assert(!ss::RetagAllowed<X86Pinned, ArmPinned>,
-    "FIXY-V-261: the V-024 RetagAllowed concept must reject cross-trunk "
-    "retag.");
+              "FIXY-V-261: the V-024 RetagAllowed concept must reject cross-trunk "
+              "retag.");
 
 }  // namespace crucible::safety::source::detail::v261_self_test

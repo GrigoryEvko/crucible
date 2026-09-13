@@ -167,40 +167,28 @@ namespace crucible::safety {
 // that want sequential degradation pass a smaller ctx such as
 // effects::BgDrainCtx explicitly.
 using PermissionForkSpawnCtx = ::crucible::effects::ExecCtx<
-    ::crucible::effects::Bg,
-    ::crucible::effects::ctx_numa::Local,
-    ::crucible::effects::ctx_alloc::Arena,
-    ::crucible::effects::ctx_heat::Cold,
-    ::crucible::effects::ctx_resid::DRAM,
-    ::crucible::effects::Row<
-        ::crucible::effects::Effect::Bg,
-        ::crucible::effects::Effect::Alloc>,
+    ::crucible::effects::Bg, ::crucible::effects::ctx_numa::Local, ::crucible::effects::ctx_alloc::Arena,
+    ::crucible::effects::ctx_heat::Cold, ::crucible::effects::ctx_resid::DRAM,
+    ::crucible::effects::Row<::crucible::effects::Effect::Bg, ::crucible::effects::Effect::Alloc>,
     ::crucible::effects::ctx_workload::ByteBudget<16ULL * 1024ULL * 1024ULL>>;
 
 template <typename Ctx, typename Parent, typename... Children>
 concept CtxFitsPermissionFork =
-    ::crucible::effects::IsExecCtx<Ctx>
-    && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Bg>
-    && CtxAdmitsPermission<Parent, Ctx>
-    && (CtxAdmitsPermission<Children, Ctx> && ...)
-    && splits_into_pack_v<Parent, Children...>
-    && splits_into_pack_authoring_witness_v<Parent, Children...>;
+    ::crucible::effects::IsExecCtx<Ctx> && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Bg>
+    && CtxAdmitsPermission<Parent, Ctx> && (CtxAdmitsPermission<Children, Ctx> && ...)
+    && splits_into_pack_v<Parent, Children...> && splits_into_pack_authoring_witness_v<Parent, Children...>;
 
 namespace detail {
 
 template <typename Callable, typename Child, typename Ctx>
-concept PermissionForkCtxCallable =
-    std::is_invocable_v<Callable, Permission<Child>, Ctx const&>
-    && std::is_nothrow_invocable_v<Callable, Permission<Child>, Ctx const&>;
+concept PermissionForkCtxCallable = std::is_invocable_v<Callable, Permission<Child>, Ctx const&>
+                                 && std::is_nothrow_invocable_v<Callable, Permission<Child>, Ctx const&>;
 
 template <typename Ctx, typename ChildrenTuple, typename CallablesTuple>
 struct permission_fork_ctx_callables;
 
 template <typename Ctx, typename... Children, typename... Callables>
-struct permission_fork_ctx_callables<
-    Ctx,
-    std::tuple<Children...>,
-    std::tuple<Callables...>> {
+struct permission_fork_ctx_callables<Ctx, std::tuple<Children...>, std::tuple<Callables...>> {
     static consteval bool value() noexcept {
         if constexpr (sizeof...(Children) != sizeof...(Callables)) {
             return false;
@@ -236,11 +224,8 @@ template <typename Ctx>
 // file doc block for the full rationale (fixy-A1-010).
 
 template <typename Ctx, typename Children, typename Callables, std::size_t... Is>
-void permission_fork_spawn_(Ctx const& ctx,
-                             Children&& children,
-                             Callables&& callables,
-                             std::index_sequence<Is...>) noexcept
-{
+void permission_fork_spawn_(Ctx const& ctx, Children&& children, Callables&& callables,
+                            std::index_sequence<Is...>) noexcept {
     // Build the array of jthreads in-place.  Each entry's lambda
     // captures-by-move its child Permission and its corresponding
     // callable.  jthread's stop_token argument is unused in our
@@ -263,16 +248,10 @@ void permission_fork_spawn_(Ctx const& ctx,
 #if defined(__cpp_exceptions)
     try {
 #endif
-        [[maybe_unused]] std::array<std::jthread, sizeof...(Is)> threads = {
-            std::jthread{
-                [child_perm = std::move(std::get<Is>(std::forward<Children>(children))),
-                 callable   = std::move(std::get<Is>(std::forward<Callables>(callables))),
-                 child_ctx  = ctx]
-                (std::stop_token) mutable noexcept {
-                    callable(std::move(child_perm), child_ctx);
-                }
-            }...
-        };
+        [[maybe_unused]] std::array<std::jthread, sizeof...(Is)> threads = {std::jthread{
+            [child_perm = std::move(std::get<Is>(std::forward<Children>(children))),
+             callable = std::move(std::get<Is>(std::forward<Callables>(callables))),
+             child_ctx = ctx](std::stop_token) mutable noexcept { callable(std::move(child_perm), child_ctx); }}...};
         // ~std::array runs here, joining each jthread.
 #if defined(__cpp_exceptions)
     } catch (...) {
@@ -287,14 +266,10 @@ void permission_fork_spawn_(Ctx const& ctx,
 }
 
 template <typename Ctx, typename Children, typename Callables, std::size_t... Is>
-void permission_fork_inline_(Ctx const& ctx,
-                             Children&& children,
-                             Callables&& callables,
-                             std::index_sequence<Is...>) noexcept
-{
-    (std::get<Is>(std::forward<Callables>(callables))(
-         std::move(std::get<Is>(std::forward<Children>(children))),
-         ctx), ...);
+void permission_fork_inline_(Ctx const& ctx, Children&& children, Callables&& callables,
+                             std::index_sequence<Is...>) noexcept {
+    (std::get<Is>(std::forward<Callables>(callables))(std::move(std::get<Is>(std::forward<Children>(children))), ctx),
+     ...);
 }
 
 }  // namespace detail
@@ -313,17 +288,11 @@ void permission_fork_inline_(Ctx const& ctx,
 
 template <typename... Children, typename Ctx, typename Parent, typename... Callables>
     requires CtxFitsPermissionFork<Ctx, Parent, Children...>
-          && detail::permission_fork_ctx_callables_v<
-              Ctx,
-              std::tuple<Children...>,
-              std::tuple<Callables...>>
-[[nodiscard]] Permission<Parent> mint_permission_fork(
-    Ctx const& ctx,
-    Permission<Parent>&& parent,
-    Callables&&... callables) noexcept
-{
+          && detail::permission_fork_ctx_callables_v<Ctx, std::tuple<Children...>, std::tuple<Callables...>>
+[[nodiscard]] Permission<Parent> mint_permission_fork(Ctx const& ctx, Permission<Parent>&& parent,
+                                                      Callables&&... callables) noexcept {
     static_assert(sizeof...(Children) == sizeof...(Callables),
-        "mint_permission_fork: number of Child tags must match number of callables.");
+                  "mint_permission_fork: number of Child tags must match number of callables.");
     // fix-07: the child region tags MUST be pairwise distinct.  Without
     // this, `mint_permission_fork<A, A>(...)` would split the parent into
     // two `Permission<A>` and hand one to each of two jthreads — two
@@ -332,20 +301,14 @@ template <typename... Children, typename Ctx, typename Parent, typename... Calla
     // boundary (in addition to the split_n it delegates to) so the
     // diagnostic names the fork primitive directly.
     static_assert(all_distinct_tags_v<Children...>,
-        "mint_permission_fork: Child region tags must be PAIRWISE DISTINCT — "
-        "forking two threads with Permission<A> each would alias region A and "
-        "produce a data race (fix-07).");
-    static_assert((std::is_invocable_v<
-                       Callables,
-                       Permission<Children>,
-                       Ctx const&> && ...),
-        "mint_permission_fork: each callable must be invocable as "
-        "Callable_i(Permission<Child_i>&&, Ctx const&).");
-    static_assert((std::is_nothrow_invocable_v<
-                       Callables,
-                       Permission<Children>,
-                       Ctx const&> && ...),
-        "mint_permission_fork: callables must be noexcept (Crucible -fno-exceptions).");
+                  "mint_permission_fork: Child region tags must be PAIRWISE DISTINCT — "
+                  "forking two threads with Permission<A> each would alias region A and "
+                  "produce a data race (fix-07).");
+    static_assert((std::is_invocable_v<Callables, Permission<Children>, Ctx const&> && ...),
+                  "mint_permission_fork: each callable must be invocable as "
+                  "Callable_i(Permission<Child_i>&&, Ctx const&).");
+    static_assert((std::is_nothrow_invocable_v<Callables, Permission<Children>, Ctx const&> && ...),
+                  "mint_permission_fork: callables must be noexcept (Crucible -fno-exceptions).");
 
     // FIXY-V-087: reject crucible::fixy::ctrl::throws anywhere in a
     // Callable's TYPE TREE.  `is_nothrow_invocable_v` above catches
@@ -363,48 +326,33 @@ template <typename... Children, typename Ctx, typename Parent, typename... Calla
     // breaking the linear-resource invariant on the parent region.
     // See `crucible/fixy/ctrl/Throws.h` for the tag and the
     // type-tree-contains trait + cv-ref decay discipline.
-    static_assert(!(::crucible::fixy::ctrl::type_tree_contains_throws_v<
-                        std::decay_t<Callables>> || ...),
-        "mint_permission_fork: Callables may not carry the "
-        "crucible::fixy::ctrl::throws grant — exceptions tearing "
-        "through structured fork-join would corrupt parent Permission "
-        "rebuild and child Permission lifetimes (FIXY-V-087).");
+    static_assert(!(::crucible::fixy::ctrl::type_tree_contains_throws_v<std::decay_t<Callables>> || ...),
+                  "mint_permission_fork: Callables may not carry the "
+                  "crucible::fixy::ctrl::throws grant — exceptions tearing "
+                  "through structured fork-join would corrupt parent Permission "
+                  "rebuild and child Permission lifetimes (FIXY-V-087).");
 
     // Step 1: split the parent into disjoint child Permissions.
-    auto child_perms =
-        mint_permission_split_n<Children...>(ctx, std::move(parent));
+    auto child_perms = mint_permission_split_n<Children...>(ctx, std::move(parent));
 
     // Step 2: pack the callables for index_sequence-driven spawn.
-    auto callable_pack = std::tuple<std::decay_t<Callables>...>{
-        std::forward<Callables>(callables)...
-    };
+    auto callable_pack = std::tuple<std::decay_t<Callables>...>{std::forward<Callables>(callables)...};
 
     // Step 3: obey the cache-tier rule.  A compile-time zero working set
     // is necessarily inline, so avoid even the Topology singleton read.
     // Nonzero budgets route through ParallelismRule because cache sizes
     // and cgroup CPU limits are host facts.
     if constexpr (detail::permission_fork_zero_budget_v<Ctx>()) {
-        detail::permission_fork_inline_(
-            ctx,
-            std::move(child_perms),
-            std::move(callable_pack),
-            std::index_sequence_for<Children...>{});
+        detail::permission_fork_inline_(ctx, std::move(child_perms), std::move(callable_pack),
+                                        std::index_sequence_for<Children...>{});
     } else {
-        const auto decision =
-            ::crucible::concurrent::parallelism_decision_for<Ctx>();
-        if (decision.kind
-            == ::crucible::concurrent::ParallelismDecision::Kind::Sequential) {
-            detail::permission_fork_inline_(
-                ctx,
-                std::move(child_perms),
-                std::move(callable_pack),
-                std::index_sequence_for<Children...>{});
+        const auto decision = ::crucible::concurrent::parallelism_decision_for<Ctx>();
+        if (decision.kind == ::crucible::concurrent::ParallelismDecision::Kind::Sequential) {
+            detail::permission_fork_inline_(ctx, std::move(child_perms), std::move(callable_pack),
+                                            std::index_sequence_for<Children...>{});
         } else {
-            detail::permission_fork_spawn_(
-                ctx,
-                std::move(child_perms),
-                std::move(callable_pack),
-                std::index_sequence_for<Children...>{});
+            detail::permission_fork_spawn_(ctx, std::move(child_perms), std::move(callable_pack),
+                                           std::index_sequence_for<Children...>{});
         }
     }
 

@@ -46,20 +46,16 @@ using ::crucible::safety::CipherTierTag_v;
 // (KernelCache promote, Cipher publish_hot/warm/cold, Forge Phase E
 // recipe admission, BackgroundThread phase promotion).
 template <CipherTierTag_v From, CipherTierTag_v To>
-inline constexpr bool can_promote_tier_v =
-    ::crucible::decide::tier_replaces(To, From);
+inline constexpr bool can_promote_tier_v = ::crucible::decide::tier_replaces(To, From);
 
 template <CipherTierTag_v From, CipherTierTag_v To>
-inline constexpr bool can_demote_tier_v =
-    ::crucible::decide::tier_replaces(From, To);
+inline constexpr bool can_demote_tier_v = ::crucible::decide::tier_replaces(From, To);
 
 template <CipherTierTag_v From, CipherTierTag_v To, typename T>
-concept PromotableTier =
-    can_promote_tier_v<From, To> && std::move_constructible<T>;
+concept PromotableTier = can_promote_tier_v<From, To> && std::move_constructible<T>;
 
 template <CipherTierTag_v From, CipherTierTag_v To, typename T>
-concept DemotableTier =
-    can_demote_tier_v<From, To> && std::move_constructible<T>;
+concept DemotableTier = can_demote_tier_v<From, To> && std::move_constructible<T>;
 
 // ── Verification-scope honesty (fixy-CR-10) ─────────────────────────
 //
@@ -95,37 +91,28 @@ struct content_hash_projection;
 
 template <>
 struct content_hash_projection<ContentHash> {
-    [[nodiscard]] static constexpr ContentHash project(
-        const ContentHash& value) noexcept {
-        return value;
-    }
+    [[nodiscard]] static constexpr ContentHash project(const ContentHash& value) noexcept { return value; }
 };
 
 template <typename T>
 concept RestorableHashed = requires(const T& v) {
-    { content_hash_projection<T>::project(v) }
-        -> std::same_as<ContentHash>;
+    { content_hash_projection<T>::project(v) } -> std::same_as<ContentHash>;
 };
 
 template <typename T>
-concept RestorableTier =
-    std::move_constructible<T> && RestorableHashed<T>;
+concept RestorableTier = std::move_constructible<T> && RestorableHashed<T>;
 
 template <CipherTierTag_v From, CipherTierTag_v To, typename T>
     requires PromotableTier<From, To, T>
 [[nodiscard]] constexpr CipherTier<To, T>
-mint_promote(CipherTier<From, T> source)
-    noexcept(std::is_nothrow_move_constructible_v<T>)
-{
+mint_promote(CipherTier<From, T> source) noexcept(std::is_nothrow_move_constructible_v<T>) {
     return CipherTier<To, T>{std::move(source).consume()};
 }
 
 template <CipherTierTag_v From, CipherTierTag_v To, typename T>
     requires DemotableTier<From, To, T>
 [[nodiscard]] constexpr CipherTier<To, T>
-mint_demote(CipherTier<From, T> source)
-    noexcept(std::is_nothrow_move_constructible_v<T>)
-{
+mint_demote(CipherTier<From, T> source) noexcept(std::is_nothrow_move_constructible_v<T>) {
     return CipherTier<To, T>{std::move(source).consume()};
 }
 
@@ -138,11 +125,16 @@ enum class RestoreError : std::uint8_t {
 
 [[nodiscard]] consteval const char* restore_error_name(RestoreError error) noexcept {
     switch (error) {
-        case RestoreError::EmptyContentHash:    return "EmptyContentHash";
-        case RestoreError::EmptyColdHandle:     return "EmptyColdHandle";
-        case RestoreError::ContentHashMismatch: return "ContentHashMismatch";
-        case RestoreError::BackendUnavailable:  return "BackendUnavailable";
-        default:                                return "<unknown RestoreError>";
+        case RestoreError::EmptyContentHash:
+            return "EmptyContentHash";
+        case RestoreError::EmptyColdHandle:
+            return "EmptyColdHandle";
+        case RestoreError::ContentHashMismatch:
+            return "ContentHashMismatch";
+        case RestoreError::BackendUnavailable:
+            return "BackendUnavailable";
+        default:
+            return "<unknown RestoreError>";
     }
 }
 
@@ -158,9 +150,8 @@ using HotTierHandle = ::crucible::safety::cipher_tier::Hot<T>;
 template <typename T>
     requires RestorableTier<T>
 [[nodiscard]] constexpr std::expected<WarmTierHandle<T>, RestoreError>
-mint_restore(ColdTierHandle<T> cold_handle, ContentHash content_hash)
-    noexcept(std::is_nothrow_move_constructible_v<T>)
-{
+mint_restore(ColdTierHandle<T> cold_handle,
+             ContentHash content_hash) noexcept(std::is_nothrow_move_constructible_v<T>) {
     if (!static_cast<bool>(content_hash)) {
         return std::unexpected(RestoreError::EmptyContentHash);
     }
@@ -168,8 +159,7 @@ mint_restore(ColdTierHandle<T> cold_handle, ContentHash content_hash)
     // fixy-CR-10: uniform projection — fires for EVERY restorable T,
     // not only T = ContentHash.  Production payloads must opt in via
     // `content_hash_projection<T>::project` (see header doc-block).
-    const ContentHash cold_projected =
-        content_hash_projection<T>::project(cold_handle.peek());
+    const ContentHash cold_projected = content_hash_projection<T>::project(cold_handle.peek());
     if (!static_cast<bool>(cold_projected)) {
         return std::unexpected(RestoreError::EmptyColdHandle);
     }
@@ -177,72 +167,51 @@ mint_restore(ColdTierHandle<T> cold_handle, ContentHash content_hash)
         return std::unexpected(RestoreError::ContentHashMismatch);
     }
 
-    return mint_promote<CipherTierTag_v::Cold, CipherTierTag_v::Warm>(
-        std::move(cold_handle));
+    return mint_promote<CipherTierTag_v::Cold, CipherTierTag_v::Warm>(std::move(cold_handle));
 }
 
 template <typename T>
 using HotPromotePayload = HotTierHandle<T>;
 
 template <typename T>
-using HotPromote =
-    ::crucible::safety::proto::Send<
-        HotPromotePayload<T>,
-        ::crucible::safety::proto::End>;
+using HotPromote = ::crucible::safety::proto::Send<HotPromotePayload<T>, ::crucible::safety::proto::End>;
 
 template <typename T, typename K = ::crucible::safety::proto::End>
-using HotPromoteDelegate =
-    ::crucible::safety::proto::Delegate<HotPromote<T>, K>;
+using HotPromoteDelegate = ::crucible::safety::proto::Delegate<HotPromote<T>, K>;
 
 template <typename T, typename K = ::crucible::safety::proto::End>
-using HotPromoteAccept =
-    ::crucible::safety::proto::Accept<HotPromote<T>, K>;
+using HotPromoteAccept = ::crucible::safety::proto::Accept<HotPromote<T>, K>;
 
 namespace detail::cipher_tier_promotion_self_test {
 
-using HotHash  = HotTierHandle<ContentHash>;
+using HotHash = HotTierHandle<ContentHash>;
 using WarmHash = WarmTierHandle<ContentHash>;
 using ColdHash = ColdTierHandle<ContentHash>;
 
-static_assert(can_promote_tier_v<CipherTierTag_v::Cold,
-                                 CipherTierTag_v::Warm>);
-static_assert(can_promote_tier_v<CipherTierTag_v::Cold,
-                                 CipherTierTag_v::Hot>);
-static_assert(can_promote_tier_v<CipherTierTag_v::Warm,
-                                 CipherTierTag_v::Hot>);
-static_assert(!can_promote_tier_v<CipherTierTag_v::Hot,
-                                  CipherTierTag_v::Cold>);
+static_assert(can_promote_tier_v<CipherTierTag_v::Cold, CipherTierTag_v::Warm>);
+static_assert(can_promote_tier_v<CipherTierTag_v::Cold, CipherTierTag_v::Hot>);
+static_assert(can_promote_tier_v<CipherTierTag_v::Warm, CipherTierTag_v::Hot>);
+static_assert(!can_promote_tier_v<CipherTierTag_v::Hot, CipherTierTag_v::Cold>);
 
-static_assert(can_demote_tier_v<CipherTierTag_v::Hot,
-                                CipherTierTag_v::Warm>);
-static_assert(can_demote_tier_v<CipherTierTag_v::Hot,
-                                CipherTierTag_v::Cold>);
-static_assert(can_demote_tier_v<CipherTierTag_v::Warm,
-                                CipherTierTag_v::Cold>);
-static_assert(!can_demote_tier_v<CipherTierTag_v::Cold,
-                                 CipherTierTag_v::Hot>);
+static_assert(can_demote_tier_v<CipherTierTag_v::Hot, CipherTierTag_v::Warm>);
+static_assert(can_demote_tier_v<CipherTierTag_v::Hot, CipherTierTag_v::Cold>);
+static_assert(can_demote_tier_v<CipherTierTag_v::Warm, CipherTierTag_v::Cold>);
+static_assert(!can_demote_tier_v<CipherTierTag_v::Cold, CipherTierTag_v::Hot>);
 
+static_assert(
+    std::is_same_v<decltype(mint_promote<CipherTierTag_v::Cold, CipherTierTag_v::Warm>(ColdHash{ContentHash{1}})),
+                   WarmHash>);
 static_assert(std::is_same_v<
-    decltype(mint_promote<CipherTierTag_v::Cold, CipherTierTag_v::Warm>(
-        ColdHash{ContentHash{1}})),
-    WarmHash>);
-static_assert(std::is_same_v<
-    decltype(mint_demote<CipherTierTag_v::Hot, CipherTierTag_v::Cold>(
-        HotHash{ContentHash{2}})),
-    ColdHash>);
+              decltype(mint_demote<CipherTierTag_v::Hot, CipherTierTag_v::Cold>(HotHash{ContentHash{2}})), ColdHash>);
 
 using HotPromoteHash = HotPromote<ContentHash>;
 using HotPromoteCarrier = HotPromoteDelegate<ContentHash>;
 using HotPromotePeer = HotPromoteAccept<ContentHash>;
 
 static_assert(::crucible::safety::proto::is_well_formed_v<HotPromoteHash>);
-static_assert(::crucible::safety::proto::DelegatesTo<
-    HotPromoteCarrier, HotPromoteHash>);
-static_assert(::crucible::safety::proto::AcceptsFrom<
-    HotPromotePeer, HotPromoteHash>);
-static_assert(std::is_same_v<
-    ::crucible::safety::proto::dual_of_t<HotPromoteCarrier>,
-    HotPromotePeer>);
+static_assert(::crucible::safety::proto::DelegatesTo<HotPromoteCarrier, HotPromoteHash>);
+static_assert(::crucible::safety::proto::AcceptsFrom<HotPromotePeer, HotPromoteHash>);
+static_assert(std::is_same_v<::crucible::safety::proto::dual_of_t<HotPromoteCarrier>, HotPromotePeer>);
 
 }  // namespace detail::cipher_tier_promotion_self_test
 

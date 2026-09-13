@@ -239,7 +239,7 @@ struct strict_default_for<dim::DimensionAxis::Observability> {
     // for `strict_default_for<Observability>::type` hit substitution
     // failure (only `derived_from` was visible).
     using derived_from = strict_default_for<dim::DimensionAxis::Effect>;
-    using type         = typename derived_from::type;
+    using type = typename derived_from::type;
 };
 
 // FIXY-AUDIT-A4: positive static_assert pinning Observability's
@@ -248,10 +248,9 @@ struct strict_default_for<dim::DimensionAxis::Observability> {
 // etc.), this regression fires here at the fixy/Default.h definition
 // site rather than as an opaque substitution failure deep inside a
 // downstream resolver.
-static_assert(std::is_same_v<
-    typename strict_default_for<dim::DimensionAxis::Observability>::type,
-    typename strict_default_for<dim::DimensionAxis::Effect>::type>,
-    "Observability's derived type must round-trip to Effect's strict default.");
+static_assert(std::is_same_v<typename strict_default_for<dim::DimensionAxis::Observability>::type,
+                             typename strict_default_for<dim::DimensionAxis::Effect>::type>,
+              "Observability's derived type must round-trip to Effect's strict default.");
 
 // fixy-M-08: structural witness for the half-engaged duality.  HALF-2
 // (payload-derived) is asserted above; this assertion locks HALF-1
@@ -471,12 +470,10 @@ struct strict_default_for<dim::DimensionAxis::MemoryScope> {
 // callers must NAME the type, not "accept" it).
 
 template <dim::DimensionAxis D>
-concept HasStrictDefault =
-    requires { typename strict_default_for<D>::type; }
-    || requires {
-        typename strict_default_for<D>::value_type;
-        { strict_default_for<D>::value };
-    };
+concept HasStrictDefault = requires { typename strict_default_for<D>::type; } || requires {
+    typename strict_default_for<D>::value_type;
+    { strict_default_for<D>::value };
+};
 
 // ─── HasDerivedDefault — Observability is the only derived axis ────
 //
@@ -486,13 +483,12 @@ concept HasStrictDefault =
 // "I accept whatever the upstream dim resolves to."
 
 template <dim::DimensionAxis D>
-concept HasDerivedDefault =
-    requires { typename strict_default_for<D>::derived_from; };
+concept HasDerivedDefault = requires { typename strict_default_for<D>::derived_from; };
 
 template <dim::DimensionAxis D>
-concept IsCallerSupplied =
-    requires { { strict_default_for<D>::caller_supplied } -> std::convertible_to<bool>; }
-    && strict_default_for<D>::caller_supplied;
+concept IsCallerSupplied = requires {
+    { strict_default_for<D>::caller_supplied } -> std::convertible_to<bool>;
+} && strict_default_for<D>::caller_supplied;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Self-test — reflection-driven coverage ─────────────────────────
@@ -506,24 +502,22 @@ concept IsCallerSupplied =
 namespace detail::default_coverage {
 
 [[nodiscard]] consteval bool every_axis_resolves() noexcept {
-    static constexpr auto resolve_axes = std::define_static_array(
-        std::meta::enumerators_of(^^::crucible::safety::DimensionAxis));
+    static constexpr auto resolve_axes =
+        std::define_static_array(std::meta::enumerators_of(^^::crucible::safety::DimensionAxis));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : resolve_axes) {
         constexpr auto axis_v = [:en:];
-        constexpr bool has_caller    = IsCallerSupplied<axis_v>;
-        constexpr bool has_strict    = HasStrictDefault<axis_v>;
-        constexpr bool has_derived   = HasDerivedDefault<axis_v>;
+        constexpr bool has_caller = IsCallerSupplied<axis_v>;
+        constexpr bool has_strict = HasStrictDefault<axis_v>;
+        constexpr bool has_derived = HasDerivedDefault<axis_v>;
         // FIXY-AUDIT-A9: a derived axis may ALSO expose `type` (pre-
         // resolved through `derived_from`) — those are not two
         // independent engagements but a derived axis publishing its
         // upstream value for downstream consumers.  Count strict as
         // an independent slot only when no derived marker is present.
-        constexpr int  strict_indep  = (has_strict && !has_derived) ? 1 : 0;
-        constexpr int  match_count   = (has_caller ? 1 : 0)
-                                     + strict_indep
-                                     + (has_derived ? 1 : 0);
+        constexpr int strict_indep = (has_strict && !has_derived) ? 1 : 0;
+        constexpr int match_count = (has_caller ? 1 : 0) + strict_indep + (has_derived ? 1 : 0);
         if (match_count != 1) {
             return false;
         }
@@ -541,51 +535,51 @@ namespace detail::default_coverage {
 
 [[nodiscard]] consteval bool type_defaults_match_substrate() noexcept {
     using DF = safety::fn::Fn<int>;
-    return  std::is_same_v<typename strict_default_for<dim::DimensionAxis::Refinement>::type, DF::refinement_t>
-        &&  std::is_same_v<typename strict_default_for<dim::DimensionAxis::Effect>::type,     DF::effect_row_t>
-        &&  std::is_same_v<typename strict_default_for<dim::DimensionAxis::Protocol>::type,   DF::protocol_t>
-        &&  std::is_same_v<typename strict_default_for<dim::DimensionAxis::Lifetime>::type,   DF::lifetime_t>
-        &&  std::is_same_v<typename strict_default_for<dim::DimensionAxis::Provenance>::type, DF::source_t>
-        &&  std::is_same_v<typename strict_default_for<dim::DimensionAxis::Trust>::type,      DF::trust_t>
-        &&  std::is_same_v<typename strict_default_for<dim::DimensionAxis::Complexity>::type, DF::cost_t>
-        &&  std::is_same_v<typename strict_default_for<dim::DimensionAxis::Precision>::type,  DF::precision_t>
-        &&  std::is_same_v<typename strict_default_for<dim::DimensionAxis::Space>::type,      DF::space_t>
-        &&  std::is_same_v<typename strict_default_for<dim::DimensionAxis::Size>::type,       DF::size_t_>
-        &&  std::is_same_v<typename strict_default_for<dim::DimensionAxis::Staleness>::type,  DF::staleness_t>;
+    return std::is_same_v<typename strict_default_for<dim::DimensionAxis::Refinement>::type, DF::refinement_t>
+        && std::is_same_v<typename strict_default_for<dim::DimensionAxis::Effect>::type, DF::effect_row_t>
+        && std::is_same_v<typename strict_default_for<dim::DimensionAxis::Protocol>::type, DF::protocol_t>
+        && std::is_same_v<typename strict_default_for<dim::DimensionAxis::Lifetime>::type, DF::lifetime_t>
+        && std::is_same_v<typename strict_default_for<dim::DimensionAxis::Provenance>::type, DF::source_t>
+        && std::is_same_v<typename strict_default_for<dim::DimensionAxis::Trust>::type, DF::trust_t>
+        && std::is_same_v<typename strict_default_for<dim::DimensionAxis::Complexity>::type, DF::cost_t>
+        && std::is_same_v<typename strict_default_for<dim::DimensionAxis::Precision>::type, DF::precision_t>
+        && std::is_same_v<typename strict_default_for<dim::DimensionAxis::Space>::type, DF::space_t>
+        && std::is_same_v<typename strict_default_for<dim::DimensionAxis::Size>::type, DF::size_t_>
+        && std::is_same_v<typename strict_default_for<dim::DimensionAxis::Staleness>::type, DF::staleness_t>;
 }
 
 [[nodiscard]] consteval bool enum_defaults_match_substrate() noexcept {
     using DF = safety::fn::Fn<int>;
-    return  strict_default_for<dim::DimensionAxis::Usage>::value          == DF::usage_v
-        &&  strict_default_for<dim::DimensionAxis::Security>::value       == DF::security_v
-        &&  strict_default_for<dim::DimensionAxis::Representation>::value == DF::repr_v
-        &&  strict_default_for<dim::DimensionAxis::Overflow>::value       == DF::overflow_v
-        &&  strict_default_for<dim::DimensionAxis::Mutation>::value       == DF::mutation_v
-        &&  strict_default_for<dim::DimensionAxis::Reentrancy>::value     == DF::reentrancy_v
-        &&  strict_default_for<dim::DimensionAxis::Version>::value        == DF::version_v;
+    return strict_default_for<dim::DimensionAxis::Usage>::value == DF::usage_v
+        && strict_default_for<dim::DimensionAxis::Security>::value == DF::security_v
+        && strict_default_for<dim::DimensionAxis::Representation>::value == DF::repr_v
+        && strict_default_for<dim::DimensionAxis::Overflow>::value == DF::overflow_v
+        && strict_default_for<dim::DimensionAxis::Mutation>::value == DF::mutation_v
+        && strict_default_for<dim::DimensionAxis::Reentrancy>::value == DF::reentrancy_v
+        && strict_default_for<dim::DimensionAxis::Version>::value == DF::version_v;
 }
 
 }  // namespace detail::default_coverage
 
 static_assert(detail::default_coverage::every_axis_resolves(),
-    "fixy::Default — at least one DimensionAxis enumerator does not "
-    "have a strict_default_for specialization (or has multiple "
-    "conflicting role markers).  Each axis must classify as exactly "
-    "ONE of: caller-supplied (Type), has-strict-default (most axes), "
-    "or has-derived-default (Observability).  Add the missing "
-    "specialization, then re-run.");
+              "fixy::Default — at least one DimensionAxis enumerator does not "
+              "have a strict_default_for specialization (or has multiple "
+              "conflicting role markers).  Each axis must classify as exactly "
+              "ONE of: caller-supplied (Type), has-strict-default (most axes), "
+              "or has-derived-default (Observability).  Add the missing "
+              "specialization, then re-run.");
 
 static_assert(detail::default_coverage::type_defaults_match_substrate(),
-    "fixy::Default — a type-valued strict-default aliased here has "
-    "drifted from safety::fn::Fn<int>'s shipped default.  Likely "
-    "cause: the substrate's per-axis default was changed without "
-    "updating fixy/Default.h alongside.  Re-align fixy/Default.h's "
-    "specialization with the substrate's authoritative default in "
-    "safety/Fn.h's class template parameter list.");
+              "fixy::Default — a type-valued strict-default aliased here has "
+              "drifted from safety::fn::Fn<int>'s shipped default.  Likely "
+              "cause: the substrate's per-axis default was changed without "
+              "updating fixy/Default.h alongside.  Re-align fixy/Default.h's "
+              "specialization with the substrate's authoritative default in "
+              "safety/Fn.h's class template parameter list.");
 
 static_assert(detail::default_coverage::enum_defaults_match_substrate(),
-    "fixy::Default — an enum-valued strict-default aliased here has "
-    "drifted from safety::fn::Fn<int>'s shipped default.  Same fix "
-    "as the type-defaults assertion above.");
+              "fixy::Default — an enum-valued strict-default aliased here has "
+              "drifted from safety::fn::Fn<int>'s shipped default.  Same fix "
+              "as the type-defaults assertion above.");
 
 }  // namespace crucible::fixy

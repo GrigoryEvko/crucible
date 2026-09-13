@@ -95,10 +95,9 @@ namespace crucible::effects {
 // this guard preempts the carrier-width regression at the moment a 64th
 // atom would be added — at which point the lattice MUST migrate to a
 // wider carrier (uint128 / std::bitset<N>) before the new atom lands.
-static_assert(effect_count <= 64,
-    "EffectRowLattice carrier is uint64_t — extend to a wider carrier "
-    "(uint128 / std::bitset<effect_count>) before adding a 65th Effect "
-    "atom.  See 28_04_2026_effects.md §8.5.3 (append-only Universe).");
+static_assert(effect_count <= 64, "EffectRowLattice carrier is uint64_t — extend to a wider carrier "
+                                  "(uint128 / std::bitset<effect_count>) before adding a 65th Effect "
+                                  "atom.  See 28_04_2026_effects.md §8.5.3 (append-only Universe).");
 
 // ── Per-atom underlying-value guard (fixy-A3-011) ───────────────────
 //
@@ -116,8 +115,7 @@ static_assert(effect_count <= 64,
 // reach the bit-shift.  Adding a new atom at the next free position
 // (6, 7, 8, ...) per FOUND-I04 keeps it inside the guard window.
 [[nodiscard]] consteval bool every_effect_underlying_lt_64() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^Effect));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Effect));
     // -Wshadow false-positive on template for induction variable.
     // See feedback_gcc16_c26_reflection_gotchas memory rule.
 #pragma GCC diagnostic push
@@ -130,54 +128,35 @@ static_assert(effect_count <= 64,
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_effect_underlying_lt_64(),
-    "fixy-A3-011: at least one Effect atom has an underlying value "
-    ">= 64 — the EffectRowLattice::At<...>::value bit-shift "
-    "`1ULL << static_cast<std::uint8_t>(Atom)` would be undefined.  "
-    "Restore append-only Universe values (next free position) or "
-    "follow the major-version migration ceremony per FOUND-I04.");
+static_assert(every_effect_underlying_lt_64(), "fixy-A3-011: at least one Effect atom has an underlying value "
+                                               ">= 64 — the EffectRowLattice::At<...>::value bit-shift "
+                                               "`1ULL << static_cast<std::uint8_t>(Atom)` would be undefined.  "
+                                               "Restore append-only Universe values (next free position) or "
+                                               "follow the major-version migration ceremony per FOUND-I04.");
 
 // ── EffectRowLattice ───────────────────────────────────────────────
 
 struct EffectRowLattice {
     using element_type = std::uint64_t;
 
-    [[nodiscard]] static constexpr element_type bottom() noexcept {
-        return 0;
-    }
+    [[nodiscard]] static constexpr element_type bottom() noexcept { return 0; }
 
     // Top is the universe — every Effect atom present.  Adding a new
     // atom to Capabilities.h auto-bumps `effect_count` (it's reflection-
     // derived); the top mask therefore extends without manual update.
     [[nodiscard]] static constexpr element_type top() noexcept {
-        return (effect_count == 0)
-            ? element_type{0}
-            : ((element_type{1} << effect_count) - element_type{1});
+        return (effect_count == 0) ? element_type{0} : ((element_type{1} << effect_count) - element_type{1});
     }
 
     // Subset bit-test: a ⊆ b iff every bit in a is also in b iff
     // `a & ~b` clears every bit in a.
-    [[nodiscard]] static constexpr bool leq(
-        element_type a, element_type b) noexcept
-    {
-        return (a & ~b) == 0;
-    }
+    [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept { return (a & ~b) == 0; }
 
-    [[nodiscard]] static constexpr element_type join(
-        element_type a, element_type b) noexcept
-    {
-        return a | b;
-    }
+    [[nodiscard]] static constexpr element_type join(element_type a, element_type b) noexcept { return a | b; }
 
-    [[nodiscard]] static constexpr element_type meet(
-        element_type a, element_type b) noexcept
-    {
-        return a & b;
-    }
+    [[nodiscard]] static constexpr element_type meet(element_type a, element_type b) noexcept { return a & b; }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return "EffectRow";
-    }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "EffectRow"; }
 
     // ── At<Effect... Atoms> singleton sub-lattice (FOUND-H01-AUDIT-1) ──
     //
@@ -209,44 +188,30 @@ struct EffectRowLattice {
         // from the underlying value of Effect::i — stable across
         // append-only Universe extensions per 28_04 §8.5.3.
         static constexpr std::uint64_t value =
-            ((std::uint64_t{1} << static_cast<std::uint8_t>(Atoms)) | ...
-             | std::uint64_t{0});
+            ((std::uint64_t{1} << static_cast<std::uint8_t>(Atoms)) | ... | std::uint64_t{0});
 
         // Singleton element — empty struct so Graded's
         // [[no_unique_address]] grade_type grade_ collapses to zero.
         struct element_type {
             constexpr element_type() noexcept = default;
-            [[nodiscard]] constexpr bool operator==(
-                element_type) const noexcept { return true; }
+            [[nodiscard]] constexpr bool operator==(element_type) const noexcept { return true; }
         };
-        static_assert(std::is_empty_v<element_type>,
-            "At<Atoms...>::element_type must be empty so Graded's "
-            "[[no_unique_address]] grade_ slot collapses to 0 bytes.");
+        static_assert(std::is_empty_v<element_type>, "At<Atoms...>::element_type must be empty so Graded's "
+                                                     "[[no_unique_address]] grade_ slot collapses to 0 bytes.");
 
-        [[nodiscard]] static constexpr element_type bottom() noexcept {
-            return {};
-        }
-        [[nodiscard]] static constexpr element_type top() noexcept {
-            return {};
-        }
-        [[nodiscard]] static constexpr bool leq(
-            element_type, element_type) noexcept { return true; }
-        [[nodiscard]] static constexpr element_type join(
-            element_type, element_type) noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type meet(
-            element_type, element_type) noexcept { return {}; }
+        [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
+        [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
 
-        [[nodiscard]] static consteval std::string_view name() noexcept {
-            return "EffectRow::At";
-        }
+        [[nodiscard]] static consteval std::string_view name() noexcept { return "EffectRow::At"; }
 
         // Bridge to the parent lattice's bitmask carrier.  Consumers
         // wanting the runtime bitmask (cache-key generation, runtime
         // diagnostics) read `At<...>::bits()` to escape the type-level
         // singleton encoding back to the parent lattice's element_type.
-        [[nodiscard]] static constexpr std::uint64_t bits() noexcept {
-            return value;
-        }
+        [[nodiscard]] static constexpr std::uint64_t bits() noexcept { return value; }
     };
 };
 
@@ -266,8 +231,7 @@ inline constexpr EffectRowLattice::element_type row_descriptor_v = 0;
 
 template <Effect... Es>
 inline constexpr EffectRowLattice::element_type row_descriptor_v<Row<Es...>> =
-    ((EffectRowLattice::element_type{1} <<
-      static_cast<std::uint8_t>(Es)) | ...
+    ((EffectRowLattice::element_type{1} << static_cast<std::uint8_t>(Es)) | ...
      | EffectRowLattice::element_type{0});  // identity for empty pack
 
 // ── Concept conformance + lattice-axiom witnesses ──────────────────
@@ -284,44 +248,34 @@ static_assert(::crucible::algebra::BoundedLattice<EffectRowLattice>);
 // pack, single atom, multi-atom, and the universe.
 static_assert(::crucible::algebra::Lattice<EffectRowLattice::At<>>);
 static_assert(::crucible::algebra::BoundedLattice<EffectRowLattice::At<>>);
-static_assert(::crucible::algebra::Lattice<
-    EffectRowLattice::At<Effect::Alloc>>);
-static_assert(::crucible::algebra::BoundedLattice<
-    EffectRowLattice::At<Effect::Alloc>>);
-static_assert(::crucible::algebra::Lattice<
-    EffectRowLattice::At<Effect::Bg, Effect::Alloc, Effect::IO>>);
-static_assert(::crucible::algebra::BoundedLattice<
-    EffectRowLattice::At<Effect::Bg, Effect::Alloc, Effect::IO>>);
+static_assert(::crucible::algebra::Lattice<EffectRowLattice::At<Effect::Alloc>>);
+static_assert(::crucible::algebra::BoundedLattice<EffectRowLattice::At<Effect::Alloc>>);
+static_assert(::crucible::algebra::Lattice<EffectRowLattice::At<Effect::Bg, Effect::Alloc, Effect::IO>>);
+static_assert(::crucible::algebra::BoundedLattice<EffectRowLattice::At<Effect::Bg, Effect::Alloc, Effect::IO>>);
 
 // At<>::element_type is empty — the Graded grade slot collapses to 0
 // bytes, mirroring ConfLattice::At, ToleranceLattice::At, QttSemiring::
 // At.  Without this property the type-level grade pinning would force
 // a runtime carrier into every Computation<R, T> instance.
 static_assert(std::is_empty_v<EffectRowLattice::At<>::element_type>);
-static_assert(std::is_empty_v<
-    EffectRowLattice::At<Effect::Alloc>::element_type>);
-static_assert(std::is_empty_v<
-    EffectRowLattice::At<Effect::Alloc, Effect::IO>::element_type>);
+static_assert(std::is_empty_v<EffectRowLattice::At<Effect::Alloc>::element_type>);
+static_assert(std::is_empty_v<EffectRowLattice::At<Effect::Alloc, Effect::IO>::element_type>);
 
 // At<...>::bits() is a stable bridge to the parent's bitmask carrier;
 // the encoding agrees with row_descriptor_v at every spot witness.
 static_assert(EffectRowLattice::At<>::bits() == 0);
-static_assert(EffectRowLattice::At<Effect::Alloc>::bits() ==
-    (std::uint64_t{1} << static_cast<std::uint8_t>(Effect::Alloc)));
-static_assert(EffectRowLattice::At<Effect::IO>::bits() ==
-    (std::uint64_t{1} << static_cast<std::uint8_t>(Effect::IO)));
-static_assert(EffectRowLattice::At<Effect::Alloc, Effect::IO>::bits() ==
-    EffectRowLattice::join(
-        EffectRowLattice::At<Effect::Alloc>::bits(),
-        EffectRowLattice::At<Effect::IO>::bits()));
+static_assert(EffectRowLattice::At<Effect::Alloc>::bits()
+              == (std::uint64_t{1} << static_cast<std::uint8_t>(Effect::Alloc)));
+static_assert(EffectRowLattice::At<Effect::IO>::bits() == (std::uint64_t{1} << static_cast<std::uint8_t>(Effect::IO)));
+static_assert(EffectRowLattice::At<Effect::Alloc, Effect::IO>::bits()
+              == EffectRowLattice::join(EffectRowLattice::At<Effect::Alloc>::bits(),
+                                        EffectRowLattice::At<Effect::IO>::bits()));
 
 // At<>::bits() agrees with row_descriptor_v<Row<Atoms...>> — the two
 // type-level descriptors collapse to the same bitmask, proving the
 // At<> ↔ Row<> bridge needed by H03's Computation alias.
-static_assert(EffectRowLattice::At<>::bits()
-              == row_descriptor_v<Row<>>);
-static_assert(EffectRowLattice::At<Effect::Alloc>::bits()
-              == row_descriptor_v<Row<Effect::Alloc>>);
+static_assert(EffectRowLattice::At<>::bits() == row_descriptor_v<Row<>>);
+static_assert(EffectRowLattice::At<Effect::Alloc>::bits() == row_descriptor_v<Row<Effect::Alloc>>);
 static_assert(EffectRowLattice::At<Effect::Alloc, Effect::IO>::bits()
               == row_descriptor_v<Row<Effect::Alloc, Effect::IO>>);
 // Order independence — At<A,B>::bits() == At<B,A>::bits() (set-fold).
@@ -344,7 +298,8 @@ static_assert(EffectRowLattice::At<Effect::Alloc, Effect::IO>::bits()
 // to GradedTrait's `graded_modality` (algebra/GradedTrait.h:159).
 
 namespace detail {
-template <typename R> struct effect_row_to_at;  // primary undefined on purpose
+template <typename R>
+struct effect_row_to_at;  // primary undefined on purpose
 
 template <Effect... Es>
 struct effect_row_to_at<Row<Es...>> {
@@ -361,32 +316,19 @@ using effect_row_to_at_t = typename detail::effect_row_to_at<R>::type;
 // across the empty pack, single atom, and multi-atom cases.  Order-
 // independence + bit-position stability already proven at the At<>
 // level; here we just verify the pattern-match.
+static_assert(std::is_same_v<effect_row_to_at_t<Row<>>, EffectRowLattice::At<>>);
+static_assert(std::is_same_v<effect_row_to_at_t<Row<Effect::Alloc>>, EffectRowLattice::At<Effect::Alloc>>);
+static_assert(std::is_same_v<effect_row_to_at_t<Row<Effect::Bg>>, EffectRowLattice::At<Effect::Bg>>);
+static_assert(std::is_same_v<effect_row_to_at_t<Row<Effect::Alloc, Effect::IO>>,
+                             EffectRowLattice::At<Effect::Alloc, Effect::IO>>);
 static_assert(std::is_same_v<
-    effect_row_to_at_t<Row<>>,
-    EffectRowLattice::At<>>);
-static_assert(std::is_same_v<
-    effect_row_to_at_t<Row<Effect::Alloc>>,
-    EffectRowLattice::At<Effect::Alloc>>);
-static_assert(std::is_same_v<
-    effect_row_to_at_t<Row<Effect::Bg>>,
-    EffectRowLattice::At<Effect::Bg>>);
-static_assert(std::is_same_v<
-    effect_row_to_at_t<Row<Effect::Alloc, Effect::IO>>,
-    EffectRowLattice::At<Effect::Alloc, Effect::IO>>);
-static_assert(std::is_same_v<
-    effect_row_to_at_t<Row<
-        Effect::Alloc, Effect::IO, Effect::Block,
-        Effect::Bg,    Effect::Init, Effect::Test>>,
-    EffectRowLattice::At<
-        Effect::Alloc, Effect::IO, Effect::Block,
-        Effect::Bg,    Effect::Init, Effect::Test>>);
+              effect_row_to_at_t<Row<Effect::Alloc, Effect::IO, Effect::Block, Effect::Bg, Effect::Init, Effect::Test>>,
+              EffectRowLattice::At<Effect::Alloc, Effect::IO, Effect::Block, Effect::Bg, Effect::Init, Effect::Test>>);
 
 // Helper output's bits() agrees with row_descriptor_v on the input —
 // the round-trip Row → At → bits matches the direct Row → bits bridge.
-static_assert(effect_row_to_at_t<Row<>>::bits()
-              == row_descriptor_v<Row<>>);
-static_assert(effect_row_to_at_t<Row<Effect::Alloc>>::bits()
-              == row_descriptor_v<Row<Effect::Alloc>>);
+static_assert(effect_row_to_at_t<Row<>>::bits() == row_descriptor_v<Row<>>);
+static_assert(effect_row_to_at_t<Row<Effect::Alloc>>::bits() == row_descriptor_v<Row<Effect::Alloc>>);
 static_assert(effect_row_to_at_t<Row<Effect::Alloc, Effect::IO>>::bits()
               == row_descriptor_v<Row<Effect::Alloc, Effect::IO>>);
 
@@ -394,7 +336,7 @@ static_assert(effect_row_to_at_t<Row<Effect::Alloc, Effect::IO>>::bits()
 
 namespace detail::effect_row_lattice_self_test {
 
-using L  = EffectRowLattice;
+using L = EffectRowLattice;
 using EL = L::element_type;
 
 // Witness elements covering the full lattice surface:
@@ -405,14 +347,14 @@ using EL = L::element_type;
 //   L::top()    = full universe (bits 0..5)
 //   intermediate witnesses test the partial-order machinery.
 
-inline constexpr EL e_bot   = L::bottom();
+inline constexpr EL e_bot = L::bottom();
 inline constexpr EL e_alloc = EL{1} << static_cast<std::uint8_t>(Effect::Alloc);
-inline constexpr EL e_io    = EL{1} << static_cast<std::uint8_t>(Effect::IO);
+inline constexpr EL e_io = EL{1} << static_cast<std::uint8_t>(Effect::IO);
 inline constexpr EL e_block = EL{1} << static_cast<std::uint8_t>(Effect::Block);
-inline constexpr EL e_bg    = EL{1} << static_cast<std::uint8_t>(Effect::Bg);
-inline constexpr EL e_init  = EL{1} << static_cast<std::uint8_t>(Effect::Init);
-inline constexpr EL e_test  = EL{1} << static_cast<std::uint8_t>(Effect::Test);
-inline constexpr EL e_top   = L::top();
+inline constexpr EL e_bg = EL{1} << static_cast<std::uint8_t>(Effect::Bg);
+inline constexpr EL e_init = EL{1} << static_cast<std::uint8_t>(Effect::Init);
+inline constexpr EL e_test = EL{1} << static_cast<std::uint8_t>(Effect::Test);
+inline constexpr EL e_top = L::top();
 
 // Sanity: bottom is below top; top is above bottom.
 static_assert(L::leq(e_bot, e_top));
@@ -421,8 +363,8 @@ static_assert(!L::leq(e_top, e_bot));
 // Each single-atom descriptor sits strictly between bottom and top.
 static_assert(L::leq(e_bot, e_alloc));
 static_assert(L::leq(e_alloc, e_top));
-static_assert(!L::leq(e_alloc, e_io));    // disjoint single atoms
-static_assert(!L::leq(e_io,    e_alloc));
+static_assert(!L::leq(e_alloc, e_io));  // disjoint single atoms
+static_assert(!L::leq(e_io, e_alloc));
 
 // Join = set union: {Alloc} ∪ {IO} = {Alloc, IO}.
 static_assert(L::join(e_alloc, e_io) == (e_alloc | e_io));
@@ -436,11 +378,11 @@ static_assert(L::meet(e_alloc, e_top) == e_alloc);
 
 // Top contains every named atom.
 static_assert((e_top & e_alloc) == e_alloc);
-static_assert((e_top & e_io)    == e_io);
+static_assert((e_top & e_io) == e_io);
 static_assert((e_top & e_block) == e_block);
-static_assert((e_top & e_bg)    == e_bg);
-static_assert((e_top & e_init)  == e_init);
-static_assert((e_top & e_test)  == e_test);
+static_assert((e_top & e_bg) == e_bg);
+static_assert((e_top & e_init) == e_init);
+static_assert((e_top & e_test) == e_test);
 
 // Top has exactly `effect_count` bits set; nothing beyond.
 static_assert(L::top() == ((EL{1} << effect_count) - EL{1}));
@@ -454,63 +396,49 @@ static_assert(L::top() == ((EL{1} << effect_count) - EL{1}));
 //   - three pairwise-disjoint singletons (true 3D distributive case)
 //   - includes top (top-identity laws fire)
 
-static_assert(::crucible::algebra::verify_bounded_lattice_axioms_at<L>(
-    e_bot, e_bot, e_bot));
-static_assert(::crucible::algebra::verify_bounded_lattice_axioms_at<L>(
-    e_bot, e_alloc, e_alloc | e_io));
-static_assert(::crucible::algebra::verify_bounded_lattice_axioms_at<L>(
-    e_alloc, e_io, e_block));
-static_assert(::crucible::algebra::verify_bounded_lattice_axioms_at<L>(
-    e_alloc | e_io, e_io | e_block, e_block | e_bg));
-static_assert(::crucible::algebra::verify_bounded_lattice_axioms_at<L>(
-    e_bot, e_alloc, e_top));
-static_assert(::crucible::algebra::verify_bounded_lattice_axioms_at<L>(
-    e_top, e_top, e_top));
+static_assert(::crucible::algebra::verify_bounded_lattice_axioms_at<L>(e_bot, e_bot, e_bot));
+static_assert(::crucible::algebra::verify_bounded_lattice_axioms_at<L>(e_bot, e_alloc, e_alloc | e_io));
+static_assert(::crucible::algebra::verify_bounded_lattice_axioms_at<L>(e_alloc, e_io, e_block));
+static_assert(::crucible::algebra::verify_bounded_lattice_axioms_at<L>(e_alloc | e_io, e_io | e_block, e_block | e_bg));
+static_assert(::crucible::algebra::verify_bounded_lattice_axioms_at<L>(e_bot, e_alloc, e_top));
+static_assert(::crucible::algebra::verify_bounded_lattice_axioms_at<L>(e_top, e_top, e_top));
 
 // ── Distributivity (Birkhoff) ──────────────────────────────────────
 //
 // Powerset lattices are distributive — the meet and join distribute
 // over each other.  Verify at the same triples.
 
-static_assert(::crucible::algebra::verify_distributive_lattice<L>(
-    e_alloc, e_io, e_block));
-static_assert(::crucible::algebra::verify_distributive_lattice<L>(
-    e_alloc | e_io, e_io | e_block, e_block | e_bg));
-static_assert(::crucible::algebra::verify_distributive_lattice<L>(
-    e_bot, e_alloc, e_top));
+static_assert(::crucible::algebra::verify_distributive_lattice<L>(e_alloc, e_io, e_block));
+static_assert(::crucible::algebra::verify_distributive_lattice<L>(e_alloc | e_io, e_io | e_block, e_block | e_bg));
+static_assert(::crucible::algebra::verify_distributive_lattice<L>(e_bot, e_alloc, e_top));
 
 // ── row_descriptor_v bridge — type-level Row → bitmask ─────────────
 
-static_assert(row_descriptor_v<Row<>>                                   == e_bot);
-static_assert(row_descriptor_v<Row<Effect::Alloc>>                      == e_alloc);
-static_assert(row_descriptor_v<Row<Effect::IO>>                         == e_io);
-static_assert(row_descriptor_v<Row<Effect::Block>>                      == e_block);
-static_assert(row_descriptor_v<Row<Effect::Bg>>                         == e_bg);
-static_assert(row_descriptor_v<Row<Effect::Init>>                       == e_init);
-static_assert(row_descriptor_v<Row<Effect::Test>>                       == e_test);
+static_assert(row_descriptor_v<Row<>> == e_bot);
+static_assert(row_descriptor_v<Row<Effect::Alloc>> == e_alloc);
+static_assert(row_descriptor_v<Row<Effect::IO>> == e_io);
+static_assert(row_descriptor_v<Row<Effect::Block>> == e_block);
+static_assert(row_descriptor_v<Row<Effect::Bg>> == e_bg);
+static_assert(row_descriptor_v<Row<Effect::Init>> == e_init);
+static_assert(row_descriptor_v<Row<Effect::Test>> == e_test);
 
 // Multi-atom rows: descriptor is the OR of single-atom descriptors.
-static_assert(row_descriptor_v<Row<Effect::Alloc, Effect::IO>>
-              == (e_alloc | e_io));
-static_assert(row_descriptor_v<Row<Effect::Block, Effect::Alloc, Effect::IO>>
-              == (e_block | e_alloc | e_io));
+static_assert(row_descriptor_v<Row<Effect::Alloc, Effect::IO>> == (e_alloc | e_io));
+static_assert(row_descriptor_v<Row<Effect::Block, Effect::Alloc, Effect::IO>> == (e_block | e_alloc | e_io));
 
 // Order independence — the bridge is a set-fold, not a sequence-fold.
-static_assert(row_descriptor_v<Row<Effect::Alloc, Effect::IO>>
-              == row_descriptor_v<Row<Effect::IO, Effect::Alloc>>);
+static_assert(row_descriptor_v<Row<Effect::Alloc, Effect::IO>> == row_descriptor_v<Row<Effect::IO, Effect::Alloc>>);
 
 // Duplicate atoms — the bridge ignores duplication.
-static_assert(row_descriptor_v<Row<Effect::Alloc, Effect::Alloc>>
-              == row_descriptor_v<Row<Effect::Alloc>>);
+static_assert(row_descriptor_v<Row<Effect::Alloc, Effect::Alloc>> == row_descriptor_v<Row<Effect::Alloc>>);
 
 // AllRow analog: union of every named atom equals top().
-static_assert(row_descriptor_v<Row<
-    Effect::Alloc, Effect::IO, Effect::Block,
-    Effect::Bg,    Effect::Init, Effect::Test>> == e_top);
+static_assert(row_descriptor_v<Row<Effect::Alloc, Effect::IO, Effect::Block, Effect::Bg, Effect::Init, Effect::Test>>
+              == e_top);
 
 // Non-Row types map to bottom (default-specialization safety).
-static_assert(row_descriptor_v<int>     == 0);
-static_assert(row_descriptor_v<double>  == 0);
+static_assert(row_descriptor_v<int> == 0);
+static_assert(row_descriptor_v<double> == 0);
 
 // ── Bridge ↔ EffectRow.h Subrow concept agreement ──────────────────
 //
@@ -520,22 +448,16 @@ static_assert(row_descriptor_v<double>  == 0);
 // site — otherwise downstream Graded<EffectRowLattice, _, T> code
 // would misclassify rows.
 
-static_assert( L::leq(row_descriptor_v<Row<>>,
-                      row_descriptor_v<Row<Effect::Alloc>>)
+static_assert(L::leq(row_descriptor_v<Row<>>, row_descriptor_v<Row<Effect::Alloc>>)
               == is_subrow_v<Row<>, Row<Effect::Alloc>>);
 
-static_assert( L::leq(row_descriptor_v<Row<Effect::Alloc>>,
-                      row_descriptor_v<Row<Effect::Alloc, Effect::IO>>)
-              == is_subrow_v<Row<Effect::Alloc>,
-                             Row<Effect::Alloc, Effect::IO>>);
+static_assert(L::leq(row_descriptor_v<Row<Effect::Alloc>>, row_descriptor_v<Row<Effect::Alloc, Effect::IO>>)
+              == is_subrow_v<Row<Effect::Alloc>, Row<Effect::Alloc, Effect::IO>>);
 
-static_assert( L::leq(row_descriptor_v<Row<Effect::Alloc, Effect::IO>>,
-                      row_descriptor_v<Row<Effect::Alloc>>)
-              == is_subrow_v<Row<Effect::Alloc, Effect::IO>,
-                             Row<Effect::Alloc>>);
+static_assert(L::leq(row_descriptor_v<Row<Effect::Alloc, Effect::IO>>, row_descriptor_v<Row<Effect::Alloc>>)
+              == is_subrow_v<Row<Effect::Alloc, Effect::IO>, Row<Effect::Alloc>>);
 
-static_assert( L::leq(row_descriptor_v<Row<Effect::IO>>,
-                      row_descriptor_v<Row<Effect::Alloc>>)
+static_assert(L::leq(row_descriptor_v<Row<Effect::IO>>, row_descriptor_v<Row<Effect::Alloc>>)
               == is_subrow_v<Row<Effect::IO>, Row<Effect::Alloc>>);
 
 }  // namespace detail::effect_row_lattice_self_test
@@ -548,21 +470,21 @@ static_assert( L::leq(row_descriptor_v<Row<Effect::IO>>,
 // wall above.
 
 inline void runtime_smoke_test_lattice() noexcept {
-    using L  = EffectRowLattice;
+    using L = EffectRowLattice;
     using EL = L::element_type;
 
-    [[maybe_unused]] EL b   = L::bottom();
-    [[maybe_unused]] EL t   = L::top();
+    [[maybe_unused]] EL b = L::bottom();
+    [[maybe_unused]] EL t = L::top();
 
     [[maybe_unused]] bool ok_le = L::leq(b, t);
-    [[maybe_unused]] EL u       = L::join(b, t);
-    [[maybe_unused]] EL i       = L::meet(b, t);
+    [[maybe_unused]] EL u = L::join(b, t);
+    [[maybe_unused]] EL i = L::meet(b, t);
 
     [[maybe_unused]] auto nm = ::crucible::algebra::lattice_name<L>();
 
     // Bridge with type-level rows — confirms the alias names are
     // visible at the boundary, not just inside the self-test ns.
-    [[maybe_unused]] EL d_pure  = row_descriptor_v<Row<>>;
+    [[maybe_unused]] EL d_pure = row_descriptor_v<Row<>>;
     [[maybe_unused]] EL d_alloc = row_descriptor_v<Row<Effect::Alloc>>;
 
     // At<> singleton sub-lattice (FOUND-H01-AUDIT-1) — drive the
@@ -571,14 +493,14 @@ inline void runtime_smoke_test_lattice() noexcept {
     // smoke test: instantiate every consteval/constexpr accessor with
     // non-constant args + concept-based capability checks.
     using AtAlloc = L::template At<Effect::Alloc>;
-    using AtAB    = L::template At<Effect::Alloc, Effect::IO>;
+    using AtAB = L::template At<Effect::Alloc, Effect::IO>;
 
     [[maybe_unused]] auto at_b = AtAlloc::bottom();
     [[maybe_unused]] auto at_t = AtAlloc::top();
     [[maybe_unused]] bool at_le = AtAlloc::leq(at_b, at_t);
     [[maybe_unused]] auto at_join = AtAlloc::join(at_b, at_t);
     [[maybe_unused]] auto at_meet = AtAlloc::meet(at_b, at_t);
-    [[maybe_unused]] auto at_nm   = AtAlloc::name();
+    [[maybe_unused]] auto at_nm = AtAlloc::name();
     [[maybe_unused]] std::uint64_t at_bits = AtAlloc::bits();
     [[maybe_unused]] std::uint64_t ab_bits = AtAB::bits();
 }

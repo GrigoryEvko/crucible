@@ -188,8 +188,8 @@ namespace crucible::safety::proto {
 
 template <typename Body, typename EntryPS>
 struct LoopContext {
-    using body            = Body;
-    using entry_perm_set  = EntryPS;
+    using body = Body;
+    using entry_perm_set = EntryPS;
 };
 
 // ═════════════════════════════════════════════════════════════════
@@ -223,25 +223,15 @@ struct VendorCtx {
 
 template <VendorBackend V, typename InnerLoopCtx>
 struct session_loop_ctx_traits<VendorCtx<V, InnerLoopCtx>> {
-    using inner_loop_ctx =
-        typename session_loop_ctx_traits<InnerLoopCtx>::inner_loop_ctx;
-    static constexpr bool explicit_epoch =
-        session_loop_ctx_traits<InnerLoopCtx>::explicit_epoch;
-    static constexpr std::uint64_t current_epoch =
-        session_loop_ctx_traits<InnerLoopCtx>::current_epoch;
-    static constexpr std::uint64_t current_generation =
-        session_loop_ctx_traits<InnerLoopCtx>::current_generation;
+    using inner_loop_ctx = typename session_loop_ctx_traits<InnerLoopCtx>::inner_loop_ctx;
+    static constexpr bool explicit_epoch = session_loop_ctx_traits<InnerLoopCtx>::explicit_epoch;
+    static constexpr std::uint64_t current_epoch = session_loop_ctx_traits<InnerLoopCtx>::current_epoch;
+    static constexpr std::uint64_t current_generation = session_loop_ctx_traits<InnerLoopCtx>::current_generation;
 };
 
 template <VendorBackend V, typename InnerLoopCtx, typename NewInnerLoopCtx>
-struct session_loop_ctx_rebind_inner<
-    VendorCtx<V, InnerLoopCtx>,
-    NewInnerLoopCtx> {
-    using type = VendorCtx<
-        V,
-        typename session_loop_ctx_rebind_inner<
-            InnerLoopCtx,
-            NewInnerLoopCtx>::type>;
+struct session_loop_ctx_rebind_inner<VendorCtx<V, InnerLoopCtx>, NewInnerLoopCtx> {
+    using type = VendorCtx<V, typename session_loop_ctx_rebind_inner<InnerLoopCtx, NewInnerLoopCtx>::type>;
 };
 
 template <typename LoopCtx>
@@ -249,24 +239,16 @@ struct loop_ctx_traits {
     using inner_loop_ctx = session_loop_ctx_inner_t<LoopCtx>;
     static constexpr VendorBackend vendor_backend = VendorBackend::Portable;
     static constexpr bool explicit_vendor = false;
-    static constexpr bool explicit_epoch =
-        session_loop_ctx_has_explicit_epoch_v<LoopCtx>;
-    static constexpr std::uint64_t current_epoch =
-        session_loop_ctx_epoch_v<LoopCtx>;
-    static constexpr std::uint64_t current_generation =
-        session_loop_ctx_generation_v<LoopCtx>;
+    static constexpr bool explicit_epoch = session_loop_ctx_has_explicit_epoch_v<LoopCtx>;
+    static constexpr std::uint64_t current_epoch = session_loop_ctx_epoch_v<LoopCtx>;
+    static constexpr std::uint64_t current_generation = session_loop_ctx_generation_v<LoopCtx>;
 };
 
-template <std::uint64_t CurrentEpoch,
-          std::uint64_t CurrentGeneration,
-          typename InnerLoopCtx>
+template <std::uint64_t CurrentEpoch, std::uint64_t CurrentGeneration, typename InnerLoopCtx>
 struct loop_ctx_traits<EpochCtx<CurrentEpoch, CurrentGeneration, InnerLoopCtx>> {
-    using inner_loop_ctx =
-        typename loop_ctx_traits<InnerLoopCtx>::inner_loop_ctx;
-    static constexpr VendorBackend vendor_backend =
-        loop_ctx_traits<InnerLoopCtx>::vendor_backend;
-    static constexpr bool explicit_vendor =
-        loop_ctx_traits<InnerLoopCtx>::explicit_vendor;
+    using inner_loop_ctx = typename loop_ctx_traits<InnerLoopCtx>::inner_loop_ctx;
+    static constexpr VendorBackend vendor_backend = loop_ctx_traits<InnerLoopCtx>::vendor_backend;
+    static constexpr bool explicit_vendor = loop_ctx_traits<InnerLoopCtx>::explicit_vendor;
     static constexpr bool explicit_epoch = true;
     static constexpr std::uint64_t current_epoch = CurrentEpoch;
     static constexpr std::uint64_t current_generation = CurrentGeneration;
@@ -274,52 +256,39 @@ struct loop_ctx_traits<EpochCtx<CurrentEpoch, CurrentGeneration, InnerLoopCtx>> 
 
 template <VendorBackend V, typename InnerLoopCtx>
 struct loop_ctx_traits<VendorCtx<V, InnerLoopCtx>> {
-    using inner_loop_ctx =
-        typename loop_ctx_traits<InnerLoopCtx>::inner_loop_ctx;
+    using inner_loop_ctx = typename loop_ctx_traits<InnerLoopCtx>::inner_loop_ctx;
     static constexpr VendorBackend vendor_backend = V;
     static constexpr bool explicit_vendor = true;
-    static constexpr bool explicit_epoch =
-        loop_ctx_traits<InnerLoopCtx>::explicit_epoch;
-    static constexpr std::uint64_t current_epoch =
-        loop_ctx_traits<InnerLoopCtx>::current_epoch;
-    static constexpr std::uint64_t current_generation =
-        loop_ctx_traits<InnerLoopCtx>::current_generation;
+    static constexpr bool explicit_epoch = loop_ctx_traits<InnerLoopCtx>::explicit_epoch;
+    static constexpr std::uint64_t current_epoch = loop_ctx_traits<InnerLoopCtx>::current_epoch;
+    static constexpr std::uint64_t current_generation = loop_ctx_traits<InnerLoopCtx>::current_generation;
 };
 
 template <typename LoopCtx>
 using loop_ctx_inner_t = typename loop_ctx_traits<LoopCtx>::inner_loop_ctx;
 
 template <typename LoopCtx>
-inline constexpr VendorBackend loop_ctx_vendor_v =
-    loop_ctx_traits<LoopCtx>::vendor_backend;
+inline constexpr VendorBackend loop_ctx_vendor_v = loop_ctx_traits<LoopCtx>::vendor_backend;
 
 template <typename LoopCtx>
-inline constexpr bool loop_ctx_has_explicit_vendor_v =
-    loop_ctx_traits<LoopCtx>::explicit_vendor;
+inline constexpr bool loop_ctx_has_explicit_vendor_v = loop_ctx_traits<LoopCtx>::explicit_vendor;
 
 template <typename LoopCtx>
-inline constexpr bool loop_ctx_has_explicit_epoch_v =
-    loop_ctx_traits<LoopCtx>::explicit_epoch;
+inline constexpr bool loop_ctx_has_explicit_epoch_v = loop_ctx_traits<LoopCtx>::explicit_epoch;
 
 template <typename LoopCtx>
-inline constexpr std::uint64_t loop_ctx_epoch_v =
-    loop_ctx_traits<LoopCtx>::current_epoch;
+inline constexpr std::uint64_t loop_ctx_epoch_v = loop_ctx_traits<LoopCtx>::current_epoch;
 
 template <typename LoopCtx>
-inline constexpr std::uint64_t loop_ctx_generation_v =
-    loop_ctx_traits<LoopCtx>::current_generation;
+inline constexpr std::uint64_t loop_ctx_generation_v = loop_ctx_traits<LoopCtx>::current_generation;
 
-template <typename LoopCtx,
-          std::uint64_t MinEpoch,
-          std::uint64_t MinGeneration>
+template <typename LoopCtx, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
 inline constexpr bool loop_ctx_epoch_satisfies_v =
-    loop_ctx_has_explicit_epoch_v<LoopCtx> &&
-    MinEpoch <= loop_ctx_epoch_v<LoopCtx> &&
-    MinGeneration <= loop_ctx_generation_v<LoopCtx>;
+    loop_ctx_has_explicit_epoch_v<LoopCtx> && MinEpoch <= loop_ctx_epoch_v<LoopCtx>
+    && MinGeneration <= loop_ctx_generation_v<LoopCtx>;
 
 template <typename LoopCtx>
-using loop_ctx_as_vendor_ctx_t =
-    VendorCtx<loop_ctx_vendor_v<LoopCtx>, loop_ctx_inner_t<LoopCtx>>;
+using loop_ctx_as_vendor_ctx_t = VendorCtx<loop_ctx_vendor_v<LoopCtx>, loop_ctx_inner_t<LoopCtx>>;
 
 template <typename LoopCtx, typename NewInnerLoopCtx>
 struct loop_ctx_rebind_inner {
@@ -328,42 +297,25 @@ struct loop_ctx_rebind_inner {
 
 template <VendorBackend V, typename InnerLoopCtx, typename NewInnerLoopCtx>
 struct loop_ctx_rebind_inner<VendorCtx<V, InnerLoopCtx>, NewInnerLoopCtx> {
-    using type = VendorCtx<
-        V,
-        typename loop_ctx_rebind_inner<
-            InnerLoopCtx,
-            NewInnerLoopCtx>::type>;
+    using type = VendorCtx<V, typename loop_ctx_rebind_inner<InnerLoopCtx, NewInnerLoopCtx>::type>;
 };
 
-template <std::uint64_t CurrentEpoch,
-          std::uint64_t CurrentGeneration,
-          typename InnerLoopCtx,
-          typename NewInnerLoopCtx>
-struct loop_ctx_rebind_inner<
-    EpochCtx<CurrentEpoch, CurrentGeneration, InnerLoopCtx>,
-    NewInnerLoopCtx> {
-    using type = EpochCtx<
-        CurrentEpoch,
-        CurrentGeneration,
-        typename loop_ctx_rebind_inner<
-            InnerLoopCtx,
-            NewInnerLoopCtx>::type>;
+template <std::uint64_t CurrentEpoch, std::uint64_t CurrentGeneration, typename InnerLoopCtx, typename NewInnerLoopCtx>
+struct loop_ctx_rebind_inner<EpochCtx<CurrentEpoch, CurrentGeneration, InnerLoopCtx>, NewInnerLoopCtx> {
+    using type =
+        EpochCtx<CurrentEpoch, CurrentGeneration, typename loop_ctx_rebind_inner<InnerLoopCtx, NewInnerLoopCtx>::type>;
 };
 
 template <typename LoopCtx, typename NewInnerLoopCtx>
-using loop_ctx_rebind_inner_t =
-    typename loop_ctx_rebind_inner<LoopCtx, NewInnerLoopCtx>::type;
+using loop_ctx_rebind_inner_t = typename loop_ctx_rebind_inner<LoopCtx, NewInnerLoopCtx>::type;
 
 template <VendorBackend Provider, VendorBackend Consumer>
 inline constexpr bool session_vendor_satisfies_v =
-    Provider != VendorBackend::None &&
-    Consumer != VendorBackend::None &&
-    VendorLattice::leq(Consumer, Provider);
+    Provider != VendorBackend::None && Consumer != VendorBackend::None && VendorLattice::leq(Consumer, Provider);
 
 template <typename ProviderLoopCtx, typename ConsumerLoopCtx>
 inline constexpr bool loop_ctx_vendor_satisfies_v =
-    session_vendor_satisfies_v<loop_ctx_vendor_v<ProviderLoopCtx>,
-                               loop_ctx_vendor_v<ConsumerLoopCtx>>;
+    session_vendor_satisfies_v<loop_ctx_vendor_v<ProviderLoopCtx>, loop_ctx_vendor_v<ConsumerLoopCtx>>;
 
 // ═════════════════════════════════════════════════════════════════
 // ── Forward declaration ──────────────────────────────────────────
@@ -373,10 +325,7 @@ inline constexpr bool loop_ctx_vendor_satisfies_v =
 // the top-level handle (no enclosing Loop) names just (Proto, PS,
 // Resource).
 
-template <typename Proto,
-          typename PS,
-          typename Resource,
-          typename LoopCtx = void>
+template <typename Proto, typename PS, typename Resource, typename LoopCtx = void>
 class PermissionedSessionHandle;
 
 namespace detail {
@@ -386,12 +335,10 @@ private:
     constexpr permissioned_session_construct_key() noexcept = default;
 
     template <typename R, typename PS2, typename Res, typename L>
-    friend constexpr auto step_to_next_permissioned(
-        Res, std::source_location) noexcept;
+    friend constexpr auto step_to_next_permissioned(Res, std::source_location) noexcept;
 
     template <typename Proto, typename InitialPS, typename Res, typename L>
-    friend constexpr auto permissioned_session_with_loc_(
-        Res, std::source_location) noexcept;
+    friend constexpr auto permissioned_session_with_loc_(Res, std::source_location) noexcept;
 
     template <typename P, typename PS2, typename Res, typename L>
     friend class ::crucible::safety::proto::PermissionedSessionHandle;
@@ -401,19 +348,17 @@ private:
 
 template <typename ProviderHandle, typename ConsumerHandle>
 inline constexpr bool permissioned_session_vendor_compatible_v =
-    loop_ctx_vendor_satisfies_v<typename ProviderHandle::loop_ctx,
-                                typename ConsumerHandle::loop_ctx>;
+    loop_ctx_vendor_satisfies_v<typename ProviderHandle::loop_ctx, typename ConsumerHandle::loop_ctx>;
 
 template <typename ProviderHandle, typename ConsumerHandle>
 consteval void assert_permissioned_session_vendor_compatible() {
-    static_assert(permissioned_session_vendor_compatible_v<ProviderHandle,
-                                                           ConsumerHandle>,
-        "crucible::session::diagnostic [VendorCtx_Mismatch]: "
-        "PermissionedSessionHandle vendor composition rejected.  "
-        "VendorLattice::leq(consumer_vendor, provider_vendor) is false "
-        "or one side is VendorCtx<None>.  Portable providers may satisfy "
-        "vendor-specific consumers; distinct vendor-specific providers "
-        "such as NV and AMD are intentionally incomparable.");
+    static_assert(permissioned_session_vendor_compatible_v<ProviderHandle, ConsumerHandle>,
+                  "crucible::session::diagnostic [VendorCtx_Mismatch]: "
+                  "PermissionedSessionHandle vendor composition rejected.  "
+                  "VendorLattice::leq(consumer_vendor, provider_vendor) is false "
+                  "or one side is VendorCtx<None>.  Portable providers may satisfy "
+                  "vendor-specific consumers; distinct vendor-specific providers "
+                  "such as NV and AMD are intentionally incomparable.");
 }
 
 // Permission-aware delegation protocol marker.  `DelegatedSession` is
@@ -421,50 +366,27 @@ consteval void assert_permissioned_session_vendor_compatible() {
 // payload that names the inner protocol plus the PermSet traveling
 // with that endpoint.
 template <typename InnerProto, typename InnerPS, typename K, typename LoopCtx>
-struct is_well_formed<Delegate<DelegatedSession<InnerProto, InnerPS>, K>,
-                      LoopCtx>
-    : std::bool_constant<
-          is_well_formed<InnerProto, void>::value &&
-          is_well_formed<K, LoopCtx>::value
-      > {};
+struct is_well_formed<Delegate<DelegatedSession<InnerProto, InnerPS>, K>, LoopCtx>
+    : std::bool_constant<is_well_formed<InnerProto, void>::value && is_well_formed<K, LoopCtx>::value> {};
 
 template <typename InnerProto, typename InnerPS, typename K, typename LoopCtx>
-struct is_well_formed<Accept<DelegatedSession<InnerProto, InnerPS>, K>,
-                      LoopCtx>
-    : std::bool_constant<
-          is_well_formed<InnerProto, void>::value &&
-          is_well_formed<K, LoopCtx>::value
-      > {};
+struct is_well_formed<Accept<DelegatedSession<InnerProto, InnerPS>, K>, LoopCtx>
+    : std::bool_constant<is_well_formed<InnerProto, void>::value && is_well_formed<K, LoopCtx>::value> {};
 
-template <typename InnerProto, typename InnerPS, typename K,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
+template <typename InnerProto, typename InnerPS, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration,
           typename LoopCtx>
-struct is_well_formed<
-    EpochedDelegate<DelegatedSession<InnerProto, InnerPS>, K,
-                    MinEpoch, MinGeneration>,
-    LoopCtx>
-    : std::bool_constant<
-          session_epoch_threshold_valid_v<LoopCtx, MinEpoch, MinGeneration> &&
-          is_well_formed<InnerProto, void>::value &&
-          is_well_formed<K, LoopCtx>::value &&
-          (!session_loop_ctx_has_explicit_epoch_v<LoopCtx> ||
-           session_loop_ctx_epoch_matches_v<LoopCtx, MinEpoch, MinGeneration>)
-      > {};
+struct is_well_formed<EpochedDelegate<DelegatedSession<InnerProto, InnerPS>, K, MinEpoch, MinGeneration>, LoopCtx>
+    : std::bool_constant<session_epoch_threshold_valid_v<LoopCtx, MinEpoch, MinGeneration>
+                         && is_well_formed<InnerProto, void>::value && is_well_formed<K, LoopCtx>::value
+                         && (!session_loop_ctx_has_explicit_epoch_v<LoopCtx>
+                             || session_loop_ctx_epoch_matches_v<LoopCtx, MinEpoch, MinGeneration>)> {};
 
-template <typename InnerProto, typename InnerPS, typename K,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
+template <typename InnerProto, typename InnerPS, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration,
           typename LoopCtx>
-struct is_well_formed<
-    EpochedAccept<DelegatedSession<InnerProto, InnerPS>, K,
-                  MinEpoch, MinGeneration>,
-    LoopCtx>
-    : std::bool_constant<
-          session_epoch_threshold_valid_v<LoopCtx, MinEpoch, MinGeneration> &&
-          is_well_formed<InnerProto, void>::value &&
-          is_well_formed<K, LoopCtx>::value &&
-          session_loop_ctx_epoch_satisfies_v<
-              LoopCtx, MinEpoch, MinGeneration>
-      > {};
+struct is_well_formed<EpochedAccept<DelegatedSession<InnerProto, InnerPS>, K, MinEpoch, MinGeneration>, LoopCtx>
+    : std::bool_constant<session_epoch_threshold_valid_v<LoopCtx, MinEpoch, MinGeneration>
+                         && is_well_formed<InnerProto, void>::value && is_well_formed<K, LoopCtx>::value
+                         && session_loop_ctx_epoch_satisfies_v<LoopCtx, MinEpoch, MinGeneration>> {};
 
 // ═════════════════════════════════════════════════════════════════
 // ── detail::step_to_next_permissioned ────────────────────────────
@@ -482,28 +404,21 @@ struct is_well_formed<
 
 namespace detail {
 
-template <typename R,
-          typename PS,
-          typename Resource,
-          typename LoopCtx>
-[[nodiscard]] constexpr auto step_to_next_permissioned(
-    Resource r,
-    std::source_location loc) noexcept
-{
+template <typename R, typename PS, typename Resource, typename LoopCtx>
+[[nodiscard]] constexpr auto step_to_next_permissioned(Resource r, std::source_location loc) noexcept {
     if constexpr (std::is_same_v<R, Continue>) {
         using ActiveLoopCtx = loop_ctx_inner_t<LoopCtx>;
 
         // Continue must have an enclosing Loop.  This is also enforced
         // by the bare framework's step_to_next, but checking here gives
         // a PSH-specific diagnostic that points at the right header.
-        static_assert(!std::is_void_v<ActiveLoopCtx>,
-            "crucible::session::diagnostic [Continue_Without_Loop]: "
-            "PermissionedSessionHandle: Continue appears outside any "
-            "enclosing Loop.  Wrap the protocol prefix containing "
-            "Continue in Loop<Body>, or replace Continue with End to "
-            "make the protocol one-shot.");
+        static_assert(!std::is_void_v<ActiveLoopCtx>, "crucible::session::diagnostic [Continue_Without_Loop]: "
+                                                      "PermissionedSessionHandle: Continue appears outside any "
+                                                      "enclosing Loop.  Wrap the protocol prefix containing "
+                                                      "Continue in Loop<Body>, or replace Continue with End to "
+                                                      "make the protocol one-shot.");
 
-        using LoopBody    = typename ActiveLoopCtx::body;
+        using LoopBody = typename ActiveLoopCtx::body;
         using LoopEntryPS = typename ActiveLoopCtx::entry_perm_set;
 
         // Decision D3 / Risk R1 — Loop body permission balance
@@ -512,52 +427,41 @@ template <typename R,
         // surrender or that gains a permission without surrender at end
         // would violate the loop invariant; the type system catches it
         // at the syntactic Continue site.
-        static_assert(perm_set_equal_v<PS, LoopEntryPS>,
-            "crucible::session::diagnostic [PermissionImbalance]: "
-            "PermissionedSessionHandle: Loop body's terminal PermSet "
-            "differs from the Loop entry PermSet — the iteration's "
-            "permission flow does not balance.  Each iteration of a "
-            "Loop must leave the PermSet exactly as it entered "
-            "(otherwise iteration N+1 would start in a state different "
-            "from iteration N, violating the invariant).  Either "
-            "surrender the leftover Transferable permissions before "
-            "Continue (via send<Returned<...>>), or restructure the "
-            "loop body to receive matching Returned permissions on "
-            "each iteration so the net PS evolution is zero.");
+        static_assert(perm_set_equal_v<PS, LoopEntryPS>, "crucible::session::diagnostic [PermissionImbalance]: "
+                                                         "PermissionedSessionHandle: Loop body's terminal PermSet "
+                                                         "differs from the Loop entry PermSet — the iteration's "
+                                                         "permission flow does not balance.  Each iteration of a "
+                                                         "Loop must leave the PermSet exactly as it entered "
+                                                         "(otherwise iteration N+1 would start in a state different "
+                                                         "from iteration N, violating the invariant).  Either "
+                                                         "surrender the leftover Transferable permissions before "
+                                                         "Continue (via send<Returned<...>>), or restructure the "
+                                                         "loop body to receive matching Returned permissions on "
+                                                         "each iteration so the net PS evolution is zero.");
 
-        return PermissionedSessionHandle<LoopBody, LoopEntryPS,
-                                         Resource, LoopCtx>{
-            permissioned_session_construct_key{},
-            std::forward<Resource>(r), loc};
+        return PermissionedSessionHandle<LoopBody, LoopEntryPS, Resource, LoopCtx>{permissioned_session_construct_key{},
+                                                                                   std::forward<Resource>(r), loc};
     } else if constexpr (is_loop_v<R>) {
         using InnerBody = typename R::body;
-        using InnerCtx  =
-            loop_ctx_rebind_inner_t<LoopCtx, LoopContext<InnerBody, PS>>;
+        using InnerCtx = loop_ctx_rebind_inner_t<LoopCtx, LoopContext<InnerBody, PS>>;
         // Enter inner Loop: shadow LoopCtx with a fresh context whose
         // entry_perm_set captures the PS at Loop entry.  This is what
         // gives nested Loops their own balance check.
-        return PermissionedSessionHandle<InnerBody, PS,
-                                         Resource, InnerCtx>{
-            permissioned_session_construct_key{},
-            std::forward<Resource>(r), loc};
+        return PermissionedSessionHandle<InnerBody, PS, Resource, InnerCtx>{permissioned_session_construct_key{},
+                                                                            std::forward<Resource>(r), loc};
     } else {
         // Plain head (End / Stop / Send / Recv / Select / Offer).  Wrap
         // and continue.  No PS evolution at the wrap step itself —
         // evolution happens on the consumer call (send/recv/etc.).
-        return PermissionedSessionHandle<R, PS, Resource, LoopCtx>{
-            permissioned_session_construct_key{},
-            std::forward<Resource>(r), loc};
+        return PermissionedSessionHandle<R, PS, Resource, LoopCtx>{permissioned_session_construct_key{},
+                                                                   std::forward<Resource>(r), loc};
     }
 }
 
-template <typename R,
-          typename PS,
-          typename Resource,
-          typename LoopCtx>
-[[nodiscard]] constexpr auto step_to_next_permissioned(Resource r) noexcept
-{
-    return step_to_next_permissioned<R, PS, Resource, LoopCtx>(
-        std::forward<Resource>(r), std::source_location::current());
+template <typename R, typename PS, typename Resource, typename LoopCtx>
+[[nodiscard]] constexpr auto step_to_next_permissioned(Resource r) noexcept {
+    return step_to_next_permissioned<R, PS, Resource, LoopCtx>(std::forward<Resource>(r),
+                                                               std::source_location::current());
 }
 
 // ── Debug-mode abandonment enrichment (Decision D5 / Risk R3) ───
@@ -578,16 +482,15 @@ inline void emit_leaked_permissions_debug() noexcept {
     if constexpr (PS::size > 0) {
         constexpr auto name = perm_set_name<PS>();
         std::fprintf(stderr,
-            "─────────────────────────────────────────────────────────────────────\n"
-            "[PermissionedSessionHandle] LEAKED PERMISSIONS (PS::size = %zu):\n"
-            "  %.*s\n"
-            "Each tag in the PermSet was acquired via Recv<Transferable<...>>\n"
-            "or Recv<Returned<...>> but never surrendered before the handle\n"
-            "was abandoned.  Surrender via Send<Returned<...>> back to the\n"
-            "origin or close the protocol with EmptyPermSet at End/Stop.\n"
-            "─────────────────────────────────────────────────────────────────────\n",
-            PS::size,
-            static_cast<int>(name.size()), name.data());
+                     "─────────────────────────────────────────────────────────────────────\n"
+                     "[PermissionedSessionHandle] LEAKED PERMISSIONS (PS::size = %zu):\n"
+                     "  %.*s\n"
+                     "Each tag in the PermSet was acquired via Recv<Transferable<...>>\n"
+                     "or Recv<Returned<...>> but never surrendered before the handle\n"
+                     "was abandoned.  Surrender via Send<Returned<...>> back to the\n"
+                     "origin or close the protocol with EmptyPermSet at End/Stop.\n"
+                     "─────────────────────────────────────────────────────────────────────\n",
+                     PS::size, static_cast<int>(name.size()), name.data());
     }
 #endif
 }
@@ -600,12 +503,9 @@ inline void emit_leaked_permissions_debug() noexcept {
 
 template <typename PS, typename Resource, typename LoopCtx>
 class [[nodiscard]] PermissionedSessionHandle<End, PS, Resource, LoopCtx>
-    : public SessionHandleBase<End,
-                               PermissionedSessionHandle<End, PS,
-                                                         Resource, LoopCtx>>
-{
-    Resource                           resource_;
-    [[no_unique_address]] PS           perm_set_;
+    : public SessionHandleBase<End, PermissionedSessionHandle<End, PS, Resource, LoopCtx>> {
+    Resource resource_;
+    [[no_unique_address]] PS perm_set_;
 
     template <typename P, typename PS2, typename R2, typename L2>
     friend class PermissionedSessionHandle;
@@ -614,24 +514,22 @@ class [[nodiscard]] PermissionedSessionHandle<End, PS, Resource, LoopCtx>
     friend constexpr auto detail::step_to_next_permissioned(Res, std::source_location) noexcept;
 
 public:
-    using protocol      = End;
-    using perm_set      = PS;
+    using protocol = End;
+    using perm_set = PS;
     using resource_type = Resource;
-    using loop_ctx      = LoopCtx;
+    using loop_ctx = LoopCtx;
     using inner_loop_ctx = loop_ctx_inner_t<LoopCtx>;
-    using vendor_ctx    = loop_ctx_as_vendor_ctx_t<LoopCtx>;
+    using vendor_ctx = loop_ctx_as_vendor_ctx_t<LoopCtx>;
     static constexpr VendorBackend vendor_backend = loop_ctx_vendor_v<LoopCtx>;
 
     constexpr explicit PermissionedSessionHandle(
-        detail::permissioned_session_construct_key,
-        Resource r,
-        std::source_location loc = std::source_location::current())
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : SessionHandleBase<End,
-                            PermissionedSessionHandle<End, PS, Resource, LoopCtx>>{loc}
-        , resource_{std::forward<Resource>(r)} {}
+        detail::permissioned_session_construct_key, Resource r,
+        std::source_location loc =
+            std::source_location::current()) noexcept(std::is_nothrow_move_constructible_v<Resource>)
+        : SessionHandleBase<End, PermissionedSessionHandle<End, PS, Resource, LoopCtx>>{loc},
+          resource_{std::forward<Resource>(r)} {}
 
-    constexpr PermissionedSessionHandle(PermissionedSessionHandle&&) noexcept            = default;
+    constexpr PermissionedSessionHandle(PermissionedSessionHandle&&) noexcept = default;
     constexpr PermissionedSessionHandle& operator=(PermissionedSessionHandle&&) noexcept = default;
 
     // Debug-only destructor enrichment.  In release this is a no-op
@@ -660,25 +558,22 @@ public:
     // every permission the handle ever acquired must have been
     // surrendered before reaching End.  This is the structural
     // convergence point the cross-branch enforcement (D4) relies on.
-    [[nodiscard]] constexpr Resource close() &&
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-    {
-        static_assert(perm_set_equal_v<PS, EmptyPermSet>,
-            "crucible::session::diagnostic [PermissionImbalance]: "
-            "PermissionedSessionHandle: reached End with a non-empty "
-            "PermSet — every permission acquired through the protocol "
-            "must be surrendered before close().  Either Send<Returned"
-            "<...>> the remaining permissions back to their origin, or "
-            "(if the protocol is genuinely one-shot consumption of the "
-            "permission) extend the protocol to surrender via send "
-            "before End.  Reaching End with leftover authority is "
-            "structurally a permission leak.");
+    [[nodiscard]] constexpr Resource close() && noexcept(std::is_nothrow_move_constructible_v<Resource>) {
+        static_assert(perm_set_equal_v<PS, EmptyPermSet>, "crucible::session::diagnostic [PermissionImbalance]: "
+                                                          "PermissionedSessionHandle: reached End with a non-empty "
+                                                          "PermSet — every permission acquired through the protocol "
+                                                          "must be surrendered before close().  Either Send<Returned"
+                                                          "<...>> the remaining permissions back to their origin, or "
+                                                          "(if the protocol is genuinely one-shot consumption of the "
+                                                          "permission) extend the protocol to surrender via send "
+                                                          "before End.  Reaching End with leftover authority is "
+                                                          "structurally a permission leak.");
         this->mark_consumed_();
         return std::forward<Resource>(resource_);
     }
 
-    [[nodiscard]] constexpr Resource&       resource() &       noexcept { return resource_; }
-    [[nodiscard]] constexpr const Resource& resource() const & noexcept { return resource_; }
+    [[nodiscard]] constexpr Resource& resource() & noexcept { return resource_; }
+    [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
 
 // ═════════════════════════════════════════════════════════════════
@@ -691,12 +586,9 @@ public:
 
 template <CrashClass C, typename PS, typename Resource, typename LoopCtx>
 class [[nodiscard]] PermissionedSessionHandle<Stop_g<C>, PS, Resource, LoopCtx>
-    : public SessionHandleBase<Stop_g<C>,
-                               PermissionedSessionHandle<Stop_g<C>, PS,
-                                                         Resource, LoopCtx>>
-{
-    Resource                           resource_;
-    [[no_unique_address]] PS           perm_set_;
+    : public SessionHandleBase<Stop_g<C>, PermissionedSessionHandle<Stop_g<C>, PS, Resource, LoopCtx>> {
+    Resource resource_;
+    [[no_unique_address]] PS perm_set_;
 
     template <typename P, typename PS2, typename R2, typename L2>
     friend class PermissionedSessionHandle;
@@ -705,25 +597,23 @@ class [[nodiscard]] PermissionedSessionHandle<Stop_g<C>, PS, Resource, LoopCtx>
     friend constexpr auto detail::step_to_next_permissioned(Res, std::source_location) noexcept;
 
 public:
-    using protocol      = Stop_g<C>;
-    using perm_set      = PS;
+    using protocol = Stop_g<C>;
+    using perm_set = PS;
     using resource_type = Resource;
-    using loop_ctx      = LoopCtx;
+    using loop_ctx = LoopCtx;
     using inner_loop_ctx = loop_ctx_inner_t<LoopCtx>;
-    using vendor_ctx    = loop_ctx_as_vendor_ctx_t<LoopCtx>;
+    using vendor_ctx = loop_ctx_as_vendor_ctx_t<LoopCtx>;
     static constexpr CrashClass crash_class = C;
     static constexpr VendorBackend vendor_backend = loop_ctx_vendor_v<LoopCtx>;
 
     constexpr explicit PermissionedSessionHandle(
-        detail::permissioned_session_construct_key,
-        Resource r,
-        std::source_location loc = std::source_location::current())
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : SessionHandleBase<Stop_g<C>,
-                            PermissionedSessionHandle<Stop_g<C>, PS, Resource, LoopCtx>>{loc}
-        , resource_{std::forward<Resource>(r)} {}
+        detail::permissioned_session_construct_key, Resource r,
+        std::source_location loc =
+            std::source_location::current()) noexcept(std::is_nothrow_move_constructible_v<Resource>)
+        : SessionHandleBase<Stop_g<C>, PermissionedSessionHandle<Stop_g<C>, PS, Resource, LoopCtx>>{loc},
+          resource_{std::forward<Resource>(r)} {}
 
-    constexpr PermissionedSessionHandle(PermissionedSessionHandle&&) noexcept            = default;
+    constexpr PermissionedSessionHandle(PermissionedSessionHandle&&) noexcept = default;
     constexpr PermissionedSessionHandle& operator=(PermissionedSessionHandle&&) noexcept = default;
 
     ~PermissionedSessionHandle() {
@@ -734,37 +624,30 @@ public:
 #endif
     }
 
-    [[nodiscard]] constexpr Resource close() &&
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-    {
-        static_assert(perm_set_equal_v<PS, EmptyPermSet>,
-            "crucible::session::diagnostic [PermissionImbalance]: "
-            "PermissionedSessionHandle<Stop>: reached Stop with a "
-            "non-empty PermSet.  Crash-stop discipline (BSYZ22) drops "
-            "permissions on the floor at Stop; if that's the intended "
-            "behaviour, surrender the permissions explicitly before "
-            "Stop instead of relying on close to do it implicitly.");
+    [[nodiscard]] constexpr Resource close() && noexcept(std::is_nothrow_move_constructible_v<Resource>) {
+        static_assert(perm_set_equal_v<PS, EmptyPermSet>, "crucible::session::diagnostic [PermissionImbalance]: "
+                                                          "PermissionedSessionHandle<Stop>: reached Stop with a "
+                                                          "non-empty PermSet.  Crash-stop discipline (BSYZ22) drops "
+                                                          "permissions on the floor at Stop; if that's the intended "
+                                                          "behaviour, surrender the permissions explicitly before "
+                                                          "Stop instead of relying on close to do it implicitly.");
         this->mark_consumed_();
         return std::forward<Resource>(resource_);
     }
 
-    [[nodiscard]] constexpr Resource&       resource() &       noexcept { return resource_; }
-    [[nodiscard]] constexpr const Resource& resource() const & noexcept { return resource_; }
+    [[nodiscard]] constexpr Resource& resource() & noexcept { return resource_; }
+    [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
 
 // ═════════════════════════════════════════════════════════════════
 // ── PermissionedSessionHandle<Send<T, R>, PS, Resource, LoopCtx>
 // ═════════════════════════════════════════════════════════════════
 
-template <typename T, typename R, typename PS,
-          typename Resource, typename LoopCtx>
+template <typename T, typename R, typename PS, typename Resource, typename LoopCtx>
 class [[nodiscard]] PermissionedSessionHandle<Send<T, R>, PS, Resource, LoopCtx>
-    : public SessionHandleBase<Send<T, R>,
-                               PermissionedSessionHandle<Send<T, R>, PS,
-                                                         Resource, LoopCtx>>
-{
-    Resource                           resource_;
-    [[no_unique_address]] PS           perm_set_;
+    : public SessionHandleBase<Send<T, R>, PermissionedSessionHandle<Send<T, R>, PS, Resource, LoopCtx>> {
+    Resource resource_;
+    [[no_unique_address]] PS perm_set_;
 
     template <typename P, typename PS2, typename R2, typename L2>
     friend class PermissionedSessionHandle;
@@ -773,26 +656,24 @@ class [[nodiscard]] PermissionedSessionHandle<Send<T, R>, PS, Resource, LoopCtx>
     friend constexpr auto detail::step_to_next_permissioned(Res, std::source_location) noexcept;
 
 public:
-    using protocol      = Send<T, R>;
-    using payload       = T;
-    using continuation  = R;
-    using perm_set      = PS;
+    using protocol = Send<T, R>;
+    using payload = T;
+    using continuation = R;
+    using perm_set = PS;
     using resource_type = Resource;
-    using loop_ctx      = LoopCtx;
+    using loop_ctx = LoopCtx;
     using inner_loop_ctx = loop_ctx_inner_t<LoopCtx>;
-    using vendor_ctx    = loop_ctx_as_vendor_ctx_t<LoopCtx>;
+    using vendor_ctx = loop_ctx_as_vendor_ctx_t<LoopCtx>;
     static constexpr VendorBackend vendor_backend = loop_ctx_vendor_v<LoopCtx>;
 
     constexpr explicit PermissionedSessionHandle(
-        detail::permissioned_session_construct_key,
-        Resource r,
-        std::source_location loc = std::source_location::current())
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : SessionHandleBase<Send<T, R>,
-                            PermissionedSessionHandle<Send<T, R>, PS, Resource, LoopCtx>>{loc}
-        , resource_{std::forward<Resource>(r)} {}
+        detail::permissioned_session_construct_key, Resource r,
+        std::source_location loc =
+            std::source_location::current()) noexcept(std::is_nothrow_move_constructible_v<Resource>)
+        : SessionHandleBase<Send<T, R>, PermissionedSessionHandle<Send<T, R>, PS, Resource, LoopCtx>>{loc},
+          resource_{std::forward<Resource>(r)} {}
 
-    constexpr PermissionedSessionHandle(PermissionedSessionHandle&&) noexcept            = default;
+    constexpr PermissionedSessionHandle(PermissionedSessionHandle&&) noexcept = default;
     constexpr PermissionedSessionHandle& operator=(PermissionedSessionHandle&&) noexcept = default;
 
     ~PermissionedSessionHandle() {
@@ -817,52 +698,44 @@ public:
     //     because Transport-shape mismatch is a structural signature
     //     mismatch, not a permission-flow issue.
     template <typename U = T, typename Transport>
-        requires is_subsort_v<std::remove_cvref_t<U>, T> &&
-                 std::is_invocable_v<Transport, Resource&, U&&>
-    [[nodiscard]] constexpr auto send(U value, Transport transport) &&
-        noexcept(std::is_nothrow_invocable_v<Transport, Resource&, U&&>
-                 && std::is_nothrow_move_constructible_v<Resource>
-                 && std::is_nothrow_move_constructible_v<U>)
-    {
-        static_assert(SendablePayload<T, PS>,
-            "crucible::session::diagnostic [PermissionImbalance]: "
-            "PermissionedSessionHandle::send: payload type T requires "
-            "a permission tag the handle's PermSet does not contain.  "
-            "Cases:\n"
-            "  * Send<Transferable<T, X>, K>: sender must hold X "
-            "(X must be in PS).\n"
-            "  * Send<Returned<T, X>, K>: sender must hold X "
-            "(X was previously borrowed and is being returned).\n"
-            "  * Send<Borrowed<T, X>, K> and Send<Plain T, K>: "
-            "always sendable (no permission demand).\n"
-            "Verify the handle was minted (or evolved) with the "
-            "permission you're trying to transfer.  If the protocol "
-            "intends to lend (not transfer), wrap the payload in "
-            "Borrowed<T, X> instead of Transferable<T, X>.");
+        requires is_subsort_v<std::remove_cvref_t<U>, T> && std::is_invocable_v<Transport, Resource&, U&&>
+    [[nodiscard]] constexpr auto
+    send(U value, Transport transport) && noexcept(std::is_nothrow_invocable_v<Transport, Resource&, U&&>
+                                                   && std::is_nothrow_move_constructible_v<Resource>
+                                                   && std::is_nothrow_move_constructible_v<U>) {
+        static_assert(SendablePayload<T, PS>, "crucible::session::diagnostic [PermissionImbalance]: "
+                                              "PermissionedSessionHandle::send: payload type T requires "
+                                              "a permission tag the handle's PermSet does not contain.  "
+                                              "Cases:\n"
+                                              "  * Send<Transferable<T, X>, K>: sender must hold X "
+                                              "(X must be in PS).\n"
+                                              "  * Send<Returned<T, X>, K>: sender must hold X "
+                                              "(X was previously borrowed and is being returned).\n"
+                                              "  * Send<Borrowed<T, X>, K> and Send<Plain T, K>: "
+                                              "always sendable (no permission demand).\n"
+                                              "Verify the handle was minted (or evolved) with the "
+                                              "permission you're trying to transfer.  If the protocol "
+                                              "intends to lend (not transfer), wrap the payload in "
+                                              "Borrowed<T, X> instead of Transferable<T, X>.");
         std::invoke(transport, resource_, std::move(value));
         this->mark_consumed_();
         using NextPS = compute_perm_set_after_send_t<PS, T>;
-        return detail::step_to_next_permissioned<R, NextPS, Resource, LoopCtx>(
-            std::forward<Resource>(resource_));
+        return detail::step_to_next_permissioned<R, NextPS, Resource, LoopCtx>(std::forward<Resource>(resource_));
     }
 
-    [[nodiscard]] constexpr Resource&       resource() &       noexcept { return resource_; }
-    [[nodiscard]] constexpr const Resource& resource() const & noexcept { return resource_; }
+    [[nodiscard]] constexpr Resource& resource() & noexcept { return resource_; }
+    [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
 
 // ═════════════════════════════════════════════════════════════════
 // ── PermissionedSessionHandle<Recv<T, R>, PS, Resource, LoopCtx>
 // ═════════════════════════════════════════════════════════════════
 
-template <typename T, typename R, typename PS,
-          typename Resource, typename LoopCtx>
+template <typename T, typename R, typename PS, typename Resource, typename LoopCtx>
 class [[nodiscard]] PermissionedSessionHandle<Recv<T, R>, PS, Resource, LoopCtx>
-    : public SessionHandleBase<Recv<T, R>,
-                               PermissionedSessionHandle<Recv<T, R>, PS,
-                                                         Resource, LoopCtx>>
-{
-    Resource                           resource_;
-    [[no_unique_address]] PS           perm_set_;
+    : public SessionHandleBase<Recv<T, R>, PermissionedSessionHandle<Recv<T, R>, PS, Resource, LoopCtx>> {
+    Resource resource_;
+    [[no_unique_address]] PS perm_set_;
 
     template <typename P, typename PS2, typename R2, typename L2>
     friend class PermissionedSessionHandle;
@@ -871,26 +744,24 @@ class [[nodiscard]] PermissionedSessionHandle<Recv<T, R>, PS, Resource, LoopCtx>
     friend constexpr auto detail::step_to_next_permissioned(Res, std::source_location) noexcept;
 
 public:
-    using protocol      = Recv<T, R>;
-    using payload       = T;
-    using continuation  = R;
-    using perm_set      = PS;
+    using protocol = Recv<T, R>;
+    using payload = T;
+    using continuation = R;
+    using perm_set = PS;
     using resource_type = Resource;
-    using loop_ctx      = LoopCtx;
+    using loop_ctx = LoopCtx;
     using inner_loop_ctx = loop_ctx_inner_t<LoopCtx>;
-    using vendor_ctx    = loop_ctx_as_vendor_ctx_t<LoopCtx>;
+    using vendor_ctx = loop_ctx_as_vendor_ctx_t<LoopCtx>;
     static constexpr VendorBackend vendor_backend = loop_ctx_vendor_v<LoopCtx>;
 
     constexpr explicit PermissionedSessionHandle(
-        detail::permissioned_session_construct_key,
-        Resource r,
-        std::source_location loc = std::source_location::current())
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : SessionHandleBase<Recv<T, R>,
-                            PermissionedSessionHandle<Recv<T, R>, PS, Resource, LoopCtx>>{loc}
-        , resource_{std::forward<Resource>(r)} {}
+        detail::permissioned_session_construct_key, Resource r,
+        std::source_location loc =
+            std::source_location::current()) noexcept(std::is_nothrow_move_constructible_v<Resource>)
+        : SessionHandleBase<Recv<T, R>, PermissionedSessionHandle<Recv<T, R>, PS, Resource, LoopCtx>>{loc},
+          resource_{std::forward<Resource>(r)} {}
 
-    constexpr PermissionedSessionHandle(PermissionedSessionHandle&&) noexcept            = default;
+    constexpr PermissionedSessionHandle(PermissionedSessionHandle&&) noexcept = default;
     constexpr PermissionedSessionHandle& operator=(PermissionedSessionHandle&&) noexcept = default;
 
     ~PermissionedSessionHandle() {
@@ -908,22 +779,19 @@ public:
     // user code.  PS evolves per compute_perm_set_after_recv_t.
     template <typename Transport>
         requires std::is_invocable_r_v<T, Transport, Resource&>
-    [[nodiscard]] constexpr auto recv(Transport transport) &&
-        noexcept(std::is_nothrow_invocable_r_v<T, Transport, Resource&>
-                 && std::is_nothrow_move_constructible_v<Resource>
-                 && std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr auto
+    recv(Transport transport) && noexcept(std::is_nothrow_invocable_r_v<T, Transport, Resource&>
+                                          && std::is_nothrow_move_constructible_v<Resource>
+                                          && std::is_nothrow_move_constructible_v<T>) {
         T value = std::invoke(transport, resource_);
         this->mark_consumed_();
         using NextPS = compute_perm_set_after_recv_t<PS, T>;
-        auto next = detail::step_to_next_permissioned<R, NextPS,
-                                                      Resource, LoopCtx>(
-            std::forward<Resource>(resource_));
+        auto next = detail::step_to_next_permissioned<R, NextPS, Resource, LoopCtx>(std::forward<Resource>(resource_));
         return std::pair{std::move(value), std::move(next)};
     }
 
-    [[nodiscard]] constexpr Resource&       resource() &       noexcept { return resource_; }
-    [[nodiscard]] constexpr const Resource& resource() const & noexcept { return resource_; }
+    [[nodiscard]] constexpr Resource& resource() & noexcept { return resource_; }
+    [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
 
 // ═════════════════════════════════════════════════════════════════
@@ -935,21 +803,15 @@ public:
 // those tokens.  Delegate consumes that inner PSH, and Accept mints
 // the matching inner PSH on the recipient side.
 
-template <typename InnerProto, typename InnerPS, typename K, typename PS,
-          typename Resource, typename LoopCtx>
-class [[nodiscard]] PermissionedSessionHandle<
-    Delegate<DelegatedSession<InnerProto, InnerPS>, K>,
-    PS, Resource, LoopCtx>
+template <typename InnerProto, typename InnerPS, typename K, typename PS, typename Resource, typename LoopCtx>
+class [[nodiscard]] PermissionedSessionHandle<Delegate<DelegatedSession<InnerProto, InnerPS>, K>, PS, Resource, LoopCtx>
     : public SessionHandleBase<
           Delegate<DelegatedSession<InnerProto, InnerPS>, K>,
-          PermissionedSessionHandle<
-              Delegate<DelegatedSession<InnerProto, InnerPS>, K>,
-              PS, Resource, LoopCtx>>
-{
+          PermissionedSessionHandle<Delegate<DelegatedSession<InnerProto, InnerPS>, K>, PS, Resource, LoopCtx>> {
     using Protocol = Delegate<DelegatedSession<InnerProto, InnerPS>, K>;
 
-    Resource                           resource_;
-    [[no_unique_address]] PS           perm_set_;
+    Resource resource_;
+    [[no_unique_address]] PS perm_set_;
 
     template <typename P, typename PS2, typename R2, typename L2>
     friend class PermissionedSessionHandle;
@@ -958,29 +820,26 @@ class [[nodiscard]] PermissionedSessionHandle<
     friend constexpr auto detail::step_to_next_permissioned(Res, std::source_location) noexcept;
 
 public:
-    using protocol        = Protocol;
+    using protocol = Protocol;
     using delegated_proto = InnerProto;
     using delegated_payload = DelegatedSession<InnerProto, InnerPS>;
-    using inner_perm_set  = InnerPS;
-    using continuation    = K;
-    using perm_set        = PS;
-    using resource_type   = Resource;
-    using loop_ctx        = LoopCtx;
-    using inner_loop_ctx  = loop_ctx_inner_t<LoopCtx>;
-    using vendor_ctx      = loop_ctx_as_vendor_ctx_t<LoopCtx>;
+    using inner_perm_set = InnerPS;
+    using continuation = K;
+    using perm_set = PS;
+    using resource_type = Resource;
+    using loop_ctx = LoopCtx;
+    using inner_loop_ctx = loop_ctx_inner_t<LoopCtx>;
+    using vendor_ctx = loop_ctx_as_vendor_ctx_t<LoopCtx>;
     static constexpr VendorBackend vendor_backend = loop_ctx_vendor_v<LoopCtx>;
 
     constexpr explicit PermissionedSessionHandle(
-        detail::permissioned_session_construct_key,
-        Resource r,
-        std::source_location loc = std::source_location::current())
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : SessionHandleBase<Protocol,
-                            PermissionedSessionHandle<Protocol, PS,
-                                                      Resource, LoopCtx>>{loc}
-        , resource_{std::forward<Resource>(r)} {}
+        detail::permissioned_session_construct_key, Resource r,
+        std::source_location loc =
+            std::source_location::current()) noexcept(std::is_nothrow_move_constructible_v<Resource>)
+        : SessionHandleBase<Protocol, PermissionedSessionHandle<Protocol, PS, Resource, LoopCtx>>{loc},
+          resource_{std::forward<Resource>(r)} {}
 
-    constexpr PermissionedSessionHandle(PermissionedSessionHandle&&) noexcept            = default;
+    constexpr PermissionedSessionHandle(PermissionedSessionHandle&&) noexcept = default;
     constexpr PermissionedSessionHandle& operator=(PermissionedSessionHandle&&) noexcept = default;
 
     ~PermissionedSessionHandle() {
@@ -991,103 +850,82 @@ public:
 #endif
     }
 
-    template <typename ActualInnerPS, typename DelegatedResource,
-              typename DelegatedLoopCtx, typename Transport>
-        requires (!is_stop_v<InnerProto> &&
-                  std::is_invocable_v<Transport, Resource&, DelegatedResource&&>)
-    [[nodiscard]] constexpr auto delegate(
-        PermissionedSessionHandle<InnerProto, ActualInnerPS,
-                                  DelegatedResource, DelegatedLoopCtx>&& delegated,
-        Transport transport) &&
-        noexcept(std::is_nothrow_invocable_v<Transport, Resource&, DelegatedResource&&>
-                 && std::is_nothrow_move_constructible_v<Resource>)
-    {
+    template <typename ActualInnerPS, typename DelegatedResource, typename DelegatedLoopCtx, typename Transport>
+        requires(!is_stop_v<InnerProto> && std::is_invocable_v<Transport, Resource&, DelegatedResource &&>)
+    [[nodiscard]] constexpr auto
+    delegate(PermissionedSessionHandle<InnerProto, ActualInnerPS, DelegatedResource, DelegatedLoopCtx>&& delegated,
+             Transport transport) && noexcept(std::is_nothrow_invocable_v<Transport, Resource&, DelegatedResource&&>
+                                              && std::is_nothrow_move_constructible_v<Resource>) {
         static_assert(perm_set_equal_v<ActualInnerPS, InnerPS>,
-            "crucible::session::diagnostic [PermissionImbalance]: "
-            "PermissionedSessionHandle::delegate: PermSet does not "
-            "contain inner_ps tokens declared by DelegatedSession<P, "
-            "InnerPS>.  The delegated handle's ActualInnerPS must "
-            "match InnerPS exactly; otherwise the handoff would either "
-            "fabricate missing authority or drop extra authority.");
-        static_assert(perm_set_disjoint_v<PS, InnerPS>,
-            "crucible::session::diagnostic [PermissionImbalance]: "
-            "PermissionedSessionHandle::delegate: PermSet conflict -- "
-            "inner_ps already owned by the carrier handle.  The "
-            "delegated endpoint must be the unique owner of InnerPS "
-            "before handoff.");
-        static_assert(!is_terminal_state_v<InnerProto> ||
-                      perm_set_equal_v<InnerPS, EmptyPermSet>,
-            "crucible::session::diagnostic [PermissionImbalance]: "
-            "PermissionedSessionHandle::delegate: "
-            "is_permission_balanced_v<InnerProto> against InnerPS "
-            "rejects.  A terminal delegated protocol cannot carry a "
-            "non-empty inner_ps; close or rebalance the inner endpoint "
-            "before handoff.");
+                      "crucible::session::diagnostic [PermissionImbalance]: "
+                      "PermissionedSessionHandle::delegate: PermSet does not "
+                      "contain inner_ps tokens declared by DelegatedSession<P, "
+                      "InnerPS>.  The delegated handle's ActualInnerPS must "
+                      "match InnerPS exactly; otherwise the handoff would either "
+                      "fabricate missing authority or drop extra authority.");
+        static_assert(perm_set_disjoint_v<PS, InnerPS>, "crucible::session::diagnostic [PermissionImbalance]: "
+                                                        "PermissionedSessionHandle::delegate: PermSet conflict -- "
+                                                        "inner_ps already owned by the carrier handle.  The "
+                                                        "delegated endpoint must be the unique owner of InnerPS "
+                                                        "before handoff.");
+        static_assert(!is_terminal_state_v<InnerProto> || perm_set_equal_v<InnerPS, EmptyPermSet>,
+                      "crucible::session::diagnostic [PermissionImbalance]: "
+                      "PermissionedSessionHandle::delegate: "
+                      "is_permission_balanced_v<InnerProto> against InnerPS "
+                      "rejects.  A terminal delegated protocol cannot carry a "
+                      "non-empty inner_ps; close or rebalance the inner endpoint "
+                      "before handoff.");
 
         std::invoke(transport, resource_, std::move(delegated.resource_));
         delegated.mark_consumed_();
         this->mark_consumed_();
-        return detail::step_to_next_permissioned<K, PS, Resource, LoopCtx>(
-            std::forward<Resource>(resource_));
+        return detail::step_to_next_permissioned<K, PS, Resource, LoopCtx>(std::forward<Resource>(resource_));
     }
 
-    template <typename ActualInnerPS, typename DelegatedResource,
-              typename DelegatedLoopCtx, typename Transport>
+    template <typename ActualInnerPS, typename DelegatedResource, typename DelegatedLoopCtx, typename Transport>
         requires is_stop_v<InnerProto>
-    void delegate(
-        PermissionedSessionHandle<InnerProto, ActualInnerPS,
-                                  DelegatedResource, DelegatedLoopCtx>&&,
-        Transport) && = delete(
-        "[DelegateStop_NoContinuation] PermissionedSessionHandle<"
-        "Delegate<DelegatedSession<Stop, InnerPS>, K>> cannot "
-        "delegate an already-crashed endpoint and continue as K.  "
-        "Handle Stop/crash before this permissioned handoff point.");
+    void delegate(PermissionedSessionHandle<InnerProto, ActualInnerPS, DelegatedResource, DelegatedLoopCtx>&&,
+                  Transport) && = delete("[DelegateStop_NoContinuation] PermissionedSessionHandle<"
+                                         "Delegate<DelegatedSession<Stop, InnerPS>, K>> cannot "
+                                         "delegate an already-crashed endpoint and continue as K.  "
+                                         "Handle Stop/crash before this permissioned handoff point.");
 
-    template <typename ActualInnerPS, typename DelegatedResource,
-              typename DelegatedLoopCtx>
-        requires (!is_stop_v<InnerProto>)
-    [[nodiscard]] constexpr auto delegate_local(
-        PermissionedSessionHandle<InnerProto, ActualInnerPS,
-                                  DelegatedResource, DelegatedLoopCtx>&& delegated) &&
-        noexcept(std::is_nothrow_move_constructible_v<Resource>
-                 && std::is_nothrow_destructible_v<DelegatedResource>)
-    {
+    template <typename ActualInnerPS, typename DelegatedResource, typename DelegatedLoopCtx>
+        requires(!is_stop_v<InnerProto>)
+    [[nodiscard]] constexpr auto
+    delegate_local(PermissionedSessionHandle<InnerProto, ActualInnerPS, DelegatedResource, DelegatedLoopCtx>&&
+                       delegated) && noexcept(std::is_nothrow_move_constructible_v<Resource>
+                                              && std::is_nothrow_destructible_v<DelegatedResource>) {
         static_assert(perm_set_equal_v<ActualInnerPS, InnerPS>,
-            "crucible::session::diagnostic [PermissionImbalance]: "
-            "PermissionedSessionHandle::delegate_local: PermSet does "
-            "not contain inner_ps tokens declared by DelegatedSession"
-            "<P, InnerPS>.");
-        static_assert(perm_set_disjoint_v<PS, InnerPS>,
-            "crucible::session::diagnostic [PermissionImbalance]: "
-            "PermissionedSessionHandle::delegate_local: PermSet "
-            "conflict -- inner_ps already owned by the carrier "
-            "handle.");
-        static_assert(!is_terminal_state_v<InnerProto> ||
-                      perm_set_equal_v<InnerPS, EmptyPermSet>,
-            "crucible::session::diagnostic [PermissionImbalance]: "
-            "PermissionedSessionHandle::delegate_local: "
-            "is_permission_balanced_v<InnerProto> against InnerPS "
-            "rejects.");
+                      "crucible::session::diagnostic [PermissionImbalance]: "
+                      "PermissionedSessionHandle::delegate_local: PermSet does "
+                      "not contain inner_ps tokens declared by DelegatedSession"
+                      "<P, InnerPS>.");
+        static_assert(perm_set_disjoint_v<PS, InnerPS>, "crucible::session::diagnostic [PermissionImbalance]: "
+                                                        "PermissionedSessionHandle::delegate_local: PermSet "
+                                                        "conflict -- inner_ps already owned by the carrier "
+                                                        "handle.");
+        static_assert(!is_terminal_state_v<InnerProto> || perm_set_equal_v<InnerPS, EmptyPermSet>,
+                      "crucible::session::diagnostic [PermissionImbalance]: "
+                      "PermissionedSessionHandle::delegate_local: "
+                      "is_permission_balanced_v<InnerProto> against InnerPS "
+                      "rejects.");
         delegated.mark_consumed_();
         (void)std::move(delegated);
         this->mark_consumed_();
-        return detail::step_to_next_permissioned<K, PS, Resource, LoopCtx>(
-            std::forward<Resource>(resource_));
+        return detail::step_to_next_permissioned<K, PS, Resource, LoopCtx>(std::forward<Resource>(resource_));
     }
 
-    template <typename ActualInnerPS, typename DelegatedResource,
-              typename DelegatedLoopCtx>
-    void delegate(
-        PermissionedSessionHandle<InnerProto, ActualInnerPS,
-                                  DelegatedResource, DelegatedLoopCtx>&&) && = delete(
-        "[Wire_Variant_Required] PermissionedSessionHandle<Delegate<"
-        "DelegatedSession<P, InnerPS>, K>>::delegate(handle) without "
-        "a transport is not allowed.  Choose delegate(handle, "
-        "transport) for wire handoff or delegate_local(handle) for "
-        "explicit in-memory tests.");
+    template <typename ActualInnerPS, typename DelegatedResource, typename DelegatedLoopCtx>
+    void delegate(PermissionedSessionHandle<InnerProto, ActualInnerPS, DelegatedResource, DelegatedLoopCtx>&&) && =
+        delete("[Wire_Variant_Required] PermissionedSessionHandle<Delegate<"
+               "DelegatedSession<P, InnerPS>, K>>::delegate(handle) without "
+               "a transport is not allowed.  Choose delegate(handle, "
+               "transport) for wire handoff or delegate_local(handle) for "
+               "explicit in-memory tests.");
 
-    [[nodiscard]] constexpr Resource&       resource() &       noexcept { return resource_; }
-    [[nodiscard]] constexpr const Resource& resource() const & noexcept { return resource_; }
+    [[nodiscard]] constexpr Resource& resource() & noexcept { return resource_; }
+    [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
 
 // ═════════════════════════════════════════════════════════════════
@@ -1100,26 +938,19 @@ public:
 // prevents a sender at (E,G) from weakening the handoff by declaring
 // a lower minimum that stale peers could satisfy.
 
-template <typename InnerProto, typename InnerPS, typename K,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
+template <typename InnerProto, typename InnerPS, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration,
           typename PS, typename Resource, typename LoopCtx>
-class [[nodiscard]] PermissionedSessionHandle<
-    EpochedDelegate<DelegatedSession<InnerProto, InnerPS>, K,
-                    MinEpoch, MinGeneration>,
-    PS, Resource, LoopCtx>
+class [[nodiscard]]
+PermissionedSessionHandle<EpochedDelegate<DelegatedSession<InnerProto, InnerPS>, K, MinEpoch, MinGeneration>, PS,
+                          Resource, LoopCtx>
     : public SessionHandleBase<
-          EpochedDelegate<DelegatedSession<InnerProto, InnerPS>, K,
-                          MinEpoch, MinGeneration>,
-          PermissionedSessionHandle<
-              EpochedDelegate<DelegatedSession<InnerProto, InnerPS>, K,
-                              MinEpoch, MinGeneration>,
-              PS, Resource, LoopCtx>>
-{
-    using Protocol = EpochedDelegate<
-        DelegatedSession<InnerProto, InnerPS>, K, MinEpoch, MinGeneration>;
+          EpochedDelegate<DelegatedSession<InnerProto, InnerPS>, K, MinEpoch, MinGeneration>,
+          PermissionedSessionHandle<EpochedDelegate<DelegatedSession<InnerProto, InnerPS>, K, MinEpoch, MinGeneration>,
+                                    PS, Resource, LoopCtx>> {
+    using Protocol = EpochedDelegate<DelegatedSession<InnerProto, InnerPS>, K, MinEpoch, MinGeneration>;
 
-    Resource                           resource_;
-    [[no_unique_address]] PS           perm_set_;
+    Resource resource_;
+    [[no_unique_address]] PS perm_set_;
 
     template <typename P, typename PS2, typename R2, typename L2>
     friend class PermissionedSessionHandle;
@@ -1127,41 +958,37 @@ class [[nodiscard]] PermissionedSessionHandle<
     template <typename U, typename PS2, typename Res, typename L>
     friend constexpr auto detail::step_to_next_permissioned(Res, std::source_location) noexcept;
 
-    static_assert(session_loop_ctx_epoch_matches_v<
-        LoopCtx, MinEpoch, MinGeneration>,
-        "crucible::session::diagnostic [EpochCtx_StaleSender]: "
-        "PermissionedSessionHandle<EpochedDelegate<...>> requires "
-        "LoopCtx = EpochCtx<CurrentEpoch, CurrentGeneration, ...> with "
-        "CurrentEpoch == MinEpoch and CurrentGeneration == MinGeneration. "
-        "A sender cannot mint a reshard handoff from a stale or weakened "
-        "epoch context.");
+    static_assert(session_loop_ctx_epoch_matches_v<LoopCtx, MinEpoch, MinGeneration>,
+                  "crucible::session::diagnostic [EpochCtx_StaleSender]: "
+                  "PermissionedSessionHandle<EpochedDelegate<...>> requires "
+                  "LoopCtx = EpochCtx<CurrentEpoch, CurrentGeneration, ...> with "
+                  "CurrentEpoch == MinEpoch and CurrentGeneration == MinGeneration. "
+                  "A sender cannot mint a reshard handoff from a stale or weakened "
+                  "epoch context.");
 
 public:
-    using protocol          = Protocol;
-    using delegated_proto   = InnerProto;
+    using protocol = Protocol;
+    using delegated_proto = InnerProto;
     using delegated_payload = DelegatedSession<InnerProto, InnerPS>;
-    using inner_perm_set    = InnerPS;
-    using continuation      = K;
-    using perm_set          = PS;
-    using resource_type     = Resource;
-    using loop_ctx          = LoopCtx;
-    using inner_loop_ctx    = loop_ctx_inner_t<LoopCtx>;
-    using vendor_ctx        = loop_ctx_as_vendor_ctx_t<LoopCtx>;
+    using inner_perm_set = InnerPS;
+    using continuation = K;
+    using perm_set = PS;
+    using resource_type = Resource;
+    using loop_ctx = LoopCtx;
+    using inner_loop_ctx = loop_ctx_inner_t<LoopCtx>;
+    using vendor_ctx = loop_ctx_as_vendor_ctx_t<LoopCtx>;
     static constexpr VendorBackend vendor_backend = loop_ctx_vendor_v<LoopCtx>;
     static constexpr std::uint64_t min_epoch = MinEpoch;
     static constexpr std::uint64_t min_generation = MinGeneration;
 
     constexpr explicit PermissionedSessionHandle(
-        detail::permissioned_session_construct_key,
-        Resource r,
-        std::source_location loc = std::source_location::current())
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : SessionHandleBase<Protocol,
-                            PermissionedSessionHandle<Protocol, PS,
-                                                      Resource, LoopCtx>>{loc}
-        , resource_{std::forward<Resource>(r)} {}
+        detail::permissioned_session_construct_key, Resource r,
+        std::source_location loc =
+            std::source_location::current()) noexcept(std::is_nothrow_move_constructible_v<Resource>)
+        : SessionHandleBase<Protocol, PermissionedSessionHandle<Protocol, PS, Resource, LoopCtx>>{loc},
+          resource_{std::forward<Resource>(r)} {}
 
-    constexpr PermissionedSessionHandle(PermissionedSessionHandle&&) noexcept            = default;
+    constexpr PermissionedSessionHandle(PermissionedSessionHandle&&) noexcept = default;
     constexpr PermissionedSessionHandle& operator=(PermissionedSessionHandle&&) noexcept = default;
 
     ~PermissionedSessionHandle() {
@@ -1172,119 +999,92 @@ public:
 #endif
     }
 
-    template <typename ActualInnerPS, typename DelegatedResource,
-              typename DelegatedLoopCtx, typename Transport>
-        requires (!is_stop_v<InnerProto> &&
-                  std::is_invocable_v<Transport, Resource&, DelegatedResource&&>)
-    [[nodiscard]] constexpr auto delegate(
-        PermissionedSessionHandle<InnerProto, ActualInnerPS,
-                                  DelegatedResource, DelegatedLoopCtx>&& delegated,
-        Transport transport) &&
-        noexcept(std::is_nothrow_invocable_v<Transport, Resource&, DelegatedResource&&>
-                 && std::is_nothrow_move_constructible_v<Resource>)
-    {
+    template <typename ActualInnerPS, typename DelegatedResource, typename DelegatedLoopCtx, typename Transport>
+        requires(!is_stop_v<InnerProto> && std::is_invocable_v<Transport, Resource&, DelegatedResource &&>)
+    [[nodiscard]] constexpr auto
+    delegate(PermissionedSessionHandle<InnerProto, ActualInnerPS, DelegatedResource, DelegatedLoopCtx>&& delegated,
+             Transport transport) && noexcept(std::is_nothrow_invocable_v<Transport, Resource&, DelegatedResource&&>
+                                              && std::is_nothrow_move_constructible_v<Resource>) {
         static_assert(perm_set_equal_v<ActualInnerPS, InnerPS>,
-            "crucible::session::diagnostic [PermissionImbalance]: "
-            "PermissionedSessionHandle::delegate: PermSet does not "
-            "contain inner_ps tokens declared by DelegatedSession<P, "
-            "InnerPS>.");
-        static_assert(perm_set_disjoint_v<PS, InnerPS>,
-            "crucible::session::diagnostic [PermissionImbalance]: "
-            "PermissionedSessionHandle::delegate: PermSet conflict -- "
-            "inner_ps already owned by the carrier handle.");
-        static_assert(!is_terminal_state_v<InnerProto> ||
-                      perm_set_equal_v<InnerPS, EmptyPermSet>,
-            "crucible::session::diagnostic [PermissionImbalance]: "
-            "PermissionedSessionHandle::delegate: "
-            "is_permission_balanced_v<InnerProto> against InnerPS "
-            "rejects.");
+                      "crucible::session::diagnostic [PermissionImbalance]: "
+                      "PermissionedSessionHandle::delegate: PermSet does not "
+                      "contain inner_ps tokens declared by DelegatedSession<P, "
+                      "InnerPS>.");
+        static_assert(perm_set_disjoint_v<PS, InnerPS>, "crucible::session::diagnostic [PermissionImbalance]: "
+                                                        "PermissionedSessionHandle::delegate: PermSet conflict -- "
+                                                        "inner_ps already owned by the carrier handle.");
+        static_assert(!is_terminal_state_v<InnerProto> || perm_set_equal_v<InnerPS, EmptyPermSet>,
+                      "crucible::session::diagnostic [PermissionImbalance]: "
+                      "PermissionedSessionHandle::delegate: "
+                      "is_permission_balanced_v<InnerProto> against InnerPS "
+                      "rejects.");
 
         std::invoke(transport, resource_, std::move(delegated.resource_));
         delegated.mark_consumed_();
         this->mark_consumed_();
-        return detail::step_to_next_permissioned<K, PS, Resource, LoopCtx>(
-            std::forward<Resource>(resource_));
+        return detail::step_to_next_permissioned<K, PS, Resource, LoopCtx>(std::forward<Resource>(resource_));
     }
 
-    template <typename ActualInnerPS, typename DelegatedResource,
-              typename DelegatedLoopCtx, typename Transport>
+    template <typename ActualInnerPS, typename DelegatedResource, typename DelegatedLoopCtx, typename Transport>
         requires is_stop_v<InnerProto>
-    void delegate(
-        PermissionedSessionHandle<InnerProto, ActualInnerPS,
-                                  DelegatedResource, DelegatedLoopCtx>&&,
-        Transport) && = delete(
-        "[DelegateStop_NoContinuation] PermissionedSessionHandle<"
-        "EpochedDelegate<DelegatedSession<Stop, InnerPS>, K, "
-        "MinEpoch, MinGeneration>> cannot delegate an already-crashed "
-        "endpoint and continue as K.  Handle Stop/crash before this "
-        "epoch-versioned permissioned handoff point.");
+    void delegate(PermissionedSessionHandle<InnerProto, ActualInnerPS, DelegatedResource, DelegatedLoopCtx>&&,
+                  Transport) && = delete("[DelegateStop_NoContinuation] PermissionedSessionHandle<"
+                                         "EpochedDelegate<DelegatedSession<Stop, InnerPS>, K, "
+                                         "MinEpoch, MinGeneration>> cannot delegate an already-crashed "
+                                         "endpoint and continue as K.  Handle Stop/crash before this "
+                                         "epoch-versioned permissioned handoff point.");
 
-    template <typename ActualInnerPS, typename DelegatedResource,
-              typename DelegatedLoopCtx>
-        requires (!is_stop_v<InnerProto>)
-    [[nodiscard]] constexpr auto delegate_local(
-        PermissionedSessionHandle<InnerProto, ActualInnerPS,
-                                  DelegatedResource, DelegatedLoopCtx>&& delegated) &&
-        noexcept(std::is_nothrow_move_constructible_v<Resource>
-                 && std::is_nothrow_destructible_v<DelegatedResource>)
-    {
+    template <typename ActualInnerPS, typename DelegatedResource, typename DelegatedLoopCtx>
+        requires(!is_stop_v<InnerProto>)
+    [[nodiscard]] constexpr auto
+    delegate_local(PermissionedSessionHandle<InnerProto, ActualInnerPS, DelegatedResource, DelegatedLoopCtx>&&
+                       delegated) && noexcept(std::is_nothrow_move_constructible_v<Resource>
+                                              && std::is_nothrow_destructible_v<DelegatedResource>) {
         static_assert(perm_set_equal_v<ActualInnerPS, InnerPS>,
-            "crucible::session::diagnostic [PermissionImbalance]: "
-            "PermissionedSessionHandle::delegate_local: PermSet does "
-            "not contain inner_ps tokens declared by DelegatedSession"
-            "<P, InnerPS>.");
-        static_assert(perm_set_disjoint_v<PS, InnerPS>,
-            "crucible::session::diagnostic [PermissionImbalance]: "
-            "PermissionedSessionHandle::delegate_local: PermSet "
-            "conflict -- inner_ps already owned by the carrier handle.");
-        static_assert(!is_terminal_state_v<InnerProto> ||
-                      perm_set_equal_v<InnerPS, EmptyPermSet>,
-            "crucible::session::diagnostic [PermissionImbalance]: "
-            "PermissionedSessionHandle::delegate_local: "
-            "is_permission_balanced_v<InnerProto> against InnerPS "
-            "rejects.");
+                      "crucible::session::diagnostic [PermissionImbalance]: "
+                      "PermissionedSessionHandle::delegate_local: PermSet does "
+                      "not contain inner_ps tokens declared by DelegatedSession"
+                      "<P, InnerPS>.");
+        static_assert(perm_set_disjoint_v<PS, InnerPS>, "crucible::session::diagnostic [PermissionImbalance]: "
+                                                        "PermissionedSessionHandle::delegate_local: PermSet "
+                                                        "conflict -- inner_ps already owned by the carrier handle.");
+        static_assert(!is_terminal_state_v<InnerProto> || perm_set_equal_v<InnerPS, EmptyPermSet>,
+                      "crucible::session::diagnostic [PermissionImbalance]: "
+                      "PermissionedSessionHandle::delegate_local: "
+                      "is_permission_balanced_v<InnerProto> against InnerPS "
+                      "rejects.");
 
         delegated.mark_consumed_();
         (void)std::move(delegated);
         this->mark_consumed_();
-        return detail::step_to_next_permissioned<K, PS, Resource, LoopCtx>(
-            std::forward<Resource>(resource_));
+        return detail::step_to_next_permissioned<K, PS, Resource, LoopCtx>(std::forward<Resource>(resource_));
     }
 
-    template <typename ActualInnerPS, typename DelegatedResource,
-              typename DelegatedLoopCtx>
-    void delegate(
-        PermissionedSessionHandle<InnerProto, ActualInnerPS,
-                                  DelegatedResource, DelegatedLoopCtx>&&) && = delete(
-        "[Wire_Variant_Required] PermissionedSessionHandle<EpochedDelegate<"
-        "DelegatedSession<P, InnerPS>, K, MinEpoch, MinGeneration>>::"
-        "delegate(handle) without a transport is not allowed.  Choose "
-        "delegate(handle, transport) for wire handoff or delegate_local"
-        "(handle) for explicit in-memory tests.");
+    template <typename ActualInnerPS, typename DelegatedResource, typename DelegatedLoopCtx>
+    void delegate(PermissionedSessionHandle<InnerProto, ActualInnerPS, DelegatedResource, DelegatedLoopCtx>&&) && =
+        delete("[Wire_Variant_Required] PermissionedSessionHandle<EpochedDelegate<"
+               "DelegatedSession<P, InnerPS>, K, MinEpoch, MinGeneration>>::"
+               "delegate(handle) without a transport is not allowed.  Choose "
+               "delegate(handle, transport) for wire handoff or delegate_local"
+               "(handle) for explicit in-memory tests.");
 
-    [[nodiscard]] constexpr Resource&       resource() &       noexcept { return resource_; }
-    [[nodiscard]] constexpr const Resource& resource() const & noexcept { return resource_; }
+    [[nodiscard]] constexpr Resource& resource() & noexcept { return resource_; }
+    [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
 
 // ═════════════════════════════════════════════════════════════════
 // ── PermissionedSessionHandle<Accept<DelegatedSession<P, IPS>, K>>
 // ═════════════════════════════════════════════════════════════════
 
-template <typename InnerProto, typename InnerPS, typename K, typename PS,
-          typename Resource, typename LoopCtx>
-class [[nodiscard]] PermissionedSessionHandle<
-    Accept<DelegatedSession<InnerProto, InnerPS>, K>,
-    PS, Resource, LoopCtx>
+template <typename InnerProto, typename InnerPS, typename K, typename PS, typename Resource, typename LoopCtx>
+class [[nodiscard]] PermissionedSessionHandle<Accept<DelegatedSession<InnerProto, InnerPS>, K>, PS, Resource, LoopCtx>
     : public SessionHandleBase<
           Accept<DelegatedSession<InnerProto, InnerPS>, K>,
-          PermissionedSessionHandle<
-              Accept<DelegatedSession<InnerProto, InnerPS>, K>,
-              PS, Resource, LoopCtx>>
-{
+          PermissionedSessionHandle<Accept<DelegatedSession<InnerProto, InnerPS>, K>, PS, Resource, LoopCtx>> {
     using Protocol = Accept<DelegatedSession<InnerProto, InnerPS>, K>;
 
-    Resource                           resource_;
-    [[no_unique_address]] PS           perm_set_;
+    Resource resource_;
+    [[no_unique_address]] PS perm_set_;
 
     template <typename P, typename PS2, typename R2, typename L2>
     friend class PermissionedSessionHandle;
@@ -1293,29 +1093,26 @@ class [[nodiscard]] PermissionedSessionHandle<
     friend constexpr auto detail::step_to_next_permissioned(Res, std::source_location) noexcept;
 
 public:
-    using protocol        = Protocol;
+    using protocol = Protocol;
     using delegated_proto = InnerProto;
     using delegated_payload = DelegatedSession<InnerProto, InnerPS>;
-    using inner_perm_set  = InnerPS;
-    using continuation    = K;
-    using perm_set        = PS;
-    using resource_type   = Resource;
-    using loop_ctx        = LoopCtx;
-    using inner_loop_ctx  = loop_ctx_inner_t<LoopCtx>;
-    using vendor_ctx      = loop_ctx_as_vendor_ctx_t<LoopCtx>;
+    using inner_perm_set = InnerPS;
+    using continuation = K;
+    using perm_set = PS;
+    using resource_type = Resource;
+    using loop_ctx = LoopCtx;
+    using inner_loop_ctx = loop_ctx_inner_t<LoopCtx>;
+    using vendor_ctx = loop_ctx_as_vendor_ctx_t<LoopCtx>;
     static constexpr VendorBackend vendor_backend = loop_ctx_vendor_v<LoopCtx>;
 
     constexpr explicit PermissionedSessionHandle(
-        detail::permissioned_session_construct_key,
-        Resource r,
-        std::source_location loc = std::source_location::current())
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : SessionHandleBase<Protocol,
-                            PermissionedSessionHandle<Protocol, PS,
-                                                      Resource, LoopCtx>>{loc}
-        , resource_{std::forward<Resource>(r)} {}
+        detail::permissioned_session_construct_key, Resource r,
+        std::source_location loc =
+            std::source_location::current()) noexcept(std::is_nothrow_move_constructible_v<Resource>)
+        : SessionHandleBase<Protocol, PermissionedSessionHandle<Protocol, PS, Resource, LoopCtx>>{loc},
+          resource_{std::forward<Resource>(r)} {}
 
-    constexpr PermissionedSessionHandle(PermissionedSessionHandle&&) noexcept            = default;
+    constexpr PermissionedSessionHandle(PermissionedSessionHandle&&) noexcept = default;
     constexpr PermissionedSessionHandle& operator=(PermissionedSessionHandle&&) noexcept = default;
 
     ~PermissionedSessionHandle() {
@@ -1326,73 +1123,57 @@ public:
 #endif
     }
 
-    template <typename Transport,
-              typename DelegatedResource = std::invoke_result_t<Transport, Resource&>>
+    template <typename Transport, typename DelegatedResource = std::invoke_result_t<Transport, Resource&>>
         requires std::is_invocable_v<Transport, Resource&>
-    [[nodiscard]] constexpr auto accept(Transport transport) &&
-        noexcept(std::is_nothrow_invocable_v<Transport, Resource&>
-                 && std::is_nothrow_move_constructible_v<Resource>
-                 && std::is_nothrow_move_constructible_v<DelegatedResource>)
-    {
-        static_assert(perm_set_disjoint_v<PS, InnerPS>,
-            "crucible::session::diagnostic [PermissionImbalance]: "
-            "PermissionedSessionHandle::accept: PermSet conflict -- "
-            "inner_ps already owned by the carrier handle.  Accepting "
-            "DelegatedSession<P, InnerPS> would duplicate a CSL "
-            "permission token; split the authority into distinct tags "
-            "or remove the overlapping carrier permission before "
-            "accepting the endpoint.");
-        static_assert(!is_terminal_state_v<InnerProto> ||
-                      perm_set_equal_v<InnerPS, EmptyPermSet>,
-            "crucible::session::diagnostic [PermissionImbalance]: "
-            "PermissionedSessionHandle::accept: "
-            "is_permission_balanced_v<InnerProto> against InnerPS "
-            "rejects.  A terminal delegated protocol cannot carry a "
-            "non-empty inner_ps.");
+    [[nodiscard]] constexpr auto
+    accept(Transport transport) && noexcept(std::is_nothrow_invocable_v<Transport, Resource&>
+                                            && std::is_nothrow_move_constructible_v<Resource>
+                                            && std::is_nothrow_move_constructible_v<DelegatedResource>) {
+        static_assert(perm_set_disjoint_v<PS, InnerPS>, "crucible::session::diagnostic [PermissionImbalance]: "
+                                                        "PermissionedSessionHandle::accept: PermSet conflict -- "
+                                                        "inner_ps already owned by the carrier handle.  Accepting "
+                                                        "DelegatedSession<P, InnerPS> would duplicate a CSL "
+                                                        "permission token; split the authority into distinct tags "
+                                                        "or remove the overlapping carrier permission before "
+                                                        "accepting the endpoint.");
+        static_assert(!is_terminal_state_v<InnerProto> || perm_set_equal_v<InnerPS, EmptyPermSet>,
+                      "crucible::session::diagnostic [PermissionImbalance]: "
+                      "PermissionedSessionHandle::accept: "
+                      "is_permission_balanced_v<InnerProto> against InnerPS "
+                      "rejects.  A terminal delegated protocol cannot carry a "
+                      "non-empty inner_ps.");
 
         DelegatedResource delegated_res = std::invoke(transport, resource_);
         this->mark_consumed_();
-        PermissionedSessionHandle<InnerProto, InnerPS,
-                                  DelegatedResource, void> delegated_handle{
-            detail::permissioned_session_construct_key{},
-            std::move(delegated_res)};
+        PermissionedSessionHandle<InnerProto, InnerPS, DelegatedResource, void> delegated_handle{
+            detail::permissioned_session_construct_key{}, std::move(delegated_res)};
         auto continuation_handle =
-            detail::step_to_next_permissioned<K, PS, Resource, LoopCtx>(
-                std::forward<Resource>(resource_));
-        return std::pair{std::move(delegated_handle),
-                         std::move(continuation_handle)};
+            detail::step_to_next_permissioned<K, PS, Resource, LoopCtx>(std::forward<Resource>(resource_));
+        return std::pair{std::move(delegated_handle), std::move(continuation_handle)};
     }
 
     template <typename DelegatedResource>
-    [[nodiscard]] constexpr auto accept_with(DelegatedResource delegated_res) &&
-        noexcept(std::is_nothrow_move_constructible_v<Resource>
-                 && std::is_nothrow_move_constructible_v<DelegatedResource>)
-    {
-        static_assert(perm_set_disjoint_v<PS, InnerPS>,
-            "crucible::session::diagnostic [PermissionImbalance]: "
-            "PermissionedSessionHandle::accept_with: PermSet conflict "
-            "-- inner_ps already owned by the carrier handle.");
-        static_assert(!is_terminal_state_v<InnerProto> ||
-                      perm_set_equal_v<InnerPS, EmptyPermSet>,
-            "crucible::session::diagnostic [PermissionImbalance]: "
-            "PermissionedSessionHandle::accept_with: "
-            "is_permission_balanced_v<InnerProto> against InnerPS "
-            "rejects.");
+    [[nodiscard]] constexpr auto accept_with(DelegatedResource delegated_res) && noexcept(
+        std::is_nothrow_move_constructible_v<Resource> && std::is_nothrow_move_constructible_v<DelegatedResource>) {
+        static_assert(perm_set_disjoint_v<PS, InnerPS>, "crucible::session::diagnostic [PermissionImbalance]: "
+                                                        "PermissionedSessionHandle::accept_with: PermSet conflict "
+                                                        "-- inner_ps already owned by the carrier handle.");
+        static_assert(!is_terminal_state_v<InnerProto> || perm_set_equal_v<InnerPS, EmptyPermSet>,
+                      "crucible::session::diagnostic [PermissionImbalance]: "
+                      "PermissionedSessionHandle::accept_with: "
+                      "is_permission_balanced_v<InnerProto> against InnerPS "
+                      "rejects.");
 
         this->mark_consumed_();
-        PermissionedSessionHandle<InnerProto, InnerPS,
-                                  DelegatedResource, void> delegated_handle{
-            detail::permissioned_session_construct_key{},
-            std::move(delegated_res)};
+        PermissionedSessionHandle<InnerProto, InnerPS, DelegatedResource, void> delegated_handle{
+            detail::permissioned_session_construct_key{}, std::move(delegated_res)};
         auto continuation_handle =
-            detail::step_to_next_permissioned<K, PS, Resource, LoopCtx>(
-                std::forward<Resource>(resource_));
-        return std::pair{std::move(delegated_handle),
-                         std::move(continuation_handle)};
+            detail::step_to_next_permissioned<K, PS, Resource, LoopCtx>(std::forward<Resource>(resource_));
+        return std::pair{std::move(delegated_handle), std::move(continuation_handle)};
     }
 
-    [[nodiscard]] constexpr Resource&       resource() &       noexcept { return resource_; }
-    [[nodiscard]] constexpr const Resource& resource() const & noexcept { return resource_; }
+    [[nodiscard]] constexpr Resource& resource() & noexcept { return resource_; }
+    [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
 
 // ═════════════════════════════════════════════════════════════════
@@ -1402,26 +1183,19 @@ public:
 // The recipient side may be newer than the declared minimum, but it
 // must not be stale or unannotated.
 
-template <typename InnerProto, typename InnerPS, typename K,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
+template <typename InnerProto, typename InnerPS, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration,
           typename PS, typename Resource, typename LoopCtx>
-class [[nodiscard]] PermissionedSessionHandle<
-    EpochedAccept<DelegatedSession<InnerProto, InnerPS>, K,
-                  MinEpoch, MinGeneration>,
-    PS, Resource, LoopCtx>
+class [[nodiscard]]
+PermissionedSessionHandle<EpochedAccept<DelegatedSession<InnerProto, InnerPS>, K, MinEpoch, MinGeneration>, PS,
+                          Resource, LoopCtx>
     : public SessionHandleBase<
-          EpochedAccept<DelegatedSession<InnerProto, InnerPS>, K,
-                        MinEpoch, MinGeneration>,
-          PermissionedSessionHandle<
-              EpochedAccept<DelegatedSession<InnerProto, InnerPS>, K,
-                            MinEpoch, MinGeneration>,
-              PS, Resource, LoopCtx>>
-{
-    using Protocol = EpochedAccept<
-        DelegatedSession<InnerProto, InnerPS>, K, MinEpoch, MinGeneration>;
+          EpochedAccept<DelegatedSession<InnerProto, InnerPS>, K, MinEpoch, MinGeneration>,
+          PermissionedSessionHandle<EpochedAccept<DelegatedSession<InnerProto, InnerPS>, K, MinEpoch, MinGeneration>,
+                                    PS, Resource, LoopCtx>> {
+    using Protocol = EpochedAccept<DelegatedSession<InnerProto, InnerPS>, K, MinEpoch, MinGeneration>;
 
-    Resource                           resource_;
-    [[no_unique_address]] PS           perm_set_;
+    Resource resource_;
+    [[no_unique_address]] PS perm_set_;
 
     template <typename P, typename PS2, typename R2, typename L2>
     friend class PermissionedSessionHandle;
@@ -1429,41 +1203,37 @@ class [[nodiscard]] PermissionedSessionHandle<
     template <typename U, typename PS2, typename Res, typename L>
     friend constexpr auto detail::step_to_next_permissioned(Res, std::source_location) noexcept;
 
-    static_assert(session_loop_ctx_epoch_satisfies_v<
-        LoopCtx, MinEpoch, MinGeneration>,
-        "crucible::session::diagnostic [EpochCtx_StaleRecipient]: "
-        "PermissionedSessionHandle<EpochedAccept<...>> requires "
-        "LoopCtx = EpochCtx<CurrentEpoch, CurrentGeneration, ...> with "
-        "CurrentEpoch >= MinEpoch and CurrentGeneration >= MinGeneration. "
-        "A stale or unannotated recipient cannot accept this delegated "
-        "reshard endpoint.");
+    static_assert(session_loop_ctx_epoch_satisfies_v<LoopCtx, MinEpoch, MinGeneration>,
+                  "crucible::session::diagnostic [EpochCtx_StaleRecipient]: "
+                  "PermissionedSessionHandle<EpochedAccept<...>> requires "
+                  "LoopCtx = EpochCtx<CurrentEpoch, CurrentGeneration, ...> with "
+                  "CurrentEpoch >= MinEpoch and CurrentGeneration >= MinGeneration. "
+                  "A stale or unannotated recipient cannot accept this delegated "
+                  "reshard endpoint.");
 
 public:
-    using protocol          = Protocol;
-    using delegated_proto   = InnerProto;
+    using protocol = Protocol;
+    using delegated_proto = InnerProto;
     using delegated_payload = DelegatedSession<InnerProto, InnerPS>;
-    using inner_perm_set    = InnerPS;
-    using continuation      = K;
-    using perm_set          = PS;
-    using resource_type     = Resource;
-    using loop_ctx          = LoopCtx;
-    using inner_loop_ctx    = loop_ctx_inner_t<LoopCtx>;
-    using vendor_ctx        = loop_ctx_as_vendor_ctx_t<LoopCtx>;
+    using inner_perm_set = InnerPS;
+    using continuation = K;
+    using perm_set = PS;
+    using resource_type = Resource;
+    using loop_ctx = LoopCtx;
+    using inner_loop_ctx = loop_ctx_inner_t<LoopCtx>;
+    using vendor_ctx = loop_ctx_as_vendor_ctx_t<LoopCtx>;
     static constexpr VendorBackend vendor_backend = loop_ctx_vendor_v<LoopCtx>;
     static constexpr std::uint64_t min_epoch = MinEpoch;
     static constexpr std::uint64_t min_generation = MinGeneration;
 
     constexpr explicit PermissionedSessionHandle(
-        detail::permissioned_session_construct_key,
-        Resource r,
-        std::source_location loc = std::source_location::current())
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : SessionHandleBase<Protocol,
-                            PermissionedSessionHandle<Protocol, PS,
-                                                      Resource, LoopCtx>>{loc}
-        , resource_{std::forward<Resource>(r)} {}
+        detail::permissioned_session_construct_key, Resource r,
+        std::source_location loc =
+            std::source_location::current()) noexcept(std::is_nothrow_move_constructible_v<Resource>)
+        : SessionHandleBase<Protocol, PermissionedSessionHandle<Protocol, PS, Resource, LoopCtx>>{loc},
+          resource_{std::forward<Resource>(r)} {}
 
-    constexpr PermissionedSessionHandle(PermissionedSessionHandle&&) noexcept            = default;
+    constexpr PermissionedSessionHandle(PermissionedSessionHandle&&) noexcept = default;
     constexpr PermissionedSessionHandle& operator=(PermissionedSessionHandle&&) noexcept = default;
 
     ~PermissionedSessionHandle() {
@@ -1474,121 +1244,96 @@ public:
 #endif
     }
 
-    template <typename Transport,
-              typename DelegatedResource = std::invoke_result_t<Transport, Resource&>>
+    template <typename Transport, typename DelegatedResource = std::invoke_result_t<Transport, Resource&>>
         requires std::is_invocable_v<Transport, Resource&>
-    [[nodiscard]] constexpr auto accept(Transport transport) &&
-        noexcept(std::is_nothrow_invocable_v<Transport, Resource&>
-                 && std::is_nothrow_move_constructible_v<Resource>
-                 && std::is_nothrow_move_constructible_v<DelegatedResource>)
-    {
-        static_assert(perm_set_disjoint_v<PS, InnerPS>,
-            "crucible::session::diagnostic [PermissionImbalance]: "
-            "PermissionedSessionHandle::accept: PermSet conflict -- "
-            "inner_ps already owned by the carrier handle.  Accepting "
-            "DelegatedSession<P, InnerPS> would duplicate a CSL "
-            "permission token.");
-        static_assert(!is_terminal_state_v<InnerProto> ||
-                      perm_set_equal_v<InnerPS, EmptyPermSet>,
-            "crucible::session::diagnostic [PermissionImbalance]: "
-            "PermissionedSessionHandle::accept: "
-            "is_permission_balanced_v<InnerProto> against InnerPS "
-            "rejects.  A terminal delegated protocol cannot carry a "
-            "non-empty inner_ps.");
+    [[nodiscard]] constexpr auto
+    accept(Transport transport) && noexcept(std::is_nothrow_invocable_v<Transport, Resource&>
+                                            && std::is_nothrow_move_constructible_v<Resource>
+                                            && std::is_nothrow_move_constructible_v<DelegatedResource>) {
+        static_assert(perm_set_disjoint_v<PS, InnerPS>, "crucible::session::diagnostic [PermissionImbalance]: "
+                                                        "PermissionedSessionHandle::accept: PermSet conflict -- "
+                                                        "inner_ps already owned by the carrier handle.  Accepting "
+                                                        "DelegatedSession<P, InnerPS> would duplicate a CSL "
+                                                        "permission token.");
+        static_assert(!is_terminal_state_v<InnerProto> || perm_set_equal_v<InnerPS, EmptyPermSet>,
+                      "crucible::session::diagnostic [PermissionImbalance]: "
+                      "PermissionedSessionHandle::accept: "
+                      "is_permission_balanced_v<InnerProto> against InnerPS "
+                      "rejects.  A terminal delegated protocol cannot carry a "
+                      "non-empty inner_ps.");
 
         DelegatedResource delegated_res = std::invoke(transport, resource_);
         this->mark_consumed_();
-        PermissionedSessionHandle<InnerProto, InnerPS,
-                                  DelegatedResource, void> delegated_handle{
-            detail::permissioned_session_construct_key{},
-            std::move(delegated_res)};
+        PermissionedSessionHandle<InnerProto, InnerPS, DelegatedResource, void> delegated_handle{
+            detail::permissioned_session_construct_key{}, std::move(delegated_res)};
         auto continuation_handle =
-            detail::step_to_next_permissioned<K, PS, Resource, LoopCtx>(
-                std::forward<Resource>(resource_));
-        return std::pair{std::move(delegated_handle),
-                         std::move(continuation_handle)};
+            detail::step_to_next_permissioned<K, PS, Resource, LoopCtx>(std::forward<Resource>(resource_));
+        return std::pair{std::move(delegated_handle), std::move(continuation_handle)};
     }
 
     template <typename DelegatedResource>
-    [[nodiscard]] constexpr auto accept_with(DelegatedResource delegated_res) &&
-        noexcept(std::is_nothrow_move_constructible_v<Resource>
-                 && std::is_nothrow_move_constructible_v<DelegatedResource>)
-    {
-        static_assert(perm_set_disjoint_v<PS, InnerPS>,
-            "crucible::session::diagnostic [PermissionImbalance]: "
-            "PermissionedSessionHandle::accept_with: PermSet conflict "
-            "-- inner_ps already owned by the carrier handle.");
-        static_assert(!is_terminal_state_v<InnerProto> ||
-                      perm_set_equal_v<InnerPS, EmptyPermSet>,
-            "crucible::session::diagnostic [PermissionImbalance]: "
-            "PermissionedSessionHandle::accept_with: "
-            "is_permission_balanced_v<InnerProto> against InnerPS "
-            "rejects.");
+    [[nodiscard]] constexpr auto accept_with(DelegatedResource delegated_res) && noexcept(
+        std::is_nothrow_move_constructible_v<Resource> && std::is_nothrow_move_constructible_v<DelegatedResource>) {
+        static_assert(perm_set_disjoint_v<PS, InnerPS>, "crucible::session::diagnostic [PermissionImbalance]: "
+                                                        "PermissionedSessionHandle::accept_with: PermSet conflict "
+                                                        "-- inner_ps already owned by the carrier handle.");
+        static_assert(!is_terminal_state_v<InnerProto> || perm_set_equal_v<InnerPS, EmptyPermSet>,
+                      "crucible::session::diagnostic [PermissionImbalance]: "
+                      "PermissionedSessionHandle::accept_with: "
+                      "is_permission_balanced_v<InnerProto> against InnerPS "
+                      "rejects.");
 
         this->mark_consumed_();
-        PermissionedSessionHandle<InnerProto, InnerPS,
-                                  DelegatedResource, void> delegated_handle{
-            detail::permissioned_session_construct_key{},
-            std::move(delegated_res)};
+        PermissionedSessionHandle<InnerProto, InnerPS, DelegatedResource, void> delegated_handle{
+            detail::permissioned_session_construct_key{}, std::move(delegated_res)};
         auto continuation_handle =
-            detail::step_to_next_permissioned<K, PS, Resource, LoopCtx>(
-                std::forward<Resource>(resource_));
-        return std::pair{std::move(delegated_handle),
-                         std::move(continuation_handle)};
+            detail::step_to_next_permissioned<K, PS, Resource, LoopCtx>(std::forward<Resource>(resource_));
+        return std::pair{std::move(delegated_handle), std::move(continuation_handle)};
     }
 
-    [[nodiscard]] constexpr Resource&       resource() &       noexcept { return resource_; }
-    [[nodiscard]] constexpr const Resource& resource() const & noexcept { return resource_; }
+    [[nodiscard]] constexpr Resource& resource() & noexcept { return resource_; }
+    [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
 
 // ═════════════════════════════════════════════════════════════════
 // ── PermissionedSessionHandle<CheckpointedSession<B, R>, PS, ...>
 // ═════════════════════════════════════════════════════════════════
 
-template <typename ProtoBase, typename ProtoRollback, typename PS,
-          typename Resource, typename LoopCtx>
-class [[nodiscard]] PermissionedSessionHandle<
-        CheckpointedSession<ProtoBase, ProtoRollback>, PS, Resource, LoopCtx>
+template <typename ProtoBase, typename ProtoRollback, typename PS, typename Resource, typename LoopCtx>
+class [[nodiscard]] PermissionedSessionHandle<CheckpointedSession<ProtoBase, ProtoRollback>, PS, Resource, LoopCtx>
     : public SessionHandleBase<
           CheckpointedSession<ProtoBase, ProtoRollback>,
-          PermissionedSessionHandle<
-              CheckpointedSession<ProtoBase, ProtoRollback>, PS,
-              Resource, LoopCtx>>
-{
-    Resource                           resource_;
-    [[no_unique_address]] PS           perm_set_;
+          PermissionedSessionHandle<CheckpointedSession<ProtoBase, ProtoRollback>, PS, Resource, LoopCtx>> {
+    Resource resource_;
+    [[no_unique_address]] PS perm_set_;
 
     template <typename P, typename PS2, typename R2, typename L2>
     friend class PermissionedSessionHandle;
 
     template <typename U, typename PS2, typename Res, typename L>
-    friend constexpr auto detail::step_to_next_permissioned(
-        Res, std::source_location) noexcept;
+    friend constexpr auto detail::step_to_next_permissioned(Res, std::source_location) noexcept;
 
 public:
-    using protocol          = CheckpointedSession<ProtoBase, ProtoRollback>;
-    using base_protocol     = ProtoBase;
+    using protocol = CheckpointedSession<ProtoBase, ProtoRollback>;
+    using base_protocol = ProtoBase;
     using rollback_protocol = ProtoRollback;
-    using perm_set          = PS;
-    using resource_type     = Resource;
-    using loop_ctx          = LoopCtx;
-    using inner_loop_ctx    = loop_ctx_inner_t<LoopCtx>;
-    using vendor_ctx        = loop_ctx_as_vendor_ctx_t<LoopCtx>;
+    using perm_set = PS;
+    using resource_type = Resource;
+    using loop_ctx = LoopCtx;
+    using inner_loop_ctx = loop_ctx_inner_t<LoopCtx>;
+    using vendor_ctx = loop_ctx_as_vendor_ctx_t<LoopCtx>;
     static constexpr VendorBackend vendor_backend = loop_ctx_vendor_v<LoopCtx>;
 
     constexpr explicit PermissionedSessionHandle(
-        detail::permissioned_session_construct_key,
-        Resource r,
-        std::source_location loc = std::source_location::current())
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
+        detail::permissioned_session_construct_key, Resource r,
+        std::source_location loc =
+            std::source_location::current()) noexcept(std::is_nothrow_move_constructible_v<Resource>)
         : SessionHandleBase<
               CheckpointedSession<ProtoBase, ProtoRollback>,
-              PermissionedSessionHandle<
-                  CheckpointedSession<ProtoBase, ProtoRollback>, PS,
-                  Resource, LoopCtx>>{loc}
-        , resource_{std::forward<Resource>(r)} {}
+              PermissionedSessionHandle<CheckpointedSession<ProtoBase, ProtoRollback>, PS, Resource, LoopCtx>>{loc},
+          resource_{std::forward<Resource>(r)} {}
 
-    constexpr PermissionedSessionHandle(PermissionedSessionHandle&&) noexcept            = default;
+    constexpr PermissionedSessionHandle(PermissionedSessionHandle&&) noexcept = default;
     constexpr PermissionedSessionHandle& operator=(PermissionedSessionHandle&&) noexcept = default;
 
     ~PermissionedSessionHandle() {
@@ -1599,26 +1344,19 @@ public:
 #endif
     }
 
-    [[nodiscard]] constexpr auto base() &&
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-    {
+    [[nodiscard]] constexpr auto base() && noexcept(std::is_nothrow_move_constructible_v<Resource>) {
         this->mark_consumed_();
-        return detail::step_to_next_permissioned<ProtoBase, PS,
-                                                 Resource, LoopCtx>(
+        return detail::step_to_next_permissioned<ProtoBase, PS, Resource, LoopCtx>(std::forward<Resource>(resource_));
+    }
+
+    [[nodiscard]] constexpr auto rollback() && noexcept(std::is_nothrow_move_constructible_v<Resource>) {
+        this->mark_consumed_();
+        return detail::step_to_next_permissioned<ProtoRollback, PS, Resource, LoopCtx>(
             std::forward<Resource>(resource_));
     }
 
-    [[nodiscard]] constexpr auto rollback() &&
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-    {
-        this->mark_consumed_();
-        return detail::step_to_next_permissioned<ProtoRollback, PS,
-                                                 Resource, LoopCtx>(
-            std::forward<Resource>(resource_));
-    }
-
-    [[nodiscard]] constexpr Resource&       resource() &       noexcept { return resource_; }
-    [[nodiscard]] constexpr const Resource& resource() const & noexcept { return resource_; }
+    [[nodiscard]] constexpr Resource& resource() & noexcept { return resource_; }
+    [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
 
 // ═════════════════════════════════════════════════════════════════
@@ -1638,16 +1376,12 @@ public:
 // it's compositional: any future Select<Bs..., NewBranch> only adds
 // to the convergence requirement at the existing terminal points.
 
-template <typename... Branches, typename PS,
-          typename Resource, typename LoopCtx>
-class [[nodiscard]] PermissionedSessionHandle<Select<Branches...>, PS,
-                                              Resource, LoopCtx>
+template <typename... Branches, typename PS, typename Resource, typename LoopCtx>
+class [[nodiscard]] PermissionedSessionHandle<Select<Branches...>, PS, Resource, LoopCtx>
     : public SessionHandleBase<Select<Branches...>,
-                               PermissionedSessionHandle<Select<Branches...>, PS,
-                                                         Resource, LoopCtx>>
-{
-    Resource                           resource_;
-    [[no_unique_address]] PS           perm_set_;
+                               PermissionedSessionHandle<Select<Branches...>, PS, Resource, LoopCtx>> {
+    Resource resource_;
+    [[no_unique_address]] PS perm_set_;
 
     template <typename P, typename PS2, typename R2, typename L2>
     friend class PermissionedSessionHandle;
@@ -1656,38 +1390,34 @@ class [[nodiscard]] PermissionedSessionHandle<Select<Branches...>, PS,
     friend constexpr auto detail::step_to_next_permissioned(Res, std::source_location) noexcept;
 
 public:
-    using protocol      = Select<Branches...>;
-    using perm_set      = PS;
+    using protocol = Select<Branches...>;
+    using perm_set = PS;
     using resource_type = Resource;
-    using loop_ctx      = LoopCtx;
+    using loop_ctx = LoopCtx;
     using inner_loop_ctx = loop_ctx_inner_t<LoopCtx>;
-    using vendor_ctx    = loop_ctx_as_vendor_ctx_t<LoopCtx>;
+    using vendor_ctx = loop_ctx_as_vendor_ctx_t<LoopCtx>;
     static constexpr VendorBackend vendor_backend = loop_ctx_vendor_v<LoopCtx>;
 
     static constexpr std::size_t branch_count = sizeof...(Branches);
 
-    static_assert(branch_count > 0,
-        "crucible::session::diagnostic [Empty_Choice_Combinator]: "
-        "PermissionedSessionHandle<Select<>>: cannot construct a "
-        "runnable handle on Select<> with zero branches.");
+    static_assert(branch_count > 0, "crucible::session::diagnostic [Empty_Choice_Combinator]: "
+                                    "PermissionedSessionHandle<Select<>>: cannot construct a "
+                                    "runnable handle on Select<> with zero branches.");
 
     constexpr explicit PermissionedSessionHandle(
-        detail::permissioned_session_construct_key,
-        Resource r,
-        std::source_location loc = std::source_location::current())
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : SessionHandleBase<Select<Branches...>,
-                            PermissionedSessionHandle<Select<Branches...>, PS,
-                                                      Resource, LoopCtx>>{loc}
-        , resource_{std::forward<Resource>(r)} {}
+        detail::permissioned_session_construct_key, Resource r,
+        std::source_location loc =
+            std::source_location::current()) noexcept(std::is_nothrow_move_constructible_v<Resource>)
+        : SessionHandleBase<Select<Branches...>, PermissionedSessionHandle<Select<Branches...>, PS, Resource, LoopCtx>>{
+              loc},
+          resource_{std::forward<Resource>(r)} {}
 
-    constexpr PermissionedSessionHandle(PermissionedSessionHandle&&) noexcept            = default;
+    constexpr PermissionedSessionHandle(PermissionedSessionHandle&&) noexcept = default;
     constexpr PermissionedSessionHandle& operator=(PermissionedSessionHandle&&) noexcept = default;
 
     ~PermissionedSessionHandle() {
 #ifndef NDEBUG
-        if (!this->is_consumed_()
-            && !is_terminal_state_v<Select<Branches...>>) {
+        if (!this->is_consumed_() && !is_terminal_state_v<Select<Branches...>>) {
             detail::emit_leaked_permissions_debug<PS>();
         }
 #endif
@@ -1699,51 +1429,41 @@ public:
     // next PS evolution.
     template <std::size_t I, typename Transport>
         requires std::is_invocable_v<Transport, Resource&, std::size_t>
-    [[nodiscard]] constexpr auto select(Transport transport) &&
-        noexcept(std::is_nothrow_invocable_v<Transport, Resource&, std::size_t>
-                 && std::is_nothrow_move_constructible_v<Resource>)
-    {
-        static_assert(I < sizeof...(Branches),
-            "crucible::session::diagnostic [Branch_Index_Out_Of_Range]: "
-            "PermissionedSessionHandle<Select<...>>::select<I>(transport): "
-            "branch index I is out of range.");
+    [[nodiscard]] constexpr auto
+    select(Transport transport) && noexcept(std::is_nothrow_invocable_v<Transport, Resource&, std::size_t>
+                                            && std::is_nothrow_move_constructible_v<Resource>) {
+        static_assert(I < sizeof...(Branches), "crucible::session::diagnostic [Branch_Index_Out_Of_Range]: "
+                                               "PermissionedSessionHandle<Select<...>>::select<I>(transport): "
+                                               "branch index I is out of range.");
         std::invoke(transport, resource_, I);
         this->mark_consumed_();
         using Chosen = std::tuple_element_t<I, std::tuple<Branches...>>;
-        return detail::step_to_next_permissioned<Chosen, PS,
-                                                 Resource, LoopCtx>(
-            std::forward<Resource>(resource_));
+        return detail::step_to_next_permissioned<Chosen, PS, Resource, LoopCtx>(std::forward<Resource>(resource_));
     }
 
     // Wire-omitting variant — same naming discipline as the bare
     // framework (#377 force-explicit-discipline).  Use only for
     // in-memory channels and unit tests.
     template <std::size_t I>
-    [[nodiscard]] constexpr auto select_local() &&
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-    {
-        static_assert(I < sizeof...(Branches),
-            "crucible::session::diagnostic [Branch_Index_Out_Of_Range]: "
-            "PermissionedSessionHandle<Select<...>>::select_local<I>(): "
-            "branch index I is out of range.");
+    [[nodiscard]] constexpr auto select_local() && noexcept(std::is_nothrow_move_constructible_v<Resource>) {
+        static_assert(I < sizeof...(Branches), "crucible::session::diagnostic [Branch_Index_Out_Of_Range]: "
+                                               "PermissionedSessionHandle<Select<...>>::select_local<I>(): "
+                                               "branch index I is out of range.");
         this->mark_consumed_();
         using Chosen = std::tuple_element_t<I, std::tuple<Branches...>>;
-        return detail::step_to_next_permissioned<Chosen, PS,
-                                                 Resource, LoopCtx>(
-            std::forward<Resource>(resource_));
+        return detail::step_to_next_permissioned<Chosen, PS, Resource, LoopCtx>(std::forward<Resource>(resource_));
     }
 
     // Match the bare framework's deletion of bare select<I>() to keep
     // user code from accidentally bypassing the wire-vs-local choice.
     template <std::size_t I>
-    void select() && = delete(
-        "[Wire_Variant_Required] PermissionedSessionHandle<Select<...>>"
-        "::select<I>() without arguments is not allowed (mirror of "
-        "Session.h:#377).  Choose select<I>(transport) for wire-based "
-        "sessions or select_local<I>() for in-memory channels.");
+    void select() && = delete("[Wire_Variant_Required] PermissionedSessionHandle<Select<...>>"
+                              "::select<I>() without arguments is not allowed (mirror of "
+                              "Session.h:#377).  Choose select<I>(transport) for wire-based "
+                              "sessions or select_local<I>() for in-memory channels.");
 
-    [[nodiscard]] constexpr Resource&       resource() &       noexcept { return resource_; }
-    [[nodiscard]] constexpr const Resource& resource() const & noexcept { return resource_; }
+    [[nodiscard]] constexpr Resource& resource() & noexcept { return resource_; }
+    [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
 
 // ═════════════════════════════════════════════════════════════════
@@ -1754,16 +1474,12 @@ public:
 // calls handler with the chosen branch's PSH; per-branch PS evolves
 // according to that branch's first head.
 
-template <typename... Branches, typename PS,
-          typename Resource, typename LoopCtx>
-class [[nodiscard]] PermissionedSessionHandle<Offer<Branches...>, PS,
-                                              Resource, LoopCtx>
+template <typename... Branches, typename PS, typename Resource, typename LoopCtx>
+class [[nodiscard]] PermissionedSessionHandle<Offer<Branches...>, PS, Resource, LoopCtx>
     : public SessionHandleBase<Offer<Branches...>,
-                               PermissionedSessionHandle<Offer<Branches...>, PS,
-                                                         Resource, LoopCtx>>
-{
-    Resource                           resource_;
-    [[no_unique_address]] PS           perm_set_;
+                               PermissionedSessionHandle<Offer<Branches...>, PS, Resource, LoopCtx>> {
+    Resource resource_;
+    [[no_unique_address]] PS perm_set_;
 
     template <typename P, typename PS2, typename R2, typename L2>
     friend class PermissionedSessionHandle;
@@ -1772,38 +1488,34 @@ class [[nodiscard]] PermissionedSessionHandle<Offer<Branches...>, PS,
     friend constexpr auto detail::step_to_next_permissioned(Res, std::source_location) noexcept;
 
 public:
-    using protocol      = Offer<Branches...>;
-    using perm_set      = PS;
+    using protocol = Offer<Branches...>;
+    using perm_set = PS;
     using resource_type = Resource;
-    using loop_ctx      = LoopCtx;
+    using loop_ctx = LoopCtx;
     using inner_loop_ctx = loop_ctx_inner_t<LoopCtx>;
-    using vendor_ctx    = loop_ctx_as_vendor_ctx_t<LoopCtx>;
+    using vendor_ctx = loop_ctx_as_vendor_ctx_t<LoopCtx>;
     static constexpr VendorBackend vendor_backend = loop_ctx_vendor_v<LoopCtx>;
 
     static constexpr std::size_t branch_count = sizeof...(Branches);
 
-    static_assert(branch_count > 0,
-        "crucible::session::diagnostic [Empty_Choice_Combinator]: "
-        "PermissionedSessionHandle<Offer<>>: cannot construct a "
-        "runnable handle on Offer<> with zero branches.");
+    static_assert(branch_count > 0, "crucible::session::diagnostic [Empty_Choice_Combinator]: "
+                                    "PermissionedSessionHandle<Offer<>>: cannot construct a "
+                                    "runnable handle on Offer<> with zero branches.");
 
     constexpr explicit PermissionedSessionHandle(
-        detail::permissioned_session_construct_key,
-        Resource r,
-        std::source_location loc = std::source_location::current())
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : SessionHandleBase<Offer<Branches...>,
-                            PermissionedSessionHandle<Offer<Branches...>, PS,
-                                                      Resource, LoopCtx>>{loc}
-        , resource_{std::forward<Resource>(r)} {}
+        detail::permissioned_session_construct_key, Resource r,
+        std::source_location loc =
+            std::source_location::current()) noexcept(std::is_nothrow_move_constructible_v<Resource>)
+        : SessionHandleBase<Offer<Branches...>, PermissionedSessionHandle<Offer<Branches...>, PS, Resource, LoopCtx>>{
+              loc},
+          resource_{std::forward<Resource>(r)} {}
 
-    constexpr PermissionedSessionHandle(PermissionedSessionHandle&&) noexcept            = default;
+    constexpr PermissionedSessionHandle(PermissionedSessionHandle&&) noexcept = default;
     constexpr PermissionedSessionHandle& operator=(PermissionedSessionHandle&&) noexcept = default;
 
     ~PermissionedSessionHandle() {
 #ifndef NDEBUG
-        if (!this->is_consumed_()
-            && !is_terminal_state_v<Offer<Branches...>>) {
+        if (!this->is_consumed_() && !is_terminal_state_v<Offer<Branches...>>) {
             detail::emit_leaked_permissions_debug<PS>();
         }
 #endif
@@ -1811,8 +1523,7 @@ public:
 
     template <typename Transport, typename Handler>
         requires std::is_invocable_r_v<std::size_t, Transport, Resource&>
-    constexpr auto branch(Transport transport, Handler handler) &&
-    {
+    constexpr auto branch(Transport transport, Handler handler) && {
         const std::size_t idx = std::invoke(transport, resource_);
         this->mark_consumed_();
         return dispatch_branch_(idx, std::forward<Resource>(resource_), std::move(handler),
@@ -1821,72 +1532,64 @@ public:
 
     // Wire-omitting variant — mirrors bare Offer::pick_local.
     template <std::size_t I>
-    [[nodiscard]] constexpr auto pick_local() &&
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-    {
-        static_assert(I < sizeof...(Branches),
-            "crucible::session::diagnostic [Branch_Index_Out_Of_Range]: "
-            "PermissionedSessionHandle<Offer<...>>::pick_local<I>(): "
-            "branch index I is out of range.");
+    [[nodiscard]] constexpr auto pick_local() && noexcept(std::is_nothrow_move_constructible_v<Resource>) {
+        static_assert(I < sizeof...(Branches), "crucible::session::diagnostic [Branch_Index_Out_Of_Range]: "
+                                               "PermissionedSessionHandle<Offer<...>>::pick_local<I>(): "
+                                               "branch index I is out of range.");
         this->mark_consumed_();
         using Chosen = std::tuple_element_t<I, std::tuple<Branches...>>;
-        return detail::step_to_next_permissioned<Chosen, PS,
-                                                 Resource, LoopCtx>(
-            std::forward<Resource>(resource_));
+        return detail::step_to_next_permissioned<Chosen, PS, Resource, LoopCtx>(std::forward<Resource>(resource_));
     }
 
     template <std::size_t I>
-    void pick() && = delete(
-        "[Wire_Variant_Required] PermissionedSessionHandle<Offer<...>>"
-        "::pick<I>() without arguments is not allowed (mirror of "
-        "Session.h:#377).  Use pick_local<I>() for in-memory channels "
-        "or branch(transport, handler) for wire-based sessions.");
+    void pick() && = delete("[Wire_Variant_Required] PermissionedSessionHandle<Offer<...>>"
+                            "::pick<I>() without arguments is not allowed (mirror of "
+                            "Session.h:#377).  Use pick_local<I>() for in-memory channels "
+                            "or branch(transport, handler) for wire-based sessions.");
 
-    [[nodiscard]] constexpr Resource&       resource() &       noexcept { return resource_; }
-    [[nodiscard]] constexpr const Resource& resource() const & noexcept { return resource_; }
+    [[nodiscard]] constexpr Resource& resource() & noexcept { return resource_; }
+    [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 
 private:
     template <std::size_t I>
     static constexpr auto make_branch_handle_(Resource r) {
         using B = std::tuple_element_t<I, std::tuple<Branches...>>;
-        return detail::step_to_next_permissioned<B, PS, Resource, LoopCtx>(
-            std::forward<Resource>(r));
+        return detail::step_to_next_permissioned<B, PS, Resource, LoopCtx>(std::forward<Resource>(r));
     }
 
     template <std::size_t... Is, typename Handler>
-    static constexpr auto dispatch_branch_(
-        std::size_t                 idx,
-        Resource                    res,
-        Handler                     handler,
-        std::index_sequence<Is...>)
-    {
+    static constexpr auto dispatch_branch_(std::size_t idx, Resource res, Handler handler, std::index_sequence<Is...>) {
         if (idx >= sizeof...(Branches)) [[unlikely]] {
             std::abort();
         }
 
         using FirstHandle = decltype(make_branch_handle_<0>(std::declval<Resource>()));
-        using Result      = std::invoke_result_t<Handler&&, FirstHandle>;
+        using Result = std::invoke_result_t<Handler&&, FirstHandle>;
 
         if constexpr (std::is_void_v<Result>) {
             bool dispatched = false;
-            ([&]() {
-                if (!dispatched && idx == Is) {
-                    std::invoke(std::move(handler),
-                                make_branch_handle_<Is>(std::forward<Resource>(res)));
-                    dispatched = true;
-                }
-            }(), ...);
+            (
+                [&]() {
+                    if (!dispatched && idx == Is) {
+                        std::invoke(std::move(handler), make_branch_handle_<Is>(std::forward<Resource>(res)));
+                        dispatched = true;
+                    }
+                }(),
+                ...);
         } else {
             std::optional<Result> result;
             bool dispatched = false;
-            ([&]() {
-                if (!dispatched && idx == Is) {
-                    result.emplace(std::invoke(std::move(handler),
-                                                make_branch_handle_<Is>(std::forward<Resource>(res))));
-                    dispatched = true;
-                }
-            }(), ...);
-            if (!result) [[unlikely]] std::abort();
+            (
+                [&]() {
+                    if (!dispatched && idx == Is) {
+                        result.emplace(
+                            std::invoke(std::move(handler), make_branch_handle_<Is>(std::forward<Resource>(res))));
+                        dispatched = true;
+                    }
+                }(),
+                ...);
+            if (!result) [[unlikely]]
+                std::abort();
             return std::move(*result);
         }
     }
@@ -1909,64 +1612,43 @@ private:
 
 namespace detail {
 
-template <typename Proto,
-          typename InitialPS,
-          typename Resource,
-          typename LoopCtx>
-[[nodiscard]] constexpr auto permissioned_session_with_loc_(
-    Resource r,
-    std::source_location loc) noexcept
-{
-    static_assert(is_well_formed<Proto, LoopCtx>::value,
-        "crucible::session::diagnostic [Protocol_Ill_Formed]: "
-        "mint_permissioned_session<Proto>: protocol is ill-formed.");
-    static_assert(!is_empty_choice_v<Proto>,
-        "crucible::session::diagnostic [Empty_Choice_Combinator]: "
-        "mint_permissioned_session<Proto>: cannot construct a runnable "
-        "handle on Proto with a reachable empty Select<> / Offer<> / "
-        "Offer<Sender<R>> (top-level or nested under Send/Recv/Loop/"
-        "branch/Delegate/Accept).  The is_empty_choice trait walks "
-        "recursively (fixy-CR-14) so empty choices anywhere in the "
-        "protocol tree are caught at mint time, not at the eventual "
-        ".pick<I>() / .recv() that hits the dead-end.");
-    static_assert(SessionResource<Resource>,
-        "crucible::session::diagnostic [SessionResource_NotPinned]: "
-        "mint_permissioned_session<Proto, Resource>: Resource fails the "
-        "pin-discipline.  See SessionResource concept in Session.h.");
+template <typename Proto, typename InitialPS, typename Resource, typename LoopCtx>
+[[nodiscard]] constexpr auto permissioned_session_with_loc_(Resource r, std::source_location loc) noexcept {
+    static_assert(is_well_formed<Proto, LoopCtx>::value, "crucible::session::diagnostic [Protocol_Ill_Formed]: "
+                                                         "mint_permissioned_session<Proto>: protocol is ill-formed.");
+    static_assert(!is_empty_choice_v<Proto>, "crucible::session::diagnostic [Empty_Choice_Combinator]: "
+                                             "mint_permissioned_session<Proto>: cannot construct a runnable "
+                                             "handle on Proto with a reachable empty Select<> / Offer<> / "
+                                             "Offer<Sender<R>> (top-level or nested under Send/Recv/Loop/"
+                                             "branch/Delegate/Accept).  The is_empty_choice trait walks "
+                                             "recursively (fixy-CR-14) so empty choices anywhere in the "
+                                             "protocol tree are caught at mint time, not at the eventual "
+                                             ".pick<I>() / .recv() that hits the dead-end.");
+    static_assert(SessionResource<Resource>, "crucible::session::diagnostic [SessionResource_NotPinned]: "
+                                             "mint_permissioned_session<Proto, Resource>: Resource fails the "
+                                             "pin-discipline.  See SessionResource concept in Session.h.");
 
     if constexpr (is_vendor_pinned_v<Proto>) {
         using InnerProto = protocol_inner_t<Proto>;
-        using VendorLoopCtx =
-            VendorCtx<protocol_vendor_v<Proto>, loop_ctx_inner_t<LoopCtx>>;
-        return permissioned_session_with_loc_<InnerProto, InitialPS,
-                                                  Resource, VendorLoopCtx>(
-            std::forward<Resource>(r), loc);
+        using VendorLoopCtx = VendorCtx<protocol_vendor_v<Proto>, loop_ctx_inner_t<LoopCtx>>;
+        return permissioned_session_with_loc_<InnerProto, InitialPS, Resource, VendorLoopCtx>(std::forward<Resource>(r),
+                                                                                              loc);
     } else if constexpr (is_loop_v<Proto>) {
         using Body = typename Proto::body;
-        using Ctx  =
-            loop_ctx_rebind_inner_t<LoopCtx, LoopContext<Body, InitialPS>>;
-        return step_to_next_permissioned<Body, InitialPS, Resource, Ctx>(
-            std::forward<Resource>(r), loc);
+        using Ctx = loop_ctx_rebind_inner_t<LoopCtx, LoopContext<Body, InitialPS>>;
+        return step_to_next_permissioned<Body, InitialPS, Resource, Ctx>(std::forward<Resource>(r), loc);
     } else {
-        static_assert(!std::is_same_v<Proto, Continue>,
-            "crucible::session::diagnostic [Continue_Without_Loop]: "
-            "mint_permissioned_session<Continue>: Continue cannot be the "
-            "top-level protocol.");
-        return PermissionedSessionHandle<Proto, InitialPS, Resource,
-                                          LoopCtx>{
-            permissioned_session_construct_key{},
-            std::forward<Resource>(r), loc};
+        static_assert(!std::is_same_v<Proto, Continue>, "crucible::session::diagnostic [Continue_Without_Loop]: "
+                                                        "mint_permissioned_session<Continue>: Continue cannot be the "
+                                                        "top-level protocol.");
+        return PermissionedSessionHandle<Proto, InitialPS, Resource, LoopCtx>{permissioned_session_construct_key{},
+                                                                              std::forward<Resource>(r), loc};
     }
 }
 
 template <typename Proto, typename InitialPS, typename Resource>
-[[nodiscard]] constexpr auto permissioned_session_with_loc_(
-    Resource r,
-    std::source_location loc) noexcept
-{
-    return permissioned_session_with_loc_<Proto, InitialPS,
-                                              Resource, void>(
-        std::forward<Resource>(r), loc);
+[[nodiscard]] constexpr auto permissioned_session_with_loc_(Resource r, std::source_location loc) noexcept {
+    return permissioned_session_with_loc_<Proto, InitialPS, Resource, void>(std::forward<Resource>(r), loc);
 }
 
 }  // namespace detail
@@ -2025,13 +1707,9 @@ template <typename Proto, typename InitialPS, typename Resource>
 
 template <typename PSH, typename Body>
     requires std::is_invocable_v<Body, PSH&&>
-[[nodiscard]] constexpr auto with_crash_check_or_detach(
-    PSH&& h,
-    ::crucible::safety::OneShotFlag& flag,
-    Body&& body)
-    noexcept(std::is_nothrow_invocable_v<Body, PSH&&>)
-    -> std::optional<std::invoke_result_t<Body, PSH&&>>
-{
+[[nodiscard]] constexpr auto with_crash_check_or_detach(PSH&& h, ::crucible::safety::OneShotFlag& flag,
+                                                        Body&& body) noexcept(std::is_nothrow_invocable_v<Body, PSH&&>)
+    -> std::optional<std::invoke_result_t<Body, PSH&&>> {
     if (flag.peek()) [[unlikely]] {
         // Acquire-fence pairs with the producer's release-store in
         // OneShotFlag::signal(), so any state the producer mutated
@@ -2124,20 +1802,14 @@ namespace detail {
 // Pulled out so the parameter pack expansion at the call site stays
 // readable.
 template <typename G, typename Role, typename SharedChannel, typename Body>
-[[nodiscard]] constexpr auto session_fork_role_lambda(
-    SharedChannel& ch,
-    Body&& body) noexcept
-{
-    return [&ch, body = std::forward<Body>(body)](
-               Permission<Role>&& role_perm,
-               auto const&) mutable noexcept {
+[[nodiscard]] constexpr auto session_fork_role_lambda(SharedChannel& ch, Body&& body) noexcept {
+    return [&ch, body = std::forward<Body>(body)](Permission<Role>&& role_perm, auto const&) mutable noexcept {
         using LocalProto = typename Project<G, Role>::type;
         // The role Permission is consumed into the endpoint's initial
         // PermSet.  LocalProto may begin with Loop; the detail mint
         // unrolls it the same way as the public ctx-bound factory.
         static_cast<void>(role_perm);
-        auto handle = permissioned_session_with_loc_<
-            LocalProto, PermSet<Role>, SharedChannel&, void>(
+        auto handle = permissioned_session_with_loc_<LocalProto, PermSet<Role>, SharedChannel&, void>(
             ch, std::source_location::current());
         std::move(body)(std::move(handle));
     };
@@ -2145,31 +1817,25 @@ template <typename G, typename Role, typename SharedChannel, typename Body>
 
 }  // namespace detail
 
-template <typename G, typename Whole, typename... RolePerms,
-          typename SharedChannel, typename... Bodies>
-[[nodiscard]] Permission<Whole> session_fork(
-    SharedChannel& ch,
-    Permission<Whole>&& whole_perm,
-    Bodies&&... bodies) noexcept
-{
-    static_assert(is_global_well_formed_v<G>,
-        "crucible::session::diagnostic [Protocol_Ill_Formed]: "
-        "session_fork<G, ...>: global type G is ill-formed.");
+template <typename G, typename Whole, typename... RolePerms, typename SharedChannel, typename... Bodies>
+[[nodiscard]] Permission<Whole> session_fork(SharedChannel& ch, Permission<Whole>&& whole_perm,
+                                             Bodies&&... bodies) noexcept {
+    static_assert(is_global_well_formed_v<G>, "crucible::session::diagnostic [Protocol_Ill_Formed]: "
+                                              "session_fork<G, ...>: global type G is ill-formed.");
     static_assert(sizeof...(RolePerms) == sizeof...(Bodies),
-        "crucible::session::diagnostic [PermissionImbalance]: "
-        "session_fork: number of RolePerms template arguments must "
-        "match number of body callables.");
+                  "crucible::session::diagnostic [PermissionImbalance]: "
+                  "session_fork: number of RolePerms template arguments must "
+                  "match number of body callables.");
     static_assert(splits_into_pack_v<Whole, RolePerms...>,
-        "crucible::session::diagnostic [PermissionImbalance]: "
-        "session_fork<G, Whole, RolePerms...>: requires "
-        "splits_into_pack<Whole, RolePerms...>::value true.  Declare "
-        "the manifest in the same TU as the Whole and Role tags so "
-        "reviewers see the entire region tree at one glance.");
-    static_assert(SessionResource<SharedChannel&>,
-        "crucible::session::diagnostic [SessionResource_NotPinned]: "
-        "session_fork: the SharedChannel must be Pinned (its address "
-        "must be stable across the spawned threads' lifetimes).  "
-        "Derive your channel from safety::Pinned<ChannelType>.");
+                  "crucible::session::diagnostic [PermissionImbalance]: "
+                  "session_fork<G, Whole, RolePerms...>: requires "
+                  "splits_into_pack<Whole, RolePerms...>::value true.  Declare "
+                  "the manifest in the same TU as the Whole and Role tags so "
+                  "reviewers see the entire region tree at one glance.");
+    static_assert(SessionResource<SharedChannel&>, "crucible::session::diagnostic [SessionResource_NotPinned]: "
+                                                   "session_fork: the SharedChannel must be Pinned (its address "
+                                                   "must be stable across the spawned threads' lifetimes).  "
+                                                   "Derive your channel from safety::Pinned<ChannelType>.");
 
     // Compose: each role's lambda calls mint_permissioned_session with
     // the role's projected protocol + the role permission token; then
@@ -2178,12 +1844,8 @@ template <typename G, typename Whole, typename... RolePerms,
     // one jthread per role, join via RAII array destructor, rebuild
     // Whole on return.
     return mint_permission_fork<RolePerms...>(
-        PermissionForkSpawnCtx{},
-        std::move(whole_perm),
-        detail::session_fork_role_lambda<G, RolePerms, SharedChannel,
-                                          Bodies>(
-            ch, std::forward<Bodies>(bodies))...
-    );
+        PermissionForkSpawnCtx{}, std::move(whole_perm),
+        detail::session_fork_role_lambda<G, RolePerms, SharedChannel, Bodies>(ch, std::forward<Bodies>(bodies))...);
 }
 
 }  // namespace crucible::safety::proto
@@ -2198,7 +1860,7 @@ namespace crucible::safety::proto::detail::permissioned_session_smoke {
 
 // Synthetic tags for compile-time exercises.
 struct WorkPerm {};
-struct HotPerm  {};
+struct HotPerm {};
 
 // Simple value Resource (FakeChannel).  Pinned not required for
 // value-type Resources.
@@ -2228,12 +1890,10 @@ static_assert(std::is_empty_v<PermSet<WorkPerm, HotPerm>>);
 static_assert(sizeof(PermissionedSessionHandle<End, EmptyPermSet, FakeChannel>)
               == sizeof(SessionHandle<End, FakeChannel>));
 
-static_assert(sizeof(PermissionedSessionHandle<End, PermSet<WorkPerm, HotPerm>,
-                                                FakeChannel>)
+static_assert(sizeof(PermissionedSessionHandle<End, PermSet<WorkPerm, HotPerm>, FakeChannel>)
               == sizeof(SessionHandle<End, FakeChannel>));
 
-static_assert(sizeof(PermissionedSessionHandle<Send<int, End>, EmptyPermSet,
-                                                FakeChannel>)
+static_assert(sizeof(PermissionedSessionHandle<Send<int, End>, EmptyPermSet, FakeChannel>)
               == sizeof(SessionHandle<Send<int, End>, FakeChannel>));
 
 // ── Type-level shape verification for Send permission flow ─────────
@@ -2244,25 +1904,22 @@ static_assert(sizeof(PermissionedSessionHandle<Send<int, End>, EmptyPermSet,
 // WorkPerm.
 
 using WorkChannel = FakeChannel;
-using SendProto   = Send<Transferable<int, WorkPerm>, End>;
-using PSWith      = PermSet<WorkPerm>;
-using PSWithout   = EmptyPermSet;
+using SendProto = Send<Transferable<int, WorkPerm>, End>;
+using PSWith = PermSet<WorkPerm>;
+using PSWithout = EmptyPermSet;
 using DelegatedPayload = DelegatedSession<SendProto, PSWith>;
-using DelegateProto    = Delegate<DelegatedPayload, End>;
-using AcceptProto      = Accept<DelegatedPayload, End>;
+using DelegateProto = Delegate<DelegatedPayload, End>;
+using AcceptProto = Accept<DelegatedPayload, End>;
 
 // The next-PS metafunction matches PSWithout for this Transferable.
-static_assert(perm_set_equal_v<
-    compute_perm_set_after_send_t<PSWith, Transferable<int, WorkPerm>>,
-    PSWithout>);
+static_assert(perm_set_equal_v<compute_perm_set_after_send_t<PSWith, Transferable<int, WorkPerm>>, PSWithout>);
 
 // ── Type-level shape verification for Recv permission flow ─────────
 //
 // Recv of a Transferable<int, HotPerm> grows PS by HotPerm.
 
-static_assert(perm_set_equal_v<
-    compute_perm_set_after_recv_t<EmptyPermSet, Transferable<int, HotPerm>>,
-    PermSet<HotPerm>>);
+static_assert(
+    perm_set_equal_v<compute_perm_set_after_recv_t<EmptyPermSet, Transferable<int, HotPerm>>, PermSet<HotPerm>>);
 
 // Permission-aware Delegate/Accept shape: carrier PS stays separate
 // from the inner endpoint's InnerPS; the accepted/delegated endpoint
@@ -2271,45 +1928,33 @@ static_assert(is_well_formed_v<DelegateProto>);
 static_assert(is_well_formed_v<AcceptProto>);
 static_assert(std::is_same_v<dual_of_t<DelegateProto>, AcceptProto>);
 static_assert(std::is_same_v<
-    typename PermissionedSessionHandle<DelegateProto, EmptyPermSet,
-                                       FakeChannel>::inner_perm_set,
-    PSWith>);
-static_assert(sizeof(PermissionedSessionHandle<DelegateProto, EmptyPermSet,
-                                               FakeChannel>)
+              typename PermissionedSessionHandle<DelegateProto, EmptyPermSet, FakeChannel>::inner_perm_set, PSWith>);
+static_assert(sizeof(PermissionedSessionHandle<DelegateProto, EmptyPermSet, FakeChannel>)
               == sizeof(SessionHandle<DelegateProto, FakeChannel>));
-static_assert(sizeof(PermissionedSessionHandle<AcceptProto, EmptyPermSet,
-                                               FakeChannel>)
+static_assert(sizeof(PermissionedSessionHandle<AcceptProto, EmptyPermSet, FakeChannel>)
               == sizeof(SessionHandle<AcceptProto, FakeChannel>));
 
 // ── VendorCtx<Backend, InnerLoopCtx> shape and composition ─────────
 
-using NvBareCtx   = VendorCtx<VendorBackend::NV>;
-using AmdBareCtx  = VendorCtx<VendorBackend::AMD>;
+using NvBareCtx = VendorCtx<VendorBackend::NV>;
+using AmdBareCtx = VendorCtx<VendorBackend::AMD>;
 using EpochBareCtx = EpochCtx<5, 3>;
-using NvEpochCtx   = VendorCtx<VendorBackend::NV, EpochBareCtx>;
-using EpochNvCtx   = EpochCtx<5, 3, NvBareCtx>;
-using NvLoopCtx   = VendorCtx<VendorBackend::NV,
-                              LoopContext<Send<int, Continue>, EmptyPermSet>>;
-using NvEndHandle  = PermissionedSessionHandle<End, EmptyPermSet,
-                                                FakeChannel, NvBareCtx>;
-using AmdEndHandle = PermissionedSessionHandle<End, EmptyPermSet,
-                                                FakeChannel, AmdBareCtx>;
-using RawEndHandle = PermissionedSessionHandle<End, EmptyPermSet,
-                                                FakeChannel>;
+using NvEpochCtx = VendorCtx<VendorBackend::NV, EpochBareCtx>;
+using EpochNvCtx = EpochCtx<5, 3, NvBareCtx>;
+using NvLoopCtx = VendorCtx<VendorBackend::NV, LoopContext<Send<int, Continue>, EmptyPermSet>>;
+using NvEndHandle = PermissionedSessionHandle<End, EmptyPermSet, FakeChannel, NvBareCtx>;
+using AmdEndHandle = PermissionedSessionHandle<End, EmptyPermSet, FakeChannel, AmdBareCtx>;
+using RawEndHandle = PermissionedSessionHandle<End, EmptyPermSet, FakeChannel>;
 
 static_assert(std::is_empty_v<NvBareCtx>);
 static_assert(std::is_empty_v<EpochBareCtx>);
 static_assert(std::is_empty_v<NvEpochCtx>);
 static_assert(std::is_empty_v<NvLoopCtx>);
 static_assert(loop_ctx_vendor_v<void> == VendorBackend::Portable);
-static_assert(loop_ctx_vendor_v<LoopContext<Send<int, Continue>,
-                                           EmptyPermSet>>
-              == VendorBackend::Portable);
+static_assert(loop_ctx_vendor_v<LoopContext<Send<int, Continue>, EmptyPermSet>> == VendorBackend::Portable);
 static_assert(loop_ctx_vendor_v<NvBareCtx> == VendorBackend::NV);
 static_assert(std::is_same_v<loop_ctx_inner_t<NvBareCtx>, void>);
-static_assert(std::is_same_v<loop_ctx_inner_t<NvLoopCtx>,
-                             LoopContext<Send<int, Continue>,
-                                         EmptyPermSet>>);
+static_assert(std::is_same_v<loop_ctx_inner_t<NvLoopCtx>, LoopContext<Send<int, Continue>, EmptyPermSet>>);
 static_assert(loop_ctx_has_explicit_epoch_v<EpochBareCtx>);
 static_assert(loop_ctx_epoch_v<EpochBareCtx> == 5);
 static_assert(loop_ctx_generation_v<EpochBareCtx> == 3);
@@ -2322,42 +1967,25 @@ static_assert(loop_ctx_vendor_v<EpochNvCtx> == VendorBackend::NV);
 static_assert(loop_ctx_has_explicit_epoch_v<EpochNvCtx>);
 static_assert(session_loop_ctx_epoch_satisfies_v<EpochNvCtx, 5, 3>);
 static_assert(!session_loop_ctx_epoch_satisfies_v<NvEpochCtx, 6, 3>);
-static_assert(std::is_same_v<loop_ctx_rebind_inner_t<
-                  NvBareCtx,
-                  LoopContext<Recv<int, Continue>, EmptyPermSet>>,
-              VendorCtx<VendorBackend::NV,
-                        LoopContext<Recv<int, Continue>, EmptyPermSet>>>);
-static_assert(std::is_same_v<loop_ctx_rebind_inner_t<
-                  NvEpochCtx,
-                  LoopContext<Recv<int, Continue>, EmptyPermSet>>,
-              VendorCtx<VendorBackend::NV,
-                        EpochCtx<5, 3,
-                                 LoopContext<Recv<int, Continue>,
-                                             EmptyPermSet>>>>);
-static_assert(std::is_same_v<session_loop_ctx_rebind_inner_t<
-                  NvEpochCtx,
-                  Loop<Recv<int, Continue>>>,
-              VendorCtx<VendorBackend::NV,
-                        EpochCtx<5, 3,
-                                 Loop<Recv<int, Continue>>>>>);
+static_assert(std::is_same_v<loop_ctx_rebind_inner_t<NvBareCtx, LoopContext<Recv<int, Continue>, EmptyPermSet>>,
+                             VendorCtx<VendorBackend::NV, LoopContext<Recv<int, Continue>, EmptyPermSet>>>);
+static_assert(
+    std::is_same_v<loop_ctx_rebind_inner_t<NvEpochCtx, LoopContext<Recv<int, Continue>, EmptyPermSet>>,
+                   VendorCtx<VendorBackend::NV, EpochCtx<5, 3, LoopContext<Recv<int, Continue>, EmptyPermSet>>>>);
+static_assert(std::is_same_v<session_loop_ctx_rebind_inner_t<NvEpochCtx, Loop<Recv<int, Continue>>>,
+                             VendorCtx<VendorBackend::NV, EpochCtx<5, 3, Loop<Recv<int, Continue>>>>>);
 
 static_assert(std::is_same_v<typename RawEndHandle::loop_ctx, void>);
-static_assert(std::is_same_v<typename RawEndHandle::vendor_ctx,
-                             VendorCtx<VendorBackend::Portable, void>>);
+static_assert(std::is_same_v<typename RawEndHandle::vendor_ctx, VendorCtx<VendorBackend::Portable, void>>);
 static_assert(RawEndHandle::vendor_backend == VendorBackend::Portable);
 static_assert(NvEndHandle::vendor_backend == VendorBackend::NV);
 static_assert(sizeof(NvEndHandle) == sizeof(SessionHandle<End, FakeChannel>));
 
-static_assert(permissioned_session_vendor_compatible_v<RawEndHandle,
-                                                       NvEndHandle>);
-static_assert(permissioned_session_vendor_compatible_v<NvEndHandle,
-                                                       NvEndHandle>);
-static_assert(!permissioned_session_vendor_compatible_v<NvEndHandle,
-                                                        AmdEndHandle>);
-static_assert(!permissioned_session_vendor_compatible_v<AmdEndHandle,
-                                                        NvEndHandle>);
-static_assert(!permissioned_session_vendor_compatible_v<NvEndHandle,
-                                                        RawEndHandle>);
+static_assert(permissioned_session_vendor_compatible_v<RawEndHandle, NvEndHandle>);
+static_assert(permissioned_session_vendor_compatible_v<NvEndHandle, NvEndHandle>);
+static_assert(!permissioned_session_vendor_compatible_v<NvEndHandle, AmdEndHandle>);
+static_assert(!permissioned_session_vendor_compatible_v<AmdEndHandle, NvEndHandle>);
+static_assert(!permissioned_session_vendor_compatible_v<NvEndHandle, RawEndHandle>);
 
 // ── runtime_smoke_test (per the discipline) ────────────────────────
 //
@@ -2369,9 +1997,8 @@ inline void runtime_smoke_test() noexcept {
     // End-handle close round-trip.
     {
         FakeChannel ch{42};
-        auto h = detail::permissioned_session_with_loc_<
-            End, EmptyPermSet, FakeChannel>(
-            ch, std::source_location::current());
+        auto h =
+            detail::permissioned_session_with_loc_<End, EmptyPermSet, FakeChannel>(ch, std::source_location::current());
         FakeChannel out = std::move(h).close();
         // Resource was moved through; identity preserved.
         if (out.last_sent != 42) std::abort();
@@ -2384,8 +2011,7 @@ inline void runtime_smoke_test() noexcept {
         auto perm = ::crucible::safety::mint_permission_root<WorkPerm>();
         ::crucible::safety::permission_drop(std::move(perm));
 
-        auto handle = detail::permissioned_session_with_loc_<
-            End, EmptyPermSet, FakeChannel>(
+        auto handle = detail::permissioned_session_with_loc_<End, EmptyPermSet, FakeChannel>(
             FakeChannel{7}, std::source_location::current());
         FakeChannel out = std::move(handle).close();
         if (out.last_sent != 7) std::abort();
@@ -2393,12 +2019,12 @@ inline void runtime_smoke_test() noexcept {
 
     // Send/recv shape check via static_asserts.
     {
-        using PSHSend  = PermissionedSessionHandle<SendProto, PSWith, FakeChannel>;
-        using PSHEnd   = PermissionedSessionHandle<End, EmptyPermSet, FakeChannel>;
-        static_assert(std::is_same_v<typename PSHSend::perm_set,  PSWith>);
-        static_assert(std::is_same_v<typename PSHEnd::perm_set,   EmptyPermSet>);
-        static_assert(std::is_same_v<typename PSHSend::protocol,  SendProto>);
-        static_assert(std::is_same_v<typename PSHEnd::protocol,   End>);
+        using PSHSend = PermissionedSessionHandle<SendProto, PSWith, FakeChannel>;
+        using PSHEnd = PermissionedSessionHandle<End, EmptyPermSet, FakeChannel>;
+        static_assert(std::is_same_v<typename PSHSend::perm_set, PSWith>);
+        static_assert(std::is_same_v<typename PSHEnd::perm_set, EmptyPermSet>);
+        static_assert(std::is_same_v<typename PSHSend::protocol, SendProto>);
+        static_assert(std::is_same_v<typename PSHEnd::protocol, End>);
     }
 
     // LoopContext basics — body/entry_perm_set typedefs.
@@ -2416,43 +2042,29 @@ inline void runtime_smoke_test() noexcept {
     // machinery resolves correctly.
     {
         using LoopProto = Loop<Send<int, Continue>>;  // plain int — no PS
-        using LoopHandle =
-            decltype(detail::permissioned_session_with_loc_<
-                     LoopProto, EmptyPermSet, FakeChannel>(
-                         FakeChannel{}, std::source_location::current()));
-        static_assert(std::is_same_v<typename LoopHandle::protocol,
-                                     Send<int, Continue>>);
-        static_assert(std::is_same_v<typename LoopHandle::perm_set,
-                                     EmptyPermSet>);
-        static_assert(std::is_same_v<typename LoopHandle::loop_ctx,
-                                     LoopContext<Send<int, Continue>,
-                                                 EmptyPermSet>>);
+        using LoopHandle = decltype(detail::permissioned_session_with_loc_<LoopProto, EmptyPermSet, FakeChannel>(
+            FakeChannel{}, std::source_location::current()));
+        static_assert(std::is_same_v<typename LoopHandle::protocol, Send<int, Continue>>);
+        static_assert(std::is_same_v<typename LoopHandle::perm_set, EmptyPermSet>);
+        static_assert(std::is_same_v<typename LoopHandle::loop_ctx, LoopContext<Send<int, Continue>, EmptyPermSet>>);
     }
 
     // step_to_next_permissioned: plain head wraps directly.
     {
         using NextEnd =
-            decltype(detail::step_to_next_permissioned<End, EmptyPermSet,
-                                                       FakeChannel, void>(
-                FakeChannel{}));
-        static_assert(std::is_same_v<NextEnd,
-            PermissionedSessionHandle<End, EmptyPermSet, FakeChannel, void>>);
+            decltype(detail::step_to_next_permissioned<End, EmptyPermSet, FakeChannel, void>(FakeChannel{}));
+        static_assert(std::is_same_v<NextEnd, PermissionedSessionHandle<End, EmptyPermSet, FakeChannel, void>>);
     }
 
     // step_to_next_permissioned: Loop<B> head shadows LoopCtx with the
     // new context whose entry_perm_set captures the current PS.
     {
         using NextLoop =
-            decltype(detail::step_to_next_permissioned<
-                Loop<Send<int, Continue>>, PermSet<WorkPerm>,
-                FakeChannel, void>(FakeChannel{}));
-        static_assert(std::is_same_v<typename NextLoop::protocol,
-                                     Send<int, Continue>>);
-        static_assert(std::is_same_v<typename NextLoop::perm_set,
-                                     PermSet<WorkPerm>>);
-        static_assert(std::is_same_v<typename NextLoop::loop_ctx,
-                                     LoopContext<Send<int, Continue>,
-                                                 PermSet<WorkPerm>>>);
+            decltype(detail::step_to_next_permissioned<Loop<Send<int, Continue>>, PermSet<WorkPerm>, FakeChannel, void>(
+                FakeChannel{}));
+        static_assert(std::is_same_v<typename NextLoop::protocol, Send<int, Continue>>);
+        static_assert(std::is_same_v<typename NextLoop::perm_set, PermSet<WorkPerm>>);
+        static_assert(std::is_same_v<typename NextLoop::loop_ctx, LoopContext<Send<int, Continue>, PermSet<WorkPerm>>>);
     }
 
     // step_to_next_permissioned: entering a loop from a pinned context
@@ -2460,12 +2072,10 @@ inline void runtime_smoke_test() noexcept {
     // inner context.
     {
         using PinnedLoop =
-            decltype(detail::step_to_next_permissioned<
-                Loop<Send<int, Continue>>, EmptyPermSet,
-                FakeChannel, VendorCtx<VendorBackend::NV>>(FakeChannel{}));
+            decltype(detail::step_to_next_permissioned<Loop<Send<int, Continue>>, EmptyPermSet, FakeChannel,
+                                                       VendorCtx<VendorBackend::NV>>(FakeChannel{}));
         static_assert(std::is_same_v<typename PinnedLoop::loop_ctx,
-            VendorCtx<VendorBackend::NV,
-                      LoopContext<Send<int, Continue>, EmptyPermSet>>>);
+                                     VendorCtx<VendorBackend::NV, LoopContext<Send<int, Continue>, EmptyPermSet>>>);
         static_assert(PinnedLoop::vendor_backend == VendorBackend::NV);
     }
 

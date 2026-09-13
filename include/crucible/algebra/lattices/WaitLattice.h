@@ -157,27 +157,33 @@ namespace crucible::algebra::lattices {
 // matching the project convention (bottom=0).  This INVERTS the
 // 28_04 §4.3.3 spec's ordinal hint; semantic contract preserved.
 enum class WaitStrategy : std::uint8_t {
-    Block       = 0,    // bottom: poll / epoll_wait / blocking syscall
-    Park        = 1,    // pthread_cond_wait / std::condition_variable
-    AcquireWait = 2,    // std::atomic::wait / futex(FUTEX_WAIT)
-    UmwaitC01   = 3,    // Intel WAITPKG umonitor+umwait (Tremont+)
-    BoundedSpin = 4,    // SpinPause + exponential backoff
-    SpinPause   = 5,    // top: _mm_pause / yield on acquire-load
+    Block = 0,  // bottom: poll / epoll_wait / blocking syscall
+    Park = 1,  // pthread_cond_wait / std::condition_variable
+    AcquireWait = 2,  // std::atomic::wait / futex(FUTEX_WAIT)
+    UmwaitC01 = 3,  // Intel WAITPKG umonitor+umwait (Tremont+)
+    BoundedSpin = 4,  // SpinPause + exponential backoff
+    SpinPause = 5,  // top: _mm_pause / yield on acquire-load
 };
 
 // Cardinality + diagnostic name via reflection.
-inline constexpr std::size_t wait_strategy_count =
-    std::meta::enumerators_of(^^WaitStrategy).size();
+inline constexpr std::size_t wait_strategy_count = std::meta::enumerators_of(^^WaitStrategy).size();
 
 [[nodiscard]] consteval std::string_view wait_strategy_name(WaitStrategy s) noexcept {
     switch (s) {
-        case WaitStrategy::Block:       return "Block";
-        case WaitStrategy::Park:        return "Park";
-        case WaitStrategy::AcquireWait: return "AcquireWait";
-        case WaitStrategy::UmwaitC01:   return "UmwaitC01";
-        case WaitStrategy::BoundedSpin: return "BoundedSpin";
-        case WaitStrategy::SpinPause:   return "SpinPause";
-        default:                        return std::string_view{"<unknown WaitStrategy>"};
+        case WaitStrategy::Block:
+            return "Block";
+        case WaitStrategy::Park:
+            return "Park";
+        case WaitStrategy::AcquireWait:
+            return "AcquireWait";
+        case WaitStrategy::UmwaitC01:
+            return "UmwaitC01";
+        case WaitStrategy::BoundedSpin:
+            return "BoundedSpin";
+        case WaitStrategy::SpinPause:
+            return "SpinPause";
+        default:
+            return std::string_view{"<unknown WaitStrategy>"};
     }
 }
 
@@ -185,47 +191,44 @@ inline constexpr std::size_t wait_strategy_count =
 //
 // Inherits leq/join/meet from ChainLatticeOps<WaitStrategy>.
 struct WaitLattice : ChainLatticeOps<WaitStrategy> {
-    [[nodiscard]] static constexpr element_type bottom() noexcept {
-        return WaitStrategy::Block;
-    }
-    [[nodiscard]] static constexpr element_type top() noexcept {
-        return WaitStrategy::SpinPause;
-    }
+    [[nodiscard]] static constexpr element_type bottom() noexcept { return WaitStrategy::Block; }
+    [[nodiscard]] static constexpr element_type top() noexcept { return WaitStrategy::SpinPause; }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return "WaitLattice";
-    }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "WaitLattice"; }
 
     // ── At<T>: singleton sub-lattice at a fixed type-level strategy ─
     template <WaitStrategy T>
     struct At {
         struct element_type {
             using wait_strategy_value_type = WaitStrategy;
-            [[nodiscard]] constexpr operator wait_strategy_value_type() const noexcept {
-                return T;
-            }
-            [[nodiscard]] constexpr bool operator==(element_type) const noexcept {
-                return true;
-            }
+            [[nodiscard]] constexpr operator wait_strategy_value_type() const noexcept { return T; }
+            [[nodiscard]] constexpr bool operator==(element_type) const noexcept { return true; }
         };
 
         static constexpr WaitStrategy strategy = T;
 
         [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-        [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
         [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
 
         [[nodiscard]] static consteval std::string_view name() noexcept {
             switch (T) {
-                case WaitStrategy::Block:       return "WaitLattice::At<Block>";
-                case WaitStrategy::Park:        return "WaitLattice::At<Park>";
-                case WaitStrategy::AcquireWait: return "WaitLattice::At<AcquireWait>";
-                case WaitStrategy::UmwaitC01:   return "WaitLattice::At<UmwaitC01>";
-                case WaitStrategy::BoundedSpin: return "WaitLattice::At<BoundedSpin>";
-                case WaitStrategy::SpinPause:   return "WaitLattice::At<SpinPause>";
-                default:                        return "WaitLattice::At<?>";
+                case WaitStrategy::Block:
+                    return "WaitLattice::At<Block>";
+                case WaitStrategy::Park:
+                    return "WaitLattice::At<Park>";
+                case WaitStrategy::AcquireWait:
+                    return "WaitLattice::At<AcquireWait>";
+                case WaitStrategy::UmwaitC01:
+                    return "WaitLattice::At<UmwaitC01>";
+                case WaitStrategy::BoundedSpin:
+                    return "WaitLattice::At<BoundedSpin>";
+                case WaitStrategy::SpinPause:
+                    return "WaitLattice::At<SpinPause>";
+                default:
+                    return "WaitLattice::At<?>";
             }
         }
     };
@@ -233,42 +236,38 @@ struct WaitLattice : ChainLatticeOps<WaitStrategy> {
 
 // ── Convenience aliases ─────────────────────────────────────────────
 namespace wait_strategy {
-    using BlockStrategy       = WaitLattice::At<WaitStrategy::Block>;
-    using ParkStrategy        = WaitLattice::At<WaitStrategy::Park>;
-    using AcquireWaitStrategy = WaitLattice::At<WaitStrategy::AcquireWait>;
-    using UmwaitC01Strategy   = WaitLattice::At<WaitStrategy::UmwaitC01>;
-    using BoundedSpinStrategy = WaitLattice::At<WaitStrategy::BoundedSpin>;
-    using SpinPauseStrategy   = WaitLattice::At<WaitStrategy::SpinPause>;
+using BlockStrategy = WaitLattice::At<WaitStrategy::Block>;
+using ParkStrategy = WaitLattice::At<WaitStrategy::Park>;
+using AcquireWaitStrategy = WaitLattice::At<WaitStrategy::AcquireWait>;
+using UmwaitC01Strategy = WaitLattice::At<WaitStrategy::UmwaitC01>;
+using BoundedSpinStrategy = WaitLattice::At<WaitStrategy::BoundedSpin>;
+using SpinPauseStrategy = WaitLattice::At<WaitStrategy::SpinPause>;
 }  // namespace wait_strategy
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::wait_lattice_self_test {
 
 // Cardinality + reflection-based name coverage.
-static_assert(wait_strategy_count == 6,
-    "WaitStrategy catalog diverged from {Block, Park, AcquireWait, "
-    "UmwaitC01, BoundedSpin, SpinPause}; confirm intent and update "
-    "the dispatcher's wait-admission gates + scheduler-policy "
-    "plumbing.");
+static_assert(wait_strategy_count == 6, "WaitStrategy catalog diverged from {Block, Park, AcquireWait, "
+                                        "UmwaitC01, BoundedSpin, SpinPause}; confirm intent and update "
+                                        "the dispatcher's wait-admission gates + scheduler-policy "
+                                        "plumbing.");
 
 [[nodiscard]] consteval bool every_wait_strategy_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^WaitStrategy));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^WaitStrategy));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
-        if (wait_strategy_name([:en:]) ==
-            std::string_view{"<unknown WaitStrategy>"}) {
+        if (wait_strategy_name([:en:]) == std::string_view{"<unknown WaitStrategy>"}) {
             return false;
         }
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_wait_strategy_has_name(),
-    "wait_strategy_name() switch missing arm for at least one tier — "
-    "add the arm or the new tier leaks the '<unknown WaitStrategy>' "
-    "sentinel into runtime observer's debug output.");
+static_assert(every_wait_strategy_has_name(), "wait_strategy_name() switch missing arm for at least one tier — "
+                                              "add the arm or the new tier leaks the '<unknown WaitStrategy>' "
+                                              "sentinel into runtime observer's debug output.");
 
 // Concept conformance — full lattice + each At<T> sub-lattice.
 static_assert(Lattice<WaitLattice>);
@@ -294,78 +293,75 @@ static_assert(std::is_empty_v<wait_strategy::BlockStrategy::element_type>);
 // EXHAUSTIVE lattice-axiom + distributivity coverage over
 // (WaitStrategy)³ = 216 triples each.
 static_assert(verify_chain_lattice_exhaustive<WaitLattice>(),
-    "WaitLattice's chain-order lattice axioms must hold at every "
-    "(WaitStrategy)³ triple — failure indicates a defect in "
-    "leq/join/meet or in the underlying enum encoding.");
+              "WaitLattice's chain-order lattice axioms must hold at every "
+              "(WaitStrategy)³ triple — failure indicates a defect in "
+              "leq/join/meet or in the underlying enum encoding.");
 static_assert(verify_chain_lattice_distributive_exhaustive<WaitLattice>(),
-    "WaitLattice's chain order must satisfy distributivity at every "
-    "(WaitStrategy)³ triple.");
+              "WaitLattice's chain order must satisfy distributivity at every "
+              "(WaitStrategy)³ triple.");
 
 // Direct order witnesses — the entire chain is increasing, with
 // SpinPause at the top (cheapest wait) and Block at the bottom.
-static_assert( WaitLattice::leq(WaitStrategy::Block,       WaitStrategy::Park));
-static_assert( WaitLattice::leq(WaitStrategy::Park,        WaitStrategy::AcquireWait));
-static_assert( WaitLattice::leq(WaitStrategy::AcquireWait, WaitStrategy::UmwaitC01));
-static_assert( WaitLattice::leq(WaitStrategy::UmwaitC01,   WaitStrategy::BoundedSpin));
-static_assert( WaitLattice::leq(WaitStrategy::BoundedSpin, WaitStrategy::SpinPause));
-static_assert( WaitLattice::leq(WaitStrategy::Block,       WaitStrategy::SpinPause));   // transitive
-static_assert(!WaitLattice::leq(WaitStrategy::SpinPause,   WaitStrategy::Block));
-static_assert(!WaitLattice::leq(WaitStrategy::SpinPause,   WaitStrategy::BoundedSpin));
-static_assert(!WaitLattice::leq(WaitStrategy::Park,        WaitStrategy::Block));
+static_assert(WaitLattice::leq(WaitStrategy::Block, WaitStrategy::Park));
+static_assert(WaitLattice::leq(WaitStrategy::Park, WaitStrategy::AcquireWait));
+static_assert(WaitLattice::leq(WaitStrategy::AcquireWait, WaitStrategy::UmwaitC01));
+static_assert(WaitLattice::leq(WaitStrategy::UmwaitC01, WaitStrategy::BoundedSpin));
+static_assert(WaitLattice::leq(WaitStrategy::BoundedSpin, WaitStrategy::SpinPause));
+static_assert(WaitLattice::leq(WaitStrategy::Block, WaitStrategy::SpinPause));  // transitive
+static_assert(!WaitLattice::leq(WaitStrategy::SpinPause, WaitStrategy::Block));
+static_assert(!WaitLattice::leq(WaitStrategy::SpinPause, WaitStrategy::BoundedSpin));
+static_assert(!WaitLattice::leq(WaitStrategy::Park, WaitStrategy::Block));
 
 // Pin bottom / top to the chain endpoints.
 static_assert(WaitLattice::bottom() == WaitStrategy::Block);
-static_assert(WaitLattice::top()    == WaitStrategy::SpinPause);
+static_assert(WaitLattice::top() == WaitStrategy::SpinPause);
 
 // Join strengthens (max); meet weakens (min).
-static_assert(WaitLattice::join(WaitStrategy::Block,       WaitStrategy::SpinPause)
-              == WaitStrategy::SpinPause);
-static_assert(WaitLattice::join(WaitStrategy::Park,        WaitStrategy::AcquireWait)
-              == WaitStrategy::AcquireWait);
-static_assert(WaitLattice::meet(WaitStrategy::Block,       WaitStrategy::SpinPause)
-              == WaitStrategy::Block);
-static_assert(WaitLattice::meet(WaitStrategy::BoundedSpin, WaitStrategy::SpinPause)
-              == WaitStrategy::BoundedSpin);
+static_assert(WaitLattice::join(WaitStrategy::Block, WaitStrategy::SpinPause) == WaitStrategy::SpinPause);
+static_assert(WaitLattice::join(WaitStrategy::Park, WaitStrategy::AcquireWait) == WaitStrategy::AcquireWait);
+static_assert(WaitLattice::meet(WaitStrategy::Block, WaitStrategy::SpinPause) == WaitStrategy::Block);
+static_assert(WaitLattice::meet(WaitStrategy::BoundedSpin, WaitStrategy::SpinPause) == WaitStrategy::BoundedSpin);
 
 // Diagnostic names.
 static_assert(WaitLattice::name() == "WaitLattice");
-static_assert(wait_strategy::BlockStrategy::name()       == "WaitLattice::At<Block>");
-static_assert(wait_strategy::ParkStrategy::name()        == "WaitLattice::At<Park>");
+static_assert(wait_strategy::BlockStrategy::name() == "WaitLattice::At<Block>");
+static_assert(wait_strategy::ParkStrategy::name() == "WaitLattice::At<Park>");
 static_assert(wait_strategy::AcquireWaitStrategy::name() == "WaitLattice::At<AcquireWait>");
-static_assert(wait_strategy::UmwaitC01Strategy::name()   == "WaitLattice::At<UmwaitC01>");
+static_assert(wait_strategy::UmwaitC01Strategy::name() == "WaitLattice::At<UmwaitC01>");
 static_assert(wait_strategy::BoundedSpinStrategy::name() == "WaitLattice::At<BoundedSpin>");
-static_assert(wait_strategy::SpinPauseStrategy::name()   == "WaitLattice::At<SpinPause>");
+static_assert(wait_strategy::SpinPauseStrategy::name() == "WaitLattice::At<SpinPause>");
 
 // Reflection-driven coverage check on At<T>::name().
 [[nodiscard]] consteval bool every_at_wait_strategy_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^WaitStrategy));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^WaitStrategy));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
-        if (WaitLattice::At<([:en:])>::name() ==
-            std::string_view{"WaitLattice::At<?>"}) {
+        if (WaitLattice::At<([:en:])>::name() == std::string_view{"WaitLattice::At<?>"}) {
             return false;
         }
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_at_wait_strategy_has_name(),
-    "WaitLattice::At<T>::name() switch missing an arm for at least "
-    "one strategy.");
+static_assert(every_at_wait_strategy_has_name(), "WaitLattice::At<T>::name() switch missing an arm for at least "
+                                                 "one strategy.");
 
 // Convenience aliases resolve correctly.
-static_assert(wait_strategy::BlockStrategy::strategy       == WaitStrategy::Block);
-static_assert(wait_strategy::ParkStrategy::strategy        == WaitStrategy::Park);
+static_assert(wait_strategy::BlockStrategy::strategy == WaitStrategy::Block);
+static_assert(wait_strategy::ParkStrategy::strategy == WaitStrategy::Park);
 static_assert(wait_strategy::AcquireWaitStrategy::strategy == WaitStrategy::AcquireWait);
-static_assert(wait_strategy::UmwaitC01Strategy::strategy   == WaitStrategy::UmwaitC01);
+static_assert(wait_strategy::UmwaitC01Strategy::strategy == WaitStrategy::UmwaitC01);
 static_assert(wait_strategy::BoundedSpinStrategy::strategy == WaitStrategy::BoundedSpin);
-static_assert(wait_strategy::SpinPauseStrategy::strategy   == WaitStrategy::SpinPause);
+static_assert(wait_strategy::SpinPauseStrategy::strategy == WaitStrategy::SpinPause);
 
 // ── Layout invariants on Graded<...,At<T>,T_> ───────────────────────
-struct OneByteValue   { char c{0}; };
-struct EightByteValue { unsigned long long v{0}; };
+struct OneByteValue {
+    char c{0};
+};
+struct EightByteValue {
+    unsigned long long v{0};
+};
 
 // SpinPauseStrategy — the most semantically-loaded tier (foreground
 // SPSC ring waiter + Vessel hot-path wait sites).
@@ -391,26 +387,26 @@ inline void runtime_smoke_test() {
     // Full WaitLattice ops at runtime.
     WaitStrategy a = WaitStrategy::Block;
     WaitStrategy b = WaitStrategy::SpinPause;
-    [[maybe_unused]] bool         l1   = WaitLattice::leq(a, b);
-    [[maybe_unused]] WaitStrategy j1   = WaitLattice::join(a, b);
-    [[maybe_unused]] WaitStrategy m1   = WaitLattice::meet(a, b);
-    [[maybe_unused]] WaitStrategy bot  = WaitLattice::bottom();
+    [[maybe_unused]] bool l1 = WaitLattice::leq(a, b);
+    [[maybe_unused]] WaitStrategy j1 = WaitLattice::join(a, b);
+    [[maybe_unused]] WaitStrategy m1 = WaitLattice::meet(a, b);
+    [[maybe_unused]] WaitStrategy bot = WaitLattice::bottom();
     [[maybe_unused]] WaitStrategy topv = WaitLattice::top();
 
     // Mid-tier ops — chain through the WAITPKG/futex boundary.
-    WaitStrategy umwait  = WaitStrategy::UmwaitC01;
-    WaitStrategy futex   = WaitStrategy::AcquireWait;
-    [[maybe_unused]] WaitStrategy j2 = WaitLattice::join(umwait, futex);   // UmwaitC01 (more pure)
-    [[maybe_unused]] WaitStrategy m2 = WaitLattice::meet(umwait, futex);   // AcquireWait
+    WaitStrategy umwait = WaitStrategy::UmwaitC01;
+    WaitStrategy futex = WaitStrategy::AcquireWait;
+    [[maybe_unused]] WaitStrategy j2 = WaitLattice::join(umwait, futex);  // UmwaitC01 (more pure)
+    [[maybe_unused]] WaitStrategy m2 = WaitLattice::meet(umwait, futex);  // AcquireWait
 
     // Graded<Absolute, SpinPauseStrategy, T> at runtime.
     OneByteValue v{42};
     SpinPauseGraded<OneByteValue> initial{v, wait_strategy::SpinPauseStrategy::bottom()};
-    auto widened   = initial.weaken(wait_strategy::SpinPauseStrategy::top());
-    auto composed  = initial.compose(widened);
-    auto rv_widen  = std::move(widened).weaken(wait_strategy::SpinPauseStrategy::top());
+    auto widened = initial.weaken(wait_strategy::SpinPauseStrategy::top());
+    auto composed = initial.compose(widened);
+    auto rv_widen = std::move(widened).weaken(wait_strategy::SpinPauseStrategy::top());
 
-    [[maybe_unused]] auto g  = rv_widen.grade();
+    [[maybe_unused]] auto g = rv_widen.grade();
     [[maybe_unused]] auto vc = composed.peek().c;
 
     // Conversion: At<WaitStrategy>::element_type → WaitStrategy.

@@ -126,29 +126,31 @@ using MemOrderLattice = ::crucible::safety::MemOrderLattice;
 // to U; mem_order_tag_v<T> projects to O.
 
 template <typename T>
-inline constexpr bool is_mem_order_v =
-    ::crucible::safety::extract::is_mem_order_v<T>;
+inline constexpr bool is_mem_order_v = ::crucible::safety::extract::is_mem_order_v<T>;
 
 template <typename T>
 concept IsMemOrder = ::crucible::safety::extract::IsMemOrder<T>;
 
 template <typename T>
     requires is_mem_order_v<T>
-using mem_order_value_t =
-    ::crucible::safety::extract::mem_order_value_t<T>;
+using mem_order_value_t = ::crucible::safety::extract::mem_order_value_t<T>;
 
 template <typename T>
     requires is_mem_order_v<T>
-inline constexpr Order mem_order_tag_v =
-    ::crucible::safety::extract::mem_order_tag_v<T>;
+inline constexpr Order mem_order_tag_v = ::crucible::safety::extract::mem_order_tag_v<T>;
 
 // ─── Convenience aliases (mirror safety::mem_order::*) ─────────────
 namespace mem_order {
-    template <typename T> using Relaxed = MemOrder<Order::Relaxed, T>;
-    template <typename T> using Acquire = MemOrder<Order::Acquire, T>;
-    template <typename T> using Release = MemOrder<Order::Release, T>;
-    template <typename T> using AcqRel  = MemOrder<Order::AcqRel,  T>;
-    template <typename T> using SeqCst  = MemOrder<Order::SeqCst,  T>;
+template <typename T>
+using Relaxed = MemOrder<Order::Relaxed, T>;
+template <typename T>
+using Acquire = MemOrder<Order::Acquire, T>;
+template <typename T>
+using Release = MemOrder<Order::Release, T>;
+template <typename T>
+using AcqRel = MemOrder<Order::AcqRel, T>;
+template <typename T>
+using SeqCst = MemOrder<Order::SeqCst, T>;
 }  // namespace mem_order
 
 // ═════════════════════════════════════════════════════════════════════
@@ -163,62 +165,59 @@ namespace mem_order {
 namespace detail::mem_order_surface_sentinel {
 
 // Alias identity — MemOrder<O, T> at fixy::sync IS the substrate type.
-static_assert(std::is_same_v<
-    ::crucible::fixy::sync::MemOrder<Order::Relaxed, int>,
-    ::crucible::safety::MemOrder<::crucible::safety::MemOrderTag_v::Relaxed, int>>,
-    "FIXY-V-084: fixy::sync::MemOrder<O, T> must alias "
-    "safety::MemOrder<O, T> verbatim.");
+static_assert(std::is_same_v<::crucible::fixy::sync::MemOrder<Order::Relaxed, int>,
+                             ::crucible::safety::MemOrder<::crucible::safety::MemOrderTag_v::Relaxed, int>>,
+              "FIXY-V-084: fixy::sync::MemOrder<O, T> must alias "
+              "safety::MemOrder<O, T> verbatim.");
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::sync::MemOrder<Order::SeqCst, double>,
-    ::crucible::safety::MemOrder<::crucible::safety::MemOrderTag_v::SeqCst, double>>,
-    "FIXY-V-084: fixy::sync::MemOrder<SeqCst, double> identity drift.");
+static_assert(std::is_same_v<::crucible::fixy::sync::MemOrder<Order::SeqCst, double>,
+                             ::crucible::safety::MemOrder<::crucible::safety::MemOrderTag_v::SeqCst, double>>,
+              "FIXY-V-084: fixy::sync::MemOrder<SeqCst, double> identity drift.");
 
 // Order enum identity — the type ID must be the substrate enum.
 static_assert(std::is_same_v<Order, ::crucible::safety::MemOrderTag_v>,
-    "FIXY-V-084: fixy::sync::Order must alias safety::MemOrderTag_v.");
+              "FIXY-V-084: fixy::sync::Order must alias safety::MemOrderTag_v.");
 
 // Enumerator value preservation — ordinals are load-bearing for
 // `MemOrderLattice::leq()` chain ordering.  Order is reversed from
 // Wait: bottom=SeqCst (weakest claim, heaviest fence), top=Relaxed.
-static_assert(static_cast<int>(Order::SeqCst)  == 0);
-static_assert(static_cast<int>(Order::AcqRel)  == 1);
+static_assert(static_cast<int>(Order::SeqCst) == 0);
+static_assert(static_cast<int>(Order::AcqRel) == 1);
 static_assert(static_cast<int>(Order::Release) == 2);
 static_assert(static_cast<int>(Order::Acquire) == 3);
 static_assert(static_cast<int>(Order::Relaxed) == 4);
 
 // MemOrderLattice surface identity — `leq()` reachable.
-static_assert(MemOrderLattice::leq(Order::SeqCst, Order::Relaxed),
-    "FIXY-V-084: SeqCst ⊑ Relaxed must hold via "
-    "fixy::sync::MemOrderLattice.");
+static_assert(MemOrderLattice::leq(Order::SeqCst, Order::Relaxed), "FIXY-V-084: SeqCst ⊑ Relaxed must hold via "
+                                                                   "fixy::sync::MemOrderLattice.");
 static_assert(!MemOrderLattice::leq(Order::Relaxed, Order::SeqCst),
-    "FIXY-V-084: Relaxed ⊑ SeqCst must FAIL — chain direction drift.");
+              "FIXY-V-084: Relaxed ⊑ SeqCst must FAIL — chain direction drift.");
 
 // EBO collapse preservation — re-export does NOT inflate the size.
 static_assert(sizeof(MemOrder<Order::Relaxed, int>) == sizeof(int),
-    "FIXY-V-084: fixy::sync::MemOrder<Relaxed, int> must EBO-collapse "
-    "to sizeof(int).");
+              "FIXY-V-084: fixy::sync::MemOrder<Relaxed, int> must EBO-collapse "
+              "to sizeof(int).");
 static_assert(sizeof(MemOrder<Order::SeqCst, double>) == sizeof(double),
-    "FIXY-V-084: fixy::sync::MemOrder<SeqCst, double> must EBO-collapse.");
+              "FIXY-V-084: fixy::sync::MemOrder<SeqCst, double> must EBO-collapse.");
 
 // Detector concept reach — IsMemOrder at fixy::sync ≡ safety::extract.
 static_assert(IsMemOrder<MemOrder<Order::Relaxed, int>>);
-static_assert(IsMemOrder<MemOrder<Order::SeqCst,  double>>);
+static_assert(IsMemOrder<MemOrder<Order::SeqCst, double>>);
 static_assert(!IsMemOrder<int>);
 static_assert(!IsMemOrder<int*>);
 
 // Projection helpers — mem_order_value_t / mem_order_tag_v.
 static_assert(std::is_same_v<mem_order_value_t<MemOrder<Order::Relaxed, int>>, int>);
-static_assert(std::is_same_v<mem_order_value_t<MemOrder<Order::SeqCst,  double>>, double>);
+static_assert(std::is_same_v<mem_order_value_t<MemOrder<Order::SeqCst, double>>, double>);
 static_assert(mem_order_tag_v<MemOrder<Order::Relaxed, int>> == Order::Relaxed);
-static_assert(mem_order_tag_v<MemOrder<Order::SeqCst,  int>> == Order::SeqCst);
+static_assert(mem_order_tag_v<MemOrder<Order::SeqCst, int>> == Order::SeqCst);
 
 // Convenience alias identity — mem_order::Relaxed<T> ≡ MemOrder<Relaxed, T>.
 static_assert(std::is_same_v<mem_order::Relaxed<int>, MemOrder<Order::Relaxed, int>>);
 static_assert(std::is_same_v<mem_order::Acquire<int>, MemOrder<Order::Acquire, int>>);
 static_assert(std::is_same_v<mem_order::Release<int>, MemOrder<Order::Release, int>>);
-static_assert(std::is_same_v<mem_order::AcqRel<int>,  MemOrder<Order::AcqRel,  int>>);
-static_assert(std::is_same_v<mem_order::SeqCst<int>,  MemOrder<Order::SeqCst,  int>>);
+static_assert(std::is_same_v<mem_order::AcqRel<int>, MemOrder<Order::AcqRel, int>>);
+static_assert(std::is_same_v<mem_order::SeqCst<int>, MemOrder<Order::SeqCst, int>>);
 
 // satisfies<> subsumption gate — reachable through the fixy surface.
 // Relaxed (top) satisfies every weaker consumer; SeqCst satisfies only
@@ -229,20 +228,20 @@ static_assert(MemOrder<Order::Relaxed, int>::template satisfies<Order::Acquire>)
 static_assert(MemOrder<Order::Relaxed, int>::template satisfies<Order::SeqCst>);
 static_assert(MemOrder<Order::SeqCst, int>::template satisfies<Order::SeqCst>);
 static_assert(!MemOrder<Order::SeqCst, int>::template satisfies<Order::Relaxed>,
-    "FIXY-V-084: SeqCst-tier value MUST NOT satisfy Relaxed — this "
-    "is the load-bearing rejection the hot-path discipline depends "
-    "on.  If this fires, seq_cst-fenced values could silently flow "
-    "through the Relaxed-required gate and violate the CLAUDE.md §VI "
-    "seq_cst ban.");
+              "FIXY-V-084: SeqCst-tier value MUST NOT satisfy Relaxed — this "
+              "is the load-bearing rejection the hot-path discipline depends "
+              "on.  If this fires, seq_cst-fenced values could silently flow "
+              "through the Relaxed-required gate and violate the CLAUDE.md §VI "
+              "seq_cst ban.");
 
 // Cardinality witness — five MemOrderTag enumerators ship today
 // (no Consume — explicit P3475R2 omission per substrate doc-block).
 // If a new tier is added the surface reddens here, forcing the
 // conv-alias namespace to be updated in lockstep.
 static_assert(std::meta::enumerators_of(^^Order).size() == 5,
-    "FIXY-V-084: MemOrderTag enumerator count drift — fixy::sync::"
-    "mem_order::* convenience-alias namespace must be updated to "
-    "mirror.");
+              "FIXY-V-084: MemOrderTag enumerator count drift — fixy::sync::"
+              "mem_order::* convenience-alias namespace must be updated to "
+              "mirror.");
 
 }  // namespace detail::mem_order_surface_sentinel
 

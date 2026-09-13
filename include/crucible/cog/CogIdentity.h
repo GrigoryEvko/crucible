@@ -134,19 +134,15 @@ struct Uuid {
     std::uint64_t lo = 0;
 
     constexpr Uuid() noexcept = default;
-    constexpr Uuid(std::uint64_t h, std::uint64_t l) noexcept
-        : hi{h}, lo{l} {}
+    constexpr Uuid(std::uint64_t h, std::uint64_t l) noexcept : hi{h}, lo{l} {}
 
-    [[nodiscard]] constexpr bool is_zero() const noexcept {
-        return hi == 0 && lo == 0;
-    }
+    [[nodiscard]] constexpr bool is_zero() const noexcept { return hi == 0 && lo == 0; }
 
     auto operator<=>(const Uuid&) const noexcept = default;
 };
 
-static_assert(sizeof(Uuid) == 16,
-    "Uuid layout drifted from (uint64_t, uint64_t) — alignment / "
-    "padding change would break federation Cipher wire format.");
+static_assert(sizeof(Uuid) == 16, "Uuid layout drifted from (uint64_t, uint64_t) — alignment / "
+                                  "padding change would break federation Cipher wire format.");
 static_assert(std::is_trivially_copyable_v<Uuid>);
 static_assert(std::is_standard_layout_v<Uuid>);
 
@@ -157,30 +153,38 @@ static_assert(std::is_standard_layout_v<Uuid>);
 // store inline in CogIdentity (one byte, EBO-eligible adjacent to
 // CogKind).
 enum class CogLevel : std::uint8_t {
-    L0_Atomic     = 0,
-    L1_Component  = 1,
-    L2_Board      = 2,
-    L3_Chassis    = 3,
-    L4_Rack       = 4,
-    L5_Row        = 5,
-    L6_Hall       = 6,
+    L0_Atomic = 0,
+    L1_Component = 1,
+    L2_Board = 2,
+    L3_Chassis = 3,
+    L4_Rack = 4,
+    L5_Row = 5,
+    L6_Hall = 6,
     L7_Datacenter = 7,
 };
 
 inline constexpr std::size_t cog_level_count = 8;
 
-[[nodiscard]] constexpr std::string_view
-cog_level_name(CogLevel L) noexcept {
+[[nodiscard]] constexpr std::string_view cog_level_name(CogLevel L) noexcept {
     switch (L) {
-        case CogLevel::L0_Atomic:     return "L0_Atomic";
-        case CogLevel::L1_Component:  return "L1_Component";
-        case CogLevel::L2_Board:      return "L2_Board";
-        case CogLevel::L3_Chassis:    return "L3_Chassis";
-        case CogLevel::L4_Rack:       return "L4_Rack";
-        case CogLevel::L5_Row:        return "L5_Row";
-        case CogLevel::L6_Hall:       return "L6_Hall";
-        case CogLevel::L7_Datacenter: return "L7_Datacenter";
-        default:                      return std::string_view{"<unknown CogLevel>"};
+        case CogLevel::L0_Atomic:
+            return "L0_Atomic";
+        case CogLevel::L1_Component:
+            return "L1_Component";
+        case CogLevel::L2_Board:
+            return "L2_Board";
+        case CogLevel::L3_Chassis:
+            return "L3_Chassis";
+        case CogLevel::L4_Rack:
+            return "L4_Rack";
+        case CogLevel::L5_Row:
+            return "L5_Row";
+        case CogLevel::L6_Hall:
+            return "L6_Hall";
+        case CogLevel::L7_Datacenter:
+            return "L7_Datacenter";
+        default:
+            return std::string_view{"<unknown CogLevel>"};
     }
 }
 
@@ -192,58 +196,79 @@ cog_level_name(CogLevel L) noexcept {
 // at the foot of the file readable as a freeze ledger.
 enum class CogKind : std::uint8_t {
     // L0 atoms
-    Gpu                = 0,
-    NicPort            = 1,
-    CpuCore            = 2,
-    DramChannel        = 3,
-    NvmeNamespace      = 4,
-    NvSwitch           = 5,
+    Gpu = 0,
+    NicPort = 1,
+    CpuCore = 2,
+    DramChannel = 3,
+    NvmeNamespace = 4,
+    NvSwitch = 5,
     OpticalTransceiver = 6,
-    PsuRail            = 7,
-    PcieLaneGroup      = 8,
-    BmcSensor          = 9,
+    PsuRail = 7,
+    PcieLaneGroup = 8,
+    BmcSensor = 9,
     // L1 aggregates
-    GpuPackage         = 10,
-    CpuSocket          = 11,
-    NicCard            = 12,
-    NvmeDrive          = 13,
-    RackPsu            = 14,
-    PcieRoot           = 15,
+    GpuPackage = 10,
+    CpuSocket = 11,
+    NicCard = 12,
+    NvmeDrive = 13,
+    RackPsu = 14,
+    PcieRoot = 15,
     // L2..L7 aggregates
-    Server             = 16,
-    Rack               = 17,
-    Row                = 18,
-    Hall               = 19,
-    Datacenter         = 20,
+    Server = 16,
+    Rack = 17,
+    Row = 18,
+    Hall = 19,
+    Datacenter = 20,
 };
 
 inline constexpr std::size_t cog_kind_count = 21;
 
-[[nodiscard]] constexpr std::string_view
-cog_kind_name(CogKind K) noexcept {
+[[nodiscard]] constexpr std::string_view cog_kind_name(CogKind K) noexcept {
     switch (K) {
-        case CogKind::Gpu:                return "Gpu";
-        case CogKind::NicPort:            return "NicPort";
-        case CogKind::CpuCore:            return "CpuCore";
-        case CogKind::DramChannel:        return "DramChannel";
-        case CogKind::NvmeNamespace:      return "NvmeNamespace";
-        case CogKind::NvSwitch:           return "NvSwitch";
-        case CogKind::OpticalTransceiver: return "OpticalTransceiver";
-        case CogKind::PsuRail:            return "PsuRail";
-        case CogKind::PcieLaneGroup:      return "PcieLaneGroup";
-        case CogKind::BmcSensor:          return "BmcSensor";
-        case CogKind::GpuPackage:         return "GpuPackage";
-        case CogKind::CpuSocket:          return "CpuSocket";
-        case CogKind::NicCard:            return "NicCard";
-        case CogKind::NvmeDrive:          return "NvmeDrive";
-        case CogKind::RackPsu:            return "RackPsu";
-        case CogKind::PcieRoot:           return "PcieRoot";
-        case CogKind::Server:             return "Server";
-        case CogKind::Rack:               return "Rack";
-        case CogKind::Row:                return "Row";
-        case CogKind::Hall:               return "Hall";
-        case CogKind::Datacenter:         return "Datacenter";
-        default:                          return std::string_view{"<unknown CogKind>"};
+        case CogKind::Gpu:
+            return "Gpu";
+        case CogKind::NicPort:
+            return "NicPort";
+        case CogKind::CpuCore:
+            return "CpuCore";
+        case CogKind::DramChannel:
+            return "DramChannel";
+        case CogKind::NvmeNamespace:
+            return "NvmeNamespace";
+        case CogKind::NvSwitch:
+            return "NvSwitch";
+        case CogKind::OpticalTransceiver:
+            return "OpticalTransceiver";
+        case CogKind::PsuRail:
+            return "PsuRail";
+        case CogKind::PcieLaneGroup:
+            return "PcieLaneGroup";
+        case CogKind::BmcSensor:
+            return "BmcSensor";
+        case CogKind::GpuPackage:
+            return "GpuPackage";
+        case CogKind::CpuSocket:
+            return "CpuSocket";
+        case CogKind::NicCard:
+            return "NicCard";
+        case CogKind::NvmeDrive:
+            return "NvmeDrive";
+        case CogKind::RackPsu:
+            return "RackPsu";
+        case CogKind::PcieRoot:
+            return "PcieRoot";
+        case CogKind::Server:
+            return "Server";
+        case CogKind::Rack:
+            return "Rack";
+        case CogKind::Row:
+            return "Row";
+        case CogKind::Hall:
+            return "Hall";
+        case CogKind::Datacenter:
+            return "Datacenter";
+        default:
+            return std::string_view{"<unknown CogKind>"};
     }
 }
 
@@ -325,28 +350,35 @@ cog_kind_name(CogKind K) noexcept {
 // instance with its own substrate-specific emit shape.
 
 enum class CogFamily : std::uint8_t {
-    Compute   = 0,
-    Network   = 1,
-    Memory    = 2,
-    Bus       = 3,
-    Power     = 4,
-    Sensor    = 5,
+    Compute = 0,
+    Network = 1,
+    Memory = 2,
+    Bus = 3,
+    Power = 4,
+    Sensor = 5,
     Container = 6,
 };
 
 inline constexpr std::size_t cog_family_count = 7;
 
-[[nodiscard]] constexpr std::string_view
-cog_family_name(CogFamily F) noexcept {
+[[nodiscard]] constexpr std::string_view cog_family_name(CogFamily F) noexcept {
     switch (F) {
-        case CogFamily::Compute:   return "Compute";
-        case CogFamily::Network:   return "Network";
-        case CogFamily::Memory:    return "Memory";
-        case CogFamily::Bus:       return "Bus";
-        case CogFamily::Power:     return "Power";
-        case CogFamily::Sensor:    return "Sensor";
-        case CogFamily::Container: return "Container";
-        default: return std::string_view{"<unknown CogFamily>"};
+        case CogFamily::Compute:
+            return "Compute";
+        case CogFamily::Network:
+            return "Network";
+        case CogFamily::Memory:
+            return "Memory";
+        case CogFamily::Bus:
+            return "Bus";
+        case CogFamily::Power:
+            return "Power";
+        case CogFamily::Sensor:
+            return "Sensor";
+        case CogFamily::Container:
+            return "Container";
+        default:
+            return std::string_view{"<unknown CogFamily>"};
     }
 }
 
@@ -357,29 +389,92 @@ template <CogKind K>
 struct cog_family_for;
 
 // L0 atoms (CogKind ordinals 0..9)
-template <> struct cog_family_for<CogKind::Gpu>                { static constexpr CogFamily value = CogFamily::Compute; };
-template <> struct cog_family_for<CogKind::NicPort>            { static constexpr CogFamily value = CogFamily::Network; };
-template <> struct cog_family_for<CogKind::CpuCore>            { static constexpr CogFamily value = CogFamily::Compute; };
-template <> struct cog_family_for<CogKind::DramChannel>        { static constexpr CogFamily value = CogFamily::Memory;  };
-template <> struct cog_family_for<CogKind::NvmeNamespace>      { static constexpr CogFamily value = CogFamily::Memory;  };
-template <> struct cog_family_for<CogKind::NvSwitch>           { static constexpr CogFamily value = CogFamily::Network; };
-template <> struct cog_family_for<CogKind::OpticalTransceiver> { static constexpr CogFamily value = CogFamily::Network; };
-template <> struct cog_family_for<CogKind::PsuRail>            { static constexpr CogFamily value = CogFamily::Power;   };
-template <> struct cog_family_for<CogKind::PcieLaneGroup>      { static constexpr CogFamily value = CogFamily::Bus;     };
-template <> struct cog_family_for<CogKind::BmcSensor>          { static constexpr CogFamily value = CogFamily::Sensor;  };
+template <>
+struct cog_family_for<CogKind::Gpu> {
+    static constexpr CogFamily value = CogFamily::Compute;
+};
+template <>
+struct cog_family_for<CogKind::NicPort> {
+    static constexpr CogFamily value = CogFamily::Network;
+};
+template <>
+struct cog_family_for<CogKind::CpuCore> {
+    static constexpr CogFamily value = CogFamily::Compute;
+};
+template <>
+struct cog_family_for<CogKind::DramChannel> {
+    static constexpr CogFamily value = CogFamily::Memory;
+};
+template <>
+struct cog_family_for<CogKind::NvmeNamespace> {
+    static constexpr CogFamily value = CogFamily::Memory;
+};
+template <>
+struct cog_family_for<CogKind::NvSwitch> {
+    static constexpr CogFamily value = CogFamily::Network;
+};
+template <>
+struct cog_family_for<CogKind::OpticalTransceiver> {
+    static constexpr CogFamily value = CogFamily::Network;
+};
+template <>
+struct cog_family_for<CogKind::PsuRail> {
+    static constexpr CogFamily value = CogFamily::Power;
+};
+template <>
+struct cog_family_for<CogKind::PcieLaneGroup> {
+    static constexpr CogFamily value = CogFamily::Bus;
+};
+template <>
+struct cog_family_for<CogKind::BmcSensor> {
+    static constexpr CogFamily value = CogFamily::Sensor;
+};
 // L1 aggregates (CogKind ordinals 10..15)
-template <> struct cog_family_for<CogKind::GpuPackage>         { static constexpr CogFamily value = CogFamily::Compute; };
-template <> struct cog_family_for<CogKind::CpuSocket>          { static constexpr CogFamily value = CogFamily::Compute; };
-template <> struct cog_family_for<CogKind::NicCard>            { static constexpr CogFamily value = CogFamily::Network; };
-template <> struct cog_family_for<CogKind::NvmeDrive>          { static constexpr CogFamily value = CogFamily::Memory;  };
-template <> struct cog_family_for<CogKind::RackPsu>            { static constexpr CogFamily value = CogFamily::Power;   };
-template <> struct cog_family_for<CogKind::PcieRoot>           { static constexpr CogFamily value = CogFamily::Bus;     };
+template <>
+struct cog_family_for<CogKind::GpuPackage> {
+    static constexpr CogFamily value = CogFamily::Compute;
+};
+template <>
+struct cog_family_for<CogKind::CpuSocket> {
+    static constexpr CogFamily value = CogFamily::Compute;
+};
+template <>
+struct cog_family_for<CogKind::NicCard> {
+    static constexpr CogFamily value = CogFamily::Network;
+};
+template <>
+struct cog_family_for<CogKind::NvmeDrive> {
+    static constexpr CogFamily value = CogFamily::Memory;
+};
+template <>
+struct cog_family_for<CogKind::RackPsu> {
+    static constexpr CogFamily value = CogFamily::Power;
+};
+template <>
+struct cog_family_for<CogKind::PcieRoot> {
+    static constexpr CogFamily value = CogFamily::Bus;
+};
 // L2..L7 enclosures (CogKind ordinals 16..20)
-template <> struct cog_family_for<CogKind::Server>             { static constexpr CogFamily value = CogFamily::Container; };
-template <> struct cog_family_for<CogKind::Rack>               { static constexpr CogFamily value = CogFamily::Container; };
-template <> struct cog_family_for<CogKind::Row>                { static constexpr CogFamily value = CogFamily::Container; };
-template <> struct cog_family_for<CogKind::Hall>               { static constexpr CogFamily value = CogFamily::Container; };
-template <> struct cog_family_for<CogKind::Datacenter>         { static constexpr CogFamily value = CogFamily::Container; };
+template <>
+struct cog_family_for<CogKind::Server> {
+    static constexpr CogFamily value = CogFamily::Container;
+};
+template <>
+struct cog_family_for<CogKind::Rack> {
+    static constexpr CogFamily value = CogFamily::Container;
+};
+template <>
+struct cog_family_for<CogKind::Row> {
+    static constexpr CogFamily value = CogFamily::Container;
+};
+template <>
+struct cog_family_for<CogKind::Hall> {
+    static constexpr CogFamily value = CogFamily::Container;
+};
+template <>
+struct cog_family_for<CogKind::Datacenter> {
+    static constexpr CogFamily value = CogFamily::Container;
+};
 
 template <CogKind K>
 inline constexpr CogFamily cog_family_v = cog_family_for<K>::value;
@@ -389,11 +484,8 @@ inline constexpr CogFamily cog_family_v = cog_family_for<K>::value;
 // Container kinds are non-substrate; CogMimic<K> refuses them at the
 // requires-clause.
 template <CogKind K>
-concept IsMimicSubstrate =
-       cog_family_v<K> == CogFamily::Compute
-    || cog_family_v<K> == CogFamily::Network
-    || cog_family_v<K> == CogFamily::Memory
-    || cog_family_v<K> == CogFamily::Bus;
+concept IsMimicSubstrate = cog_family_v<K> == CogFamily::Compute || cog_family_v<K> == CogFamily::Network
+                        || cog_family_v<K> == CogFamily::Memory || cog_family_v<K> == CogFamily::Bus;
 
 // IsComputeKind<K> — strict subset of IsMimicSubstrate restricted to
 // the Compute family.  Used by code that genuinely only schedules
@@ -436,16 +528,14 @@ concept IsComputeKind = cog_family_v<K> == CogFamily::Compute;
 //   DetSafe:  content_hash is platform-stable; uuid comparison is
 //             value-based.
 struct CogIdentity {
-    Uuid     uuid;                                        // operational identifier
-    CogLevel level = CogLevel::L0_Atomic;                 // hierarchical position
-    CogKind  kind  = CogKind::Gpu;                        // hardware classification
+    Uuid uuid;  // operational identifier
+    CogLevel level = CogLevel::L0_Atomic;  // hierarchical position
+    CogKind kind = CogKind::Gpu;  // hardware classification
 
     // Vendor-supplied provenance.  string_view fields are non-owning;
     // the underlying char storage lives in the topology arena.
-    safety::Tagged<std::string_view, safety::source::Vendor> vendor{
-        std::string_view{}};
-    safety::Tagged<std::string_view, safety::source::Vendor> model{
-        std::string_view{}};
+    safety::Tagged<std::string_view, safety::source::Vendor> vendor{std::string_view{}};
+    safety::Tagged<std::string_view, safety::source::Vendor> model{std::string_view{}};
 
     // Firmware / BIOS revisions.  Per task description, opaque
     // uint64_t — vendor-defined encoding (semver, build number, hash
@@ -461,7 +551,7 @@ struct CogIdentity {
     // *this iff this->parent == &parent, (3) lifetime spans the
     // entire fleet-running window (Cipher cold-tier promotion drops
     // the topology only on full reseed).
-    const CogIdentity*           parent   = nullptr;
+    const CogIdentity* parent = nullptr;
     std::span<const CogIdentity> children{};
 
     // Neighbor edges.  L2 = direct hardware peers (e.g., GPUs on the
@@ -474,9 +564,8 @@ struct CogIdentity {
 };
 
 static_assert(std::is_trivially_destructible_v<CogIdentity>,
-    "CogIdentity must be trivially destructible — no heap, no resources.");
-static_assert(std::is_standard_layout_v<CogIdentity>,
-    "CogIdentity must be standard-layout for Cipher serialization.");
+              "CogIdentity must be trivially destructible — no heap, no resources.");
+static_assert(std::is_standard_layout_v<CogIdentity>, "CogIdentity must be standard-layout for Cipher serialization.");
 
 // ── content_hash: the KernelCache key axis ──────────────────────────
 //
@@ -500,9 +589,7 @@ static_assert(std::is_standard_layout_v<CogIdentity>,
 // guaranteed: input is uint64_t, output is uint64_t, mixing uses only
 // xor / shift / multiply with hex constants — no float, no platform
 // intrinsic.
-[[nodiscard]] constexpr std::uint64_t
-content_hash(CogIdentity const& c) noexcept
-{
+[[nodiscard]] constexpr std::uint64_t content_hash(CogIdentity const& c) noexcept {
     // CRUCIBLE_PRE rather than P2900 `pre()` clause: GCC 16.1.1 silently
     // bypasses pre()-on-struct-const-ref at consteval (see safety/Pre.h
     // for the full diagnosis), which would let neg_cog_identity_*
@@ -540,20 +627,17 @@ namespace detail::cog_identity_self_test {
 // Cardinality.  Held at eight CogLevel atoms and twenty-one CogKind
 // atoms — adding atoms requires updating these guards AND the name-
 // coverage lambdas below AND the FOUND-I04 pin block at the file foot.
-static_assert(cog_level_count == 8,
-    "CogLevel cardinality drifted from the L0..L7 baseline — confirm "
-    "the new atom is intentional and update the pin block.");
-static_assert(cog_kind_count == 21,
-    "CogKind cardinality drifted from the 21-atom baseline — confirm "
-    "the new atom is intentional and update the pin block.");
+static_assert(cog_level_count == 8, "CogLevel cardinality drifted from the L0..L7 baseline — confirm "
+                                    "the new atom is intentional and update the pin block.");
+static_assert(cog_kind_count == 21, "CogKind cardinality drifted from the 21-atom baseline — confirm "
+                                    "the new atom is intentional and update the pin block.");
 
 // Reflection-driven name coverage — every CogLevel and CogKind atom
 // MUST have a non-sentinel name.  Adding an enumerator without
 // updating the corresponding cog_*_name() switch fires here at
 // header-inclusion time.
 [[nodiscard]] consteval bool every_cog_level_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^CogLevel));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^CogLevel));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
@@ -564,14 +648,12 @@ static_assert(cog_kind_count == 21,
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_cog_level_has_name(),
-    "cog_level_name() switch is missing an arm for at least one "
-    "CogLevel atom — add the arm or the new atom leaks the "
-    "'<unknown CogLevel>' sentinel into diagnostics.");
+static_assert(every_cog_level_has_name(), "cog_level_name() switch is missing an arm for at least one "
+                                          "CogLevel atom — add the arm or the new atom leaks the "
+                                          "'<unknown CogLevel>' sentinel into diagnostics.");
 
 [[nodiscard]] consteval bool every_cog_kind_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^CogKind));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^CogKind));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
@@ -582,22 +664,21 @@ static_assert(every_cog_level_has_name(),
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_cog_kind_has_name(),
-    "cog_kind_name() switch is missing an arm for at least one "
-    "CogKind atom — add the arm or the new atom leaks the "
-    "'<unknown CogKind>' sentinel into diagnostics.");
+static_assert(every_cog_kind_has_name(), "cog_kind_name() switch is missing an arm for at least one "
+                                         "CogKind atom — add the arm or the new atom leaks the "
+                                         "'<unknown CogKind>' sentinel into diagnostics.");
 
 // Underlying types pinned — width drift is silently ABI-breaking.
 static_assert(std::is_same_v<std::underlying_type_t<CogLevel>, std::uint8_t>,
-    "CogLevel underlying type drifted from uint8_t — ABI change.");
+              "CogLevel underlying type drifted from uint8_t — ABI change.");
 static_assert(std::is_same_v<std::underlying_type_t<CogKind>, std::uint8_t>,
-    "CogKind underlying type drifted from uint8_t — ABI change.");
+              "CogKind underlying type drifted from uint8_t — ABI change.");
 
 // IsComputeKind smoke — exactly four atoms qualify (Compute family).
-static_assert( IsComputeKind<CogKind::Gpu>);
-static_assert( IsComputeKind<CogKind::CpuCore>);
-static_assert( IsComputeKind<CogKind::GpuPackage>);
-static_assert( IsComputeKind<CogKind::CpuSocket>);
+static_assert(IsComputeKind<CogKind::Gpu>);
+static_assert(IsComputeKind<CogKind::CpuCore>);
+static_assert(IsComputeKind<CogKind::GpuPackage>);
+static_assert(IsComputeKind<CogKind::CpuSocket>);
 static_assert(!IsComputeKind<CogKind::NicPort>);
 static_assert(!IsComputeKind<CogKind::DramChannel>);
 static_assert(!IsComputeKind<CogKind::NvmeNamespace>);
@@ -620,19 +701,19 @@ static_assert(!IsComputeKind<CogKind::Datacenter>);
 // Power / Sensor / Container kinds REFUSE.  This is the broad gate
 // CogMimic<K> (GAPS-188) consumes; the §3.7 networking.md vision puts
 // every substrate Cog under per-Cog Mimic ownership, not just compute.
-static_assert( IsMimicSubstrate<CogKind::Gpu>);
-static_assert( IsMimicSubstrate<CogKind::CpuCore>);
-static_assert( IsMimicSubstrate<CogKind::GpuPackage>);
-static_assert( IsMimicSubstrate<CogKind::CpuSocket>);
-static_assert( IsMimicSubstrate<CogKind::NicPort>);
-static_assert( IsMimicSubstrate<CogKind::NvSwitch>);
-static_assert( IsMimicSubstrate<CogKind::OpticalTransceiver>);
-static_assert( IsMimicSubstrate<CogKind::NicCard>);
-static_assert( IsMimicSubstrate<CogKind::DramChannel>);
-static_assert( IsMimicSubstrate<CogKind::NvmeNamespace>);
-static_assert( IsMimicSubstrate<CogKind::NvmeDrive>);
-static_assert( IsMimicSubstrate<CogKind::PcieLaneGroup>);
-static_assert( IsMimicSubstrate<CogKind::PcieRoot>);
+static_assert(IsMimicSubstrate<CogKind::Gpu>);
+static_assert(IsMimicSubstrate<CogKind::CpuCore>);
+static_assert(IsMimicSubstrate<CogKind::GpuPackage>);
+static_assert(IsMimicSubstrate<CogKind::CpuSocket>);
+static_assert(IsMimicSubstrate<CogKind::NicPort>);
+static_assert(IsMimicSubstrate<CogKind::NvSwitch>);
+static_assert(IsMimicSubstrate<CogKind::OpticalTransceiver>);
+static_assert(IsMimicSubstrate<CogKind::NicCard>);
+static_assert(IsMimicSubstrate<CogKind::DramChannel>);
+static_assert(IsMimicSubstrate<CogKind::NvmeNamespace>);
+static_assert(IsMimicSubstrate<CogKind::NvmeDrive>);
+static_assert(IsMimicSubstrate<CogKind::PcieLaneGroup>);
+static_assert(IsMimicSubstrate<CogKind::PcieRoot>);
 static_assert(!IsMimicSubstrate<CogKind::PsuRail>);
 static_assert(!IsMimicSubstrate<CogKind::RackPsu>);
 static_assert(!IsMimicSubstrate<CogKind::BmcSensor>);
@@ -643,13 +724,11 @@ static_assert(!IsMimicSubstrate<CogKind::Hall>);
 static_assert(!IsMimicSubstrate<CogKind::Datacenter>);
 
 // CogFamily cardinality + name coverage.
-static_assert(cog_family_count == 7,
-    "CogFamily cardinality drifted from 7 — confirm the new family is "
-    "intentional and update the FOUND-I04 pin block.");
+static_assert(cog_family_count == 7, "CogFamily cardinality drifted from 7 — confirm the new family is "
+                                     "intentional and update the FOUND-I04 pin block.");
 
 [[nodiscard]] consteval bool every_cog_family_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^CogFamily));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^CogFamily));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
@@ -660,50 +739,51 @@ static_assert(cog_family_count == 7,
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_cog_family_has_name(),
-    "cog_family_name() switch is missing an arm for at least one "
-    "CogFamily atom.");
+static_assert(every_cog_family_has_name(), "cog_family_name() switch is missing an arm for at least one "
+                                           "CogFamily atom.");
 
 // content_hash determinism — same triple → same hash.
-static_assert([] {
-    CogIdentity a{};
-    a.uuid              = Uuid{0xDEADBEEFULL, 0xCAFEBABEULL};
-    a.firmware_revision = safety::Tagged<std::uint64_t,
-                                         safety::source::Vendor>{0x12345678ULL};
-    a.bios_revision     = safety::Tagged<std::uint64_t,
-                                         safety::source::Vendor>{0xABCDEF01ULL};
+static_assert(
+    [] {
+        CogIdentity a{};
+        a.uuid = Uuid{0xDEADBEEFULL, 0xCAFEBABEULL};
+        a.firmware_revision = safety::Tagged<std::uint64_t, safety::source::Vendor>{0x12345678ULL};
+        a.bios_revision = safety::Tagged<std::uint64_t, safety::source::Vendor>{0xABCDEF01ULL};
 
-    CogIdentity b = a;
-    return content_hash(a) == content_hash(b);
-}(), "content_hash diverged for identical (uuid, firmware, bios) — DetSafe.");
+        CogIdentity b = a;
+        return content_hash(a) == content_hash(b);
+    }(),
+    "content_hash diverged for identical (uuid, firmware, bios) — DetSafe.");
 
 // content_hash discriminates firmware drift — same uuid, different
 // firmware_revision → different hash (the entire purpose of including
 // firmware in the key axis).
-static_assert([] {
-    CogIdentity a{};
-    a.uuid              = Uuid{0xDEADBEEFULL, 0xCAFEBABEULL};
-    a.firmware_revision = safety::Tagged<std::uint64_t,
-                                         safety::source::Vendor>{1};
+static_assert(
+    [] {
+        CogIdentity a{};
+        a.uuid = Uuid{0xDEADBEEFULL, 0xCAFEBABEULL};
+        a.firmware_revision = safety::Tagged<std::uint64_t, safety::source::Vendor>{1};
 
-    CogIdentity b = a;
-    b.firmware_revision = safety::Tagged<std::uint64_t,
-                                         safety::source::Vendor>{2};
-    return content_hash(a) != content_hash(b);
-}(), "content_hash collapsed firmware_revision — KernelCache would "
-     "reuse stale kernels across firmware updates.");
+        CogIdentity b = a;
+        b.firmware_revision = safety::Tagged<std::uint64_t, safety::source::Vendor>{2};
+        return content_hash(a) != content_hash(b);
+    }(),
+    "content_hash collapsed firmware_revision — KernelCache would "
+    "reuse stale kernels across firmware updates.");
 
 // content_hash discriminates uuid drift — different uuid → different
 // hash even with identical firmware/bios.
-static_assert([] {
-    CogIdentity a{};
-    a.uuid = Uuid{1, 0};
+static_assert(
+    [] {
+        CogIdentity a{};
+        a.uuid = Uuid{1, 0};
 
-    CogIdentity b{};
-    b.uuid = Uuid{2, 0};
-    return content_hash(a) != content_hash(b);
-}(), "content_hash collapsed uuid — distinct Cogs would alias in "
-     "KernelCache.");
+        CogIdentity b{};
+        b.uuid = Uuid{2, 0};
+        return content_hash(a) != content_hash(b);
+    }(),
+    "content_hash collapsed uuid — distinct Cogs would alias in "
+    "KernelCache.");
 
 // ── Append-only Universe pin (FOUND-I04) ────────────────────────────
 //
@@ -719,61 +799,61 @@ static_assert([] {
 // lines below.
 
 // CogLevel pins (8 atoms)
-static_assert(static_cast<std::uint8_t>(CogLevel::L0_Atomic)     == 0,
-    "CogLevel::L0_Atomic value drifted — federation row_hash invalidated.");
-static_assert(static_cast<std::uint8_t>(CogLevel::L1_Component)  == 1,
-    "CogLevel::L1_Component value drifted — federation row_hash invalidated.");
-static_assert(static_cast<std::uint8_t>(CogLevel::L2_Board)      == 2,
-    "CogLevel::L2_Board value drifted — federation row_hash invalidated.");
-static_assert(static_cast<std::uint8_t>(CogLevel::L3_Chassis)    == 3,
-    "CogLevel::L3_Chassis value drifted — federation row_hash invalidated.");
-static_assert(static_cast<std::uint8_t>(CogLevel::L4_Rack)       == 4,
-    "CogLevel::L4_Rack value drifted — federation row_hash invalidated.");
-static_assert(static_cast<std::uint8_t>(CogLevel::L5_Row)        == 5,
-    "CogLevel::L5_Row value drifted — federation row_hash invalidated.");
-static_assert(static_cast<std::uint8_t>(CogLevel::L6_Hall)       == 6,
-    "CogLevel::L6_Hall value drifted — federation row_hash invalidated.");
+static_assert(static_cast<std::uint8_t>(CogLevel::L0_Atomic) == 0,
+              "CogLevel::L0_Atomic value drifted — federation row_hash invalidated.");
+static_assert(static_cast<std::uint8_t>(CogLevel::L1_Component) == 1,
+              "CogLevel::L1_Component value drifted — federation row_hash invalidated.");
+static_assert(static_cast<std::uint8_t>(CogLevel::L2_Board) == 2,
+              "CogLevel::L2_Board value drifted — federation row_hash invalidated.");
+static_assert(static_cast<std::uint8_t>(CogLevel::L3_Chassis) == 3,
+              "CogLevel::L3_Chassis value drifted — federation row_hash invalidated.");
+static_assert(static_cast<std::uint8_t>(CogLevel::L4_Rack) == 4,
+              "CogLevel::L4_Rack value drifted — federation row_hash invalidated.");
+static_assert(static_cast<std::uint8_t>(CogLevel::L5_Row) == 5,
+              "CogLevel::L5_Row value drifted — federation row_hash invalidated.");
+static_assert(static_cast<std::uint8_t>(CogLevel::L6_Hall) == 6,
+              "CogLevel::L6_Hall value drifted — federation row_hash invalidated.");
 static_assert(static_cast<std::uint8_t>(CogLevel::L7_Datacenter) == 7,
-    "CogLevel::L7_Datacenter value drifted — federation row_hash invalidated.");
+              "CogLevel::L7_Datacenter value drifted — federation row_hash invalidated.");
 
 // CogKind pins (21 atoms — L0 atoms 0..9, L1 aggregates 10..15,
 // L2..L7 aggregates 16..20)
-static_assert(static_cast<std::uint8_t>(CogKind::Gpu)                ==  0);
-static_assert(static_cast<std::uint8_t>(CogKind::NicPort)            ==  1);
-static_assert(static_cast<std::uint8_t>(CogKind::CpuCore)            ==  2);
-static_assert(static_cast<std::uint8_t>(CogKind::DramChannel)        ==  3);
-static_assert(static_cast<std::uint8_t>(CogKind::NvmeNamespace)      ==  4);
-static_assert(static_cast<std::uint8_t>(CogKind::NvSwitch)           ==  5);
-static_assert(static_cast<std::uint8_t>(CogKind::OpticalTransceiver) ==  6);
-static_assert(static_cast<std::uint8_t>(CogKind::PsuRail)            ==  7);
-static_assert(static_cast<std::uint8_t>(CogKind::PcieLaneGroup)      ==  8);
-static_assert(static_cast<std::uint8_t>(CogKind::BmcSensor)          ==  9);
-static_assert(static_cast<std::uint8_t>(CogKind::GpuPackage)         == 10);
-static_assert(static_cast<std::uint8_t>(CogKind::CpuSocket)          == 11);
-static_assert(static_cast<std::uint8_t>(CogKind::NicCard)            == 12);
-static_assert(static_cast<std::uint8_t>(CogKind::NvmeDrive)          == 13);
-static_assert(static_cast<std::uint8_t>(CogKind::RackPsu)            == 14);
-static_assert(static_cast<std::uint8_t>(CogKind::PcieRoot)           == 15);
-static_assert(static_cast<std::uint8_t>(CogKind::Server)             == 16);
-static_assert(static_cast<std::uint8_t>(CogKind::Rack)               == 17);
-static_assert(static_cast<std::uint8_t>(CogKind::Row)                == 18);
-static_assert(static_cast<std::uint8_t>(CogKind::Hall)               == 19);
-static_assert(static_cast<std::uint8_t>(CogKind::Datacenter)         == 20);
+static_assert(static_cast<std::uint8_t>(CogKind::Gpu) == 0);
+static_assert(static_cast<std::uint8_t>(CogKind::NicPort) == 1);
+static_assert(static_cast<std::uint8_t>(CogKind::CpuCore) == 2);
+static_assert(static_cast<std::uint8_t>(CogKind::DramChannel) == 3);
+static_assert(static_cast<std::uint8_t>(CogKind::NvmeNamespace) == 4);
+static_assert(static_cast<std::uint8_t>(CogKind::NvSwitch) == 5);
+static_assert(static_cast<std::uint8_t>(CogKind::OpticalTransceiver) == 6);
+static_assert(static_cast<std::uint8_t>(CogKind::PsuRail) == 7);
+static_assert(static_cast<std::uint8_t>(CogKind::PcieLaneGroup) == 8);
+static_assert(static_cast<std::uint8_t>(CogKind::BmcSensor) == 9);
+static_assert(static_cast<std::uint8_t>(CogKind::GpuPackage) == 10);
+static_assert(static_cast<std::uint8_t>(CogKind::CpuSocket) == 11);
+static_assert(static_cast<std::uint8_t>(CogKind::NicCard) == 12);
+static_assert(static_cast<std::uint8_t>(CogKind::NvmeDrive) == 13);
+static_assert(static_cast<std::uint8_t>(CogKind::RackPsu) == 14);
+static_assert(static_cast<std::uint8_t>(CogKind::PcieRoot) == 15);
+static_assert(static_cast<std::uint8_t>(CogKind::Server) == 16);
+static_assert(static_cast<std::uint8_t>(CogKind::Rack) == 17);
+static_assert(static_cast<std::uint8_t>(CogKind::Row) == 18);
+static_assert(static_cast<std::uint8_t>(CogKind::Hall) == 19);
+static_assert(static_cast<std::uint8_t>(CogKind::Datacenter) == 20);
 
 // CogFamily ordinal pins (7 atoms).  Frozen by FOUND-I04 — federation
 // row_hash drift is silent if a value changes; downstream consumers
 // of cog_family_v<K> would fold to a different bit pattern.
-static_assert(static_cast<std::uint8_t>(CogFamily::Compute)   == 0,
-    "CogFamily::Compute drifted — federation row_hash invalidated.");
-static_assert(static_cast<std::uint8_t>(CogFamily::Network)   == 1);
-static_assert(static_cast<std::uint8_t>(CogFamily::Memory)    == 2);
-static_assert(static_cast<std::uint8_t>(CogFamily::Bus)       == 3);
-static_assert(static_cast<std::uint8_t>(CogFamily::Power)     == 4);
-static_assert(static_cast<std::uint8_t>(CogFamily::Sensor)    == 5);
+static_assert(static_cast<std::uint8_t>(CogFamily::Compute) == 0,
+              "CogFamily::Compute drifted — federation row_hash invalidated.");
+static_assert(static_cast<std::uint8_t>(CogFamily::Network) == 1);
+static_assert(static_cast<std::uint8_t>(CogFamily::Memory) == 2);
+static_assert(static_cast<std::uint8_t>(CogFamily::Bus) == 3);
+static_assert(static_cast<std::uint8_t>(CogFamily::Power) == 4);
+static_assert(static_cast<std::uint8_t>(CogFamily::Sensor) == 5);
 static_assert(static_cast<std::uint8_t>(CogFamily::Container) == 6);
 
 static_assert(std::is_same_v<std::underlying_type_t<CogFamily>, std::uint8_t>,
-    "CogFamily underlying type drifted from uint8_t — ABI change.");
+              "CogFamily underlying type drifted from uint8_t — ABI change.");
 
 // CogKind → CogFamily mapping pins (21 atoms).  Frozen by FOUND-I04.
 // A failure here means someone re-assigned an existing kind to a
@@ -781,28 +861,28 @@ static_assert(std::is_same_v<std::underlying_type_t<CogFamily>, std::uint8_t>,
 // Cipher checkpoint and shared archive that mentions this kind would
 // invalidate.  Re-mapping requires a major-version bump, not a silent
 // edit.
-static_assert(cog_family_v<CogKind::Gpu>                == CogFamily::Compute);
-static_assert(cog_family_v<CogKind::NicPort>            == CogFamily::Network);
-static_assert(cog_family_v<CogKind::CpuCore>            == CogFamily::Compute);
-static_assert(cog_family_v<CogKind::DramChannel>        == CogFamily::Memory);
-static_assert(cog_family_v<CogKind::NvmeNamespace>      == CogFamily::Memory);
-static_assert(cog_family_v<CogKind::NvSwitch>           == CogFamily::Network);
+static_assert(cog_family_v<CogKind::Gpu> == CogFamily::Compute);
+static_assert(cog_family_v<CogKind::NicPort> == CogFamily::Network);
+static_assert(cog_family_v<CogKind::CpuCore> == CogFamily::Compute);
+static_assert(cog_family_v<CogKind::DramChannel> == CogFamily::Memory);
+static_assert(cog_family_v<CogKind::NvmeNamespace> == CogFamily::Memory);
+static_assert(cog_family_v<CogKind::NvSwitch> == CogFamily::Network);
 static_assert(cog_family_v<CogKind::OpticalTransceiver> == CogFamily::Network);
-static_assert(cog_family_v<CogKind::PsuRail>            == CogFamily::Power);
-static_assert(cog_family_v<CogKind::PcieLaneGroup>      == CogFamily::Bus);
-static_assert(cog_family_v<CogKind::BmcSensor>          == CogFamily::Sensor);
-static_assert(cog_family_v<CogKind::GpuPackage>         == CogFamily::Compute);
-static_assert(cog_family_v<CogKind::CpuSocket>          == CogFamily::Compute);
-static_assert(cog_family_v<CogKind::NicCard>            == CogFamily::Network);
-static_assert(cog_family_v<CogKind::NvmeDrive>          == CogFamily::Memory);
-static_assert(cog_family_v<CogKind::RackPsu>            == CogFamily::Power);
-static_assert(cog_family_v<CogKind::PcieRoot>           == CogFamily::Bus);
-static_assert(cog_family_v<CogKind::Server>             == CogFamily::Container);
-static_assert(cog_family_v<CogKind::Rack>               == CogFamily::Container);
-static_assert(cog_family_v<CogKind::Row>                == CogFamily::Container);
-static_assert(cog_family_v<CogKind::Hall>               == CogFamily::Container);
-static_assert(cog_family_v<CogKind::Datacenter>         == CogFamily::Container);
+static_assert(cog_family_v<CogKind::PsuRail> == CogFamily::Power);
+static_assert(cog_family_v<CogKind::PcieLaneGroup> == CogFamily::Bus);
+static_assert(cog_family_v<CogKind::BmcSensor> == CogFamily::Sensor);
+static_assert(cog_family_v<CogKind::GpuPackage> == CogFamily::Compute);
+static_assert(cog_family_v<CogKind::CpuSocket> == CogFamily::Compute);
+static_assert(cog_family_v<CogKind::NicCard> == CogFamily::Network);
+static_assert(cog_family_v<CogKind::NvmeDrive> == CogFamily::Memory);
+static_assert(cog_family_v<CogKind::RackPsu> == CogFamily::Power);
+static_assert(cog_family_v<CogKind::PcieRoot> == CogFamily::Bus);
+static_assert(cog_family_v<CogKind::Server> == CogFamily::Container);
+static_assert(cog_family_v<CogKind::Rack> == CogFamily::Container);
+static_assert(cog_family_v<CogKind::Row> == CogFamily::Container);
+static_assert(cog_family_v<CogKind::Hall> == CogFamily::Container);
+static_assert(cog_family_v<CogKind::Datacenter> == CogFamily::Container);
 
-} // namespace detail::cog_identity_self_test
+}  // namespace detail::cog_identity_self_test
 
-} // namespace crucible::cog
+}  // namespace crucible::cog

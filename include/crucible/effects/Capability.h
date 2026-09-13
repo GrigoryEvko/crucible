@@ -86,7 +86,7 @@
 #include <crucible/Platform.h>
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>
-#include <crucible/effects/ExecCtx.h>      // cap_permitted_row + is_cap_type
+#include <crucible/effects/ExecCtx.h>  // cap_permitted_row + is_cap_type
 
 #include <string_view>
 #include <type_traits>
@@ -101,14 +101,14 @@ namespace crucible::effects {
 // coherence static_assert.
 
 template <Effect E, class Source>
-concept CanMintCap = is_cap_type_v<Source>
-                  && row_contains_v<cap_permitted_row_t<Source>, E>;
+concept CanMintCap = is_cap_type_v<Source> && row_contains_v<cap_permitted_row_t<Source>, E>;
 
 // ── Capability<Cap, Source> ─────────────────────────────────────────
 
 // Forward-declared so cap_mint_key's friend declaration can name the
 // Capability template before its definition.
-template <Effect Cap, class Source> class Capability;
+template <Effect Cap, class Source>
+class Capability;
 
 // ── cap_mint_key: passkey for mint_cap (fixy-A3-013) ────────────────
 //
@@ -186,17 +186,16 @@ public:
     // conversions; the call site must spell `Capability<E,S>{key}`.
     explicit constexpr Capability(cap_mint_key) noexcept {}
 
-
     // ── Move-only linearity ─────────────────────────────────────────
-    Capability(Capability const&)            = delete;
+    Capability(Capability const&) = delete;
     Capability& operator=(Capability const&) = delete;
-    Capability(Capability&&)            noexcept = default;
+    Capability(Capability&&) noexcept = default;
     Capability& operator=(Capability&&) noexcept = default;
-    ~Capability()                                = default;
+    ~Capability() = default;
 
     // ── Type-level accessors ────────────────────────────────────────
-    static constexpr Effect cap_v   = Cap;
-    using source_type               = Source;
+    static constexpr Effect cap_v = Cap;
+    using source_type = Source;
 
     // ── Consume marker ──────────────────────────────────────────────
     //
@@ -231,9 +230,7 @@ public:
     constexpr void consume() && noexcept {}
 
     // ── Diagnostic ──────────────────────────────────────────────────
-    [[nodiscard]] static consteval std::string_view kind_name() noexcept {
-        return "Capability";
-    }
+    [[nodiscard]] static consteval std::string_view kind_name() noexcept { return "Capability"; }
 };
 
 // ── Mint factory ────────────────────────────────────────────────────
@@ -254,10 +251,14 @@ template <Effect E, class Source>
 
 // ── Recognition trait + concept ─────────────────────────────────────
 
-template <class T>            struct is_capability                      : std::false_type {};
-template <Effect E, class S>  struct is_capability<Capability<E, S>>    : std::true_type  {};
-template <class T>            inline constexpr bool is_capability_v = is_capability<T>::value;
-template <class T>            concept IsCapability = is_capability_v<T>;
+template <class T>
+struct is_capability : std::false_type {};
+template <Effect E, class S>
+struct is_capability<Capability<E, S>> : std::true_type {};
+template <class T>
+inline constexpr bool is_capability_v = is_capability<T>::value;
+template <class T>
+concept IsCapability = is_capability_v<T>;
 
 // ── Discrimination ──────────────────────────────────────────────────
 //
@@ -269,9 +270,9 @@ template <class T>            concept IsCapability = is_capability_v<T>;
 // Bg-minted cap specifically).
 
 template <class T, Effect E>
-struct cap_matches                                : std::false_type {};
+struct cap_matches : std::false_type {};
 template <Effect E, class S>
-struct cap_matches<Capability<E, S>, E>           : std::true_type  {};
+struct cap_matches<Capability<E, S>, E> : std::true_type {};
 template <class T, Effect E>
 inline constexpr bool cap_matches_v = cap_matches<T, E>::value;
 
@@ -287,15 +288,23 @@ concept HasCapAndSource = std::is_same_v<T, Capability<E, S>>;
 // Declared HERE (before ExecCtx-driven minting / CapMatchesCtx)
 // because those downstream consumers reference cap_of_v.
 
-template <class T> struct cap_of;
+template <class T>
+struct cap_of;
 template <Effect E, class S>
-struct cap_of<Capability<E, S>> { static constexpr Effect value = E; };
-template <class T> inline constexpr Effect cap_of_v = cap_of<T>::value;
+struct cap_of<Capability<E, S>> {
+    static constexpr Effect value = E;
+};
+template <class T>
+inline constexpr Effect cap_of_v = cap_of<T>::value;
 
-template <class T> struct source_of;
+template <class T>
+struct source_of;
 template <Effect E, class S>
-struct source_of<Capability<E, S>> { using type = S; };
-template <class T> using source_of_t = typename source_of<T>::type;
+struct source_of<Capability<E, S>> {
+    using type = S;
+};
+template <class T>
+using source_of_t = typename source_of<T>::type;
 
 // ── ExecCtx-driven minting ──────────────────────────────────────────
 //
@@ -315,8 +324,7 @@ template <class T> using source_of_t = typename source_of<T>::type;
 
 template <Effect E, IsExecCtx Ctx>
     requires CtxCanMint<Ctx, E>
-[[nodiscard]] constexpr Capability<E, cap_type_of_t<Ctx>>
-mint_from_ctx(Ctx const& ctx) noexcept {
+[[nodiscard]] constexpr Capability<E, cap_type_of_t<Ctx>> mint_from_ctx(Ctx const& ctx) noexcept {
     // fixy-A3-005: pass the ctx's already-constructed Cap member
     // rather than fabricating a fresh Source{}.  The ctx's Cap was
     // legitimately constructed via the mint_*_context passkey path;
@@ -337,9 +345,7 @@ mint_from_ctx(Ctx const& ctx) noexcept {
 // "see" it.
 
 template <class Cap, class Ctx>
-concept CapMatchesCtx = IsCapability<Cap>
-                     && IsExecCtx<Ctx>
-                     && row_contains_v<row_type_of_t<Ctx>, cap_of_v<Cap>>;
+concept CapMatchesCtx = IsCapability<Cap> && IsExecCtx<Ctx> && row_contains_v<row_type_of_t<Ctx>, cap_of_v<Cap>>;
 
 // ── Bare-cap extraction ────────────────────────────────────────────
 //
@@ -358,21 +364,24 @@ concept CapMatchesCtx = IsCapability<Cap>
 
 template <Effect E, class S>
 [[nodiscard]] constexpr cap::Alloc extract_bare(Capability<E, S>&& c) noexcept
-    requires (E == Effect::Alloc) {
+    requires(E == Effect::Alloc)
+{
     std::move(c).consume();
     return cap::Alloc{};
 }
 
 template <Effect E, class S>
 [[nodiscard]] constexpr cap::IO extract_bare(Capability<E, S>&& c) noexcept
-    requires (E == Effect::IO) {
+    requires(E == Effect::IO)
+{
     std::move(c).consume();
     return cap::IO{};
 }
 
 template <Effect E, class S>
 [[nodiscard]] constexpr cap::Block extract_bare(Capability<E, S>&& c) noexcept
-    requires (E == Effect::Block) {
+    requires(E == Effect::Block)
+{
     std::move(c).consume();
     return cap::Block{};
 }
@@ -382,17 +391,17 @@ namespace detail::capability_self_test {
 
 // ── Layout ──────────────────────────────────────────────────────────
 static_assert(sizeof(Capability<Effect::Alloc, Bg>) == 1,
-    "Capability<E, S> must be 1 byte (empty class with phantom Source)");
-static_assert(sizeof(Capability<Effect::IO,    Init>) == 1);
+              "Capability<E, S> must be 1 byte (empty class with phantom Source)");
+static_assert(sizeof(Capability<Effect::IO, Init>) == 1);
 static_assert(sizeof(Capability<Effect::Block, Test>) == 1);
 
 // ── Linearity ───────────────────────────────────────────────────────
 static_assert(!std::is_copy_constructible_v<Capability<Effect::Alloc, Bg>>,
-    "Capability must NOT be copyable (linearity discipline)");
+              "Capability must NOT be copyable (linearity discipline)");
 static_assert(!std::is_copy_assignable_v<Capability<Effect::Alloc, Bg>>);
-static_assert( std::is_move_constructible_v<Capability<Effect::Alloc, Bg>>);
-static_assert( std::is_move_assignable_v<Capability<Effect::Alloc, Bg>>);
-static_assert( std::is_nothrow_move_constructible_v<Capability<Effect::Alloc, Bg>>);
+static_assert(std::is_move_constructible_v<Capability<Effect::Alloc, Bg>>);
+static_assert(std::is_move_assignable_v<Capability<Effect::Alloc, Bg>>);
+static_assert(std::is_nothrow_move_constructible_v<Capability<Effect::Alloc, Bg>>);
 
 // ── consume() rvalue-qualifier pin (fixy-A3-012) ────────────────────
 //
@@ -422,23 +431,21 @@ static_assert( std::is_nothrow_move_constructible_v<Capability<Effect::Alloc, Bg
 template <class, class = void>
 struct cap_consume_callable_lvalue : std::false_type {};
 template <class C>
-struct cap_consume_callable_lvalue<C,
-    std::void_t<decltype(std::declval<C&>().consume())>> : std::true_type {};
+struct cap_consume_callable_lvalue<C, std::void_t<decltype(std::declval<C&>().consume())>> : std::true_type {};
 
 template <class, class = void>
 struct cap_consume_callable_rvalue : std::false_type {};
 template <class C>
-struct cap_consume_callable_rvalue<C,
-    std::void_t<decltype(std::declval<C>().consume())>> : std::true_type {};
+struct cap_consume_callable_rvalue<C, std::void_t<decltype(std::declval<C>().consume())>> : std::true_type {};
 
 static_assert(!cap_consume_callable_lvalue<Capability<Effect::Alloc, Bg>>::value,
-    "fixy-A3-012: Capability::consume() must NOT be callable on an "
-    "lvalue — discipline says the call site must spell `std::move(c)."
-    "consume()` to make linearity grep-visible.  A maintainer dropping "
-    "the rvalue-ref qualifier would defeat this gate.");
-static_assert( cap_consume_callable_rvalue<Capability<Effect::Alloc, Bg>>::value,
-    "fixy-A3-012: Capability::consume() must be callable on a non-"
-    "const rvalue — this is the canonical consumption path.");
+              "fixy-A3-012: Capability::consume() must NOT be callable on an "
+              "lvalue — discipline says the call site must spell `std::move(c)."
+              "consume()` to make linearity grep-visible.  A maintainer dropping "
+              "the rvalue-ref qualifier would defeat this gate.");
+static_assert(cap_consume_callable_rvalue<Capability<Effect::Alloc, Bg>>::value,
+              "fixy-A3-012: Capability::consume() must be callable on a non-"
+              "const rvalue — this is the canonical consumption path.");
 
 // ── Construction discipline ─────────────────────────────────────────
 //
@@ -447,7 +454,7 @@ static_assert( cap_consume_callable_rvalue<Capability<Effect::Alloc, Bg>>::value
 // cap_mint_key by value.  Forging a Capability<> via direct
 // default instantiation is a compile error.
 static_assert(!std::is_default_constructible_v<Capability<Effect::Alloc, Bg>>);
-static_assert(!std::is_default_constructible_v<Capability<Effect::IO,    Init>>);
+static_assert(!std::is_default_constructible_v<Capability<Effect::IO, Init>>);
 static_assert(!std::is_default_constructible_v<Capability<Effect::Block, Test>>);
 
 // ── Passkey gate (fixy-A3-013) ──────────────────────────────────────
@@ -456,22 +463,22 @@ static_assert(!std::is_default_constructible_v<Capability<Effect::Block, Test>>)
 //     mint_cap can produce a cap_mint_key (its default ctor is private,
 //     friended only to mint_cap).  Both halves below are load-bearing:
 //     drop either and forgeability creeps back in.
-static_assert( std::is_constructible_v<Capability<Effect::Alloc, Bg>, cap_mint_key>);
-static_assert( std::is_constructible_v<Capability<Effect::IO,    Init>, cap_mint_key>);
-static_assert( std::is_constructible_v<Capability<Effect::Block, Test>, cap_mint_key>);
+static_assert(std::is_constructible_v<Capability<Effect::Alloc, Bg>, cap_mint_key>);
+static_assert(std::is_constructible_v<Capability<Effect::IO, Init>, cap_mint_key>);
+static_assert(std::is_constructible_v<Capability<Effect::Block, Test>, cap_mint_key>);
 static_assert(!std::is_default_constructible_v<cap_mint_key>,
-    "fixy-A3-013: cap_mint_key's default ctor must NOT be public — "
-    "only mint_cap is friended to construct one.  If this fails, the "
-    "passkey gate has been silently widened.");
+              "fixy-A3-013: cap_mint_key's default ctor must NOT be public — "
+              "only mint_cap is friended to construct one.  If this fails, the "
+              "passkey gate has been silently widened.");
 
 // (2) Capability is NOT constructible from `int{}` / other arbitrary
 //     bag-of-bytes — `explicit` on the cap_mint_key ctor prevents
 //     implicit conversions through the passkey path.
 static_assert(!std::is_constructible_v<Capability<Effect::Alloc, Bg>, int>);
 static_assert(!std::is_convertible_v<cap_mint_key, Capability<Effect::Alloc, Bg>>,
-    "fixy-A3-013: the passkey ctor must be explicit — implicit "
-    "cap_mint_key → Capability conversion would let an `auto x = key;` "
-    "site silently mint a Capability without spelling the construction.");
+              "fixy-A3-013: the passkey ctor must be explicit — implicit "
+              "cap_mint_key → Capability conversion would let an `auto x = key;` "
+              "site silently mint a Capability without spelling the construction.");
 
 // (3) Defense-in-depth: exercise friend resolution at header inclusion.
 //     If a future requires-clause evolution desyncs the cap_mint_key
@@ -482,9 +489,9 @@ static_assert(!std::is_convertible_v<cap_mint_key, Capability<Effect::Alloc, Bg>
 //     This is the live mechanical regression-pin — the structural
 //     foreclosure of the templated-friend brittleness.
 static_assert(noexcept(mint_cap<Effect::Alloc>(std::declval<Bg const&>())),
-    "fixy-A3-013: mint_cap<Effect::Alloc>(Bg) must resolve and be "
-    "noexcept.  If this fails, the cap_mint_key friend declaration has "
-    "drifted from mint_cap's signature — re-sync the requires-clause.");
+              "fixy-A3-013: mint_cap<Effect::Alloc>(Bg) must resolve and be "
+              "noexcept.  If this fails, the cap_mint_key friend declaration has "
+              "drifted from mint_cap's signature — re-sync the requires-clause.");
 static_assert(noexcept(mint_cap<Effect::IO>(std::declval<Init const&>())));
 static_assert(noexcept(mint_cap<Effect::Block>(std::declval<Test const&>())));
 
@@ -492,8 +499,8 @@ static_assert(noexcept(mint_cap<Effect::Block>(std::declval<Test const&>())));
 //     preserved.  An empty key adds no per-cap overhead.
 static_assert(std::is_empty_v<cap_mint_key>);
 static_assert(sizeof(Capability<Effect::Alloc, Bg>) == 1,
-    "fixy-A3-013: passkey ctor must preserve the 1-byte size guarantee "
-    "(cap_mint_key is empty + Capability still has no state members + EBO).");
+              "fixy-A3-013: passkey ctor must preserve the 1-byte size guarantee "
+              "(cap_mint_key is empty + Capability still has no state members + EBO).");
 
 // ── CanMintCap coverage ─────────────────────────────────────────────
 //
@@ -501,20 +508,20 @@ static_assert(sizeof(Capability<Effect::Alloc, Bg>) == 1,
 // future revision of cap_permitted_row catches drift.
 
 // Bg permits all four atoms it aggregates plus its own thread tag.
-static_assert( CanMintCap<Effect::Alloc, Bg>);
-static_assert( CanMintCap<Effect::IO,    Bg>);
-static_assert( CanMintCap<Effect::Block, Bg>);
-static_assert( CanMintCap<Effect::Bg,    Bg>);
-static_assert(!CanMintCap<Effect::Init,  Bg>);
-static_assert(!CanMintCap<Effect::Test,  Bg>);
+static_assert(CanMintCap<Effect::Alloc, Bg>);
+static_assert(CanMintCap<Effect::IO, Bg>);
+static_assert(CanMintCap<Effect::Block, Bg>);
+static_assert(CanMintCap<Effect::Bg, Bg>);
+static_assert(!CanMintCap<Effect::Init, Bg>);
+static_assert(!CanMintCap<Effect::Test, Bg>);
 
 // Init permits Alloc, IO, and its own thread tag — NO Block.
-static_assert( CanMintCap<Effect::Alloc, Init>);
-static_assert( CanMintCap<Effect::IO,    Init>);
-static_assert( CanMintCap<Effect::Init,  Init>);
+static_assert(CanMintCap<Effect::Alloc, Init>);
+static_assert(CanMintCap<Effect::IO, Init>);
+static_assert(CanMintCap<Effect::Init, Init>);
 static_assert(!CanMintCap<Effect::Block, Init>);
-static_assert(!CanMintCap<Effect::Bg,    Init>);
-static_assert(!CanMintCap<Effect::Test,  Init>);
+static_assert(!CanMintCap<Effect::Bg, Init>);
+static_assert(!CanMintCap<Effect::Test, Init>);
 
 // Test permits Alloc, IO, Block, and its own thread tag.
 //
@@ -529,20 +536,20 @@ static_assert(!CanMintCap<Effect::Test,  Init>);
 // claimed "unrestricted" which falsely implied Bg/Init mintability —
 // fixed in commit "FIXY-FOUND-102: docs aligned with structural
 // isolation".
-static_assert( CanMintCap<Effect::Alloc, Test>);
-static_assert( CanMintCap<Effect::IO,    Test>);
-static_assert( CanMintCap<Effect::Block, Test>);
-static_assert( CanMintCap<Effect::Test,  Test>);
-static_assert(!CanMintCap<Effect::Bg,    Test>);
-static_assert(!CanMintCap<Effect::Init,  Test>);
+static_assert(CanMintCap<Effect::Alloc, Test>);
+static_assert(CanMintCap<Effect::IO, Test>);
+static_assert(CanMintCap<Effect::Block, Test>);
+static_assert(CanMintCap<Effect::Test, Test>);
+static_assert(!CanMintCap<Effect::Bg, Test>);
+static_assert(!CanMintCap<Effect::Init, Test>);
 
 // Foreground permits NOTHING.
 static_assert(!CanMintCap<Effect::Alloc, ctx_cap::Fg>);
-static_assert(!CanMintCap<Effect::IO,    ctx_cap::Fg>);
+static_assert(!CanMintCap<Effect::IO, ctx_cap::Fg>);
 static_assert(!CanMintCap<Effect::Block, ctx_cap::Fg>);
-static_assert(!CanMintCap<Effect::Bg,    ctx_cap::Fg>);
-static_assert(!CanMintCap<Effect::Init,  ctx_cap::Fg>);
-static_assert(!CanMintCap<Effect::Test,  ctx_cap::Fg>);
+static_assert(!CanMintCap<Effect::Bg, ctx_cap::Fg>);
+static_assert(!CanMintCap<Effect::Init, ctx_cap::Fg>);
+static_assert(!CanMintCap<Effect::Test, ctx_cap::Fg>);
 
 // Non-cap-type sources are rejected by the is_cap_type_v gate
 // (the first conjunct of CanMintCap).
@@ -550,28 +557,28 @@ static_assert(!CanMintCap<Effect::Alloc, int>);
 static_assert(!CanMintCap<Effect::Alloc, void>);
 
 // ── Recognition + extractors ────────────────────────────────────────
-static_assert( is_capability_v<Capability<Effect::Alloc, Bg>>);
+static_assert(is_capability_v<Capability<Effect::Alloc, Bg>>);
 static_assert(!is_capability_v<int>);
 static_assert(!is_capability_v<Bg>);
 static_assert(!is_capability_v<cap::Alloc>);  // bare cap is NOT a Capability
 
 static_assert(cap_of_v<Capability<Effect::Alloc, Bg>> == Effect::Alloc);
-static_assert(cap_of_v<Capability<Effect::IO,    Init>> == Effect::IO);
+static_assert(cap_of_v<Capability<Effect::IO, Init>> == Effect::IO);
 static_assert(cap_of_v<Capability<Effect::Block, Test>> == Effect::Block);
 
-static_assert(std::is_same_v<source_of_t<Capability<Effect::Alloc, Bg>>,   Bg>);
-static_assert(std::is_same_v<source_of_t<Capability<Effect::IO,    Init>>, Init>);
+static_assert(std::is_same_v<source_of_t<Capability<Effect::Alloc, Bg>>, Bg>);
+static_assert(std::is_same_v<source_of_t<Capability<Effect::IO, Init>>, Init>);
 static_assert(std::is_same_v<source_of_t<Capability<Effect::Block, Test>>, Test>);
 
 // ── Discrimination ──────────────────────────────────────────────────
-static_assert( cap_matches_v<Capability<Effect::Alloc, Bg>,   Effect::Alloc>);
-static_assert(!cap_matches_v<Capability<Effect::Alloc, Bg>,   Effect::IO>);
-static_assert( cap_matches_v<Capability<Effect::Alloc, Init>, Effect::Alloc>);  // any source
-static_assert(!cap_matches_v<int,                              Effect::Alloc>);  // non-cap
+static_assert(cap_matches_v<Capability<Effect::Alloc, Bg>, Effect::Alloc>);
+static_assert(!cap_matches_v<Capability<Effect::Alloc, Bg>, Effect::IO>);
+static_assert(cap_matches_v<Capability<Effect::Alloc, Init>, Effect::Alloc>);  // any source
+static_assert(!cap_matches_v<int, Effect::Alloc>);  // non-cap
 
-static_assert( HasCapAndSource<Capability<Effect::Alloc, Bg>, Effect::Alloc, Bg>);
+static_assert(HasCapAndSource<Capability<Effect::Alloc, Bg>, Effect::Alloc, Bg>);
 static_assert(!HasCapAndSource<Capability<Effect::Alloc, Bg>, Effect::Alloc, Init>);  // wrong source
-static_assert(!HasCapAndSource<Capability<Effect::Alloc, Bg>, Effect::IO,    Bg>);    // wrong cap
+static_assert(!HasCapAndSource<Capability<Effect::Alloc, Bg>, Effect::IO, Bg>);  // wrong cap
 
 // ── CapMatchesCtx ───────────────────────────────────────────────────
 //
@@ -580,16 +587,16 @@ static_assert(!HasCapAndSource<Capability<Effect::Alloc, Bg>, Effect::IO,    Bg>
 // authorize the same effect — caps are universal proofs of effect-
 // authorization, not source-locked).
 
-static_assert( CapMatchesCtx<Capability<Effect::Bg,    Bg>, BgDrainCtx>);    // Bg in Row<Bg, Alloc>
-static_assert( CapMatchesCtx<Capability<Effect::Alloc, Bg>, BgDrainCtx>);    // Alloc in Row<Bg, Alloc>
-static_assert(!CapMatchesCtx<Capability<Effect::IO,    Bg>, BgDrainCtx>);    // IO not in Row<Bg, Alloc>
-static_assert( CapMatchesCtx<Capability<Effect::IO,    Bg>, BgCompileCtx>);  // IO in compile row
-static_assert(!CapMatchesCtx<Capability<Effect::Bg,    Bg>, HotFgCtx>);      // Fg row is empty
-static_assert( CapMatchesCtx<Capability<Effect::Test,  Test>, TestRunnerCtx>);
+static_assert(CapMatchesCtx<Capability<Effect::Bg, Bg>, BgDrainCtx>);  // Bg in Row<Bg, Alloc>
+static_assert(CapMatchesCtx<Capability<Effect::Alloc, Bg>, BgDrainCtx>);  // Alloc in Row<Bg, Alloc>
+static_assert(!CapMatchesCtx<Capability<Effect::IO, Bg>, BgDrainCtx>);  // IO not in Row<Bg, Alloc>
+static_assert(CapMatchesCtx<Capability<Effect::IO, Bg>, BgCompileCtx>);  // IO in compile row
+static_assert(!CapMatchesCtx<Capability<Effect::Bg, Bg>, HotFgCtx>);  // Fg row is empty
+static_assert(CapMatchesCtx<Capability<Effect::Test, Test>, TestRunnerCtx>);
 
 // Source-mismatch is permitted (caps are not source-locked).
-static_assert( CapMatchesCtx<Capability<Effect::Alloc, Init>, BgDrainCtx>);  // Init-minted cap, Bg-ctx
-static_assert( CapMatchesCtx<Capability<Effect::Alloc, Test>, BgCompileCtx>);
+static_assert(CapMatchesCtx<Capability<Effect::Alloc, Init>, BgDrainCtx>);  // Init-minted cap, Bg-ctx
+static_assert(CapMatchesCtx<Capability<Effect::Alloc, Test>, BgCompileCtx>);
 
 }  // namespace detail::capability_self_test
 
@@ -603,14 +610,14 @@ static_assert( CapMatchesCtx<Capability<Effect::Alloc, Test>, BgCompileCtx>);
     // (these are smoke tests, not production minters).
     auto bg = testing::bg();
     auto bg_alloc = mint_cap<Effect::Alloc>(bg);
-    auto bg_io    = mint_cap<Effect::IO>(bg);
+    auto bg_io = mint_cap<Effect::IO>(bg);
     auto bg_block = mint_cap<Effect::Block>(bg);
-    auto bg_self  = mint_cap<Effect::Bg>(bg);
+    auto bg_self = mint_cap<Effect::Bg>(bg);
 
     auto init = testing::init();
     auto init_alloc = mint_cap<Effect::Alloc>(init);
-    auto init_io    = mint_cap<Effect::IO>(init);
-    auto init_self  = mint_cap<Effect::Init>(init);
+    auto init_io = mint_cap<Effect::IO>(init);
+    auto init_self = mint_cap<Effect::Init>(init);
 
     auto test = testing::test();
     auto test_alloc = mint_cap<Effect::Alloc>(test);
@@ -623,16 +630,16 @@ static_assert( CapMatchesCtx<Capability<Effect::Alloc, Test>, BgCompileCtx>);
     // use-after-move; the type system itself doesn't model it but
     // the discipline is in place).
     Capability<Effect::Alloc, Bg> moved = std::move(bg_alloc);
-    std::move(moved).consume();   // documentation-grade no-op
+    std::move(moved).consume();  // documentation-grade no-op
 
     // ── Type-level extraction at runtime ────────────────────────────
-    static_assert(cap_of_v<decltype(bg_io)>     == Effect::IO);
+    static_assert(cap_of_v<decltype(bg_io)> == Effect::IO);
     static_assert(cap_of_v<decltype(test_block)> == Effect::Block);
-    static_assert(std::is_same_v<source_of_t<decltype(init_io)>,   Init>);
+    static_assert(std::is_same_v<source_of_t<decltype(init_io)>, Init>);
     static_assert(std::is_same_v<source_of_t<decltype(test_alloc)>, Test>);
 
     // ── Concept-based capability check ──────────────────────────────
-    static_assert( IsCapability<decltype(bg_io)>);
+    static_assert(IsCapability<decltype(bg_io)>);
     static_assert(!IsCapability<int>);
 
     static_cast<void>(bg_io);
@@ -645,14 +652,12 @@ static_assert( CapMatchesCtx<Capability<Effect::Alloc, Test>, BgCompileCtx>);
     static_cast<void>(test_block);
 
     // ── ExecCtx-driven minting ──────────────────────────────────────
-    BgDrainCtx     bg_ctx;
-    BgCompileCtx   bg_compile_ctx;
+    BgDrainCtx bg_ctx;
+    BgCompileCtx bg_compile_ctx;
     auto from_ctx_alloc = mint_from_ctx<Effect::Alloc>(bg_ctx);
-    auto from_ctx_io    = mint_from_ctx<Effect::IO>(bg_compile_ctx);
-    static_assert(std::is_same_v<decltype(from_ctx_alloc),
-                                  Capability<Effect::Alloc, Bg>>);
-    static_assert(std::is_same_v<decltype(from_ctx_io),
-                                  Capability<Effect::IO, Bg>>);
+    auto from_ctx_io = mint_from_ctx<Effect::IO>(bg_compile_ctx);
+    static_assert(std::is_same_v<decltype(from_ctx_alloc), Capability<Effect::Alloc, Bg>>);
+    static_assert(std::is_same_v<decltype(from_ctx_io), Capability<Effect::IO, Bg>>);
     static_cast<void>(from_ctx_alloc);
     static_cast<void>(from_ctx_io);
 

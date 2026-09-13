@@ -103,7 +103,7 @@
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/lattices/LifetimeLattice.h>
 
-#include <cstdlib>      // std::abort in the runtime smoke test
+#include <cstdlib>  // std::abort in the runtime smoke test
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -122,14 +122,10 @@ template <Lifetime_v Scope, typename T>
 class [[nodiscard]] OpaqueLifetime {
 public:
     // ── Public type aliases ─────────────────────────────────────────
-    using value_type   = T;
+    using value_type = T;
     using lattice_type = LifetimeLattice::At<Scope>;
-    using graded_type  = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Absolute,
-        lattice_type,
-        T>;
-    static constexpr ::crucible::algebra::ModalityKind modality =
-        ::crucible::algebra::ModalityKind::Absolute;
+    using graded_type = ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
+    static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::Absolute;
 
     // The pinned scope — exposed as a static constexpr for callers
     // doing scope-aware dispatch without instantiating the wrapper.
@@ -139,7 +135,6 @@ private:
     graded_type impl_;
 
 public:
-
     // ── Construction ────────────────────────────────────────────────
     //
     // Default: T{} at the pinned scope.
@@ -153,40 +148,38 @@ public:
     // that genuinely honors the scope (e.g., a Raft-committed cold-
     // tier init).  Production callers SHOULD prefer the explicit-T
     // constructor at scope-anchored commit sites.
-    constexpr OpaqueLifetime() noexcept(
-        std::is_nothrow_default_constructible_v<T>)
+    constexpr OpaqueLifetime() noexcept(std::is_nothrow_default_constructible_v<T>)
         : impl_{T{}, typename lattice_type::element_type{}} {}
 
     // Explicit construction from a T value.
-    constexpr explicit OpaqueLifetime(T value) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    constexpr explicit OpaqueLifetime(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(value), typename lattice_type::element_type{}} {}
 
     // In-place construction.
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr explicit OpaqueLifetime(std::in_place_t, Args&&... args)
-        noexcept(std::is_nothrow_constructible_v<T, Args...>
-                 && std::is_nothrow_move_constructible_v<T>)
-        : impl_{T(std::forward<Args>(args)...),
-                typename lattice_type::element_type{}} {}
+    constexpr explicit OpaqueLifetime(std::in_place_t,
+                                      Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
+                                                               && std::is_nothrow_move_constructible_v<T>)
+        : impl_{T(std::forward<Args>(args)...), typename lattice_type::element_type{}} {}
 
     // Defaulted copy/move/destroy — OpaqueLifetime IS COPYABLE
     // within the same scope pin.  Copying a value within its
     // declared scope is fine; the per-scope identity is preserved
     // by template-instantiation isolation.
-    constexpr OpaqueLifetime(const OpaqueLifetime&)            = default;
-    constexpr OpaqueLifetime(OpaqueLifetime&&)                 = default;
+    constexpr OpaqueLifetime(const OpaqueLifetime&) = default;
+    constexpr OpaqueLifetime(OpaqueLifetime&&) = default;
     constexpr OpaqueLifetime& operator=(const OpaqueLifetime&) = default;
-    constexpr OpaqueLifetime& operator=(OpaqueLifetime&&)      = default;
-    ~OpaqueLifetime()                                          = default;
+    constexpr OpaqueLifetime& operator=(OpaqueLifetime&&) = default;
+    ~OpaqueLifetime() = default;
 
     // Equality: compares value bytes within the SAME scope pin.
     // Cross-scope comparison rejected at overload resolution.
-    [[nodiscard]] friend constexpr bool operator==(
-        OpaqueLifetime const& a, OpaqueLifetime const& b) noexcept(
-        noexcept(a.peek() == b.peek()))
-        requires requires(T const& x, T const& y) { { x == y } -> std::convertible_to<bool>; }
+    [[nodiscard]] friend constexpr bool operator==(OpaqueLifetime const& a,
+                                                   OpaqueLifetime const& b) noexcept(noexcept(a.peek() == b.peek()))
+        requires requires(T const& x, T const& y) {
+            { x == y } -> std::convertible_to<bool>;
+        }
     {
         return a.peek() == b.peek();
     }
@@ -195,35 +188,21 @@ public:
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return graded_type::lattice_name();
-    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 
     // ── Read-only access ────────────────────────────────────────────
-    [[nodiscard]] constexpr T const& peek() const& noexcept {
-        return impl_.peek();
-    }
+    [[nodiscard]] constexpr T const& peek() const& noexcept { return impl_.peek(); }
 
-    [[nodiscard]] constexpr T consume() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return std::move(impl_).consume();
     }
 
-    [[nodiscard]] constexpr T& peek_mut() & noexcept {
-        return impl_.peek_mut();
-    }
+    [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(); }
 
     // ── swap ────────────────────────────────────────────────────────
-    constexpr void swap(OpaqueLifetime& other)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
-        impl_.swap(other.impl_);
-    }
+    constexpr void swap(OpaqueLifetime& other) noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
 
-    friend constexpr void swap(OpaqueLifetime& a, OpaqueLifetime& b)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
+    friend constexpr void swap(OpaqueLifetime& a, OpaqueLifetime& b) noexcept(std::is_nothrow_swappable_v<T>) {
         a.swap(b);
     }
 
@@ -245,29 +224,30 @@ public:
     // Compile error when NarrowerScope > Scope — would widen the
     // scope and leak data across the original scope boundary.
     template <Lifetime_v NarrowerScope>
-        requires (LifetimeLattice::leq(NarrowerScope, Scope))
-    [[nodiscard]] constexpr OpaqueLifetime<NarrowerScope, T> relax() const&
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
+        requires(LifetimeLattice::leq(NarrowerScope, Scope))
+    [[nodiscard]] constexpr OpaqueLifetime<NarrowerScope, T>
+    relax() const& noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
     {
         return OpaqueLifetime<NarrowerScope, T>{this->peek()};
     }
 
     template <Lifetime_v NarrowerScope>
-        requires (LifetimeLattice::leq(NarrowerScope, Scope))
-    [[nodiscard]] constexpr OpaqueLifetime<NarrowerScope, T> relax() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
-        return OpaqueLifetime<NarrowerScope, T>{
-            std::move(impl_).consume()};
+        requires(LifetimeLattice::leq(NarrowerScope, Scope))
+    [[nodiscard]] constexpr OpaqueLifetime<NarrowerScope, T>
+    relax() && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return OpaqueLifetime<NarrowerScope, T>{std::move(impl_).consume()};
     }
 };
 
 // ── Convenience aliases ─────────────────────────────────────────────
 namespace opaque_lifetime {
-    template <typename T> using PerRequest = OpaqueLifetime<Lifetime_v::PER_REQUEST, T>;
-    template <typename T> using PerProgram = OpaqueLifetime<Lifetime_v::PER_PROGRAM, T>;
-    template <typename T> using PerFleet   = OpaqueLifetime<Lifetime_v::PER_FLEET,   T>;
+template <typename T>
+using PerRequest = OpaqueLifetime<Lifetime_v::PER_REQUEST, T>;
+template <typename T>
+using PerProgram = OpaqueLifetime<Lifetime_v::PER_PROGRAM, T>;
+template <typename T>
+using PerFleet = OpaqueLifetime<Lifetime_v::PER_FLEET, T>;
 }  // namespace opaque_lifetime
 
 // ── Layout invariants ───────────────────────────────────────────────
@@ -275,13 +255,16 @@ namespace opaque_lifetime {
 // regime-1: zero-cost EBO collapse.
 namespace detail::opaque_lifetime_layout {
 
-template <typename T> using FleetL   = OpaqueLifetime<Lifetime_v::PER_FLEET,   T>;
-template <typename T> using ProgramL = OpaqueLifetime<Lifetime_v::PER_PROGRAM, T>;
-template <typename T> using RequestL = OpaqueLifetime<Lifetime_v::PER_REQUEST, T>;
+template <typename T>
+using FleetL = OpaqueLifetime<Lifetime_v::PER_FLEET, T>;
+template <typename T>
+using ProgramL = OpaqueLifetime<Lifetime_v::PER_PROGRAM, T>;
+template <typename T>
+using RequestL = OpaqueLifetime<Lifetime_v::PER_REQUEST, T>;
 
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(FleetL,   char);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(FleetL,   int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(FleetL,   double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(FleetL, char);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(FleetL, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(FleetL, double);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(ProgramL, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(ProgramL, double);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(RequestL, int);
@@ -289,15 +272,15 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(RequestL, double);
 
 }  // namespace detail::opaque_lifetime_layout
 
-static_assert(sizeof(OpaqueLifetime<Lifetime_v::PER_REQUEST, int>)    == sizeof(int));
-static_assert(sizeof(OpaqueLifetime<Lifetime_v::PER_PROGRAM, int>)    == sizeof(int));
-static_assert(sizeof(OpaqueLifetime<Lifetime_v::PER_FLEET,   int>)    == sizeof(int));
-static_assert(sizeof(OpaqueLifetime<Lifetime_v::PER_FLEET,   double>) == sizeof(double));
+static_assert(sizeof(OpaqueLifetime<Lifetime_v::PER_REQUEST, int>) == sizeof(int));
+static_assert(sizeof(OpaqueLifetime<Lifetime_v::PER_PROGRAM, int>) == sizeof(int));
+static_assert(sizeof(OpaqueLifetime<Lifetime_v::PER_FLEET, int>) == sizeof(int));
+static_assert(sizeof(OpaqueLifetime<Lifetime_v::PER_FLEET, double>) == sizeof(double));
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::opaque_lifetime_self_test {
 
-using FleetInt   = OpaqueLifetime<Lifetime_v::PER_FLEET,   int>;
+using FleetInt = OpaqueLifetime<Lifetime_v::PER_FLEET, int>;
 using ProgramInt = OpaqueLifetime<Lifetime_v::PER_PROGRAM, int>;
 using RequestInt = OpaqueLifetime<Lifetime_v::PER_REQUEST, int>;
 
@@ -310,7 +293,7 @@ inline constexpr FleetInt o_explicit{42};
 static_assert(o_explicit.peek() == 42);
 
 // ── Pinned scope accessor ──────────────────────────────────────────
-static_assert(FleetInt::scope   == Lifetime_v::PER_FLEET);
+static_assert(FleetInt::scope == Lifetime_v::PER_FLEET);
 static_assert(ProgramInt::scope == Lifetime_v::PER_PROGRAM);
 static_assert(RequestInt::scope == Lifetime_v::PER_REQUEST);
 
@@ -322,36 +305,32 @@ static_assert(FleetInt::satisfies<Lifetime_v::PER_PROGRAM>);
 static_assert(FleetInt::satisfies<Lifetime_v::PER_REQUEST>);
 
 // PER_PROGRAM satisfies narrower-or-equal.
-static_assert( ProgramInt::satisfies<Lifetime_v::PER_PROGRAM>);
-static_assert( ProgramInt::satisfies<Lifetime_v::PER_REQUEST>);
+static_assert(ProgramInt::satisfies<Lifetime_v::PER_PROGRAM>);
+static_assert(ProgramInt::satisfies<Lifetime_v::PER_REQUEST>);
 static_assert(!ProgramInt::satisfies<Lifetime_v::PER_FLEET>);
 
 // PER_REQUEST satisfies only PER_REQUEST.
-static_assert( RequestInt::satisfies<Lifetime_v::PER_REQUEST>);
+static_assert(RequestInt::satisfies<Lifetime_v::PER_REQUEST>);
 static_assert(!RequestInt::satisfies<Lifetime_v::PER_PROGRAM>);
 static_assert(!RequestInt::satisfies<Lifetime_v::PER_FLEET>);
 
 // ── relax<NarrowerScope> — DOWN-the-lattice conversion ────────────
 //
 // PER_FLEET relaxes to any scope.
-inline constexpr auto from_fleet_to_program =
-    FleetInt{42}.relax<Lifetime_v::PER_PROGRAM>();
+inline constexpr auto from_fleet_to_program = FleetInt{42}.relax<Lifetime_v::PER_PROGRAM>();
 static_assert(from_fleet_to_program.peek() == 42);
 static_assert(from_fleet_to_program.scope == Lifetime_v::PER_PROGRAM);
 
-inline constexpr auto from_fleet_to_request =
-    FleetInt{99}.relax<Lifetime_v::PER_REQUEST>();
+inline constexpr auto from_fleet_to_request = FleetInt{99}.relax<Lifetime_v::PER_REQUEST>();
 static_assert(from_fleet_to_request.peek() == 99);
 static_assert(from_fleet_to_request.scope == Lifetime_v::PER_REQUEST);
 
 // PER_PROGRAM relaxes to PER_REQUEST but NOT to PER_FLEET.
-inline constexpr auto from_program_to_request =
-    ProgramInt{7}.relax<Lifetime_v::PER_REQUEST>();
+inline constexpr auto from_program_to_request = ProgramInt{7}.relax<Lifetime_v::PER_REQUEST>();
 static_assert(from_program_to_request.peek() == 7);
 static_assert(from_program_to_request.scope == Lifetime_v::PER_REQUEST);
 
-inline constexpr auto from_program_to_self =
-    ProgramInt{8}.relax<Lifetime_v::PER_PROGRAM>();   // identity
+inline constexpr auto from_program_to_self = ProgramInt{8}.relax<Lifetime_v::PER_PROGRAM>();  // identity
 static_assert(from_program_to_self.peek() == 8);
 
 // SFINAE-style detector pinning the requires-clause.
@@ -360,17 +339,17 @@ concept can_relax = requires(W w) {
     { std::move(w).template relax<T_target>() };
 };
 
-static_assert( can_relax<FleetInt,   Lifetime_v::PER_PROGRAM>); // ✓ down
-static_assert( can_relax<FleetInt,   Lifetime_v::PER_REQUEST>); // ✓ down
-static_assert( can_relax<ProgramInt, Lifetime_v::PER_REQUEST>); // ✓ down
-static_assert( can_relax<ProgramInt, Lifetime_v::PER_PROGRAM>); // ✓ self
-static_assert(!can_relax<ProgramInt, Lifetime_v::PER_FLEET>);   // ✗ up
-static_assert(!can_relax<RequestInt, Lifetime_v::PER_PROGRAM>); // ✗ up
-static_assert(!can_relax<RequestInt, Lifetime_v::PER_FLEET>);   // ✗ up
+static_assert(can_relax<FleetInt, Lifetime_v::PER_PROGRAM>);  // ✓ down
+static_assert(can_relax<FleetInt, Lifetime_v::PER_REQUEST>);  // ✓ down
+static_assert(can_relax<ProgramInt, Lifetime_v::PER_REQUEST>);  // ✓ down
+static_assert(can_relax<ProgramInt, Lifetime_v::PER_PROGRAM>);  // ✓ self
+static_assert(!can_relax<ProgramInt, Lifetime_v::PER_FLEET>);  // ✗ up
+static_assert(!can_relax<RequestInt, Lifetime_v::PER_PROGRAM>);  // ✗ up
+static_assert(!can_relax<RequestInt, Lifetime_v::PER_FLEET>);  // ✗ up
 
 // ── Diagnostic forwarders ─────────────────────────────────────────
 static_assert(FleetInt::value_type_name().ends_with("int"));
-static_assert(FleetInt::lattice_name()   == "LifetimeLattice::At<PER_FLEET>");
+static_assert(FleetInt::lattice_name() == "LifetimeLattice::At<PER_FLEET>");
 static_assert(ProgramInt::lattice_name() == "LifetimeLattice::At<PER_PROGRAM>");
 static_assert(RequestInt::lattice_name() == "LifetimeLattice::At<PER_REQUEST>");
 
@@ -425,7 +404,7 @@ concept can_equality_compare = requires(W const& a, W const& b) {
     { a == b } -> std::convertible_to<bool>;
 };
 
-static_assert( can_equality_compare<FleetInt>);
+static_assert(can_equality_compare<FleetInt>);
 static_assert(!can_equality_compare<OpaqueLifetime<Lifetime_v::PER_FLEET, NoEqualityT>>);
 
 // ── relax reflexivity ─────────────────────────────────────────────
@@ -442,12 +421,11 @@ static_assert(FleetInt::lattice_name().size() > 0);
 static_assert(FleetInt::lattice_name().starts_with("LifetimeLattice::At<"));
 
 // ── Convenience aliases resolve correctly ────────────────────────
-static_assert(opaque_lifetime::PerFleet<int>::scope   == Lifetime_v::PER_FLEET);
+static_assert(opaque_lifetime::PerFleet<int>::scope == Lifetime_v::PER_FLEET);
 static_assert(opaque_lifetime::PerProgram<int>::scope == Lifetime_v::PER_PROGRAM);
 static_assert(opaque_lifetime::PerRequest<int>::scope == Lifetime_v::PER_REQUEST);
 
-static_assert(std::is_same_v<opaque_lifetime::PerFleet<double>,
-                             OpaqueLifetime<Lifetime_v::PER_FLEET, double>>);
+static_assert(std::is_same_v<opaque_lifetime::PerFleet<double>, OpaqueLifetime<Lifetime_v::PER_FLEET, double>>);
 
 // ── Runtime smoke test ─────────────────────────────────────────────
 inline void runtime_smoke_test() {
@@ -498,7 +476,7 @@ inline void runtime_smoke_test() {
     if (extracted != 55) std::abort();
 
     // Convenience-alias instantiation.
-    opaque_lifetime::PerFleet<int>      alias_form{123};
+    opaque_lifetime::PerFleet<int> alias_form{123};
     opaque_lifetime::PerRequest<double> req_form{3.14};
     [[maybe_unused]] auto av = alias_form.peek();
     [[maybe_unused]] auto rv = req_form.peek();

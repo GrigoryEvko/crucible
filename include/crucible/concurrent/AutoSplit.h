@@ -32,33 +32,26 @@ namespace crucible::concurrent {
 
 namespace autosplit_detail {
 
-[[nodiscard]] constexpr std::size_t saturating_mul(std::size_t a,
-                                                   std::size_t b) noexcept {
+[[nodiscard]] constexpr std::size_t saturating_mul(std::size_t a, std::size_t b) noexcept {
     if (a == 0 || b == 0) return 0;
     constexpr std::size_t max = std::numeric_limits<std::size_t>::max();
     if (a > max / b) return max;
     return a * b;
 }
 
-[[nodiscard]] constexpr std::size_t ceil_div(std::size_t n,
-                                             std::size_t d) noexcept {
+[[nodiscard]] constexpr std::size_t ceil_div(std::size_t n, std::size_t d) noexcept {
     if (d == 0) return 0;
     return n / d + (n % d == 0 ? 0 : 1);
 }
 
-[[nodiscard]] constexpr std::size_t sanitized(std::size_t value,
-                                              std::size_t fallback) noexcept {
+[[nodiscard]] constexpr std::size_t sanitized(std::size_t value, std::size_t fallback) noexcept {
     return value == 0 ? fallback : value;
 }
 
-[[nodiscard]] constexpr Tier classify_from_profile(
-    std::size_t bytes,
-    AutoRouteRuntimeProfile profile) noexcept {
-    const std::size_t l2 = sanitized(profile.l2_per_core_bytes,
-                                     conservative_cliff_l2_per_core);
+[[nodiscard]] constexpr Tier classify_from_profile(std::size_t bytes, AutoRouteRuntimeProfile profile) noexcept {
+    const std::size_t l2 = sanitized(profile.l2_per_core_bytes, conservative_cliff_l2_per_core);
     const std::size_t l1 = std::min<std::size_t>(32ULL * 1024ULL, l2);
-    const std::size_t l3 = sanitized(profile.huge_bytes,
-                                     16ULL * 1024ULL * 1024ULL);
+    const std::size_t l3 = sanitized(profile.huge_bytes, 16ULL * 1024ULL * 1024ULL);
     if (bytes < l1) return Tier::L1Resident;
     if (bytes < l2) return Tier::L2Resident;
     if (bytes < l3) return Tier::L3Resident;
@@ -71,16 +64,14 @@ namespace autosplit_detail {
                                     : NumaPolicy::NumaIgnore;
 }
 
-[[nodiscard]] constexpr std::uint64_t saturating_mul_u64(std::uint64_t a,
-                                                          std::uint64_t b) noexcept {
+[[nodiscard]] constexpr std::uint64_t saturating_mul_u64(std::uint64_t a, std::uint64_t b) noexcept {
     if (a == 0 || b == 0) return 0;
     constexpr std::uint64_t max = static_cast<std::uint64_t>(-1);
     if (a > max / b) return max;
     return a * b;
 }
 
-[[nodiscard]] constexpr std::uint64_t saturating_add_u64(std::uint64_t a,
-                                                          std::uint64_t b) noexcept {
+[[nodiscard]] constexpr std::uint64_t saturating_add_u64(std::uint64_t a, std::uint64_t b) noexcept {
     constexpr std::uint64_t max = static_cast<std::uint64_t>(-1);
     return a > max - b ? max : a + b;
 }
@@ -96,22 +87,17 @@ namespace autosplit_detail {
 // The hysteresis (10%) prevents flipping decisions across the cliff
 // for marginal wins.  Returns true when the planner should override
 // to shard_count = 1.
-[[nodiscard]] constexpr bool break_even_prefers_sequential(
-    std::size_t items,
-    std::uint64_t per_item_compute_ns,
-    std::uint64_t dispatch_cost_ns,
-    std::size_t shard_count) noexcept {
+[[nodiscard]] constexpr bool break_even_prefers_sequential(std::size_t items, std::uint64_t per_item_compute_ns,
+                                                           std::uint64_t dispatch_cost_ns,
+                                                           std::size_t shard_count) noexcept {
     if (per_item_compute_ns == 0) return false;
     if (shard_count <= 1) return false;
     if (items == 0) return false;
 
-    const std::uint64_t total_compute =
-        saturating_mul_u64(items, per_item_compute_ns);
-    const std::uint64_t par_overhead =
-        saturating_mul_u64(shard_count, dispatch_cost_ns);
+    const std::uint64_t total_compute = saturating_mul_u64(items, per_item_compute_ns);
+    const std::uint64_t par_overhead = saturating_mul_u64(shard_count, dispatch_cost_ns);
     const std::uint64_t par_compute = total_compute / shard_count;
-    const std::uint64_t par_total =
-        saturating_add_u64(par_compute, par_overhead);
+    const std::uint64_t par_total = saturating_add_u64(par_compute, par_overhead);
 
     // 10% hysteresis — require parallel to save at least a tenth of seq.
     const std::uint64_t threshold = total_compute - total_compute / 10;
@@ -128,23 +114,16 @@ namespace autosplit_detail {
 //
 // Returned as integer percent ∈ [0, 100] to keep this constexpr-without-FP.
 // Callers compare against a `min_efficiency_pct` threshold (default 70).
-[[nodiscard]] constexpr std::uint32_t efficiency_pct(
-    std::size_t items,
-    std::uint64_t per_item_compute_ns,
-    std::uint64_t dispatch_cost_ns,
-    std::size_t shard_count) noexcept {
+[[nodiscard]] constexpr std::uint32_t efficiency_pct(std::size_t items, std::uint64_t per_item_compute_ns,
+                                                     std::uint64_t dispatch_cost_ns, std::size_t shard_count) noexcept {
     if (shard_count <= 1) return 100;
     if (items == 0 || per_item_compute_ns == 0) return 0;
 
-    const std::uint64_t seq_wall =
-        saturating_mul_u64(items, per_item_compute_ns);
+    const std::uint64_t seq_wall = saturating_mul_u64(items, per_item_compute_ns);
     const std::uint64_t par_compute = seq_wall / shard_count;
-    const std::uint64_t par_overhead =
-        saturating_mul_u64(shard_count, dispatch_cost_ns);
-    const std::uint64_t par_wall =
-        saturating_add_u64(par_compute, par_overhead);
-    const std::uint64_t par_cpu =
-        saturating_mul_u64(par_wall, shard_count);
+    const std::uint64_t par_overhead = saturating_mul_u64(shard_count, dispatch_cost_ns);
+    const std::uint64_t par_wall = saturating_add_u64(par_compute, par_overhead);
+    const std::uint64_t par_cpu = saturating_mul_u64(par_wall, shard_count);
 
     if (par_cpu == 0) return 100;
     // efficiency = seq_wall / par_cpu, scaled to percent.
@@ -208,9 +187,9 @@ enum class AutoSplitCompletionMode : std::uint8_t {
 
 struct AutoSplitRoutingDecision {
     AutoSplitPartitionStrategy partition = AutoSplitPartitionStrategy::Inline;
-    AutoSplitScheduleMode      schedule = AutoSplitScheduleMode::Inline;
-    AutoSplitPlacementPolicy   placement = AutoSplitPlacementPolicy::Caller;
-    AutoSplitCompletionMode    completion = AutoSplitCompletionMode::None;
+    AutoSplitScheduleMode schedule = AutoSplitScheduleMode::Inline;
+    AutoSplitPlacementPolicy placement = AutoSplitPlacementPolicy::Caller;
+    AutoSplitCompletionMode completion = AutoSplitCompletionMode::None;
 };
 
 struct AutoSplitShapeCache {
@@ -224,8 +203,7 @@ struct AutoSplitShapeCache {
 
     std::array<Slot, kSlotCount> slots{};
 
-    [[nodiscard]] static constexpr std::uint64_t mix_key(
-        std::uint64_t key) noexcept {
+    [[nodiscard]] static constexpr std::uint64_t mix_key(std::uint64_t key) noexcept {
         key ^= key >> 30;
         key *= 0xbf58476d1ce4e5b9ULL;
         key ^= key >> 27;
@@ -234,47 +212,35 @@ struct AutoSplitShapeCache {
         return key == 0 ? 1 : key;
     }
 
-    [[nodiscard]] static constexpr std::uint32_t pack(
-        std::size_t factor,
-        std::uint8_t hits,
-        SchedulingIntent intent) noexcept {
-        const auto f = static_cast<std::uint32_t>(
-            std::min<std::size_t>(factor, 0xffU));
-        return f
-             | (static_cast<std::uint32_t>(hits) << 8)
-             | (static_cast<std::uint32_t>(intent) << 16);
+    [[nodiscard]] static constexpr std::uint32_t pack(std::size_t factor, std::uint8_t hits,
+                                                      SchedulingIntent intent) noexcept {
+        const auto f = static_cast<std::uint32_t>(std::min<std::size_t>(factor, 0xffU));
+        return f | (static_cast<std::uint32_t>(hits) << 8) | (static_cast<std::uint32_t>(intent) << 16);
     }
 
-    [[nodiscard]] static constexpr std::size_t factor_from(
-        std::uint32_t packed) noexcept {
+    [[nodiscard]] static constexpr std::size_t factor_from(std::uint32_t packed) noexcept {
         return static_cast<std::size_t>(packed & 0xffU);
     }
 
-    [[nodiscard]] static constexpr std::uint8_t hits_from(
-        std::uint32_t packed) noexcept {
+    [[nodiscard]] static constexpr std::uint8_t hits_from(std::uint32_t packed) noexcept {
         return static_cast<std::uint8_t>((packed >> 8) & 0xffU);
     }
 
-    [[nodiscard]] static constexpr SchedulingIntent intent_from(
-        std::uint32_t packed) noexcept {
+    [[nodiscard]] static constexpr SchedulingIntent intent_from(std::uint32_t packed) noexcept {
         return static_cast<SchedulingIntent>((packed >> 16) & 0xffU);
     }
 
-    [[nodiscard]] std::size_t lookup_or(std::uint64_t key,
-                                        SchedulingIntent intent,
+    [[nodiscard]] std::size_t lookup_or(std::uint64_t key, SchedulingIntent intent,
                                         std::size_t fallback) const noexcept {
         const std::uint64_t mixed = mix_key(key);
         const Slot& slot = slots[slot_index_(mixed)];
-        const std::uint64_t before =
-            slot.key.load(std::memory_order_acquire);
+        const std::uint64_t before = slot.key.load(std::memory_order_acquire);
         if (before != mixed) {
             return fallback;
         }
 
-        const std::uint32_t packed =
-            slot.packed.load(std::memory_order_acquire);
-        const std::uint64_t after =
-            slot.key.load(std::memory_order_acquire);
+        const std::uint32_t packed = slot.packed.load(std::memory_order_acquire);
+        const std::uint64_t after = slot.key.load(std::memory_order_acquire);
         if (before != after || after != mixed) {
             return fallback;
         }
@@ -286,31 +252,23 @@ struct AutoSplitShapeCache {
         return factor == 0 ? fallback : factor;
     }
 
-    void record(std::uint64_t key,
-                SchedulingIntent intent,
-                std::size_t factor) noexcept {
+    void record(std::uint64_t key, SchedulingIntent intent, std::size_t factor) noexcept {
         const std::uint64_t mixed = mix_key(key);
         Slot& slot = slots[slot_index_(mixed)];
-        const bool same_key =
-            slot.key.load(std::memory_order_acquire) == mixed;
-        const std::uint32_t old =
-            same_key ? slot.packed.load(std::memory_order_acquire) : 0;
+        const bool same_key = slot.key.load(std::memory_order_acquire) == mixed;
+        const std::uint32_t old = same_key ? slot.packed.load(std::memory_order_acquire) : 0;
         const std::uint8_t old_hits = same_key ? hits_from(old) : 0;
-        const std::uint8_t next_hits =
-            old_hits == 0xffU ? old_hits
-                              : static_cast<std::uint8_t>(old_hits + 1);
+        const std::uint8_t next_hits = old_hits == 0xffU ? old_hits : static_cast<std::uint8_t>(old_hits + 1);
 
         if (!same_key) {
             slot.key.store(0, std::memory_order_release);
         }
-        slot.packed.store(pack(factor, next_hits, intent),
-                          std::memory_order_release);
+        slot.packed.store(pack(factor, next_hits, intent), std::memory_order_release);
         slot.key.store(mixed, std::memory_order_release);
     }
 
 private:
-    [[nodiscard]] static constexpr std::size_t slot_index_(
-        std::uint64_t mixed) noexcept {
+    [[nodiscard]] static constexpr std::size_t slot_index_(std::uint64_t mixed) noexcept {
         static_assert((kSlotCount & (kSlotCount - 1)) == 0);
         return (mixed >> 3) & (kSlotCount - 1);
     }
@@ -326,15 +284,12 @@ struct AutoSplitOnlineCalibrator {
         samples.fetch_add(1, std::memory_order_relaxed);
     }
 
-    void record_shard(std::uint64_t observed_ns,
-                      std::size_t shard_items) noexcept {
+    void record_shard(std::uint64_t observed_ns, std::size_t shard_items) noexcept {
         const std::size_t denom = std::max<std::size_t>(1, shard_items);
         const std::uint64_t whole = observed_ns / denom;
         const std::uint64_t rem = observed_ns % denom;
-        const std::uint64_t scaled =
-            autosplit_detail::saturating_add_u64(
-                autosplit_detail::saturating_mul_u64(whole, 1000),
-                autosplit_detail::saturating_mul_u64(rem, 1000) / denom);
+        const std::uint64_t scaled = autosplit_detail::saturating_add_u64(
+            autosplit_detail::saturating_mul_u64(whole, 1000), autosplit_detail::saturating_mul_u64(rem, 1000) / denom);
         mix_(per_item_ewma_ns_x1000, scaled);
         samples.fetch_add(1, std::memory_order_relaxed);
     }
@@ -347,9 +302,7 @@ struct AutoSplitOnlineCalibrator {
         return per_item_ewma_ns_x1000.load(std::memory_order_relaxed) / 1000;
     }
 
-    [[nodiscard]] std::uint64_t sample_count() const noexcept {
-        return samples.load(std::memory_order_relaxed);
-    }
+    [[nodiscard]] std::uint64_t sample_count() const noexcept { return samples.load(std::memory_order_relaxed); }
 
 private:
     // fixy-V-206 (Agent 7 Bug #2): replace the relaxed read-modify-write
@@ -367,8 +320,7 @@ private:
     // reader's view of prior history (acquire on the eventual settled
     // value).  acquire on retry ensures we re-read the freshly-committed
     // `old` from the other writer before recomputing `next`.
-    static void mix_(std::atomic<std::uint64_t>& target,
-                     std::uint64_t observed) noexcept {
+    static void mix_(std::atomic<std::uint64_t>& target, std::uint64_t observed) noexcept {
         std::uint64_t old = target.load(std::memory_order_acquire);
         std::uint64_t next;
         do {
@@ -379,15 +331,9 @@ private:
             // tiny number that would flip parallel-vs-sequential mid-
             // run.  Right-shift by 4 is the unsigned `/16` the prior
             // shape used; for `uint64_t` this is exactly equivalent.
-            const std::uint64_t weighted =
-                autosplit_detail::saturating_mul_u64(old, 15);
-            next = (old == 0)
-                ? observed
-                : autosplit_detail::saturating_add_u64(weighted, observed) >> 4;
-        } while (!target.compare_exchange_weak(
-                      old, next,
-                      std::memory_order_acq_rel,
-                      std::memory_order_acquire));
+            const std::uint64_t weighted = autosplit_detail::saturating_mul_u64(old, 15);
+            next = (old == 0) ? observed : autosplit_detail::saturating_add_u64(weighted, observed) >> 4;
+        } while (!target.compare_exchange_weak(old, next, std::memory_order_acq_rel, std::memory_order_acquire));
     }
 };
 
@@ -409,19 +355,16 @@ struct AutoSplitRouterState {
 // throughput regression even when wall time wins.
 struct AutoSplitRuntimeProfile {
     AutoRouteRuntimeProfile route{};
-    std::size_t      available_workers   = 1;
-    std::uint64_t    dispatch_cost_ns    = 10'000;  // 10 µs / shard fanout
-    std::uint32_t    min_efficiency_pct  = 70;       // 70% efficiency floor
+    std::size_t available_workers = 1;
+    std::uint64_t dispatch_cost_ns = 10'000;  // 10 µs / shard fanout
+    std::uint32_t min_efficiency_pct = 70;  // 70% efficiency floor
 };
 
 namespace autosplit_detail {
 
-[[nodiscard]] inline AutoSplitRuntimeProfile apply_pool_pressure(
-    SchedulingIntent intent,
-    AutoSplitRuntimeProfile profile,
-    std::size_t idle_workers) noexcept {
-    if (intent != SchedulingIntent::Background &&
-        intent != SchedulingIntent::Adaptive) {
+[[nodiscard]] inline AutoSplitRuntimeProfile
+apply_pool_pressure(SchedulingIntent intent, AutoSplitRuntimeProfile profile, std::size_t idle_workers) noexcept {
+    if (intent != SchedulingIntent::Background && intent != SchedulingIntent::Adaptive) {
         return profile;
     }
 
@@ -430,8 +373,7 @@ namespace autosplit_detail {
         return profile;
     }
 
-    profile.available_workers = std::min(
-        sanitized(profile.available_workers, 1), idle_workers);
+    profile.available_workers = std::min(sanitized(profile.available_workers, 1), idle_workers);
     return profile;
 }
 
@@ -444,21 +386,19 @@ namespace autosplit_detail {
 // the byte-tier trap for memory-shaped workloads where per-item compute
 // is far smaller than the bytes-touched would suggest.
 struct AutoSplitRequest {
-    std::size_t      item_count          = 0;
-    std::size_t      bytes_per_item      = 0;
-    std::size_t      max_shards          = 16;
-    std::size_t      producers           = 1;
-    std::size_t      consumers           = 1;
-    std::uint64_t    per_item_compute_ns = 0;            // 0 = byte-tier rule only
-    SchedulingIntent intent              = SchedulingIntent::Throughput;
-    bool             touches_memory      = false;        // bandwidth-shaped work
-    bool             is_io_bound         = false;         // wait/IO dominated work
+    std::size_t item_count = 0;
+    std::size_t bytes_per_item = 0;
+    std::size_t max_shards = 16;
+    std::size_t producers = 1;
+    std::size_t consumers = 1;
+    std::uint64_t per_item_compute_ns = 0;  // 0 = byte-tier rule only
+    SchedulingIntent intent = SchedulingIntent::Throughput;
+    bool touches_memory = false;  // bandwidth-shaped work
+    bool is_io_bound = false;  // wait/IO dominated work
 };
 
-[[nodiscard]] constexpr std::uint64_t auto_split_shape_key(
-    AutoSplitRequest request,
-    AutoSplitRuntimeProfile profile,
-    std::uint64_t body_key = 0) noexcept {
+[[nodiscard]] constexpr std::uint64_t auto_split_shape_key(AutoSplitRequest request, AutoSplitRuntimeProfile profile,
+                                                           std::uint64_t body_key = 0) noexcept {
     auto mix = [](std::uint64_t acc, std::uint64_t value) constexpr noexcept {
         value = AutoSplitShapeCache::mix_key(value);
         return acc ^ (value + 0x9E3779B97F4A7C15ULL + (acc << 6) + (acc >> 2));
@@ -502,83 +442,74 @@ struct AutoSplitRequest {
 // pipeline is consteval.
 
 enum class HintDirective : std::uint8_t {
-    None,                  // No opinion — defer to byte-tier + break-even
-    PreferSequential,      // Body wants inline; planner forces shard=1
-    PreferParallel,        // Body wants fanout; planner skips break-even
-    ByteTierWithCompute,   // Run byte-tier, apply break-even at per_item_ns
+    None,  // No opinion — defer to byte-tier + break-even
+    PreferSequential,  // Body wants inline; planner forces shard=1
+    PreferParallel,  // Body wants fanout; planner skips break-even
+    ByteTierWithCompute,  // Run byte-tier, apply break-even at per_item_ns
 };
 
 struct AutoSplitWorkloadHint {
-    HintDirective    directive          = HintDirective::None;
+    HintDirective directive = HintDirective::None;
     // Per-item cost estimate the body advertises.  Used by break-even
     // when directive==ByteTierWithCompute (or as a fallback when the
     // request didn't supply a hint).
-    std::uint64_t    per_item_ns        = 0;
+    std::uint64_t per_item_ns = 0;
     // The maximum number of shards this body can usefully consume.
     // 0 = no opinion.  Used to clamp request.max_shards from above —
     // e.g. a body with heavy captures (sizeof > 256) might prefer
     // ≤ 4 shards to avoid 16× lambda copies on the queue.
-    std::size_t      max_natural_shards = 0;
+    std::size_t max_natural_shards = 0;
     // Caller's appetite for parallelism.  When the body's hint differs
     // from the request's intent, the request wins (caller knows context
     // the body author can't); the body's hint applies only when caller
     // didn't override.  Default Throughput keeps the system-throughput-
     // friendly efficiency gate active.
-    SchedulingIntent intent             = SchedulingIntent::Throughput;
+    SchedulingIntent intent = SchedulingIntent::Throughput;
     // Body declares it's free of side effects — fanout always safe.
-    bool             is_pure            = false;
+    bool is_pure = false;
     // Body touches memory significantly (mem-bound).  Hints that
     // parallel mem fanout helps hide DRAM latency.
-    bool             touches_memory     = false;
+    bool touches_memory = false;
     // Body has IO/Block effects.  Hints that the workload is latency-
     // bound, not compute-bound; can fan out PAST core_count.
-    bool             is_io_bound        = false;
+    bool is_io_bound = false;
 };
 
 // Default trait — no opinion.  The router falls through to byte-tier.
 template <typename Body>
 struct workload_traits {
-    [[nodiscard]] static constexpr AutoSplitWorkloadHint hint() noexcept {
-        return AutoSplitWorkloadHint{};
-    }
+    [[nodiscard]] static constexpr AutoSplitWorkloadHint hint() noexcept { return AutoSplitWorkloadHint{}; }
 };
 
 namespace autosplit_detail {
 
-[[nodiscard]] consteval AutoSplitWorkloadHint merge_hints(
-    AutoSplitWorkloadHint lhs,
-    AutoSplitWorkloadHint rhs) noexcept {
-    if (rhs.directive == HintDirective::PreferSequential ||
-        lhs.directive == HintDirective::None) {
+[[nodiscard]] consteval AutoSplitWorkloadHint merge_hints(AutoSplitWorkloadHint lhs,
+                                                          AutoSplitWorkloadHint rhs) noexcept {
+    if (rhs.directive == HintDirective::PreferSequential || lhs.directive == HintDirective::None) {
         lhs.directive = rhs.directive;
-    } else if (lhs.directive == HintDirective::ByteTierWithCompute &&
-               rhs.directive == HintDirective::PreferParallel) {
+    } else if (lhs.directive == HintDirective::ByteTierWithCompute && rhs.directive == HintDirective::PreferParallel) {
         lhs.directive = rhs.directive;
     }
 
     if (lhs.per_item_ns == 0) lhs.per_item_ns = rhs.per_item_ns;
     if (rhs.max_natural_shards != 0) {
-        lhs.max_natural_shards =
-            lhs.max_natural_shards == 0
-                ? rhs.max_natural_shards
-                : std::min(lhs.max_natural_shards, rhs.max_natural_shards);
+        lhs.max_natural_shards = lhs.max_natural_shards == 0 ? rhs.max_natural_shards
+                                                             : std::min(lhs.max_natural_shards, rhs.max_natural_shards);
     }
     if (rhs.intent != SchedulingIntent::Throughput) lhs.intent = rhs.intent;
-    lhs.is_pure        = lhs.is_pure || rhs.is_pure;
+    lhs.is_pure = lhs.is_pure || rhs.is_pure;
     lhs.touches_memory = lhs.touches_memory || rhs.touches_memory;
-    lhs.is_io_bound    = lhs.is_io_bound || rhs.is_io_bound;
+    lhs.is_io_bound = lhs.is_io_bound || rhs.is_io_bound;
     return lhs;
 }
 
-[[nodiscard]] consteval AutoSplitWorkloadHint normalize_hint(
-    AutoSplitWorkloadHint hint) noexcept {
+[[nodiscard]] consteval AutoSplitWorkloadHint normalize_hint(AutoSplitWorkloadHint hint) noexcept {
     if (hint.directive == HintDirective::PreferSequential) {
         hint.intent = SchedulingIntent::Sequential;
         hint.max_natural_shards = 1;
     }
-    if (hint.is_io_bound &&
-        hint.directive != HintDirective::PreferSequential &&
-        hint.directive == HintDirective::None) {
+    if (hint.is_io_bound && hint.directive != HintDirective::PreferSequential
+        && hint.directive == HintDirective::None) {
         hint.directive = HintDirective::PreferParallel;
     }
     return hint;
@@ -592,8 +523,7 @@ template <typename Row>
     if constexpr (eff::row_size_v<Row> == 0) {
         hint.is_pure = true;
     }
-    if constexpr (eff::row_contains_v<Row, eff::Effect::Block> ||
-                  eff::row_contains_v<Row, eff::Effect::IO>) {
+    if constexpr (eff::row_contains_v<Row, eff::Effect::Block> || eff::row_contains_v<Row, eff::Effect::IO>) {
         hint.is_io_bound = true;
         hint.directive = HintDirective::PreferParallel;
         hint.intent = SchedulingIntent::Overlapped;
@@ -606,8 +536,7 @@ template <typename Row>
 }
 
 template <std::size_t Bytes>
-[[nodiscard]] consteval AutoSplitWorkloadHint
-hint_from_ctx_workload_bytes() noexcept {
+[[nodiscard]] consteval AutoSplitWorkloadHint hint_from_ctx_workload_bytes() noexcept {
     AutoSplitWorkloadHint hint{};
     if constexpr (Bytes <= conservative_cliff_l2_per_core) {
         hint.directive = HintDirective::PreferSequential;
@@ -623,26 +552,19 @@ hint_from_ctx_workload_bytes() noexcept {
 
 template <typename Workload>
 struct ctx_workload_hint_impl {
-    [[nodiscard]] static consteval AutoSplitWorkloadHint hint() noexcept {
-        return AutoSplitWorkloadHint{};
-    }
+    [[nodiscard]] static consteval AutoSplitWorkloadHint hint() noexcept { return AutoSplitWorkloadHint{}; }
 };
 
 template <std::size_t Bytes>
-struct ctx_workload_hint_impl<
-    ::crucible::effects::ctx_workload::ByteBudget<Bytes>> {
+struct ctx_workload_hint_impl<::crucible::effects::ctx_workload::ByteBudget<Bytes>> {
     [[nodiscard]] static consteval AutoSplitWorkloadHint hint() noexcept {
         return hint_from_ctx_workload_bytes<Bytes>();
     }
 };
 
-template <std::size_t Bytes,
-          std::size_t Producers,
-          std::size_t Consumers,
-          bool LatestOnly>
+template <std::size_t Bytes, std::size_t Producers, std::size_t Consumers, bool LatestOnly>
 struct ctx_workload_hint_impl<
-    ::crucible::effects::ctx_workload::ChannelBudget<
-        Bytes, Producers, Consumers, LatestOnly>> {
+    ::crucible::effects::ctx_workload::ChannelBudget<Bytes, Producers, Consumers, LatestOnly>> {
     [[nodiscard]] static consteval AutoSplitWorkloadHint hint() noexcept {
         (void)Producers;
         (void)Consumers;
@@ -652,8 +574,7 @@ struct ctx_workload_hint_impl<
 };
 
 template <std::size_t Items>
-struct ctx_workload_hint_impl<
-    ::crucible::effects::ctx_workload::ItemBudget<Items>> {
+struct ctx_workload_hint_impl<::crucible::effects::ctx_workload::ItemBudget<Items>> {
     [[nodiscard]] static consteval AutoSplitWorkloadHint hint() noexcept {
         AutoSplitWorkloadHint hint{};
         if constexpr (Items <= 1) {
@@ -665,8 +586,7 @@ struct ctx_workload_hint_impl<
 };
 
 template <typename Workload>
-[[nodiscard]] consteval AutoSplitWorkloadHint
-hint_from_ctx_workload_axis() noexcept {
+[[nodiscard]] consteval AutoSplitWorkloadHint hint_from_ctx_workload_axis() noexcept {
     return ctx_workload_hint_impl<Workload>::hint();
 }
 
@@ -675,14 +595,12 @@ template <typename Heat, typename Resid, typename Row, typename Workload>
     namespace eff = ::crucible::effects;
     AutoSplitWorkloadHint hint = hint_from_effect_row<Row>();
 
-    if constexpr (std::is_same_v<Heat, eff::ctx_heat::Hot> ||
-                  std::is_same_v<Resid, eff::ctx_resid::L1> ||
-                  std::is_same_v<Resid, eff::ctx_resid::L2>) {
+    if constexpr (std::is_same_v<Heat, eff::ctx_heat::Hot> || std::is_same_v<Resid, eff::ctx_resid::L1>
+                  || std::is_same_v<Resid, eff::ctx_resid::L2>) {
         hint.directive = HintDirective::PreferSequential;
         hint.intent = SchedulingIntent::Sequential;
         hint.max_natural_shards = 1;
-    } else if constexpr (std::is_same_v<Heat, eff::ctx_heat::Warm> ||
-                         std::is_same_v<Resid, eff::ctx_resid::L3>) {
+    } else if constexpr (std::is_same_v<Heat, eff::ctx_heat::Warm> || std::is_same_v<Resid, eff::ctx_resid::L3>) {
         if (hint.max_natural_shards == 0) hint.max_natural_shards = 4;
     } else if constexpr (std::is_same_v<Resid, eff::ctx_resid::DRAM>) {
         hint.touches_memory = true;
@@ -692,19 +610,14 @@ template <typename Heat, typename Resid, typename Row, typename Workload>
 }
 
 template <typename Body>
-concept DeclaresExecCtxType = requires {
-    typename std::decay_t<Body>::exec_ctx_type;
-};
+concept DeclaresExecCtxType = requires { typename std::decay_t<Body>::exec_ctx_type; };
 
 template <typename Body>
 concept HasExecCtxType =
-    DeclaresExecCtxType<Body> &&
-    ::crucible::effects::IsExecCtx<typename std::decay_t<Body>::exec_ctx_type>;
+    DeclaresExecCtxType<Body> && ::crucible::effects::IsExecCtx<typename std::decay_t<Body>::exec_ctx_type>;
 
 template <typename Body>
-concept HasAutoSplitValueType = requires {
-    typename std::decay_t<Body>::value_type;
-};
+concept HasAutoSplitValueType = requires { typename std::decay_t<Body>::value_type; };
 
 }  // namespace autosplit_detail
 
@@ -760,9 +673,9 @@ template <::crucible::safety::WaitStrategy_v Strategy, typename T>
 struct workload_traits<::crucible::safety::Wait<Strategy, T>> {
     [[nodiscard]] static constexpr AutoSplitWorkloadHint hint() noexcept {
         AutoSplitWorkloadHint h{};
-        if constexpr (Strategy == ::crucible::safety::WaitStrategy_v::Block ||
-                      Strategy == ::crucible::safety::WaitStrategy_v::Park ||
-                      Strategy == ::crucible::safety::WaitStrategy_v::AcquireWait) {
+        if constexpr (Strategy == ::crucible::safety::WaitStrategy_v::Block
+                      || Strategy == ::crucible::safety::WaitStrategy_v::Park
+                      || Strategy == ::crucible::safety::WaitStrategy_v::AcquireWait) {
             h.directive = HintDirective::PreferParallel;
             h.intent = SchedulingIntent::Overlapped;
             h.is_io_bound = true;
@@ -779,11 +692,11 @@ template <::crucible::safety::AllocClassTag_v Tag, typename T>
 struct workload_traits<::crucible::safety::AllocClass<Tag, T>> {
     [[nodiscard]] static constexpr AutoSplitWorkloadHint hint() noexcept {
         AutoSplitWorkloadHint h{};
-        if constexpr (Tag == ::crucible::safety::AllocClassTag_v::Stack ||
-                      Tag == ::crucible::safety::AllocClassTag_v::Pool) {
+        if constexpr (Tag == ::crucible::safety::AllocClassTag_v::Stack
+                      || Tag == ::crucible::safety::AllocClassTag_v::Pool) {
             h.max_natural_shards = 1;
-        } else if constexpr (Tag == ::crucible::safety::AllocClassTag_v::HugePage ||
-                             Tag == ::crucible::safety::AllocClassTag_v::Mmap) {
+        } else if constexpr (Tag == ::crucible::safety::AllocClassTag_v::HugePage
+                             || Tag == ::crucible::safety::AllocClassTag_v::Mmap) {
             h.touches_memory = true;
         }
         return h;
@@ -797,10 +710,8 @@ struct workload_traits<::crucible::effects::Computation<Row, T>> {
     }
 };
 
-template <class Cap, class Numa, class Alloc, class Heat,
-          class Resid, class Row, class Workload, class Progress>
-struct workload_traits<
-    ::crucible::effects::ExecCtx<Cap, Numa, Alloc, Heat, Resid, Row, Workload, Progress>> {
+template <class Cap, class Numa, class Alloc, class Heat, class Resid, class Row, class Workload, class Progress>
+struct workload_traits<::crucible::effects::ExecCtx<Cap, Numa, Alloc, Heat, Resid, Row, Workload, Progress>> {
     [[nodiscard]] static constexpr AutoSplitWorkloadHint hint() noexcept {
         // Progress is not consumed by hint_from_exec_ctx_axes — the
         // scheduler hint surface (Latency/Throughput/Locality) is
@@ -815,9 +726,7 @@ struct workload_traits<
 //   struct MyBody : AutoSplitWorkloadTagged<{.directive = HintDirective::PreferParallel}> { ... };
 template <AutoSplitWorkloadHint H>
 struct AutoSplitWorkloadTagged {
-    [[nodiscard]] static constexpr AutoSplitWorkloadHint workload_hint() noexcept {
-        return H;
-    }
+    [[nodiscard]] static constexpr AutoSplitWorkloadHint workload_hint() noexcept { return H; }
 };
 
 namespace autosplit_detail {
@@ -864,12 +773,10 @@ template <typename Body>
                       "AutoSplit body exec_ctx_type must satisfy "
                       "crucible::effects::IsExecCtx; malformed context "
                       "metadata is not ignored");
-        hint = autosplit_detail::merge_hints(
-            hint, workload_traits<typename B::exec_ctx_type>::hint());
+        hint = autosplit_detail::merge_hints(hint, workload_traits<typename B::exec_ctx_type>::hint());
     }
     if constexpr (autosplit_detail::HasAutoSplitValueType<B>) {
-        hint = autosplit_detail::merge_hints(
-            hint, workload_traits<typename B::value_type>::hint());
+        hint = autosplit_detail::merge_hints(hint, workload_traits<typename B::value_type>::hint());
     }
 
     // 3. Auto-inference from type properties — zero opt-in cost.
@@ -899,16 +806,12 @@ struct AutoSplitShard {
     std::size_t end = 0;
     std::size_t byte_offset = 0;
     std::size_t byte_count = 0;
-    NumaPolicy  numa = NumaPolicy::NumaIgnore;
-    Tier        tier = Tier::L1Resident;
+    NumaPolicy numa = NumaPolicy::NumaIgnore;
+    Tier tier = Tier::L1Resident;
 
-    [[nodiscard]] constexpr std::size_t size() const noexcept {
-        return end >= begin ? end - begin : 0;
-    }
+    [[nodiscard]] constexpr std::size_t size() const noexcept { return end >= begin ? end - begin : 0; }
 
-    [[nodiscard]] constexpr bool empty() const noexcept {
-        return size() == 0;
-    }
+    [[nodiscard]] constexpr bool empty() const noexcept { return size() == 0; }
 };
 
 struct AutoSplitPlan {
@@ -922,16 +825,11 @@ struct AutoSplitPlan {
     std::size_t total_bytes = 0;
     std::size_t grain_items = 0;
 
-    [[nodiscard]] constexpr bool empty() const noexcept {
-        return shard_count == 0 || total_items == 0;
-    }
+    [[nodiscard]] constexpr bool empty() const noexcept { return shard_count == 0 || total_items == 0; }
 
-    [[nodiscard]] constexpr bool runs_inline() const noexcept {
-        return shard_count <= 1;
-    }
+    [[nodiscard]] constexpr bool runs_inline() const noexcept { return shard_count <= 1; }
 
-    [[nodiscard]] constexpr AutoSplitShard
-    shard(std::size_t index) const noexcept {
+    [[nodiscard]] constexpr AutoSplitShard shard(std::size_t index) const noexcept {
         if (index >= shard_count || shard_count == 0) return {};
 
         const std::size_t base = total_items / shard_count;
@@ -961,22 +859,20 @@ struct AutoSplitDispatchResult {
 
 template <typename Job>
 concept AutoSplitShardBody =
-    std::copy_constructible<std::decay_t<Job>> &&
-    std::is_invocable_r_v<void, std::decay_t<Job>&, AutoSplitShard>;
+    std::copy_constructible<std::decay_t<Job>> && std::is_invocable_r_v<void, std::decay_t<Job>&, AutoSplitShard>;
 
-[[nodiscard]] inline const AutoSplitRuntimeProfile&
-auto_split_runtime_profile_once() noexcept {
+[[nodiscard]] inline const AutoSplitRuntimeProfile& auto_split_runtime_profile_once() noexcept {
     static const AutoSplitRuntimeProfile profile = [] {
         const Topology& topology = Topology::instance();
         return AutoSplitRuntimeProfile{
-            .route = AutoRouteRuntimeProfile{
-                .l2_per_core_bytes = topology.l2_per_core_bytes(),
-                .huge_bytes = topology.l3_total_bytes(),
-                .medium_shards = 4,
-                .huge_shards = 16,
-            },
-            .available_workers = std::max<std::size_t>(
-                1, topology.process_cpu_count()),
+            .route =
+                AutoRouteRuntimeProfile{
+                    .l2_per_core_bytes = topology.l2_per_core_bytes(),
+                    .huge_bytes = topology.l3_total_bytes(),
+                    .medium_shards = 4,
+                    .huge_shards = 16,
+                },
+            .available_workers = std::max<std::size_t>(1, topology.process_cpu_count()),
             .dispatch_cost_ns = 10'000,  // 10 µs/shard — empirical Pool fanout cost
         };
     }();
@@ -984,99 +880,66 @@ auto_split_runtime_profile_once() noexcept {
 }
 
 [[nodiscard]] inline AutoSplitRuntimeProfile
-auto_split_runtime_profile_from_topology(
-    const Topology& topology = Topology::instance()) noexcept {
+auto_split_runtime_profile_from_topology(const Topology& topology = Topology::instance()) noexcept {
     return AutoSplitRuntimeProfile{
         .route = auto_route_runtime_profile_from_topology(topology),
-        .available_workers = std::max<std::size_t>(
-            1, topology.process_cpu_count()),
+        .available_workers = std::max<std::size_t>(1, topology.process_cpu_count()),
         .dispatch_cost_ns = 10'000,
     };
 }
 
 [[nodiscard]] constexpr AutoSplitRuntimeProfile
-auto_split_runtime_profile_from_topology_snapshot(
-    Topology::Snapshot snapshot) noexcept {
+auto_split_runtime_profile_from_topology_snapshot(Topology::Snapshot snapshot) noexcept {
     return AutoSplitRuntimeProfile{
         .route = auto_route_runtime_profile_from_topology_snapshot(snapshot),
-        .available_workers = std::max<std::size_t>(
-            1, snapshot.process_cpu_count),
+        .available_workers = std::max<std::size_t>(1, snapshot.process_cpu_count),
         .dispatch_cost_ns = 10'000,
     };
 }
 
-[[nodiscard]] inline AutoSplitRuntimeProfile
-auto_split_runtime_profile_refresh() noexcept {
-    return auto_split_runtime_profile_from_topology_snapshot(
-        Topology::instance().snapshot());
+[[nodiscard]] inline AutoSplitRuntimeProfile auto_split_runtime_profile_refresh() noexcept {
+    return auto_split_runtime_profile_from_topology_snapshot(Topology::instance().snapshot());
 }
 
-[[nodiscard]] inline AutoSplitRuntimeProfile
-auto_split_runtime_profile_reprobe() noexcept {
-    return auto_split_runtime_profile_from_topology_snapshot(
-        Topology::reprobe_snapshot());
+[[nodiscard]] inline AutoSplitRuntimeProfile auto_split_runtime_profile_reprobe() noexcept {
+    return auto_split_runtime_profile_from_topology_snapshot(Topology::reprobe_snapshot());
 }
 
-[[nodiscard]] constexpr AutoRouteDecision
-normalize_auto_split_route(AutoRouteDecision route,
-                           std::size_t shard_count) noexcept {
+[[nodiscard]] constexpr AutoRouteDecision normalize_auto_split_route(AutoRouteDecision route,
+                                                                     std::size_t shard_count) noexcept {
     const std::size_t fanout = std::max<std::size_t>(1, shard_count);
     route.worker_fanout = fanout;
     route.uses_worker_fanout = shard_count > 1;
     if (!route.uses_worker_fanout) {
-        route.kind = detail::route_kind_from_topology_runtime(
-            route.channel_topology);
+        route.kind = detail::route_kind_from_topology_runtime(route.channel_topology);
     } else {
         route.kind = RouteKind::ShardedGrid;
     }
     return route;
 }
 
-[[nodiscard]] constexpr AutoSplitPlan
-auto_split_plan(AutoSplitRequest request,
-                AutoSplitRuntimeProfile profile = {}) noexcept {
-    const std::size_t total_bytes =
-        autosplit_detail::saturating_mul(request.item_count,
-                                         request.bytes_per_item);
-    const std::size_t max_shards =
-        autosplit_detail::sanitized(request.max_shards, 1);
-    const std::size_t worker_limit =
-        autosplit_detail::sanitized(profile.available_workers, 1);
-    const std::size_t producers =
-        autosplit_detail::sanitized(request.producers, 1);
-    const std::size_t consumers =
-        autosplit_detail::sanitized(request.consumers, 1);
-    const std::size_t hard_cap = std::max<std::size_t>(
-        1, std::min(max_shards, worker_limit));
-    const std::size_t l2 = autosplit_detail::sanitized(
-        profile.route.l2_per_core_bytes, conservative_cliff_l2_per_core);
-    const Tier request_tier =
-        autosplit_detail::classify_from_profile(total_bytes, profile.route);
-    const std::size_t bandwidth_min_bytes = std::max<std::size_t>(
-        8ULL * 1024ULL * 1024ULL,
-        autosplit_detail::saturating_mul(l2, 16));
-    const bool memory_bandwidth_candidate =
-        request.touches_memory &&
-        request.intent != SchedulingIntent::Sequential &&
-        request_tier != Tier::L1Resident &&
-        request_tier != Tier::L2Resident &&
-        total_bytes >= bandwidth_min_bytes;
+[[nodiscard]] constexpr AutoSplitPlan auto_split_plan(AutoSplitRequest request,
+                                                      AutoSplitRuntimeProfile profile = {}) noexcept {
+    const std::size_t total_bytes = autosplit_detail::saturating_mul(request.item_count, request.bytes_per_item);
+    const std::size_t max_shards = autosplit_detail::sanitized(request.max_shards, 1);
+    const std::size_t worker_limit = autosplit_detail::sanitized(profile.available_workers, 1);
+    const std::size_t producers = autosplit_detail::sanitized(request.producers, 1);
+    const std::size_t consumers = autosplit_detail::sanitized(request.consumers, 1);
+    const std::size_t hard_cap = std::max<std::size_t>(1, std::min(max_shards, worker_limit));
+    const std::size_t l2 = autosplit_detail::sanitized(profile.route.l2_per_core_bytes, conservative_cliff_l2_per_core);
+    const Tier request_tier = autosplit_detail::classify_from_profile(total_bytes, profile.route);
+    const std::size_t bandwidth_min_bytes =
+        std::max<std::size_t>(8ULL * 1024ULL * 1024ULL, autosplit_detail::saturating_mul(l2, 16));
+    const bool memory_bandwidth_candidate = request.touches_memory && request.intent != SchedulingIntent::Sequential
+                                         && request_tier != Tier::L1Resident && request_tier != Tier::L2Resident
+                                         && total_bytes >= bandwidth_min_bytes;
 
     const AutoRouteDecision route =
-        auto_route_decision_runtime(RouteIntent::Shardable,
-                                    producers,
-                                    consumers,
-                                    total_bytes,
-                                    hard_cap,
-                                    profile.route);
-    const std::size_t l2_fit =
-        total_bytes == 0 ? 1 : autosplit_detail::ceil_div(total_bytes, l2);
-    const std::size_t route_factor =
-        route.uses_worker_fanout ? std::max(route.worker_fanout, l2_fit) : 1;
-    const std::size_t item_cap =
-        request.item_count == 0 ? 0 : std::max<std::size_t>(1, request.item_count);
-    std::size_t shard_count =
-        item_cap == 0 ? 0 : std::min({route_factor, hard_cap, item_cap});
+        auto_route_decision_runtime(RouteIntent::Shardable, producers, consumers, total_bytes, hard_cap, profile.route);
+    const std::size_t l2_fit = total_bytes == 0 ? 1 : autosplit_detail::ceil_div(total_bytes, l2);
+    const std::size_t route_factor = route.uses_worker_fanout ? std::max(route.worker_fanout, l2_fit) : 1;
+    const std::size_t item_cap = request.item_count == 0 ? 0 : std::max<std::size_t>(1, request.item_count);
+    std::size_t shard_count = item_cap == 0 ? 0 : std::min({route_factor, hard_cap, item_cap});
 
     // Intent gate.  Sequential intent always collapses; that's the
     // contract callers rely on for hot-path-typed bodies.
@@ -1089,13 +952,9 @@ auto_split_plan(AutoSplitRequest request,
     // sequential when fanout overhead dominates the parallel speedup.
     // LatencyCritical intent SKIPS this gate — it accepts CPU cost in
     // exchange for wall-time wins.
-    if (request.intent != SchedulingIntent::LatencyCritical &&
-        !request.is_io_bound &&
-        autosplit_detail::break_even_prefers_sequential(
-            request.item_count,
-            request.per_item_compute_ns,
-            profile.dispatch_cost_ns,
-            shard_count)) {
+    if (request.intent != SchedulingIntent::LatencyCritical && !request.is_io_bound
+        && autosplit_detail::break_even_prefers_sequential(request.item_count, request.per_item_compute_ns,
+                                                           profile.dispatch_cost_ns, shard_count)) {
         shard_count = 1;
     }
 
@@ -1113,30 +972,21 @@ auto_split_plan(AutoSplitRequest request,
     // 0 (no compute hint), efficiency_pct returns 0 for every F > 1
     // and the gate would always force sequential — so we only apply
     // it when the caller actually provided a hint.
-    if (request.per_item_compute_ns > 0 &&
-        !memory_bandwidth_candidate &&
-        !request.is_io_bound &&
-        request.intent != SchedulingIntent::LatencyCritical &&
-        request.intent != SchedulingIntent::Sequential) {
-        while (shard_count > 1 &&
-               autosplit_detail::efficiency_pct(
-                   request.item_count,
-                   request.per_item_compute_ns,
-                   profile.dispatch_cost_ns,
-                   shard_count) < profile.min_efficiency_pct) {
+    if (request.per_item_compute_ns > 0 && !memory_bandwidth_candidate && !request.is_io_bound
+        && request.intent != SchedulingIntent::LatencyCritical && request.intent != SchedulingIntent::Sequential) {
+        while (shard_count > 1
+               && autosplit_detail::efficiency_pct(request.item_count, request.per_item_compute_ns,
+                                                   profile.dispatch_cost_ns, shard_count)
+                      < profile.min_efficiency_pct) {
             shard_count >>= 1;  // halve and retry; converges in log2(F) steps
             if (shard_count == 0) shard_count = 1;
         }
     }
 
-    const std::size_t grain =
-        shard_count == 0
-            ? 0
-            : autosplit_detail::ceil_div(request.item_count, shard_count);
+    const std::size_t grain = shard_count == 0 ? 0 : autosplit_detail::ceil_div(request.item_count, shard_count);
 
     ParallelismDecision decision{};
-    decision.kind = shard_count > 1 ? ParallelismDecision::Kind::Parallel
-                                    : ParallelismDecision::Kind::Sequential;
+    decision.kind = shard_count > 1 ? ParallelismDecision::Kind::Parallel : ParallelismDecision::Kind::Sequential;
     decision.factor = std::max<std::size_t>(1, shard_count);
     decision.tier = request_tier;
     decision.numa = autosplit_detail::numa_from_tier(decision.tier);
@@ -1146,14 +996,12 @@ auto_split_plan(AutoSplitRequest request,
         routing.partition = AutoSplitPartitionStrategy::EvenContiguous;
         routing.schedule = AutoSplitScheduleMode::SyncForkJoin;
         routing.completion = AutoSplitCompletionMode::BlockingWait;
-        routing.placement =
-            decision.numa == NumaPolicy::NumaLocal  ? AutoSplitPlacementPolicy::PoolNumaLocal
-          : decision.numa == NumaPolicy::NumaSpread ? AutoSplitPlacementPolicy::PoolNumaSpread
-                                                    : AutoSplitPlacementPolicy::PoolAny;
+        routing.placement = decision.numa == NumaPolicy::NumaLocal  ? AutoSplitPlacementPolicy::PoolNumaLocal
+                          : decision.numa == NumaPolicy::NumaSpread ? AutoSplitPlacementPolicy::PoolNumaSpread
+                                                                    : AutoSplitPlacementPolicy::PoolAny;
     }
 
-    const AutoRouteDecision normalized_route =
-        normalize_auto_split_route(route, shard_count);
+    const AutoRouteDecision normalized_route = normalize_auto_split_route(route, shard_count);
 
     return AutoSplitPlan{
         .request = request,
@@ -1168,8 +1016,7 @@ auto_split_plan(AutoSplitRequest request,
     };
 }
 
-[[nodiscard]] inline AutoSplitPlan
-auto_split_plan_runtime(AutoSplitRequest request) noexcept {
+[[nodiscard]] inline AutoSplitPlan auto_split_plan_runtime(AutoSplitRequest request) noexcept {
     return auto_split_plan(request, auto_split_runtime_profile_once());
 }
 
@@ -1180,51 +1027,42 @@ auto_split_plan_runtime(AutoSplitRequest request) noexcept {
 //
 // `factor` is clamped to `[1, item_count]`.  factor=0 collapses to an
 // empty plan (consistent with `auto_split_plan` when item_count == 0).
-[[nodiscard]] constexpr AutoSplitPlan
-auto_split_plan_at_factor(AutoSplitRequest request,
-                          std::size_t factor,
-                          AutoSplitRuntimeProfile profile = {}) noexcept {
+[[nodiscard]] constexpr AutoSplitPlan auto_split_plan_at_factor(AutoSplitRequest request, std::size_t factor,
+                                                                AutoSplitRuntimeProfile profile = {}) noexcept {
     if (request.item_count == 0 || factor == 0) {
         return AutoSplitPlan{};
     }
     const std::size_t shard_count = std::min(factor, request.item_count);
-    const std::size_t total_bytes =
-        autosplit_detail::saturating_mul(request.item_count,
-                                         request.bytes_per_item);
+    const std::size_t total_bytes = autosplit_detail::saturating_mul(request.item_count, request.bytes_per_item);
 
     AutoRouteDecision route{
-        .kind           = shard_count > 1 ? RouteKind::ShardedGrid
-                                           : RouteKind::Spsc,
-        .intent         = RouteIntent::Shardable,
-        .channel_topology = detail::recommend_topology_runtime(
-            autosplit_detail::sanitized(request.producers, 1),
-            autosplit_detail::sanitized(request.consumers, 1),
-            false),
+        .kind = shard_count > 1 ? RouteKind::ShardedGrid : RouteKind::Spsc,
+        .intent = RouteIntent::Shardable,
+        .channel_topology =
+            detail::recommend_topology_runtime(autosplit_detail::sanitized(request.producers, 1),
+                                               autosplit_detail::sanitized(request.consumers, 1), false),
         .channel_producers = autosplit_detail::sanitized(request.producers, 1),
         .channel_consumers = autosplit_detail::sanitized(request.consumers, 1),
         .workload_bytes = total_bytes,
-        .worker_fanout  = shard_count,
+        .worker_fanout = shard_count,
         .uses_worker_fanout = shard_count > 1,
-        .latest_only    = false,
+        .latest_only = false,
     };
     route = normalize_auto_split_route(route, shard_count);
 
     ParallelismDecision decision{};
-    decision.kind = shard_count > 1 ? ParallelismDecision::Kind::Parallel
-                                    : ParallelismDecision::Kind::Sequential;
+    decision.kind = shard_count > 1 ? ParallelismDecision::Kind::Parallel : ParallelismDecision::Kind::Sequential;
     decision.factor = shard_count;
-    decision.tier = autosplit_detail::classify_from_profile(total_bytes,
-                                                            profile.route);
+    decision.tier = autosplit_detail::classify_from_profile(total_bytes, profile.route);
     decision.numa = autosplit_detail::numa_from_tier(decision.tier);
 
     AutoSplitRoutingDecision routing{};
     if (shard_count > 1) {
         routing.partition = AutoSplitPartitionStrategy::EvenContiguous;
         routing.schedule = AutoSplitScheduleMode::SyncForkJoin;
-        routing.placement =
-            decision.numa == NumaPolicy::NumaLocal  ? AutoSplitPlacementPolicy::PoolNumaLocal
-          : decision.numa == NumaPolicy::NumaSpread ? AutoSplitPlacementPolicy::PoolNumaSpread
-                                                    : AutoSplitPlacementPolicy::PoolAny;
+        routing.placement = decision.numa == NumaPolicy::NumaLocal  ? AutoSplitPlacementPolicy::PoolNumaLocal
+                          : decision.numa == NumaPolicy::NumaSpread ? AutoSplitPlacementPolicy::PoolNumaSpread
+                                                                    : AutoSplitPlacementPolicy::PoolAny;
         routing.completion = AutoSplitCompletionMode::BlockingWait;
     }
 
@@ -1241,14 +1079,11 @@ auto_split_plan_at_factor(AutoSplitRequest request,
     };
 }
 
-[[nodiscard]] inline AutoSplitPlan
-auto_split_plan_cached(AutoSplitRequest request,
-                       AutoSplitRuntimeProfile profile,
-                       AutoSplitRouterState& state,
-                       std::uint64_t body_key = 0) noexcept {
+[[nodiscard]] inline AutoSplitPlan auto_split_plan_cached(AutoSplitRequest request, AutoSplitRuntimeProfile profile,
+                                                          AutoSplitRouterState& state,
+                                                          std::uint64_t body_key = 0) noexcept {
     const std::uint64_t key = auto_split_shape_key(request, profile, body_key);
-    const std::size_t cached =
-        state.cache.lookup_or(key, request.intent, 0);
+    const std::size_t cached = state.cache.lookup_or(key, request.intent, 0);
     if (cached != 0) {
         return auto_split_plan_at_factor(request, cached, profile);
     }
@@ -1259,55 +1094,40 @@ auto_split_plan_cached(AutoSplitRequest request,
 }
 
 template <typename Policy, typename Job>
-    requires scheduler::SchedulerPolicy<Policy, adaptive_detail::ticket_type> &&
-             AutoSplitShardBody<Job>
-[[nodiscard]] AutoSplitDispatchResult
-dispatch_auto_split(Pool<Policy>& pool,
-                    AutoSplitRequest request,
-                    AutoSplitRuntimeProfile runtime_profile,
-                    Job&& job) {
+    requires scheduler::SchedulerPolicy<Policy, adaptive_detail::ticket_type> && AutoSplitShardBody<Job>
+[[nodiscard]] AutoSplitDispatchResult dispatch_auto_split(Pool<Policy>& pool, AutoSplitRequest request,
+                                                          AutoSplitRuntimeProfile runtime_profile, Job&& job) {
     const AutoSplitRuntimeProfile pressured_profile =
-        autosplit_detail::apply_pool_pressure(
-            request.intent, runtime_profile, pool.idle_workers_approx());
+        autosplit_detail::apply_pool_pressure(request.intent, runtime_profile, pool.idle_workers_approx());
     const AutoSplitPlan plan = auto_split_plan(request, pressured_profile);
     return dispatch_auto_split_plan_(pool, plan, std::forward<Job>(job));
 }
 
 template <typename Policy, typename Job>
-    requires scheduler::SchedulerPolicy<Policy, adaptive_detail::ticket_type> &&
-             AutoSplitShardBody<Job>
+    requires scheduler::SchedulerPolicy<Policy, adaptive_detail::ticket_type> && AutoSplitShardBody<Job>
 [[nodiscard]] AutoSplitDispatchResult
-dispatch_auto_split(Pool<Policy>& pool,
-                    AutoSplitRequest request,
-                    AutoSplitRuntimeProfile runtime_profile,
-                    AutoSplitRouterState& router_state,
-                    std::uint64_t body_key,
-                    Job&& job) {
+dispatch_auto_split(Pool<Policy>& pool, AutoSplitRequest request, AutoSplitRuntimeProfile runtime_profile,
+                    AutoSplitRouterState& router_state, std::uint64_t body_key, Job&& job) {
     const AutoSplitRuntimeProfile pressured_profile =
-        autosplit_detail::apply_pool_pressure(
-            request.intent, runtime_profile, pool.idle_workers_approx());
-    const AutoSplitPlan plan = auto_split_plan_cached(
-        request, pressured_profile, router_state, body_key);
+        autosplit_detail::apply_pool_pressure(request.intent, runtime_profile, pool.idle_workers_approx());
+    const AutoSplitPlan plan = auto_split_plan_cached(request, pressured_profile, router_state, body_key);
     return dispatch_auto_split_plan_(pool, plan, std::forward<Job>(job));
 }
 
 template <typename Policy, typename Job>
-    requires scheduler::SchedulerPolicy<Policy, adaptive_detail::ticket_type> &&
-             AutoSplitShardBody<Job>
-[[nodiscard]] AutoSplitDispatchResult
-dispatch_auto_split_plan_(Pool<Policy>& pool,
-                          AutoSplitPlan plan,
-                          Job&& job) {
+    requires scheduler::SchedulerPolicy<Policy, adaptive_detail::ticket_type> && AutoSplitShardBody<Job>
+[[nodiscard]] AutoSplitDispatchResult dispatch_auto_split_plan_(Pool<Policy>& pool, AutoSplitPlan plan, Job&& job) {
     if (plan.empty()) {
         return AutoSplitDispatchResult{
             .plan = plan,
-            .dispatch = DispatchWithWorkloadResult{
-                .decision = plan.decision,
-                .ran_inline = true,
-                .queued = false,
-                .worker_limit = 0,
-                .tasks_submitted = 0,
-            },
+            .dispatch =
+                DispatchWithWorkloadResult{
+                    .decision = plan.decision,
+                    .ran_inline = true,
+                    .queued = false,
+                    .worker_limit = 0,
+                    .tasks_submitted = 0,
+                },
         };
     }
 
@@ -1317,14 +1137,11 @@ dispatch_auto_split_plan_(Pool<Policy>& pool,
             .write_bytes = plan.total_bytes,
             .item_count = plan.total_items,
         },
-        plan.shard_count,
-        plan.decision.numa);
+        plan.shard_count, plan.decision.numa);
 
-    auto split_job = [plan, fn = std::decay_t<Job>{std::forward<Job>(job)}](
-                         WorkShard worker) mutable {
+    auto split_job = [plan, fn = std::decay_t<Job>{std::forward<Job>(job)}](WorkShard worker) mutable {
         const std::size_t worker_count = std::max<std::size_t>(1, worker.count);
-        for (std::size_t i = worker.index; i < plan.shard_count;
-             i += worker_count) {
+        for (std::size_t i = worker.index; i < plan.shard_count; i += worker_count) {
             fn(plan.shard(i));
         }
     };
@@ -1336,16 +1153,9 @@ dispatch_auto_split_plan_(Pool<Policy>& pool,
 }
 
 template <typename Policy, typename Job>
-    requires scheduler::SchedulerPolicy<Policy, adaptive_detail::ticket_type> &&
-             AutoSplitShardBody<Job>
-[[nodiscard]] AutoSplitDispatchResult
-dispatch_auto_split(Pool<Policy>& pool,
-                    AutoSplitRequest request,
-                    Job&& job) {
-    return dispatch_auto_split(pool,
-                               request,
-                               auto_split_runtime_profile_once(),
-                               std::forward<Job>(job));
+    requires scheduler::SchedulerPolicy<Policy, adaptive_detail::ticket_type> && AutoSplitShardBody<Job>
+[[nodiscard]] AutoSplitDispatchResult dispatch_auto_split(Pool<Policy>& pool, AutoSplitRequest request, Job&& job) {
+    return dispatch_auto_split(pool, request, auto_split_runtime_profile_once(), std::forward<Job>(job));
 }
 
 // Dispatch a request through an explicit fixed `factor`, bypassing the
@@ -1353,24 +1163,21 @@ dispatch_auto_split(Pool<Policy>& pool,
 // against handpicked factors.  factor=1 runs the body inline on the
 // caller; factor>1 fans out to the pool with strided shard coverage.
 template <typename Policy, typename Job>
-    requires scheduler::SchedulerPolicy<Policy, adaptive_detail::ticket_type> &&
-             AutoSplitShardBody<Job>
-[[nodiscard]] AutoSplitDispatchResult
-dispatch_at_factor(Pool<Policy>& pool,
-                   AutoSplitRequest request,
-                   std::size_t factor,
-                   Job&& job) {
+    requires scheduler::SchedulerPolicy<Policy, adaptive_detail::ticket_type> && AutoSplitShardBody<Job>
+[[nodiscard]] AutoSplitDispatchResult dispatch_at_factor(Pool<Policy>& pool, AutoSplitRequest request,
+                                                         std::size_t factor, Job&& job) {
     const AutoSplitPlan plan = auto_split_plan_at_factor(request, factor);
     if (plan.empty()) {
         return AutoSplitDispatchResult{
             .plan = plan,
-            .dispatch = DispatchWithWorkloadResult{
-                .decision = plan.decision,
-                .ran_inline = true,
-                .queued = false,
-                .worker_limit = 0,
-                .tasks_submitted = 0,
-            },
+            .dispatch =
+                DispatchWithWorkloadResult{
+                    .decision = plan.decision,
+                    .ran_inline = true,
+                    .queued = false,
+                    .worker_limit = 0,
+                    .tasks_submitted = 0,
+                },
         };
     }
     if (plan.shard_count == 1) {
@@ -1378,13 +1185,14 @@ dispatch_at_factor(Pool<Policy>& pool,
         body(plan.shard(0));
         return AutoSplitDispatchResult{
             .plan = plan,
-            .dispatch = DispatchWithWorkloadResult{
-                .decision = plan.decision,
-                .ran_inline = true,
-                .queued = false,
-                .worker_limit = 1,
-                .tasks_submitted = 1,
-            },
+            .dispatch =
+                DispatchWithWorkloadResult{
+                    .decision = plan.decision,
+                    .ran_inline = true,
+                    .queued = false,
+                    .worker_limit = 1,
+                    .tasks_submitted = 1,
+                },
         };
     }
 
@@ -1396,19 +1204,16 @@ dispatch_at_factor(Pool<Policy>& pool,
             .write_bytes = plan.total_bytes,
             .item_count = plan.total_items,
         },
-        plan.shard_count,
-        plan.decision.numa);
+        plan.shard_count, plan.decision.numa);
 
     // The split_job is self-balancing: when only ONE worker runs it
     // (because ParallelismRule::recommend collapses to Sequential
     // despite our cap), the strided loop still walks every shard
     // index.  So the body always sees every shard exactly once,
     // regardless of how many workers are active.
-    auto split_job = [plan, fn = std::decay_t<Job>{std::forward<Job>(job)}](
-                         WorkShard worker) mutable {
+    auto split_job = [plan, fn = std::decay_t<Job>{std::forward<Job>(job)}](WorkShard worker) mutable {
         const std::size_t worker_count = std::max<std::size_t>(1, worker.count);
-        for (std::size_t i = worker.index; i < plan.shard_count;
-             i += worker_count) {
+        for (std::size_t i = worker.index; i < plan.shard_count; i += worker_count) {
             fn(plan.shard(i));
         }
     };
@@ -1440,9 +1245,8 @@ dispatch_at_factor(Pool<Policy>& pool,
 // applies the merged result to the request before calling the cost
 // model.  Zero runtime cost beyond the existing `auto_split_plan`.
 
-[[nodiscard]] constexpr AutoSplitRequest
-merge_request_with_hint(AutoSplitRequest req,
-                        AutoSplitWorkloadHint hint) noexcept {
+[[nodiscard]] constexpr AutoSplitRequest merge_request_with_hint(AutoSplitRequest req,
+                                                                 AutoSplitWorkloadHint hint) noexcept {
     // Hint's directive forces the strongest signal it can:
     if (hint.directive == HintDirective::PreferSequential) {
         req.intent = SchedulingIntent::Sequential;
@@ -1451,9 +1255,8 @@ merge_request_with_hint(AutoSplitRequest req,
     // upgrades when the caller didn't already declare LatencyCritical
     // or Sequential (those carry user-meaningful semantics we don't
     // override).
-    if (hint.directive == HintDirective::PreferParallel &&
-        req.intent != SchedulingIntent::Sequential &&
-        req.intent != SchedulingIntent::LatencyCritical) {
+    if (hint.directive == HintDirective::PreferParallel && req.intent != SchedulingIntent::Sequential
+        && req.intent != SchedulingIntent::LatencyCritical) {
         req.intent = SchedulingIntent::LatencyCritical;
     }
     // Body's per-item ns fills in only when caller didn't supply one.
@@ -1473,30 +1276,20 @@ merge_request_with_hint(AutoSplitRequest req,
 }
 
 template <typename Policy, typename Job>
-    requires scheduler::SchedulerPolicy<Policy, adaptive_detail::ticket_type> &&
-             AutoSplitShardBody<Job>
-[[nodiscard]] AutoSplitDispatchResult
-dispatch_auto_split_typed(Pool<Policy>& pool,
-                          AutoSplitRequest request,
-                          AutoSplitRuntimeProfile runtime_profile,
-                          Job&& job) {
+    requires scheduler::SchedulerPolicy<Policy, adaptive_detail::ticket_type> && AutoSplitShardBody<Job>
+[[nodiscard]] AutoSplitDispatchResult dispatch_auto_split_typed(Pool<Policy>& pool, AutoSplitRequest request,
+                                                                AutoSplitRuntimeProfile runtime_profile, Job&& job) {
     using Body = std::decay_t<Job>;
     constexpr AutoSplitWorkloadHint hint = infer_workload_hint<Body>();
     const AutoSplitRequest merged = merge_request_with_hint(request, hint);
-    return dispatch_auto_split(pool, merged, runtime_profile,
-                               std::forward<Job>(job));
+    return dispatch_auto_split(pool, merged, runtime_profile, std::forward<Job>(job));
 }
 
 template <typename Policy, typename Job>
-    requires scheduler::SchedulerPolicy<Policy, adaptive_detail::ticket_type> &&
-             AutoSplitShardBody<Job>
-[[nodiscard]] AutoSplitDispatchResult
-dispatch_auto_split_typed(Pool<Policy>& pool,
-                          AutoSplitRequest request,
-                          Job&& job) {
-    return dispatch_auto_split_typed(pool, request,
-                                     auto_split_runtime_profile_once(),
-                                     std::forward<Job>(job));
+    requires scheduler::SchedulerPolicy<Policy, adaptive_detail::ticket_type> && AutoSplitShardBody<Job>
+[[nodiscard]] AutoSplitDispatchResult dispatch_auto_split_typed(Pool<Policy>& pool, AutoSplitRequest request,
+                                                                Job&& job) {
+    return dispatch_auto_split_typed(pool, request, auto_split_runtime_profile_once(), std::forward<Job>(job));
 }
 
 // ── Plan-only typed query (no dispatch) ────────────────────────────
@@ -1504,9 +1297,8 @@ dispatch_auto_split_typed(Pool<Policy>& pool,
 // Useful for benches and tests that need to inspect the plan without
 // running it.  Same compile-time fold as dispatch_auto_split_typed.
 template <typename Body>
-[[nodiscard]] constexpr AutoSplitPlan
-auto_split_plan_typed(AutoSplitRequest request,
-                      AutoSplitRuntimeProfile profile = {}) noexcept {
+[[nodiscard]] constexpr AutoSplitPlan auto_split_plan_typed(AutoSplitRequest request,
+                                                            AutoSplitRuntimeProfile profile = {}) noexcept {
     constexpr AutoSplitWorkloadHint hint = infer_workload_hint<Body>();
     return auto_split_plan(merge_request_with_hint(request, hint), profile);
 }

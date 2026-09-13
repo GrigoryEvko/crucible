@@ -53,7 +53,7 @@
 // issue for GradedWrapperViolation specifically.
 
 #include <crucible/safety/diag/CheatProbe.h>
-#include <crucible/algebra/GradedTrait.h>          // GradedWrapper concept
+#include <crucible/algebra/GradedTrait.h>  // GradedWrapper concept
 
 namespace crucible::safety::diag {
 
@@ -78,8 +78,7 @@ struct concept_gate<Category::GradedWrapperViolation> {
     static constexpr bool defined = true;
 
     template <typename T>
-    static constexpr bool admits_type =
-        ::crucible::algebra::GradedWrapper<T>;
+    static constexpr bool admits_type = ::crucible::algebra::GradedWrapper<T>;
 
     template <auto FnPtr>
     static constexpr bool admits_function = false;
@@ -93,6 +92,6 @@ struct concept_gate<Category::GradedWrapperViolation> {
 // bound.  Foundation invariant: this header IS load-bearing.
 
 static_assert(is_gate_defined_v<Category::GradedWrapperViolation>,
-    "GradedWrapperGate.h: specialization must mark gate as defined");
+              "GradedWrapperGate.h: specialization must mark gate as defined");
 
 }  // namespace crucible::safety::diag

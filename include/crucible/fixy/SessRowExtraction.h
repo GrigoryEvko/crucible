@@ -156,11 +156,14 @@ using ::crucible::safety::proto::protocol_effect_row_t;
 namespace crucible::fixy::sess::row::v062_self_test {
 
 namespace proto = ::crucible::safety::proto;
-namespace eff   = ::crucible::effects;
-namespace saf   = ::crucible::safety;
+namespace eff = ::crucible::effects;
+namespace saf = ::crucible::safety;
 
 // Fixture types.
-struct UserPod { int x; double y; };
+struct UserPod {
+    int x;
+    double y;
+};
 struct ProvTag {};
 
 // Computation-wrapped bare T.
@@ -168,112 +171,86 @@ using IoComp = eff::Computation<eff::Row<eff::Effect::IO>, int>;
 using BgComp = eff::Computation<eff::Row<eff::Effect::Bg>, int>;
 
 // Composite wrappers — each spec must recurse transparently.
-using TaggedIo  = saf::Tagged<IoComp, ProvTag>;
-using StaleIo   = saf::Stale<IoComp>;
-using LinearIo  = saf::Linear<IoComp>;
-using SecretIo  = saf::Secret<IoComp>;
+using TaggedIo = saf::Tagged<IoComp, ProvTag>;
+using StaleIo = saf::Stale<IoComp>;
+using LinearIo = saf::Linear<IoComp>;
+using SecretIo = saf::Secret<IoComp>;
 
 // Minimal protocols for protocol_effect_row reach.
-using End_      = proto::End;
-using SendIo    = proto::Send<IoComp, proto::End>;
-using RecvBg    = proto::Recv<BgComp, proto::End>;
+using End_ = proto::End;
+using SendIo = proto::Send<IoComp, proto::End>;
+using RecvBg = proto::Recv<BgComp, proto::End>;
 
 // ── A. Carrier-type reach ──────────────────────────────────────────
-static_assert(std::is_same_v<
-    NumericalPayloadRow<saf::Tolerance::BITEXACT, eff::Row<eff::Effect::IO>>,
-    proto::NumericalPayloadRow<saf::Tolerance::BITEXACT, eff::Row<eff::Effect::IO>>>,
-    "NumericalPayloadRow must reach identically through fixy::");
-static_assert(NumericalPayloadRow<saf::Tolerance::BITEXACT,
-                                  eff::Row<eff::Effect::IO>>::tolerance
-              == saf::Tolerance::BITEXACT,
-    "NumericalPayloadRow preserves the tolerance grade NTTP.");
+static_assert(std::is_same_v<NumericalPayloadRow<saf::Tolerance::BITEXACT, eff::Row<eff::Effect::IO>>,
+                             proto::NumericalPayloadRow<saf::Tolerance::BITEXACT, eff::Row<eff::Effect::IO>>>,
+              "NumericalPayloadRow must reach identically through fixy::");
+static_assert(NumericalPayloadRow<saf::Tolerance::BITEXACT, eff::Row<eff::Effect::IO>>::tolerance
+                  == saf::Tolerance::BITEXACT,
+              "NumericalPayloadRow preserves the tolerance grade NTTP.");
 
 // ── B. Per-payload extractor reach ─────────────────────────────────
 // Bare types → empty row.
-static_assert(std::is_same_v<payload_row_t<int>,      eff::Row<>>);
-static_assert(std::is_same_v<payload_row_t<UserPod>,  eff::Row<>>);
+static_assert(std::is_same_v<payload_row_t<int>, eff::Row<>>);
+static_assert(std::is_same_v<payload_row_t<UserPod>, eff::Row<>>);
 
 // Computation extracts its row literally.
 static_assert(std::is_same_v<payload_row_t<IoComp>, eff::Row<eff::Effect::IO>>);
 static_assert(std::is_same_v<payload_row_t<BgComp>, eff::Row<eff::Effect::Bg>>);
 
 // Identity through fixy:: matches substrate exactly.
-static_assert(std::is_same_v<
-    payload_row_t<IoComp>, proto::payload_row_t<IoComp>>,
-    "payload_row_t must reach identically through fixy::");
+static_assert(std::is_same_v<payload_row_t<IoComp>, proto::payload_row_t<IoComp>>,
+              "payload_row_t must reach identically through fixy::");
 
 // Transparent-unwrap discipline: wrapping with Tagged/Stale/Linear/
 // Secret must NOT change the extracted row (deferral to inner).
-static_assert(std::is_same_v<
-    payload_row_t<TaggedIo>, payload_row_t<IoComp>>,
-    "Tagged is transparent for payload_row.");
-static_assert(std::is_same_v<
-    payload_row_t<StaleIo>, payload_row_t<IoComp>>,
-    "Stale is transparent for payload_row.");
-static_assert(std::is_same_v<
-    payload_row_t<LinearIo>, payload_row_t<IoComp>>,
-    "Linear is transparent for payload_row.");
-static_assert(std::is_same_v<
-    payload_row_t<SecretIo>, payload_row_t<IoComp>>,
-    "Secret is transparent for payload_row.");
+static_assert(std::is_same_v<payload_row_t<TaggedIo>, payload_row_t<IoComp>>, "Tagged is transparent for payload_row.");
+static_assert(std::is_same_v<payload_row_t<StaleIo>, payload_row_t<IoComp>>, "Stale is transparent for payload_row.");
+static_assert(std::is_same_v<payload_row_t<LinearIo>, payload_row_t<IoComp>>, "Linear is transparent for payload_row.");
+static_assert(std::is_same_v<payload_row_t<SecretIo>, payload_row_t<IoComp>>, "Secret is transparent for payload_row.");
 
 // Class-template form reach (for trait-inheritance composition).
-static_assert(std::is_same_v<
-    typename payload_row<IoComp>::type, eff::Row<eff::Effect::IO>>);
+static_assert(std::is_same_v<typename payload_row<IoComp>::type, eff::Row<eff::Effect::IO>>);
 
 // ── C. Row-effect extractor reach ──────────────────────────────────
 // Identity on plain rows.
-static_assert(std::is_same_v<
-    payload_row_effect_t<eff::Row<eff::Effect::IO>>, eff::Row<eff::Effect::IO>>,
-    "payload_row_effect_t is identity on bare effects::Row<...>.");
+static_assert(std::is_same_v<payload_row_effect_t<eff::Row<eff::Effect::IO>>, eff::Row<eff::Effect::IO>>,
+              "payload_row_effect_t is identity on bare effects::Row<...>.");
 
 // Strips tolerance from NumericalPayloadRow.
 using NPR = NumericalPayloadRow<saf::Tolerance::BITEXACT, eff::Row<eff::Effect::IO>>;
-static_assert(std::is_same_v<
-    payload_row_effect_t<NPR>, eff::Row<eff::Effect::IO>>,
-    "payload_row_effect_t strips tolerance from NumericalPayloadRow.");
+static_assert(std::is_same_v<payload_row_effect_t<NPR>, eff::Row<eff::Effect::IO>>,
+              "payload_row_effect_t strips tolerance from NumericalPayloadRow.");
 
 // Class-template form reach.
-static_assert(std::is_same_v<
-    typename payload_row_effect<eff::Row<eff::Effect::IO>>::type,
-    eff::Row<eff::Effect::IO>>);
+static_assert(std::is_same_v<typename payload_row_effect<eff::Row<eff::Effect::IO>>::type, eff::Row<eff::Effect::IO>>);
 
 // ── D. Composed alias reach ────────────────────────────────────────
-static_assert(std::is_same_v<
-    payload_effect_row_t<IoComp>, eff::Row<eff::Effect::IO>>,
-    "payload_effect_row_t<Computation<Row<IO>, int>> = Row<IO>.");
-static_assert(std::is_same_v<
-    payload_effect_row_t<int>, eff::Row<>>,
-    "payload_effect_row_t<int> = Row<> (bare base case).");
+static_assert(std::is_same_v<payload_effect_row_t<IoComp>, eff::Row<eff::Effect::IO>>,
+              "payload_effect_row_t<Computation<Row<IO>, int>> = Row<IO>.");
+static_assert(std::is_same_v<payload_effect_row_t<int>, eff::Row<>>,
+              "payload_effect_row_t<int> = Row<> (bare base case).");
 
 // Substrate-identity through fixy.
-static_assert(std::is_same_v<
-    payload_effect_row_t<TaggedIo>,
-    proto::payload_effect_row_t<TaggedIo>>,
-    "payload_effect_row_t must reach identically through fixy::");
+static_assert(std::is_same_v<payload_effect_row_t<TaggedIo>, proto::payload_effect_row_t<TaggedIo>>,
+              "payload_effect_row_t must reach identically through fixy::");
 
 // ── E. Protocol walker reach ───────────────────────────────────────
 // End → Row<>.
-static_assert(std::is_same_v<protocol_effect_row_t<End_>, eff::Row<>>,
-    "protocol_effect_row_t<End> = Row<>.");
+static_assert(std::is_same_v<protocol_effect_row_t<End_>, eff::Row<>>, "protocol_effect_row_t<End> = Row<>.");
 
 // Send/Recv extract the payload's row.
-static_assert(std::is_same_v<
-    protocol_effect_row_t<SendIo>, eff::Row<eff::Effect::IO>>,
-    "protocol_effect_row_t<Send<Computation<Row<IO>,_>, End>> = Row<IO>.");
-static_assert(std::is_same_v<
-    protocol_effect_row_t<RecvBg>, eff::Row<eff::Effect::Bg>>,
-    "protocol_effect_row_t<Recv<Computation<Row<Bg>,_>, End>> = Row<Bg>.");
+static_assert(std::is_same_v<protocol_effect_row_t<SendIo>, eff::Row<eff::Effect::IO>>,
+              "protocol_effect_row_t<Send<Computation<Row<IO>,_>, End>> = Row<IO>.");
+static_assert(std::is_same_v<protocol_effect_row_t<RecvBg>, eff::Row<eff::Effect::Bg>>,
+              "protocol_effect_row_t<Recv<Computation<Row<Bg>,_>, End>> = Row<Bg>.");
 
 // Class-template form.
-static_assert(std::is_same_v<
-    typename protocol_effect_row<End_>::type, eff::Row<>>);
+static_assert(std::is_same_v<typename protocol_effect_row<End_>::type, eff::Row<>>);
 
 // Substrate identity.
-static_assert(std::is_same_v<
-    protocol_effect_row_t<SendIo>,
-    proto::protocol_effect_row_t<SendIo>>,
-    "protocol_effect_row_t must reach identically through fixy::");
+static_assert(std::is_same_v<protocol_effect_row_t<SendIo>, proto::protocol_effect_row_t<SendIo>>,
+              "protocol_effect_row_t must reach identically through fixy::");
 
 // ── F. Cardinality witness ─────────────────────────────────────────
 //
@@ -288,9 +265,8 @@ static_assert(std::is_same_v<
 // — a detail namespace, not part of the public surface; the walker
 // folds internally and consumers never observe it directly.)
 constexpr int v062_surface_cardinality = 8;
-static_assert(v062_surface_cardinality == 8,
-    "fixy::sess::row:: V-062 surface cardinality drifted — update "
-    "SessRowExtraction.h using-decls AND this sentinel in lockstep.");
+static_assert(v062_surface_cardinality == 8, "fixy::sess::row:: V-062 surface cardinality drifted — update "
+                                             "SessRowExtraction.h using-decls AND this sentinel in lockstep.");
 
 }  // namespace crucible::fixy::sess::row::v062_self_test
 
@@ -302,29 +278,27 @@ namespace crucible::fixy::sess::row {
 
 inline void runtime_smoke_test() noexcept {
     namespace proto = ::crucible::safety::proto;
-    namespace eff   = ::crucible::effects;
-    namespace saf   = ::crucible::safety;
+    namespace eff = ::crucible::effects;
+    namespace saf = ::crucible::safety;
 
     using IoComp = eff::Computation<eff::Row<eff::Effect::IO>, int>;
-    using End_   = proto::End;
+    using End_ = proto::End;
     using SendIo = proto::Send<IoComp, End_>;
 
-    [[maybe_unused]] constexpr bool comp_ok =
-        std::is_same_v<payload_row_t<IoComp>, eff::Row<eff::Effect::IO>>;
-    [[maybe_unused]] constexpr bool bare_ok =
-        std::is_same_v<payload_row_t<int>, eff::Row<>>;
-    [[maybe_unused]] constexpr bool proto_ok =
-        std::is_same_v<protocol_effect_row_t<SendIo>, eff::Row<eff::Effect::IO>>;
-    [[maybe_unused]] constexpr bool effect_strip_ok = std::is_same_v<
-        payload_effect_row_t<IoComp>, eff::Row<eff::Effect::IO>>;
+    [[maybe_unused]] constexpr bool comp_ok = std::is_same_v<payload_row_t<IoComp>, eff::Row<eff::Effect::IO>>;
+    [[maybe_unused]] constexpr bool bare_ok = std::is_same_v<payload_row_t<int>, eff::Row<>>;
+    [[maybe_unused]] constexpr bool proto_ok = std::is_same_v<protocol_effect_row_t<SendIo>, eff::Row<eff::Effect::IO>>;
+    [[maybe_unused]] constexpr bool effect_strip_ok =
+        std::is_same_v<payload_effect_row_t<IoComp>, eff::Row<eff::Effect::IO>>;
 
-    using NPR = NumericalPayloadRow<saf::Tolerance::BITEXACT,
-                                    eff::Row<eff::Effect::IO>>;
-    [[maybe_unused]] constexpr bool npr_strip_ok = std::is_same_v<
-        payload_row_effect_t<NPR>, eff::Row<eff::Effect::IO>>;
+    using NPR = NumericalPayloadRow<saf::Tolerance::BITEXACT, eff::Row<eff::Effect::IO>>;
+    [[maybe_unused]] constexpr bool npr_strip_ok = std::is_same_v<payload_row_effect_t<NPR>, eff::Row<eff::Effect::IO>>;
 
-    (void) comp_ok; (void) bare_ok; (void) proto_ok;
-    (void) effect_strip_ok; (void) npr_strip_ok;
+    (void)comp_ok;
+    (void)bare_ok;
+    (void)proto_ok;
+    (void)effect_strip_ok;
+    (void)npr_strip_ok;
 }
 
 }  // namespace crucible::fixy::sess::row

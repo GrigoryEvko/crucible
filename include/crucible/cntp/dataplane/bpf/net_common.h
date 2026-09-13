@@ -37,8 +37,8 @@ struct crucible_net_flow_key {
     __u32 dst_ip4;
     __u16 src_port;
     __u16 dst_port;
-    __u8  proto;
-    __u8  _pad[3];
+    __u8 proto;
+    __u8 _pad[3];
 };
 
 struct crucible_net_event {
@@ -46,8 +46,8 @@ struct crucible_net_event {
     __u64 value1;
     __u32 ifindex;
     __u16 queue_id;
-    __u8  kind;
-    __u8  _pad;
+    __u8 kind;
+    __u8 _pad;
     __u64 ts_ns;
 };
 
@@ -56,13 +56,10 @@ struct crucible_net_timeline {
     struct crucible_net_event events[CRUCIBLE_NET_TIMELINE_CAPACITY];
 };
 
-static __always_inline void
-crucible_net_publish_event(struct crucible_net_timeline *timeline,
-                           struct crucible_net_event event)
-{
+static __always_inline void crucible_net_publish_event(struct crucible_net_timeline* timeline,
+                                                       struct crucible_net_event event) {
     __u64 idx = __sync_fetch_and_add(&timeline->hdr.write_idx, 1);
-    struct crucible_net_event *slot =
-        &timeline->events[idx & CRUCIBLE_NET_TIMELINE_MASK];
+    struct crucible_net_event* slot = &timeline->events[idx & CRUCIBLE_NET_TIMELINE_MASK];
 
     slot->value0 = event.value0;
     slot->value1 = event.value1;

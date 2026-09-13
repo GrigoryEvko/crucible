@@ -108,13 +108,13 @@ using ::crucible::safety::wire_policy_t;
 namespace u052a_self_test {
 
 // ── A. Payload + policy placeholders ───────────────────────────────
-struct Token { int v = 0; };
+struct Token {
+    int v = 0;
+};
 struct Other {};
 
-using TokenWire  = DeclassifyOnSend<Token,
-    ::crucible::safety::secret_policy::WireSerialize>;
-using TokenAudit = DeclassifyOnSend<Token,
-    ::crucible::safety::secret_policy::AuditedLogging>;
+using TokenWire = DeclassifyOnSend<Token, ::crucible::safety::secret_policy::WireSerialize>;
+using TokenAudit = DeclassifyOnSend<Token, ::crucible::safety::secret_policy::AuditedLogging>;
 
 // ── B. Re-export type-identity witness (dual-export sentinel) ──────
 //
@@ -123,22 +123,20 @@ using TokenAudit = DeclassifyOnSend<Token,
 // or relocated to a different namespace), the next line fails to
 // compile with a recognisable substrate-rename diagnostic.
 
-static_assert(std::is_same_v<
-    DeclassifyOnSend<Token,
-        ::crucible::safety::secret_policy::WireSerialize>,
-    ::crucible::safety::DeclassifyOnSend<Token,
-        ::crucible::safety::secret_policy::WireSerialize>>,
+static_assert(
+    std::is_same_v<DeclassifyOnSend<Token, ::crucible::safety::secret_policy::WireSerialize>,
+                   ::crucible::safety::DeclassifyOnSend<Token, ::crucible::safety::secret_policy::WireSerialize>>,
     "fixy::sess::declassify::DeclassifyOnSend must alias "
     "safety::DeclassifyOnSend.");
 
 // ── C. Shape predicates discriminate wrapper vs non-wrapper ────────
-static_assert( is_declassify_on_send_v<TokenWire>);
-static_assert( is_declassify_on_send_v<TokenAudit>);
+static_assert(is_declassify_on_send_v<TokenWire>);
+static_assert(is_declassify_on_send_v<TokenAudit>);
 static_assert(!is_declassify_on_send_v<Token>);
 static_assert(!is_declassify_on_send_v<int>);
 
 // ── D. Concept gate routes through the umbrella ────────────────────
-static_assert( DeclassifyOnSendable<TokenWire>);
+static_assert(DeclassifyOnSendable<TokenWire>);
 static_assert(!DeclassifyOnSendable<Token>);
 
 // ── E. wire_payload_type_t extracts the inner T (with fallback) ────
@@ -146,19 +144,17 @@ static_assert(!DeclassifyOnSendable<Token>);
 // The metafunction has a fallback that passes non-DeclassifyOnSend
 // types unchanged (so generic transport code can use it uniformly).
 // Both branches must reach through the umbrella.
-static_assert(std::is_same_v<wire_payload_type_t<TokenWire>,  Token>);
+static_assert(std::is_same_v<wire_payload_type_t<TokenWire>, Token>);
 static_assert(std::is_same_v<wire_payload_type_t<TokenAudit>, Token>);
-static_assert(std::is_same_v<wire_payload_type_t<Token>,      Token>);
-static_assert(std::is_same_v<wire_payload_type_t<int>,        int>);
+static_assert(std::is_same_v<wire_payload_type_t<Token>, Token>);
+static_assert(std::is_same_v<wire_payload_type_t<int>, int>);
 
 // ── F. wire_policy_t extracts the policy tag ──────────────────────
 //
 // Defined ONLY for DeclassifyOnSend specialisations (no fallback —
 // asking for the wire-policy of a bare payload is a category error).
-static_assert(std::is_same_v<wire_policy_t<TokenWire>,
-    ::crucible::safety::secret_policy::WireSerialize>);
-static_assert(std::is_same_v<wire_policy_t<TokenAudit>,
-    ::crucible::safety::secret_policy::AuditedLogging>);
+static_assert(std::is_same_v<wire_policy_t<TokenWire>, ::crucible::safety::secret_policy::WireSerialize>);
+static_assert(std::is_same_v<wire_policy_t<TokenAudit>, ::crucible::safety::secret_policy::AuditedLogging>);
 
 // ── G. Distinct-policy wrapper distinctness ────────────────────────
 //
@@ -179,8 +175,8 @@ static_assert(!std::is_same_v<TokenWire, TokenAudit>);
 // payload boundary — defeating the security promise of Secret<T>.
 static_assert(!std::is_copy_constructible_v<TokenWire>);
 static_assert(!std::is_copy_assignable_v<TokenWire>);
-static_assert( std::is_move_constructible_v<TokenWire>);
-static_assert( std::is_move_assignable_v<TokenWire>);
+static_assert(std::is_move_constructible_v<TokenWire>);
+static_assert(std::is_move_assignable_v<TokenWire>);
 
 // ── I. Cardinality witness — count of items U-052a surfaces.
 //
@@ -197,9 +193,8 @@ static_assert( std::is_move_assignable_v<TokenWire>);
 //                                                       ───
 //                                                        8
 constexpr int u052a_surface_cardinality = 8;
-static_assert(u052a_surface_cardinality == 8,
-    "fixy::sess::declassify:: U-052a surface cardinality drifted — "
-    "update SessDecl.h using-decls AND this sentinel in lockstep.");
+static_assert(u052a_surface_cardinality == 8, "fixy::sess::declassify:: U-052a surface cardinality drifted — "
+                                              "update SessDecl.h using-decls AND this sentinel in lockstep.");
 
 }  // namespace u052a_self_test
 
@@ -215,19 +210,22 @@ static_assert(u052a_surface_cardinality == 8,
 // Cost: instantiations only.  No runtime code path is executed.
 
 inline void runtime_smoke_test() noexcept {
-    struct Payload { int v = 0; };
-    using P = DeclassifyOnSend<Payload,
-        ::crucible::safety::secret_policy::WireSerialize>;
+    struct Payload {
+        int v = 0;
+    };
+    using P = DeclassifyOnSend<Payload, ::crucible::safety::secret_policy::WireSerialize>;
 
-    [[maybe_unused]] constexpr bool isW       = is_declassify_on_send_v<P>;
+    [[maybe_unused]] constexpr bool isW = is_declassify_on_send_v<P>;
     [[maybe_unused]] constexpr bool isNotWrap = is_declassify_on_send_v<int>;
-    [[maybe_unused]] constexpr bool cap       = DeclassifyOnSendable<P>;
+    [[maybe_unused]] constexpr bool cap = DeclassifyOnSendable<P>;
 
     using PayloadT = wire_payload_type_t<P>;
-    using PolicyT  = wire_policy_t<P>;
-    using PassT    = wire_payload_type_t<int>;
+    using PolicyT = wire_policy_t<P>;
+    using PassT = wire_payload_type_t<int>;
 
-    (void)isW; (void)isNotWrap; (void)cap;
+    (void)isW;
+    (void)isNotWrap;
+    (void)cap;
     (void)static_cast<PayloadT*>(nullptr);
     (void)static_cast<PolicyT*>(nullptr);
     (void)static_cast<PassT*>(nullptr);

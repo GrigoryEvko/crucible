@@ -83,14 +83,11 @@ enum class FlowAction : std::uint8_t {
 
 using TcamRuleId = safety::Refined<safety::non_zero, std::uint64_t>;
 using TcamEntryCount = safety::Positive<std::uint32_t>;
-using TcamPriority =
-    safety::Bounded<std::uint16_t{0}, std::uint16_t{65'535}, std::uint16_t>;
-using TcamDscp =
-    safety::Bounded<std::uint8_t{0}, std::uint8_t{63}, std::uint8_t>;
+using TcamPriority = safety::Bounded<std::uint16_t{0}, std::uint16_t{65'535}, std::uint16_t>;
+using TcamDscp = safety::Bounded<std::uint8_t{0}, std::uint8_t{63}, std::uint8_t>;
 
 template <std::uint32_t MaxRules>
-concept TcamTableShape =
-    MaxRules > 0u && MaxRules <= kMaxStaticTcamRules;
+concept TcamTableShape = MaxRules > 0u && MaxRules <= kMaxStaticTcamRules;
 
 struct FiveTuple {
     std::uint32_t src_ipv4_be = 0;
@@ -121,8 +118,7 @@ struct TcamFlowRule {
 struct TcamTablePlan {
     cog::CogIdentity target{};
     TcamTargetKind target_kind = TcamTargetKind::NicPort;
-    TcamEntryCount capacity{std::uint32_t{1},
-                            typename TcamEntryCount::Trusted{}};
+    TcamEntryCount capacity{std::uint32_t{1}, typename TcamEntryCount::Trusted{}};
     bool backend_ready = false;
 };
 
@@ -133,65 +129,53 @@ struct TcamRuleHandle {
     std::uint32_t generation = 0;
 };
 
-using DeclaredTcamTable =
-    safety::Tagged<TcamTablePlan, safety::source::TcamTable>;
-using DeclaredTcamFlowRule =
-    safety::Tagged<TcamFlowRule, safety::source::TcamFlowRule>;
+using DeclaredTcamTable = safety::Tagged<TcamTablePlan, safety::source::TcamTable>;
+using DeclaredTcamFlowRule = safety::Tagged<TcamFlowRule, safety::source::TcamFlowRule>;
 using OwnedTcamRule = safety::Linear<TcamRuleHandle>;
 
 template <class Ctx>
-concept CtxFitsTcamMint =
-    effects::IsExecCtx<Ctx>
-    && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Init>>;
+concept CtxFitsTcamMint = effects::IsExecCtx<Ctx> && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Init>>;
 
-[[nodiscard]] constexpr std::expected<TcamRuleId, TcamError>
-admit_tcam_rule_id(std::uint64_t id) noexcept {
+[[nodiscard]] constexpr std::expected<TcamRuleId, TcamError> admit_tcam_rule_id(std::uint64_t id) noexcept {
     if (id == 0u) {
         return std::unexpected(TcamError::InvalidRuleId);
     }
     return TcamRuleId{id, typename TcamRuleId::Trusted{}};
 }
 
-[[nodiscard]] constexpr std::expected<TcamEntryCount, TcamError>
-admit_tcam_entries(std::uint32_t entries) noexcept {
+[[nodiscard]] constexpr std::expected<TcamEntryCount, TcamError> admit_tcam_entries(std::uint32_t entries) noexcept {
     if (entries == 0u || entries > kMaxStaticTcamRules) {
         return std::unexpected(TcamError::InvalidEntryCount);
     }
     return TcamEntryCount{entries, typename TcamEntryCount::Trusted{}};
 }
 
-[[nodiscard]] constexpr std::expected<TcamDscp, TcamError>
-admit_tcam_dscp(std::uint8_t dscp) noexcept {
+[[nodiscard]] constexpr std::expected<TcamDscp, TcamError> admit_tcam_dscp(std::uint8_t dscp) noexcept {
     if (dscp > 63u) {
         return std::unexpected(TcamError::InvalidActionParameter);
     }
     return TcamDscp{dscp, typename TcamDscp::Trusted{}};
 }
 
-[[nodiscard]] constexpr std::expected<TcamPriority, TcamError>
-admit_tcam_priority(std::uint16_t priority) noexcept {
+[[nodiscard]] constexpr std::expected<TcamPriority, TcamError> admit_tcam_priority(std::uint16_t priority) noexcept {
     return TcamPriority{priority, typename TcamPriority::Trusted{}};
 }
 
-[[nodiscard]] constexpr std::expected<void, TcamError>
-validate_tcam_match(FiveTuple match) noexcept {
+[[nodiscard]] constexpr std::expected<void, TcamError> validate_tcam_match(FiveTuple match) noexcept {
     if (match.src_prefix_bits > 32u || match.dst_prefix_bits > 32u) {
         return std::unexpected(TcamError::InvalidMatchParameter);
     }
     return {};
 }
 
-[[nodiscard]] constexpr std::expected<void, TcamError>
-validate_tcam_action(TcamFlowAction action) noexcept {
-    if ((action.kind == FlowAction::Redirect || action.kind == FlowAction::Mirror)
-        && action.redirect_ifindex == 0u) {
+[[nodiscard]] constexpr std::expected<void, TcamError> validate_tcam_action(TcamFlowAction action) noexcept {
+    if ((action.kind == FlowAction::Redirect || action.kind == FlowAction::Mirror) && action.redirect_ifindex == 0u) {
         return std::unexpected(TcamError::InvalidActionParameter);
     }
     return {};
 }
 
-[[nodiscard]] constexpr std::expected<void, TcamError>
-validate_tcam_rule(TcamFlowRule const& rule) noexcept {
+[[nodiscard]] constexpr std::expected<void, TcamError> validate_tcam_rule(TcamFlowRule const& rule) noexcept {
     if (rule.rule_id.value() == 0u) {
         return std::unexpected(TcamError::InvalidRuleId);
     }
@@ -202,8 +186,7 @@ validate_tcam_rule(TcamFlowRule const& rule) noexcept {
     return validate_tcam_action(rule.action);
 }
 
-[[nodiscard]] constexpr std::expected<DeclaredTcamFlowRule, TcamError>
-declare_tcam_rule(TcamFlowRule rule) noexcept {
+[[nodiscard]] constexpr std::expected<DeclaredTcamFlowRule, TcamError> declare_tcam_rule(TcamFlowRule rule) noexcept {
     auto valid = validate_tcam_rule(rule);
     if (!valid.has_value()) {
         return std::unexpected(valid.error());
@@ -212,8 +195,7 @@ declare_tcam_rule(TcamFlowRule rule) noexcept {
 }
 
 [[nodiscard]] constexpr std::expected<void, TcamError>
-validate_tcam_target(cog::CogIdentity target,
-                     cog::NicPortTargetCaps const& caps) noexcept {
+validate_tcam_target(cog::CogIdentity target, cog::NicPortTargetCaps const& caps) noexcept {
     if (target.uuid.is_zero()) {
         return std::unexpected(TcamError::ZeroTargetCog);
     }
@@ -227,8 +209,7 @@ validate_tcam_target(cog::CogIdentity target,
 }
 
 [[nodiscard]] constexpr std::expected<void, TcamError>
-validate_tcam_target(cog::CogIdentity target,
-                     cog::NvSwitchTargetCaps const& caps) noexcept {
+validate_tcam_target(cog::CogIdentity target, cog::NvSwitchTargetCaps const& caps) noexcept {
     if (target.uuid.is_zero()) {
         return std::unexpected(TcamError::ZeroTargetCog);
     }
@@ -242,8 +223,7 @@ validate_tcam_target(cog::CogIdentity target,
 }
 
 [[nodiscard]] constexpr std::expected<void, TcamError>
-validate_tcam_capacity(TcamEntryCount requested,
-                       cog::NicPortTargetCaps const& caps) noexcept {
+validate_tcam_capacity(TcamEntryCount requested, cog::NicPortTargetCaps const& caps) noexcept {
     if (requested.value() > caps.tcam_entries.value()) {
         return std::unexpected(TcamError::CapacityExceeded);
     }
@@ -251,8 +231,7 @@ validate_tcam_capacity(TcamEntryCount requested,
 }
 
 [[nodiscard]] constexpr std::expected<void, TcamError>
-validate_tcam_capacity(TcamEntryCount requested,
-                       cog::NvSwitchTargetCaps const& caps) noexcept {
+validate_tcam_capacity(TcamEntryCount requested, cog::NvSwitchTargetCaps const& caps) noexcept {
     if (requested.value() > caps.tcam_entries.value()) {
         return std::unexpected(TcamError::CapacityExceeded);
     }
@@ -262,10 +241,7 @@ validate_tcam_capacity(TcamEntryCount requested,
 template <class Ctx, class Caps>
     requires CtxFitsTcamMint<Ctx>
 [[nodiscard]] constexpr std::expected<DeclaredTcamTable, TcamError>
-mint_tcam_table(Ctx const&,
-                cog::CogIdentity target,
-                Caps const& caps,
-                TcamEntryCount capacity,
+mint_tcam_table(Ctx const&, cog::CogIdentity target, Caps const& caps, TcamEntryCount capacity,
                 bool backend_ready = false) noexcept {
     auto target_valid = validate_tcam_target(target, caps);
     if (!target_valid.has_value()) {
@@ -305,33 +281,25 @@ class TcamRules : public safety::Pinned<TcamRules<MaxRules>> {
         }
         Slot const& slot = slots_[handle.slot];
         if (!slot.occupied || slot.generation != handle.generation
-            || slot.rule.rule_id.value() != handle.rule_id.value()
-            || handle.target_uuid != plan_.value().target.uuid) {
+            || slot.rule.rule_id.value() != handle.rule_id.value() || handle.target_uuid != plan_.value().target.uuid) {
             return std::unexpected(TcamError::InvalidRuleHandle);
         }
         return handle.slot;
     }
 
 public:
-    explicit constexpr TcamRules(DeclaredTcamTable plan) noexcept
-        : plan_{plan} {}
+    explicit constexpr TcamRules(DeclaredTcamTable plan) noexcept : plan_{plan} {}
 
-    [[nodiscard]] constexpr TcamTablePlan const& plan() const noexcept {
-        return plan_.value();
-    }
+    [[nodiscard]] constexpr TcamTablePlan const& plan() const noexcept { return plan_.value(); }
 
-    [[nodiscard]] constexpr std::uint32_t installed_rules() const noexcept {
-        return installed_;
-    }
+    [[nodiscard]] constexpr std::uint32_t installed_rules() const noexcept { return installed_; }
 
-    [[nodiscard]] constexpr std::uint32_t
-    available_rules_remaining() const noexcept {
+    [[nodiscard]] constexpr std::uint32_t available_rules_remaining() const noexcept {
         auto const cap = plan_.value().capacity.value();
         return installed_ >= cap ? 0u : cap - installed_;
     }
 
-    [[nodiscard]] constexpr std::expected<OwnedTcamRule, TcamError>
-    add_rule(DeclaredTcamFlowRule rule) noexcept {
+    [[nodiscard]] constexpr std::expected<OwnedTcamRule, TcamError> add_rule(DeclaredTcamFlowRule rule) noexcept {
         auto valid = validate_tcam_rule(rule.value());
         if (!valid.has_value()) {
             return std::unexpected(valid.error());
@@ -357,8 +325,7 @@ public:
         return std::unexpected(TcamError::TableFull);
     }
 
-    [[nodiscard]] constexpr std::expected<void, TcamError>
-    remove_rule(OwnedTcamRule handle) noexcept {
+    [[nodiscard]] constexpr std::expected<void, TcamError> remove_rule(OwnedTcamRule handle) noexcept {
         TcamRuleHandle raw = std::move(handle).consume();
         auto slot_index = slot_for(raw);
         if (!slot_index.has_value()) {
@@ -381,8 +348,8 @@ public:
         return slots_[*slot_index].counter;
     }
 
-    [[nodiscard]] constexpr std::expected<void, TcamError>
-    note_match(OwnedTcamRule const& handle, std::uint64_t count = 1) noexcept {
+    [[nodiscard]] constexpr std::expected<void, TcamError> note_match(OwnedTcamRule const& handle,
+                                                                      std::uint64_t count = 1) noexcept {
         auto slot_index = slot_for(handle.peek());
         if (!slot_index.has_value()) {
             return std::unexpected(slot_index.error());
@@ -395,8 +362,7 @@ public:
         return {};
     }
 
-    [[nodiscard]] constexpr std::expected<void, TcamError>
-    require_backend_ready() const noexcept {
+    [[nodiscard]] constexpr std::expected<void, TcamError> require_backend_ready() const noexcept {
         if (!plan_.value().backend_ready) {
             return std::unexpected(TcamError::VendorBackendUnavailable);
         }
@@ -416,12 +382,10 @@ public:
 // warning with `#pragma GCC diagnostic push/ignored
 // "-Wdeprecated-declarations"/pop`.
 [[nodiscard, deprecated("CRUCIBLE_STUB: TCAM flow-rule install (rdma-core DV "
-    "/ DPDK rte_flow / tc-flower / switchd / netlink) not yet attached; "
-    "success path is substrate bookkeeping, not device programming; see "
-    "fixy-A5-002 / fixy-A5-025 / FIXY-U-087")]]
-std::expected<void, TcamError>
-force_tcam_backend_boundary(DeclaredTcamTable table,
-                            DeclaredTcamFlowRule rule) noexcept;
+                        "/ DPDK rte_flow / tc-flower / switchd / netlink) not yet attached; "
+                        "success path is substrate bookkeeping, not device programming; see "
+                        "fixy-A5-002 / fixy-A5-025 / FIXY-U-087")]]
+std::expected<void, TcamError> force_tcam_backend_boundary(DeclaredTcamTable table, DeclaredTcamFlowRule rule) noexcept;
 
 static_assert(sizeof(TcamRuleId) == sizeof(std::uint64_t));
 static_assert(sizeof(TcamEntryCount) == sizeof(std::uint32_t));

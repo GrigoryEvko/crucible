@@ -321,21 +321,13 @@ struct FederatedPeer {
 namespace crucible::safety {
 
 template <typename Org, typename A, typename B>
-struct splits_into<
-    ::crucible::permissions::tag::FederatedPeer<Org>,
-    ::crucible::permissions::tag::FederatedPeer<A>,
-    ::crucible::permissions::tag::FederatedPeer<B>>
-    : std::bool_constant<std::is_same_v<A, Org>
-                         && std::is_same_v<B, Org>> {};
+struct splits_into<::crucible::permissions::tag::FederatedPeer<Org>, ::crucible::permissions::tag::FederatedPeer<A>,
+                   ::crucible::permissions::tag::FederatedPeer<B>>
+    : std::bool_constant<std::is_same_v<A, Org> && std::is_same_v<B, Org>> {};
 
 template <typename Org, typename... Children>
-struct splits_into_pack<
-    ::crucible::permissions::tag::FederatedPeer<Org>,
-    Children...>
-    : std::bool_constant<(
-        std::is_same_v<
-            Children,
-            ::crucible::permissions::tag::FederatedPeer<Org>> && ...)> {};
+struct splits_into_pack<::crucible::permissions::tag::FederatedPeer<Org>, Children...>
+    : std::bool_constant<(std::is_same_v<Children, ::crucible::permissions::tag::FederatedPeer<Org>> && ...)> {};
 
 // fixy-M-29 authoring witnesses.  These mirror the splits_into /
 // splits_into_pack truth conditions above — the witness's ::value is
@@ -348,21 +340,14 @@ struct splits_into_pack<
 // splits_into_v to true but the witness stays false, so
 // well_authored_split_v rejects.
 template <typename Org, typename A, typename B>
-struct splits_into_authoring_witness<
-    ::crucible::permissions::tag::FederatedPeer<Org>,
-    ::crucible::permissions::tag::FederatedPeer<A>,
-    ::crucible::permissions::tag::FederatedPeer<B>>
-    : std::bool_constant<std::is_same_v<A, Org>
-                         && std::is_same_v<B, Org>> {};
+struct splits_into_authoring_witness<::crucible::permissions::tag::FederatedPeer<Org>,
+                                     ::crucible::permissions::tag::FederatedPeer<A>,
+                                     ::crucible::permissions::tag::FederatedPeer<B>>
+    : std::bool_constant<std::is_same_v<A, Org> && std::is_same_v<B, Org>> {};
 
 template <typename Org, typename... Children>
-struct splits_into_pack_authoring_witness<
-    ::crucible::permissions::tag::FederatedPeer<Org>,
-    Children...>
-    : std::bool_constant<(
-        std::is_same_v<
-            Children,
-            ::crucible::permissions::tag::FederatedPeer<Org>> && ...)> {};
+struct splits_into_pack_authoring_witness<::crucible::permissions::tag::FederatedPeer<Org>, Children...>
+    : std::bool_constant<(std::is_same_v<Children, ::crucible::permissions::tag::FederatedPeer<Org>> && ...)> {};
 
 }  // namespace crucible::safety
 
@@ -383,8 +368,7 @@ template <typename Org>
 struct is_federated_peer_tag<tag::FederatedPeer<Org>> : std::true_type {};
 
 template <typename Tag>
-inline constexpr bool is_federated_peer_tag_v =
-    is_federated_peer_tag<Tag>::value;
+inline constexpr bool is_federated_peer_tag_v = is_federated_peer_tag<Tag>::value;
 
 // ── fixy-CR-06 federation-mint chokepoint ─────────────────────────
 //
@@ -400,9 +384,7 @@ namespace detail {
 
 struct FederationMintAccess {
     template <typename Org>
-    [[nodiscard]] static constexpr
-    ::crucible::safety::Permission<tag::FederatedPeer<Org>>
-    mint() noexcept {
+    [[nodiscard]] static constexpr ::crucible::safety::Permission<tag::FederatedPeer<Org>> mint() noexcept {
         return ::crucible::safety::Permission<tag::FederatedPeer<Org>>{};
     }
 };
@@ -410,11 +392,9 @@ struct FederationMintAccess {
 }  // namespace detail
 
 template <typename Org>
-using FederatedPeerPermission =
-    ::crucible::safety::Permission<tag::FederatedPeer<Org>>;
+using FederatedPeerPermission = ::crucible::safety::Permission<tag::FederatedPeer<Org>>;
 
-using LocalCipherPermission =
-    ::crucible::safety::Permission<tag::LocalCipherTag>;
+using LocalCipherPermission = ::crucible::safety::Permission<tag::LocalCipherTag>;
 
 // ── fixy-A1-008 federation strong-hash semantic types ─────────────
 //
@@ -441,16 +421,13 @@ using LocalCipherPermission =
 struct OrgId {
 private:
     std::uint64_t v;
+
 public:
     constexpr OrgId() noexcept : v(0) {}
     constexpr explicit OrgId(std::uint64_t val) noexcept : v(val) {}
-    [[nodiscard]] static constexpr OrgId from_raw(std::uint64_t val) noexcept {
-        return OrgId{val};
-    }
+    [[nodiscard]] static constexpr OrgId from_raw(std::uint64_t val) noexcept { return OrgId{val}; }
     [[nodiscard]] constexpr std::uint64_t raw() const noexcept { return v; }
-    [[nodiscard]] constexpr explicit operator bool() const noexcept {
-        return v != 0;
-    }
+    [[nodiscard]] constexpr explicit operator bool() const noexcept { return v != 0; }
     constexpr auto operator<=>(const OrgId&) const noexcept = default;
 };
 static_assert(sizeof(OrgId) == sizeof(std::uint64_t));
@@ -459,6 +436,7 @@ static_assert(std::is_trivially_copyable_v<OrgId>);
 struct PeerKeyFingerprint {
 private:
     std::uint64_t v;
+
 public:
     constexpr PeerKeyFingerprint() noexcept : v(0) {}
     constexpr explicit PeerKeyFingerprint(std::uint64_t val) noexcept : v(val) {}
@@ -466,9 +444,7 @@ public:
         return PeerKeyFingerprint{val};
     }
     [[nodiscard]] constexpr std::uint64_t raw() const noexcept { return v; }
-    [[nodiscard]] constexpr explicit operator bool() const noexcept {
-        return v != 0;
-    }
+    [[nodiscard]] constexpr explicit operator bool() const noexcept { return v != 0; }
     constexpr auto operator<=>(const PeerKeyFingerprint&) const noexcept = default;
 };
 static_assert(sizeof(PeerKeyFingerprint) == sizeof(std::uint64_t));
@@ -477,16 +453,13 @@ static_assert(std::is_trivially_copyable_v<PeerKeyFingerprint>);
 struct Nonce {
 private:
     std::uint64_t v;
+
 public:
     constexpr Nonce() noexcept : v(0) {}
     constexpr explicit Nonce(std::uint64_t val) noexcept : v(val) {}
-    [[nodiscard]] static constexpr Nonce from_raw(std::uint64_t val) noexcept {
-        return Nonce{val};
-    }
+    [[nodiscard]] static constexpr Nonce from_raw(std::uint64_t val) noexcept { return Nonce{val}; }
     [[nodiscard]] constexpr std::uint64_t raw() const noexcept { return v; }
-    [[nodiscard]] constexpr explicit operator bool() const noexcept {
-        return v != 0;
-    }
+    [[nodiscard]] constexpr explicit operator bool() const noexcept { return v != 0; }
     constexpr auto operator<=>(const Nonce&) const noexcept = default;
 };
 static_assert(sizeof(Nonce) == sizeof(std::uint64_t));
@@ -495,6 +468,7 @@ static_assert(std::is_trivially_copyable_v<Nonce>);
 struct SignatureFingerprint {
 private:
     std::uint64_t v;
+
 public:
     constexpr SignatureFingerprint() noexcept : v(0) {}
     constexpr explicit SignatureFingerprint(std::uint64_t val) noexcept : v(val) {}
@@ -502,33 +476,29 @@ public:
         return SignatureFingerprint{val};
     }
     [[nodiscard]] constexpr std::uint64_t raw() const noexcept { return v; }
-    [[nodiscard]] constexpr explicit operator bool() const noexcept {
-        return v != 0;
-    }
+    [[nodiscard]] constexpr explicit operator bool() const noexcept { return v != 0; }
     constexpr auto operator<=>(const SignatureFingerprint&) const noexcept = default;
 };
 static_assert(sizeof(SignatureFingerprint) == sizeof(std::uint64_t));
 static_assert(std::is_trivially_copyable_v<SignatureFingerprint>);
 
 template <typename Org>
-inline constexpr OrgId federation_org_id =
-    OrgId{::crucible::safety::diag::stable_type_id<Org>};
+inline constexpr OrgId federation_org_id = OrgId{::crucible::safety::diag::stable_type_id<Org>};
 
 namespace policy {
 
 template <typename... Orgs>
 struct admit_orgs {
     template <typename Org>
-    static constexpr bool admits =
-        (std::same_as<Org, Orgs> || ...);
+    static constexpr bool admits = (std::same_as<Org, Orgs> || ...);
 };
 
 }  // namespace policy
 
 struct FederationHandshake {
-    OrgId                org_id{};
-    PeerKeyFingerprint   peer_key_fingerprint{};
-    Nonce                nonce{};
+    OrgId org_id{};
+    PeerKeyFingerprint peer_key_fingerprint{};
+    Nonce nonce{};
     SignatureFingerprint self_signature_fingerprint{};
 };
 
@@ -543,15 +513,20 @@ enum class AdmittanceError : std::uint8_t {
     BadSignature = 5,
 };
 
-[[nodiscard]] inline constexpr std::string_view
-admittance_error_name(AdmittanceError error) noexcept {
+[[nodiscard]] inline constexpr std::string_view admittance_error_name(AdmittanceError error) noexcept {
     switch (error) {
-        case AdmittanceError::OrgNotAllowed:    return "OrgNotAllowed";
-        case AdmittanceError::OrgMismatch:      return "OrgMismatch";
-        case AdmittanceError::MissingPeerKey:   return "MissingPeerKey";
-        case AdmittanceError::MissingSignature: return "MissingSignature";
-        case AdmittanceError::BadSignature:     return "BadSignature";
-        default:                                return "<unknown AdmittanceError>";
+        case AdmittanceError::OrgNotAllowed:
+            return "OrgNotAllowed";
+        case AdmittanceError::OrgMismatch:
+            return "OrgMismatch";
+        case AdmittanceError::MissingPeerKey:
+            return "MissingPeerKey";
+        case AdmittanceError::MissingSignature:
+            return "MissingSignature";
+        case AdmittanceError::BadSignature:
+            return "BadSignature";
+        default:
+            return "<unknown AdmittanceError>";
     }
 }
 
@@ -566,35 +541,24 @@ namespace detail {
     return k;
 }
 
-[[nodiscard]] constexpr std::uint64_t combine_runtime_ids(
-    std::uint64_t a,
-    std::uint64_t b) noexcept
-{
+[[nodiscard]] constexpr std::uint64_t combine_runtime_ids(std::uint64_t a, std::uint64_t b) noexcept {
     a ^= b + 0x9e3779b97f4a7c15ULL + (a << 6) + (a >> 2);
     return federation_mix64(a);
 }
 
 }  // namespace detail
 
-[[nodiscard]] constexpr SignatureFingerprint federation_signature_fingerprint(
-    OrgId              org_id,
-    PeerKeyFingerprint peer_key_fingerprint,
-    Nonce              nonce) noexcept
-{
+[[nodiscard]] constexpr SignatureFingerprint
+federation_signature_fingerprint(OrgId org_id, PeerKeyFingerprint peer_key_fingerprint, Nonce nonce) noexcept {
     constexpr std::uint64_t kDomain = 0xCFED'AD11'0000'0001ULL;
     return SignatureFingerprint{
-        detail::combine_runtime_ids(
-            detail::combine_runtime_ids(kDomain, org_id.raw()),
-            detail::combine_runtime_ids(
-                peer_key_fingerprint.raw(), nonce.raw())) };
+        detail::combine_runtime_ids(detail::combine_runtime_ids(kDomain, org_id.raw()),
+                                    detail::combine_runtime_ids(peer_key_fingerprint.raw(), nonce.raw()))};
 }
 
 template <typename Org>
 [[nodiscard]] constexpr PeerKeyFingerprint default_peer_key_fingerprint() noexcept {
-    return PeerKeyFingerprint{
-        detail::combine_runtime_ids(
-            federation_org_id<Org>.raw(),
-            0xCFED'9EED'0000'0001ULL) };
+    return PeerKeyFingerprint{detail::combine_runtime_ids(federation_org_id<Org>.raw(), 0xCFED'9EED'0000'0001ULL)};
 }
 
 // ── fixy-L-02 #1518 — §XXI Universal Mint Pattern ──────────────────
@@ -625,25 +589,19 @@ template <typename Org>
 // a separate mechanical sweep.
 
 template <typename Org>
-concept FederationOrgTag =
-    std::is_class_v<Org> && std::is_empty_v<Org>;
+concept FederationOrgTag = std::is_class_v<Org> && std::is_empty_v<Org>;
 
 template <typename Org>
     requires FederationOrgTag<Org>
 [[nodiscard]] constexpr FederationHandshake
-mint_self_signed_handshake(
-    PeerKeyFingerprint peer_key_fingerprint =
-        default_peer_key_fingerprint<Org>(),
-    Nonce nonce = Nonce{0}) noexcept
-{
+mint_self_signed_handshake(PeerKeyFingerprint peer_key_fingerprint = default_peer_key_fingerprint<Org>(),
+                           Nonce nonce = Nonce{0}) noexcept {
     const OrgId org_id = federation_org_id<Org>;
     return FederationHandshake{
         .org_id = org_id,
         .peer_key_fingerprint = peer_key_fingerprint,
         .nonce = nonce,
-        .self_signature_fingerprint =
-            federation_signature_fingerprint(
-                org_id, peer_key_fingerprint, nonce),
+        .self_signature_fingerprint = federation_signature_fingerprint(org_id, peer_key_fingerprint, nonce),
     };
 }
 
@@ -659,47 +617,35 @@ mint_self_signed_handshake(
 // mechanical migration sweep).
 template <typename Org>
 [[nodiscard]] constexpr FederationHandshake
-make_self_signed_handshake(
-    PeerKeyFingerprint peer_key_fingerprint =
-        default_peer_key_fingerprint<Org>(),
-    Nonce nonce = Nonce{0}) noexcept
-{
+make_self_signed_handshake(PeerKeyFingerprint peer_key_fingerprint = default_peer_key_fingerprint<Org>(),
+                           Nonce nonce = Nonce{0}) noexcept {
     const OrgId org_id = federation_org_id<Org>;
     return FederationHandshake{
         .org_id = org_id,
         .peer_key_fingerprint = peer_key_fingerprint,
         .nonce = nonce,
-        .self_signature_fingerprint =
-            federation_signature_fingerprint(
-                org_id, peer_key_fingerprint, nonce),
+        .self_signature_fingerprint = federation_signature_fingerprint(org_id, peer_key_fingerprint, nonce),
     };
 }
 
-template <typename Org,
-          typename Policy = policy::admit_orgs<Org>>
-[[deprecated(
-      "fixy-CR-02/CR-03/CR-04: self-signed federation handshake is "
-      "forgeable (CR-02: signature_fingerprint is a deterministic "
-      "mix64 of public values, NOT a MAC), replayable (CR-03: no "
-      "seen-nonce / no epoch binding / no expiry), AND admits "
-      "borrowed-ref local authority (CR-04: local_permission is "
-      "const-ref + (void)-cast — the verifier never inspects the "
-      "bytes; any const-ref to a Permission<LocalCipherTag> mints).  "
-      "Replace with HACL*-backed verifier (MAC the handshake using "
-      "per-cipher secret material) + stateful seen-nonces store "
-      "before production deployment.  Suppress locally via "
-      "_Pragma(\"GCC diagnostic ignored \\\"-Wdeprecated-declarations\\\"\") "
-      "if you are calling this knowingly (tests, V1 development)." )]]
+template <typename Org, typename Policy = policy::admit_orgs<Org>>
+[[deprecated("fixy-CR-02/CR-03/CR-04: self-signed federation handshake is "
+             "forgeable (CR-02: signature_fingerprint is a deterministic "
+             "mix64 of public values, NOT a MAC), replayable (CR-03: no "
+             "seen-nonce / no epoch binding / no expiry), AND admits "
+             "borrowed-ref local authority (CR-04: local_permission is "
+             "const-ref + (void)-cast — the verifier never inspects the "
+             "bytes; any const-ref to a Permission<LocalCipherTag> mints).  "
+             "Replace with HACL*-backed verifier (MAC the handshake using "
+             "per-cipher secret material) + stateful seen-nonces store "
+             "before production deployment.  Suppress locally via "
+             "_Pragma(\"GCC diagnostic ignored \\\"-Wdeprecated-declarations\\\"\") "
+             "if you are calling this knowingly (tests, V1 development).")]]
 // §XXI: standalone [[nodiscard]] on the signature line (not folded into the
 // [[deprecated]] attribute above) so the mint-inventory scanner's qualifier
 // window reaches it — the federation admission gate must be nd=Y (fix-17).
-[[nodiscard]] constexpr std::expected<
-    FederatedPeerPermission<Org>,
-    AdmittanceError>
-mint_federation_admittance(
-    const LocalCipherPermission& local_permission,
-    FederationHandshake handshake) noexcept
-{
+[[nodiscard]] constexpr std::expected<FederatedPeerPermission<Org>, AdmittanceError>
+mint_federation_admittance(const LocalCipherPermission& local_permission, FederationHandshake handshake) noexcept {
     (void)local_permission;
 
     if constexpr (!Policy::template admits<Org>) {
@@ -716,15 +662,11 @@ mint_federation_admittance(
         return std::unexpected(AdmittanceError::MissingSignature);
     }
     if (handshake.self_signature_fingerprint
-        != federation_signature_fingerprint(
-            handshake.org_id,
-            handshake.peer_key_fingerprint,
-            handshake.nonce)) {
+        != federation_signature_fingerprint(handshake.org_id, handshake.peer_key_fingerprint, handshake.nonce)) {
         return std::unexpected(AdmittanceError::BadSignature);
     }
 
-    return ::crucible::permissions::detail::FederationMintAccess
-        ::template mint<Org>();
+    return ::crucible::permissions::detail::FederationMintAccess ::template mint<Org>();
 }
 
 }  // namespace crucible::permissions
@@ -741,27 +683,24 @@ namespace crucible::safety {
 
 template <typename Tag>
     requires ::crucible::permissions::is_federated_peer_tag_v<Tag>
-[[nodiscard]] constexpr Permission<Tag> mint_permission_root() noexcept
-    = delete(
-        "fixy-CR-06: Permission<tag::FederatedPeer<Org>> cannot be minted "
-        "via mint_permission_root.  Federation peer admittance is the "
-        "load-bearing security boundary between organizations — every "
-        "minting must run the admittance policy + handshake + (once "
-        "HACL* lands) MAC check.  Use "
-        "`::crucible::permissions::mint_federation_admittance<Org, "
-        "Policy>(local_cipher, handshake)`.  See fixy-CR-06 section in "
-        "FederationPermission.h for the threat model.");
+[[nodiscard]] constexpr Permission<Tag>
+mint_permission_root() noexcept = delete("fixy-CR-06: Permission<tag::FederatedPeer<Org>> cannot be minted "
+                                         "via mint_permission_root.  Federation peer admittance is the "
+                                         "load-bearing security boundary between organizations — every "
+                                         "minting must run the admittance policy + handshake + (once "
+                                         "HACL* lands) MAC check.  Use "
+                                         "`::crucible::permissions::mint_federation_admittance<Org, "
+                                         "Policy>(local_cipher, handshake)`.  See fixy-CR-06 section in "
+                                         "FederationPermission.h for the threat model.");
 
 template <typename Tag, ::crucible::effects::IsExecCtx Ctx>
-    requires ::crucible::permissions::is_federated_peer_tag_v<Tag>
-          && CtxAdmitsPermission<Tag, Ctx>
-[[nodiscard]] constexpr Permission<Tag> mint_permission_root(Ctx const&) noexcept
-    = delete(
-        "fixy-CR-06: Permission<tag::FederatedPeer<Org>> cannot be minted "
-        "via mint_permission_root(ctx) either.  An ExecCtx argument does "
-        "not authorize cross-org admittance; only "
-        "`mint_federation_admittance<Org, Policy>(local_cipher, handshake)` "
-        "does.  See fixy-CR-06 section in FederationPermission.h.");
+    requires ::crucible::permissions::is_federated_peer_tag_v<Tag> && CtxAdmitsPermission<Tag, Ctx>
+[[nodiscard]] constexpr Permission<Tag>
+mint_permission_root(Ctx const&) noexcept = delete("fixy-CR-06: Permission<tag::FederatedPeer<Org>> cannot be minted "
+                                                   "via mint_permission_root(ctx) either.  An ExecCtx argument does "
+                                                   "not authorize cross-org admittance; only "
+                                                   "`mint_federation_admittance<Org, Policy>(local_cipher, handshake)` "
+                                                   "does.  See fixy-CR-06 section in FederationPermission.h.");
 
 }  // namespace crucible::safety
 
@@ -784,47 +723,29 @@ static_assert(policy::admit_orgs<SelfOrg, OtherOrg>::template admits<OtherOrg>);
 // intra-org splits.  This is the accidental-cross-org guard; a
 // malicious explicit specialization still wins by being more
 // specialized (see fixy-M-29 follow-up).
-static_assert(::crucible::safety::splits_into_v<
-              tag::FederatedPeer<SelfOrg>,
-              tag::FederatedPeer<SelfOrg>,
-              tag::FederatedPeer<SelfOrg>>,
+static_assert(::crucible::safety::splits_into_v<tag::FederatedPeer<SelfOrg>, tag::FederatedPeer<SelfOrg>,
+                                                tag::FederatedPeer<SelfOrg>>,
               "intra-org split must be admitted");
-static_assert(!::crucible::safety::splits_into_v<
-              tag::FederatedPeer<SelfOrg>,
-              tag::FederatedPeer<OtherOrg>,
-              tag::FederatedPeer<OtherOrg>>,
+static_assert(!::crucible::safety::splits_into_v<tag::FederatedPeer<SelfOrg>, tag::FederatedPeer<OtherOrg>,
+                                                 tag::FederatedPeer<OtherOrg>>,
               "cross-org split must be rejected by default");
-static_assert(!::crucible::safety::splits_into_v<
-              tag::FederatedPeer<SelfOrg>,
-              tag::FederatedPeer<SelfOrg>,
-              tag::FederatedPeer<OtherOrg>>,
+static_assert(!::crucible::safety::splits_into_v<tag::FederatedPeer<SelfOrg>, tag::FederatedPeer<SelfOrg>,
+                                                 tag::FederatedPeer<OtherOrg>>,
               "mixed-org split (one child crosses) must be rejected");
-static_assert(::crucible::safety::splits_into_pack_v<
-              tag::FederatedPeer<SelfOrg>,
-              tag::FederatedPeer<SelfOrg>,
-              tag::FederatedPeer<SelfOrg>,
-              tag::FederatedPeer<SelfOrg>>,
+static_assert(::crucible::safety::splits_into_pack_v<tag::FederatedPeer<SelfOrg>, tag::FederatedPeer<SelfOrg>,
+                                                     tag::FederatedPeer<SelfOrg>, tag::FederatedPeer<SelfOrg>>,
               "intra-org N-ary split must be admitted");
-static_assert(!::crucible::safety::splits_into_pack_v<
-              tag::FederatedPeer<SelfOrg>,
-              tag::FederatedPeer<SelfOrg>,
-              tag::FederatedPeer<OtherOrg>>,
+static_assert(!::crucible::safety::splits_into_pack_v<tag::FederatedPeer<SelfOrg>, tag::FederatedPeer<SelfOrg>,
+                                                      tag::FederatedPeer<OtherOrg>>,
               "N-ary split with one cross-org child must be rejected");
 
-static_assert(std::is_same_v<
-    FederatedPeerPermission<SelfOrg>::tag_type,
-    tag::FederatedPeer<SelfOrg>>);
+static_assert(std::is_same_v<FederatedPeerPermission<SelfOrg>::tag_type, tag::FederatedPeer<SelfOrg>>);
 
-constexpr FederationHandshake kSelfHandshake =
-    make_self_signed_handshake<SelfOrg>(
-        PeerKeyFingerprint{123}, Nonce{456});
+constexpr FederationHandshake kSelfHandshake = make_self_signed_handshake<SelfOrg>(PeerKeyFingerprint{123}, Nonce{456});
 static_assert(kSelfHandshake.org_id == federation_org_id<SelfOrg>);
 static_assert(kSelfHandshake.peer_key_fingerprint == PeerKeyFingerprint{123});
 static_assert(kSelfHandshake.self_signature_fingerprint
-              == federation_signature_fingerprint(
-                  federation_org_id<SelfOrg>,
-                  PeerKeyFingerprint{123},
-                  Nonce{456}));
+              == federation_signature_fingerprint(federation_org_id<SelfOrg>, PeerKeyFingerprint{123}, Nonce{456}));
 
 }  // namespace detail::federation_permission_self_test
 

@@ -156,66 +156,72 @@ namespace crucible::algebra::lattices {
 // every tier below it.  Ordinal 0 = weakest (None, no barrier); ordinal
 // 6 = strongest (FullFence, standalone architectural fence).
 enum class BarrierStrength : std::uint8_t {
-    None            = 0,  // bottom — no barrier (relaxed-on-own-variable)
+    None = 0,  // bottom — no barrier (relaxed-on-own-variable)
     CompilerBarrier = 1,  // asm volatile("":::"memory") — optimizer-only, no instruction
-    AcquireLoad     = 2,  // acquire ordering (prior loads fenced)
-    ReleaseStore    = 3,  // release ordering (prior-store visibility)
-    AcqRel          = 4,  // combined acquire + release
-    SeqCst          = 5,  // sequentially consistent (total order)
-    FullFence       = 6,  // top — standalone mfence / DMB ISH
+    AcquireLoad = 2,  // acquire ordering (prior loads fenced)
+    ReleaseStore = 3,  // release ordering (prior-store visibility)
+    AcqRel = 4,  // combined acquire + release
+    SeqCst = 5,  // sequentially consistent (total order)
+    FullFence = 6,  // top — standalone mfence / DMB ISH
 };
 
 [[nodiscard]] consteval std::string_view barrier_strength_name(BarrierStrength k) noexcept {
     switch (k) {
-        case BarrierStrength::None:            return "None";
-        case BarrierStrength::CompilerBarrier: return "CompilerBarrier";
-        case BarrierStrength::AcquireLoad:     return "AcquireLoad";
-        case BarrierStrength::ReleaseStore:    return "ReleaseStore";
-        case BarrierStrength::AcqRel:          return "AcqRel";
-        case BarrierStrength::SeqCst:          return "SeqCst";
-        case BarrierStrength::FullFence:       return "FullFence";
-        default:                               return std::string_view{"<unknown BarrierStrength>"};
+        case BarrierStrength::None:
+            return "None";
+        case BarrierStrength::CompilerBarrier:
+            return "CompilerBarrier";
+        case BarrierStrength::AcquireLoad:
+            return "AcquireLoad";
+        case BarrierStrength::ReleaseStore:
+            return "ReleaseStore";
+        case BarrierStrength::AcqRel:
+            return "AcqRel";
+        case BarrierStrength::SeqCst:
+            return "SeqCst";
+        case BarrierStrength::FullFence:
+            return "FullFence";
+        default:
+            return std::string_view{"<unknown BarrierStrength>"};
     }
 }
 
 struct BarrierStrengthLattice : ChainLatticeOps<BarrierStrength> {
-    [[nodiscard]] static constexpr BarrierStrength bottom() noexcept {
-        return BarrierStrength::None;
-    }
-    [[nodiscard]] static constexpr BarrierStrength top() noexcept {
-        return BarrierStrength::FullFence;
-    }
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return "BarrierStrengthLattice";
-    }
+    [[nodiscard]] static constexpr BarrierStrength bottom() noexcept { return BarrierStrength::None; }
+    [[nodiscard]] static constexpr BarrierStrength top() noexcept { return BarrierStrength::FullFence; }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "BarrierStrengthLattice"; }
 
     template <BarrierStrength K>
     struct At {
         struct element_type {
             using barrier_strength_value_type = BarrierStrength;
-            [[nodiscard]] constexpr operator barrier_strength_value_type() const noexcept {
-                return K;
-            }
-            [[nodiscard]] constexpr bool operator==(element_type) const noexcept {
-                return true;
-            }
+            [[nodiscard]] constexpr operator barrier_strength_value_type() const noexcept { return K; }
+            [[nodiscard]] constexpr bool operator==(element_type) const noexcept { return true; }
         };
         static constexpr BarrierStrength tier = K;
         [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-        [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
         [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static consteval std::string_view name() noexcept {
             switch (K) {
-                case BarrierStrength::None:            return "BarrierStrengthLattice::At<None>";
-                case BarrierStrength::CompilerBarrier: return "BarrierStrengthLattice::At<CompilerBarrier>";
-                case BarrierStrength::AcquireLoad:     return "BarrierStrengthLattice::At<AcquireLoad>";
-                case BarrierStrength::ReleaseStore:    return "BarrierStrengthLattice::At<ReleaseStore>";
-                case BarrierStrength::AcqRel:          return "BarrierStrengthLattice::At<AcqRel>";
-                case BarrierStrength::SeqCst:          return "BarrierStrengthLattice::At<SeqCst>";
-                case BarrierStrength::FullFence:       return "BarrierStrengthLattice::At<FullFence>";
-                default:                               return "BarrierStrengthLattice::At<?>";
+                case BarrierStrength::None:
+                    return "BarrierStrengthLattice::At<None>";
+                case BarrierStrength::CompilerBarrier:
+                    return "BarrierStrengthLattice::At<CompilerBarrier>";
+                case BarrierStrength::AcquireLoad:
+                    return "BarrierStrengthLattice::At<AcquireLoad>";
+                case BarrierStrength::ReleaseStore:
+                    return "BarrierStrengthLattice::At<ReleaseStore>";
+                case BarrierStrength::AcqRel:
+                    return "BarrierStrengthLattice::At<AcqRel>";
+                case BarrierStrength::SeqCst:
+                    return "BarrierStrengthLattice::At<SeqCst>";
+                case BarrierStrength::FullFence:
+                    return "BarrierStrengthLattice::At<FullFence>";
+                default:
+                    return "BarrierStrengthLattice::At<?>";
             }
         }
     };
@@ -225,15 +231,13 @@ struct BarrierStrengthLattice : ChainLatticeOps<BarrierStrength> {
 namespace detail::barrier_strength_lattice_self_test {
 
 // Catalog cardinality — the fence-strength chain has exactly 7 tiers.
-inline constexpr std::size_t barrier_strength_count =
-    std::meta::enumerators_of(^^BarrierStrength).size();
+inline constexpr std::size_t barrier_strength_count = std::meta::enumerators_of(^^BarrierStrength).size();
 
-static_assert(barrier_strength_count == 7,
-    "BarrierStrength diverged from {None, CompilerBarrier, AcquireLoad, "
-    "ReleaseStore, AcqRel, SeqCst, FullFence}.  Adding a tier requires "
-    "(a) append-only ordinal placement (FOUND-I04), (b) the matching "
-    "barrier_strength_name() arm, (c) the matching At<K> name() arm, AND "
-    "(d) the V-255 BarrierGuarded wrapper's row_hash + collision rules.");
+static_assert(barrier_strength_count == 7, "BarrierStrength diverged from {None, CompilerBarrier, AcquireLoad, "
+                                           "ReleaseStore, AcqRel, SeqCst, FullFence}.  Adding a tier requires "
+                                           "(a) append-only ordinal placement (FOUND-I04), (b) the matching "
+                                           "barrier_strength_name() arm, (c) the matching At<K> name() arm, AND "
+                                           "(d) the V-255 BarrierGuarded wrapper's row_hash + collision rules.");
 
 // Bottom-element pin — ordinal 0 is the weakest (None, no barrier).
 static_assert(std::to_underlying(BarrierStrength::None) == 0);
@@ -247,21 +251,19 @@ static_assert(std::is_same_v<std::underlying_type_t<BarrierStrength>, std::uint8
 // Reflection-driven name coverage — every enumerator must resolve to a
 // non-sentinel, non-empty name.  Auto-extends if the enum grows.
 [[nodiscard]] consteval bool every_barrier_strength_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^BarrierStrength));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^BarrierStrength));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
         const auto candidate = barrier_strength_name([:en:]);
         if (candidate == std::string_view{"<unknown BarrierStrength>"}) return false;
-        if (candidate.empty())                                          return false;
+        if (candidate.empty()) return false;
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_barrier_strength_has_name(),
-    "barrier_strength_name() switch missing an arm for at least one "
-    "BarrierStrength enumerator.");
+static_assert(every_barrier_strength_has_name(), "barrier_strength_name() switch missing an arm for at least one "
+                                                 "BarrierStrength enumerator.");
 
 // Concept conformance — chain lattice satisfies Lattice + BoundedLattice
 // and NOT Semiring (the chain order has no independent ⊕/⊗).
@@ -272,42 +274,42 @@ static_assert(!::crucible::algebra::Semiring<BarrierStrengthLattice>);
 // Exhaustive lattice-axiom verifier on (axis)³ triples.  Chain orders
 // are always distributive — failure indicates a leq/join/meet defect.
 static_assert(verify_chain_lattice_exhaustive<BarrierStrengthLattice>(),
-    "BarrierStrengthLattice chain-order lattice axioms failed at some "
-    "triple — leq/join/meet defect.");
+              "BarrierStrengthLattice chain-order lattice axioms failed at some "
+              "triple — leq/join/meet defect.");
 static_assert(verify_chain_lattice_distributive_exhaustive<BarrierStrengthLattice>(),
-    "BarrierStrengthLattice chain failed distributivity — leq/join/meet "
-    "defect.");
+              "BarrierStrengthLattice chain failed distributivity — leq/join/meet "
+              "defect.");
 
 // Bottom / top pins on the lattice surface (catches enum-reorder drift).
 static_assert(BarrierStrengthLattice::bottom() == BarrierStrength::None);
-static_assert(BarrierStrengthLattice::top()    == BarrierStrength::FullFence);
+static_assert(BarrierStrengthLattice::top() == BarrierStrength::FullFence);
 
 // Lattice top-level diagnostic name pin.
 static_assert(BarrierStrengthLattice::name() == std::string_view{"BarrierStrengthLattice"});
 
 // Strict-chain order pin (bottom ⊏ top witness).
-static_assert( BarrierStrengthLattice::leq(BarrierStrength::None, BarrierStrength::FullFence));
+static_assert(BarrierStrengthLattice::leq(BarrierStrength::None, BarrierStrength::FullFence));
 static_assert(!BarrierStrengthLattice::leq(BarrierStrength::FullFence, BarrierStrength::None));
 
 // Mid-chain ordering — every tier strictly subsumes the previous.
-static_assert(BarrierStrengthLattice::leq(BarrierStrength::None,            BarrierStrength::CompilerBarrier));
+static_assert(BarrierStrengthLattice::leq(BarrierStrength::None, BarrierStrength::CompilerBarrier));
 static_assert(BarrierStrengthLattice::leq(BarrierStrength::CompilerBarrier, BarrierStrength::AcquireLoad));
-static_assert(BarrierStrengthLattice::leq(BarrierStrength::AcquireLoad,     BarrierStrength::ReleaseStore));
-static_assert(BarrierStrengthLattice::leq(BarrierStrength::ReleaseStore,    BarrierStrength::AcqRel));
-static_assert(BarrierStrengthLattice::leq(BarrierStrength::AcqRel,          BarrierStrength::SeqCst));
-static_assert(BarrierStrengthLattice::leq(BarrierStrength::SeqCst,          BarrierStrength::FullFence));
+static_assert(BarrierStrengthLattice::leq(BarrierStrength::AcquireLoad, BarrierStrength::ReleaseStore));
+static_assert(BarrierStrengthLattice::leq(BarrierStrength::ReleaseStore, BarrierStrength::AcqRel));
+static_assert(BarrierStrengthLattice::leq(BarrierStrength::AcqRel, BarrierStrength::SeqCst));
+static_assert(BarrierStrengthLattice::leq(BarrierStrength::SeqCst, BarrierStrength::FullFence));
 
 // The load-bearing `satisfies` witness from the task spec: a stronger
 // fence satisfies a weaker requirement, the reverse does not.
 static_assert(BarrierStrengthLattice::leq(BarrierStrength::AcqRel, BarrierStrength::SeqCst),
-    "FIXY-V-252: SeqCst::satisfies<AcqRel> — a SeqCst fence satisfies an "
-    "AcqRel requirement (leq(AcqRel, SeqCst) is the satisfies direction).");
+              "FIXY-V-252: SeqCst::satisfies<AcqRel> — a SeqCst fence satisfies an "
+              "AcqRel requirement (leq(AcqRel, SeqCst) is the satisfies direction).");
 static_assert(!BarrierStrengthLattice::leq(BarrierStrength::SeqCst, BarrierStrength::AcqRel),
-    "FIXY-V-252: AcqRel does NOT satisfy a SeqCst requirement.");
+              "FIXY-V-252: AcqRel does NOT satisfy a SeqCst requirement.");
 
 // Reverse direction must fail for non-equal pairs.
 static_assert(!BarrierStrengthLattice::leq(BarrierStrength::CompilerBarrier, BarrierStrength::None));
-static_assert(!BarrierStrengthLattice::leq(BarrierStrength::FullFence,       BarrierStrength::SeqCst));
+static_assert(!BarrierStrengthLattice::leq(BarrierStrength::FullFence, BarrierStrength::SeqCst));
 
 // Join semantics — par=join (stronger-fence-dominates).  Composing a
 // CompilerBarrier site with a SeqCst site yields SeqCst.
@@ -325,8 +327,7 @@ static_assert(BarrierStrengthLattice::join(BarrierStrength::FullFence, BarrierSt
 // meeting a strong binding with a weak policy yields the weak floor.
 static_assert(BarrierStrengthLattice::meet(BarrierStrength::FullFence, BarrierStrength::AcquireLoad)
               == BarrierStrength::AcquireLoad);
-static_assert(BarrierStrengthLattice::meet(BarrierStrength::None, BarrierStrength::SeqCst)
-              == BarrierStrength::None);
+static_assert(BarrierStrengthLattice::meet(BarrierStrength::None, BarrierStrength::SeqCst) == BarrierStrength::None);
 
 // ── FIXY-FOUND-076 audit pin: cross-tree convention alignment ────────
 //
@@ -356,21 +357,18 @@ static_assert(BarrierStrengthLattice::meet(BarrierStrength::None, BarrierStrengt
 // strictest moves to bottom) would red THIS assert in lockstep with
 // the FOUND-009/010 convention.  Pinning both directions makes the
 // audit one-grep-discoverable.
-static_assert(BarrierStrengthLattice::join(BarrierStrength::None,
-                                           BarrierStrength::FullFence)
-              == BarrierStrength::FullFence,
-    "FIXY-FOUND-076: BarrierStrengthLattice's JOIN gives strictest-wins "
-    "under the natural-strength-lattice convention (top=FullFence). "
-    "join(None, FullFence) returns FullFence — the stronger of the two. "
-    "This matches the cross-tree 'par=join, strictest-wins' contract; "
-    "consumers can call JOIN directly here, UNLIKE MemOrder/HwInstruction "
-    "which require MEET for strictest-wins (FOUND-009/010).");
-static_assert(BarrierStrengthLattice::meet(BarrierStrength::None,
-                                           BarrierStrength::FullFence)
-              == BarrierStrength::None,
-    "FIXY-FOUND-076: BarrierStrengthLattice's MEET gives weakest-floor "
-    "(bottom=None).  CSL/admission gates wanting capability-minimization "
-    "MUST call MEET — None absorbs in meet by chain-minimum semantics.");
+static_assert(BarrierStrengthLattice::join(BarrierStrength::None, BarrierStrength::FullFence)
+                  == BarrierStrength::FullFence,
+              "FIXY-FOUND-076: BarrierStrengthLattice's JOIN gives strictest-wins "
+              "under the natural-strength-lattice convention (top=FullFence). "
+              "join(None, FullFence) returns FullFence — the stronger of the two. "
+              "This matches the cross-tree 'par=join, strictest-wins' contract; "
+              "consumers can call JOIN directly here, UNLIKE MemOrder/HwInstruction "
+              "which require MEET for strictest-wins (FOUND-009/010).");
+static_assert(BarrierStrengthLattice::meet(BarrierStrength::None, BarrierStrength::FullFence) == BarrierStrength::None,
+              "FIXY-FOUND-076: BarrierStrengthLattice's MEET gives weakest-floor "
+              "(bottom=None).  CSL/admission gates wanting capability-minimization "
+              "MUST call MEET — None absorbs in meet by chain-minimum semantics.");
 
 // At<K> singleton — empty element_type for EBO collapse at every use
 // site.  V-255's `Graded<Absolute, At<K>, P>` relies on this.
@@ -385,37 +383,36 @@ static_assert(BarrierStrengthLattice::At<BarrierStrength::SeqCst>::tier == Barri
 
 // At<K>::name() coverage — reflection-driven, mirrors the enum-name probe.
 [[nodiscard]] consteval bool every_at_barrier_strength_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^BarrierStrength));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^BarrierStrength));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
-        if (BarrierStrengthLattice::At<([:en:])>::name() ==
-            std::string_view{"BarrierStrengthLattice::At<?>"}) {
+        if (BarrierStrengthLattice::At<([:en:])>::name() == std::string_view{"BarrierStrengthLattice::At<?>"}) {
             return false;
         }
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_at_barrier_strength_has_name(),
-    "BarrierStrengthLattice::At<K>::name() switch missing an arm.");
+static_assert(every_at_barrier_strength_has_name(), "BarrierStrengthLattice::At<K>::name() switch missing an arm.");
 
 // ── Layout invariants — Graded<Absolute, At<K>, P> == sizeof(P) ─────
-struct OneByteValue   { char c{0}; };
-struct EightByteValue { unsigned long long v{0}; };
+struct OneByteValue {
+    char c{0};
+};
+struct EightByteValue {
+    unsigned long long v{0};
+};
 
 template <typename T_>
-using NoneGraded = Graded<ModalityKind::Absolute,
-                          BarrierStrengthLattice::At<BarrierStrength::None>, T_>;
+using NoneGraded = Graded<ModalityKind::Absolute, BarrierStrengthLattice::At<BarrierStrength::None>, T_>;
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoneGraded, OneByteValue);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoneGraded, EightByteValue);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoneGraded, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoneGraded, double);
 
 template <typename T_>
-using FullFenceGraded = Graded<ModalityKind::Absolute,
-                               BarrierStrengthLattice::At<BarrierStrength::FullFence>, T_>;
+using FullFenceGraded = Graded<ModalityKind::Absolute, BarrierStrengthLattice::At<BarrierStrength::FullFence>, T_>;
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(FullFenceGraded, EightByteValue);
 
 // Runtime smoke test — per feedback_algebra_runtime_smoke_test_discipline:
@@ -423,7 +420,7 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(FullFenceGraded, EightByteValue);
 inline void barrier_strength_lattice_runtime_smoke_test() {
     BarrierStrength a = BarrierStrength::None;
     BarrierStrength b = BarrierStrength::FullFence;
-    [[maybe_unused]] bool            rl = BarrierStrengthLattice::leq(a, b);
+    [[maybe_unused]] bool rl = BarrierStrengthLattice::leq(a, b);
     [[maybe_unused]] BarrierStrength rj = BarrierStrengthLattice::join(a, b);
     [[maybe_unused]] BarrierStrength rm = BarrierStrengthLattice::meet(a, b);
     [[maybe_unused]] BarrierStrength bot = BarrierStrengthLattice::bottom();
@@ -443,11 +440,10 @@ inline void barrier_strength_lattice_runtime_smoke_test() {
 
     // Graded carrier round-trip on the regime-1 EBO shape.
     OneByteValue payload{9};
-    NoneGraded<OneByteValue> initial{
-        payload, BarrierStrengthLattice::At<BarrierStrength::None>::bottom()};
-    auto widened  = initial.weaken(BarrierStrengthLattice::At<BarrierStrength::None>::top());
+    NoneGraded<OneByteValue> initial{payload, BarrierStrengthLattice::At<BarrierStrength::None>::bottom()};
+    auto widened = initial.weaken(BarrierStrengthLattice::At<BarrierStrength::None>::top());
     auto composed = initial.compose(widened);
-    [[maybe_unused]] auto grade  = widened.grade();
+    [[maybe_unused]] auto grade = widened.grade();
     [[maybe_unused]] auto peeked = composed.peek().c;
 }
 

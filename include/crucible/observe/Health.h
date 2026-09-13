@@ -26,59 +26,37 @@ enum class HealthMetricSlot : std::uint32_t {
 inline constexpr std::uint32_t kTopologyHealthMetricBase = 0x4845'0000u;
 inline constexpr std::size_t kTopologyHealthObservationCount = 4;
 
-using TopologyHealthObservationSet =
-    std::array<ObservationSnapshot, kTopologyHealthObservationCount>;
-using TopologyHealthObservationBatch =
-    std::array<Observation, kTopologyHealthObservationCount>;
+using TopologyHealthObservationSet = std::array<ObservationSnapshot, kTopologyHealthObservationCount>;
+using TopologyHealthObservationBatch = std::array<Observation, kTopologyHealthObservationCount>;
 
-[[nodiscard]] constexpr std::uint32_t
-topology_health_metric_id(std::uint16_t peer_slot,
-                          HealthMetricSlot slot) noexcept {
-    return kTopologyHealthMetricBase
-         | (static_cast<std::uint32_t>(peer_slot) << 8u)
-         | static_cast<std::uint32_t>(slot);
+[[nodiscard]] constexpr std::uint32_t topology_health_metric_id(std::uint16_t peer_slot,
+                                                                HealthMetricSlot slot) noexcept {
+    return kTopologyHealthMetricBase | (static_cast<std::uint32_t>(peer_slot) << 8u) | static_cast<std::uint32_t>(slot);
 }
 
 [[nodiscard]] constexpr TopologyHealthObservationBatch
-topology_health_observations(
-    std::uint16_t peer_slot,
-    topology::HealthSnapshot const& snapshot,
-    ObservationSource source = ObservationSource::Runtime) noexcept {
+topology_health_observations(std::uint16_t peer_slot, topology::HealthSnapshot const& snapshot,
+                             ObservationSource source = ObservationSource::Runtime) noexcept {
     return TopologyHealthObservationBatch{{
-        make_observation(
-            ObservationKind::HealthScore,
-            source,
-            topology_health_metric_id(peer_slot, HealthMetricSlot::Score),
-            snapshot.score.raw(),
-            snapshot.sequence),
-        make_observation(
-            ObservationKind::PhiMilli,
-            source,
-            topology_health_metric_id(peer_slot, HealthMetricSlot::PhiMilli),
-            snapshot.phi.raw(),
-            snapshot.sequence),
-        make_observation(
-            ObservationKind::DropRatePpm,
-            source,
-            topology_health_metric_id(peer_slot, HealthMetricSlot::DropRatePpm),
-            snapshot.drop_rate_ppm,
-            snapshot.sequence),
-        make_observation(
-            ObservationKind::WearUsedPpm,
-            source,
-            topology_health_metric_id(peer_slot, HealthMetricSlot::WearUsedPpm),
-            snapshot.wear_used_ppm,
-            snapshot.sequence),
+        make_observation(ObservationKind::HealthScore, source,
+                         topology_health_metric_id(peer_slot, HealthMetricSlot::Score), snapshot.score.raw(),
+                         snapshot.sequence),
+        make_observation(ObservationKind::PhiMilli, source,
+                         topology_health_metric_id(peer_slot, HealthMetricSlot::PhiMilli), snapshot.phi.raw(),
+                         snapshot.sequence),
+        make_observation(ObservationKind::DropRatePpm, source,
+                         topology_health_metric_id(peer_slot, HealthMetricSlot::DropRatePpm), snapshot.drop_rate_ppm,
+                         snapshot.sequence),
+        make_observation(ObservationKind::WearUsedPpm, source,
+                         topology_health_metric_id(peer_slot, HealthMetricSlot::WearUsedPpm), snapshot.wear_used_ppm,
+                         snapshot.sequence),
     }};
 }
 
-inline void publish_topology_health(
-    TopologyHealthObservationSet& sinks,
-    std::uint16_t peer_slot,
-    topology::HealthSnapshot const& snapshot,
-    ObservationSource source = ObservationSource::Runtime) noexcept {
-    TopologyHealthObservationBatch const observations =
-        topology_health_observations(peer_slot, snapshot, source);
+inline void publish_topology_health(TopologyHealthObservationSet& sinks, std::uint16_t peer_slot,
+                                    topology::HealthSnapshot const& snapshot,
+                                    ObservationSource source = ObservationSource::Runtime) noexcept {
+    TopologyHealthObservationBatch const observations = topology_health_observations(peer_slot, snapshot, source);
     for (std::size_t i = 0; i < observations.size(); ++i) {
         record_observation(sinks[i], observations[i]);
     }

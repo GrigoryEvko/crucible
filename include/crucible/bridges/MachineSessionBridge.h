@@ -115,46 +115,40 @@ namespace crucible::safety {
 // SessionHandle stores `&machine_`, which would dangle on bridge move.
 
 template <typename State, typename Proto>
-class [[nodiscard]] SessionFromMachine
-    : public Pinned<SessionFromMachine<State, Proto>>
-{
+class [[nodiscard]] SessionFromMachine : public Pinned<SessionFromMachine<State, Proto>> {
     static_assert(safety::proto::is_well_formed_v<Proto>,
-        "crucible::session::diagnostic [Protocol_Ill_Formed]: "
-        "SessionFromMachine<State, Proto>: Proto must be well-formed "
-        "(every Continue must have an enclosing Loop).  See "
-        "safety/Session.h's is_well_formed_v for the structural rule.");
+                  "crucible::session::diagnostic [Protocol_Ill_Formed]: "
+                  "SessionFromMachine<State, Proto>: Proto must be well-formed "
+                  "(every Continue must have an enclosing Loop).  See "
+                  "safety/Session.h's is_well_formed_v for the structural rule.");
 
     Machine<State> machine_;
 
 public:
-    using state_type   = State;
+    using state_type = State;
     using machine_type = Machine<State>;
-    using protocol     = Proto;
+    using protocol = Proto;
 
     // The session view's concrete type — the handle's Proto and
     // Resource fully determine its specialisation.  Exposed so callers
     // can name the type without re-deriving it.
-    using session_handle_type =
-        decltype(safety::proto::mint_session_handle<Proto>(
-            std::declval<machine_type*>()));
+    using session_handle_type = decltype(safety::proto::mint_session_handle<Proto>(std::declval<machine_type*>()));
 
     // ── Constructors ─────────────────────────────────────────────────
     //
     // Three forms mirror Machine<State>: from a State value, in-place
     // construction, or from an already-built Machine.
 
-    constexpr explicit SessionFromMachine(State s)
-        noexcept(std::is_nothrow_move_constructible_v<State>)
+    constexpr explicit SessionFromMachine(State s) noexcept(std::is_nothrow_move_constructible_v<State>)
         : machine_{std::move(s)} {}
 
     template <typename... Args>
         requires std::is_constructible_v<State, Args...>
-    constexpr explicit SessionFromMachine(std::in_place_t, Args&&... args)
-        noexcept(std::is_nothrow_constructible_v<State, Args...>)
+    constexpr explicit SessionFromMachine(std::in_place_t,
+                                          Args&&... args) noexcept(std::is_nothrow_constructible_v<State, Args...>)
         : machine_{std::in_place, std::forward<Args>(args)...} {}
 
-    constexpr explicit SessionFromMachine(machine_type m) noexcept
-        : machine_{std::move(m)} {}
+    constexpr explicit SessionFromMachine(machine_type m) noexcept : machine_{std::move(m)} {}
 
     // Pinned base deletes copy and move; ~SessionFromMachine is the
     // only special member needed and defaults cleanly.
@@ -166,26 +160,18 @@ public:
     // data_mut() methods do not consume the Machine, so the bridge
     // remains in a valid state across these borrows.
 
-    [[nodiscard]] constexpr machine_type& machine() & noexcept {
-        return machine_;
-    }
+    [[nodiscard]] constexpr machine_type& machine() & noexcept { return machine_; }
 
-    [[nodiscard]] constexpr const machine_type& machine() const & noexcept {
-        return machine_;
-    }
+    [[nodiscard]] constexpr const machine_type& machine() const& noexcept { return machine_; }
 
     // ── Direct state borrow (sugar over machine().data() / data_mut())
     //
     // Common case: callers want the State value, not the wrapping
     // Machine.  Forwards to Machine's borrowing API.
 
-    [[nodiscard]] constexpr const State& state() const & noexcept {
-        return machine_.data();
-    }
+    [[nodiscard]] constexpr const State& state() const& noexcept { return machine_.data(); }
 
-    [[nodiscard]] constexpr State& state_mut() & noexcept {
-        return machine_.data_mut();
-    }
+    [[nodiscard]] constexpr State& state_mut() & noexcept { return machine_.data_mut(); }
 
     // ── Protocol view (SessionHandle) ────────────────────────────────
     //
@@ -238,9 +224,7 @@ public:
     // itself from being moved, so .extract() is the sole legitimate
     // path to recover the State.
 
-    [[nodiscard]] constexpr State extract() &&
-        noexcept(std::is_nothrow_move_constructible_v<State>)
-    {
+    [[nodiscard]] constexpr State extract() && noexcept(std::is_nothrow_move_constructible_v<State>) {
         return std::move(machine_).extract();
     }
 };
@@ -267,43 +251,30 @@ public:
 // a named diagnostic.
 
 template <typename Cell>
-concept AtomicMachineCell =
-    requires(const std::remove_cvref_t<Cell>& cell,
-             std::memory_order order) {
-        typename std::remove_cvref_t<Cell>::state_type;
-        { cell.load(order) } ->
-            std::same_as<typename std::remove_cvref_t<Cell>::state_type>;
-    };
+concept AtomicMachineCell = requires(const std::remove_cvref_t<Cell>& cell, std::memory_order order) {
+    typename std::remove_cvref_t<Cell>::state_type;
+    { cell.load(order) } -> std::same_as<typename std::remove_cvref_t<Cell>::state_type>;
+};
 
 template <typename Proto, typename Cell>
-    requires (AtomicMachineCell<Cell>
-              && safety::proto::is_well_formed_v<Proto>)
-[[nodiscard]] constexpr auto mint_atomic_session(Cell& cell) noexcept
-{
+    requires(AtomicMachineCell<Cell> && safety::proto::is_well_formed_v<Proto>)
+[[nodiscard]] constexpr auto mint_atomic_session(Cell& cell) noexcept {
     return safety::proto::mint_session_handle<Proto>(&cell);
 }
 
 template <typename Cell>
     requires AtomicMachineCell<Cell>
 [[nodiscard]] constexpr typename std::remove_cvref_t<Cell>::state_type
-atomic_machine_state(
-    const Cell& cell,
-    std::memory_order order = std::memory_order_acquire) noexcept
-{
+atomic_machine_state(const Cell& cell, std::memory_order order = std::memory_order_acquire) noexcept {
     return cell.load(order);
 }
 
 template <typename Event, AtomicMachineCell Cell>
-constexpr void publish_atomic_machine_transition(Cell*& cell, Event&& event)
-    noexcept(noexcept(cell->publish_from_session(
-        std::forward<Event>(event), std::memory_order_release)))
-    requires requires {
-        cell->publish_from_session(
-            std::forward<Event>(event), std::memory_order_release);
-    }
+constexpr void publish_atomic_machine_transition(Cell*& cell, Event&& event) noexcept(
+    noexcept(cell->publish_from_session(std::forward<Event>(event), std::memory_order_release)))
+    requires requires { cell->publish_from_session(std::forward<Event>(event), std::memory_order_release); }
 {
-    cell->publish_from_session(
-        std::forward<Event>(event), std::memory_order_release);
+    cell->publish_from_session(std::forward<Event>(event), std::memory_order_release);
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -334,11 +305,8 @@ constexpr void publish_atomic_machine_transition(Cell*& cell, Event&& event)
 
 // End-state overload: clean consume via .close().
 template <typename State, typename LoopCtx>
-[[nodiscard]] constexpr Machine<State>* machine_from_session(
-    safety::proto::SessionHandle<safety::proto::End,
-                                  Machine<State>*,
-                                  LoopCtx>&& sh) noexcept
-{
+[[nodiscard]] constexpr Machine<State>*
+machine_from_session(safety::proto::SessionHandle<safety::proto::End, Machine<State>*, LoopCtx>&& sh) noexcept {
     return std::move(sh).close();
 }
 
@@ -350,10 +318,9 @@ template <typename State, typename LoopCtx>
 // consumed flag and does not abort.  This overload routes any
 // non-End SessionHandle through that escape hatch in one step.
 template <typename Proto, typename State, typename LoopCtx>
-    requires (!std::is_same_v<Proto, safety::proto::End>)
-[[nodiscard]] constexpr Machine<State>* machine_from_session(
-    safety::proto::SessionHandle<Proto, Machine<State>*, LoopCtx>&& sh) noexcept
-{
+    requires(!std::is_same_v<Proto, safety::proto::End>)
+[[nodiscard]] constexpr Machine<State>*
+machine_from_session(safety::proto::SessionHandle<Proto, Machine<State>*, LoopCtx>&& sh) noexcept {
     Machine<State>* p = sh.resource();
     std::move(sh).detach(safety::proto::detach_reason::OwnerLifetimeBoundEarlyExit{});
     return p;
@@ -371,24 +338,27 @@ template <typename Proto, typename State, typename LoopCtx>
 #ifdef NDEBUG
 namespace detail::msb_release_size_test {
 
-struct OneByteState   { char x; };
-struct FourByteState  { int  x; };
-struct EightByteState { double x; };
+struct OneByteState {
+    char x;
+};
+struct FourByteState {
+    int x;
+};
+struct EightByteState {
+    double x;
+};
 
 using Proto1 = safety::proto::End;
 using Proto2 = safety::proto::Loop<safety::proto::Send<int, safety::proto::Continue>>;
 
-static_assert(sizeof(SessionFromMachine<OneByteState, Proto1>)
-              == sizeof(OneByteState),
-    "Release-mode SessionFromMachine must add zero bytes beyond State.");
+static_assert(sizeof(SessionFromMachine<OneByteState, Proto1>) == sizeof(OneByteState),
+              "Release-mode SessionFromMachine must add zero bytes beyond State.");
 
-static_assert(sizeof(SessionFromMachine<FourByteState, Proto2>)
-              == sizeof(FourByteState),
-    "Release-mode SessionFromMachine must add zero bytes beyond State.");
+static_assert(sizeof(SessionFromMachine<FourByteState, Proto2>) == sizeof(FourByteState),
+              "Release-mode SessionFromMachine must add zero bytes beyond State.");
 
-static_assert(sizeof(SessionFromMachine<EightByteState, Proto1>)
-              == sizeof(EightByteState),
-    "Release-mode SessionFromMachine must add zero bytes beyond State.");
+static_assert(sizeof(SessionFromMachine<EightByteState, Proto1>) == sizeof(EightByteState),
+              "Release-mode SessionFromMachine must add zero bytes beyond State.");
 
 }  // namespace detail::msb_release_size_test
 #endif
@@ -404,19 +374,22 @@ namespace detail::msb_self_test {
 
 // Fixture: a typestate carrying a Vigil-style mode plus a counter.
 struct VigilModeState {
-    enum class Mode : uint8_t { Idle, Recording, Replaying, Serving };
-    Mode      mode    = Mode::Idle;
-    uint32_t  ticks   = 0;
+    enum class Mode : uint8_t {
+        Idle,
+        Recording,
+        Replaying,
+        Serving
+    };
+    Mode mode = Mode::Idle;
+    uint32_t ticks = 0;
 };
 
 // A single-party protocol matching the Vigil mode-transition graph
 // shape: an unbounded loop offering one of four mode-transition
 // branches per tick.  Real Vigil shapes will refine this; the bridge
 // works with any well-formed Proto.
-using VigilProto = safety::proto::Loop<
-    safety::proto::Select<
-        safety::proto::Send<int, safety::proto::Continue>,
-        safety::proto::End>>;
+using VigilProto =
+    safety::proto::Loop<safety::proto::Select<safety::proto::Send<int, safety::proto::Continue>, safety::proto::End>>;
 
 using Bridge = SessionFromMachine<VigilModeState, VigilProto>;
 
@@ -430,22 +403,18 @@ static_assert(!std::is_move_assignable_v<Bridge>);
 static_assert(std::is_base_of_v<Pinned<Bridge>, Bridge>);
 
 // Public typedefs are correctly wired.
-static_assert(std::is_same_v<typename Bridge::state_type,   VigilModeState>);
+static_assert(std::is_same_v<typename Bridge::state_type, VigilModeState>);
 static_assert(std::is_same_v<typename Bridge::machine_type, Machine<VigilModeState>>);
-static_assert(std::is_same_v<typename Bridge::protocol,     VigilProto>);
+static_assert(std::is_same_v<typename Bridge::protocol, VigilProto>);
 
 // session_handle_type is the SessionHandle specialisation produced
 // by mint_session_handle<Proto>(&machine_).  Loop unrolls one step
 // at construction, so the resulting handle's compile-time Proto is
 // the loop body (a Select), with Loop<...> as the LoopCtx.
 using ExpectedSession = safety::proto::SessionHandle<
-    safety::proto::Select<
-        safety::proto::Send<int, safety::proto::Continue>,
-        safety::proto::End>,
-    Machine<VigilModeState>*,
-    VigilProto>;
-static_assert(std::is_same_v<typename Bridge::session_handle_type,
-                              ExpectedSession>);
+    safety::proto::Select<safety::proto::Send<int, safety::proto::Continue>, safety::proto::End>,
+    Machine<VigilModeState>*, VigilProto>;
+static_assert(std::is_same_v<typename Bridge::session_handle_type, ExpectedSession>);
 
 }  // namespace detail::msb_self_test
 

@@ -88,14 +88,14 @@
 #include <crucible/Cipher.h>
 #include <crucible/bridges/SessionPersistence.h>
 #include <crucible/cipher/CipherTierPromotion.h>
-#include <crucible/cipher/ComputationCache.h>           // FIXY-U-015: dispatcher cache surface
-#include <crucible/cipher/ComputationCacheFederation.h> // FIXY-U-015: cache federation wire-keys
-#include <crucible/cipher/FederationProtocol.h>         // FIXY-U-015: federation entry wire format
-#include <crucible/effects/ExecCtx.h>                   // FIXY-V-220: IsBgCtx / IsFgCtx / IsInitCtx
+#include <crucible/cipher/ComputationCache.h>  // FIXY-U-015: dispatcher cache surface
+#include <crucible/cipher/ComputationCacheFederation.h>  // FIXY-U-015: cache federation wire-keys
+#include <crucible/cipher/FederationProtocol.h>  // FIXY-U-015: federation entry wire format
+#include <crucible/effects/ExecCtx.h>  // FIXY-V-220: IsBgCtx / IsFgCtx / IsInitCtx
 #include <crucible/safety/Contract.h>
 
-#include <chrono>      // FIXY-U-015: drain_computation_cache signature
-#include <type_traits> // FIXY-U-015 sentinel uses std::is_same_v
+#include <chrono>  // FIXY-U-015: drain_computation_cache signature
+#include <type_traits>  // FIXY-U-015 sentinel uses std::is_same_v
 
 // FIXY-V-220 — forward-declare the 5 non-Cipher host classes that
 // carry member-function mints.  Pure name reach for the registration
@@ -133,7 +133,7 @@ using ::crucible::safety::CipherTierTag_v;
 // ── Per-tier handle aliases (Hot / Warm / Cold) ─────────────────────
 
 template <typename T>
-using HotTierHandle  = ::crucible::cipher::HotTierHandle<T>;
+using HotTierHandle = ::crucible::cipher::HotTierHandle<T>;
 
 template <typename T>
 using WarmTierHandle = ::crucible::cipher::WarmTierHandle<T>;
@@ -149,12 +149,10 @@ using ColdTierHandle = ::crucible::cipher::ColdTierHandle<T>;
 // write `if constexpr (can_promote_tier_v<From, To>)` branches.
 
 template <CipherTierTag_v From, CipherTierTag_v To>
-inline constexpr bool can_promote_tier_v =
-    ::crucible::cipher::can_promote_tier_v<From, To>;
+inline constexpr bool can_promote_tier_v = ::crucible::cipher::can_promote_tier_v<From, To>;
 
 template <CipherTierTag_v From, CipherTierTag_v To>
-inline constexpr bool can_demote_tier_v =
-    ::crucible::cipher::can_demote_tier_v<From, To>;
+inline constexpr bool can_demote_tier_v = ::crucible::cipher::can_demote_tier_v<From, To>;
 
 // ── Mint factories (CLAUDE.md §XXI) ─────────────────────────────────
 //
@@ -183,16 +181,16 @@ using ::crucible::cipher::restore_error_name;
 // migration through a session boundary.
 
 template <typename T>
-using HotPromotePayload  = ::crucible::cipher::HotPromotePayload<T>;
+using HotPromotePayload = ::crucible::cipher::HotPromotePayload<T>;
 
 template <typename T>
-using HotPromote         = ::crucible::cipher::HotPromote<T>;
+using HotPromote = ::crucible::cipher::HotPromote<T>;
 
 template <typename T, typename K = ::crucible::safety::proto::End>
 using HotPromoteDelegate = ::crucible::cipher::HotPromoteDelegate<T, K>;
 
 template <typename T, typename K = ::crucible::safety::proto::End>
-using HotPromoteAccept   = ::crucible::cipher::HotPromoteAccept<T, K>;
+using HotPromoteAccept = ::crucible::cipher::HotPromoteAccept<T, K>;
 
 // ── EpochedDelegate (sessions/SessionDelegate.h) ────────────────────
 //
@@ -204,12 +202,8 @@ using HotPromoteAccept   = ::crucible::cipher::HotPromoteAccept<T, K>;
 // re-exported via fixy/Sess.h::EpochedDelegate; aliased here for
 // migration-flow grep discoverability per audit doc §B9.
 
-template <typename T,
-          typename K = ::crucible::safety::proto::End,
-          unsigned MinEpoch = 0,
-          unsigned MinGeneration = 0>
-using EpochedDelegate =
-    ::crucible::safety::proto::EpochedDelegate<T, K, MinEpoch, MinGeneration>;
+template <typename T, typename K = ::crucible::safety::proto::End, unsigned MinEpoch = 0, unsigned MinGeneration = 0>
+using EpochedDelegate = ::crucible::safety::proto::EpochedDelegate<T, K, MinEpoch, MinGeneration>;
 
 // ── mint_persisted_session (bridges/SessionPersistence.h) ───────────
 //
@@ -280,12 +274,10 @@ using ::crucible::CipherSessionEventPersistenceRow;
 // Cipher::content_addressed(region).  Surface them so callers can
 // declare ContentAddressedPayload<MyType> at non-Cipher call sites.
 template <typename T>
-using ContentAddressedPayload =
-    ::crucible::cipher::ContentAddressedPayload<T>;
+using ContentAddressedPayload = ::crucible::cipher::ContentAddressedPayload<T>;
 
 template <typename T>
-using LoadedContentAddressedPayload =
-    ::crucible::cipher::LoadedContentAddressedPayload<T>;
+using LoadedContentAddressedPayload = ::crucible::cipher::LoadedContentAddressedPayload<T>;
 
 // ── B. SessionEvent — 72-byte cold-tier wire format ────────────────
 //
@@ -324,8 +316,7 @@ using ::crucible::cipher::IsEffectRow;
 // across TUs and across program restarts (within a build).
 template <auto FnPtr, typename... Args>
     requires ::crucible::cipher::IsCacheableFunction<FnPtr>
-inline constexpr std::uint64_t computation_cache_key =
-    ::crucible::cipher::computation_cache_key<FnPtr, Args...>;
+inline constexpr std::uint64_t computation_cache_key = ::crucible::cipher::computation_cache_key<FnPtr, Args...>;
 
 // lookup_computation_cache<FnPtr, Args...>() — acquire-load the
 // current slot.  Returns nullptr on miss; returns a non-null
@@ -343,8 +334,7 @@ using ::crucible::cipher::insert_computation_cache;
 // combination at different Row engagements get different cache
 // slots.  Used by callers that need per-effect-row specialization.
 template <auto FnPtr, typename Row, typename... Args>
-    requires ::crucible::cipher::IsCacheableFunction<FnPtr>
-          && ::crucible::cipher::IsEffectRow<Row>
+    requires ::crucible::cipher::IsCacheableFunction<FnPtr> && ::crucible::cipher::IsEffectRow<Row>
 inline constexpr std::uint64_t computation_cache_key_in_row =
     ::crucible::cipher::computation_cache_key_in_row<FnPtr, Row, Args...>;
 
@@ -548,9 +538,7 @@ struct member_mint_required_ctx<::crucible::Cipher, mint_name::open_view> {
     static consteval bool admits() noexcept {
         return ::crucible::effects::IsBgCtx<std::remove_cvref_t<Ctx>>;
     }
-    static consteval const char* name() noexcept {
-        return "Cipher::mint_open_view";
-    }
+    static consteval const char* name() noexcept { return "Cipher::mint_open_view"; }
     static consteval const char* required_ctx_description() noexcept {
         return "IsBgCtx — Cipher::OpenView writes are drain-side";
     }
@@ -569,9 +557,7 @@ struct member_mint_required_ctx<::crucible::CKernelTable, mint_name::mutable_vie
     static consteval bool admits() noexcept {
         return ::crucible::effects::IsInitCtx<std::remove_cvref_t<Ctx>>;
     }
-    static consteval const char* name() noexcept {
-        return "CKernelTable::mint_mutable_view";
-    }
+    static consteval const char* name() noexcept { return "CKernelTable::mint_mutable_view"; }
     static consteval const char* required_ctx_description() noexcept {
         return "IsInitCtx — pre-seal cold-init table build, single writer";
     }
@@ -590,9 +576,7 @@ struct member_mint_required_ctx<::crucible::CKernelTable, mint_name::sealed_view
     static consteval bool admits() noexcept {
         return ::crucible::effects::IsExecCtx<std::remove_cvref_t<Ctx>>;
     }
-    static consteval const char* name() noexcept {
-        return "CKernelTable::mint_sealed_view";
-    }
+    static consteval const char* name() noexcept { return "CKernelTable::mint_sealed_view"; }
     static consteval const char* required_ctx_description() noexcept {
         return "IsExecCtx — hot/bg post-seal reads (any ctx)";
     }
@@ -609,9 +593,7 @@ struct member_mint_required_ctx<::crucible::SchemaTable, mint_name::mutable_view
     static consteval bool admits() noexcept {
         return ::crucible::effects::IsInitCtx<std::remove_cvref_t<Ctx>>;
     }
-    static consteval const char* name() noexcept {
-        return "SchemaTable::mint_mutable_view";
-    }
+    static consteval const char* name() noexcept { return "SchemaTable::mint_mutable_view"; }
     static consteval const char* required_ctx_description() noexcept {
         return "IsInitCtx — pre-seal cold-init schema build, single writer";
     }
@@ -628,9 +610,7 @@ struct member_mint_required_ctx<::crucible::SchemaTable, mint_name::sealed_view>
     static consteval bool admits() noexcept {
         return ::crucible::effects::IsExecCtx<std::remove_cvref_t<Ctx>>;
     }
-    static consteval const char* name() noexcept {
-        return "SchemaTable::mint_sealed_view";
-    }
+    static consteval const char* name() noexcept { return "SchemaTable::mint_sealed_view"; }
     static consteval const char* required_ctx_description() noexcept {
         return "IsExecCtx — hot/bg post-seal reads (any ctx)";
     }
@@ -648,12 +628,9 @@ struct member_mint_required_ctx<::crucible::PoolAllocator, mint_name::initialize
     template <class Ctx>
     static consteval bool admits() noexcept {
         using C = std::remove_cvref_t<Ctx>;
-        return ::crucible::effects::IsFgCtx<C>
-            || ::crucible::effects::IsBgCtx<C>;
+        return ::crucible::effects::IsFgCtx<C> || ::crucible::effects::IsBgCtx<C>;
     }
-    static consteval const char* name() noexcept {
-        return "PoolAllocator::mint_initialized_view";
-    }
+    static consteval const char* name() noexcept { return "PoolAllocator::mint_initialized_view"; }
     static consteval const char* required_ctx_description() noexcept {
         return "IsFgCtx OR IsBgCtx — hot dispatch alloc + bg drain release";
     }
@@ -672,9 +649,7 @@ struct member_mint_required_ctx<::crucible::CrucibleContext, mint_name::compiled
     static consteval bool admits() noexcept {
         return ::crucible::effects::IsFgCtx<std::remove_cvref_t<Ctx>>;
     }
-    static consteval const char* name() noexcept {
-        return "CrucibleContext::mint_compiled_view";
-    }
+    static consteval const char* name() noexcept { return "CrucibleContext::mint_compiled_view"; }
     static consteval const char* required_ctx_description() noexcept {
         return "IsFgCtx — compiled dispatch is hot-path foreground only";
     }
@@ -692,9 +667,7 @@ struct member_mint_required_ctx<::crucible::ReplayEngine, mint_name::active_view
     static consteval bool admits() noexcept {
         return ::crucible::effects::IsFgCtx<std::remove_cvref_t<Ctx>>;
     }
-    static consteval const char* name() noexcept {
-        return "ReplayEngine::mint_active_view";
-    }
+    static consteval const char* name() noexcept { return "ReplayEngine::mint_active_view"; }
     static consteval const char* required_ctx_description() noexcept {
         return "IsFgCtx — replay cursor walked by hot FG dispatch";
     }
@@ -715,9 +688,8 @@ struct member_mint_required_ctx<::crucible::ReplayEngine, mint_name::active_view
 
 template <class Class, class MintName, class Ctx>
 concept MemberMintCtxRequired = requires {
-    requires member_mint_required_ctx<
-        std::remove_cvref_t<Class>,
-        std::remove_cvref_t<MintName>>::template admits<Ctx>();
+    requires member_mint_required_ctx<std::remove_cvref_t<Class>,
+                                      std::remove_cvref_t<MintName>>::template admits<Ctx>();
 };
 
 }  // namespace crucible::fixy::contract
@@ -727,51 +699,36 @@ concept MemberMintCtxRequired = requires {
 namespace crucible::fixy::contract::self_test {
 
 // CipherTier wrapper identity.
-static_assert(std::is_same_v<
-    cipher::CipherTier<
-        ::crucible::safety::CipherTierTag_v::Hot, int>,
-    ::crucible::safety::CipherTier<
-        ::crucible::safety::CipherTierTag_v::Hot, int>>,
-    "fixy::contract::cipher::CipherTier must alias safety::CipherTier.");
+static_assert(std::is_same_v<cipher::CipherTier<::crucible::safety::CipherTierTag_v::Hot, int>,
+                             ::crucible::safety::CipherTier<::crucible::safety::CipherTierTag_v::Hot, int>>,
+              "fixy::contract::cipher::CipherTier must alias safety::CipherTier.");
 
 // Per-tier handle identity.
-static_assert(std::is_same_v<
-    cipher::HotTierHandle<int>,
-    ::crucible::safety::cipher_tier::Hot<int>>,
-    "fixy::contract::cipher::HotTierHandle must alias "
-    "safety::cipher_tier::Hot.");
+static_assert(std::is_same_v<cipher::HotTierHandle<int>, ::crucible::safety::cipher_tier::Hot<int>>,
+              "fixy::contract::cipher::HotTierHandle must alias "
+              "safety::cipher_tier::Hot.");
 
-static_assert(std::is_same_v<
-    cipher::WarmTierHandle<int>,
-    ::crucible::safety::cipher_tier::Warm<int>>);
+static_assert(std::is_same_v<cipher::WarmTierHandle<int>, ::crucible::safety::cipher_tier::Warm<int>>);
 
-static_assert(std::is_same_v<
-    cipher::ColdTierHandle<int>,
-    ::crucible::safety::cipher_tier::Cold<int>>);
+static_assert(std::is_same_v<cipher::ColdTierHandle<int>, ::crucible::safety::cipher_tier::Cold<int>>);
 
 // Admission gates preserve substrate values.
-static_assert(cipher::can_promote_tier_v<
-    ::crucible::safety::CipherTierTag_v::Cold,
-    ::crucible::safety::CipherTierTag_v::Hot>);
+static_assert(
+    cipher::can_promote_tier_v<::crucible::safety::CipherTierTag_v::Cold, ::crucible::safety::CipherTierTag_v::Hot>);
 
-static_assert(!cipher::can_promote_tier_v<
-    ::crucible::safety::CipherTierTag_v::Hot,
-    ::crucible::safety::CipherTierTag_v::Cold>);
+static_assert(
+    !cipher::can_promote_tier_v<::crucible::safety::CipherTierTag_v::Hot, ::crucible::safety::CipherTierTag_v::Cold>);
 
-static_assert(cipher::can_demote_tier_v<
-    ::crucible::safety::CipherTierTag_v::Hot,
-    ::crucible::safety::CipherTierTag_v::Cold>);
+static_assert(
+    cipher::can_demote_tier_v<::crucible::safety::CipherTierTag_v::Hot, ::crucible::safety::CipherTierTag_v::Cold>);
 
 // EpochedDelegate identity.
-static_assert(std::is_same_v<
-    cipher::EpochedDelegate<
-        ::crucible::safety::proto::Send<int,
-            ::crucible::safety::proto::End>,
-        ::crucible::safety::proto::End, 0, 0>,
-    ::crucible::safety::proto::EpochedDelegate<
-        ::crucible::safety::proto::Send<int,
-            ::crucible::safety::proto::End>,
-        ::crucible::safety::proto::End, 0, 0>>,
+static_assert(
+    std::is_same_v<
+        cipher::EpochedDelegate<::crucible::safety::proto::Send<int, ::crucible::safety::proto::End>,
+                                ::crucible::safety::proto::End, 0, 0>,
+        ::crucible::safety::proto::EpochedDelegate<::crucible::safety::proto::Send<int, ::crucible::safety::proto::End>,
+                                                   ::crucible::safety::proto::End, 0, 0>>,
     "fixy::contract::cipher::EpochedDelegate must alias "
     "safety::proto::EpochedDelegate.");
 
@@ -787,41 +744,34 @@ namespace u015 {
 // ── A. Top-level Cipher class + companion templates ───────────────
 
 static_assert(std::is_same_v<cipher::Cipher, ::crucible::Cipher>,
-    "fixy::contract::cipher::Cipher must alias ::crucible::Cipher.");
+              "fixy::contract::cipher::Cipher must alias ::crucible::Cipher.");
 
-static_assert(std::is_same_v<cipher::CipherOpenView,
-                             ::crucible::CipherOpenView>,
-    "fixy::contract::cipher::CipherOpenView must alias the substrate.");
+static_assert(std::is_same_v<cipher::CipherOpenView, ::crucible::CipherOpenView>,
+              "fixy::contract::cipher::CipherOpenView must alias the substrate.");
 
-static_assert(std::is_same_v<cipher::CipherSessionEventPersistenceRow,
-                             ::crucible::CipherSessionEventPersistenceRow>);
+static_assert(std::is_same_v<cipher::CipherSessionEventPersistenceRow, ::crucible::CipherSessionEventPersistenceRow>);
 
-static_assert(std::is_same_v<cipher::ContentAddressedPayload<int>,
-                             ::crucible::cipher::ContentAddressedPayload<int>>);
+static_assert(std::is_same_v<cipher::ContentAddressedPayload<int>, ::crucible::cipher::ContentAddressedPayload<int>>);
 
-static_assert(std::is_same_v<cipher::LoadedContentAddressedPayload<int>,
-                             ::crucible::cipher::LoadedContentAddressedPayload<int>>);
+static_assert(
+    std::is_same_v<cipher::LoadedContentAddressedPayload<int>, ::crucible::cipher::LoadedContentAddressedPayload<int>>);
 
 // Class-scope OpenView reachable through cipher::Cipher alias.
-static_assert(std::is_same_v<cipher::Cipher::OpenView,
-                             ::crucible::CipherOpenView>);
+static_assert(std::is_same_v<cipher::Cipher::OpenView, ::crucible::CipherOpenView>);
 
 // ── B. SessionEvent identity + cold-tier wire size ────────────────
 
-static_assert(std::is_same_v<cipher::SessionEvent,
-                             ::crucible::safety::proto::SessionEvent>,
-    "fixy::contract::cipher::SessionEvent must alias substrate.");
+static_assert(std::is_same_v<cipher::SessionEvent, ::crucible::safety::proto::SessionEvent>,
+              "fixy::contract::cipher::SessionEvent must alias substrate.");
 
 // Pin the wire size — same 72 B that Cipher.h asserts internally.
-static_assert(sizeof(cipher::SessionEvent) == 72,
-    "Cipher session-event wire format pinned at 72 B (Cipher.h:158).");
+static_assert(sizeof(cipher::SessionEvent) == 72, "Cipher session-event wire format pinned at 72 B (Cipher.h:158).");
 
 // ── C. ComputationCache surface ───────────────────────────────────
 
 // CompiledBody is opaque forward-declared; identity check on the
 // pointer type proves the alias resolves to the same incomplete type.
-static_assert(std::is_same_v<cipher::CompiledBody*,
-                             ::crucible::cipher::CompiledBody*>);
+static_assert(std::is_same_v<cipher::CompiledBody*, ::crucible::cipher::CompiledBody*>);
 
 // IsCacheableFunction + IsEffectRow concept behavioral equivalence.
 // Probe: an inline noexcept fn ptr satisfies IsCacheableFunction; an
@@ -830,74 +780,56 @@ namespace u015_cache_probe {
 inline void probe_fn(int) noexcept {}
 }  // namespace u015_cache_probe
 
-static_assert(cipher::IsCacheableFunction<&u015_cache_probe::probe_fn> ==
-              ::crucible::cipher::IsCacheableFunction<&u015_cache_probe::probe_fn>);
+static_assert(cipher::IsCacheableFunction<&u015_cache_probe::probe_fn>
+              == ::crucible::cipher::IsCacheableFunction<&u015_cache_probe::probe_fn>);
 static_assert(cipher::IsCacheableFunction<&u015_cache_probe::probe_fn>,
-    "An inline noexcept fn must satisfy IsCacheableFunction through fixy::.");
+              "An inline noexcept fn must satisfy IsCacheableFunction through fixy::.");
 
-static_assert(cipher::IsEffectRow<::crucible::effects::Row<>> ==
-              ::crucible::cipher::IsEffectRow<::crucible::effects::Row<>>);
+static_assert(cipher::IsEffectRow<::crucible::effects::Row<>>
+              == ::crucible::cipher::IsEffectRow<::crucible::effects::Row<>>);
 static_assert(cipher::IsEffectRow<::crucible::effects::Row<>>);
-static_assert(!cipher::IsEffectRow<int>,
-    "Non-row T must NOT satisfy IsEffectRow through fixy::.");
+static_assert(!cipher::IsEffectRow<int>, "Non-row T must NOT satisfy IsEffectRow through fixy::.");
 
 // computation_cache_key value-equality through the alias.
-static_assert(
-    cipher::computation_cache_key<&u015_cache_probe::probe_fn, int> ==
-    ::crucible::cipher::computation_cache_key<&u015_cache_probe::probe_fn, int>);
+static_assert(cipher::computation_cache_key<&u015_cache_probe::probe_fn, int>
+              == ::crucible::cipher::computation_cache_key<&u015_cache_probe::probe_fn, int>);
 
 // row variant value-equality.
 static_assert(
-    cipher::computation_cache_key_in_row<&u015_cache_probe::probe_fn,
-                                          ::crucible::effects::Row<>, int> ==
-    ::crucible::cipher::computation_cache_key_in_row<
-        &u015_cache_probe::probe_fn,
-        ::crucible::effects::Row<>, int>);
+    cipher::computation_cache_key_in_row<&u015_cache_probe::probe_fn, ::crucible::effects::Row<>, int>
+    == ::crucible::cipher::computation_cache_key_in_row<&u015_cache_probe::probe_fn, ::crucible::effects::Row<>, int>);
 
 // Function-pointer identity for lookup / insert / drain (witnesses
 // the using-decl resolves to the same overloaded substrate fn).
-static_assert(std::is_same_v<
-    decltype(&cipher::lookup_computation_cache<&u015_cache_probe::probe_fn, int>),
-    decltype(&::crucible::cipher::lookup_computation_cache<
-                &u015_cache_probe::probe_fn, int>)>);
-static_assert(std::is_same_v<
-    decltype(&cipher::insert_computation_cache<&u015_cache_probe::probe_fn, int>),
-    decltype(&::crucible::cipher::insert_computation_cache<
-                &u015_cache_probe::probe_fn, int>)>);
-static_assert(std::is_same_v<
-    decltype(&cipher::lookup_computation_cache_in_row<
-                &u015_cache_probe::probe_fn,
-                ::crucible::effects::Row<>, int>),
-    decltype(&::crucible::cipher::lookup_computation_cache_in_row<
-                &u015_cache_probe::probe_fn,
-                ::crucible::effects::Row<>, int>)>);
-static_assert(std::is_same_v<
-    decltype(&cipher::insert_computation_cache_in_row<
-                &u015_cache_probe::probe_fn,
-                ::crucible::effects::Row<>, int>),
-    decltype(&::crucible::cipher::insert_computation_cache_in_row<
-                &u015_cache_probe::probe_fn,
-                ::crucible::effects::Row<>, int>)>);
-static_assert(std::is_same_v<decltype(&cipher::drain_computation_cache),
-                             decltype(&::crucible::cipher::drain_computation_cache)>);
+static_assert(
+    std::is_same_v<decltype(&cipher::lookup_computation_cache<&u015_cache_probe::probe_fn, int>),
+                   decltype(&::crucible::cipher::lookup_computation_cache<&u015_cache_probe::probe_fn, int>)>);
+static_assert(
+    std::is_same_v<decltype(&cipher::insert_computation_cache<&u015_cache_probe::probe_fn, int>),
+                   decltype(&::crucible::cipher::insert_computation_cache<&u015_cache_probe::probe_fn, int>)>);
+static_assert(std::is_same_v<decltype(&cipher::lookup_computation_cache_in_row<&u015_cache_probe::probe_fn,
+                                                                               ::crucible::effects::Row<>, int>),
+                             decltype(&::crucible::cipher::lookup_computation_cache_in_row<
+                                      &u015_cache_probe::probe_fn, ::crucible::effects::Row<>, int>)>);
+static_assert(std::is_same_v<decltype(&cipher::insert_computation_cache_in_row<&u015_cache_probe::probe_fn,
+                                                                               ::crucible::effects::Row<>, int>),
+                             decltype(&::crucible::cipher::insert_computation_cache_in_row<
+                                      &u015_cache_probe::probe_fn, ::crucible::effects::Row<>, int>)>);
+static_assert(
+    std::is_same_v<decltype(&cipher::drain_computation_cache), decltype(&::crucible::cipher::drain_computation_cache)>);
 
 // ── D. federation:: nested namespace surface ──────────────────────
 
-static_assert(cipher::federation::FEDERATION_MAGIC ==
-              ::crucible::cipher::federation::FEDERATION_MAGIC);
-static_assert(cipher::federation::FEDERATION_PROTOCOL_V1 ==
-              ::crucible::cipher::federation::FEDERATION_PROTOCOL_V1);
-static_assert(cipher::federation::FEDERATION_HEADER_BYTES ==
-              ::crucible::cipher::federation::FEDERATION_HEADER_BYTES);
+static_assert(cipher::federation::FEDERATION_MAGIC == ::crucible::cipher::federation::FEDERATION_MAGIC);
+static_assert(cipher::federation::FEDERATION_PROTOCOL_V1 == ::crucible::cipher::federation::FEDERATION_PROTOCOL_V1);
+static_assert(cipher::federation::FEDERATION_HEADER_BYTES == ::crucible::cipher::federation::FEDERATION_HEADER_BYTES);
 
-static_assert(std::is_same_v<cipher::federation::FederationEntryHeader,
-                             ::crucible::cipher::federation::FederationEntryHeader>);
-static_assert(std::is_same_v<cipher::federation::ColdBlobRegion,
-                             ::crucible::cipher::federation::ColdBlobRegion>);
-static_assert(std::is_same_v<cipher::federation::FederationEntryView,
-                             ::crucible::cipher::federation::FederationEntryView>);
-static_assert(std::is_same_v<cipher::federation::FederationError,
-                             ::crucible::cipher::federation::FederationError>);
+static_assert(
+    std::is_same_v<cipher::federation::FederationEntryHeader, ::crucible::cipher::federation::FederationEntryHeader>);
+static_assert(std::is_same_v<cipher::federation::ColdBlobRegion, ::crucible::cipher::federation::ColdBlobRegion>);
+static_assert(
+    std::is_same_v<cipher::federation::FederationEntryView, ::crucible::cipher::federation::FederationEntryView>);
+static_assert(std::is_same_v<cipher::federation::FederationError, ::crucible::cipher::federation::FederationError>);
 
 // Function-pointer identity for non-template federation free fns.
 static_assert(std::is_same_v<decltype(&cipher::federation::federation_error_name),
@@ -912,9 +844,9 @@ static_assert(std::is_same_v<decltype(&cipher::federation::deserialize_untrusted
 // deserialize_federation_entry is a function TEMPLATE on Org; pick a
 // probe Org and assert the instantiated fn-pointer types match.
 struct U015FederationProbeOrg {};
-static_assert(std::is_same_v<
-    decltype(&cipher::federation::deserialize_federation_entry<U015FederationProbeOrg>),
-    decltype(&::crucible::cipher::federation::deserialize_federation_entry<U015FederationProbeOrg>)>);
+static_assert(
+    std::is_same_v<decltype(&cipher::federation::deserialize_federation_entry<U015FederationProbeOrg>),
+                   decltype(&::crucible::cipher::federation::deserialize_federation_entry<U015FederationProbeOrg>)>);
 
 static_assert(std::is_same_v<decltype(&cipher::federation::federation_entry_blob_layout_disjoint),
                              decltype(&::crucible::cipher::federation::federation_entry_blob_layout_disjoint)>);
@@ -923,9 +855,8 @@ static_assert(std::is_same_v<decltype(&cipher::federation::federation_accepts_ca
 
 // cold_blob_regions_pairwise_disjoint is a function template on MaxRegions;
 // instantiate explicitly to compare fn-pointer types.
-static_assert(std::is_same_v<
-    decltype(&cipher::federation::cold_blob_regions_pairwise_disjoint<8>),
-    decltype(&::crucible::cipher::federation::cold_blob_regions_pairwise_disjoint<8>)>);
+static_assert(std::is_same_v<decltype(&cipher::federation::cold_blob_regions_pairwise_disjoint<8>),
+                             decltype(&::crucible::cipher::federation::cold_blob_regions_pairwise_disjoint<8>)>);
 
 // ─── ComputationCacheFederation.h surface identity ────────────────
 
@@ -938,60 +869,54 @@ using U015ProbeRow = ::crucible::effects::Row<>;
 
 // Per-(FnPtr, Row, Args...) key tag identity.
 static_assert(std::is_same_v<
-    cipher::federation::ComputationCacheFederationKeyTag<
-        &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>,
-    ::crucible::cipher::federation::ComputationCacheFederationKeyTag<
-        &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>>);
+              cipher::federation::ComputationCacheFederationKeyTag<&u015_ccfed_probe::probe_kernel, U015ProbeRow, int>,
+              ::crucible::cipher::federation::ComputationCacheFederationKeyTag<&u015_ccfed_probe::probe_kernel,
+                                                                               U015ProbeRow, int>>);
 
 // Per-role MPST projection aliases.
-static_assert(std::is_same_v<
-    cipher::federation::ComputationCacheFederationSenderProto<
-        &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>,
-    ::crucible::cipher::federation::ComputationCacheFederationSenderProto<
-        &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>>);
-static_assert(std::is_same_v<
-    cipher::federation::ComputationCacheFederationReceiverProto<
-        &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>,
-    ::crucible::cipher::federation::ComputationCacheFederationReceiverProto<
-        &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>>);
-static_assert(std::is_same_v<
-    cipher::federation::ComputationCacheFederationCoordProto<
-        &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>,
-    ::crucible::cipher::federation::ComputationCacheFederationCoordProto<
-        &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>>);
+static_assert(
+    std::is_same_v<
+        cipher::federation::ComputationCacheFederationSenderProto<&u015_ccfed_probe::probe_kernel, U015ProbeRow, int>,
+        ::crucible::cipher::federation::ComputationCacheFederationSenderProto<&u015_ccfed_probe::probe_kernel,
+                                                                              U015ProbeRow, int>>);
+static_assert(
+    std::is_same_v<
+        cipher::federation::ComputationCacheFederationReceiverProto<&u015_ccfed_probe::probe_kernel, U015ProbeRow, int>,
+        ::crucible::cipher::federation::ComputationCacheFederationReceiverProto<&u015_ccfed_probe::probe_kernel,
+                                                                                U015ProbeRow, int>>);
+static_assert(
+    std::is_same_v<
+        cipher::federation::ComputationCacheFederationCoordProto<&u015_ccfed_probe::probe_kernel, U015ProbeRow, int>,
+        ::crucible::cipher::federation::ComputationCacheFederationCoordProto<&u015_ccfed_probe::probe_kernel,
+                                                                             U015ProbeRow, int>>);
 
 // Content-addressed payload wrapper identity.
-static_assert(std::is_same_v<
-    cipher::federation::ContentAddressedFederationPayload<int>,
-    ::crucible::cipher::federation::ContentAddressedFederationPayload<int>>);
+static_assert(std::is_same_v<cipher::federation::ContentAddressedFederationPayload<int>,
+                             ::crucible::cipher::federation::ContentAddressedFederationPayload<int>>);
 
 // Per-(FnPtr, Row, Args...) payload aliases.
 static_assert(std::is_same_v<
-    cipher::federation::ComputationCacheFederationPayload<
-        &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>,
-    ::crucible::cipher::federation::ComputationCacheFederationPayload<
-        &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>>);
-static_assert(std::is_same_v<
-    cipher::federation::ComputationCacheFederationContentAddressedPayload<
-        &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>,
-    ::crucible::cipher::federation::ComputationCacheFederationContentAddressedPayload<
-        &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>>);
+              cipher::federation::ComputationCacheFederationPayload<&u015_ccfed_probe::probe_kernel, U015ProbeRow, int>,
+              ::crucible::cipher::federation::ComputationCacheFederationPayload<&u015_ccfed_probe::probe_kernel,
+                                                                                U015ProbeRow, int>>);
+static_assert(std::is_same_v<cipher::federation::ComputationCacheFederationContentAddressedPayload<
+                                 &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>,
+                             ::crucible::cipher::federation::ComputationCacheFederationContentAddressedPayload<
+                                 &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>>);
 
 // Hash-derivation function-pointer identity (templates instantiated
 // on the probe triple).
-static_assert(std::is_same_v<
-    decltype(&cipher::federation::federation_content_hash<
-                &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>),
-    decltype(&::crucible::cipher::federation::federation_content_hash<
-                &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>)>);
-static_assert(std::is_same_v<
-    decltype(&cipher::federation::federation_row_hash<U015ProbeRow>),
-    decltype(&::crucible::cipher::federation::federation_row_hash<U015ProbeRow>)>);
-static_assert(std::is_same_v<
-    decltype(&cipher::federation::federation_key<
-                &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>),
-    decltype(&::crucible::cipher::federation::federation_key<
-                &u015_ccfed_probe::probe_kernel, U015ProbeRow, int>)>);
+static_assert(
+    std::is_same_v<
+        decltype(&cipher::federation::federation_content_hash<&u015_ccfed_probe::probe_kernel, U015ProbeRow, int>),
+        decltype(&::crucible::cipher::federation::federation_content_hash<&u015_ccfed_probe::probe_kernel, U015ProbeRow,
+                                                                          int>)>);
+static_assert(std::is_same_v<decltype(&cipher::federation::federation_row_hash<U015ProbeRow>),
+                             decltype(&::crucible::cipher::federation::federation_row_hash<U015ProbeRow>)>);
+static_assert(
+    std::is_same_v<
+        decltype(&cipher::federation::federation_key<&u015_ccfed_probe::probe_kernel, U015ProbeRow, int>),
+        decltype(&::crucible::cipher::federation::federation_key<&u015_ccfed_probe::probe_kernel, U015ProbeRow, int>)>);
 
 // serialize_computation_cache_federation_entry has TWO overloads on
 // the same template signature (Args differ in payload param type:
@@ -1048,10 +973,9 @@ static_assert(std::is_same_v<
 //                                                                  42
 
 constexpr int u015_surface_cardinality = 42;
-static_assert(u015_surface_cardinality == 42,
-    "FIXY-U-015 surface (Cipher + ComputationCache + federation full) "
-    "drifted from 42 — Contract.h U-015 block and this sentinel "
-    "must update in lockstep.");
+static_assert(u015_surface_cardinality == 42, "FIXY-U-015 surface (Cipher + ComputationCache + federation full) "
+                                              "drifted from 42 — Contract.h U-015 block and this sentinel "
+                                              "must update in lockstep.");
 
 }  // namespace u015
 
@@ -1069,79 +993,64 @@ namespace eff = ::crucible::effects;
 
 // ── Per-spec positive admission ────────────────────────────────────
 
-static_assert(member_mint_required_ctx<
-    ::crucible::Cipher, mint_name::open_view>::admits<eff::BgDrainCtx>(),
-    "V-220 #1: Cipher::mint_open_view must admit BgDrainCtx.");
+static_assert(member_mint_required_ctx<::crucible::Cipher, mint_name::open_view>::admits<eff::BgDrainCtx>(),
+              "V-220 #1: Cipher::mint_open_view must admit BgDrainCtx.");
 
-static_assert(member_mint_required_ctx<
-    ::crucible::CKernelTable, mint_name::mutable_view>::admits<eff::ColdInitCtx>(),
-    "V-220 #2: CKernelTable::mint_mutable_view must admit ColdInitCtx.");
+static_assert(member_mint_required_ctx<::crucible::CKernelTable, mint_name::mutable_view>::admits<eff::ColdInitCtx>(),
+              "V-220 #2: CKernelTable::mint_mutable_view must admit ColdInitCtx.");
 
-static_assert(member_mint_required_ctx<
-    ::crucible::CKernelTable, mint_name::sealed_view>::admits<eff::HotFgCtx>(),
-    "V-220 #3a: CKernelTable::mint_sealed_view must admit HotFgCtx.");
-static_assert(member_mint_required_ctx<
-    ::crucible::CKernelTable, mint_name::sealed_view>::admits<eff::BgDrainCtx>(),
-    "V-220 #3b: CKernelTable::mint_sealed_view must admit BgDrainCtx.");
+static_assert(member_mint_required_ctx<::crucible::CKernelTable, mint_name::sealed_view>::admits<eff::HotFgCtx>(),
+              "V-220 #3a: CKernelTable::mint_sealed_view must admit HotFgCtx.");
+static_assert(member_mint_required_ctx<::crucible::CKernelTable, mint_name::sealed_view>::admits<eff::BgDrainCtx>(),
+              "V-220 #3b: CKernelTable::mint_sealed_view must admit BgDrainCtx.");
 
-static_assert(member_mint_required_ctx<
-    ::crucible::SchemaTable, mint_name::mutable_view>::admits<eff::ColdInitCtx>(),
-    "V-220 #4: SchemaTable::mint_mutable_view must admit ColdInitCtx.");
+static_assert(member_mint_required_ctx<::crucible::SchemaTable, mint_name::mutable_view>::admits<eff::ColdInitCtx>(),
+              "V-220 #4: SchemaTable::mint_mutable_view must admit ColdInitCtx.");
 
-static_assert(member_mint_required_ctx<
-    ::crucible::SchemaTable, mint_name::sealed_view>::admits<eff::HotFgCtx>(),
-    "V-220 #5: SchemaTable::mint_sealed_view must admit HotFgCtx.");
+static_assert(member_mint_required_ctx<::crucible::SchemaTable, mint_name::sealed_view>::admits<eff::HotFgCtx>(),
+              "V-220 #5: SchemaTable::mint_sealed_view must admit HotFgCtx.");
 
-static_assert(member_mint_required_ctx<
-    ::crucible::PoolAllocator, mint_name::initialized_view>::admits<eff::HotFgCtx>(),
-    "V-220 #6a: PoolAllocator::mint_initialized_view must admit HotFgCtx.");
-static_assert(member_mint_required_ctx<
-    ::crucible::PoolAllocator, mint_name::initialized_view>::admits<eff::BgDrainCtx>(),
+static_assert(member_mint_required_ctx<::crucible::PoolAllocator, mint_name::initialized_view>::admits<eff::HotFgCtx>(),
+              "V-220 #6a: PoolAllocator::mint_initialized_view must admit HotFgCtx.");
+static_assert(
+    member_mint_required_ctx<::crucible::PoolAllocator, mint_name::initialized_view>::admits<eff::BgDrainCtx>(),
     "V-220 #6b: PoolAllocator::mint_initialized_view must admit BgDrainCtx.");
 
-static_assert(member_mint_required_ctx<
-    ::crucible::CrucibleContext, mint_name::compiled_view>::admits<eff::HotFgCtx>(),
-    "V-220 #7: CrucibleContext::mint_compiled_view must admit HotFgCtx.");
+static_assert(member_mint_required_ctx<::crucible::CrucibleContext, mint_name::compiled_view>::admits<eff::HotFgCtx>(),
+              "V-220 #7: CrucibleContext::mint_compiled_view must admit HotFgCtx.");
 
-static_assert(member_mint_required_ctx<
-    ::crucible::ReplayEngine, mint_name::active_view>::admits<eff::HotFgCtx>(),
-    "V-220 #8: ReplayEngine::mint_active_view must admit HotFgCtx.");
+static_assert(member_mint_required_ctx<::crucible::ReplayEngine, mint_name::active_view>::admits<eff::HotFgCtx>(),
+              "V-220 #8: ReplayEngine::mint_active_view must admit HotFgCtx.");
 
 // ── Per-spec negative admission (wrong-ctx rejection) ──────────────
 //
 // Each spec rejects the wrong ctx tier — the cross-class concept's
 // `admits<Ctx>()` branch returns false for these pairings.
 
-static_assert(!member_mint_required_ctx<
-    ::crucible::Cipher, mint_name::open_view>::admits<eff::HotFgCtx>(),
-    "V-220 #1-neg: Cipher::mint_open_view must REJECT HotFgCtx.");
+static_assert(!member_mint_required_ctx<::crucible::Cipher, mint_name::open_view>::admits<eff::HotFgCtx>(),
+              "V-220 #1-neg: Cipher::mint_open_view must REJECT HotFgCtx.");
 
-static_assert(!member_mint_required_ctx<
-    ::crucible::CKernelTable, mint_name::mutable_view>::admits<eff::HotFgCtx>(),
-    "V-220 #2-neg: mint_mutable_view must REJECT HotFgCtx (init-only).");
+static_assert(!member_mint_required_ctx<::crucible::CKernelTable, mint_name::mutable_view>::admits<eff::HotFgCtx>(),
+              "V-220 #2-neg: mint_mutable_view must REJECT HotFgCtx (init-only).");
 
-static_assert(!member_mint_required_ctx<
-    ::crucible::CrucibleContext, mint_name::compiled_view>::admits<eff::BgDrainCtx>(),
+static_assert(
+    !member_mint_required_ctx<::crucible::CrucibleContext, mint_name::compiled_view>::admits<eff::BgDrainCtx>(),
     "V-220 #7-neg: mint_compiled_view must REJECT BgDrainCtx (Fg only).");
 
-static_assert(!member_mint_required_ctx<
-    ::crucible::ReplayEngine, mint_name::active_view>::admits<eff::ColdInitCtx>(),
-    "V-220 #8-neg: mint_active_view must REJECT ColdInitCtx (Fg only).");
+static_assert(!member_mint_required_ctx<::crucible::ReplayEngine, mint_name::active_view>::admits<eff::ColdInitCtx>(),
+              "V-220 #8-neg: mint_active_view must REJECT ColdInitCtx (Fg only).");
 
 // ── Cross-class concept positive + negative ────────────────────────
 
-static_assert(MemberMintCtxRequired<
-    ::crucible::Cipher, mint_name::open_view, eff::BgDrainCtx>,
-    "V-220 concept: must satisfy for (Cipher, open_view, BgDrainCtx).");
+static_assert(MemberMintCtxRequired<::crucible::Cipher, mint_name::open_view, eff::BgDrainCtx>,
+              "V-220 concept: must satisfy for (Cipher, open_view, BgDrainCtx).");
 
-static_assert(!MemberMintCtxRequired<
-    ::crucible::Cipher, mint_name::open_view, eff::HotFgCtx>,
-    "V-220 concept: must reject for (Cipher, open_view, HotFgCtx).");
+static_assert(!MemberMintCtxRequired<::crucible::Cipher, mint_name::open_view, eff::HotFgCtx>,
+              "V-220 concept: must reject for (Cipher, open_view, HotFgCtx).");
 
 // cvref-strip: const& on the Ctx must NOT change the answer.
-static_assert(MemberMintCtxRequired<
-    ::crucible::Cipher, mint_name::open_view, eff::BgDrainCtx const&>,
-    "V-220 concept: cvref-stripped Ctx must satisfy.");
+static_assert(MemberMintCtxRequired<::crucible::Cipher, mint_name::open_view, eff::BgDrainCtx const&>,
+              "V-220 concept: cvref-stripped Ctx must satisfy.");
 
 // ── Cardinality witness ────────────────────────────────────────────
 //
@@ -1150,9 +1059,9 @@ static_assert(MemberMintCtxRequired<
 
 inline constexpr std::size_t v220_member_mint_cardinality = 8;
 static_assert(v220_member_mint_cardinality == 8,
-    "FIXY-V-220 cardinality sentinel: 8 registered member mints today. "
-    "If a new (Class, MintName) spec lands, bump this constant AND refresh "
-    "the doc-block at the top of the V-220 section in fixy/Contract.h.");
+              "FIXY-V-220 cardinality sentinel: 8 registered member mints today. "
+              "If a new (Class, MintName) spec lands, bump this constant AND refresh "
+              "the doc-block at the top of the V-220 section in fixy/Contract.h.");
 
 }  // namespace v220
 

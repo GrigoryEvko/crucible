@@ -112,10 +112,10 @@
 //   safety/Borrowed.h    — BorrowedRef (the must-be-present sibling)
 //   safety/Mutation.h    — WriteOnceNonNull (guarded-deref analog)
 
-#include <crucible/Platform.h>      // CRUCIBLE_LIFETIMEBOUND
-#include <crucible/safety/Pre.h>    // CRUCIBLE_PRE
+#include <crucible/Platform.h>  // CRUCIBLE_LIFETIMEBOUND
+#include <crucible/safety/Pre.h>  // CRUCIBLE_PRE
 
-#include <cstdlib>                  // std::abort (runtime_smoke_test)
+#include <cstdlib>  // std::abort (runtime_smoke_test)
 #include <string_view>
 #include <type_traits>
 
@@ -126,14 +126,12 @@ namespace crucible::safety {
 // ═════════════════════════════════════════════════════════════════════
 
 template <class T>
-    requires (std::is_object_v<T>)   // rejects T&, void, function types
+    requires(std::is_object_v<T>)  // rejects T&, void, function types
 class [[nodiscard]] WeakRef {
 public:
     using element_type = T;
 
-    static constexpr std::string_view wrapper_kind() noexcept {
-        return "structural::WeakRef";
-    }
+    static constexpr std::string_view wrapper_kind() noexcept { return "structural::WeakRef"; }
 
 private:
     // NSDMI null = "empty / evicted slot" (InitSafe).  Every reachable
@@ -154,33 +152,27 @@ public:
 
     // Bind to a live object.  Lifetime-bound: a temporary triggers the
     // dangling diagnostic where the compiler supports it.
-    constexpr explicit WeakRef(T& ref CRUCIBLE_LIFETIMEBOUND) noexcept
-        : ptr_{&ref} {}
+    constexpr explicit WeakRef(T& ref CRUCIBLE_LIFETIMEBOUND) noexcept : ptr_{&ref} {}
 
     // Populate from a raw nullable pointer (the cache-slot-from-a-field
     // path).  Unlike BorrowedRef::from_raw_nonnull, null is a VALID,
     // expected input — no precondition.  Grep-discoverable ("from_raw").
-    [[nodiscard]] static constexpr WeakRef from_raw(
-        T* p CRUCIBLE_LIFETIMEBOUND) noexcept {
+    [[nodiscard]] static constexpr WeakRef from_raw(T* p CRUCIBLE_LIFETIMEBOUND) noexcept {
         return WeakRef{from_raw_tag_t{}, p};
     }
 
     // Defaulted copy/move/dtor — non-owning, so a copy is two readers
     // of the same referent (no ownership conflict).
-    constexpr WeakRef(WeakRef const&)            = default;
-    constexpr WeakRef(WeakRef&&)                 = default;
+    constexpr WeakRef(WeakRef const&) = default;
+    constexpr WeakRef(WeakRef&&) = default;
     constexpr WeakRef& operator=(WeakRef const&) = default;
-    constexpr WeakRef& operator=(WeakRef&&)      = default;
-    ~WeakRef()                                   = default;
+    constexpr WeakRef& operator=(WeakRef&&) = default;
+    ~WeakRef() = default;
 
     // ── Queries ─────────────────────────────────────────────────────
 
-    [[nodiscard]] constexpr bool has_value() const noexcept {
-        return ptr_ != nullptr;
-    }
-    [[nodiscard]] constexpr explicit operator bool() const noexcept {
-        return ptr_ != nullptr;
-    }
+    [[nodiscard]] constexpr bool has_value() const noexcept { return ptr_ != nullptr; }
+    [[nodiscard]] constexpr explicit operator bool() const noexcept { return ptr_ != nullptr; }
 
     // ── Access ──────────────────────────────────────────────────────
 
@@ -213,10 +205,7 @@ public:
 
     // Equality is pointer IDENTITY, not value: two WeakRefs are equal
     // iff they refer to the same object (or are both empty).
-    [[nodiscard]] friend constexpr bool operator==(
-        WeakRef a, WeakRef b) noexcept {
-        return a.ptr_ == b.ptr_;
-    }
+    [[nodiscard]] friend constexpr bool operator==(WeakRef a, WeakRef b) noexcept { return a.ptr_ == b.ptr_; }
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -224,7 +213,7 @@ public:
 // ═════════════════════════════════════════════════════════════════════
 
 // Zero-cost: collapses to exactly one pointer.
-static_assert(sizeof(WeakRef<int>)  == sizeof(int*));
+static_assert(sizeof(WeakRef<int>) == sizeof(int*));
 static_assert(alignof(WeakRef<int>) == alignof(int*));
 static_assert(std::is_trivially_copyable_v<WeakRef<int>>);
 static_assert(std::is_trivially_destructible_v<WeakRef<int>>);
@@ -255,17 +244,16 @@ static_assert(default_is_empty());
 [[nodiscard]] consteval bool binds_and_derefs() noexcept {
     int x = 42;
     WeakRef<int> w{x};
-    return w.has_value()
-        && static_cast<bool>(w)
-        && w.try_get() == &x
-        && w.get() == 42
-        && *w == 42;
+    return w.has_value() && static_cast<bool>(w) && w.try_get() == &x && w.get() == 42 && *w == 42;
 }
 static_assert(binds_and_derefs());
 
 // operator-> reaches a struct member.
 [[nodiscard]] consteval bool arrow_reaches_member() noexcept {
-    struct Pair { int a; int b; };
+    struct Pair {
+        int a;
+        int b;
+    };
     Pair p{7, 9};
     WeakRef<Pair> w{p};
     return w->a == 7 && w->b == 9;
@@ -277,9 +265,7 @@ static_assert(arrow_reaches_member());
     WeakRef<int> empty = WeakRef<int>::from_raw(nullptr);
     int x = 5;
     WeakRef<int> full = WeakRef<int>::from_raw(&x);
-    return !empty.has_value()
-        && full.has_value()
-        && full.try_get() == &x;
+    return !empty.has_value() && full.has_value() && full.try_get() == &x;
 }
 static_assert(from_raw_is_nullable());
 
@@ -296,14 +282,13 @@ static_assert(reset_evicts());
 // Equality is identity; copy is two readers of the same referent.
 [[nodiscard]] consteval bool identity_equality_and_copy() noexcept {
     int x = 3;
-    int y = 3;                       // same value, different object
+    int y = 3;  // same value, different object
     WeakRef<int> a{x};
-    WeakRef<int> b = a;              // copy → two readers
+    WeakRef<int> b = a;  // copy → two readers
     WeakRef<int> c{y};
-    return a == b                    // same object
-        && !(a == c)                 // different object, equal value
-        && a.try_get() == b.try_get()
-        && WeakRef<int>{} == WeakRef<int>{};  // two empties equal
+    return a == b  // same object
+        && !(a == c)  // different object, equal value
+        && a.try_get() == b.try_get() && WeakRef<int>{} == WeakRef<int>{};  // two empties equal
 }
 static_assert(identity_equality_and_copy());
 
@@ -321,7 +306,7 @@ inline void runtime_smoke_test() {
     if (empty.try_get() != nullptr) std::abort();
 
     volatile int seed = 77;
-    int box = static_cast<int>(seed);          // non-constant
+    int box = static_cast<int>(seed);  // non-constant
     WeakRef<int> w{box};
     if (!w.has_value() || !static_cast<bool>(w)) std::abort();
     if (w.try_get() != &box) std::abort();
@@ -329,7 +314,10 @@ inline void runtime_smoke_test() {
     if (*w != box) std::abort();
 
     // operator-> on a struct referent.
-    struct Pair { int a; int b; };
+    struct Pair {
+        int a;
+        int b;
+    };
     Pair p{static_cast<int>(seed), static_cast<int>(seed) + 1};
     WeakRef<Pair> wp{p};
     if (wp->a != box || wp->b != box + 1) std::abort();

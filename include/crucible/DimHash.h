@@ -50,11 +50,11 @@
 // remains correct.
 // ═══════════════════════════════════════════════════════════════════
 
-#include <crucible/Expr.h>            // detail::kDimMix
+#include <crucible/Expr.h>  // detail::kDimMix
 #include <crucible/Platform.h>
-#include <crucible/TensorMeta.h>      // TensorMeta (extracted from MerkleDag.h)
-#include <crucible/fixy/Wrap.h>     // FIXY-U-096v: DetSafe / Tagged via the fixy umbrella
-#include <crucible/safety/Simd.h>   // crucible::simd:: facade (used directly; not a migrated wrapper)
+#include <crucible/TensorMeta.h>  // TensorMeta (extracted from MerkleDag.h)
+#include <crucible/fixy/Wrap.h>  // FIXY-U-096v: DetSafe / Tagged via the fixy umbrella
+#include <crucible/safety/Simd.h>  // crucible::simd:: facade (used directly; not a migrated wrapper)
 
 #include <cstdint>
 #include <type_traits>
@@ -66,35 +66,24 @@ namespace crucible {
 // from TensorMeta bytes, but it is not a persistent artifact key by
 // itself.  The nested wrapper forces consumers to acknowledge both
 // facts before mixing or exporting the bits.
-using DimHash = ::crucible::fixy::wrap::Tagged<
-    uint64_t, ::crucible::hash_family::FamilyB>;
-using DimHashDet = ::crucible::fixy::wrap::DetSafe<
-    ::crucible::fixy::wrap::DetSafeTier_v::Pure, DimHash>;
+using DimHash = ::crucible::fixy::wrap::Tagged<uint64_t, ::crucible::hash_family::FamilyB>;
+using DimHashDet = ::crucible::fixy::wrap::DetSafe<::crucible::fixy::wrap::DetSafeTier_v::Pure, DimHash>;
 
-static_assert(sizeof(DimHash) == sizeof(uint64_t),
-    "Tagged<uint64_t, hash_family::FamilyB> must EBO-collapse so "
-    "dim-hash stays register-sized");
-static_assert(sizeof(DimHashDet) == sizeof(uint64_t),
-    "DetSafe<Pure, Tagged<uint64_t, hash_family::FamilyB>> must "
-    "EBO-collapse so dim-hash stays register-sized");
+static_assert(sizeof(DimHash) == sizeof(uint64_t), "Tagged<uint64_t, hash_family::FamilyB> must EBO-collapse so "
+                                                   "dim-hash stays register-sized");
+static_assert(sizeof(DimHashDet) == sizeof(uint64_t), "DetSafe<Pure, Tagged<uint64_t, hash_family::FamilyB>> must "
+                                                      "EBO-collapse so dim-hash stays register-sized");
 static_assert(std::is_trivially_copyable_v<DimHash>);
 static_assert(std::is_trivially_copyable_v<DimHashDet>);
 static_assert(std::is_standard_layout_v<DimHash>);
 static_assert(std::is_standard_layout_v<DimHashDet>);
 
-[[nodiscard]] inline constexpr DimHash
-dim_hash(uint64_t hash) noexcept {
-  return DimHash{hash};
-}
+[[nodiscard]] inline constexpr DimHash dim_hash(uint64_t hash) noexcept { return DimHash{hash}; }
 
-[[nodiscard]] inline constexpr uint64_t
-raw_dim_hash(const DimHash& hash) noexcept {
-  return hash.value();
-}
+[[nodiscard]] inline constexpr uint64_t raw_dim_hash(const DimHash& hash) noexcept { return hash.value(); }
 
-[[nodiscard]] inline constexpr uint64_t
-raw_dim_hash(const DimHashDet& hash) noexcept {
-  return raw_dim_hash(hash.peek());
+[[nodiscard]] inline constexpr uint64_t raw_dim_hash(const DimHashDet& hash) noexcept {
+    return raw_dim_hash(hash.peek());
 }
 
 }  // namespace crucible
@@ -117,50 +106,48 @@ namespace crucible::detail {
 // arrays) but has no side effects and no global state.  Safe to CSE
 // across multiple calls with the same input.
 
-[[nodiscard, gnu::pure]] CRUCIBLE_INLINE
-uint64_t dim_hash_simd(const TensorMeta& meta) noexcept {
-  using simd::i64x8;
-  using simd::u64x8;
+[[nodiscard, gnu::pure]] CRUCIBLE_INLINE uint64_t dim_hash_simd(const TensorMeta& meta) noexcept {
+    using simd::i64x8;
+    using simd::u64x8;
 
-  // Load full 8 lanes from each array.  TensorMeta::sizes[8] and
-  // strides[8] are well-defined for the full lane range (zero-init
-  // past ndim per InitSafe + NSDMI in the struct definition), so a
-  // plain vector load is in-bounds even when meta.ndim < 8.
-  //
-  // simd::load<V>(ptr) uses element-aligned (memcpy) loads.  TensorMeta
-  // itself is only naturally aligned in vectors and trace-loader
-  // buffers, so vector-aligned loads would be unsound even though the
-  // arrays are 64 bytes wide.
-  auto sizes   = simd::load<i64x8>(meta.sizes.raw_data());
-  auto strides = simd::load<i64x8>(meta.strides.raw_data());
+    // Load full 8 lanes from each array.  TensorMeta::sizes[8] and
+    // strides[8] are well-defined for the full lane range (zero-init
+    // past ndim per InitSafe + NSDMI in the struct definition), so a
+    // plain vector load is in-bounds even when meta.ndim < 8.
+    //
+    // simd::load<V>(ptr) uses element-aligned (memcpy) loads.  TensorMeta
+    // itself is only naturally aligned in vectors and trace-loader
+    // buffers, so vector-aligned loads would be unsound even though the
+    // arrays are 64 bytes wide.
+    auto sizes = simd::load<i64x8>(meta.sizes.raw_data());
+    auto strides = simd::load<i64x8>(meta.strides.raw_data());
 
-  // Load kDimMix halves: kDimMix[0..7] for sizes, kDimMix[8..15] for
-  // strides.  element-aligned because the table is a constexpr global
-  // with only alignof(uint64_t) guarantee.
-  auto mix_lo = simd::load<u64x8>(detail::kDimMix);
-  auto mix_hi = simd::load<u64x8>(detail::kDimMix + 8);
+    // Load kDimMix halves: kDimMix[0..7] for sizes, kDimMix[8..15] for
+    // strides.  element-aligned because the table is a constexpr global
+    // with only alignof(uint64_t) guarantee.
+    auto mix_lo = simd::load<u64x8>(detail::kDimMix);
+    auto mix_hi = simd::load<u64x8>(detail::kDimMix + 8);
 
-  // Cast sizes/strides from int64 → uint64 to match the scalar
-  // uint64_t arithmetic.  simd::vec has a converting constructor
-  // between same-width integers; zero machine cost (vreinterpret on
-  // every ISA).
-  u64x8 sizes_u  (sizes);
-  u64x8 strides_u(strides);
+    // Cast sizes/strides from int64 → uint64 to match the scalar
+    // uint64_t arithmetic.  simd::vec has a converting constructor
+    // between same-width integers; zero machine cost (vreinterpret on
+    // every ISA).
+    u64x8 sizes_u(sizes);
+    u64x8 strides_u(strides);
 
-  // Per-lane multiplies and XOR-combine.
-  u64x8 combined = (sizes_u * mix_lo) ^ (strides_u * mix_hi);
+    // Per-lane multiplies and XOR-combine.
+    u64x8 combined = (sizes_u * mix_lo) ^ (strides_u * mix_hi);
 
-  // Masked horizontal XOR-fold: reduce only lanes [0, ndim), using
-  // identity element 0 for masked-out lanes.  simd::reduce_xor's masked
-  // overload folds this into one call — no explicit select + temporary
-  // vector materialization.
-  auto valid_mask = simd::prefix_mask<u64x8>(static_cast<int>(meta.ndim));
-  return simd::reduce_xor(combined, valid_mask);
+    // Masked horizontal XOR-fold: reduce only lanes [0, ndim), using
+    // identity element 0 for masked-out lanes.  simd::reduce_xor's masked
+    // overload folds this into one call — no explicit select + temporary
+    // vector materialization.
+    auto valid_mask = simd::prefix_mask<u64x8>(static_cast<int>(meta.ndim));
+    return simd::reduce_xor(combined, valid_mask);
 }
 
-[[nodiscard, gnu::pure]] CRUCIBLE_INLINE
-DimHashDet dim_hash_simd_det(const TensorMeta& meta) noexcept {
-  return DimHashDet{dim_hash(dim_hash_simd(meta))};
+[[nodiscard, gnu::pure]] CRUCIBLE_INLINE DimHashDet dim_hash_simd_det(const TensorMeta& meta) noexcept {
+    return DimHashDet{dim_hash(dim_hash_simd(meta))};
 }
 
 // Scalar reference implementation — kept exposed so equivalence
@@ -172,21 +159,17 @@ DimHashDet dim_hash_simd_det(const TensorMeta& meta) noexcept {
 // MUST update both this function AND dim_hash_simd in lockstep,
 // then update the equivalence fuzzer.
 
-[[nodiscard, gnu::pure]] CRUCIBLE_INLINE
-uint64_t dim_hash_scalar(const TensorMeta& meta) noexcept {
-  uint64_t result = 0;
-  for (uint8_t d = 0; d < meta.ndim; ++d) {
-    result ^= static_cast<uint64_t>(raw_tensor_dim(meta.sizes[d])) *
-              detail::kDimMix[d];
-    result ^= static_cast<uint64_t>(raw_tensor_dim(meta.strides[d])) *
-              detail::kDimMix[d + 8];
-  }
-  return result;
+[[nodiscard, gnu::pure]] CRUCIBLE_INLINE uint64_t dim_hash_scalar(const TensorMeta& meta) noexcept {
+    uint64_t result = 0;
+    for (uint8_t d = 0; d < meta.ndim; ++d) {
+        result ^= static_cast<uint64_t>(raw_tensor_dim(meta.sizes[d])) * detail::kDimMix[d];
+        result ^= static_cast<uint64_t>(raw_tensor_dim(meta.strides[d])) * detail::kDimMix[d + 8];
+    }
+    return result;
 }
 
-[[nodiscard, gnu::pure]] CRUCIBLE_INLINE
-DimHashDet dim_hash_scalar_det(const TensorMeta& meta) noexcept {
-  return DimHashDet{dim_hash(dim_hash_scalar(meta))};
+[[nodiscard, gnu::pure]] CRUCIBLE_INLINE DimHashDet dim_hash_scalar_det(const TensorMeta& meta) noexcept {
+    return DimHashDet{dim_hash(dim_hash_scalar(meta))};
 }
 
 }  // namespace crucible::detail

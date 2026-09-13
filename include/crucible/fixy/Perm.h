@@ -60,11 +60,11 @@
 #include <crucible/permissions/Permission.h>
 #include <crucible/permissions/PermissionFork.h>
 #include <crucible/permissions/PermissionInherit.h>
-#include <crucible/permissions/ReadView.h>             // FIXY-U-014: ReadView + mint_read_view
-#include <crucible/safety/PermissionGridGenerator.h>   // FIXY-U-014: grid M×N permissions
-#include <crucible/safety/PermissionTreeGenerator.h>   // FIXY-V-177: tree N-ary slice generator
+#include <crucible/permissions/ReadView.h>  // FIXY-U-014: ReadView + mint_read_view
+#include <crucible/safety/PermissionGridGenerator.h>  // FIXY-U-014: grid M×N permissions
+#include <crucible/safety/PermissionTreeGenerator.h>  // FIXY-V-177: tree N-ary slice generator
 
-#include <type_traits>   // FIXY-U-020 sentinel uses std::is_same_v
+#include <type_traits>  // FIXY-U-020 sentinel uses std::is_same_v
 
 namespace crucible::fixy::perm {
 
@@ -236,17 +236,15 @@ namespace crucible::fixy::perm::self_test {
 // ── Permission tag type carriers ───────────────────────────────────
 struct PermDualExportTag {};
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::perm::Permission<PermDualExportTag>,
-    ::crucible::safety::Permission<PermDualExportTag>>,
-    "fixy::perm::Permission must alias safety::Permission — dual-export "
-    "drift breaks linearity proofs across TUs.");
+static_assert(std::is_same_v<::crucible::fixy::perm::Permission<PermDualExportTag>,
+                             ::crucible::safety::Permission<PermDualExportTag>>,
+              "fixy::perm::Permission must alias safety::Permission — dual-export "
+              "drift breaks linearity proofs across TUs.");
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::perm::SharedPermission<PermDualExportTag>,
-    ::crucible::safety::SharedPermission<PermDualExportTag>>,
-    "fixy::perm::SharedPermission must alias safety::SharedPermission "
-    "AND must agree with the fixy::wrap:: parallel re-export (fixy-A4-011).");
+static_assert(std::is_same_v<::crucible::fixy::perm::SharedPermission<PermDualExportTag>,
+                             ::crucible::safety::SharedPermission<PermDualExportTag>>,
+              "fixy::perm::SharedPermission must alias safety::SharedPermission "
+              "AND must agree with the fixy::wrap:: parallel re-export (fixy-A4-011).");
 
 // ── mint_permission_inherit_t alias-template reachability ──────────
 //
@@ -278,8 +276,8 @@ struct mint_permission_inherit_t_name_reach_witness_ {
     static constexpr bool ok = true;
 };
 static_assert(mint_permission_inherit_t_name_reach_witness_<>::ok,
-    "fixy::perm::mint_permission_inherit_t must be reachable as an "
-    "alias template — drift in the using-decl breaks fixy-A1-029.");
+              "fixy::perm::mint_permission_inherit_t must be reachable as an "
+              "alias template — drift in the using-decl breaks fixy-A1-029.");
 
 // ── FIXY-U-071 dual-export: policy::admit_orgs identity ────────────
 //
@@ -296,26 +294,19 @@ static_assert(mint_permission_inherit_t_name_reach_witness_<>::ok,
 struct DualExportOrgProbeA {};
 struct DualExportOrgProbeB {};
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::perm::policy::admit_orgs<DualExportOrgProbeA>,
-    ::crucible::permissions::policy::admit_orgs<DualExportOrgProbeA>>,
-    "fixy::perm::policy::admit_orgs must alias permissions::policy::admit_orgs");
+static_assert(std::is_same_v<::crucible::fixy::perm::policy::admit_orgs<DualExportOrgProbeA>,
+                             ::crucible::permissions::policy::admit_orgs<DualExportOrgProbeA>>,
+              "fixy::perm::policy::admit_orgs must alias permissions::policy::admit_orgs");
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::perm::policy::admit_orgs<DualExportOrgProbeA,
-                                                DualExportOrgProbeB>,
-    ::crucible::permissions::policy::admit_orgs<DualExportOrgProbeA,
-                                                DualExportOrgProbeB>>,
-    "Variadic instantiation must preserve substrate identity.");
+static_assert(std::is_same_v<::crucible::fixy::perm::policy::admit_orgs<DualExportOrgProbeA, DualExportOrgProbeB>,
+                             ::crucible::permissions::policy::admit_orgs<DualExportOrgProbeA, DualExportOrgProbeB>>,
+              "Variadic instantiation must preserve substrate identity.");
 
 // Behavioral witness: the substrate predicate flows through the alias.
-static_assert(::crucible::fixy::perm::policy::admit_orgs<DualExportOrgProbeA>
-              ::template admits<DualExportOrgProbeA>);
-static_assert(!::crucible::fixy::perm::policy::admit_orgs<DualExportOrgProbeA>
-              ::template admits<DualExportOrgProbeB>);
+static_assert(::crucible::fixy::perm::policy::admit_orgs<DualExportOrgProbeA>::template admits<DualExportOrgProbeA>);
+static_assert(!::crucible::fixy::perm::policy::admit_orgs<DualExportOrgProbeA>::template admits<DualExportOrgProbeB>);
 static_assert(::crucible::fixy::perm::policy::admit_orgs<DualExportOrgProbeA,
-                                                          DualExportOrgProbeB>
-              ::template admits<DualExportOrgProbeB>);
+                                                         DualExportOrgProbeB>::template admits<DualExportOrgProbeB>);
 
 // ── FIXY-U-014: Pool / Guard / ReadView / Fair / Grid surface ──────
 //
@@ -339,31 +330,27 @@ struct U014_ReadViewProbeTag {};
 struct U014_FairProbeTag {};
 
 // Pool identity: SharedPermissionPool aliases substrate one-for-one.
-static_assert(std::is_same_v<
-    ::crucible::fixy::perm::SharedPermissionPool<U014_PoolGuardProbeTag>,
-    ::crucible::safety::SharedPermissionPool<U014_PoolGuardProbeTag>>,
-    "fixy::perm::SharedPermissionPool must alias safety::SharedPermissionPool");
+static_assert(std::is_same_v<::crucible::fixy::perm::SharedPermissionPool<U014_PoolGuardProbeTag>,
+                             ::crucible::safety::SharedPermissionPool<U014_PoolGuardProbeTag>>,
+              "fixy::perm::SharedPermissionPool must alias safety::SharedPermissionPool");
 
 // Guard identity: SharedPermissionGuard aliases substrate one-for-one.
-static_assert(std::is_same_v<
-    ::crucible::fixy::perm::SharedPermissionGuard<U014_PoolGuardProbeTag>,
-    ::crucible::safety::SharedPermissionGuard<U014_PoolGuardProbeTag>>,
-    "fixy::perm::SharedPermissionGuard must alias safety::SharedPermissionGuard");
+static_assert(std::is_same_v<::crucible::fixy::perm::SharedPermissionGuard<U014_PoolGuardProbeTag>,
+                             ::crucible::safety::SharedPermissionGuard<U014_PoolGuardProbeTag>>,
+              "fixy::perm::SharedPermissionGuard must alias safety::SharedPermissionGuard");
 
 // ReadView identity: lifetime-bound borrow surface preserved.
-static_assert(std::is_same_v<
-    ::crucible::fixy::perm::ReadView<U014_ReadViewProbeTag>,
-    ::crucible::safety::ReadView<U014_ReadViewProbeTag>>,
-    "fixy::perm::ReadView must alias safety::ReadView");
+static_assert(std::is_same_v<::crucible::fixy::perm::ReadView<U014_ReadViewProbeTag>,
+                             ::crucible::safety::ReadView<U014_ReadViewProbeTag>>,
+              "fixy::perm::ReadView must alias safety::ReadView");
 
 // FairSharedPermissionPool identity: per-tag carrier preserved.
 // Substrate defaults BurstLimit to 1; use the default to avoid
 // depending on the substrate's exact non-type template signature
 // beyond the leading tag parameter.
-static_assert(std::is_same_v<
-    ::crucible::fixy::perm::FairSharedPermissionPool<U014_FairProbeTag>,
-    ::crucible::safety::FairSharedPermissionPool<U014_FairProbeTag>>,
-    "fixy::perm::FairSharedPermissionPool must alias safety::FairSharedPermissionPool");
+static_assert(std::is_same_v<::crucible::fixy::perm::FairSharedPermissionPool<U014_FairProbeTag>,
+                             ::crucible::safety::FairSharedPermissionPool<U014_FairProbeTag>>,
+              "fixy::perm::FairSharedPermissionPool must alias safety::FairSharedPermissionPool");
 
 // Grid family — name reachability via SFINAE-detector probe.  We do
 // NOT instantiate GridPermissions or invoke mint_grid_permissions
@@ -373,15 +360,12 @@ static_assert(std::is_same_v<
 // is well-formed AND the alias resolves to the substrate symbol.
 
 template <typename Whole, std::size_t M, std::size_t N>
-using fixy_grid_reach_probe_ =
-    ::crucible::fixy::perm::GridPermissions<Whole, M, N>;
+using fixy_grid_reach_probe_ = ::crucible::fixy::perm::GridPermissions<Whole, M, N>;
 template <typename Whole, std::size_t M, std::size_t N>
-using safety_grid_reach_probe_ =
-    ::crucible::safety::GridPermissions<Whole, M, N>;
-static_assert(std::is_same_v<
-    fixy_grid_reach_probe_<U014_PoolGuardProbeTag, 2, 3>,
-    safety_grid_reach_probe_<U014_PoolGuardProbeTag, 2, 3>>,
-    "fixy::perm::GridPermissions must alias safety::GridPermissions");
+using safety_grid_reach_probe_ = ::crucible::safety::GridPermissions<Whole, M, N>;
+static_assert(std::is_same_v<fixy_grid_reach_probe_<U014_PoolGuardProbeTag, 2, 3>,
+                             safety_grid_reach_probe_<U014_PoolGuardProbeTag, 2, 3>>,
+              "fixy::perm::GridPermissions must alias safety::GridPermissions");
 
 // can_split_grid_v identity: the value-trait gate (mint's
 // requires-clause) is reachable through the fixy:: path and agrees
@@ -391,31 +375,28 @@ static_assert(std::is_same_v<
 // so an arbitrary probe tag with M>0, N>0 admits grid splitting
 // through both paths.  The witness is: BOTH paths agree on TRUE,
 // AND we exercise the M=0 boundary where both must agree on FALSE.
-static_assert(
-    ::crucible::fixy::perm::can_split_grid_v<U014_PoolGuardProbeTag, 2, 3>
-    == ::crucible::safety::can_split_grid_v<U014_PoolGuardProbeTag, 2, 3>,
-    "fixy::perm::can_split_grid_v must mirror safety::can_split_grid_v");
+static_assert(::crucible::fixy::perm::can_split_grid_v<U014_PoolGuardProbeTag, 2, 3>
+                  == ::crucible::safety::can_split_grid_v<U014_PoolGuardProbeTag, 2, 3>,
+              "fixy::perm::can_split_grid_v must mirror safety::can_split_grid_v");
 static_assert(::crucible::fixy::perm::can_split_grid_v<U014_PoolGuardProbeTag, 2, 3>,
-    "Grid splitting must succeed for any tag with M>0, N>0 (auto-encoded).");
+              "Grid splitting must succeed for any tag with M>0, N>0 (auto-encoded).");
 static_assert(!::crucible::fixy::perm::can_split_grid_v<U014_PoolGuardProbeTag, 0, 3>,
-    "Grid splitting MUST reject M=0 through the fixy:: path.");
+              "Grid splitting MUST reject M=0 through the fixy:: path.");
 static_assert(!::crucible::fixy::perm::can_split_grid_v<U014_PoolGuardProbeTag, 2, 0>,
-    "Grid splitting MUST reject N=0 through the fixy:: path.");
+              "Grid splitting MUST reject N=0 through the fixy:: path.");
 
 // mint_read_view free-function reachability — name-resolution proof
 // via address-of through the fixy:: alias.  No runtime invocation:
 // the witness is purely type-level — both fn pointers must name the
 // same substrate symbol once instantiated on the probe tag.
-static_assert(std::is_same_v<
-    decltype(&::crucible::fixy::perm::mint_read_view<U014_ReadViewProbeTag>),
-    decltype(&::crucible::safety::mint_read_view<U014_ReadViewProbeTag>)>,
-    "fixy::perm::mint_read_view must resolve to safety::mint_read_view");
+static_assert(std::is_same_v<decltype(&::crucible::fixy::perm::mint_read_view<U014_ReadViewProbeTag>),
+                             decltype(&::crucible::safety::mint_read_view<U014_ReadViewProbeTag>)>,
+              "fixy::perm::mint_read_view must resolve to safety::mint_read_view");
 
 // mint_grid_permissions free-function reachability — same pattern.
-static_assert(std::is_same_v<
-    decltype(&::crucible::fixy::perm::mint_grid_permissions<U014_PoolGuardProbeTag, 2, 3>),
-    decltype(&::crucible::safety::mint_grid_permissions<U014_PoolGuardProbeTag, 2, 3>)>,
-    "fixy::perm::mint_grid_permissions must resolve to safety::mint_grid_permissions");
+static_assert(std::is_same_v<decltype(&::crucible::fixy::perm::mint_grid_permissions<U014_PoolGuardProbeTag, 2, 3>),
+                             decltype(&::crucible::safety::mint_grid_permissions<U014_PoolGuardProbeTag, 2, 3>)>,
+              "fixy::perm::mint_grid_permissions must resolve to safety::mint_grid_permissions");
 
 // ── Cardinality witness ────────────────────────────────────────────
 //
@@ -424,9 +405,8 @@ static_assert(std::is_same_v<
 // fans out as a constant-mismatch diagnostic on this TU, not a
 // silent drift in downstream callers.
 constexpr int kU014SurfaceCardinality = 8;
-static_assert(kU014SurfaceCardinality == 8,
-    "FIXY-U-014 surface (Pool/Guard/ReadView/mint_read_view/Fair/"
-    "Grid/mint_grid_permissions/can_split_grid_v) drifted from 8.");
+static_assert(kU014SurfaceCardinality == 8, "FIXY-U-014 surface (Pool/Guard/ReadView/mint_read_view/Fair/"
+                                            "Grid/mint_grid_permissions/can_split_grid_v) drifted from 8.");
 
 // ── FIXY-V-177: tree + grid-vocabulary surface identity ────────────
 //
@@ -436,58 +416,48 @@ static_assert(kU014SurfaceCardinality == 8,
 // permission minting is needed (parallel to the grid sentinels above).
 
 // Tree: Slice / auto_split_n_t / auto_split_n_permissions_t identity.
-static_assert(std::is_same_v<
-    ::crucible::fixy::perm::Slice<U014_PoolGuardProbeTag, 0>,
-    ::crucible::safety::Slice<U014_PoolGuardProbeTag, 0>>,
-    "fixy::perm::Slice must alias safety::Slice");
-static_assert(std::is_same_v<
-    ::crucible::fixy::perm::auto_split_n_t<U014_PoolGuardProbeTag, 3>,
-    ::crucible::safety::auto_split_n_t<U014_PoolGuardProbeTag, 3>>,
-    "fixy::perm::auto_split_n_t must alias safety::auto_split_n_t");
-static_assert(std::is_same_v<
-    ::crucible::fixy::perm::auto_split_n_permissions_t<U014_PoolGuardProbeTag, 2>,
-    ::crucible::safety::auto_split_n_permissions_t<U014_PoolGuardProbeTag, 2>>,
-    "fixy::perm::auto_split_n_permissions_t must alias the substrate alias");
+static_assert(std::is_same_v<::crucible::fixy::perm::Slice<U014_PoolGuardProbeTag, 0>,
+                             ::crucible::safety::Slice<U014_PoolGuardProbeTag, 0>>,
+              "fixy::perm::Slice must alias safety::Slice");
+static_assert(std::is_same_v<::crucible::fixy::perm::auto_split_n_t<U014_PoolGuardProbeTag, 3>,
+                             ::crucible::safety::auto_split_n_t<U014_PoolGuardProbeTag, 3>>,
+              "fixy::perm::auto_split_n_t must alias safety::auto_split_n_t");
+static_assert(std::is_same_v<::crucible::fixy::perm::auto_split_n_permissions_t<U014_PoolGuardProbeTag, 2>,
+                             ::crucible::safety::auto_split_n_permissions_t<U014_PoolGuardProbeTag, 2>>,
+              "fixy::perm::auto_split_n_permissions_t must alias the substrate alias");
 
 // can_split_n_v: value agreement + N=0 boundary rejection through fixy::.
-static_assert(
-    ::crucible::fixy::perm::can_split_n_v<U014_PoolGuardProbeTag, 4>
-    == ::crucible::safety::can_split_n_v<U014_PoolGuardProbeTag, 4>,
-    "fixy::perm::can_split_n_v must mirror safety::can_split_n_v");
+static_assert(::crucible::fixy::perm::can_split_n_v<U014_PoolGuardProbeTag, 4>
+                  == ::crucible::safety::can_split_n_v<U014_PoolGuardProbeTag, 4>,
+              "fixy::perm::can_split_n_v must mirror safety::can_split_n_v");
 static_assert(::crucible::fixy::perm::can_split_n_v<U014_PoolGuardProbeTag, 4>,
-    "Tree N-ary split must succeed for N>0 through the fixy:: path.");
+              "Tree N-ary split must succeed for N>0 through the fixy:: path.");
 static_assert(!::crucible::fixy::perm::can_split_n_v<U014_PoolGuardProbeTag, 0>,
-    "Tree N-ary split MUST reject N=0 through the fixy:: path.");
+              "Tree N-ary split MUST reject N=0 through the fixy:: path.");
 
 // Grid vocabulary: side-tag + per-side slot alias + descriptor identity.
-static_assert(std::is_same_v<
-    ::crucible::fixy::perm::ProducerSide<U014_PoolGuardProbeTag>,
-    ::crucible::safety::ProducerSide<U014_PoolGuardProbeTag>>,
-    "fixy::perm::ProducerSide must alias safety::ProducerSide");
-static_assert(std::is_same_v<
-    ::crucible::fixy::perm::ConsumerSide<U014_PoolGuardProbeTag>,
-    ::crucible::safety::ConsumerSide<U014_PoolGuardProbeTag>>,
-    "fixy::perm::ConsumerSide must alias safety::ConsumerSide");
-static_assert(std::is_same_v<
-    ::crucible::fixy::perm::Producer<U014_PoolGuardProbeTag, 0>,
-    ::crucible::safety::Producer<U014_PoolGuardProbeTag, 0>>,
-    "fixy::perm::Producer must alias safety::Producer");
-static_assert(std::is_same_v<
-    ::crucible::fixy::perm::Consumer<U014_PoolGuardProbeTag, 1>,
-    ::crucible::safety::Consumer<U014_PoolGuardProbeTag, 1>>,
-    "fixy::perm::Consumer must alias safety::Consumer");
-static_assert(std::is_same_v<
-    typename ::crucible::fixy::perm::auto_split_grid<U014_PoolGuardProbeTag, 2, 3>::whole_type,
-    typename ::crucible::safety::auto_split_grid<U014_PoolGuardProbeTag, 2, 3>::whole_type>,
-    "fixy::perm::auto_split_grid must alias safety::auto_split_grid");
+static_assert(std::is_same_v<::crucible::fixy::perm::ProducerSide<U014_PoolGuardProbeTag>,
+                             ::crucible::safety::ProducerSide<U014_PoolGuardProbeTag>>,
+              "fixy::perm::ProducerSide must alias safety::ProducerSide");
+static_assert(std::is_same_v<::crucible::fixy::perm::ConsumerSide<U014_PoolGuardProbeTag>,
+                             ::crucible::safety::ConsumerSide<U014_PoolGuardProbeTag>>,
+              "fixy::perm::ConsumerSide must alias safety::ConsumerSide");
+static_assert(std::is_same_v<::crucible::fixy::perm::Producer<U014_PoolGuardProbeTag, 0>,
+                             ::crucible::safety::Producer<U014_PoolGuardProbeTag, 0>>,
+              "fixy::perm::Producer must alias safety::Producer");
+static_assert(std::is_same_v<::crucible::fixy::perm::Consumer<U014_PoolGuardProbeTag, 1>,
+                             ::crucible::safety::Consumer<U014_PoolGuardProbeTag, 1>>,
+              "fixy::perm::Consumer must alias safety::Consumer");
+static_assert(std::is_same_v<typename ::crucible::fixy::perm::auto_split_grid<U014_PoolGuardProbeTag, 2, 3>::whole_type,
+                             typename ::crucible::safety::auto_split_grid<U014_PoolGuardProbeTag, 2, 3>::whole_type>,
+              "fixy::perm::auto_split_grid must alias safety::auto_split_grid");
 
 // ── V-177 surface cardinality ──────────────────────────────────────
 // Ten new public symbols (5 grid-vocabulary + 5 tree).  A substrate
 // ADD/REMOVE fans out as a constant-mismatch here, not silent drift.
 constexpr int kV177SurfaceCardinality = 10;
-static_assert(kV177SurfaceCardinality == 10,
-    "FIXY-V-177 surface (ProducerSide/ConsumerSide/Producer/Consumer/"
-    "auto_split_grid + Slice/auto_split_n/auto_split_n_t/"
-    "auto_split_n_permissions_t/can_split_n_v) drifted from 10.");
+static_assert(kV177SurfaceCardinality == 10, "FIXY-V-177 surface (ProducerSide/ConsumerSide/Producer/Consumer/"
+                                             "auto_split_grid + Slice/auto_split_n/auto_split_n_t/"
+                                             "auto_split_n_permissions_t/can_split_n_v) drifted from 10.");
 
 }  // namespace crucible::fixy::perm::self_test

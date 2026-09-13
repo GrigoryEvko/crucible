@@ -142,25 +142,29 @@ namespace crucible::algebra::lattices {
 
 // ── Witness tier ────────────────────────────────────────────────────
 enum class Witness : std::uint8_t {
-    UNWITNESSED       = 0,    // weakest — no proof attached
-    TYPE_CHECKED      = 1,    // wrappers + contracts discipline
-    TEST_PASSED       = 2,    // measurement discipline (CI / fuzzers)
-    FORMALLY_VERIFIED = 3,    // strongest — mathematical proof
+    UNWITNESSED = 0,  // weakest — no proof attached
+    TYPE_CHECKED = 1,  // wrappers + contracts discipline
+    TEST_PASSED = 2,  // measurement discipline (CI / fuzzers)
+    FORMALLY_VERIFIED = 3,  // strongest — mathematical proof
 };
 
 // Cardinality + diagnostic name via reflection — auto-bumps on
 // future tier extensions; reflection-based name-coverage assertion
 // catches missing switch arms.
-inline constexpr std::size_t witness_count =
-    std::meta::enumerators_of(^^Witness).size();
+inline constexpr std::size_t witness_count = std::meta::enumerators_of(^^Witness).size();
 
 [[nodiscard]] consteval std::string_view witness_name(Witness w) noexcept {
     switch (w) {
-        case Witness::UNWITNESSED:       return "UNWITNESSED";
-        case Witness::TYPE_CHECKED:      return "TYPE_CHECKED";
-        case Witness::TEST_PASSED:       return "TEST_PASSED";
-        case Witness::FORMALLY_VERIFIED: return "FORMALLY_VERIFIED";
-        default:                         return std::string_view{"<unknown Witness>"};
+        case Witness::UNWITNESSED:
+            return "UNWITNESSED";
+        case Witness::TYPE_CHECKED:
+            return "TYPE_CHECKED";
+        case Witness::TEST_PASSED:
+            return "TEST_PASSED";
+        case Witness::FORMALLY_VERIFIED:
+            return "FORMALLY_VERIFIED";
+        default:
+            return std::string_view{"<unknown Witness>"};
     }
 }
 
@@ -170,16 +174,10 @@ inline constexpr std::size_t witness_count =
 // ChainLattice.h dedup convention (audit Tier-2 dedup; see
 // ConsistencyLattice for the same shape).
 struct WitnessLattice : ChainLatticeOps<Witness> {
-    [[nodiscard]] static constexpr element_type bottom() noexcept {
-        return Witness::UNWITNESSED;
-    }
-    [[nodiscard]] static constexpr element_type top() noexcept {
-        return Witness::FORMALLY_VERIFIED;
-    }
+    [[nodiscard]] static constexpr element_type bottom() noexcept { return Witness::UNWITNESSED; }
+    [[nodiscard]] static constexpr element_type top() noexcept { return Witness::FORMALLY_VERIFIED; }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return "WitnessLattice";
-    }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "WitnessLattice"; }
 
     // ── At<W>: singleton sub-lattice at a fixed type-level tier ─────
     //
@@ -194,29 +192,30 @@ struct WitnessLattice : ChainLatticeOps<Witness> {
     struct At {
         struct element_type {
             using witness_value_type = Witness;
-            [[nodiscard]] constexpr operator witness_value_type() const noexcept {
-                return W;
-            }
-            [[nodiscard]] constexpr bool operator==(element_type) const noexcept {
-                return true;
-            }
+            [[nodiscard]] constexpr operator witness_value_type() const noexcept { return W; }
+            [[nodiscard]] constexpr bool operator==(element_type) const noexcept { return true; }
         };
 
         static constexpr Witness tier = W;
 
         [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-        [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
         [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
 
         [[nodiscard]] static consteval std::string_view name() noexcept {
             switch (W) {
-                case Witness::UNWITNESSED:       return "WitnessLattice::At<UNWITNESSED>";
-                case Witness::TYPE_CHECKED:      return "WitnessLattice::At<TYPE_CHECKED>";
-                case Witness::TEST_PASSED:       return "WitnessLattice::At<TEST_PASSED>";
-                case Witness::FORMALLY_VERIFIED: return "WitnessLattice::At<FORMALLY_VERIFIED>";
-                default:                         return "WitnessLattice::At<?>";
+                case Witness::UNWITNESSED:
+                    return "WitnessLattice::At<UNWITNESSED>";
+                case Witness::TYPE_CHECKED:
+                    return "WitnessLattice::At<TYPE_CHECKED>";
+                case Witness::TEST_PASSED:
+                    return "WitnessLattice::At<TEST_PASSED>";
+                case Witness::FORMALLY_VERIFIED:
+                    return "WitnessLattice::At<FORMALLY_VERIFIED>";
+                default:
+                    return "WitnessLattice::At<?>";
             }
         }
     };
@@ -229,26 +228,24 @@ struct WitnessLattice : ChainLatticeOps<Witness> {
 // code that does `using namespace ...`.  Matches the
 // consistency::EventualTier / conf::SecretTier convention.
 namespace witness {
-    using UnwitnessedTier       = WitnessLattice::At<Witness::UNWITNESSED>;
-    using TypeCheckedTier       = WitnessLattice::At<Witness::TYPE_CHECKED>;
-    using TestPassedTier        = WitnessLattice::At<Witness::TEST_PASSED>;
-    using FormallyVerifiedTier  = WitnessLattice::At<Witness::FORMALLY_VERIFIED>;
+using UnwitnessedTier = WitnessLattice::At<Witness::UNWITNESSED>;
+using TypeCheckedTier = WitnessLattice::At<Witness::TYPE_CHECKED>;
+using TestPassedTier = WitnessLattice::At<Witness::TEST_PASSED>;
+using FormallyVerifiedTier = WitnessLattice::At<Witness::FORMALLY_VERIFIED>;
 }  // namespace witness
 
 // ── Self-test (compile-time + reflection-driven name coverage) ──────
 namespace detail::witness_lattice_self_test {
 
 // Cardinality + reflection-based name coverage.
-static_assert(witness_count == 4,
-    "Witness catalog diverged from {UNWITNESSED, TYPE_CHECKED, "
-    "TEST_PASSED, FORMALLY_VERIFIED}; confirm intent.  Adding a tier "
-    "between TEST_PASSED and FORMALLY_VERIFIED (e.g. CROSS_VENDOR_"
-    "VERIFIED) requires updating the V-054 Witness<> alias' tier "
-    "shortcuts AND the V-176 mimic::nv:: producer site.");
+static_assert(witness_count == 4, "Witness catalog diverged from {UNWITNESSED, TYPE_CHECKED, "
+                                  "TEST_PASSED, FORMALLY_VERIFIED}; confirm intent.  Adding a tier "
+                                  "between TEST_PASSED and FORMALLY_VERIFIED (e.g. CROSS_VENDOR_"
+                                  "VERIFIED) requires updating the V-054 Witness<> alias' tier "
+                                  "shortcuts AND the V-176 mimic::nv:: producer site.");
 
 [[nodiscard]] consteval bool every_witness_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^Witness));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Witness));
     // -Wshadow fires on `template for` bodies because GCC 16 unrolls
     // the loop into successive scopes that each declare the same
     // induction variable; suppress locally for the loop body only.
@@ -262,10 +259,9 @@ static_assert(witness_count == 4,
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_witness_has_name(),
-    "witness_name() switch missing arm for at least one Witness tier "
-    "— add the arm or the new tier leaks the '<unknown Witness>' "
-    "sentinel into runtime observer's debug output.");
+static_assert(every_witness_has_name(), "witness_name() switch missing arm for at least one Witness tier "
+                                        "— add the arm or the new tier leaks the '<unknown Witness>' "
+                                        "sentinel into runtime observer's debug output.");
 
 // Concept conformance — full lattice + each At<W> sub-lattice.
 static_assert(Lattice<WitnessLattice>);
@@ -293,74 +289,71 @@ static_assert(std::is_empty_v<witness::FormallyVerifiedTier::element_type>);
 // over the underlying enum, so adding a new Witness tier auto-extends
 // coverage with no per-lattice code change.
 static_assert(verify_chain_lattice_exhaustive<WitnessLattice>(),
-    "WitnessLattice's chain-order lattice axioms must hold at every "
-    "(Witness)³ triple — failure indicates a defect in leq/join/meet "
-    "or in the underlying enum encoding.");
+              "WitnessLattice's chain-order lattice axioms must hold at every "
+              "(Witness)³ triple — failure indicates a defect in leq/join/meet "
+              "or in the underlying enum encoding.");
 static_assert(verify_chain_lattice_distributive_exhaustive<WitnessLattice>(),
-    "WitnessLattice's chain order must satisfy distributivity at every "
-    "(Witness)³ triple — a chain order always does, so failure would "
-    "indicate a defect in join or meet.");
+              "WitnessLattice's chain order must satisfy distributivity at every "
+              "(Witness)³ triple — a chain order always does, so failure would "
+              "indicate a defect in join or meet.");
 
 // Direct order witnesses — the entire chain is strictly increasing.
-static_assert( WitnessLattice::leq(Witness::UNWITNESSED,  Witness::TYPE_CHECKED));
-static_assert( WitnessLattice::leq(Witness::TYPE_CHECKED, Witness::TEST_PASSED));
-static_assert( WitnessLattice::leq(Witness::TEST_PASSED,  Witness::FORMALLY_VERIFIED));
-static_assert( WitnessLattice::leq(Witness::UNWITNESSED,  Witness::FORMALLY_VERIFIED));  // transitive endpoints
+static_assert(WitnessLattice::leq(Witness::UNWITNESSED, Witness::TYPE_CHECKED));
+static_assert(WitnessLattice::leq(Witness::TYPE_CHECKED, Witness::TEST_PASSED));
+static_assert(WitnessLattice::leq(Witness::TEST_PASSED, Witness::FORMALLY_VERIFIED));
+static_assert(WitnessLattice::leq(Witness::UNWITNESSED, Witness::FORMALLY_VERIFIED));  // transitive endpoints
 static_assert(!WitnessLattice::leq(Witness::FORMALLY_VERIFIED, Witness::UNWITNESSED));
-static_assert(!WitnessLattice::leq(Witness::TEST_PASSED,  Witness::TYPE_CHECKED));
+static_assert(!WitnessLattice::leq(Witness::TEST_PASSED, Witness::TYPE_CHECKED));
 static_assert(!WitnessLattice::leq(Witness::FORMALLY_VERIFIED, Witness::TEST_PASSED));
 
 // Pin bottom / top to the chain endpoints.
 static_assert(WitnessLattice::bottom() == Witness::UNWITNESSED);
-static_assert(WitnessLattice::top()    == Witness::FORMALLY_VERIFIED);
+static_assert(WitnessLattice::top() == Witness::FORMALLY_VERIFIED);
 
 // Join strengthens (max); meet weakens (min).
-static_assert(WitnessLattice::join(Witness::UNWITNESSED,  Witness::FORMALLY_VERIFIED) == Witness::FORMALLY_VERIFIED);
-static_assert(WitnessLattice::join(Witness::TYPE_CHECKED, Witness::TEST_PASSED)        == Witness::TEST_PASSED);
-static_assert(WitnessLattice::meet(Witness::UNWITNESSED,  Witness::FORMALLY_VERIFIED) == Witness::UNWITNESSED);
-static_assert(WitnessLattice::meet(Witness::TEST_PASSED,  Witness::FORMALLY_VERIFIED) == Witness::TEST_PASSED);
+static_assert(WitnessLattice::join(Witness::UNWITNESSED, Witness::FORMALLY_VERIFIED) == Witness::FORMALLY_VERIFIED);
+static_assert(WitnessLattice::join(Witness::TYPE_CHECKED, Witness::TEST_PASSED) == Witness::TEST_PASSED);
+static_assert(WitnessLattice::meet(Witness::UNWITNESSED, Witness::FORMALLY_VERIFIED) == Witness::UNWITNESSED);
+static_assert(WitnessLattice::meet(Witness::TEST_PASSED, Witness::FORMALLY_VERIFIED) == Witness::TEST_PASSED);
 
 // Diagnostic names — full lattice + per-tier At<W>::name() coverage.
 static_assert(WitnessLattice::name() == "WitnessLattice");
-static_assert(witness::UnwitnessedTier::name()       == "WitnessLattice::At<UNWITNESSED>");
-static_assert(witness::TypeCheckedTier::name()       == "WitnessLattice::At<TYPE_CHECKED>");
-static_assert(witness::TestPassedTier::name()        == "WitnessLattice::At<TEST_PASSED>");
-static_assert(witness::FormallyVerifiedTier::name()  == "WitnessLattice::At<FORMALLY_VERIFIED>");
-static_assert(witness_name(Witness::UNWITNESSED)       == "UNWITNESSED");
-static_assert(witness_name(Witness::TYPE_CHECKED)      == "TYPE_CHECKED");
-static_assert(witness_name(Witness::TEST_PASSED)       == "TEST_PASSED");
+static_assert(witness::UnwitnessedTier::name() == "WitnessLattice::At<UNWITNESSED>");
+static_assert(witness::TypeCheckedTier::name() == "WitnessLattice::At<TYPE_CHECKED>");
+static_assert(witness::TestPassedTier::name() == "WitnessLattice::At<TEST_PASSED>");
+static_assert(witness::FormallyVerifiedTier::name() == "WitnessLattice::At<FORMALLY_VERIFIED>");
+static_assert(witness_name(Witness::UNWITNESSED) == "UNWITNESSED");
+static_assert(witness_name(Witness::TYPE_CHECKED) == "TYPE_CHECKED");
+static_assert(witness_name(Witness::TEST_PASSED) == "TEST_PASSED");
 static_assert(witness_name(Witness::FORMALLY_VERIFIED) == "FORMALLY_VERIFIED");
 
 // Reflection-driven coverage check on At<W>::name().
 [[nodiscard]] consteval bool every_at_witness_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^Witness));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Witness));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
-        if (WitnessLattice::At<([:en:])>::name() ==
-            std::string_view{"WitnessLattice::At<?>"}) {
+        if (WitnessLattice::At<([:en:])>::name() == std::string_view{"WitnessLattice::At<?>"}) {
             return false;
         }
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_at_witness_has_name(),
-    "WitnessLattice::At<W>::name() switch missing an arm for at least "
-    "one tier — add the arm or the new tier leaks the "
-    "'WitnessLattice::At<?>' sentinel.");
+static_assert(every_at_witness_has_name(), "WitnessLattice::At<W>::name() switch missing an arm for at least "
+                                           "one tier — add the arm or the new tier leaks the "
+                                           "'WitnessLattice::At<?>' sentinel.");
 
 // Convenience aliases resolve correctly.
-static_assert(witness::UnwitnessedTier::tier      == Witness::UNWITNESSED);
-static_assert(witness::TypeCheckedTier::tier      == Witness::TYPE_CHECKED);
-static_assert(witness::TestPassedTier::tier       == Witness::TEST_PASSED);
+static_assert(witness::UnwitnessedTier::tier == Witness::UNWITNESSED);
+static_assert(witness::TypeCheckedTier::tier == Witness::TYPE_CHECKED);
+static_assert(witness::TestPassedTier::tier == Witness::TEST_PASSED);
 static_assert(witness::FormallyVerifiedTier::tier == Witness::FORMALLY_VERIFIED);
 
 // At<W>::element_type → Witness conversion recovers the type-level tier.
-static_assert(static_cast<Witness>(witness::UnwitnessedTier::element_type{})      == Witness::UNWITNESSED);
-static_assert(static_cast<Witness>(witness::TypeCheckedTier::element_type{})      == Witness::TYPE_CHECKED);
-static_assert(static_cast<Witness>(witness::TestPassedTier::element_type{})       == Witness::TEST_PASSED);
+static_assert(static_cast<Witness>(witness::UnwitnessedTier::element_type{}) == Witness::UNWITNESSED);
+static_assert(static_cast<Witness>(witness::TypeCheckedTier::element_type{}) == Witness::TYPE_CHECKED);
+static_assert(static_cast<Witness>(witness::TestPassedTier::element_type{}) == Witness::TEST_PASSED);
 static_assert(static_cast<Witness>(witness::FormallyVerifiedTier::element_type{}) == Witness::FORMALLY_VERIFIED);
 
 // ── Layout invariants on Graded<Comonad, At<W>, T> ──────────────────
@@ -371,12 +364,15 @@ static_assert(static_cast<Witness>(witness::FormallyVerifiedTier::element_type{}
 // FIXY-V-176 (mimic/nv/Kernel.h Witness<FormallyVerified,
 // CompiledKernel*>) where the witness must not bloat the kernel
 // pointer in the KernelCache slot.
-struct OneByteValue   { char c{0}; };
-struct EightByteValue { unsigned long long v{0}; };
+struct OneByteValue {
+    char c{0};
+};
+struct EightByteValue {
+    unsigned long long v{0};
+};
 
 template <typename T>
-using FormallyVerifiedGraded =
-    Graded<ModalityKind::Comonad, witness::FormallyVerifiedTier, T>;
+using FormallyVerifiedGraded = Graded<ModalityKind::Comonad, witness::FormallyVerifiedTier, T>;
 
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(FormallyVerifiedGraded, OneByteValue);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(FormallyVerifiedGraded, EightByteValue);
@@ -390,8 +386,7 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(FormallyVerifiedGraded, double);
 // Tier-tagged counter — same payload at a weaker tier, verifies the
 // alias works at every tier in the chain (not just the top).
 template <typename T>
-using TestPassedGraded =
-    Graded<ModalityKind::Comonad, witness::TestPassedTier, T>;
+using TestPassedGraded = Graded<ModalityKind::Comonad, witness::TestPassedTier, T>;
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(TestPassedGraded, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(TestPassedGraded, EightByteValue);
 
@@ -399,8 +394,7 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(TestPassedGraded, EightByteValue);
 // with the carrier even though it claims nothing; load-bearing for
 // the V-054 default-witness ergonomic.
 template <typename T>
-using UnwitnessedGraded =
-    Graded<ModalityKind::Comonad, witness::UnwitnessedTier, T>;
+using UnwitnessedGraded = Graded<ModalityKind::Comonad, witness::UnwitnessedTier, T>;
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(UnwitnessedGraded, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(UnwitnessedGraded, EightByteValue);
 
@@ -416,31 +410,29 @@ inline void runtime_smoke_test() {
     // Full WitnessLattice ops at runtime.
     Witness a = Witness::UNWITNESSED;
     Witness b = Witness::FORMALLY_VERIFIED;
-    [[maybe_unused]] bool    l1   = WitnessLattice::leq(a, b);
-    [[maybe_unused]] Witness j1   = WitnessLattice::join(a, b);
-    [[maybe_unused]] Witness m1   = WitnessLattice::meet(a, b);
-    [[maybe_unused]] Witness bot  = WitnessLattice::bottom();
-    [[maybe_unused]] Witness top  = WitnessLattice::top();
+    [[maybe_unused]] bool l1 = WitnessLattice::leq(a, b);
+    [[maybe_unused]] Witness j1 = WitnessLattice::join(a, b);
+    [[maybe_unused]] Witness m1 = WitnessLattice::meet(a, b);
+    [[maybe_unused]] Witness bot = WitnessLattice::bottom();
+    [[maybe_unused]] Witness top = WitnessLattice::top();
 
     // Mid-tier ops — chains through the middle of the lattice.
     Witness mid = Witness::TEST_PASSED;
-    [[maybe_unused]] Witness j2 = WitnessLattice::join(mid, b);    // FORMALLY_VERIFIED
-    [[maybe_unused]] Witness m2 = WitnessLattice::meet(mid, a);    // UNWITNESSED
+    [[maybe_unused]] Witness j2 = WitnessLattice::join(mid, b);  // FORMALLY_VERIFIED
+    [[maybe_unused]] Witness m2 = WitnessLattice::meet(mid, a);  // UNWITNESSED
 
     // Graded<Comonad, FormallyVerifiedTier, T> at runtime.
     OneByteValue v{42};
-    FormallyVerifiedGraded<OneByteValue> initial{
-        v, witness::FormallyVerifiedTier::bottom()};
-    auto widened   = initial.weaken(witness::FormallyVerifiedTier::top());
-    auto composed  = initial.compose(widened);
-    auto rv_widen  = std::move(widened).weaken(
-                         witness::FormallyVerifiedTier::top());
+    FormallyVerifiedGraded<OneByteValue> initial{v, witness::FormallyVerifiedTier::bottom()};
+    auto widened = initial.weaken(witness::FormallyVerifiedTier::top());
+    auto composed = initial.compose(widened);
+    auto rv_widen = std::move(widened).weaken(witness::FormallyVerifiedTier::top());
 
     // Comonad counit (extract) — always available, observing the
     // value as plain T does NOT require declassifying the witness.
     auto extracted = std::move(composed).extract();
 
-    [[maybe_unused]] auto g  = rv_widen.grade();
+    [[maybe_unused]] auto g = rv_widen.grade();
     [[maybe_unused]] auto vc = extracted.c;
 
     // Conversion: At<Witness::FORMALLY_VERIFIED>::element_type →

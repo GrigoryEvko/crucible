@@ -833,10 +833,8 @@ constexpr bool coprime(T a, T b) noexcept {
     // Unsigned absolute value: well-defined for all signed T,
     // including INT_MIN (where -INT_MIN as a signed value would
     // be UB but the unsigned cast wraps to the correct magnitude).
-    U au = (a < T{0}) ? static_cast<U>(0) - static_cast<U>(a)
-                      : static_cast<U>(a);
-    U bu = (b < T{0}) ? static_cast<U>(0) - static_cast<U>(b)
-                      : static_cast<U>(b);
+    U au = (a < T{0}) ? static_cast<U>(0) - static_cast<U>(a) : static_cast<U>(a);
+    U bu = (b < T{0}) ? static_cast<U>(0) - static_cast<U>(b) : static_cast<U>(b);
     while (bu != U{0}) {
         U t = au % bu;
         au = bu;
@@ -963,9 +961,7 @@ constexpr bool operator==(Interval<T> const& a, Interval<T> const& b) noexcept {
 
 template <std::integral T, std::size_t N = std::dynamic_extent>
 [[nodiscard, gnu::pure]]
-constexpr bool intervals_pairwise_disjoint(
-    std::span<const Interval<T>, N> ivs
-) noexcept {
+constexpr bool intervals_pairwise_disjoint(std::span<const Interval<T>, N> ivs) noexcept {
     // Pass 1: well-formedness (lo <= hi).  An inverted interval
     // is malformed; no integer x satisfies lo <= x < hi.
     for (Interval<T> const& iv : ivs) {
@@ -1102,10 +1098,7 @@ constexpr bool intervals_pairwise_disjoint(
 //     boundary-only check, blind to interior gaps and overlaps.
 template <std::integral T, std::size_t N = std::dynamic_extent>
 [[nodiscard, gnu::pure]]
-constexpr bool intervals_cover_unit(
-    std::span<const Interval<T>, N> ivs,
-    T total
-) noexcept {
+constexpr bool intervals_cover_unit(std::span<const Interval<T>, N> ivs, T total) noexcept {
     // Negative or trivial total: only the empty span partitions
     // an empty range; a negative total has no valid partition.
     if (total < T{0}) {
@@ -1553,8 +1546,7 @@ constexpr bool row_subset() noexcept {
 // (CONTRACT-090 fuzzer pinning fmix bijection over ~10^9 random
 // uint64_t inputs against a slow reference oracle).
 [[nodiscard, gnu::const]]
-constexpr bool fmix_preserves_non_zero(std::uint64_t seed,
-                                       std::uint64_t mix_output) noexcept {
+constexpr bool fmix_preserves_non_zero(std::uint64_t seed, std::uint64_t mix_output) noexcept {
     return seed != 0 && mix_output != 0;
 }
 
@@ -1924,14 +1916,9 @@ constexpr bool implies(bool antecedent, bool consequent) noexcept {
 // a CONTRACT-126 trim candidate; until then it stays as documented
 // availability for the dynamic-alignment case.
 [[nodiscard, gnu::const]]
-constexpr bool aligned_in_range(std::uint64_t value,
-                                std::uint64_t low,
-                                std::uint64_t high,
+constexpr bool aligned_in_range(std::uint64_t value, std::uint64_t low, std::uint64_t high,
                                 std::uint64_t alignment) noexcept {
-    return alignment != 0u
-        && low <= value
-        && value <= high
-        && (value % alignment) == 0u;
+    return alignment != 0u && low <= value && value <= high && (value % alignment) == 0u;
 }
 
 // ─── in_range ──────────────────────────────────────────────────────
@@ -2589,7 +2576,7 @@ constexpr bool valid_span(C count, const void* ptr) noexcept {
 // caller's intended sentinel — that is a per-type design decision,
 // documented at the type definition site.
 template <typename T>
-    requires requires (T const& a, T const& b) {
+    requires requires(T const& a, T const& b) {
         { a != b } -> std::convertible_to<bool>;
     }
 [[nodiscard, gnu::pure]]
@@ -2663,7 +2650,7 @@ constexpr bool is_non_zero(T const& x) noexcept(noexcept(T{} != x)) {
 // empty-slot (zero) side stays at `is_non_zero`.  Together they form
 // the complete cache-key admissibility witness.
 template <typename H>
-    requires requires (H const& h) {
+    requires requires(H const& h) {
         { h.is_sentinel() } -> std::convertible_to<bool>;
     }
 [[nodiscard, gnu::pure]]

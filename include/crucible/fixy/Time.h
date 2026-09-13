@@ -46,35 +46,35 @@
 //   mint_tsc_reader    : missing pin proof (non-CpuPinned) · non-singleton pin
 //   mint_bounded_sleep : ctx without Block (Init) · MaxNanos == 0
 
-#include <crucible/Platform.h>                              // CRUCIBLE_INLINE
-#include <crucible/fixy/Grant.h>                            // grant_base, which_dim, IsGrantTag
-#include <crucible/fixy/Dim.h>                              // dim::DimensionAxis
-#include <crucible/fixy/Hw.h>                               // fixy::hw::TscMode (single source)
+#include <crucible/Platform.h>  // CRUCIBLE_INLINE
+#include <crucible/fixy/Grant.h>  // grant_base, which_dim, IsGrantTag
+#include <crucible/fixy/Dim.h>  // dim::DimensionAxis
+#include <crucible/fixy/Hw.h>  // fixy::hw::TscMode (single source)
 
-#include <crucible/safety/ClockSource.h>                    // ClockSource_v, ClockSource, TscBytes
-#include <crucible/safety/CpuPinned.h>                      // CpuPinned, PinningPosture, AffinityMask
-#include <crucible/safety/Pre.h>                            // CRUCIBLE_PRE
+#include <crucible/safety/ClockSource.h>  // ClockSource_v, ClockSource, TscBytes
+#include <crucible/safety/CpuPinned.h>  // CpuPinned, PinningPosture, AffinityMask
+#include <crucible/safety/Pre.h>  // CRUCIBLE_PRE
 
-#include <crucible/effects/ExecCtx.h>                       // IsExecCtx, CtxCanMint, Effect
+#include <crucible/effects/ExecCtx.h>  // IsExecCtx, CtxCanMint, Effect
 
-#include <ctime>                                            // clock_gettime, clock_nanosleep, timespec, CLOCK_*
+#include <ctime>  // clock_gettime, clock_nanosleep, timespec, CLOCK_*
 #include <cstdint>
 #include <type_traits>
-#include <utility>                                          // std::move
+#include <utility>  // std::move
 
 #if defined(__x86_64__)
-#  include <x86intrin.h>                                    // __rdtsc, __rdtscp
+#include <x86intrin.h>  // __rdtsc, __rdtscp
 #endif
 
 namespace crucible::fixy::time {
 
-namespace sf  = ::crucible::safety;
+namespace sf = ::crucible::safety;
 namespace eff = ::crucible::effects;
-namespace ml  = ::crucible::algebra::lattices;
+namespace ml = ::crucible::algebra::lattices;
 
 using sf::ClockSource_v;
-using sf::MonotonicClockBytes;   // FIXY-U-096z: clock-bytes carrier re-export
-using sf::mint_clock_source;     // FIXY-U-096z: §XXI clock-source mint re-export
+using sf::MonotonicClockBytes;  // FIXY-U-096z: clock-bytes carrier re-export
+using sf::mint_clock_source;  // FIXY-U-096z: §XXI clock-source mint re-export
 using TscMode = ::crucible::fixy::hw::TscMode;
 
 // ── clockid mapping — only the static-clockid clock_gettime sources ─
@@ -91,19 +91,26 @@ using TscMode = ::crucible::fixy::hw::TscMode;
 //     the syscall boundary itself.
 [[nodiscard]] consteval ::clockid_t clockid_for(ClockSource_v source) noexcept {
     switch (source) {
-        case ClockSource_v::Realtime:     return CLOCK_REALTIME;
-        case ClockSource_v::Monotonic:    return CLOCK_MONOTONIC;
-        case ClockSource_v::MonotonicRaw: return CLOCK_MONOTONIC_RAW;
-        case ClockSource_v::Boot:         return CLOCK_BOOTTIME;
-        case ClockSource_v::ThreadCpu:    return CLOCK_THREAD_CPUTIME_ID;
-        case ClockSource_v::ProcessCpu:   return CLOCK_PROCESS_CPUTIME_ID;
+        case ClockSource_v::Realtime:
+            return CLOCK_REALTIME;
+        case ClockSource_v::Monotonic:
+            return CLOCK_MONOTONIC;
+        case ClockSource_v::MonotonicRaw:
+            return CLOCK_MONOTONIC_RAW;
+        case ClockSource_v::Boot:
+            return CLOCK_BOOTTIME;
+        case ClockSource_v::ThreadCpu:
+            return CLOCK_THREAD_CPUTIME_ID;
+        case ClockSource_v::ProcessCpu:
+            return CLOCK_PROCESS_CPUTIME_ID;
         case ClockSource_v::TscRaw:
         case ClockSource_v::TscSerialized:
         case ClockSource_v::PmuCounter:
             return -1;  // not clock_gettime-backed; use mint_tsc_reader
         case ClockSource_v::PtpHwClock:
             return -1;  // FIXY-V-201: per-fd clockid; use topology::ptp_now(fd)
-        default:                          return -1;
+        default:
+            return -1;
     }
 }
 
@@ -121,7 +128,7 @@ namespace detail {
     asm volatile("mrs %0, cntvct_el0" : "=r"(value));
     return value;
 #else
-#  error "fixy/Time.h: TSC read is supported on x86_64 and aarch64 only."
+#error "fixy/Time.h: TSC read is supported on x86_64 and aarch64 only."
 #endif
 }
 
@@ -129,15 +136,15 @@ namespace detail {
 #if defined(__x86_64__)
     unsigned aux = 0;
     const std::uint64_t value = __rdtscp(&aux);  // rdtscp serializes wrt prior insns
-    _mm_lfence();                                // serialize wrt subsequent insns
+    _mm_lfence();  // serialize wrt subsequent insns
     return value;
 #elif defined(__aarch64__)
-    asm volatile("isb" ::: "memory");            // instruction-sync barrier
+    asm volatile("isb" ::: "memory");  // instruction-sync barrier
     std::uint64_t value = 0;
     asm volatile("mrs %0, cntvct_el0" : "=r"(value));
     return value;
 #else
-#  error "fixy/Time.h: TSC read is supported on x86_64 and aarch64 only."
+#error "fixy/Time.h: TSC read is supported on x86_64 and aarch64 only."
 #endif
 }
 
@@ -150,8 +157,7 @@ inline constexpr bool is_cpu_pinned_v<sf::CpuPinned<Mask, Posture, Unit>> = true
 // Map a TSC mode onto its ClockSource provenance.
 template <TscMode Mode>
 [[nodiscard]] consteval ClockSource_v tsc_source() noexcept {
-    return Mode == TscMode::SerializedPinned ? ClockSource_v::TscSerialized
-                                             : ClockSource_v::TscRaw;
+    return Mode == TscMode::SerializedPinned ? ClockSource_v::TscSerialized : ClockSource_v::TscRaw;
 }
 
 }  // namespace detail
@@ -159,9 +165,7 @@ template <TscMode Mode>
 // A CpuPinned proof pinned to EXACTLY ONE core — the soundness floor for
 // a TSC read (a multi-core mask still lets the thread migrate).
 template <typename T>
-concept IsSingletonCpuPin =
-    detail::is_cpu_pinned_v<std::remove_cvref_t<T>>
-    && std::remove_cvref_t<T>::is_singleton_pin;
+concept IsSingletonCpuPin = detail::is_cpu_pinned_v<std::remove_cvref_t<T>> && std::remove_cvref_t<T>::is_singleton_pin;
 
 // ── ClockReader<Source> — clock_gettime → ClockSource<Source> ───────
 template <ClockSource_v Source>
@@ -173,8 +177,8 @@ struct ClockReader final {
     [[nodiscard]] result_type read() const noexcept {
         std::timespec now{};
         (void)::clock_gettime(clockid_for(Source), &now);
-        return result_type{ static_cast<std::uint64_t>(now.tv_sec) * 1'000'000'000ULL
-                            + static_cast<std::uint64_t>(now.tv_nsec) };
+        return result_type{static_cast<std::uint64_t>(now.tv_sec) * 1'000'000'000ULL
+                           + static_cast<std::uint64_t>(now.tv_nsec)};
     }
 };
 
@@ -183,26 +187,25 @@ struct ClockReader final {
 // Move-only: it owns the CpuPinned proof (the consume-once discipline), so
 // the pin cannot be released or re-claimed while a reader could still read.
 template <TscMode Mode, typename PinT>
-    requires (Mode != TscMode::NotAllowed) && IsSingletonCpuPin<PinT>
+    requires(Mode != TscMode::NotAllowed) && IsSingletonCpuPin<PinT>
 struct TscReader final {
-    using result_type = std::conditional_t<Mode == TscMode::SerializedPinned,
-                                            sf::TscSerializedBytes<std::uint64_t>,
-                                            sf::TscBytes<std::uint64_t>>;
+    using result_type = std::conditional_t<Mode == TscMode::SerializedPinned, sf::TscSerializedBytes<std::uint64_t>,
+                                           sf::TscBytes<std::uint64_t>>;
     static constexpr TscMode mode = Mode;
 
-    explicit constexpr TscReader(PinT&& pin) noexcept : pin_{ std::move(pin) } {}
+    explicit constexpr TscReader(PinT&& pin) noexcept : pin_{std::move(pin)} {}
 
-    TscReader(const TscReader&)            = delete;
+    TscReader(const TscReader&) = delete;
     TscReader& operator=(const TscReader&) = delete;
-    TscReader(TscReader&&) noexcept            = default;
+    TscReader(TscReader&&) noexcept = default;
     TscReader& operator=(TscReader&&) noexcept = default;
-    ~TscReader()                               = default;
+    ~TscReader() = default;
 
     [[nodiscard]] result_type read() const noexcept {
         if constexpr (Mode == TscMode::SerializedPinned) {
-            return result_type{ detail::read_raw_tsc_serialized() };
+            return result_type{detail::read_raw_tsc_serialized()};
         } else {
-            return result_type{ detail::read_raw_tsc() };
+            return result_type{detail::read_raw_tsc()};
         }
     }
 
@@ -214,14 +217,14 @@ private:
 
 // ── BoundedSleeper<MaxNanos> — clock_nanosleep capped at MaxNanos ────
 template <std::uint64_t MaxNanos>
-    requires (MaxNanos > 0)
+    requires(MaxNanos > 0)
 struct BoundedSleeper final {
     static constexpr std::uint64_t max_nanos = MaxNanos;
 
     void sleep_for(std::uint64_t nanos) const noexcept {
         CRUCIBLE_PRE(nanos <= MaxNanos);  // statically-capped — cannot oversleep
-        std::timespec request{ static_cast<std::time_t>(nanos / 1'000'000'000ULL),
-                               static_cast<long>(nanos % 1'000'000'000ULL) };
+        std::timespec request{static_cast<std::time_t>(nanos / 1'000'000'000ULL),
+                              static_cast<long>(nanos % 1'000'000'000ULL)};
         (void)::clock_nanosleep(CLOCK_MONOTONIC, 0, &request, nullptr);
     }
 };
@@ -261,8 +264,8 @@ struct which_dim<time::clock_read<Source>>
     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::SyscallSurface> {};
 
 template <ft::TscMode Mode>
-struct which_dim<time::tsc_read<Mode>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::HwInstruction> {};
+struct which_dim<time::tsc_read<Mode>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::HwInstruction> {
+};
 
 template <std::uint64_t MaxNanos>
 struct which_dim<time::sleep<MaxNanos>>
@@ -282,13 +285,11 @@ concept CtxFitsClockReaderMint = eff::IsExecCtx<Ctx> && ClockBacked<Source>;
 
 // tsc reader: any ExecCtx + a real TSC mode + a single-core pin proof.
 template <typename Ctx, TscMode Mode, typename PinT>
-concept CtxFitsTscReaderMint =
-    eff::IsExecCtx<Ctx> && (Mode != TscMode::NotAllowed) && IsSingletonCpuPin<PinT>;
+concept CtxFitsTscReaderMint = eff::IsExecCtx<Ctx> && (Mode != TscMode::NotAllowed) && IsSingletonCpuPin<PinT>;
 
 // bounded sleep: a Block-capable ctx + a non-zero static cap.
 template <typename Ctx, std::uint64_t MaxNanos>
-concept CtxFitsBoundedSleepMint =
-    eff::CtxCanMint<Ctx, eff::Effect::Block> && (MaxNanos > 0);
+concept CtxFitsBoundedSleepMint = eff::CtxCanMint<Ctx, eff::Effect::Block> && (MaxNanos > 0);
 
 template <ClockSource_v Source, eff::IsExecCtx Ctx>
     requires CtxFitsClockReaderMint<Ctx, Source>
@@ -298,9 +299,8 @@ template <ClockSource_v Source, eff::IsExecCtx Ctx>
 
 template <TscMode Mode, eff::IsExecCtx Ctx, typename PinT>
     requires CtxFitsTscReaderMint<Ctx, Mode, PinT>
-[[nodiscard]] constexpr TscReader<Mode, std::remove_cvref_t<PinT>>
-mint_tsc_reader(Ctx const&, PinT&& pin) noexcept {
-    return TscReader<Mode, std::remove_cvref_t<PinT>>{ std::move(pin) };
+[[nodiscard]] constexpr TscReader<Mode, std::remove_cvref_t<PinT>> mint_tsc_reader(Ctx const&, PinT&& pin) noexcept {
+    return TscReader<Mode, std::remove_cvref_t<PinT>>{std::move(pin)};
 }
 
 template <std::uint64_t MaxNanos, eff::IsExecCtx Ctx>
@@ -317,7 +317,7 @@ template <std::uint64_t MaxNanos, eff::IsExecCtx Ctx>
 
 namespace crucible::fixy::time::detail::v190_self_test {
 
-namespace gt  = ::crucible::fixy::grant::time;
+namespace gt = ::crucible::fixy::grant::time;
 using ::crucible::fixy::grant::IsGrantTag;
 using ::crucible::fixy::grant::which_dim_v;
 using D = ::crucible::fixy::dim::DimensionAxis;
@@ -327,36 +327,33 @@ static_assert(IsGrantTag<gt::clock_read<ClockSource_v::Boot>>);
 static_assert(IsGrantTag<gt::tsc_read<TscMode::Raw>>);
 static_assert(IsGrantTag<gt::sleep<1000>>);
 static_assert(sizeof(gt::clock_read<ClockSource_v::Monotonic>) == 1);
-static_assert(sizeof(gt::tsc_read<TscMode::SerializedPinned>)  == 1);
-static_assert(sizeof(gt::sleep<1>)                             == 1);
+static_assert(sizeof(gt::tsc_read<TscMode::SerializedPinned>) == 1);
+static_assert(sizeof(gt::sleep<1>) == 1);
 static_assert(which_dim_v<gt::clock_read<ClockSource_v::Boot>> == D::SyscallSurface);
-static_assert(which_dim_v<gt::tsc_read<TscMode::Raw>>          == D::HwInstruction);
-static_assert(which_dim_v<gt::sleep<4096>>                     == D::SyscallSurface);
+static_assert(which_dim_v<gt::tsc_read<TscMode::Raw>> == D::HwInstruction);
+static_assert(which_dim_v<gt::sleep<4096>> == D::SyscallSurface);
 
 // ── ClockBacked: clock_gettime sources yes, TSC/PMU no ──────────────
-static_assert( ClockBacked<ClockSource_v::Monotonic>);
-static_assert( ClockBacked<ClockSource_v::Boot>);
+static_assert(ClockBacked<ClockSource_v::Monotonic>);
+static_assert(ClockBacked<ClockSource_v::Boot>);
 static_assert(!ClockBacked<ClockSource_v::TscRaw>);
 static_assert(!ClockBacked<ClockSource_v::PmuCounter>);
 
 // ── ClockReader result-type provenance (the V-194 distinction) ──────
-static_assert(std::is_same_v<ClockReader<ClockSource_v::Boot>::result_type,
-                             sf::BootClockBytes<std::uint64_t>>);
-static_assert(std::is_same_v<ClockReader<ClockSource_v::Monotonic>::result_type,
-                             sf::MonotonicClockBytes<std::uint64_t>>);
-static_assert(!std::is_same_v<ClockReader<ClockSource_v::Boot>,
-                              ClockReader<ClockSource_v::Monotonic>>);
+static_assert(std::is_same_v<ClockReader<ClockSource_v::Boot>::result_type, sf::BootClockBytes<std::uint64_t>>);
+static_assert(
+    std::is_same_v<ClockReader<ClockSource_v::Monotonic>::result_type, sf::MonotonicClockBytes<std::uint64_t>>);
+static_assert(!std::is_same_v<ClockReader<ClockSource_v::Boot>, ClockReader<ClockSource_v::Monotonic>>);
 
 // ── IsSingletonCpuPin gate ──────────────────────────────────────────
 using SinglePin = sf::CpuPinned<ml::AffinityMask::single(0), sf::PinningPosture::PinnedExplicit, int>;
-using MultiPin  = sf::CpuPinned<ml::AffinityMask::range(0, 1), sf::PinningPosture::PinnedExplicit, int>;
-static_assert( IsSingletonCpuPin<SinglePin>);
+using MultiPin = sf::CpuPinned<ml::AffinityMask::range(0, 1), sf::PinningPosture::PinnedExplicit, int>;
+static_assert(IsSingletonCpuPin<SinglePin>);
 static_assert(!IsSingletonCpuPin<MultiPin>);
 static_assert(!IsSingletonCpuPin<int>);
 
 // ── TscReader result-type per mode ──────────────────────────────────
-static_assert(std::is_same_v<TscReader<TscMode::Raw, SinglePin>::result_type,
-                             sf::TscBytes<std::uint64_t>>);
+static_assert(std::is_same_v<TscReader<TscMode::Raw, SinglePin>::result_type, sf::TscBytes<std::uint64_t>>);
 static_assert(std::is_same_v<TscReader<TscMode::SerializedPinned, SinglePin>::result_type,
                              sf::TscSerializedBytes<std::uint64_t>>);
 
@@ -367,14 +364,13 @@ static_assert(BoundedSleeper<1'000'000>::max_nanos == 1'000'000ULL);
 inline bool runtime_smoke_test() {
     namespace eff_t = ::crucible::effects;
     eff_t::ColdInitCtx init{};
-    eff_t::BgDrainCtx  bg{};
+    eff_t::BgDrainCtx bg{};
 
     auto boot_reader = mint_clock_reader<ClockSource_v::Boot>(init);
     const auto t0 = boot_reader.read();
     if (t0.peek() == 0) return false;  // CLOCK_BOOTTIME is monotonic-positive
 
-    auto pin = sf::mint_cpu_pinned<ml::AffinityMask::single(0),
-                                   sf::PinningPosture::PinnedExplicit, int>(0);
+    auto pin = sf::mint_cpu_pinned<ml::AffinityMask::single(0), sf::PinningPosture::PinnedExplicit, int>(0);
     auto tsc_reader = mint_tsc_reader<TscMode::Raw>(init, std::move(pin));
     (void)tsc_reader.read();
 

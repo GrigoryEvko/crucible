@@ -104,7 +104,7 @@
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/lattices/ToleranceLattice.h>
 
-#include <cstdlib>      // std::abort in the runtime smoke test
+#include <cstdlib>  // std::abort in the runtime smoke test
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -122,14 +122,10 @@ template <Tolerance T_at, typename T>
 class [[nodiscard]] NumericalTier {
 public:
     // ── Public type aliases ─────────────────────────────────────────
-    using value_type   = T;
+    using value_type = T;
     using lattice_type = ToleranceLattice::At<T_at>;
-    using graded_type  = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Absolute,
-        lattice_type,
-        T>;
-    static constexpr ::crucible::algebra::ModalityKind modality =
-        ::crucible::algebra::ModalityKind::Absolute;
+    using graded_type = ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
+    static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::Absolute;
 
     // The pinned tier — exposed as a static constexpr for callers
     // doing tier-aware dispatch without instantiating the wrapper.
@@ -141,7 +137,6 @@ private:
     graded_type impl_;
 
 public:
-
     // ── Construction ────────────────────────────────────────────────
     //
     // Default: T{} at the pinned tier.  The pinned tier is a type-
@@ -159,37 +154,34 @@ public:
     // constructor at recipe emit sites — the default ctor exists
     // for compatibility with std::array<NumericalTier<...>, N> /
     // struct-field default-init contexts.
-    constexpr NumericalTier() noexcept(
-        std::is_nothrow_default_constructible_v<T>)
+    constexpr NumericalTier() noexcept(std::is_nothrow_default_constructible_v<T>)
         : impl_{T{}, typename lattice_type::element_type{}} {}
 
     // Explicit construction from a T value.  The most common
     // production pattern — a kernel emit produces a value under the
     // declared recipe tier; the wrapper binds that tier into the type.
-    constexpr explicit NumericalTier(T value) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    constexpr explicit NumericalTier(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(value), typename lattice_type::element_type{}} {}
 
     // In-place construction — avoids moving T through a temporary.
     // Mirrors Secret<T>'s std::in_place_t pattern.
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr explicit NumericalTier(std::in_place_t, Args&&... args)
-        noexcept(std::is_nothrow_constructible_v<T, Args...>
-                 && std::is_nothrow_move_constructible_v<T>)
-        : impl_{T(std::forward<Args>(args)...),
-                typename lattice_type::element_type{}} {}
+    constexpr explicit NumericalTier(std::in_place_t,
+                                     Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
+                                                              && std::is_nothrow_move_constructible_v<T>)
+        : impl_{T(std::forward<Args>(args)...), typename lattice_type::element_type{}} {}
 
     // Defaulted copy/move/destroy — NumericalTier IS COPYABLE.  A
     // tier pin is a static property of the value; copying a value
     // copies its tier promise unchanged.  Contrast with Linear<T>
     // (which deletes copy because the value identity IS the
     // ownership) — NumericalTier's invariant survives copying.
-    constexpr NumericalTier(const NumericalTier&)            = default;
-    constexpr NumericalTier(NumericalTier&&)                 = default;
+    constexpr NumericalTier(const NumericalTier&) = default;
+    constexpr NumericalTier(NumericalTier&&) = default;
     constexpr NumericalTier& operator=(const NumericalTier&) = default;
-    constexpr NumericalTier& operator=(NumericalTier&&)      = default;
-    ~NumericalTier()                                         = default;
+    constexpr NumericalTier& operator=(NumericalTier&&) = default;
+    ~NumericalTier() = default;
 
     // Equality: compares value bytes within the SAME tier pin.  Cross-
     // tier comparison is rejected at overload resolution because the
@@ -198,10 +190,11 @@ public:
     // with NumericalTier<ULP_FP16, T> fails to find a viable operator==
     // — the pinned-tier identity is preserved at the comparison
     // boundary.  Mirrors Stale's family-parity discipline.
-    [[nodiscard]] friend constexpr bool operator==(
-        NumericalTier const& a, NumericalTier const& b) noexcept(
-        noexcept(a.peek() == b.peek()))
-        requires requires(T const& x, T const& y) { { x == y } -> std::convertible_to<bool>; }
+    [[nodiscard]] friend constexpr bool operator==(NumericalTier const& a,
+                                                   NumericalTier const& b) noexcept(noexcept(a.peek() == b.peek()))
+        requires requires(T const& x, T const& y) {
+            { x == y } -> std::convertible_to<bool>;
+        }
     {
         return a.peek() == b.peek();
     }
@@ -218,18 +211,12 @@ public:
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return graded_type::lattice_name();
-    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 
     // ── Read-only access ────────────────────────────────────────────
-    [[nodiscard]] constexpr T const& peek() const& noexcept {
-        return impl_.peek();
-    }
+    [[nodiscard]] constexpr T const& peek() const& noexcept { return impl_.peek(); }
 
-    [[nodiscard]] constexpr T consume() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return std::move(impl_).consume();
     }
 
@@ -243,24 +230,16 @@ public:
     // contents post-construction is asserting the new bytes also
     // satisfy BITEXACT — the discipline lives at the call site, the
     // wrapper trusts it.
-    [[nodiscard]] constexpr T& peek_mut() & noexcept {
-        return impl_.peek_mut();
-    }
+    [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(); }
 
     // ── swap (forwarded from Graded substrate) ─────────────────────
     //
     // Standard exchange — swaps T values between two NumericalTier
     // instances pinned at the SAME tier.  Cross-tier swap is a
     // compile error (the types differ) — that's the point.
-    constexpr void swap(NumericalTier& other)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
-        impl_.swap(other.impl_);
-    }
+    constexpr void swap(NumericalTier& other) noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
 
-    friend constexpr void swap(NumericalTier& a, NumericalTier& b)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
+    friend constexpr void swap(NumericalTier& a, NumericalTier& b) noexcept(std::is_nothrow_swappable_v<T>) {
         a.swap(b);
     }
 
@@ -300,21 +279,18 @@ public:
     // Two overloads (const& / &&) mirror Stale's combine_max pattern
     // — the const& form copies T; the && form moves it.
     template <Tolerance LooserTier>
-        requires (ToleranceLattice::leq(LooserTier, T_at))
-    [[nodiscard]] constexpr NumericalTier<LooserTier, T> relax() const&
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
+        requires(ToleranceLattice::leq(LooserTier, T_at))
+    [[nodiscard]] constexpr NumericalTier<LooserTier, T>
+    relax() const& noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
     {
         return NumericalTier<LooserTier, T>{this->peek()};
     }
 
     template <Tolerance LooserTier>
-        requires (ToleranceLattice::leq(LooserTier, T_at))
-    [[nodiscard]] constexpr NumericalTier<LooserTier, T> relax() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
-        return NumericalTier<LooserTier, T>{
-            std::move(impl_).consume()};
+        requires(ToleranceLattice::leq(LooserTier, T_at))
+    [[nodiscard]] constexpr NumericalTier<LooserTier, T> relax() && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return NumericalTier<LooserTier, T>{std::move(impl_).consume()};
     }
 };
 
@@ -334,13 +310,20 @@ public:
 // Per-tier aliases for the most common production sites.  Mirrors
 // the tolerance:: namespace in ToleranceLattice.h.
 namespace numerical_tier {
-    template <typename T> using Relaxed  = NumericalTier<Tolerance::RELAXED,  T>;
-    template <typename T> using Int8     = NumericalTier<Tolerance::ULP_INT8, T>;
-    template <typename T> using Fp8      = NumericalTier<Tolerance::ULP_FP8,  T>;
-    template <typename T> using Fp16     = NumericalTier<Tolerance::ULP_FP16, T>;
-    template <typename T> using Fp32     = NumericalTier<Tolerance::ULP_FP32, T>;
-    template <typename T> using Fp64     = NumericalTier<Tolerance::ULP_FP64, T>;
-    template <typename T> using Bitexact = NumericalTier<Tolerance::BITEXACT, T>;
+template <typename T>
+using Relaxed = NumericalTier<Tolerance::RELAXED, T>;
+template <typename T>
+using Int8 = NumericalTier<Tolerance::ULP_INT8, T>;
+template <typename T>
+using Fp8 = NumericalTier<Tolerance::ULP_FP8, T>;
+template <typename T>
+using Fp16 = NumericalTier<Tolerance::ULP_FP16, T>;
+template <typename T>
+using Fp32 = NumericalTier<Tolerance::ULP_FP32, T>;
+template <typename T>
+using Fp64 = NumericalTier<Tolerance::ULP_FP64, T>;
+template <typename T>
+using Bitexact = NumericalTier<Tolerance::BITEXACT, T>;
 }  // namespace numerical_tier
 
 // ── Layout invariants ───────────────────────────────────────────────
@@ -351,37 +334,40 @@ namespace numerical_tier {
 // per-tier layout drift.
 namespace detail::numerical_tier_layout {
 
-template <typename T> using BitexactN = NumericalTier<Tolerance::BITEXACT, T>;
-template <typename T> using Fp32N     = NumericalTier<Tolerance::ULP_FP32, T>;
-template <typename T> using RelaxedN  = NumericalTier<Tolerance::RELAXED,  T>;
+template <typename T>
+using BitexactN = NumericalTier<Tolerance::BITEXACT, T>;
+template <typename T>
+using Fp32N = NumericalTier<Tolerance::ULP_FP32, T>;
+template <typename T>
+using RelaxedN = NumericalTier<Tolerance::RELAXED, T>;
 
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(BitexactN, char);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(BitexactN, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(BitexactN, double);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(Fp32N,     int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(Fp32N,     double);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(RelaxedN,  int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(RelaxedN,  double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(Fp32N, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(Fp32N, double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(RelaxedN, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(RelaxedN, double);
 
 }  // namespace detail::numerical_tier_layout
 
 // Direct sizeof witnesses — EBO collapse must hold for the
 // production-typical T sizes regardless of which tier is pinned.
-static_assert(sizeof(NumericalTier<Tolerance::RELAXED,  int>)    == sizeof(int));
-static_assert(sizeof(NumericalTier<Tolerance::ULP_INT8, int>)    == sizeof(int));
-static_assert(sizeof(NumericalTier<Tolerance::ULP_FP8,  int>)    == sizeof(int));
-static_assert(sizeof(NumericalTier<Tolerance::ULP_FP16, int>)    == sizeof(int));
-static_assert(sizeof(NumericalTier<Tolerance::ULP_FP32, int>)    == sizeof(int));
-static_assert(sizeof(NumericalTier<Tolerance::ULP_FP64, int>)    == sizeof(int));
-static_assert(sizeof(NumericalTier<Tolerance::BITEXACT, int>)    == sizeof(int));
+static_assert(sizeof(NumericalTier<Tolerance::RELAXED, int>) == sizeof(int));
+static_assert(sizeof(NumericalTier<Tolerance::ULP_INT8, int>) == sizeof(int));
+static_assert(sizeof(NumericalTier<Tolerance::ULP_FP8, int>) == sizeof(int));
+static_assert(sizeof(NumericalTier<Tolerance::ULP_FP16, int>) == sizeof(int));
+static_assert(sizeof(NumericalTier<Tolerance::ULP_FP32, int>) == sizeof(int));
+static_assert(sizeof(NumericalTier<Tolerance::ULP_FP64, int>) == sizeof(int));
+static_assert(sizeof(NumericalTier<Tolerance::BITEXACT, int>) == sizeof(int));
 static_assert(sizeof(NumericalTier<Tolerance::BITEXACT, double>) == sizeof(double));
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::numerical_tier_self_test {
 
 using BitexactInt = NumericalTier<Tolerance::BITEXACT, int>;
-using Fp16Int     = NumericalTier<Tolerance::ULP_FP16, int>;
-using RelaxedInt  = NumericalTier<Tolerance::RELAXED,  int>;
+using Fp16Int = NumericalTier<Tolerance::ULP_FP16, int>;
+using RelaxedInt = NumericalTier<Tolerance::RELAXED, int>;
 
 // ── Construction paths ─────────────────────────────────────────────
 inline constexpr BitexactInt nt_default{};
@@ -393,8 +379,8 @@ static_assert(nt_explicit.peek() == 42);
 
 // ── Pinned tier accessor ───────────────────────────────────────────
 static_assert(BitexactInt::tier == Tolerance::BITEXACT);
-static_assert(Fp16Int::tier     == Tolerance::ULP_FP16);
-static_assert(RelaxedInt::tier  == Tolerance::RELAXED);
+static_assert(Fp16Int::tier == Tolerance::ULP_FP16);
+static_assert(RelaxedInt::tier == Tolerance::RELAXED);
 
 // ── satisfies<RequiredTier> — subsumption-up direction ─────────────
 //
@@ -408,41 +394,37 @@ static_assert(BitexactInt::satisfies<Tolerance::ULP_INT8>);
 static_assert(BitexactInt::satisfies<Tolerance::RELAXED>);
 
 // An FP16 producer satisfies looser-or-equal consumers only.
-static_assert( Fp16Int::satisfies<Tolerance::ULP_FP16>);    // self
-static_assert( Fp16Int::satisfies<Tolerance::ULP_FP8>);     // looser
-static_assert( Fp16Int::satisfies<Tolerance::ULP_INT8>);
-static_assert( Fp16Int::satisfies<Tolerance::RELAXED>);
-static_assert(!Fp16Int::satisfies<Tolerance::ULP_FP32>);    // tighter
+static_assert(Fp16Int::satisfies<Tolerance::ULP_FP16>);  // self
+static_assert(Fp16Int::satisfies<Tolerance::ULP_FP8>);  // looser
+static_assert(Fp16Int::satisfies<Tolerance::ULP_INT8>);
+static_assert(Fp16Int::satisfies<Tolerance::RELAXED>);
+static_assert(!Fp16Int::satisfies<Tolerance::ULP_FP32>);  // tighter
 static_assert(!Fp16Int::satisfies<Tolerance::ULP_FP64>);
 static_assert(!Fp16Int::satisfies<Tolerance::BITEXACT>);
 
 // A RELAXED producer satisfies only RELAXED consumers.
-static_assert( RelaxedInt::satisfies<Tolerance::RELAXED>);
+static_assert(RelaxedInt::satisfies<Tolerance::RELAXED>);
 static_assert(!RelaxedInt::satisfies<Tolerance::ULP_INT8>);
 static_assert(!RelaxedInt::satisfies<Tolerance::BITEXACT>);
 
 // ── relax<LooserTier> — DOWN-the-lattice conversion ────────────────
 //
 // BITEXACT relaxes to any tier.
-inline constexpr auto from_bitexact_to_fp16 =
-    BitexactInt{42}.relax<Tolerance::ULP_FP16>();
+inline constexpr auto from_bitexact_to_fp16 = BitexactInt{42}.relax<Tolerance::ULP_FP16>();
 static_assert(from_bitexact_to_fp16.peek() == 42);
 static_assert(from_bitexact_to_fp16.tier == Tolerance::ULP_FP16);
 
-inline constexpr auto from_bitexact_to_relaxed =
-    BitexactInt{99}.relax<Tolerance::RELAXED>();
+inline constexpr auto from_bitexact_to_relaxed = BitexactInt{99}.relax<Tolerance::RELAXED>();
 static_assert(from_bitexact_to_relaxed.peek() == 99);
 static_assert(from_bitexact_to_relaxed.tier == Tolerance::RELAXED);
 
 // FP16 relaxes to FP8 / INT8 / RELAXED but NOT to FP32 / FP64 /
 // BITEXACT (those are stricter; the requires-clause refuses).
-inline constexpr auto from_fp16_to_int8 =
-    Fp16Int{7}.relax<Tolerance::ULP_INT8>();
+inline constexpr auto from_fp16_to_int8 = Fp16Int{7}.relax<Tolerance::ULP_INT8>();
 static_assert(from_fp16_to_int8.peek() == 7);
 static_assert(from_fp16_to_int8.tier == Tolerance::ULP_INT8);
 
-inline constexpr auto from_fp16_to_self =
-    Fp16Int{8}.relax<Tolerance::ULP_FP16>();   // identity relax (allowed)
+inline constexpr auto from_fp16_to_self = Fp16Int{8}.relax<Tolerance::ULP_FP16>();  // identity relax (allowed)
 static_assert(from_fp16_to_self.peek() == 8);
 
 // SFINAE-style detector: relax<TighterTier> on a looser-pinned
@@ -454,13 +436,13 @@ concept can_relax = requires(W w) {
     { std::move(w).template relax<T_target>() };
 };
 
-static_assert( can_relax<BitexactInt, Tolerance::ULP_FP16>);   // ✓ down
-static_assert( can_relax<BitexactInt, Tolerance::RELAXED>);    // ✓ down
-static_assert( can_relax<Fp16Int,     Tolerance::ULP_INT8>);   // ✓ down
-static_assert( can_relax<Fp16Int,     Tolerance::ULP_FP16>);   // ✓ self
-static_assert(!can_relax<Fp16Int,     Tolerance::ULP_FP32>);   // ✗ up
-static_assert(!can_relax<Fp16Int,     Tolerance::BITEXACT>);   // ✗ up
-static_assert(!can_relax<RelaxedInt,  Tolerance::ULP_INT8>);   // ✗ up
+static_assert(can_relax<BitexactInt, Tolerance::ULP_FP16>);  // ✓ down
+static_assert(can_relax<BitexactInt, Tolerance::RELAXED>);  // ✓ down
+static_assert(can_relax<Fp16Int, Tolerance::ULP_INT8>);  // ✓ down
+static_assert(can_relax<Fp16Int, Tolerance::ULP_FP16>);  // ✓ self
+static_assert(!can_relax<Fp16Int, Tolerance::ULP_FP32>);  // ✗ up
+static_assert(!can_relax<Fp16Int, Tolerance::BITEXACT>);  // ✗ up
+static_assert(!can_relax<RelaxedInt, Tolerance::ULP_INT8>);  // ✗ up
 
 // ── Diagnostic forwarders ─────────────────────────────────────────
 //
@@ -473,8 +455,8 @@ static_assert(BitexactInt::value_type_name().ends_with("int"));
 // the algebra-level free function lattice_name<L>().  At<T_at>'s
 // own name() returns the per-tier hand-written string verbatim.
 static_assert(BitexactInt::lattice_name() == "ToleranceLattice::At<BITEXACT>");
-static_assert(Fp16Int::lattice_name()     == "ToleranceLattice::At<ULP_FP16>");
-static_assert(RelaxedInt::lattice_name()  == "ToleranceLattice::At<RELAXED>");
+static_assert(Fp16Int::lattice_name() == "ToleranceLattice::At<ULP_FP16>");
+static_assert(RelaxedInt::lattice_name() == "ToleranceLattice::At<RELAXED>");
 
 // ── swap exchanges T values within the same tier pin ──────────────
 [[nodiscard]] consteval bool swap_exchanges_within_same_tier() noexcept {
@@ -537,12 +519,12 @@ concept can_equality_compare = requires(W const& a, W const& b) {
     { a == b } -> std::convertible_to<bool>;
 };
 
-static_assert( can_equality_compare<BitexactInt>);
+static_assert(can_equality_compare<BitexactInt>);
 static_assert(!can_equality_compare<NumericalTier<Tolerance::BITEXACT, NoEqualityT>>,
-    "operator== must be SFINAE-disabled when T lacks operator== — "
-    "without the requires-clause guard, the friend would emit a hard "
-    "error inside operator==(NumericalTier&,NumericalTier&) that "
-    "callers cannot suppress with concept-based dispatch.");
+              "operator== must be SFINAE-disabled when T lacks operator== — "
+              "without the requires-clause guard, the friend would emit a hard "
+              "error inside operator==(NumericalTier&,NumericalTier&) that "
+              "callers cannot suppress with concept-based dispatch.");
 
 // ── relax reflexivity ─────────────────────────────────────────────
 //
@@ -572,14 +554,13 @@ static_assert(BitexactInt::lattice_name().starts_with("ToleranceLattice::At<"));
 
 // ── Convenience aliases resolve correctly ────────────────────────
 static_assert(numerical_tier::Bitexact<int>::tier == Tolerance::BITEXACT);
-static_assert(numerical_tier::Fp32<int>::tier     == Tolerance::ULP_FP32);
-static_assert(numerical_tier::Fp16<int>::tier     == Tolerance::ULP_FP16);
-static_assert(numerical_tier::Fp8<int>::tier      == Tolerance::ULP_FP8);
-static_assert(numerical_tier::Int8<int>::tier     == Tolerance::ULP_INT8);
-static_assert(numerical_tier::Relaxed<int>::tier  == Tolerance::RELAXED);
+static_assert(numerical_tier::Fp32<int>::tier == Tolerance::ULP_FP32);
+static_assert(numerical_tier::Fp16<int>::tier == Tolerance::ULP_FP16);
+static_assert(numerical_tier::Fp8<int>::tier == Tolerance::ULP_FP8);
+static_assert(numerical_tier::Int8<int>::tier == Tolerance::ULP_INT8);
+static_assert(numerical_tier::Relaxed<int>::tier == Tolerance::RELAXED);
 
-static_assert(std::is_same_v<numerical_tier::Bitexact<double>,
-                             NumericalTier<Tolerance::BITEXACT, double>>);
+static_assert(std::is_same_v<numerical_tier::Bitexact<double>, NumericalTier<Tolerance::BITEXACT, double>>);
 
 // ── Runtime smoke test ─────────────────────────────────────────────
 //
@@ -638,7 +619,7 @@ inline void runtime_smoke_test() {
 
     // Convenience-alias instantiation at runtime.
     numerical_tier::Bitexact<int> alias_form{123};
-    numerical_tier::Fp16<double>  fp16_form{3.14};
+    numerical_tier::Fp16<double> fp16_form{3.14};
     [[maybe_unused]] auto av = alias_form.peek();
     [[maybe_unused]] auto fv = fp16_form.peek();
 }

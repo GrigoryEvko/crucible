@@ -200,37 +200,21 @@ using federation::mint_federation_pool;
 using ::crucible::safety::proto::federation::federation_required_row;
 using ::crucible::safety::proto::federation::CtxFitsFederation;
 
-template <typename Org,
-          typename KeyTag = federation::AnyFederationKey,
-          typename Ctx,
-          typename SenderEndpoint,
+template <typename Org, typename KeyTag = federation::AnyFederationKey, typename Ctx, typename SenderEndpoint,
           typename ReceiverEndpoint>
     requires ::crucible::safety::proto::federation::CtxFitsFederation<Ctx>
 [[nodiscard]] constexpr auto mint_federation_channel(
-    Ctx const& ctx,
-    SenderEndpoint&& sender_endpoint,
-    ReceiverEndpoint&& receiver_endpoint,
-    ::crucible::safety::SharedPermission<
-        ::crucible::permissions::tag::FederatedPeer<Org>> admittance) noexcept
-{
+    Ctx const& ctx, SenderEndpoint&& sender_endpoint, ReceiverEndpoint&& receiver_endpoint,
+    ::crucible::safety::SharedPermission<::crucible::permissions::tag::FederatedPeer<Org>> admittance) noexcept {
     using ctx_row = typename Ctx::row_type;
-    using offending = ::crucible::effects::row_difference_t<
-        ::crucible::safety::proto::federation::federation_required_row,
-        ctx_row>;
+    using offending =
+        ::crucible::effects::row_difference_t<::crucible::safety::proto::federation::federation_required_row, ctx_row>;
     CRUCIBLE_ROW_MISMATCH_ASSERT(
-        (::crucible::decide::row_subset<
-            ::crucible::safety::proto::federation::federation_required_row,
-            ctx_row>()),
-        EffectRowMismatch,
-        &::crucible::safety::proto::federation::federation_mint_boundary,
-        ctx_row,
-        ::crucible::safety::proto::federation::federation_required_row,
-        offending);
-    return federation::mint_channel<Org, KeyTag>(
-        ctx,
-        std::forward<SenderEndpoint>(sender_endpoint),
-        std::forward<ReceiverEndpoint>(receiver_endpoint),
-        admittance);
+        (::crucible::decide::row_subset<::crucible::safety::proto::federation::federation_required_row, ctx_row>()),
+        EffectRowMismatch, &::crucible::safety::proto::federation::federation_mint_boundary, ctx_row,
+        ::crucible::safety::proto::federation::federation_required_row, offending);
+    return federation::mint_channel<Org, KeyTag>(ctx, std::forward<SenderEndpoint>(sender_endpoint),
+                                                 std::forward<ReceiverEndpoint>(receiver_endpoint), admittance);
 }
 
 }  // namespace crucible::fixy::sess
@@ -259,69 +243,42 @@ struct ProbeKey {};
 // so a substrate-side rename of any one fires here, not three TUs
 // deep.
 
-static_assert(std::is_same_v<ffed::SenderRole,   pfed::SenderRole>,
-    "fixy::sess::federation::SenderRole must reach substrate.  If "
-    "this red-lights, the namespace alias in SessFederation.h is "
-    "broken or substrate symbol moved.");
+static_assert(std::is_same_v<ffed::SenderRole, pfed::SenderRole>,
+              "fixy::sess::federation::SenderRole must reach substrate.  If "
+              "this red-lights, the namespace alias in SessFederation.h is "
+              "broken or substrate symbol moved.");
 static_assert(std::is_same_v<ffed::ReceiverRole, pfed::ReceiverRole>);
-static_assert(std::is_same_v<ffed::CoordRole,    pfed::CoordRole>);
+static_assert(std::is_same_v<ffed::CoordRole, pfed::CoordRole>);
 
-static_assert(std::is_same_v<ffed::AnyFederationKey,
-                             pfed::AnyFederationKey>);
+static_assert(std::is_same_v<ffed::AnyFederationKey, pfed::AnyFederationKey>);
 
 // Per-role projection protocols (3) — reach + parameterised round-trip.
-static_assert(std::is_same_v<
-    ffed::SenderProto<ProbeKey>,   pfed::SenderProto<ProbeKey>>);
-static_assert(std::is_same_v<
-    ffed::ReceiverProto<ProbeKey>, pfed::ReceiverProto<ProbeKey>>);
-static_assert(std::is_same_v<
-    ffed::CoordProto<ProbeKey>,    pfed::CoordProto<ProbeKey>>);
+static_assert(std::is_same_v<ffed::SenderProto<ProbeKey>, pfed::SenderProto<ProbeKey>>);
+static_assert(std::is_same_v<ffed::ReceiverProto<ProbeKey>, pfed::ReceiverProto<ProbeKey>>);
+static_assert(std::is_same_v<ffed::CoordProto<ProbeKey>, pfed::CoordProto<ProbeKey>>);
 
 // Expected canonical projections (3) — Sender/Receiver/Coord.
-static_assert(std::is_same_v<
-    ffed::ExpectedSenderProto<ProbeKey>,
-    pfed::ExpectedSenderProto<ProbeKey>>);
-static_assert(std::is_same_v<
-    ffed::ExpectedReceiverProto<ProbeKey>,
-    pfed::ExpectedReceiverProto<ProbeKey>>);
-static_assert(std::is_same_v<
-    ffed::ExpectedCoordProto<ProbeKey>,
-    pfed::ExpectedCoordProto<ProbeKey>>);
+static_assert(std::is_same_v<ffed::ExpectedSenderProto<ProbeKey>, pfed::ExpectedSenderProto<ProbeKey>>);
+static_assert(std::is_same_v<ffed::ExpectedReceiverProto<ProbeKey>, pfed::ExpectedReceiverProto<ProbeKey>>);
+static_assert(std::is_same_v<ffed::ExpectedCoordProto<ProbeKey>, pfed::ExpectedCoordProto<ProbeKey>>);
 
 // Global protocol + KeyTag-indexed alias (2).
-static_assert(std::is_same_v<ffed::FederationProtocol,
-                             pfed::FederationProtocol>);
-static_assert(std::is_same_v<
-    ffed::FederationProtocolFor<ProbeKey>,
-    pfed::FederationProtocolFor<ProbeKey>>);
+static_assert(std::is_same_v<ffed::FederationProtocol, pfed::FederationProtocol>);
+static_assert(std::is_same_v<ffed::FederationProtocolFor<ProbeKey>, pfed::FederationProtocolFor<ProbeKey>>);
 
 // Payload types (3 + 2 ContentAddressed aliases = 5 reach).
-static_assert(std::is_same_v<ffed::Ack<ProbeKey>,
-                             pfed::Ack<ProbeKey>>);
-static_assert(std::is_same_v<ffed::PullRequest<ProbeKey>,
-                             pfed::PullRequest<ProbeKey>>);
-static_assert(std::is_same_v<ffed::FederationEntryPayload<ProbeKey>,
-                             pfed::FederationEntryPayload<ProbeKey>>);
-static_assert(std::is_same_v<ffed::HeaderPayload<ProbeKey>,
-                             pfed::HeaderPayload<ProbeKey>>);
-static_assert(std::is_same_v<ffed::BodyPayload<ProbeKey>,
-                             pfed::BodyPayload<ProbeKey>>);
+static_assert(std::is_same_v<ffed::Ack<ProbeKey>, pfed::Ack<ProbeKey>>);
+static_assert(std::is_same_v<ffed::PullRequest<ProbeKey>, pfed::PullRequest<ProbeKey>>);
+static_assert(std::is_same_v<ffed::FederationEntryPayload<ProbeKey>, pfed::FederationEntryPayload<ProbeKey>>);
+static_assert(std::is_same_v<ffed::HeaderPayload<ProbeKey>, pfed::HeaderPayload<ProbeKey>>);
+static_assert(std::is_same_v<ffed::BodyPayload<ProbeKey>, pfed::BodyPayload<ProbeKey>>);
 
 // Verifier traits (2) — role_protocol_matches{,_v}.
-static_assert(ffed::role_protocol_matches_v<
-                  pfed::SenderRole,
-                  ffed::SenderProto<ProbeKey>,
-                  ProbeKey>,
-    "Verifier must admit (SenderRole, SenderProto, KeyTag).");
-static_assert(!ffed::role_protocol_matches_v<
-                  pfed::SenderRole,
-                  ffed::ReceiverProto<ProbeKey>,
-                  ProbeKey>,
-    "Verifier must REJECT (SenderRole, ReceiverProto, KeyTag).");
-static_assert(ffed::role_protocol_matches<
-                  pfed::CoordRole,
-                  ffed::CoordProto<ProbeKey>,
-                  ProbeKey>::value);
+static_assert(ffed::role_protocol_matches_v<pfed::SenderRole, ffed::SenderProto<ProbeKey>, ProbeKey>,
+              "Verifier must admit (SenderRole, SenderProto, KeyTag).");
+static_assert(!ffed::role_protocol_matches_v<pfed::SenderRole, ffed::ReceiverProto<ProbeKey>, ProbeKey>,
+              "Verifier must REJECT (SenderRole, ReceiverProto, KeyTag).");
+static_assert(ffed::role_protocol_matches<pfed::CoordRole, ffed::CoordProto<ProbeKey>, ProbeKey>::value);
 
 // ── B. Per-role + pool mints (4 using-decls direct reach) ──────────
 //
@@ -333,17 +290,15 @@ static_assert(ffed::role_protocol_matches<
 // that the function-template addresses exist and match the substrate.
 
 namespace fixy_sess_ns = ::crucible::fixy::sess;
-static_assert(
-    static_cast<void*>(nullptr) == static_cast<void*>(nullptr),
-    "Mint reach is exercised via runtime_smoke_test below — "
-    "consteval cannot take address of variadic function templates "
-    "without ctx + admittance fixtures.");
+static_assert(static_cast<void*>(nullptr) == static_cast<void*>(nullptr),
+              "Mint reach is exercised via runtime_smoke_test below — "
+              "consteval cannot take address of variadic function templates "
+              "without ctx + admittance fixtures.");
 
 // ── C. Row gate reach (federation_required_row + CtxFitsFederation) ─
 
-static_assert(std::is_same_v<
-    decltype(fixy_sess_ns::federation_required_row{}),
-    decltype(pfed::federation_required_row{})>,
+static_assert(
+    std::is_same_v<decltype(fixy_sess_ns::federation_required_row{}), decltype(pfed::federation_required_row{})>,
     "federation_required_row must reach identically through fixy::");
 
 // ── D. Cardinality witness ─────────────────────────────────────────
@@ -360,10 +315,9 @@ static_assert(std::is_same_v<
 // witnessed independently in test/test_fixy_sess_federation.cpp.
 
 constexpr int v065_fixy_surface_cardinality = 8;
-static_assert(v065_fixy_surface_cardinality == 8,
-    "fixy::sess:: V-065 fixy-side surface cardinality drifted — "
-    "update SessFederation.h using-decls AND this sentinel in "
-    "lockstep.");
+static_assert(v065_fixy_surface_cardinality == 8, "fixy::sess:: V-065 fixy-side surface cardinality drifted — "
+                                                  "update SessFederation.h using-decls AND this sentinel in "
+                                                  "lockstep.");
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Runtime smoke test (FIXY-U-103 discipline) ─────────────────────
@@ -388,31 +342,28 @@ inline void runtime_smoke_test() noexcept {
     namespace pfed_alias = ::crucible::safety::proto::federation;
     struct LocalKeyTag {};
 
-    using SenderP   = fed_alias::SenderProto<LocalKeyTag>;
+    using SenderP = fed_alias::SenderProto<LocalKeyTag>;
     using ReceiverP = fed_alias::ReceiverProto<LocalKeyTag>;
-    using CoordP    = fed_alias::CoordProto<LocalKeyTag>;
-    using GlobalP   = fed_alias::FederationProtocolFor<LocalKeyTag>;
+    using CoordP = fed_alias::CoordProto<LocalKeyTag>;
+    using GlobalP = fed_alias::FederationProtocolFor<LocalKeyTag>;
 
-    [[maybe_unused]] constexpr bool sender_id_ok =
-        std::is_same_v<SenderP, pfed_alias::SenderProto<LocalKeyTag>>;
-    [[maybe_unused]] constexpr bool receiver_id_ok =
-        std::is_same_v<ReceiverP, pfed_alias::ReceiverProto<LocalKeyTag>>;
-    [[maybe_unused]] constexpr bool coord_id_ok =
-        std::is_same_v<CoordP, pfed_alias::CoordProto<LocalKeyTag>>;
+    [[maybe_unused]] constexpr bool sender_id_ok = std::is_same_v<SenderP, pfed_alias::SenderProto<LocalKeyTag>>;
+    [[maybe_unused]] constexpr bool receiver_id_ok = std::is_same_v<ReceiverP, pfed_alias::ReceiverProto<LocalKeyTag>>;
+    [[maybe_unused]] constexpr bool coord_id_ok = std::is_same_v<CoordP, pfed_alias::CoordProto<LocalKeyTag>>;
     [[maybe_unused]] constexpr bool global_id_ok =
-        std::is_same_v<GlobalP,
-                       pfed_alias::FederationProtocolFor<LocalKeyTag>>;
+        std::is_same_v<GlobalP, pfed_alias::FederationProtocolFor<LocalKeyTag>>;
 
     [[maybe_unused]] constexpr bool sender_matches =
-        fed_alias::role_protocol_matches_v<
-            pfed_alias::SenderRole, SenderP, LocalKeyTag>;
+        fed_alias::role_protocol_matches_v<pfed_alias::SenderRole, SenderP, LocalKeyTag>;
     [[maybe_unused]] constexpr bool sender_rejects_receiver_role =
-        !fed_alias::role_protocol_matches_v<
-            pfed_alias::SenderRole, ReceiverP, LocalKeyTag>;
+        !fed_alias::role_protocol_matches_v<pfed_alias::SenderRole, ReceiverP, LocalKeyTag>;
 
-    (void) sender_id_ok;       (void) receiver_id_ok;
-    (void) coord_id_ok;        (void) global_id_ok;
-    (void) sender_matches;     (void) sender_rejects_receiver_role;
+    (void)sender_id_ok;
+    (void)receiver_id_ok;
+    (void)coord_id_ok;
+    (void)global_id_ok;
+    (void)sender_matches;
+    (void)sender_rejects_receiver_role;
 }
 
 }  // namespace crucible::fixy::sess::v065_self_test

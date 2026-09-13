@@ -69,44 +69,40 @@ using ::crucible::algebra::lattices::ControlFlowLattice;
 template <ControlFlow Tier, typename T>
 class [[nodiscard]] ControlFlowPinned {
 public:
-    using value_type   = T;
+    using value_type = T;
     using lattice_type = ControlFlowLattice::At<Tier>;
-    using graded_type  = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
-    static constexpr ::crucible::algebra::ModalityKind modality =
-        ::crucible::algebra::ModalityKind::Absolute;
+    using graded_type = ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
+    static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::Absolute;
     static constexpr ControlFlow tier = Tier;
 
 private:
     graded_type impl_;
 
 public:
-    constexpr ControlFlowPinned() noexcept(
-        std::is_nothrow_default_constructible_v<T>)
+    constexpr ControlFlowPinned() noexcept(std::is_nothrow_default_constructible_v<T>)
         : impl_{T{}, typename lattice_type::element_type{}} {}
 
-    constexpr explicit ControlFlowPinned(T value) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    constexpr explicit ControlFlowPinned(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(value), typename lattice_type::element_type{}} {}
 
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr explicit ControlFlowPinned(std::in_place_t, Args&&... args)
-        noexcept(std::is_nothrow_constructible_v<T, Args...>
-                 && std::is_nothrow_move_constructible_v<T>)
-        : impl_{T(std::forward<Args>(args)...),
-                typename lattice_type::element_type{}} {}
+    constexpr explicit ControlFlowPinned(std::in_place_t,
+                                         Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
+                                                                  && std::is_nothrow_move_constructible_v<T>)
+        : impl_{T(std::forward<Args>(args)...), typename lattice_type::element_type{}} {}
 
-    constexpr ControlFlowPinned(const ControlFlowPinned&)            = default;
-    constexpr ControlFlowPinned(ControlFlowPinned&&)                 = default;
+    constexpr ControlFlowPinned(const ControlFlowPinned&) = default;
+    constexpr ControlFlowPinned(ControlFlowPinned&&) = default;
     constexpr ControlFlowPinned& operator=(const ControlFlowPinned&) = default;
-    constexpr ControlFlowPinned& operator=(ControlFlowPinned&&)      = default;
-    ~ControlFlowPinned()                                             = default;
+    constexpr ControlFlowPinned& operator=(ControlFlowPinned&&) = default;
+    ~ControlFlowPinned() = default;
 
-    [[nodiscard]] friend constexpr bool operator==(
-        ControlFlowPinned const& a, ControlFlowPinned const& b) noexcept(
-        noexcept(a.peek() == b.peek()))
-        requires requires(T const& x, T const& y) { { x == y } -> std::convertible_to<bool>; }
+    [[nodiscard]] friend constexpr bool operator==(ControlFlowPinned const& a,
+                                                   ControlFlowPinned const& b) noexcept(noexcept(a.peek() == b.peek()))
+        requires requires(T const& x, T const& y) {
+            { x == y } -> std::convertible_to<bool>;
+        }
     {
         return a.peek() == b.peek();
     }
@@ -114,20 +110,18 @@ public:
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return graded_type::lattice_name();
-    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 
     [[nodiscard]] constexpr T const& peek() const& noexcept { return impl_.peek(); }
-    [[nodiscard]] constexpr T consume() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    { return std::move(impl_).consume(); }
+    [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return std::move(impl_).consume();
+    }
     [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(); }
 
-    constexpr void swap(ControlFlowPinned& other)
-        noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
-    friend constexpr void swap(ControlFlowPinned& a, ControlFlowPinned& b)
-        noexcept(std::is_nothrow_swappable_v<T>) { a.swap(b); }
+    constexpr void swap(ControlFlowPinned& other) noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
+    friend constexpr void swap(ControlFlowPinned& a, ControlFlowPinned& b) noexcept(std::is_nothrow_swappable_v<T>) {
+        a.swap(b);
+    }
 
     // ── satisfies<Ceiling> — ceiling-direction admission check ─────────
     // True iff this tier is WITHIN the consumer's ceiling: leq(Tier, C).
@@ -138,47 +132,53 @@ public:
     // Sound: a safer value may be conservatively declared more-capable.
     // Compile error when Higher < Tier (cannot claim safer-than-real).
     template <ControlFlow Higher>
-        requires (ControlFlowLattice::leq(Tier, Higher))
-    [[nodiscard]] constexpr ControlFlowPinned<Higher, T> widen() const&
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
+        requires(ControlFlowLattice::leq(Tier, Higher))
+    [[nodiscard]] constexpr ControlFlowPinned<Higher, T>
+    widen() const& noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
-    { return ControlFlowPinned<Higher, T>{this->peek()}; }
+    {
+        return ControlFlowPinned<Higher, T>{this->peek()};
+    }
 
     template <ControlFlow Higher>
-        requires (ControlFlowLattice::leq(Tier, Higher))
-    [[nodiscard]] constexpr ControlFlowPinned<Higher, T> widen() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    { return ControlFlowPinned<Higher, T>{std::move(impl_).consume()}; }
+        requires(ControlFlowLattice::leq(Tier, Higher))
+    [[nodiscard]] constexpr ControlFlowPinned<Higher, T> widen() && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return ControlFlowPinned<Higher, T>{std::move(impl_).consume()};
+    }
 };
 
 // ── §XXI Universal Mint factory (token mint) ────────────────────────
 template <ControlFlow Tier, typename T, typename... Args>
     requires std::is_constructible_v<T, Args...>
-[[nodiscard]] constexpr ControlFlowPinned<Tier, T> mint_control_flow(Args&&... args)
-    noexcept(std::is_nothrow_constructible_v<T, Args...>)
-{
+[[nodiscard]] constexpr ControlFlowPinned<Tier, T>
+mint_control_flow(Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>) {
     return ControlFlowPinned<Tier, T>{std::in_place, std::forward<Args>(args)...};
 }
 
 // ── Per-tier convenience aliases ────────────────────────────────────
 namespace control_flow_pin {
-    template <typename T> using Pure       = ControlFlowPinned<ControlFlow::Pure,       T>;
-    template <typename T> using AbortOnly  = ControlFlowPinned<ControlFlow::AbortOnly,  T>;
-    template <typename T> using ThrowOnly  = ControlFlowPinned<ControlFlow::ThrowOnly,  T>;
-    template <typename T> using MayLongjmp = ControlFlowPinned<ControlFlow::MayLongjmp, T>;
-    template <typename T> using MaySignal  = ControlFlowPinned<ControlFlow::MaySignal,  T>;
+template <typename T>
+using Pure = ControlFlowPinned<ControlFlow::Pure, T>;
+template <typename T>
+using AbortOnly = ControlFlowPinned<ControlFlow::AbortOnly, T>;
+template <typename T>
+using ThrowOnly = ControlFlowPinned<ControlFlow::ThrowOnly, T>;
+template <typename T>
+using MayLongjmp = ControlFlowPinned<ControlFlow::MayLongjmp, T>;
+template <typename T>
+using MaySignal = ControlFlowPinned<ControlFlow::MaySignal, T>;
 }  // namespace control_flow_pin
 
 // ── Layout invariants — regime-1 EBO collapse ───────────────────────
-static_assert(sizeof(ControlFlowPinned<ControlFlow::Pure,      int>)    == sizeof(int));
-static_assert(sizeof(ControlFlowPinned<ControlFlow::MaySignal, int>)    == sizeof(int));
+static_assert(sizeof(ControlFlowPinned<ControlFlow::Pure, int>) == sizeof(int));
+static_assert(sizeof(ControlFlowPinned<ControlFlow::MaySignal, int>) == sizeof(int));
 static_assert(sizeof(ControlFlowPinned<ControlFlow::ThrowOnly, double>) == sizeof(double));
-static_assert(sizeof(ControlFlowPinned<ControlFlow::Pure,      char>)   == sizeof(char));
+static_assert(sizeof(ControlFlowPinned<ControlFlow::Pure, char>) == sizeof(char));
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::control_flow_pinned_self_test {
 
-using PureInt   = ControlFlowPinned<ControlFlow::Pure,      int>;
+using PureInt = ControlFlowPinned<ControlFlow::Pure, int>;
 using SignalInt = ControlFlowPinned<ControlFlow::MaySignal, int>;
 
 inline constexpr PureInt cf_default{};
@@ -191,7 +191,7 @@ static_assert(PureInt::modality == ::crucible::algebra::ModalityKind::Absolute);
 // satisfies only the MaySignal ceiling.
 static_assert(PureInt::satisfies<ControlFlow::Pure>);
 static_assert(PureInt::satisfies<ControlFlow::MaySignal>);
-static_assert( SignalInt::satisfies<ControlFlow::MaySignal>);
+static_assert(SignalInt::satisfies<ControlFlow::MaySignal>);
 static_assert(!SignalInt::satisfies<ControlFlow::Pure>);
 static_assert(!SignalInt::satisfies<ControlFlow::ThrowOnly>);
 

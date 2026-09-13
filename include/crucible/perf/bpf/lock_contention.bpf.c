@@ -14,9 +14,9 @@
 #include "common.h"
 
 /* Futex operations we care about */
-#define FUTEX_WAIT         0
-#define FUTEX_WAIT_BITSET  9
-#define FUTEX_LOCK_PI      6
+#define FUTEX_WAIT 0
+#define FUTEX_WAIT_BITSET 9
+#define FUTEX_LOCK_PI 6
 
 /* ─── Maps ──────────────────────────────────────────────────────────── */
 
@@ -86,25 +86,21 @@ struct {
  *   field:... (timespec, uaddr2, val3)
  */
 SEC("tracepoint/syscalls/sys_enter_futex")
-int handle_futex_enter(struct trace_event_raw_sys_enter *ctx)
-{
-    if (!is_target())
-        return 0;
+int handle_futex_enter(struct trace_event_raw_sys_enter* ctx) {
+    if (!is_target()) return 0;
 
     /* Read futex op from args[1] (second arg to futex syscall) */
-    int op = (int)ctx->args[1] & 0x7F;  /* mask out FUTEX_PRIVATE_FLAG etc */
+    int op = (int)ctx->args[1] & 0x7F; /* mask out FUTEX_PRIVATE_FLAG etc */
 
     /* Only trace wait operations */
-    if (op != FUTEX_WAIT && op != FUTEX_WAIT_BITSET && op != FUTEX_LOCK_PI)
-        return 0;
+    if (op != FUTEX_WAIT && op != FUTEX_WAIT_BITSET && op != FUTEX_LOCK_PI) return 0;
 
     __u32 tid = get_tid();
-    __s32 sid = bpf_get_stackid(ctx, &lock_stacks,
-                                BPF_F_USER_STACK | BPF_F_FAST_STACK_CMP);
+    __s32 sid = bpf_get_stackid(ctx, &lock_stacks, BPF_F_USER_STACK | BPF_F_FAST_STACK_CMP);
 
     struct wait_info info = {
-        .addr = ctx->args[0],  /* futex uaddr */
-        .ts   = bpf_ktime_get_ns(),
+        .addr = ctx->args[0], /* futex uaddr */
+        .ts = bpf_ktime_get_ns(),
         .stack_id = sid >= 0 ? sid : -1,
     };
     bpf_map_update_elem(&wait_start, &tid, &info, BPF_ANY);
@@ -113,10 +109,8 @@ int handle_futex_enter(struct trace_event_raw_sys_enter *ctx)
 }
 
 SEC("tracepoint/syscalls/sys_exit_futex")
-int handle_futex_exit(struct trace_event_raw_sys_exit *ctx)
-{
-    if (!is_target())
-        return 0;
+int handle_futex_exit(struct trace_event_raw_sys_exit* ctx) {
+    if (!is_target()) return 0;
 
     /* GAPS-004d-AUDIT (2026-05-04): single bpf_ktime_get_ns() call.
      * Was two calls (one for delta, one for ts_ns) — wasted ~50 ns
@@ -125,9 +119,8 @@ int handle_futex_exit(struct trace_event_raw_sys_exit *ctx)
     __u64 now = bpf_ktime_get_ns();
 
     __u32 tid = get_tid();
-    struct wait_info *info = bpf_map_lookup_elem(&wait_start, &tid);
-    if (!info)
-        return 0;
+    struct wait_info* info = bpf_map_lookup_elem(&wait_start, &tid);
+    if (!info) return 0;
 
     __u64 delta = now - info->ts;
     struct lock_key key = {
@@ -139,7 +132,7 @@ int handle_futex_exit(struct trace_event_raw_sys_exit *ctx)
 
     /* Emit to zero-copy timeline (ts_ns written last for ordering) */
     __u32 tl_zero = 0;
-    struct lock_timeline *tl = bpf_map_lookup_elem(&lock_timeline, &tl_zero);
+    struct lock_timeline* tl = bpf_map_lookup_elem(&lock_timeline, &tl_zero);
     if (tl) {
         __u64 idx = __sync_fetch_and_add(&tl->hdr.write_idx, 1);
         __u32 slot = (__u32)(idx & TIMELINE_MASK);
@@ -162,12 +155,11 @@ int handle_futex_exit(struct trace_event_raw_sys_exit *ctx)
     }
 
     /* Aggregate contention */
-    struct lock_val *val = bpf_map_lookup_elem(&contention, &key);
+    struct lock_val* val = bpf_map_lookup_elem(&contention, &key);
     if (val) {
         __sync_fetch_and_add(&val->total_wait_ns, delta);
         __sync_fetch_and_add(&val->count, 1);
-        if (delta > val->max_wait_ns)
-            val->max_wait_ns = delta;
+        if (delta > val->max_wait_ns) val->max_wait_ns = delta;
     } else {
         struct lock_val new_val = {
             .total_wait_ns = delta,
@@ -179,9 +171,8 @@ int handle_futex_exit(struct trace_event_raw_sys_exit *ctx)
 
     /* Increment total counter */
     __u32 zero = 0;
-    __u64 *cnt = bpf_map_lookup_elem(&lock_wait_count, &zero);
-    if (cnt)
-        __sync_fetch_and_add(cnt, 1);
+    __u64* cnt = bpf_map_lookup_elem(&lock_wait_count, &zero);
+    if (cnt) __sync_fetch_and_add(cnt, 1);
 
     return 0;
 }

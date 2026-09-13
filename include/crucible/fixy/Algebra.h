@@ -58,16 +58,16 @@
 // Zero.  Template aliases ARE the substrate templates; zero new
 // instantiations introduced, zero new symbols emitted.
 
-#include <crucible/algebra/Algebra.h>      // pulls Graded + Lattice +
-                                           // Modality + AllLattices
+#include <crucible/algebra/Algebra.h>  // pulls Graded + Lattice +
+// Modality + AllLattices
 #include <crucible/algebra/GradedTrait.h>  // GradedWrapper concept +
-                                           // IsGraded probe
+// IsGraded probe
 #include <crucible/safety/DimensionTraits.h>  // FIXY-U-061: wrapper_*
-                                              // accessors + verify_quadruple
-                                              // (transitively pulls every
-                                              // safety/ wrapper that ships a
-                                              // wrapper_dimension<W>
-                                              // partial specialization)
+// accessors + verify_quadruple
+// (transitively pulls every
+// safety/ wrapper that ships a
+// wrapper_dimension<W>
+// partial specialization)
 
 namespace crucible::fixy::algebra {
 
@@ -86,9 +86,9 @@ using ::crucible::algebra::CoeffectModality;
 
 // Compile-time predicates: has_counit_v / has_unit_v / has_grade_only_v.
 template <ModalityKind K>
-inline constexpr bool has_counit_v     = ::crucible::algebra::has_counit_v<K>;
+inline constexpr bool has_counit_v = ::crucible::algebra::has_counit_v<K>;
 template <ModalityKind K>
-inline constexpr bool has_unit_v       = ::crucible::algebra::has_unit_v<K>;
+inline constexpr bool has_unit_v = ::crucible::algebra::has_unit_v<K>;
 template <ModalityKind K>
 inline constexpr bool has_grade_only_v = ::crucible::algebra::has_grade_only_v<K>;
 
@@ -97,8 +97,7 @@ inline constexpr bool has_grade_only_v = ::crucible::algebra::has_grade_only_v<K
 namespace modality = ::crucible::algebra::modality;
 
 // Reflection-derived cardinality of ModalityKind.
-inline constexpr std::size_t modality_kind_count =
-    ::crucible::algebra::modality_kind_count;
+inline constexpr std::size_t modality_kind_count = ::crucible::algebra::modality_kind_count;
 
 using ::crucible::algebra::modality_name;
 
@@ -277,13 +276,12 @@ using ::crucible::safety::verify_quadruple;
 namespace crucible::fixy::algebra::self_test {
 
 // Substrate identity.
-static_assert(std::is_same_v<
-    Graded<ModalityKind::Absolute, lattices::QttSemiring::At<lattices::QttGrade::One>, int>,
-    ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Absolute,
-        ::crucible::algebra::lattices::QttSemiring::At<
-            ::crucible::algebra::lattices::QttGrade::One>,
-        int>>,
+static_assert(
+    std::is_same_v<
+        Graded<ModalityKind::Absolute, lattices::QttSemiring::At<lattices::QttGrade::One>, int>,
+        ::crucible::algebra::Graded<
+            ::crucible::algebra::ModalityKind::Absolute,
+            ::crucible::algebra::lattices::QttSemiring::At<::crucible::algebra::lattices::QttGrade::One>, int>>,
     "fixy::algebra::Graded must alias algebra::Graded");
 
 // Concept passes through unchanged.
@@ -294,8 +292,8 @@ static_assert(Semiring<lattices::QttSemiring>);
 static_assert(Semiring<lattices::StalenessSemiring>);
 
 // Modality enum passes through unchanged.
-static_assert(ModalityKind::Absolute      == ::crucible::algebra::ModalityKind::Absolute);
-static_assert(ModalityKind::Comonad       == ::crucible::algebra::ModalityKind::Comonad);
+static_assert(ModalityKind::Absolute == ::crucible::algebra::ModalityKind::Absolute);
+static_assert(ModalityKind::Comonad == ::crucible::algebra::ModalityKind::Comonad);
 static_assert(ModalityKind::RelativeMonad == ::crucible::algebra::ModalityKind::RelativeMonad);
 
 // fixy-A4-012: substrate-cross-check.  Mirrors fixy/Dim.h:140-147 — the
@@ -309,14 +307,13 @@ static_assert(ModalityKind::RelativeMonad == ::crucible::algebra::ModalityKind::
 // Both sides of the comparison derive from the same enum, so under
 // normal operation this assertion is tautological — adding a new
 // modality enumerator bumps both sides together.
-static_assert(modality_kind_count
-              == std::meta::enumerators_of(^^::crucible::algebra::ModalityKind).size(),
-    "fixy::algebra — substrate algebra::modality_kind_count has drifted "
-    "from the reflection-derived enumerator count of algebra::ModalityKind.  "
-    "Either the substrate constant was manually maintained (and forgot to "
-    "bump on enumerator addition) or reflection is reporting a different "
-    "enum than the substrate exposes.  Investigate algebra/Modality.h:74 — "
-    "it MUST remain `std::meta::enumerators_of(^^ModalityKind).size()`.");
+static_assert(modality_kind_count == std::meta::enumerators_of(^^::crucible::algebra::ModalityKind).size(),
+              "fixy::algebra — substrate algebra::modality_kind_count has drifted "
+              "from the reflection-derived enumerator count of algebra::ModalityKind.  "
+              "Either the substrate constant was manually maintained (and forgot to "
+              "bump on enumerator addition) or reflection is reporting a different "
+              "enum than the substrate exposes.  Investigate algebra/Modality.h:74 — "
+              "it MUST remain `std::meta::enumerators_of(^^ModalityKind).size()`.");
 
 // fixy-M-01: IsGraded strict-identity witness.  The fixy doc-block
 // previously characterised IsGraded as a "wrapper-level" probe, which
@@ -324,13 +321,10 @@ static_assert(modality_kind_count
 // "is T LITERALLY a Graded<M, L, V> specialization?" — see Graded.h
 // :1365-1366.  These two witnesses lock the strict-identity reading
 // down: a true Graded passes, a bare value type fails.
-static_assert(IsGraded<Graded<ModalityKind::Absolute,
-                              lattices::QttSemiring::At<lattices::QttGrade::One>,
-                              int>>,
-    "fixy::algebra::IsGraded must accept Graded<...> specializations.");
-static_assert(!IsGraded<int>,
-    "fixy::algebra::IsGraded must reject bare types — strict identity, "
-    "not structural / wrapper-level (the latter is GradedWrapper's role).");
+static_assert(IsGraded<Graded<ModalityKind::Absolute, lattices::QttSemiring::At<lattices::QttGrade::One>, int>>,
+              "fixy::algebra::IsGraded must accept Graded<...> specializations.");
+static_assert(!IsGraded<int>, "fixy::algebra::IsGraded must reject bare types — strict identity, "
+                              "not structural / wrapper-level (the latter is GradedWrapper's role).");
 
 }  // namespace crucible::fixy::algebra::self_test
 
@@ -352,10 +346,10 @@ namespace ssaf = ::crucible::safety;
 using WRefined = ssaf::Refined<ssaf::positive, int>;
 
 // Tier-S: Usage (linear).  Linear<int>.
-using WLinear  = ssaf::Linear<int>;
+using WLinear = ssaf::Linear<int>;
 
 // Tier-S: Provenance.  Tagged<int, source::FromUser>.
-using WTagged  = ssaf::Tagged<int, ssaf::source::FromUser>;
+using WTagged = ssaf::Tagged<int, ssaf::source::FromUser>;
 
 // Tier-L: Representation.  TimeOrdered<int, 4, Tag>.
 struct TimeTag {};
@@ -374,37 +368,27 @@ static_assert(!fad::DimensionedGradedWrapper<int>);
 static_assert(!fad::DimensionedGradedWrapper<void*>);
 
 // ── wrapper_dimension_v through the alias agrees with substrate ────
-static_assert(fad::wrapper_dimension_v<WRefined>
-              == ssaf::wrapper_dimension_v<WRefined>);
-static_assert(fad::wrapper_dimension_v<WLinear>
-              == ssaf::wrapper_dimension_v<WLinear>);
-static_assert(fad::wrapper_dimension_v<WTagged>
-              == ssaf::wrapper_dimension_v<WTagged>);
-static_assert(fad::wrapper_dimension_v<WTimeOrdered>
-              == ssaf::wrapper_dimension_v<WTimeOrdered>);
-static_assert(fad::wrapper_dimension_v<WEpochVersioned>
-              == ssaf::wrapper_dimension_v<WEpochVersioned>);
+static_assert(fad::wrapper_dimension_v<WRefined> == ssaf::wrapper_dimension_v<WRefined>);
+static_assert(fad::wrapper_dimension_v<WLinear> == ssaf::wrapper_dimension_v<WLinear>);
+static_assert(fad::wrapper_dimension_v<WTagged> == ssaf::wrapper_dimension_v<WTagged>);
+static_assert(fad::wrapper_dimension_v<WTimeOrdered> == ssaf::wrapper_dimension_v<WTimeOrdered>);
+static_assert(fad::wrapper_dimension_v<WEpochVersioned> == ssaf::wrapper_dimension_v<WEpochVersioned>);
 
 // ── wrapper_tier_v hits the exact tier per substrate self-test ─────
-static_assert(fad::wrapper_tier_v<WLinear>          == ssaf::TierKind::Semiring);
-static_assert(fad::wrapper_tier_v<WRefined>         == ssaf::TierKind::Foundational);
-static_assert(fad::wrapper_tier_v<WTagged>          == ssaf::TierKind::Semiring);
-static_assert(fad::wrapper_tier_v<WTimeOrdered>     == ssaf::TierKind::Lattice);
-static_assert(fad::wrapper_tier_v<WEpochVersioned>  == ssaf::TierKind::Versioned);
+static_assert(fad::wrapper_tier_v<WLinear> == ssaf::TierKind::Semiring);
+static_assert(fad::wrapper_tier_v<WRefined> == ssaf::TierKind::Foundational);
+static_assert(fad::wrapper_tier_v<WTagged> == ssaf::TierKind::Semiring);
+static_assert(fad::wrapper_tier_v<WTimeOrdered> == ssaf::TierKind::Lattice);
+static_assert(fad::wrapper_tier_v<WEpochVersioned> == ssaf::TierKind::Versioned);
 
 // ── wrapper_modality_v survives the alias ──────────────────────────
-static_assert(fad::wrapper_modality_v<WLinear>
-              == ssaf::wrapper_modality_v<WLinear>);
-static_assert(fad::wrapper_modality_v<WTagged>
-              == ssaf::wrapper_modality_v<WTagged>);
+static_assert(fad::wrapper_modality_v<WLinear> == ssaf::wrapper_modality_v<WLinear>);
+static_assert(fad::wrapper_modality_v<WTagged> == ssaf::wrapper_modality_v<WTagged>);
 
 // ── wrapper_lattice_t projects to the same lattice type ────────────
-static_assert(std::is_same_v<
-    typename fad::wrapper_lattice_t<WLinear>,
-    typename ssaf::wrapper_lattice_t<WLinear>>);
-static_assert(std::is_same_v<
-    typename fad::wrapper_lattice_t<WTimeOrdered>,
-    typename ssaf::wrapper_lattice_t<WTimeOrdered>>);
+static_assert(std::is_same_v<typename fad::wrapper_lattice_t<WLinear>, typename ssaf::wrapper_lattice_t<WLinear>>);
+static_assert(
+    std::is_same_v<typename fad::wrapper_lattice_t<WTimeOrdered>, typename ssaf::wrapper_lattice_t<WTimeOrdered>>);
 
 // ── tier_for_grade_v works for bare grade types ────────────────────
 //
@@ -430,7 +414,6 @@ static_assert(fad::verify_quadruple<WEpochVersioned>());
 // dimension_tier_v<W> classifies a wrapper's lattice via tier_for_grade
 // (the heuristic path).  Differs from wrapper_tier_v above which reads
 // from the wrapper's exact dimension specialization.
-static_assert(fad::dimension_tier_v<WLinear>
-              == ssaf::dimension_tier_v<WLinear>);
+static_assert(fad::dimension_tier_v<WLinear> == ssaf::dimension_tier_v<WLinear>);
 
 }  // namespace crucible::fixy::algebra::dim::self_test

@@ -60,31 +60,42 @@ enum class NicConfigError : std::uint8_t {
 [[nodiscard]] std::string_view nic_config_error_name(NicConfigError error) noexcept;
 
 enum class NicOffload : std::uint32_t {
-    Tso           = 1u << 0,
-    Gso           = 1u << 1,
-    Gro           = 1u << 2,
-    Lro           = 1u << 3,
-    RxChecksum    = 1u << 4,
-    TxChecksum    = 1u << 5,
+    Tso = 1u << 0,
+    Gso = 1u << 1,
+    Gro = 1u << 2,
+    Lro = 1u << 3,
+    RxChecksum = 1u << 4,
+    TxChecksum = 1u << 5,
     ScatterGather = 1u << 6,
-    RxVlan        = 1u << 7,
-    TxVlan        = 1u << 8,
-    RxHash        = 1u << 9,
+    RxVlan = 1u << 7,
+    TxVlan = 1u << 8,
+    RxHash = 1u << 9,
 };
 
 [[nodiscard]] constexpr std::string_view nic_offload_name(NicOffload offload) noexcept {
     switch (offload) {
-        case NicOffload::Tso:           return "Tso";
-        case NicOffload::Gso:           return "Gso";
-        case NicOffload::Gro:           return "Gro";
-        case NicOffload::Lro:           return "Lro";
-        case NicOffload::RxChecksum:    return "RxChecksum";
-        case NicOffload::TxChecksum:    return "TxChecksum";
-        case NicOffload::ScatterGather: return "ScatterGather";
-        case NicOffload::RxVlan:        return "RxVlan";
-        case NicOffload::TxVlan:        return "TxVlan";
-        case NicOffload::RxHash:        return "RxHash";
-        default:                        return "<unknown NicOffload>";
+        case NicOffload::Tso:
+            return "Tso";
+        case NicOffload::Gso:
+            return "Gso";
+        case NicOffload::Gro:
+            return "Gro";
+        case NicOffload::Lro:
+            return "Lro";
+        case NicOffload::RxChecksum:
+            return "RxChecksum";
+        case NicOffload::TxChecksum:
+            return "TxChecksum";
+        case NicOffload::ScatterGather:
+            return "ScatterGather";
+        case NicOffload::RxVlan:
+            return "RxVlan";
+        case NicOffload::TxVlan:
+            return "TxVlan";
+        case NicOffload::RxHash:
+            return "RxHash";
+        default:
+            return "<unknown NicOffload>";
     }
 }
 
@@ -109,34 +120,33 @@ enum class QdiscKind : std::uint8_t {
 
 [[nodiscard]] constexpr std::string_view qdisc_kind_name(QdiscKind kind) noexcept {
     switch (kind) {
-        case QdiscKind::Fq:      return "fq";
-        case QdiscKind::FqCodel: return "fq_codel";
-        case QdiscKind::Htb:     return "htb";
-        case QdiscKind::Mq:      return "mq";
-        case QdiscKind::Prio:    return "prio";
-        default:                 return "unknown";
+        case QdiscKind::Fq:
+            return "fq";
+        case QdiscKind::FqCodel:
+            return "fq_codel";
+        case QdiscKind::Htb:
+            return "htb";
+        case QdiscKind::Mq:
+            return "mq";
+        case QdiscKind::Prio:
+            return "prio";
+        default:
+            return "unknown";
     }
 }
 
-using NicRingSize = safety::Refined<
-    safety::all_of<safety::power_of_two,
-                   safety::in_range<std::uint16_t{256}, std::uint16_t{8192}>>,
-    std::uint16_t>;
-using NicQueueCount =
-    safety::Bounded<std::uint16_t{1}, std::uint16_t{4096}, std::uint16_t>;
-using RssTableSize =
-    safety::Bounded<std::uint16_t{1}, std::uint16_t{4096}, std::uint16_t>;
+using NicRingSize =
+    safety::Refined<safety::all_of<safety::power_of_two, safety::in_range<std::uint16_t{256}, std::uint16_t{8192}>>,
+                    std::uint16_t>;
+using NicQueueCount = safety::Bounded<std::uint16_t{1}, std::uint16_t{4096}, std::uint16_t>;
+using RssTableSize = safety::Bounded<std::uint16_t{1}, std::uint16_t{4096}, std::uint16_t>;
 using LinkSpeedMbps = safety::Positive<std::uint32_t>;
 using PositiveQdiscParam = safety::Positive<std::uint32_t>;
-using SysctlBytes = safety::Refined<
-    safety::all_of<safety::positive,
-                   safety::bounded_above<std::uint64_t{1ull << 40u}>>,
-    std::uint64_t>;
+using SysctlBytes =
+    safety::Refined<safety::all_of<safety::positive, safety::bounded_above<std::uint64_t{1ull << 40u}>>, std::uint64_t>;
 using SysctlPackets = safety::Positive<std::uint32_t>;
-using BusyPollUs =
-    safety::Bounded<std::uint32_t{0}, std::uint32_t{1'000'000}, std::uint32_t>;
-using TcpRtoMinUs =
-    safety::Bounded<std::uint32_t{1}, std::uint32_t{60'000'000}, std::uint32_t>;
+using BusyPollUs = safety::Bounded<std::uint32_t{0}, std::uint32_t{1'000'000}, std::uint32_t>;
+using TcpRtoMinUs = safety::Bounded<std::uint32_t{1}, std::uint32_t{60'000'000}, std::uint32_t>;
 
 struct RssConfig {
     RssHashFunction hash = RssHashFunction::Toeplitz;
@@ -194,8 +204,7 @@ struct SysctlConfig {
     SysctlPackets netdev_budget{std::uint32_t{600}};
     BusyPollUs busy_poll_us{std::uint32_t{0}};
     BusyPollUs busy_read_us{std::uint32_t{0}};
-    cntp::KernelCcName tcp_congestion{
-        cntp::KernelCcName::from("bbr").value()};
+    cntp::KernelCcName tcp_congestion{cntp::KernelCcName::from("bbr").value()};
     TcpRtoMinUs tcp_rto_min_us{std::uint32_t{10'000}};
     TcpMemoryTriple tcp_rmem{};
     TcpMemoryTriple tcp_wmem{};
@@ -212,82 +221,65 @@ struct NicConfigPlan {
     bool allow_privileged_apply = false;
 };
 
-using DeclaredEthtoolConfig =
-    safety::Tagged<EthtoolConfig, safety::source::NicConfig>;
-using DeclaredQdiscConfig =
-    safety::Tagged<QdiscConfig, safety::source::NicConfig>;
-using DeclaredSysctlConfig =
-    safety::Tagged<SysctlConfig, safety::source::NicConfig>;
-using DeclaredNicConfig =
-    safety::Tagged<NicConfigPlan, safety::source::NicConfig>;
+using DeclaredEthtoolConfig = safety::Tagged<EthtoolConfig, safety::source::NicConfig>;
+using DeclaredQdiscConfig = safety::Tagged<QdiscConfig, safety::source::NicConfig>;
+using DeclaredSysctlConfig = safety::Tagged<SysctlConfig, safety::source::NicConfig>;
+using DeclaredNicConfig = safety::Tagged<NicConfigPlan, safety::source::NicConfig>;
 
 template <class Ctx>
-concept CtxFitsNicConfigMint =
-    effects::IsExecCtx<Ctx>
-    && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Init>>;
+concept CtxFitsNicConfigMint = effects::IsExecCtx<Ctx> && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Init>>;
 
-[[nodiscard]] constexpr std::expected<NicRingSize, NicConfigError>
-admit_ring_size(std::uint16_t size) noexcept {
+[[nodiscard]] constexpr std::expected<NicRingSize, NicConfigError> admit_ring_size(std::uint16_t size) noexcept {
     if (size < 256u || size > 8192u || (size & (size - 1u)) != 0u) {
         return std::unexpected(NicConfigError::InvalidRingSize);
     }
     return NicRingSize{size, typename NicRingSize::Trusted{}};
 }
 
-[[nodiscard]] constexpr std::expected<NicQueueCount, NicConfigError>
-admit_queue_count(std::uint16_t count) noexcept {
+[[nodiscard]] constexpr std::expected<NicQueueCount, NicConfigError> admit_queue_count(std::uint16_t count) noexcept {
     if (count == 0u || count > 4096u) {
         return std::unexpected(NicConfigError::InvalidQueueCount);
     }
     return NicQueueCount{count, typename NicQueueCount::Trusted{}};
 }
 
-[[nodiscard]] constexpr std::expected<RssTableSize, NicConfigError>
-admit_rss_table_size(std::uint16_t count) noexcept {
+[[nodiscard]] constexpr std::expected<RssTableSize, NicConfigError> admit_rss_table_size(std::uint16_t count) noexcept {
     if (count == 0u || count > 4096u) {
         return std::unexpected(NicConfigError::InvalidRssTableSize);
     }
     return RssTableSize{count, typename RssTableSize::Trusted{}};
 }
 
-[[nodiscard]] constexpr std::expected<SysctlBytes, NicConfigError>
-admit_sysctl_bytes(std::uint64_t bytes) noexcept {
+[[nodiscard]] constexpr std::expected<SysctlBytes, NicConfigError> admit_sysctl_bytes(std::uint64_t bytes) noexcept {
     if (bytes == 0u || bytes > (1ull << 40u)) {
         return std::unexpected(NicConfigError::InvalidSysctlBytes);
     }
     return SysctlBytes{bytes, typename SysctlBytes::Trusted{}};
 }
 
-[[nodiscard]] constexpr std::expected<BusyPollUs, NicConfigError>
-admit_busy_poll_us(std::uint32_t us) noexcept {
+[[nodiscard]] constexpr std::expected<BusyPollUs, NicConfigError> admit_busy_poll_us(std::uint32_t us) noexcept {
     if (us > 1'000'000u) {
         return std::unexpected(NicConfigError::InvalidBusyPollUs);
     }
     return BusyPollUs{us, typename BusyPollUs::Trusted{}};
 }
 
-[[nodiscard]] constexpr std::expected<TcpRtoMinUs, NicConfigError>
-admit_tcp_rto_min_us(std::uint32_t us) noexcept {
+[[nodiscard]] constexpr std::expected<TcpRtoMinUs, NicConfigError> admit_tcp_rto_min_us(std::uint32_t us) noexcept {
     if (us == 0u || us > 60'000'000u) {
         return std::unexpected(NicConfigError::InvalidTcpRtoMinUs);
     }
     return TcpRtoMinUs{us, typename TcpRtoMinUs::Trusted{}};
 }
 
-[[nodiscard]] constexpr bool
-tcp_memory_triple_ordered(TcpMemoryTriple triple) noexcept {
-    return triple.min.value() <= triple.pressure.value()
-        && triple.pressure.value() <= triple.max.value();
+[[nodiscard]] constexpr bool tcp_memory_triple_ordered(TcpMemoryTriple triple) noexcept {
+    return triple.min.value() <= triple.pressure.value() && triple.pressure.value() <= triple.max.value();
 }
 
-[[nodiscard]] constexpr bool
-interface_name_present(cntp::NicInterfaceName interface) noexcept {
+[[nodiscard]] constexpr bool interface_name_present(cntp::NicInterfaceName interface) noexcept {
     return !interface.view().empty();
 }
 
-[[nodiscard]] constexpr bool
-same_interface(cntp::NicInterfaceName lhs,
-               cntp::NicInterfaceName rhs) noexcept {
+[[nodiscard]] constexpr bool same_interface(cntp::NicInterfaceName lhs, cntp::NicInterfaceName rhs) noexcept {
     return lhs.view() == rhs.view();
 }
 
@@ -299,8 +291,7 @@ validate_ethtool_config(EthtoolConfig const& config) noexcept {
     return {};
 }
 
-[[nodiscard]] constexpr std::expected<void, NicConfigError>
-validate_qdisc_config(QdiscConfig const& config) noexcept {
+[[nodiscard]] constexpr std::expected<void, NicConfigError> validate_qdisc_config(QdiscConfig const& config) noexcept {
     if (!interface_name_present(config.interface)) {
         return std::unexpected(NicConfigError::InvalidInterfaceName);
     }
@@ -309,15 +300,13 @@ validate_qdisc_config(QdiscConfig const& config) noexcept {
 
 [[nodiscard]] constexpr std::expected<void, NicConfigError>
 validate_sysctl_config(SysctlConfig const& config) noexcept {
-    if (!tcp_memory_triple_ordered(config.tcp_rmem)
-        || !tcp_memory_triple_ordered(config.tcp_wmem)) {
+    if (!tcp_memory_triple_ordered(config.tcp_rmem) || !tcp_memory_triple_ordered(config.tcp_wmem)) {
         return std::unexpected(NicConfigError::InvalidTcpMemoryTriple);
     }
     return {};
 }
 
-[[nodiscard]] constexpr std::expected<void, NicConfigError>
-validate_nic_config(NicConfigPlan const& plan) noexcept {
+[[nodiscard]] constexpr std::expected<void, NicConfigError> validate_nic_config(NicConfigPlan const& plan) noexcept {
     if (plan.identity.uuid.is_zero()) {
         return std::unexpected(NicConfigError::ZeroCog);
     }
@@ -341,13 +330,8 @@ validate_nic_config(NicConfigPlan const& plan) noexcept {
 template <class Ctx>
     requires CtxFitsNicConfigMint<Ctx>
 [[nodiscard]] constexpr std::expected<DeclaredNicConfig, NicConfigError>
-mint_nic_config(Ctx const&,
-                CogIdentity identity,
-                cntp::NicInterfaceName interface,
-                EthtoolConfig ethtool = {},
-                QdiscConfig qdisc = {},
-                SysctlConfig sysctl = {},
-                bool allow_privileged_apply = false) noexcept {
+mint_nic_config(Ctx const&, CogIdentity identity, cntp::NicInterfaceName interface, EthtoolConfig ethtool = {},
+                QdiscConfig qdisc = {}, SysctlConfig sysctl = {}, bool allow_privileged_apply = false) noexcept {
     ethtool.interface = interface;
     qdisc.interface = interface;
     NicConfigPlan plan{
@@ -364,13 +348,11 @@ mint_nic_config(Ctx const&,
     return DeclaredNicConfig{plan};
 }
 
-[[nodiscard]] constexpr DeclaredEthtoolConfig
-declare_ethtool_config(EthtoolConfig config) noexcept {
+[[nodiscard]] constexpr DeclaredEthtoolConfig declare_ethtool_config(EthtoolConfig config) noexcept {
     return DeclaredEthtoolConfig{config};
 }
 
-[[nodiscard]] constexpr DeclaredQdiscConfig
-declare_qdisc_config(QdiscConfig config) noexcept {
+[[nodiscard]] constexpr DeclaredQdiscConfig declare_qdisc_config(QdiscConfig config) noexcept {
     return DeclaredQdiscConfig{config};
 }
 
@@ -383,13 +365,16 @@ declare_sysctl_config(SysctlConfig config) noexcept {
     return DeclaredSysctlConfig{config};
 }
 
-[[nodiscard]] constexpr NicTxQdisc
-qdisc_to_audit_qdisc(QdiscKind kind) noexcept {
+[[nodiscard]] constexpr NicTxQdisc qdisc_to_audit_qdisc(QdiscKind kind) noexcept {
     switch (kind) {
-        case QdiscKind::Fq:      return NicTxQdisc::Fq;
-        case QdiscKind::FqCodel: return NicTxQdisc::FqCodel;
-        case QdiscKind::Mq:      return NicTxQdisc::Mq;
-        default:                 return NicTxQdisc::Unknown;
+        case QdiscKind::Fq:
+            return NicTxQdisc::Fq;
+        case QdiscKind::FqCodel:
+            return NicTxQdisc::FqCodel;
+        case QdiscKind::Mq:
+            return NicTxQdisc::Mq;
+        default:
+            return NicTxQdisc::Unknown;
     }
 }
 
@@ -410,30 +395,26 @@ audit_features_from_offloads(safety::Bits<NicOffload> offloads) noexcept {
 // `test/cog_neg/neg_nic_config_raw_apply.cpp`) suppress the warning with
 // `#pragma GCC diagnostic push/ignored "-Wdeprecated-declarations"/pop`.
 [[nodiscard, deprecated("CRUCIBLE_STUB: privileged NIC config apply not yet "
-    "wired to CAP_NET_ADMIN ethtool/sysctl/tc-qdisc backend; returns "
-    "PrivilegedApplyDeferred or PrivilegedBackendUnavailable; see fixy-A5-002 "
-    "/ FIXY-U-087")]]
-std::expected<void, NicConfigError>
-apply_config(DeclaredNicConfig config) noexcept;
+                        "wired to CAP_NET_ADMIN ethtool/sysctl/tc-qdisc backend; returns "
+                        "PrivilegedApplyDeferred or PrivilegedBackendUnavailable; see fixy-A5-002 "
+                        "/ FIXY-U-087")]]
+std::expected<void, NicConfigError> apply_config(DeclaredNicConfig config) noexcept;
 [[nodiscard, deprecated("CRUCIBLE_STUB: privileged ethtool ring/queue/RSS "
-    "apply not yet wired; returns PrivilegedApplyDeferred; see fixy-A5-002 / "
-    "FIXY-U-087")]]
-std::expected<void, NicConfigError>
-apply_ethtool(DeclaredEthtoolConfig config) noexcept;
+                        "apply not yet wired; returns PrivilegedApplyDeferred; see fixy-A5-002 / "
+                        "FIXY-U-087")]]
+std::expected<void, NicConfigError> apply_ethtool(DeclaredEthtoolConfig config) noexcept;
 [[nodiscard, deprecated("CRUCIBLE_STUB: privileged tc-qdisc apply not yet "
-    "wired; returns PrivilegedApplyDeferred; see fixy-A5-002 / FIXY-U-087")]]
-std::expected<void, NicConfigError>
-apply_qdisc(DeclaredQdiscConfig config) noexcept;
+                        "wired; returns PrivilegedApplyDeferred; see fixy-A5-002 / FIXY-U-087")]]
+std::expected<void, NicConfigError> apply_qdisc(DeclaredQdiscConfig config) noexcept;
 [[nodiscard, deprecated("CRUCIBLE_STUB: privileged sysctl tcp_* / rmem_max / "
-    "wmem_max apply not yet wired; returns PrivilegedApplyDeferred; see "
-    "fixy-A5-002 / FIXY-U-087")]]
-std::expected<void, NicConfigError>
-apply_sysctl(DeclaredSysctlConfig config) noexcept;
+                        "wmem_max apply not yet wired; returns PrivilegedApplyDeferred; see "
+                        "fixy-A5-002 / FIXY-U-087")]]
+std::expected<void, NicConfigError> apply_sysctl(DeclaredSysctlConfig config) noexcept;
 [[nodiscard, deprecated("CRUCIBLE_STUB: privileged sysfs/ethtool query "
-    "backend not yet attached; returns NicConfigError::QueryDeferred; see "
-    "fixy-A5-002 / FIXY-U-087")]]
-std::expected<DeclaredNicConfig, NicConfigError>
-query_current(CogIdentity identity, cntp::NicInterfaceName interface) noexcept;
+                        "backend not yet attached; returns NicConfigError::QueryDeferred; see "
+                        "fixy-A5-002 / FIXY-U-087")]]
+std::expected<DeclaredNicConfig, NicConfigError> query_current(CogIdentity identity,
+                                                               cntp::NicInterfaceName interface) noexcept;
 
 static_assert(sizeof(NicRingSize) == sizeof(std::uint16_t));
 static_assert(sizeof(NicQueueCount) == sizeof(std::uint16_t));

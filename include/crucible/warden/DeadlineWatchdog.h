@@ -112,18 +112,18 @@
 // Same Init-by-value gate as every Senses-touching surface in the
 // GAPS-004 series.
 
-#include <crucible/Platform.h>              // CRUCIBLE_PURE for getters
+#include <crucible/Platform.h>  // CRUCIBLE_PURE for getters
 #include <crucible/effects/Capabilities.h>  // effects::Init capability tag
-#include <crucible/effects/EffectRow.h>     // row_contains_v
-#include <crucible/effects/ExecCtx.h>       // IsExecCtx, row_type_of_t
-#include <crucible/perf/Senses.h>           // Senses + SchedSwitch facade
-#include <crucible/warden/Policy.h>             // Policy + SchedClass + budget
-#include <crucible/safety/Checked.h>        // crucible::sat::sub_sat
-#include <crucible/safety/ClockSource.h>    // FIXY-V-194: BootClockBytes
+#include <crucible/effects/EffectRow.h>  // row_contains_v
+#include <crucible/effects/ExecCtx.h>  // IsExecCtx, row_type_of_t
+#include <crucible/perf/Senses.h>  // Senses + SchedSwitch facade
+#include <crucible/warden/Policy.h>  // Policy + SchedClass + budget
+#include <crucible/safety/Checked.h>  // crucible::sat::sub_sat
+#include <crucible/safety/ClockSource.h>  // FIXY-V-194: BootClockBytes
 
 #include <chrono>
 #include <cstdint>
-#include <ctime>                            // FIXY-V-194: clock_gettime, CLOCK_BOOTTIME
+#include <ctime>  // FIXY-V-194: clock_gettime, CLOCK_BOOTTIME
 
 namespace crucible::warden {
 
@@ -144,18 +144,21 @@ namespace crucible::warden {
 
 enum class WatchdogVerdict : uint8_t {
     InsufficientData = 0,  // can't observe (no Senses, no SchedSwitch, window not elapsed)
-    Healthy          = 1,  // miss count within budget for this window
-    Downgrade        = 2,  // budget exceeded; recommend SchedClass demotion
+    Healthy = 1,  // miss count within budget for this window
+    Downgrade = 2,  // budget exceeded; recommend SchedClass demotion
 };
 
 // Stable string for diagnostic / runtime observation logging.  No allocation.
-[[nodiscard, gnu::const]] inline const char*
-watchdog_verdict_name(WatchdogVerdict v) noexcept {
+[[nodiscard, gnu::const]] inline const char* watchdog_verdict_name(WatchdogVerdict v) noexcept {
     switch (v) {
-        case WatchdogVerdict::InsufficientData: return "InsufficientData";
-        case WatchdogVerdict::Healthy:          return "Healthy";
-        case WatchdogVerdict::Downgrade:        return "Downgrade";
-        default:                                return "Invalid";
+        case WatchdogVerdict::InsufficientData:
+            return "InsufficientData";
+        case WatchdogVerdict::Healthy:
+            return "Healthy";
+        case WatchdogVerdict::Downgrade:
+            return "Downgrade";
+        default:
+            return "Invalid";
     }
 }
 
@@ -186,22 +189,16 @@ watchdog_verdict_name(WatchdogVerdict v) noexcept {
 //   row-shape as V-193's CtxFitsMonotonicClock for consistency.
 template <typename Ctx>
 concept CtxFitsDeadlineWatchdog =
-    ::crucible::effects::CtxOwnsAnyOf<Ctx,
-        ::crucible::effects::Effect::Bg,
-        ::crucible::effects::Effect::Init,
-        ::crucible::effects::Effect::Test>;
+    ::crucible::effects::CtxOwnsAnyOf<Ctx, ::crucible::effects::Effect::Bg, ::crucible::effects::Effect::Init,
+                                      ::crucible::effects::Effect::Test>;
 
 class DeadlineWatchdog {
 public:
-    [[nodiscard]] explicit DeadlineWatchdog(
-        const ::crucible::perf::Senses* senses,
-        const Policy& policy,
-        ::crucible::effects::Init) noexcept
-        : senses_{senses}
-        , miss_budget_{policy.deadline_miss_budget}
-        , window_ns_{static_cast<uint64_t>(policy.watchdog_window_sec)
-                     * 1'000'000'000ull}
-    {
+    [[nodiscard]] explicit DeadlineWatchdog(const ::crucible::perf::Senses* senses, const Policy& policy,
+                                            ::crucible::effects::Init) noexcept
+        : senses_{senses},
+          miss_budget_{policy.deadline_miss_budget},
+          window_ns_{static_cast<uint64_t>(policy.watchdog_window_sec) * 1'000'000'000ull} {
         // Baseline captured lazily on first observe() — at construction
         // time we may not yet have a SchedSwitch counter to read (load
         // can race with Watchdog construction in some Keeper init
@@ -269,11 +266,8 @@ public:
         if (::clock_gettime(CLOCK_BOOTTIME, &ts) != 0) [[unlikely]] {
             return WatchdogVerdict::InsufficientData;
         }
-        auto now_bytes = ::crucible::safety::mint_clock_source<
-            ::crucible::safety::ClockSource_v::Boot,
-            std::uint64_t>(
-            static_cast<std::uint64_t>(ts.tv_sec) * 1'000'000'000ull
-            + static_cast<std::uint64_t>(ts.tv_nsec));
+        auto now_bytes = ::crucible::safety::mint_clock_source<::crucible::safety::ClockSource_v::Boot, std::uint64_t>(
+            static_cast<std::uint64_t>(ts.tv_sec) * 1'000'000'000ull + static_cast<std::uint64_t>(ts.tv_nsec));
         const uint64_t now_ns = std::move(now_bytes).consume();
         const uint64_t count = sched->context_switches();
 
@@ -281,8 +275,8 @@ public:
         // until at least one window has elapsed.
         if (window_started_ns_ == 0) {
             window_started_ns_ = now_ns;
-            baseline_count_    = count;
-            latest_count_      = count;
+            baseline_count_ = count;
+            latest_count_ = count;
             return WatchdogVerdict::InsufficientData;
         }
 
@@ -302,14 +296,11 @@ public:
         // next observe() once it rebases.
         const uint64_t elapsed_ns = now_ns - window_started_ns_;
         if (elapsed_ns >= window_ns_) {
-            const uint64_t misses = ::crucible::sat::sub_sat<uint64_t>(
-                count, baseline_count_);
-            const WatchdogVerdict v = (misses > miss_budget_)
-                ? WatchdogVerdict::Downgrade
-                : WatchdogVerdict::Healthy;
+            const uint64_t misses = ::crucible::sat::sub_sat<uint64_t>(count, baseline_count_);
+            const WatchdogVerdict v = (misses > miss_budget_) ? WatchdogVerdict::Downgrade : WatchdogVerdict::Healthy;
 
             window_started_ns_ = now_ns;
-            baseline_count_    = count;
+            baseline_count_ = count;
             return v;
         }
 
@@ -318,8 +309,7 @@ public:
         // rather than waiting for the window to close.  Avoids a
         // window-length lag in pathological miss storms.  Same
         // sub_sat rationale as above.
-        const uint64_t misses = ::crucible::sat::sub_sat<uint64_t>(
-            count, baseline_count_);
+        const uint64_t misses = ::crucible::sat::sub_sat<uint64_t>(count, baseline_count_);
         if (misses > miss_budget_) {
             // Don't reset the window — the next observe() will see
             // the exceeded state again until the window naturally
@@ -336,8 +326,8 @@ public:
     // the demoted class's expected miss profile.
     void reset() noexcept {
         window_started_ns_ = 0;
-        baseline_count_    = 0;
-        latest_count_      = 0;
+        baseline_count_ = 0;
+        latest_count_ = 0;
     }
 
     // ── Diagnostics / runtime observer feedback ─────────────────────
@@ -350,11 +340,11 @@ public:
     // only on member state; the optimizer can CSE redundant calls
     // (e.g. a runtime observer loop that reads baseline_count + latest_count
     // back-to-back compiles to two MOV reads, no aliasing assumed).
-    CRUCIBLE_PURE uint64_t baseline_count() const noexcept     { return baseline_count_; }
-    CRUCIBLE_PURE uint64_t latest_count() const noexcept       { return latest_count_; }
-    CRUCIBLE_PURE uint64_t window_started_ns() const noexcept  { return window_started_ns_; }
-    CRUCIBLE_PURE uint32_t miss_budget() const noexcept        { return miss_budget_; }
-    CRUCIBLE_PURE uint64_t window_ns() const noexcept          { return window_ns_; }
+    CRUCIBLE_PURE uint64_t baseline_count() const noexcept { return baseline_count_; }
+    CRUCIBLE_PURE uint64_t latest_count() const noexcept { return latest_count_; }
+    CRUCIBLE_PURE uint64_t window_started_ns() const noexcept { return window_started_ns_; }
+    CRUCIBLE_PURE uint32_t miss_budget() const noexcept { return miss_budget_; }
+    CRUCIBLE_PURE uint64_t window_ns() const noexcept { return window_ns_; }
 
     // Misses observed since window start.  `crucible::sat::sub_sat`
     // saturates to zero on the rare counter-reset edge case (e.g.
@@ -373,23 +363,22 @@ public:
         delete("DeadlineWatchdog owns rolling-window state — copying would shadow window with stale data");
     DeadlineWatchdog& operator=(const DeadlineWatchdog&) =
         delete("DeadlineWatchdog owns rolling-window state — copying would shadow window with stale data");
-    DeadlineWatchdog(DeadlineWatchdog&&) noexcept            = default;
+    DeadlineWatchdog(DeadlineWatchdog&&) noexcept = default;
     DeadlineWatchdog& operator=(DeadlineWatchdog&&) noexcept = default;
-    ~DeadlineWatchdog() noexcept                             = default;
+    ~DeadlineWatchdog() noexcept = default;
 
 private:
     const ::crucible::perf::Senses* senses_ = nullptr;
-    uint32_t miss_budget_                   = 0;
-    uint64_t window_ns_                     = 0;
-    uint64_t window_started_ns_             = 0;  // 0 = first observation pending
-    uint64_t baseline_count_                = 0;
-    uint64_t latest_count_                  = 0;
+    uint32_t miss_budget_ = 0;
+    uint64_t window_ns_ = 0;
+    uint64_t window_started_ns_ = 0;  // 0 = first observation pending
+    uint64_t baseline_count_ = 0;
+    uint64_t latest_count_ = 0;
 };
 
 // Tiny: 1 ptr + 1 u32 + 4 u64 = 40 bytes.  Stack-allocatable in any
 // Keeper / bench frame.  No virtual, no heap.
-static_assert(sizeof(DeadlineWatchdog) <= 64,
-    "DeadlineWatchdog must fit in one cache line");
+static_assert(sizeof(DeadlineWatchdog) <= 64, "DeadlineWatchdog must fit in one cache line");
 
 // Recommended demotion table.  When `observe() == Downgrade`, the
 // caller picks the next class via this helper rather than open-coding
@@ -416,16 +405,12 @@ static_assert(sizeof(DeadlineWatchdog) <= 64,
 // Body is constexpr-noexcept and constructs in place; no allocation.
 
 template <class Ctx>
-concept CtxFitsDeadlineWatchdogMint =
-       effects::IsExecCtx<Ctx>
-    && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
+concept CtxFitsDeadlineWatchdogMint = effects::IsExecCtx<Ctx> && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
 
 template <effects::IsExecCtx Ctx>
     requires CtxFitsDeadlineWatchdogMint<Ctx>
-[[nodiscard]] constexpr DeadlineWatchdog
-mint_deadline_watchdog(Ctx const&,
-                       const ::crucible::perf::Senses* senses,
-                       const Policy& policy) noexcept {
+[[nodiscard]] constexpr DeadlineWatchdog mint_deadline_watchdog(Ctx const&, const ::crucible::perf::Senses* senses,
+                                                                const Policy& policy) noexcept {
     return DeadlineWatchdog{senses, policy, ::crucible::effects::Init{}};
 }
 
@@ -433,17 +418,23 @@ static_assert(CtxFitsDeadlineWatchdogMint<effects::ColdInitCtx>);
 static_assert(!CtxFitsDeadlineWatchdogMint<effects::BgDrainCtx>);
 static_assert(!CtxFitsDeadlineWatchdogMint<effects::HotFgCtx>);
 
-[[nodiscard, gnu::const]] inline SchedClass
-demote_one_step(SchedClass c) noexcept {
+[[nodiscard, gnu::const]] inline SchedClass demote_one_step(SchedClass c) noexcept {
     switch (c) {
-        case SchedClass::Deadline:   return SchedClass::Fifo;
-        case SchedClass::Fifo:       return SchedClass::Other;
-        case SchedClass::RoundRobin: return SchedClass::Other;
-        case SchedClass::Other:      return SchedClass::Other;  // already at floor
-        case SchedClass::Batch:      return SchedClass::Other;  // batch → other (same-tier downshift)
-        case SchedClass::Idle:       return SchedClass::Idle;   // Idle is unrelated to RT — preserve
-        default:                     return SchedClass::Other;
+        case SchedClass::Deadline:
+            return SchedClass::Fifo;
+        case SchedClass::Fifo:
+            return SchedClass::Other;
+        case SchedClass::RoundRobin:
+            return SchedClass::Other;
+        case SchedClass::Other:
+            return SchedClass::Other;  // already at floor
+        case SchedClass::Batch:
+            return SchedClass::Other;  // batch → other (same-tier downshift)
+        case SchedClass::Idle:
+            return SchedClass::Idle;  // Idle is unrelated to RT — preserve
+        default:
+            return SchedClass::Other;
     }
 }
 
-} // namespace crucible::warden
+}  // namespace crucible::warden

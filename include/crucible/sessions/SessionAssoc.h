@@ -138,22 +138,18 @@ struct role_list_subset;
 
 template <typename... Rs1, typename RL2>
 struct role_list_subset<RoleList<Rs1...>, RL2>
-    : std::bool_constant<
-          (detail::global::contains_role_v<Rs1, RL2> && ...)
-      > {};
+    : std::bool_constant<(detail::global::contains_role_v<Rs1, RL2> && ...)> {};
 
 }  // namespace detail::assoc
 
 // RL1 ⊆ RL2?  true when every role in RL1 appears in RL2.  Empty RL1
 // is vacuously a subset of any RL2 (fold over empty pack is true).
 template <typename RL1, typename RL2>
-inline constexpr bool role_list_subset_v =
-    detail::assoc::role_list_subset<RL1, RL2>::value;
+inline constexpr bool role_list_subset_v = detail::assoc::role_list_subset<RL1, RL2>::value;
 
 // RL1 == RL2 as sets?  Bidirectional subset.
 template <typename RL1, typename RL2>
-inline constexpr bool role_lists_equal_as_sets_v =
-    role_list_subset_v<RL1, RL2> && role_list_subset_v<RL2, RL1>;
+inline constexpr bool role_lists_equal_as_sets_v = role_list_subset_v<RL1, RL2> && role_list_subset_v<RL2, RL1>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── domain_roles_for_session_t<Γ, SessionTag> ──────────────────────
@@ -175,31 +171,23 @@ struct collect_roles_for_session<Context<>, SessionTag> {
 
 // Entry whose session matches — prepend its role to the recursion's result.
 template <typename SessionTag, typename R, typename T, typename... Rest>
-struct collect_roles_for_session<
-    Context<Entry<SessionTag, R, T>, Rest...>, SessionTag>
-{
-    using rest_type = typename collect_roles_for_session<
-        Context<Rest...>, SessionTag>::type;
+struct collect_roles_for_session<Context<Entry<SessionTag, R, T>, Rest...>, SessionTag> {
+    using rest_type = typename collect_roles_for_session<Context<Rest...>, SessionTag>::type;
     using type = insert_unique_t<R, rest_type>;
 };
 
 // Entry whose session does NOT match — skip.  This partial spec is
 // LESS specialised than the matching one above, so the compiler
 // prefers the match when applicable.
-template <typename S, typename R, typename T, typename... Rest,
-          typename SessionTag>
-struct collect_roles_for_session<
-    Context<Entry<S, R, T>, Rest...>, SessionTag>
-{
-    using type = typename collect_roles_for_session<
-        Context<Rest...>, SessionTag>::type;
+template <typename S, typename R, typename T, typename... Rest, typename SessionTag>
+struct collect_roles_for_session<Context<Entry<S, R, T>, Rest...>, SessionTag> {
+    using type = typename collect_roles_for_session<Context<Rest...>, SessionTag>::type;
 };
 
 }  // namespace detail::assoc
 
 template <typename Γ, typename SessionTag>
-using domain_roles_for_session_t =
-    typename detail::assoc::collect_roles_for_session<Γ, SessionTag>::type;
+using domain_roles_for_session_t = typename detail::assoc::collect_roles_for_session<Γ, SessionTag>::type;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── domain_matches_v<Γ, G, SessionTag> ─────────────────────────────
@@ -212,9 +200,7 @@ using domain_roles_for_session_t =
 
 template <typename Γ, typename G, typename SessionTag>
 inline constexpr bool domain_matches_v =
-    role_lists_equal_as_sets_v<
-        domain_roles_for_session_t<Γ, SessionTag>,
-        roles_of_t<G>>;
+    role_lists_equal_as_sets_v<domain_roles_for_session_t<Γ, SessionTag>, roles_of_t<G>>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── all_entries_refine_projection_v (gated subtype check) ──────────
@@ -232,18 +218,13 @@ inline constexpr bool domain_matches_v =
 
 namespace detail::assoc {
 
-template <bool DomainOK, typename Γ, typename G, typename SessionTag,
-          typename RolesPack>
+template <bool DomainOK, typename Γ, typename G, typename SessionTag, typename RolesPack>
 struct gated_refine_check : std::false_type {};
 
 // Gate true: actually do the per-role subtype check.
 template <typename Γ, typename G, typename SessionTag, typename... Rs>
 struct gated_refine_check<true, Γ, G, SessionTag, RoleList<Rs...>>
-    : std::bool_constant<
-          (is_subtype_sync_v<
-               lookup_context_t<Γ, SessionTag, Rs>,
-               project_t<G, Rs>> && ...)
-      > {};
+    : std::bool_constant<(is_subtype_sync_v<lookup_context_t<Γ, SessionTag, Rs>, project_t<G, Rs>> && ...)> {};
 
 }  // namespace detail::assoc
 
@@ -252,10 +233,7 @@ struct gated_refine_check<true, Γ, G, SessionTag, RoleList<Rs...>>
 // each (S, p) entry against its projection.
 template <typename Γ, typename G, typename SessionTag>
 inline constexpr bool all_entries_refine_projection_v =
-    detail::assoc::gated_refine_check<
-        domain_matches_v<Γ, G, SessionTag>,
-        Γ, G, SessionTag,
-        roles_of_t<G>>::value;
+    detail::assoc::gated_refine_check<domain_matches_v<Γ, G, SessionTag>, Γ, G, SessionTag, roles_of_t<G>>::value;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── is_associated_v<Γ, G, SessionTag> — the full check ─────────────
@@ -267,8 +245,7 @@ inline constexpr bool all_entries_refine_projection_v =
 
 template <typename Γ, typename G, typename SessionTag>
 inline constexpr bool is_associated_v =
-    domain_matches_v<Γ, G, SessionTag>
-    && all_entries_refine_projection_v<Γ, G, SessionTag>;
+    domain_matches_v<Γ, G, SessionTag> && all_entries_refine_projection_v<Γ, G, SessionTag>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── projected_context_t<G, SessionTag> ─────────────────────────────
@@ -293,9 +270,7 @@ struct project_to_context<RoleList<Rs...>, G, SessionTag> {
 }  // namespace detail::assoc
 
 template <typename G, typename SessionTag>
-using projected_context_t =
-    typename detail::assoc::project_to_context<
-        roles_of_t<G>, G, SessionTag>::type;
+using projected_context_t = typename detail::assoc::project_to_context<roles_of_t<G>, G, SessionTag>::type;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Ergonomic surface ──────────────────────────────────────────────
@@ -309,26 +284,25 @@ concept AssociatedWith = is_associated_v<Γ, G, SessionTag>;
 // revealing wrapper for protocol-declaration-time use.
 template <typename Γ, typename G, typename SessionTag>
 consteval void assert_associated() noexcept {
-    static_assert(domain_matches_v<Γ, G, SessionTag>,
-        "crucible::session::diagnostic [Association_Domain_Mismatch]: "
-        "assert_associated: condition (1) fails — Γ's domain (for the "
-        "given SessionTag) does not match roles_of_t<G>.  Every role "
-        "of G must have a corresponding Entry<SessionTag, role, "
-        "local_type> in Γ, and Γ must not have EXTRA entries for this "
-        "session beyond G's roles.  Common causes: missing an entry "
-        "for a participating role; added an entry for a role not in "
-        "G; wrong SessionTag.");
+    static_assert(domain_matches_v<Γ, G, SessionTag>, "crucible::session::diagnostic [Association_Domain_Mismatch]: "
+                                                      "assert_associated: condition (1) fails — Γ's domain (for the "
+                                                      "given SessionTag) does not match roles_of_t<G>.  Every role "
+                                                      "of G must have a corresponding Entry<SessionTag, role, "
+                                                      "local_type> in Γ, and Γ must not have EXTRA entries for this "
+                                                      "session beyond G's roles.  Common causes: missing an entry "
+                                                      "for a participating role; added an entry for a role not in "
+                                                      "G; wrong SessionTag.");
 
     static_assert(all_entries_refine_projection_v<Γ, G, SessionTag>,
-        "crucible::session::diagnostic [SubtypeMismatch]: "
-        "assert_associated: condition (2) fails — at least one Γ "
-        "entry's local_type is NOT a synchronous subtype of its "
-        "projection G ↾ role.  Subtype follows Gay-Hole 2005 rules "
-        "(see SessionSubtype.h): Send payload covariant + continuation "
-        "covariant; Recv payload contravariant + continuation "
-        "covariant; Select narrows (fewer branches is a subtype); "
-        "Offer widens (more branches is a subtype); Loop bodies "
-        "related coinductively; Stop is bottom.");
+                  "crucible::session::diagnostic [SubtypeMismatch]: "
+                  "assert_associated: condition (2) fails — at least one Γ "
+                  "entry's local_type is NOT a synchronous subtype of its "
+                  "projection G ↾ role.  Subtype follows Gay-Hole 2005 rules "
+                  "(see SessionSubtype.h): Send payload covariant + continuation "
+                  "covariant; Recv payload contravariant + continuation "
+                  "covariant; Select narrows (fewer branches is a subtype); "
+                  "Offer widens (more branches is a subtype); Loop bodies "
+                  "related coinductively; Stop is bottom.");
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -343,24 +317,22 @@ namespace detail::assoc::assoc_self_test {
 
 // ─── Fixture tags ──────────────────────────────────────────────────
 
-struct My2PC    {};  // session tag
+struct My2PC {};  // session tag
 struct OtherSession {};
-struct Coord    {};
+struct Coord {};
 struct Follower {};
 struct Stranger {};  // a role NOT in G_2PC — used for negative tests
 
 struct Prepare {};
-struct Vote    {};
-struct Commit  {};
-struct Abort   {};
+struct Vote {};
+struct Commit {};
+struct Abort {};
 
 // ─── Fixture global type ──────────────────────────────────────────
 
-using G_2PC = Transmission<Coord, Follower, Prepare,
-              Transmission<Follower, Coord, Vote,
-              Choice<Coord, Follower,
-                  BranchG<Commit, End_G>,
-                  BranchG<Abort,  End_G>>>>;
+using G_2PC = Transmission<
+    Coord, Follower, Prepare,
+    Transmission<Follower, Coord, Vote, Choice<Coord, Follower, BranchG<Commit, End_G>, BranchG<Abort, End_G>>>>;
 
 // Sanity: G_2PC is well-formed and its role set is {Coord, Follower}.
 static_assert(is_global_well_formed_v<G_2PC>);
@@ -368,22 +340,22 @@ static_assert(roles_of_t<G_2PC>::size == 2);
 
 // ─── role_list_subset + role_lists_equal_as_sets ──────────────────
 
-using RL_CF  = RoleList<Coord, Follower>;
-using RL_FC  = RoleList<Follower, Coord>;
-using RL_C   = RoleList<Coord>;
+using RL_CF = RoleList<Coord, Follower>;
+using RL_FC = RoleList<Follower, Coord>;
+using RL_C = RoleList<Coord>;
 using RL_CFS = RoleList<Coord, Follower, Stranger>;
-using RL_e   = EmptyRoleList;
+using RL_e = EmptyRoleList;
 
-static_assert(role_list_subset_v<RL_e,  RL_CF>);
-static_assert(role_list_subset_v<RL_C,  RL_CF>);
+static_assert(role_list_subset_v<RL_e, RL_CF>);
+static_assert(role_list_subset_v<RL_C, RL_CF>);
 static_assert(role_list_subset_v<RL_CF, RL_CF>);
 static_assert(role_list_subset_v<RL_CF, RL_FC>);  // set equality despite order
-static_assert(!role_list_subset_v<RL_CFS, RL_CF>); // superset is not subset
-static_assert(!role_list_subset_v<RL_CF,  RL_C>);  // Follower not in RL_C
+static_assert(!role_list_subset_v<RL_CFS, RL_CF>);  // superset is not subset
+static_assert(!role_list_subset_v<RL_CF, RL_C>);  // Follower not in RL_C
 
 // role_lists_equal_as_sets: order-insensitive.
-static_assert( role_lists_equal_as_sets_v<RL_CF, RL_FC>);
-static_assert( role_lists_equal_as_sets_v<RL_e,  RL_e>);
+static_assert(role_lists_equal_as_sets_v<RL_CF, RL_FC>);
+static_assert(role_lists_equal_as_sets_v<RL_e, RL_e>);
 static_assert(!role_lists_equal_as_sets_v<RL_CF, RL_C>);
 static_assert(!role_lists_equal_as_sets_v<RL_CF, RL_CFS>);
 
@@ -392,32 +364,24 @@ static_assert(!role_lists_equal_as_sets_v<RL_CF, RL_CFS>);
 using ReflexiveΔ = projected_context_t<G_2PC, My2PC>;
 
 // Δ_reflexive's domain (for My2PC) is {Coord, Follower}.
-static_assert(role_lists_equal_as_sets_v<
-    domain_roles_for_session_t<ReflexiveΔ, My2PC>,
-    RL_CF>);
+static_assert(role_lists_equal_as_sets_v<domain_roles_for_session_t<ReflexiveΔ, My2PC>, RL_CF>);
 
 // Δ_reflexive's domain for an OTHER session is empty.
-static_assert(role_lists_equal_as_sets_v<
-    domain_roles_for_session_t<ReflexiveΔ, OtherSession>,
-    RL_e>);
+static_assert(role_lists_equal_as_sets_v<domain_roles_for_session_t<ReflexiveΔ, OtherSession>, RL_e>);
 
 // Multi-session Γ: filter picks only the matching-session entries.
-using ΔMultiSession = Context<
-    Entry<My2PC,        Coord,    project_t<G_2PC, Coord>>,
-    Entry<My2PC,        Follower, project_t<G_2PC, Follower>>,
-    Entry<OtherSession, Coord,    End>>;
+using ΔMultiSession = Context<Entry<My2PC, Coord, project_t<G_2PC, Coord>>,
+                              Entry<My2PC, Follower, project_t<G_2PC, Follower>>, Entry<OtherSession, Coord, End>>;
 // For My2PC: {Coord, Follower}.
-static_assert(role_lists_equal_as_sets_v<
-    domain_roles_for_session_t<ΔMultiSession, My2PC>, RL_CF>);
+static_assert(role_lists_equal_as_sets_v<domain_roles_for_session_t<ΔMultiSession, My2PC>, RL_CF>);
 // For OtherSession: {Coord}.
-static_assert(role_lists_equal_as_sets_v<
-    domain_roles_for_session_t<ΔMultiSession, OtherSession>, RL_C>);
+static_assert(role_lists_equal_as_sets_v<domain_roles_for_session_t<ΔMultiSession, OtherSession>, RL_C>);
 
 // ─── Reflexive association: projected_context_t ⊑_s G always ─────
 
-static_assert( domain_matches_v<ReflexiveΔ, G_2PC, My2PC>);
-static_assert( all_entries_refine_projection_v<ReflexiveΔ, G_2PC, My2PC>);
-static_assert( is_associated_v<ReflexiveΔ, G_2PC, My2PC>);
+static_assert(domain_matches_v<ReflexiveΔ, G_2PC, My2PC>);
+static_assert(all_entries_refine_projection_v<ReflexiveΔ, G_2PC, My2PC>);
+static_assert(is_associated_v<ReflexiveΔ, G_2PC, My2PC>);
 
 // ─── Refined association: Coord narrows Select to commit-only ────
 
@@ -425,16 +389,12 @@ static_assert( is_associated_v<ReflexiveΔ, G_2PC, My2PC>);
 //   Send<Prepare, Recv<Vote, Select<Send<Commit, End>, Send<Abort, End>>>>
 //
 // A narrower implementation: Coord commits unconditionally.
-using RefinedCoord = Send<Prepare,
-                     Recv<Vote,
-                     Select<Send<Commit, End>>>>;
+using RefinedCoord = Send<Prepare, Recv<Vote, Select<Send<Commit, End>>>>;
 
 // Verify the refinement is a sync subtype of the projection.
 static_assert(is_subtype_sync_v<RefinedCoord, project_t<G_2PC, Coord>>);
 
-using ΔRefined = Context<
-    Entry<My2PC, Coord,    RefinedCoord>,
-    Entry<My2PC, Follower, project_t<G_2PC, Follower>>>;
+using ΔRefined = Context<Entry<My2PC, Coord, RefinedCoord>, Entry<My2PC, Follower, project_t<G_2PC, Follower>>>;
 
 static_assert(is_associated_v<ΔRefined, G_2PC, My2PC>);
 
@@ -443,16 +403,11 @@ static_assert(is_associated_v<ΔRefined, G_2PC, My2PC>);
 // If Δ's entry is a SUPERtype of the projection (more branches, wider
 // choice), association fails.
 
-using WidenedCoord = Send<Prepare,
-                     Recv<Vote,
-                     Select<
-                         Send<Commit, End>,
-                         Send<Abort,  End>,
-                         Send<Commit, End>>>>;  // duplicate branch = wider
+using WidenedCoord =
+    Send<Prepare,
+         Recv<Vote, Select<Send<Commit, End>, Send<Abort, End>, Send<Commit, End>>>>;  // duplicate branch = wider
 
-using ΔWidened = Context<
-    Entry<My2PC, Coord,    WidenedCoord>,
-    Entry<My2PC, Follower, project_t<G_2PC, Follower>>>;
+using ΔWidened = Context<Entry<My2PC, Coord, WidenedCoord>, Entry<My2PC, Follower, project_t<G_2PC, Follower>>>;
 
 // WidenedCoord is NOT a subtype of the projection (more Select
 // branches than the super can accept).
@@ -462,8 +417,7 @@ static_assert(!is_associated_v<ΔWidened, G_2PC, My2PC>);
 
 // ─── Non-association: missing role ──────────────────────────────
 
-using ΔMissing = Context<
-    Entry<My2PC, Coord, project_t<G_2PC, Coord>>>;
+using ΔMissing = Context<Entry<My2PC, Coord, project_t<G_2PC, Coord>>>;
 // Missing Follower entry.
 
 static_assert(!domain_matches_v<ΔMissing, G_2PC, My2PC>);
@@ -474,10 +428,8 @@ static_assert(!is_associated_v<ΔMissing, G_2PC, My2PC>);
 
 // ─── Non-association: extra role ────────────────────────────────
 
-using ΔExtra = Context<
-    Entry<My2PC, Coord,    project_t<G_2PC, Coord>>,
-    Entry<My2PC, Follower, project_t<G_2PC, Follower>>,
-    Entry<My2PC, Stranger, End>>;  // role not in G_2PC
+using ΔExtra = Context<Entry<My2PC, Coord, project_t<G_2PC, Coord>>, Entry<My2PC, Follower, project_t<G_2PC, Follower>>,
+                       Entry<My2PC, Stranger, End>>;  // role not in G_2PC
 
 static_assert(!domain_matches_v<ΔExtra, G_2PC, My2PC>);
 static_assert(!is_associated_v<ΔExtra, G_2PC, My2PC>);
@@ -485,17 +437,14 @@ static_assert(!is_associated_v<ΔExtra, G_2PC, My2PC>);
 // ─── Non-association: wrong session tag ─────────────────────────
 
 // An entirely different session's Γ has nothing to do with G_2PC@My2PC.
-using ΔWrongSession = Context<
-    Entry<OtherSession, Coord,    project_t<G_2PC, Coord>>,
-    Entry<OtherSession, Follower, project_t<G_2PC, Follower>>>;
+using ΔWrongSession = Context<Entry<OtherSession, Coord, project_t<G_2PC, Coord>>,
+                              Entry<OtherSession, Follower, project_t<G_2PC, Follower>>>;
 
 // Checking against My2PC: domain is EMPTY (no My2PC entries).
-static_assert(role_lists_equal_as_sets_v<
-    domain_roles_for_session_t<ΔWrongSession, My2PC>,
-    RL_e>);
+static_assert(role_lists_equal_as_sets_v<domain_roles_for_session_t<ΔWrongSession, My2PC>, RL_e>);
 static_assert(!is_associated_v<ΔWrongSession, G_2PC, My2PC>);
 // But against OtherSession: reflexive, associates fine.
-static_assert( is_associated_v<ΔWrongSession, G_2PC, OtherSession>);
+static_assert(is_associated_v<ΔWrongSession, G_2PC, OtherSession>);
 
 // ─── Multi-session Γ: sessions are independently associated ─────
 
@@ -509,16 +458,18 @@ static_assert(is_associated_v<ΔMultiSession, G_2PC, My2PC>);
 
 template <typename Γ, typename G, typename SessionTag>
     requires AssociatedWith<Γ, G, SessionTag>
-consteval bool requires_associated() { return true; }
+consteval bool requires_associated() {
+    return true;
+}
 
 static_assert(requires_associated<ReflexiveΔ, G_2PC, My2PC>());
-static_assert(requires_associated<ΔRefined,  G_2PC, My2PC>());
+static_assert(requires_associated<ΔRefined, G_2PC, My2PC>());
 
 // ─── assert_associated helper compiles ──────────────────────────
 
 consteval bool check_assert_associated() {
     assert_associated<ReflexiveΔ, G_2PC, My2PC>();
-    assert_associated<ΔRefined,  G_2PC, My2PC>();
+    assert_associated<ΔRefined, G_2PC, My2PC>();
     return true;
 }
 static_assert(check_assert_associated());
@@ -530,7 +481,8 @@ static_assert(check_assert_associated());
 //
 // (Uses reflexivity of sync subtyping: T ⩽ T.)
 
-struct Alice {}; struct Bob {};
+struct Alice {};
+struct Bob {};
 struct Ping {};
 
 // Exercise reflexivity on a few more shapes:

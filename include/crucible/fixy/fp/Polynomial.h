@@ -113,18 +113,17 @@ namespace crucible::fixy::fp {
 // to become negative and `sqrt` to produce NaN.  With reduction,
 // |u| ≤ 0.414 guarantees sub-ULP convergence in 7 terms.
 // log(m) = log(1 + u), Taylor coefficients in hex float form.
-[[nodiscard]] inline float
-log_poly(float x) noexcept {
+[[nodiscard]] inline float log_poly(float x) noexcept {
     // Extract IEEE 754 binary32 exponent + mantissa via bit_cast (no
     // libm, no rounding-mode dependence, fully cross-platform).
     const std::uint32_t bits = std::bit_cast<std::uint32_t>(x);
-    const std::int32_t  e_raw = static_cast<std::int32_t>((bits >> 23) & 0xFFu);
-    std::int32_t        e_unbiased = e_raw - 127;
+    const std::int32_t e_raw = static_cast<std::int32_t>((bits >> 23) & 0xFFu);
+    std::int32_t e_unbiased = e_raw - 127;
 
     // Reconstitute m ∈ [1, 2) by zeroing the exponent field to 127.
     // Equivalent to ldexpf(x, -e_unbiased) but bit_cast-based.
     const std::uint32_t m_bits = (bits & 0x007F'FFFFu) | (127u << 23);
-    float               m = std::bit_cast<float>(m_bits);
+    float m = std::bit_cast<float>(m_bits);
 
     // Second range reduction: if m > √2, halve m and bump the exponent
     // so that m ∈ [√2/2, √2] ≈ [0.707, 1.414].  Cross-platform bit-stable
@@ -141,12 +140,12 @@ log_poly(float x) noexcept {
     // Coefficients in hex float form for bit-unambiguous constants.
     // Horner's method for stability:
     //   log(1+u) = u * (1 - u*(1/2 - u*(1/3 - u*(1/4 - u*(1/5 - u*(1/6 - u/7))))))
-    const float c2 = 0x1.0p-1f;          // 1/2
-    const float c3 = 0x1.5555560p-2f;    // 1/3 (nearest float)
-    const float c4 = 0x1.0p-2f;          // 1/4
-    const float c5 = 0x1.99999ap-3f;     // 1/5
-    const float c6 = 0x1.5555560p-3f;    // 1/6
-    const float c7 = 0x1.2492494p-3f;    // 1/7
+    const float c2 = 0x1.0p-1f;  // 1/2
+    const float c3 = 0x1.5555560p-2f;  // 1/3 (nearest float)
+    const float c4 = 0x1.0p-2f;  // 1/4
+    const float c5 = 0x1.99999ap-3f;  // 1/5
+    const float c6 = 0x1.5555560p-3f;  // 1/6
+    const float c7 = 0x1.2492494p-3f;  // 1/7
 
     float p = c7;
     p = c6 - u * p;
@@ -167,12 +166,11 @@ log_poly(float x) noexcept {
 // theta = x - q * (π/2) where q = round(x / (π/2)), reduced ∈ [-π/4, π/4].
 // All ops are IEEE 754 +/-/*: cross-platform bit-stable.
 struct ReduceResult {
-    float        reduced = 0.0f;
+    float reduced = 0.0f;
     std::int32_t quadrant = 0;  // ∈ {0, 1, 2, 3} mod 4 of round(x / (π/2))
 };
 
-[[nodiscard]] inline ReduceResult
-reduce_quarter_pi(float x) noexcept {
+[[nodiscard]] inline ReduceResult reduce_quarter_pi(float x) noexcept {
     // 2/π in hex float — exact-rounded.
     const float two_over_pi = 0x1.45F306p-1f;  // 0.6366197...
     const float pi_over_two = 0x1.921FB6p+0f;  // 1.5707963...
@@ -188,8 +186,7 @@ reduce_quarter_pi(float x) noexcept {
     const std::int32_t q = static_cast<std::int32_t>(q_biased);
 
     const float reduced = x - static_cast<float>(q) * pi_over_two;
-    const std::int32_t quadrant = static_cast<std::int32_t>(
-        static_cast<std::uint32_t>(q) & 0x3u);  // ∈ {0, 1, 2, 3}
+    const std::int32_t quadrant = static_cast<std::int32_t>(static_cast<std::uint32_t>(q) & 0x3u);  // ∈ {0, 1, 2, 3}
 
     return ReduceResult{reduced, quadrant};
 }
@@ -198,14 +195,13 @@ reduce_quarter_pi(float x) noexcept {
 //
 // 5-term Taylor polynomial: x - x³/6 + x⁵/120 - x⁷/5040 + x⁹/362880.
 // Max abs error on [-π/4, π/4] ≈ 3e-9 (float-precision sufficient).
-[[nodiscard]] inline float
-sin_in_quarter(float x) noexcept {
+[[nodiscard]] inline float sin_in_quarter(float x) noexcept {
     const float x2 = x * x;
     // Horner form for sin(x)/x = 1 - x²/6 + x⁴/120 - x⁶/5040 + x⁸/362880
-    const float a4 = 0x1.5D8A4Cp-19f;    // 1/362880 ≈ 2.755e-6
-    const float a3 = 0x1.A01A02p-13f;    // 1/5040   ≈ 1.984e-4
-    const float a2 = 0x1.111112p-7f;     // 1/120    ≈ 8.333e-3
-    const float a1 = 0x1.555556p-3f;     // 1/6      ≈ 1.667e-1
+    const float a4 = 0x1.5D8A4Cp-19f;  // 1/362880 ≈ 2.755e-6
+    const float a3 = 0x1.A01A02p-13f;  // 1/5040   ≈ 1.984e-4
+    const float a2 = 0x1.111112p-7f;  // 1/120    ≈ 8.333e-3
+    const float a1 = 0x1.555556p-3f;  // 1/6      ≈ 1.667e-1
     float p = a4;
     p = a3 - x2 * p;
     p = a2 - x2 * p;
@@ -218,13 +214,12 @@ sin_in_quarter(float x) noexcept {
 //
 // 5-term Taylor: 1 - x²/2 + x⁴/24 - x⁶/720 + x⁸/40320.
 // Max abs error on [-π/4, π/4] ≈ 2e-9.
-[[nodiscard]] inline float
-cos_in_quarter(float x) noexcept {
+[[nodiscard]] inline float cos_in_quarter(float x) noexcept {
     const float x2 = x * x;
-    const float b4 = 0x1.A01A02p-16f;    // 1/40320
-    const float b3 = 0x1.6C16C2p-10f;    // 1/720
-    const float b2 = 0x1.555556p-5f;     // 1/24
-    const float b1 = 0x1.0p-1f;          // 1/2
+    const float b4 = 0x1.A01A02p-16f;  // 1/40320
+    const float b3 = 0x1.6C16C2p-10f;  // 1/720
+    const float b2 = 0x1.555556p-5f;  // 1/24
+    const float b1 = 0x1.0p-1f;  // 1/2
     float p = b4;
     p = b3 - x2 * p;
     p = b2 - x2 * p;
@@ -240,31 +235,39 @@ cos_in_quarter(float x) noexcept {
 //   q=1: sin(x) =  cos_in(r),  cos(x) = -sin_in(r)
 //   q=2: sin(x) = -sin_in(r),  cos(x) = -cos_in(r)
 //   q=3: sin(x) = -cos_in(r),  cos(x) =  sin_in(r)
-[[nodiscard]] inline float
-sin_poly(float x) noexcept {
+[[nodiscard]] inline float sin_poly(float x) noexcept {
     const ReduceResult rr = reduce_quarter_pi(x);
     const float s = sin_in_quarter(rr.reduced);
     const float c = cos_in_quarter(rr.reduced);
     switch (rr.quadrant) {
-        case 0: return  s;
-        case 1: return  c;
-        case 2: return -s;
-        case 3: return -c;
-        default: return 0.0f;  // unreachable; q masked to {0,1,2,3}
+        case 0:
+            return s;
+        case 1:
+            return c;
+        case 2:
+            return -s;
+        case 3:
+            return -c;
+        default:
+            return 0.0f;  // unreachable; q masked to {0,1,2,3}
     }
 }
 
-[[nodiscard]] inline float
-cos_poly(float x) noexcept {
+[[nodiscard]] inline float cos_poly(float x) noexcept {
     const ReduceResult rr = reduce_quarter_pi(x);
     const float s = sin_in_quarter(rr.reduced);
     const float c = cos_in_quarter(rr.reduced);
     switch (rr.quadrant) {
-        case 0: return  c;
-        case 1: return -s;
-        case 2: return -c;
-        case 3: return  s;
-        default: return 0.0f;  // unreachable
+        case 0:
+            return c;
+        case 1:
+            return -s;
+        case 2:
+            return -c;
+        case 3:
+            return s;
+        default:
+            return 0.0f;  // unreachable
     }
 }
 
@@ -274,8 +277,8 @@ cos_poly(float x) noexcept {
 // Output: pair of N(0,1)-distributed floats, bit-stable across any
 // conforming IEEE 754 platform.  All ops are +, -, *, /, bit_cast, or
 // std::sqrt (the latter mandated correctly-rounded by IEEE 754 §6.3).
-[[nodiscard]] inline std::pair<float, float>
-box_muller_polynomial(std::uint32_t u1_raw, std::uint32_t u2_raw) noexcept {
+[[nodiscard]] inline std::pair<float, float> box_muller_polynomial(std::uint32_t u1_raw,
+                                                                   std::uint32_t u2_raw) noexcept {
     // Map raw uint32 to (0, 1] — same convention as Philox::box_muller.
     // (x+1) * 2^-32 ∈ (2^-32, 1] avoids log(0).
     const float two_pow_neg32 = 0x1.0p-32f;
@@ -303,15 +306,15 @@ box_muller_polynomial(std::uint32_t u1_raw, std::uint32_t u2_raw) noexcept {
 // V-095 sentinel TU.
 inline void runtime_smoke_test() noexcept {
     // Smoke: log_poly at a few well-known inputs.  All ops bit-stable.
-    [[maybe_unused]] volatile float log1 = log_poly(1.0f);   // expect 0
-    [[maybe_unused]] volatile float log2 = log_poly(2.0f);   // expect ln(2)
+    [[maybe_unused]] volatile float log1 = log_poly(1.0f);  // expect 0
+    [[maybe_unused]] volatile float log2 = log_poly(2.0f);  // expect ln(2)
     [[maybe_unused]] volatile float log_e = log_poly(0x1.5BF0A8p+1f);  // ≈ e
 
     // Smoke: sin/cos at canonical angles.
-    [[maybe_unused]] volatile float s0 = sin_poly(0.0f);                     // expect 0
-    [[maybe_unused]] volatile float c0 = cos_poly(0.0f);                     // expect 1
-    [[maybe_unused]] volatile float spi2 = sin_poly(0x1.921FB6p+0f);         // π/2
-    [[maybe_unused]] volatile float cpi  = cos_poly(0x1.921FB6p+1f);         // π
+    [[maybe_unused]] volatile float s0 = sin_poly(0.0f);  // expect 0
+    [[maybe_unused]] volatile float c0 = cos_poly(0.0f);  // expect 1
+    [[maybe_unused]] volatile float spi2 = sin_poly(0x1.921FB6p+0f);  // π/2
+    [[maybe_unused]] volatile float cpi = cos_poly(0x1.921FB6p+1f);  // π
 
     // Smoke: Box-Muller with a representative seed pair.
     const auto [z1, z2] = box_muller_polynomial(0xDEADBEEFu, 0xCAFEBABEu);

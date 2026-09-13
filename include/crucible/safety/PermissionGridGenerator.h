@@ -100,14 +100,11 @@ struct ConsumerSide {
 // ── Whole splits binary into the two sides ─────────────────────────
 
 template <typename Whole>
-struct splits_into<Whole, ProducerSide<Whole>, ConsumerSide<Whole>>
-    : std::true_type {};
+struct splits_into<Whole, ProducerSide<Whole>, ConsumerSide<Whole>> : std::true_type {};
 
 // fixy-M-29 authoring witness (paired with the splits_into spec above).
 template <typename Whole>
-struct splits_into_authoring_witness<
-    Whole, ProducerSide<Whole>, ConsumerSide<Whole>>
-    : std::true_type {};
+struct splits_into_authoring_witness<Whole, ProducerSide<Whole>, ConsumerSide<Whole>> : std::true_type {};
 
 // ── Per-side slot aliases (reuse 1D Slice<>) ───────────────────────
 //
@@ -125,10 +122,8 @@ using Consumer = Slice<ConsumerSide<Whole>, J>;
 
 template <typename Whole, std::size_t M, std::size_t N>
 struct auto_split_grid {
-    static_assert(M > 0,
-        "auto_split_grid<Whole, M, N>: M (producer count) must be > 0");
-    static_assert(N > 0,
-        "auto_split_grid<Whole, M, N>: N (consumer count) must be > 0");
+    static_assert(M > 0, "auto_split_grid<Whole, M, N>: M (producer count) must be > 0");
+    static_assert(N > 0, "auto_split_grid<Whole, M, N>: N (consumer count) must be > 0");
 
     using whole_type = Whole;
     using producer_side_type = ProducerSide<Whole>;
@@ -171,11 +166,8 @@ struct [[nodiscard]] GridPermissions {
 
 template <typename Whole, std::size_t M, std::size_t N>
 inline constexpr bool can_split_grid_v =
-       (M > 0)
-    && (N > 0)
-    && splits_into_v<Whole, ProducerSide<Whole>, ConsumerSide<Whole>>
-    && can_split_n_v<ProducerSide<Whole>, M>
-    && can_split_n_v<ConsumerSide<Whole>, N>;
+    (M > 0) && (N > 0) && splits_into_v<Whole, ProducerSide<Whole>, ConsumerSide<Whole>>
+    && can_split_n_v<ProducerSide<Whole>, M> && can_split_n_v<ConsumerSide<Whole>, N>;
 
 // ── mint_grid_permissions<Whole, M, N>(parent) — §XXI token mint ───
 //
@@ -195,21 +187,15 @@ inline constexpr bool can_split_grid_v =
 namespace detail {
 
 template <typename Whole, std::size_t... Is>
-[[nodiscard]] constexpr auto split_producer_side_(
-    Permission<ProducerSide<Whole>>&& side,
-    std::index_sequence<Is...>) noexcept
-{
-    return mint_permission_split_n<Slice<ProducerSide<Whole>, Is>...>(
-        std::move(side));
+[[nodiscard]] constexpr auto split_producer_side_(Permission<ProducerSide<Whole>>&& side,
+                                                  std::index_sequence<Is...>) noexcept {
+    return mint_permission_split_n<Slice<ProducerSide<Whole>, Is>...>(std::move(side));
 }
 
 template <typename Whole, std::size_t... Js>
-[[nodiscard]] constexpr auto split_consumer_side_(
-    Permission<ConsumerSide<Whole>>&& side,
-    std::index_sequence<Js...>) noexcept
-{
-    return mint_permission_split_n<Slice<ConsumerSide<Whole>, Js>...>(
-        std::move(side));
+[[nodiscard]] constexpr auto split_consumer_side_(Permission<ConsumerSide<Whole>>&& side,
+                                                  std::index_sequence<Js...>) noexcept {
+    return mint_permission_split_n<Slice<ConsumerSide<Whole>, Js>...>(std::move(side));
 }
 
 }  // namespace detail
@@ -217,16 +203,12 @@ template <typename Whole, std::size_t... Js>
 template <typename Whole, std::size_t M, std::size_t N>
     requires can_split_grid_v<Whole, M, N>
 [[nodiscard]] constexpr auto mint_grid_permissions(Permission<Whole>&& parent) noexcept
-    -> GridPermissions<Whole, M, N>
-{
-    auto sides = mint_permission_split<ProducerSide<Whole>, ConsumerSide<Whole>>(
-        std::move(parent));
+    -> GridPermissions<Whole, M, N> {
+    auto sides = mint_permission_split<ProducerSide<Whole>, ConsumerSide<Whole>>(std::move(parent));
 
     return GridPermissions<Whole, M, N>{
-        .producers = detail::split_producer_side_<Whole>(
-            std::move(sides.first), std::make_index_sequence<M>{}),
-        .consumers = detail::split_consumer_side_<Whole>(
-            std::move(sides.second), std::make_index_sequence<N>{}),
+        .producers = detail::split_producer_side_<Whole>(std::move(sides.first), std::make_index_sequence<M>{}),
+        .consumers = detail::split_consumer_side_<Whole>(std::move(sides.second), std::make_index_sequence<N>{}),
     };
 }
 
@@ -243,24 +225,16 @@ static_assert(std::is_empty_v<ProducerSide<detail::grid_test_tag_>>);
 static_assert(std::is_empty_v<ConsumerSide<detail::grid_test_tag_>>);
 
 // Producer<Whole, I> and Consumer<Whole, J> alias to distinct Slice<>.
-static_assert(std::is_same_v<
-    Producer<detail::grid_test_tag_, 0>,
-    Slice<ProducerSide<detail::grid_test_tag_>, 0>>);
-static_assert(std::is_same_v<
-    Consumer<detail::grid_test_tag_, 0>,
-    Slice<ConsumerSide<detail::grid_test_tag_>, 0>>);
+static_assert(std::is_same_v<Producer<detail::grid_test_tag_, 0>, Slice<ProducerSide<detail::grid_test_tag_>, 0>>);
+static_assert(std::is_same_v<Consumer<detail::grid_test_tag_, 0>, Slice<ConsumerSide<detail::grid_test_tag_>, 0>>);
 
 // Producer side and consumer side of the same Whole are NOT
 // interchangeable — the type system enforces the role distinction.
-static_assert(!std::is_same_v<
-    Producer<detail::grid_test_tag_, 0>,
-    Consumer<detail::grid_test_tag_, 0>>);
+static_assert(!std::is_same_v<Producer<detail::grid_test_tag_, 0>, Consumer<detail::grid_test_tag_, 0>>);
 
 // Whole's binary split is registered.
-static_assert(splits_into_v<
-    detail::grid_test_tag_,
-    ProducerSide<detail::grid_test_tag_>,
-    ConsumerSide<detail::grid_test_tag_>>);
+static_assert(
+    splits_into_v<detail::grid_test_tag_, ProducerSide<detail::grid_test_tag_>, ConsumerSide<detail::grid_test_tag_>>);
 
 // can_split_grid_v matches at multiple (M, N) tuples.
 static_assert(can_split_grid_v<detail::grid_test_tag_, 1, 1>);
@@ -270,15 +244,11 @@ static_assert(!can_split_grid_v<detail::grid_test_tag_, 0, 4>);
 static_assert(!can_split_grid_v<detail::grid_test_tag_, 4, 0>);
 
 // auto_split_grid surfaces both side types correctly.
-static_assert(std::is_same_v<
-    auto_split_grid<detail::grid_test_tag_, 2, 3>::producer_tags,
-    std::tuple<Producer<detail::grid_test_tag_, 0>,
-               Producer<detail::grid_test_tag_, 1>>>);
-static_assert(std::is_same_v<
-    auto_split_grid<detail::grid_test_tag_, 2, 3>::consumer_tags,
-    std::tuple<Consumer<detail::grid_test_tag_, 0>,
-               Consumer<detail::grid_test_tag_, 1>,
-               Consumer<detail::grid_test_tag_, 2>>>);
+static_assert(std::is_same_v<auto_split_grid<detail::grid_test_tag_, 2, 3>::producer_tags,
+                             std::tuple<Producer<detail::grid_test_tag_, 0>, Producer<detail::grid_test_tag_, 1>>>);
+static_assert(std::is_same_v<auto_split_grid<detail::grid_test_tag_, 2, 3>::consumer_tags,
+                             std::tuple<Consumer<detail::grid_test_tag_, 0>, Consumer<detail::grid_test_tag_, 1>,
+                                        Consumer<detail::grid_test_tag_, 2>>>);
 
 // ── Runtime smoke test ─────────────────────────────────────────────
 
@@ -289,20 +259,13 @@ inline void runtime_smoke_test_grid() {
     auto whole = mint_permission_root<Tag>();
     auto grid = mint_grid_permissions<Tag, 4, 3>(std::move(whole));
 
-    static_assert(std::is_same_v<
-        decltype(grid),
-        GridPermissions<Tag, 4, 3>>);
-    static_assert(std::is_same_v<
-        decltype(grid.producers),
-        std::tuple<Permission<Producer<Tag, 0>>,
-                   Permission<Producer<Tag, 1>>,
-                   Permission<Producer<Tag, 2>>,
-                   Permission<Producer<Tag, 3>>>>);
-    static_assert(std::is_same_v<
-        decltype(grid.consumers),
-        std::tuple<Permission<Consumer<Tag, 0>>,
-                   Permission<Consumer<Tag, 1>>,
-                   Permission<Consumer<Tag, 2>>>>);
+    static_assert(std::is_same_v<decltype(grid), GridPermissions<Tag, 4, 3>>);
+    static_assert(std::is_same_v<decltype(grid.producers),
+                                 std::tuple<Permission<Producer<Tag, 0>>, Permission<Producer<Tag, 1>>,
+                                            Permission<Producer<Tag, 2>>, Permission<Producer<Tag, 3>>>>);
+    static_assert(
+        std::is_same_v<decltype(grid.consumers), std::tuple<Permission<Consumer<Tag, 0>>, Permission<Consumer<Tag, 1>>,
+                                                            Permission<Consumer<Tag, 2>>>>);
 
     // Suppress unused; permissions destruct at scope end.
     (void)grid;

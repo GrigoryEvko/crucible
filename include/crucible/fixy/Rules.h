@@ -124,23 +124,19 @@ inline constexpr bool no_linear_region_alias_v =
 
 // ─── frame_axis_consistent_v — backs R018 / F001 ──────────────────
 template <typename... Fs>
-inline constexpr bool frame_axis_consistent_v =
-    ::crucible::safety::fn::collision::pack::frame_axis_consistent_v<Fs...>;
+inline constexpr bool frame_axis_consistent_v = ::crucible::safety::fn::collision::pack::frame_axis_consistent_v<Fs...>;
 
 // ─── is_linear_in_region_v — per-Fn helper ────────────────────────
 template <typename F>
-inline constexpr bool is_linear_in_region_v =
-    ::crucible::safety::fn::collision::pack::is_linear_in_region_v<F>;
+inline constexpr bool is_linear_in_region_v = ::crucible::safety::fn::collision::pack::is_linear_in_region_v<F>;
 
 // ─── same_region_tag_v — type-level tag identity ──────────────────
 template <typename Tag1, typename Tag2>
-inline constexpr bool same_region_tag_v =
-    ::crucible::safety::fn::collision::pack::same_region_tag_v<Tag1, Tag2>;
+inline constexpr bool same_region_tag_v = ::crucible::safety::fn::collision::pack::same_region_tag_v<Tag1, Tag2>;
 
 // ─── region_tag_of_t — lifetime → region-tag carrier ──────────────
 template <typename L>
-using region_tag_of_t =
-    typename ::crucible::safety::fn::collision::pack::region_tag_of<L>::type;
+using region_tag_of_t = typename ::crucible::safety::fn::collision::pack::region_tag_of<L>::type;
 
 }  // namespace pack
 
@@ -313,19 +309,18 @@ static_assert(RuleCode::None == ::crucible::safety::fn::collision::RuleCode::Non
 //    AND that the using-decl correctly imports the concept (not just
 //    a name).
 static_assert(ValidComposition<::crucible::safety::fn::Fn<int>>,
-    "fixy::rule::ValidComposition must accept the Fn<int> positive "
-    "probe — substrate identity for the §6.8 gate.");
+              "fixy::rule::ValidComposition must accept the Fn<int> positive "
+              "probe — substrate identity for the §6.8 gate.");
 
 // 3. CollisionRules<F>::valid reaches through the alias and agrees
 //    with ValidComposition (the concept reads `::valid` from the
 //    trait — bypassing the concept lets us check the trait alone).
 static_assert(CollisionRules<::crucible::safety::fn::Fn<int>>::valid,
-    "fixy::rule::CollisionRules<F>::valid must alias substrate trait");
+              "fixy::rule::CollisionRules<F>::valid must alias substrate trait");
 
 // 4. AllRulesOK aggregate evaluates true on the positive probe — the
 //    conjunction of 20 per-rule concepts equals ValidComposition.
-static_assert(AllRulesOK<::crucible::safety::fn::Fn<int>>,
-    "fixy::rule::AllRulesOK must hold on the canonical probe");
+static_assert(AllRulesOK<::crucible::safety::fn::Fn<int>>, "fixy::rule::AllRulesOK must hold on the canonical probe");
 
 // 5. bijection — rule_code_of(rule_tag_t<R>) == R, witnessed via the
 //    alias.  Spot-check three rules from different catalog regions
@@ -335,10 +330,8 @@ static_assert(rule_bijection_v<RuleCode::L004>);
 static_assert(rule_bijection_v<RuleCode::F002>);
 
 // 6. rule_tag_t alias resolves to the substrate's tag class.
-static_assert(std::is_same_v<
-    rule_tag_t<RuleCode::I002>,
-    ::crucible::safety::fn::collision::I002_ClassifiedFailPayload>,
-    "fixy::rule::rule_tag_t alias must resolve to substrate tag");
+static_assert(std::is_same_v<rule_tag_t<RuleCode::I002>, ::crucible::safety::fn::collision::I002_ClassifiedFailPayload>,
+              "fixy::rule::rule_tag_t alias must resolve to substrate tag");
 
 // 7. Per-rule concepts I002_OK..F002_OK reach through the alias on
 //    the positive probe.  All 20 evaluate true for Fn<int>.
@@ -376,9 +369,8 @@ static_assert(F002_OK<::crucible::safety::fn::Fn<int>>);
 //                                                          ----
 //                                                            28
 constexpr int u062_surface_cardinality = 28;
-static_assert(u062_surface_cardinality == 28,
-    "fixy::rule:: U-062 surface cardinality drifted — update Rules.h "
-    "using-decls AND this sentinel in lockstep.");
+static_assert(u062_surface_cardinality == 28, "fixy::rule:: U-062 surface cardinality drifted — update Rules.h "
+                                              "using-decls AND this sentinel in lockstep.");
 
 }  // namespace u062_self_test
 

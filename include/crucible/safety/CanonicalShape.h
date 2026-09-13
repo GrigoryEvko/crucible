@@ -108,15 +108,8 @@ namespace crucible::safety::extract {
 // ═════════════════════════════════════════════════════════════════════
 
 template <auto FnPtr>
-concept CanonicalShape =
-       UnaryTransform<FnPtr>
-    || BinaryTransform<FnPtr>
-    || Reduction<FnPtr>
-    || ProducerEndpoint<FnPtr>
-    || ConsumerEndpoint<FnPtr>
-    || SwmrWriter<FnPtr>
-    || SwmrReader<FnPtr>
-    || PipelineStage<FnPtr>;
+concept CanonicalShape = UnaryTransform<FnPtr> || BinaryTransform<FnPtr> || Reduction<FnPtr> || ProducerEndpoint<FnPtr>
+                      || ConsumerEndpoint<FnPtr> || SwmrWriter<FnPtr> || SwmrReader<FnPtr> || PipelineStage<FnPtr>;
 
 template <auto FnPtr>
 concept NonCanonical = !CanonicalShape<FnPtr>;
@@ -171,8 +164,7 @@ consteval CanonicalShapeKind canonical_shape_kind_impl() noexcept {
 }  // namespace detail
 
 template <auto FnPtr>
-inline constexpr CanonicalShapeKind canonical_shape_kind_v =
-    detail::canonical_shape_kind_impl<FnPtr>();
+inline constexpr CanonicalShapeKind canonical_shape_kind_v = detail::canonical_shape_kind_impl<FnPtr>();
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Human-readable name lookup ─────────────────────────────────────
@@ -182,26 +174,33 @@ inline constexpr CanonicalShapeKind canonical_shape_kind_v =
 // dispatcher uses this to render error messages naming the matched
 // shape (or naming "NonCanonical" with the §3.8 fallthrough hint).
 
-[[nodiscard]] constexpr std::string_view canonical_shape_name(
-    CanonicalShapeKind k) noexcept
-{
+[[nodiscard]] constexpr std::string_view canonical_shape_name(CanonicalShapeKind k) noexcept {
     switch (k) {
-        case CanonicalShapeKind::UnaryTransform:    return "UnaryTransform";
-        case CanonicalShapeKind::BinaryTransform:   return "BinaryTransform";
-        case CanonicalShapeKind::Reduction:         return "Reduction";
-        case CanonicalShapeKind::ProducerEndpoint:  return "ProducerEndpoint";
-        case CanonicalShapeKind::ConsumerEndpoint:  return "ConsumerEndpoint";
-        case CanonicalShapeKind::SwmrWriter:        return "SwmrWriter";
-        case CanonicalShapeKind::SwmrReader:        return "SwmrReader";
-        case CanonicalShapeKind::PipelineStage:     return "PipelineStage";
-        case CanonicalShapeKind::NonCanonical:      return "NonCanonical";
-        default: return "Unknown";  // unreachable under exhaustive enum
+        case CanonicalShapeKind::UnaryTransform:
+            return "UnaryTransform";
+        case CanonicalShapeKind::BinaryTransform:
+            return "BinaryTransform";
+        case CanonicalShapeKind::Reduction:
+            return "Reduction";
+        case CanonicalShapeKind::ProducerEndpoint:
+            return "ProducerEndpoint";
+        case CanonicalShapeKind::ConsumerEndpoint:
+            return "ConsumerEndpoint";
+        case CanonicalShapeKind::SwmrWriter:
+            return "SwmrWriter";
+        case CanonicalShapeKind::SwmrReader:
+            return "SwmrReader";
+        case CanonicalShapeKind::PipelineStage:
+            return "PipelineStage";
+        case CanonicalShapeKind::NonCanonical:
+            return "NonCanonical";
+        default:
+            return "Unknown";  // unreachable under exhaustive enum
     }
 }
 
 template <auto FnPtr>
-inline constexpr std::string_view canonical_shape_name_of_v =
-    canonical_shape_name(canonical_shape_kind_v<FnPtr>);
+inline constexpr std::string_view canonical_shape_name_of_v = canonical_shape_name(canonical_shape_kind_v<FnPtr>);
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Self-test block ────────────────────────────────────────────────
@@ -216,15 +215,13 @@ namespace detail::canonical_shape_self_test {
 
 inline void f_two_ints(int, int) noexcept {}
 static_assert(!CanonicalShape<&f_two_ints>);
-static_assert( NonCanonical<&f_two_ints>);
-static_assert(canonical_shape_kind_v<&f_two_ints>
-              == CanonicalShapeKind::NonCanonical);
-static_assert(canonical_shape_name(CanonicalShapeKind::NonCanonical)
-              == std::string_view{"NonCanonical"});
+static_assert(NonCanonical<&f_two_ints>);
+static_assert(canonical_shape_kind_v<&f_two_ints> == CanonicalShapeKind::NonCanonical);
+static_assert(canonical_shape_name(CanonicalShapeKind::NonCanonical) == std::string_view{"NonCanonical"});
 
 inline void f_three_params(int, int, int) noexcept {}
 static_assert(!CanonicalShape<&f_three_params>);
-static_assert( NonCanonical<&f_three_params>);
+static_assert(NonCanonical<&f_three_params>);
 
 }  // namespace detail::canonical_shape_self_test
 
@@ -239,12 +236,9 @@ inline bool canonical_shape_smoke_test() noexcept {
     bool ok = true;
     for (std::size_t i = 0; i < cap; ++i) {
         ok = ok && !CanonicalShape<&f_two_ints>;
-        ok = ok &&  NonCanonical<&f_two_ints>;
-        ok = ok && (canonical_shape_kind_v<&f_two_ints>
-                    == CanonicalShapeKind::NonCanonical);
-        ok = ok && (canonical_shape_name(canonical_shape_kind_v<
-                                          &f_three_params>)
-                    == std::string_view{"NonCanonical"});
+        ok = ok && NonCanonical<&f_two_ints>;
+        ok = ok && (canonical_shape_kind_v<&f_two_ints> == CanonicalShapeKind::NonCanonical);
+        ok = ok && (canonical_shape_name(canonical_shape_kind_v<&f_three_params>) == std::string_view{"NonCanonical"});
     }
     return ok;
 }

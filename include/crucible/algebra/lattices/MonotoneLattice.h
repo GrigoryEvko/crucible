@@ -121,7 +121,7 @@
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/Lattice.h>
 
-#include <cmath>      // std::isnan (constexpr in C++26 — used by NaN guard)
+#include <cmath>  // std::isnan (constexpr in C++26 — used by NaN guard)
 #include <concepts>
 #include <contracts>
 #include <cstdint>
@@ -146,24 +146,16 @@ struct monotone_bounds;
 template <typename T>
     requires std::is_arithmetic_v<T>
 struct monotone_bounds<T, std::less<T>> {
-    [[nodiscard]] static constexpr T lattice_bottom() noexcept {
-        return std::numeric_limits<T>::lowest();
-    }
-    [[nodiscard]] static constexpr T lattice_top() noexcept {
-        return std::numeric_limits<T>::max();
-    }
+    [[nodiscard]] static constexpr T lattice_bottom() noexcept { return std::numeric_limits<T>::lowest(); }
+    [[nodiscard]] static constexpr T lattice_top() noexcept { return std::numeric_limits<T>::max(); }
 };
 
 // Arithmetic T + std::greater<T>: bottom/top swap.
 template <typename T>
     requires std::is_arithmetic_v<T>
 struct monotone_bounds<T, std::greater<T>> {
-    [[nodiscard]] static constexpr T lattice_bottom() noexcept {
-        return std::numeric_limits<T>::max();
-    }
-    [[nodiscard]] static constexpr T lattice_top() noexcept {
-        return std::numeric_limits<T>::lowest();
-    }
+    [[nodiscard]] static constexpr T lattice_bottom() noexcept { return std::numeric_limits<T>::max(); }
+    [[nodiscard]] static constexpr T lattice_top() noexcept { return std::numeric_limits<T>::lowest(); }
 };
 
 // ── Concept gate ────────────────────────────────────────────────────
@@ -174,7 +166,7 @@ struct monotone_bounds<T, std::greater<T>> {
 template <typename T, typename Cmp>
 concept HasMonotoneBounds = requires {
     { monotone_bounds<T, Cmp>::lattice_bottom() } -> std::same_as<T>;
-    { monotone_bounds<T, Cmp>::lattice_top()    } -> std::same_as<T>;
+    { monotone_bounds<T, Cmp>::lattice_top() } -> std::same_as<T>;
 };
 
 // ── MonotoneLattice<T, Cmp> ─────────────────────────────────────────
@@ -257,18 +249,16 @@ struct MonotoneLattice {
         return monotone_bounds<T, Cmp>::lattice_top();
     }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return "MonotoneLattice";
-    }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "MonotoneLattice"; }
 };
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::monotone_lattice_self_test {
 
 // ── Concept conformance: arithmetic + std::less ─────────────────────
-using MonU64Less    = MonotoneLattice<std::uint64_t, std::less<std::uint64_t>>;
-using MonI32Less    = MonotoneLattice<std::int32_t,  std::less<std::int32_t>>;
-using MonF64Less    = MonotoneLattice<double,        std::less<double>>;
+using MonU64Less = MonotoneLattice<std::uint64_t, std::less<std::uint64_t>>;
+using MonI32Less = MonotoneLattice<std::int32_t, std::less<std::int32_t>>;
+using MonF64Less = MonotoneLattice<double, std::less<double>>;
 
 static_assert(Lattice<MonU64Less>);
 static_assert(BoundedBelowLattice<MonU64Less>);
@@ -289,9 +279,7 @@ static_assert(BoundedLattice<MonU64Greater>);
 
 // ── Concept conformance: custom Cmp, no monotone_bounds → Lattice only
 struct CustomLess {
-    [[nodiscard]] constexpr bool operator()(int a, int b) const noexcept {
-        return a < b;
-    }
+    [[nodiscard]] constexpr bool operator()(int a, int b) const noexcept { return a < b; }
 };
 using MonI32Custom = MonotoneLattice<int, CustomLess>;
 
@@ -304,15 +292,15 @@ static_assert(!BoundedLattice<MonI32Custom>);
 static_assert(UnboundedLattice<MonI32Custom>);
 
 // ── Bounds correctness ──────────────────────────────────────────────
-static_assert(MonU64Less::bottom()    == 0u);
-static_assert(MonU64Less::top()       == std::numeric_limits<std::uint64_t>::max());
-static_assert(MonI32Less::bottom()    == std::numeric_limits<std::int32_t>::min());
-static_assert(MonI32Less::top()       == std::numeric_limits<std::int32_t>::max());
+static_assert(MonU64Less::bottom() == 0u);
+static_assert(MonU64Less::top() == std::numeric_limits<std::uint64_t>::max());
+static_assert(MonI32Less::bottom() == std::numeric_limits<std::int32_t>::min());
+static_assert(MonI32Less::top() == std::numeric_limits<std::int32_t>::max());
 
 // std::greater orientation swaps the bounds — bottom is the LARGEST
 // value (descending order's bottom-most reachable element).
 static_assert(MonU64Greater::bottom() == std::numeric_limits<std::uint64_t>::max());
-static_assert(MonU64Greater::top()    == 0u);
+static_assert(MonU64Greater::top() == 0u);
 
 // ── Lattice ops at representative witnesses (uint64_t, std::less) ───
 static_assert(MonU64Less::leq(0u, 1u));
@@ -342,32 +330,32 @@ static_assert(MonU64Greater::meet(3u, 7u) == 7u);
 //
 // For uint64_t / std::less:
 constexpr std::uint64_t u_bot = MonU64Less::bottom();
-constexpr std::uint64_t u_lo  = 1u;
+constexpr std::uint64_t u_lo = 1u;
 constexpr std::uint64_t u_mid = std::uint64_t{1} << 32;
-constexpr std::uint64_t u_hi  = std::numeric_limits<std::uint64_t>::max() - 1u;
+constexpr std::uint64_t u_hi = std::numeric_limits<std::uint64_t>::max() - 1u;
 constexpr std::uint64_t u_top = MonU64Less::top();
 
 static_assert(verify_bounded_lattice_axioms_at<MonU64Less>(u_bot, u_bot, u_bot));
-static_assert(verify_bounded_lattice_axioms_at<MonU64Less>(u_bot, u_lo,  u_top));
-static_assert(verify_bounded_lattice_axioms_at<MonU64Less>(u_lo,  u_mid, u_hi));
+static_assert(verify_bounded_lattice_axioms_at<MonU64Less>(u_bot, u_lo, u_top));
+static_assert(verify_bounded_lattice_axioms_at<MonU64Less>(u_lo, u_mid, u_hi));
 static_assert(verify_bounded_lattice_axioms_at<MonU64Less>(u_top, u_top, u_top));
-static_assert(verify_bounded_lattice_axioms_at<MonU64Less>(u_hi,  u_mid, u_lo));   // descending
+static_assert(verify_bounded_lattice_axioms_at<MonU64Less>(u_hi, u_mid, u_lo));  // descending
 static_assert(verify_bounded_lattice_axioms_at<MonU64Less>(u_top, u_bot, u_top));  // boundary
 static_assert(verify_bounded_lattice_axioms_at<MonU64Less>(u_bot, u_mid, u_top));  // span
 
 // For int32_t / std::less (negative-zero-positive crossings):
 constexpr std::int32_t i_neg = -100;
 constexpr std::int32_t i_zero = 0;
-constexpr std::int32_t i_pos  = 100;
-constexpr std::int32_t i_bot  = MonI32Less::bottom();
-constexpr std::int32_t i_top  = MonI32Less::top();
+constexpr std::int32_t i_pos = 100;
+constexpr std::int32_t i_bot = MonI32Less::bottom();
+constexpr std::int32_t i_top = MonI32Less::top();
 
 static_assert(verify_bounded_lattice_axioms_at<MonI32Less>(i_neg, i_zero, i_pos));
 static_assert(verify_bounded_lattice_axioms_at<MonI32Less>(i_bot, i_zero, i_top));
-static_assert(verify_bounded_lattice_axioms_at<MonI32Less>(i_top, i_neg,  i_bot));
+static_assert(verify_bounded_lattice_axioms_at<MonI32Less>(i_top, i_neg, i_bot));
 
 // For uint64_t / std::greater (reversed direction sanity):
-static_assert(verify_bounded_lattice_axioms_at<MonU64Greater>(u_bot, u_lo,  u_top));
+static_assert(verify_bounded_lattice_axioms_at<MonU64Greater>(u_bot, u_lo, u_top));
 static_assert(verify_bounded_lattice_axioms_at<MonU64Greater>(u_top, u_mid, u_bot));
 
 // ── Monotonic semantics (CSL "advance only") ────────────────────────
@@ -377,7 +365,7 @@ static_assert(verify_bounded_lattice_axioms_at<MonU64Greater>(u_top, u_mid, u_bo
 // the chain order under join.
 static_assert(MonU64Less::leq(0u, 100u));
 static_assert(MonU64Less::leq(100u, 1000u));
-static_assert(MonU64Less::leq(0u, 1000u));   // transitivity
+static_assert(MonU64Less::leq(0u, 1000u));  // transitivity
 static_assert(MonU64Less::join(100u, 1000u) == 1000u);
 static_assert(MonU64Less::join(0u, MonU64Less::top()) == MonU64Less::top());
 
@@ -405,8 +393,8 @@ static_assert(!MonF64Less::is_nan_safe(std::numeric_limits<double>::quiet_NaN())
 static_assert(!MonF64Less::is_nan_safe(std::numeric_limits<double>::signaling_NaN()));
 
 // Diagnostic name.
-static_assert(MonU64Less::name()    == "MonotoneLattice");
-static_assert(MonI32Custom::name()  == "MonotoneLattice");
+static_assert(MonU64Less::name() == "MonotoneLattice");
+static_assert(MonI32Custom::name() == "MonotoneLattice");
 
 // element_type / compare_type aliases.
 static_assert(std::is_same_v<MonU64Less::element_type, std::uint64_t>);
@@ -433,15 +421,14 @@ static_assert(!std::is_empty_v<MonU64Less::element_type>);
 static_assert(sizeof(MonU64Less::element_type) == 8);
 
 template <typename T>
-using MonotonicGraded =
-    Graded<ModalityKind::Absolute, MonotoneLattice<T, std::less<T>>, T>;
+using MonotonicGraded = Graded<ModalityKind::Absolute, MonotoneLattice<T, std::less<T>>, T>;
 
 // Specialization collapses value+grade to one field — sizeof(T)
 // regardless of T's width.  If these fire, the partial specialization
 // is no longer being selected (likely the requires-clause drifted or
 // MonotoneLattice's element_type alias changed).
 static_assert(sizeof(MonotonicGraded<std::uint64_t>) == sizeof(std::uint64_t));
-static_assert(sizeof(MonotonicGraded<std::int32_t>)  == sizeof(std::int32_t));
+static_assert(sizeof(MonotonicGraded<std::int32_t>) == sizeof(std::int32_t));
 
 // ── Runtime smoke test ──────────────────────────────────────────────
 //
@@ -458,7 +445,7 @@ inline void runtime_smoke_test() {
     std::uint64_t b = 1000;
 
     // Lattice ops at runtime.
-    [[maybe_unused]] bool          l = MonU64Less::leq(a, b);
+    [[maybe_unused]] bool l = MonU64Less::leq(a, b);
     [[maybe_unused]] std::uint64_t j = MonU64Less::join(a, b);
     [[maybe_unused]] std::uint64_t m = MonU64Less::meet(a, b);
 
@@ -467,7 +454,7 @@ inline void runtime_smoke_test() {
     [[maybe_unused]] std::uint64_t top = MonU64Less::top();
 
     // Reversed-orientation runtime check.
-    [[maybe_unused]] bool          gl = MonU64Greater::leq(b, a);   // 1000 ≤_> 100
+    [[maybe_unused]] bool gl = MonU64Greater::leq(b, a);  // 1000 ≤_> 100
     [[maybe_unused]] std::uint64_t gj = MonU64Greater::join(a, b);  // = 100 (smaller-val wins under >)
 
     // Graded<Absolute, MonotoneLattice, T> at runtime.
@@ -483,12 +470,12 @@ inline void runtime_smoke_test() {
     //
     // weaken/compose preserve the value-IS-grade invariant
     // automatically (they update both views in lockstep).
-    MonotonicGraded<std::uint64_t> initial{a};                  // value=a, grade=a
-    auto widened   = initial.weaken(a);                         // no-op weaken to current
-    auto widened2  = widened.weaken(b);                         // advance to b
-    auto composed  = initial.compose(widened2);                 // join → max(a, b) = b
-    auto rv_widen  = std::move(widened2).weaken(b);             // rvalue-this weaken
-    auto rv_comp   = std::move(initial).compose(composed);      // rvalue-this compose
+    MonotonicGraded<std::uint64_t> initial{a};  // value=a, grade=a
+    auto widened = initial.weaken(a);  // no-op weaken to current
+    auto widened2 = widened.weaken(b);  // advance to b
+    auto composed = initial.compose(widened2);  // join → max(a, b) = b
+    auto rv_widen = std::move(widened2).weaken(b);  // rvalue-this weaken
+    auto rv_comp = std::move(initial).compose(composed);  // rvalue-this compose
 
     [[maybe_unused]] auto g1 = composed.grade();
     [[maybe_unused]] auto v1 = composed.peek();
@@ -507,18 +494,18 @@ inline void runtime_smoke_test() {
     double fa = -1.0;
     double fb = 0.0;
     double fc = std::numeric_limits<double>::infinity();
-    [[maybe_unused]] bool   fl1 = MonF64Less::leq(fa, fb);
+    [[maybe_unused]] bool fl1 = MonF64Less::leq(fa, fb);
     [[maybe_unused]] double fj1 = MonF64Less::join(fa, fc);
     [[maybe_unused]] double fm1 = MonF64Less::meet(fa, fc);
-    [[maybe_unused]] bool   fnan_a = MonF64Less::is_nan_safe(fa);
-    [[maybe_unused]] bool   fnan_b = MonF64Less::is_nan_safe(fb);
-    [[maybe_unused]] bool   fnan_inf = MonF64Less::is_nan_safe(fc);
+    [[maybe_unused]] bool fnan_a = MonF64Less::is_nan_safe(fa);
+    [[maybe_unused]] bool fnan_b = MonF64Less::is_nan_safe(fb);
+    [[maybe_unused]] bool fnan_inf = MonF64Less::is_nan_safe(fc);
 
     // Confirm the guard correctly identifies a NaN at runtime (the
     // value is constructed but NEVER passed to leq/join/meet — that
     // would intentionally trip the contract).
     double fnan = std::nan("");
-    [[maybe_unused]] bool   fnan_fired = !MonF64Less::is_nan_safe(fnan);
+    [[maybe_unused]] bool fnan_fired = !MonF64Less::is_nan_safe(fnan);
 }
 
 }  // namespace detail::monotone_lattice_self_test

@@ -136,27 +136,22 @@ namespace crucible::safety {
 // ═════════════════════════════════════════════════════════════════════
 
 template <typename Proto, typename Resource>
-class [[nodiscard]] LazyEstablishedChannel
-    : public Pinned<LazyEstablishedChannel<Proto, Resource>>
-{
-    static_assert(safety::proto::is_well_formed_v<Proto>,
-        "crucible::session::diagnostic [Protocol_Ill_Formed]: "
-        "LazyEstablishedChannel<Proto, Resource>: Proto must be "
-        "well-formed (every Continue must have an enclosing Loop).");
+class [[nodiscard]] LazyEstablishedChannel : public Pinned<LazyEstablishedChannel<Proto, Resource>> {
+    static_assert(safety::proto::is_well_formed_v<Proto>, "crucible::session::diagnostic [Protocol_Ill_Formed]: "
+                                                          "LazyEstablishedChannel<Proto, Resource>: Proto must be "
+                                                          "well-formed (every Continue must have an enclosing Loop).");
 
     PublishOnce<Resource> resource_;
 
 public:
-    using protocol      = Proto;
+    using protocol = Proto;
     using resource_type = Resource;
 
     // The handle yielded by a successful observe().  Resource* is a
     // pointer (value type) — satisfies the SessionResource concept
     // unconditionally; the user does NOT need to make Resource Pinned
     // for the framework's discipline to apply.
-    using session_handle_type =
-        decltype(safety::proto::mint_session_handle<Proto>(
-            std::declval<Resource*>()));
+    using session_handle_type = decltype(safety::proto::mint_session_handle<Proto>(std::declval<Resource*>()));
 
     // Default-construct: PublishOnce starts un-published.
     constexpr LazyEstablishedChannel() noexcept = default;
@@ -204,9 +199,7 @@ public:
     // not a mint itself.  Reviewers grepping `mint_session_handle<`
     // see every session-token origination including the LEC path.
 
-    void establish(Resource* r) noexcept {
-        resource_.publish(r);
-    }
+    void establish(Resource* r) noexcept { resource_.publish(r); }
 
     // ── Observe ──────────────────────────────────────────────────────
     //
@@ -244,9 +237,7 @@ public:
     // — only observe() carries the acquire-release synchronization
     // for the published object's contents.
 
-    [[nodiscard]] bool is_established() const noexcept {
-        return resource_.is_published();
-    }
+    [[nodiscard]] bool is_established() const noexcept { return resource_.is_published(); }
 
     // Static accessor — protocol's compile-time-rendered name.  Same
     // cross-TU constexpr-capture caveat as protocol_name() itself
@@ -273,13 +264,11 @@ struct AnyResource {};
 using P1 = safety::proto::End;
 using P2 = safety::proto::Loop<safety::proto::Send<int, safety::proto::Continue>>;
 
-static_assert(sizeof(LazyEstablishedChannel<P1, AnyResource>)
-              == sizeof(PublishOnce<AnyResource>),
-    "LazyEstablishedChannel must add zero bytes beyond its PublishOnce.");
+static_assert(sizeof(LazyEstablishedChannel<P1, AnyResource>) == sizeof(PublishOnce<AnyResource>),
+              "LazyEstablishedChannel must add zero bytes beyond its PublishOnce.");
 
-static_assert(sizeof(LazyEstablishedChannel<P2, AnyResource>)
-              == sizeof(std::atomic<AnyResource*>),
-    "LazyEstablishedChannel must collapse to one atomic pointer.");
+static_assert(sizeof(LazyEstablishedChannel<P2, AnyResource>) == sizeof(std::atomic<AnyResource*>),
+              "LazyEstablishedChannel must collapse to one atomic pointer.");
 
 }  // namespace detail::lec_size_test
 
@@ -289,12 +278,12 @@ static_assert(sizeof(LazyEstablishedChannel<P2, AnyResource>)
 
 namespace detail::lec_self_test {
 
-struct DummyChannel { int sentinel = 0; };
+struct DummyChannel {
+    int sentinel = 0;
+};
 
-using SimpleProto = safety::proto::Loop<
-    safety::proto::Select<
-        safety::proto::Send<int, safety::proto::Continue>,
-        safety::proto::End>>;
+using SimpleProto =
+    safety::proto::Loop<safety::proto::Select<safety::proto::Send<int, safety::proto::Continue>, safety::proto::End>>;
 
 using LEC = LazyEstablishedChannel<SimpleProto, DummyChannel>;
 
@@ -304,7 +293,7 @@ static_assert(!std::is_move_constructible_v<LEC>);
 static_assert(std::is_base_of_v<Pinned<LEC>, LEC>);
 
 // Public typedefs wire correctly.
-static_assert(std::is_same_v<typename LEC::protocol,      SimpleProto>);
+static_assert(std::is_same_v<typename LEC::protocol, SimpleProto>);
 static_assert(std::is_same_v<typename LEC::resource_type, DummyChannel>);
 
 // session_handle_type is the SessionHandle specialisation produced
@@ -312,13 +301,9 @@ static_assert(std::is_same_v<typename LEC::resource_type, DummyChannel>);
 // at construction, so the resulting handle's compile-time Proto is
 // the loop body (a Select), with Loop<...> as LoopCtx.
 using ExpectedSession = safety::proto::SessionHandle<
-    safety::proto::Select<
-        safety::proto::Send<int, safety::proto::Continue>,
-        safety::proto::End>,
-    DummyChannel*,
+    safety::proto::Select<safety::proto::Send<int, safety::proto::Continue>, safety::proto::End>, DummyChannel*,
     SimpleProto>;
-static_assert(std::is_same_v<typename LEC::session_handle_type,
-                              ExpectedSession>);
+static_assert(std::is_same_v<typename LEC::session_handle_type, ExpectedSession>);
 
 }  // namespace detail::lec_self_test
 

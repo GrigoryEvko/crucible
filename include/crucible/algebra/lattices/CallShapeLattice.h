@@ -169,27 +169,33 @@ namespace crucible::algebra::lattices {
 // = largest set (Unbounded, neither depth nor target statically
 // bounded).
 enum class CallShape : std::uint8_t {
-    Direct          = 0,  // bottom — every call statically resolved; inlinable
+    Direct = 0,  // bottom — every call statically resolved; inlinable
     BoundedRecurses = 1,  // recursion with statically-known depth bound (N is wrapper metadata)
-    Indirect        = 2,  // function-pointer call (concrete target, runtime-resolved, no vtable)
-    Virtual         = 3,  // vtable dynamic dispatch (load vptr → index slot → call)
-    Unbounded       = 4,  // top — unbounded recursion / computed-target dispatch
+    Indirect = 2,  // function-pointer call (concrete target, runtime-resolved, no vtable)
+    Virtual = 3,  // vtable dynamic dispatch (load vptr → index slot → call)
+    Unbounded = 4,  // top — unbounded recursion / computed-target dispatch
 };
 
 [[nodiscard]] consteval std::string_view call_shape_name(CallShape t) noexcept {
     switch (t) {
-        case CallShape::Direct:          return "Direct";
-        case CallShape::BoundedRecurses: return "BoundedRecurses";
-        case CallShape::Indirect:        return "Indirect";
-        case CallShape::Virtual:         return "Virtual";
-        case CallShape::Unbounded:       return "Unbounded";
-        default:                         return std::string_view{"<unknown CallShape>"};
+        case CallShape::Direct:
+            return "Direct";
+        case CallShape::BoundedRecurses:
+            return "BoundedRecurses";
+        case CallShape::Indirect:
+            return "Indirect";
+        case CallShape::Virtual:
+            return "Virtual";
+        case CallShape::Unbounded:
+            return "Unbounded";
+        default:
+            return std::string_view{"<unknown CallShape>"};
     }
 }
 
 struct CallShapeLattice : ChainLatticeOps<CallShape> {
     [[nodiscard]] static constexpr CallShape bottom() noexcept { return CallShape::Direct; }
-    [[nodiscard]] static constexpr CallShape top()    noexcept { return CallShape::Unbounded; }
+    [[nodiscard]] static constexpr CallShape top() noexcept { return CallShape::Unbounded; }
     [[nodiscard]] static consteval std::string_view name() noexcept { return "CallShapeLattice"; }
 
     template <CallShape T>
@@ -201,18 +207,24 @@ struct CallShapeLattice : ChainLatticeOps<CallShape> {
         };
         static constexpr CallShape tier = T;
         [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-        [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
         [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static consteval std::string_view name() noexcept {
             switch (T) {
-                case CallShape::Direct:          return "CallShapeLattice::At<Direct>";
-                case CallShape::BoundedRecurses: return "CallShapeLattice::At<BoundedRecurses>";
-                case CallShape::Indirect:        return "CallShapeLattice::At<Indirect>";
-                case CallShape::Virtual:         return "CallShapeLattice::At<Virtual>";
-                case CallShape::Unbounded:       return "CallShapeLattice::At<Unbounded>";
-                default:                         return "CallShapeLattice::At<?>";
+                case CallShape::Direct:
+                    return "CallShapeLattice::At<Direct>";
+                case CallShape::BoundedRecurses:
+                    return "CallShapeLattice::At<BoundedRecurses>";
+                case CallShape::Indirect:
+                    return "CallShapeLattice::At<Indirect>";
+                case CallShape::Virtual:
+                    return "CallShapeLattice::At<Virtual>";
+                case CallShape::Unbounded:
+                    return "CallShapeLattice::At<Unbounded>";
+                default:
+                    return "CallShapeLattice::At<?>";
             }
         }
     };
@@ -222,17 +234,15 @@ struct CallShapeLattice : ChainLatticeOps<CallShape> {
 namespace detail::call_shape_lattice_self_test {
 
 // Catalog cardinality — the dispatch chain has exactly 5 tiers.
-inline constexpr std::size_t call_shape_count =
-    std::meta::enumerators_of(^^CallShape).size();
+inline constexpr std::size_t call_shape_count = std::meta::enumerators_of(^^CallShape).size();
 
-static_assert(call_shape_count == 5,
-    "CallShape diverged from {Direct, BoundedRecurses, Indirect, "
-    "Virtual, Unbounded} per V-240 §taxonomy.  Adding a new dispatch "
-    "tier requires (a) appending at the next free ordinal (append-only "
-    "per FOUND-I04 Universe extension rule), (b) the matching "
-    "call_shape_name() switch arm, (c) the matching At<T> singleton "
-    "name() arm.  Reusing an existing ordinal would silently change "
-    "every stored row_hash (federation cache key) without warning.");
+static_assert(call_shape_count == 5, "CallShape diverged from {Direct, BoundedRecurses, Indirect, "
+                                     "Virtual, Unbounded} per V-240 §taxonomy.  Adding a new dispatch "
+                                     "tier requires (a) appending at the next free ordinal (append-only "
+                                     "per FOUND-I04 Universe extension rule), (b) the matching "
+                                     "call_shape_name() switch arm, (c) the matching At<T> singleton "
+                                     "name() arm.  Reusing an existing ordinal would silently change "
+                                     "every stored row_hash (federation cache key) without warning.");
 
 // Bottom-element pin — ordinal 0 is the smallest shape set (Direct: the
 // function makes only statically-resolved calls, the hot-path-safest
@@ -249,22 +259,20 @@ static_assert(std::is_same_v<std::underlying_type_t<CallShape>, std::uint8_t>);
 // Reflection-driven name coverage — every enumerator must resolve to a
 // non-sentinel, non-empty name.  Auto-extends if the enum grows.
 [[nodiscard]] consteval bool every_call_shape_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^CallShape));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^CallShape));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
         const auto n = call_shape_name([:en:]);
         if (n == std::string_view{"<unknown CallShape>"}) return false;
-        if (n.empty())                                    return false;
+        if (n.empty()) return false;
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_call_shape_has_name(),
-    "call_shape_name() switch missing an arm for at least one CallShape "
-    "enumerator.  Add the arm or the new tier leaks the "
-    "'<unknown CallShape>' sentinel.");
+static_assert(every_call_shape_has_name(), "call_shape_name() switch missing an arm for at least one CallShape "
+                                           "enumerator.  Add the arm or the new tier leaks the "
+                                           "'<unknown CallShape>' sentinel.");
 
 // Concept conformance — chain lattice satisfies Lattice + BoundedLattice
 // and NOT Semiring (chain order has no independent ⊕/⊗ structure; the
@@ -278,16 +286,16 @@ static_assert(!::crucible::algebra::Semiring<CallShapeLattice>);
 // Exhaustive lattice-axiom verifier on (axis)³ triples.  Chain orders
 // are always distributive — failure indicates a leq/join/meet defect.
 static_assert(verify_chain_lattice_exhaustive<CallShapeLattice>(),
-    "CallShapeLattice chain-order lattice axioms failed at some triple "
-    "— leq/join/meet defect.");
+              "CallShapeLattice chain-order lattice axioms failed at some triple "
+              "— leq/join/meet defect.");
 static_assert(verify_chain_lattice_distributive_exhaustive<CallShapeLattice>(),
-    "CallShapeLattice chain failed distributivity check — leq/join/meet "
-    "defect.");
+              "CallShapeLattice chain failed distributivity check — leq/join/meet "
+              "defect.");
 
 // Bottom / top pins on the lattice surface (catches "someone reordered
 // the enum and the lattice failed to follow" drift).
 static_assert(CallShapeLattice::bottom() == CallShape::Direct);
-static_assert(CallShapeLattice::top()    == CallShape::Unbounded);
+static_assert(CallShapeLattice::top() == CallShape::Unbounded);
 
 // Lattice top-level diagnostic name pin.
 static_assert(CallShapeLattice::name() == std::string_view{"CallShapeLattice"});
@@ -295,34 +303,31 @@ static_assert(CallShapeLattice::name() == std::string_view{"CallShapeLattice"});
 // Strict-chain order pin (bottom ⊏ top witness).  Combined with the
 // exhaustive axiom verifier above, the chain direction is structurally
 // locked.
-static_assert( CallShapeLattice::leq(CallShape::Direct, CallShape::Unbounded));
+static_assert(CallShapeLattice::leq(CallShape::Direct, CallShape::Unbounded));
 static_assert(!CallShapeLattice::leq(CallShape::Unbounded, CallShape::Direct));
 
 // Mid-chain ordering — every tier strictly subsumes the previous.
-static_assert(CallShapeLattice::leq(CallShape::Direct,          CallShape::BoundedRecurses));
+static_assert(CallShapeLattice::leq(CallShape::Direct, CallShape::BoundedRecurses));
 static_assert(CallShapeLattice::leq(CallShape::BoundedRecurses, CallShape::Indirect));
-static_assert(CallShapeLattice::leq(CallShape::Indirect,        CallShape::Virtual));
-static_assert(CallShapeLattice::leq(CallShape::Virtual,         CallShape::Unbounded));
+static_assert(CallShapeLattice::leq(CallShape::Indirect, CallShape::Virtual));
+static_assert(CallShapeLattice::leq(CallShape::Virtual, CallShape::Unbounded));
 
 // Reverse direction must fail for non-equal pairs.
 static_assert(!CallShapeLattice::leq(CallShape::BoundedRecurses, CallShape::Direct));
-static_assert(!CallShapeLattice::leq(CallShape::Unbounded,       CallShape::Virtual));
+static_assert(!CallShapeLattice::leq(CallShape::Unbounded, CallShape::Virtual));
 
 // Join semantics — par=join (less-analyzable shape dominates).  Composing
 // an indirect site with a virtual site yields Virtual (the wider /
 // less-analyzable shape).
-static_assert(CallShapeLattice::join(CallShape::Indirect, CallShape::Virtual)
-              == CallShape::Virtual);
+static_assert(CallShapeLattice::join(CallShape::Indirect, CallShape::Virtual) == CallShape::Virtual);
 // Direct is the join identity (composing with a fully-static site never
 // widens the shape).
-static_assert(CallShapeLattice::join(CallShape::Direct, CallShape::BoundedRecurses)
-              == CallShape::BoundedRecurses);
+static_assert(CallShapeLattice::join(CallShape::Direct, CallShape::BoundedRecurses) == CallShape::BoundedRecurses);
 
 // Meet semantics — and=meet (more-analyzable floor).  Meeting a tight
 // admission policy with a loose binding yields the tight (more-static)
 // floor.
-static_assert(CallShapeLattice::meet(CallShape::Unbounded, CallShape::BoundedRecurses)
-              == CallShape::BoundedRecurses);
+static_assert(CallShapeLattice::meet(CallShape::Unbounded, CallShape::BoundedRecurses) == CallShape::BoundedRecurses);
 
 // ── FIXY-FOUND-076 audit pin: cross-tree convention misalignment ─────
 //
@@ -345,21 +350,17 @@ static_assert(CallShapeLattice::meet(CallShape::Unbounded, CallShape::BoundedRec
 //
 // Polarity-witness pin: a refactor inverting the chain (so Unbounded
 // moves to bottom) would red these asserts.
-static_assert(CallShapeLattice::join(CallShape::Direct,
-                                     CallShape::Unbounded)
-              == CallShape::Unbounded,
-    "FIXY-FOUND-076: CallShapeLattice's JOIN gives LEAST-analyzable "
-    "(top=Unbounded).  A consumer treating compose as 'strictest-wins "
-    "call-shape minimization' would silently admit Unbounded.  Forge "
-    "hot-path admission gates wanting Direct-only floor MUST call "
-    "MEET — SAME defect family as FOUND-009/010/076 PART A.");
-static_assert(CallShapeLattice::meet(CallShape::Direct,
-                                     CallShape::Unbounded)
-              == CallShape::Direct,
-    "FIXY-FOUND-076: CallShapeLattice's MEET gives strictest-call-"
-    "shape (bottom=Direct).  Forge phase E hot-path admission gates "
-    "MUST call MEET — calling JOIN silently admits the most-permissive "
-    "participant's call shape.");
+static_assert(CallShapeLattice::join(CallShape::Direct, CallShape::Unbounded) == CallShape::Unbounded,
+              "FIXY-FOUND-076: CallShapeLattice's JOIN gives LEAST-analyzable "
+              "(top=Unbounded).  A consumer treating compose as 'strictest-wins "
+              "call-shape minimization' would silently admit Unbounded.  Forge "
+              "hot-path admission gates wanting Direct-only floor MUST call "
+              "MEET — SAME defect family as FOUND-009/010/076 PART A.");
+static_assert(CallShapeLattice::meet(CallShape::Direct, CallShape::Unbounded) == CallShape::Direct,
+              "FIXY-FOUND-076: CallShapeLattice's MEET gives strictest-call-"
+              "shape (bottom=Direct).  Forge phase E hot-path admission gates "
+              "MUST call MEET — calling JOIN silently admits the most-permissive "
+              "participant's call shape.");
 
 // At<T> singleton — empty element_type for EBO collapse at every use
 // site.  V-242's `Graded<Absolute, At<T>, P>` relies on this for
@@ -382,7 +383,7 @@ inline void call_shape_lattice_runtime_smoke_test() {
     // the optimizer cannot collapse the call to a compile-time fold.
     CallShape a = CallShape::Direct;
     CallShape b = CallShape::Unbounded;
-    [[maybe_unused]] bool      rl = CallShapeLattice::leq(a, b);
+    [[maybe_unused]] bool rl = CallShapeLattice::leq(a, b);
     [[maybe_unused]] CallShape rj = CallShapeLattice::join(a, b);
     [[maybe_unused]] CallShape rm = CallShapeLattice::meet(a, b);
 

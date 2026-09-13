@@ -17,7 +17,7 @@
 #include <crucible/safety/RefinedAlgebra.h>
 #include <crucible/safety/Tagged.h>
 
-#include <bit>          // FIXY-U-082: std::bit_cast for pointer↔uintptr_t
+#include <bit>  // FIXY-U-082: std::bit_cast for pointer↔uintptr_t
 #include <cstdint>
 #include <expected>
 #include <string_view>
@@ -51,15 +51,14 @@ enum class GpuDirectError : std::uint8_t {
 };
 
 enum class MrAccessFlag : std::uint8_t {
-    LocalRead   = 1u << 0,
-    LocalWrite  = 1u << 1,
-    RemoteRead  = 1u << 2,
+    LocalRead = 1u << 0,
+    LocalWrite = 1u << 1,
+    RemoteRead = 1u << 2,
     RemoteWrite = 1u << 3,
-    RemoteAtomic= 1u << 4,
+    RemoteAtomic = 1u << 4,
 };
 
-[[nodiscard]] std::string_view
-gpu_direct_error_name(GpuDirectError error) noexcept;
+[[nodiscard]] std::string_view gpu_direct_error_name(GpuDirectError error) noexcept;
 [[nodiscard]] std::string_view mr_access_flag_name(MrAccessFlag flag) noexcept;
 
 using GpuVirtualAddress = safety::Refined<safety::non_zero, std::uintptr_t>;
@@ -82,8 +81,7 @@ struct GpuDirectMrPlan {
     cog::CogIdentity gpu{};
     cog::CogIdentity nic{};
     PeerPlacement placement{};
-    GpuVirtualAddress gpu_base{std::uintptr_t{1},
-                               typename GpuVirtualAddress::Trusted{}};
+    GpuVirtualAddress gpu_base{std::uintptr_t{1}, typename GpuVirtualAddress::Trusted{}};
     GpuDirectByteCount bytes{std::uint64_t{1}};
     MrAccess access{MrAccessFlag::LocalWrite, MrAccessFlag::RemoteWrite};
     bool peer_module_loaded = false;
@@ -94,8 +92,7 @@ struct GpuDirectStoragePlan {
     cog::CogIdentity gpu{};
     cog::CogIdentity nvme{};
     PeerPlacement placement{};
-    GpuVirtualAddress gpu_base{std::uintptr_t{1},
-                               typename GpuVirtualAddress::Trusted{}};
+    GpuVirtualAddress gpu_base{std::uintptr_t{1}, typename GpuVirtualAddress::Trusted{}};
     GpuDirectByteCount bytes{std::uint64_t{1}};
     StorageByteOffset storage_offset_bytes = 0;
     bool storage_backend_loaded = false;
@@ -105,37 +102,30 @@ struct GpuDirectStoragePlan {
 struct GpuDirectMrHandle {
     cog::Uuid gpu_uuid{};
     cog::Uuid nic_uuid{};
-    GpuVirtualAddress gpu_base{std::uintptr_t{1},
-                               typename GpuVirtualAddress::Trusted{}};
+    GpuVirtualAddress gpu_base{std::uintptr_t{1}, typename GpuVirtualAddress::Trusted{}};
     GpuDirectByteCount bytes{std::uint64_t{1}};
     MrAccess access{MrAccessFlag::LocalWrite, MrAccessFlag::RemoteWrite};
 };
 
-using DeclaredGpuDirectMrPlan =
-    safety::Tagged<GpuDirectMrPlan, wip_source::GpuDirect>;
-using DeclaredGpuDirectStoragePlan =
-    safety::Tagged<GpuDirectStoragePlan, wip_source::GpuDirect>;
+using DeclaredGpuDirectMrPlan = safety::Tagged<GpuDirectMrPlan, wip_source::GpuDirect>;
+using DeclaredGpuDirectStoragePlan = safety::Tagged<GpuDirectStoragePlan, wip_source::GpuDirect>;
 
 template <class Ctx>
-concept CtxFitsGpuDirectMint =
-    effects::IsExecCtx<Ctx>
-    && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Init>>;
+concept CtxFitsGpuDirectMint = effects::IsExecCtx<Ctx> && effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Init>>;
 
 [[nodiscard]] constexpr std::expected<GpuVirtualAddress, GpuDirectError>
 admit_gpu_virtual_address(std::uintptr_t address) noexcept {
     if (address == 0u) {
         return std::unexpected(GpuDirectError::NullGpuAddress);
     }
-    return GpuVirtualAddress{
-        address, typename GpuVirtualAddress::Trusted{}};
+    return GpuVirtualAddress{address, typename GpuVirtualAddress::Trusted{}};
 }
 
 [[nodiscard]] inline std::expected<GpuVirtualAddress, GpuDirectError>
 admit_gpu_virtual_address(void const* address) noexcept {
     // FIXY-U-082 / fixy-A5-028: std::bit_cast — C++26 idiom for
     // pointer↔uintptr_t value reinterpretation, no strict-aliasing risk.
-    return admit_gpu_virtual_address(
-        std::bit_cast<std::uintptr_t>(address));
+    return admit_gpu_virtual_address(std::bit_cast<std::uintptr_t>(address));
 }
 
 [[nodiscard]] constexpr std::expected<GpuDirectByteCount, GpuDirectError>
@@ -150,14 +140,10 @@ admit_gpu_direct_bytes(std::uint64_t bytes) noexcept {
     return MrAccess{MrAccessFlag::LocalWrite, MrAccessFlag::RemoteWrite};
 }
 
-[[nodiscard]] constexpr bool access_valid(MrAccess access) noexcept {
-    return !access.none();
-}
+[[nodiscard]] constexpr bool access_valid(MrAccess access) noexcept { return !access.none(); }
 
-[[nodiscard]] constexpr bool placement_compatible(
-    PeerPlacement placement) noexcept {
-    return placement.peer_bridge_present
-        || placement.gpu_pcie_root.value() == placement.peer_pcie_root.value();
+[[nodiscard]] constexpr bool placement_compatible(PeerPlacement placement) noexcept {
+    return placement.peer_bridge_present || placement.gpu_pcie_root.value() == placement.peer_pcie_root.value();
 }
 
 [[nodiscard]] constexpr bool placement_known(PeerPlacement placement) noexcept {
@@ -166,8 +152,7 @@ admit_gpu_direct_bytes(std::uint64_t bytes) noexcept {
 }
 
 [[nodiscard]] constexpr std::expected<void, GpuDirectError>
-validate_gpu_for_rdma(cog::CogIdentity gpu,
-                      cog::GpuTargetCaps const& caps) noexcept {
+validate_gpu_for_rdma(cog::CogIdentity gpu, cog::GpuTargetCaps const& caps) noexcept {
     if (gpu.uuid.is_zero()) {
         return std::unexpected(GpuDirectError::ZeroGpuCog);
     }
@@ -181,8 +166,7 @@ validate_gpu_for_rdma(cog::CogIdentity gpu,
 }
 
 [[nodiscard]] constexpr std::expected<void, GpuDirectError>
-validate_gpu_for_storage(cog::CogIdentity gpu,
-                         cog::GpuTargetCaps const& caps) noexcept {
+validate_gpu_for_storage(cog::CogIdentity gpu, cog::GpuTargetCaps const& caps) noexcept {
     if (gpu.uuid.is_zero()) {
         return std::unexpected(GpuDirectError::ZeroGpuCog);
     }
@@ -196,8 +180,7 @@ validate_gpu_for_storage(cog::CogIdentity gpu,
 }
 
 [[nodiscard]] constexpr std::expected<void, GpuDirectError>
-validate_nic_for_rdma(cog::CogIdentity nic,
-                      cog::NicPortTargetCaps const& caps) noexcept {
+validate_nic_for_rdma(cog::CogIdentity nic, cog::NicPortTargetCaps const& caps) noexcept {
     if (nic.uuid.is_zero()) {
         return std::unexpected(GpuDirectError::ZeroPeerCog);
     }
@@ -210,24 +193,19 @@ validate_nic_for_rdma(cog::CogIdentity nic,
     return {};
 }
 
-[[nodiscard]] constexpr std::expected<void, GpuDirectError>
-validate_nvme_peer(cog::CogIdentity nvme) noexcept {
+[[nodiscard]] constexpr std::expected<void, GpuDirectError> validate_nvme_peer(cog::CogIdentity nvme) noexcept {
     if (nvme.uuid.is_zero()) {
         return std::unexpected(GpuDirectError::ZeroPeerCog);
     }
-    if (nvme.kind != cog::CogKind::NvmeNamespace
-        && nvme.kind != cog::CogKind::NvmeDrive) {
+    if (nvme.kind != cog::CogKind::NvmeNamespace && nvme.kind != cog::CogKind::NvmeDrive) {
         return std::unexpected(GpuDirectError::NonNvmeCog);
     }
     return {};
 }
 
 [[nodiscard]] constexpr std::expected<void, GpuDirectError>
-check_gpu_nic_compat(cog::CogIdentity gpu,
-                     cog::GpuTargetCaps const& gpu_caps,
-                     cog::CogIdentity nic,
-                     cog::NicPortTargetCaps const& nic_caps,
-                     PeerPlacement placement) noexcept {
+check_gpu_nic_compat(cog::CogIdentity gpu, cog::GpuTargetCaps const& gpu_caps, cog::CogIdentity nic,
+                     cog::NicPortTargetCaps const& nic_caps, PeerPlacement placement) noexcept {
     auto gpu_valid = validate_gpu_for_rdma(gpu, gpu_caps);
     if (!gpu_valid.has_value()) {
         return std::unexpected(gpu_valid.error());
@@ -246,11 +224,9 @@ check_gpu_nic_compat(cog::CogIdentity gpu,
 }
 
 [[nodiscard]] constexpr std::expected<void, GpuDirectError>
-validate_mr_plan(GpuDirectMrPlan const& plan,
-                 cog::GpuTargetCaps const& gpu_caps,
+validate_mr_plan(GpuDirectMrPlan const& plan, cog::GpuTargetCaps const& gpu_caps,
                  cog::NicPortTargetCaps const& nic_caps) noexcept {
-    auto compat = check_gpu_nic_compat(
-        plan.gpu, gpu_caps, plan.nic, nic_caps, plan.placement);
+    auto compat = check_gpu_nic_compat(plan.gpu, gpu_caps, plan.nic, nic_caps, plan.placement);
     if (!compat.has_value()) {
         return std::unexpected(compat.error());
     }
@@ -267,8 +243,7 @@ validate_mr_plan(GpuDirectMrPlan const& plan,
 }
 
 [[nodiscard]] constexpr std::expected<void, GpuDirectError>
-validate_storage_plan(GpuDirectStoragePlan const& plan,
-                      cog::GpuTargetCaps const& gpu_caps) noexcept {
+validate_storage_plan(GpuDirectStoragePlan const& plan, cog::GpuTargetCaps const& gpu_caps) noexcept {
     auto gpu_valid = validate_gpu_for_storage(plan.gpu, gpu_caps);
     if (!gpu_valid.has_value()) {
         return std::unexpected(gpu_valid.error());
@@ -277,8 +252,7 @@ validate_storage_plan(GpuDirectStoragePlan const& plan,
     if (!nvme_valid.has_value()) {
         return std::unexpected(nvme_valid.error());
     }
-    if (!plan.placement.peer_bridge_present
-        && !placement_known(plan.placement)) {
+    if (!plan.placement.peer_bridge_present && !placement_known(plan.placement)) {
         return std::unexpected(GpuDirectError::PcieRootUnknown);
     }
     if (!placement_compatible(plan.placement)) {
@@ -296,16 +270,9 @@ validate_storage_plan(GpuDirectStoragePlan const& plan,
 template <class Ctx>
     requires CtxFitsGpuDirectMint<Ctx>
 [[nodiscard]] constexpr std::expected<DeclaredGpuDirectMrPlan, GpuDirectError>
-mint_gpu_direct_mr_plan(Ctx const&,
-                        cog::CogIdentity gpu,
-                        cog::GpuTargetCaps gpu_caps,
-                        cog::CogIdentity nic,
-                        cog::NicPortTargetCaps nic_caps,
-                        PeerPlacement placement,
-                        GpuVirtualAddress gpu_base,
-                        GpuDirectByteCount bytes,
-                        MrAccess access = mrc_write_access(),
-                        bool peer_module_loaded = false,
+mint_gpu_direct_mr_plan(Ctx const&, cog::CogIdentity gpu, cog::GpuTargetCaps gpu_caps, cog::CogIdentity nic,
+                        cog::NicPortTargetCaps nic_caps, PeerPlacement placement, GpuVirtualAddress gpu_base,
+                        GpuDirectByteCount bytes, MrAccess access = mrc_write_access(), bool peer_module_loaded = false,
                         bool allow_backend_registration = false) noexcept {
     GpuDirectMrPlan plan{
         .gpu = gpu,
@@ -326,17 +293,10 @@ mint_gpu_direct_mr_plan(Ctx const&,
 
 template <class Ctx>
     requires CtxFitsGpuDirectMint<Ctx>
-[[nodiscard]] constexpr std::expected<DeclaredGpuDirectStoragePlan,
-                                      GpuDirectError>
-mint_gpu_direct_storage_plan(Ctx const&,
-                             cog::CogIdentity gpu,
-                             cog::GpuTargetCaps gpu_caps,
-                             cog::CogIdentity nvme,
-                             PeerPlacement placement,
-                             GpuVirtualAddress gpu_base,
-                             GpuDirectByteCount bytes,
-                             StorageByteOffset storage_offset_bytes = 0,
-                             bool storage_backend_loaded = false,
+[[nodiscard]] constexpr std::expected<DeclaredGpuDirectStoragePlan, GpuDirectError>
+mint_gpu_direct_storage_plan(Ctx const&, cog::CogIdentity gpu, cog::GpuTargetCaps gpu_caps, cog::CogIdentity nvme,
+                             PeerPlacement placement, GpuVirtualAddress gpu_base, GpuDirectByteCount bytes,
+                             StorageByteOffset storage_offset_bytes = 0, bool storage_backend_loaded = false,
                              bool allow_backend_io = false) noexcept {
     GpuDirectStoragePlan plan{
         .gpu = gpu,
@@ -362,28 +322,23 @@ public:
     [[nodiscard]] std::expected<GpuDirectMrHandle, GpuDirectError>
     register_gpu_memory(DeclaredGpuDirectMrPlan plan) noexcept;
 
-    [[nodiscard]] std::expected<void, GpuDirectError>
-    deregister_gpu_memory(GpuDirectMrHandle handle) noexcept;
+    [[nodiscard]] std::expected<void, GpuDirectError> deregister_gpu_memory(GpuDirectMrHandle handle) noexcept;
 };
 
 [[nodiscard]] std::expected<GpuDirectMrHandle, GpuDirectError>
 register_gpu_memory(DeclaredGpuDirectMrPlan plan) noexcept;
 
-[[nodiscard]] std::expected<void, GpuDirectError>
-deregister_gpu_memory(GpuDirectMrHandle handle) noexcept;
+[[nodiscard]] std::expected<void, GpuDirectError> deregister_gpu_memory(GpuDirectMrHandle handle) noexcept;
 
-[[nodiscard]] std::expected<void, GpuDirectError>
-read_from_nvme(DeclaredGpuDirectStoragePlan plan) noexcept;
+[[nodiscard]] std::expected<void, GpuDirectError> read_from_nvme(DeclaredGpuDirectStoragePlan plan) noexcept;
 
-[[nodiscard]] std::expected<void, GpuDirectError>
-write_to_nvme(DeclaredGpuDirectStoragePlan plan) noexcept;
+[[nodiscard]] std::expected<void, GpuDirectError> write_to_nvme(DeclaredGpuDirectStoragePlan plan) noexcept;
 
 static_assert(sizeof(GpuVirtualAddress) == sizeof(std::uintptr_t));
 static_assert(sizeof(GpuDirectByteCount) == sizeof(std::uint64_t));
 static_assert(sizeof(PcieRootId) == sizeof(std::uint16_t));
 static_assert(sizeof(DeclaredGpuDirectMrPlan) == sizeof(GpuDirectMrPlan));
-static_assert(sizeof(DeclaredGpuDirectStoragePlan)
-              == sizeof(GpuDirectStoragePlan));
+static_assert(sizeof(DeclaredGpuDirectStoragePlan) == sizeof(GpuDirectStoragePlan));
 static_assert(CtxFitsGpuDirectMint<effects::ColdInitCtx>);
 static_assert(!CtxFitsGpuDirectMint<effects::BgDrainCtx>);
 static_assert(std::is_trivially_copyable_v<PeerPlacement>);

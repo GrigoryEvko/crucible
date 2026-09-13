@@ -128,10 +128,8 @@ struct ProductLattice;
 // via `ProductLattice<L1, ProductLattice<L2, ...>>`.
 template <typename L1, typename L2>
 struct ProductLattice<L1, L2> {
-    static_assert(Lattice<L1>,
-        "ProductLattice<L1, L2>: L1 must satisfy the Lattice concept.");
-    static_assert(Lattice<L2>,
-        "ProductLattice<L1, L2>: L2 must satisfy the Lattice concept.");
+    static_assert(Lattice<L1>, "ProductLattice<L1, L2>: L1 must satisfy the Lattice concept.");
+    static_assert(Lattice<L2>, "ProductLattice<L1, L2>: L2 must satisfy the Lattice concept.");
 
     // Componentwise element carrier.  `[[no_unique_address]]` on each
     // member preserves the EBO collapse for empty-element lattices
@@ -147,7 +145,7 @@ struct ProductLattice<L1, L2> {
         [[nodiscard]] constexpr bool operator==(const element_type&) const noexcept = default;
     };
 
-    using first_lattice  = L1;
+    using first_lattice = L1;
     using second_lattice = L2;
 
     // ── Generic-arity API parity with the N-ary primary ─────────────
@@ -166,21 +164,25 @@ struct ProductLattice<L1, L2> {
     static constexpr std::size_t arity = 2;
 
     template <std::size_t I>
-        requires (I < 2)
+        requires(I < 2)
     using nth_lattice = std::conditional_t<I == 0, L1, L2>;
 
     template <std::size_t I>
-        requires (I < 2)
+        requires(I < 2)
     [[nodiscard]] static constexpr auto& get(element_type& e) noexcept {
-        if constexpr (I == 0) return e.first;
-        else                  return e.second;
+        if constexpr (I == 0)
+            return e.first;
+        else
+            return e.second;
     }
 
     template <std::size_t I>
-        requires (I < 2)
+        requires(I < 2)
     [[nodiscard]] static constexpr auto const& get(element_type const& e) noexcept {
-        if constexpr (I == 0) return e.first;
-        else                  return e.second;
+        if constexpr (I == 0)
+            return e.first;
+        else
+            return e.second;
     }
 
     // ── Bounded structure (concept-gated) ───────────────────────────
@@ -207,28 +209,16 @@ struct ProductLattice<L1, L2> {
     // All three are pointwise.  leq is short-circuiting on the first
     // component's failure (standard && semantics).
 
-    [[nodiscard]] static constexpr bool leq(
-        element_type a, element_type b) noexcept
-    {
+    [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept {
         return L1::leq(a.first, b.first) && L2::leq(a.second, b.second);
     }
 
-    [[nodiscard]] static constexpr element_type join(
-        element_type a, element_type b) noexcept
-    {
-        return element_type{
-            L1::join(a.first, b.first),
-            L2::join(a.second, b.second)
-        };
+    [[nodiscard]] static constexpr element_type join(element_type a, element_type b) noexcept {
+        return element_type{L1::join(a.first, b.first), L2::join(a.second, b.second)};
     }
 
-    [[nodiscard]] static constexpr element_type meet(
-        element_type a, element_type b) noexcept
-    {
-        return element_type{
-            L1::meet(a.first, b.first),
-            L2::meet(a.second, b.second)
-        };
+    [[nodiscard]] static constexpr element_type meet(element_type a, element_type b) noexcept {
+        return element_type{L1::meet(a.first, b.first), L2::meet(a.second, b.second)};
     }
 
     // ── Diagnostic name ─────────────────────────────────────────────
@@ -240,9 +230,7 @@ struct ProductLattice<L1, L2> {
     // containing Graded<>'s reflection-based display does not already
     // provide.  Downstream debug formatters can introspect the
     // first_lattice / second_lattice typedefs.
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return "Product<L1xL2>";
-    }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "Product<L1xL2>"; }
 };
 
 // ── ProductLattice<> — degenerate empty-pack specialization ─────────
@@ -255,20 +243,16 @@ struct ProductLattice<L1, L2> {
 template <>
 struct ProductLattice<> {
     struct element_type {
-        [[nodiscard]] constexpr bool operator==(element_type) const noexcept {
-            return true;
-        }
+        [[nodiscard]] constexpr bool operator==(element_type) const noexcept { return true; }
     };
 
     [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-    [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-    [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true;  }
-    [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {};   }
-    [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {};   }
+    [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+    [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
+    [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
+    [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return "Product<>";
-    }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "Product<>"; }
 };
 
 // ── N-ary primary template (ALGEBRA-15 extension) ───────────────────
@@ -342,9 +326,7 @@ struct ProductElementImpl;
 // (I, L) pair.  Defaulted operator== compares each base's value via
 // per-slot ProductSlot::operator==.
 template <std::size_t... Is, typename... Ls>
-struct ProductElementImpl<std::index_sequence<Is...>, Ls...>
-    : ProductSlot<Is, Ls>...
-{
+struct ProductElementImpl<std::index_sequence<Is...>, Ls...> : ProductSlot<Is, Ls>... {
     [[nodiscard]] constexpr bool operator==(const ProductElementImpl&) const noexcept = default;
 };
 
@@ -358,22 +340,20 @@ struct ProductElementImpl<std::index_sequence<Is...>, Ls...>
 // the historical member names.  N=0 also falls to the empty-pack
 // specialization.
 template <typename... Ls>
-    requires (sizeof...(Ls) != 2)
+    requires(sizeof...(Ls) != 2)
 struct ProductLattice<Ls...> {
-    static_assert((Lattice<Ls> && ...),
-        "ProductLattice<Ls...>: every L_i must satisfy the Lattice concept.");
+    static_assert((Lattice<Ls> && ...), "ProductLattice<Ls...>: every L_i must satisfy the Lattice concept.");
 
     // ── Public type aliases ─────────────────────────────────────────
     static constexpr std::size_t arity = sizeof...(Ls);
 
-    using element_type = detail::ProductElementImpl<
-        std::make_index_sequence<sizeof...(Ls)>, Ls...>;
+    using element_type = detail::ProductElementImpl<std::make_index_sequence<sizeof...(Ls)>, Ls...>;
 
     // C++26 pack indexing exposes the I-th component lattice for
     // downstream introspection (mirrors first_lattice / second_lattice
     // in the binary specialization).
     template <std::size_t I>
-        requires (I < sizeof...(Ls))
+        requires(I < sizeof...(Ls))
     using nth_lattice = Ls...[I];
 
     // ── Slot accessor (lvalue + rvalue overloads) ───────────────────
@@ -383,13 +363,13 @@ struct ProductLattice<Ls...> {
     // index probes from a template-deep cascade to a clean concept-
     // failure diagnostic at the call site.
     template <std::size_t I>
-        requires (I < sizeof...(Ls))
+        requires(I < sizeof...(Ls))
     [[nodiscard]] static constexpr auto& get(element_type& e) noexcept {
         return static_cast<detail::ProductSlot<I, Ls...[I]>&>(e).value;
     }
 
     template <std::size_t I>
-        requires (I < sizeof...(Ls))
+        requires(I < sizeof...(Ls))
     [[nodiscard]] static constexpr auto const& get(element_type const& e) noexcept {
         return static_cast<detail::ProductSlot<I, Ls...[I]> const&>(e).value;
     }
@@ -401,23 +381,21 @@ struct ProductLattice<Ls...> {
     // binary case, generalized via fold-over-Ls.
 
     [[nodiscard]] static constexpr element_type bottom() noexcept
-        requires (BoundedBelowLattice<Ls> && ...)
+        requires(BoundedBelowLattice<Ls> && ...)
     {
         element_type result;
         [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-            ((static_cast<detail::ProductSlot<Is, Ls...[Is]>&>(result).value
-                = Ls...[Is]::bottom()), ...);
+            ((static_cast<detail::ProductSlot<Is, Ls...[Is]>&>(result).value = Ls...[Is] ::bottom()), ...);
         }(std::make_index_sequence<sizeof...(Ls)>{});
         return result;
     }
 
     [[nodiscard]] static constexpr element_type top() noexcept
-        requires (BoundedAboveLattice<Ls> && ...)
+        requires(BoundedAboveLattice<Ls> && ...)
     {
         element_type result;
         [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-            ((static_cast<detail::ProductSlot<Is, Ls...[Is]>&>(result).value
-                = Ls...[Is]::top()), ...);
+            ((static_cast<detail::ProductSlot<Is, Ls...[Is]>&>(result).value = Ls...[Is] ::top()), ...);
         }(std::make_index_sequence<sizeof...(Ls)>{});
         return result;
     }
@@ -430,32 +408,28 @@ struct ProductLattice<Ls...> {
     // (NOT consteval) per the algebra/Lattice.h convention so Graded's
     // runtime `pre (L::leq(...))` can fire under enforce semantic.
 
-    [[nodiscard]] static constexpr bool leq(
-        element_type const& a, element_type const& b) noexcept
-    {
+    [[nodiscard]] static constexpr bool leq(element_type const& a, element_type const& b) noexcept {
         return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-            return (Ls...[Is]::leq(get<Is>(a), get<Is>(b)) && ...);
+            return (Ls...[Is] ::leq(get<Is>(a), get<Is>(b)) && ...);
         }(std::make_index_sequence<sizeof...(Ls)>{});
     }
 
-    [[nodiscard]] static constexpr element_type join(
-        element_type const& a, element_type const& b) noexcept
-    {
+    [[nodiscard]] static constexpr element_type join(element_type const& a, element_type const& b) noexcept {
         element_type result;
         [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-            ((static_cast<detail::ProductSlot<Is, Ls...[Is]>&>(result).value
-                = Ls...[Is]::join(get<Is>(a), get<Is>(b))), ...);
+            ((static_cast<detail::ProductSlot<Is, Ls...[Is]>&>(result).value =
+                  Ls...[Is] ::join(get<Is>(a), get<Is>(b))),
+             ...);
         }(std::make_index_sequence<sizeof...(Ls)>{});
         return result;
     }
 
-    [[nodiscard]] static constexpr element_type meet(
-        element_type const& a, element_type const& b) noexcept
-    {
+    [[nodiscard]] static constexpr element_type meet(element_type const& a, element_type const& b) noexcept {
         element_type result;
         [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-            ((static_cast<detail::ProductSlot<Is, Ls...[Is]>&>(result).value
-                = Ls...[Is]::meet(get<Is>(a), get<Is>(b))), ...);
+            ((static_cast<detail::ProductSlot<Is, Ls...[Is]>&>(result).value =
+                  Ls...[Is] ::meet(get<Is>(a), get<Is>(b))),
+             ...);
         }(std::make_index_sequence<sizeof...(Ls)>{});
         return result;
     }
@@ -466,9 +440,7 @@ struct ProductLattice<Ls...> {
     // rationale: per-component name composition would require
     // define_static_string glue without diagnostic value Graded's
     // reflection-based display already provides.
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return "Product<L1x...xLn>";
-    }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "Product<L1x...xLn>"; }
 };
 
 // ── Self-test ───────────────────────────────────────────────────────
@@ -481,17 +453,11 @@ namespace detail::product_lattice_self_test {
 // any (a, b, c) triple in [0, 255].
 struct U8MinMax {
     using element_type = std::uint8_t;
-    [[nodiscard]] static constexpr element_type bottom() noexcept { return 0;   }
-    [[nodiscard]] static constexpr element_type top()    noexcept { return 255; }
-    [[nodiscard]] static constexpr bool         leq(element_type a, element_type b) noexcept {
-        return a <= b;
-    }
-    [[nodiscard]] static constexpr element_type join(element_type a, element_type b) noexcept {
-        return a >= b ? a : b;
-    }
-    [[nodiscard]] static constexpr element_type meet(element_type a, element_type b) noexcept {
-        return a <= b ? a : b;
-    }
+    [[nodiscard]] static constexpr element_type bottom() noexcept { return 0; }
+    [[nodiscard]] static constexpr element_type top() noexcept { return 255; }
+    [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept { return a <= b; }
+    [[nodiscard]] static constexpr element_type join(element_type a, element_type b) noexcept { return a >= b ? a : b; }
+    [[nodiscard]] static constexpr element_type meet(element_type a, element_type b) noexcept { return a <= b ? a : b; }
     [[nodiscard]] static consteval std::string_view name() noexcept { return "U8MinMax"; }
 };
 
@@ -507,46 +473,42 @@ static_assert(BoundedAboveLattice<P_u8u8>);
 static_assert(BoundedLattice<P_u8u8>);
 
 // Bounds — bottom / top are pointwise lifts.
-static_assert(P_u8u8::bottom().first  == 0);
+static_assert(P_u8u8::bottom().first == 0);
 static_assert(P_u8u8::bottom().second == 0);
-static_assert(P_u8u8::top().first     == 255);
-static_assert(P_u8u8::top().second    == 255);
+static_assert(P_u8u8::top().first == 255);
+static_assert(P_u8u8::top().second == 255);
 
 // Pointwise leq.
-static_assert( P_u8u8::leq({1,   2},   {3,   4}));   //  1≤3 ∧ 2≤4
-static_assert(!P_u8u8::leq({3,   2},   {1,   4}));   //  3≤1 fails
-static_assert(!P_u8u8::leq({1,   4},   {3,   2}));   //  4≤2 fails
-static_assert( P_u8u8::leq({0,   0},   {255, 255})); // bottom ≤ top
-static_assert(!P_u8u8::leq({255, 255}, {0,   0}));   // top ⊄ bottom
+static_assert(P_u8u8::leq({1, 2}, {3, 4}));  //  1≤3 ∧ 2≤4
+static_assert(!P_u8u8::leq({3, 2}, {1, 4}));  //  3≤1 fails
+static_assert(!P_u8u8::leq({1, 4}, {3, 2}));  //  4≤2 fails
+static_assert(P_u8u8::leq({0, 0}, {255, 255}));  // bottom ≤ top
+static_assert(!P_u8u8::leq({255, 255}, {0, 0}));  // top ⊄ bottom
 
 // Pointwise join — supremum on each axis independently.
-static_assert(P_u8u8::join({1, 4}, {3, 2}).first  == 3);
+static_assert(P_u8u8::join({1, 4}, {3, 2}).first == 3);
 static_assert(P_u8u8::join({1, 4}, {3, 2}).second == 4);
 
 // Pointwise meet — infimum on each axis independently.
-static_assert(P_u8u8::meet({1, 4}, {3, 2}).first  == 1);
+static_assert(P_u8u8::meet({1, 4}, {3, 2}).first == 1);
 static_assert(P_u8u8::meet({1, 4}, {3, 2}).second == 2);
 
 // Bounded-lattice axioms hold — exhaustive over a representative
 // 3-witness span.  verify_bounded_lattice_axioms_at rolls in
 // idempotency, commutativity, associativity, absorption, partial
 // order, and bottom/top identity in one shot.
-static_assert(verify_bounded_lattice_axioms_at<P_u8u8>(
-    {0, 0}, {0, 0}, {0, 0}));
-static_assert(verify_bounded_lattice_axioms_at<P_u8u8>(
-    {0, 0}, {127, 64}, {255, 255}));
-static_assert(verify_bounded_lattice_axioms_at<P_u8u8>(
-    {1, 4}, {3, 2}, {5, 7}));
-static_assert(verify_bounded_lattice_axioms_at<P_u8u8>(
-    {255, 0}, {0, 255}, {127, 127}));
+static_assert(verify_bounded_lattice_axioms_at<P_u8u8>({0, 0}, {0, 0}, {0, 0}));
+static_assert(verify_bounded_lattice_axioms_at<P_u8u8>({0, 0}, {127, 64}, {255, 255}));
+static_assert(verify_bounded_lattice_axioms_at<P_u8u8>({1, 4}, {3, 2}, {5, 7}));
+static_assert(verify_bounded_lattice_axioms_at<P_u8u8>({255, 0}, {0, 255}, {127, 127}));
 
 // Subsumes / strictly_less helpers — sanity check that the partial-
 // order sugar from Lattice.h composes with the product correctly.
-static_assert( subsumes<P_u8u8>({1, 2},   {3, 4}));
-static_assert(!subsumes<P_u8u8>({3, 4},   {1, 2}));
-static_assert( equivalent<P_u8u8>({5, 7}, {5, 7}));
+static_assert(subsumes<P_u8u8>({1, 2}, {3, 4}));
+static_assert(!subsumes<P_u8u8>({3, 4}, {1, 2}));
+static_assert(equivalent<P_u8u8>({5, 7}, {5, 7}));
 static_assert(!equivalent<P_u8u8>({5, 7}, {7, 5}));
-static_assert( strictly_less<P_u8u8>({1, 2}, {3, 4}));
+static_assert(strictly_less<P_u8u8>({1, 2}, {3, 4}));
 static_assert(!strictly_less<P_u8u8>({3, 4}, {1, 2}));
 
 // Diagnostic name — fixed token; see the "Diagnostic name" comment
@@ -555,7 +517,7 @@ static_assert(P_u8u8::name() == "Product<L1xL2>");
 
 // Component-lattice projections — first_lattice / second_lattice
 // expose the underlying component types for downstream introspection.
-static_assert(std::is_same_v<P_u8u8::first_lattice,  U8MinMax>);
+static_assert(std::is_same_v<P_u8u8::first_lattice, U8MinMax>);
 static_assert(std::is_same_v<P_u8u8::second_lattice, U8MinMax>);
 
 // ── Generic-arity API parity (audit Tier-1 improvement) ────────────
@@ -572,15 +534,14 @@ static_assert(std::is_same_v<P_u8u8::nth_lattice<1>, U8MinMax>);
 // the binary specialization's first/second members expose.
 static_assert(P_u8u8::get<0>(P_u8u8::bottom()) == 0);
 static_assert(P_u8u8::get<1>(P_u8u8::bottom()) == 0);
-static_assert(P_u8u8::get<0>(P_u8u8::top())    == 255);
-static_assert(P_u8u8::get<1>(P_u8u8::top())    == 255);
+static_assert(P_u8u8::get<0>(P_u8u8::top()) == 255);
+static_assert(P_u8u8::get<1>(P_u8u8::top()) == 255);
 
 // Helper-equivalence: get<0>/get<1> on a constructed element_type
 // agree with direct first/second access.
 [[nodiscard]] consteval bool binary_get_matches_first_second() noexcept {
     P_u8u8::element_type e{17, 42};
-    return P_u8u8::get<0>(e) == e.first
-        && P_u8u8::get<1>(e) == e.second;
+    return P_u8u8::get<0>(e) == e.first && P_u8u8::get<1>(e) == e.second;
 }
 static_assert(binary_get_matches_first_second());
 
@@ -588,8 +549,7 @@ static_assert(binary_get_matches_first_second());
 using P_empty = ProductLattice<>;
 
 static_assert(BoundedLattice<P_empty>);
-static_assert(verify_bounded_lattice_axioms_at<P_empty>(
-    P_empty::bottom(), P_empty::bottom(), P_empty::bottom()));
+static_assert(verify_bounded_lattice_axioms_at<P_empty>(P_empty::bottom(), P_empty::bottom(), P_empty::bottom()));
 static_assert(P_empty::name() == "Product<>");
 static_assert(std::is_empty_v<P_empty::element_type>);
 
@@ -604,8 +564,8 @@ using P_qtt_u8 = ProductLattice<QttSemiring::At<QttGrade::One>, U8MinMax>;
 
 static_assert(Lattice<P_qtt_u8>);
 static_assert(P_qtt_u8::bottom().second == 0);
-static_assert(P_qtt_u8::top().second    == 255);
-static_assert( P_qtt_u8::leq({{}, 1}, {{}, 5}));
+static_assert(P_qtt_u8::top().second == 255);
+static_assert(P_qtt_u8::leq({{}, 1}, {{}, 5}));
 static_assert(!P_qtt_u8::leq({{}, 5}, {{}, 1}));
 
 // EBO discipline — when L1::element_type is empty, product element_type
@@ -614,9 +574,9 @@ static_assert(!P_qtt_u8::leq({{}, 5}, {{}, 1}));
 // fully collapse on this compiler/version; the LOAD-BEARING claim is
 // the absence of a doubled cost, not bit-exact size).
 static_assert(sizeof(P_qtt_u8::element_type) <= sizeof(std::uint8_t) + 1,
-    "ProductLattice<Empty, NonEmpty>::element_type must EBO-collapse "
-    "the empty component down to ≤ 1 trailing byte; if this fires, "
-    "the [[no_unique_address]] discipline drifted.");
+              "ProductLattice<Empty, NonEmpty>::element_type must EBO-collapse "
+              "the empty component down to ≤ 1 trailing byte; if this fires, "
+              "the [[no_unique_address]] discipline drifted.");
 
 // ── Layout invariant on Graded<...,ProductLattice<...>,T> ───────────
 //
@@ -638,18 +598,19 @@ static_assert(sizeof(P_qtt_u8::element_type) <= sizeof(std::uint8_t) + 1,
 // Empty-empty product: both component element_types are empty (the
 // BoolLattice-pair case).  EBO collapses fully; the layout invariant
 // macro applies and Graded over T retains sizeof(T).
-struct OneByteValue   { char c{0}; };
-struct EightByteValue { unsigned long long v{0}; };
+struct OneByteValue {
+    char c{0};
+};
+struct EightByteValue {
+    unsigned long long v{0};
+};
 
 namespace empty_empty_witness {
 struct PredA {};
 struct PredB {};
 }  // namespace empty_empty_witness
 
-using P_empty_empty = ProductLattice<
-    BoolLattice<empty_empty_witness::PredA>,
-    BoolLattice<empty_empty_witness::PredB>
->;
+using P_empty_empty = ProductLattice<BoolLattice<empty_empty_witness::PredA>, BoolLattice<empty_empty_witness::PredB>>;
 
 template <typename T>
 using BudgetEmptyEmpty = Graded<ModalityKind::Absolute, P_empty_empty, T>;
@@ -658,9 +619,9 @@ using BudgetEmptyEmpty = Graded<ModalityKind::Absolute, P_empty_empty, T>;
 // product wrapper.  Load-bearing for the BoolLattice×BoolLattice
 // composition (two refinement predicates carried simultaneously).
 static_assert(std::is_empty_v<P_empty_empty::element_type>,
-    "ProductLattice<EmptyL1, EmptyL2>::element_type must be empty for "
-    "the EBO collapse contract to hold; if this fires the [[no_unique_"
-    "address]] discipline drifted.");
+              "ProductLattice<EmptyL1, EmptyL2>::element_type must be empty for "
+              "the EBO collapse contract to hold; if this fires the [[no_unique_"
+              "address]] discipline drifted.");
 
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(BudgetEmptyEmpty, OneByteValue);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(BudgetEmptyEmpty, EightByteValue);
@@ -675,15 +636,15 @@ template <typename T>
 using BudgetU8U8 = Graded<ModalityKind::Absolute, P_u8u8, T>;
 
 static_assert(sizeof(BudgetU8U8<int>) <= sizeof(int) + 4,
-    "BudgetU8U8<int> exceeded sizeof(int) + 4 — the U8×U8 grade "
-    "(2 bytes) plus alignment padding (≤ 2 bytes) should fit in 4 "
-    "trailing bytes; if this fires investigate Graded's grade "
-    "field placement.");
+              "BudgetU8U8<int> exceeded sizeof(int) + 4 — the U8×U8 grade "
+              "(2 bytes) plus alignment padding (≤ 2 bytes) should fit in 4 "
+              "trailing bytes; if this fires investigate Graded's grade "
+              "field placement.");
 static_assert(sizeof(BudgetU8U8<double>) <= sizeof(double) + 8,
-    "BudgetU8U8<double> exceeded sizeof(double) + 8 — the U8×U8 "
-    "grade (2 bytes) plus alignment padding (≤ 6 bytes) should fit "
-    "in 8 trailing bytes; if this fires investigate Graded's grade "
-    "field placement.");
+              "BudgetU8U8<double> exceeded sizeof(double) + 8 — the U8×U8 "
+              "grade (2 bytes) plus alignment padding (≤ 6 bytes) should fit "
+              "in 8 trailing bytes; if this fires investigate Graded's grade "
+              "field placement.");
 
 // ════════════════════════════════════════════════════════════════════
 // N-ary self-test (ALGEBRA-15 extension)
@@ -711,7 +672,7 @@ static_assert(P_u8::arity == 1);
 static_assert(std::is_same_v<P_u8::nth_lattice<0>, U8MinMax>);
 
 static_assert(P_u8::get<0>(P_u8::bottom()) == 0);
-static_assert(P_u8::get<0>(P_u8::top())    == 255);
+static_assert(P_u8::get<0>(P_u8::top()) == 255);
 
 // Construct via default ctor + slot mutation (the public `get<I>`
 // returns a non-const ref for lvalue element_type).
@@ -751,16 +712,14 @@ static_assert(std::is_same_v<P_u8u8u8::nth_lattice<2>, U8MinMax>);
 static_assert(P_u8u8u8::get<0>(P_u8u8u8::bottom()) == 0);
 static_assert(P_u8u8u8::get<1>(P_u8u8u8::bottom()) == 0);
 static_assert(P_u8u8u8::get<2>(P_u8u8u8::bottom()) == 0);
-static_assert(P_u8u8u8::get<0>(P_u8u8u8::top())    == 255);
-static_assert(P_u8u8u8::get<1>(P_u8u8u8::top())    == 255);
-static_assert(P_u8u8u8::get<2>(P_u8u8u8::top())    == 255);
+static_assert(P_u8u8u8::get<0>(P_u8u8u8::top()) == 255);
+static_assert(P_u8u8u8::get<1>(P_u8u8u8::top()) == 255);
+static_assert(P_u8u8u8::get<2>(P_u8u8u8::top()) == 255);
 
 // Helper to construct + populate a 3-way element by index, used
 // throughout the N=3 tests.  The default-construct + slot-mutate
 // idiom mirrors how production code would build N-way values.
-[[nodiscard]] consteval P_u8u8u8::element_type make_u8u8u8(
-    std::uint8_t a, std::uint8_t b, std::uint8_t c) noexcept
-{
+[[nodiscard]] consteval P_u8u8u8::element_type make_u8u8u8(std::uint8_t a, std::uint8_t b, std::uint8_t c) noexcept {
     P_u8u8u8::element_type e{};
     P_u8u8u8::get<0>(e) = a;
     P_u8u8u8::get<1>(e) = b;
@@ -769,10 +728,11 @@ static_assert(P_u8u8u8::get<2>(P_u8u8u8::top())    == 255);
 }
 
 // Pointwise leq: ALL three slots must satisfy.
-static_assert( P_u8u8u8::leq(make_u8u8u8(1, 2, 3), make_u8u8u8(5, 6, 7)));
-static_assert(!P_u8u8u8::leq(make_u8u8u8(5, 2, 3), make_u8u8u8(1, 6, 7)));   // slot 0 fails
-static_assert(!P_u8u8u8::leq(make_u8u8u8(1, 6, 3), make_u8u8u8(5, 2, 7)));   // slot 1 fails
-static_assert(!P_u8u8u8::leq(make_u8u8u8(1, 2, 7), make_u8u8u8(5, 6, 3)));   // slot 2 fails (proves fold doesn't short-circuit too early)
+static_assert(P_u8u8u8::leq(make_u8u8u8(1, 2, 3), make_u8u8u8(5, 6, 7)));
+static_assert(!P_u8u8u8::leq(make_u8u8u8(5, 2, 3), make_u8u8u8(1, 6, 7)));  // slot 0 fails
+static_assert(!P_u8u8u8::leq(make_u8u8u8(1, 6, 3), make_u8u8u8(5, 2, 7)));  // slot 1 fails
+static_assert(!P_u8u8u8::leq(make_u8u8u8(1, 2, 7),
+                             make_u8u8u8(5, 6, 3)));  // slot 2 fails (proves fold doesn't short-circuit too early)
 
 // Pointwise join — supremum on each slot independently.
 static_assert(P_u8u8u8::get<0>(P_u8u8u8::join(make_u8u8u8(1, 5, 3), make_u8u8u8(4, 2, 6))) == 4);
@@ -785,22 +745,15 @@ static_assert(P_u8u8u8::get<1>(P_u8u8u8::meet(make_u8u8u8(1, 5, 3), make_u8u8u8(
 static_assert(P_u8u8u8::get<2>(P_u8u8u8::meet(make_u8u8u8(1, 5, 3), make_u8u8u8(4, 2, 6))) == 3);
 
 // Bounded-lattice axiom rollup across mixed witnesses.
-static_assert(verify_bounded_lattice_axioms_at<P_u8u8u8>(
-    make_u8u8u8(0,   0,   0),
-    make_u8u8u8(127, 64,  200),
-    make_u8u8u8(255, 255, 255)));
-static_assert(verify_bounded_lattice_axioms_at<P_u8u8u8>(
-    make_u8u8u8(1, 4, 9),
-    make_u8u8u8(3, 2, 5),
-    make_u8u8u8(5, 7, 1)));
+static_assert(verify_bounded_lattice_axioms_at<P_u8u8u8>(make_u8u8u8(0, 0, 0), make_u8u8u8(127, 64, 200),
+                                                         make_u8u8u8(255, 255, 255)));
+static_assert(verify_bounded_lattice_axioms_at<P_u8u8u8>(make_u8u8u8(1, 4, 9), make_u8u8u8(3, 2, 5),
+                                                         make_u8u8u8(5, 7, 1)));
 
 // Distributive lattice — chain orders on each slot, distributive
 // per-slot, so the product is distributive (Birkhoff: products of
 // distributive lattices are distributive).
-static_assert(verify_distributive_lattice<P_u8u8u8>(
-    make_u8u8u8(1, 4, 9),
-    make_u8u8u8(3, 2, 5),
-    make_u8u8u8(5, 7, 1)));
+static_assert(verify_distributive_lattice<P_u8u8u8>(make_u8u8u8(1, 4, 9), make_u8u8u8(3, 2, 5), make_u8u8u8(5, 7, 1)));
 
 // ── N=4 — additional arity for fold-coverage robustness ─────────────
 using P_u8x4 = ProductLattice<U8MinMax, U8MinMax, U8MinMax, U8MinMax>;
@@ -808,7 +761,7 @@ static_assert(Lattice<P_u8x4>);
 static_assert(BoundedLattice<P_u8x4>);
 static_assert(P_u8x4::arity == 4);
 static_assert(P_u8x4::get<0>(P_u8x4::bottom()) == 0);
-static_assert(P_u8x4::get<3>(P_u8x4::top())    == 255);
+static_assert(P_u8x4::get<3>(P_u8x4::top()) == 255);
 
 // ── EBO collapse: empty-element Ls vanish from sizeof ───────────────
 //
@@ -831,29 +784,18 @@ struct PredD {};
 struct PredE {};
 }  // namespace n_ary_witness
 
-using P_empty_3way = ProductLattice<
-    BoolLattice<n_ary_witness::PredA>,
-    BoolLattice<n_ary_witness::PredB>,
-    BoolLattice<n_ary_witness::PredC>
->;
-using P_empty_4way = ProductLattice<
-    BoolLattice<n_ary_witness::PredA>,
-    BoolLattice<n_ary_witness::PredB>,
-    BoolLattice<n_ary_witness::PredC>,
-    BoolLattice<n_ary_witness::PredD>
->;
-using P_empty_5way = ProductLattice<
-    BoolLattice<n_ary_witness::PredA>,
-    BoolLattice<n_ary_witness::PredB>,
-    BoolLattice<n_ary_witness::PredC>,
-    BoolLattice<n_ary_witness::PredD>,
-    BoolLattice<n_ary_witness::PredE>
->;
+using P_empty_3way = ProductLattice<BoolLattice<n_ary_witness::PredA>, BoolLattice<n_ary_witness::PredB>,
+                                    BoolLattice<n_ary_witness::PredC>>;
+using P_empty_4way = ProductLattice<BoolLattice<n_ary_witness::PredA>, BoolLattice<n_ary_witness::PredB>,
+                                    BoolLattice<n_ary_witness::PredC>, BoolLattice<n_ary_witness::PredD>>;
+using P_empty_5way = ProductLattice<BoolLattice<n_ary_witness::PredA>, BoolLattice<n_ary_witness::PredB>,
+                                    BoolLattice<n_ary_witness::PredC>, BoolLattice<n_ary_witness::PredD>,
+                                    BoolLattice<n_ary_witness::PredE>>;
 
 static_assert(std::is_empty_v<P_empty_3way::element_type>,
-    "ProductLattice<EmptyL,EmptyL,EmptyL>::element_type must be empty "
-    "for the inheritance-EBO contract to hold; if this fires the "
-    "ProductSlot<I, L> base inheritance discipline drifted.");
+              "ProductLattice<EmptyL,EmptyL,EmptyL>::element_type must be empty "
+              "for the inheritance-EBO contract to hold; if this fires the "
+              "ProductSlot<I, L> base inheritance discipline drifted.");
 static_assert(std::is_empty_v<P_empty_4way::element_type>);
 static_assert(std::is_empty_v<P_empty_5way::element_type>);
 
@@ -869,30 +811,23 @@ static_assert(sizeof(P_empty_5way::element_type) == 1);
 // empty.  The N-ary primary's EBO must collapse the two empty slots,
 // leaving only the non-empty slot's storage.  Total ≤ 1 byte (the
 // non-empty slot's size).
-using P_mixed_one_nonempty = ProductLattice<
-    U8MinMax,
-    BoolLattice<n_ary_witness::PredA>,
-    BoolLattice<n_ary_witness::PredB>
->;
+using P_mixed_one_nonempty =
+    ProductLattice<U8MinMax, BoolLattice<n_ary_witness::PredA>, BoolLattice<n_ary_witness::PredB>>;
 static_assert(sizeof(P_mixed_one_nonempty::element_type) == 1,
-    "ProductLattice<NonEmpty, Empty, Empty>::element_type must be 1 "
-    "byte — the two empty slots EBO-collapse to zero.  If this fires "
-    "the inheritance discipline failed to share addresses.");
+              "ProductLattice<NonEmpty, Empty, Empty>::element_type must be 1 "
+              "byte — the two empty slots EBO-collapse to zero.  If this fires "
+              "the inheritance discipline failed to share addresses.");
 
 // 4-way: slots 1+3 are non-empty (1 byte each), slots 0+2 empty.
 // Total ≤ 2 bytes (two non-empty slots; alignment may push higher
 // for non-1-byte components but U8MinMax has alignof = 1).
-using P_mixed_two_nonempty = ProductLattice<
-    BoolLattice<n_ary_witness::PredA>,
-    U8MinMax,
-    BoolLattice<n_ary_witness::PredB>,
-    U8MinMax
->;
+using P_mixed_two_nonempty =
+    ProductLattice<BoolLattice<n_ary_witness::PredA>, U8MinMax, BoolLattice<n_ary_witness::PredB>, U8MinMax>;
 static_assert(sizeof(P_mixed_two_nonempty::element_type) == 2,
-    "ProductLattice<Empty, NonEmpty, Empty, NonEmpty>::element_type "
-    "must be 2 bytes — the two empty slots EBO-collapse, leaving two "
-    "1-byte non-empty slots adjacent.  If this fires the per-slot EBO "
-    "failed to share addresses across non-adjacent empty bases.");
+              "ProductLattice<Empty, NonEmpty, Empty, NonEmpty>::element_type "
+              "must be 2 bytes — the two empty slots EBO-collapse, leaving two "
+              "1-byte non-empty slots adjacent.  If this fires the per-slot EBO "
+              "failed to share addresses across non-adjacent empty bases.");
 
 // ── Graded composition over the N-ary product ───────────────────────
 //
@@ -919,19 +854,19 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(Budgeted3Empty, double);
 template <typename T>
 using Budgeted3U8 = Graded<ModalityKind::Absolute, P_u8u8u8, T>;
 static_assert(sizeof(Budgeted3U8<int>) <= sizeof(int) + 4,
-    "Budgeted3U8<int> exceeded sizeof(int) + 4 — the U8×U8×U8 grade "
-    "(3 bytes) plus alignment padding (≤ 1 byte) should fit in 4 "
-    "trailing bytes; if this fires investigate Graded's grade field "
-    "placement or the inheritance-EBO discipline.");
+              "Budgeted3U8<int> exceeded sizeof(int) + 4 — the U8×U8×U8 grade "
+              "(3 bytes) plus alignment padding (≤ 1 byte) should fit in 4 "
+              "trailing bytes; if this fires investigate Graded's grade field "
+              "placement or the inheritance-EBO discipline.");
 static_assert(sizeof(Budgeted3U8<double>) <= sizeof(double) + 8,
-    "Budgeted3U8<double> exceeded sizeof(double) + 8 — the U8×U8×U8 "
-    "grade (3 bytes) plus alignment padding (≤ 5 bytes) should fit "
-    "in 8 trailing bytes.");
+              "Budgeted3U8<double> exceeded sizeof(double) + 8 — the U8×U8×U8 "
+              "grade (3 bytes) plus alignment padding (≤ 5 bytes) should fit "
+              "in 8 trailing bytes.");
 
 // ── Diagnostic name for the N-ary primary ───────────────────────────
 static_assert(P_u8u8u8::name() == "Product<L1x...xLn>");
-static_assert(P_u8::name()     == "Product<L1x...xLn>");
-static_assert(P_u8x4::name()   == "Product<L1x...xLn>");
+static_assert(P_u8::name() == "Product<L1x...xLn>");
+static_assert(P_u8x4::name() == "Product<L1x...xLn>");
 
 // ── Runtime smoke test ──────────────────────────────────────────────
 //
@@ -945,20 +880,20 @@ static_assert(P_u8x4::name()   == "Product<L1x...xLn>");
 // fold-based ops at runtime.
 inline void runtime_smoke_test() {
     using L = P_u8u8;
-    L::element_type lo{ 1, 2};
-    L::element_type hi{ 5, 7};
-    [[maybe_unused]] bool             le = L::leq(lo, hi);
-    [[maybe_unused]] L::element_type  jn = L::join(lo, hi);
-    [[maybe_unused]] L::element_type  mt = L::meet(lo, hi);
-    [[maybe_unused]] L::element_type  bt = L::bottom();
-    [[maybe_unused]] L::element_type  tp = L::top();
+    L::element_type lo{1, 2};
+    L::element_type hi{5, 7};
+    [[maybe_unused]] bool le = L::leq(lo, hi);
+    [[maybe_unused]] L::element_type jn = L::join(lo, hi);
+    [[maybe_unused]] L::element_type mt = L::meet(lo, hi);
+    [[maybe_unused]] L::element_type bt = L::bottom();
+    [[maybe_unused]] L::element_type tp = L::top();
 
     OneByteValue v{42};
     BudgetU8U8<OneByteValue> initial{v, lo};
-    auto widened   = initial.weaken(hi);                 // lo ⊑ hi
-    auto composed  = initial.compose(widened);
-    auto rv_widen  = std::move(widened).weaken(L::top());
-    auto rv_comp   = std::move(initial).compose(composed);
+    auto widened = initial.weaken(hi);  // lo ⊑ hi
+    auto composed = initial.compose(widened);
+    auto rv_widen = std::move(widened).weaken(L::top());
+    auto rv_comp = std::move(initial).compose(composed);
 
     [[maybe_unused]] auto g1 = composed.grade();
     [[maybe_unused]] auto v1 = composed.peek().c;
@@ -976,7 +911,7 @@ inline void runtime_smoke_test() {
     N::get<1>(n_hi) = 5;
     N::get<2>(n_hi) = 6;
 
-    [[maybe_unused]] bool            n_le = N::leq(n_lo, n_hi);
+    [[maybe_unused]] bool n_le = N::leq(n_lo, n_hi);
     [[maybe_unused]] N::element_type n_jn = N::join(n_lo, n_hi);
     [[maybe_unused]] N::element_type n_mt = N::meet(n_lo, n_hi);
     [[maybe_unused]] N::element_type n_bt = N::bottom();
@@ -986,9 +921,9 @@ inline void runtime_smoke_test() {
     // pattern (per-op precision pinned via a multi-axis grade).
     OneByteValue n_v{17};
     Budgeted3U8<OneByteValue> n_initial{n_v, n_lo};
-    auto n_widened  = n_initial.weaken(n_hi);
+    auto n_widened = n_initial.weaken(n_hi);
     auto n_composed = n_initial.compose(n_widened);
-    [[maybe_unused]] auto n_g  = n_composed.grade();
+    [[maybe_unused]] auto n_g = n_composed.grade();
     [[maybe_unused]] auto n_vc = n_composed.peek().c;
 }
 

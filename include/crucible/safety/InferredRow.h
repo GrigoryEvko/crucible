@@ -74,23 +74,17 @@ template <typename P, typename Acc>
     using PB = std::remove_cvref_t<P>;
 
     if constexpr (std::is_same_v<PB, cap::Alloc>) {
-        return std::type_identity<
-            ::crucible::effects::detail::row_insert_unique_t<Acc, Effect::Alloc>>{};
+        return std::type_identity<::crucible::effects::detail::row_insert_unique_t<Acc, Effect::Alloc>>{};
     } else if constexpr (std::is_same_v<PB, cap::IO>) {
-        return std::type_identity<
-            ::crucible::effects::detail::row_insert_unique_t<Acc, Effect::IO>>{};
+        return std::type_identity<::crucible::effects::detail::row_insert_unique_t<Acc, Effect::IO>>{};
     } else if constexpr (std::is_same_v<PB, cap::Block>) {
-        return std::type_identity<
-            ::crucible::effects::detail::row_insert_unique_t<Acc, Effect::Block>>{};
+        return std::type_identity<::crucible::effects::detail::row_insert_unique_t<Acc, Effect::Block>>{};
     } else if constexpr (std::is_same_v<PB, Bg>) {
-        return std::type_identity<
-            ::crucible::effects::detail::row_insert_unique_t<Acc, Effect::Bg>>{};
+        return std::type_identity<::crucible::effects::detail::row_insert_unique_t<Acc, Effect::Bg>>{};
     } else if constexpr (std::is_same_v<PB, Init>) {
-        return std::type_identity<
-            ::crucible::effects::detail::row_insert_unique_t<Acc, Effect::Init>>{};
+        return std::type_identity<::crucible::effects::detail::row_insert_unique_t<Acc, Effect::Init>>{};
     } else if constexpr (std::is_same_v<PB, Test>) {
-        return std::type_identity<
-            ::crucible::effects::detail::row_insert_unique_t<Acc, Effect::Test>>{};
+        return std::type_identity<::crucible::effects::detail::row_insert_unique_t<Acc, Effect::Test>>{};
     } else {
         // Parameter does not carry a cap-tag — Acc unchanged.
         return std::type_identity<Acc>{};
@@ -98,8 +92,7 @@ template <typename P, typename Acc>
 }
 
 template <typename P, typename Acc>
-using accumulate_param_effect_t =
-    typename decltype(accumulate_param_effect<P, Acc>())::type;
+using accumulate_param_effect_t = typename decltype(accumulate_param_effect<P, Acc>())::type;
 
 // Recursive fold over parameter indices 0..arity-1.  Mirrors D11's
 // infer_perm_tags_step pattern.
@@ -118,17 +111,11 @@ struct infer_row_step<FnPtr, I, Acc, /*AtEnd=*/false> {
     using P_I = param_type_t<FnPtr, I>;
     using NextAcc = accumulate_param_effect_t<P_I, Acc>;
     static constexpr std::size_t Next = I + 1;
-    using type = typename infer_row_step<
-        FnPtr, Next, NextAcc,
-        (Next >= arity_v<FnPtr>)>::type;
+    using type = typename infer_row_step<FnPtr, Next, NextAcc, (Next >= arity_v<FnPtr>)>::type;
 };
 
 template <auto FnPtr>
-using infer_row_raw =
-    typename infer_row_step<
-        FnPtr, 0,
-        ::crucible::effects::EmptyRow,
-        (0 >= arity_v<FnPtr>)>::type;
+using infer_row_raw = typename infer_row_step<FnPtr, 0, ::crucible::effects::EmptyRow, (0 >= arity_v<FnPtr>)>::type;
 
 }  // namespace detail
 
@@ -144,22 +131,21 @@ using inferred_row_t = detail::infer_row_raw<FnPtr>;
 
 // Atom count in the inferred row.
 template <auto FnPtr>
-inline constexpr std::size_t inferred_row_count_v =
-    inferred_row_t<FnPtr>::size;
+inline constexpr std::size_t inferred_row_count_v = inferred_row_t<FnPtr>::size;
 
 // Point-query: does FnPtr's parameter list carry an effect of kind E?
 // Folds over the inferred row; declaration-order independent.
 template <auto FnPtr, ::crucible::effects::Effect E>
-inline constexpr bool function_has_effect_v =
-    ::crucible::effects::row_contains_v<inferred_row_t<FnPtr>, E>;  // ROW-CONTAINS-OK: inferred-row point query over inferred_row_t<FnPtr>, not a Ctx capability check
+inline constexpr bool function_has_effect_v = ::crucible::effects::row_contains_v<
+    inferred_row_t<FnPtr>,
+    E>;  // ROW-CONTAINS-OK: inferred-row point query over inferred_row_t<FnPtr>, not a Ctx capability check
 
 // True iff FnPtr's parameter list carries NO cap-tag types — a
 // "pure" function in the dispatcher's vocabulary.  Foreground hot-
 // path code that holds no context can only call functions where
 // this returns true.
 template <auto FnPtr>
-inline constexpr bool is_pure_function_v =
-    inferred_row_count_v<FnPtr> == 0;
+inline constexpr bool is_pure_function_v = inferred_row_count_v<FnPtr> == 0;
 
 template <auto FnPtr>
 concept IsPureFunction = is_pure_function_v<FnPtr>;
@@ -173,52 +159,36 @@ namespace detail::infer_row_self_test {
 inline void f_pure(int, double) noexcept {}
 inline void f_alloc(::crucible::effects::Alloc, std::size_t) noexcept {}
 inline void f_bg(::crucible::effects::Bg, int) noexcept {}
-inline void f_alloc_io(::crucible::effects::Alloc,
-                       ::crucible::effects::IO,
-                       int) noexcept {}
-inline void f_alloc_dup(::crucible::effects::Alloc,
-                        ::crucible::effects::Alloc,
-                        int) noexcept {}
+inline void f_alloc_io(::crucible::effects::Alloc, ::crucible::effects::IO, int) noexcept {}
+inline void f_alloc_dup(::crucible::effects::Alloc, ::crucible::effects::Alloc, int) noexcept {}
 
 // ── Pure function — empty row.
-static_assert(std::is_same_v<
-    inferred_row_t<&f_pure>,
-    ::crucible::effects::EmptyRow>);
+static_assert(std::is_same_v<inferred_row_t<&f_pure>, ::crucible::effects::EmptyRow>);
 static_assert(inferred_row_count_v<&f_pure> == 0);
 static_assert(is_pure_function_v<&f_pure>);
 static_assert(IsPureFunction<&f_pure>);
 
 // ── Single-cap function — singleton row.
-static_assert(std::is_same_v<
-    inferred_row_t<&f_alloc>,
-    ::crucible::effects::Row<::crucible::effects::Effect::Alloc>>);
+static_assert(std::is_same_v<inferred_row_t<&f_alloc>, ::crucible::effects::Row<::crucible::effects::Effect::Alloc>>);
 static_assert(inferred_row_count_v<&f_alloc> == 1);
 static_assert(!is_pure_function_v<&f_alloc>);
-static_assert(function_has_effect_v<&f_alloc,
-                                    ::crucible::effects::Effect::Alloc>);
-static_assert(!function_has_effect_v<&f_alloc,
-                                     ::crucible::effects::Effect::IO>);
+static_assert(function_has_effect_v<&f_alloc, ::crucible::effects::Effect::Alloc>);
+static_assert(!function_has_effect_v<&f_alloc, ::crucible::effects::Effect::IO>);
 
 // ── Bg context — Bg atom (NOT auto-expanded into Alloc/IO/Block).
-static_assert(std::is_same_v<
-    inferred_row_t<&f_bg>,
-    ::crucible::effects::Row<::crucible::effects::Effect::Bg>>);
-static_assert(function_has_effect_v<&f_bg,
-                                    ::crucible::effects::Effect::Bg>);
-static_assert(!function_has_effect_v<&f_bg,
-                                     ::crucible::effects::Effect::Alloc>);
+static_assert(std::is_same_v<inferred_row_t<&f_bg>, ::crucible::effects::Row<::crucible::effects::Effect::Bg>>);
+static_assert(function_has_effect_v<&f_bg, ::crucible::effects::Effect::Bg>);
+static_assert(!function_has_effect_v<&f_bg, ::crucible::effects::Effect::Alloc>);
 
 // ── Two distinct caps — two-atom row, declaration order.
-static_assert(std::is_same_v<
-    inferred_row_t<&f_alloc_io>,
-    ::crucible::effects::Row<::crucible::effects::Effect::Alloc,
-                             ::crucible::effects::Effect::IO>>);
+static_assert(
+    std::is_same_v<inferred_row_t<&f_alloc_io>,
+                   ::crucible::effects::Row<::crucible::effects::Effect::Alloc, ::crucible::effects::Effect::IO>>);
 static_assert(inferred_row_count_v<&f_alloc_io> == 2);
 
 // ── Duplicated cap parameter — dedup via insert-unique.
-static_assert(std::is_same_v<
-    inferred_row_t<&f_alloc_dup>,
-    ::crucible::effects::Row<::crucible::effects::Effect::Alloc>>);
+static_assert(
+    std::is_same_v<inferred_row_t<&f_alloc_dup>, ::crucible::effects::Row<::crucible::effects::Effect::Alloc>>);
 static_assert(inferred_row_count_v<&f_alloc_dup> == 1);
 
 }  // namespace detail::infer_row_self_test

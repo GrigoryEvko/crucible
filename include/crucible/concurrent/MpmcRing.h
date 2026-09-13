@@ -130,9 +130,7 @@ namespace crucible::concurrent {
 // release-store; T must be safe to byte-copy under memory-order rules.
 
 template <typename T>
-concept MpmcValue =
-    std::is_trivially_copyable_v<T> &&
-    std::is_trivially_destructible_v<T>;
+concept MpmcValue = std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T>;
 
 // ── MpmcRing<T, Capacity> — the SCQ-derived primitive ──────────────
 
@@ -142,10 +140,8 @@ public:
     using value_type = T;
     static constexpr std::size_t channel_capacity = Capacity;
 
-    static_assert(std::has_single_bit(Capacity),
-                  "Capacity must be a power of two");
-    static_assert(Capacity >= 2,
-                  "Capacity must be at least 2");
+    static_assert(std::has_single_bit(Capacity), "Capacity must be a power of two");
+    static_assert(Capacity >= 2, "Capacity must be at least 2");
 
     // Buffer has 2×Capacity cells.  Paper §5.2: doubled capacity is
     // the key to livelock-free single-width-CAS operation — ensures
@@ -157,35 +153,31 @@ public:
     // Threshold high water — set on successful enqueue.  Paper:
     // 3n - 1 where n = Capacity.  A dequeuer's scan can fail at
     // most n - 1 + 2n = 3n - 1 times before guaranteed empty.
-    static constexpr std::int64_t kThresholdHi =
-        static_cast<std::int64_t>(3 * Capacity - 1);
+    static constexpr std::int64_t kThresholdHi = static_cast<std::int64_t>(3 * Capacity - 1);
 
 private:
     // ── Cell state bit layout ──────────────────────────────────────
-    static constexpr std::uint64_t kIsSafeBit        = std::uint64_t{1} << 63;
-    static constexpr std::uint64_t kOccupiedBit      = std::uint64_t{1} << 62;
+    static constexpr std::uint64_t kIsSafeBit = std::uint64_t{1} << 63;
+    static constexpr std::uint64_t kOccupiedBit = std::uint64_t{1} << 62;
     static constexpr std::uint64_t kDataPublishedBit = std::uint64_t{1} << 61;
-    static constexpr std::uint64_t kCycleMask        = (std::uint64_t{1} << 61) - 1;
+    static constexpr std::uint64_t kCycleMask = (std::uint64_t{1} << 61) - 1;
 
     // ── Pack/unpack helpers ────────────────────────────────────────
 
-    [[nodiscard, gnu::const]] static constexpr std::uint64_t
-    pack_state(std::uint64_t cycle, bool safe, bool occupied,
-               bool published = false) noexcept {
-        return (safe      ? kIsSafeBit        : 0)
-             | (occupied  ? kOccupiedBit      : 0)
-             | (published ? kDataPublishedBit : 0)
+    [[nodiscard, gnu::const]] static constexpr std::uint64_t pack_state(std::uint64_t cycle, bool safe, bool occupied,
+                                                                        bool published = false) noexcept {
+        return (safe ? kIsSafeBit : 0) | (occupied ? kOccupiedBit : 0) | (published ? kDataPublishedBit : 0)
              | (cycle & kCycleMask);
     }
 
-    [[nodiscard, gnu::const]] static constexpr std::uint64_t
-    cycle_of(std::uint64_t s) noexcept { return s & kCycleMask; }
-    [[nodiscard, gnu::const]] static constexpr bool
-    is_safe(std::uint64_t s)  noexcept { return (s & kIsSafeBit)   != 0; }
-    [[nodiscard, gnu::const]] static constexpr bool
-    is_occupied(std::uint64_t s) noexcept { return (s & kOccupiedBit) != 0; }
-    [[nodiscard, gnu::const]] static constexpr bool
-    is_data_published(std::uint64_t s) noexcept {
+    [[nodiscard, gnu::const]] static constexpr std::uint64_t cycle_of(std::uint64_t s) noexcept {
+        return s & kCycleMask;
+    }
+    [[nodiscard, gnu::const]] static constexpr bool is_safe(std::uint64_t s) noexcept { return (s & kIsSafeBit) != 0; }
+    [[nodiscard, gnu::const]] static constexpr bool is_occupied(std::uint64_t s) noexcept {
+        return (s & kOccupiedBit) != 0;
+    }
+    [[nodiscard, gnu::const]] static constexpr bool is_data_published(std::uint64_t s) noexcept {
         return (s & kDataPublishedBit) != 0;
     }
 
@@ -202,7 +194,7 @@ private:
         // Initial state per paper §5.2: Cycle=0, IsSafe=1, Index=⊥.
         // In our inline variant: Cycle=0, IsSafe=1, Occupied=0.
         std::atomic<std::uint64_t> state{pack_state(0, true, false)};
-        T                          data{};
+        T data{};
     };
 
     alignas(64) std::array<Cell, kCells> cells_;
@@ -273,16 +265,16 @@ public:
         // Paper Fig 8 Lines 12-22: FAA a ticket, then CAS the cell.
         // Outer loop: FAA retry on cell-not-ready.  In practice the
         // outer loop rarely runs more than once.
-        for (std::size_t outer_retry = 0; ; ++outer_retry) {
+        for (std::size_t outer_retry = 0;; ++outer_retry) {
             // Bound outer retries — pathological case only.
-            if (outer_retry > kCells) [[unlikely]] return false;
+            if (outer_retry > kCells) [[unlikely]]
+                return false;
 
             const std::uint64_t T_ = tail_.bump_by(1);
             const std::uint64_t j = T_ & kMask;
             // Cycle(T) = T / 2n.  For power-of-2 kCells, this is
             // a shift.
-            const std::uint64_t cycle_T =
-                T_ >> std::countr_zero(kCells);
+            const std::uint64_t cycle_T = T_ >> std::countr_zero(kCells);
 
             Cell& cell = cells_[j];
             std::uint64_t ent = cell.state.load(std::memory_order_acquire);
@@ -296,10 +288,7 @@ public:
                 //   Cycle(Ent) < Cycle(T)
                 //   AND Index(Ent) = ⊥   (our: NOT Occupied)
                 //   AND (IsSafe(Ent) OR Head ≤ T)
-                if (ent_cycle < cycle_T &&
-                    !is_occupied(ent) &&
-                    (is_safe(ent) || head_.get() <= T_)) {
-
+                if (ent_cycle < cycle_T && !is_occupied(ent) && (is_safe(ent) || head_.get() <= T_)) {
                     // Two-phase publish.  Phase 1: CAS-reserve the
                     // cell with DataPublished=0.  Only ONE producer
                     // can win this CAS for any given (cycle_T, j) —
@@ -310,16 +299,13 @@ public:
                     // different cycles targeting the same cell can
                     // race on cell.data (caught by TSan + cookie
                     // fuzzer; see header doc-block above).
-                    const std::uint64_t reserved_ent =
-                        pack_state(cycle_T,
-                                   /*safe*/ true,
-                                   /*occupied*/ true,
-                                   /*published*/ false);
+                    const std::uint64_t reserved_ent = pack_state(cycle_T,
+                                                                  /*safe*/ true,
+                                                                  /*occupied*/ true,
+                                                                  /*published*/ false);
 
-                    if (!cell.state.compare_exchange_strong(
-                            ent, reserved_ent,
-                            std::memory_order_acq_rel,
-                            std::memory_order_acquire)) {
+                    if (!cell.state.compare_exchange_strong(ent, reserved_ent, std::memory_order_acq_rel,
+                                                            std::memory_order_acquire)) {
                         // CAS failed; ent updated.  Re-check.
                         continue;
                     }
@@ -335,8 +321,7 @@ public:
                     // higher cycle may have CAS'd the IsSafe bit off
                     // (branch-2 occupied path) between our reserve
                     // and our publish.
-                    (void)cell.state.fetch_or(kDataPublishedBit,
-                                              std::memory_order_release);
+                    (void)cell.state.fetch_or(kDataPublishedBit, std::memory_order_release);
 
                     // Paper Fig 8 Lines 20-21: update Threshold
                     // on successful enqueue.
@@ -356,10 +341,8 @@ public:
                     // SEPLOG-H2 (PermissionedMpmcRing wrapper with
                     // typed Producer/Consumer sessions) is the
                     // tracked design path, not bare pre/post.
-                    if (threshold_.load(std::memory_order_acquire) !=
-                        kThresholdHi) {
-                        threshold_.store(kThresholdHi,
-                                         std::memory_order_release);
+                    if (threshold_.load(std::memory_order_acquire) != kThresholdHi) {
+                        threshold_.store(kThresholdHi, std::memory_order_release);
                     }
                     return true;
                 }
@@ -383,13 +366,13 @@ public:
             return std::nullopt;
         }
 
-        for (std::size_t outer_retry = 0; ; ++outer_retry) {
-            if (outer_retry > kCells) [[unlikely]] return std::nullopt;
+        for (std::size_t outer_retry = 0;; ++outer_retry) {
+            if (outer_retry > kCells) [[unlikely]]
+                return std::nullopt;
 
             const std::uint64_t H_ = head_.bump_by(1);
             const std::uint64_t j = H_ & kMask;
-            const std::uint64_t cycle_H =
-                H_ >> std::countr_zero(kCells);
+            const std::uint64_t cycle_H = H_ >> std::countr_zero(kCells);
 
             Cell& cell = cells_[j];
             std::uint64_t ent = cell.state.load(std::memory_order_acquire);
@@ -450,10 +433,8 @@ public:
                     // cleared so the next producer's two-phase
                     // protocol starts from a clean slate at this
                     // cell's next cycle.
-                    const std::uint64_t clear_mask =
-                        ~(kOccupiedBit | kDataPublishedBit);
-                    (void)cell.state.fetch_and(clear_mask,
-                                                std::memory_order_acq_rel);
+                    const std::uint64_t clear_mask = ~(kOccupiedBit | kDataPublishedBit);
+                    (void)cell.state.fetch_and(clear_mask, std::memory_order_acq_rel);
                     return result;
                 }
 
@@ -475,8 +456,7 @@ public:
                         // DataPublished to 0 — the cell now
                         // represents a fresh-cycle empty slot, no
                         // producer at cycle_H has reserved it yet.
-                        new_ent = pack_state(cycle_H, is_safe(ent),
-                                              false, /*published*/ false);
+                        new_ent = pack_state(cycle_H, is_safe(ent), false, /*published*/ false);
                     } else {
                         // Index ≠ ⊥: leave cycle, clear IsSafe
                         // (mark unsafe).  Preserve DataPublished —
@@ -486,14 +466,11 @@ public:
                         // strictly less than our current H_) will
                         // need to read the data once it claims its
                         // ticket.
-                        new_ent = pack_state(ent_cycle, false, true,
-                                              is_data_published(ent));
+                        new_ent = pack_state(ent_cycle, false, true, is_data_published(ent));
                     }
 
-                    if (cell.state.compare_exchange_strong(
-                            ent, new_ent,
-                            std::memory_order_acq_rel,
-                            std::memory_order_acquire)) {
+                    if (cell.state.compare_exchange_strong(ent, new_ent, std::memory_order_acq_rel,
+                                                           std::memory_order_acquire)) {
                         // CAS succeeded; now check Tail for empty
                         // detection (Paper Fig 8 Lines 39-45).
                         break;
@@ -533,9 +510,7 @@ public:
     // per-item retry control.
     //
     // Per-call shape: N × try_push, short-circuit on first false.
-    [[nodiscard, gnu::hot]] std::size_t try_push_batch(
-        std::span<const T> items) noexcept
-    {
+    [[nodiscard, gnu::hot]] std::size_t try_push_batch(std::span<const T> items) noexcept {
         std::size_t pushed = 0;
         for (const T& item : items) {
             if (!try_push(item)) break;
@@ -568,24 +543,16 @@ public:
         return t > h ? (t - h) : 0;
     }
 
-    [[nodiscard]] bool empty_approx() const noexcept {
-        return threshold_.load(std::memory_order_acquire) < 0;
-    }
+    [[nodiscard]] bool empty_approx() const noexcept { return threshold_.load(std::memory_order_acquire) < 0; }
 
     [[nodiscard]] std::int64_t threshold_snapshot() const noexcept {
         return threshold_.load(std::memory_order_acquire);
     }
 
-    [[nodiscard]] std::uint64_t ticket_waste_count() const noexcept {
-        return enqueue_ticket_waste_.get();
-    }
+    [[nodiscard]] std::uint64_t ticket_waste_count() const noexcept { return enqueue_ticket_waste_.get(); }
 
-    [[nodiscard]] static constexpr std::size_t capacity() noexcept {
-        return Capacity;
-    }
-    [[nodiscard]] static constexpr std::size_t internal_cells() noexcept {
-        return kCells;
-    }
+    [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
+    [[nodiscard]] static constexpr std::size_t internal_cells() noexcept { return kCells; }
 };
 
 // ── Compile-time sanity ─────────────────────────────────────────────

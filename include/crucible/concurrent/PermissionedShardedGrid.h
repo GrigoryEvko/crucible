@@ -141,7 +141,8 @@ namespace crucible::concurrent {
 
 namespace grid_tag {
 
-template <typename UserTag> struct Whole {};
+template <typename UserTag>
+struct Whole {};
 
 template <typename UserTag, std::size_t I>
 using Producer = safety::Producer<Whole<UserTag>, I>;
@@ -153,19 +154,13 @@ using Consumer = safety::Consumer<Whole<UserTag>, J>;
 
 // ── PermissionedShardedGrid<T, M, N, Capacity, UserTag, Routing> ───
 
-template <SpscValue T,
-          std::size_t M,
-          std::size_t N,
-          std::size_t Capacity,
-          typename UserTag = void,
+template <SpscValue T, std::size_t M, std::size_t N, std::size_t Capacity, typename UserTag = void,
           typename Routing = RoundRobinRouting>
-class PermissionedShardedGrid
-    : public safety::Pinned<PermissionedShardedGrid<T, M, N, Capacity,
-                                                    UserTag, Routing>> {
+class PermissionedShardedGrid : public safety::Pinned<PermissionedShardedGrid<T, M, N, Capacity, UserTag, Routing>> {
 public:
-    using value_type   = T;
-    using user_tag     = UserTag;
-    using whole_tag    = grid_tag::Whole<UserTag>;
+    using value_type = T;
+    using user_tag = UserTag;
+    using whole_tag = grid_tag::Whole<UserTag>;
 
     static constexpr std::size_t num_producers = M;
     static constexpr std::size_t num_consumers = N;
@@ -190,31 +185,27 @@ public:
         // implicitly deletes move-assign — same rationale as
         // PermissionedSpscChannel::ConsumerHandle.
         PermissionedShardedGrid& grid_;
-        [[no_unique_address]] safety::Permission<
-            grid_tag::Producer<UserTag, I>> perm_;
+        [[no_unique_address]] safety::Permission<grid_tag::Producer<UserTag, I>> perm_;
 
         constexpr ProducerHandle(PermissionedShardedGrid& g,
-                                 safety::Permission<
-                                     grid_tag::Producer<UserTag, I>>&& p) noexcept
+                                 safety::Permission<grid_tag::Producer<UserTag, I>>&& p) noexcept
             : grid_{g}, perm_{std::move(p)} {}
         friend class PermissionedShardedGrid;
 
     public:
-        ProducerHandle(const ProducerHandle&)
-            = delete("ProducerHandle owns the slot's Producer Permission — copy would duplicate the linear token, allowing two threads to share a single SPSC slot (data race on the inner SpscRing)");
-        ProducerHandle& operator=(const ProducerHandle&)
-            = delete("ProducerHandle owns the slot's Producer Permission — assignment would overwrite the linear token");
+        ProducerHandle(const ProducerHandle&) = delete(
+            "ProducerHandle owns the slot's Producer Permission — copy would duplicate the linear token, allowing two threads to share a single SPSC slot (data race on the inner SpscRing)");
+        ProducerHandle& operator=(const ProducerHandle&) =
+            delete("ProducerHandle owns the slot's Producer Permission — assignment would overwrite the linear token");
         constexpr ProducerHandle(ProducerHandle&&) noexcept = default;
-        ProducerHandle& operator=(ProducerHandle&&)
-            = delete("ProducerHandle binds to ONE shard slot for life — the slot index is part of the type");
+        ProducerHandle& operator=(ProducerHandle&&) =
+            delete("ProducerHandle binds to ONE shard slot for life — the slot index is part of the type");
 
         static constexpr std::size_t shard_index = I;
 
         // Push to producer slot I — Routing picks consumer column.
         // Per ShardedSpscGrid::send: ~5-8 ns uncontended.
-        [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept {
-            return grid_.grid_.try_push(I, item);
-        }
+        [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept { return grid_.grid_.try_push(I, item); }
 
         // Per-handle diagnostics (snapshot, NOT exact).  Producer-row
         // view: sum of size across the N consumer columns this handle's
@@ -233,9 +224,7 @@ public:
             }
             return true;
         }
-        [[nodiscard]] static constexpr std::size_t capacity() noexcept {
-            return Capacity;
-        }
+        [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
     };
 
     // ── ConsumerHandle<J> ─────────────────────────────────────────
@@ -250,31 +239,27 @@ public:
         static_assert(J < N, "Consumer slot index out of range");
 
         PermissionedShardedGrid& grid_;
-        [[no_unique_address]] safety::Permission<
-            grid_tag::Consumer<UserTag, J>> perm_;
+        [[no_unique_address]] safety::Permission<grid_tag::Consumer<UserTag, J>> perm_;
 
         constexpr ConsumerHandle(PermissionedShardedGrid& g,
-                                 safety::Permission<
-                                     grid_tag::Consumer<UserTag, J>>&& p) noexcept
+                                 safety::Permission<grid_tag::Consumer<UserTag, J>>&& p) noexcept
             : grid_{g}, perm_{std::move(p)} {}
         friend class PermissionedShardedGrid;
 
     public:
-        ConsumerHandle(const ConsumerHandle&)
-            = delete("ConsumerHandle owns the slot's Consumer Permission — copy would duplicate the linear token, allowing two threads to share a single SPSC consumer slot (data race on column drain)");
-        ConsumerHandle& operator=(const ConsumerHandle&)
-            = delete("ConsumerHandle owns the slot's Consumer Permission — assignment would overwrite the linear token");
+        ConsumerHandle(const ConsumerHandle&) = delete(
+            "ConsumerHandle owns the slot's Consumer Permission — copy would duplicate the linear token, allowing two threads to share a single SPSC consumer slot (data race on column drain)");
+        ConsumerHandle& operator=(const ConsumerHandle&) =
+            delete("ConsumerHandle owns the slot's Consumer Permission — assignment would overwrite the linear token");
         constexpr ConsumerHandle(ConsumerHandle&&) noexcept = default;
-        ConsumerHandle& operator=(ConsumerHandle&&)
-            = delete("ConsumerHandle binds to ONE shard slot for life — the slot index is part of the type");
+        ConsumerHandle& operator=(ConsumerHandle&&) =
+            delete("ConsumerHandle binds to ONE shard slot for life — the slot index is part of the type");
 
         static constexpr std::size_t shard_index = J;
 
         // Round-robin pop across all M producers in column J.
         // Per ShardedSpscGrid::try_pop.
-        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept {
-            return grid_.grid_.try_pop(J);
-        }
+        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept { return grid_.grid_.try_pop(J); }
 
         // Per-handle diagnostics (snapshot, NOT exact).  Consumer-column
         // view: sum of size across the M producer rows that feed this
@@ -292,9 +277,7 @@ public:
             }
             return true;
         }
-        [[nodiscard]] static constexpr std::size_t capacity() noexcept {
-            return Capacity;
-        }
+        [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
     };
 
     // ── Factories ─────────────────────────────────────────────────
@@ -304,17 +287,15 @@ public:
     // factory and hands one to each producer<I>/consumer<J>.
 
     template <std::size_t I>
-    [[nodiscard]] constexpr ProducerHandle<I> producer(
-        safety::Permission<grid_tag::Producer<UserTag, I>>&& perm) noexcept
-    {
+    [[nodiscard]] constexpr ProducerHandle<I>
+    producer(safety::Permission<grid_tag::Producer<UserTag, I>>&& perm) noexcept {
         static_assert(I < M, "producer<I>(): I must be less than M");
         return ProducerHandle<I>{*this, std::move(perm)};
     }
 
     template <std::size_t J>
-    [[nodiscard]] constexpr ConsumerHandle<J> consumer(
-        safety::Permission<grid_tag::Consumer<UserTag, J>>&& perm) noexcept
-    {
+    [[nodiscard]] constexpr ConsumerHandle<J>
+    consumer(safety::Permission<grid_tag::Consumer<UserTag, J>>&& perm) noexcept {
         static_assert(J < N, "consumer<J>(): J must be less than N");
         return ConsumerHandle<J>{*this, std::move(perm)};
     }
@@ -333,9 +314,8 @@ public:
     template <typename Body>
         requires std::is_invocable_v<Body>
     [[nodiscard]] safety::Permission<whole_tag>
-    with_recombined_access(safety::Permission<whole_tag>&& whole, Body&& body)
-        noexcept(std::is_nothrow_invocable_v<Body>)
-    {
+    with_recombined_access(safety::Permission<whole_tag>&& whole,
+                           Body&& body) noexcept(std::is_nothrow_invocable_v<Body>) {
         std::forward<Body>(body)();
         return std::move(whole);
     }
@@ -345,34 +325,24 @@ public:
     // Per-shard size — the M×N grid has M*N independent SpscRings,
     // so a global size is meaningless on the hot path.  Caller passes
     // the (producer, consumer) cell indices for per-shard inquiry.
-    [[nodiscard]] std::size_t size_approx(std::size_t producer_id,
-                                          std::size_t consumer_id) const noexcept
-    {
+    [[nodiscard]] std::size_t size_approx(std::size_t producer_id, std::size_t consumer_id) const noexcept {
         return grid_.size_approx(producer_id, consumer_id);
     }
 
     // Channel-level diagnostics — universal Permissioned* surface.
     // size_approx() walks all M×N cells; for hot-path use prefer the
     // per-shard variant above.
-    [[nodiscard]] std::size_t size_approx() const noexcept {
-        return grid_.size_approx();
-    }
-    [[nodiscard]] bool empty_approx() const noexcept {
-        return grid_.empty_approx();
-    }
+    [[nodiscard]] std::size_t size_approx() const noexcept { return grid_.size_approx(); }
+    [[nodiscard]] bool empty_approx() const noexcept { return grid_.empty_approx(); }
 
     // Channel-level capacity = total cells across M×N shards.
-    [[nodiscard]] static constexpr std::size_t capacity() noexcept {
-        return M * N * Capacity;
-    }
+    [[nodiscard]] static constexpr std::size_t capacity() noexcept { return M * N * Capacity; }
 
     // ShardedGrid has no atomic exclusivity flag — the linear
     // Permissions on all M+N endpoints ARE the proof of single-
     // handle ownership.  Always returns false for API uniformity
     // with the pool-based wrappers.
-    [[nodiscard]] static constexpr bool is_exclusive_active() noexcept {
-        return false;
-    }
+    [[nodiscard]] static constexpr bool is_exclusive_active() noexcept { return false; }
 
 private:
     ShardedSpscGrid<T, M, N, Capacity, Routing> grid_;

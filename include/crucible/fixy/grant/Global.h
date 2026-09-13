@@ -61,12 +61,11 @@ struct which_dim<global::namespace_static<StaticTag>>
     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::GlobalState> {};
 
 template <>
-struct which_dim<global::atexit_handler>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::GlobalState> {};
+struct which_dim<global::atexit_handler> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::GlobalState> {
+};
 
 // "I accept the strict default (no mutable global state) for this binding."
-using accept_default_strict_for_GlobalState =
-    accept_default_strict_for<dim::DimensionAxis::GlobalState>;
+using accept_default_strict_for_GlobalState = accept_default_strict_for<dim::DimensionAxis::GlobalState>;
 
 }  // namespace crucible::fixy::grant
 
@@ -74,29 +73,28 @@ namespace crucible::fixy::grant::detail::global_grant_self_test {
 
 using D = dim::DimensionAxis;
 
-struct sample_tag       final {};
-struct other_tag        final {};
+struct sample_tag final {};
+struct other_tag final {};
 
 static_assert(IsGrantTag<global::singleton<sample_tag>>);
 static_assert(IsGrantTag<global::thread_local_<sample_tag>>);
 static_assert(IsGrantTag<global::namespace_static<sample_tag>>);
 static_assert(IsGrantTag<global::atexit_handler>);
 
-static_assert(sizeof(global::singleton<sample_tag>)       == 1);
-static_assert(sizeof(global::thread_local_<sample_tag>)   == 1);
+static_assert(sizeof(global::singleton<sample_tag>) == 1);
+static_assert(sizeof(global::thread_local_<sample_tag>) == 1);
 static_assert(sizeof(global::namespace_static<sample_tag>) == 1);
-static_assert(sizeof(global::atexit_handler)              == 1);
+static_assert(sizeof(global::atexit_handler) == 1);
 
-static_assert(which_dim_v<global::singleton<sample_tag>>       == D::GlobalState);
-static_assert(which_dim_v<global::thread_local_<sample_tag>>   == D::GlobalState);
+static_assert(which_dim_v<global::singleton<sample_tag>> == D::GlobalState);
+static_assert(which_dim_v<global::thread_local_<sample_tag>> == D::GlobalState);
 static_assert(which_dim_v<global::namespace_static<sample_tag>> == D::GlobalState);
-static_assert(which_dim_v<global::atexit_handler>              == D::GlobalState);
+static_assert(which_dim_v<global::atexit_handler> == D::GlobalState);
 static_assert(which_dim_v<accept_default_strict_for_GlobalState> == D::GlobalState);
 
 // Each global's tag carries identity; the four grant kinds are distinct.
 static_assert(!std::is_same_v<global::singleton<sample_tag>, global::singleton<other_tag>>);
 static_assert(!std::is_same_v<global::singleton<sample_tag>, global::thread_local_<sample_tag>>);
-static_assert(!std::is_same_v<global::thread_local_<sample_tag>,
-                              global::namespace_static<sample_tag>>);
+static_assert(!std::is_same_v<global::thread_local_<sample_tag>, global::namespace_static<sample_tag>>);
 
 }  // namespace crucible::fixy::grant::detail::global_grant_self_test

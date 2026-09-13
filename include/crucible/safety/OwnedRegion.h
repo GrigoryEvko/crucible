@@ -94,13 +94,12 @@ namespace crucible::safety {
 
 template <typename T, typename Tag>
 class [[nodiscard]] OwnedRegion {
-    T*          base_  = nullptr;
+    T* base_ = nullptr;
     std::size_t count_ = 0;
     [[no_unique_address]] Permission<Tag> perm_;
 
     // Private constructor — only friended factories may construct.
-    constexpr OwnedRegion(T* base, std::size_t count,
-                          Permission<Tag>&& p) noexcept
+    constexpr OwnedRegion(T* base, std::size_t count, Permission<Tag>&& p) noexcept
         : base_{base}, count_{count}, perm_{std::move(p)} {}
 
     // Allow split_into to construct sub-regions of different Slice<...> types.
@@ -121,40 +120,33 @@ class [[nodiscard]] OwnedRegion {
     // friended by `ForkRebuildKey`.
     template <typename Parent>
     static OwnedRegion<T, Parent> rebuild_parent_(T* base, std::size_t count) noexcept {
-        return OwnedRegion<T, Parent>{
-            base, count,
-            ::crucible::safety::detail::rebuild_parent_after_fork_<Parent>()};
+        return OwnedRegion<T, Parent>{base, count, ::crucible::safety::detail::rebuild_parent_after_fork_<Parent>()};
     }
 
     // Friend the Workload primitives so they may rebuild parents.
     template <std::size_t N, typename U, typename Whole, typename Body>
-    friend OwnedRegion<U, Whole>
-    parallel_for_views(OwnedRegion<U, Whole>&&, Body) noexcept;
+    friend OwnedRegion<U, Whole> parallel_for_views(OwnedRegion<U, Whole>&&, Body) noexcept;
 
-    template <std::size_t N, typename R, typename U, typename Whole,
-              typename Mapper, typename Reducer>
-    friend std::pair<R, OwnedRegion<U, Whole>>
-    parallel_reduce_views(OwnedRegion<U, Whole>&&, R, Mapper, Reducer) noexcept;
+    template <std::size_t N, typename R, typename U, typename Whole, typename Mapper, typename Reducer>
+    friend std::pair<R, OwnedRegion<U, Whole>> parallel_reduce_views(OwnedRegion<U, Whole>&&, R, Mapper,
+                                                                     Reducer) noexcept;
 
     // FOUND-F02 — parallel_apply_pair<N> takes TWO regions and
     // rebuilds both after worker join; needs friendship to call
     // rebuild_parent_ on each.
-    template <std::size_t N, typename T1, typename W1,
-              typename T2, typename W2, typename Body>
+    template <std::size_t N, typename T1, typename W1, typename T2, typename W2, typename Body>
     friend std::pair<OwnedRegion<T1, W1>, OwnedRegion<T2, W2>>
-    parallel_apply_pair(OwnedRegion<T1, W1>&&, OwnedRegion<T2, W2>&&,
-                        Body) noexcept;
+    parallel_apply_pair(OwnedRegion<T1, W1>&&, OwnedRegion<T2, W2>&&, Body) noexcept;
 
 public:
     using value_type = T;
-    using tag_type   = Tag;
+    using tag_type = Tag;
 
     // Move-only by virtue of Permission's linearity.
-    OwnedRegion(const OwnedRegion&)
-        = delete("OwnedRegion owns a Permission — copy would duplicate the linear token");
-    OwnedRegion& operator=(const OwnedRegion&)
-        = delete("OwnedRegion owns a Permission — assignment would overwrite the linear token");
-    constexpr OwnedRegion(OwnedRegion&&) noexcept            = default;
+    OwnedRegion(const OwnedRegion&) = delete("OwnedRegion owns a Permission — copy would duplicate the linear token");
+    OwnedRegion& operator=(const OwnedRegion&) =
+        delete("OwnedRegion owns a Permission — assignment would overwrite the linear token");
+    constexpr OwnedRegion(OwnedRegion&&) noexcept = default;
     constexpr OwnedRegion& operator=(OwnedRegion&&) noexcept = default;
     ~OwnedRegion() = default;
 
@@ -165,14 +157,9 @@ public:
     // ownership by surrendering the Permission token.
     //
     // count == 0: returns OwnedRegion with base_ == nullptr, count_ == 0.
-    [[nodiscard]] static OwnedRegion adopt(
-        effects::Alloc alloc_token,
-        Arena& arena,
-        std::size_t count,
-        Permission<Tag>&& perm) noexcept
-    {
-        T* base = (count == 0) ? nullptr
-                               : arena.alloc_array<T>(alloc_token, count);
+    [[nodiscard]] static OwnedRegion adopt(effects::Alloc alloc_token, Arena& arena, std::size_t count,
+                                           Permission<Tag>&& perm) noexcept {
+        T* base = (count == 0) ? nullptr : arena.alloc_array<T>(alloc_token, count);
         return OwnedRegion{base, count, std::move(perm)};
     }
 
@@ -181,33 +168,27 @@ public:
     // NOT own the storage (just the Permission proof).  Useful for
     // migration: existing (T*, size_t) pairs can be wrapped without
     // re-allocation.
-    [[nodiscard]] static OwnedRegion wrap(
-        T* base, std::size_t count, Permission<Tag>&& perm) noexcept
-    {
+    [[nodiscard]] static OwnedRegion wrap(T* base, std::size_t count, Permission<Tag>&& perm) noexcept {
         return OwnedRegion{base, count, std::move(perm)};
     }
 
     // ── Views (zero indirection over contiguous bytes) ────────────
 
-    [[nodiscard]] constexpr std::span<T> span() noexcept {
-        return std::span<T>{base_, count_};
-    }
-    [[nodiscard]] constexpr std::span<T const> cspan() const noexcept {
-        return std::span<T const>{base_, count_};
-    }
+    [[nodiscard]] constexpr std::span<T> span() noexcept { return std::span<T>{base_, count_}; }
+    [[nodiscard]] constexpr std::span<T const> cspan() const noexcept { return std::span<T const>{base_, count_}; }
 
     // ── Accessors ─────────────────────────────────────────────────
 
-    [[nodiscard]] constexpr T*          data()       noexcept { return base_; }
-    [[nodiscard]] constexpr T const*    data() const noexcept { return base_; }
+    [[nodiscard]] constexpr T* data() noexcept { return base_; }
+    [[nodiscard]] constexpr T const* data() const noexcept { return base_; }
     [[nodiscard]] constexpr std::size_t size() const noexcept { return count_; }
-    [[nodiscard]] constexpr bool        empty() const noexcept { return count_ == 0; }
+    [[nodiscard]] constexpr bool empty() const noexcept { return count_ == 0; }
 
     // Range-based for support — iteration over native pointer.
-    [[nodiscard]] constexpr T*       begin()       noexcept { return base_; }
-    [[nodiscard]] constexpr T*       end()         noexcept { return base_ + count_; }
+    [[nodiscard]] constexpr T* begin() noexcept { return base_; }
+    [[nodiscard]] constexpr T* end() noexcept { return base_ + count_; }
     [[nodiscard]] constexpr T const* begin() const noexcept { return base_; }
-    [[nodiscard]] constexpr T const* end()   const noexcept { return base_ + count_; }
+    [[nodiscard]] constexpr T const* end() const noexcept { return base_ + count_; }
 
     // ── Partition (index-space, not memory-space) ─────────────────
     //
@@ -241,8 +222,8 @@ private:
     auto split_into_impl_(std::index_sequence<Is...>) && noexcept;
 
     // Per-shard chunk math — returns (start_offset, length) for shard I.
-    static constexpr std::pair<std::size_t, std::size_t>
-    chunk_range_(std::size_t total, std::size_t n, std::size_t i) noexcept {
+    static constexpr std::pair<std::size_t, std::size_t> chunk_range_(std::size_t total, std::size_t n,
+                                                                      std::size_t i) noexcept {
         if (n == 0) return {0, 0};
         const std::size_t chunk = (total + n - 1) / n;
         const std::size_t start = i * chunk;
@@ -259,8 +240,7 @@ template <typename T, typename Tag>
 template <std::size_t N>
 auto OwnedRegion<T, Tag>::split_into() && noexcept {
     static_assert(N > 0, "split_into<N>() requires N > 0");
-    return std::move(*this).template split_into_impl_<N>(
-        std::make_index_sequence<N>{});
+    return std::move(*this).template split_into_impl_<N>(std::make_index_sequence<N>{});
 }
 
 template <typename T, typename Tag>
@@ -271,7 +251,7 @@ auto OwnedRegion<T, Tag>::split_into_impl_(std::index_sequence<Is...>) && noexce
     // Snapshot base+count BEFORE consuming the permission.  After
     // mint_permission_split_n the parent's `perm_` is moved-from but base_/
     // count_ remain readable until *this destructs.
-    T*                base  = base_;
+    T* base = base_;
     const std::size_t total = count_;
 
     // Split the parent permission into N child Slice<Tag, I> permissions.
@@ -280,23 +260,18 @@ auto OwnedRegion<T, Tag>::split_into_impl_(std::index_sequence<Is...>) && noexce
     // Construct one OwnedRegion<T, Slice<Tag, I>> per shard, pointing
     // into the same buffer at chunk offsets.
     return std::tuple<OwnedRegion<T, Slice<Tag, Is>>...>{
-        OwnedRegion<T, Slice<Tag, Is>>{
-            base + chunk_range_(total, N, Is).first,
-            chunk_range_(total, N, Is).second,
-            std::move(std::get<Is>(sub_perms))
-        }...
-    };
+        OwnedRegion<T, Slice<Tag, Is>>{base + chunk_range_(total, N, Is).first, chunk_range_(total, N, Is).second,
+                                       std::move(std::get<Is>(sub_perms))}...};
 }
 
 // ── Zero-cost guarantees ────────────────────────────────────────────
 
 namespace detail {
-    struct owned_region_test_tag {};
-}
+struct owned_region_test_tag {};
+}  // namespace detail
 
 // sizeof = (T*) + (size_t).  Permission EBO-collapses to 0.
-static_assert(sizeof(OwnedRegion<int, detail::owned_region_test_tag>) ==
-              sizeof(int*) + sizeof(std::size_t),
+static_assert(sizeof(OwnedRegion<int, detail::owned_region_test_tag>) == sizeof(int*) + sizeof(std::size_t),
               "OwnedRegion<T, Tag> must be exactly (T*, size_t); Permission EBO-collapses");
 
 // Move-only.
@@ -309,13 +284,10 @@ static_assert(sizeof(Slice<detail::owned_region_test_tag, 0>) == 1);
 static_assert(std::is_trivially_destructible_v<Slice<detail::owned_region_test_tag, 0>>);
 
 // splits_into_pack auto-specialization.
-static_assert(splits_into_pack_v<
-    detail::owned_region_test_tag,
-    Slice<detail::owned_region_test_tag, 0>,
-    Slice<detail::owned_region_test_tag, 1>,
-    Slice<detail::owned_region_test_tag, 2>,
-    Slice<detail::owned_region_test_tag, 3>>,
-    "Slice<Parent, 0..N-1> must auto-specialize splits_into_pack");
+static_assert(splits_into_pack_v<detail::owned_region_test_tag, Slice<detail::owned_region_test_tag, 0>,
+                                 Slice<detail::owned_region_test_tag, 1>, Slice<detail::owned_region_test_tag, 2>,
+                                 Slice<detail::owned_region_test_tag, 3>>,
+              "Slice<Parent, 0..N-1> must auto-specialize splits_into_pack");
 
 // ── runtime_smoke_test ──────────────────────────────────────────────
 //
@@ -336,9 +308,8 @@ inline void runtime_smoke_test() {
 
     // adopt(arena, count, perm) — single arena bump-pointer alloc + perm.
     auto perm = mint_permission_root<smoke_tag>();
-    auto region = OwnedRegion<int, smoke_tag>::adopt(
-        test_ctx.alloc, arena, static_cast<std::size_t>(seed + 1),
-        std::move(perm));
+    auto region =
+        OwnedRegion<int, smoke_tag>::adopt(test_ctx.alloc, arena, static_cast<std::size_t>(seed + 1), std::move(perm));
     if (region.size() != 8u) std::abort();
     if (region.empty()) std::abort();
     if (region.data() == nullptr) std::abort();
@@ -348,7 +319,8 @@ inline void runtime_smoke_test() {
         region.data()[i] = static_cast<int>(i) * seed;
     }
     int sum = 0;
-    for (int v : region) sum += v;
+    for (int v : region)
+        sum += v;
     if (sum != (0 + 1 + 2 + 3 + 4 + 5 + 6 + 7) * seed) std::abort();
 
     // span() + cspan() — zero-indirection views.
@@ -364,24 +336,21 @@ inline void runtime_smoke_test() {
     auto& s1 = std::get<1>(shards);
     auto& s2 = std::get<2>(shards);
     auto& s3 = std::get<3>(shards);
-    if (s0.size() != 2u || s1.size() != 2u
-            || s2.size() != 2u || s3.size() != 2u) std::abort();
+    if (s0.size() != 2u || s1.size() != 2u || s2.size() != 2u || s3.size() != 2u) std::abort();
     if (s0.data()[0] != 0 || s0.data()[1] != seed) std::abort();
     if (s3.data()[1] != 7 * seed) std::abort();
 
     // wrap(base, count, perm) — adopt externally-allocated storage.
     int storage[3] = {seed, seed + 1, seed + 2};
     auto wrap_perm = mint_permission_root<smoke_tag>();
-    auto wrapped = OwnedRegion<int, smoke_tag>::wrap(
-        storage, 3u, std::move(wrap_perm));
+    auto wrapped = OwnedRegion<int, smoke_tag>::wrap(storage, 3u, std::move(wrap_perm));
     if (wrapped.size() != 3u) std::abort();
     if (wrapped.data() != storage) std::abort();
     if (wrapped.data()[2] != seed + 2) std::abort();
 
     // Empty-region path: count == 0 → nullptr base.
     auto empty_perm = mint_permission_root<smoke_tag>();
-    auto empty = OwnedRegion<int, smoke_tag>::adopt(
-        test_ctx.alloc, arena, 0u, std::move(empty_perm));
+    auto empty = OwnedRegion<int, smoke_tag>::adopt(test_ctx.alloc, arena, 0u, std::move(empty_perm));
     if (!empty.empty()) std::abort();
     if (empty.data() != nullptr) std::abort();
     if (empty.size() != 0u) std::abort();

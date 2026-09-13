@@ -41,12 +41,10 @@ struct RuntimeMetrics {
 
 using RuntimeMetricsSample = ::crucible::safety::Stale<RuntimeMetrics>;
 using RuntimeMetricsComputation =
-    ::crucible::effects::Computation<
-        ::crucible::effects::Row<::crucible::effects::Effect::Bg>,
-        RuntimeMetrics>;
+    ::crucible::effects::Computation<::crucible::effects::Row<::crucible::effects::Effect::Bg>, RuntimeMetrics>;
 using RuntimeMetricsChannel =
-    ::crucible::safety::proto::swmr_session::SwmrSession<
-        RuntimeMetricsSample, RuntimeMetricsWriterTag, RuntimeMetricsReaderTag>;
+    ::crucible::safety::proto::swmr_session::SwmrSession<RuntimeMetricsSample, RuntimeMetricsWriterTag,
+                                                         RuntimeMetricsReaderTag>;
 using RuntimeMetricsWriter = typename RuntimeMetricsChannel::WriterHandle;
 using RuntimeMetricsReader = typename RuntimeMetricsChannel::ReaderHandle;
 
@@ -54,33 +52,29 @@ static_assert(std::is_trivially_copyable_v<RuntimeMetrics>);
 static_assert(std::is_trivially_destructible_v<RuntimeMetrics>);
 static_assert(::crucible::concurrent::SnapshotValue<RuntimeMetricsSample>);
 
-[[nodiscard]] inline RuntimeMetricsSample
-fresh_metrics_sample(RuntimeMetrics metrics) noexcept {
+[[nodiscard]] inline RuntimeMetricsSample fresh_metrics_sample(RuntimeMetrics metrics) noexcept {
     return RuntimeMetricsSample::fresh(metrics);
 }
 
-[[nodiscard]] inline RuntimeMetricsSample
-metrics_sample_at(RuntimeMetrics metrics, std::uint64_t staleness) noexcept {
+[[nodiscard]] inline RuntimeMetricsSample metrics_sample_at(RuntimeMetrics metrics, std::uint64_t staleness) noexcept {
     return RuntimeMetricsSample::at(metrics, staleness);
 }
 
-[[nodiscard]] inline RuntimeMetricsWriter mint_metrics_writer(
-    RuntimeMetricsChannel& channel,
-    ::crucible::safety::Permission<RuntimeMetricsWriterTag>&& permission) noexcept {
-    return ::crucible::safety::proto::swmr_session::mint_swmr_writer<
-        RuntimeMetricsChannel>(channel, std::move(permission));
+[[nodiscard]] inline RuntimeMetricsWriter
+mint_metrics_writer(RuntimeMetricsChannel& channel,
+                    ::crucible::safety::Permission<RuntimeMetricsWriterTag>&& permission) noexcept {
+    return ::crucible::safety::proto::swmr_session::mint_swmr_writer<RuntimeMetricsChannel>(channel,
+                                                                                            std::move(permission));
 }
 
 [[nodiscard]] inline std::optional<RuntimeMetricsReader>
 mint_keeper_metrics_reader(RuntimeMetricsChannel& channel) noexcept {
-    return ::crucible::safety::proto::swmr_session::mint_swmr_reader<
-        RuntimeMetricsChannel>(channel);
+    return ::crucible::safety::proto::swmr_session::mint_swmr_reader<RuntimeMetricsChannel>(channel);
 }
 
 [[nodiscard]] inline std::optional<RuntimeMetricsReader>
 mint_canopy_metrics_reader(RuntimeMetricsChannel& channel) noexcept {
-    return ::crucible::safety::proto::swmr_session::mint_swmr_reader<
-        RuntimeMetricsChannel>(channel);
+    return ::crucible::safety::proto::swmr_session::mint_swmr_reader<RuntimeMetricsChannel>(channel);
 }
 
 }  // namespace crucible::observe

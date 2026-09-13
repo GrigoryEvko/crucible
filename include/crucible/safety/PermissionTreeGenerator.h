@@ -102,13 +102,11 @@ struct Slice {
 // any (Parent, sizeof...(Is)) pair without per-N user-side work.
 
 template <typename Parent, std::size_t... Is>
-struct splits_into_pack<Parent, Slice<Parent, Is>...>
-    : std::true_type {};
+struct splits_into_pack<Parent, Slice<Parent, Is>...> : std::true_type {};
 
 // fixy-M-29 authoring witness (paired with the splits_into_pack spec above).
 template <typename Parent, std::size_t... Is>
-struct splits_into_pack_authoring_witness<Parent, Slice<Parent, Is>...>
-    : std::true_type {};
+struct splits_into_pack_authoring_witness<Parent, Slice<Parent, Is>...> : std::true_type {};
 
 // ── auto_split_n<Parent, N>::type ──────────────────────────────────
 //
@@ -125,37 +123,31 @@ struct splits_into_pack_authoring_witness<Parent, Slice<Parent, Is>...>
 namespace detail {
 
 template <typename Parent, std::size_t... Is>
-constexpr auto auto_split_tuple_(std::index_sequence<Is...>) noexcept
-    -> std::tuple<Slice<Parent, Is>...>;
+constexpr auto auto_split_tuple_(std::index_sequence<Is...>) noexcept -> std::tuple<Slice<Parent, Is>...>;
 
 template <typename Parent, std::size_t... Is>
-constexpr auto auto_split_perms_(std::index_sequence<Is...>) noexcept
-    -> std::tuple<Permission<Slice<Parent, Is>>...>;
+constexpr auto auto_split_perms_(std::index_sequence<Is...>) noexcept -> std::tuple<Permission<Slice<Parent, Is>>...>;
 
 }  // namespace detail
 
 template <typename Parent, std::size_t N>
 struct auto_split_n {
-    static_assert(N > 0,
-        "auto_split_n<Parent, N>: N must be greater than zero — "
-        "splitting a permission into zero shards has no operational meaning");
+    static_assert(N > 0, "auto_split_n<Parent, N>: N must be greater than zero — "
+                         "splitting a permission into zero shards has no operational meaning");
 
     // Tuple of the slice tag types themselves (compile-time identity only).
-    using type = decltype(
-        detail::auto_split_tuple_<Parent>(std::make_index_sequence<N>{}));
+    using type = decltype(detail::auto_split_tuple_<Parent>(std::make_index_sequence<N>{}));
 
     // Tuple of the slice Permission tokens (the actual return type of
     // mint_permission_split_n<Slice<Parent, Is>...>(parent_perm)).
-    using permissions_type = decltype(
-        detail::auto_split_perms_<Parent>(std::make_index_sequence<N>{}));
+    using permissions_type = decltype(detail::auto_split_perms_<Parent>(std::make_index_sequence<N>{}));
 };
 
 template <typename Parent, std::size_t N>
 using auto_split_n_t = typename auto_split_n<Parent, N>::type;
 
 template <typename Parent, std::size_t N>
-using auto_split_n_permissions_t =
-    typename auto_split_n<Parent, N>::permissions_type;
+using auto_split_n_permissions_t = typename auto_split_n<Parent, N>::permissions_type;
 
 // ── can_split_n_v<Parent, N> — consteval check ─────────────────────
 //
@@ -176,8 +168,7 @@ constexpr bool can_split_n_impl_(std::index_sequence<Is...>) noexcept {
 }  // namespace detail
 
 template <typename Parent, std::size_t N>
-inline constexpr bool can_split_n_v =
-    (N > 0) && detail::can_split_n_impl_<Parent>(std::make_index_sequence<N>{});
+inline constexpr bool can_split_n_v = (N > 0) && detail::can_split_n_impl_<Parent>(std::make_index_sequence<N>{});
 
 // ── Sentinel static_asserts (per project memory: header-only TUs ───
 //                             must be exercised by an including .cpp,
@@ -188,27 +179,22 @@ struct ptg_test_tag_ {};
 }  // namespace detail
 
 static_assert(sizeof(Slice<detail::ptg_test_tag_, 0>) == 1,
-    "Slice<Parent, I>: must be a 1-byte empty class (no payload)");
+              "Slice<Parent, I>: must be a 1-byte empty class (no payload)");
 static_assert(std::is_trivially_destructible_v<Slice<detail::ptg_test_tag_, 0>>);
 static_assert(std::is_empty_v<Slice<detail::ptg_test_tag_, 0>>);
 
 // Distinct (Parent, I) pairs produce distinct types.
-static_assert(!std::is_same_v<Slice<detail::ptg_test_tag_, 0>,
-                              Slice<detail::ptg_test_tag_, 1>>);
+static_assert(!std::is_same_v<Slice<detail::ptg_test_tag_, 0>, Slice<detail::ptg_test_tag_, 1>>);
 
 // parent_type and index round-trip.
-static_assert(std::is_same_v<Slice<detail::ptg_test_tag_, 5>::parent_type,
-                             detail::ptg_test_tag_>);
+static_assert(std::is_same_v<Slice<detail::ptg_test_tag_, 5>::parent_type, detail::ptg_test_tag_>);
 static_assert(Slice<detail::ptg_test_tag_, 5>::index == 5);
 
 // splits_into_pack auto-fires for any N >= 1.
-static_assert(splits_into_pack_v<detail::ptg_test_tag_,
-                                 Slice<detail::ptg_test_tag_, 0>>);
-static_assert(splits_into_pack_v<detail::ptg_test_tag_,
-                                 Slice<detail::ptg_test_tag_, 0>,
-                                 Slice<detail::ptg_test_tag_, 1>,
-                                 Slice<detail::ptg_test_tag_, 2>,
-                                 Slice<detail::ptg_test_tag_, 3>>);
+static_assert(splits_into_pack_v<detail::ptg_test_tag_, Slice<detail::ptg_test_tag_, 0>>);
+static_assert(
+    splits_into_pack_v<detail::ptg_test_tag_, Slice<detail::ptg_test_tag_, 0>, Slice<detail::ptg_test_tag_, 1>,
+                       Slice<detail::ptg_test_tag_, 2>, Slice<detail::ptg_test_tag_, 3>>);
 
 // can_split_n_v matches.
 static_assert(can_split_n_v<detail::ptg_test_tag_, 1>);
@@ -216,16 +202,13 @@ static_assert(can_split_n_v<detail::ptg_test_tag_, 4>);
 static_assert(can_split_n_v<detail::ptg_test_tag_, 64>);
 
 // auto_split_n_t is the homogeneous-shape but heterogeneous-types tuple.
-static_assert(std::is_same_v<
-    auto_split_n_t<detail::ptg_test_tag_, 3>,
-    std::tuple<Slice<detail::ptg_test_tag_, 0>,
-               Slice<detail::ptg_test_tag_, 1>,
-               Slice<detail::ptg_test_tag_, 2>>>);
+static_assert(std::is_same_v<auto_split_n_t<detail::ptg_test_tag_, 3>,
+                             std::tuple<Slice<detail::ptg_test_tag_, 0>, Slice<detail::ptg_test_tag_, 1>,
+                                        Slice<detail::ptg_test_tag_, 2>>>);
 
 static_assert(std::is_same_v<
-    auto_split_n_permissions_t<detail::ptg_test_tag_, 2>,
-    std::tuple<Permission<Slice<detail::ptg_test_tag_, 0>>,
-               Permission<Slice<detail::ptg_test_tag_, 1>>>>);
+              auto_split_n_permissions_t<detail::ptg_test_tag_, 2>,
+              std::tuple<Permission<Slice<detail::ptg_test_tag_, 0>>, Permission<Slice<detail::ptg_test_tag_, 1>>>>);
 
 // ── Runtime smoke test (per project memory: every header ships an ──
 //                       inline runtime witness using non-constant
@@ -236,14 +219,11 @@ inline void runtime_smoke_test() {
     using Tag = detail::ptg_test_tag_;
     auto parent = mint_permission_root<Tag>();
 
-    auto children = mint_permission_split_n<
-        Slice<Tag, 0>, Slice<Tag, 1>,
-        Slice<Tag, 2>, Slice<Tag, 3>>(std::move(parent));
+    auto children =
+        mint_permission_split_n<Slice<Tag, 0>, Slice<Tag, 1>, Slice<Tag, 2>, Slice<Tag, 3>>(std::move(parent));
 
     // The tuple types match auto_split_n_permissions_t.
-    static_assert(std::is_same_v<
-        decltype(children),
-        auto_split_n_permissions_t<Tag, 4>>);
+    static_assert(std::is_same_v<decltype(children), auto_split_n_permissions_t<Tag, 4>>);
 
     // Suppress unused-variable warnings; children destruct at scope end.
     (void)children;

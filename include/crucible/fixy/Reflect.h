@@ -86,10 +86,10 @@
 //                bit-equality.  Iteration order follows reflection
 //                substrate's declaration order (fixed at compile time).
 
-#include <crucible/Reflect.h>            // struct-field reflection
-#include <crucible/safety/Reflected.h>   // enum-enumerator reflection
+#include <crucible/Reflect.h>  // struct-field reflection
+#include <crucible/safety/Reflected.h>  // enum-enumerator reflection
 
-#include <cstdint>      // self_test uses uint64_t
+#include <cstdint>  // self_test uses uint64_t
 #include <string_view>  // self_test uses std::string_view
 #include <type_traits>  // self_test uses std::is_same_v
 
@@ -163,11 +163,11 @@ struct ReflectProbeStruct {
 };
 
 enum class ReflectProbeEnum : std::uint8_t {
-    Zero  = 0x00,
-    One   = 0x01,
-    Two   = 0x02,
-    Four  = 0x04,
-    Three = 0x03,    // composite — skipped by single-bit filter
+    Zero = 0x00,
+    One = 0x01,
+    Two = 0x02,
+    Four = 0x04,
+    Three = 0x03,  // composite — skipped by single-bit filter
 };
 
 // ── 1. Function-template reach identity — reflect_hash ─────────────
@@ -185,13 +185,12 @@ enum class ReflectProbeEnum : std::uint8_t {
 
 inline constexpr ReflectProbeStruct probe_struct{42, 99};
 
-static_assert(
-    &::crucible::fixy::reflect::reflect_hash<ReflectProbeStruct> ==
-    &::crucible::reflect_hash<ReflectProbeStruct>,
-    "fixy::reflect::reflect_hash MUST resolve to the same instantiated "
-    "function as crucible::reflect_hash — using-decls preserve substrate "
-    "identity.  Drift would mean two reach paths point to DIFFERENT "
-    "functions, breaking KernelCache content-addressing (DetSafe).");
+static_assert(&::crucible::fixy::reflect::reflect_hash<ReflectProbeStruct>
+                  == &::crucible::reflect_hash<ReflectProbeStruct>,
+              "fixy::reflect::reflect_hash MUST resolve to the same instantiated "
+              "function as crucible::reflect_hash — using-decls preserve substrate "
+              "identity.  Drift would mean two reach paths point to DIFFERENT "
+              "functions, breaking KernelCache content-addressing (DetSafe).");
 
 // ── 2. Variable-template reach identity — has_reflected_hash ───────
 //
@@ -199,64 +198,55 @@ static_assert(
 // the using-decl makes the name visible in fixy::reflect:: while
 // preserving the same instantiated value.
 
-static_assert(
-    ::crucible::fixy::reflect::has_reflected_hash<ReflectProbeStruct> ==
-    ::crucible::has_reflected_hash<ReflectProbeStruct>,
-    "fixy::reflect::has_reflected_hash<T> must agree with substrate.");
+static_assert(::crucible::fixy::reflect::has_reflected_hash<ReflectProbeStruct>
+                  == ::crucible::has_reflected_hash<ReflectProbeStruct>,
+              "fixy::reflect::has_reflected_hash<T> must agree with substrate.");
 
 // Positive — ReflectProbeStruct is a class with reflectable fields.
-static_assert(
-    ::crucible::fixy::reflect::has_reflected_hash<ReflectProbeStruct>,
-    "ReflectProbeStruct is reflectable; trait must report true.");
+static_assert(::crucible::fixy::reflect::has_reflected_hash<ReflectProbeStruct>,
+              "ReflectProbeStruct is reflectable; trait must report true.");
 
 // Negative — int is not a class, so detect_reflected_hash returns
 // false; this proves the false branch of the trait reaches through
 // the alias intact.
-static_assert(
-    !::crucible::fixy::reflect::has_reflected_hash<int>,
-    "int is not a class type; has_reflected_hash<int> must be false. "
-    "Drift would mean the negative branch of the trait is bypassed.");
+static_assert(!::crucible::fixy::reflect::has_reflected_hash<int>,
+              "int is not a class type; has_reflected_hash<int> must be false. "
+              "Drift would mean the negative branch of the trait is bypassed.");
 
 // ── 3. Function-template reach identity — reflect_fmix_fold ────────
 //
 // Distinct hash bit-pattern from reflect_hash; documenting both
 // paths agree at the alias boundary.
 
-static_assert(
-    ::crucible::fixy::reflect::reflect_fmix_fold<0xDEADBEEFULL>(probe_struct) ==
-    ::crucible::reflect_fmix_fold<0xDEADBEEFULL>(probe_struct),
-    "fixy::reflect::reflect_fmix_fold<Seed, T> must produce identical "
-    "output to substrate — different fold pattern from reflect_hash "
-    "but same DetSafe contract.");
+static_assert(::crucible::fixy::reflect::reflect_fmix_fold<0xDEADBEEFULL>(probe_struct)
+                  == ::crucible::reflect_fmix_fold<0xDEADBEEFULL>(probe_struct),
+              "fixy::reflect::reflect_fmix_fold<Seed, T> must produce identical "
+              "output to substrate — different fold pattern from reflect_hash "
+              "but same DetSafe contract.");
 
 // Distinct seed → distinct hash (sanity-witness for the seed param
 // reaching through the alias).
-static_assert(
-    ::crucible::fixy::reflect::reflect_fmix_fold<0xCAFEBABEULL>(probe_struct) !=
-    ::crucible::fixy::reflect::reflect_fmix_fold<0xDEADBEEFULL>(probe_struct),
-    "Different seeds must produce different fmix64-fold hashes — if "
-    "they collide the seed parameter has been dropped at the alias.");
+static_assert(::crucible::fixy::reflect::reflect_fmix_fold<0xCAFEBABEULL>(probe_struct)
+                  != ::crucible::fixy::reflect::reflect_fmix_fold<0xDEADBEEFULL>(probe_struct),
+              "Different seeds must produce different fmix64-fold hashes — if "
+              "they collide the seed parameter has been dropped at the alias.");
 
 // ── 4. Enumerator reflection reach — enumerator_name ───────────────
 //
 // safety::reflected::enumerator_name is a constexpr function template
 // returning string_view; identity-witness: same string at the alias.
 
-static_assert(
-    ::crucible::fixy::reflect::enumerator_name(ReflectProbeEnum::One) ==
-    ::crucible::safety::reflected::enumerator_name(ReflectProbeEnum::One),
-    "fixy::reflect::enumerator_name must agree with substrate on "
-    "named enumerator lookups (positive case).");
+static_assert(::crucible::fixy::reflect::enumerator_name(ReflectProbeEnum::One)
+                  == ::crucible::safety::reflected::enumerator_name(ReflectProbeEnum::One),
+              "fixy::reflect::enumerator_name must agree with substrate on "
+              "named enumerator lookups (positive case).");
 
-static_assert(
-    ::crucible::fixy::reflect::enumerator_name(ReflectProbeEnum::One) == "One",
-    "Direct positive witness — One enumerator maps to \"One\" name.");
+static_assert(::crucible::fixy::reflect::enumerator_name(ReflectProbeEnum::One) == "One",
+              "Direct positive witness — One enumerator maps to \"One\" name.");
 
-static_assert(
-    ::crucible::fixy::reflect::enumerator_name(
-        static_cast<ReflectProbeEnum>(0xFF)).empty(),
-    "Unknown value yields empty view, not garbage — reach-through "
-    "preserves the negative case.");
+static_assert(::crucible::fixy::reflect::enumerator_name(static_cast<ReflectProbeEnum>(0xFF)).empty(),
+              "Unknown value yields empty view, not garbage — reach-through "
+              "preserves the negative case.");
 
 // ── 5. for_each_enumerator reach — counting + ordering witness ─────
 //
@@ -271,9 +261,8 @@ static_assert(
         [&](ReflectProbeEnum, std::string_view) noexcept { ++n; });
     return n;
 }
-static_assert(count_through_alias() == 5,
-    "ReflectProbeEnum has 5 declared enumerators; reach-through must "
-    "preserve substrate's iteration cardinality.");
+static_assert(count_through_alias() == 5, "ReflectProbeEnum has 5 declared enumerators; reach-through must "
+                                          "preserve substrate's iteration cardinality.");
 
 // ── 6. for_each_single_bit_enumerator reach — popcount filter ──────
 //
@@ -286,10 +275,9 @@ static_assert(count_through_alias() == 5,
         [&](ReflectProbeEnum, std::string_view) noexcept { ++n; });
     return n;
 }
-static_assert(count_single_bit_through_alias() == 3,
-    "ReflectProbeEnum has 3 single-bit enumerators (One, Two, Four); "
-    "Three (0x03, popcount=2) and Zero (popcount=0) filtered. "
-    "Reach-through must preserve substrate's compile-time filter.");
+static_assert(count_single_bit_through_alias() == 3, "ReflectProbeEnum has 3 single-bit enumerators (One, Two, Four); "
+                                                     "Three (0x03, popcount=2) and Zero (popcount=0) filtered. "
+                                                     "Reach-through must preserve substrate's compile-time filter.");
 
 // ── 7. bits_to_string reach — round-trip witness ───────────────────
 //
@@ -298,16 +286,13 @@ static_assert(count_single_bit_through_alias() == 3,
 
 [[nodiscard]] consteval bool bits_to_string_through_alias() noexcept {
     char buf[16] = {};
-    ::crucible::safety::Bits<ReflectProbeEnum> b{
-        ReflectProbeEnum::One, ReflectProbeEnum::Two};
-    auto n = ::crucible::fixy::reflect::bits_to_string<ReflectProbeEnum>(
-        b, buf, sizeof(buf));
+    ::crucible::safety::Bits<ReflectProbeEnum> b{ReflectProbeEnum::One, ReflectProbeEnum::Two};
+    auto n = ::crucible::fixy::reflect::bits_to_string<ReflectProbeEnum>(b, buf, sizeof(buf));
     return n == 7 && std::string_view{buf} == "One|Two";
 }
-static_assert(bits_to_string_through_alias(),
-    "Reach-through must preserve substrate's snprintf-style formatting "
-    "of Bits<E> — declaration-order iteration produces \"One|Two\" for "
-    "Bits<E>{One, Two}.");
+static_assert(bits_to_string_through_alias(), "Reach-through must preserve substrate's snprintf-style formatting "
+                                              "of Bits<E> — declaration-order iteration produces \"One|Two\" for "
+                                              "Bits<E>{One, Two}.");
 
 // ── 8. Cardinality witness ────────────────────────────────────────
 //
@@ -329,8 +314,7 @@ static_assert(bits_to_string_through_alias(),
 // extend this block + bump the constant + add a sentinel above.
 
 constexpr int reflect_alias_cardinality = 8;
-static_assert(reflect_alias_cardinality == 8,
-    "fixy::reflect:: cardinality changed — update Reflect.h sentinel "
-    "block to track the substrate reflection surface.");
+static_assert(reflect_alias_cardinality == 8, "fixy::reflect:: cardinality changed — update Reflect.h sentinel "
+                                              "block to track the substrate reflection surface.");
 
 }  // namespace crucible::fixy::reflect::self_test

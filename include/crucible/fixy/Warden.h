@@ -183,35 +183,24 @@ namespace crucible::fixy::warden::self_test {
 // or accidentally rewrites the using-decl to import a different
 // symbol would red the build at this header's first include.
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::warden::AppliedPolicy,
-    ::crucible::warden::AppliedPolicy>,
-    "fixy::warden::AppliedPolicy must alias warden::AppliedPolicy.");
+static_assert(std::is_same_v<::crucible::fixy::warden::AppliedPolicy, ::crucible::warden::AppliedPolicy>,
+              "fixy::warden::AppliedPolicy must alias warden::AppliedPolicy.");
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::warden::Policy,
-    ::crucible::warden::Policy>,
-    "fixy::warden::Policy must alias warden::Policy.");
+static_assert(std::is_same_v<::crucible::fixy::warden::Policy, ::crucible::warden::Policy>,
+              "fixy::warden::Policy must alias warden::Policy.");
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::warden::DeadlineWatchdog,
-    ::crucible::warden::DeadlineWatchdog>,
-    "fixy::warden::DeadlineWatchdog must alias warden::DeadlineWatchdog.");
+static_assert(std::is_same_v<::crucible::fixy::warden::DeadlineWatchdog, ::crucible::warden::DeadlineWatchdog>,
+              "fixy::warden::DeadlineWatchdog must alias warden::DeadlineWatchdog.");
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::warden::HotRegionRegistryHandle,
-    ::crucible::warden::HotRegionRegistryHandle>,
+static_assert(
+    std::is_same_v<::crucible::fixy::warden::HotRegionRegistryHandle, ::crucible::warden::HotRegionRegistryHandle>,
     "fixy::warden::HotRegionRegistryHandle must alias substrate.");
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::warden::QuarantineConfig,
-    ::crucible::warden::QuarantineConfig>,
-    "fixy::warden::QuarantineConfig must alias substrate.");
+static_assert(std::is_same_v<::crucible::fixy::warden::QuarantineConfig, ::crucible::warden::QuarantineConfig>,
+              "fixy::warden::QuarantineConfig must alias substrate.");
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::warden::QuarantineEvent,
-    ::crucible::warden::QuarantineEvent>,
-    "fixy::warden::QuarantineEvent must alias substrate.");
+static_assert(std::is_same_v<::crucible::fixy::warden::QuarantineEvent, ::crucible::warden::QuarantineEvent>,
+              "fixy::warden::QuarantineEvent must alias substrate.");
 
 // FIXY-U-120c — QuarantineTransition + QuarantineSnapshot identity
 // witnesses.  Both are non-mint quarantine surface types re-exported
@@ -221,15 +210,11 @@ static_assert(std::is_same_v<
 // with a local typedef would silently pass — `QuarantineSnapshot`
 // is trivially-copyable and structurally similar to a hand-rolled
 // substitute, masking ABI drift across the fixy:: surface.
-static_assert(std::is_same_v<
-    ::crucible::fixy::warden::QuarantineTransition,
-    ::crucible::warden::QuarantineTransition>,
-    "fixy::warden::QuarantineTransition must alias substrate.");
+static_assert(std::is_same_v<::crucible::fixy::warden::QuarantineTransition, ::crucible::warden::QuarantineTransition>,
+              "fixy::warden::QuarantineTransition must alias substrate.");
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::warden::QuarantineSnapshot,
-    ::crucible::warden::QuarantineSnapshot>,
-    "fixy::warden::QuarantineSnapshot must alias substrate.");
+static_assert(std::is_same_v<::crucible::fixy::warden::QuarantineSnapshot, ::crucible::warden::QuarantineSnapshot>,
+              "fixy::warden::QuarantineSnapshot must alias substrate.");
 
 // FIXY-U-120d — Hardening class identity.  The class itself is
 // re-exported via `using ::crucible::warden::Hardening;` above; the
@@ -242,10 +227,8 @@ static_assert(std::is_same_v<
 // The fixy:: re-export semantics, however, would silently diverge:
 // downstream users typing `fixy::warden::Hardening::apply(...)` would
 // reach a different class.  Catch that asymmetry here.
-static_assert(std::is_same_v<
-    ::crucible::fixy::warden::Hardening,
-    ::crucible::warden::Hardening>,
-    "fixy::warden::Hardening must alias substrate.");
+static_assert(std::is_same_v<::crucible::fixy::warden::Hardening, ::crucible::warden::Hardening>,
+              "fixy::warden::Hardening must alias substrate.");
 
 // Concept-resolution witnesses.  Each concept name is satisfied by
 // `ColdInitCtx` (which carries Init in its effect row); the substrate
@@ -253,21 +236,17 @@ static_assert(std::is_same_v<
 // duplication is deliberate — surfaces drift through the fixy:: layer
 // at every consumer's include time.
 
-static_assert(::crucible::fixy::warden::CtxFitsHardeningMint<
-    ::crucible::effects::ColdInitCtx>,
-    "fixy::warden::CtxFitsHardeningMint must admit ColdInitCtx.");
+static_assert(::crucible::fixy::warden::CtxFitsHardeningMint<::crucible::effects::ColdInitCtx>,
+              "fixy::warden::CtxFitsHardeningMint must admit ColdInitCtx.");
 
-static_assert(::crucible::fixy::warden::CtxFitsDeadlineWatchdogMint<
-    ::crucible::effects::ColdInitCtx>,
-    "fixy::warden::CtxFitsDeadlineWatchdogMint must admit ColdInitCtx.");
+static_assert(::crucible::fixy::warden::CtxFitsDeadlineWatchdogMint<::crucible::effects::ColdInitCtx>,
+              "fixy::warden::CtxFitsDeadlineWatchdogMint must admit ColdInitCtx.");
 
-static_assert(::crucible::fixy::warden::CtxFitsHotRegionRegistryMint<
-    ::crucible::effects::ColdInitCtx>,
-    "fixy::warden::CtxFitsHotRegionRegistryMint must admit ColdInitCtx.");
+static_assert(::crucible::fixy::warden::CtxFitsHotRegionRegistryMint<::crucible::effects::ColdInitCtx>,
+              "fixy::warden::CtxFitsHotRegionRegistryMint must admit ColdInitCtx.");
 
-static_assert(::crucible::fixy::warden::CtxFitsQuarantineMint<
-    ::crucible::effects::ColdInitCtx>,
-    "fixy::warden::CtxFitsQuarantineMint must admit ColdInitCtx.");
+static_assert(::crucible::fixy::warden::CtxFitsQuarantineMint<::crucible::effects::ColdInitCtx>,
+              "fixy::warden::CtxFitsQuarantineMint must admit ColdInitCtx.");
 
 // Negative-reach witness.  `BgDrainCtx` carries `Bg, Alloc` but NOT
 // `Init`; every Init-only warden mint must reject it.  The substrate
@@ -275,21 +254,17 @@ static_assert(::crucible::fixy::warden::CtxFitsQuarantineMint<
 // re-asserting through the fixy:: surface witnesses the gate is not
 // silently relaxed by the using-decl.
 
-static_assert(!::crucible::fixy::warden::CtxFitsHardeningMint<
-    ::crucible::effects::BgDrainCtx>,
-    "fixy::warden::CtxFitsHardeningMint must reject BgDrainCtx.");
+static_assert(!::crucible::fixy::warden::CtxFitsHardeningMint<::crucible::effects::BgDrainCtx>,
+              "fixy::warden::CtxFitsHardeningMint must reject BgDrainCtx.");
 
-static_assert(!::crucible::fixy::warden::CtxFitsDeadlineWatchdogMint<
-    ::crucible::effects::BgDrainCtx>,
-    "fixy::warden::CtxFitsDeadlineWatchdogMint must reject BgDrainCtx.");
+static_assert(!::crucible::fixy::warden::CtxFitsDeadlineWatchdogMint<::crucible::effects::BgDrainCtx>,
+              "fixy::warden::CtxFitsDeadlineWatchdogMint must reject BgDrainCtx.");
 
-static_assert(!::crucible::fixy::warden::CtxFitsHotRegionRegistryMint<
-    ::crucible::effects::BgDrainCtx>,
-    "fixy::warden::CtxFitsHotRegionRegistryMint must reject BgDrainCtx.");
+static_assert(!::crucible::fixy::warden::CtxFitsHotRegionRegistryMint<::crucible::effects::BgDrainCtx>,
+              "fixy::warden::CtxFitsHotRegionRegistryMint must reject BgDrainCtx.");
 
-static_assert(!::crucible::fixy::warden::CtxFitsQuarantineMint<
-    ::crucible::effects::BgDrainCtx>,
-    "fixy::warden::CtxFitsQuarantineMint must reject BgDrainCtx.");
+static_assert(!::crucible::fixy::warden::CtxFitsQuarantineMint<::crucible::effects::BgDrainCtx>,
+              "fixy::warden::CtxFitsQuarantineMint must reject BgDrainCtx.");
 
 // FIXY-U-120d — Second negative-reach class: HotFgCtx.  Carries
 // `Row<>` (empty effect row), failing the Init-row conjunct of every
@@ -300,17 +275,14 @@ static_assert(!::crucible::fixy::warden::CtxFitsQuarantineMint<
 // due to empty row).  Quarantine has no HotFg neg-assert in
 // substrate (the substrate ships only ColdInit positive + BgDrain
 // negative for QuarantineMint), so we omit it here for parity.
-static_assert(!::crucible::fixy::warden::CtxFitsHardeningMint<
-    ::crucible::effects::HotFgCtx>,
-    "fixy::warden::CtxFitsHardeningMint must reject HotFgCtx.");
+static_assert(!::crucible::fixy::warden::CtxFitsHardeningMint<::crucible::effects::HotFgCtx>,
+              "fixy::warden::CtxFitsHardeningMint must reject HotFgCtx.");
 
-static_assert(!::crucible::fixy::warden::CtxFitsDeadlineWatchdogMint<
-    ::crucible::effects::HotFgCtx>,
-    "fixy::warden::CtxFitsDeadlineWatchdogMint must reject HotFgCtx.");
+static_assert(!::crucible::fixy::warden::CtxFitsDeadlineWatchdogMint<::crucible::effects::HotFgCtx>,
+              "fixy::warden::CtxFitsDeadlineWatchdogMint must reject HotFgCtx.");
 
-static_assert(!::crucible::fixy::warden::CtxFitsHotRegionRegistryMint<
-    ::crucible::effects::HotFgCtx>,
-    "fixy::warden::CtxFitsHotRegionRegistryMint must reject HotFgCtx.");
+static_assert(!::crucible::fixy::warden::CtxFitsHotRegionRegistryMint<::crucible::effects::HotFgCtx>,
+              "fixy::warden::CtxFitsHotRegionRegistryMint must reject HotFgCtx.");
 
 // FIXY-U-120d — Sub-concept admittance witnesses for the quarantine
 // record/override variants.  These are query-only concepts (not gates
@@ -324,20 +296,17 @@ static_assert(!::crucible::fixy::warden::CtxFitsHotRegionRegistryMint<
 // Substrate ships these asserts at Quarantine.h:471-474; test TU
 // duplicates them.  Header sentinel must too for include-time drift
 // detection at every fixy:: consumer.
-static_assert(::crucible::fixy::warden::CtxFitsQuarantineRecord<
-    ::crucible::effects::BgDrainCtx>,
-    "fixy::warden::CtxFitsQuarantineRecord must admit BgDrainCtx "
-    "(the steady-state drain context records transitions).");
+static_assert(::crucible::fixy::warden::CtxFitsQuarantineRecord<::crucible::effects::BgDrainCtx>,
+              "fixy::warden::CtxFitsQuarantineRecord must admit BgDrainCtx "
+              "(the steady-state drain context records transitions).");
 
-static_assert(::crucible::fixy::warden::CtxFitsQuarantineOverride<
-    ::crucible::effects::ColdInitCtx>,
-    "fixy::warden::CtxFitsQuarantineOverride must admit ColdInitCtx "
-    "(Keeper init-time override authority).");
+static_assert(::crucible::fixy::warden::CtxFitsQuarantineOverride<::crucible::effects::ColdInitCtx>,
+              "fixy::warden::CtxFitsQuarantineOverride must admit ColdInitCtx "
+              "(Keeper init-time override authority).");
 
-static_assert(::crucible::fixy::warden::CtxFitsQuarantineOverride<
-    ::crucible::effects::TestRunnerCtx>,
-    "fixy::warden::CtxFitsQuarantineOverride must admit TestRunnerCtx "
-    "(deterministic test-runner override authority).");
+static_assert(::crucible::fixy::warden::CtxFitsQuarantineOverride<::crucible::effects::TestRunnerCtx>,
+              "fixy::warden::CtxFitsQuarantineOverride must admit TestRunnerCtx "
+              "(deterministic test-runner override authority).");
 
 // Cardinality witness.  Four mint factories live in `warden/`.
 //
@@ -354,14 +323,13 @@ static_assert(::crucible::fixy::warden::CtxFitsQuarantineOverride<
 
 inline constexpr int warden_mint_cardinality = 4;
 
-static_assert(warden_mint_cardinality == 4,
-    "ceiling: fixy::warden:: re-exports exactly 4 mint factories — "
-    "mint_hardening, mint_deadline_watchdog, "
-    "mint_hot_region_registry_handle, mint_quarantine_policy.  "
-    "If you add or remove a warden mint, update BOTH the constant "
-    "AND this colocated ceiling pin in the same edit.  The "
-    "sibling test_fixy_warden.cpp holds only a >= floor and "
-    "auto-tracks growth — see feedback_catalog_cardinality_test_drift.");
+static_assert(warden_mint_cardinality == 4, "ceiling: fixy::warden:: re-exports exactly 4 mint factories — "
+                                            "mint_hardening, mint_deadline_watchdog, "
+                                            "mint_hot_region_registry_handle, mint_quarantine_policy.  "
+                                            "If you add or remove a warden mint, update BOTH the constant "
+                                            "AND this colocated ceiling pin in the same edit.  The "
+                                            "sibling test_fixy_warden.cpp holds only a >= floor and "
+                                            "auto-tracks growth — see feedback_catalog_cardinality_test_drift.");
 
 }  // namespace crucible::fixy::warden::self_test
 
@@ -379,10 +347,8 @@ namespace crucible::fixy::warden {
 
 inline void runtime_smoke_test() noexcept {
     // Witness that the concept aliases instantiate at runtime context.
-    constexpr bool admits_cold = CtxFitsHardeningMint<
-        ::crucible::effects::ColdInitCtx>;
-    constexpr bool rejects_bg = !CtxFitsHardeningMint<
-        ::crucible::effects::BgDrainCtx>;
+    constexpr bool admits_cold = CtxFitsHardeningMint<::crucible::effects::ColdInitCtx>;
+    constexpr bool rejects_bg = !CtxFitsHardeningMint<::crucible::effects::BgDrainCtx>;
     (void)admits_cold;
     (void)rejects_bg;
 }

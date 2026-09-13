@@ -45,9 +45,7 @@ public:
     constexpr PlanId() noexcept = default;
     explicit constexpr PlanId(std::uint32_t value) noexcept : value_{value} {}
 
-    [[nodiscard]] constexpr std::uint32_t raw() const noexcept {
-        return value_;
-    }
+    [[nodiscard]] constexpr std::uint32_t raw() const noexcept { return value_; }
 
     constexpr auto operator<=>(const PlanId&) const noexcept = default;
 };
@@ -60,9 +58,7 @@ public:
     constexpr ChainEdgeId() noexcept = default;
     explicit constexpr ChainEdgeId(std::uint32_t value) noexcept : value_{value} {}
 
-    [[nodiscard]] constexpr std::uint32_t raw() const noexcept {
-        return value_;
-    }
+    [[nodiscard]] constexpr std::uint32_t raw() const noexcept { return value_; }
 
     constexpr auto operator<=>(const ChainEdgeId&) const noexcept = default;
 };
@@ -86,37 +82,25 @@ class ChainEdge : public safety::Pinned<ChainEdge<Backend>> {
 public:
     static constexpr VendorBackend backend = Backend;
 
-    ChainEdge(PlanId upstream,
-              PlanId downstream,
-              ChainEdgeId edge,
-              std::uint64_t signal_value = 1) noexcept
-        : upstream_{upstream}
-        , downstream_{downstream}
-        , edge_{edge}
-        , signal_value_{signal_value}
-        , semaphore_{Backend, edge.raw(), &value_}
-    {}
+    ChainEdge(PlanId upstream, PlanId downstream, ChainEdgeId edge, std::uint64_t signal_value = 1) noexcept
+        : upstream_{upstream},
+          downstream_{downstream},
+          edge_{edge},
+          signal_value_{signal_value},
+          semaphore_{Backend, edge.raw(), &value_} {}
 
     ChainEdge(const ChainEdge&) = delete;
     ChainEdge& operator=(const ChainEdge&) = delete;
     ChainEdge(ChainEdge&&) = delete;
     ChainEdge& operator=(ChainEdge&&) = delete;
 
-    [[nodiscard]] constexpr PlanId upstream_plan() const noexcept {
-        return upstream_;
-    }
+    [[nodiscard]] constexpr PlanId upstream_plan() const noexcept { return upstream_; }
 
-    [[nodiscard]] constexpr PlanId downstream_plan() const noexcept {
-        return downstream_;
-    }
+    [[nodiscard]] constexpr PlanId downstream_plan() const noexcept { return downstream_; }
 
-    [[nodiscard]] constexpr ChainEdgeId edge_id() const noexcept {
-        return edge_;
-    }
+    [[nodiscard]] constexpr ChainEdgeId edge_id() const noexcept { return edge_; }
 
-    [[nodiscard]] constexpr std::uint64_t signal_value() const noexcept {
-        return signal_value_;
-    }
+    [[nodiscard]] constexpr std::uint64_t signal_value() const noexcept { return signal_value_; }
 
     [[nodiscard]] SemaphoreSignal expected_signal() const noexcept {
         return SemaphoreSignal{
@@ -128,18 +112,16 @@ public:
         };
     }
 
-    void signal(const SemaphoreSignal&) noexcept
-        = delete("raw ChainEdge::signal is substrate-only; use PermissionedChainEdge::SignalerHandle so the Signaler Permission gates the operation.");
+    void signal(const SemaphoreSignal&) noexcept = delete(
+        "raw ChainEdge::signal is substrate-only; use PermissionedChainEdge::SignalerHandle so the Signaler Permission gates the operation.");
 
-    [[nodiscard]] bool wait(const SemaphoreSignal&) const noexcept
-        = delete("raw ChainEdge::wait is substrate-only; use PermissionedChainEdge::WaiterHandle so the Waiter Permission gates the operation.");
+    [[nodiscard]] bool wait(const SemaphoreSignal&) const noexcept = delete(
+        "raw ChainEdge::wait is substrate-only; use PermissionedChainEdge::WaiterHandle so the Waiter Permission gates the operation.");
 
-    [[nodiscard]] std::uint64_t current_value() const noexcept {
-        return value_.load(std::memory_order_acquire);
-    }
+    [[nodiscard]] std::uint64_t current_value() const noexcept { return value_.load(std::memory_order_acquire); }
 
-    void reset_under_quiescence(std::uint64_t value = 0) noexcept
-        = delete("raw ChainEdge::reset_under_quiescence is substrate-only; use PermissionedChainEdge::reset_under_quiescence with the Whole Permission.");
+    void reset_under_quiescence(std::uint64_t value = 0) noexcept = delete(
+        "raw ChainEdge::reset_under_quiescence is substrate-only; use PermissionedChainEdge::reset_under_quiescence with the Whole Permission.");
 
 private:
     template <VendorBackend, typename>
@@ -197,24 +179,18 @@ private:
     // MUST treat the bool return as "polling oracle result, retry on
     // false" until the vendor backends migrate.  Tests calling this
     // path: same discipline.
-    [[nodiscard]] bool wait(detail::ChainEdgeAccess,
-                            const SemaphoreSignal& signal) const noexcept {
+    [[nodiscard]] bool wait(detail::ChainEdgeAccess, const SemaphoreSignal& signal) const noexcept {
         if (!matches_expected_signal_(signal)) return false;
         return mimic::detail::semaphore_wait<Backend>(semaphore_, signal.value);
     }
 
-    void reset_under_quiescence(detail::ChainEdgeAccess,
-                                std::uint64_t value = 0) noexcept {
+    void reset_under_quiescence(detail::ChainEdgeAccess, std::uint64_t value = 0) noexcept {
         value_.store(value, std::memory_order_release);
     }
 
-    [[nodiscard]] constexpr bool
-    matches_expected_signal_(const SemaphoreSignal& signal) const noexcept {
-        return signal.edge == edge_
-            && signal.upstream == upstream_
-            && signal.downstream == downstream_
-            && signal.value == signal_value_
-            && signal.backend == Backend;
+    [[nodiscard]] constexpr bool matches_expected_signal_(const SemaphoreSignal& signal) const noexcept {
+        return signal.edge == edge_ && signal.upstream == upstream_ && signal.downstream == downstream_
+            && signal.value == signal_value_ && signal.backend == Backend;
     }
 
     PlanId upstream_;

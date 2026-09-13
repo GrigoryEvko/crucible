@@ -21,8 +21,7 @@ struct {
 } cntp_wip_pacing_events SEC(".maps");
 
 SEC("tc")
-int crucible_cntp_wip_fq_pacing_sample(struct __sk_buff *skb)
-{
+int crucible_cntp_wip_fq_pacing_sample(struct __sk_buff* skb) {
     (void)skb;
     return TC_ACT_OK;
 }

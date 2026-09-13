@@ -9,12 +9,12 @@
 #include <version>
 #include <type_traits>
 
-#include <contracts>   // CRUCIBLE_ASSERT / CRUCIBLE_DEBUG_ASSERT
-#include <cstdio>      // CRUCIBLE_INVARIANT diagnostic path
-#include <cstdlib>     // CRUCIBLE_INVARIANT abort path
-#include <cstring>     // is_debugger_present: strstr parse of /proc status
-#include <fcntl.h>     // is_debugger_present: open(/proc/self/status)
-#include <unistd.h>    // is_debugger_present: read/close
+#include <contracts>  // CRUCIBLE_ASSERT / CRUCIBLE_DEBUG_ASSERT
+#include <cstdio>  // CRUCIBLE_INVARIANT diagnostic path
+#include <cstdlib>  // CRUCIBLE_INVARIANT abort path
+#include <cstring>  // is_debugger_present: strstr parse of /proc status
+#include <fcntl.h>  // is_debugger_present: open(/proc/self/status)
+#include <unistd.h>  // is_debugger_present: read/close
 
 // ═══════════════════════════════════════════════════════════════════
 // Toolchain floor — hard-require C++26 and GCC 16 (or Clang 22 for
@@ -35,13 +35,11 @@
 // value). The ISO-final C++26 publication will bump this to 202600L;
 // bump the floor then. Until then, 202400L is the right floor — C++23
 // is 202302L, C++20 is 202002L.
-static_assert(__cplusplus >= 202400L,
-              "Crucible requires C++26 (-std=c++26). See CMakePresets.json.");
+static_assert(__cplusplus >= 202400L, "Crucible requires C++26 (-std=c++26). See CMakePresets.json.");
 
 #if !defined(__clang__)
-static_assert(__GNUC__ >= 16,
-              "Crucible requires GCC 16 for -fcontracts / -freflection. "
-              "See CLAUDE.md toolchain section.");
+static_assert(__GNUC__ >= 16, "Crucible requires GCC 16 for -fcontracts / -freflection. "
+                              "See CLAUDE.md toolchain section.");
 #endif
 
 // ═══════════════════════════════════════════════════════════════════
@@ -72,11 +70,11 @@ static_assert(__GNUC__ >= 16,
 // ═══════════════════════════════════════════════════════════════════
 
 // ── Inlining control ───────────────────────────────────────────────
-#define CRUCIBLE_INLINE       [[gnu::always_inline]] inline
-#define CRUCIBLE_HOT          [[gnu::hot, gnu::always_inline]] inline
-#define CRUCIBLE_COLD         [[gnu::cold, gnu::noinline]]
-#define CRUCIBLE_FLATTEN      [[gnu::flatten]]
-#define CRUCIBLE_NOINLINE     [[gnu::noinline]]
+#define CRUCIBLE_INLINE [[gnu::always_inline]] inline
+#define CRUCIBLE_HOT [[gnu::hot, gnu::always_inline]] inline
+#define CRUCIBLE_COLD [[gnu::cold, gnu::noinline]]
+#define CRUCIBLE_FLATTEN [[gnu::flatten]]
+#define CRUCIBLE_NOINLINE [[gnu::noinline]]
 
 // ── Purity (optimizer can CSE / move across side-effect points) ────
 // PURE:  depends on args + observable memory (no side effects,
@@ -85,24 +83,24 @@ static_assert(__GNUC__ >= 16,
 // CONST: depends on args only; does not read memory.  Strictly
 //        stronger than PURE.  Use on sat-math, bit helpers, simple
 //        arithmetic where the args alone determine the result.
-#define CRUCIBLE_PURE         [[gnu::pure, nodiscard]]
-#define CRUCIBLE_CONST        [[gnu::const, nodiscard]]
+#define CRUCIBLE_PURE [[gnu::pure, nodiscard]]
+#define CRUCIBLE_CONST [[gnu::const, nodiscard]]
 
 // ── Pointer contracts ──────────────────────────────────────────────
-#define CRUCIBLE_NONNULL              [[gnu::nonnull]]
-#define CRUCIBLE_RETURNS_NONNULL      [[gnu::returns_nonnull]]
-#define CRUCIBLE_MALLOC               [[gnu::malloc]]
-#define CRUCIBLE_ALLOC_SIZE(n)        [[gnu::alloc_size(n)]]
-#define CRUCIBLE_ASSUME_ALIGNED(n)    [[gnu::assume_aligned(n)]]
+#define CRUCIBLE_NONNULL [[gnu::nonnull]]
+#define CRUCIBLE_RETURNS_NONNULL [[gnu::returns_nonnull]]
+#define CRUCIBLE_MALLOC [[gnu::malloc]]
+#define CRUCIBLE_ALLOC_SIZE(n) [[gnu::alloc_size(n)]]
+#define CRUCIBLE_ASSUME_ALIGNED(n) [[gnu::assume_aligned(n)]]
 
 // ── Tail call ──────────────────────────────────────────────────────
 // Used in state-machine-style dispatch where the called function's
 // return is the enclosing function's return — GCC 16 treats it as a
 // hard requirement (compile error if the call can't be tail-optimized).
-#define CRUCIBLE_MUSTTAIL     [[gnu::musttail]]
+#define CRUCIBLE_MUSTTAIL [[gnu::musttail]]
 
 // ── Symbol visibility ─────────────────────────────────────────────
-#define CRUCIBLE_API          __attribute__((visibility("default")))
+#define CRUCIBLE_API __attribute__((visibility("default")))
 
 // ═══════════════════════════════════════════════════════════════════
 // Spin-pause hint — the ONLY cross-thread synchronization primitive.
@@ -119,12 +117,12 @@ static_assert(__GNUC__ >= 16,
 // ═══════════════════════════════════════════════════════════════════
 
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
-  #include <immintrin.h>
-  #define CRUCIBLE_SPIN_PAUSE _mm_pause()
+#include <immintrin.h>
+#define CRUCIBLE_SPIN_PAUSE _mm_pause()
 #elif defined(__aarch64__) || defined(_M_ARM64)
-  #define CRUCIBLE_SPIN_PAUSE __asm__ volatile("yield")
+#define CRUCIBLE_SPIN_PAUSE __asm__ volatile("yield")
 #else
-  #define CRUCIBLE_SPIN_PAUSE ((void)0)
+#define CRUCIBLE_SPIN_PAUSE ((void)0)
 #endif
 
 // ═══════════════════════════════════════════════════════════════════
@@ -146,51 +144,40 @@ static_assert(__GNUC__ >= 16,
 // ═══════════════════════════════════════════════════════════════════
 
 #if defined(__clang__)
-  // Mark a type as a mutex/lock capability.
-  #define CRUCIBLE_CAPABILITY(name) \
-    __attribute__((capability(name)))
+// Mark a type as a mutex/lock capability.
+#define CRUCIBLE_CAPABILITY(name) __attribute__((capability(name)))
 
-  // Data protected by a capability.
-  #define CRUCIBLE_GUARDED_BY(cap) \
-    __attribute__((guarded_by(cap)))
-  #define CRUCIBLE_PT_GUARDED_BY(cap) \
-    __attribute__((pt_guarded_by(cap)))
+// Data protected by a capability.
+#define CRUCIBLE_GUARDED_BY(cap) __attribute__((guarded_by(cap)))
+#define CRUCIBLE_PT_GUARDED_BY(cap) __attribute__((pt_guarded_by(cap)))
 
-  // Function requires capability held / not held.
-  #define CRUCIBLE_REQUIRES(...) \
-    __attribute__((requires_capability(__VA_ARGS__)))
-  #define CRUCIBLE_REQUIRES_SHARED(...) \
-    __attribute__((requires_shared_capability(__VA_ARGS__)))
-  #define CRUCIBLE_EXCLUDES(...) \
-    __attribute__((locks_excluded(__VA_ARGS__)))
+// Function requires capability held / not held.
+#define CRUCIBLE_REQUIRES(...) __attribute__((requires_capability(__VA_ARGS__)))
+#define CRUCIBLE_REQUIRES_SHARED(...) __attribute__((requires_shared_capability(__VA_ARGS__)))
+#define CRUCIBLE_EXCLUDES(...) __attribute__((locks_excluded(__VA_ARGS__)))
 
-  // Function acquires / releases / tries to acquire.
-  #define CRUCIBLE_ACQUIRE(...) \
-    __attribute__((acquire_capability(__VA_ARGS__)))
-  #define CRUCIBLE_RELEASE(...) \
-    __attribute__((release_capability(__VA_ARGS__)))
-  #define CRUCIBLE_TRY_ACQUIRE(...) \
-    __attribute__((try_acquire_capability(__VA_ARGS__)))
+// Function acquires / releases / tries to acquire.
+#define CRUCIBLE_ACQUIRE(...) __attribute__((acquire_capability(__VA_ARGS__)))
+#define CRUCIBLE_RELEASE(...) __attribute__((release_capability(__VA_ARGS__)))
+#define CRUCIBLE_TRY_ACQUIRE(...) __attribute__((try_acquire_capability(__VA_ARGS__)))
 
-  // Escape hatch for SPSC / atomic patterns safe by design.
-  #define CRUCIBLE_NO_THREAD_SAFETY \
-    __attribute__((no_thread_safety_analysis))
+// Escape hatch for SPSC / atomic patterns safe by design.
+#define CRUCIBLE_NO_THREAD_SAFETY __attribute__((no_thread_safety_analysis))
 
-  // Assert capability held at a point (runtime no-op, static check).
-  #define CRUCIBLE_ASSERT_CAPABILITY(cap) \
-    __attribute__((assert_capability(cap)))
+// Assert capability held at a point (runtime no-op, static check).
+#define CRUCIBLE_ASSERT_CAPABILITY(cap) __attribute__((assert_capability(cap)))
 #else
-  #define CRUCIBLE_CAPABILITY(name)
-  #define CRUCIBLE_GUARDED_BY(cap)
-  #define CRUCIBLE_PT_GUARDED_BY(cap)
-  #define CRUCIBLE_REQUIRES(...)
-  #define CRUCIBLE_REQUIRES_SHARED(...)
-  #define CRUCIBLE_EXCLUDES(...)
-  #define CRUCIBLE_ACQUIRE(...)
-  #define CRUCIBLE_RELEASE(...)
-  #define CRUCIBLE_TRY_ACQUIRE(...)
-  #define CRUCIBLE_NO_THREAD_SAFETY
-  #define CRUCIBLE_ASSERT_CAPABILITY(cap)
+#define CRUCIBLE_CAPABILITY(name)
+#define CRUCIBLE_GUARDED_BY(cap)
+#define CRUCIBLE_PT_GUARDED_BY(cap)
+#define CRUCIBLE_REQUIRES(...)
+#define CRUCIBLE_REQUIRES_SHARED(...)
+#define CRUCIBLE_EXCLUDES(...)
+#define CRUCIBLE_ACQUIRE(...)
+#define CRUCIBLE_RELEASE(...)
+#define CRUCIBLE_TRY_ACQUIRE(...)
+#define CRUCIBLE_NO_THREAD_SAFETY
+#define CRUCIBLE_ASSERT_CAPABILITY(cap)
 #endif
 
 // ═══════════════════════════════════════════════════════════════════
@@ -214,15 +201,15 @@ static_assert(__GNUC__ >= 16,
 // ═══════════════════════════════════════════════════════════════════
 
 #if defined(__clang__)
-  #define CRUCIBLE_LIFETIMEBOUND [[clang::lifetimebound]]
-  #define CRUCIBLE_OWNER [[gsl::Owner]]
-  #define CRUCIBLE_POINTER [[gsl::Pointer]]
-  #define CRUCIBLE_UNSAFE_BUFFER_USAGE [[clang::unsafe_buffer_usage]]
+#define CRUCIBLE_LIFETIMEBOUND [[clang::lifetimebound]]
+#define CRUCIBLE_OWNER [[gsl::Owner]]
+#define CRUCIBLE_POINTER [[gsl::Pointer]]
+#define CRUCIBLE_UNSAFE_BUFFER_USAGE [[clang::unsafe_buffer_usage]]
 #else
-  #define CRUCIBLE_LIFETIMEBOUND
-  #define CRUCIBLE_OWNER
-  #define CRUCIBLE_POINTER
-  #define CRUCIBLE_UNSAFE_BUFFER_USAGE
+#define CRUCIBLE_LIFETIMEBOUND
+#define CRUCIBLE_OWNER
+#define CRUCIBLE_POINTER
+#define CRUCIBLE_UNSAFE_BUFFER_USAGE
 #endif
 
 // ═══════════════════════════════════════════════════════════════════
@@ -234,9 +221,8 @@ static_assert(__GNUC__ >= 16,
 // a Clang-only extension in 2026 and a superset we don't need.
 // ═══════════════════════════════════════════════════════════════════
 
-#define CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(T)                       \
-    static_assert(std::is_trivially_copyable_v<T>,                     \
-                  #T " must be trivially copyable for Arena memcpy safety")
+#define CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(T) \
+    static_assert(std::is_trivially_copyable_v<T>, #T " must be trivially copyable for Arena memcpy safety")
 
 // Strong variant: BOTH trivially-copyable (for memcpy) AND standard-layout
 // (for offsetof / per-field serialization).  Use on types that are written
@@ -247,13 +233,11 @@ static_assert(__GNUC__ >= 16,
 // standard-layout.  TraceNode + RegionNode/BranchNode/LoopNode hierarchy
 // uses the plain variant; leaf struct types (MemoryPlan, TensorMeta,
 // TensorSlot, CallSiteTable entries, serialized records) get this one.
-#define CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(T)                \
-    static_assert(std::is_trivially_copyable_v<T>,                     \
-                  #T " must be trivially copyable for Arena memcpy safety"); \
-    static_assert(std::is_standard_layout_v<T>,                        \
-                  #T " must be standard-layout so offsetof() and "     \
-                  "serialize/deserialize via per-field offsets is "    \
-                  "well-defined")
+#define CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(T)                                                       \
+    static_assert(std::is_trivially_copyable_v<T>, #T " must be trivially copyable for Arena memcpy safety"); \
+    static_assert(std::is_standard_layout_v<T>, #T " must be standard-layout so offsetof() and "              \
+                                                   "serialize/deserialize via per-field offsets is "          \
+                                                   "well-defined")
 
 // ═══════════════════════════════════════════════════════════════════
 // Debugging primitives — shim for C++26 <debugging> (P2546R5).
@@ -283,7 +267,8 @@ namespace crucible::detail {
     const char* p = buf;
     while ((p = std::strstr(p, "TracerPid:")) != nullptr) {
         p += sizeof("TracerPid:") - 1;
-        while (*p == ' ' || *p == '\t') ++p;
+        while (*p == ' ' || *p == '\t')
+            ++p;
         if (*p != '0' && *p >= '0' && *p <= '9') return true;
         break;
     }
@@ -293,18 +278,17 @@ namespace crucible::detail {
 // Unconditional programmatic breakpoint.  Platform-specific trap:
 // int3 on x86, brk #0 on aarch64.  __builtin_trap is portable and
 // emits the same opcode GCC uses for std::unreachable on UB.
-[[gnu::always_inline]] inline void breakpoint() noexcept {
-    __builtin_trap();
-}
+[[gnu::always_inline]] inline void breakpoint() noexcept { __builtin_trap(); }
 
 // Breakpoint only when a debugger is attached.  Under unattended CI
 // the call no-ops; under gdb/lldb it drops the operator at the
 // failure site so the stack frame can be inspected before abort.
 [[gnu::always_inline]] inline void breakpoint_if_debugging() noexcept {
-    if (is_debugger_present()) [[unlikely]] __builtin_trap();
+    if (is_debugger_present()) [[unlikely]]
+        __builtin_trap();
 }
 
-} // namespace crucible::detail
+}  // namespace crucible::detail
 
 // ═══════════════════════════════════════════════════════════════════
 // Assertion triad — code_guide §XII
@@ -342,26 +326,24 @@ namespace crucible::detail {
 #define CRUCIBLE_ASSERT(cond) contract_assert(cond)
 
 #ifdef NDEBUG
-  #define CRUCIBLE_DEBUG_ASSERT(cond) ((void)0)
+#define CRUCIBLE_DEBUG_ASSERT(cond) ((void)0)
 #else
-  #define CRUCIBLE_DEBUG_ASSERT(cond) contract_assert(cond)
+#define CRUCIBLE_DEBUG_ASSERT(cond) contract_assert(cond)
 #endif
 
 #ifdef NDEBUG
-  #define CRUCIBLE_INVARIANT(cond) [[assume(cond)]]
+#define CRUCIBLE_INVARIANT(cond) [[assume(cond)]]
 #else
-  #define CRUCIBLE_INVARIANT(cond)                                            \
-      do {                                                                    \
-          if (!(cond)) [[unlikely]] {                                         \
-              if (!::crucible::detail::is_debugger_present()) {               \
-                  std::fprintf(stderr,                                        \
-                               "crucible: invariant failed: %s (%s:%d)\n",   \
-                               #cond, __FILE__, __LINE__);                    \
-              }                                                               \
-              ::crucible::detail::breakpoint_if_debugging();                  \
-              std::abort();                                                   \
-          }                                                                   \
-      } while (0)
+#define CRUCIBLE_INVARIANT(cond)                                                                             \
+    do {                                                                                                     \
+        if (!(cond)) [[unlikely]] {                                                                          \
+            if (!::crucible::detail::is_debugger_present()) {                                                \
+                std::fprintf(stderr, "crucible: invariant failed: %s (%s:%d)\n", #cond, __FILE__, __LINE__); \
+            }                                                                                                \
+            ::crucible::detail::breakpoint_if_debugging();                                                   \
+            std::abort();                                                                                    \
+        }                                                                                                    \
+    } while (0)
 #endif
 
 // CRUCIBLE_FATAL_INVARIANT — always-aborts variant of CRUCIBLE_INVARIANT.
@@ -377,16 +359,16 @@ namespace crucible::detail {
 //
 // Cost: zero when cond holds (the [[unlikely]] branch is outlined cold).
 // Not for hot paths — those should use std::expected or sat-arith.
-#define CRUCIBLE_FATAL_INVARIANT(cond)                                        \
-    do {                                                                      \
-        if (!(cond)) [[unlikely]] {                                           \
-            if (!::crucible::detail::is_debugger_present()) {                 \
-                std::fprintf(stderr,                                          \
-                             "crucible: fatal invariant failed: %s "          \
-                             "(%s:%d)\n",                                     \
-                             #cond, __FILE__, __LINE__);                      \
-            }                                                                 \
-            ::crucible::detail::breakpoint_if_debugging();                    \
-            std::abort();                                                     \
-        }                                                                     \
+#define CRUCIBLE_FATAL_INVARIANT(cond)                               \
+    do {                                                             \
+        if (!(cond)) [[unlikely]] {                                  \
+            if (!::crucible::detail::is_debugger_present()) {        \
+                std::fprintf(stderr,                                 \
+                             "crucible: fatal invariant failed: %s " \
+                             "(%s:%d)\n",                            \
+                             #cond, __FILE__, __LINE__);             \
+            }                                                        \
+            ::crucible::detail::breakpoint_if_debugging();           \
+            std::abort();                                            \
+        }                                                            \
     } while (0)

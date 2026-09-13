@@ -72,7 +72,7 @@
 
 #include <type_traits>
 
-#include <crucible/fixy/Fs.h>      // V-224 — fs::open_mode, sync_op, atomicity, flag tags
+#include <crucible/fixy/Fs.h>  // V-224 — fs::open_mode, sync_op, atomicity, flag tags
 
 namespace crucible::fixy::cipher {
 
@@ -80,10 +80,10 @@ namespace crucible::fixy::cipher {
 // definitions read as one continuous narrative.  (These are namespace
 // aliases — they do not introduce new names; pure ergonomics.)
 namespace open_mode = ::crucible::fixy::fs::open_mode;
-namespace flag      = ::crucible::fixy::fs::flag;
-namespace sync_op   = ::crucible::fixy::fs::sync_op;
+namespace flag = ::crucible::fixy::fs::flag;
+namespace sync_op = ::crucible::fixy::fs::sync_op;
 namespace atomicity = ::crucible::fixy::fs::atomicity;
-namespace grant_fs  = ::crucible::fixy::grant::fs;
+namespace grant_fs = ::crucible::fixy::grant::fs;
 
 // ── Detail layer — specific-enumerator engagement predicates ─────────
 //
@@ -101,67 +101,53 @@ template <typename TargetMode, typename G>
 struct is_specific_mode : std::false_type {};
 
 template <typename TargetMode>
-struct is_specific_mode<TargetMode, ::crucible::fixy::grant::fs::mode<TargetMode>>
-    : std::true_type {};
+struct is_specific_mode<TargetMode, ::crucible::fixy::grant::fs::mode<TargetMode>> : std::true_type {};
 
 template <typename TargetMode, typename G>
 inline constexpr bool is_specific_mode_v = is_specific_mode<TargetMode, G>::value;
 
 template <typename TargetMode, typename... Grants>
-inline constexpr bool has_specific_mode_v =
-    (is_specific_mode_v<TargetMode, Grants> || ...);
+inline constexpr bool has_specific_mode_v = (is_specific_mode_v<TargetMode, Grants> || ...);
 
 // ── with_flag<TargetFlag> engagement ────────────────────────────────
 template <typename TargetFlag, typename G>
 struct is_specific_with_flag : std::false_type {};
 
 template <typename TargetFlag>
-struct is_specific_with_flag<TargetFlag,
-                             ::crucible::fixy::grant::fs::with_flag<TargetFlag>>
-    : std::true_type {};
+struct is_specific_with_flag<TargetFlag, ::crucible::fixy::grant::fs::with_flag<TargetFlag>> : std::true_type {};
 
 template <typename TargetFlag, typename G>
-inline constexpr bool is_specific_with_flag_v =
-    is_specific_with_flag<TargetFlag, G>::value;
+inline constexpr bool is_specific_with_flag_v = is_specific_with_flag<TargetFlag, G>::value;
 
 template <typename TargetFlag, typename... Grants>
-inline constexpr bool has_specific_with_flag_v =
-    (is_specific_with_flag_v<TargetFlag, Grants> || ...);
+inline constexpr bool has_specific_with_flag_v = (is_specific_with_flag_v<TargetFlag, Grants> || ...);
 
 // ── durable<TargetSync> engagement ──────────────────────────────────
 template <typename TargetSync, typename G>
 struct is_specific_durable : std::false_type {};
 
 template <typename TargetSync>
-struct is_specific_durable<TargetSync,
-                           ::crucible::fixy::grant::fs::durable<TargetSync>>
-    : std::true_type {};
+struct is_specific_durable<TargetSync, ::crucible::fixy::grant::fs::durable<TargetSync>> : std::true_type {};
 
 template <typename TargetSync, typename G>
-inline constexpr bool is_specific_durable_v =
-    is_specific_durable<TargetSync, G>::value;
+inline constexpr bool is_specific_durable_v = is_specific_durable<TargetSync, G>::value;
 
 template <typename TargetSync, typename... Grants>
-inline constexpr bool has_specific_durable_v =
-    (is_specific_durable_v<TargetSync, Grants> || ...);
+inline constexpr bool has_specific_durable_v = (is_specific_durable_v<TargetSync, Grants> || ...);
 
 // ── atomic_write<TargetAtomicity> engagement ────────────────────────
 template <typename TargetAtomicity, typename G>
 struct is_specific_atomic_write : std::false_type {};
 
 template <typename TargetAtomicity>
-struct is_specific_atomic_write<
-    TargetAtomicity,
-    ::crucible::fixy::grant::fs::atomic_write<TargetAtomicity>>
+struct is_specific_atomic_write<TargetAtomicity, ::crucible::fixy::grant::fs::atomic_write<TargetAtomicity>>
     : std::true_type {};
 
 template <typename TargetAtomicity, typename G>
-inline constexpr bool is_specific_atomic_write_v =
-    is_specific_atomic_write<TargetAtomicity, G>::value;
+inline constexpr bool is_specific_atomic_write_v = is_specific_atomic_write<TargetAtomicity, G>::value;
 
 template <typename TargetAtomicity, typename... Grants>
-inline constexpr bool has_specific_atomic_write_v =
-    (is_specific_atomic_write_v<TargetAtomicity, Grants> || ...);
+inline constexpr bool has_specific_atomic_write_v = (is_specific_atomic_write_v<TargetAtomicity, Grants> || ...);
 
 }  // namespace detail
 
@@ -195,10 +181,9 @@ inline constexpr bool has_specific_atomic_write_v =
 
 template <typename... Grants>
 inline constexpr bool engages_warm_writer_stance_v =
-       detail::has_specific_mode_v<open_mode::WriteTruncate, Grants...>
+    detail::has_specific_mode_v<open_mode::WriteTruncate, Grants...>
     && detail::has_specific_durable_v<sync_op::Fdatasync, Grants...>
-    && detail::has_specific_atomic_write_v<atomicity::RenameAt2NoReplace,
-                                           Grants...>;
+    && detail::has_specific_atomic_write_v<atomicity::RenameAt2NoReplace, Grants...>;
 
 template <typename... Grants>
 concept IsCipherWarmWriterStance = engages_warm_writer_stance_v<Grants...>;
@@ -230,7 +215,7 @@ concept IsCipherWarmWriterStance = engages_warm_writer_stance_v<Grants...>;
 
 template <typename... Grants>
 inline constexpr bool engages_cold_writer_stance_v =
-       detail::has_specific_mode_v<open_mode::WriteCreate, Grants...>
+    detail::has_specific_mode_v<open_mode::WriteCreate, Grants...>
     && detail::has_specific_with_flag_v<flag::FullSync, Grants...>
     && detail::has_specific_durable_v<sync_op::Fsync, Grants...>
     && detail::has_specific_atomic_write_v<atomicity::LinkAtomic, Grants...>;
@@ -268,9 +253,8 @@ concept IsCipherColdWriterStance = engages_cold_writer_stance_v<Grants...>;
 
 template <typename... Grants>
 inline constexpr bool engages_head_advance_stance_v =
-       detail::has_specific_mode_v<open_mode::WriteCreate, Grants...>
-    && detail::has_specific_atomic_write_v<atomicity::RenameAt2NoReplace,
-                                           Grants...>
+    detail::has_specific_mode_v<open_mode::WriteCreate, Grants...>
+    && detail::has_specific_atomic_write_v<atomicity::RenameAt2NoReplace, Grants...>
     && detail::has_specific_durable_v<sync_op::FsyncParentDir, Grants...>;
 
 template <typename... Grants>
@@ -292,24 +276,15 @@ concept IsHeadAdvanceStance = engages_head_advance_stance_v<Grants...>;
 template <typename... Grants>
 struct pack final {};
 
-using CipherWarmWriterStance = pack<
-    grant_fs::mode<open_mode::WriteTruncate>,
-    grant_fs::durable<sync_op::Fdatasync>,
-    grant_fs::atomic_write<atomicity::RenameAt2NoReplace>
->;
+using CipherWarmWriterStance = pack<grant_fs::mode<open_mode::WriteTruncate>, grant_fs::durable<sync_op::Fdatasync>,
+                                    grant_fs::atomic_write<atomicity::RenameAt2NoReplace>>;
 
-using CipherColdWriterStance = pack<
-    grant_fs::mode<open_mode::WriteCreate>,
-    grant_fs::with_flag<flag::FullSync>,
-    grant_fs::durable<sync_op::Fsync>,
-    grant_fs::atomic_write<atomicity::LinkAtomic>
->;
+using CipherColdWriterStance = pack<grant_fs::mode<open_mode::WriteCreate>, grant_fs::with_flag<flag::FullSync>,
+                                    grant_fs::durable<sync_op::Fsync>, grant_fs::atomic_write<atomicity::LinkAtomic>>;
 
-using HeadAdvanceStance = pack<
-    grant_fs::mode<open_mode::WriteCreate>,
-    grant_fs::atomic_write<atomicity::RenameAt2NoReplace>,
-    grant_fs::durable<sync_op::FsyncParentDir>
->;
+using HeadAdvanceStance =
+    pack<grant_fs::mode<open_mode::WriteCreate>, grant_fs::atomic_write<atomicity::RenameAt2NoReplace>,
+         grant_fs::durable<sync_op::FsyncParentDir>>;
 
 // ── Stance-from-pack adapter ────────────────────────────────────────
 //
@@ -319,35 +294,29 @@ using HeadAdvanceStance = pack<
 // expose a helper to unpack the alias into a stance-concept query.
 
 template <typename P>
-struct stance_pack_satisfies_warm   : std::false_type {};
+struct stance_pack_satisfies_warm : std::false_type {};
 template <typename P>
-struct stance_pack_satisfies_cold   : std::false_type {};
+struct stance_pack_satisfies_cold : std::false_type {};
 template <typename P>
-struct stance_pack_satisfies_head   : std::false_type {};
+struct stance_pack_satisfies_head : std::false_type {};
 
 template <typename... Grants>
-struct stance_pack_satisfies_warm<pack<Grants...>>
-    : std::bool_constant<IsCipherWarmWriterStance<Grants...>> {};
+struct stance_pack_satisfies_warm<pack<Grants...>> : std::bool_constant<IsCipherWarmWriterStance<Grants...>> {};
 
 template <typename... Grants>
-struct stance_pack_satisfies_cold<pack<Grants...>>
-    : std::bool_constant<IsCipherColdWriterStance<Grants...>> {};
+struct stance_pack_satisfies_cold<pack<Grants...>> : std::bool_constant<IsCipherColdWriterStance<Grants...>> {};
 
 template <typename... Grants>
-struct stance_pack_satisfies_head<pack<Grants...>>
-    : std::bool_constant<IsHeadAdvanceStance<Grants...>> {};
+struct stance_pack_satisfies_head<pack<Grants...>> : std::bool_constant<IsHeadAdvanceStance<Grants...>> {};
 
 template <typename P>
-inline constexpr bool stance_pack_satisfies_warm_v =
-    stance_pack_satisfies_warm<P>::value;
+inline constexpr bool stance_pack_satisfies_warm_v = stance_pack_satisfies_warm<P>::value;
 
 template <typename P>
-inline constexpr bool stance_pack_satisfies_cold_v =
-    stance_pack_satisfies_cold<P>::value;
+inline constexpr bool stance_pack_satisfies_cold_v = stance_pack_satisfies_cold<P>::value;
 
 template <typename P>
-inline constexpr bool stance_pack_satisfies_head_v =
-    stance_pack_satisfies_head<P>::value;
+inline constexpr bool stance_pack_satisfies_head_v = stance_pack_satisfies_head<P>::value;
 
 // ── Self-test block ──────────────────────────────────────────────────
 //
@@ -390,29 +359,22 @@ static_assert(!stance_pack_satisfies_cold_v<HeadAdvanceStance>,
               "V-227: head-advance pack must NOT satisfy cold-writer concept");
 
 // Empty pack — fails all three stances (sanity).
-static_assert(!IsCipherWarmWriterStance<>,
-              "V-227: empty pack must NOT satisfy warm-writer concept");
-static_assert(!IsCipherColdWriterStance<>,
-              "V-227: empty pack must NOT satisfy cold-writer concept");
-static_assert(!IsHeadAdvanceStance<>,
-              "V-227: empty pack must NOT satisfy head-advance concept");
+static_assert(!IsCipherWarmWriterStance<>, "V-227: empty pack must NOT satisfy warm-writer concept");
+static_assert(!IsCipherColdWriterStance<>, "V-227: empty pack must NOT satisfy cold-writer concept");
+static_assert(!IsHeadAdvanceStance<>, "V-227: empty pack must NOT satisfy head-advance concept");
 
 // Missing-grant — warm-writer pack with the atomic_write removed
 // fails the warm-writer concept.  Witnesses the AND-chain's fold
 // properly rejects partial-engagement.
-static_assert(!IsCipherWarmWriterStance<
-                  grant_fs::mode<open_mode::WriteTruncate>,
-                  grant_fs::durable<sync_op::Fdatasync>>,
-              "V-227: warm-writer missing atomic_write must fail");
-static_assert(!IsCipherColdWriterStance<
-                  grant_fs::mode<open_mode::WriteCreate>,
-                  grant_fs::with_flag<flag::FullSync>,
-                  grant_fs::durable<sync_op::Fsync>>,
+static_assert(
+    !IsCipherWarmWriterStance<grant_fs::mode<open_mode::WriteTruncate>, grant_fs::durable<sync_op::Fdatasync>>,
+    "V-227: warm-writer missing atomic_write must fail");
+static_assert(!IsCipherColdWriterStance<grant_fs::mode<open_mode::WriteCreate>, grant_fs::with_flag<flag::FullSync>,
+                                        grant_fs::durable<sync_op::Fsync>>,
               "V-227: cold-writer missing atomic_write must fail");
-static_assert(!IsHeadAdvanceStance<
-                  grant_fs::mode<open_mode::WriteCreate>,
-                  grant_fs::atomic_write<atomicity::RenameAt2NoReplace>>,
-              "V-227: head-advance missing FsyncParentDir must fail");
+static_assert(
+    !IsHeadAdvanceStance<grant_fs::mode<open_mode::WriteCreate>, grant_fs::atomic_write<atomicity::RenameAt2NoReplace>>,
+    "V-227: head-advance missing FsyncParentDir must fail");
 
 // Wrong-enumerator — warm-writer pack with `Fsync` instead of
 // `Fdatasync` (stronger durability than required) fails the
@@ -420,10 +382,8 @@ static_assert(!IsHeadAdvanceStance<
 // enumerator.  Witnesses that the stance gates are precision-tight,
 // not "at least this strong".  This is intentional: if a caller
 // wants Fsync, they want the cold-tier stance, not the warm-tier.
-static_assert(!IsCipherWarmWriterStance<
-                  grant_fs::mode<open_mode::WriteTruncate>,
-                  grant_fs::durable<sync_op::Fsync>,
-                  grant_fs::atomic_write<atomicity::RenameAt2NoReplace>>,
+static_assert(!IsCipherWarmWriterStance<grant_fs::mode<open_mode::WriteTruncate>, grant_fs::durable<sync_op::Fsync>,
+                                        grant_fs::atomic_write<atomicity::RenameAt2NoReplace>>,
               "V-227: warm-writer with Fsync (not Fdatasync) must fail — "
               "use cold-writer stance instead");
 
@@ -431,10 +391,8 @@ static_assert(!IsCipherWarmWriterStance<
 // RENAME_NOREPLACE) fails the head-advance concept.  Witnesses
 // that the stance gates refuse the weaker atomicity that would
 // silently clobber a concurrent advance.
-static_assert(!IsHeadAdvanceStance<
-                  grant_fs::mode<open_mode::WriteCreate>,
-                  grant_fs::atomic_write<atomicity::Rename>,
-                  grant_fs::durable<sync_op::FsyncParentDir>>,
+static_assert(!IsHeadAdvanceStance<grant_fs::mode<open_mode::WriteCreate>, grant_fs::atomic_write<atomicity::Rename>,
+                                   grant_fs::durable<sync_op::FsyncParentDir>>,
               "V-227: head-advance with plain Rename (not RENAME_NOREPLACE) "
               "must fail");
 
@@ -443,26 +401,22 @@ static_assert(!IsHeadAdvanceStance<
 // LinkAtomic is structurally wrong because linkat (AT_EMPTY_PATH)
 // requires an anonymous tmp file (O_TMPFILE), not a truncated
 // existing file.
-static_assert(!IsCipherColdWriterStance<
-                  grant_fs::mode<open_mode::WriteTruncate>,
-                  grant_fs::with_flag<flag::FullSync>,
-                  grant_fs::durable<sync_op::Fsync>,
-                  grant_fs::atomic_write<atomicity::LinkAtomic>>,
-              "V-227: cold-writer with WriteTruncate (not WriteCreate) "
-              "must fail");
+static_assert(
+    !IsCipherColdWriterStance<grant_fs::mode<open_mode::WriteTruncate>, grant_fs::with_flag<flag::FullSync>,
+                              grant_fs::durable<sync_op::Fsync>, grant_fs::atomic_write<atomicity::LinkAtomic>>,
+    "V-227: cold-writer with WriteTruncate (not WriteCreate) "
+    "must fail");
 
 // Optional-extension — warm-writer pack PLUS an extra
 // `with_flag<Direct>` grant still satisfies the warm-writer concept
 // (the concept demands the AND of required grants; extras are
 // permitted).  Witnesses that the stance is OPEN to optional
 // engagement; only the required-set is gated.
-static_assert(IsCipherWarmWriterStance<
-                  grant_fs::mode<open_mode::WriteTruncate>,
-                  grant_fs::durable<sync_op::Fdatasync>,
-                  grant_fs::atomic_write<atomicity::RenameAt2NoReplace>,
-                  grant_fs::with_flag<flag::Direct>>,
-              "V-227: warm-writer pack + optional with_flag<Direct> must "
-              "still satisfy (extras permitted)");
+static_assert(
+    IsCipherWarmWriterStance<grant_fs::mode<open_mode::WriteTruncate>, grant_fs::durable<sync_op::Fdatasync>,
+                             grant_fs::atomic_write<atomicity::RenameAt2NoReplace>, grant_fs::with_flag<flag::Direct>>,
+    "V-227: warm-writer pack + optional with_flag<Direct> must "
+    "still satisfy (extras permitted)");
 
 }  // namespace selftest
 

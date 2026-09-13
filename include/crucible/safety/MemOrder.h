@@ -113,7 +113,7 @@
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/lattices/MemOrderLattice.h>
 
-#include <cstdlib>      // std::abort in the runtime smoke test
+#include <cstdlib>  // std::abort in the runtime smoke test
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -130,14 +130,10 @@ template <MemOrderTag_v Tag, typename T>
 class [[nodiscard]] MemOrder {
 public:
     // ── Public type aliases ─────────────────────────────────────────
-    using value_type   = T;
+    using value_type = T;
     using lattice_type = MemOrderLattice::At<Tag>;
-    using graded_type  = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Absolute,
-        lattice_type,
-        T>;
-    static constexpr ::crucible::algebra::ModalityKind modality =
-        ::crucible::algebra::ModalityKind::Absolute;
+    using graded_type = ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
+    static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::Absolute;
 
     // The pinned tag — exposed as a static constexpr for callers
     // doing tag-aware dispatch without instantiating the wrapper.
@@ -147,34 +143,30 @@ private:
     graded_type impl_;
 
 public:
-
     // ── Construction ────────────────────────────────────────────────
-    constexpr MemOrder() noexcept(
-        std::is_nothrow_default_constructible_v<T>)
+    constexpr MemOrder() noexcept(std::is_nothrow_default_constructible_v<T>)
         : impl_{T{}, typename lattice_type::element_type{}} {}
 
-    constexpr explicit MemOrder(T value) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    constexpr explicit MemOrder(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(value), typename lattice_type::element_type{}} {}
 
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr explicit MemOrder(std::in_place_t, Args&&... args)
-        noexcept(std::is_nothrow_constructible_v<T, Args...>
-                 && std::is_nothrow_move_constructible_v<T>)
-        : impl_{T(std::forward<Args>(args)...),
-                typename lattice_type::element_type{}} {}
+    constexpr explicit MemOrder(std::in_place_t, Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
+                                                                          && std::is_nothrow_move_constructible_v<T>)
+        : impl_{T(std::forward<Args>(args)...), typename lattice_type::element_type{}} {}
 
-    constexpr MemOrder(const MemOrder&)            = default;
-    constexpr MemOrder(MemOrder&&)                 = default;
+    constexpr MemOrder(const MemOrder&) = default;
+    constexpr MemOrder(MemOrder&&) = default;
     constexpr MemOrder& operator=(const MemOrder&) = default;
-    constexpr MemOrder& operator=(MemOrder&&)      = default;
-    ~MemOrder()                                    = default;
+    constexpr MemOrder& operator=(MemOrder&&) = default;
+    ~MemOrder() = default;
 
-    [[nodiscard]] friend constexpr bool operator==(
-        MemOrder const& a, MemOrder const& b) noexcept(
-        noexcept(a.peek() == b.peek()))
-        requires requires(T const& x, T const& y) { { x == y } -> std::convertible_to<bool>; }
+    [[nodiscard]] friend constexpr bool operator==(MemOrder const& a,
+                                                   MemOrder const& b) noexcept(noexcept(a.peek() == b.peek()))
+        requires requires(T const& x, T const& y) {
+            { x == y } -> std::convertible_to<bool>;
+        }
     {
         return a.peek() == b.peek();
     }
@@ -183,37 +175,21 @@ public:
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return graded_type::lattice_name();
-    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 
     // ── Read-only access ────────────────────────────────────────────
-    [[nodiscard]] constexpr T const& peek() const& noexcept {
-        return impl_.peek();
-    }
+    [[nodiscard]] constexpr T const& peek() const& noexcept { return impl_.peek(); }
 
-    [[nodiscard]] constexpr T consume() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return std::move(impl_).consume();
     }
 
-    [[nodiscard]] constexpr T& peek_mut() & noexcept {
-        return impl_.peek_mut();
-    }
+    [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(); }
 
     // ── swap ────────────────────────────────────────────────────────
-    constexpr void swap(MemOrder& other)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
-        impl_.swap(other.impl_);
-    }
+    constexpr void swap(MemOrder& other) noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
 
-    friend constexpr void swap(MemOrder& a, MemOrder& b)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
-        a.swap(b);
-    }
+    friend constexpr void swap(MemOrder& a, MemOrder& b) noexcept(std::is_nothrow_swappable_v<T>) { a.swap(b); }
 
     // ── satisfies<RequiredTag> ─────────────────────────────────────
     template <MemOrderTag_v RequiredTag>
@@ -221,43 +197,47 @@ public:
 
     // ── relax<WeakerTag> ───────────────────────────────────────────
     template <MemOrderTag_v WeakerTag>
-        requires (MemOrderLattice::leq(WeakerTag, Tag))
-    [[nodiscard]] constexpr MemOrder<WeakerTag, T> relax() const&
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
+        requires(MemOrderLattice::leq(WeakerTag, Tag))
+    [[nodiscard]] constexpr MemOrder<WeakerTag, T> relax() const& noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
     {
         return MemOrder<WeakerTag, T>{this->peek()};
     }
 
     template <MemOrderTag_v WeakerTag>
-        requires (MemOrderLattice::leq(WeakerTag, Tag))
-    [[nodiscard]] constexpr MemOrder<WeakerTag, T> relax() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
-        return MemOrder<WeakerTag, T>{
-            std::move(impl_).consume()};
+        requires(MemOrderLattice::leq(WeakerTag, Tag))
+    [[nodiscard]] constexpr MemOrder<WeakerTag, T> relax() && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return MemOrder<WeakerTag, T>{std::move(impl_).consume()};
     }
 };
 
 // ── Convenience aliases ─────────────────────────────────────────────
 namespace mem_order {
-    template <typename T> using Relaxed = MemOrder<MemOrderTag_v::Relaxed, T>;
-    template <typename T> using Acquire = MemOrder<MemOrderTag_v::Acquire, T>;
-    template <typename T> using Release = MemOrder<MemOrderTag_v::Release, T>;
-    template <typename T> using AcqRel  = MemOrder<MemOrderTag_v::AcqRel,  T>;
-    template <typename T> using SeqCst  = MemOrder<MemOrderTag_v::SeqCst,  T>;
+template <typename T>
+using Relaxed = MemOrder<MemOrderTag_v::Relaxed, T>;
+template <typename T>
+using Acquire = MemOrder<MemOrderTag_v::Acquire, T>;
+template <typename T>
+using Release = MemOrder<MemOrderTag_v::Release, T>;
+template <typename T>
+using AcqRel = MemOrder<MemOrderTag_v::AcqRel, T>;
+template <typename T>
+using SeqCst = MemOrder<MemOrderTag_v::SeqCst, T>;
 }  // namespace mem_order
 
 // ── Layout invariants ───────────────────────────────────────────────
 namespace detail::mem_order_layout {
 
-template <typename T> using RelaxM = MemOrder<MemOrderTag_v::Relaxed, T>;
-template <typename T> using AcqRelM = MemOrder<MemOrderTag_v::AcqRel,  T>;
-template <typename T> using SeqCstM = MemOrder<MemOrderTag_v::SeqCst,  T>;
+template <typename T>
+using RelaxM = MemOrder<MemOrderTag_v::Relaxed, T>;
+template <typename T>
+using AcqRelM = MemOrder<MemOrderTag_v::AcqRel, T>;
+template <typename T>
+using SeqCstM = MemOrder<MemOrderTag_v::SeqCst, T>;
 
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(RelaxM,  char);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(RelaxM,  int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(RelaxM,  double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(RelaxM, char);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(RelaxM, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(RelaxM, double);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(AcqRelM, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(AcqRelM, double);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(SeqCstM, int);
@@ -265,21 +245,21 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(SeqCstM, double);
 
 }  // namespace detail::mem_order_layout
 
-static_assert(sizeof(MemOrder<MemOrderTag_v::Relaxed, int>)    == sizeof(int));
-static_assert(sizeof(MemOrder<MemOrderTag_v::Acquire, int>)    == sizeof(int));
-static_assert(sizeof(MemOrder<MemOrderTag_v::Release, int>)    == sizeof(int));
-static_assert(sizeof(MemOrder<MemOrderTag_v::AcqRel,  int>)    == sizeof(int));
-static_assert(sizeof(MemOrder<MemOrderTag_v::SeqCst,  int>)    == sizeof(int));
+static_assert(sizeof(MemOrder<MemOrderTag_v::Relaxed, int>) == sizeof(int));
+static_assert(sizeof(MemOrder<MemOrderTag_v::Acquire, int>) == sizeof(int));
+static_assert(sizeof(MemOrder<MemOrderTag_v::Release, int>) == sizeof(int));
+static_assert(sizeof(MemOrder<MemOrderTag_v::AcqRel, int>) == sizeof(int));
+static_assert(sizeof(MemOrder<MemOrderTag_v::SeqCst, int>) == sizeof(int));
 static_assert(sizeof(MemOrder<MemOrderTag_v::Relaxed, double>) == sizeof(double));
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::mem_order_self_test {
 
-using RelaxInt   = MemOrder<MemOrderTag_v::Relaxed, int>;
-using AcqInt     = MemOrder<MemOrderTag_v::Acquire, int>;
-using RelInt     = MemOrder<MemOrderTag_v::Release, int>;
-using AcqRelInt  = MemOrder<MemOrderTag_v::AcqRel,  int>;
-using SeqCstInt  = MemOrder<MemOrderTag_v::SeqCst,  int>;
+using RelaxInt = MemOrder<MemOrderTag_v::Relaxed, int>;
+using AcqInt = MemOrder<MemOrderTag_v::Acquire, int>;
+using RelInt = MemOrder<MemOrderTag_v::Release, int>;
+using AcqRelInt = MemOrder<MemOrderTag_v::AcqRel, int>;
+using SeqCstInt = MemOrder<MemOrderTag_v::SeqCst, int>;
 
 // ── Construction paths ─────────────────────────────────────────────
 inline constexpr RelaxInt m_default{};
@@ -293,11 +273,11 @@ inline constexpr RelaxInt m_in_place{std::in_place, 7};
 static_assert(m_in_place.peek() == 7);
 
 // ── Pinned tag accessor ──────────────────────────────────────────
-static_assert(RelaxInt::tag   == MemOrderTag_v::Relaxed);
-static_assert(AcqInt::tag     == MemOrderTag_v::Acquire);
-static_assert(RelInt::tag     == MemOrderTag_v::Release);
-static_assert(AcqRelInt::tag  == MemOrderTag_v::AcqRel);
-static_assert(SeqCstInt::tag  == MemOrderTag_v::SeqCst);
+static_assert(RelaxInt::tag == MemOrderTag_v::Relaxed);
+static_assert(AcqInt::tag == MemOrderTag_v::Acquire);
+static_assert(RelInt::tag == MemOrderTag_v::Release);
+static_assert(AcqRelInt::tag == MemOrderTag_v::AcqRel);
+static_assert(SeqCstInt::tag == MemOrderTag_v::SeqCst);
 
 // ── satisfies<RequiredTag> — subsumption-up direction ────────────
 //
@@ -318,63 +298,59 @@ static_assert(RelaxInt::satisfies<MemOrderTag_v::SeqCst>);
 
 // Acquire (chain index 3) satisfies: Acquire (self) + Release +
 // AcqRel + SeqCst (all below).  FAILS on Relaxed (above).
-static_assert( AcqInt::satisfies<MemOrderTag_v::Acquire>);   // self
-static_assert( AcqInt::satisfies<MemOrderTag_v::Release>);   // below in chain
-static_assert( AcqInt::satisfies<MemOrderTag_v::AcqRel>);    // below in chain
-static_assert( AcqInt::satisfies<MemOrderTag_v::SeqCst>);    // below in chain (bottom)
-static_assert(!AcqInt::satisfies<MemOrderTag_v::Relaxed>);   // above in chain ✗
+static_assert(AcqInt::satisfies<MemOrderTag_v::Acquire>);  // self
+static_assert(AcqInt::satisfies<MemOrderTag_v::Release>);  // below in chain
+static_assert(AcqInt::satisfies<MemOrderTag_v::AcqRel>);  // below in chain
+static_assert(AcqInt::satisfies<MemOrderTag_v::SeqCst>);  // below in chain (bottom)
+static_assert(!AcqInt::satisfies<MemOrderTag_v::Relaxed>);  // above in chain ✗
 
 // Release (chain index 2) satisfies: Release (self) + AcqRel +
 // SeqCst (all below).  FAILS on Acquire and Relaxed (above).
-static_assert( RelInt::satisfies<MemOrderTag_v::Release>);   // self
-static_assert( RelInt::satisfies<MemOrderTag_v::AcqRel>);    // below in chain
-static_assert( RelInt::satisfies<MemOrderTag_v::SeqCst>);    // below in chain
-static_assert(!RelInt::satisfies<MemOrderTag_v::Acquire>);   // above in chain ✗
-static_assert(!RelInt::satisfies<MemOrderTag_v::Relaxed>);   // above in chain ✗
+static_assert(RelInt::satisfies<MemOrderTag_v::Release>);  // self
+static_assert(RelInt::satisfies<MemOrderTag_v::AcqRel>);  // below in chain
+static_assert(RelInt::satisfies<MemOrderTag_v::SeqCst>);  // below in chain
+static_assert(!RelInt::satisfies<MemOrderTag_v::Acquire>);  // above in chain ✗
+static_assert(!RelInt::satisfies<MemOrderTag_v::Relaxed>);  // above in chain ✗
 
 // AcqRel (chain index 1) satisfies: AcqRel (self) + SeqCst (below).
 // FAILS on Release / Acquire / Relaxed (all above).
-static_assert( AcqRelInt::satisfies<MemOrderTag_v::AcqRel>);  // self
-static_assert( AcqRelInt::satisfies<MemOrderTag_v::SeqCst>);  // below in chain
+static_assert(AcqRelInt::satisfies<MemOrderTag_v::AcqRel>);  // self
+static_assert(AcqRelInt::satisfies<MemOrderTag_v::SeqCst>);  // below in chain
 static_assert(!AcqRelInt::satisfies<MemOrderTag_v::Release>,  // above in chain ✗
-    "AcqRel MUST NOT satisfy Release — Release is above AcqRel in "
-    "the chain (Release makes a stronger no-fence claim than the "
-    "RMW combined Acquire+Release).  If this fires, AcqRel values "
-    "could silently flow into Release-only-admitting call sites.");
-static_assert(!AcqRelInt::satisfies<MemOrderTag_v::Acquire>); // above ✗
-static_assert(!AcqRelInt::satisfies<MemOrderTag_v::Relaxed>); // above ✗
+              "AcqRel MUST NOT satisfy Release — Release is above AcqRel in "
+              "the chain (Release makes a stronger no-fence claim than the "
+              "RMW combined Acquire+Release).  If this fires, AcqRel values "
+              "could silently flow into Release-only-admitting call sites.");
+static_assert(!AcqRelInt::satisfies<MemOrderTag_v::Acquire>);  // above ✗
+static_assert(!AcqRelInt::satisfies<MemOrderTag_v::Relaxed>);  // above ✗
 
 // SeqCst (chain bottom) satisfies only SeqCst — THE LOAD-BEARING
 // REJECTION for the CLAUDE.md §VI seq_cst ban.  A SeqCst-rowed
 // function cannot pass a hot-path admission gate at AcqRel or above.
-static_assert( SeqCstInt::satisfies<MemOrderTag_v::SeqCst>);  // self
+static_assert(SeqCstInt::satisfies<MemOrderTag_v::SeqCst>);  // self
 static_assert(!SeqCstInt::satisfies<MemOrderTag_v::AcqRel>,
-    "SeqCst MUST NOT satisfy AcqRel — this is the load-bearing "
-    "rejection that the CLAUDE.md §VI seq_cst-ban depends on. "
-    "If this fires, seq_cst-fenced values can silently flow into "
-    "hot-path atomic call sites, breaking the per-call shape budget "
-    "(seq_cst on x86 = ~30-100ns, AcqRel = ~5-10ns).");
+              "SeqCst MUST NOT satisfy AcqRel — this is the load-bearing "
+              "rejection that the CLAUDE.md §VI seq_cst-ban depends on. "
+              "If this fires, seq_cst-fenced values can silently flow into "
+              "hot-path atomic call sites, breaking the per-call shape budget "
+              "(seq_cst on x86 = ~30-100ns, AcqRel = ~5-10ns).");
 static_assert(!SeqCstInt::satisfies<MemOrderTag_v::Release>);
 static_assert(!SeqCstInt::satisfies<MemOrderTag_v::Acquire>);
 static_assert(!SeqCstInt::satisfies<MemOrderTag_v::Relaxed>);
 
 // ── relax<WeakerTag> — DOWN-the-lattice conversion ───────────────
-inline constexpr auto from_relax_to_acq =
-    RelaxInt{42}.relax<MemOrderTag_v::Acquire>();
+inline constexpr auto from_relax_to_acq = RelaxInt{42}.relax<MemOrderTag_v::Acquire>();
 static_assert(from_relax_to_acq.peek() == 42);
 static_assert(from_relax_to_acq.tag == MemOrderTag_v::Acquire);
 
-inline constexpr auto from_relax_to_seqcst =
-    RelaxInt{99}.relax<MemOrderTag_v::SeqCst>();
+inline constexpr auto from_relax_to_seqcst = RelaxInt{99}.relax<MemOrderTag_v::SeqCst>();
 static_assert(from_relax_to_seqcst.peek() == 99);
 static_assert(from_relax_to_seqcst.tag == MemOrderTag_v::SeqCst);
 
-inline constexpr auto from_acqrel_to_seqcst =
-    AcqRelInt{7}.relax<MemOrderTag_v::SeqCst>();
+inline constexpr auto from_acqrel_to_seqcst = AcqRelInt{7}.relax<MemOrderTag_v::SeqCst>();
 static_assert(from_acqrel_to_seqcst.peek() == 7);
 
-inline constexpr auto from_acqrel_to_self =
-    AcqRelInt{8}.relax<MemOrderTag_v::AcqRel>();   // identity
+inline constexpr auto from_acqrel_to_self = AcqRelInt{8}.relax<MemOrderTag_v::AcqRel>();  // identity
 static_assert(from_acqrel_to_self.peek() == 8);
 
 // SFINAE-style detector — proves the requires-clause's correctness.
@@ -383,30 +359,30 @@ concept can_relax = requires(W w) {
     { std::move(w).template relax<T_target>() };
 };
 
-static_assert( can_relax<RelaxInt,  MemOrderTag_v::Acquire>);    // ✓ down
-static_assert( can_relax<RelaxInt,  MemOrderTag_v::SeqCst>);     // ✓ down (full chain)
-static_assert( can_relax<RelaxInt,  MemOrderTag_v::Relaxed>);    // ✓ self
-static_assert( can_relax<AcqRelInt, MemOrderTag_v::SeqCst>);     // ✓ down
-static_assert( can_relax<AcqRelInt, MemOrderTag_v::AcqRel>);     // ✓ self
-static_assert(!can_relax<AcqRelInt, MemOrderTag_v::Acquire>,      // ✗ up
-    "relax<Acquire> on an AcqRel-pinned wrapper MUST be rejected — "
-    "claiming a stronger no-fence claim than the source provides "
-    "defeats the hot-path admission gate.");
-static_assert(!can_relax<AcqRelInt, MemOrderTag_v::Relaxed>);    // ✗ up
-static_assert(!can_relax<SeqCstInt, MemOrderTag_v::AcqRel>,       // ✗ up
-    "relax<AcqRel> on a SeqCst-pinned wrapper MUST be rejected — "
-    "this is THE LOAD-BEARING REJECTION for the seq_cst ban.  If "
-    "this fires, seq_cst-fenced values can silently flow into hot-"
-    "path call sites, breaking CLAUDE.md §VI discipline.");
-static_assert(!can_relax<SeqCstInt, MemOrderTag_v::Relaxed>);    // ✗ up
+static_assert(can_relax<RelaxInt, MemOrderTag_v::Acquire>);  // ✓ down
+static_assert(can_relax<RelaxInt, MemOrderTag_v::SeqCst>);  // ✓ down (full chain)
+static_assert(can_relax<RelaxInt, MemOrderTag_v::Relaxed>);  // ✓ self
+static_assert(can_relax<AcqRelInt, MemOrderTag_v::SeqCst>);  // ✓ down
+static_assert(can_relax<AcqRelInt, MemOrderTag_v::AcqRel>);  // ✓ self
+static_assert(!can_relax<AcqRelInt, MemOrderTag_v::Acquire>,  // ✗ up
+              "relax<Acquire> on an AcqRel-pinned wrapper MUST be rejected — "
+              "claiming a stronger no-fence claim than the source provides "
+              "defeats the hot-path admission gate.");
+static_assert(!can_relax<AcqRelInt, MemOrderTag_v::Relaxed>);  // ✗ up
+static_assert(!can_relax<SeqCstInt, MemOrderTag_v::AcqRel>,  // ✗ up
+              "relax<AcqRel> on a SeqCst-pinned wrapper MUST be rejected — "
+              "this is THE LOAD-BEARING REJECTION for the seq_cst ban.  If "
+              "this fires, seq_cst-fenced values can silently flow into hot-"
+              "path call sites, breaking CLAUDE.md §VI discipline.");
+static_assert(!can_relax<SeqCstInt, MemOrderTag_v::Relaxed>);  // ✗ up
 // SeqCst reflexivity — chain endpoint admits relax to itself.
-static_assert( can_relax<SeqCstInt, MemOrderTag_v::SeqCst>);     // ✓ self at bottom
+static_assert(can_relax<SeqCstInt, MemOrderTag_v::SeqCst>);  // ✓ self at bottom
 
 // ── Diagnostic forwarders ─────────────────────────────────────────
 static_assert(RelaxInt::value_type_name().ends_with("int"));
-static_assert(RelaxInt::lattice_name()  == "MemOrderLattice::At<Relaxed>");
-static_assert(AcqInt::lattice_name()    == "MemOrderLattice::At<Acquire>");
-static_assert(RelInt::lattice_name()    == "MemOrderLattice::At<Release>");
+static_assert(RelaxInt::lattice_name() == "MemOrderLattice::At<Relaxed>");
+static_assert(AcqInt::lattice_name() == "MemOrderLattice::At<Acquire>");
+static_assert(RelInt::lattice_name() == "MemOrderLattice::At<Release>");
 static_assert(AcqRelInt::lattice_name() == "MemOrderLattice::At<AcqRel>");
 static_assert(SeqCstInt::lattice_name() == "MemOrderLattice::At<SeqCst>");
 
@@ -461,13 +437,13 @@ concept can_equality_compare = requires(W const& a, W const& b) {
     { a == b } -> std::convertible_to<bool>;
 };
 
-static_assert( can_equality_compare<RelaxInt>);
+static_assert(can_equality_compare<RelaxInt>);
 static_assert(!can_equality_compare<MemOrder<MemOrderTag_v::Relaxed, NoEqualityT>>);
 
 // NoEqualityT has DELETED copy ctor — MemOrder<Relaxed, NoEqualityT>
 // must inherit that deletion.
 static_assert(!std::is_copy_constructible_v<MemOrder<MemOrderTag_v::Relaxed, NoEqualityT>>,
-    "MemOrder<Tag, T> must transitively inherit T's copy-deletion.");
+              "MemOrder<Tag, T> must transitively inherit T's copy-deletion.");
 static_assert(std::is_move_constructible_v<MemOrder<MemOrderTag_v::Relaxed, NoEqualityT>>);
 
 // ── relax reflexivity ─────────────────────────────────────────────
@@ -499,10 +475,9 @@ concept can_relax_lvalue = requires(W const& w) {
 };
 
 using RelaxMoveOnly = MemOrder<MemOrderTag_v::Relaxed, MoveOnlyT>;
-static_assert( can_relax_rvalue<RelaxMoveOnly, MemOrderTag_v::Acquire>,
-    "relax<>() && MUST work for move-only T.");
+static_assert(can_relax_rvalue<RelaxMoveOnly, MemOrderTag_v::Acquire>, "relax<>() && MUST work for move-only T.");
 static_assert(!can_relax_lvalue<RelaxMoveOnly, MemOrderTag_v::Acquire>,
-    "relax<>() const& on move-only T MUST be rejected.");
+              "relax<>() const& on move-only T MUST be rejected.");
 
 [[nodiscard]] consteval bool relax_move_only_works() noexcept {
     RelaxMoveOnly src{MoveOnlyT{77}};
@@ -520,11 +495,10 @@ static_assert(RelaxInt::lattice_name().starts_with("MemOrderLattice::At<"));
 static_assert(mem_order::Relaxed<int>::tag == MemOrderTag_v::Relaxed);
 static_assert(mem_order::Acquire<int>::tag == MemOrderTag_v::Acquire);
 static_assert(mem_order::Release<int>::tag == MemOrderTag_v::Release);
-static_assert(mem_order::AcqRel<int>::tag  == MemOrderTag_v::AcqRel);
-static_assert(mem_order::SeqCst<int>::tag  == MemOrderTag_v::SeqCst);
+static_assert(mem_order::AcqRel<int>::tag == MemOrderTag_v::AcqRel);
+static_assert(mem_order::SeqCst<int>::tag == MemOrderTag_v::SeqCst);
 
-static_assert(std::is_same_v<mem_order::Relaxed<double>,
-                             MemOrder<MemOrderTag_v::Relaxed, double>>);
+static_assert(std::is_same_v<mem_order::Relaxed<double>, MemOrder<MemOrderTag_v::Relaxed, double>>);
 
 // ── Hot-path admission simulation — the LOAD-BEARING scenario ────
 //
@@ -540,25 +514,24 @@ static_assert(std::is_same_v<mem_order::Relaxed<double>,
 //   SeqCst is REJECTED (✓ — the LOAD-BEARING test for the §VI ban)
 
 template <typename W>
-concept is_hot_path_atomic_admissible =
-    W::template satisfies<MemOrderTag_v::AcqRel>;
+concept is_hot_path_atomic_admissible = W::template satisfies<MemOrderTag_v::AcqRel>;
 
-static_assert( is_hot_path_atomic_admissible<RelaxInt>,
-    "Relaxed-tier value MUST pass the hot-path atomic admission gate.");
-static_assert( is_hot_path_atomic_admissible<AcqInt>,
-    "Acquire-tier value MUST pass the hot-path atomic admission gate.");
-static_assert( is_hot_path_atomic_admissible<RelInt>,
-    "Release-tier value MUST pass the hot-path atomic admission gate.");
-static_assert( is_hot_path_atomic_admissible<AcqRelInt>,
-    "AcqRel-tier value MUST pass the hot-path atomic admission gate "
-    "(it's the boundary).");
+static_assert(is_hot_path_atomic_admissible<RelaxInt>,
+              "Relaxed-tier value MUST pass the hot-path atomic admission gate.");
+static_assert(is_hot_path_atomic_admissible<AcqInt>,
+              "Acquire-tier value MUST pass the hot-path atomic admission gate.");
+static_assert(is_hot_path_atomic_admissible<RelInt>,
+              "Release-tier value MUST pass the hot-path atomic admission gate.");
+static_assert(is_hot_path_atomic_admissible<AcqRelInt>,
+              "AcqRel-tier value MUST pass the hot-path atomic admission gate "
+              "(it's the boundary).");
 static_assert(!is_hot_path_atomic_admissible<SeqCstInt>,
-    "SeqCst-tier value MUST be REJECTED at the hot-path atomic "
-    "admission gate — this is the LOAD-BEARING TEST for CLAUDE.md "
-    "§VI's seq_cst-ban discipline.  If this fires, seq_cst-fenced "
-    "atomic ops can silently flow into hot-path call sites and "
-    "introduce ~30-100ns total-order fences where AcqRel (~5-10ns) "
-    "would suffice.");
+              "SeqCst-tier value MUST be REJECTED at the hot-path atomic "
+              "admission gate — this is the LOAD-BEARING TEST for CLAUDE.md "
+              "§VI's seq_cst-ban discipline.  If this fires, seq_cst-fenced "
+              "atomic ops can silently flow into hot-path call sites and "
+              "introduce ~30-100ns total-order fences where AcqRel (~5-10ns) "
+              "would suffice.");
 
 // ── Runtime smoke test ─────────────────────────────────────────────
 inline void runtime_smoke_test() {
@@ -601,13 +574,13 @@ inline void runtime_smoke_test() {
     if (extracted != 55) std::abort();
 
     mem_order::Relaxed<int> alias_relax{123};
-    mem_order::AcqRel<int>  alias_acqrel{456};
-    mem_order::SeqCst<int>  alias_seqcst{789};
+    mem_order::AcqRel<int> alias_acqrel{456};
+    mem_order::SeqCst<int> alias_seqcst{789};
     [[maybe_unused]] auto rv = alias_relax.peek();
     [[maybe_unused]] auto av = alias_acqrel.peek();
     [[maybe_unused]] auto sv = alias_seqcst.peek();
 
-    [[maybe_unused]] bool can_relax_pass  = is_hot_path_atomic_admissible<RelaxInt>;
+    [[maybe_unused]] bool can_relax_pass = is_hot_path_atomic_admissible<RelaxInt>;
     [[maybe_unused]] bool can_acqrel_pass = is_hot_path_atomic_admissible<AcqRelInt>;
     [[maybe_unused]] bool can_seqcst_pass = is_hot_path_atomic_admissible<SeqCstInt>;
 }

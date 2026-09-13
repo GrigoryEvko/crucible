@@ -7,7 +7,7 @@
 // when built via the project presets.
 
 #include <crucible/Platform.h>
-#include <crucible/Expr.h> // detail::fmix64
+#include <crucible/Expr.h>  // detail::fmix64
 
 #include <bit>
 #include <cstdint>
@@ -53,50 +53,40 @@ namespace crucible {
 namespace detail_reflect {
 
 template <typename T>
-concept IsReflectFieldSupported =
-    std::is_enum_v<T> ||
-    std::is_integral_v<T> ||
-    std::is_floating_point_v<T> ||
-    std::is_pointer_v<T> ||
-    std::is_array_v<T> ||
-    std::is_class_v<T>;
+concept IsReflectFieldSupported = std::is_enum_v<T> || std::is_integral_v<T> || std::is_floating_point_v<T>
+                               || std::is_pointer_v<T> || std::is_array_v<T> || std::is_class_v<T>;
 
 // ── WRAP-Reflect-4 #985 sentinel: canonical-type membership pins ──
 // Each disjunct above must admit at least one canonical example.
 // A future regression that accidentally narrows the concept (e.g.
 // drops `std::is_floating_point_v<T>` while extending another arm)
 // trips at every TU including Reflect.h.
-static_assert(IsReflectFieldSupported<int>,
-    "WRAP-Reflect-4 #985: integral types must satisfy "
-    "IsReflectFieldSupported (load-bearing for reflect_hash).");
-static_assert(IsReflectFieldSupported<double>,
-    "WRAP-Reflect-4 #985: floating-point types must satisfy "
-    "IsReflectFieldSupported.");
-static_assert(IsReflectFieldSupported<void*>,
-    "WRAP-Reflect-4 #985: pointer types must satisfy "
-    "IsReflectFieldSupported.");
-static_assert(IsReflectFieldSupported<int[4]>,
-    "WRAP-Reflect-4 #985: C array types must satisfy "
-    "IsReflectFieldSupported.");
-struct ReflectFieldSentinel { int x; };  // class probe
+static_assert(IsReflectFieldSupported<int>, "WRAP-Reflect-4 #985: integral types must satisfy "
+                                            "IsReflectFieldSupported (load-bearing for reflect_hash).");
+static_assert(IsReflectFieldSupported<double>, "WRAP-Reflect-4 #985: floating-point types must satisfy "
+                                               "IsReflectFieldSupported.");
+static_assert(IsReflectFieldSupported<void*>, "WRAP-Reflect-4 #985: pointer types must satisfy "
+                                              "IsReflectFieldSupported.");
+static_assert(IsReflectFieldSupported<int[4]>, "WRAP-Reflect-4 #985: C array types must satisfy "
+                                               "IsReflectFieldSupported.");
+struct ReflectFieldSentinel {
+    int x;
+};  // class probe
 static_assert(IsReflectFieldSupported<ReflectFieldSentinel>,
-    "WRAP-Reflect-4 #985: class types must satisfy "
-    "IsReflectFieldSupported (closes the recursion universe).");
+              "WRAP-Reflect-4 #985: class types must satisfy "
+              "IsReflectFieldSupported (closes the recursion universe).");
 
 // Cross-lane separation: unsupported categories must NOT satisfy
 // the concept.  If a future contributor accidentally widens the
 // allow-list to include void or function types, the
 // static_assert(false) fall-through arms below would become
 // unreachable in a misleading way — these sentinels catch that.
-static_assert(!IsReflectFieldSupported<void>,
-    "WRAP-Reflect-4 #985: `void` is not a reflectable type "
-    "category — the allow-list must remain bounded.");
-static_assert(!IsReflectFieldSupported<int(int)>,
-    "WRAP-Reflect-4 #985: function types are not reflectable — "
-    "function POINTERS are (covered by is_pointer_v).");
+static_assert(!IsReflectFieldSupported<void>, "WRAP-Reflect-4 #985: `void` is not a reflectable type "
+                                              "category — the allow-list must remain bounded.");
+static_assert(!IsReflectFieldSupported<int(int)>, "WRAP-Reflect-4 #985: function types are not reflectable — "
+                                                  "function POINTERS are (covered by is_pointer_v).");
 
 }  // namespace detail_reflect
-
 
 // ═══════════════════════════════════════════════════════════════════
 // reflect_hash<T>: Automatic struct hashing via reflection
@@ -118,7 +108,7 @@ static_assert(!IsReflectFieldSupported<int(int)>,
 // sub-objects via member access).  noexcept: every hash_field branch is
 // integer math, bit_cast, or pointer-to-integer — none can throw.
 template <typename T>
-  requires std::is_class_v<T>
+    requires std::is_class_v<T>
 [[nodiscard, gnu::pure]] uint64_t reflect_hash(const T& obj) noexcept;
 
 namespace detail_reflect {
@@ -126,67 +116,64 @@ namespace detail_reflect {
 // Count non-static data members of T.
 template <typename T>
 consteval size_t member_count() {
-  return std::meta::nonstatic_data_members_of(
-      ^^T, std::meta::access_context::unchecked()).size();
+    return std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()).size();
 }
 
 // Get the I-th non-static data member info.
 template <typename T, size_t I>
 consteval auto member_info() {
-  return std::meta::nonstatic_data_members_of(
-      ^^T, std::meta::access_context::unchecked())[I];
+    return std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())[I];
 }
 
 // Hash a single field value. Dispatches on type.
 template <typename T>
 [[nodiscard, gnu::pure]] constexpr uint64_t hash_field(const T& val) noexcept {
-  if constexpr (std::is_enum_v<T>) {
-    return detail::fmix64(static_cast<uint64_t>(std::to_underlying(val)));
-  } else if constexpr (std::is_integral_v<T>) {
-    return detail::fmix64(static_cast<uint64_t>(val));
-  } else if constexpr (std::is_floating_point_v<T>) {
-    if constexpr (sizeof(T) == 4)
-      return detail::fmix64(static_cast<uint64_t>(std::bit_cast<uint32_t>(val)));
-    else
-      return detail::fmix64(std::bit_cast<uint64_t>(val));
-  } else if constexpr (std::is_pointer_v<T>) {
-    return detail::fmix64(std::bit_cast<uintptr_t>(val));
-  } else if constexpr (std::is_array_v<T>) {
-    uint64_t h = 0;
-    for (size_t i = 0; i < std::extent_v<T>; i++)
-      h = h * 0x100000001b3ULL ^ hash_field(val[i]);
-    return detail::fmix64(h);
-  } else if constexpr (std::is_class_v<T>) {
-    return reflect_hash(val); // recursive
-  } else {
-    // WRAP-Reflect-4 #985: the fall-through must remain unreachable
-    // for every T satisfying detail_reflect::IsReflectFieldSupported.
-    // If it fires, T is outside the explicit allow-list — extend the
-    // concept (above) AND add a matching branch to BOTH pack_field
-    // and print_field below.  Half-extensions are caught by the
-    // concept's per-branch sentinel pins.
-    static_assert(false,
-        "WRAP-Reflect-4 #985: T not in "
-        "detail_reflect::IsReflectFieldSupported allow-list "
-        "(enum / integral / floating_point / pointer / array / class).");
-  }
+    if constexpr (std::is_enum_v<T>) {
+        return detail::fmix64(static_cast<uint64_t>(std::to_underlying(val)));
+    } else if constexpr (std::is_integral_v<T>) {
+        return detail::fmix64(static_cast<uint64_t>(val));
+    } else if constexpr (std::is_floating_point_v<T>) {
+        if constexpr (sizeof(T) == 4)
+            return detail::fmix64(static_cast<uint64_t>(std::bit_cast<uint32_t>(val)));
+        else
+            return detail::fmix64(std::bit_cast<uint64_t>(val));
+    } else if constexpr (std::is_pointer_v<T>) {
+        return detail::fmix64(std::bit_cast<uintptr_t>(val));
+    } else if constexpr (std::is_array_v<T>) {
+        uint64_t h = 0;
+        for (size_t i = 0; i < std::extent_v<T>; i++)
+            h = h * 0x100000001b3ULL ^ hash_field(val[i]);
+        return detail::fmix64(h);
+    } else if constexpr (std::is_class_v<T>) {
+        return reflect_hash(val);  // recursive
+    } else {
+        // WRAP-Reflect-4 #985: the fall-through must remain unreachable
+        // for every T satisfying detail_reflect::IsReflectFieldSupported.
+        // If it fires, T is outside the explicit allow-list — extend the
+        // concept (above) AND add a matching branch to BOTH pack_field
+        // and print_field below.  Half-extensions are caught by the
+        // concept's per-branch sentinel pins.
+        static_assert(false, "WRAP-Reflect-4 #985: T not in "
+                             "detail_reflect::IsReflectFieldSupported allow-list "
+                             "(enum / integral / floating_point / pointer / array / class).");
+    }
 }
 
 // Fold over all members via index_sequence.
 template <typename T, size_t... Is>
 [[nodiscard, gnu::pure]] uint64_t hash_impl(const T& obj, std::index_sequence<Is...>) noexcept {
-  uint64_t h = 0x9E3779B97F4A7C15ULL;
-  ((h = h * 0x9E3779B97F4A7C15ULL ^ hash_field(obj.[:member_info<T, Is>():])), ...);
-  return detail::fmix64(h);
+    uint64_t h = 0x9E3779B97F4A7C15ULL;
+    ((h = h * 0x9E3779B97F4A7C15ULL ^ hash_field(obj.[:member_info<T, Is>():])), ...);
+    return detail::fmix64(h);
 }
 
-} // namespace detail_reflect
+}  // namespace detail_reflect
 
 template <typename T>
-  requires std::is_class_v<T>
+    requires std::is_class_v<T>
 [[nodiscard, gnu::pure]] uint64_t reflect_hash(const T& obj) noexcept {
-  constexpr size_t N = detail_reflect::member_count<T>();
-  return detail_reflect::hash_impl(obj, std::make_index_sequence<N>{});
+    constexpr size_t N = detail_reflect::member_count<T>();
+    return detail_reflect::hash_impl(obj, std::make_index_sequence<N>{});
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -221,18 +208,17 @@ namespace detail_reflect {
 // trait usable at compile time without instantiation.
 template <typename T>
 consteval bool detect_reflected_hash() noexcept {
-  if constexpr (std::is_class_v<T>) {
-    return requires (const T& t) { reflect_hash(t); };
-  } else {
-    return false;
-  }
+    if constexpr (std::is_class_v<T>) {
+        return requires(const T& t) { reflect_hash(t); };
+    } else {
+        return false;
+    }
 }
 
 }  // namespace detail_reflect
 
 template <typename T>
-inline constexpr bool has_reflected_hash =
-    detail_reflect::detect_reflected_hash<T>();
+inline constexpr bool has_reflected_hash = detail_reflect::detect_reflected_hash<T>();
 
 // ═══════════════════════════════════════════════════════════════════
 // reflect_fmix_fold<T,Seed> — fmix64-based reflection fold helper.
@@ -270,45 +256,41 @@ namespace detail_reflect {
 // outer fmix64 in the fold loop.
 template <typename T>
 [[nodiscard, gnu::pure]] constexpr uint64_t pack_field(const T& val) noexcept {
-  if constexpr (std::is_enum_v<T>) {
-    return static_cast<uint64_t>(std::to_underlying(val));
-  } else if constexpr (std::is_integral_v<T>) {
-    return static_cast<uint64_t>(val);
-  } else if constexpr (std::is_floating_point_v<T>) {
-    if constexpr (sizeof(T) == 4)
-      return static_cast<uint64_t>(std::bit_cast<uint32_t>(val));
-    else
-      return std::bit_cast<uint64_t>(val);
-  } else if constexpr (std::is_pointer_v<T>) {
-    return std::bit_cast<uintptr_t>(val);
-  } else if constexpr (std::is_class_v<T>) {
-    return reflect_hash(val);  // recursive
-  } else {
-    // WRAP-Reflect-4 #985: see hash_field's fall-through doc-block.
-    static_assert(false,
-        "WRAP-Reflect-4 #985: T not in "
-        "detail_reflect::IsReflectFieldSupported allow-list "
-        "(enum / integral / floating_point / pointer / array / class).");
-  }
+    if constexpr (std::is_enum_v<T>) {
+        return static_cast<uint64_t>(std::to_underlying(val));
+    } else if constexpr (std::is_integral_v<T>) {
+        return static_cast<uint64_t>(val);
+    } else if constexpr (std::is_floating_point_v<T>) {
+        if constexpr (sizeof(T) == 4)
+            return static_cast<uint64_t>(std::bit_cast<uint32_t>(val));
+        else
+            return std::bit_cast<uint64_t>(val);
+    } else if constexpr (std::is_pointer_v<T>) {
+        return std::bit_cast<uintptr_t>(val);
+    } else if constexpr (std::is_class_v<T>) {
+        return reflect_hash(val);  // recursive
+    } else {
+        // WRAP-Reflect-4 #985: see hash_field's fall-through doc-block.
+        static_assert(false, "WRAP-Reflect-4 #985: T not in "
+                             "detail_reflect::IsReflectFieldSupported allow-list "
+                             "(enum / integral / floating_point / pointer / array / class).");
+    }
 }
 
 template <typename T, uint64_t Seed, size_t... Is>
-[[nodiscard, gnu::pure]] constexpr uint64_t
-fmix_fold_impl(const T& obj, std::index_sequence<Is...>) noexcept {
-  uint64_t h = Seed;
-  ((h = detail::fmix64(h ^ pack_field(obj.[:member_info<T, Is>():]))), ...);
-  return h;
+[[nodiscard, gnu::pure]] constexpr uint64_t fmix_fold_impl(const T& obj, std::index_sequence<Is...>) noexcept {
+    uint64_t h = Seed;
+    ((h = detail::fmix64(h ^ pack_field(obj.[:member_info<T, Is>():]))), ...);
+    return h;
 }
 
 }  // namespace detail_reflect
 
 template <uint64_t Seed, typename T>
-  requires std::is_class_v<T>
-[[nodiscard, gnu::pure]] constexpr uint64_t
-reflect_fmix_fold(const T& obj) noexcept {
-  constexpr size_t N = detail_reflect::member_count<T>();
-  return detail_reflect::fmix_fold_impl<T, Seed>(
-      obj, std::make_index_sequence<N>{});
+    requires std::is_class_v<T>
+[[nodiscard, gnu::pure]] constexpr uint64_t reflect_fmix_fold(const T& obj) noexcept {
+    constexpr size_t N = detail_reflect::member_count<T>();
+    return detail_reflect::fmix_fold_impl<T, Seed>(obj, std::make_index_sequence<N>{});
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -330,7 +312,7 @@ reflect_fmix_fold(const T& obj) noexcept {
 // get output; a null FILE* is undefined behavior at the libc level and
 // outside Reflect's contract.
 template <typename T>
-  requires std::is_class_v<T>
+    requires std::is_class_v<T>
 void reflect_print(const T& obj, FILE* out = stderr) noexcept;
 
 namespace detail_reflect {
@@ -338,67 +320,66 @@ namespace detail_reflect {
 // Print a single field value.
 template <typename T>
 void print_field(const T& val, FILE* out) noexcept {
-  if constexpr (std::is_enum_v<T>) {
-    std::fprintf(out, "%llu", static_cast<unsigned long long>(std::to_underlying(val)));
-  } else if constexpr (std::is_same_v<T, bool>) {
-    std::fprintf(out, "%s", val ? "true" : "false");
-  } else if constexpr (std::is_signed_v<T> && std::is_integral_v<T>) {
-    std::fprintf(out, "%lld", static_cast<long long>(val));
-  } else if constexpr (std::is_unsigned_v<T> && std::is_integral_v<T>) {
-    std::fprintf(out, "%llu", static_cast<unsigned long long>(val));
-  } else if constexpr (std::is_floating_point_v<T>) {
-    std::fprintf(out, "%g", static_cast<double>(val));
-  } else if constexpr (std::is_pointer_v<T>) {
-    std::fprintf(out, "%p", static_cast<const void*>(val));
-  } else if constexpr (std::is_array_v<T>) {
-    std::fprintf(out, "[");
-    for (size_t i = 0; i < std::extent_v<T>; i++) {
-      if (i > 0) std::fprintf(out, ", ");
-      print_field(val[i], out);
+    if constexpr (std::is_enum_v<T>) {
+        std::fprintf(out, "%llu", static_cast<unsigned long long>(std::to_underlying(val)));
+    } else if constexpr (std::is_same_v<T, bool>) {
+        std::fprintf(out, "%s", val ? "true" : "false");
+    } else if constexpr (std::is_signed_v<T> && std::is_integral_v<T>) {
+        std::fprintf(out, "%lld", static_cast<long long>(val));
+    } else if constexpr (std::is_unsigned_v<T> && std::is_integral_v<T>) {
+        std::fprintf(out, "%llu", static_cast<unsigned long long>(val));
+    } else if constexpr (std::is_floating_point_v<T>) {
+        std::fprintf(out, "%g", static_cast<double>(val));
+    } else if constexpr (std::is_pointer_v<T>) {
+        std::fprintf(out, "%p", static_cast<const void*>(val));
+    } else if constexpr (std::is_array_v<T>) {
+        std::fprintf(out, "[");
+        for (size_t i = 0; i < std::extent_v<T>; i++) {
+            if (i > 0) std::fprintf(out, ", ");
+            print_field(val[i], out);
+        }
+        std::fprintf(out, "]");
+    } else if constexpr (std::is_class_v<T>) {
+        reflect_print(val, out);  // recursive
+    } else {
+        // WRAP-Reflect-4 #985: see hash_field's fall-through doc-block.
+        static_assert(false, "WRAP-Reflect-4 #985: T not in "
+                             "detail_reflect::IsReflectFieldSupported allow-list "
+                             "(enum / integral / floating_point / pointer / array / class).");
     }
-    std::fprintf(out, "]");
-  } else if constexpr (std::is_class_v<T>) {
-    reflect_print(val, out); // recursive
-  } else {
-    // WRAP-Reflect-4 #985: see hash_field's fall-through doc-block.
-    static_assert(false,
-        "WRAP-Reflect-4 #985: T not in "
-        "detail_reflect::IsReflectFieldSupported allow-list "
-        "(enum / integral / floating_point / pointer / array / class).");
-  }
 }
 
 // Get the name of the I-th member as a compile-time string.
 template <typename T, size_t I>
 consteval auto member_name() {
-  return std::meta::identifier_of(member_info<T, I>());
+    return std::meta::identifier_of(member_info<T, I>());
 }
 
 // Print one "name = value" pair.
 template <typename T, size_t I>
 void print_member(const T& obj, FILE* out, bool first) noexcept {
-  if (!first) std::fprintf(out, ", ");
-  // identifier_of returns a string_view usable at runtime via expansion
-  constexpr auto name = member_name<T, I>();
-  std::fprintf(out, "%.*s = ", static_cast<int>(name.size()), name.data());
-  print_field(obj.[:member_info<T, I>():], out);
+    if (!first) std::fprintf(out, ", ");
+    // identifier_of returns a string_view usable at runtime via expansion
+    constexpr auto name = member_name<T, I>();
+    std::fprintf(out, "%.*s = ", static_cast<int>(name.size()), name.data());
+    print_field(obj.[:member_info<T, I>():], out);
 }
 
 template <typename T, size_t... Is>
 void print_impl(const T& obj, FILE* out, std::index_sequence<Is...>) noexcept {
-  constexpr auto type_name = std::meta::identifier_of(^^T);
-  std::fprintf(out, "%.*s { ", static_cast<int>(type_name.size()), type_name.data());
-  (print_member<T, Is>(obj, out, Is == 0), ...);
-  std::fprintf(out, " }");
+    constexpr auto type_name = std::meta::identifier_of(^^T);
+    std::fprintf(out, "%.*s { ", static_cast<int>(type_name.size()), type_name.data());
+    (print_member<T, Is>(obj, out, Is == 0), ...);
+    std::fprintf(out, " }");
 }
 
-} // namespace detail_reflect
+}  // namespace detail_reflect
 
 template <typename T>
-  requires std::is_class_v<T>
+    requires std::is_class_v<T>
 void reflect_print(const T& obj, FILE* out) noexcept {
-  constexpr size_t N = detail_reflect::member_count<T>();
-  detail_reflect::print_impl(obj, out, std::make_index_sequence<N>{});
+    constexpr size_t N = detail_reflect::member_count<T>();
+    detail_reflect::print_impl(obj, out, std::make_index_sequence<N>{});
 }
 
-} // namespace crucible
+}  // namespace crucible

@@ -21,8 +21,7 @@ struct {
 } topology_lldp_rx_events SEC(".maps");
 
 SEC("xdp")
-int crucible_topology_lldp_rx_sample(struct xdp_md *ctx)
-{
+int crucible_topology_lldp_rx_sample(struct xdp_md* ctx) {
     (void)ctx;
     return XDP_PASS;
 }

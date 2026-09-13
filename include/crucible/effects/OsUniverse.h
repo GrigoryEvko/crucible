@@ -106,14 +106,13 @@ struct OsUniverse {
     // Both fire at compile time; the discipline scales to every
     // future per-axis Universe (DetSafeUniverse, HotPathUniverse,
     // ...) following the same pattern.
-    static_assert(cardinality <= 64,
-        "[OsUniverse_Overflow] fixy-A3-018: OsUniverse cardinality "
-        "exceeds EffectRowLattice's uint64_t bitmask carrier width. "
-        "FOUND-I04 append-only Universe extension landed atom #65 — "
-        "either widen the carrier to uint128_t (touches every "
-        "row_hash / row_descriptor consumer) or split the Universe "
-        "into multiple disjoint Universes (preferred, follows the "
-        "per-axis Universe roadmap in FOUND-G).");
+    static_assert(cardinality <= 64, "[OsUniverse_Overflow] fixy-A3-018: OsUniverse cardinality "
+                                     "exceeds EffectRowLattice's uint64_t bitmask carrier width. "
+                                     "FOUND-I04 append-only Universe extension landed atom #65 — "
+                                     "either widen the carrier to uint128_t (touches every "
+                                     "row_hash / row_descriptor consumer) or split the Universe "
+                                     "into multiple disjoint Universes (preferred, follows the "
+                                     "per-axis Universe roadmap in FOUND-G).");
 
     // FIXY-FOUND-109 reframe: bit_position now derives its
     // intermediate cast width from `underlying_type_t<atom_t>`, so
@@ -125,16 +124,15 @@ struct OsUniverse {
     // row_hash consumers (RowHashFold.h, EffectMask) must be
     // audited regardless of whether bit_position itself is now
     // truncation-proof.  Keep the assert; reframe the rationale.
-    static_assert(
-        std::is_same_v<std::underlying_type_t<atom_t>, std::uint8_t>,
-        "[OsUniverse_Underlying] fixy-A3-018 + FIXY-FOUND-109: "
-        "OsUniverse::atom_t underlying type changed away from "
-        "uint8_t.  bit_position is now structurally safe via "
-        "underlying_type_t derivation, but a widening still demands "
-        "an audit of row_descriptor / row_hash / EffectMask "
-        "consumers because cardinality > 64 would overflow the "
-        "uint64_t bitmask carrier independently of this site.  "
-        "Address the audit, then update this assert.");
+    static_assert(std::is_same_v<std::underlying_type_t<atom_t>, std::uint8_t>,
+                  "[OsUniverse_Underlying] fixy-A3-018 + FIXY-FOUND-109: "
+                  "OsUniverse::atom_t underlying type changed away from "
+                  "uint8_t.  bit_position is now structurally safe via "
+                  "underlying_type_t derivation, but a widening still demands "
+                  "an audit of row_descriptor / row_hash / EffectMask "
+                  "consumers because cardinality > 64 would overflow the "
+                  "uint64_t bitmask carrier independently of this site.  "
+                  "Address the audit, then update this assert.");
 
     // The value-level lattice instance — bounded distributive lattice
     // over `std::uint64_t` bitmasks, satisfying Lattice +
@@ -149,9 +147,7 @@ struct OsUniverse {
     // (the consteval surface; not the reflection-driven
     // display_string_of which has documented TU-fragility per
     // algebra/Graded.h:156-186).
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return "OsUniverse";
-    }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "OsUniverse"; }
 
     // Per-atom name emitter (FOUND-H01-AUDIT-4).  Forwards to the
     // canonical `effect_name(Effect)` from Capabilities.h:58-68.  The
@@ -166,10 +162,7 @@ struct OsUniverse {
     // test can drive atom_name with a non-constant argument.  Still
     // constant-evaluated when called from consteval contexts (e.g.,
     // detail::os_universe_self_test::every_atom_has_name below).
-    [[nodiscard]] static constexpr std::string_view
-    atom_name(atom_t a) noexcept {
-        return effect_name(a);
-    }
+    [[nodiscard]] static constexpr std::string_view atom_name(atom_t a) noexcept { return effect_name(a); }
 
     // Bit position of an atom in the parent lattice's bitmask carrier.
     // Stable across append-only Universe extensions (28_04 §8.5.3,
@@ -189,10 +182,8 @@ struct OsUniverse {
     // still catches accidental widening so the maintainer audits the
     // surrounding row_descriptor / row_hash consumers, but the
     // truncation hole that motivated it is closed at this site.
-    [[nodiscard]] static constexpr std::size_t
-    bit_position(atom_t a) noexcept {
-        return static_cast<std::size_t>(
-            static_cast<std::underlying_type_t<atom_t>>(a));
+    [[nodiscard]] static constexpr std::size_t bit_position(atom_t a) noexcept {
+        return static_cast<std::size_t>(static_cast<std::underlying_type_t<atom_t>>(a));
     }
 };
 
@@ -210,47 +201,43 @@ concept Universe = requires {
     typename U::atom_t;
     typename U::lattice;
     { U::cardinality } -> std::convertible_to<std::size_t>;
-    { U::name() }      -> std::convertible_to<std::string_view>;
-    { U::atom_name(std::declval<typename U::atom_t>()) }
-        -> std::convertible_to<std::string_view>;
+    { U::name() } -> std::convertible_to<std::string_view>;
+    { U::atom_name(std::declval<typename U::atom_t>()) } -> std::convertible_to<std::string_view>;
 };
 
 // ── Concept-conformance assertions ──────────────────────────────────
 
-static_assert(Universe<OsUniverse>,
-    "OsUniverse must satisfy the Universe concept — every per-category "
-    "Universe descriptor exposes atom_t / cardinality / lattice / "
-    "name() / atom_name() through this surface.");
+static_assert(Universe<OsUniverse>, "OsUniverse must satisfy the Universe concept — every per-category "
+                                    "Universe descriptor exposes atom_t / cardinality / lattice / "
+                                    "name() / atom_name() through this surface.");
 
 static_assert(std::is_same_v<OsUniverse::atom_t, Effect>);
 static_assert(std::is_same_v<OsUniverse::lattice, EffectRowLattice>);
 static_assert(OsUniverse::cardinality == effect_count);
 static_assert(OsUniverse::name() == "OsUniverse");
 static_assert(OsUniverse::atom_name(Effect::Alloc) == "Alloc");
-static_assert(OsUniverse::atom_name(Effect::IO)    == "IO");
+static_assert(OsUniverse::atom_name(Effect::IO) == "IO");
 static_assert(OsUniverse::atom_name(Effect::Block) == "Block");
-static_assert(OsUniverse::atom_name(Effect::Bg)    == "Bg");
-static_assert(OsUniverse::atom_name(Effect::Init)  == "Init");
-static_assert(OsUniverse::atom_name(Effect::Test)  == "Test");
+static_assert(OsUniverse::atom_name(Effect::Bg) == "Bg");
+static_assert(OsUniverse::atom_name(Effect::Init) == "Init");
+static_assert(OsUniverse::atom_name(Effect::Test) == "Test");
 
 // Bit-position bridge agrees with the parent lattice's encoding.
 // row_descriptor_v<Row<Effect::Alloc>> sets bit at bit_position(Alloc).
 static_assert(OsUniverse::bit_position(Effect::Alloc) == 0);
-static_assert(OsUniverse::bit_position(Effect::IO)    == 1);
+static_assert(OsUniverse::bit_position(Effect::IO) == 1);
 static_assert(OsUniverse::bit_position(Effect::Block) == 2);
-static_assert(OsUniverse::bit_position(Effect::Bg)    == 3);
-static_assert(OsUniverse::bit_position(Effect::Init)  == 4);
-static_assert(OsUniverse::bit_position(Effect::Test)  == 5);
+static_assert(OsUniverse::bit_position(Effect::Bg) == 3);
+static_assert(OsUniverse::bit_position(Effect::Init) == 4);
+static_assert(OsUniverse::bit_position(Effect::Test) == 5);
 
 // Bridge: every atom's bit position matches the parent lattice's
 // row_descriptor_v encoding for the singleton row containing only
 // that atom.
 static_assert(row_descriptor_v<Row<Effect::Alloc>>
-              == (EffectRowLattice::element_type{1}
-                  << OsUniverse::bit_position(Effect::Alloc)));
+              == (EffectRowLattice::element_type{1} << OsUniverse::bit_position(Effect::Alloc)));
 static_assert(row_descriptor_v<Row<Effect::Bg>>
-              == (EffectRowLattice::element_type{1}
-                  << OsUniverse::bit_position(Effect::Bg)));
+              == (EffectRowLattice::element_type{1} << OsUniverse::bit_position(Effect::Bg)));
 
 // ── Self-test block ─────────────────────────────────────────────────
 
@@ -264,8 +251,7 @@ namespace detail::os_universe_self_test {
 // Universe overrides atom_name and forgets to mirror the addition.
 
 [[nodiscard]] consteval bool every_atom_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^Effect));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^Effect));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
@@ -277,18 +263,15 @@ namespace detail::os_universe_self_test {
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_atom_has_name(),
-    "OsUniverse::atom_name must produce a non-empty, non-sentinel "
-    "name for every Effect atom.  Add the missing arm to "
-    "effect_name() in Capabilities.h or the new atom leaks the "
-    "'<unknown Effect>' sentinel into Universe-driven diagnostics.");
+static_assert(every_atom_has_name(), "OsUniverse::atom_name must produce a non-empty, non-sentinel "
+                                     "name for every Effect atom.  Add the missing arm to "
+                                     "effect_name() in Capabilities.h or the new atom leaks the "
+                                     "'<unknown Effect>' sentinel into Universe-driven diagnostics.");
 
 // Pairwise distinctness — the Universe's atom_name surface inherits
 // effect_name's distinctness, but the sanity check is cheap.
-static_assert(OsUniverse::atom_name(Effect::Alloc)
-              != OsUniverse::atom_name(Effect::IO));
-static_assert(OsUniverse::atom_name(Effect::Bg)
-              != OsUniverse::atom_name(Effect::Init));
+static_assert(OsUniverse::atom_name(Effect::Alloc) != OsUniverse::atom_name(Effect::IO));
+static_assert(OsUniverse::atom_name(Effect::Bg) != OsUniverse::atom_name(Effect::Init));
 
 // Layout: OsUniverse is a stateless type — sizeof(OsUniverse) is
 // implementation-defined for empty structs (1 byte under most ABIs)
@@ -312,22 +295,15 @@ static_assert(OsUniverse::atom_name(Effect::Bg)
 
 template <Effect E>
 [[nodiscard]] consteval std::size_t derived_bit_position_of() noexcept {
-    return static_cast<std::size_t>(
-        static_cast<std::underlying_type_t<Effect>>(E));
+    return static_cast<std::size_t>(static_cast<std::underlying_type_t<Effect>>(E));
 }
 
-static_assert(OsUniverse::bit_position(Effect::Alloc)
-              == derived_bit_position_of<Effect::Alloc>());
-static_assert(OsUniverse::bit_position(Effect::IO)
-              == derived_bit_position_of<Effect::IO>());
-static_assert(OsUniverse::bit_position(Effect::Block)
-              == derived_bit_position_of<Effect::Block>());
-static_assert(OsUniverse::bit_position(Effect::Bg)
-              == derived_bit_position_of<Effect::Bg>());
-static_assert(OsUniverse::bit_position(Effect::Init)
-              == derived_bit_position_of<Effect::Init>());
-static_assert(OsUniverse::bit_position(Effect::Test)
-              == derived_bit_position_of<Effect::Test>());
+static_assert(OsUniverse::bit_position(Effect::Alloc) == derived_bit_position_of<Effect::Alloc>());
+static_assert(OsUniverse::bit_position(Effect::IO) == derived_bit_position_of<Effect::IO>());
+static_assert(OsUniverse::bit_position(Effect::Block) == derived_bit_position_of<Effect::Block>());
+static_assert(OsUniverse::bit_position(Effect::Bg) == derived_bit_position_of<Effect::Bg>());
+static_assert(OsUniverse::bit_position(Effect::Init) == derived_bit_position_of<Effect::Init>());
+static_assert(OsUniverse::bit_position(Effect::Test) == derived_bit_position_of<Effect::Test>());
 
 }  // namespace detail::os_universe_self_test
 
@@ -347,8 +323,7 @@ inline void runtime_smoke_test_os_universe() noexcept {
     Effect e_runtime = Effect::Alloc;
     [[maybe_unused]] auto an = OsUniverse::atom_name(e_runtime);
 
-    [[maybe_unused]] std::size_t bp =
-        OsUniverse::bit_position(e_runtime);
+    [[maybe_unused]] std::size_t bp = OsUniverse::bit_position(e_runtime);
 
     // Concept-based capability check at the boundary (per
     // feedback_algebra_runtime_smoke_test_discipline) — confirms the

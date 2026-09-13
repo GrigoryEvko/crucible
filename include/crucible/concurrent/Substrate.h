@@ -69,11 +69,11 @@ namespace crucible::concurrent {
 // ── ChannelTopology enum ───────────────────────────────────────────────────
 
 enum class ChannelTopology : std::uint8_t {
-    OneToOne          = 0,   // SPSC ring                — single producer, single consumer
-    ManyToOne         = 1,   // MPSC ring                — many producers, one consumer
-    OneToMany_Latest  = 2,   // SWMR snapshot            — one writer, many readers (latest value)
-    ManyToMany        = 3,   // MPMC ring                — many producers, many consumers
-    WorkStealing      = 4,   // Chase-Lev deque          — owner pushes/pops, thieves steal
+    OneToOne = 0,  // SPSC ring                — single producer, single consumer
+    ManyToOne = 1,  // MPSC ring                — many producers, one consumer
+    OneToMany_Latest = 2,  // SWMR snapshot            — one writer, many readers (latest value)
+    ManyToMany = 3,  // MPMC ring                — many producers, many consumers
+    WorkStealing = 4,  // Chase-Lev deque          — owner pushes/pops, thieves steal
 };
 
 // ── Substrate metafunction ──────────────────────────────────────────
@@ -125,46 +125,47 @@ using Substrate_t = typename Substrate<Pat, T, Cap, UserTag>::type;
 // templates undefined on non-Permissioned* T, so misuse fires at
 // instantiation rather than substituting silently.
 
-template <class S> struct substrate_traits;
+template <class S>
+struct substrate_traits;
 
 template <class T, std::size_t Cap, class UserTag>
 struct substrate_traits<PermissionedSpscChannel<T, Cap, UserTag>> {
-    static constexpr ChannelTopology     topology = ChannelTopology::OneToOne;
-    static constexpr std::size_t  capacity = Cap;
+    static constexpr ChannelTopology topology = ChannelTopology::OneToOne;
+    static constexpr std::size_t capacity = Cap;
     using value_type = T;
-    using user_tag   = UserTag;
+    using user_tag = UserTag;
 };
 
 template <class T, std::size_t Cap, class UserTag>
 struct substrate_traits<PermissionedMpscChannel<T, Cap, UserTag>> {
-    static constexpr ChannelTopology     topology = ChannelTopology::ManyToOne;
-    static constexpr std::size_t  capacity = Cap;
+    static constexpr ChannelTopology topology = ChannelTopology::ManyToOne;
+    static constexpr std::size_t capacity = Cap;
     using value_type = T;
-    using user_tag   = UserTag;
+    using user_tag = UserTag;
 };
 
 template <class T, class UserTag>
 struct substrate_traits<PermissionedSnapshot<T, UserTag>> {
-    static constexpr ChannelTopology     topology = ChannelTopology::OneToMany_Latest;
-    static constexpr std::size_t  capacity = 0;  // single slot
+    static constexpr ChannelTopology topology = ChannelTopology::OneToMany_Latest;
+    static constexpr std::size_t capacity = 0;  // single slot
     using value_type = T;
-    using user_tag   = UserTag;
+    using user_tag = UserTag;
 };
 
 template <class T, std::size_t Cap, class UserTag>
 struct substrate_traits<PermissionedMpmcChannel<T, Cap, UserTag>> {
-    static constexpr ChannelTopology     topology = ChannelTopology::ManyToMany;
-    static constexpr std::size_t  capacity = Cap;
+    static constexpr ChannelTopology topology = ChannelTopology::ManyToMany;
+    static constexpr std::size_t capacity = Cap;
     using value_type = T;
-    using user_tag   = UserTag;
+    using user_tag = UserTag;
 };
 
 template <class T, std::size_t Cap, class UserTag>
 struct substrate_traits<PermissionedChaseLevDeque<T, Cap, UserTag>> {
-    static constexpr ChannelTopology     topology = ChannelTopology::WorkStealing;
-    static constexpr std::size_t  capacity = Cap;
+    static constexpr ChannelTopology topology = ChannelTopology::WorkStealing;
+    static constexpr std::size_t capacity = Cap;
     using value_type = T;
-    using user_tag   = UserTag;
+    using user_tag = UserTag;
 };
 
 // is_substrate_v: true iff S has a substrate_traits specialization.
@@ -172,11 +173,12 @@ template <class S, class = void>
 struct is_substrate : std::false_type {};
 
 template <class S>
-struct is_substrate<S, std::void_t<typename substrate_traits<S>::value_type>>
-    : std::true_type {};
+struct is_substrate<S, std::void_t<typename substrate_traits<S>::value_type>> : std::true_type {};
 
-template <class S> inline constexpr bool is_substrate_v = is_substrate<S>::value;
-template <class S> concept IsSubstrate = is_substrate_v<S>;
+template <class S>
+inline constexpr bool is_substrate_v = is_substrate<S>::value;
+template <class S>
+concept IsSubstrate = is_substrate_v<S>;
 
 template <IsSubstrate S>
 inline constexpr ChannelTopology substrate_topology_v = substrate_traits<S>::topology;
@@ -228,10 +230,9 @@ inline constexpr std::size_t substrate_capacity_v = substrate_traits<S>::capacit
 // KB even when total is 4 MB).
 
 template <IsSubstrate S>
-inline constexpr std::size_t channel_byte_footprint_v =
-    substrate_capacity_v<S> > 0
-        ? sizeof(substrate_value_type_t<S>) * substrate_capacity_v<S>
-        : sizeof(substrate_value_type_t<S>);  // Snapshot single-slot
+inline constexpr std::size_t channel_byte_footprint_v = substrate_capacity_v<S> > 0
+                                                          ? sizeof(substrate_value_type_t<S>) * substrate_capacity_v<S>
+                                                          : sizeof(substrate_value_type_t<S>);  // Snapshot single-slot
 
 // ── per_call_working_set_v<S>: hot-path access footprint ───────────
 //
@@ -295,13 +296,11 @@ namespace detail {
 // alignas(64) discipline pervasive in the Permissioned* primitives
 // (CLAUDE.md §VIII — x86-64 + Graviton/Neoverse 64 B; Apple
 // Silicon's 128 B handled separately when it lands).
-inline constexpr std::size_t kHotPathCacheLineBytes =
-    ::crucible::concurrent::hot_path_cache_line_bytes;
+inline constexpr std::size_t kHotPathCacheLineBytes = ::crucible::concurrent::hot_path_cache_line_bytes;
 
 // Round sizeof(T) up to the nearest cache line.  A 4 B int still
 // occupies one full cache line under cell-aligned layout.
-[[nodiscard]] consteval std::size_t
-cell_line_footprint(std::size_t value_bytes) noexcept {
+[[nodiscard]] consteval std::size_t cell_line_footprint(std::size_t value_bytes) noexcept {
     return ::crucible::concurrent::cell_line_footprint(value_bytes);
 }
 
@@ -310,8 +309,7 @@ cell_line_footprint(std::size_t value_bytes) noexcept {
 // Primary per_call_working_set computation, dispatched on topology.
 template <IsSubstrate S>
 inline constexpr std::size_t per_call_working_set_v = [] consteval {
-    constexpr std::size_t cell =
-        detail::cell_line_footprint(sizeof(substrate_value_type_t<S>));
+    constexpr std::size_t cell = detail::cell_line_footprint(sizeof(substrate_value_type_t<S>));
     constexpr ChannelTopology topo = substrate_topology_v<S>;
     if constexpr (topo == ChannelTopology::OneToOne) {
         // SpscRing: head + tail + cell.
@@ -354,19 +352,16 @@ inline constexpr std::size_t per_call_working_set_v = [] consteval {
 // Callers wanting Chase-Lev semantics select WorkStealing
 // explicitly.
 
-[[nodiscard]] consteval ChannelTopology recommend_topology(
-    std::size_t num_producers,
-    std::size_t num_consumers,
-    bool        latest_only = false) noexcept {
+[[nodiscard]] consteval ChannelTopology recommend_topology(std::size_t num_producers, std::size_t num_consumers,
+                                                           bool latest_only = false) noexcept {
     if (num_producers == 1 && num_consumers == 1) return ChannelTopology::OneToOne;
-    if (num_producers >  1 && num_consumers == 1) return ChannelTopology::ManyToOne;
-    if (num_producers == 1 && num_consumers >  1 && latest_only)
-        return ChannelTopology::OneToMany_Latest;
-    if (num_producers >  1 && num_consumers >  1) return ChannelTopology::ManyToMany;
+    if (num_producers > 1 && num_consumers == 1) return ChannelTopology::ManyToOne;
+    if (num_producers == 1 && num_consumers > 1 && latest_only) return ChannelTopology::OneToMany_Latest;
+    if (num_producers > 1 && num_consumers > 1) return ChannelTopology::ManyToMany;
     // 1 producer, N consumers without latest_only:
     // closest match is ManyToMany at producer-side N=1 (the MPMC
     // ring degenerates to SPMC when only one producer is active).
-    if (num_producers == 1 && num_consumers >  1) return ChannelTopology::ManyToMany;
+    if (num_producers == 1 && num_consumers > 1) return ChannelTopology::ManyToMany;
     // num_producers == 0 || num_consumers == 0: caller error;
     // default to OneToOne which static_asserts on capacity > 0
     // downstream.
@@ -409,11 +404,10 @@ inline constexpr std::size_t per_call_working_set_v = [] consteval {
 
 inline constexpr std::size_t conservative_cliff_l2_per_core = 256ULL * 1024;
 
-[[nodiscard]] consteval ChannelTopology recommend_topology_for_workload(
-    std::size_t num_producers,
-    std::size_t num_consumers,
-    std::size_t workload_bytes,
-    bool        latest_only = false) noexcept {
+[[nodiscard]] consteval ChannelTopology recommend_topology_for_workload(std::size_t num_producers,
+                                                                        std::size_t num_consumers,
+                                                                        std::size_t workload_bytes,
+                                                                        bool latest_only = false) noexcept {
     // Below the cliff: cardinality alone decides.
     if (workload_bytes <= conservative_cliff_l2_per_core) {
         return recommend_topology(num_producers, num_consumers, latest_only);
@@ -448,20 +442,15 @@ inline constexpr std::size_t conservative_cliff_l2_per_core = 256ULL * 1024;
 // fingerprints; Snapshot needs different reader-handle semantics).
 
 template <class S>
-concept IsOneToOneSubstrate = IsSubstrate<S>
-                           && substrate_topology_v<S> == ChannelTopology::OneToOne;
+concept IsOneToOneSubstrate = IsSubstrate<S> && substrate_topology_v<S> == ChannelTopology::OneToOne;
 template <class S>
-concept IsManyToOneSubstrate = IsSubstrate<S>
-                            && substrate_topology_v<S> == ChannelTopology::ManyToOne;
+concept IsManyToOneSubstrate = IsSubstrate<S> && substrate_topology_v<S> == ChannelTopology::ManyToOne;
 template <class S>
-concept IsOneToManyLatestSubstrate = IsSubstrate<S>
-                                  && substrate_topology_v<S> == ChannelTopology::OneToMany_Latest;
+concept IsOneToManyLatestSubstrate = IsSubstrate<S> && substrate_topology_v<S> == ChannelTopology::OneToMany_Latest;
 template <class S>
-concept IsManyToManySubstrate = IsSubstrate<S>
-                             && substrate_topology_v<S> == ChannelTopology::ManyToMany;
+concept IsManyToManySubstrate = IsSubstrate<S> && substrate_topology_v<S> == ChannelTopology::ManyToMany;
 template <class S>
-concept IsWorkStealingSubstrate = IsSubstrate<S>
-                               && substrate_topology_v<S> == ChannelTopology::WorkStealing;
+concept IsWorkStealingSubstrate = IsSubstrate<S> && substrate_topology_v<S> == ChannelTopology::WorkStealing;
 
 // ── Self-test block ─────────────────────────────────────────────────
 namespace detail::substrate_self_test {
@@ -472,76 +461,76 @@ struct ConductorCompile {};
 // ── Substrate maps each ChannelTopology to the right Permissioned* ─────────
 
 static_assert(std::is_same_v<Substrate_t<ChannelTopology::OneToOne, int, 1024, VesselOpStream>,
-                              PermissionedSpscChannel<int, 1024, VesselOpStream>>);
+                             PermissionedSpscChannel<int, 1024, VesselOpStream>>);
 
 static_assert(std::is_same_v<Substrate_t<ChannelTopology::ManyToOne, int, 256, VesselOpStream>,
-                              PermissionedMpscChannel<int, 256, VesselOpStream>>);
+                             PermissionedMpscChannel<int, 256, VesselOpStream>>);
 
 static_assert(std::is_same_v<Substrate_t<ChannelTopology::OneToMany_Latest, double, 0, ConductorCompile>,
-                              PermissionedSnapshot<double, ConductorCompile>>);
+                             PermissionedSnapshot<double, ConductorCompile>>);
 
 static_assert(std::is_same_v<Substrate_t<ChannelTopology::ManyToMany, int, 64, VesselOpStream>,
-                              PermissionedMpmcChannel<int, 64, VesselOpStream>>);
+                             PermissionedMpmcChannel<int, 64, VesselOpStream>>);
 
 static_assert(std::is_same_v<Substrate_t<ChannelTopology::WorkStealing, int, 128, ConductorCompile>,
-                              PermissionedChaseLevDeque<int, 128, ConductorCompile>>);
+                             PermissionedChaseLevDeque<int, 128, ConductorCompile>>);
 
 // ── Extractors round-trip ───────────────────────────────────────────
 using SpscT = Substrate_t<ChannelTopology::OneToOne, int, 1024, VesselOpStream>;
-static_assert(substrate_topology_v<SpscT>      == ChannelTopology::OneToOne);
-static_assert(substrate_capacity_v<SpscT>      == 1024);
+static_assert(substrate_topology_v<SpscT> == ChannelTopology::OneToOne);
+static_assert(substrate_capacity_v<SpscT> == 1024);
 static_assert(std::is_same_v<substrate_value_type_t<SpscT>, int>);
-static_assert(std::is_same_v<substrate_user_tag_t<SpscT>,  VesselOpStream>);
+static_assert(std::is_same_v<substrate_user_tag_t<SpscT>, VesselOpStream>);
 
 using SnapT = Substrate_t<ChannelTopology::OneToMany_Latest, double, 0, ConductorCompile>;
 static_assert(substrate_topology_v<SnapT> == ChannelTopology::OneToMany_Latest);
-static_assert(substrate_capacity_v<SnapT> == 0);   // Snapshot has no ring
+static_assert(substrate_capacity_v<SnapT> == 0);  // Snapshot has no ring
 static_assert(std::is_same_v<substrate_value_type_t<SnapT>, double>);
 
 // ── Recognition ─────────────────────────────────────────────────────
-static_assert( IsSubstrate<SpscT>);
-static_assert( IsSubstrate<SnapT>);
+static_assert(IsSubstrate<SpscT>);
+static_assert(IsSubstrate<SnapT>);
 static_assert(!IsSubstrate<int>);
 static_assert(!IsSubstrate<void>);
 
 // ── ChannelTopology discrimination ─────────────────────────────────────────
-static_assert( IsOneToOneSubstrate<SpscT>);
+static_assert(IsOneToOneSubstrate<SpscT>);
 static_assert(!IsOneToOneSubstrate<SnapT>);
-static_assert( IsOneToManyLatestSubstrate<SnapT>);
+static_assert(IsOneToManyLatestSubstrate<SnapT>);
 static_assert(!IsOneToManyLatestSubstrate<SpscT>);
 
 using MpscT = Substrate_t<ChannelTopology::ManyToOne, int, 64, VesselOpStream>;
-static_assert( IsManyToOneSubstrate<MpscT>);
+static_assert(IsManyToOneSubstrate<MpscT>);
 static_assert(!IsManyToOneSubstrate<SpscT>);
 
 using MpmcT = Substrate_t<ChannelTopology::ManyToMany, int, 32, VesselOpStream>;
-static_assert( IsManyToManySubstrate<MpmcT>);
+static_assert(IsManyToManySubstrate<MpmcT>);
 
 using DequeT = Substrate_t<ChannelTopology::WorkStealing, int, 256, ConductorCompile>;
-static_assert( IsWorkStealingSubstrate<DequeT>);
+static_assert(IsWorkStealingSubstrate<DequeT>);
 
 // ── Sizeof preserved (no wrapper indirection) ───────────────────────
-static_assert(sizeof(Substrate_t<ChannelTopology::OneToOne, int, 1024, VesselOpStream>) ==
-              sizeof(PermissionedSpscChannel<int, 1024, VesselOpStream>));
+static_assert(sizeof(Substrate_t<ChannelTopology::OneToOne, int, 1024, VesselOpStream>)
+              == sizeof(PermissionedSpscChannel<int, 1024, VesselOpStream>));
 
 // ── channel_byte_footprint_v pinning ───────────────────────────────
 //
 // SPSC<int, 1024> = 4 KB.  MPMC<int, 64> = 256 B.  Snapshot<double>
 // = 8 B (single slot).  Catches drift in either sizeof(T) or capacity.
 
-static_assert(channel_byte_footprint_v<SpscT>  == sizeof(int) * 1024);
-static_assert(channel_byte_footprint_v<MpscT>  == sizeof(int) * 64);
-static_assert(channel_byte_footprint_v<SnapT>  == sizeof(double));      // single slot
-static_assert(channel_byte_footprint_v<MpmcT>  == sizeof(int) * 32);
+static_assert(channel_byte_footprint_v<SpscT> == sizeof(int) * 1024);
+static_assert(channel_byte_footprint_v<MpscT> == sizeof(int) * 64);
+static_assert(channel_byte_footprint_v<SnapT> == sizeof(double));  // single slot
+static_assert(channel_byte_footprint_v<MpmcT> == sizeof(int) * 32);
 static_assert(channel_byte_footprint_v<DequeT> == sizeof(int) * 256);
 
 // ── recommend_topology pinning ──────────────────────────────────────
-static_assert(recommend_topology(1, 1)         == ChannelTopology::OneToOne);
-static_assert(recommend_topology(4, 1)         == ChannelTopology::ManyToOne);
-static_assert(recommend_topology(8, 8)         == ChannelTopology::ManyToMany);
-static_assert(recommend_topology(1, 4, true)   == ChannelTopology::OneToMany_Latest);
-static_assert(recommend_topology(1, 4, false)  == ChannelTopology::ManyToMany);
-static_assert(recommend_topology(1, 1, true)   == ChannelTopology::OneToOne);  // 1-1 trumps latest
+static_assert(recommend_topology(1, 1) == ChannelTopology::OneToOne);
+static_assert(recommend_topology(4, 1) == ChannelTopology::ManyToOne);
+static_assert(recommend_topology(8, 8) == ChannelTopology::ManyToMany);
+static_assert(recommend_topology(1, 4, true) == ChannelTopology::OneToMany_Latest);
+static_assert(recommend_topology(1, 4, false) == ChannelTopology::ManyToMany);
+static_assert(recommend_topology(1, 1, true) == ChannelTopology::OneToOne);  // 1-1 trumps latest
 
 // ── per_call_working_set_v pinning ──────────────────────────────────
 //
@@ -582,18 +571,16 @@ struct OneHundredByteValue {
     char pad[100];
     auto operator<=>(OneHundredByteValue const&) const = default;
 };
-using BigCellSpsc = Substrate_t<ChannelTopology::OneToOne,
-                                 OneHundredByteValue, 16, VesselOpStream>;
-static_assert(per_call_working_set_v<BigCellSpsc>
-              == 2 * kLine + 128);  // 2 lines + 2 lines
+using BigCellSpsc = Substrate_t<ChannelTopology::OneToOne, OneHundredByteValue, 16, VesselOpStream>;
+static_assert(per_call_working_set_v<BigCellSpsc> == 2 * kLine + 128);  // 2 lines + 2 lines
 
 // Per-call WS is INDEPENDENT of capacity.  An SPSC<int, 1M> has the
 // SAME per-call WS as an SPSC<int, 64> — that's the load-bearing
 // claim of the metric.  4 MB total storage but only 192 B touched
 // per push.
 using HugeSpsc = Substrate_t<ChannelTopology::OneToOne, int, 1024 * 1024, VesselOpStream>;
-static_assert(channel_byte_footprint_v<HugeSpsc>  == 4 * 1024 * 1024);
-static_assert(per_call_working_set_v<HugeSpsc>    == 3 * kLine);
+static_assert(channel_byte_footprint_v<HugeSpsc> == 4 * 1024 * 1024);
+static_assert(per_call_working_set_v<HugeSpsc> == 3 * kLine);
 
 // ── recommend_topology_for_workload pinning ────────────────────────
 //
@@ -601,24 +588,24 @@ static_assert(per_call_working_set_v<HugeSpsc>    == 3 * kLine);
 // cliff: 1×1 stays OneToOne (TraceRing-style), genuine N×M climbs
 // to MPSC/MPMC.  Latest-only stays Snapshot regardless.
 
-inline constexpr std::size_t kSmall = 4 * 1024;        //   4 KB
-inline constexpr std::size_t kMid   = 64 * 1024;       //  64 KB (still below cliff)
-inline constexpr std::size_t kBig   = 4 * 1024 * 1024; //   4 MB (above cliff)
+inline constexpr std::size_t kSmall = 4 * 1024;  //   4 KB
+inline constexpr std::size_t kMid = 64 * 1024;  //  64 KB (still below cliff)
+inline constexpr std::size_t kBig = 4 * 1024 * 1024;  //   4 MB (above cliff)
 
 // Below the cliff: identical to recommend_topology.
 static_assert(recommend_topology_for_workload(1, 1, kSmall) == ChannelTopology::OneToOne);
 static_assert(recommend_topology_for_workload(4, 1, kSmall) == ChannelTopology::ManyToOne);
-static_assert(recommend_topology_for_workload(8, 8, kMid)   == ChannelTopology::ManyToMany);
+static_assert(recommend_topology_for_workload(8, 8, kMid) == ChannelTopology::ManyToMany);
 static_assert(recommend_topology_for_workload(1, 4, kMid, true) == ChannelTopology::OneToMany_Latest);
 
 // Above the cliff:
 // 1×1 stays OneToOne (TraceRing-style large SPSC is valid; per-call
 // WS L1-resident, total storage L3-class).
-static_assert(recommend_topology_for_workload(1, 1, kBig)  == ChannelTopology::OneToOne);
+static_assert(recommend_topology_for_workload(1, 1, kBig) == ChannelTopology::OneToOne);
 // N×1 climbs to MPSC.
-static_assert(recommend_topology_for_workload(4, 1, kBig)  == ChannelTopology::ManyToOne);
+static_assert(recommend_topology_for_workload(4, 1, kBig) == ChannelTopology::ManyToOne);
 // N×N climbs to MPMC.
-static_assert(recommend_topology_for_workload(8, 8, kBig)  == ChannelTopology::ManyToMany);
+static_assert(recommend_topology_for_workload(8, 8, kBig) == ChannelTopology::ManyToMany);
 // 1×N latest-only stays Snapshot regardless of size.
 static_assert(recommend_topology_for_workload(1, 4, kBig, true) == ChannelTopology::OneToMany_Latest);
 // 1×N stream above the cliff: ManyToMany (SPMC degeneration).
@@ -635,17 +622,17 @@ inline constexpr std::size_t k16MiB = 16ULL * 1024ULL * 1024ULL;
 inline constexpr std::size_t k1GiB = 1024ULL * 1024ULL * 1024ULL;
 inline constexpr std::size_t k16GiB = 16ULL * 1024ULL * 1024ULL * 1024ULL;
 
-static_assert(recommend_topology_for_workload(1, 1, k16KiB)  == ChannelTopology::OneToOne);
+static_assert(recommend_topology_for_workload(1, 1, k16KiB) == ChannelTopology::OneToOne);
 static_assert(recommend_topology_for_workload(1, 1, k256KiB) == ChannelTopology::OneToOne);
-static_assert(recommend_topology_for_workload(1, 1, k16MiB)  == ChannelTopology::OneToOne);
-static_assert(recommend_topology_for_workload(1, 1, k1GiB)   == ChannelTopology::OneToOne);
-static_assert(recommend_topology_for_workload(1, 1, k16GiB)  == ChannelTopology::OneToOne);
+static_assert(recommend_topology_for_workload(1, 1, k16MiB) == ChannelTopology::OneToOne);
+static_assert(recommend_topology_for_workload(1, 1, k1GiB) == ChannelTopology::OneToOne);
+static_assert(recommend_topology_for_workload(1, 1, k16GiB) == ChannelTopology::OneToOne);
 
-static_assert(recommend_topology_for_workload(4, 4, k16KiB)  == ChannelTopology::ManyToMany);
+static_assert(recommend_topology_for_workload(4, 4, k16KiB) == ChannelTopology::ManyToMany);
 static_assert(recommend_topology_for_workload(4, 4, k256KiB) == ChannelTopology::ManyToMany);
-static_assert(recommend_topology_for_workload(4, 4, k16MiB)  == ChannelTopology::ManyToMany);
-static_assert(recommend_topology_for_workload(4, 4, k1GiB)   == ChannelTopology::ManyToMany);
-static_assert(recommend_topology_for_workload(4, 4, k16GiB)  == ChannelTopology::ManyToMany);
+static_assert(recommend_topology_for_workload(4, 4, k16MiB) == ChannelTopology::ManyToMany);
+static_assert(recommend_topology_for_workload(4, 4, k1GiB) == ChannelTopology::ManyToMany);
+static_assert(recommend_topology_for_workload(4, 4, k16GiB) == ChannelTopology::ManyToMany);
 
 }  // namespace detail::substrate_self_test
 

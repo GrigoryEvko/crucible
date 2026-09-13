@@ -95,48 +95,48 @@ using ::crucible::algebra::lattices::mem_scope_is_arm;
 // ── FenceArch — the fence dialect a target speaks ───────────────────
 // 1:1 with fixy BarrierArch (X86, Arm, Compiler, Gpu); see header doc.
 enum class FenceArch : std::uint8_t {
-    X86      = 0,  // x86-64: mfence (full); acquire/release are free (TSO)
-    Arm      = 1,  // aarch64: DMB <domain><variant>
-    Gpu      = 2,  // PTX/GPU: fence.<sem>.<scope> (vendor backend dialect)
+    X86 = 0,  // x86-64: mfence (full); acquire/release are free (TSO)
+    Arm = 1,  // aarch64: DMB <domain><variant>
+    Gpu = 2,  // PTX/GPU: fence.<sem>.<scope> (vendor backend dialect)
     Compiler = 3,  // pure compiler reordering barrier; no hardware fence
 };
 
 // ── FenceKind — the instruction FAMILY a backend emits ──────────────
 enum class FenceKind : std::uint8_t {
-    NoOp            = 0,  // None strength: nothing emitted
+    NoOp = 0,  // None strength: nothing emitted
     CompilerBarrier = 1,  // asm volatile("" ::: "memory"): optimizer-only
-    X86Mfence       = 2,  // x86 mfence (standalone full fence)
-    ArmDmb          = 3,  // aarch64 DMB <domain><variant>
-    GpuFence        = 4,  // PTX fence.<sem>.<scope> (vendor backend dialect)
+    X86Mfence = 2,  // x86 mfence (standalone full fence)
+    ArmDmb = 3,  // aarch64 DMB <domain><variant>
+    GpuFence = 4,  // PTX fence.<sem>.<scope> (vendor backend dialect)
 };
 
 // ── FenceDomain — the scope token carried by the instruction ────────
 enum class FenceDomain : std::uint8_t {
-    None       = 0,  // x86 system / compiler barrier / noop — no scope token
-    ArmIsh     = 1,  // DMB ISH  (inner-shareable)
-    ArmOsh     = 2,  // DMB OSH  (outer-shareable)
-    ArmSy      = 3,  // DMB SY   (full-system)
-    GpuCta     = 4,  // fence....cta
+    None = 0,  // x86 system / compiler barrier / noop — no scope token
+    ArmIsh = 1,  // DMB ISH  (inner-shareable)
+    ArmOsh = 2,  // DMB OSH  (outer-shareable)
+    ArmSy = 3,  // DMB SY   (full-system)
+    GpuCta = 4,  // fence....cta
     GpuCluster = 5,  // fence....cluster
-    GpuGpu     = 6,  // fence....gpu
-    GpuSys     = 7,  // fence....sys
+    GpuGpu = 6,  // fence....gpu
+    GpuSys = 7,  // fence....sys
 };
 
 // ── FenceOrder — the ordering variant ───────────────────────────────
 enum class FenceOrder : std::uint8_t {
-    None    = 0,
+    None = 0,
     Acquire = 1,  // ARM DMB <dom>LD / PTX fence.acq_rel (two-sided)
     Release = 2,  // ARM DMB <dom>ST / PTX fence.acq_rel (two-sided)
-    AcqRel  = 3,  // ARM DMB <dom> (full) / PTX fence.acq_rel
-    SeqCst  = 4,  // PTX fence.sc / x86 mfence
-    Full    = 5,  // standalone architectural full fence
+    AcqRel = 3,  // ARM DMB <dom> (full) / PTX fence.acq_rel
+    SeqCst = 4,  // PTX fence.sc / x86 mfence
+    Full = 5,  // standalone architectural full fence
 };
 
 // ── FenceSpec — the descriptor backends consume ─────────────────────
 struct FenceSpec {
-    FenceKind   kind   = FenceKind::NoOp;
+    FenceKind kind = FenceKind::NoOp;
     FenceDomain domain = FenceDomain::None;
-    FenceOrder  order  = FenceOrder::None;
+    FenceOrder order = FenceOrder::None;
 
     [[nodiscard]] constexpr bool operator==(const FenceSpec&) const noexcept = default;
 };
@@ -146,8 +146,7 @@ static_assert(alignof(FenceSpec) == 1);
 // ── Consistency predicates (V402 / V401) ────────────────────────────
 
 // V402 mirror: which (arch, scope) trunks may compose.
-[[nodiscard]] constexpr bool fence_arch_scope_consistent(FenceArch arch,
-                                                         MemoryScope scope) noexcept {
+[[nodiscard]] constexpr bool fence_arch_scope_consistent(FenceArch arch, MemoryScope scope) noexcept {
     if (mem_scope_is_accel(scope)) {
         return arch == FenceArch::Gpu;
     }
@@ -166,8 +165,7 @@ static_assert(alignof(FenceSpec) == 1);
 // that V401 must not reject; the scope-widening race the catalog warns
 // about is real only on the accel trunk, where `.gpu` visibility is a
 // separate axis from the ordering the barrier establishes.
-[[nodiscard]] constexpr bool fence_strength_meets_scope(BarrierStrength strength,
-                                                       MemoryScope scope) noexcept {
+[[nodiscard]] constexpr bool fence_strength_meets_scope(BarrierStrength strength, MemoryScope scope) noexcept {
     if (MemoryScopeLattice::leq(MemoryScope::Gpu, scope)) {
         // scope is Gpu-wide or System-wide; require at least AcqRel.
         return std::to_underlying(strength) >= std::to_underlying(BarrierStrength::AcqRel);
@@ -182,40 +180,52 @@ namespace detail {
 // arms; None / CompilerBarrier strengths are handled before this).
 [[nodiscard]] constexpr FenceOrder order_of(BarrierStrength strength) noexcept {
     switch (strength) {
-        case BarrierStrength::AcquireLoad:  return FenceOrder::Acquire;
-        case BarrierStrength::ReleaseStore: return FenceOrder::Release;
-        case BarrierStrength::AcqRel:       return FenceOrder::AcqRel;
-        case BarrierStrength::SeqCst:       return FenceOrder::SeqCst;
-        case BarrierStrength::FullFence:    return FenceOrder::Full;
+        case BarrierStrength::AcquireLoad:
+            return FenceOrder::Acquire;
+        case BarrierStrength::ReleaseStore:
+            return FenceOrder::Release;
+        case BarrierStrength::AcqRel:
+            return FenceOrder::AcqRel;
+        case BarrierStrength::SeqCst:
+            return FenceOrder::SeqCst;
+        case BarrierStrength::FullFence:
+            return FenceOrder::Full;
         case BarrierStrength::None:
         case BarrierStrength::CompilerBarrier:
-        default:                            return FenceOrder::None;
+        default:
+            return FenceOrder::None;
     }
 }
 
 [[nodiscard]] constexpr FenceDomain arm_domain_of(MemoryScope scope) noexcept {
     switch (scope) {
-        case MemoryScope::Inner: return FenceDomain::ArmIsh;
-        case MemoryScope::Outer: return FenceDomain::ArmOsh;
-        default:                 return FenceDomain::ArmSy;  // System (full-system)
+        case MemoryScope::Inner:
+            return FenceDomain::ArmIsh;
+        case MemoryScope::Outer:
+            return FenceDomain::ArmOsh;
+        default:
+            return FenceDomain::ArmSy;  // System (full-system)
     }
 }
 
 [[nodiscard]] constexpr FenceDomain gpu_domain_of(MemoryScope scope) noexcept {
     switch (scope) {
-        case MemoryScope::Cta:     return FenceDomain::GpuCta;
-        case MemoryScope::Cluster: return FenceDomain::GpuCluster;
-        case MemoryScope::Gpu:     return FenceDomain::GpuGpu;
-        default:                   return FenceDomain::GpuSys;  // System (.sys)
+        case MemoryScope::Cta:
+            return FenceDomain::GpuCta;
+        case MemoryScope::Cluster:
+            return FenceDomain::GpuCluster;
+        case MemoryScope::Gpu:
+            return FenceDomain::GpuGpu;
+        default:
+            return FenceDomain::GpuSys;  // System (.sys)
     }
 }
 
 // PTX fences are two-sided; acquire-only / release-only fold to acq_rel,
 // seqcst / full fold to .sc.
 [[nodiscard]] constexpr FenceOrder gpu_sem_of(BarrierStrength strength) noexcept {
-    return (std::to_underlying(strength) >= std::to_underlying(BarrierStrength::SeqCst))
-               ? FenceOrder::SeqCst
-               : FenceOrder::AcqRel;
+    return (std::to_underlying(strength) >= std::to_underlying(BarrierStrength::SeqCst)) ? FenceOrder::SeqCst
+                                                                                         : FenceOrder::AcqRel;
 }
 
 }  // namespace detail
@@ -230,8 +240,7 @@ namespace detail {
 // CompilerBarrier (a safe over-approximation: never WRONG codegen, only
 // possibly weaker than the caller's unsatisfiable request) rather than
 // fabricating a nonexistent instruction.
-[[nodiscard]] constexpr FenceSpec
-fence_spec_for(BarrierStrength strength, MemoryScope scope, FenceArch arch) noexcept {
+[[nodiscard]] constexpr FenceSpec fence_spec_for(BarrierStrength strength, MemoryScope scope, FenceArch arch) noexcept {
     if (strength == BarrierStrength::None) {
         return FenceSpec{FenceKind::NoOp, FenceDomain::None, FenceOrder::None};
     }
@@ -307,9 +316,12 @@ template <BarrierStrength Strength, MemoryScope Scope, FenceArch Arch>
 // pointer into a static string literal — never null, never allocates.
 [[nodiscard]] constexpr const char* fence_mnemonic(FenceSpec spec) noexcept {
     switch (spec.kind) {
-        case FenceKind::NoOp:            return "";
-        case FenceKind::CompilerBarrier: return "compiler_barrier";
-        case FenceKind::X86Mfence:       return "mfence";
+        case FenceKind::NoOp:
+            return "";
+        case FenceKind::CompilerBarrier:
+            return "compiler_barrier";
+        case FenceKind::X86Mfence:
+            return "mfence";
         case FenceKind::ArmDmb:
             switch (spec.domain) {
                 case FenceDomain::ArmIsh:
@@ -324,7 +336,8 @@ template <BarrierStrength Strength, MemoryScope Scope, FenceArch Arch>
                     return spec.order == FenceOrder::Acquire ? "dmb ld"
                          : spec.order == FenceOrder::Release ? "dmb st"
                                                              : "dmb sy";
-                default: return "dmb sy";
+                default:
+                    return "dmb sy";
             }
         case FenceKind::GpuFence:
             switch (spec.domain) {
@@ -336,7 +349,8 @@ template <BarrierStrength Strength, MemoryScope Scope, FenceArch Arch>
                     return spec.order == FenceOrder::SeqCst ? "fence.sc.gpu" : "fence.acq_rel.gpu";
                 case FenceDomain::GpuSys:
                     return spec.order == FenceOrder::SeqCst ? "fence.sc.sys" : "fence.acq_rel.sys";
-                default: return "fence.acq_rel.sys";
+                default:
+                    return "fence.acq_rel.sys";
             }
         default:
             return "";
@@ -360,27 +374,27 @@ static_assert(lower_fence<BS::SeqCst, MS::System, FA::X86>().kind == FenceKind::
 static_assert(lower_fence<BS::FullFence, MS::System, FA::X86>().kind == FenceKind::X86Mfence);
 
 // ARM: scope → DMB domain, strength → variant.
-static_assert(lower_fence<BS::AcqRel, MS::Inner, FA::Arm>() ==
-              FenceSpec{FenceKind::ArmDmb, FenceDomain::ArmIsh, FenceOrder::AcqRel});
+static_assert(lower_fence<BS::AcqRel, MS::Inner, FA::Arm>()
+              == FenceSpec{FenceKind::ArmDmb, FenceDomain::ArmIsh, FenceOrder::AcqRel});
 static_assert(lower_fence<BS::AcquireLoad, MS::Inner, FA::Arm>().order == FenceOrder::Acquire);
-static_assert(lower_fence<BS::ReleaseStore, MS::Outer, FA::Arm>() ==
-              FenceSpec{FenceKind::ArmDmb, FenceDomain::ArmOsh, FenceOrder::Release});
+static_assert(lower_fence<BS::ReleaseStore, MS::Outer, FA::Arm>()
+              == FenceSpec{FenceKind::ArmDmb, FenceDomain::ArmOsh, FenceOrder::Release});
 static_assert(lower_fence<BS::SeqCst, MS::System, FA::Arm>().domain == FenceDomain::ArmSy);
 static_assert(lower_fence<BS::AcqRel, MS::Thread, FA::Arm>().kind == FenceKind::CompilerBarrier);
 
 // GPU/PTX: scope → token, strength → .acq_rel / .sc.
-static_assert(lower_fence<BS::AcqRel, MS::Cta, FA::Gpu>() ==
-              FenceSpec{FenceKind::GpuFence, FenceDomain::GpuCta, FenceOrder::AcqRel});
-static_assert(lower_fence<BS::SeqCst, MS::Gpu, FA::Gpu>() ==
-              FenceSpec{FenceKind::GpuFence, FenceDomain::GpuGpu, FenceOrder::SeqCst});
+static_assert(lower_fence<BS::AcqRel, MS::Cta, FA::Gpu>()
+              == FenceSpec{FenceKind::GpuFence, FenceDomain::GpuCta, FenceOrder::AcqRel});
+static_assert(lower_fence<BS::SeqCst, MS::Gpu, FA::Gpu>()
+              == FenceSpec{FenceKind::GpuFence, FenceDomain::GpuGpu, FenceOrder::SeqCst});
 static_assert(lower_fence<BS::AcqRel, MS::Cluster, FA::Gpu>().domain == FenceDomain::GpuCluster);
 static_assert(lower_fence<BS::AcqRel, MS::Warp, FA::Gpu>().kind == FenceKind::CompilerBarrier);
 
 // Mnemonics — the golden assembly tokens backends / CI compare against.
 static_assert(fence_mnemonic(lower_fence<BS::SeqCst, MS::System, FA::X86>())[0] == 'm');  // "mfence"
-static_assert(fence_mnemonic(lower_fence<BS::AcqRel, MS::Inner, FA::Arm>())[4] == 'i');   // "dmb ish"
-static_assert(fence_mnemonic(lower_fence<BS::SeqCst, MS::Gpu, FA::Gpu>())[6] == 's');     // "fence.sc.gpu"
-static_assert(fence_mnemonic(FenceSpec{})[0] == '\0');                                    // NoOp → ""
+static_assert(fence_mnemonic(lower_fence<BS::AcqRel, MS::Inner, FA::Arm>())[4] == 'i');  // "dmb ish"
+static_assert(fence_mnemonic(lower_fence<BS::SeqCst, MS::Gpu, FA::Gpu>())[6] == 's');  // "fence.sc.gpu"
+static_assert(fence_mnemonic(FenceSpec{})[0] == '\0');  // NoOp → ""
 
 // Consistency predicates.
 static_assert(fence_arch_scope_consistent(FA::Gpu, MS::Cta));
@@ -402,9 +416,8 @@ inline void runtime_smoke_test() noexcept {
     volatile auto s = BarrierStrength::AcqRel;
     volatile auto sc = MemoryScope::Cta;
     volatile auto a = FenceArch::Gpu;
-    FenceSpec spec = fence_spec_for(static_cast<BarrierStrength>(s),
-                                    static_cast<MemoryScope>(sc),
-                                    static_cast<FenceArch>(a));
+    FenceSpec spec =
+        fence_spec_for(static_cast<BarrierStrength>(s), static_cast<MemoryScope>(sc), static_cast<FenceArch>(a));
     CRUCIBLE_INVARIANT(spec.kind == FenceKind::GpuFence);
     CRUCIBLE_INVARIANT(spec.domain == FenceDomain::GpuCta);
     const char* m = fence_mnemonic(spec);

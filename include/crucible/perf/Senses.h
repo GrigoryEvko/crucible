@@ -94,30 +94,29 @@ namespace crucible::perf {
 // but doubles the libbpf attach cost (~50 ms per program).
 
 struct SensesMask {
-    bool sense_hub       : 1 = false;
-    bool sched_switch    : 1 = false;
-    bool pmu_sample      : 1 = false;
+    bool sense_hub : 1 = false;
+    bool sched_switch : 1 = false;
+    bool pmu_sample : 1 = false;
     bool lock_contention : 1 = false;
     bool syscall_latency : 1 = false;
-    bool sched_tp_btf    : 1 = false;
-    bool syscall_tp_btf  : 1 = false;
+    bool sched_tp_btf : 1 = false;
+    bool syscall_tp_btf : 1 = false;
 
     [[nodiscard]] static constexpr SensesMask all() noexcept {
         return SensesMask{
-            .sense_hub       = true,
-            .sched_switch    = true,
-            .pmu_sample      = true,
+            .sense_hub = true,
+            .sched_switch = true,
+            .pmu_sample = true,
             .lock_contention = true,
             .syscall_latency = true,
-            .sched_tp_btf    = true,
-            .syscall_tp_btf  = true,
+            .sched_tp_btf = true,
+            .syscall_tp_btf = true,
         };
     }
 
     [[nodiscard]] constexpr bool any() const noexcept {
-        return sense_hub || sched_switch || pmu_sample ||
-               lock_contention || syscall_latency ||
-               sched_tp_btf || syscall_tp_btf;
+        return sense_hub || sched_switch || pmu_sample || lock_contention || syscall_latency || sched_tp_btf
+            || syscall_tp_btf;
     }
 };
 
@@ -128,22 +127,18 @@ struct SensesMask {
 // drift attribution ("can't read CPU stalls — PmuSample is missing").
 
 struct CoverageReport {
-    bool sense_hub_attached       = false;
-    bool sched_switch_attached    = false;
-    bool pmu_sample_attached      = false;
+    bool sense_hub_attached = false;
+    bool sched_switch_attached = false;
+    bool pmu_sample_attached = false;
     bool lock_contention_attached = false;
     bool syscall_latency_attached = false;
-    bool sched_tp_btf_attached    = false;
-    bool syscall_tp_btf_attached  = false;
+    bool sched_tp_btf_attached = false;
+    bool syscall_tp_btf_attached = false;
 
     [[nodiscard]] std::size_t attached_count() const noexcept {
-        return (sense_hub_attached       ? 1u : 0u)
-             + (sched_switch_attached    ? 1u : 0u)
-             + (pmu_sample_attached      ? 1u : 0u)
-             + (lock_contention_attached ? 1u : 0u)
-             + (syscall_latency_attached ? 1u : 0u)
-             + (sched_tp_btf_attached    ? 1u : 0u)
-             + (syscall_tp_btf_attached  ? 1u : 0u);
+        return (sense_hub_attached ? 1u : 0u) + (sched_switch_attached ? 1u : 0u) + (pmu_sample_attached ? 1u : 0u)
+             + (lock_contention_attached ? 1u : 0u) + (syscall_latency_attached ? 1u : 0u)
+             + (sched_tp_btf_attached ? 1u : 0u) + (syscall_tp_btf_attached ? 1u : 0u);
     }
 };
 
@@ -159,29 +154,27 @@ public:
     // each is recorded in coverage().  Returns a Senses with whatever
     // subset succeeded — never returns std::nullopt at this level
     // because partial loads are still useful.
-    [[nodiscard]] static Senses
-        load_all(::crucible::effects::Init) noexcept;
+    [[nodiscard]] static Senses load_all(::crucible::effects::Init) noexcept;
 
     // Load only the masked subset.  Callers that want predictable cost
     // (e.g. ≤ 0.5 % CPU budget) use this with SensesMask listing only
     // low-rate facades like SenseHub + PmuSample.
-    [[nodiscard]] static Senses
-        load_subset(::crucible::effects::Init, SensesMask which) noexcept;
+    [[nodiscard]] static Senses load_subset(::crucible::effects::Init, SensesMask which) noexcept;
 
     // Per-subprogram accessors.  Return non-null pointer if the
     // subprogram loaded successfully, nullptr otherwise.  Lifetime
     // tied to the Senses instance — do not retain past Senses
     // destruction.  Const-only — sub-facades are read-only at this
     // surface (mutating ops live on the facade types themselves).
-    [[nodiscard]] const SenseHub*       sense_hub()       const noexcept;
-    [[nodiscard]] const SchedSwitch*    sched_switch()    const noexcept;
-    [[nodiscard]] const PmuSample*      pmu_sample()      const noexcept;
+    [[nodiscard]] const SenseHub* sense_hub() const noexcept;
+    [[nodiscard]] const SchedSwitch* sched_switch() const noexcept;
+    [[nodiscard]] const PmuSample* pmu_sample() const noexcept;
     [[nodiscard]] const LockContention* lock_contention() const noexcept;
     [[nodiscard]] const SyscallLatency* syscall_latency() const noexcept;
     // GAPS-004f: BTF-typed parallel facades (lower per-event cost on
     // kernels with CONFIG_DEBUG_INFO_BTF=y + ≥ 5.5).
-    [[nodiscard]] const SchedTpBtf*     sched_tp_btf()    const noexcept;
-    [[nodiscard]] const SyscallTpBtf*   syscall_tp_btf()  const noexcept;
+    [[nodiscard]] const SchedTpBtf* sched_tp_btf() const noexcept;
+    [[nodiscard]] const SyscallTpBtf* syscall_tp_btf() const noexcept;
 
     // Coverage report — which subprograms attached, used by
     // bench harness banner and runtime drift-attribution.
@@ -191,10 +184,8 @@ public:
     // + mmap.  Copying would double-close the BPF objects on
     // destruction.  Same delete-with-reason discipline as every
     // per-program facade in the GAPS-004 series.
-    Senses(const Senses&)            =
-        delete("Senses owns 7 BPF objects + mmaps; copying would double-close");
-    Senses& operator=(const Senses&) =
-        delete("Senses owns 7 BPF objects + mmaps; copying would double-close");
+    Senses(const Senses&) = delete("Senses owns 7 BPF objects + mmaps; copying would double-close");
+    Senses& operator=(const Senses&) = delete("Senses owns 7 BPF objects + mmaps; copying would double-close");
     Senses(Senses&&) noexcept;
     Senses& operator=(Senses&&) noexcept;
     ~Senses() noexcept;
@@ -211,17 +202,17 @@ private:
     // once at process startup so the larger handle is a one-time
     // stack cost paid through NRVO, never copied.  See fixy-A5-026.
     struct State {
-        std::optional<SenseHub>       sense_hub;
-        std::optional<SchedSwitch>    sched_switch;
-        std::optional<PmuSample>      pmu_sample;
+        std::optional<SenseHub> sense_hub;
+        std::optional<SchedSwitch> sched_switch;
+        std::optional<PmuSample> pmu_sample;
         std::optional<LockContention> lock_contention;
         std::optional<SyscallLatency> syscall_latency;
-        std::optional<SchedTpBtf>     sched_tp_btf;
-        std::optional<SyscallTpBtf>   syscall_tp_btf;
+        std::optional<SchedTpBtf> sched_tp_btf;
+        std::optional<SyscallTpBtf> syscall_tp_btf;
     };
     std::optional<State> state_;
 
     explicit Senses(std::optional<State>) noexcept;
 };
 
-} // namespace crucible::perf
+}  // namespace crucible::perf

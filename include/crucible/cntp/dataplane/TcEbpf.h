@@ -22,25 +22,25 @@
 namespace crucible::cntp::dataplane {
 
 enum class TcAction : std::uint8_t {
-    Ok         = 0,
-    Shot       = 2,
-    Stolen     = 4,
-    Pipe       = 3,
+    Ok = 0,
+    Shot = 2,
+    Stolen = 4,
+    Pipe = 3,
     Reclassify = 1,
-    Trap       = 8,
+    Trap = 8,
 };
 
 enum class TcAttachPoint : std::uint8_t {
     Ingress = 0,
-    Egress  = 1,
+    Egress = 1,
 };
 
 enum class TcProgramKind : std::uint8_t {
-    EgressMark       = 0,
-    PacingGate       = 1,
-    QuarantineDrop   = 2,
-    FlowTelemetry    = 3,
-    IngressClassify  = 4,
+    EgressMark = 0,
+    PacingGate = 1,
+    QuarantineDrop = 2,
+    FlowTelemetry = 3,
+    IngressClassify = 4,
 };
 
 enum class TcError : std::uint8_t {
@@ -61,8 +61,7 @@ enum class TcError : std::uint8_t {
 using TcIfIndex = XdpIfIndex;
 using TcDscp = safety::Bounded<std::uint8_t{0}, std::uint8_t{63}, std::uint8_t>;
 using TcClassId = safety::Positive<std::uint32_t>;
-using TcFlowPriority =
-    safety::Bounded<std::uint8_t{0}, std::uint8_t{7}, std::uint8_t>;
+using TcFlowPriority = safety::Bounded<std::uint8_t{0}, std::uint8_t{7}, std::uint8_t>;
 
 struct TcProgramSpec {
     cntp::NicInterfaceName interface{};
@@ -71,8 +70,7 @@ struct TcProgramSpec {
     TcProgramKind kind = TcProgramKind::EgressMark;
     TcAction default_action = TcAction::Ok;
     bool direct_action = true;
-    safety::Bits<cog::NicFeature> required_features{
-        cog::NicFeature::TcEbpf};
+    safety::Bits<cog::NicFeature> required_features{cog::NicFeature::TcEbpf};
 };
 
 struct TcFlowClass {
@@ -82,34 +80,27 @@ struct TcFlowClass {
     TcAction action = TcAction::Ok;
 };
 
-using DeclaredTcProgram =
-    safety::Tagged<TcProgramSpec, safety::source::TcEbpf>;
-using DeclaredTcFlowClass =
-    safety::Tagged<TcFlowClass, safety::source::TcEbpf>;
+using DeclaredTcProgram = safety::Tagged<TcProgramSpec, safety::source::TcEbpf>;
+using DeclaredTcFlowClass = safety::Tagged<TcFlowClass, safety::source::TcEbpf>;
 
 template <class Ctx>
-concept CtxFitsTcMint =
-       effects::IsExecCtx<Ctx>
-    && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
+concept CtxFitsTcMint = effects::IsExecCtx<Ctx> && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
 
-[[nodiscard]] constexpr std::expected<TcDscp, TcError>
-admit_tc_dscp(std::uint8_t dscp) noexcept {
+[[nodiscard]] constexpr std::expected<TcDscp, TcError> admit_tc_dscp(std::uint8_t dscp) noexcept {
     if (dscp > 63u) {
         return std::unexpected(TcError::InvalidDscp);
     }
     return TcDscp{dscp, typename TcDscp::Trusted{}};
 }
 
-[[nodiscard]] constexpr std::expected<TcClassId, TcError>
-admit_tc_classid(std::uint32_t classid) noexcept {
+[[nodiscard]] constexpr std::expected<TcClassId, TcError> admit_tc_classid(std::uint32_t classid) noexcept {
     if (classid == 0u) {
         return std::unexpected(TcError::InvalidClassId);
     }
     return TcClassId{classid, typename TcClassId::Trusted{}};
 }
 
-[[nodiscard]] constexpr std::expected<TcFlowPriority, TcError>
-admit_tc_flow_priority(std::uint8_t priority) noexcept {
+[[nodiscard]] constexpr std::expected<TcFlowPriority, TcError> admit_tc_flow_priority(std::uint8_t priority) noexcept {
     if (priority > 7u) {
         return std::unexpected(TcError::InvalidFlowPriority);
     }
@@ -118,13 +109,9 @@ admit_tc_flow_priority(std::uint8_t priority) noexcept {
 
 template <class Ctx>
     requires CtxFitsTcMint<Ctx>
-[[nodiscard]] constexpr DeclaredTcProgram
-mint_tc_program(Ctx const&,
-                cntp::NicInterfaceName iface,
-                TcIfIndex ifindex,
-                TcAttachPoint attach_point,
-                TcProgramKind kind,
-                TcAction default_action = TcAction::Ok) noexcept {
+[[nodiscard]] constexpr DeclaredTcProgram mint_tc_program(Ctx const&, cntp::NicInterfaceName iface, TcIfIndex ifindex,
+                                                          TcAttachPoint attach_point, TcProgramKind kind,
+                                                          TcAction default_action = TcAction::Ok) noexcept {
     return DeclaredTcProgram{TcProgramSpec{
         .interface = iface,
         .ifindex = ifindex,
@@ -132,16 +119,12 @@ mint_tc_program(Ctx const&,
         .kind = kind,
         .default_action = default_action,
         .direct_action = true,
-        .required_features = safety::Bits<cog::NicFeature>{
-            cog::NicFeature::TcEbpf},
+        .required_features = safety::Bits<cog::NicFeature>{cog::NicFeature::TcEbpf},
     }};
 }
 
-[[nodiscard]] constexpr DeclaredTcFlowClass
-mint_tc_flow_class(TcDscp dscp,
-                   TcClassId classid,
-                   TcFlowPriority priority,
-                   TcAction action = TcAction::Ok) noexcept {
+[[nodiscard]] constexpr DeclaredTcFlowClass mint_tc_flow_class(TcDscp dscp, TcClassId classid, TcFlowPriority priority,
+                                                               TcAction action = TcAction::Ok) noexcept {
     return DeclaredTcFlowClass{TcFlowClass{
         .dscp = dscp,
         .classid = classid,
@@ -151,9 +134,7 @@ mint_tc_flow_class(TcDscp dscp,
 }
 
 [[nodiscard]] constexpr std::expected<void, TcError>
-tc_admit_nic(cog::CogIdentity const& identity,
-             cog::NicPortTargetCaps const& caps,
-             DeclaredTcProgram program) noexcept {
+tc_admit_nic(cog::CogIdentity const& identity, cog::NicPortTargetCaps const& caps, DeclaredTcProgram program) noexcept {
     if (program.value().ifindex.value() == 0u) {
         return std::unexpected(TcError::InvalidIfIndex);
     }
@@ -166,42 +147,32 @@ tc_admit_nic(cog::CogIdentity const& identity,
     return {};
 }
 
-[[nodiscard]] std::expected<void, TcError>
-attach_tc_program(DeclaredTcProgram program) noexcept;
+[[nodiscard]] std::expected<void, TcError> attach_tc_program(DeclaredTcProgram program) noexcept;
 
 struct TcFlowKey {
     std::int32_t fd = 0;
 
-    [[nodiscard]] friend constexpr bool
-    operator==(TcFlowKey, TcFlowKey) noexcept = default;
+    [[nodiscard]] friend constexpr bool operator==(TcFlowKey, TcFlowKey) noexcept = default;
 };
 
-[[nodiscard]] constexpr TcFlowKey tc_flow_key(cntp::SocketFd fd) noexcept {
-    return TcFlowKey{.fd = fd.value()};
-}
+[[nodiscard]] constexpr TcFlowKey tc_flow_key(cntp::SocketFd fd) noexcept { return TcFlowKey{.fd = fd.value()}; }
 
 template <std::uint32_t MaxFlows>
-    requires (MaxFlows > 0)
-class TcFlowClassMap
-    : public safety::Pinned<TcFlowClassMap<MaxFlows>> {
+    requires(MaxFlows > 0)
+class TcFlowClassMap : public safety::Pinned<TcFlowClassMap<MaxFlows>> {
     BpfMapImage<TcFlowKey, TcFlowClass, MaxFlows, BpfMapKind::LruHash> map_{};
 
 public:
     constexpr TcFlowClassMap() noexcept = default;
 
-    [[nodiscard]] constexpr std::uint32_t size() const noexcept {
-        return map_.size();
-    }
+    [[nodiscard]] constexpr std::uint32_t size() const noexcept { return map_.size(); }
 
-    [[nodiscard]] constexpr std::expected<void, XdpError>
-    update(TcFlowKey key,
-           DeclaredTcFlowClass value,
-           BpfMapUpdate mode = BpfMapUpdate::Any) noexcept {
+    [[nodiscard]] constexpr std::expected<void, XdpError> update(TcFlowKey key, DeclaredTcFlowClass value,
+                                                                 BpfMapUpdate mode = BpfMapUpdate::Any) noexcept {
         return map_.update(key, value.value(), mode);
     }
 
-    [[nodiscard]] constexpr std::optional<DeclaredTcFlowClass>
-    lookup(TcFlowKey const& key) const noexcept {
+    [[nodiscard]] constexpr std::optional<DeclaredTcFlowClass> lookup(TcFlowKey const& key) const noexcept {
         auto raw = map_.lookup(key);
         if (!raw.has_value()) {
             return std::nullopt;

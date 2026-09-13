@@ -27,16 +27,14 @@ struct is_linear_impl<::crucible::safety::Linear<T>> : std::true_type {
 }  // namespace detail
 
 template <typename T>
-inline constexpr bool is_linear_v =
-    detail::is_linear_impl<std::remove_cvref_t<T>>::value;
+inline constexpr bool is_linear_v = detail::is_linear_impl<std::remove_cvref_t<T>>::value;
 
 template <typename T>
 concept IsLinear = is_linear_v<T>;
 
 template <typename T>
     requires is_linear_v<T>
-using linear_value_t =
-    typename detail::is_linear_impl<std::remove_cvref_t<T>>::value_type;
+using linear_value_t = typename detail::is_linear_impl<std::remove_cvref_t<T>>::value_type;
 
 namespace detail::is_linear_self_test {
 
@@ -54,16 +52,16 @@ struct LookalikeLinear {
     int payload;
 };
 
-static_assert( is_linear_v<L_int>);
-static_assert( is_linear_v<L_ptr>);
-static_assert( is_linear_v<L_tag>);
+static_assert(is_linear_v<L_int>);
+static_assert(is_linear_v<L_ptr>);
+static_assert(is_linear_v<L_tag>);
 
-static_assert( is_linear_v<L_int&>);
-static_assert( is_linear_v<L_int&&>);
-static_assert( is_linear_v<L_int const>);
-static_assert( is_linear_v<L_int const&>);
-static_assert( is_linear_v<L_int volatile>);
-static_assert( is_linear_v<L_int const volatile>);
+static_assert(is_linear_v<L_int&>);
+static_assert(is_linear_v<L_int&&>);
+static_assert(is_linear_v<L_int const>);
+static_assert(is_linear_v<L_int const&>);
+static_assert(is_linear_v<L_int volatile>);
+static_assert(is_linear_v<L_int const volatile>);
 
 static_assert(!is_linear_v<int>);
 static_assert(!is_linear_v<int*>);
@@ -72,8 +70,8 @@ static_assert(!is_linear_v<void>);
 static_assert(!is_linear_v<LookalikeLinear>);
 static_assert(!is_linear_v<DerivedLinear>);
 
-static_assert( IsLinear<L_int>);
-static_assert( IsLinear<L_int&&>);
+static_assert(IsLinear<L_int>);
+static_assert(IsLinear<L_int&&>);
 static_assert(!IsLinear<int>);
 static_assert(!IsLinear<DerivedLinear>);
 

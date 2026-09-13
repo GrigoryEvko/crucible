@@ -132,7 +132,7 @@
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/lattices/WaitLattice.h>
 
-#include <cstdlib>      // std::abort in the runtime smoke test
+#include <cstdlib>  // std::abort in the runtime smoke test
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -150,14 +150,10 @@ template <WaitStrategy_v Strategy, typename T>
 class [[nodiscard]] Wait {
 public:
     // ── Public type aliases ─────────────────────────────────────────
-    using value_type   = T;
+    using value_type = T;
     using lattice_type = WaitLattice::At<Strategy>;
-    using graded_type  = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Absolute,
-        lattice_type,
-        T>;
-    static constexpr ::crucible::algebra::ModalityKind modality =
-        ::crucible::algebra::ModalityKind::Absolute;
+    using graded_type = ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
+    static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::Absolute;
 
     // The pinned strategy — exposed as a static constexpr for callers
     // doing strategy-aware dispatch without instantiating the wrapper.
@@ -167,7 +163,6 @@ private:
     graded_type impl_;
 
 public:
-
     // ── Construction ────────────────────────────────────────────────
     //
     // SEMANTIC NOTE: a default-constructed Wait<SpinPause, T> claims
@@ -175,35 +170,32 @@ public:
     // trivially-zero T, vacuously true.  For non-trivial T, the
     // claim becomes meaningful only if the wrapper is constructed
     // in a context that genuinely honors the strategy.
-    constexpr Wait() noexcept(
-        std::is_nothrow_default_constructible_v<T>)
+    constexpr Wait() noexcept(std::is_nothrow_default_constructible_v<T>)
         : impl_{T{}, typename lattice_type::element_type{}} {}
 
-    constexpr explicit Wait(T value) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    constexpr explicit Wait(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(value), typename lattice_type::element_type{}} {}
 
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr explicit Wait(std::in_place_t, Args&&... args)
-        noexcept(std::is_nothrow_constructible_v<T, Args...>
-                 && std::is_nothrow_move_constructible_v<T>)
-        : impl_{T(std::forward<Args>(args)...),
-                typename lattice_type::element_type{}} {}
+    constexpr explicit Wait(std::in_place_t, Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
+                                                                      && std::is_nothrow_move_constructible_v<T>)
+        : impl_{T(std::forward<Args>(args)...), typename lattice_type::element_type{}} {}
 
     // Defaulted copy/move/destroy — Wait IS COPYABLE within the
     // same strategy pin.
-    constexpr Wait(const Wait&)            = default;
-    constexpr Wait(Wait&&)                 = default;
+    constexpr Wait(const Wait&) = default;
+    constexpr Wait(Wait&&) = default;
     constexpr Wait& operator=(const Wait&) = default;
-    constexpr Wait& operator=(Wait&&)      = default;
-    ~Wait()                                = default;
+    constexpr Wait& operator=(Wait&&) = default;
+    ~Wait() = default;
 
     // Equality: compares value bytes within the SAME strategy pin.
-    [[nodiscard]] friend constexpr bool operator==(
-        Wait const& a, Wait const& b) noexcept(
-        noexcept(a.peek() == b.peek()))
-        requires requires(T const& x, T const& y) { { x == y } -> std::convertible_to<bool>; }
+    [[nodiscard]] friend constexpr bool operator==(Wait const& a,
+                                                   Wait const& b) noexcept(noexcept(a.peek() == b.peek()))
+        requires requires(T const& x, T const& y) {
+            { x == y } -> std::convertible_to<bool>;
+        }
     {
         return a.peek() == b.peek();
     }
@@ -212,37 +204,21 @@ public:
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return graded_type::lattice_name();
-    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 
     // ── Read-only access ────────────────────────────────────────────
-    [[nodiscard]] constexpr T const& peek() const& noexcept {
-        return impl_.peek();
-    }
+    [[nodiscard]] constexpr T const& peek() const& noexcept { return impl_.peek(); }
 
-    [[nodiscard]] constexpr T consume() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return std::move(impl_).consume();
     }
 
-    [[nodiscard]] constexpr T& peek_mut() & noexcept {
-        return impl_.peek_mut();
-    }
+    [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(); }
 
     // ── swap ────────────────────────────────────────────────────────
-    constexpr void swap(Wait& other)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
-        impl_.swap(other.impl_);
-    }
+    constexpr void swap(Wait& other) noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
 
-    friend constexpr void swap(Wait& a, Wait& b)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
-        a.swap(b);
-    }
+    friend constexpr void swap(Wait& a, Wait& b) noexcept(std::is_nothrow_swappable_v<T>) { a.swap(b); }
 
     // ── satisfies<RequiredStrategy> — static subsumption check ────
     //
@@ -259,68 +235,73 @@ public:
     // Compile error when WeakerStrategy > Strategy — would CLAIM
     // more wait-discipline than the source provides.
     template <WaitStrategy_v WeakerStrategy>
-        requires (WaitLattice::leq(WeakerStrategy, Strategy))
-    [[nodiscard]] constexpr Wait<WeakerStrategy, T> relax() const&
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
+        requires(WaitLattice::leq(WeakerStrategy, Strategy))
+    [[nodiscard]] constexpr Wait<WeakerStrategy, T> relax() const& noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
     {
         return Wait<WeakerStrategy, T>{this->peek()};
     }
 
     template <WaitStrategy_v WeakerStrategy>
-        requires (WaitLattice::leq(WeakerStrategy, Strategy))
-    [[nodiscard]] constexpr Wait<WeakerStrategy, T> relax() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
-        return Wait<WeakerStrategy, T>{
-            std::move(impl_).consume()};
+        requires(WaitLattice::leq(WeakerStrategy, Strategy))
+    [[nodiscard]] constexpr Wait<WeakerStrategy, T> relax() && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return Wait<WeakerStrategy, T>{std::move(impl_).consume()};
     }
 };
 
 // ── Convenience aliases ─────────────────────────────────────────────
 namespace wait {
-    template <typename T> using SpinPause   = Wait<WaitStrategy_v::SpinPause,   T>;
-    template <typename T> using BoundedSpin = Wait<WaitStrategy_v::BoundedSpin, T>;
-    template <typename T> using UmwaitC01   = Wait<WaitStrategy_v::UmwaitC01,   T>;
-    template <typename T> using AcquireWait = Wait<WaitStrategy_v::AcquireWait, T>;
-    template <typename T> using Park        = Wait<WaitStrategy_v::Park,        T>;
-    template <typename T> using Block       = Wait<WaitStrategy_v::Block,       T>;
+template <typename T>
+using SpinPause = Wait<WaitStrategy_v::SpinPause, T>;
+template <typename T>
+using BoundedSpin = Wait<WaitStrategy_v::BoundedSpin, T>;
+template <typename T>
+using UmwaitC01 = Wait<WaitStrategy_v::UmwaitC01, T>;
+template <typename T>
+using AcquireWait = Wait<WaitStrategy_v::AcquireWait, T>;
+template <typename T>
+using Park = Wait<WaitStrategy_v::Park, T>;
+template <typename T>
+using Block = Wait<WaitStrategy_v::Block, T>;
 }  // namespace wait
 
 // ── Layout invariants ───────────────────────────────────────────────
 namespace detail::wait_layout {
 
-template <typename T> using SpinW   = Wait<WaitStrategy_v::SpinPause,   T>;
-template <typename T> using ParkW   = Wait<WaitStrategy_v::Park,        T>;
-template <typename T> using BlockW  = Wait<WaitStrategy_v::Block,       T>;
+template <typename T>
+using SpinW = Wait<WaitStrategy_v::SpinPause, T>;
+template <typename T>
+using ParkW = Wait<WaitStrategy_v::Park, T>;
+template <typename T>
+using BlockW = Wait<WaitStrategy_v::Block, T>;
 
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(SpinW,  char);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(SpinW,  int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(SpinW,  double);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(ParkW,  int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(ParkW,  double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(SpinW, char);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(SpinW, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(SpinW, double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(ParkW, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(ParkW, double);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(BlockW, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(BlockW, double);
 
 }  // namespace detail::wait_layout
 
-static_assert(sizeof(Wait<WaitStrategy_v::SpinPause,   int>)    == sizeof(int));
-static_assert(sizeof(Wait<WaitStrategy_v::BoundedSpin, int>)    == sizeof(int));
-static_assert(sizeof(Wait<WaitStrategy_v::UmwaitC01,   int>)    == sizeof(int));
-static_assert(sizeof(Wait<WaitStrategy_v::AcquireWait, int>)    == sizeof(int));
-static_assert(sizeof(Wait<WaitStrategy_v::Park,        int>)    == sizeof(int));
-static_assert(sizeof(Wait<WaitStrategy_v::Block,       int>)    == sizeof(int));
-static_assert(sizeof(Wait<WaitStrategy_v::SpinPause,   double>) == sizeof(double));
+static_assert(sizeof(Wait<WaitStrategy_v::SpinPause, int>) == sizeof(int));
+static_assert(sizeof(Wait<WaitStrategy_v::BoundedSpin, int>) == sizeof(int));
+static_assert(sizeof(Wait<WaitStrategy_v::UmwaitC01, int>) == sizeof(int));
+static_assert(sizeof(Wait<WaitStrategy_v::AcquireWait, int>) == sizeof(int));
+static_assert(sizeof(Wait<WaitStrategy_v::Park, int>) == sizeof(int));
+static_assert(sizeof(Wait<WaitStrategy_v::Block, int>) == sizeof(int));
+static_assert(sizeof(Wait<WaitStrategy_v::SpinPause, double>) == sizeof(double));
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::wait_self_test {
 
-using SpinInt    = Wait<WaitStrategy_v::SpinPause,   int>;
-using BoundInt   = Wait<WaitStrategy_v::BoundedSpin, int>;
-using UmwaitInt  = Wait<WaitStrategy_v::UmwaitC01,   int>;
-using FutexInt   = Wait<WaitStrategy_v::AcquireWait, int>;
-using ParkInt    = Wait<WaitStrategy_v::Park,        int>;
-using BlockInt   = Wait<WaitStrategy_v::Block,       int>;
+using SpinInt = Wait<WaitStrategy_v::SpinPause, int>;
+using BoundInt = Wait<WaitStrategy_v::BoundedSpin, int>;
+using UmwaitInt = Wait<WaitStrategy_v::UmwaitC01, int>;
+using FutexInt = Wait<WaitStrategy_v::AcquireWait, int>;
+using ParkInt = Wait<WaitStrategy_v::Park, int>;
+using BlockInt = Wait<WaitStrategy_v::Block, int>;
 
 // ── Construction paths ─────────────────────────────────────────────
 inline constexpr SpinInt w_default{};
@@ -334,12 +315,12 @@ inline constexpr SpinInt w_in_place{std::in_place, 7};
 static_assert(w_in_place.peek() == 7);
 
 // ── Pinned strategy accessor ──────────────────────────────────────
-static_assert(SpinInt::strategy   == WaitStrategy_v::SpinPause);
-static_assert(BoundInt::strategy  == WaitStrategy_v::BoundedSpin);
+static_assert(SpinInt::strategy == WaitStrategy_v::SpinPause);
+static_assert(BoundInt::strategy == WaitStrategy_v::BoundedSpin);
 static_assert(UmwaitInt::strategy == WaitStrategy_v::UmwaitC01);
-static_assert(FutexInt::strategy  == WaitStrategy_v::AcquireWait);
-static_assert(ParkInt::strategy   == WaitStrategy_v::Park);
-static_assert(BlockInt::strategy  == WaitStrategy_v::Block);
+static_assert(FutexInt::strategy == WaitStrategy_v::AcquireWait);
+static_assert(ParkInt::strategy == WaitStrategy_v::Park);
+static_assert(BlockInt::strategy == WaitStrategy_v::Block);
 
 // ── satisfies<RequiredStrategy> — subsumption-up direction ────────
 //
@@ -355,47 +336,43 @@ static_assert(SpinInt::satisfies<WaitStrategy_v::Block>);
 // stronger.  THIS IS THE LOAD-BEARING POSITIVE TEST: futex-tier
 // values pass the gate of futex-tier or weaker consumers, but FAIL
 // the hot-path-only gate (SpinPause / BoundedSpin).
-static_assert( FutexInt::satisfies<WaitStrategy_v::AcquireWait>);   // self
-static_assert( FutexInt::satisfies<WaitStrategy_v::Park>);          // weaker
-static_assert( FutexInt::satisfies<WaitStrategy_v::Block>);
-static_assert(!FutexInt::satisfies<WaitStrategy_v::UmwaitC01>);     // stronger fails ✓
+static_assert(FutexInt::satisfies<WaitStrategy_v::AcquireWait>);  // self
+static_assert(FutexInt::satisfies<WaitStrategy_v::Park>);  // weaker
+static_assert(FutexInt::satisfies<WaitStrategy_v::Block>);
+static_assert(!FutexInt::satisfies<WaitStrategy_v::UmwaitC01>);  // stronger fails ✓
 static_assert(!FutexInt::satisfies<WaitStrategy_v::BoundedSpin>);
 static_assert(!FutexInt::satisfies<WaitStrategy_v::SpinPause>,
-    "AcquireWait MUST NOT satisfy SpinPause — this is the load-"
-    "bearing rejection that the hot-path waiter discipline depends "
-    "on.  If this fires, futex-backed waits could silently flow "
-    "into hot-path SPSC ring polls and miss the CLAUDE.md §IX.5 "
-    "10-40ns wait floor.");
+              "AcquireWait MUST NOT satisfy SpinPause — this is the load-"
+              "bearing rejection that the hot-path waiter discipline depends "
+              "on.  If this fires, futex-backed waits could silently flow "
+              "into hot-path SPSC ring polls and miss the CLAUDE.md §IX.5 "
+              "10-40ns wait floor.");
 
 // Park satisfies Park / Block; FAILS on stronger.
-static_assert( ParkInt::satisfies<WaitStrategy_v::Park>);
-static_assert( ParkInt::satisfies<WaitStrategy_v::Block>);
+static_assert(ParkInt::satisfies<WaitStrategy_v::Park>);
+static_assert(ParkInt::satisfies<WaitStrategy_v::Block>);
 static_assert(!ParkInt::satisfies<WaitStrategy_v::AcquireWait>);
 static_assert(!ParkInt::satisfies<WaitStrategy_v::SpinPause>);
 
 // Block satisfies only Block.
-static_assert( BlockInt::satisfies<WaitStrategy_v::Block>);
+static_assert(BlockInt::satisfies<WaitStrategy_v::Block>);
 static_assert(!BlockInt::satisfies<WaitStrategy_v::Park>);
 static_assert(!BlockInt::satisfies<WaitStrategy_v::AcquireWait>);
 static_assert(!BlockInt::satisfies<WaitStrategy_v::SpinPause>);
 
 // ── relax<WeakerStrategy> — DOWN-the-lattice conversion ───────────
-inline constexpr auto from_spin_to_bound =
-    SpinInt{42}.relax<WaitStrategy_v::BoundedSpin>();
+inline constexpr auto from_spin_to_bound = SpinInt{42}.relax<WaitStrategy_v::BoundedSpin>();
 static_assert(from_spin_to_bound.peek() == 42);
 static_assert(from_spin_to_bound.strategy == WaitStrategy_v::BoundedSpin);
 
-inline constexpr auto from_spin_to_block =
-    SpinInt{99}.relax<WaitStrategy_v::Block>();
+inline constexpr auto from_spin_to_block = SpinInt{99}.relax<WaitStrategy_v::Block>();
 static_assert(from_spin_to_block.peek() == 99);
 static_assert(from_spin_to_block.strategy == WaitStrategy_v::Block);
 
-inline constexpr auto from_umwait_to_park =
-    UmwaitInt{7}.relax<WaitStrategy_v::Park>();
+inline constexpr auto from_umwait_to_park = UmwaitInt{7}.relax<WaitStrategy_v::Park>();
 static_assert(from_umwait_to_park.peek() == 7);
 
-inline constexpr auto from_futex_to_self =
-    FutexInt{8}.relax<WaitStrategy_v::AcquireWait>();   // identity
+inline constexpr auto from_futex_to_self = FutexInt{8}.relax<WaitStrategy_v::AcquireWait>();  // identity
 static_assert(from_futex_to_self.peek() == 8);
 
 // SFINAE-style detector — proves the requires-clause's correctness.
@@ -404,29 +381,29 @@ concept can_relax = requires(W w) {
     { std::move(w).template relax<T_target>() };
 };
 
-static_assert( can_relax<SpinInt,   WaitStrategy_v::BoundedSpin>);    // ✓ down
-static_assert( can_relax<SpinInt,   WaitStrategy_v::Block>);          // ✓ down (full chain)
-static_assert( can_relax<SpinInt,   WaitStrategy_v::SpinPause>);      // ✓ self
-static_assert( can_relax<UmwaitInt, WaitStrategy_v::AcquireWait>);    // ✓ down
-static_assert( can_relax<UmwaitInt, WaitStrategy_v::UmwaitC01>);      // ✓ self
-static_assert(!can_relax<UmwaitInt, WaitStrategy_v::BoundedSpin>,      // ✗ up
-    "relax<BoundedSpin> on an UmwaitC01-pinned wrapper MUST be "
-    "rejected — claiming a stronger wait-discipline than the source "
-    "provides defeats the hot-path admission gate.");
-static_assert(!can_relax<UmwaitInt, WaitStrategy_v::SpinPause>);      // ✗ up
-static_assert(!can_relax<ParkInt,   WaitStrategy_v::AcquireWait>);    // ✗ up
-static_assert(!can_relax<BlockInt,  WaitStrategy_v::Park>);           // ✗ up
+static_assert(can_relax<SpinInt, WaitStrategy_v::BoundedSpin>);  // ✓ down
+static_assert(can_relax<SpinInt, WaitStrategy_v::Block>);  // ✓ down (full chain)
+static_assert(can_relax<SpinInt, WaitStrategy_v::SpinPause>);  // ✓ self
+static_assert(can_relax<UmwaitInt, WaitStrategy_v::AcquireWait>);  // ✓ down
+static_assert(can_relax<UmwaitInt, WaitStrategy_v::UmwaitC01>);  // ✓ self
+static_assert(!can_relax<UmwaitInt, WaitStrategy_v::BoundedSpin>,  // ✗ up
+              "relax<BoundedSpin> on an UmwaitC01-pinned wrapper MUST be "
+              "rejected — claiming a stronger wait-discipline than the source "
+              "provides defeats the hot-path admission gate.");
+static_assert(!can_relax<UmwaitInt, WaitStrategy_v::SpinPause>);  // ✗ up
+static_assert(!can_relax<ParkInt, WaitStrategy_v::AcquireWait>);  // ✗ up
+static_assert(!can_relax<BlockInt, WaitStrategy_v::Park>);  // ✗ up
 // Block reflexivity — chain endpoint admits relax to itself.
-static_assert( can_relax<BlockInt,  WaitStrategy_v::Block>);          // ✓ self at bottom
+static_assert(can_relax<BlockInt, WaitStrategy_v::Block>);  // ✓ self at bottom
 
 // ── Diagnostic forwarders ─────────────────────────────────────────
 static_assert(SpinInt::value_type_name().ends_with("int"));
-static_assert(SpinInt::lattice_name()   == "WaitLattice::At<SpinPause>");
-static_assert(BoundInt::lattice_name()  == "WaitLattice::At<BoundedSpin>");
+static_assert(SpinInt::lattice_name() == "WaitLattice::At<SpinPause>");
+static_assert(BoundInt::lattice_name() == "WaitLattice::At<BoundedSpin>");
 static_assert(UmwaitInt::lattice_name() == "WaitLattice::At<UmwaitC01>");
-static_assert(FutexInt::lattice_name()  == "WaitLattice::At<AcquireWait>");
-static_assert(ParkInt::lattice_name()   == "WaitLattice::At<Park>");
-static_assert(BlockInt::lattice_name()  == "WaitLattice::At<Block>");
+static_assert(FutexInt::lattice_name() == "WaitLattice::At<AcquireWait>");
+static_assert(ParkInt::lattice_name() == "WaitLattice::At<Park>");
+static_assert(BlockInt::lattice_name() == "WaitLattice::At<Block>");
 
 // ── swap exchanges T values within the same strategy pin ─────────
 [[nodiscard]] consteval bool swap_exchanges_within_same_strategy() noexcept {
@@ -479,15 +456,15 @@ concept can_equality_compare = requires(W const& a, W const& b) {
     { a == b } -> std::convertible_to<bool>;
 };
 
-static_assert( can_equality_compare<SpinInt>);
+static_assert(can_equality_compare<SpinInt>);
 static_assert(!can_equality_compare<Wait<WaitStrategy_v::SpinPause, NoEqualityT>>);
 
 // NoEqualityT has DELETED copy ctor — Wait<SpinPause, NoEqualityT>
 // must inherit that deletion.
 static_assert(!std::is_copy_constructible_v<Wait<WaitStrategy_v::SpinPause, NoEqualityT>>,
-    "Wait<Strategy, T> must transitively inherit T's copy-deletion. "
-    "If this fires, NoEqualityT's deleted copy ctor is no longer "
-    "visible through the wrapper.");
+              "Wait<Strategy, T> must transitively inherit T's copy-deletion. "
+              "If this fires, NoEqualityT's deleted copy ctor is no longer "
+              "visible through the wrapper.");
 static_assert(std::is_move_constructible_v<Wait<WaitStrategy_v::SpinPause, NoEqualityT>>);
 
 // ── relax reflexivity ─────────────────────────────────────────────
@@ -523,10 +500,9 @@ concept can_relax_lvalue = requires(W const& w) {
 };
 
 using SpinMoveOnly = Wait<WaitStrategy_v::SpinPause, MoveOnlyT>;
-static_assert( can_relax_rvalue<SpinMoveOnly, WaitStrategy_v::Park>,
-    "relax<>() && MUST work for move-only T.");
+static_assert(can_relax_rvalue<SpinMoveOnly, WaitStrategy_v::Park>, "relax<>() && MUST work for move-only T.");
 static_assert(!can_relax_lvalue<SpinMoveOnly, WaitStrategy_v::Park>,
-    "relax<>() const& on move-only T MUST be rejected.");
+              "relax<>() const& on move-only T MUST be rejected.");
 
 [[nodiscard]] consteval bool relax_move_only_works() noexcept {
     SpinMoveOnly src{MoveOnlyT{77}};
@@ -541,15 +517,14 @@ static_assert(SpinInt::lattice_name().size() > 0);
 static_assert(SpinInt::lattice_name().starts_with("WaitLattice::At<"));
 
 // ── Convenience aliases resolve correctly ────────────────────────
-static_assert(wait::SpinPause<int>::strategy   == WaitStrategy_v::SpinPause);
+static_assert(wait::SpinPause<int>::strategy == WaitStrategy_v::SpinPause);
 static_assert(wait::BoundedSpin<int>::strategy == WaitStrategy_v::BoundedSpin);
-static_assert(wait::UmwaitC01<int>::strategy   == WaitStrategy_v::UmwaitC01);
+static_assert(wait::UmwaitC01<int>::strategy == WaitStrategy_v::UmwaitC01);
 static_assert(wait::AcquireWait<int>::strategy == WaitStrategy_v::AcquireWait);
-static_assert(wait::Park<int>::strategy        == WaitStrategy_v::Park);
-static_assert(wait::Block<int>::strategy       == WaitStrategy_v::Block);
+static_assert(wait::Park<int>::strategy == WaitStrategy_v::Park);
+static_assert(wait::Block<int>::strategy == WaitStrategy_v::Block);
 
-static_assert(std::is_same_v<wait::SpinPause<double>,
-                             Wait<WaitStrategy_v::SpinPause, double>>);
+static_assert(std::is_same_v<wait::SpinPause<double>, Wait<WaitStrategy_v::SpinPause, double>>);
 
 // ── Hot-path waiter admission simulation ─────────────────────────
 //
@@ -567,22 +542,18 @@ static_assert(std::is_same_v<wait::SpinPause<double>,
 //   AcquireWait / Park / Block are REJECTED (✓ — can't futex on hot path)
 
 template <typename W>
-concept is_hot_path_waiter_admissible =
-    W::template satisfies<WaitStrategy_v::SpinPause>;
+concept is_hot_path_waiter_admissible = W::template satisfies<WaitStrategy_v::SpinPause>;
 
-static_assert( is_hot_path_waiter_admissible<SpinInt>,
-    "SpinPause-tier value MUST pass the hot-path waiter gate.");
+static_assert(is_hot_path_waiter_admissible<SpinInt>, "SpinPause-tier value MUST pass the hot-path waiter gate.");
 static_assert(!is_hot_path_waiter_admissible<BoundInt>,
-    "BoundedSpin-tier value MUST be REJECTED at the strict hot-path "
-    "waiter gate (BoundedSpin includes backoff that may exceed the "
-    "_mm_pause budget).");
-static_assert(!is_hot_path_waiter_admissible<FutexInt>,
-    "AcquireWait-tier value MUST be REJECTED — futex (1-5μs) is "
-    "banned on hot path per CLAUDE.md §IX.5.");
-static_assert(!is_hot_path_waiter_admissible<ParkInt>,
-    "Park-tier value MUST be REJECTED at the hot-path waiter gate.");
+              "BoundedSpin-tier value MUST be REJECTED at the strict hot-path "
+              "waiter gate (BoundedSpin includes backoff that may exceed the "
+              "_mm_pause budget).");
+static_assert(!is_hot_path_waiter_admissible<FutexInt>, "AcquireWait-tier value MUST be REJECTED — futex (1-5μs) is "
+                                                        "banned on hot path per CLAUDE.md §IX.5.");
+static_assert(!is_hot_path_waiter_admissible<ParkInt>, "Park-tier value MUST be REJECTED at the hot-path waiter gate.");
 static_assert(!is_hot_path_waiter_admissible<BlockInt>,
-    "Block-tier value MUST be REJECTED at the hot-path waiter gate.");
+              "Block-tier value MUST be REJECTED at the hot-path waiter gate.");
 
 // ── Runtime smoke test ─────────────────────────────────────────────
 inline void runtime_smoke_test() {
@@ -633,15 +604,15 @@ inline void runtime_smoke_test() {
     if (extracted != 55) std::abort();
 
     // Convenience-alias instantiation.
-    wait::SpinPause<int>   alias_spin{123};
-    wait::Park<int>        alias_park{456};
-    wait::Block<int>       alias_block{789};
+    wait::SpinPause<int> alias_spin{123};
+    wait::Park<int> alias_park{456};
+    wait::Block<int> alias_block{789};
     [[maybe_unused]] auto sv = alias_spin.peek();
     [[maybe_unused]] auto pv = alias_park.peek();
     [[maybe_unused]] auto bv = alias_block.peek();
 
     // Hot-path waiter admission simulation at runtime.
-    [[maybe_unused]] bool can_spin_pass  = is_hot_path_waiter_admissible<SpinInt>;
+    [[maybe_unused]] bool can_spin_pass = is_hot_path_waiter_admissible<SpinInt>;
     [[maybe_unused]] bool can_futex_pass = is_hot_path_waiter_admissible<FutexInt>;
     [[maybe_unused]] bool can_block_pass = is_hot_path_waiter_admissible<BlockInt>;
 }

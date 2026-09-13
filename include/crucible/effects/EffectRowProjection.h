@@ -72,11 +72,11 @@
 #include <crucible/Platform.h>
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>
-#include <crucible/effects/ExecCtx.h>     // provides existing IsEffectRow concept
-#include <crucible/safety/Pre.h>          // CRUCIBLE_PRE — fires at consteval + runtime
+#include <crucible/effects/ExecCtx.h>  // provides existing IsEffectRow concept
+#include <crucible/safety/Pre.h>  // CRUCIBLE_PRE — fires at consteval + runtime
 
 #include <bit>
-#include <cassert>                        // FIXY-FOUND-105: assert() — no [[assume]] in release
+#include <cassert>  // FIXY-FOUND-105: assert() — no [[assume]] in release
 #include <cstdint>
 #include <cstdlib>
 #include <type_traits>
@@ -104,18 +104,17 @@ private:
     constexpr EffectMask(from_raw_tag_t, underlying_type b) noexcept : bits_{b} {}
 
     [[nodiscard]] static constexpr underlying_type bit_for(Effect e) noexcept {
-        return static_cast<underlying_type>(
-            underlying_type{1} << static_cast<underlying_type>(e));
+        return static_cast<underlying_type>(underlying_type{1} << static_cast<underlying_type>(e));
     }
 
 public:
     constexpr EffectMask() noexcept = default;
 
-    constexpr EffectMask(EffectMask const&)            = default;
-    constexpr EffectMask(EffectMask&&)                 = default;
+    constexpr EffectMask(EffectMask const&) = default;
+    constexpr EffectMask(EffectMask&&) = default;
     constexpr EffectMask& operator=(EffectMask const&) = default;
-    constexpr EffectMask& operator=(EffectMask&&)      = default;
-    ~EffectMask()                                      = default;
+    constexpr EffectMask& operator=(EffectMask&&) = default;
+    ~EffectMask() = default;
 
     // Explicit raw escape — for deserialization paths or interop.
     //
@@ -170,10 +169,8 @@ public:
     // integrity holds against a malicious peer.
     [[nodiscard]] static constexpr EffectMask from_raw(underlying_type b) noexcept {
         constexpr underlying_type valid_mask =
-            static_cast<underlying_type>(
-                (underlying_type{1} << effect_count) - underlying_type{1});
-        underlying_type const sanitized =
-            static_cast<underlying_type>(b & valid_mask);
+            static_cast<underlying_type>((underlying_type{1} << effect_count) - underlying_type{1});
+        underlying_type const sanitized = static_cast<underlying_type>(b & valid_mask);
         // Consteval-poison: a static_assert that calls from_raw with
         // invalid input fires a hard compile-time error (since
         // __builtin_trap is not a constant expression).
@@ -188,23 +185,16 @@ public:
         return EffectMask{from_raw_tag_t{}, sanitized};
     }
 
-    constexpr void set(Effect e) noexcept {
-        bits_ = static_cast<underlying_type>(bits_ | bit_for(e));
-    }
+    constexpr void set(Effect e) noexcept { bits_ = static_cast<underlying_type>(bits_ | bit_for(e)); }
     constexpr void unset(Effect e) noexcept {
-        bits_ = static_cast<underlying_type>(
-            bits_ & static_cast<underlying_type>(~bit_for(e)));
+        bits_ = static_cast<underlying_type>(bits_ & static_cast<underlying_type>(~bit_for(e)));
     }
     constexpr void clear() noexcept { bits_ = 0; }
 
-    [[nodiscard]] constexpr bool test(Effect e) const noexcept {
-        return (bits_ & bit_for(e)) != underlying_type{0};
-    }
+    [[nodiscard]] constexpr bool test(Effect e) const noexcept { return (bits_ & bit_for(e)) != underlying_type{0}; }
     [[nodiscard]] constexpr bool none() const noexcept { return bits_ == 0; }
-    [[nodiscard]] constexpr bool any()  const noexcept { return bits_ != 0; }
-    [[nodiscard]] constexpr int  popcount() const noexcept {
-        return std::popcount(bits_);
-    }
+    [[nodiscard]] constexpr bool any() const noexcept { return bits_ != 0; }
+    [[nodiscard]] constexpr int popcount() const noexcept { return std::popcount(bits_); }
     [[nodiscard]] constexpr underlying_type raw() const noexcept { return bits_; }
 
     [[nodiscard]] friend constexpr bool operator==(EffectMask, EffectMask) noexcept = default;
@@ -243,9 +233,7 @@ template <Effect... Es>
 // ═════════════════════════════════════════════════════════════════════
 
 template <Effect... Es>
-[[nodiscard]] constexpr EffectMask
-bits_from_row_pack(Row<Es...>) noexcept
-{
+[[nodiscard]] constexpr EffectMask bits_from_row_pack(Row<Es...>) noexcept {
     return bits_for<Es...>();
 }
 
@@ -272,20 +260,16 @@ template <IsEffectRow R>
 //   is row ⊆ sample?
 
 template <IsEffectRow R>
-[[nodiscard]] constexpr bool
-row_subsumes_bits(EffectMask sample) noexcept
-{
+[[nodiscard]] constexpr bool row_subsumes_bits(EffectMask sample) noexcept {
     auto row_bits = bits_from_row<R>();
-    auto outside  = sample & ~row_bits;
+    auto outside = sample & ~row_bits;
     return outside.none();
 }
 
 template <IsEffectRow R>
-[[nodiscard]] constexpr bool
-bits_subsumes_row(EffectMask sample) noexcept
-{
+[[nodiscard]] constexpr bool bits_subsumes_row(EffectMask sample) noexcept {
     auto row_bits = bits_from_row<R>();
-    auto missing  = row_bits & ~sample;
+    auto missing = row_bits & ~sample;
     return missing.none();
 }
 
@@ -297,9 +281,9 @@ namespace detail::effect_row_projection_self_test {
 
 // IsEffectRow detection (concept reused from ExecCtx.h — does NOT
 // cvref-strip; callers pass unqualified Row types).
-static_assert( IsEffectRow<Row<>>);
-static_assert( IsEffectRow<Row<Effect::Bg>>);
-static_assert( IsEffectRow<Row<Effect::Bg, Effect::Alloc>>);
+static_assert(IsEffectRow<Row<>>);
+static_assert(IsEffectRow<Row<Effect::Bg>>);
+static_assert(IsEffectRow<Row<Effect::Bg, Effect::Alloc>>);
 static_assert(!IsEffectRow<int>);
 static_assert(!IsEffectRow<Effect>);
 static_assert(!IsEffectRow<EffectMask>);
@@ -308,10 +292,10 @@ static_assert(!IsEffectRow<EffectMask>);
 static_assert(bits_for<>().none());
 static_assert(bits_for<>().popcount() == 0);
 
-static_assert(bits_for<Effect::Alloc>().raw() == (1u << 0));   // Alloc = position 0
-static_assert(bits_for<Effect::IO>().raw()    == (1u << 1));
-static_assert(bits_for<Effect::Bg>().raw()    == (1u << 3));   // Bg = position 3
-static_assert(bits_for<Effect::Test>().raw()  == (1u << 5));
+static_assert(bits_for<Effect::Alloc>().raw() == (1u << 0));  // Alloc = position 0
+static_assert(bits_for<Effect::IO>().raw() == (1u << 1));
+static_assert(bits_for<Effect::Bg>().raw() == (1u << 3));  // Bg = position 3
+static_assert(bits_for<Effect::Test>().raw() == (1u << 5));
 
 static_assert(bits_for<Effect::Bg>().test(Effect::Bg));
 static_assert(!bits_for<Effect::Bg>().test(Effect::Alloc));
@@ -328,11 +312,10 @@ static_assert(bits_from_row<Row<Effect::IO>>().test(Effect::IO));
 static_assert(bits_from_row<Row<Effect::IO>>().popcount() == 1);
 
 // Order-insensitive: bitwise OR is commutative.
-static_assert(bits_from_row<Row<Effect::Bg, Effect::Alloc>>()
-              == bits_from_row<Row<Effect::Alloc, Effect::Bg>>(),
-    "bits_from_row MUST be order-insensitive — bitwise OR is "
-    "commutative.  If this fires, federation peers projecting "
-    "different Row orderings would compute different cache keys.");
+static_assert(bits_from_row<Row<Effect::Bg, Effect::Alloc>>() == bits_from_row<Row<Effect::Alloc, Effect::Bg>>(),
+              "bits_from_row MUST be order-insensitive — bitwise OR is "
+              "commutative.  If this fires, federation peers projecting "
+              "different Row orderings would compute different cache keys.");
 
 // from_raw round-trip.
 static_assert(EffectMask::from_raw(0x0B).raw() == 0x0B);
@@ -342,19 +325,19 @@ static_assert(EffectMask::from_raw(0x0B).raw() == 0x0B);
 // (Alloc=0..Test=5).  All-valid-bits is accepted; the neg-compile
 // fixtures in test/effects_neg/ witness that poisoned inputs fire
 // the CRUCIBLE_PRE precondition at consteval.
-static_assert(EffectMask::from_raw(0x3F).raw() == 0x3F);          // all 6 atoms
-static_assert(EffectMask::from_raw(0x00).raw() == 0x00);          // empty
-static_assert(EffectMask::from_raw(0x20).raw() == 0x20);          // Test only (bit 5)
-static_assert(EffectMask::from_raw(0x01).raw() == 0x01);          // Alloc only (bit 0)
+static_assert(EffectMask::from_raw(0x3F).raw() == 0x3F);  // all 6 atoms
+static_assert(EffectMask::from_raw(0x00).raw() == 0x00);  // empty
+static_assert(EffectMask::from_raw(0x20).raw() == 0x20);  // Test only (bit 5)
+static_assert(EffectMask::from_raw(0x01).raw() == 0x01);  // Alloc only (bit 0)
 
 // row_subsumes_bits — drift-detection semantics.
 [[nodiscard]] consteval bool drift_detection() noexcept {
     using R_bg_only = Row<Effect::Bg>;
     auto sample_bg_alloc = bits_for<Effect::Bg, Effect::Alloc>();
-    if (row_subsumes_bits<R_bg_only>(sample_bg_alloc)) return false;   // drift
+    if (row_subsumes_bits<R_bg_only>(sample_bg_alloc)) return false;  // drift
     auto sample_bg_only = bits_for<Effect::Bg>();
-    if (!row_subsumes_bits<R_bg_only>(sample_bg_only)) return false;   // covered
-    if (!row_subsumes_bits<R_bg_only>(EffectMask{})) return false;     // empty trivially
+    if (!row_subsumes_bits<R_bg_only>(sample_bg_only)) return false;  // covered
+    if (!row_subsumes_bits<R_bg_only>(EffectMask{})) return false;  // empty trivially
     return true;
 }
 static_assert(drift_detection());
@@ -363,7 +346,7 @@ static_assert(drift_detection());
 [[nodiscard]] consteval bool inverse_subsumption() noexcept {
     using R_bg_alloc = Row<Effect::Bg, Effect::Alloc>;
     auto sample_full = bits_for<Effect::Bg, Effect::Alloc, Effect::IO>();
-    if (!bits_subsumes_row<R_bg_alloc>(sample_full)) return false;    // covers
+    if (!bits_subsumes_row<R_bg_alloc>(sample_full)) return false;  // covers
     auto sample_partial = bits_for<Effect::Bg>();
     if (bits_subsumes_row<R_bg_alloc>(sample_partial)) return false;  // missing Alloc
     return true;
@@ -374,9 +357,9 @@ static_assert(inverse_subsumption());
 static_assert(row_subsumes_bits<Row<>>(EffectMask{}));
 // Empty row CANNOT subsume a non-empty sample (load-bearing semantics).
 static_assert(!row_subsumes_bits<Row<>>(bits_for<Effect::Bg>()),
-    "An empty row R = Row<> has no atoms, so it does NOT cover a "
-    "sample containing Effect::Bg — drift expected.  If this fires, "
-    "row_subsumes_bits has the subsumption direction inverted.");
+              "An empty row R = Row<> has no atoms, so it does NOT cover a "
+              "sample containing Effect::Bg — drift expected.  If this fires, "
+              "row_subsumes_bits has the subsumption direction inverted.");
 
 // ── Runtime smoke test ──────────────────────────────────────────────
 
@@ -387,19 +370,19 @@ inline void runtime_smoke_test() {
 
     auto multi = bits_from_row<Row<Effect::Bg, Effect::Alloc, Effect::IO>>();
     if (multi.popcount() != 3) std::abort();
-    if (!multi.test(Effect::Bg))    std::abort();
+    if (!multi.test(Effect::Bg)) std::abort();
     if (!multi.test(Effect::Alloc)) std::abort();
-    if (!multi.test(Effect::IO))    std::abort();
+    if (!multi.test(Effect::IO)) std::abort();
 
     using R_bg = Row<Effect::Bg>;
     auto sample_bg_io = bits_for<Effect::Bg, Effect::IO>();
-    if (row_subsumes_bits<R_bg>(sample_bg_io)) std::abort();   // drift expected
+    if (row_subsumes_bits<R_bg>(sample_bg_io)) std::abort();  // drift expected
 
     auto sample_bg = bits_for<Effect::Bg>();
-    if (!row_subsumes_bits<R_bg>(sample_bg)) std::abort();   // covered
+    if (!row_subsumes_bits<R_bg>(sample_bg)) std::abort();  // covered
 
     using R_bg_alloc = Row<Effect::Bg, Effect::Alloc>;
-    if (bits_subsumes_row<R_bg_alloc>(sample_bg)) std::abort();   // missing Alloc
+    if (bits_subsumes_row<R_bg_alloc>(sample_bg)) std::abort();  // missing Alloc
     auto sample_full = bits_for<Effect::Bg, Effect::Alloc>();
     if (!bits_subsumes_row<R_bg_alloc>(sample_full)) std::abort();
 

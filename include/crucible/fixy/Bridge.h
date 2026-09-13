@@ -106,13 +106,13 @@
 #include <crucible/bridges/RecordingSessionHandle.h>
 #include <crucible/bridges/SessionPersistence.h>
 #include <crucible/bridges/VigilModeHandle.h>
-#include <crucible/fixy/Handle.h>                    // FIXY-V-216 — cross-tier identity sentinel
+#include <crucible/fixy/Handle.h>  // FIXY-V-216 — cross-tier identity sentinel
 #include <crucible/permissions/PermissionInherit.h>  // FIXY-U-070 sentinel
-                                                     //   uses survivor_registry
-#include <crucible/safety/EpochVersioned.h>          // FIXY-V-216 — dual-export at bridge tier
+//   uses survivor_registry
+#include <crucible/safety/EpochVersioned.h>  // FIXY-V-216 — dual-export at bridge tier
 
-#include <cstdint>                                    // FIXY-V-216 sentinel uses std::uint64_t
-#include <type_traits>                                // FIXY-U-070 sentinel
+#include <cstdint>  // FIXY-V-216 sentinel uses std::uint64_t
+#include <type_traits>  // FIXY-U-070 sentinel
 
 namespace crucible::fixy::bridge {
 
@@ -315,12 +315,9 @@ namespace crucible::permissions {
 // sentinel-evaluation time.  Production peer tags carry analogous
 // specializations next to their `struct PeerTag {};` declaration.
 template <>
-struct survivor_registry<
-    ::crucible::fixy::bridge::self_test::BridgeProbePeer>
-{
-    using type = inheritance_list<
-        ::crucible::fixy::bridge::self_test::BridgeProbeSurvivorA,
-        ::crucible::fixy::bridge::self_test::BridgeProbeSurvivorB>;
+struct survivor_registry<::crucible::fixy::bridge::self_test::BridgeProbePeer> {
+    using type = inheritance_list<::crucible::fixy::bridge::self_test::BridgeProbeSurvivorA,
+                                  ::crucible::fixy::bridge::self_test::BridgeProbeSurvivorB>;
 };
 
 }  // namespace crucible::permissions
@@ -334,54 +331,43 @@ namespace crucible::fixy::bridge::self_test {
 //    structural change; the test TU is the runtime witness.
 
 // 2. CrashEvent template identity.
-static_assert(std::is_same_v<
-    ::crucible::fixy::bridge::CrashEvent<
-        BridgeProbePeer, BridgeProbeResource,
-        BridgeProbeSurvivorA, BridgeProbeSurvivorB>,
-    ::crucible::safety::proto::CrashEvent<
-        BridgeProbePeer, BridgeProbeResource,
-        BridgeProbeSurvivorA, BridgeProbeSurvivorB>>,
-    "fixy::bridge::CrashEvent must alias safety::proto::CrashEvent");
+static_assert(std::is_same_v<::crucible::fixy::bridge::CrashEvent<BridgeProbePeer, BridgeProbeResource,
+                                                                  BridgeProbeSurvivorA, BridgeProbeSurvivorB>,
+                             ::crucible::safety::proto::CrashEvent<BridgeProbePeer, BridgeProbeResource,
+                                                                   BridgeProbeSurvivorA, BridgeProbeSurvivorB>>,
+              "fixy::bridge::CrashEvent must alias safety::proto::CrashEvent");
 
 // 3. crash_event_from_survivors helper identity.  Substrate lives in
 //    proto::detail::; the fixy::bridge:: alias resolves to the same.
-static_assert(std::is_same_v<
-    typename ::crucible::fixy::bridge::crash_event_from_survivors<
-        BridgeProbePeer, BridgeProbeResource,
-        ::crucible::permissions::inheritance_list<
-            BridgeProbeSurvivorA, BridgeProbeSurvivorB>>::type,
-    typename ::crucible::safety::proto::detail::crash_event_from_survivors<
-        BridgeProbePeer, BridgeProbeResource,
-        ::crucible::permissions::inheritance_list<
-            BridgeProbeSurvivorA, BridgeProbeSurvivorB>>::type>,
+static_assert(
+    std::is_same_v<typename ::crucible::fixy::bridge::crash_event_from_survivors<
+                       BridgeProbePeer, BridgeProbeResource,
+                       ::crucible::permissions::inheritance_list<BridgeProbeSurvivorA, BridgeProbeSurvivorB>>::type,
+                   typename ::crucible::safety::proto::detail::crash_event_from_survivors<
+                       BridgeProbePeer, BridgeProbeResource,
+                       ::crucible::permissions::inheritance_list<BridgeProbeSurvivorA, BridgeProbeSurvivorB>>::type>,
     "fixy::bridge::crash_event_from_survivors must alias substrate");
 
 // 4. crash_event_for_t resolves through the alias.
-static_assert(std::is_same_v<
-    ::crucible::fixy::bridge::crash_event_for_t<
-        BridgeProbePeer, BridgeProbeResource>,
-    ::crucible::safety::proto::detail::crash_event_for_t<
-        BridgeProbePeer, BridgeProbeResource>>,
+static_assert(
+    std::is_same_v<::crucible::fixy::bridge::crash_event_for_t<BridgeProbePeer, BridgeProbeResource>,
+                   ::crucible::safety::proto::detail::crash_event_for_t<BridgeProbePeer, BridgeProbeResource>>,
     "fixy::bridge::crash_event_for_t must alias substrate");
 
 // 5. crash_event_matches_survivors predicate true on canonical shape.
-using ProbeCanonicalEvent = ::crucible::fixy::bridge::crash_event_for_t<
-    BridgeProbePeer, BridgeProbeResource>;
-static_assert(::crucible::fixy::bridge::crash_event_matches_survivors<
-    ProbeCanonicalEvent>::value,
-    "predicate must fire true on the canonical CrashEvent for the peer");
-static_assert(::crucible::fixy::bridge::crash_event_matches_survivors_v<
-    ProbeCanonicalEvent>,
-    "variable template must fire true on the canonical CrashEvent");
+using ProbeCanonicalEvent = ::crucible::fixy::bridge::crash_event_for_t<BridgeProbePeer, BridgeProbeResource>;
+static_assert(::crucible::fixy::bridge::crash_event_matches_survivors<ProbeCanonicalEvent>::value,
+              "predicate must fire true on the canonical CrashEvent for the peer");
+static_assert(::crucible::fixy::bridge::crash_event_matches_survivors_v<ProbeCanonicalEvent>,
+              "variable template must fire true on the canonical CrashEvent");
 
 // 6. Predicate false on a manually-constructed mismatched event.
-using ProbeMismatchEvent = ::crucible::fixy::bridge::CrashEvent<
-    BridgeProbePeer, BridgeProbeResource,
-    BridgeProbeSurvivorA>;  // only one survivor, registry has two
-static_assert(!::crucible::fixy::bridge::crash_event_matches_survivors_v<
-    ProbeMismatchEvent>,
-    "predicate must reject events whose survivor list doesn't match "
-    "the peer's registered survivors_t");
+using ProbeMismatchEvent =
+    ::crucible::fixy::bridge::CrashEvent<BridgeProbePeer, BridgeProbeResource,
+                                         BridgeProbeSurvivorA>;  // only one survivor, registry has two
+static_assert(!::crucible::fixy::bridge::crash_event_matches_survivors_v<ProbeMismatchEvent>,
+              "predicate must reject events whose survivor list doesn't match "
+              "the peer's registered survivors_t");
 
 // Cardinality witness: 6 items surfaced (wrap_crash_return /
 // CrashEvent / crash_event_from_survivors / crash_event_for_t /
@@ -389,9 +375,8 @@ static_assert(!::crucible::fixy::bridge::crash_event_matches_survivors_v<
 // A future addition / removal MUST bump this number AND extend the
 // sentinel block above.
 constexpr int crash_event_surface_cardinality = 6;
-static_assert(crash_event_surface_cardinality == 6,
-    "fixy::bridge:: crash-event surface cardinality drifted — update "
-    "Bridge.h sentinel block to match the substrate.");
+static_assert(crash_event_surface_cardinality == 6, "fixy::bridge:: crash-event surface cardinality drifted — update "
+                                                    "Bridge.h sentinel block to match the substrate.");
 
 // FIXY-V-216 — EpochVersioned dual-export sentinels.  The wrapper is
 // also re-exported in fixy::handle::; the bridge-tier alias MUST
@@ -404,60 +389,52 @@ static_assert(crash_event_surface_cardinality == 6,
 
 struct BridgeProbeEpochT {};
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::bridge::Epoch,
-    ::crucible::safety::Epoch>,
-    "fixy::bridge::Epoch must alias safety::Epoch — Canopy fleet-"
-    "epoch identity drift would break checkpoint admission gates "
-    "at bridge tier.");
+static_assert(std::is_same_v<::crucible::fixy::bridge::Epoch, ::crucible::safety::Epoch>,
+              "fixy::bridge::Epoch must alias safety::Epoch — Canopy fleet-"
+              "epoch identity drift would break checkpoint admission gates "
+              "at bridge tier.");
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::bridge::Generation,
-    ::crucible::safety::Generation>,
-    "fixy::bridge::Generation must alias safety::Generation — "
-    "per-Relay restart counter identity drift would silently equate "
-    "Generation and Epoch at the bridge-tier admission gates.");
+static_assert(std::is_same_v<::crucible::fixy::bridge::Generation, ::crucible::safety::Generation>,
+              "fixy::bridge::Generation must alias safety::Generation — "
+              "per-Relay restart counter identity drift would silently equate "
+              "Generation and Epoch at the bridge-tier admission gates.");
 
 // 2. Wrapper template identity preserved through alias.
-static_assert(std::is_same_v<
-    ::crucible::fixy::bridge::EpochVersioned<BridgeProbeEpochT>,
-    ::crucible::safety::EpochVersioned<BridgeProbeEpochT>>,
-    "fixy::bridge::EpochVersioned<T> must alias safety::EpochVersioned<T> "
-    "— bridge-tier checkpoint values flow through Cipher cold-tier as "
-    "the same byte-representation handle-tier consumers see; drift "
-    "here breaks the federation cache key (FOUND-G68 row_hash).");
+static_assert(std::is_same_v<::crucible::fixy::bridge::EpochVersioned<BridgeProbeEpochT>,
+                             ::crucible::safety::EpochVersioned<BridgeProbeEpochT>>,
+              "fixy::bridge::EpochVersioned<T> must alias safety::EpochVersioned<T> "
+              "— bridge-tier checkpoint values flow through Cipher cold-tier as "
+              "the same byte-representation handle-tier consumers see; drift "
+              "here breaks the federation cache key (FOUND-G68 row_hash).");
 
 // 3. Cross-tier representation identity — handle and bridge aliases
 //    MUST resolve to one substrate type.  Otherwise a value attached
 //    at handle tier cannot be admission-gated at bridge tier without
 //    a retag (which would force a fresh row_hash and miss the
 //    federation cache).
-static_assert(std::is_same_v<
-    ::crucible::fixy::bridge::EpochVersioned<BridgeProbeEpochT>,
-    ::crucible::fixy::handle::EpochVersioned<BridgeProbeEpochT>>,
-    "fixy::bridge::EpochVersioned<T> and fixy::handle::EpochVersioned<T> "
-    "MUST share substrate identity — dual-export discipline; drift would "
-    "force a retag at every handle→bridge crossing and invalidate the "
-    "FOUND-G68 row_hash federation cache key.");
+static_assert(std::is_same_v<::crucible::fixy::bridge::EpochVersioned<BridgeProbeEpochT>,
+                             ::crucible::fixy::handle::EpochVersioned<BridgeProbeEpochT>>,
+              "fixy::bridge::EpochVersioned<T> and fixy::handle::EpochVersioned<T> "
+              "MUST share substrate identity — dual-export discipline; drift would "
+              "force a retag at every handle→bridge crossing and invalidate the "
+              "FOUND-G68 row_hash federation cache key.");
 
 // 4. REGIME-4 storage contract — same as handle-tier sentinel, but
 //    surfaced at the bridge boundary too so a contributor reading
 //    Bridge.h doesn't have to grep into Handle.h to verify the
 //    contract.
-static_assert(
-    sizeof(::crucible::fixy::bridge::EpochVersioned<std::uint8_t>) >=
-        sizeof(std::uint64_t) * 2 + sizeof(std::uint8_t),
-    "fixy::bridge::EpochVersioned<T> must carry at least 16 bytes of "
-    "grade (Epoch + Generation) — REGIME-4 storage contract; drift "
-    "would silently shrink checkpoint headers below the (epoch, gen) "
-    "pair required by Cipher cold-tier roll-forward.");
+static_assert(sizeof(::crucible::fixy::bridge::EpochVersioned<std::uint8_t>)
+                  >= sizeof(std::uint64_t) * 2 + sizeof(std::uint8_t),
+              "fixy::bridge::EpochVersioned<T> must carry at least 16 bytes of "
+              "grade (Epoch + Generation) — REGIME-4 storage contract; drift "
+              "would silently shrink checkpoint headers below the (epoch, gen) "
+              "pair required by Cipher cold-tier roll-forward.");
 
 // FIXY-V-216 cardinality witness — 3 EpochVersioned-axis aliases
 // surfaced at fixy::bridge:: (Epoch, Generation, EpochVersioned<T>).
 constexpr int epoch_versioned_surface_cardinality = 3;
-static_assert(epoch_versioned_surface_cardinality == 3,
-    "fixy::bridge:: EpochVersioned surface cardinality drifted — "
-    "update Bridge.h sentinel block (FIXY-V-216) to track the "
-    "substrate EpochVersioned axis surface.");
+static_assert(epoch_versioned_surface_cardinality == 3, "fixy::bridge:: EpochVersioned surface cardinality drifted — "
+                                                        "update Bridge.h sentinel block (FIXY-V-216) to track the "
+                                                        "substrate EpochVersioned axis surface.");
 
 }  // namespace crucible::fixy::bridge::self_test

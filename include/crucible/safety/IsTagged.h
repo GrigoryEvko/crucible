@@ -17,9 +17,7 @@ struct is_tagged_impl : std::false_type {
 };
 
 template <typename T, typename Tag>
-struct is_tagged_impl<::crucible::safety::Tagged<T, Tag>>
-    : std::true_type
-{
+struct is_tagged_impl<::crucible::safety::Tagged<T, Tag>> : std::true_type {
     using value_type = T;
     using tag_type = Tag;
 };
@@ -27,21 +25,18 @@ struct is_tagged_impl<::crucible::safety::Tagged<T, Tag>>
 }  // namespace detail
 
 template <typename T>
-inline constexpr bool is_tagged_v =
-    detail::is_tagged_impl<std::remove_cvref_t<T>>::value;
+inline constexpr bool is_tagged_v = detail::is_tagged_impl<std::remove_cvref_t<T>>::value;
 
 template <typename T>
 concept IsTagged = is_tagged_v<T>;
 
 template <typename T>
     requires is_tagged_v<T>
-using tagged_value_t =
-    typename detail::is_tagged_impl<std::remove_cvref_t<T>>::value_type;
+using tagged_value_t = typename detail::is_tagged_impl<std::remove_cvref_t<T>>::value_type;
 
 template <typename T>
     requires is_tagged_v<T>
-using tagged_tag_t =
-    typename detail::is_tagged_impl<std::remove_cvref_t<T>>::tag_type;
+using tagged_tag_t = typename detail::is_tagged_impl<std::remove_cvref_t<T>>::tag_type;
 
 namespace detail::is_tagged_self_test {
 
@@ -56,15 +51,15 @@ struct LookalikeTagged {
     using tag_type = tag_a;
 };
 
-static_assert( is_tagged_v<T_int_a>);
-static_assert( is_tagged_v<T_int_b>);
-static_assert( is_tagged_v<T_double_a>);
+static_assert(is_tagged_v<T_int_a>);
+static_assert(is_tagged_v<T_int_b>);
+static_assert(is_tagged_v<T_double_a>);
 
-static_assert( is_tagged_v<T_int_a&>);
-static_assert( is_tagged_v<T_int_a&&>);
-static_assert( is_tagged_v<T_int_a const>);
-static_assert( is_tagged_v<T_int_a const&>);
-static_assert( is_tagged_v<T_int_a volatile>);
+static_assert(is_tagged_v<T_int_a&>);
+static_assert(is_tagged_v<T_int_a&&>);
+static_assert(is_tagged_v<T_int_a const>);
+static_assert(is_tagged_v<T_int_a const&>);
+static_assert(is_tagged_v<T_int_a volatile>);
 
 static_assert(!is_tagged_v<int>);
 static_assert(!is_tagged_v<int*>);
@@ -72,8 +67,8 @@ static_assert(!is_tagged_v<T_int_a*>);
 static_assert(!is_tagged_v<void>);
 static_assert(!is_tagged_v<LookalikeTagged>);
 
-static_assert( IsTagged<T_int_a>);
-static_assert( IsTagged<T_int_b const&>);
+static_assert(IsTagged<T_int_a>);
+static_assert(IsTagged<T_int_b const&>);
 static_assert(!IsTagged<int>);
 
 static_assert(std::is_same_v<tagged_value_t<T_int_a>, int>);

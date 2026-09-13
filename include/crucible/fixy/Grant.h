@@ -81,12 +81,12 @@ namespace crucible::fixy::grant {
 // the cheat-probe round will catch a tag that doesn't.
 
 struct grant_base {
-    constexpr grant_base()                              noexcept = default;
-    constexpr grant_base(const grant_base&)             noexcept = default;
-    constexpr grant_base(grant_base&&)                  noexcept = default;
-    constexpr grant_base& operator=(const grant_base&)  noexcept = default;
-    constexpr grant_base& operator=(grant_base&&)       noexcept = default;
-    ~grant_base()                                                = default;
+    constexpr grant_base() noexcept = default;
+    constexpr grant_base(const grant_base&) noexcept = default;
+    constexpr grant_base(grant_base&&) noexcept = default;
+    constexpr grant_base& operator=(const grant_base&) noexcept = default;
+    constexpr grant_base& operator=(grant_base&&) noexcept = default;
+    ~grant_base() = default;
 };
 
 // IsGrantTag — structural concept gate.
@@ -159,12 +159,10 @@ struct grant_base {
 
 template <typename G>
 inline constexpr bool IsGrantTag_v =
-       // fixy-A4-033: G must be cv-ref-free; copy-paste-from-runtime
-       // bugs (decltype on a const/reference variable) reject here
-       // rather than reach `which_dim_v<G>` via the resolver.
-       std::is_same_v<G, std::remove_cvref_t<G>>
-    && std::is_base_of_v<grant_base, G>
-    && std::is_final_v<G>;
+    // fixy-A4-033: G must be cv-ref-free; copy-paste-from-runtime
+    // bugs (decltype on a const/reference variable) reject here
+    // rather than reach `which_dim_v<G>` via the resolver.
+    std::is_same_v<G, std::remove_cvref_t<G>> && std::is_base_of_v<grant_base, G> && std::is_final_v<G>;
 
 template <typename G>
 concept IsGrantTag = IsGrantTag_v<G>;
@@ -209,9 +207,7 @@ concept IsGrantTag = IsGrantTag_v<G>;
 // gate would require enumerating every legal substrate type and
 // would block legitimate user-defined machine-state classes.
 template <typename Proto>
-concept IsSessionProtocol =
-       std::is_same_v<Proto, std::remove_cvref_t<Proto>>
-    && std::is_class_v<Proto>;
+concept IsSessionProtocol = std::is_same_v<Proto, std::remove_cvref_t<Proto>> && std::is_class_v<Proto>;
 
 // `IsRefinementPredicate<Pred>` — gate for `refined_with<Pred>`.
 // Accepts substrate-shaped predicates: empty class types like
@@ -247,11 +243,9 @@ concept IsSessionProtocol =
 //   still pass; the gate only rejects the genuinely-problematic
 //   stateful shapes.
 template <typename Pred>
-concept IsRefinementPredicate =
-       std::is_same_v<Pred, std::remove_cvref_t<Pred>>
-    && std::is_class_v<Pred>
-    && std::is_empty_v<Pred>                   // FIXY-FOUND-037: substrate convention
-    && std::is_default_constructible_v<Pred>;  // FIXY-FOUND-037: required for substrate use
+concept IsRefinementPredicate = std::is_same_v<Pred, std::remove_cvref_t<Pred>> && std::is_class_v<Pred>
+                             && std::is_empty_v<Pred>  // FIXY-FOUND-037: substrate convention
+                             && std::is_default_constructible_v<Pred>;  // FIXY-FOUND-037: required for substrate use
 
 // `IsProvenanceSource<Source>` — gate for `from_source<Source>`.
 // Substrate convention: every `safety::source::*` tag is an empty
@@ -278,9 +272,7 @@ concept IsRefinementPredicate =
 // this site.
 template <typename Source>
 concept IsProvenanceSource =
-       std::is_same_v<Source, std::remove_cvref_t<Source>>
-    && std::is_class_v<Source>
-    && std::is_empty_v<Source>;
+    std::is_same_v<Source, std::remove_cvref_t<Source>> && std::is_class_v<Source> && std::is_empty_v<Source>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── which_dim_v<G> — primary template + per-tag specialization ─────
@@ -315,8 +307,7 @@ template <dim::DimensionAxis D>
 struct accept_default_strict_for final : grant_base {};
 
 template <dim::DimensionAxis D>
-struct which_dim<accept_default_strict_for<D>>
-    : std::integral_constant<dim::DimensionAxis, D> {};
+struct which_dim<accept_default_strict_for<D>> : std::integral_constant<dim::DimensionAxis, D> {};
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Relaxation tags ─────────────────────────────────────────────────
@@ -332,10 +323,10 @@ struct which_dim<accept_default_strict_for<D>>
 // needs the dim-mapping for the engagement check.
 
 // ── DimensionAxis::Usage = 2 relaxations ───────────────────────────
-struct affine          final : grant_base {};  // Usage = Affine
-struct copy            final : grant_base {};  // Usage = Copy
-struct ghost           final : grant_base {};  // Usage = Ghost
-struct borrow          final : grant_base {};  // Usage = Borrow
+struct affine final : grant_base {};  // Usage = Affine
+struct copy final : grant_base {};  // Usage = Copy
+struct ghost final : grant_base {};  // Usage = Ghost
+struct borrow final : grant_base {};  // Usage = Borrow
 struct capability_usage final : grant_base {};  // Usage = Capability
 //   FIXY-FOUND-043 — naming-asymmetry rationale.  Four of the five
 //   Usage-axis grants (`affine`, `copy`, `ghost`, `borrow`) are bare
@@ -364,11 +355,16 @@ struct capability_usage final : grant_base {};  // Usage = Capability
 //
 //   fixy.md §24.2 + Grant.h FIXY-FOUND-043 (this comment).
 
-template <> struct which_dim<affine>           : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Usage> {};
-template <> struct which_dim<copy>             : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Usage> {};
-template <> struct which_dim<ghost>            : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Usage> {};
-template <> struct which_dim<borrow>           : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Usage> {};
-template <> struct which_dim<capability_usage> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Usage> {};
+template <>
+struct which_dim<affine> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Usage> {};
+template <>
+struct which_dim<copy> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Usage> {};
+template <>
+struct which_dim<ghost> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Usage> {};
+template <>
+struct which_dim<borrow> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Usage> {};
+template <>
+struct which_dim<capability_usage> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Usage> {};
 
 // ── DimensionAxis::Effect = 3 relaxations ──────────────────────────
 //
@@ -394,8 +390,7 @@ template <effects::Effect... Es>
 struct with final : grant_base {};
 
 template <effects::Effect... Es>
-struct which_dim<with<Es...>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Effect> {};
+struct which_dim<with<Es...>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Effect> {};
 
 // Convenience subtagged aliases — `with_alloc`, `with_io`, `with_bg`
 // engage the Effect axis with single-effect rows (the most common
@@ -403,11 +398,11 @@ struct which_dim<with<Es...>>
 // `with<>` specialization.
 
 using with_alloc = with<effects::Effect::Alloc>;
-using with_io    = with<effects::Effect::IO>;
+using with_io = with<effects::Effect::IO>;
 using with_block = with<effects::Effect::Block>;
-using with_bg    = with<effects::Effect::Bg>;
-using with_init  = with<effects::Effect::Init>;
-using with_test  = with<effects::Effect::Test>;
+using with_bg = with<effects::Effect::Bg>;
+using with_init = with<effects::Effect::Init>;
+using with_test = with<effects::Effect::Test>;
 
 // ── DimensionAxis::Security = 4 relaxations ────────────────────────
 //
@@ -451,25 +446,24 @@ struct declassify final : grant_base {};
 
 template <typename Policy>
     requires ::crucible::safety::DeclassificationPolicy<Policy>
-struct which_dim<declassify<Policy>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Security> {};
+struct which_dim<declassify<Policy>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Security> {};
 
 struct as_unclassified final : grant_base {};
-struct as_public       final : grant_base {};
-struct as_internal     final : grant_base {};
-struct as_classified   final : grant_base {};
-struct as_secret       final : grant_base {};
+struct as_public final : grant_base {};
+struct as_internal final : grant_base {};
+struct as_classified final : grant_base {};
+struct as_secret final : grant_base {};
 
-template <> struct which_dim<as_unclassified>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Security> {};
-template <> struct which_dim<as_public>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Security> {};
-template <> struct which_dim<as_internal>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Security> {};
-template <> struct which_dim<as_classified>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Security> {};
-template <> struct which_dim<as_secret>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Security> {};
+template <>
+struct which_dim<as_unclassified> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Security> {};
+template <>
+struct which_dim<as_public> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Security> {};
+template <>
+struct which_dim<as_internal> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Security> {};
+template <>
+struct which_dim<as_classified> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Security> {};
+template <>
+struct which_dim<as_secret> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Security> {};
 
 // ── DimensionAxis::Protocol = 5 relaxations ────────────────────────
 //
@@ -483,8 +477,7 @@ struct protocol final : grant_base {};
 
 template <typename Proto>
     requires IsSessionProtocol<Proto>
-struct which_dim<protocol<Proto>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Protocol> {};
+struct which_dim<protocol<Proto>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Protocol> {};
 
 // ── DimensionAxis::Lifetime = 6 relaxations ────────────────────────
 //
@@ -495,8 +488,7 @@ template <auto RegionTag>
 struct in_region final : grant_base {};
 
 template <auto RegionTag>
-struct which_dim<in_region<RegionTag>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Lifetime> {};
+struct which_dim<in_region<RegionTag>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Lifetime> {};
 
 // ── DimensionAxis::Provenance = 7 relaxations ──────────────────────
 //
@@ -511,8 +503,7 @@ struct from_source final : grant_base {};
 
 template <typename Source>
     requires IsProvenanceSource<Source>
-struct which_dim<from_source<Source>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Provenance> {};
+struct which_dim<from_source<Source>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Provenance> {};
 
 // ── DimensionAxis::Trust = 8 relaxations ───────────────────────────
 //
@@ -567,22 +558,21 @@ template <auto Rationale>
 struct trust_assumed final : grant_base {};
 
 template <auto Rationale>
-struct which_dim<trust_assumed<Rationale>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Trust> {};
+struct which_dim<trust_assumed<Rationale>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Trust> {};
 
-struct trust_verified   final : grant_base {};
-struct trust_tested     final : grant_base {};
+struct trust_verified final : grant_base {};
+struct trust_tested final : grant_base {};
 struct trust_unverified final : grant_base {};
-struct trust_external   final : grant_base {};
+struct trust_external final : grant_base {};
 
-template <> struct which_dim<trust_verified>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Trust> {};
-template <> struct which_dim<trust_tested>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Trust> {};
-template <> struct which_dim<trust_unverified>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Trust> {};
-template <> struct which_dim<trust_external>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Trust> {};
+template <>
+struct which_dim<trust_verified> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Trust> {};
+template <>
+struct which_dim<trust_tested> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Trust> {};
+template <>
+struct which_dim<trust_unverified> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Trust> {};
+template <>
+struct which_dim<trust_external> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Trust> {};
 
 // ── DimensionAxis::Representation = 9 relaxations ──────────────────
 //
@@ -592,8 +582,7 @@ template <safety::fn::ReprKind Kind>
 struct repr final : grant_base {};
 
 template <safety::fn::ReprKind Kind>
-struct which_dim<repr<Kind>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Representation> {};
+struct which_dim<repr<Kind>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Representation> {};
 
 // ── DimensionAxis::Observability = 10 — derived from Effect ────────
 //
@@ -608,15 +597,21 @@ struct which_dim<repr<Kind>>
 // `cost_constant`, `cost_linear<N>`, `cost_quadratic<N>` engage
 // Complexity with the corresponding `safety::fn::cost::*` tag.
 
-struct cost_constant   final : grant_base {};
-template <auto N> struct cost_linear     final : grant_base {};
-template <auto N> struct cost_quadratic  final : grant_base {};
-struct cost_unbounded  final : grant_base {};
+struct cost_constant final : grant_base {};
+template <auto N>
+struct cost_linear final : grant_base {};
+template <auto N>
+struct cost_quadratic final : grant_base {};
+struct cost_unbounded final : grant_base {};
 
-template <>            struct which_dim<cost_constant>      : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Complexity> {};
-template <auto N>      struct which_dim<cost_linear<N>>     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Complexity> {};
-template <auto N>      struct which_dim<cost_quadratic<N>>  : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Complexity> {};
-template <>            struct which_dim<cost_unbounded>     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Complexity> {};
+template <>
+struct which_dim<cost_constant> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Complexity> {};
+template <auto N>
+struct which_dim<cost_linear<N>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Complexity> {};
+template <auto N>
+struct which_dim<cost_quadratic<N>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Complexity> {};
+template <>
+struct which_dim<cost_unbounded> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Complexity> {};
 
 // ── DimensionAxis::Precision = 12 relaxations ──────────────────────
 //
@@ -624,40 +619,52 @@ template <>            struct which_dim<cost_unbounded>     : std::integral_cons
 // `fixy/Fn.h`'s `detail::resolve` namespace projects to
 // `safety::fn::precision::*`.
 
-struct precision_f32   final : grant_base {};
-struct precision_f64   final : grant_base {};
-template <auto Bound> struct precision_higham final : grant_base {};
+struct precision_f32 final : grant_base {};
+struct precision_f64 final : grant_base {};
+template <auto Bound>
+struct precision_higham final : grant_base {};
 
-template <>           struct which_dim<precision_f32>          : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Precision> {};
-template <>           struct which_dim<precision_f64>          : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Precision> {};
-template <auto Bound> struct which_dim<precision_higham<Bound>>: std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Precision> {};
+template <>
+struct which_dim<precision_f32> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Precision> {};
+template <>
+struct which_dim<precision_f64> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Precision> {};
+template <auto Bound>
+struct which_dim<precision_higham<Bound>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Precision> {
+};
 
 // ── DimensionAxis::Space = 13 relaxations ──────────────────────────
-template <auto N> struct space_bounded final : grant_base {};
+template <auto N>
+struct space_bounded final : grant_base {};
 struct space_unbounded final : grant_base {};
 
-template <auto N> struct which_dim<space_bounded<N>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Space> {};
-template <>       struct which_dim<space_unbounded>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Space> {};
+template <auto N>
+struct which_dim<space_bounded<N>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Space> {};
+template <>
+struct which_dim<space_unbounded> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Space> {};
 
 // ── DimensionAxis::Overflow = 14 relaxations ───────────────────────
-struct overflow_wrap     final : grant_base {};
+struct overflow_wrap final : grant_base {};
 struct overflow_saturate final : grant_base {};
-struct overflow_widen    final : grant_base {};
+struct overflow_widen final : grant_base {};
 
-template <> struct which_dim<overflow_wrap>     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Overflow> {};
-template <> struct which_dim<overflow_saturate> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Overflow> {};
-template <> struct which_dim<overflow_widen>    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Overflow> {};
+template <>
+struct which_dim<overflow_wrap> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Overflow> {};
+template <>
+struct which_dim<overflow_saturate> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Overflow> {};
+template <>
+struct which_dim<overflow_widen> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Overflow> {};
 
 // ── DimensionAxis::Mutation = 15 relaxations ───────────────────────
-struct mut_mutable    final : grant_base {};
-struct mut_append     final : grant_base {};
-struct mut_monotonic  final : grant_base {};
+struct mut_mutable final : grant_base {};
+struct mut_append final : grant_base {};
+struct mut_monotonic final : grant_base {};
 
-template <> struct which_dim<mut_mutable>   : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Mutation> {};
-template <> struct which_dim<mut_append>    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Mutation> {};
-template <> struct which_dim<mut_monotonic> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Mutation> {};
+template <>
+struct which_dim<mut_mutable> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Mutation> {};
+template <>
+struct which_dim<mut_append> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Mutation> {};
+template <>
+struct which_dim<mut_monotonic> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Mutation> {};
 
 // ── DimensionAxis::Reentrancy = 16 relaxations ─────────────────────
 //
@@ -681,16 +688,18 @@ template <> struct which_dim<mut_monotonic> : std::integral_constant<dim::Dimens
 struct reentrant final : grant_base {};
 struct coroutine final : grant_base {};
 
-template <> struct which_dim<reentrant> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Reentrancy> {};
-template <> struct which_dim<coroutine> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Reentrancy> {};
+template <>
+struct which_dim<reentrant> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Reentrancy> {};
+template <>
+struct which_dim<coroutine> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Reentrancy> {};
 
 // FIXY-FOUND-036: canonical sub-namespace, mirroring grant::ctrl::*
 // for ControlFlow.  New call sites should prefer this qualified
 // spelling; top-level `grant::coroutine` / `grant::reentrant` remain
 // valid aliases for backwards-compat with FIXY-U-* production sites.
 namespace reentrancy {
-    using reentrant = ::crucible::fixy::grant::reentrant;
-    using coroutine = ::crucible::fixy::grant::coroutine;
+using reentrant = ::crucible::fixy::grant::reentrant;
+using coroutine = ::crucible::fixy::grant::coroutine;
 }  // namespace reentrancy
 
 // Cross-axis non-collision sentinel: both spellings (top-level and
@@ -700,43 +709,44 @@ namespace reentrancy {
 // Reentrancy, the dispatch ambiguity would fire here at compile
 // time before the regression can ship.
 static_assert(std::is_same_v<reentrancy::coroutine, coroutine>,
-    "FIXY-FOUND-036: grant::reentrancy::coroutine must alias the "
-    "top-level grant::coroutine — sub-namespace is a re-export, "
-    "not a separate type.");
+              "FIXY-FOUND-036: grant::reentrancy::coroutine must alias the "
+              "top-level grant::coroutine — sub-namespace is a re-export, "
+              "not a separate type.");
 static_assert(std::is_same_v<reentrancy::reentrant, reentrant>,
-    "FIXY-FOUND-036: grant::reentrancy::reentrant must alias the "
-    "top-level grant::reentrant — sub-namespace is a re-export.");
-static_assert(which_dim<reentrancy::coroutine>::value
-              == dim::DimensionAxis::Reentrancy,
-    "FIXY-FOUND-036: grant::reentrancy::coroutine must resolve to "
-    "DimensionAxis::Reentrancy (forward-looking guard against a "
-    "future grant::ctrl::coroutine that might silently claim the "
-    "same name on a different axis).");
-static_assert(which_dim<reentrancy::reentrant>::value
-              == dim::DimensionAxis::Reentrancy,
-    "FIXY-FOUND-036: grant::reentrancy::reentrant must resolve to "
-    "DimensionAxis::Reentrancy.");
+              "FIXY-FOUND-036: grant::reentrancy::reentrant must alias the "
+              "top-level grant::reentrant — sub-namespace is a re-export.");
+static_assert(which_dim<reentrancy::coroutine>::value == dim::DimensionAxis::Reentrancy,
+              "FIXY-FOUND-036: grant::reentrancy::coroutine must resolve to "
+              "DimensionAxis::Reentrancy (forward-looking guard against a "
+              "future grant::ctrl::coroutine that might silently claim the "
+              "same name on a different axis).");
+static_assert(which_dim<reentrancy::reentrant>::value == dim::DimensionAxis::Reentrancy,
+              "FIXY-FOUND-036: grant::reentrancy::reentrant must resolve to "
+              "DimensionAxis::Reentrancy.");
 
 // ── DimensionAxis::Size = 17 relaxations ───────────────────────────
-template <auto Depth> struct sized_at final : grant_base {};
+template <auto Depth>
+struct sized_at final : grant_base {};
 struct productive final : grant_base {};
 
-template <auto Depth> struct which_dim<sized_at<Depth>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Size> {};
-template <>           struct which_dim<productive>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Size> {};
+template <auto Depth>
+struct which_dim<sized_at<Depth>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Size> {};
+template <>
+struct which_dim<productive> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Size> {};
 
 // ── DimensionAxis::Version = 18 relaxations ────────────────────────
-template <std::uint32_t V> struct version final : grant_base {};
+template <std::uint32_t V>
+struct version final : grant_base {};
 
-template <std::uint32_t V> struct which_dim<version<V>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Version> {};
+template <std::uint32_t V>
+struct which_dim<version<V>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Version> {};
 
 // ── DimensionAxis::Staleness = 19 relaxations ──────────────────────
-template <auto TauMax> struct stale_to final : grant_base {};
+template <auto TauMax>
+struct stale_to final : grant_base {};
 
-template <auto TauMax> struct which_dim<stale_to<TauMax>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Staleness> {};
+template <auto TauMax>
+struct which_dim<stale_to<TauMax>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Staleness> {};
 
 // ── DimensionAxis::Refinement = 1 relaxations ──────────────────────
 //
@@ -750,8 +760,7 @@ struct refined_with final : grant_base {};
 
 template <typename Pred>
     requires IsRefinementPredicate<Pred>
-struct which_dim<refined_with<Pred>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Refinement> {};
+struct which_dim<refined_with<Pred>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Refinement> {};
 
 // ── DimensionAxis::Type = 0 relaxations ────────────────────────────
 //
@@ -787,8 +796,7 @@ static_assert(IsGrantTag<with<>>);
 // real policy tag from safety/Secret.h's catalog; `declassify<int>`
 // is rejected at template instantiation (witnessed by the fixy_neg
 // fixture neg_fixy_grant_declassify_non_policy.cpp).
-static_assert(IsGrantTag<declassify<
-    ::crucible::safety::secret_policy::AuditedLogging>>);
+static_assert(IsGrantTag<declassify<::crucible::safety::secret_policy::AuditedLogging>>);
 static_assert(IsGrantTag<as_unclassified>);
 static_assert(IsGrantTag<as_public>);
 static_assert(IsGrantTag<as_internal>);
@@ -805,8 +813,8 @@ static_assert(IsGrantTag<refined_with<safety::fn::pred::True>>);
 // Positive: substrate predicates (empty + default-constructible)
 // continue to pass.  pred::True is the canonical example.
 static_assert(IsRefinementPredicate<safety::fn::pred::True>,
-    "FIXY-FOUND-037: safety::fn::pred::True must satisfy the "
-    "tightened IsRefinementPredicate gate (empty + default-ctorable).");
+              "FIXY-FOUND-037: safety::fn::pred::True must satisfy the "
+              "tightened IsRefinementPredicate gate (empty + default-ctorable).");
 
 // Negative: a stateful predicate-shaped struct is REJECTED by the
 // tightened gate.  Demonstrates that the federation-cache-poisoning
@@ -816,94 +824,91 @@ static_assert(IsRefinementPredicate<safety::fn::pred::True>,
 // must either make it empty + default-ctorable (substrate convention)
 // or document a deliberate opt-out.
 namespace detail::found_037_witness {
-    struct StatefulPredicate {                   // NOT empty — has data
-        int threshold = 0;
-        [[nodiscard]] constexpr bool operator()(int v) const noexcept
-            { return v > threshold; }
-    };
-    static_assert(!IsRefinementPredicate<StatefulPredicate>,
-        "FIXY-FOUND-037: stateful predicates must be rejected by the "
-        "tightened IsRefinementPredicate gate — each unique stateful "
-        "Pred type would fragment the federation cache.");
+struct StatefulPredicate {  // NOT empty — has data
+    int threshold = 0;
+    [[nodiscard]] constexpr bool operator()(int v) const noexcept { return v > threshold; }
+};
+static_assert(!IsRefinementPredicate<StatefulPredicate>, "FIXY-FOUND-037: stateful predicates must be rejected by the "
+                                                         "tightened IsRefinementPredicate gate — each unique stateful "
+                                                         "Pred type would fragment the federation cache.");
 
-    struct NonDefaultConstructiblePredicate {    // empty but not default-ctorable
-        constexpr NonDefaultConstructiblePredicate(int) noexcept {}
-        [[nodiscard]] constexpr bool operator()(int v) const noexcept
-            { return v > 0; }
-    };
-    static_assert(!IsRefinementPredicate<NonDefaultConstructiblePredicate>,
-        "FIXY-FOUND-037: non-default-constructible predicates must be "
-        "rejected — the substrate Refined<Pred, T> machinery assumes "
-        "Pred is freely instantiable.");
+struct NonDefaultConstructiblePredicate {  // empty but not default-ctorable
+    constexpr NonDefaultConstructiblePredicate(int) noexcept {}
+    [[nodiscard]] constexpr bool operator()(int v) const noexcept { return v > 0; }
+};
+static_assert(!IsRefinementPredicate<NonDefaultConstructiblePredicate>,
+              "FIXY-FOUND-037: non-default-constructible predicates must be "
+              "rejected — the substrate Refined<Pred, T> machinery assumes "
+              "Pred is freely instantiable.");
 
-    // Conversely: a capture-less lambda IS empty + default-constructible
-    // in C++20+, so the tightening does NOT reject this common shape
-    // (the gate only rejects genuinely-problematic stateful shapes).
-    using CaptureLessLambdaType = decltype([](int v) noexcept { return v > 0; });
-    static_assert(std::is_empty_v<CaptureLessLambdaType>);
-    static_assert(std::is_default_constructible_v<CaptureLessLambdaType>);
-    static_assert(IsRefinementPredicate<CaptureLessLambdaType>,
-        "FIXY-FOUND-037: capture-less lambdas in C++20+ are empty + "
-        "default-constructible, so the tightening admits them.  This "
-        "is by design — the lambda's UNIQUE TYPE per declaration site "
-        "is the audit-discoverable cache-slot identity.");
+// Conversely: a capture-less lambda IS empty + default-constructible
+// in C++20+, so the tightening does NOT reject this common shape
+// (the gate only rejects genuinely-problematic stateful shapes).
+using CaptureLessLambdaType = decltype([](int v) noexcept { return v > 0; });
+static_assert(std::is_empty_v<CaptureLessLambdaType>);
+static_assert(std::is_default_constructible_v<CaptureLessLambdaType>);
+static_assert(IsRefinementPredicate<CaptureLessLambdaType>,
+              "FIXY-FOUND-037: capture-less lambdas in C++20+ are empty + "
+              "default-constructible, so the tightening admits them.  This "
+              "is by design — the lambda's UNIQUE TYPE per declaration site "
+              "is the audit-discoverable cache-slot identity.");
 }  // namespace detail::found_037_witness
 static_assert(IsGrantTag<version<3>>);
 static_assert(IsGrantTag<stale_to<5>>);
 
 // EBO-collapse witnesses for the new Security/Trust lattice tags —
 // each empty + final + grant_base → 1-byte tag.
-static_assert(sizeof(as_unclassified)   == 1);
-static_assert(sizeof(as_public)         == 1);
-static_assert(sizeof(as_internal)       == 1);
-static_assert(sizeof(as_classified)     == 1);
-static_assert(sizeof(as_secret)         == 1);
-static_assert(sizeof(trust_verified)    == 1);
-static_assert(sizeof(trust_tested)      == 1);
-static_assert(sizeof(trust_unverified)  == 1);
-static_assert(sizeof(trust_external)    == 1);
+static_assert(sizeof(as_unclassified) == 1);
+static_assert(sizeof(as_public) == 1);
+static_assert(sizeof(as_internal) == 1);
+static_assert(sizeof(as_classified) == 1);
+static_assert(sizeof(as_secret) == 1);
+static_assert(sizeof(trust_verified) == 1);
+static_assert(sizeof(trust_tested) == 1);
+static_assert(sizeof(trust_unverified) == 1);
+static_assert(sizeof(trust_external) == 1);
 
 // which_dim_v round-trip for the new Security lattice tags.
-static_assert(which_dim_v<as_unclassified>   == dim::DimensionAxis::Security);
-static_assert(which_dim_v<as_public>         == dim::DimensionAxis::Security);
-static_assert(which_dim_v<as_internal>       == dim::DimensionAxis::Security);
-static_assert(which_dim_v<as_classified>     == dim::DimensionAxis::Security);
-static_assert(which_dim_v<as_secret>         == dim::DimensionAxis::Security);
+static_assert(which_dim_v<as_unclassified> == dim::DimensionAxis::Security);
+static_assert(which_dim_v<as_public> == dim::DimensionAxis::Security);
+static_assert(which_dim_v<as_internal> == dim::DimensionAxis::Security);
+static_assert(which_dim_v<as_classified> == dim::DimensionAxis::Security);
+static_assert(which_dim_v<as_secret> == dim::DimensionAxis::Security);
 
 // which_dim_v round-trip for the new Trust lattice tags.
-static_assert(which_dim_v<trust_verified>    == dim::DimensionAxis::Trust);
-static_assert(which_dim_v<trust_tested>      == dim::DimensionAxis::Trust);
-static_assert(which_dim_v<trust_unverified>  == dim::DimensionAxis::Trust);
-static_assert(which_dim_v<trust_external>    == dim::DimensionAxis::Trust);
+static_assert(which_dim_v<trust_verified> == dim::DimensionAxis::Trust);
+static_assert(which_dim_v<trust_tested> == dim::DimensionAxis::Trust);
+static_assert(which_dim_v<trust_unverified> == dim::DimensionAxis::Trust);
+static_assert(which_dim_v<trust_external> == dim::DimensionAxis::Trust);
 
 // EBO-collapse witness — empty + final + grant_base = 1-byte tag.
-static_assert(sizeof(affine)                 == 1);
-static_assert(sizeof(copy)                   == 1);
-static_assert(sizeof(ghost)                  == 1);
-static_assert(sizeof(with<>)                 == 1);
+static_assert(sizeof(affine) == 1);
+static_assert(sizeof(copy) == 1);
+static_assert(sizeof(ghost) == 1);
+static_assert(sizeof(with<>) == 1);
 static_assert(sizeof(with<effects::Effect::Bg, effects::Effect::IO>) == 1);
 static_assert(sizeof(accept_default_strict_for<dim::DimensionAxis::Trust>) == 1);
 
 // which_dim_v round-trip — every dim's tags route to that dim.
-static_assert(which_dim_v<affine>                                            == dim::DimensionAxis::Usage);
-static_assert(which_dim_v<copy>                                              == dim::DimensionAxis::Usage);
-static_assert(which_dim_v<with<effects::Effect::IO>>                         == dim::DimensionAxis::Effect);
-static_assert(which_dim_v<declassify<
-    ::crucible::safety::secret_policy::AuditedLogging>>                      == dim::DimensionAxis::Security);
-static_assert(which_dim_v<refined_with<safety::fn::pred::True>>              == dim::DimensionAxis::Refinement);
+static_assert(which_dim_v<affine> == dim::DimensionAxis::Usage);
+static_assert(which_dim_v<copy> == dim::DimensionAxis::Usage);
+static_assert(which_dim_v<with<effects::Effect::IO>> == dim::DimensionAxis::Effect);
+static_assert(which_dim_v<declassify<::crucible::safety::secret_policy::AuditedLogging>>
+              == dim::DimensionAxis::Security);
+static_assert(which_dim_v<refined_with<safety::fn::pred::True>> == dim::DimensionAxis::Refinement);
 static_assert(which_dim_v<accept_default_strict_for<dim::DimensionAxis::Trust>> == dim::DimensionAxis::Trust);
-static_assert(which_dim_v<version<3>>                                        == dim::DimensionAxis::Version);
-static_assert(which_dim_v<stale_to<5>>                                       == dim::DimensionAxis::Staleness);
-static_assert(which_dim_v<repr<safety::fn::ReprKind::C>>                     == dim::DimensionAxis::Representation);
-static_assert(which_dim_v<overflow_wrap>                                     == dim::DimensionAxis::Overflow);
-static_assert(which_dim_v<mut_mutable>                                       == dim::DimensionAxis::Mutation);
-static_assert(which_dim_v<reentrant>                                         == dim::DimensionAxis::Reentrancy);
-static_assert(which_dim_v<cost_constant>                                     == dim::DimensionAxis::Complexity);
-static_assert(which_dim_v<precision_f64>                                     == dim::DimensionAxis::Precision);
-static_assert(which_dim_v<space_unbounded>                                   == dim::DimensionAxis::Space);
-static_assert(which_dim_v<productive>                                        == dim::DimensionAxis::Size);
-static_assert(which_dim_v<in_region<0>>                                      == dim::DimensionAxis::Lifetime);
-static_assert(which_dim_v<from_source<safety::source::FromUser>>             == dim::DimensionAxis::Provenance);
+static_assert(which_dim_v<version<3>> == dim::DimensionAxis::Version);
+static_assert(which_dim_v<stale_to<5>> == dim::DimensionAxis::Staleness);
+static_assert(which_dim_v<repr<safety::fn::ReprKind::C>> == dim::DimensionAxis::Representation);
+static_assert(which_dim_v<overflow_wrap> == dim::DimensionAxis::Overflow);
+static_assert(which_dim_v<mut_mutable> == dim::DimensionAxis::Mutation);
+static_assert(which_dim_v<reentrant> == dim::DimensionAxis::Reentrancy);
+static_assert(which_dim_v<cost_constant> == dim::DimensionAxis::Complexity);
+static_assert(which_dim_v<precision_f64> == dim::DimensionAxis::Precision);
+static_assert(which_dim_v<space_unbounded> == dim::DimensionAxis::Space);
+static_assert(which_dim_v<productive> == dim::DimensionAxis::Size);
+static_assert(which_dim_v<in_region<0>> == dim::DimensionAxis::Lifetime);
+static_assert(which_dim_v<from_source<safety::source::FromUser>> == dim::DimensionAxis::Provenance);
 // FIXY-FOUND-044: pin IsProvenanceSource ACCEPTS every legal
 // ForgePhase<P> for P in A..L (Forge 12-phase pipeline).  The audit
 // ticket framed this as "misses source::ForgePhase" but ForgePhase
@@ -924,9 +929,9 @@ static_assert(IsProvenanceSource<safety::source::ForgePhase<'I'>>);  // SCHEDULE
 static_assert(IsProvenanceSource<safety::source::ForgePhase<'J'>>);  // EMIT
 static_assert(IsProvenanceSource<safety::source::ForgePhase<'K'>>);  // DISTRIBUTE
 static_assert(IsProvenanceSource<safety::source::ForgePhase<'L'>>);  // VALIDATE
-static_assert(which_dim_v<from_source<safety::source::ForgePhase<'F'>>>      == dim::DimensionAxis::Provenance);
-static_assert(which_dim_v<trust_assumed<axis_query_tag>>                     == dim::DimensionAxis::Trust);
-static_assert(which_dim_v<protocol<safety::fn::proto::None>>                 == dim::DimensionAxis::Protocol);
+static_assert(which_dim_v<from_source<safety::source::ForgePhase<'F'>>> == dim::DimensionAxis::Provenance);
+static_assert(which_dim_v<trust_assumed<axis_query_tag>> == dim::DimensionAxis::Trust);
+static_assert(which_dim_v<protocol<safety::fn::proto::None>> == dim::DimensionAxis::Protocol);
 
 // ── fixy-A4-033: cv-ref rejection witnesses ────────────────────────
 //

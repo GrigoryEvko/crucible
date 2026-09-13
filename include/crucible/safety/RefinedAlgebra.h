@@ -76,7 +76,7 @@
 // implications.  See the `predicate_implies` family in Refined.h.
 
 #include <crucible/Platform.h>
-#include <crucible/algebra/GradedTrait.h>      // GradedWrapper concept verification
+#include <crucible/algebra/GradedTrait.h>  // GradedWrapper concept verification
 #include <crucible/safety/Refined.h>
 
 #include <array>
@@ -102,8 +102,10 @@ namespace refined_algebra {
 template <auto... Preds>
 struct AllOf {
     constexpr bool operator()(auto const& v) const noexcept {
-        if constexpr (sizeof...(Preds) == 0) return true;
-        else return (... && Preds(v));
+        if constexpr (sizeof...(Preds) == 0)
+            return true;
+        else
+            return (... && Preds(v));
     }
 };
 
@@ -114,8 +116,10 @@ inline constexpr AllOf<Preds...> all_of{};
 template <auto... Preds>
 struct AnyOf {
     constexpr bool operator()(auto const& v) const noexcept {
-        if constexpr (sizeof...(Preds) == 0) return false;
-        else return (... || Preds(v));
+        if constexpr (sizeof...(Preds) == 0)
+            return false;
+        else
+            return (... || Preds(v));
     }
 };
 
@@ -126,9 +130,7 @@ inline constexpr AnyOf<Preds...> any_of{};
 // positively and double negation is a code smell.
 template <auto Pred>
 struct Negate {
-    constexpr bool operator()(auto const& v) const noexcept {
-        return !Pred(v);
-    }
+    constexpr bool operator()(auto const& v) const noexcept { return !Pred(v); }
 };
 
 template <auto Pred>
@@ -139,9 +141,7 @@ inline constexpr Negate<Pred> negate{};
 // it must also be non-zero" — vacuously true for zero/negative inputs).
 template <auto Pre, auto Post>
 struct Implies {
-    constexpr bool operator()(auto const& v) const noexcept {
-        return !Pre(v) || Post(v);
-    }
+    constexpr bool operator()(auto const& v) const noexcept { return !Pre(v) || Post(v); }
 };
 
 template <auto Pre, auto Post>
@@ -171,9 +171,7 @@ using refined_algebra::implies;
 // SIMD lane targets (e.g. exact_size<8> for AVX-512 64-bit lanes).
 template <std::size_t N>
 struct ExactSize {
-    constexpr bool operator()(auto const& c) const noexcept {
-        return c.size() == N;
-    }
+    constexpr bool operator()(auto const& c) const noexcept { return c.size() == N; }
 };
 
 template <std::size_t N>
@@ -182,9 +180,7 @@ inline constexpr ExactSize<N> exact_size{};
 // BoundedBelow<Min>: x ≥ Min.  Symmetric to BoundedAbove<Max>.
 template <auto Min>
 struct BoundedBelow {
-    constexpr bool operator()(auto x) const noexcept {
-        return x >= decltype(x)(Min);
-    }
+    constexpr bool operator()(auto x) const noexcept { return x >= decltype(x)(Min); }
 };
 
 template <auto Min>
@@ -197,12 +193,9 @@ inline constexpr BoundedBelow<Min> bounded_below{};
 // rather than producing UB at runtime.
 template <auto Divisor>
 struct DivisibleBy {
-    static_assert(Divisor != decltype(Divisor){0},
-        "DivisibleBy<0> is undefined (modulo by zero).  Pick a non-"
-        "zero divisor or omit the predicate.");
-    constexpr bool operator()(auto x) const noexcept {
-        return (x % decltype(x)(Divisor)) == decltype(x){0};
-    }
+    static_assert(Divisor != decltype(Divisor){0}, "DivisibleBy<0> is undefined (modulo by zero).  Pick a non-"
+                                                   "zero divisor or omit the predicate.");
+    constexpr bool operator()(auto x) const noexcept { return (x % decltype(x)(Divisor)) == decltype(x){0}; }
 };
 
 template <auto Divisor>
@@ -229,16 +222,15 @@ using Sized = Refined<exact_size<N>, S>;
 // fires at alias instantiation rather than failing the contract for
 // every constructed value.
 namespace detail {
-    template <auto Lo, auto Hi, class T>
-    struct bounded_alias {
-        static_assert(Lo <= Hi,
-            "Bounded<Lo, Hi, T>: range is empty (Lo > Hi).  No value "
-            "of T can satisfy this refinement.  Swap the arguments "
-            "or use Capped<Hi, T> / Floored<Lo, T> for single-sided "
-            "bounds.");
-        using type = Refined<in_range<Lo, Hi>, T>;
-    };
-}
+template <auto Lo, auto Hi, class T>
+struct bounded_alias {
+    static_assert(Lo <= Hi, "Bounded<Lo, Hi, T>: range is empty (Lo > Hi).  No value "
+                            "of T can satisfy this refinement.  Swap the arguments "
+                            "or use Capped<Hi, T> / Floored<Lo, T> for single-sided "
+                            "bounds.");
+    using type = Refined<in_range<Lo, Hi>, T>;
+};
+}  // namespace detail
 
 template <auto Lo, auto Hi, class T>
 using Bounded = typename detail::bounded_alias<Lo, Hi, T>::type;
@@ -294,14 +286,12 @@ namespace detail {
 // to compare against QType, mirroring the pattern in Refined.h's
 // existing predicate_implies specialisations.
 template <class QType, auto... Preds>
-inline constexpr bool conjunct_matches =
-    ((std::is_same_v<std::remove_cv_t<decltype(Preds)>, QType>) || ...);
+inline constexpr bool conjunct_matches = ((std::is_same_v<std::remove_cv_t<decltype(Preds)>, QType>) || ...);
 
 // Symmetric dual for AnyOf: true iff PType matches one of the
 // disjuncts in the AnyOf.
 template <class PType, auto... Preds>
-inline constexpr bool disjunct_matches =
-    ((std::is_same_v<std::remove_cv_t<decltype(Preds)>, PType>) || ...);
+inline constexpr bool disjunct_matches = ((std::is_same_v<std::remove_cv_t<decltype(Preds)>, PType>) || ...);
 
 // Transitive elimination — true iff some conjunct Pᵢ implies QType
 // via the existing predicate_implies trait.  This lets composed
@@ -322,16 +312,13 @@ inline constexpr bool any_pred_transitively_implies =
 // Both shapes wired through one specialisation; the requires-clause
 // disjunction keeps it a single partial ordering.
 template <auto... Preds, class QType>
-    requires (detail::conjunct_matches<QType, Preds...>
-           || detail::any_pred_transitively_implies<QType, Preds...>)
-struct predicate_implies<refined_algebra::AllOf<Preds...>, QType>
-    : std::true_type {};
+    requires(detail::conjunct_matches<QType, Preds...> || detail::any_pred_transitively_implies<QType, Preds...>)
+struct predicate_implies<refined_algebra::AllOf<Preds...>, QType> : std::true_type {};
 
 // P ⇒ AnyOf<..., P, ...>.  Disjunction introduction.
 template <class PType, auto... Preds>
     requires detail::disjunct_matches<PType, Preds...>
-struct predicate_implies<PType, refined_algebra::AnyOf<Preds...>>
-    : std::true_type {};
+struct predicate_implies<PType, refined_algebra::AnyOf<Preds...>> : std::true_type {};
 
 // ── FIXY-U-162 — BoundedBelow propagation lattice ───────────────────
 //
@@ -367,25 +354,19 @@ struct predicate_implies<PType, refined_algebra::AnyOf<Preds...>>
 // `positive` without callers re-validating downstream.
 
 template <auto N, auto M>
-    requires (N >= M)
+    requires(N >= M)
 struct predicate_implies<BoundedBelow<N>, BoundedBelow<M>> : std::true_type {};
 
 template <auto L, auto H>
 struct predicate_implies<InRange<L, H>, BoundedBelow<L>> : std::true_type {};
 
 template <auto N>
-    requires (N >= 0)
-struct predicate_implies<
-    BoundedBelow<N>,
-    std::remove_cv_t<decltype(non_negative)>>
-    : std::true_type {};
+    requires(N >= 0)
+struct predicate_implies<BoundedBelow<N>, std::remove_cv_t<decltype(non_negative)>> : std::true_type {};
 
 template <auto N>
-    requires (N >= 1)
-struct predicate_implies<
-    BoundedBelow<N>,
-    std::remove_cv_t<decltype(positive)>>
-    : std::true_type {};
+    requires(N >= 1)
+struct predicate_implies<BoundedBelow<N>, std::remove_cv_t<decltype(positive)>> : std::true_type {};
 
 // ── FIXY-U-164 — BoundedBelow ⇒ non_zero direct bridge ─────────────
 //
@@ -407,53 +388,44 @@ struct predicate_implies<
 // rationale matches the U-162 BoundedBelow⇒positive bridge.
 
 template <auto N>
-    requires (N >= 1)
-struct predicate_implies<
-    BoundedBelow<N>,
-    std::remove_cv_t<decltype(non_zero)>>
-    : std::true_type {};
+    requires(N >= 1)
+struct predicate_implies<BoundedBelow<N>, std::remove_cv_t<decltype(non_zero)>> : std::true_type {};
 
 // FIXY-U-162 closure-axiom witnesses + soundness gates at boundary.
-static_assert(implies_v<bounded_below<10>, bounded_below<5>>,
-    "FIXY-U-162: bounded_below<10> ⇒ bounded_below<5> "
-    "(tighter lower bound implies looser; 10 ≥ 5).");
+static_assert(implies_v<bounded_below<10>, bounded_below<5>>, "FIXY-U-162: bounded_below<10> ⇒ bounded_below<5> "
+                                                              "(tighter lower bound implies looser; 10 ≥ 5).");
 static_assert(implies_v<bounded_below<5>, bounded_below<5>>,
-    "FIXY-U-162: bounded_below<N> ⇒ bounded_below<N> (reflexive).");
+              "FIXY-U-162: bounded_below<N> ⇒ bounded_below<N> (reflexive).");
 static_assert(!implies_v<bounded_below<5>, bounded_below<10>>,
-    "FIXY-U-162: bounded_below<5> must NOT imply bounded_below<10> "
-    "(5 < 10 — looser lower bound does NOT imply tighter; soundness).");
+              "FIXY-U-162: bounded_below<5> must NOT imply bounded_below<10> "
+              "(5 < 10 — looser lower bound does NOT imply tighter; soundness).");
 static_assert(implies_v<in_range<5, 100>, bounded_below<5>>,
-    "FIXY-U-162: in_range<5, 100> ⇒ bounded_below<5> "
-    "(InRange floor is a lower bound; dual to InRange⇒BoundedAbove<H>).");
+              "FIXY-U-162: in_range<5, 100> ⇒ bounded_below<5> "
+              "(InRange floor is a lower bound; dual to InRange⇒BoundedAbove<H>).");
 static_assert(implies_v<in_range<0, 200>, bounded_below<0>>,
-    "FIXY-U-162: in_range<0, 200> ⇒ bounded_below<0> (L=0 cardinality).");
-static_assert(implies_v<bounded_below<0>, non_negative>,
-    "FIXY-U-162: bounded_below<0> ⇒ non_negative (N=0 trivial — "
-    "the predicates are extensionally identical for sane T).");
+              "FIXY-U-162: in_range<0, 200> ⇒ bounded_below<0> (L=0 cardinality).");
+static_assert(implies_v<bounded_below<0>, non_negative>, "FIXY-U-162: bounded_below<0> ⇒ non_negative (N=0 trivial — "
+                                                         "the predicates are extensionally identical for sane T).");
 static_assert(implies_v<bounded_below<5>, non_negative>,
-    "FIXY-U-162: bounded_below<5> ⇒ non_negative (positive lower bound).");
+              "FIXY-U-162: bounded_below<5> ⇒ non_negative (positive lower bound).");
 static_assert(!implies_v<bounded_below<-5>, non_negative>,
-    "FIXY-U-162: bounded_below<-5> must NOT imply non_negative "
-    "(admits x ∈ [-5, ∞), some of which are negative; soundness — "
-    "the N ≥ 0 requires-clause is load-bearing).");
-static_assert(implies_v<bounded_below<1>, positive>,
-    "FIXY-U-162: bounded_below<1> ⇒ positive (boundary N=1 case).");
+              "FIXY-U-162: bounded_below<-5> must NOT imply non_negative "
+              "(admits x ∈ [-5, ∞), some of which are negative; soundness — "
+              "the N ≥ 0 requires-clause is load-bearing).");
+static_assert(implies_v<bounded_below<1>, positive>, "FIXY-U-162: bounded_below<1> ⇒ positive (boundary N=1 case).");
 static_assert(implies_v<bounded_below<10>, positive>,
-    "FIXY-U-162: bounded_below<10> ⇒ positive (tighter lower bound).");
-static_assert(!implies_v<bounded_below<0>, positive>,
-    "FIXY-U-162: bounded_below<0> must NOT imply positive "
-    "(admits x=0 which is NOT positive; soundness — the N ≥ 1 "
-    "requires-clause is load-bearing, not decoration).");
+              "FIXY-U-162: bounded_below<10> ⇒ positive (tighter lower bound).");
+static_assert(!implies_v<bounded_below<0>, positive>, "FIXY-U-162: bounded_below<0> must NOT imply positive "
+                                                      "(admits x=0 which is NOT positive; soundness — the N ≥ 1 "
+                                                      "requires-clause is load-bearing, not decoration).");
 
 // FIXY-U-164 closure-axiom witnesses for the new non_zero bridge.
-static_assert(implies_v<bounded_below<1>, non_zero>,
-    "FIXY-U-164: bounded_below<1> ⇒ non_zero (boundary N=1 case).");
+static_assert(implies_v<bounded_below<1>, non_zero>, "FIXY-U-164: bounded_below<1> ⇒ non_zero (boundary N=1 case).");
 static_assert(implies_v<bounded_below<10>, non_zero>,
-    "FIXY-U-164: bounded_below<10> ⇒ non_zero (tighter lower bound).");
-static_assert(!implies_v<bounded_below<0>, non_zero>,
-    "FIXY-U-164: bounded_below<0> must NOT imply non_zero "
-    "(admits x=0 which IS zero; soundness — the N ≥ 1 gate matches "
-    "the BoundedBelow⇒positive discipline).");
+              "FIXY-U-164: bounded_below<10> ⇒ non_zero (tighter lower bound).");
+static_assert(!implies_v<bounded_below<0>, non_zero>, "FIXY-U-164: bounded_below<0> must NOT imply non_zero "
+                                                      "(admits x=0 which IS zero; soundness — the N ≥ 1 gate matches "
+                                                      "the BoundedBelow⇒positive discipline).");
 
 // ── FIXY-U-166 — ExactSize propagation lattice ─────────────────────
 //
@@ -497,44 +469,34 @@ static_assert(!implies_v<bounded_below<0>, non_zero>,
 //     `requires (N >= 1)` discipline on LengthGe⇒non_empty).
 
 template <std::size_t N, std::size_t M>
-    requires (N >= M)
+    requires(N >= M)
 struct predicate_implies<ExactSize<N>, LengthGe<M>> : std::true_type {};
 
 template <std::size_t N>
-    requires (N >= 1)
-struct predicate_implies<
-    ExactSize<N>,
-    std::remove_cv_t<decltype(non_empty)>>
-    : std::true_type {};
+    requires(N >= 1)
+struct predicate_implies<ExactSize<N>, std::remove_cv_t<decltype(non_empty)>> : std::true_type {};
 
 // FIXY-U-166 closure-axiom witnesses for the new propagation paths.
 
 // ExactSize ⇒ LengthGe: boundary (N=M), interior (N>M), vacuous lower
 // bound (M=0), and the load-bearing soundness gate (N<M).
-static_assert(implies_v<exact_size<8>, length_ge<8>>,
-    "FIXY-U-166: exact_size<8> ⇒ length_ge<8> (boundary N=M case — "
-    "exact-size satisfies its own lower bound).");
-static_assert(implies_v<exact_size<8>, length_ge<4>>,
-    "FIXY-U-166: exact_size<8> ⇒ length_ge<4> (interior — exact size "
-    "exceeds looser lower bound).");
-static_assert(implies_v<exact_size<1>, length_ge<0>>,
-    "FIXY-U-166: exact_size<1> ⇒ length_ge<0> (vacuous lower bound — "
-    "size_t is always ≥ 0).");
-static_assert(!implies_v<exact_size<4>, length_ge<8>>,
-    "FIXY-U-166: exact_size<4> must NOT imply length_ge<8> "
-    "(c.size() == 4 ⇏ c.size() ≥ 8; soundness — the N ≥ M gate is "
-    "load-bearing, not decoration).");
+static_assert(implies_v<exact_size<8>, length_ge<8>>, "FIXY-U-166: exact_size<8> ⇒ length_ge<8> (boundary N=M case — "
+                                                      "exact-size satisfies its own lower bound).");
+static_assert(implies_v<exact_size<8>, length_ge<4>>, "FIXY-U-166: exact_size<8> ⇒ length_ge<4> (interior — exact size "
+                                                      "exceeds looser lower bound).");
+static_assert(implies_v<exact_size<1>, length_ge<0>>, "FIXY-U-166: exact_size<1> ⇒ length_ge<0> (vacuous lower bound — "
+                                                      "size_t is always ≥ 0).");
+static_assert(!implies_v<exact_size<4>, length_ge<8>>, "FIXY-U-166: exact_size<4> must NOT imply length_ge<8> "
+                                                       "(c.size() == 4 ⇏ c.size() ≥ 8; soundness — the N ≥ M gate is "
+                                                       "load-bearing, not decoration).");
 
 // ExactSize ⇒ non_empty: boundary (N=1), interior (N>1), and the
 // load-bearing zero-soundness gate (N=0 means c is empty).
-static_assert(implies_v<exact_size<1>, non_empty>,
-    "FIXY-U-166: exact_size<1> ⇒ non_empty (boundary N=1 case).");
-static_assert(implies_v<exact_size<8>, non_empty>,
-    "FIXY-U-166: exact_size<8> ⇒ non_empty (interior — larger N).");
-static_assert(!implies_v<exact_size<0>, non_empty>,
-    "FIXY-U-166: exact_size<0> must NOT imply non_empty "
-    "(c.size() == 0 ⇒ c.empty() per [container.reqmts]; soundness "
-    "— the N ≥ 1 gate matches LengthGe⇒non_empty discipline).");
+static_assert(implies_v<exact_size<1>, non_empty>, "FIXY-U-166: exact_size<1> ⇒ non_empty (boundary N=1 case).");
+static_assert(implies_v<exact_size<8>, non_empty>, "FIXY-U-166: exact_size<8> ⇒ non_empty (interior — larger N).");
+static_assert(!implies_v<exact_size<0>, non_empty>, "FIXY-U-166: exact_size<0> must NOT imply non_empty "
+                                                    "(c.size() == 0 ⇒ c.empty() per [container.reqmts]; soundness "
+                                                    "— the N ≥ 1 gate matches LengthGe⇒non_empty discipline).");
 
 // ── FIXY-U-167 — DivisibleBy subsumption lattice ───────────────────
 //
@@ -567,36 +529,32 @@ static_assert(!implies_v<exact_size<0>, non_empty>,
 // pointer-alignment chain (CacheLineAligned ⇒ AlignedTo<32>).
 
 template <auto N, auto M>
-    requires (N >= M && M > decltype(M){0} && (N % M == decltype(N){0}))
+    requires(N >= M && M > decltype(M){0} && (N % M == decltype(N){0}))
 struct predicate_implies<DivisibleBy<N>, DivisibleBy<M>> : std::true_type {};
 
 // FIXY-U-167 closure-axiom witnesses for the new propagation paths.
 
 // DivisibleBy ⇒ DivisibleBy: reflexive, transitive, and SIMD-shape.
-static_assert(implies_v<divisible_by<4>, divisible_by<4>>,
-    "FIXY-U-167: divisible_by<N> ⇒ divisible_by<N> (reflexive — "
-    "N mod N = 0, N ≥ N).");
-static_assert(implies_v<divisible_by<8>, divisible_by<4>>,
-    "FIXY-U-167: divisible_by<8> ⇒ divisible_by<4> "
-    "(8 = 4*2; multiple of 8 is multiple of 4).");
-static_assert(implies_v<divisible_by<16>, divisible_by<4>>,
-    "FIXY-U-167: divisible_by<16> ⇒ divisible_by<4> "
-    "(16 = 4*4; AVX-512 trip count ⇒ SSE trip count).");
-static_assert(implies_v<divisible_by<16>, divisible_by<8>>,
-    "FIXY-U-167: divisible_by<16> ⇒ divisible_by<8> "
-    "(16 = 8*2; AVX-512 trip count ⇒ AVX2 trip count).");
+static_assert(implies_v<divisible_by<4>, divisible_by<4>>, "FIXY-U-167: divisible_by<N> ⇒ divisible_by<N> (reflexive — "
+                                                           "N mod N = 0, N ≥ N).");
+static_assert(implies_v<divisible_by<8>, divisible_by<4>>, "FIXY-U-167: divisible_by<8> ⇒ divisible_by<4> "
+                                                           "(8 = 4*2; multiple of 8 is multiple of 4).");
+static_assert(implies_v<divisible_by<16>, divisible_by<4>>, "FIXY-U-167: divisible_by<16> ⇒ divisible_by<4> "
+                                                            "(16 = 4*4; AVX-512 trip count ⇒ SSE trip count).");
+static_assert(implies_v<divisible_by<16>, divisible_by<8>>, "FIXY-U-167: divisible_by<16> ⇒ divisible_by<8> "
+                                                            "(16 = 8*2; AVX-512 trip count ⇒ AVX2 trip count).");
 
 // Soundness: M does NOT divide N must NOT propagate.
 static_assert(!implies_v<divisible_by<6>, divisible_by<4>>,
-    "FIXY-U-167: divisible_by<6> must NOT imply divisible_by<4> "
-    "(6 mod 4 = 2 ≠ 0; e.g. x=6 satisfies divisible_by<6> but not "
-    "divisible_by<4>; soundness — the N mod M = 0 gate is "
-    "load-bearing).");
+              "FIXY-U-167: divisible_by<6> must NOT imply divisible_by<4> "
+              "(6 mod 4 = 2 ≠ 0; e.g. x=6 satisfies divisible_by<6> but not "
+              "divisible_by<4>; soundness — the N mod M = 0 gate is "
+              "load-bearing).");
 static_assert(!implies_v<divisible_by<4>, divisible_by<8>>,
-    "FIXY-U-167: divisible_by<4> must NOT imply divisible_by<8> "
-    "(N=4 < M=8; the N ≥ M gate excludes this — looser divisor "
-    "doesn't imply tighter divisor; e.g. x=4 satisfies "
-    "divisible_by<4> but not divisible_by<8>).");
+              "FIXY-U-167: divisible_by<4> must NOT imply divisible_by<8> "
+              "(N=4 < M=8; the N ≥ M gate excludes this — looser divisor "
+              "doesn't imply tighter divisor; e.g. x=4 satisfies "
+              "divisible_by<4> but not divisible_by<8>).");
 
 // ── Self-test block ─────────────────────────────────────────────────
 //
@@ -612,15 +570,15 @@ namespace detail::refined_algebra_self_test {
 
 // ── EBO collapse: composed predicates are still zero-byte ────────────
 static_assert(sizeof(Refined<all_of<positive, bounded_above<1024>>, int>) == sizeof(int));
-static_assert(sizeof(Refined<any_of<positive, non_zero>, int>)            == sizeof(int));
-static_assert(sizeof(Refined<negate<positive>, int>)                       == sizeof(int));
-static_assert(sizeof(Refined<implies<positive, non_zero>, int>)            == sizeof(int));
+static_assert(sizeof(Refined<any_of<positive, non_zero>, int>) == sizeof(int));
+static_assert(sizeof(Refined<negate<positive>, int>) == sizeof(int));
+static_assert(sizeof(Refined<implies<positive, non_zero>, int>) == sizeof(int));
 
 // ── AllOf semantics ─────────────────────────────────────────────────
 constexpr auto pos_capped = all_of<positive, bounded_above<100>>;
-static_assert( pos_capped(50));
-static_assert(!pos_capped(0));      // not positive
-static_assert(!pos_capped(101));    // exceeds cap
+static_assert(pos_capped(50));
+static_assert(!pos_capped(0));  // not positive
+static_assert(!pos_capped(101));  // exceeds cap
 
 // AllOf with empty pack is vacuously true.
 constexpr auto trivially_true = all_of<>;
@@ -630,15 +588,14 @@ static_assert(trivially_true(0));
 
 // AllOf with a single predicate equals the predicate.
 constexpr auto just_positive = all_of<positive>;
-static_assert( just_positive(1));
+static_assert(just_positive(1));
 static_assert(!just_positive(0));
 
 // ── AnyOf semantics ─────────────────────────────────────────────────
-constexpr auto zero_or_huge = any_of<
-    [](int x) constexpr noexcept { return x == 0; },
-    [](int x) constexpr noexcept { return x >= 1024; }>;
-static_assert( zero_or_huge(0));
-static_assert( zero_or_huge(2048));
+constexpr auto zero_or_huge =
+    any_of<[](int x) constexpr noexcept { return x == 0; }, [](int x) constexpr noexcept { return x >= 1024; }>;
+static_assert(zero_or_huge(0));
+static_assert(zero_or_huge(2048));
 static_assert(!zero_or_huge(50));
 
 // AnyOf with empty pack is vacuously false.
@@ -647,71 +604,70 @@ static_assert(!trivially_false(42));
 
 // ── Negate semantics ────────────────────────────────────────────────
 constexpr auto neg_pos = negate<positive>;
-static_assert( neg_pos(0));      // 0 is not positive → negate true
-static_assert( neg_pos(-1));
-static_assert(!neg_pos(1));      // 1 is positive → negate false
+static_assert(neg_pos(0));  // 0 is not positive → negate true
+static_assert(neg_pos(-1));
+static_assert(!neg_pos(1));  // 1 is positive → negate false
 
 // Double negation collapses semantically.
 constexpr auto neg_neg_pos = negate<negate<positive>>;
-static_assert( neg_neg_pos(1));
+static_assert(neg_neg_pos(1));
 static_assert(!neg_neg_pos(0));
 
 // ── Implies semantics ───────────────────────────────────────────────
 constexpr auto pos_implies_nonzero = implies<positive, non_zero>;
-static_assert( pos_implies_nonzero(5));   // pos AND nonzero
-static_assert( pos_implies_nonzero(0));   // not pos → vacuously true
-static_assert( pos_implies_nonzero(-1));  // not pos → vacuously true
+static_assert(pos_implies_nonzero(5));  // pos AND nonzero
+static_assert(pos_implies_nonzero(0));  // not pos → vacuously true
+static_assert(pos_implies_nonzero(-1));  // not pos → vacuously true
 
 // Implies with always-false antecedent is always true.
 constexpr auto false_implies_anything = implies<negate<positive>, positive>;
-static_assert( false_implies_anything(1));
-static_assert(!false_implies_anything(0));   // antecedent true (not positive), consequent false
+static_assert(false_implies_anything(1));
+static_assert(!false_implies_anything(0));  // antecedent true (not positive), consequent false
 
 // ── Additional unit predicates ──────────────────────────────────────
 constexpr std::array<int, 8> a8{};
 constexpr std::array<int, 7> a7{};
-static_assert( exact_size<8>(a8));
+static_assert(exact_size<8>(a8));
 static_assert(!exact_size<7>(a8));
-static_assert( exact_size<7>(a7));
+static_assert(exact_size<7>(a7));
 
-static_assert( bounded_below<10>(15));
-static_assert( bounded_below<10>(10));
+static_assert(bounded_below<10>(15));
+static_assert(bounded_below<10>(10));
 static_assert(!bounded_below<10>(9));
 
-static_assert( divisible_by<4>(0));
-static_assert( divisible_by<4>(16));
+static_assert(divisible_by<4>(0));
+static_assert(divisible_by<4>(16));
 static_assert(!divisible_by<4>(13));
-static_assert( divisible_by<8>(2'097'152));
+static_assert(divisible_by<8>(2'097'152));
 
 // ── Type alias collapse ─────────────────────────────────────────────
-static_assert(sizeof(AlignedTo<64, void*>)            == sizeof(void*));
-static_assert(sizeof(Sized<8, std::array<int, 8>>)    == sizeof(std::array<int, 8>));
-static_assert(sizeof(Bounded<0, 100, int>)            == sizeof(int));
-static_assert(sizeof(Capped<255, std::uint32_t>)      == sizeof(std::uint32_t));
-static_assert(sizeof(Floored<1, int>)                 == sizeof(int));
+static_assert(sizeof(AlignedTo<64, void*>) == sizeof(void*));
+static_assert(sizeof(Sized<8, std::array<int, 8>>) == sizeof(std::array<int, 8>));
+static_assert(sizeof(Bounded<0, 100, int>) == sizeof(int));
+static_assert(sizeof(Capped<255, std::uint32_t>) == sizeof(std::uint32_t));
+static_assert(sizeof(Floored<1, int>) == sizeof(int));
 static_assert(sizeof(MinSize<8, std::array<int, 16>>) == sizeof(std::array<int, 16>));
-static_assert(sizeof(DivisibleByN<4, std::size_t>)    == sizeof(std::size_t));
-static_assert(sizeof(CacheLineAligned<int>)           == sizeof(int*));
-static_assert(sizeof(HugePageAligned<std::byte>)      == sizeof(std::byte*));
+static_assert(sizeof(DivisibleByN<4, std::size_t>) == sizeof(std::size_t));
+static_assert(sizeof(CacheLineAligned<int>) == sizeof(int*));
+static_assert(sizeof(HugePageAligned<std::byte>) == sizeof(std::byte*));
 
 // ── Type aliases preserve the expected predicate identity ────────────
-static_assert(std::is_same_v<typename AlignedTo<64, void*>::predicate_type,
-                              std::remove_cv_t<decltype(aligned<64>)>>);
-static_assert(std::is_same_v<typename Bounded<0, 100, int>::predicate_type,
-                              std::remove_cv_t<decltype(in_range<0, 100>)>>);
+static_assert(std::is_same_v<typename AlignedTo<64, void*>::predicate_type, std::remove_cv_t<decltype(aligned<64>)>>);
+static_assert(
+    std::is_same_v<typename Bounded<0, 100, int>::predicate_type, std::remove_cv_t<decltype(in_range<0, 100>)>>);
 static_assert(std::is_same_v<typename Capped<255, std::uint32_t>::predicate_type,
-                              std::remove_cv_t<decltype(bounded_above<255>)>>);
+                             std::remove_cv_t<decltype(bounded_above<255>)>>);
 
 // ── Composed-predicate construction at the type level ───────────────
 //
 // The Trusted{} ctor bypasses the predicate check, so we can verify
 // that the composed-predicate type is *constructible* without the test
 // itself depending on a predicate value lookup at compile time.
-using PositiveCapped    = Refined<all_of<positive, bounded_above<100>>, int>;
+using PositiveCapped = Refined<all_of<positive, bounded_above<100>>, int>;
 using AlignedNonNullPtr = Refined<all_of<non_null, aligned<64>>, void*>;
 
 [[maybe_unused]] constexpr auto _pc1 = PositiveCapped{42, PositiveCapped::Trusted{}};
-[[maybe_unused]] constexpr auto _pc2 = PositiveCapped{1,  PositiveCapped::Trusted{}};
+[[maybe_unused]] constexpr auto _pc2 = PositiveCapped{1, PositiveCapped::Trusted{}};
 
 // ── predicate_implies: AllOf / AnyOf wiring ─────────────────────────
 
@@ -751,7 +707,7 @@ static_assert(divisible_by<1>(0));
 static_assert(divisible_by<8>(64));
 
 [[maybe_unused]] constexpr auto _b_normal = Bounded<0, 100, int>{50};
-[[maybe_unused]] constexpr auto _b_equal  = Bounded<5,   5, int>{5};
+[[maybe_unused]] constexpr auto _b_equal = Bounded<5, 5, int>{5};
 
 // ── GradedWrapper concept verification ─────────────────────────────
 //
@@ -767,14 +723,13 @@ static_assert(divisible_by<8>(64));
 
 namespace alg = ::crucible::algebra;
 
-static_assert(alg::GradedWrapper<Refined<all_of<positive>, int>>,
-    "Refined<all_of<...>, T> must satisfy GradedWrapper");
+static_assert(alg::GradedWrapper<Refined<all_of<positive>, int>>, "Refined<all_of<...>, T> must satisfy GradedWrapper");
 static_assert(alg::GradedWrapper<Refined<all_of<positive, bounded_above<100>>, int>>);
 static_assert(alg::GradedWrapper<Refined<any_of<positive, non_zero>, int>>);
 static_assert(alg::GradedWrapper<Refined<negate<positive>, int>>);
 static_assert(alg::GradedWrapper<Refined<implies<positive, non_zero>, int>>);
 static_assert(alg::GradedWrapper<Refined<all_of<all_of<positive>, bounded_above<1024>>, int>>,
-    "nested combinators (AllOf<AllOf<...>, ...>) must also satisfy");
+              "nested combinators (AllOf<AllOf<...>, ...>) must also satisfy");
 
 // And the type aliases shipped above:
 static_assert(alg::GradedWrapper<AlignedTo<64, void*>>);
@@ -791,7 +746,7 @@ static_assert(alg::GradedWrapper<DivisibleByN<4, std::size_t>>);
 
 [[gnu::cold]] inline void runtime_smoke_test() noexcept {
     // ── Non-constant-argument predicate evaluation ──────────────────
-    int volatile vol = 42;             // defeat constant-folding
+    int volatile vol = 42;  // defeat constant-folding
     int x = vol;
     constexpr auto p = all_of<positive, bounded_above<100>>;
     bool ok = p(x);
@@ -814,20 +769,19 @@ static_assert(alg::GradedWrapper<DivisibleByN<4, std::size_t>>);
         int v_ = 0;
         constexpr MoveOnly() noexcept = default;
         constexpr explicit MoveOnly(int v) noexcept : v_{v} {}
-        MoveOnly(const MoveOnly&)            = delete;
-        MoveOnly(MoveOnly&&)            noexcept = default;
+        MoveOnly(const MoveOnly&) = delete;
+        MoveOnly(MoveOnly&&) noexcept = default;
         MoveOnly& operator=(const MoveOnly&) = delete;
         MoveOnly& operator=(MoveOnly&&) noexcept = default;
     };
     static_assert(!std::is_copy_constructible_v<MoveOnly>);
-    static_assert( std::is_move_constructible_v<MoveOnly>);
+    static_assert(std::is_move_constructible_v<MoveOnly>);
 
     using RmoT = Refined<positive, MoveOnly>;
     MoveOnly mo{vol};
     RmoT rmo{std::move(mo), RmoT::Trusted{}};
-    static_assert(sizeof(RmoT) == sizeof(MoveOnly),
-        "Refined<P, MoveOnly> must EBO-collapse to sizeof(MoveOnly) "
-        "regardless of T's copyability");
+    static_assert(sizeof(RmoT) == sizeof(MoveOnly), "Refined<P, MoveOnly> must EBO-collapse to sizeof(MoveOnly) "
+                                                    "regardless of T's copyability");
     static_cast<void>(rmo);
 
     // ── AlignedTo / Sized / Bounded / Capped at runtime ──────────────
@@ -859,8 +813,7 @@ static_assert(alg::GradedWrapper<DivisibleByN<4, std::size_t>>);
     // a real cache-line-aligned buffer.  The combined predicate must
     // accept a pointer argument — both `non_null` and `aligned<64>`
     // do, so AllOf<...> does too.
-    Refined<all_of<non_null, aligned<64>>, void*> aligned_nonnull_ptr{
-        static_cast<void*>(buf)};
+    Refined<all_of<non_null, aligned<64>>, void*> aligned_nonnull_ptr{static_cast<void*>(buf)};
     static_cast<void>(aligned_nonnull_ptr);
 }
 

@@ -59,56 +59,56 @@
 
 #include <crucible/algebra/Lattice.h>  // HasLatticeName concept (fixy-A3-017)
 
-#include <cstdint>     // LatticeNameProbeElement::v (fixy-A3-017)
+#include <cstdint>  // LatticeNameProbeElement::v (fixy-A3-017)
 #include <functional>  // std::less for MonotoneLattice canonical instantiation (fixy-A3-017)
 
 // ── Shipped lattices ────────────────────────────────────────────────
 #include <crucible/algebra/lattices/AffinityLattice.h>  // FOUND-G71  — shipped (2/2 NumaPlacement axes)
-#include <crucible/algebra/lattices/AllocClassLattice.h> // FOUND-G38  — shipped
-#include <crucible/algebra/lattices/BarrierStrengthLattice.h> // FIXY-V-252 — shipped (7-tier memory-fence strength chain)
-#include <crucible/algebra/lattices/BitsBudgetLattice.h> // FOUND-G63  — shipped (1/2 Budgeted axes)
-#include <crucible/algebra/lattices/BoolLattice.h>       // ALGEBRA-5  (#450) — shipped
+#include <crucible/algebra/lattices/AllocClassLattice.h>  // FOUND-G38  — shipped
+#include <crucible/algebra/lattices/BarrierStrengthLattice.h>  // FIXY-V-252 — shipped (7-tier memory-fence strength chain)
+#include <crucible/algebra/lattices/BitsBudgetLattice.h>  // FOUND-G63  — shipped (1/2 Budgeted axes)
+#include <crucible/algebra/lattices/BoolLattice.h>  // ALGEBRA-5  (#450) — shipped
 #include <crucible/algebra/lattices/CallShapeLattice.h>  // FIXY-V-240 — shipped (5-tier dispatch-shape chain)
-#include <crucible/algebra/lattices/CipherTierLattice.h> // FOUND-G43  — shipped
-#include <crucible/algebra/lattices/ClockSourceLattice.h> // FIXY-V-184 — shipped (DetSafe×Suspend×Pinning product composite + 9-source projection)
-#include <crucible/algebra/lattices/ConfLattice.h>       // ALGEBRA-6  (#451) — shipped
-#include <crucible/algebra/lattices/ConsistencyLattice.h>// ALGEBRA-14 (#459) — shipped (2/3)
-#include <crucible/algebra/lattices/ControlFlowLattice.h> // FIXY-V-239 — shipped (5-tier control-flow-escape chain)
-#include <crucible/algebra/lattices/CrashLattice.h>      // FOUND-G58  — shipped
-#include <crucible/algebra/lattices/DetSafeLattice.h>    // FOUND-G13  — shipped
-#include <crucible/algebra/lattices/EpochLattice.h>      // FOUND-G67  — shipped (1/2 EpochVersioned axes)
-#include <crucible/algebra/lattices/FpModeLattice.h>     // FIXY-V-088/089 — shipped (11 FP-mode sub-axes)
-#include <crucible/algebra/lattices/FractionalLattice.h> // ALGEBRA-8  (#453) — shipped
-#include <crucible/algebra/lattices/GenerationLattice.h> // FOUND-G67  — shipped (2/2 EpochVersioned axes)
-#include <crucible/algebra/lattices/GlobalStateLattice.h> // FIXY-V-241 — shipped (4-tier global-state-hazard chain)
-#include <crucible/algebra/lattices/HappensBefore.h>     // ALGEBRA-13 (#458) — shipped
-#include <crucible/algebra/lattices/HotPathLattice.h>    // FOUND-G18  — shipped
-#include <crucible/algebra/lattices/HwInstructionLattice.h> // FIXY-V-251 — shipped (5-tier hw-instruction capability chain)
-#include <crucible/algebra/lattices/JoinPolicyLattice.h> // FIXY-V-078 — shipped (6-tier join-policy chain)
-#include <crucible/algebra/lattices/LifetimeLattice.h>   // ALGEBRA-14 (#459) — shipped (1/3)
-#include <crucible/algebra/lattices/MemOrderLattice.h>   // FOUND-G28  — shipped
-#include <crucible/algebra/lattices/ProgressLattice.h>   // FOUND-G33  — shipped
-#include <crucible/algebra/lattices/MonotoneLattice.h>   // ALGEBRA-9  (#454) — shipped
-#include <crucible/algebra/lattices/NumaNodeLattice.h>   // FOUND-G71  — shipped (1/2 NumaPlacement axes)
+#include <crucible/algebra/lattices/CipherTierLattice.h>  // FOUND-G43  — shipped
+#include <crucible/algebra/lattices/ClockSourceLattice.h>  // FIXY-V-184 — shipped (DetSafe×Suspend×Pinning product composite + 9-source projection)
+#include <crucible/algebra/lattices/ConfLattice.h>  // ALGEBRA-6  (#451) — shipped
+#include <crucible/algebra/lattices/ConsistencyLattice.h>  // ALGEBRA-14 (#459) — shipped (2/3)
+#include <crucible/algebra/lattices/ControlFlowLattice.h>  // FIXY-V-239 — shipped (5-tier control-flow-escape chain)
+#include <crucible/algebra/lattices/CrashLattice.h>  // FOUND-G58  — shipped
+#include <crucible/algebra/lattices/DetSafeLattice.h>  // FOUND-G13  — shipped
+#include <crucible/algebra/lattices/EpochLattice.h>  // FOUND-G67  — shipped (1/2 EpochVersioned axes)
+#include <crucible/algebra/lattices/FpModeLattice.h>  // FIXY-V-088/089 — shipped (11 FP-mode sub-axes)
+#include <crucible/algebra/lattices/FractionalLattice.h>  // ALGEBRA-8  (#453) — shipped
+#include <crucible/algebra/lattices/GenerationLattice.h>  // FOUND-G67  — shipped (2/2 EpochVersioned axes)
+#include <crucible/algebra/lattices/GlobalStateLattice.h>  // FIXY-V-241 — shipped (4-tier global-state-hazard chain)
+#include <crucible/algebra/lattices/HappensBefore.h>  // ALGEBRA-13 (#458) — shipped
+#include <crucible/algebra/lattices/HotPathLattice.h>  // FOUND-G18  — shipped
+#include <crucible/algebra/lattices/HwInstructionLattice.h>  // FIXY-V-251 — shipped (5-tier hw-instruction capability chain)
+#include <crucible/algebra/lattices/JoinPolicyLattice.h>  // FIXY-V-078 — shipped (6-tier join-policy chain)
+#include <crucible/algebra/lattices/LifetimeLattice.h>  // ALGEBRA-14 (#459) — shipped (1/3)
+#include <crucible/algebra/lattices/MemOrderLattice.h>  // FOUND-G28  — shipped
+#include <crucible/algebra/lattices/ProgressLattice.h>  // FOUND-G33  — shipped
+#include <crucible/algebra/lattices/MonotoneLattice.h>  // ALGEBRA-9  (#454) — shipped
+#include <crucible/algebra/lattices/NumaNodeLattice.h>  // FOUND-G71  — shipped (1/2 NumaPlacement axes)
 #include <crucible/algebra/lattices/PeakBytesLattice.h>  // FOUND-G63  — shipped (2/2 Budgeted axes)
-#include <crucible/algebra/lattices/PinningRequirementLattice.h> // FIXY-V-182 — shipped (4-element CPU-coherence-domain chain)
-#include <crucible/algebra/lattices/ProductLattice.h>    // ALGEBRA-15 (#460) — shipped
-#include <crucible/algebra/lattices/QttSemiring.h>       // ALGEBRA-4  (#449) — shipped
-#include <crucible/algebra/lattices/RecipeFamilyLattice.h> // FOUND-G75  — shipped (1/2 RecipeSpec axes)
-#include <crucible/algebra/lattices/ResidencyHeatLattice.h> // FOUND-G48  — shipped
-#include <crucible/algebra/lattices/SchedulerPolicyLattice.h> // FIXY-V-183 — shipped (6-element Linux scheduler-class preemption chain)
+#include <crucible/algebra/lattices/PinningRequirementLattice.h>  // FIXY-V-182 — shipped (4-element CPU-coherence-domain chain)
+#include <crucible/algebra/lattices/ProductLattice.h>  // ALGEBRA-15 (#460) — shipped
+#include <crucible/algebra/lattices/QttSemiring.h>  // ALGEBRA-4  (#449) — shipped
+#include <crucible/algebra/lattices/RecipeFamilyLattice.h>  // FOUND-G75  — shipped (1/2 RecipeSpec axes)
+#include <crucible/algebra/lattices/ResidencyHeatLattice.h>  // FOUND-G48  — shipped
+#include <crucible/algebra/lattices/SchedulerPolicyLattice.h>  // FIXY-V-183 — shipped (6-element Linux scheduler-class preemption chain)
 #include <crucible/algebra/lattices/SeqPrefixLattice.h>  // ALGEBRA-10 (#455) — shipped
-#include <crucible/algebra/lattices/SimdIsaLattice.h>    // FIXY-V-250 — shipped (non-distributive x86×ARM ISA partial order)
-#include <crucible/algebra/lattices/StackUseLattice.h>   // FIXY-V-241 — shipped (4-tier stack-bound chain)
-#include <crucible/algebra/lattices/StalenessSemiring.h> // ALGEBRA-11 (#456) — shipped
-#include <crucible/algebra/lattices/StdioLattice.h>      // FIXY-V-241 — shipped (4-tier stdio-surface chain)
-#include <crucible/algebra/lattices/SuspendBehaviorLattice.h> // FIXY-V-181 — shipped (3-element clock-pause-on-suspend chain)
-#include <crucible/algebra/lattices/SyscallFamilyLattice.h> // FIXY-V-097 — shipped (9-tier syscall-family chain)
+#include <crucible/algebra/lattices/SimdIsaLattice.h>  // FIXY-V-250 — shipped (non-distributive x86×ARM ISA partial order)
+#include <crucible/algebra/lattices/StackUseLattice.h>  // FIXY-V-241 — shipped (4-tier stack-bound chain)
+#include <crucible/algebra/lattices/StalenessSemiring.h>  // ALGEBRA-11 (#456) — shipped
+#include <crucible/algebra/lattices/StdioLattice.h>  // FIXY-V-241 — shipped (4-tier stdio-surface chain)
+#include <crucible/algebra/lattices/SuspendBehaviorLattice.h>  // FIXY-V-181 — shipped (3-element clock-pause-on-suspend chain)
+#include <crucible/algebra/lattices/SyscallFamilyLattice.h>  // FIXY-V-097 — shipped (9-tier syscall-family chain)
 #include <crucible/algebra/lattices/ToleranceLattice.h>  // ALGEBRA-14 (#459) — shipped (3/3)
-#include <crucible/algebra/lattices/TrustLattice.h>      // ALGEBRA-7  (#452) — shipped
-#include <crucible/algebra/lattices/VendorLattice.h>     // FOUND-G53  — shipped
-#include <crucible/algebra/lattices/WaitLattice.h>       // FOUND-G23  — shipped
-#include <crucible/algebra/lattices/WitnessLattice.h>    // FIXY-V-053 — shipped (4-tier proof-strength chain)
+#include <crucible/algebra/lattices/TrustLattice.h>  // ALGEBRA-7  (#452) — shipped
+#include <crucible/algebra/lattices/VendorLattice.h>  // FOUND-G53  — shipped
+#include <crucible/algebra/lattices/WaitLattice.h>  // FOUND-G23  — shipped
+#include <crucible/algebra/lattices/WitnessLattice.h>  // FIXY-V-053 — shipped (4-tier proof-strength chain)
 
 // FIXY-FOUND-046 — per-enumerator underlying-value pin sweep for every
 // lattice enum consumed by row_hash_contribution_v.  Pins ride this
@@ -150,7 +150,8 @@ namespace crucible::algebra::lattices {
 // RELAXED < ULP_INT8 < ULP_FP8 < ULP_FP16 < ULP_FP32 < ULP_FP64 < BITEXACT.
 
 // Componentwise product over N lattices.
-template <typename... Ls> struct ProductLattice;
+template <typename... Ls>
+struct ProductLattice;
 
 // ── Name-coverage assertion (fixy-A3-017) ───────────────────────────
 //
@@ -188,7 +189,9 @@ namespace detail::lattice_name_coverage {
 // (those live in per-lattice self-test blocks).
 struct LatticeNameProbeTruePred {
     template <typename T>
-    [[nodiscard]] static constexpr bool check(T const&) noexcept { return true; }
+    [[nodiscard]] static constexpr bool check(T const&) noexcept {
+        return true;
+    }
 };
 struct LatticeNameProbeSource {};
 struct LatticeNameProbeElement {
@@ -201,73 +204,28 @@ template <typename... Ls>
     return (HasLatticeName<Ls> && ...);
 }
 
-static_assert(every_lattice_has_name<
-    AffinityLattice,
-    AllocClassLattice,
-    BarrierStrengthLattice,
-    BitsBudgetLattice,
-    BoolLattice<LatticeNameProbeTruePred>,
-    CallShapeLattice,
-    CipherTierLattice,
-    ClockSourceLattice,
-    ConfLattice,
-    ConsistencyLattice,
-    ControlFlowLattice,
-    CrashLattice,
-    DetSafeLattice,
-    EpochLattice,
-    FpComplexLayoutLattice,
-    FpConstantRoundingLattice,
-    FpContractLattice,
-    FpDenormalInputLattice,
-    FpFtzLattice,
-    FpInfPolicyLattice,
-    FpLibmPolicyLattice,
-    FpNanPolicyLattice,
-    FpReassociateLattice,
-    FpRoundingLattice,
-    FpTrapMaskLattice,
-    FractionalLattice,
-    GenerationLattice,
-    GlobalStateLattice,
-    HappensBeforeLattice<4>,
-    HotPathLattice,
-    HwInstructionLattice,
-    LifetimeLattice,
-    MemOrderLattice,
-    MonotoneLattice<int, std::less<int>>,
-    NumaNodeLattice,
-    PeakBytesLattice,
-    PinningRequirementLattice,
-    ProductLattice<HotPathLattice, DetSafeLattice>,
-    // FIXY-V-090 — FpModeProductLattice composite (11-way ProductLattice
-    // over the V-089 per-axis ChainLattices).  Already covered structurally
-    // by the binary ProductLattice witness above, but pinning the 11-way
-    // form here guards against an FpModeLattice.h alias rename / arity
-    // refactor breaking the umbrella discovery contract.
-    ProductLattice<FpRoundingLattice, FpFtzLattice, FpContractLattice,
-                   FpTrapMaskLattice, FpDenormalInputLattice,
-                   FpNanPolicyLattice, FpInfPolicyLattice,
-                   FpComplexLayoutLattice, FpLibmPolicyLattice,
-                   FpReassociateLattice, FpConstantRoundingLattice>,
-    ProgressLattice,
-    QttSemiring,
-    RecipeFamilyLattice,
-    ResidencyHeatLattice,
-    SchedulerPolicyLattice,
-    SeqPrefixLattice<LatticeNameProbeElement>,
-    SimdIsaLattice,
-    StackUseLattice,
-    StalenessSemiring,
-    StdioLattice,
-    SuspendBehaviorLattice,
-    SyscallFamilyLattice,
-    ToleranceLattice,
-    TrustLattice<LatticeNameProbeSource>,
-    VendorLattice,
-    WaitLattice,
-    WitnessLattice
->(),
+static_assert(
+    every_lattice_has_name<
+        AffinityLattice, AllocClassLattice, BarrierStrengthLattice, BitsBudgetLattice,
+        BoolLattice<LatticeNameProbeTruePred>, CallShapeLattice, CipherTierLattice, ClockSourceLattice, ConfLattice,
+        ConsistencyLattice, ControlFlowLattice, CrashLattice, DetSafeLattice, EpochLattice, FpComplexLayoutLattice,
+        FpConstantRoundingLattice, FpContractLattice, FpDenormalInputLattice, FpFtzLattice, FpInfPolicyLattice,
+        FpLibmPolicyLattice, FpNanPolicyLattice, FpReassociateLattice, FpRoundingLattice, FpTrapMaskLattice,
+        FractionalLattice, GenerationLattice, GlobalStateLattice, HappensBeforeLattice<4>, HotPathLattice,
+        HwInstructionLattice, LifetimeLattice, MemOrderLattice, MonotoneLattice<int, std::less<int>>, NumaNodeLattice,
+        PeakBytesLattice, PinningRequirementLattice, ProductLattice<HotPathLattice, DetSafeLattice>,
+        // FIXY-V-090 — FpModeProductLattice composite (11-way ProductLattice
+        // over the V-089 per-axis ChainLattices).  Already covered structurally
+        // by the binary ProductLattice witness above, but pinning the 11-way
+        // form here guards against an FpModeLattice.h alias rename / arity
+        // refactor breaking the umbrella discovery contract.
+        ProductLattice<FpRoundingLattice, FpFtzLattice, FpContractLattice, FpTrapMaskLattice, FpDenormalInputLattice,
+                       FpNanPolicyLattice, FpInfPolicyLattice, FpComplexLayoutLattice, FpLibmPolicyLattice,
+                       FpReassociateLattice, FpConstantRoundingLattice>,
+        ProgressLattice, QttSemiring, RecipeFamilyLattice, ResidencyHeatLattice, SchedulerPolicyLattice,
+        SeqPrefixLattice<LatticeNameProbeElement>, SimdIsaLattice, StackUseLattice, StalenessSemiring, StdioLattice,
+        SuspendBehaviorLattice, SyscallFamilyLattice, ToleranceLattice, TrustLattice<LatticeNameProbeSource>,
+        VendorLattice, WaitLattice, WitnessLattice>(),
     "[Lattice_Missing_Name] At least one shipped lattice does not "
     "satisfy HasLatticeName<L> — `lattice_name<L>()` would return the "
     "`<unnamed lattice>` sentinel and degrade diagnostics silently. "

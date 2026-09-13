@@ -136,17 +136,16 @@ struct SubtypeOk {};
 // UInner are the failing pair, named for richer error messages.
 template <typename DiagnosticTag, typename TInner, typename UInner>
 struct RejectionReason {
-    static_assert(
-        diagnostic::is_diagnostic_class_v<DiagnosticTag>,
-        "RejectionReason's DiagnosticTag template argument must be a "
-        "type derived from diagnostic::tag_base.  See "
-        "SessionDiagnostic.h's catalog for the shipped tag classes.");
+    static_assert(diagnostic::is_diagnostic_class_v<DiagnosticTag>,
+                  "RejectionReason's DiagnosticTag template argument must be a "
+                  "type derived from diagnostic::tag_base.  See "
+                  "SessionDiagnostic.h's catalog for the shipped tag classes.");
 
     using diagnostic_class = DiagnosticTag;
-    using lhs_inner        = TInner;
-    using rhs_inner        = UInner;
+    using lhs_inner = TInner;
+    using rhs_inner = UInner;
 
-    static constexpr std::string_view name        = DiagnosticTag::name;
+    static constexpr std::string_view name = DiagnosticTag::name;
     static constexpr std::string_view description = DiagnosticTag::description;
     static constexpr std::string_view remediation = DiagnosticTag::remediation;
 };
@@ -188,8 +187,7 @@ using subtype_rejection_reason_t = typename subtype_rejection_reason<T, U>::type
 // metafunction.
 
 template <typename T, typename U>
-inline constexpr bool is_subtype_sync_diag_v =
-    std::is_same_v<subtype_rejection_reason_t<T, U>, SubtypeOk>;
+inline constexpr bool is_subtype_sync_diag_v = std::is_same_v<subtype_rejection_reason_t<T, U>, SubtypeOk>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Per-rule specialisations (mirror is_subtype_sync) ──────────────
@@ -197,7 +195,9 @@ inline constexpr bool is_subtype_sync_diag_v =
 
 // [reason-end]  End ⩽ End
 template <>
-struct subtype_rejection_reason<End, End> { using type = SubtypeOk; };
+struct subtype_rejection_reason<End, End> {
+    using type = SubtypeOk;
+};
 
 // [reason-continue]  Continue ⩽ Continue
 //
@@ -206,22 +206,24 @@ struct subtype_rejection_reason<End, End> { using type = SubtypeOk; };
 // assumed related, so the Continues that refer back to them are
 // trivially related too.)
 template <>
-struct subtype_rejection_reason<Continue, Continue> { using type = SubtypeOk; };
+struct subtype_rejection_reason<Continue, Continue> {
+    using type = SubtypeOk;
+};
 
 // [reason-stop]  Stop ⩽ U for any U (Stop is bottom — vacuous).
 template <typename U>
-struct subtype_rejection_reason<Stop, U> { using type = SubtypeOk; };
+struct subtype_rejection_reason<Stop, U> {
+    using type = SubtypeOk;
+};
 
 // [reason-send]  Send<T1, R1> ⩽ Send<T2, R2>
 //   COVARIANT in payload: is_subsort<T1, T2> required
 //   COVARIANT in continuation: recurse on (R1, R2)
 template <typename T1, typename R1, typename T2, typename R2>
 struct subtype_rejection_reason<Send<T1, R1>, Send<T2, R2>> {
-    using type = std::conditional_t<
-        !is_subsort_v<T1, T2>,
-        RejectionReason<diagnostic::ProtocolViolation_Payload, T1, T2>,
-        subtype_rejection_reason_t<R1, R2>
-    >;
+    using type =
+        std::conditional_t<!is_subsort_v<T1, T2>, RejectionReason<diagnostic::ProtocolViolation_Payload, T1, T2>,
+                           subtype_rejection_reason_t<R1, R2>>;
 };
 
 // [reason-recv]  Recv<T1, R1> ⩽ Recv<T2, R2>
@@ -236,11 +238,9 @@ struct subtype_rejection_reason<Send<T1, R1>, Send<T2, R2>> {
 // remediation hint in ProtocolViolation_Payload's description.
 template <typename T1, typename R1, typename T2, typename R2>
 struct subtype_rejection_reason<Recv<T1, R1>, Recv<T2, R2>> {
-    using type = std::conditional_t<
-        !is_subsort_v<T2, T1>,
-        RejectionReason<diagnostic::ProtocolViolation_Payload, T2, T1>,
-        subtype_rejection_reason_t<R1, R2>
-    >;
+    using type =
+        std::conditional_t<!is_subsort_v<T2, T1>, RejectionReason<diagnostic::ProtocolViolation_Payload, T2, T1>,
+                           subtype_rejection_reason_t<R1, R2>>;
 };
 
 // [reason-loop]  Loop<B1> ⩽ Loop<B2> — recurse on bodies.
@@ -265,33 +265,25 @@ struct subtype_rejection_reason<Loop<B1>, Loop<B2>> {
 // [reason-send-vs-recv]  Send<...> ⩽ Recv<...>
 template <typename T1, typename R1, typename T2, typename R2>
 struct subtype_rejection_reason<Send<T1, R1>, Recv<T2, R2>> {
-    using type = RejectionReason<
-        diagnostic::ShapeMismatch_SendVsRecv,
-        Send<T1, R1>, Recv<T2, R2>>;
+    using type = RejectionReason<diagnostic::ShapeMismatch_SendVsRecv, Send<T1, R1>, Recv<T2, R2>>;
 };
 
 // [reason-recv-vs-send]  Recv<...> ⩽ Send<...>
 template <typename T1, typename R1, typename T2, typename R2>
 struct subtype_rejection_reason<Recv<T1, R1>, Send<T2, R2>> {
-    using type = RejectionReason<
-        diagnostic::ShapeMismatch_SendVsRecv,
-        Recv<T1, R1>, Send<T2, R2>>;
+    using type = RejectionReason<diagnostic::ShapeMismatch_SendVsRecv, Recv<T1, R1>, Send<T2, R2>>;
 };
 
 // [reason-select-vs-offer]  Select<...> ⩽ Offer<...>
 template <typename... B1s, typename... B2s>
 struct subtype_rejection_reason<Select<B1s...>, Offer<B2s...>> {
-    using type = RejectionReason<
-        diagnostic::ShapeMismatch_SelectVsOffer,
-        Select<B1s...>, Offer<B2s...>>;
+    using type = RejectionReason<diagnostic::ShapeMismatch_SelectVsOffer, Select<B1s...>, Offer<B2s...>>;
 };
 
 // [reason-offer-vs-select]  Offer<...> ⩽ Select<...>
 template <typename... B1s, typename... B2s>
 struct subtype_rejection_reason<Offer<B1s...>, Select<B2s...>> {
-    using type = RejectionReason<
-        diagnostic::ShapeMismatch_SelectVsOffer,
-        Offer<B1s...>, Select<B2s...>>;
+    using type = RejectionReason<diagnostic::ShapeMismatch_SelectVsOffer, Offer<B1s...>, Select<B2s...>>;
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -326,22 +318,16 @@ struct branch_fold<TupA, TupB, N, N> {
 
 template <typename TupA, typename TupB, std::size_t I, std::size_t N>
 struct branch_fold {
-    using inner_reason = subtype_rejection_reason_t<
-        std::tuple_element_t<I, TupA>,
-        std::tuple_element_t<I, TupB>>;
+    using inner_reason = subtype_rejection_reason_t<std::tuple_element_t<I, TupA>, std::tuple_element_t<I, TupB>>;
 
-    using type = std::conditional_t<
-        !std::is_same_v<inner_reason, SubtypeOk>,
-        inner_reason,
-        typename branch_fold<TupA, TupB, I + 1, N>::type
-    >;
+    using type = std::conditional_t<!std::is_same_v<inner_reason, SubtypeOk>, inner_reason,
+                                    typename branch_fold<TupA, TupB, I + 1, N>::type>;
 };
 
 // Gated wrapper: only instantiates branch_fold when the size
 // precondition holds.  Avoids out-of-range tuple_element_t in the
 // failing-size case.
-template <bool SizeOk, typename TupA, typename TupB, std::size_t N,
-          typename FailureWhenSizeNotOk>
+template <bool SizeOk, typename TupA, typename TupB, std::size_t N, typename FailureWhenSizeNotOk>
 struct gated_fold {
     using type = FailureWhenSizeNotOk;
 };
@@ -357,24 +343,16 @@ struct gated_fold<true, TupA, TupB, N, Whatever> {
 template <typename... B1s, typename... B2s>
 struct subtype_rejection_reason<Select<B1s...>, Select<B2s...>> {
     using type = typename detail::subtype_reason::gated_fold<
-        (sizeof...(B1s) <= sizeof...(B2s)),
-        std::tuple<B1s...>, std::tuple<B2s...>,
-        sizeof...(B1s),
-        RejectionReason<diagnostic::BranchCount_Mismatch,
-                        Select<B1s...>, Select<B2s...>>
-    >::type;
+        (sizeof...(B1s) <= sizeof...(B2s)), std::tuple<B1s...>, std::tuple<B2s...>, sizeof...(B1s),
+        RejectionReason<diagnostic::BranchCount_Mismatch, Select<B1s...>, Select<B2s...>>>::type;
 };
 
 // [reason-offer]  Offer<B1s...> ⩽ Offer<C1s...>
 template <typename... B1s, typename... B2s>
 struct subtype_rejection_reason<Offer<B1s...>, Offer<B2s...>> {
     using type = typename detail::subtype_reason::gated_fold<
-        (sizeof...(B1s) >= sizeof...(B2s)),
-        std::tuple<B1s...>, std::tuple<B2s...>,
-        sizeof...(B2s),
-        RejectionReason<diagnostic::BranchCount_Mismatch,
-                        Offer<B1s...>, Offer<B2s...>>
-    >::type;
+        (sizeof...(B1s) >= sizeof...(B2s)), std::tuple<B1s...>, std::tuple<B2s...>, sizeof...(B2s),
+        RejectionReason<diagnostic::BranchCount_Mismatch, Offer<B1s...>, Offer<B2s...>>>::type;
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -386,17 +364,13 @@ struct subtype_rejection_reason<Offer<B1s...>, Offer<B2s...>> {
 // failing branch's inner reason — base first, then rollback.
 
 template <typename B1, typename R1, typename B2, typename R2>
-struct subtype_rejection_reason<CheckpointedSession<B1, R1>,
-                                 CheckpointedSession<B2, R2>>
-{
+struct subtype_rejection_reason<CheckpointedSession<B1, R1>, CheckpointedSession<B2, R2>> {
 private:
     using base_reason = subtype_rejection_reason_t<B1, B2>;
+
 public:
-    using type = std::conditional_t<
-        !std::is_same_v<base_reason, SubtypeOk>,
-        base_reason,
-        subtype_rejection_reason_t<R1, R2>
-    >;
+    using type =
+        std::conditional_t<!std::is_same_v<base_reason, SubtypeOk>, base_reason, subtype_rejection_reason_t<R1, R2>>;
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -411,14 +385,13 @@ public:
 
 template <typename T, typename U>
 consteval void assert_subtype_sync_diag() noexcept {
-    static_assert(is_subtype_sync_diag_v<T, U>,
-        "crucible::session::diagnostic [SubtypeMismatch]: "
-        "assert_subtype_sync_diag: T is not a synchronous subtype of "
-        "U.  Inspect subtype_rejection_reason_t<T, U> for the failing "
-        "inner pair and the classified failure tag (SubtypeMismatch / "
-        "ProtocolViolation_Payload / BranchCount_Mismatch / "
-        "ShapeMismatch_SendVsRecv / ShapeMismatch_SelectVsOffer).  "
-        "The compiler's instantiation trace names the inner types.");
+    static_assert(is_subtype_sync_diag_v<T, U>, "crucible::session::diagnostic [SubtypeMismatch]: "
+                                                "assert_subtype_sync_diag: T is not a synchronous subtype of "
+                                                "U.  Inspect subtype_rejection_reason_t<T, U> for the failing "
+                                                "inner pair and the classified failure tag (SubtypeMismatch / "
+                                                "ProtocolViolation_Payload / BranchCount_Mismatch / "
+                                                "ShapeMismatch_SendVsRecv / ShapeMismatch_SelectVsOffer).  "
+                                                "The compiler's instantiation trace names the inner types.");
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -430,8 +403,7 @@ consteval void assert_subtype_sync_diag() noexcept {
 // is_subtype_sync_diag_v MUST equal is_subtype_sync_v on every input.
 
 template <typename T, typename U>
-inline constexpr bool subtype_diag_agrees_v =
-    is_subtype_sync_diag_v<T, U> == is_subtype_sync_v<T, U>;
+inline constexpr bool subtype_diag_agrees_v = is_subtype_sync_diag_v<T, U> == is_subtype_sync_v<T, U>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Framework self-test static_asserts ─────────────────────────────
@@ -443,112 +415,80 @@ inline constexpr bool subtype_diag_agrees_v =
 
 namespace detail::subtype_reason::self_test {
 
-struct Msg     {};
-struct Other   {};
+struct Msg {};
+struct Other {};
 struct Payload {};
-struct Reply   {};
+struct Reply {};
 
 // ─── Positive: SubtypeOk for the rules in is_subtype_sync ─────────
 
 static_assert(std::is_same_v<subtype_rejection_reason_t<End, End>, SubtypeOk>);
 static_assert(std::is_same_v<subtype_rejection_reason_t<Continue, Continue>, SubtypeOk>);
-static_assert(std::is_same_v<
-    subtype_rejection_reason_t<Send<int, End>, Send<int, End>>, SubtypeOk>);
-static_assert(std::is_same_v<
-    subtype_rejection_reason_t<Recv<int, End>, Recv<int, End>>, SubtypeOk>);
-static_assert(std::is_same_v<
-    subtype_rejection_reason_t<Loop<Send<int, Continue>>,
-                                Loop<Send<int, Continue>>>,
-    SubtypeOk>);
-static_assert(std::is_same_v<
-    subtype_rejection_reason_t<Stop, End>, SubtypeOk>);
-static_assert(std::is_same_v<
-    subtype_rejection_reason_t<Stop, Send<int, End>>, SubtypeOk>);
+static_assert(std::is_same_v<subtype_rejection_reason_t<Send<int, End>, Send<int, End>>, SubtypeOk>);
+static_assert(std::is_same_v<subtype_rejection_reason_t<Recv<int, End>, Recv<int, End>>, SubtypeOk>);
+static_assert(
+    std::is_same_v<subtype_rejection_reason_t<Loop<Send<int, Continue>>, Loop<Send<int, Continue>>>, SubtypeOk>);
+static_assert(std::is_same_v<subtype_rejection_reason_t<Stop, End>, SubtypeOk>);
+static_assert(std::is_same_v<subtype_rejection_reason_t<Stop, Send<int, End>>, SubtypeOk>);
 
 // Select narrowing: Select<A> ⩽ Select<A, B> (subtype has fewer).
-static_assert(std::is_same_v<
-    subtype_rejection_reason_t<
-        Select<Send<Msg, End>>,
-        Select<Send<Msg, End>, End>>,
-    SubtypeOk>);
+static_assert(
+    std::is_same_v<subtype_rejection_reason_t<Select<Send<Msg, End>>, Select<Send<Msg, End>, End>>, SubtypeOk>);
 
 // Offer widening: Offer<A, B> ⩽ Offer<A> (subtype has more).
-static_assert(std::is_same_v<
-    subtype_rejection_reason_t<
-        Offer<Recv<Msg, End>, End>,
-        Offer<Recv<Msg, End>>>,
-    SubtypeOk>);
+static_assert(std::is_same_v<subtype_rejection_reason_t<Offer<Recv<Msg, End>, End>, Offer<Recv<Msg, End>>>, SubtypeOk>);
 
 // CheckpointedSession reflexivity.
-static_assert(std::is_same_v<
-    subtype_rejection_reason_t<
-        CheckpointedSession<Send<Msg, End>, End>,
-        CheckpointedSession<Send<Msg, End>, End>>,
-    SubtypeOk>);
+static_assert(std::is_same_v<subtype_rejection_reason_t<CheckpointedSession<Send<Msg, End>, End>,
+                                                        CheckpointedSession<Send<Msg, End>, End>>,
+                             SubtypeOk>);
 
 // ─── Negative: payload subsort failure ───────────────────────────
 
 // Send: covariant payload.  is_subsort<int, long> is false by default.
-static_assert(std::is_same_v<
-    subtype_rejection_reason_t<Send<int, End>, Send<long, End>>,
-    RejectionReason<diagnostic::ProtocolViolation_Payload, int, long>>);
+static_assert(std::is_same_v<subtype_rejection_reason_t<Send<int, End>, Send<long, End>>,
+                             RejectionReason<diagnostic::ProtocolViolation_Payload, int, long>>);
 
 // Recv: contravariant payload — failing pair is reversed.
-static_assert(std::is_same_v<
-    subtype_rejection_reason_t<Recv<int, End>, Recv<long, End>>,
-    RejectionReason<diagnostic::ProtocolViolation_Payload, long, int>>);
+static_assert(std::is_same_v<subtype_rejection_reason_t<Recv<int, End>, Recv<long, End>>,
+                             RejectionReason<diagnostic::ProtocolViolation_Payload, long, int>>);
 
 // ─── Negative: cross-shape combinators ───────────────────────────
 
-static_assert(std::is_same_v<
-    subtype_rejection_reason_t<Send<int, End>, Recv<int, End>>,
-    RejectionReason<diagnostic::ShapeMismatch_SendVsRecv,
-                    Send<int, End>, Recv<int, End>>>);
+static_assert(std::is_same_v<subtype_rejection_reason_t<Send<int, End>, Recv<int, End>>,
+                             RejectionReason<diagnostic::ShapeMismatch_SendVsRecv, Send<int, End>, Recv<int, End>>>);
 
-static_assert(std::is_same_v<
-    subtype_rejection_reason_t<Recv<int, End>, Send<int, End>>,
-    RejectionReason<diagnostic::ShapeMismatch_SendVsRecv,
-                    Recv<int, End>, Send<int, End>>>);
+static_assert(std::is_same_v<subtype_rejection_reason_t<Recv<int, End>, Send<int, End>>,
+                             RejectionReason<diagnostic::ShapeMismatch_SendVsRecv, Recv<int, End>, Send<int, End>>>);
 
-static_assert(std::is_same_v<
-    subtype_rejection_reason_t<Select<End>, Offer<End>>,
-    RejectionReason<diagnostic::ShapeMismatch_SelectVsOffer,
-                    Select<End>, Offer<End>>>);
+static_assert(std::is_same_v<subtype_rejection_reason_t<Select<End>, Offer<End>>,
+                             RejectionReason<diagnostic::ShapeMismatch_SelectVsOffer, Select<End>, Offer<End>>>);
 
-static_assert(std::is_same_v<
-    subtype_rejection_reason_t<Offer<End>, Select<End>>,
-    RejectionReason<diagnostic::ShapeMismatch_SelectVsOffer,
-                    Offer<End>, Select<End>>>);
+static_assert(std::is_same_v<subtype_rejection_reason_t<Offer<End>, Select<End>>,
+                             RejectionReason<diagnostic::ShapeMismatch_SelectVsOffer, Offer<End>, Select<End>>>);
 
 // ─── Negative: branch count cardinality ──────────────────────────
 
 // Select widening (subtype has MORE branches than super) is rejected.
 using SelectTooManyT = Select<Send<Msg, End>, End>;
 using SelectTooManyU = Select<Send<Msg, End>>;
-static_assert(std::is_same_v<
-    subtype_rejection_reason_t<SelectTooManyT, SelectTooManyU>,
-    RejectionReason<diagnostic::BranchCount_Mismatch,
-                    SelectTooManyT, SelectTooManyU>>);
+static_assert(std::is_same_v<subtype_rejection_reason_t<SelectTooManyT, SelectTooManyU>,
+                             RejectionReason<diagnostic::BranchCount_Mismatch, SelectTooManyT, SelectTooManyU>>);
 
 // Offer narrowing (subtype has FEWER branches than super) is rejected.
 using OfferTooFewT = Offer<Recv<Msg, End>>;
 using OfferTooFewU = Offer<Recv<Msg, End>, End>;
-static_assert(std::is_same_v<
-    subtype_rejection_reason_t<OfferTooFewT, OfferTooFewU>,
-    RejectionReason<diagnostic::BranchCount_Mismatch,
-                    OfferTooFewT, OfferTooFewU>>);
+static_assert(std::is_same_v<subtype_rejection_reason_t<OfferTooFewT, OfferTooFewU>,
+                             RejectionReason<diagnostic::BranchCount_Mismatch, OfferTooFewT, OfferTooFewU>>);
 
 // ─── Negative: generic SubtypeMismatch (primary template) ────────
 
 // Cross-shape pairs without a more specific tag fall through.
-static_assert(std::is_same_v<
-    subtype_rejection_reason_t<End, Send<int, End>>,
-    RejectionReason<diagnostic::SubtypeMismatch, End, Send<int, End>>>);
+static_assert(std::is_same_v<subtype_rejection_reason_t<End, Send<int, End>>,
+                             RejectionReason<diagnostic::SubtypeMismatch, End, Send<int, End>>>);
 
-static_assert(std::is_same_v<
-    subtype_rejection_reason_t<Loop<Send<int, Continue>>, End>,
-    RejectionReason<diagnostic::SubtypeMismatch,
-                    Loop<Send<int, Continue>>, End>>);
+static_assert(std::is_same_v<subtype_rejection_reason_t<Loop<Send<int, Continue>>, End>,
+                             RejectionReason<diagnostic::SubtypeMismatch, Loop<Send<int, Continue>>, End>>);
 
 // ─── Bubbling: nested failure surfaces the deepest inner pair ───
 
@@ -557,52 +497,46 @@ static_assert(std::is_same_v<
 //
 // Loop recurses → Send payload OK → Recv payload contravariant
 // is_subsort<long, int> false → ProtocolViolation_Payload(long, int).
-using NestedT = Loop<Send<int, Recv<int,  End>>>;
+using NestedT = Loop<Send<int, Recv<int, End>>>;
 using NestedU = Loop<Send<int, Recv<long, End>>>;
-static_assert(std::is_same_v<
-    subtype_rejection_reason_t<NestedT, NestedU>,
-    RejectionReason<diagnostic::ProtocolViolation_Payload, long, int>>);
+static_assert(std::is_same_v<subtype_rejection_reason_t<NestedT, NestedU>,
+                             RejectionReason<diagnostic::ProtocolViolation_Payload, long, int>>);
 
 // CheckpointedSession's base-branch failure bubbles up.
 using CkptT = CheckpointedSession<Send<int, End>, End>;
 using CkptU = CheckpointedSession<Send<long, End>, End>;
-static_assert(std::is_same_v<
-    subtype_rejection_reason_t<CkptT, CkptU>,
-    RejectionReason<diagnostic::ProtocolViolation_Payload, int, long>>);
+static_assert(std::is_same_v<subtype_rejection_reason_t<CkptT, CkptU>,
+                             RejectionReason<diagnostic::ProtocolViolation_Payload, int, long>>);
 
 // CheckpointedSession's rollback-branch failure (when base passes).
-using CkptT2 = CheckpointedSession<End, Send<int,  End>>;
+using CkptT2 = CheckpointedSession<End, Send<int, End>>;
 using CkptU2 = CheckpointedSession<End, Send<long, End>>;
-static_assert(std::is_same_v<
-    subtype_rejection_reason_t<CkptT2, CkptU2>,
-    RejectionReason<diagnostic::ProtocolViolation_Payload, int, long>>);
+static_assert(std::is_same_v<subtype_rejection_reason_t<CkptT2, CkptU2>,
+                             RejectionReason<diagnostic::ProtocolViolation_Payload, int, long>>);
 
 // Select branch fold: first failing branch surfaces.  Branch 0 OK,
 // branch 1 has a payload mismatch.
 using SelT = Select<Send<int, End>, Send<int, End>>;
 using SelU = Select<Send<int, End>, Send<long, End>>;
-static_assert(std::is_same_v<
-    subtype_rejection_reason_t<SelT, SelU>,
-    RejectionReason<diagnostic::ProtocolViolation_Payload, int, long>>);
+static_assert(std::is_same_v<subtype_rejection_reason_t<SelT, SelU>,
+                             RejectionReason<diagnostic::ProtocolViolation_Payload, int, long>>);
 
 // ─── is_subtype_sync_diag_v agrees with is_subtype_sync_v ────────
 
-static_assert( subtype_diag_agrees_v<End, End>);
-static_assert( subtype_diag_agrees_v<Send<int, End>, Send<int, End>>);
-static_assert( subtype_diag_agrees_v<Send<int, End>, Send<long, End>>);
-static_assert( subtype_diag_agrees_v<Send<int, End>, Recv<int, End>>);
-static_assert( subtype_diag_agrees_v<Loop<Send<int, Continue>>,
-                                      Loop<Send<int, Continue>>>);
-static_assert( subtype_diag_agrees_v<NestedT, NestedU>);
-static_assert( subtype_diag_agrees_v<SelectTooManyT, SelectTooManyU>);
-static_assert( subtype_diag_agrees_v<Stop, End>);
-static_assert( subtype_diag_agrees_v<CkptT, CkptU>);
+static_assert(subtype_diag_agrees_v<End, End>);
+static_assert(subtype_diag_agrees_v<Send<int, End>, Send<int, End>>);
+static_assert(subtype_diag_agrees_v<Send<int, End>, Send<long, End>>);
+static_assert(subtype_diag_agrees_v<Send<int, End>, Recv<int, End>>);
+static_assert(subtype_diag_agrees_v<Loop<Send<int, Continue>>, Loop<Send<int, Continue>>>);
+static_assert(subtype_diag_agrees_v<NestedT, NestedU>);
+static_assert(subtype_diag_agrees_v<SelectTooManyT, SelectTooManyU>);
+static_assert(subtype_diag_agrees_v<Stop, End>);
+static_assert(subtype_diag_agrees_v<CkptT, CkptU>);
 
 // ─── is_rejection_reason_v shape predicate ────────────────────────
 
 static_assert(!is_rejection_reason_v<SubtypeOk>);
-static_assert( is_rejection_reason_v<
-    RejectionReason<diagnostic::SubtypeMismatch, int, float>>);
+static_assert(is_rejection_reason_v<RejectionReason<diagnostic::SubtypeMismatch, int, float>>);
 static_assert(!is_rejection_reason_v<int>);
 
 }  // namespace detail::subtype_reason::self_test

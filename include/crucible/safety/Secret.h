@@ -43,10 +43,10 @@
 #include <concepts>
 #include <cstdlib>
 #include <cstring>
-#include <memory>      // std::addressof
-#include <meta>        // FIXY-FOUND-018: reflection-driven roster completeness
+#include <memory>  // std::addressof
+#include <meta>  // FIXY-FOUND-018: reflection-driven roster completeness
 #include <string_view>
-#include <tuple>       // FIXY-FOUND-018: secret_policy::roster::All
+#include <tuple>  // FIXY-FOUND-018: secret_policy::roster::All
 #include <type_traits>
 #include <utility>
 
@@ -88,11 +88,11 @@ namespace secret_policy {
 // CRTP-derived gate.
 struct secret_policy_base {};
 
-struct AuditedLogging   final : secret_policy_base {};   // log with audit trail
-struct WireSerialize    final : secret_policy_base {};   // encrypted-channel serialization
-struct HashForCompare   final : secret_policy_base {};   // release as hash (not the source)
-struct LengthOnly       final : secret_policy_base {};   // release only size metadata
-struct UserDisplay      final : secret_policy_base {};   // display in UI (e.g., last-4 of card)
+struct AuditedLogging final : secret_policy_base {};  // log with audit trail
+struct WireSerialize final : secret_policy_base {};  // encrypted-channel serialization
+struct HashForCompare final : secret_policy_base {};  // release as hash (not the source)
+struct LengthOnly final : secret_policy_base {};  // release only size metadata
+struct UserDisplay final : secret_policy_base {};  // display in UI (e.g., last-4 of card)
 
 // fixy-A4-015: declassification policy that discharges the Hunt-Sands
 // erasure / temporal-replay axis (Staleness, not Security).  Used as
@@ -114,7 +114,7 @@ struct UserDisplay      final : secret_policy_base {};   // display in UI (e.g.,
 // can be added here as their corpus matchers are tightened in turn;
 // each pairs with a `axes_discharged_of` specialization in fixy/
 // Theory.h that lifts the corresponding `DischargeAxis::*` bit.
-struct AuthorizedReplay final : secret_policy_base {};   // discharges Hunt-Sands erasure / replay-window axis
+struct AuthorizedReplay final : secret_policy_base {};  // discharges Hunt-Sands erasure / replay-window axis
 
 // ── FIXY-FOUND-018 cross-tree closure (2026-05-25) ────────────────
 //
@@ -167,31 +167,24 @@ struct AuthorizedReplay final : secret_policy_base {};   // discharges Hunt-Sand
 // declaration to avoid a wide rename across fixy's consumers).
 namespace roster {
 
-using All = std::tuple<
-    AuditedLogging,
-    WireSerialize,
-    HashForCompare,
-    LengthOnly,
-    UserDisplay,
-    AuthorizedReplay>;
+using All = std::tuple<AuditedLogging, WireSerialize, HashForCompare, LengthOnly, UserDisplay, AuthorizedReplay>;
 
 inline constexpr std::size_t kCount = std::tuple_size_v<All>;
 
-static_assert(kCount == 6,
-    "FIXY-FOUND-018: secret_policy::roster::All grew beyond 6 tags. "
-    "Adding a new secret_policy:: tag in safety/Secret.h requires "
-    "(a) declaring the `struct NewTag final : secret_policy_base {}` "
-    "above this roster, (b) appending the type to roster::All, and "
-    "(c) bumping this static_assert's expected count to the new "
-    "tuple_size_v.  Then in fixy/Theory.h: (d) ship the "
-    "`axes_discharged_of<NewTag>` specialization (default None per "
-    "Hunt-Sands safe-default), (e) add the explicit per-policy "
-    "sentinel witnessing the expected discharge mask, (f) bump the "
-    "fixy-side kPolicyRosterCardinality assertion to match.  "
-    "Cardinality drift between substrate (here) and fixy alias "
-    "fires AT this assertion if the substrate count is bumped first "
-    "and AT fixy's kPolicyRosterCardinality if fixy is bumped "
-    "first — either order reds the cross-tree handshake.");
+static_assert(kCount == 6, "FIXY-FOUND-018: secret_policy::roster::All grew beyond 6 tags. "
+                           "Adding a new secret_policy:: tag in safety/Secret.h requires "
+                           "(a) declaring the `struct NewTag final : secret_policy_base {}` "
+                           "above this roster, (b) appending the type to roster::All, and "
+                           "(c) bumping this static_assert's expected count to the new "
+                           "tuple_size_v.  Then in fixy/Theory.h: (d) ship the "
+                           "`axes_discharged_of<NewTag>` specialization (default None per "
+                           "Hunt-Sands safe-default), (e) add the explicit per-policy "
+                           "sentinel witnessing the expected discharge mask, (f) bump the "
+                           "fixy-side kPolicyRosterCardinality assertion to match.  "
+                           "Cardinality drift between substrate (here) and fixy alias "
+                           "fires AT this assertion if the substrate count is bumped first "
+                           "and AT fixy's kPolicyRosterCardinality if fixy is bumped "
+                           "first — either order reds the cross-tree handshake.");
 
 // ── FIXY-FOUND-018 reflection-driven completeness check ───────────
 //
@@ -222,8 +215,7 @@ static_assert(kCount == 6,
 
 namespace detail::roster_completeness {
 
-[[nodiscard]] consteval std::size_t
-count_policy_tags_in_namespace() noexcept {
+[[nodiscard]] consteval std::size_t count_policy_tags_in_namespace() noexcept {
     std::size_t found = 0;
     // `template for` synthesizes a fresh `constexpr auto m` per
     // expansion-iteration in the same enclosing scope; with
@@ -232,38 +224,33 @@ count_policy_tags_in_namespace() noexcept {
     // static_assert blind spot, ALGEBRA-1..11 template-for shadow):
     // suppress -Wshadow over the expansion's lexical extent.
     _Pragma("GCC diagnostic push")
-    _Pragma("GCC diagnostic ignored \"-Wshadow\"")
-    template for (constexpr auto m :
-                  std::define_static_array(std::meta::members_of(
-                      ^^::crucible::safety::secret_policy,
-                      std::meta::access_context::unchecked()))) {
+        _Pragma("GCC diagnostic ignored \"-Wshadow\"") template for (constexpr auto m :
+                                                                     std::define_static_array(std::meta::members_of(
+                                                                         ^^::crucible::safety::secret_policy,
+                                                                         std::meta::access_context::unchecked()))) {
         if constexpr (std::meta::is_type(m)) {
-            using member_type = typename [: m :];
-            if constexpr (std::is_class_v<member_type>
-                       && std::is_base_of_v<secret_policy_base, member_type>
-                       && !std::is_same_v<secret_policy_base, member_type>) {
+            using member_type = typename[:m:];
+            if constexpr (std::is_class_v<member_type> && std::is_base_of_v<secret_policy_base, member_type>
+                          && !std::is_same_v<secret_policy_base, member_type>) {
                 ++found;
             }
         }
     }
-    _Pragma("GCC diagnostic pop")
-    return found;
+    _Pragma("GCC diagnostic pop") return found;
 }
 
-inline constexpr std::size_t kNamespacePolicyTags =
-    count_policy_tags_in_namespace();
+inline constexpr std::size_t kNamespacePolicyTags = count_policy_tags_in_namespace();
 
-static_assert(kNamespacePolicyTags == kCount,
-    "FIXY-FOUND-018 reflection-driven completeness: the secret_policy "
-    "namespace contains a different number of secret_policy_base-"
-    "derived class types than roster::All enumerates.  Either a tag "
-    "was added to the namespace without appending to roster::All "
-    "(more namespace tags than roster entries — audit-trail gap), "
-    "OR a tag was removed without shrinking roster::All (fewer "
-    "namespace tags than roster entries — roster references a "
-    "non-existent type).  Reconcile by ensuring roster::All "
-    "enumerates every `struct X final : secret_policy_base {}` "
-    "declared above.");
+static_assert(kNamespacePolicyTags == kCount, "FIXY-FOUND-018 reflection-driven completeness: the secret_policy "
+                                              "namespace contains a different number of secret_policy_base-"
+                                              "derived class types than roster::All enumerates.  Either a tag "
+                                              "was added to the namespace without appending to roster::All "
+                                              "(more namespace tags than roster entries — audit-trail gap), "
+                                              "OR a tag was removed without shrinking roster::All (fewer "
+                                              "namespace tags than roster entries — roster references a "
+                                              "non-existent type).  Reconcile by ensuring roster::All "
+                                              "enumerates every `struct X final : secret_policy_base {}` "
+                                              "declared above.");
 
 }  // namespace detail::roster_completeness
 
@@ -279,23 +266,19 @@ static_assert(kNamespacePolicyTags == kCount,
 // structurally enforced rather than convention-only.
 template <typename Policy>
 concept DeclassificationPolicy =
-    std::is_class_v<Policy> &&
-    std::derived_from<Policy, secret_policy::secret_policy_base>;
+    std::is_class_v<Policy> && std::derived_from<Policy, secret_policy::secret_policy_base>;
 
 template <typename T>
 class [[nodiscard]] Secret {
 public:
     using value_type = T;
-    using lattice_type = ::crucible::algebra::lattices::ConfLattice::At<
-        ::crucible::algebra::lattices::Conf::Secret>;
+    using lattice_type = ::crucible::algebra::lattices::ConfLattice::At<::crucible::algebra::lattices::Conf::Secret>;
     // Modality declaration — Round-4 CHEAT-5; see Linear.h for the
     // rationale.  Secret is Comonad — declassify is the comonadic
     // counit (extract from the classified context).
-    static constexpr ::crucible::algebra::ModalityKind modality =
-        ::crucible::algebra::ModalityKind::Comonad;
+    static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::Comonad;
     // Public per GRADED-TRAIT-1 — see Linear.h for the rationale.
-    using graded_type  = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Comonad, lattice_type, T>;
+    using graded_type = ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Comonad, lattice_type, T>;
 
 private:
     // Empty-lattice grade_type collapses via [[no_unique_address]] in
@@ -303,9 +286,7 @@ private:
     graded_type impl_;
 
 public:
-
-    constexpr explicit Secret(T v)
-        noexcept(std::is_nothrow_move_constructible_v<T>)
+    constexpr explicit Secret(T v) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(v), typename lattice_type::element_type{}} {}
 
     // In-place construction — avoids moving the secret through a temporary.
@@ -316,17 +297,15 @@ public:
     // single move.
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr explicit Secret(std::in_place_t, Args&&... args)
-        noexcept(std::is_nothrow_constructible_v<T, Args...>
-                 && std::is_nothrow_move_constructible_v<T>)
-        : impl_{T(std::forward<Args>(args)...),
-                typename lattice_type::element_type{}} {}
+    constexpr explicit Secret(std::in_place_t, Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
+                                                                        && std::is_nothrow_move_constructible_v<T>)
+        : impl_{T(std::forward<Args>(args)...), typename lattice_type::element_type{}} {}
 
-    Secret(const Secret&)            = delete("Secret<T> cannot be silently duplicated");
+    Secret(const Secret&) = delete("Secret<T> cannot be silently duplicated");
     Secret& operator=(const Secret&) = delete("Secret<T> cannot be silently duplicated");
-    Secret(Secret&&)                  = default;
-    Secret& operator=(Secret&&)       = default;
-    ~Secret()                         = default;
+    Secret(Secret&&) = default;
+    Secret& operator=(Secret&&) = default;
+    ~Secret() = default;
 
     // Transform — operations on Secret produce Secret.  The callable
     // `f` receives the classified payload as T&& and must return a
@@ -357,30 +336,24 @@ public:
     // a deduction-failure inside `invoke_result_t`.
     template <typename F>
         requires std::invocable<F, T&&>
-    [[nodiscard]] constexpr auto transform(F&& f) &&
-        noexcept(std::is_nothrow_invocable_v<F, T&&>)
-        -> Secret<std::invoke_result_t<F, T&&>>
-    {
+    [[nodiscard]] constexpr auto transform(F&& f) && noexcept(std::is_nothrow_invocable_v<F, T&&>)
+        -> Secret<std::invoke_result_t<F, T&&>> {
         using R = std::invoke_result_t<F, T&&>;
-        static_assert(!std::is_reference_v<R>,
-            "[Capture_Leak_Reference_Return] Secret::transform(f): f"
-            " must return by value.  A reference return aliases either"
-            " the moved-from secret storage (UAF) or a member of f's"
-            " closure (silent declassification bypassing"
-            " declassify<Policy>).  Change f's return type to a value,"
-            " or — if the intent is to observe classified data — call"
-            " declassify<Policy>() first to leave an audit trail."
-            " (#151, Secret.h transform())");
-        static_assert(!std::is_void_v<R>,
-            "[Capture_Leak_Void_Return] Secret::transform(f): f must"
-            " return a value.  void → Secret<void> is meaningless; the"
-            " likely intent is a side-effecting observation on the"
-            " classified payload — that belongs in declassify<Policy>(),"
-            " not transform()."
-            " (#151, Secret.h transform())");
-        return Secret<R>{
-            std::forward<F>(f)(std::move(impl_).consume())
-        };
+        static_assert(!std::is_reference_v<R>, "[Capture_Leak_Reference_Return] Secret::transform(f): f"
+                                               " must return by value.  A reference return aliases either"
+                                               " the moved-from secret storage (UAF) or a member of f's"
+                                               " closure (silent declassification bypassing"
+                                               " declassify<Policy>).  Change f's return type to a value,"
+                                               " or — if the intent is to observe classified data — call"
+                                               " declassify<Policy>() first to leave an audit trail."
+                                               " (#151, Secret.h transform())");
+        static_assert(!std::is_void_v<R>, "[Capture_Leak_Void_Return] Secret::transform(f): f must"
+                                          " return a value.  void → Secret<void> is meaningless; the"
+                                          " likely intent is a side-effecting observation on the"
+                                          " classified payload — that belongs in declassify<Policy>(),"
+                                          " not transform()."
+                                          " (#151, Secret.h transform())");
+        return Secret<R>{std::forward<F>(f)(std::move(impl_).consume())};
     }
 
     // Length-preserving accessor — compiles only when T has .size().
@@ -403,21 +376,17 @@ public:
     // supplied, so the neg-compile harness can pattern-match it
     // alongside the substrate's auditing convention.
     template <DeclassificationPolicy Policy>
-    [[nodiscard]] constexpr T declassify() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
-        static_assert(
-            std::derived_from<Policy,
-                              ::crucible::safety::secret_policy::secret_policy_base>,
-            "crucible::safety::diagnostic [SecretPolicy_NotInBase]: "
-            "Secret::declassify<Policy>() requires Policy to derive "
-            "from crucible::safety::secret_policy::secret_policy_base. "
-            "Define new policies as `struct MyPolicy final : "
-            "secret_policy_base {};` inside the secret_policy:: "
-            "namespace so `grep \"declassify<secret_policy::\"` "
-            "enumerates every escape from classification.  Ad-hoc "
-            "policy structs anywhere else in the codebase would "
-            "silently bypass the audit trail.");
+    [[nodiscard]] constexpr T declassify() && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        static_assert(std::derived_from<Policy, ::crucible::safety::secret_policy::secret_policy_base>,
+                      "crucible::safety::diagnostic [SecretPolicy_NotInBase]: "
+                      "Secret::declassify<Policy>() requires Policy to derive "
+                      "from crucible::safety::secret_policy::secret_policy_base. "
+                      "Define new policies as `struct MyPolicy final : "
+                      "secret_policy_base {};` inside the secret_policy:: "
+                      "namespace so `grep \"declassify<secret_policy::\"` "
+                      "enumerates every escape from classification.  Ad-hoc "
+                      "policy structs anywhere else in the codebase would "
+                      "silently bypass the audit trail.");
         return std::move(impl_).extract();
     }
 
@@ -441,9 +410,9 @@ public:
         // unsigned char* — preserves the volatile qualifier all the way down.
         // No reinterpret_cast / no const_cast (CLAUDE.md §III).
         volatile T* vp = std::addressof(impl_.peek_mut());
-        volatile auto* p = static_cast<volatile unsigned char*>(
-            static_cast<volatile void*>(vp));
-        for (std::size_t i = 0; i < sizeof(T); ++i) p[i] = 0;
+        volatile auto* p = static_cast<volatile unsigned char*>(static_cast<volatile void*>(vp));
+        for (std::size_t i = 0; i < sizeof(T); ++i)
+            p[i] = 0;
     }
 
     // ── Diagnostic names (forwarded from Graded substrate) ─────────
@@ -461,9 +430,7 @@ public:
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return graded_type::lattice_name();
-    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 };
 
 template <typename T>
@@ -511,14 +478,12 @@ Secret(T) -> Secret<T>;
 // -O3.
 template <typename T, typename... Args>
     requires std::is_constructible_v<T, Args...>
-[[nodiscard]] constexpr Secret<T> mint_secret(Args&&... args)
-    noexcept(std::is_nothrow_constructible_v<T, Args...>)
-{
+[[nodiscard]] constexpr Secret<T> mint_secret(Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>) {
     return Secret<T>{std::in_place, std::forward<Args>(args)...};
 }
 
 // Zero-cost guarantee.
-static_assert(sizeof(Secret<int>)               == sizeof(int));
+static_assert(sizeof(Secret<int>) == sizeof(int));
 static_assert(sizeof(Secret<unsigned long long>) == sizeof(unsigned long long));
 
 // ── FIXY-FOUND-007 sentinel: Comonad-discipline API-surface lock ───
@@ -562,43 +527,38 @@ concept ExposesGetMut = requires(S& s) { s.get_mut(); };
 
 }  // namespace detail::secret_api_lock
 
-static_assert(
-    !detail::secret_api_lock::ExposesPeekMut<Secret<int>>,
-    "FIXY-FOUND-007: Secret<T>::peek_mut() must NOT exist publicly.  "
-    "The Graded substrate admits peek_mut on Comonad-empty via the "
-    "(AbsoluteModality || empty grade) gate (Graded.h:354), but the "
-    "Comonad discipline requires that the only escape from a "
-    "classified value is the named counit `declassify<Policy>()`.  "
-    "A public peek_mut bypasses the `grep declassify<secret_policy::` "
-    "audit trail.  If you need write-only access for a "
-    "secure-overwrite path, do it INTERNALLY (see zeroize()), not "
-    "through the wrapper's public face.");
-static_assert(
-    !detail::secret_api_lock::ExposesValueMut<Secret<int>>,
-    "FIXY-FOUND-007: Secret<T>::value_mut() must NOT exist — see "
-    "ExposesPeekMut diagnostic.  Tagged<T, Source>::value_mut() is "
-    "intentional (RelativeMonad, content mutation preserves "
-    "provenance); the analogous name on Secret violates Comonad "
-    "discipline.  Routes that need mutability either (a) call "
-    "transform() to derive a new Secret, (b) declassify and re-wrap, "
-    "or (c) use the internal zeroize() path for byte-level overwrite.");
-static_assert(
-    !detail::secret_api_lock::ExposesMutableRef<Secret<int>>,
-    "FIXY-FOUND-007: Secret<T>::mutable_ref() must NOT exist.  Any "
-    "public method returning T& or T* from a Comonad-classified "
-    "value bypasses the named-counit discipline — see ExposesPeekMut.");
-static_assert(
-    !detail::secret_api_lock::ExposesDataMut<Secret<int>>,
-    "FIXY-FOUND-007: Secret<T>::data_mut() must NOT exist — see "
-    "ExposesPeekMut.  Container-style data_mut() raw-pointer accessors "
-    "leak the classified payload through pointer-iterator idioms "
-    "without an audit-trail discharging policy tag.");
-static_assert(
-    !detail::secret_api_lock::ExposesGetMut<Secret<int>>,
-    "FIXY-FOUND-007: Secret<T>::get_mut() must NOT exist — see "
-    "ExposesPeekMut.  optional/variant-style get_mut() accessors are "
-    "ergonomic mutable extractors; on a Comonad wrapper they bypass "
-    "declassify<Policy>().");
+static_assert(!detail::secret_api_lock::ExposesPeekMut<Secret<int>>,
+              "FIXY-FOUND-007: Secret<T>::peek_mut() must NOT exist publicly.  "
+              "The Graded substrate admits peek_mut on Comonad-empty via the "
+              "(AbsoluteModality || empty grade) gate (Graded.h:354), but the "
+              "Comonad discipline requires that the only escape from a "
+              "classified value is the named counit `declassify<Policy>()`.  "
+              "A public peek_mut bypasses the `grep declassify<secret_policy::` "
+              "audit trail.  If you need write-only access for a "
+              "secure-overwrite path, do it INTERNALLY (see zeroize()), not "
+              "through the wrapper's public face.");
+static_assert(!detail::secret_api_lock::ExposesValueMut<Secret<int>>,
+              "FIXY-FOUND-007: Secret<T>::value_mut() must NOT exist — see "
+              "ExposesPeekMut diagnostic.  Tagged<T, Source>::value_mut() is "
+              "intentional (RelativeMonad, content mutation preserves "
+              "provenance); the analogous name on Secret violates Comonad "
+              "discipline.  Routes that need mutability either (a) call "
+              "transform() to derive a new Secret, (b) declassify and re-wrap, "
+              "or (c) use the internal zeroize() path for byte-level overwrite.");
+static_assert(!detail::secret_api_lock::ExposesMutableRef<Secret<int>>,
+              "FIXY-FOUND-007: Secret<T>::mutable_ref() must NOT exist.  Any "
+              "public method returning T& or T* from a Comonad-classified "
+              "value bypasses the named-counit discipline — see ExposesPeekMut.");
+static_assert(!detail::secret_api_lock::ExposesDataMut<Secret<int>>,
+              "FIXY-FOUND-007: Secret<T>::data_mut() must NOT exist — see "
+              "ExposesPeekMut.  Container-style data_mut() raw-pointer accessors "
+              "leak the classified payload through pointer-iterator idioms "
+              "without an audit-trail discharging policy tag.");
+static_assert(!detail::secret_api_lock::ExposesGetMut<Secret<int>>,
+              "FIXY-FOUND-007: Secret<T>::get_mut() must NOT exist — see "
+              "ExposesPeekMut.  optional/variant-style get_mut() accessors are "
+              "ergonomic mutable extractors; on a Comonad wrapper they bypass "
+              "declassify<Policy>().");
 
 namespace detail::secret_self_test {
 
@@ -611,7 +571,7 @@ namespace detail::secret_self_test {
 // / consume() and a constexpr-vs-runtime divergence would silently
 // classify the wrong bytes.
 inline void runtime_smoke_test() {
-    int seed = 17;                                          // non-constant
+    int seed = 17;  // non-constant
 
     Secret<int> s{seed * 2};
 
@@ -637,11 +597,11 @@ inline void runtime_smoke_test() {
     // Cannot inspect zeroized value without declassifying — but a key
     // zeroized in-place should compare equal to a freshly-zeroized one.
     Secret<unsigned long long> zero{0ULL};
-    auto k_out  = std::move(key).template declassify<secret_policy::HashForCompare>();
-    auto z_out  = std::move(zero).template declassify<secret_policy::HashForCompare>();
+    auto k_out = std::move(key).template declassify<secret_policy::HashForCompare>();
+    auto z_out = std::move(zero).template declassify<secret_policy::HashForCompare>();
     if (k_out != z_out) std::abort();
 }
 
 }  // namespace detail::secret_self_test
 
-} // namespace crucible::safety
+}  // namespace crucible::safety

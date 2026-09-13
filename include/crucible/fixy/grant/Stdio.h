@@ -28,7 +28,7 @@ namespace crucible::fixy::grant::stdio {
 namespace streams {
 struct Stderr final {};
 struct Stdout final {};
-struct Debug  final {};
+struct Debug final {};
 }  // namespace streams
 
 // ─── write<Stream> — formatted stdio to a stream ──────────────────────
@@ -40,12 +40,10 @@ struct write final : grant_base {};
 namespace crucible::fixy::grant {
 
 template <class Stream>
-struct which_dim<stdio::write<Stream>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Stdio> {};
+struct which_dim<stdio::write<Stream>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Stdio> {};
 
 // "I accept the strict default (no stdio) for this binding."
-using accept_default_strict_for_Stdio =
-    accept_default_strict_for<dim::DimensionAxis::Stdio>;
+using accept_default_strict_for_Stdio = accept_default_strict_for<dim::DimensionAxis::Stdio>;
 
 }  // namespace crucible::fixy::grant
 
@@ -67,7 +65,7 @@ static_assert(sizeof(stdio::write<st::Stderr>) == 1);
 
 static_assert(which_dim_v<stdio::write<st::Stderr>> == D::Stdio);
 static_assert(which_dim_v<stdio::write<st::Stdout>> == D::Stdio);
-static_assert(which_dim_v<stdio::write<st::Debug>>  == D::Stdio);
+static_assert(which_dim_v<stdio::write<st::Debug>> == D::Stdio);
 static_assert(which_dim_v<accept_default_strict_for_Stdio> == D::Stdio);
 
 // Each stream is a distinct grant type.

@@ -112,17 +112,17 @@
 
 #include <crucible/algebra/lattices/SyscallFamilyLattice.h>  // FIXY-V-179
 #include <crucible/effects/Capabilities.h>  // effects::Init capability tag
-#include <crucible/effects/EffectRow.h>     // FIXY-U-083: row_contains_v
-#include <crucible/effects/ExecCtx.h>       // FIXY-U-083: IsExecCtx, row_type_of_t
-#include <crucible/fixy/syscall/Per.h>                       // FIXY-V-179
-#include <crucible/safety/Borrowed.h>       // safety::Borrowed<T, Source>
-#include <crucible/safety/Refined.h>        // safety::Refined / bounded_above
+#include <crucible/effects/EffectRow.h>  // FIXY-U-083: row_contains_v
+#include <crucible/effects/ExecCtx.h>  // FIXY-U-083: IsExecCtx, row_type_of_t
+#include <crucible/fixy/syscall/Per.h>  // FIXY-V-179
+#include <crucible/safety/Borrowed.h>  // safety::Borrowed<T, Source>
+#include <crucible/safety/Refined.h>  // safety::Refined / bounded_above
 
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <tuple>                            // FIXY-V-179
+#include <tuple>  // FIXY-V-179
 
 namespace crucible::perf {
 
@@ -142,17 +142,16 @@ namespace crucible::perf {
 // GAPS-004b-AUDIT and `TimelineLockEvent` at GAPS-004d ship time.
 struct TimelineSyscallEvent {
     uint64_t duration_ns;  //  8 B  syscall_exit_ts - syscall_enter_ts (ns)
-    uint32_t tid;          //  4 B  thread that issued the syscall
-    uint32_t syscall_nr;   //  4 B  syscall number (e.g. SYS_read=0, SYS_write=1)
-    uint64_t ts_ns;        //  8 B  bpf_ktime_get_ns() — WRITTEN LAST
-    uint64_t _pad;         //  8 B  cache-line-coresidence pad
+    uint32_t tid;  //  4 B  thread that issued the syscall
+    uint32_t syscall_nr;  //  4 B  syscall number (e.g. SYS_read=0, SYS_write=1)
+    uint64_t ts_ns;  //  8 B  bpf_ktime_get_ns() — WRITTEN LAST
+    uint64_t _pad;  //  8 B  cache-line-coresidence pad
 };
-static_assert(sizeof(TimelineSyscallEvent) == 32,
-    "TimelineSyscallEvent must be 32 B (duration_ns 8 + tid 4 + "
-    "syscall_nr 4 + ts_ns 8 + _pad 8) to match the BPF program's "
-    "struct timeline_syscall_event in common.h — wire contract with "
-    "BPF_F_MMAPABLE map.  32 divides 64 evenly, so events[N] never "
-    "spans two cache lines.");
+static_assert(sizeof(TimelineSyscallEvent) == 32, "TimelineSyscallEvent must be 32 B (duration_ns 8 + tid 4 + "
+                                                  "syscall_nr 4 + ts_ns 8 + _pad 8) to match the BPF program's "
+                                                  "struct timeline_syscall_event in common.h — wire contract with "
+                                                  "BPF_F_MMAPABLE map.  32 divides 64 evenly, so events[N] never "
+                                                  "spans two cache lines.");
 
 }  // namespace crucible::perf
 
@@ -166,7 +165,7 @@ static_assert(sizeof(TimelineSyscallEvent) == 32,
 namespace crucible::perf {
 
 class SyscallLatency {
- public:
+public:
     // ─── Snapshot — consumer-shaped delta semantics ──────────────────
     //
     // Same shape as SchedSwitch::Snapshot.  `delta.total_syscalls` =
@@ -178,12 +177,10 @@ class SyscallLatency {
 
         [[nodiscard]] Snapshot operator-(const Snapshot& older) const noexcept {
             Snapshot r;
-            if (__builtin_sub_overflow(total_syscalls, older.total_syscalls,
-                                        &r.total_syscalls)) [[unlikely]] {
+            if (__builtin_sub_overflow(total_syscalls, older.total_syscalls, &r.total_syscalls)) [[unlikely]] {
                 r.total_syscalls = 0;
             }
-            if (__builtin_sub_overflow(timeline_index, older.timeline_index,
-                                        &r.timeline_index)) [[unlikely]] {
+            if (__builtin_sub_overflow(timeline_index, older.timeline_index, &r.timeline_index)) [[unlikely]] {
                 r.timeline_index = 0;
             }
             return r;
@@ -210,8 +207,7 @@ class SyscallLatency {
     //
     // Diagnostic line printed to stderr unless CRUCIBLE_PERF_QUIET=1 is set.
     // CRUCIBLE_PERF_VERBOSE=1 forwards libbpf's INFO/WARN messages.
-    [[nodiscard]] static std::optional<SyscallLatency>
-        load(::crucible::effects::Init) noexcept;
+    [[nodiscard]] static std::optional<SyscallLatency> load(::crucible::effects::Init) noexcept;
 
     // Total syscalls recorded for our process since load().  Cost:
     // one bpf_map_lookup_elem syscall (~1 µs) — the total_syscalls
@@ -249,8 +245,7 @@ class SyscallLatency {
     // lifetime is a use-after-free.  CRUCIBLE_LIFETIMEBOUND on
     // Borrowed's ctor catches the simple temporary-bind cases at
     // compile time.
-    [[nodiscard]] safety::Borrowed<const TimelineSyscallEvent, SyscallLatency>
-        timeline_view() const noexcept;
+    [[nodiscard]] safety::Borrowed<const TimelineSyscallEvent, SyscallLatency> timeline_view() const noexcept;
 
     // Current value of the syscall_timeline ring buffer's write_idx
     // (monotonically increasing).  Reader uses this to identify the
@@ -270,15 +265,13 @@ class SyscallLatency {
     // kicks in).  load() returns nullopt if either program fails to
     // attach.  Cap of 8 matches the inplace_vector<...,8> shape
     // used by SchedSwitch / SenseHub / PmuSample / LockContention.
-    [[nodiscard]] safety::Refined<safety::bounded_above<8>, std::size_t>
-        attached_programs() const noexcept;
+    [[nodiscard]] safety::Refined<safety::bounded_above<8>, std::size_t> attached_programs() const noexcept;
 
     // Number of bpf_program__attach calls that failed (returned
     // NULL or an ERR_PTR).  Same bound as attached_programs().
     // Non-zero means at least one tracepoint was unavailable — set
     // CRUCIBLE_PERF_VERBOSE=1 to see which.
-    [[nodiscard]] safety::Refined<safety::bounded_above<8>, std::size_t>
-        attach_failures() const noexcept;
+    [[nodiscard]] safety::Refined<safety::bounded_above<8>, std::size_t> attach_failures() const noexcept;
 
     SyscallLatency(const SyscallLatency&) =
         delete("SyscallLatency owns unique BPF object + mmap — copying would double-close");
@@ -288,7 +281,7 @@ class SyscallLatency {
     SyscallLatency& operator=(SyscallLatency&&) noexcept;
     ~SyscallLatency();
 
- private:
+private:
     struct State;
     SyscallLatency() noexcept;
 
@@ -305,9 +298,8 @@ class SyscallLatency {
 // contexts must not engage this surface; the Ctx-fit gate enforces
 // that at the type level.
 template <class Ctx>
-concept CtxFitsSyscallLatencyMint =
-       ::crucible::effects::IsExecCtx<Ctx>
-    && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Init>;
+concept CtxFitsSyscallLatencyMint = ::crucible::effects::IsExecCtx<Ctx>
+                                 && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Init>;
 
 // ── FIXY-V-179 — syscall-grant declaration ────────────────────────────
 //
@@ -319,25 +311,21 @@ concept CtxFitsSyscallLatencyMint =
 //   bpf             (41) → Privilege      → Row<IO, Block>     [V-179]
 //   perf_event_open (42) → Privilege      → Row<IO, Block>     [V-179]
 //   mmap            (21) → MemoryMapping  → Row<IO>
-using mint_syscall_latency_syscall_grants = std::tuple<
-    ::crucible::fixy::grant::syscall::per<
-        ::crucible::fixy::grant::syscall::SyscallId::bpf>,
-    ::crucible::fixy::grant::syscall::per<
-        ::crucible::fixy::grant::syscall::SyscallId::perf_event_open>,
-    ::crucible::fixy::grant::syscall::per<
-        ::crucible::fixy::grant::syscall::SyscallId::mmap>>;
+using mint_syscall_latency_syscall_grants =
+    std::tuple<::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::bpf>,
+               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::perf_event_open>,
+               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::mmap>>;
 
 namespace detail::v179_syscall_latency_grant_check {
 namespace fsc = ::crucible::fixy::grant::syscall;
 namespace fll = ::crucible::algebra::lattices;
-static_assert(::crucible::fixy::grant::family_tier_v<
-    fsc::per<fsc::SyscallId::bpf>>             == fll::SyscallFamily::Privilege);
-static_assert(::crucible::fixy::grant::family_tier_v<
-    fsc::per<fsc::SyscallId::perf_event_open>> == fll::SyscallFamily::Privilege);
-static_assert(::crucible::fixy::grant::family_tier_v<
-    fsc::per<fsc::SyscallId::mmap>>            == fll::SyscallFamily::MemoryMapping);
+static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::bpf>> == fll::SyscallFamily::Privilege);
+static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::perf_event_open>>
+              == fll::SyscallFamily::Privilege);
+static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::mmap>>
+              == fll::SyscallFamily::MemoryMapping);
 static_assert(std::tuple_size_v<mint_syscall_latency_syscall_grants> == 3,
-    "FIXY-V-179: mint_syscall_latency_syscall_grants drifted from 3 entries.");
+              "FIXY-V-179: mint_syscall_latency_syscall_grants drifted from 3 entries.");
 }  // namespace detail::v179_syscall_latency_grant_check
 
 template <::crucible::effects::IsExecCtx Ctx>
@@ -347,8 +335,8 @@ template <::crucible::effects::IsExecCtx Ctx>
 // the per-CPU histogram array, and heap-allocates
 // std::unique_ptr<State>.  CLAUDE.md §XXI: compile-time evaluation
 // would lie about the runtime cost.
-[[nodiscard]] inline std::optional<SyscallLatency>
-mint_syscall_latency(Ctx const&, ::crucible::effects::Init init) noexcept {
+[[nodiscard]] inline std::optional<SyscallLatency> mint_syscall_latency(Ctx const&,
+                                                                        ::crucible::effects::Init init) noexcept {
     return SyscallLatency::load(init);
 }
 

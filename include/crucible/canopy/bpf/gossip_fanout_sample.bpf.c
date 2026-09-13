@@ -17,8 +17,7 @@ struct {
 } canopy_gossip_fanout_events SEC(".maps");
 
 SEC("tracepoint/net/net_dev_queue")
-int crucible_canopy_gossip_fanout_sample(void *ctx)
-{
+int crucible_canopy_gossip_fanout_sample(void* ctx) {
     (void)ctx;
     return 0;
 }

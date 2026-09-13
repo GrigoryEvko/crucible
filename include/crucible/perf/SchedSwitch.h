@@ -116,17 +116,17 @@
 
 #include <crucible/algebra/lattices/SyscallFamilyLattice.h>  // FIXY-V-179
 #include <crucible/effects/Capabilities.h>  // effects::Init capability tag
-#include <crucible/effects/EffectRow.h>     // FIXY-U-083: row_contains_v
-#include <crucible/effects/ExecCtx.h>       // FIXY-U-083: IsExecCtx, row_type_of_t
-#include <crucible/fixy/syscall/Per.h>                       // FIXY-V-179
-#include <crucible/fixy/wrap/Refined.h>     // FIXY-V-171: fixy::wrap::MaxBounded
-#include <crucible/safety/Borrowed.h>       // safety::Borrowed<T, Source>
+#include <crucible/effects/EffectRow.h>  // FIXY-U-083: row_contains_v
+#include <crucible/effects/ExecCtx.h>  // FIXY-U-083: IsExecCtx, row_type_of_t
+#include <crucible/fixy/syscall/Per.h>  // FIXY-V-179
+#include <crucible/fixy/wrap/Refined.h>  // FIXY-V-171: fixy::wrap::MaxBounded
+#include <crucible/safety/Borrowed.h>  // safety::Borrowed<T, Source>
 
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <tuple>                            // FIXY-V-179
+#include <tuple>  // FIXY-V-179
 
 namespace crucible::perf {
 
@@ -155,16 +155,15 @@ namespace crucible::perf {
 // zero per-event runtime cost (we never write to _pad).
 struct TimelineSchedEvent {
     uint64_t off_cpu_ns;  //  8 B  duration thread was off-CPU (ns)
-    uint32_t tid;         //  4 B  thread that switched IN
-    uint32_t on_cpu;      //  4 B  CPU core thread switched onto
-    uint64_t ts_ns;       //  8 B  bpf_ktime_get_ns() — WRITTEN LAST
-    uint64_t _pad;        //  8 B  cache-line-coresidence pad
+    uint32_t tid;  //  4 B  thread that switched IN
+    uint32_t on_cpu;  //  4 B  CPU core thread switched onto
+    uint64_t ts_ns;  //  8 B  bpf_ktime_get_ns() — WRITTEN LAST
+    uint64_t _pad;  //  8 B  cache-line-coresidence pad
 };
-static_assert(sizeof(TimelineSchedEvent) == 32,
-    "TimelineSchedEvent must be 32 B (with 8 B trailing pad) to "
-    "match the BPF program's struct timeline_sched_event in "
-    "common.h — wire contract with BPF_F_MMAPABLE map.  32 divides "
-    "64 evenly, so events[N] never spans two cache lines.");
+static_assert(sizeof(TimelineSchedEvent) == 32, "TimelineSchedEvent must be 32 B (with 8 B trailing pad) to "
+                                                "match the BPF program's struct timeline_sched_event in "
+                                                "common.h — wire contract with BPF_F_MMAPABLE map.  32 divides "
+                                                "64 evenly, so events[N] never spans two cache lines.");
 
 // Mirrors `struct timeline_header` in common.h.  64 B (one cache
 // line) so the events array starts cache-aligned.  write_idx is
@@ -172,12 +171,11 @@ static_assert(sizeof(TimelineSchedEvent) == 32,
 // __sync_fetch_and_add — readers compute the latest valid slot as
 // `(write_idx - 1) & TIMELINE_MASK`.
 struct TimelineHeader {
-    uint64_t write_idx;   //  8 B  monotonically increasing
-    uint64_t _pad[7];     // 56 B  pad to 64 B (one cache line)
+    uint64_t write_idx;  //  8 B  monotonically increasing
+    uint64_t _pad[7];  // 56 B  pad to 64 B (one cache line)
 };
-static_assert(sizeof(TimelineHeader) == 64,
-    "TimelineHeader must be exactly one cache line so the events "
-    "array starts at offset 64 — pinned by BPF program layout");
+static_assert(sizeof(TimelineHeader) == 64, "TimelineHeader must be exactly one cache line so the events "
+                                            "array starts at offset 64 — pinned by BPF program layout");
 
 // Number of events in the sched_timeline ring buffer.  Power of
 // two so the modulo via mask is one bitwise AND.  Mirror of
@@ -187,7 +185,7 @@ constexpr uint32_t TIMELINE_CAPACITY = 4096;
 [[maybe_unused]] constexpr uint32_t TIMELINE_MASK = TIMELINE_CAPACITY - 1;
 
 class SchedSwitch {
- public:
+public:
     // ─── Snapshot — consumer-shaped delta semantics ──────────────────
     //
     // Captures the two interesting metrics — the global context-switch
@@ -212,17 +210,15 @@ class SchedSwitch {
     // computation against `context_switches()`.  Once this Snapshot
     // ships, the next watchdog audit can migrate to it.
     struct Snapshot {
-        uint64_t ctx_switches   = 0;  // matches context_switches() at snapshot
+        uint64_t ctx_switches = 0;  // matches context_switches() at snapshot
         uint64_t timeline_index = 0;  // matches timeline_write_index() at snapshot
 
         [[nodiscard]] Snapshot operator-(const Snapshot& older) const noexcept {
             Snapshot r;
-            if (__builtin_sub_overflow(ctx_switches, older.ctx_switches,
-                                        &r.ctx_switches)) [[unlikely]] {
+            if (__builtin_sub_overflow(ctx_switches, older.ctx_switches, &r.ctx_switches)) [[unlikely]] {
                 r.ctx_switches = 0;
             }
-            if (__builtin_sub_overflow(timeline_index, older.timeline_index,
-                                        &r.timeline_index)) [[unlikely]] {
+            if (__builtin_sub_overflow(timeline_index, older.timeline_index, &r.timeline_index)) [[unlikely]] {
                 r.timeline_index = 0;
             }
             return r;
@@ -256,8 +252,7 @@ class SchedSwitch {
     // Diagnostic line printed to stderr unless CRUCIBLE_PERF_QUIET=1 is
     // set in the environment.  CRUCIBLE_PERF_VERBOSE=1 forwards libbpf's
     // INFO/WARN messages.
-    [[nodiscard]] static std::optional<SchedSwitch>
-        load(::crucible::effects::Init) noexcept;
+    [[nodiscard]] static std::optional<SchedSwitch> load(::crucible::effects::Init) noexcept;
 
     // Total context switches recorded for our process since load().
     // Cost: one bpf_map_lookup_elem syscall (~1 µs) — the cs_count
@@ -292,8 +287,7 @@ class SchedSwitch {
     // holding the Borrowed view past the SchedSwitch's lifetime is
     // a use-after-free.  CRUCIBLE_LIFETIMEBOUND on Borrowed's ctor
     // catches the simple temporary-bind cases at compile time.
-    [[nodiscard]] safety::Borrowed<const TimelineSchedEvent, SchedSwitch>
-        timeline_view() const noexcept;
+    [[nodiscard]] safety::Borrowed<const TimelineSchedEvent, SchedSwitch> timeline_view() const noexcept;
 
     // Current value of the sched_timeline ring buffer's write_idx
     // (monotonically increasing).  Reader uses this to identify the
@@ -317,25 +311,22 @@ class SchedSwitch {
     // Type-identical to the prior `safety::Refined<safety::bounded_
     // above<8>, std::size_t>` spelling (`using` re-export, no ABI
     // change); the alias is the grep-target form §XVI requires.
-    [[nodiscard]] fixy::wrap::MaxBounded<8, std::size_t>
-        attached_programs() const noexcept;
+    [[nodiscard]] fixy::wrap::MaxBounded<8, std::size_t> attached_programs() const noexcept;
 
     // Number of bpf_program__attach calls that failed (returned
     // NULL or an ERR_PTR).  Same bound as attached_programs().
     // Non-zero means the tracepoint was unavailable — set
     // CRUCIBLE_PERF_VERBOSE=1 to see why.
-    [[nodiscard]] fixy::wrap::MaxBounded<8, std::size_t>
-        attach_failures() const noexcept;
+    [[nodiscard]] fixy::wrap::MaxBounded<8, std::size_t> attach_failures() const noexcept;
 
-    SchedSwitch(const SchedSwitch&) =
-        delete("SchedSwitch owns unique BPF object + mmap — copying would double-close");
-    SchedSwitch& operator=(const SchedSwitch&) =
-        delete("SchedSwitch owns unique BPF object + mmap — copying would double-close");
+    SchedSwitch(const SchedSwitch&) = delete("SchedSwitch owns unique BPF object + mmap — copying would double-close");
+    SchedSwitch&
+    operator=(const SchedSwitch&) = delete("SchedSwitch owns unique BPF object + mmap — copying would double-close");
     SchedSwitch(SchedSwitch&&) noexcept;
     SchedSwitch& operator=(SchedSwitch&&) noexcept;
     ~SchedSwitch();
 
- private:
+private:
     struct State;
     SchedSwitch() noexcept;
 
@@ -352,9 +343,8 @@ class SchedSwitch {
 // engage this surface; the Ctx-fit gate enforces that at the type
 // level.
 template <class Ctx>
-concept CtxFitsSchedSwitchMint =
-       ::crucible::effects::IsExecCtx<Ctx>
-    && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Init>;
+concept CtxFitsSchedSwitchMint = ::crucible::effects::IsExecCtx<Ctx>
+                              && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Init>;
 
 // ── FIXY-V-179 — syscall-grant declaration ────────────────────────────
 //
@@ -366,25 +356,21 @@ concept CtxFitsSchedSwitchMint =
 //   bpf             (41) → Privilege      → Row<IO, Block>     [V-179]
 //   perf_event_open (42) → Privilege      → Row<IO, Block>     [V-179]
 //   mmap            (21) → MemoryMapping  → Row<IO>
-using mint_sched_switch_syscall_grants = std::tuple<
-    ::crucible::fixy::grant::syscall::per<
-        ::crucible::fixy::grant::syscall::SyscallId::bpf>,
-    ::crucible::fixy::grant::syscall::per<
-        ::crucible::fixy::grant::syscall::SyscallId::perf_event_open>,
-    ::crucible::fixy::grant::syscall::per<
-        ::crucible::fixy::grant::syscall::SyscallId::mmap>>;
+using mint_sched_switch_syscall_grants =
+    std::tuple<::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::bpf>,
+               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::perf_event_open>,
+               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::mmap>>;
 
 namespace detail::v179_sched_switch_grant_check {
 namespace fsc = ::crucible::fixy::grant::syscall;
 namespace fll = ::crucible::algebra::lattices;
-static_assert(::crucible::fixy::grant::family_tier_v<
-    fsc::per<fsc::SyscallId::bpf>>             == fll::SyscallFamily::Privilege);
-static_assert(::crucible::fixy::grant::family_tier_v<
-    fsc::per<fsc::SyscallId::perf_event_open>> == fll::SyscallFamily::Privilege);
-static_assert(::crucible::fixy::grant::family_tier_v<
-    fsc::per<fsc::SyscallId::mmap>>            == fll::SyscallFamily::MemoryMapping);
+static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::bpf>> == fll::SyscallFamily::Privilege);
+static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::perf_event_open>>
+              == fll::SyscallFamily::Privilege);
+static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::mmap>>
+              == fll::SyscallFamily::MemoryMapping);
 static_assert(std::tuple_size_v<mint_sched_switch_syscall_grants> == 3,
-    "FIXY-V-179: mint_sched_switch_syscall_grants drifted from 3 entries.");
+              "FIXY-V-179: mint_sched_switch_syscall_grants drifted from 3 entries.");
 }  // namespace detail::v179_sched_switch_grant_check
 
 template <::crucible::effects::IsExecCtx Ctx>
@@ -394,8 +380,7 @@ template <::crucible::effects::IsExecCtx Ctx>
 // per-CPU histogram array + heap-allocates std::unique_ptr<State>.
 // CLAUDE.md §XXI: compile-time evaluation would lie about the
 // runtime cost.
-[[nodiscard]] inline std::optional<SchedSwitch>
-mint_sched_switch(Ctx const&, ::crucible::effects::Init init) noexcept {
+[[nodiscard]] inline std::optional<SchedSwitch> mint_sched_switch(Ctx const&, ::crucible::effects::Init init) noexcept {
     return SchedSwitch::load(init);
 }
 

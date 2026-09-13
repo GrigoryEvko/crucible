@@ -132,7 +132,7 @@
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/lattices/DetSafeLattice.h>
 
-#include <cstdlib>      // std::abort in the runtime smoke test
+#include <cstdlib>  // std::abort in the runtime smoke test
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -150,14 +150,10 @@ template <DetSafeTier_v Tier, typename T>
 class [[nodiscard]] DetSafe {
 public:
     // ── Public type aliases ─────────────────────────────────────────
-    using value_type   = T;
+    using value_type = T;
     using lattice_type = DetSafeLattice::At<Tier>;
-    using graded_type  = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Absolute,
-        lattice_type,
-        T>;
-    static constexpr ::crucible::algebra::ModalityKind modality =
-        ::crucible::algebra::ModalityKind::Absolute;
+    using graded_type = ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
+    static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::Absolute;
 
     // The pinned tier — exposed as a static constexpr for callers
     // doing tier-aware dispatch without instantiating the wrapper.
@@ -167,7 +163,6 @@ private:
     graded_type impl_;
 
 public:
-
     // ── Construction ────────────────────────────────────────────────
     //
     // Default: T{} at the pinned tier.
@@ -184,41 +179,38 @@ public:
     // sites (Philox.h::generate, kernel deterministic ops); the
     // default ctor exists for compatibility with std::array<
     // DetSafe<Pure, T>, N> / struct-field default-init contexts.
-    constexpr DetSafe() noexcept(
-        std::is_nothrow_default_constructible_v<T>)
+    constexpr DetSafe() noexcept(std::is_nothrow_default_constructible_v<T>)
         : impl_{T{}, typename lattice_type::element_type{}} {}
 
     // Explicit construction from a T value.  The most common
     // production pattern — a determinism-safe production site
     // (Philox.h::generate, clock wrapper, kernel emit) constructs
     // the wrapper at the appropriate tier.
-    constexpr explicit DetSafe(T value) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    constexpr explicit DetSafe(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(value), typename lattice_type::element_type{}} {}
 
     // In-place construction.
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr explicit DetSafe(std::in_place_t, Args&&... args)
-        noexcept(std::is_nothrow_constructible_v<T, Args...>
-                 && std::is_nothrow_move_constructible_v<T>)
-        : impl_{T(std::forward<Args>(args)...),
-                typename lattice_type::element_type{}} {}
+    constexpr explicit DetSafe(std::in_place_t, Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
+                                                                         && std::is_nothrow_move_constructible_v<T>)
+        : impl_{T(std::forward<Args>(args)...), typename lattice_type::element_type{}} {}
 
     // Defaulted copy/move/destroy — DetSafe IS COPYABLE within the
     // same tier pin.
-    constexpr DetSafe(const DetSafe&)            = default;
-    constexpr DetSafe(DetSafe&&)                 = default;
+    constexpr DetSafe(const DetSafe&) = default;
+    constexpr DetSafe(DetSafe&&) = default;
     constexpr DetSafe& operator=(const DetSafe&) = default;
-    constexpr DetSafe& operator=(DetSafe&&)      = default;
-    ~DetSafe()                                   = default;
+    constexpr DetSafe& operator=(DetSafe&&) = default;
+    ~DetSafe() = default;
 
     // Equality: compares value bytes within the SAME tier pin.
     // Cross-tier comparison rejected at overload resolution.
-    [[nodiscard]] friend constexpr bool operator==(
-        DetSafe const& a, DetSafe const& b) noexcept(
-        noexcept(a.peek() == b.peek()))
-        requires requires(T const& x, T const& y) { { x == y } -> std::convertible_to<bool>; }
+    [[nodiscard]] friend constexpr bool operator==(DetSafe const& a,
+                                                   DetSafe const& b) noexcept(noexcept(a.peek() == b.peek()))
+        requires requires(T const& x, T const& y) {
+            { x == y } -> std::convertible_to<bool>;
+        }
     {
         return a.peek() == b.peek();
     }
@@ -227,37 +219,21 @@ public:
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return graded_type::lattice_name();
-    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 
     // ── Read-only access ────────────────────────────────────────────
-    [[nodiscard]] constexpr T const& peek() const& noexcept {
-        return impl_.peek();
-    }
+    [[nodiscard]] constexpr T const& peek() const& noexcept { return impl_.peek(); }
 
-    [[nodiscard]] constexpr T consume() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return std::move(impl_).consume();
     }
 
-    [[nodiscard]] constexpr T& peek_mut() & noexcept {
-        return impl_.peek_mut();
-    }
+    [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(); }
 
     // ── swap ────────────────────────────────────────────────────────
-    constexpr void swap(DetSafe& other)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
-        impl_.swap(other.impl_);
-    }
+    constexpr void swap(DetSafe& other) noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
 
-    friend constexpr void swap(DetSafe& a, DetSafe& b)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
-        a.swap(b);
-    }
+    friend constexpr void swap(DetSafe& a, DetSafe& b) noexcept(std::is_nothrow_swappable_v<T>) { a.swap(b); }
 
     // ── satisfies<RequiredTier> — static subsumption check ────────
     //
@@ -292,68 +268,74 @@ public:
     // could be re-typed as PhiloxRng and silently defeat the Cipher
     // write-fence.
     template <DetSafeTier_v WeakerTier>
-        requires (DetSafeLattice::leq(WeakerTier, Tier))
-    [[nodiscard]] constexpr DetSafe<WeakerTier, T> relax() const&
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
+        requires(DetSafeLattice::leq(WeakerTier, Tier))
+    [[nodiscard]] constexpr DetSafe<WeakerTier, T> relax() const& noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
     {
         return DetSafe<WeakerTier, T>{this->peek()};
     }
 
     template <DetSafeTier_v WeakerTier>
-        requires (DetSafeLattice::leq(WeakerTier, Tier))
-    [[nodiscard]] constexpr DetSafe<WeakerTier, T> relax() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
-        return DetSafe<WeakerTier, T>{
-            std::move(impl_).consume()};
+        requires(DetSafeLattice::leq(WeakerTier, Tier))
+    [[nodiscard]] constexpr DetSafe<WeakerTier, T> relax() && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return DetSafe<WeakerTier, T>{std::move(impl_).consume()};
     }
 };
 
 // ── Convenience aliases ─────────────────────────────────────────────
 namespace det_safe {
-    template <typename T> using Pure         = DetSafe<DetSafeTier_v::Pure,                    T>;
-    template <typename T> using PhiloxRng    = DetSafe<DetSafeTier_v::PhiloxRng,               T>;
-    template <typename T> using MonoClock    = DetSafe<DetSafeTier_v::MonotonicClockRead,      T>;
-    template <typename T> using WallClock    = DetSafe<DetSafeTier_v::WallClockRead,           T>;
-    template <typename T> using EntropyRead  = DetSafe<DetSafeTier_v::EntropyRead,             T>;
-    template <typename T> using FsMtime      = DetSafe<DetSafeTier_v::FilesystemMtime,         T>;
-    template <typename T> using NDS          = DetSafe<DetSafeTier_v::NonDeterministicSyscall, T>;
+template <typename T>
+using Pure = DetSafe<DetSafeTier_v::Pure, T>;
+template <typename T>
+using PhiloxRng = DetSafe<DetSafeTier_v::PhiloxRng, T>;
+template <typename T>
+using MonoClock = DetSafe<DetSafeTier_v::MonotonicClockRead, T>;
+template <typename T>
+using WallClock = DetSafe<DetSafeTier_v::WallClockRead, T>;
+template <typename T>
+using EntropyRead = DetSafe<DetSafeTier_v::EntropyRead, T>;
+template <typename T>
+using FsMtime = DetSafe<DetSafeTier_v::FilesystemMtime, T>;
+template <typename T>
+using NDS = DetSafe<DetSafeTier_v::NonDeterministicSyscall, T>;
 }  // namespace det_safe
 
 // ── Layout invariants ───────────────────────────────────────────────
 namespace detail::det_safe_layout {
 
-template <typename T> using PureD     = DetSafe<DetSafeTier_v::Pure,               T>;
-template <typename T> using PhiloxD   = DetSafe<DetSafeTier_v::PhiloxRng,          T>;
-template <typename T> using NdsD      = DetSafe<DetSafeTier_v::NonDeterministicSyscall, T>;
+template <typename T>
+using PureD = DetSafe<DetSafeTier_v::Pure, T>;
+template <typename T>
+using PhiloxD = DetSafe<DetSafeTier_v::PhiloxRng, T>;
+template <typename T>
+using NdsD = DetSafe<DetSafeTier_v::NonDeterministicSyscall, T>;
 
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(PureD,   char);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(PureD,   int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(PureD,   double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(PureD, char);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(PureD, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(PureD, double);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(PhiloxD, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(PhiloxD, double);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(NdsD,    int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(NdsD,    double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(NdsD, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(NdsD, double);
 
 }  // namespace detail::det_safe_layout
 
-static_assert(sizeof(DetSafe<DetSafeTier_v::Pure,                    int>)    == sizeof(int));
-static_assert(sizeof(DetSafe<DetSafeTier_v::PhiloxRng,               int>)    == sizeof(int));
-static_assert(sizeof(DetSafe<DetSafeTier_v::MonotonicClockRead,      int>)    == sizeof(int));
-static_assert(sizeof(DetSafe<DetSafeTier_v::WallClockRead,           int>)    == sizeof(int));
-static_assert(sizeof(DetSafe<DetSafeTier_v::EntropyRead,             int>)    == sizeof(int));
-static_assert(sizeof(DetSafe<DetSafeTier_v::FilesystemMtime,         int>)    == sizeof(int));
-static_assert(sizeof(DetSafe<DetSafeTier_v::NonDeterministicSyscall, int>)    == sizeof(int));
-static_assert(sizeof(DetSafe<DetSafeTier_v::Pure,                    double>) == sizeof(double));
+static_assert(sizeof(DetSafe<DetSafeTier_v::Pure, int>) == sizeof(int));
+static_assert(sizeof(DetSafe<DetSafeTier_v::PhiloxRng, int>) == sizeof(int));
+static_assert(sizeof(DetSafe<DetSafeTier_v::MonotonicClockRead, int>) == sizeof(int));
+static_assert(sizeof(DetSafe<DetSafeTier_v::WallClockRead, int>) == sizeof(int));
+static_assert(sizeof(DetSafe<DetSafeTier_v::EntropyRead, int>) == sizeof(int));
+static_assert(sizeof(DetSafe<DetSafeTier_v::FilesystemMtime, int>) == sizeof(int));
+static_assert(sizeof(DetSafe<DetSafeTier_v::NonDeterministicSyscall, int>) == sizeof(int));
+static_assert(sizeof(DetSafe<DetSafeTier_v::Pure, double>) == sizeof(double));
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::det_safe_self_test {
 
-using PureInt     = DetSafe<DetSafeTier_v::Pure,               int>;
-using PhiloxInt   = DetSafe<DetSafeTier_v::PhiloxRng,          int>;
-using MonoInt     = DetSafe<DetSafeTier_v::MonotonicClockRead, int>;
-using NdsInt      = DetSafe<DetSafeTier_v::NonDeterministicSyscall, int>;
+using PureInt = DetSafe<DetSafeTier_v::Pure, int>;
+using PhiloxInt = DetSafe<DetSafeTier_v::PhiloxRng, int>;
+using MonoInt = DetSafe<DetSafeTier_v::MonotonicClockRead, int>;
+using NdsInt = DetSafe<DetSafeTier_v::NonDeterministicSyscall, int>;
 
 // ── Construction paths ─────────────────────────────────────────────
 inline constexpr PureInt d_default{};
@@ -364,10 +346,10 @@ inline constexpr PureInt d_explicit{42};
 static_assert(d_explicit.peek() == 42);
 
 // ── Pinned tier accessor ──────────────────────────────────────────
-static_assert(PureInt::tier   == DetSafeTier_v::Pure);
+static_assert(PureInt::tier == DetSafeTier_v::Pure);
 static_assert(PhiloxInt::tier == DetSafeTier_v::PhiloxRng);
-static_assert(MonoInt::tier   == DetSafeTier_v::MonotonicClockRead);
-static_assert(NdsInt::tier    == DetSafeTier_v::NonDeterministicSyscall);
+static_assert(MonoInt::tier == DetSafeTier_v::MonotonicClockRead);
+static_assert(NdsInt::tier == DetSafeTier_v::NonDeterministicSyscall);
 
 // ── satisfies<RequiredTier> — subsumption-up direction ────────────
 //
@@ -384,11 +366,11 @@ static_assert(PureInt::satisfies<DetSafeTier_v::NonDeterministicSyscall>);
 // THE LOAD-BEARING POSITIVE TEST: PhiloxRng-pinned values pass the
 // Cipher write-fence (`requires PhiloxRng` is a self-or-stronger
 // gate; PhiloxRng is the weakest acceptable).
-static_assert( PhiloxInt::satisfies<DetSafeTier_v::PhiloxRng>);          // self
-static_assert( PhiloxInt::satisfies<DetSafeTier_v::MonotonicClockRead>); // weaker
-static_assert( PhiloxInt::satisfies<DetSafeTier_v::WallClockRead>);
-static_assert( PhiloxInt::satisfies<DetSafeTier_v::NonDeterministicSyscall>);
-static_assert(!PhiloxInt::satisfies<DetSafeTier_v::Pure>);               // STRONGER fails ✓
+static_assert(PhiloxInt::satisfies<DetSafeTier_v::PhiloxRng>);  // self
+static_assert(PhiloxInt::satisfies<DetSafeTier_v::MonotonicClockRead>);  // weaker
+static_assert(PhiloxInt::satisfies<DetSafeTier_v::WallClockRead>);
+static_assert(PhiloxInt::satisfies<DetSafeTier_v::NonDeterministicSyscall>);
+static_assert(!PhiloxInt::satisfies<DetSafeTier_v::Pure>);  // STRONGER fails ✓
 
 // MonotonicClockRead does NOT satisfy PhiloxRng — THE LOAD-BEARING
 // REJECTION.  A MonotonicClockRead-pinned value cannot pass through
@@ -396,38 +378,34 @@ static_assert(!PhiloxInt::satisfies<DetSafeTier_v::Pure>);               // STRO
 // fence is silently defeated by clock reads flowing into the replay
 // log.
 static_assert(!MonoInt::satisfies<DetSafeTier_v::PhiloxRng>,
-    "MonotonicClockRead MUST NOT satisfy PhiloxRng — this is the "
-    "load-bearing rejection that the Cipher write-fence depends on. "
-    "If this fires, the 8th axiom (DetSafe) is no longer compile-"
-    "time-fenced and cross-replay determinism may regress without "
-    "warning.");
-static_assert( MonoInt::satisfies<DetSafeTier_v::MonotonicClockRead>);
-static_assert( MonoInt::satisfies<DetSafeTier_v::WallClockRead>);
-static_assert( MonoInt::satisfies<DetSafeTier_v::NonDeterministicSyscall>);
+              "MonotonicClockRead MUST NOT satisfy PhiloxRng — this is the "
+              "load-bearing rejection that the Cipher write-fence depends on. "
+              "If this fires, the 8th axiom (DetSafe) is no longer compile-"
+              "time-fenced and cross-replay determinism may regress without "
+              "warning.");
+static_assert(MonoInt::satisfies<DetSafeTier_v::MonotonicClockRead>);
+static_assert(MonoInt::satisfies<DetSafeTier_v::WallClockRead>);
+static_assert(MonoInt::satisfies<DetSafeTier_v::NonDeterministicSyscall>);
 
 // NDS satisfies only NDS.
-static_assert( NdsInt::satisfies<DetSafeTier_v::NonDeterministicSyscall>);
+static_assert(NdsInt::satisfies<DetSafeTier_v::NonDeterministicSyscall>);
 static_assert(!NdsInt::satisfies<DetSafeTier_v::FilesystemMtime>);
 static_assert(!NdsInt::satisfies<DetSafeTier_v::PhiloxRng>);
 static_assert(!NdsInt::satisfies<DetSafeTier_v::Pure>);
 
 // ── relax<WeakerTier> — DOWN-the-lattice conversion ───────────────
-inline constexpr auto from_pure_to_philox =
-    PureInt{42}.relax<DetSafeTier_v::PhiloxRng>();
+inline constexpr auto from_pure_to_philox = PureInt{42}.relax<DetSafeTier_v::PhiloxRng>();
 static_assert(from_pure_to_philox.peek() == 42);
 static_assert(from_pure_to_philox.tier == DetSafeTier_v::PhiloxRng);
 
-inline constexpr auto from_pure_to_nds =
-    PureInt{99}.relax<DetSafeTier_v::NonDeterministicSyscall>();
+inline constexpr auto from_pure_to_nds = PureInt{99}.relax<DetSafeTier_v::NonDeterministicSyscall>();
 static_assert(from_pure_to_nds.peek() == 99);
 static_assert(from_pure_to_nds.tier == DetSafeTier_v::NonDeterministicSyscall);
 
-inline constexpr auto from_philox_to_mono =
-    PhiloxInt{7}.relax<DetSafeTier_v::MonotonicClockRead>();
+inline constexpr auto from_philox_to_mono = PhiloxInt{7}.relax<DetSafeTier_v::MonotonicClockRead>();
 static_assert(from_philox_to_mono.peek() == 7);
 
-inline constexpr auto from_philox_to_self =
-    PhiloxInt{8}.relax<DetSafeTier_v::PhiloxRng>();   // identity
+inline constexpr auto from_philox_to_self = PhiloxInt{8}.relax<DetSafeTier_v::PhiloxRng>();  // identity
 static_assert(from_philox_to_self.peek() == 8);
 
 // SFINAE-style detector — proves the requires-clause's correctness.
@@ -436,31 +414,31 @@ concept can_relax = requires(W w) {
     { std::move(w).template relax<T_target>() };
 };
 
-static_assert( can_relax<PureInt,   DetSafeTier_v::PhiloxRng>);          // ✓ down
-static_assert( can_relax<PureInt,   DetSafeTier_v::NonDeterministicSyscall>); // ✓ down
-static_assert( can_relax<PhiloxInt, DetSafeTier_v::MonotonicClockRead>); // ✓ down
-static_assert( can_relax<PhiloxInt, DetSafeTier_v::PhiloxRng>);          // ✓ self
-static_assert(!can_relax<PhiloxInt, DetSafeTier_v::Pure>,                 // ✗ up
-    "relax<Pure> on a PhiloxRng-pinned wrapper MUST be rejected — "
-    "this is the load-bearing claim-stronger-than-source rejection. "
-    "If this fires, the wrapper is no longer fencing the 8th-axiom "
-    "load-bearing bug class.");
-static_assert(!can_relax<MonoInt,   DetSafeTier_v::PhiloxRng>);           // ✗ up
-static_assert(!can_relax<NdsInt,    DetSafeTier_v::FilesystemMtime>);     // ✗ up
+static_assert(can_relax<PureInt, DetSafeTier_v::PhiloxRng>);  // ✓ down
+static_assert(can_relax<PureInt, DetSafeTier_v::NonDeterministicSyscall>);  // ✓ down
+static_assert(can_relax<PhiloxInt, DetSafeTier_v::MonotonicClockRead>);  // ✓ down
+static_assert(can_relax<PhiloxInt, DetSafeTier_v::PhiloxRng>);  // ✓ self
+static_assert(!can_relax<PhiloxInt, DetSafeTier_v::Pure>,  // ✗ up
+              "relax<Pure> on a PhiloxRng-pinned wrapper MUST be rejected — "
+              "this is the load-bearing claim-stronger-than-source rejection. "
+              "If this fires, the wrapper is no longer fencing the 8th-axiom "
+              "load-bearing bug class.");
+static_assert(!can_relax<MonoInt, DetSafeTier_v::PhiloxRng>);  // ✗ up
+static_assert(!can_relax<NdsInt, DetSafeTier_v::FilesystemMtime>);  // ✗ up
 // NDS reflexivity — the bottom of the chain still admits relax to
 // itself (leq is reflexive at every point including bottom).  Pinning
 // this proves the requires-clause uses ≤ not strict-< at the chain
 // endpoint; a refactor accidentally using strict-< would break NDS-
 // to-NDS identity and break user code that materialized NDS values
 // through the relax<> surface.
-static_assert( can_relax<NdsInt,    DetSafeTier_v::NonDeterministicSyscall>); // ✓ self at bottom
+static_assert(can_relax<NdsInt, DetSafeTier_v::NonDeterministicSyscall>);  // ✓ self at bottom
 
 // ── Diagnostic forwarders ─────────────────────────────────────────
 static_assert(PureInt::value_type_name().ends_with("int"));
-static_assert(PureInt::lattice_name()   == "DetSafeLattice::At<Pure>");
+static_assert(PureInt::lattice_name() == "DetSafeLattice::At<Pure>");
 static_assert(PhiloxInt::lattice_name() == "DetSafeLattice::At<PhiloxRng>");
-static_assert(MonoInt::lattice_name()   == "DetSafeLattice::At<MonotonicClockRead>");
-static_assert(NdsInt::lattice_name()    == "DetSafeLattice::At<NonDeterministicSyscall>");
+static_assert(MonoInt::lattice_name() == "DetSafeLattice::At<MonotonicClockRead>");
+static_assert(NdsInt::lattice_name() == "DetSafeLattice::At<NonDeterministicSyscall>");
 
 // ── swap exchanges T values within the same tier pin ─────────────
 [[nodiscard]] consteval bool swap_exchanges_within_same_tier() noexcept {
@@ -513,7 +491,7 @@ concept can_equality_compare = requires(W const& a, W const& b) {
     { a == b } -> std::convertible_to<bool>;
 };
 
-static_assert( can_equality_compare<PureInt>);
+static_assert(can_equality_compare<PureInt>);
 static_assert(!can_equality_compare<DetSafe<DetSafeTier_v::Pure, NoEqualityT>>);
 
 // NoEqualityT has DELETED copy ctor — DetSafe<Pure, NoEqualityT>
@@ -522,11 +500,11 @@ static_assert(!can_equality_compare<DetSafe<DetSafeTier_v::Pure, NoEqualityT>>);
 // the Linear<int> cross-composition cell's discipline at the wrapper
 // boundary instead of the cross-wrapper composition surface.
 static_assert(!std::is_copy_constructible_v<DetSafe<DetSafeTier_v::Pure, NoEqualityT>>,
-    "DetSafe<Tier, T> must transitively inherit T's copy-deletion. "
-    "If this fires, NoEqualityT's deleted copy ctor is no longer "
-    "visible through the wrapper — the wrapper has accidentally "
-    "introduced its own copy ctor that bypasses T's move-only "
-    "discipline.");
+              "DetSafe<Tier, T> must transitively inherit T's copy-deletion. "
+              "If this fires, NoEqualityT's deleted copy ctor is no longer "
+              "visible through the wrapper — the wrapper has accidentally "
+              "introduced its own copy ctor that bypasses T's move-only "
+              "discipline.");
 static_assert(std::is_move_constructible_v<DetSafe<DetSafeTier_v::Pure, NoEqualityT>>);
 
 // ── relax reflexivity ─────────────────────────────────────────────
@@ -573,16 +551,16 @@ concept can_relax_lvalue = requires(W const& w) {
 };
 
 using PureMoveOnly = DetSafe<DetSafeTier_v::Pure, MoveOnlyT>;
-static_assert( can_relax_rvalue<PureMoveOnly, DetSafeTier_v::PhiloxRng>,
-    "relax<>() && MUST work for move-only T — the rvalue overload "
-    "moves through consume(), no copy required.  If this fires, the "
-    "&& overload accidentally inherited a copy_constructible<T> "
-    "requirement and silently rejects move-only payloads.");
+static_assert(can_relax_rvalue<PureMoveOnly, DetSafeTier_v::PhiloxRng>,
+              "relax<>() && MUST work for move-only T — the rvalue overload "
+              "moves through consume(), no copy required.  If this fires, the "
+              "&& overload accidentally inherited a copy_constructible<T> "
+              "requirement and silently rejects move-only payloads.");
 static_assert(!can_relax_lvalue<PureMoveOnly, DetSafeTier_v::PhiloxRng>,
-    "relax<>() const& on move-only T MUST be rejected — the const& "
-    "overload requires copy_constructible<T>.  If this fires, the "
-    "const& overload silently invokes T's deleted copy ctor and "
-    "produces a confusing diagnostic deep in Graded's substrate.");
+              "relax<>() const& on move-only T MUST be rejected — the const& "
+              "overload requires copy_constructible<T>.  If this fires, the "
+              "const& overload silently invokes T's deleted copy ctor and "
+              "produces a confusing diagnostic deep in Graded's substrate.");
 
 [[nodiscard]] consteval bool relax_move_only_works() noexcept {
     PureMoveOnly src{MoveOnlyT{77}};
@@ -597,16 +575,15 @@ static_assert(PureInt::lattice_name().size() > 0);
 static_assert(PureInt::lattice_name().starts_with("DetSafeLattice::At<"));
 
 // ── Convenience aliases resolve correctly ────────────────────────
-static_assert(det_safe::Pure<int>::tier        == DetSafeTier_v::Pure);
-static_assert(det_safe::PhiloxRng<int>::tier   == DetSafeTier_v::PhiloxRng);
-static_assert(det_safe::MonoClock<int>::tier   == DetSafeTier_v::MonotonicClockRead);
-static_assert(det_safe::WallClock<int>::tier   == DetSafeTier_v::WallClockRead);
+static_assert(det_safe::Pure<int>::tier == DetSafeTier_v::Pure);
+static_assert(det_safe::PhiloxRng<int>::tier == DetSafeTier_v::PhiloxRng);
+static_assert(det_safe::MonoClock<int>::tier == DetSafeTier_v::MonotonicClockRead);
+static_assert(det_safe::WallClock<int>::tier == DetSafeTier_v::WallClockRead);
 static_assert(det_safe::EntropyRead<int>::tier == DetSafeTier_v::EntropyRead);
-static_assert(det_safe::FsMtime<int>::tier     == DetSafeTier_v::FilesystemMtime);
-static_assert(det_safe::NDS<int>::tier         == DetSafeTier_v::NonDeterministicSyscall);
+static_assert(det_safe::FsMtime<int>::tier == DetSafeTier_v::FilesystemMtime);
+static_assert(det_safe::NDS<int>::tier == DetSafeTier_v::NonDeterministicSyscall);
 
-static_assert(std::is_same_v<det_safe::Pure<double>,
-                             DetSafe<DetSafeTier_v::Pure, double>>);
+static_assert(std::is_same_v<det_safe::Pure<double>, DetSafe<DetSafeTier_v::Pure, double>>);
 
 // ── Cipher write-fence simulation — the load-bearing scenario ────
 //
@@ -623,21 +600,17 @@ static_assert(std::is_same_v<det_safe::Pure<double>,
 //   NDS-tier values are REJECTED (✓)
 
 template <typename W>
-concept can_pass_cipher_fence =
-    W::template satisfies<DetSafeTier_v::PhiloxRng>;
+concept can_pass_cipher_fence = W::template satisfies<DetSafeTier_v::PhiloxRng>;
 
-static_assert( can_pass_cipher_fence<PureInt>,
-    "Pure-tier value MUST pass the Cipher write-fence (Pure ≥ PhiloxRng).");
-static_assert( can_pass_cipher_fence<PhiloxInt>,
-    "PhiloxRng-tier value MUST pass the Cipher write-fence (PhiloxRng = boundary).");
-static_assert(!can_pass_cipher_fence<MonoInt>,
-    "MonotonicClockRead-tier value MUST be REJECTED at the Cipher "
-    "write-fence — this is the LOAD-BEARING TEST.  The 8th axiom "
-    "(DetSafe) is enforced by exactly this rejection.  If this fires, "
-    "clock reads can flow into the replay log undetected.");
-static_assert(!can_pass_cipher_fence<NdsInt>,
-    "NonDeterministicSyscall-tier value MUST be REJECTED at the "
-    "Cipher write-fence.");
+static_assert(can_pass_cipher_fence<PureInt>, "Pure-tier value MUST pass the Cipher write-fence (Pure ≥ PhiloxRng).");
+static_assert(can_pass_cipher_fence<PhiloxInt>,
+              "PhiloxRng-tier value MUST pass the Cipher write-fence (PhiloxRng = boundary).");
+static_assert(!can_pass_cipher_fence<MonoInt>, "MonotonicClockRead-tier value MUST be REJECTED at the Cipher "
+                                               "write-fence — this is the LOAD-BEARING TEST.  The 8th axiom "
+                                               "(DetSafe) is enforced by exactly this rejection.  If this fires, "
+                                               "clock reads can flow into the replay log undetected.");
+static_assert(!can_pass_cipher_fence<NdsInt>, "NonDeterministicSyscall-tier value MUST be REJECTED at the "
+                                              "Cipher write-fence.");
 
 // ── Runtime smoke test ─────────────────────────────────────────────
 inline void runtime_smoke_test() {
@@ -688,15 +661,15 @@ inline void runtime_smoke_test() {
     if (extracted != 55) std::abort();
 
     // Convenience-alias instantiation.
-    det_safe::Pure<int>      alias_pure{123};
+    det_safe::Pure<int> alias_pure{123};
     det_safe::PhiloxRng<int> alias_philox{456};
     [[maybe_unused]] auto av = alias_pure.peek();
     [[maybe_unused]] auto pv = alias_philox.peek();
 
     // Cipher write-fence simulation at runtime.
-    [[maybe_unused]] bool can_pure_pass   = can_pass_cipher_fence<PureInt>;
+    [[maybe_unused]] bool can_pure_pass = can_pass_cipher_fence<PureInt>;
     [[maybe_unused]] bool can_philox_pass = can_pass_cipher_fence<PhiloxInt>;
-    [[maybe_unused]] bool can_mono_pass   = can_pass_cipher_fence<MonoInt>;
+    [[maybe_unused]] bool can_mono_pass = can_pass_cipher_fence<MonoInt>;
 }
 
 }  // namespace detail::det_safe_self_test

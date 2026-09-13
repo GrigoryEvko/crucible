@@ -53,16 +53,14 @@ struct NumaNodeMask {
 };
 
 struct WorkloadProfile {
-    WorkBudget  budget{};
+    WorkBudget budget{};
     std::size_t recommended_parallelism = 0;
-    NumaPolicy  numa_preference = NumaPolicy::NumaIgnore;
+    NumaPolicy numa_preference = NumaPolicy::NumaIgnore;
     std::uint64_t per_job_compute_estimate = 0;
 
-    [[nodiscard]] static constexpr WorkloadProfile
-    from_budget(WorkBudget work_budget,
-                std::size_t parallelism = 0,
-                NumaPolicy numa = NumaPolicy::NumaIgnore,
-                std::uint64_t per_job_compute = 0) noexcept {
+    [[nodiscard]] static constexpr WorkloadProfile from_budget(WorkBudget work_budget, std::size_t parallelism = 0,
+                                                               NumaPolicy numa = NumaPolicy::NumaIgnore,
+                                                               std::uint64_t per_job_compute = 0) noexcept {
         return WorkloadProfile{
             .budget = work_budget,
             .recommended_parallelism = parallelism,
@@ -72,8 +70,7 @@ struct WorkloadProfile {
     }
 
     template <typename T>
-    [[nodiscard]] static constexpr WorkloadProfile
-    infer_from_payload(std::size_t count = 1) noexcept {
+    [[nodiscard]] static constexpr WorkloadProfile infer_from_payload(std::size_t count = 1) noexcept {
         using value_type = std::remove_cvref_t<T>;
         return WorkloadProfile{
             .budget = ParallelismRule::budget_for_span<value_type>(count),
@@ -86,14 +83,14 @@ struct WorkloadProfile {
 struct WorkShard {
     std::size_t index = 0;
     std::size_t count = 1;
-    NumaPolicy  numa = NumaPolicy::NumaIgnore;
-    Tier        tier = Tier::L1Resident;
+    NumaPolicy numa = NumaPolicy::NumaIgnore;
+    Tier tier = Tier::L1Resident;
 };
 
 struct DispatchWithWorkloadResult {
     ParallelismDecision decision{};
-    bool        ran_inline = false;
-    bool        queued = false;
+    bool ran_inline = false;
+    bool queued = false;
     std::size_t worker_limit = 1;
     std::size_t tasks_submitted = 0;
 };
@@ -112,22 +109,15 @@ struct ticket_metadata {
 struct ticket_type {
     ticket_metadata* metadata = nullptr;
 
-    [[nodiscard]] static constexpr ticket_type
-    pack(ticket_metadata& metadata) noexcept {
+    [[nodiscard]] static constexpr ticket_type pack(ticket_metadata& metadata) noexcept {
         return ticket_type{.metadata = &metadata};
     }
 
-    [[nodiscard]] constexpr std::uint64_t key() const noexcept {
-        return metadata->key_value;
-    }
+    [[nodiscard]] constexpr std::uint64_t key() const noexcept { return metadata->key_value; }
 
-    [[nodiscard]] constexpr std::size_t slot() const noexcept {
-        return metadata->slot_index;
-    }
+    [[nodiscard]] constexpr std::size_t slot() const noexcept { return metadata->slot_index; }
 
-    [[nodiscard]] constexpr operator std::uint64_t() const noexcept {
-        return key();
-    }
+    [[nodiscard]] constexpr operator std::uint64_t() const noexcept { return key(); }
 };
 
 struct ticket_key {
@@ -140,8 +130,7 @@ concept HasSchedulerKey = requires(const Job& job) {
 };
 
 template <typename Job>
-[[nodiscard]] std::uint64_t priority_key(const Job& job,
-                                         std::uint64_t sequence) noexcept {
+[[nodiscard]] std::uint64_t priority_key(const Job& job, std::uint64_t sequence) noexcept {
     if constexpr (HasSchedulerKey<Job>) {
         return static_cast<std::uint64_t>(job.scheduler_key());
     } else {
@@ -150,8 +139,7 @@ template <typename Job>
 }
 
 template <typename Policy, typename Job>
-[[nodiscard]] std::uint64_t queue_key(const Job& job,
-                                      std::uint64_t sequence) noexcept {
+[[nodiscard]] std::uint64_t queue_key(const Job& job, std::uint64_t sequence) noexcept {
     if constexpr (Policy::priority_kind != scheduler::PriorityKind::None) {
         return priority_key(job, sequence);
     } else {
@@ -163,46 +151,34 @@ template <typename Policy, typename Job>
 template <typename Policy>
 using policy_queue_t = typename Policy::template queue_template<ticket_type>;
 
-template <std::size_t Capacity = 512,
-          std::size_t Align = alignof(std::max_align_t)>
+template <std::size_t Capacity = 512, std::size_t Align = alignof(std::max_align_t)>
 class InlineTask {
 public:
     InlineTask() noexcept = default;
 
     template <typename Fn>
-        requires (sizeof(std::decay_t<Fn>) <= Capacity)
-              && (alignof(std::decay_t<Fn>) <= Align)
-              && std::is_nothrow_constructible_v<std::decay_t<Fn>, Fn&&>
-              && std::is_nothrow_move_constructible_v<std::decay_t<Fn>>
-              && std::is_invocable_r_v<bool, std::decay_t<Fn>&>
-    explicit InlineTask(Fn&& fn)
-        noexcept(std::is_nothrow_constructible_v<std::decay_t<Fn>, Fn&&>)
-    {
+        requires(sizeof(std::decay_t<Fn>) <= Capacity) && (alignof(std::decay_t<Fn>) <= Align)
+             && std::is_nothrow_constructible_v<std::decay_t<Fn>, Fn&&>
+             && std::is_nothrow_move_constructible_v<std::decay_t<Fn>> && std::is_invocable_r_v<bool, std::decay_t<Fn>&>
+    explicit InlineTask(Fn&& fn) noexcept(std::is_nothrow_constructible_v<std::decay_t<Fn>, Fn&&>) {
         using F = std::decay_t<Fn>;
         // §III-clean type-erasure: cast through void* (storage_ decays to
         // std::byte*; static_cast<void*> is a qualified-void conversion).
         // The void* lambda parameters cast directly via static_cast<F*>.
-        std::construct_at(static_cast<F*>(static_cast<void*>(storage_)),
-                          std::forward<Fn>(fn));
-        run_ = [](void* ptr) noexcept -> bool {
-            return (*std::launder(static_cast<F*>(ptr)))();
-        };
+        std::construct_at(static_cast<F*>(static_cast<void*>(storage_)), std::forward<Fn>(fn));
+        run_ = [](void* ptr) noexcept -> bool { return (*std::launder(static_cast<F*>(ptr)))(); };
         move_ = [](void* dst, void* src) noexcept {
             F* from = std::launder(static_cast<F*>(src));
             std::construct_at(static_cast<F*>(dst), std::move(*from));
             std::destroy_at(from);
         };
-        destroy_ = [](void* ptr) noexcept {
-            std::destroy_at(std::launder(static_cast<F*>(ptr)));
-        };
+        destroy_ = [](void* ptr) noexcept { std::destroy_at(std::launder(static_cast<F*>(ptr))); };
     }
 
     InlineTask(const InlineTask&) = delete;
     InlineTask& operator=(const InlineTask&) = delete;
 
-    InlineTask(InlineTask&& other) noexcept {
-        move_from_(std::move(other));
-    }
+    InlineTask(InlineTask&& other) noexcept { move_from_(std::move(other)); }
 
     InlineTask& operator=(InlineTask&& other) noexcept {
         if (this != &other) {
@@ -212,21 +188,13 @@ public:
         return *this;
     }
 
-    ~InlineTask() noexcept {
-        reset_();
-    }
+    ~InlineTask() noexcept { reset_(); }
 
-    [[nodiscard]] bool operator()() noexcept {
-        return run_(storage_);
-    }
+    [[nodiscard]] bool operator()() noexcept { return run_(storage_); }
 
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return run_ != nullptr;
-    }
+    [[nodiscard]] explicit operator bool() const noexcept { return run_ != nullptr; }
 
-    [[nodiscard]] static consteval std::size_t capacity() noexcept {
-        return Capacity;
-    }
+    [[nodiscard]] static consteval std::size_t capacity() noexcept { return Capacity; }
 
 private:
     using RunFn = bool (*)(void*) noexcept;
@@ -279,9 +247,7 @@ public:
         return consumer->try_pop();
     }
 
-    [[nodiscard]] std::size_t size_approx() const noexcept {
-        return queue_.size_approx();
-    }
+    [[nodiscard]] std::size_t size_approx() const noexcept { return queue_.size_approx(); }
 
 private:
     queue_type queue_{};
@@ -292,9 +258,7 @@ class QueuePortal<PermissionedMpscChannel<T, Capacity, UserTag>> {
 public:
     using queue_type = PermissionedMpscChannel<T, Capacity, UserTag>;
 
-    QueuePortal()
-        : consumer_{queue_.consumer(
-              safety::mint_permission_root<typename queue_type::consumer_tag>())} {}
+    QueuePortal() : consumer_{queue_.consumer(safety::mint_permission_root<typename queue_type::consumer_tag>())} {}
 
     [[nodiscard]] bool try_push(T item) noexcept {
         auto producer = queue_.producer();
@@ -307,9 +271,7 @@ public:
         return consumer_.try_pop();
     }
 
-    [[nodiscard]] std::size_t size_approx() const noexcept {
-        return queue_.size_approx();
-    }
+    [[nodiscard]] std::size_t size_approx() const noexcept { return queue_.size_approx(); }
 
 private:
     queue_type queue_{};
@@ -322,9 +284,7 @@ class QueuePortal<PermissionedChaseLevDeque<T, Capacity, UserTag>> {
 public:
     using queue_type = PermissionedChaseLevDeque<T, Capacity, UserTag>;
 
-    QueuePortal()
-        : owner_{queue_.owner(
-              safety::mint_permission_root<typename queue_type::owner_tag>())} {}
+    QueuePortal() : owner_{queue_.owner(safety::mint_permission_root<typename queue_type::owner_tag>())} {}
 
     [[nodiscard]] bool try_push(T item) noexcept {
         SpinGuard guard{owner_lock_};
@@ -340,9 +300,7 @@ public:
         return thief ? thief->try_steal() : std::nullopt;
     }
 
-    [[nodiscard]] std::size_t size_approx() const noexcept {
-        return queue_.size_approx();
-    }
+    [[nodiscard]] std::size_t size_approx() const noexcept { return queue_.size_approx(); }
 
 private:
     queue_type queue_{};
@@ -350,29 +308,20 @@ private:
     SpinLock owner_lock_;
 };
 
-template <typename T,
-          std::size_t M,
-          std::size_t N,
-          std::size_t Capacity,
-          typename UserTag,
-          typename Routing>
+template <typename T, std::size_t M, std::size_t N, std::size_t Capacity, typename UserTag, typename Routing>
 class QueuePortal<PermissionedShardedGrid<T, M, N, Capacity, UserTag, Routing>> {
 public:
     using queue_type = PermissionedShardedGrid<T, M, N, Capacity, UserTag, Routing>;
 
     QueuePortal() {
         auto whole = safety::mint_permission_root<typename queue_type::whole_tag>();
-        auto perms = safety::mint_grid_permissions<typename queue_type::whole_tag, M, N>(
-            std::move(whole));
-        emplace_producers_(std::move(perms.producers),
-                           std::make_index_sequence<M>{});
-        emplace_consumers_(std::move(perms.consumers),
-                           std::make_index_sequence<N>{});
+        auto perms = safety::mint_grid_permissions<typename queue_type::whole_tag, M, N>(std::move(whole));
+        emplace_producers_(std::move(perms.producers), std::make_index_sequence<M>{});
+        emplace_consumers_(std::move(perms.consumers), std::make_index_sequence<N>{});
     }
 
     [[nodiscard]] bool try_push(const T& item) noexcept {
-        const std::size_t start =
-            next_producer_.fetch_add(1, std::memory_order_relaxed) % M;
+        const std::size_t start = next_producer_.fetch_add(1, std::memory_order_relaxed) % M;
         return try_push_producers_(start, item, std::make_index_sequence<M>{});
     }
 
@@ -381,9 +330,7 @@ public:
         return try_pop_consumers_(start, std::make_index_sequence<N>{});
     }
 
-    [[nodiscard]] std::size_t size_approx() const noexcept {
-        return queue_.size_approx();
-    }
+    [[nodiscard]] std::size_t size_approx() const noexcept { return queue_.size_approx(); }
 
 private:
     template <typename Seq>
@@ -391,8 +338,7 @@ private:
 
     template <std::size_t... Js>
     struct consumer_tuple_for<std::index_sequence<Js...>> {
-        using type = std::tuple<
-            typename queue_type::template ConsumerHandle<Js>...>;
+        using type = std::tuple<typename queue_type::template ConsumerHandle<Js>...>;
     };
 
     template <typename Seq>
@@ -400,27 +346,20 @@ private:
 
     template <std::size_t... Is>
     struct producer_tuple_for<std::index_sequence<Is...>> {
-        using type = std::tuple<
-            typename queue_type::template ProducerHandle<Is>...>;
+        using type = std::tuple<typename queue_type::template ProducerHandle<Is>...>;
     };
 
-    using consumer_tuple_type =
-        typename consumer_tuple_for<std::make_index_sequence<N>>::type;
-    using producer_tuple_type =
-        typename producer_tuple_for<std::make_index_sequence<M>>::type;
+    using consumer_tuple_type = typename consumer_tuple_for<std::make_index_sequence<N>>::type;
+    using producer_tuple_type = typename producer_tuple_for<std::make_index_sequence<M>>::type;
 
     template <typename ProducerPerms, std::size_t... Is>
-    void emplace_producers_(ProducerPerms&& perms,
-                            std::index_sequence<Is...>) {
-        producers_.emplace(queue_.template producer<Is>(
-            std::move(std::get<Is>(perms)))...);
+    void emplace_producers_(ProducerPerms&& perms, std::index_sequence<Is...>) {
+        producers_.emplace(queue_.template producer<Is>(std::move(std::get<Is>(perms)))...);
     }
 
     template <typename ConsumerPerms, std::size_t... Js>
-    void emplace_consumers_(ConsumerPerms&& perms,
-                            std::index_sequence<Js...>) {
-        consumers_.emplace(queue_.template consumer<Js>(
-            std::move(std::get<Js>(perms)))...);
+    void emplace_consumers_(ConsumerPerms&& perms, std::index_sequence<Js...>) {
+        consumers_.emplace(queue_.template consumer<Js>(std::move(std::get<Js>(perms)))...);
     }
 
     template <std::size_t I>
@@ -430,18 +369,14 @@ private:
     }
 
     template <std::size_t... Is>
-    [[nodiscard]] bool try_push_index_(std::size_t index,
-                                       const T& item,
-                                       std::index_sequence<Is...>) noexcept {
+    [[nodiscard]] bool try_push_index_(std::size_t index, const T& item, std::index_sequence<Is...>) noexcept {
         bool pushed = false;
         ((index == Is ? void(pushed = try_push_one_<Is>(item)) : void()), ...);
         return pushed;
     }
 
     template <std::size_t... Is>
-    [[nodiscard]] bool try_push_producers_(std::size_t start,
-                                           const T& item,
-                                           std::index_sequence<Is...> seq) noexcept {
+    [[nodiscard]] bool try_push_producers_(std::size_t start, const T& item, std::index_sequence<Is...> seq) noexcept {
         for (std::size_t offset = 0; offset < M; ++offset) {
             if (try_push_index_((start + offset) % M, item, seq)) return true;
         }
@@ -455,18 +390,14 @@ private:
     }
 
     template <std::size_t... Js>
-    [[nodiscard]] std::optional<T>
-    try_pop_index_(std::size_t index,
-                   std::index_sequence<Js...>) noexcept {
+    [[nodiscard]] std::optional<T> try_pop_index_(std::size_t index, std::index_sequence<Js...>) noexcept {
         std::optional<T> result;
         ((index == Js ? void(result = try_pop_one_<Js>()) : void()), ...);
         return result;
     }
 
     template <std::size_t... Js>
-    [[nodiscard]] std::optional<T>
-    try_pop_consumers_(std::size_t start,
-                       std::index_sequence<Js...> seq) noexcept {
+    [[nodiscard]] std::optional<T> try_pop_consumers_(std::size_t start, std::index_sequence<Js...> seq) noexcept {
         for (std::size_t offset = 0; offset < N; ++offset) {
             if (auto result = try_pop_index_((start + offset) % N, seq)) {
                 return result;
@@ -496,31 +427,21 @@ private:
     alignas(64) std::atomic<std::size_t> next_producer_{0};
 };
 
-template <typename T,
-          std::size_t M,
-          std::size_t NumBuckets,
-          std::size_t BucketCap,
-          typename KeyExtractor,
-          std::uint64_t QuantumNs,
-          typename UserTag>
-class QueuePortal<PermissionedCalendarGrid<T, M, NumBuckets, BucketCap,
-                                           KeyExtractor, QuantumNs, UserTag>> {
+template <typename T, std::size_t M, std::size_t NumBuckets, std::size_t BucketCap, typename KeyExtractor,
+          std::uint64_t QuantumNs, typename UserTag>
+class QueuePortal<PermissionedCalendarGrid<T, M, NumBuckets, BucketCap, KeyExtractor, QuantumNs, UserTag>> {
 public:
-    using queue_type = PermissionedCalendarGrid<T, M, NumBuckets, BucketCap,
-                                                KeyExtractor, QuantumNs, UserTag>;
+    using queue_type = PermissionedCalendarGrid<T, M, NumBuckets, BucketCap, KeyExtractor, QuantumNs, UserTag>;
 
     QueuePortal() {
         auto whole = safety::mint_permission_root<typename queue_type::whole_tag>();
-        auto perms = safety::mint_grid_permissions<typename queue_type::whole_tag, M, 1>(
-            std::move(whole));
-        emplace_producers_(std::move(perms.producers),
-                           std::make_index_sequence<M>{});
+        auto perms = safety::mint_grid_permissions<typename queue_type::whole_tag, M, 1>(std::move(whole));
+        emplace_producers_(std::move(perms.producers), std::make_index_sequence<M>{});
         consumer_.emplace(queue_.consumer(std::move(std::get<0>(perms.consumers))));
     }
 
     [[nodiscard]] bool try_push(const T& item) noexcept {
-        const std::size_t start =
-            next_producer_.fetch_add(1, std::memory_order_relaxed) % M;
+        const std::size_t start = next_producer_.fetch_add(1, std::memory_order_relaxed) % M;
         return try_push_producers_(start, item, std::make_index_sequence<M>{});
     }
 
@@ -530,9 +451,7 @@ public:
         return consumer_->try_pop();
     }
 
-    [[nodiscard]] std::size_t size_approx() const noexcept {
-        return queue_.size_approx();
-    }
+    [[nodiscard]] std::size_t size_approx() const noexcept { return queue_.size_approx(); }
 
 private:
     template <typename Seq>
@@ -540,18 +459,14 @@ private:
 
     template <std::size_t... Is>
     struct producer_tuple_for<std::index_sequence<Is...>> {
-        using type = std::tuple<
-            typename queue_type::template ProducerHandle<Is>...>;
+        using type = std::tuple<typename queue_type::template ProducerHandle<Is>...>;
     };
 
-    using producer_tuple_type =
-        typename producer_tuple_for<std::make_index_sequence<M>>::type;
+    using producer_tuple_type = typename producer_tuple_for<std::make_index_sequence<M>>::type;
 
     template <typename ProducerPerms, std::size_t... Is>
-    void emplace_producers_(ProducerPerms&& perms,
-                            std::index_sequence<Is...>) {
-        producers_.emplace(queue_.template producer<Is>(
-            std::move(std::get<Is>(perms)))...);
+    void emplace_producers_(ProducerPerms&& perms, std::index_sequence<Is...>) {
+        producers_.emplace(queue_.template producer<Is>(std::move(std::get<Is>(perms)))...);
     }
 
     template <std::size_t I>
@@ -561,18 +476,14 @@ private:
     }
 
     template <std::size_t... Is>
-    [[nodiscard]] bool try_push_index_(std::size_t index,
-                                       const T& item,
-                                       std::index_sequence<Is...>) noexcept {
+    [[nodiscard]] bool try_push_index_(std::size_t index, const T& item, std::index_sequence<Is...>) noexcept {
         bool pushed = false;
         ((index == Is ? void(pushed = try_push_one_<Is>(item)) : void()), ...);
         return pushed;
     }
 
     template <std::size_t... Is>
-    [[nodiscard]] bool try_push_producers_(std::size_t start,
-                                           const T& item,
-                                           std::index_sequence<Is...> seq) noexcept {
+    [[nodiscard]] bool try_push_producers_(std::size_t start, const T& item, std::index_sequence<Is...> seq) noexcept {
         for (std::size_t offset = 0; offset < M; ++offset) {
             if (try_push_index_((start + offset) % M, item, seq)) return true;
         }
@@ -589,47 +500,33 @@ private:
     alignas(64) std::atomic<std::size_t> next_producer_{0};
 };
 
-template <typename T,
-          std::size_t NumShards,
-          std::size_t NumBuckets,
-          std::size_t BucketCap,
-          typename KeyExtractor,
-          std::uint64_t QuantumNs,
-          typename UserTag>
-class QueuePortal<PermissionedShardedCalendarGrid<T, NumShards, NumBuckets,
-                                                  BucketCap, KeyExtractor,
-                                                  QuantumNs, UserTag>> {
+template <typename T, std::size_t NumShards, std::size_t NumBuckets, std::size_t BucketCap, typename KeyExtractor,
+          std::uint64_t QuantumNs, typename UserTag>
+class QueuePortal<
+    PermissionedShardedCalendarGrid<T, NumShards, NumBuckets, BucketCap, KeyExtractor, QuantumNs, UserTag>> {
 public:
-    using queue_type = PermissionedShardedCalendarGrid<T, NumShards, NumBuckets,
-                                                       BucketCap, KeyExtractor,
-                                                       QuantumNs, UserTag>;
+    using queue_type =
+        PermissionedShardedCalendarGrid<T, NumShards, NumBuckets, BucketCap, KeyExtractor, QuantumNs, UserTag>;
 
     QueuePortal() {
         auto whole = safety::mint_permission_root<typename queue_type::whole_tag>();
-        auto perms = safety::mint_grid_permissions<typename queue_type::whole_tag,
-                                                   NumShards, NumShards>(std::move(whole));
-        emplace_producers_(std::move(perms.producers),
-                           std::make_index_sequence<NumShards>{});
-        emplace_consumers_(std::move(perms.consumers),
-                           std::make_index_sequence<NumShards>{});
+        auto perms =
+            safety::mint_grid_permissions<typename queue_type::whole_tag, NumShards, NumShards>(std::move(whole));
+        emplace_producers_(std::move(perms.producers), std::make_index_sequence<NumShards>{});
+        emplace_consumers_(std::move(perms.consumers), std::make_index_sequence<NumShards>{});
     }
 
     [[nodiscard]] bool try_push(const T& item) noexcept {
-        const std::size_t start =
-            next_producer_.fetch_add(1, std::memory_order_relaxed) % NumShards;
-        return try_push_producers_(start, item,
-                                   std::make_index_sequence<NumShards>{});
+        const std::size_t start = next_producer_.fetch_add(1, std::memory_order_relaxed) % NumShards;
+        return try_push_producers_(start, item, std::make_index_sequence<NumShards>{});
     }
 
     [[nodiscard]] std::optional<T> try_pop(std::size_t worker_index = 0) noexcept {
         const std::size_t start = worker_index % NumShards;
-        return try_pop_consumers_(start,
-                                  std::make_index_sequence<NumShards>{});
+        return try_pop_consumers_(start, std::make_index_sequence<NumShards>{});
     }
 
-    [[nodiscard]] std::size_t size_approx() const noexcept {
-        return queue_.size_approx();
-    }
+    [[nodiscard]] std::size_t size_approx() const noexcept { return queue_.size_approx(); }
 
 private:
     template <typename Seq>
@@ -637,8 +534,7 @@ private:
 
     template <std::size_t... Is>
     struct producer_tuple_for<std::index_sequence<Is...>> {
-        using type = std::tuple<
-            typename queue_type::template ProducerHandle<Is>...>;
+        using type = std::tuple<typename queue_type::template ProducerHandle<Is>...>;
     };
 
     template <typename Seq>
@@ -646,27 +542,20 @@ private:
 
     template <std::size_t... Is>
     struct consumer_tuple_for<std::index_sequence<Is...>> {
-        using type = std::tuple<
-            typename queue_type::template ConsumerHandle<Is>...>;
+        using type = std::tuple<typename queue_type::template ConsumerHandle<Is>...>;
     };
 
-    using producer_tuple_type =
-        typename producer_tuple_for<std::make_index_sequence<NumShards>>::type;
-    using consumer_tuple_type =
-        typename consumer_tuple_for<std::make_index_sequence<NumShards>>::type;
+    using producer_tuple_type = typename producer_tuple_for<std::make_index_sequence<NumShards>>::type;
+    using consumer_tuple_type = typename consumer_tuple_for<std::make_index_sequence<NumShards>>::type;
 
     template <typename ProducerPerms, std::size_t... Is>
-    void emplace_producers_(ProducerPerms&& perms,
-                            std::index_sequence<Is...>) {
-        producers_.emplace(queue_.template producer<Is>(
-            std::move(std::get<Is>(perms)))...);
+    void emplace_producers_(ProducerPerms&& perms, std::index_sequence<Is...>) {
+        producers_.emplace(queue_.template producer<Is>(std::move(std::get<Is>(perms)))...);
     }
 
     template <typename ConsumerPerms, std::size_t... Is>
-    void emplace_consumers_(ConsumerPerms&& perms,
-                            std::index_sequence<Is...>) {
-        consumers_.emplace(queue_.template consumer<Is>(
-            std::move(std::get<Is>(perms)))...);
+    void emplace_consumers_(ConsumerPerms&& perms, std::index_sequence<Is...>) {
+        consumers_.emplace(queue_.template consumer<Is>(std::move(std::get<Is>(perms)))...);
     }
 
     template <std::size_t I>
@@ -676,19 +565,14 @@ private:
     }
 
     template <std::size_t... Is>
-    [[nodiscard]] bool try_push_index_(std::size_t index,
-                                       const T& item,
-                                       std::index_sequence<Is...>) noexcept {
+    [[nodiscard]] bool try_push_index_(std::size_t index, const T& item, std::index_sequence<Is...>) noexcept {
         bool pushed = false;
         ((index == Is ? void(pushed = try_push_one_<Is>(item)) : void()), ...);
         return pushed;
     }
 
     template <std::size_t... Is>
-    [[nodiscard]] bool try_push_producers_(
-        std::size_t start,
-        const T& item,
-        std::index_sequence<Is...> seq) noexcept {
+    [[nodiscard]] bool try_push_producers_(std::size_t start, const T& item, std::index_sequence<Is...> seq) noexcept {
         for (std::size_t offset = 0; offset < NumShards; ++offset) {
             if (try_push_index_((start + offset) % NumShards, item, seq)) {
                 return true;
@@ -704,21 +588,16 @@ private:
     }
 
     template <std::size_t... Is>
-    [[nodiscard]] std::optional<T> try_pop_index_(
-        std::size_t index,
-        std::index_sequence<Is...>) noexcept {
+    [[nodiscard]] std::optional<T> try_pop_index_(std::size_t index, std::index_sequence<Is...>) noexcept {
         std::optional<T> result;
         ((index == Is ? void(result = try_pop_one_<Is>()) : void()), ...);
         return result;
     }
 
     template <std::size_t... Is>
-    [[nodiscard]] std::optional<T> try_pop_consumers_(
-        std::size_t start,
-        std::index_sequence<Is...> seq) noexcept {
+    [[nodiscard]] std::optional<T> try_pop_consumers_(std::size_t start, std::index_sequence<Is...> seq) noexcept {
         for (std::size_t offset = 0; offset < NumShards; ++offset) {
-            if (auto result =
-                    try_pop_index_((start + offset) % NumShards, seq)) {
+            if (auto result = try_pop_index_((start + offset) % NumShards, seq)) {
                 return result;
             }
         }
@@ -746,14 +625,11 @@ public:
     using policy_queue_type = adaptive_detail::policy_queue_t<Policy>;
     static constexpr std::size_t task_slot_count = policy_queue_type::capacity();
 
-    static_assert(task_slot_count > 0,
-                  "Pool<Policy> requires a non-empty policy queue");
+    static_assert(task_slot_count > 0, "Pool<Policy> requires a non-empty policy queue");
 
-    explicit Pool(CoreCount cores = CoreCount::all_available(),
-                  NumaNodeMask numa_mask = {}) {
+    explicit Pool(CoreCount cores = CoreCount::all_available(), NumaNodeMask numa_mask = {}) {
         const std::size_t requested = cores.value == 0 ? 1 : cores.value;
-        const std::size_t available =
-            std::max<std::size_t>(1, Topology::instance().process_cpu_count());
+        const std::size_t available = std::max<std::size_t>(1, Topology::instance().process_cpu_count());
         worker_count_ = std::max<std::size_t>(1, std::min(requested, available));
         topology_consulted_ = Policy::needs_topology;
 
@@ -772,13 +648,14 @@ public:
     }
 
     ~Pool() {
-        for (auto& worker : workers_) worker.request_stop();
+        for (auto& worker : workers_)
+            worker.request_stop();
     }
 
-    Pool(const Pool&)            = delete("Pool owns worker jthreads and task queue");
+    Pool(const Pool&) = delete("Pool owns worker jthreads and task queue");
     Pool& operator=(const Pool&) = delete("Pool owns worker jthreads and task queue");
-    Pool(Pool&&)                 = delete("Pool atomics and worker queues are identity");
-    Pool& operator=(Pool&&)      = delete("Pool atomics and worker queues are identity");
+    Pool(Pool&&) = delete("Pool atomics and worker queues are identity");
+    Pool& operator=(Pool&&) = delete("Pool atomics and worker queues are identity");
 
     template <typename Job>
         requires std::is_invocable_r_v<void, Job&>
@@ -787,14 +664,11 @@ public:
     }
 
     template <typename Job>
-        requires (std::is_invocable_r_v<void, Job&> ||
-                  std::is_invocable_r_v<void, Job&, WorkShard>)
-    [[nodiscard]] DispatchWithWorkloadResult
-    dispatch_with_workload(WorkloadProfile profile, Job&& job) {
+        requires(std::is_invocable_r_v<void, Job&> || std::is_invocable_r_v<void, Job&, WorkShard>)
+    [[nodiscard]] DispatchWithWorkloadResult dispatch_with_workload(WorkloadProfile profile, Job&& job) {
         auto decision = ParallelismRule::recommend(profile.budget);
         if (profile.recommended_parallelism != 0) {
-            decision.factor = std::min(decision.factor,
-                                       profile.recommended_parallelism);
+            decision.factor = std::min(decision.factor, profile.recommended_parallelism);
             if (decision.factor <= 1) {
                 decision.kind = ParallelismDecision::Kind::Sequential;
                 decision.factor = 1;
@@ -819,12 +693,8 @@ public:
             };
         }
 
-        const std::size_t worker_limit = std::max<std::size_t>(
-            1, std::min(decision.factor, worker_count_));
-        const std::size_t submitted =
-            enqueue_parallel_workload_(std::forward<Job>(job),
-                                       decision,
-                                       worker_limit);
+        const std::size_t worker_limit = std::max<std::size_t>(1, std::min(decision.factor, worker_count_));
+        const std::size_t submitted = enqueue_parallel_workload_(std::forward<Job>(job), decision, worker_limit);
         return DispatchWithWorkloadResult{
             .decision = decision,
             .ran_inline = false,
@@ -835,59 +705,43 @@ public:
     }
 
     void wait_idle() const noexcept {
-        while (completed_.load(std::memory_order_acquire) !=
-               submitted_.load(std::memory_order_acquire)) {
+        while (completed_.load(std::memory_order_acquire) != submitted_.load(std::memory_order_acquire)) {
             CRUCIBLE_SPIN_PAUSE;
         }
     }
 
-    [[nodiscard]] std::size_t worker_count() const noexcept {
-        return worker_count_;
-    }
+    [[nodiscard]] std::size_t worker_count() const noexcept { return worker_count_; }
 
     [[nodiscard]] static constexpr std::size_t policy_queue_capacity() noexcept {
         return policy_queue_type::capacity();
     }
 
-    [[nodiscard]] bool topology_consulted() const noexcept {
-        return topology_consulted_;
-    }
+    [[nodiscard]] bool topology_consulted() const noexcept { return topology_consulted_; }
 
-    [[nodiscard]] std::uint64_t submitted() const noexcept {
-        return submitted_.load(std::memory_order_acquire);
-    }
+    [[nodiscard]] std::uint64_t submitted() const noexcept { return submitted_.load(std::memory_order_acquire); }
 
-    [[nodiscard]] std::uint64_t completed() const noexcept {
-        return completed_.load(std::memory_order_acquire);
-    }
+    [[nodiscard]] std::uint64_t completed() const noexcept { return completed_.load(std::memory_order_acquire); }
 
-    [[nodiscard]] std::uint64_t failed() const noexcept {
-        return failed_.load(std::memory_order_acquire);
-    }
+    [[nodiscard]] std::uint64_t failed() const noexcept { return failed_.load(std::memory_order_acquire); }
 
     [[nodiscard]] std::size_t pending_approx() const {
         std::size_t pending = 0;
         for (std::size_t i = 0; i < task_slot_count; ++i) {
-            if (task_slots_[i].state.load(std::memory_order_acquire) !=
-                slot_empty_state) {
+            if (task_slots_[i].state.load(std::memory_order_acquire) != slot_empty_state) {
                 ++pending;
             }
         }
         return pending;
     }
 
-    [[nodiscard]] std::size_t queued_approx() const noexcept {
-        return queued_tickets_.load(std::memory_order_acquire);
-    }
+    [[nodiscard]] std::size_t queued_approx() const noexcept { return queued_tickets_.load(std::memory_order_acquire); }
 
     [[nodiscard]] std::size_t running_workers_approx() const noexcept {
         return running_workers_.load(std::memory_order_acquire);
     }
 
     [[nodiscard]] std::size_t idle_workers_approx() const noexcept {
-        const std::size_t busy = std::min(
-            worker_count_,
-            queued_approx() + running_workers_approx());
+        const std::size_t busy = std::min(worker_count_, queued_approx() + running_workers_approx());
         return worker_count_ - busy;
     }
 
@@ -895,13 +749,9 @@ public:
         return affinity_applied_.load(std::memory_order_acquire);
     }
 
-    template <std::size_t Producers,
-              std::size_t Consumers,
-              std::size_t WorkingSetBytes,
-              bool LatestOnly = false>
+    template <std::size_t Producers, std::size_t Consumers, std::size_t WorkingSetBytes, bool LatestOnly = false>
     [[nodiscard]] static consteval ChannelTopology recommended_topology() {
-        return recommend_topology_for_workload(
-            Producers, Consumers, WorkingSetBytes, LatestOnly);
+        return recommend_topology_for_workload(Producers, Consumers, WorkingSetBytes, LatestOnly);
     }
 
 private:
@@ -918,31 +768,23 @@ private:
     static constexpr std::uint64_t slot_ready_tag = 2;
     static constexpr std::uint64_t slot_running_tag = 3;
 
-    [[nodiscard]] static constexpr std::uint64_t
-    slot_state(std::uint32_t generation, std::uint64_t tag) noexcept {
-        return (static_cast<std::uint64_t>(generation)
-                << slot_generation_shift) | tag;
+    [[nodiscard]] static constexpr std::uint64_t slot_state(std::uint32_t generation, std::uint64_t tag) noexcept {
+        return (static_cast<std::uint64_t>(generation) << slot_generation_shift) | tag;
     }
 
-    [[nodiscard]] static constexpr std::uint64_t
-    slot_ready_state(std::uint32_t generation) noexcept {
+    [[nodiscard]] static constexpr std::uint64_t slot_ready_state(std::uint32_t generation) noexcept {
         return slot_state(generation, slot_ready_tag);
     }
 
-    [[nodiscard]] static constexpr std::uint64_t
-    slot_running_state(std::uint32_t generation) noexcept {
+    [[nodiscard]] static constexpr std::uint64_t slot_running_state(std::uint32_t generation) noexcept {
         return slot_state(generation, slot_running_tag);
     }
 
-    [[nodiscard]] static constexpr bool
-    slot_is_ready(std::uint64_t state) noexcept {
+    [[nodiscard]] static constexpr bool slot_is_ready(std::uint64_t state) noexcept {
         return (state & slot_state_mask) == slot_ready_tag;
     }
 
-    [[nodiscard]] static constexpr std::size_t
-    ticket_slot_(ticket_type ticket) noexcept {
-        return ticket.slot();
-    }
+    [[nodiscard]] static constexpr std::size_t ticket_slot_(ticket_type ticket) noexcept { return ticket.slot(); }
 
     struct alignas(64) TaskSlot {
         adaptive_detail::ticket_metadata ticket{};
@@ -950,14 +792,11 @@ private:
         Task task{};
     };
 
-    [[nodiscard]] static constexpr ticket_type
-    pack_ticket_(TaskSlot& slot) noexcept {
+    [[nodiscard]] static constexpr ticket_type pack_ticket_(TaskSlot& slot) noexcept {
         return ticket_type::pack(slot.ticket);
     }
 
-    [[nodiscard]] TaskSlot& slot_for_(ticket_type ticket) noexcept {
-        return task_slots_[ticket_slot_(ticket)];
-    }
+    [[nodiscard]] TaskSlot& slot_for_(ticket_type ticket) noexcept { return task_slots_[ticket_slot_(ticket)]; }
 
     [[nodiscard]] const TaskSlot& slot_for_(ticket_type ticket) const noexcept {
         return task_slots_[ticket_slot_(ticket)];
@@ -966,18 +805,14 @@ private:
     struct RunningWorkerGuard {
         std::atomic<std::size_t>& counter;
 
-        explicit RunningWorkerGuard(
-            std::atomic<std::size_t>& running) noexcept
-            : counter{running} {
+        explicit RunningWorkerGuard(std::atomic<std::size_t>& running) noexcept : counter{running} {
             counter.fetch_add(1, std::memory_order_acq_rel);
         }
 
         RunningWorkerGuard(const RunningWorkerGuard&) = delete;
         RunningWorkerGuard& operator=(const RunningWorkerGuard&) = delete;
 
-        ~RunningWorkerGuard() noexcept {
-            counter.fetch_sub(1, std::memory_order_acq_rel);
-        }
+        ~RunningWorkerGuard() noexcept { counter.fetch_sub(1, std::memory_order_acq_rel); }
     };
 
     template <typename Job>
@@ -1001,8 +836,7 @@ private:
     }
 
     template <typename Job>
-    [[nodiscard]] bool invoke_inline_(Job&& job,
-                                      ParallelismDecision decision) noexcept {
+    [[nodiscard]] bool invoke_inline_(Job&& job, ParallelismDecision decision) noexcept {
         submitted_.fetch_add(1, std::memory_order_release);
         bool ok = true;
         if constexpr (std::is_invocable_r_v<void, Job&, WorkShard>) {
@@ -1023,27 +857,22 @@ private:
 
     template <typename Job>
     void enqueue_job_(Job&& job, std::size_t worker_limit) {
-        const std::uint64_t sequence =
-            next_sequence_.fetch_add(1, std::memory_order_relaxed);
-        const std::uint64_t key =
-            adaptive_detail::queue_key<Policy>(job, sequence);
+        const std::uint64_t sequence = next_sequence_.fetch_add(1, std::memory_order_relaxed);
+        const std::uint64_t key = adaptive_detail::queue_key<Policy>(job, sequence);
         Task task{
             .sequence = sequence,
             .worker_limit = std::max<std::size_t>(1, worker_limit),
-            .body = adaptive_detail::InlineTask<>{
-                [fn = std::forward<Job>(job)]() mutable noexcept -> bool {
-                    return run_body_(fn);
-                }},
+            .body = adaptive_detail::InlineTask<>{[fn = std::forward<Job>(job)]() mutable noexcept -> bool {
+                return run_body_(fn);
+            }},
         };
 
         enqueue_task_(sequence, key, std::move(task), true);
     }
 
     template <typename Job>
-    [[nodiscard]] std::size_t
-    enqueue_parallel_workload_(Job&& job,
-                               ParallelismDecision decision,
-                               std::size_t worker_limit) {
+    [[nodiscard]] std::size_t enqueue_parallel_workload_(Job&& job, ParallelismDecision decision,
+                                                         std::size_t worker_limit) {
         if constexpr (std::is_invocable_r_v<void, Job&, WorkShard>) {
             using job_type = std::decay_t<Job>;
             if constexpr (std::copy_constructible<job_type>) {
@@ -1055,9 +884,7 @@ private:
                         .numa = decision.numa,
                         .tier = decision.tier,
                     };
-                    enqueue_job_([fn = base, shard]() mutable {
-                        fn(shard);
-                    }, worker_limit);
+                    enqueue_job_([fn = base, shard]() mutable { fn(shard); }, worker_limit);
                 }
                 return worker_limit;
             } else {
@@ -1067,9 +894,7 @@ private:
                     .numa = decision.numa,
                     .tier = decision.tier,
                 };
-                enqueue_job_([fn = std::forward<Job>(job), shard]() mutable {
-                    fn(shard);
-                }, worker_limit);
+                enqueue_job_([fn = std::forward<Job>(job), shard]() mutable { fn(shard); }, worker_limit);
                 return 1;
             }
         } else {
@@ -1084,8 +909,7 @@ private:
         return true;
     }
 
-    [[nodiscard]] std::optional<ticket_type>
-    try_pop_ticket_(std::size_t worker_index) noexcept {
+    [[nodiscard]] std::optional<ticket_type> try_pop_ticket_(std::size_t worker_index) noexcept {
         auto ticket = queue_.try_pop(worker_index);
         if (ticket) {
             queued_tickets_.fetch_sub(1, std::memory_order_acq_rel);
@@ -1093,24 +917,17 @@ private:
         return ticket;
     }
 
-    [[nodiscard]] ticket_type
-    publish_task_slot_(std::uint64_t sequence,
-                       std::uint64_t key,
-                       Task task) noexcept {
+    [[nodiscard]] ticket_type publish_task_slot_(std::uint64_t sequence, std::uint64_t key, Task task) noexcept {
         const std::size_t slot_index = sequence % task_slot_count;
-        const std::uint64_t generation64 =
-            (sequence / task_slot_count) + 1;
-        if (generation64 >
-            std::numeric_limits<std::uint32_t>::max()) [[unlikely]] {
+        const std::uint64_t generation64 = (sequence / task_slot_count) + 1;
+        if (generation64 > std::numeric_limits<std::uint32_t>::max()) [[unlikely]] {
             std::abort();
         }
 
         auto& slot = task_slots_[slot_index];
         std::uint64_t expected = slot_empty_state;
-        while (!slot.state.compare_exchange_weak(
-            expected, slot_writing_state,
-            std::memory_order_acq_rel,
-            std::memory_order_acquire)) {
+        while (!slot.state.compare_exchange_weak(expected, slot_writing_state, std::memory_order_acq_rel,
+                                                 std::memory_order_acquire)) {
             expected = slot_empty_state;
             CRUCIBLE_SPIN_PAUSE;
         }
@@ -1121,17 +938,12 @@ private:
         };
         slot.task = std::move(task);
         const auto generation = static_cast<std::uint32_t>(generation64);
-        slot.state.store(slot_ready_state(generation),
-                         std::memory_order_release);
+        slot.state.store(slot_ready_state(generation), std::memory_order_release);
         return pack_ticket_(slot);
     }
 
-    void enqueue_task_(std::uint64_t sequence,
-                       std::uint64_t key,
-                       Task task,
-                       bool count_submit) {
-        const ticket_type ticket =
-            publish_task_slot_(sequence, key, std::move(task));
+    void enqueue_task_(std::uint64_t sequence, std::uint64_t key, Task task, bool count_submit) {
+        const ticket_type ticket = publish_task_slot_(sequence, key, std::move(task));
         if (count_submit) {
             submitted_.fetch_add(1, std::memory_order_release);
         }
@@ -1139,19 +951,15 @@ private:
         while (!try_enqueue_ticket_(ticket)) {
             CRUCIBLE_SPIN_PAUSE;
         }
-
     }
 
     [[nodiscard]] std::optional<Task> take_task_(ticket_type ticket) noexcept {
         auto& slot = slot_for_(ticket);
         std::uint64_t expected = slot.state.load(std::memory_order_acquire);
         if (!slot_is_ready(expected)) return std::nullopt;
-        const std::uint64_t desired =
-            (expected & ~slot_state_mask) | slot_running_tag;
-        if (!slot.state.compare_exchange_strong(
-            expected, desired,
-            std::memory_order_acq_rel,
-            std::memory_order_acquire)) {
+        const std::uint64_t desired = (expected & ~slot_state_mask) | slot_running_tag;
+        if (!slot.state.compare_exchange_strong(expected, desired, std::memory_order_acq_rel,
+                                                std::memory_order_acquire)) {
             return std::nullopt;
         }
 
@@ -1219,11 +1027,9 @@ private:
         for (std::size_t node = 0; node < topo.numa_nodes(); ++node) {
             if (mask.contains(node)) candidate_nodes.push_back(node);
         }
-        std::sort(candidate_nodes.begin(), candidate_nodes.end(),
-                  [&topo](std::size_t a, std::size_t b) noexcept {
-                      return topo.numa_distance(0, static_cast<int>(a)) <
-                             topo.numa_distance(0, static_cast<int>(b));
-                  });
+        std::sort(candidate_nodes.begin(), candidate_nodes.end(), [&topo](std::size_t a, std::size_t b) noexcept {
+            return topo.numa_distance(0, static_cast<int>(a)) < topo.numa_distance(0, static_cast<int>(b));
+        });
 
         for (std::size_t node : candidate_nodes) {
             for (int cpu : topo.cores_on_node(static_cast<int>(node))) {
@@ -1238,8 +1044,8 @@ private:
     }
 
     adaptive_detail::QueuePortal<policy_queue_type> queue_{};
-    std::unique_ptr<TaskSlot[]>     task_slots_;
-    std::vector<int>                selected_cores_;
+    std::unique_ptr<TaskSlot[]> task_slots_;
+    std::vector<int> selected_cores_;
     // FIXY-FOUND-120-AUDIT: cache-line isolation by access pattern.
     // Producer threads (submit path) and worker threads write
     // DIFFERENT subsets of these counters.  Without alignment, all 7
@@ -1258,37 +1064,33 @@ private:
     // members of the group pack into the same line via natural layout
     // (3 × 8 bytes = 24 bytes used, 40 bytes trailing padding per line).
     alignas(64) std::atomic<std::uint64_t> next_sequence_{0};
-    std::atomic<std::uint64_t>      submitted_{0};
-    std::atomic<std::size_t>        queued_tickets_{0};
+    std::atomic<std::uint64_t> submitted_{0};
+    std::atomic<std::size_t> queued_tickets_{0};
 
     alignas(64) std::atomic<std::uint64_t> completed_{0};
-    std::atomic<std::uint64_t>      failed_{0};
-    std::atomic<std::size_t>        running_workers_{0};
+    std::atomic<std::uint64_t> failed_{0};
+    std::atomic<std::size_t> running_workers_{0};
 
     alignas(64) std::atomic<std::size_t> affinity_applied_{0};
-    std::size_t                     worker_count_ = 0;
-    bool                            topology_consulted_ = false;
+    std::size_t worker_count_ = 0;
+    bool topology_consulted_ = false;
     // Last by declaration, first by destruction: jthread destructors
     // join while every queue, spin gate, task table, and atomic counter the
     // workers may observe is still alive.
-    std::vector<std::jthread>       workers_;
+    std::vector<std::jthread> workers_;
 };
 
 template <typename Policy, typename Job>
-    requires scheduler::SchedulerPolicy<Policy, adaptive_detail::ticket_type> &&
-             std::is_invocable_r_v<void, Job&>
+    requires scheduler::SchedulerPolicy<Policy, adaptive_detail::ticket_type> && std::is_invocable_r_v<void, Job&>
 void dispatch(Pool<Policy>& pool, Job&& job) {
     pool.submit(std::forward<Job>(job));
 }
 
 template <typename Policy, typename Job>
-    requires scheduler::SchedulerPolicy<Policy, adaptive_detail::ticket_type> &&
-             (std::is_invocable_r_v<void, Job&> ||
-              std::is_invocable_r_v<void, Job&, WorkShard>)
-[[nodiscard]] DispatchWithWorkloadResult
-dispatch_with_workload(Pool<Policy>& pool,
-                       WorkloadProfile profile,
-                       Job&& job) {
+    requires scheduler::SchedulerPolicy<Policy, adaptive_detail::ticket_type>
+          && (std::is_invocable_r_v<void, Job&> || std::is_invocable_r_v<void, Job&, WorkShard>)
+[[nodiscard]] DispatchWithWorkloadResult dispatch_with_workload(Pool<Policy>& pool, WorkloadProfile profile,
+                                                                Job&& job) {
     return pool.dispatch_with_workload(profile, std::forward<Job>(job));
 }
 

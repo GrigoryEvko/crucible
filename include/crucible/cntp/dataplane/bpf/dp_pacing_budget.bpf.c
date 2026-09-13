@@ -20,8 +20,7 @@ struct {
 } dp_pacing_budget_bps SEC(".maps");
 
 SEC("tc")
-int crucible_dp_pacing_budget(struct __sk_buff *skb)
-{
+int crucible_dp_pacing_budget(struct __sk_buff* skb) {
     (void)skb;
     return TC_ACT_OK;
 }

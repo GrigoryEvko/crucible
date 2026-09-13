@@ -9,8 +9,7 @@
 #include "common.h"
 
 SEC("tracepoint/sock/inet_sock_set_state")
-int crucible_canopy_peer_liveness_probe(void *ctx)
-{
+int crucible_canopy_peer_liveness_probe(void* ctx) {
     (void)ctx;
     return 0;
 }

@@ -167,35 +167,45 @@ namespace crucible::algebra::lattices {
 //                         keyctl, modify_ldt.  Mimic vendor-backend
 //                         direct-driver only.  Top of the chain.
 enum class SyscallFamily : std::uint8_t {
-    NoSyscall      = 0,  // bottom — no syscall surface at all
-    VdsoOnly       = 1,  // vDSO calls (clock_gettime, getcpu) — no kernel transition
-    ReadOnlyState  = 2,  // read-only kernel reads (read, fstat, getpid, ...)
-    FileMutation   = 3,  // file writes (write, pwrite, fsync, fdatasync, ...)
-    MemoryMapping  = 4,  // virtual-memory ops (mmap, mprotect, madvise, ...)
-    ThreadSync     = 5,  // thread / sync (futex, eventfd, pipe, epoll_*, ...)
-    NetworkIo      = 6,  // socket family (socket, send, recv, ...)
+    NoSyscall = 0,  // bottom — no syscall surface at all
+    VdsoOnly = 1,  // vDSO calls (clock_gettime, getcpu) — no kernel transition
+    ReadOnlyState = 2,  // read-only kernel reads (read, fstat, getpid, ...)
+    FileMutation = 3,  // file writes (write, pwrite, fsync, fdatasync, ...)
+    MemoryMapping = 4,  // virtual-memory ops (mmap, mprotect, madvise, ...)
+    ThreadSync = 5,  // thread / sync (futex, eventfd, pipe, epoll_*, ...)
+    NetworkIo = 6,  // socket family (socket, send, recv, ...)
     ProcessControl = 7,  // process-control (fork, exec, kill, wait, ...)
-    Privilege      = 8,  // top — privileged surface (ioctl, capset, ptrace, bpf, ...)
+    Privilege = 8,  // top — privileged surface (ioctl, capset, ptrace, bpf, ...)
 };
 
 [[nodiscard]] consteval std::string_view syscall_family_name(SyscallFamily t) noexcept {
     switch (t) {
-        case SyscallFamily::NoSyscall:      return "NoSyscall";
-        case SyscallFamily::VdsoOnly:       return "VdsoOnly";
-        case SyscallFamily::ReadOnlyState:  return "ReadOnlyState";
-        case SyscallFamily::FileMutation:   return "FileMutation";
-        case SyscallFamily::MemoryMapping:  return "MemoryMapping";
-        case SyscallFamily::ThreadSync:     return "ThreadSync";
-        case SyscallFamily::NetworkIo:      return "NetworkIo";
-        case SyscallFamily::ProcessControl: return "ProcessControl";
-        case SyscallFamily::Privilege:      return "Privilege";
-        default:                             return std::string_view{"<unknown SyscallFamily>"};
+        case SyscallFamily::NoSyscall:
+            return "NoSyscall";
+        case SyscallFamily::VdsoOnly:
+            return "VdsoOnly";
+        case SyscallFamily::ReadOnlyState:
+            return "ReadOnlyState";
+        case SyscallFamily::FileMutation:
+            return "FileMutation";
+        case SyscallFamily::MemoryMapping:
+            return "MemoryMapping";
+        case SyscallFamily::ThreadSync:
+            return "ThreadSync";
+        case SyscallFamily::NetworkIo:
+            return "NetworkIo";
+        case SyscallFamily::ProcessControl:
+            return "ProcessControl";
+        case SyscallFamily::Privilege:
+            return "Privilege";
+        default:
+            return std::string_view{"<unknown SyscallFamily>"};
     }
 }
 
 struct SyscallFamilyLattice : ChainLatticeOps<SyscallFamily> {
     [[nodiscard]] static constexpr SyscallFamily bottom() noexcept { return SyscallFamily::NoSyscall; }
-    [[nodiscard]] static constexpr SyscallFamily top()    noexcept { return SyscallFamily::Privilege; }
+    [[nodiscard]] static constexpr SyscallFamily top() noexcept { return SyscallFamily::Privilege; }
     [[nodiscard]] static consteval std::string_view name() noexcept { return "SyscallFamilyLattice"; }
 
     template <SyscallFamily T>
@@ -207,22 +217,32 @@ struct SyscallFamilyLattice : ChainLatticeOps<SyscallFamily> {
         };
         static constexpr SyscallFamily tier = T;
         [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-        [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
         [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static consteval std::string_view name() noexcept {
             switch (T) {
-                case SyscallFamily::NoSyscall:      return "SyscallFamilyLattice::At<NoSyscall>";
-                case SyscallFamily::VdsoOnly:       return "SyscallFamilyLattice::At<VdsoOnly>";
-                case SyscallFamily::ReadOnlyState:  return "SyscallFamilyLattice::At<ReadOnlyState>";
-                case SyscallFamily::FileMutation:   return "SyscallFamilyLattice::At<FileMutation>";
-                case SyscallFamily::MemoryMapping:  return "SyscallFamilyLattice::At<MemoryMapping>";
-                case SyscallFamily::ThreadSync:     return "SyscallFamilyLattice::At<ThreadSync>";
-                case SyscallFamily::NetworkIo:      return "SyscallFamilyLattice::At<NetworkIo>";
-                case SyscallFamily::ProcessControl: return "SyscallFamilyLattice::At<ProcessControl>";
-                case SyscallFamily::Privilege:      return "SyscallFamilyLattice::At<Privilege>";
-                default:                             return "SyscallFamilyLattice::At<?>";
+                case SyscallFamily::NoSyscall:
+                    return "SyscallFamilyLattice::At<NoSyscall>";
+                case SyscallFamily::VdsoOnly:
+                    return "SyscallFamilyLattice::At<VdsoOnly>";
+                case SyscallFamily::ReadOnlyState:
+                    return "SyscallFamilyLattice::At<ReadOnlyState>";
+                case SyscallFamily::FileMutation:
+                    return "SyscallFamilyLattice::At<FileMutation>";
+                case SyscallFamily::MemoryMapping:
+                    return "SyscallFamilyLattice::At<MemoryMapping>";
+                case SyscallFamily::ThreadSync:
+                    return "SyscallFamilyLattice::At<ThreadSync>";
+                case SyscallFamily::NetworkIo:
+                    return "SyscallFamilyLattice::At<NetworkIo>";
+                case SyscallFamily::ProcessControl:
+                    return "SyscallFamilyLattice::At<ProcessControl>";
+                case SyscallFamily::Privilege:
+                    return "SyscallFamilyLattice::At<Privilege>";
+                default:
+                    return "SyscallFamilyLattice::At<?>";
             }
         }
     };
@@ -233,19 +253,17 @@ namespace detail::syscall_family_lattice_self_test {
 
 // Catalog cardinality — every sub-axis carries at least 2 enumerators
 // (a chain lattice with <2 elements is degenerate).
-inline constexpr std::size_t family_count =
-    std::meta::enumerators_of(^^SyscallFamily).size();
+inline constexpr std::size_t family_count = std::meta::enumerators_of(^^SyscallFamily).size();
 
-static_assert(family_count == 9,
-    "SyscallFamily diverged from {NoSyscall, VdsoOnly, ReadOnlyState, "
-    "FileMutation, MemoryMapping, ThreadSync, NetworkIo, "
-    "ProcessControl, Privilege} per V-097 §taxonomy.  Adding a new "
-    "family requires (a) appending at the next free ordinal "
-    "(append-only per FOUND-I04 Universe extension rule), (b) the "
-    "matching syscall_family_name() switch arm, (c) the matching "
-    "At<T> singleton name() arm.  Reusing an existing ordinal would "
-    "silently change every stored row_hash (federation cache key) "
-    "without warning.");
+static_assert(family_count == 9, "SyscallFamily diverged from {NoSyscall, VdsoOnly, ReadOnlyState, "
+                                 "FileMutation, MemoryMapping, ThreadSync, NetworkIo, "
+                                 "ProcessControl, Privilege} per V-097 §taxonomy.  Adding a new "
+                                 "family requires (a) appending at the next free ordinal "
+                                 "(append-only per FOUND-I04 Universe extension rule), (b) the "
+                                 "matching syscall_family_name() switch arm, (c) the matching "
+                                 "At<T> singleton name() arm.  Reusing an existing ordinal would "
+                                 "silently change every stored row_hash (federation cache key) "
+                                 "without warning.");
 
 // Bottom-element pin — ordinal 0 is the smallest syscall set (the
 // "least-constraining" element per V-088's chain convention; in
@@ -260,22 +278,20 @@ static_assert(std::to_underlying(SyscallFamily::Privilege) == 8);
 // a non-sentinel, non-empty name.  Auto-extends when V-098 (if it
 // chose to) extends the enum.
 [[nodiscard]] consteval bool every_syscall_family_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^SyscallFamily));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^SyscallFamily));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
         const auto n = syscall_family_name([:en:]);
         if (n == std::string_view{"<unknown SyscallFamily>"}) return false;
-        if (n.empty())                                         return false;
+        if (n.empty()) return false;
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_syscall_family_has_name(),
-    "syscall_family_name() switch missing an arm for at least one "
-    "SyscallFamily enumerator.  Add the arm or the new family leaks "
-    "the '<unknown SyscallFamily>' sentinel.");
+static_assert(every_syscall_family_has_name(), "syscall_family_name() switch missing an arm for at least one "
+                                               "SyscallFamily enumerator.  Add the arm or the new family leaks "
+                                               "the '<unknown SyscallFamily>' sentinel.");
 
 // Concept conformance — chain lattice satisfies Lattice + BoundedLattice
 // and NOT Semiring (chain order has no independent ⊕/⊗ structure).
@@ -286,16 +302,16 @@ static_assert(!::crucible::algebra::Semiring<SyscallFamilyLattice>);
 // Exhaustive lattice-axiom verifier on (axis)³ triples.  Chain orders
 // are always distributive — failure indicates a leq/join/meet defect.
 static_assert(verify_chain_lattice_exhaustive<SyscallFamilyLattice>(),
-    "SyscallFamilyLattice chain-order lattice axioms failed at some "
-    "triple — leq/join/meet defect.");
+              "SyscallFamilyLattice chain-order lattice axioms failed at some "
+              "triple — leq/join/meet defect.");
 static_assert(verify_chain_lattice_distributive_exhaustive<SyscallFamilyLattice>(),
-    "SyscallFamilyLattice chain failed distributivity check — leq/"
-    "join/meet defect.");
+              "SyscallFamilyLattice chain failed distributivity check — leq/"
+              "join/meet defect.");
 
 // Bottom / top pins on the lattice surface (catches "someone reordered
 // the enum and the lattice failed to follow" drift).
 static_assert(SyscallFamilyLattice::bottom() == SyscallFamily::NoSyscall);
-static_assert(SyscallFamilyLattice::top()    == SyscallFamily::Privilege);
+static_assert(SyscallFamilyLattice::top() == SyscallFamily::Privilege);
 
 // Lattice top-level diagnostic name pin.
 static_assert(SyscallFamilyLattice::name() == std::string_view{"SyscallFamilyLattice"});
@@ -303,22 +319,22 @@ static_assert(SyscallFamilyLattice::name() == std::string_view{"SyscallFamilyLat
 // Strict-chain order pin (bottom ⊏ top witness).  Combined with the
 // exhaustive axiom verifier above, the chain direction is structurally
 // locked.
-static_assert( SyscallFamilyLattice::leq(SyscallFamily::NoSyscall, SyscallFamily::Privilege));
+static_assert(SyscallFamilyLattice::leq(SyscallFamily::NoSyscall, SyscallFamily::Privilege));
 static_assert(!SyscallFamilyLattice::leq(SyscallFamily::Privilege, SyscallFamily::NoSyscall));
 
 // Mid-chain ordering — every tier strictly subsumes the previous.
-static_assert(SyscallFamilyLattice::leq(SyscallFamily::NoSyscall,      SyscallFamily::VdsoOnly));
-static_assert(SyscallFamilyLattice::leq(SyscallFamily::VdsoOnly,       SyscallFamily::ReadOnlyState));
-static_assert(SyscallFamilyLattice::leq(SyscallFamily::ReadOnlyState,  SyscallFamily::FileMutation));
-static_assert(SyscallFamilyLattice::leq(SyscallFamily::FileMutation,   SyscallFamily::MemoryMapping));
-static_assert(SyscallFamilyLattice::leq(SyscallFamily::MemoryMapping,  SyscallFamily::ThreadSync));
-static_assert(SyscallFamilyLattice::leq(SyscallFamily::ThreadSync,     SyscallFamily::NetworkIo));
-static_assert(SyscallFamilyLattice::leq(SyscallFamily::NetworkIo,      SyscallFamily::ProcessControl));
+static_assert(SyscallFamilyLattice::leq(SyscallFamily::NoSyscall, SyscallFamily::VdsoOnly));
+static_assert(SyscallFamilyLattice::leq(SyscallFamily::VdsoOnly, SyscallFamily::ReadOnlyState));
+static_assert(SyscallFamilyLattice::leq(SyscallFamily::ReadOnlyState, SyscallFamily::FileMutation));
+static_assert(SyscallFamilyLattice::leq(SyscallFamily::FileMutation, SyscallFamily::MemoryMapping));
+static_assert(SyscallFamilyLattice::leq(SyscallFamily::MemoryMapping, SyscallFamily::ThreadSync));
+static_assert(SyscallFamilyLattice::leq(SyscallFamily::ThreadSync, SyscallFamily::NetworkIo));
+static_assert(SyscallFamilyLattice::leq(SyscallFamily::NetworkIo, SyscallFamily::ProcessControl));
 static_assert(SyscallFamilyLattice::leq(SyscallFamily::ProcessControl, SyscallFamily::Privilege));
 
 // Reverse direction must fail for non-equal pairs.
-static_assert(!SyscallFamilyLattice::leq(SyscallFamily::VdsoOnly,       SyscallFamily::NoSyscall));
-static_assert(!SyscallFamilyLattice::leq(SyscallFamily::Privilege,      SyscallFamily::ProcessControl));
+static_assert(!SyscallFamilyLattice::leq(SyscallFamily::VdsoOnly, SyscallFamily::NoSyscall));
+static_assert(!SyscallFamilyLattice::leq(SyscallFamily::Privilege, SyscallFamily::ProcessControl));
 
 // ── FIXY-FOUND-076 audit pin: cross-tree convention misalignment ─────
 //
@@ -361,22 +377,20 @@ static_assert(!SyscallFamilyLattice::leq(SyscallFamily::Privilege,      SyscallF
 // subset union for propagation; admission gates compose differently".
 //
 // Polarity-witness pin.
-static_assert(SyscallFamilyLattice::join(SyscallFamily::NoSyscall,
-                                         SyscallFamily::Privilege)
-              == SyscallFamily::Privilege,
-    "FIXY-FOUND-076: SyscallFamilyLattice's JOIN gives WIDEST-surface "
-    "(top=Privilege).  A consumer treating compose as 'strictest-wins "
-    "syscall-surface minimization' would silently admit Privilege.  "
-    "Hot-path admission gates wanting NoSyscall floor MUST call MEET "
-    "(or leq against NoSyscall directly) — SAME defect family as "
-    "FOUND-009/010 + FOUND-076 PART A/B (7 sibling lattices).");
-static_assert(SyscallFamilyLattice::meet(SyscallFamily::NoSyscall,
-                                         SyscallFamily::Privilege)
-              == SyscallFamily::NoSyscall,
-    "FIXY-FOUND-076: SyscallFamilyLattice's MEET gives strictest-"
-    "syscall-floor (bottom=NoSyscall).  Forge hot-path admission gates "
-    "MUST call MEET — calling JOIN silently admits the most-permissive "
-    "participant's syscall surface.");
+static_assert(SyscallFamilyLattice::join(SyscallFamily::NoSyscall, SyscallFamily::Privilege)
+                  == SyscallFamily::Privilege,
+              "FIXY-FOUND-076: SyscallFamilyLattice's JOIN gives WIDEST-surface "
+              "(top=Privilege).  A consumer treating compose as 'strictest-wins "
+              "syscall-surface minimization' would silently admit Privilege.  "
+              "Hot-path admission gates wanting NoSyscall floor MUST call MEET "
+              "(or leq against NoSyscall directly) — SAME defect family as "
+              "FOUND-009/010 + FOUND-076 PART A/B (7 sibling lattices).");
+static_assert(SyscallFamilyLattice::meet(SyscallFamily::NoSyscall, SyscallFamily::Privilege)
+                  == SyscallFamily::NoSyscall,
+              "FIXY-FOUND-076: SyscallFamilyLattice's MEET gives strictest-"
+              "syscall-floor (bottom=NoSyscall).  Forge hot-path admission gates "
+              "MUST call MEET — calling JOIN silently admits the most-permissive "
+              "participant's syscall surface.");
 
 // At<T> singleton — empty element_type for EBO collapse at every use
 // site.  V-098+ wrappers wired via `Graded<Absolute, At<T>, P>` will
@@ -400,9 +414,9 @@ inline void syscall_family_lattice_runtime_smoke_test() {
     // the optimizer cannot collapse the call to a compile-time fold.
     SyscallFamily a = SyscallFamily::NoSyscall;
     SyscallFamily b = SyscallFamily::Privilege;
-    [[maybe_unused]] bool          rl  = SyscallFamilyLattice::leq(a, b);
-    [[maybe_unused]] SyscallFamily rj  = SyscallFamilyLattice::join(a, b);
-    [[maybe_unused]] SyscallFamily rm  = SyscallFamilyLattice::meet(a, b);
+    [[maybe_unused]] bool rl = SyscallFamilyLattice::leq(a, b);
+    [[maybe_unused]] SyscallFamily rj = SyscallFamilyLattice::join(a, b);
+    [[maybe_unused]] SyscallFamily rm = SyscallFamilyLattice::meet(a, b);
 
     // Mid-chain witnesses.
     SyscallFamily c = SyscallFamily::FileMutation;

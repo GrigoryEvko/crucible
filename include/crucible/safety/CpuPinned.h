@@ -81,7 +81,7 @@
 
 #include <concepts>
 #include <cstdint>
-#include <cstdlib>      // std::abort in the runtime smoke test
+#include <cstdlib>  // std::abort in the runtime smoke test
 #include <type_traits>
 #include <utility>
 
@@ -92,9 +92,9 @@ using ::crucible::algebra::lattices::AffinityMask;
 
 // ── PinningPosture — HOW the thread was pinned (pin-strength order) ──
 enum class PinningPosture : std::uint8_t {
-    NotPinned      = 0,    // ⊥ — no affinity set; the thread may migrate freely
-    PinnedAuto     = 1,    // best-effort / scheduler-incidental pin (can still migrate)
-    PinnedExplicit = 2,    // ⊤ — explicit sched_setaffinity to a singleton mask
+    NotPinned = 0,  // ⊥ — no affinity set; the thread may migrate freely
+    PinnedAuto = 1,  // best-effort / scheduler-incidental pin (can still migrate)
+    PinnedExplicit = 2,  // ⊤ — explicit sched_setaffinity to a singleton mask
 };
 
 template <AffinityMask Mask, PinningPosture Posture, typename Unit>
@@ -104,10 +104,10 @@ public:
 
     // Type-level proof surface — read by the V-190 mint_tsc_reader gate and
     // the HotPath stance without instantiating the wrapper.
-    static constexpr AffinityMask    mask             = Mask;
-    static constexpr PinningPosture  posture          = Posture;
-    static constexpr bool            is_singleton_pin = AffinityLattice::is_singleton(Mask);
-    static constexpr bool            is_pinned        = (Posture != PinningPosture::NotPinned);
+    static constexpr AffinityMask mask = Mask;
+    static constexpr PinningPosture posture = Posture;
+    static constexpr bool is_singleton_pin = AffinityLattice::is_singleton(Mask);
+    static constexpr bool is_pinned = (Posture != PinningPosture::NotPinned);
 
 private:
     Unit value_{};
@@ -116,29 +116,28 @@ public:
     // ── Construction ────────────────────────────────────────────────
     constexpr CpuPinned() noexcept(std::is_nothrow_default_constructible_v<Unit>) = default;
 
-    constexpr explicit CpuPinned(Unit value) noexcept(
-        std::is_nothrow_move_constructible_v<Unit>)
+    constexpr explicit CpuPinned(Unit value) noexcept(std::is_nothrow_move_constructible_v<Unit>)
         : value_{std::move(value)} {}
 
     template <typename... Args>
         requires std::is_constructible_v<Unit, Args...>
-    constexpr explicit CpuPinned(std::in_place_t, Args&&... args)
-        noexcept(std::is_nothrow_constructible_v<Unit, Args...>)
+    constexpr explicit CpuPinned(std::in_place_t,
+                                 Args&&... args) noexcept(std::is_nothrow_constructible_v<Unit, Args...>)
         : value_{Unit(std::forward<Args>(args)...)} {}
 
     // ── Move-only (the Linear consume-once discipline) ──────────────
-    CpuPinned(const CpuPinned&)            = delete;
+    CpuPinned(const CpuPinned&) = delete;
     CpuPinned& operator=(const CpuPinned&) = delete;
-    constexpr CpuPinned(CpuPinned&&)                 = default;
-    constexpr CpuPinned& operator=(CpuPinned&&)      = default;
-    ~CpuPinned()                                     = default;
+    constexpr CpuPinned(CpuPinned&&) = default;
+    constexpr CpuPinned& operator=(CpuPinned&&) = default;
+    ~CpuPinned() = default;
 
     // ── Access ──────────────────────────────────────────────────────
     [[nodiscard]] constexpr Unit const& peek() const& noexcept { return value_; }
     [[nodiscard]] constexpr Unit& peek_mut() & noexcept { return value_; }
-    [[nodiscard]] constexpr Unit consume() &&
-        noexcept(std::is_nothrow_move_constructible_v<Unit>)
-    { return std::move(value_); }
+    [[nodiscard]] constexpr Unit consume() && noexcept(std::is_nothrow_move_constructible_v<Unit>) {
+        return std::move(value_);
+    }
 
     // ── runnable_on-style posture gate: does this proof meet a floor? ─
     //
@@ -146,29 +145,24 @@ public:
     // (pin-strength order).  A HotPath stance gates on
     // `meets_posture<PinnedExplicit>`.
     template <PinningPosture Required>
-    static constexpr bool meets_posture =
-        static_cast<std::uint8_t>(Posture) >= static_cast<std::uint8_t>(Required);
+    static constexpr bool meets_posture = static_cast<std::uint8_t>(Posture) >= static_cast<std::uint8_t>(Required);
 };
 
 // ── §XXI mint factory (token mint — move-only proof) ────────────────
 template <AffinityMask Mask, PinningPosture Posture, typename Unit, typename... Args>
     requires std::is_constructible_v<Unit, Args...>
-[[nodiscard]] constexpr CpuPinned<Mask, Posture, Unit> mint_cpu_pinned(Args&&... args)
-    noexcept(std::is_nothrow_constructible_v<Unit, Args...>)
-{
+[[nodiscard]] constexpr CpuPinned<Mask, Posture, Unit>
+mint_cpu_pinned(Args&&... args) noexcept(std::is_nothrow_constructible_v<Unit, Args...>) {
     return CpuPinned<Mask, Posture, Unit>{std::in_place, std::forward<Args>(args)...};
 }
 
 // ── Layout invariant — Mask/Posture are NTTPs, so sizeof == sizeof(Unit) ─
-static_assert(sizeof(CpuPinned<AffinityMask::single(0), PinningPosture::PinnedExplicit, int>)
-              == sizeof(int));
-static_assert(sizeof(CpuPinned<AffinityMask::single(7), PinningPosture::PinnedExplicit,
-                               unsigned long long>) == sizeof(unsigned long long));
-static_assert(!std::is_copy_constructible_v<
-    CpuPinned<AffinityMask::single(0), PinningPosture::PinnedExplicit, int>>,
-    "CpuPinned MUST be move-only — a pin proof cannot be duplicated.");
-static_assert(std::is_move_constructible_v<
-    CpuPinned<AffinityMask::single(0), PinningPosture::PinnedExplicit, int>>);
+static_assert(sizeof(CpuPinned<AffinityMask::single(0), PinningPosture::PinnedExplicit, int>) == sizeof(int));
+static_assert(sizeof(CpuPinned<AffinityMask::single(7), PinningPosture::PinnedExplicit, unsigned long long>)
+              == sizeof(unsigned long long));
+static_assert(!std::is_copy_constructible_v<CpuPinned<AffinityMask::single(0), PinningPosture::PinnedExplicit, int>>,
+              "CpuPinned MUST be move-only — a pin proof cannot be duplicated.");
+static_assert(std::is_move_constructible_v<CpuPinned<AffinityMask::single(0), PinningPosture::PinnedExplicit, int>>);
 
 }  // namespace crucible::safety
 
@@ -180,8 +174,7 @@ static_assert(std::is_move_constructible_v<
 // distinct federation-cache slots.
 namespace crucible::safety::diag {
 
-template <::crucible::algebra::lattices::AffinityMask Mask,
-          ::crucible::safety::PinningPosture Posture, typename Inner>
+template <::crucible::algebra::lattices::AffinityMask Mask, ::crucible::safety::PinningPosture Posture, typename Inner>
 struct row_hash_contribution<::crucible::safety::CpuPinned<Mask, Posture, Inner>> {
 private:
     [[nodiscard]] static consteval std::uint64_t fold_mask() noexcept {
@@ -194,8 +187,7 @@ private:
 
 public:
     static constexpr std::uint64_t value = detail::combine_ids(
-        detail::combine_ids(detail::WRAPPER_CPU_PINNED_TAG, fold_mask()),
-        row_hash_contribution_v<Inner>);
+        detail::combine_ids(detail::WRAPPER_CPU_PINNED_TAG, fold_mask()), row_hash_contribution_v<Inner>);
 };
 
 }  // namespace crucible::safety::diag
@@ -203,14 +195,14 @@ public:
 // ── Self-test ───────────────────────────────────────────────────────
 namespace crucible::safety::detail::cpu_pinned_self_test {
 
-inline constexpr AffinityMask kCore0  = AffinityMask::single(0);
-inline constexpr AffinityMask kCore7  = AffinityMask::single(7);
+inline constexpr AffinityMask kCore0 = AffinityMask::single(0);
+inline constexpr AffinityMask kCore7 = AffinityMask::single(7);
 inline constexpr AffinityMask kTwoBit = AffinityMask::range(0, 1);
 
-using PinnedC0   = CpuPinned<kCore0,  PinningPosture::PinnedExplicit, int>;
-using AutoC0     = CpuPinned<kCore0,  PinningPosture::PinnedAuto,     int>;
-using UnpinnedC0 = CpuPinned<kCore0,  PinningPosture::NotPinned,      int>;
-using TwoBitC    = CpuPinned<kTwoBit, PinningPosture::PinnedExplicit, int>;
+using PinnedC0 = CpuPinned<kCore0, PinningPosture::PinnedExplicit, int>;
+using AutoC0 = CpuPinned<kCore0, PinningPosture::PinnedAuto, int>;
+using UnpinnedC0 = CpuPinned<kCore0, PinningPosture::NotPinned, int>;
+using TwoBitC = CpuPinned<kTwoBit, PinningPosture::PinnedExplicit, int>;
 
 // ── Construction + access ──────────────────────────────────────────
 inline constexpr PinnedC0 c_default{};
@@ -224,21 +216,19 @@ inline constexpr PinnedC0 c_in_place{std::in_place, 7};
 static_assert(c_in_place.peek() == 7);
 
 // ── Singleton-pin gate (the V-190 mint_tsc_reader requirement) ──────
-static_assert( PinnedC0::is_singleton_pin,
-    "a single-core pin IS a singleton — admissible for a TSC read.");
-static_assert(!TwoBitC::is_singleton_pin,
-    "FIXY-V-187: a 2-core mask is NOT a singleton — the TSC reader gate "
-    "rejects it (a read across two cores is unsound).");
+static_assert(PinnedC0::is_singleton_pin, "a single-core pin IS a singleton — admissible for a TSC read.");
+static_assert(!TwoBitC::is_singleton_pin, "FIXY-V-187: a 2-core mask is NOT a singleton — the TSC reader gate "
+                                          "rejects it (a read across two cores is unsound).");
 static_assert(PinnedC0::is_pinned);
 static_assert(!UnpinnedC0::is_pinned);
 
 // ── Posture pin-strength order + HotPath gate ───────────────────────
-static_assert( PinnedC0::meets_posture<PinningPosture::PinnedExplicit>);
-static_assert( PinnedC0::meets_posture<PinningPosture::PinnedAuto>);
-static_assert( AutoC0::meets_posture<PinningPosture::PinnedAuto>);
+static_assert(PinnedC0::meets_posture<PinningPosture::PinnedExplicit>);
+static_assert(PinnedC0::meets_posture<PinningPosture::PinnedAuto>);
+static_assert(AutoC0::meets_posture<PinningPosture::PinnedAuto>);
 static_assert(!AutoC0::meets_posture<PinningPosture::PinnedExplicit>,
-    "FIXY-V-187: PinnedAuto does NOT meet a PinnedExplicit floor — auto "
-    "pinning can still migrate (latency spike), so a HotPath stance rejects it.");
+              "FIXY-V-187: PinnedAuto does NOT meet a PinnedExplicit floor — auto "
+              "pinning can still migrate (latency spike), so a HotPath stance rejects it.");
 static_assert(!UnpinnedC0::meets_posture<PinningPosture::PinnedAuto>);
 
 // ── Distinct types per mask / posture ───────────────────────────────
@@ -246,15 +236,13 @@ static_assert(!std::is_same_v<PinnedC0, AutoC0>);
 static_assert(!std::is_same_v<PinnedC0, CpuPinned<kCore7, PinningPosture::PinnedExplicit, int>>);
 
 // ── row_hash distinctness ───────────────────────────────────────────
+static_assert(diag::row_hash_contribution_v<PinnedC0> != diag::row_hash_contribution_v<AutoC0>,
+              "different postures MUST hash to distinct slots.");
 static_assert(diag::row_hash_contribution_v<PinnedC0>
-              != diag::row_hash_contribution_v<AutoC0>,
-    "different postures MUST hash to distinct slots.");
-static_assert(diag::row_hash_contribution_v<PinnedC0>
-              != diag::row_hash_contribution_v<CpuPinned<kCore7, PinningPosture::PinnedExplicit, int>>,
-    "different pinned cores MUST hash to distinct slots.");
-static_assert(diag::row_hash_contribution_v<PinnedC0>
-              != diag::row_hash_contribution_v<int>,
-    "a CpuPinned proof MUST hash differently from the bare wrapped value.");
+                  != diag::row_hash_contribution_v<CpuPinned<kCore7, PinningPosture::PinnedExplicit, int>>,
+              "different pinned cores MUST hash to distinct slots.");
+static_assert(diag::row_hash_contribution_v<PinnedC0> != diag::row_hash_contribution_v<int>,
+              "a CpuPinned proof MUST hash differently from the bare wrapped value.");
 
 // ── consume / peek_mut / move-only ──────────────────────────────────
 [[nodiscard]] consteval bool consume_moves_out() noexcept {
@@ -279,16 +267,12 @@ static_assert(cpu_pinned_mint_works());
 
 // ── TSC-reader gate simulation (the V-190 mint_tsc_reader shape) ────
 template <typename Proof>
-concept admissible_tsc_proof =
-    Proof::is_singleton_pin && Proof::template meets_posture<PinningPosture::PinnedExplicit>;
+concept admissible_tsc_proof = Proof::is_singleton_pin && Proof::template meets_posture<PinningPosture::PinnedExplicit>;
 
-static_assert( admissible_tsc_proof<PinnedC0>,
-    "a single-core EXPLICIT pin proof MUST be admissible for a TSC read.");
-static_assert(!admissible_tsc_proof<TwoBitC>,
-    "a 2-core pin MUST be rejected (not a singleton).");
-static_assert(!admissible_tsc_proof<AutoC0>,
-    "an AUTO pin MUST be rejected (a TSC reader needs an explicit, "
-    "non-migrating pin).");
+static_assert(admissible_tsc_proof<PinnedC0>, "a single-core EXPLICIT pin proof MUST be admissible for a TSC read.");
+static_assert(!admissible_tsc_proof<TwoBitC>, "a 2-core pin MUST be rejected (not a singleton).");
+static_assert(!admissible_tsc_proof<AutoC0>, "an AUTO pin MUST be rejected (a TSC reader needs an explicit, "
+                                             "non-migrating pin).");
 
 // ── Runtime smoke test ─────────────────────────────────────────────
 inline void runtime_smoke_test() {

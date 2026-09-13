@@ -164,9 +164,7 @@ struct Length {
     // is the lattice top so it's a valid input here, though most
     // callers want the named SeqPrefixLattice<Element>::top() form
     // when expressing the "no-upper-bound" case.
-    [[nodiscard]] static constexpr Length at(std::size_t n) noexcept {
-        return Length{n};
-    }
+    [[nodiscard]] static constexpr Length at(std::size_t n) noexcept { return Length{n}; }
 
     [[nodiscard]] friend constexpr auto operator<=>(Length, Length) noexcept = default;
     [[nodiscard]] friend constexpr bool operator==(Length, Length) noexcept = default;
@@ -175,12 +173,10 @@ struct Length {
 // ── SeqPrefixLattice<Element> ───────────────────────────────────────
 template <typename Element>
 struct SeqPrefixLattice {
-    using element_type           = Length<Element>;
-    using sequence_element_type  = Element;
+    using element_type = Length<Element>;
+    using sequence_element_type = Element;
 
-    [[nodiscard]] static constexpr element_type bottom() noexcept {
-        return element_type{0};
-    }
+    [[nodiscard]] static constexpr element_type bottom() noexcept { return element_type{0}; }
     [[nodiscard]] static constexpr element_type top() noexcept {
         // Synthesized ceiling.  See FIXY-FOUND-097 file-header
         // reconciliation block for the full design rationale —
@@ -190,9 +186,7 @@ struct SeqPrefixLattice {
         // ceiling that satisfies BoundedAboveLattice's contract.
         return element_type{std::numeric_limits<std::size_t>::max()};
     }
-    [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept {
-        return a.length <= b.length;
-    }
+    [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept { return a.length <= b.length; }
     [[nodiscard]] static constexpr element_type join(element_type a, element_type b) noexcept {
         return element_type{std::max(a.length, b.length)};
     }
@@ -200,9 +194,7 @@ struct SeqPrefixLattice {
         return element_type{std::min(a.length, b.length)};
     }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return "SeqPrefixLattice";
-    }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "SeqPrefixLattice"; }
 
     // ── Derived-grade opt-in (algebra/Graded.h §"derived-grade") ────
     //
@@ -223,7 +215,7 @@ struct SeqPrefixLattice {
     // std::inplace_vector, arena-backed sequences, or any custom
     // append-only Storage that AppendOnly might be specialized over.
     template <typename Container>
-        requires requires (Container const& c) {
+        requires requires(Container const& c) {
             { c.size() } -> std::convertible_to<std::size_t>;
         }
     [[nodiscard]] static constexpr element_type grade_of(Container const& c) noexcept {
@@ -268,54 +260,54 @@ static_assert(alignof(LatA::element_type) == alignof(std::size_t));
 // bottom element.  Verified against bottom() identity.
 static_assert(LatA::element_type{} == LatA::bottom());
 static_assert(LatA::bottom().length == 0);
-static_assert(LatA::top().length    == std::numeric_limits<std::size_t>::max());
+static_assert(LatA::top().length == std::numeric_limits<std::size_t>::max());
 
 // Length comparison is by length (default spaceship).
-static_assert(Length<EventA>{0}   <  Length<EventA>{1});
+static_assert(Length<EventA>{0} < Length<EventA>{1});
 static_assert(Length<EventA>{100} == Length<EventA>{100});
-static_assert(Length<EventA>{200} >  Length<EventA>{199});
+static_assert(Length<EventA>{200} > Length<EventA>{199});
 
 // Convenience static factory.
-static_assert(Length<EventA>::at(0)   == Length<EventA>{0});
+static_assert(Length<EventA>::at(0) == Length<EventA>{0});
 static_assert(Length<EventA>::at(100) == Length<EventA>{100});
-static_assert(Length<EventA>::at(0)   == LatA::bottom());
+static_assert(Length<EventA>::at(0) == LatA::bottom());
 
 // ── Lattice ops at representative witnesses ─────────────────────────
-constexpr Length<EventA> ε       = LatA::bottom();
-constexpr Length<EventA> short_  = Length<EventA>{1};
-constexpr Length<EventA> mid     = Length<EventA>{1024};
+constexpr Length<EventA> ε = LatA::bottom();
+constexpr Length<EventA> short_ = Length<EventA>{1};
+constexpr Length<EventA> mid = Length<EventA>{1024};
 constexpr Length<EventA> longish = Length<EventA>{1'000'000};
-constexpr Length<EventA> ω       = LatA::top();
+constexpr Length<EventA> ω = LatA::top();
 
 static_assert(LatA::leq(ε, short_));
 static_assert(LatA::leq(ε, ω));
 static_assert(LatA::leq(short_, mid));
 static_assert(LatA::leq(mid, longish));
 static_assert(LatA::leq(longish, ω));
-static_assert(LatA::leq(ε, ε));        // reflexive at bottom
-static_assert(LatA::leq(ω, ω));        // reflexive at top
+static_assert(LatA::leq(ε, ε));  // reflexive at bottom
+static_assert(LatA::leq(ω, ω));  // reflexive at top
 static_assert(!LatA::leq(short_, ε));  // 1 not ⊑ 0
-static_assert(!LatA::leq(ω, longish)); // ∞ not ⊑ 1M
+static_assert(!LatA::leq(ω, longish));  // ∞ not ⊑ 1M
 
-static_assert(LatA::join(short_, mid)  == mid);
-static_assert(LatA::join(mid, short_)  == mid);
-static_assert(LatA::join(ε, ω)         == ω);
-static_assert(LatA::meet(short_, mid)  == short_);
-static_assert(LatA::meet(ε, ω)         == ε);
+static_assert(LatA::join(short_, mid) == mid);
+static_assert(LatA::join(mid, short_) == mid);
+static_assert(LatA::join(ε, ω) == ω);
+static_assert(LatA::meet(short_, mid) == short_);
+static_assert(LatA::meet(ε, ω) == ε);
 
 // ── EXHAUSTIVE-WITHIN-WITNESS-SET axiom coverage ────────────────────
 //
 // 5 witnesses → 125 triples; verify_bounded_lattice_axioms_at rolls
 // the 13-axiom family per triple.  Below picks representative
 // triples covering the boundary, mid, and descending paths.
-static_assert(verify_bounded_lattice_axioms_at<LatA>(ε,       ε,       ε));
-static_assert(verify_bounded_lattice_axioms_at<LatA>(ε,       short_,  mid));
-static_assert(verify_bounded_lattice_axioms_at<LatA>(short_,  mid,     longish));
-static_assert(verify_bounded_lattice_axioms_at<LatA>(mid,     longish, ω));
-static_assert(verify_bounded_lattice_axioms_at<LatA>(ω,       ω,       ω));
-static_assert(verify_bounded_lattice_axioms_at<LatA>(longish, mid,     short_));   // descending
-static_assert(verify_bounded_lattice_axioms_at<LatA>(ε,       mid,     ω));        // span
-static_assert(verify_bounded_lattice_axioms_at<LatA>(ω,       ε,       longish));  // mixed
+static_assert(verify_bounded_lattice_axioms_at<LatA>(ε, ε, ε));
+static_assert(verify_bounded_lattice_axioms_at<LatA>(ε, short_, mid));
+static_assert(verify_bounded_lattice_axioms_at<LatA>(short_, mid, longish));
+static_assert(verify_bounded_lattice_axioms_at<LatA>(mid, longish, ω));
+static_assert(verify_bounded_lattice_axioms_at<LatA>(ω, ω, ω));
+static_assert(verify_bounded_lattice_axioms_at<LatA>(longish, mid, short_));  // descending
+static_assert(verify_bounded_lattice_axioms_at<LatA>(ε, mid, ω));  // span
+static_assert(verify_bounded_lattice_axioms_at<LatA>(ω, ε, longish));  // mixed
 
 // ── Append semantics: bottom + new entries ⊑ longer ─────────────────
 //
@@ -328,7 +320,7 @@ constexpr Length<EventA> bumped_3 = LatA::join(bumped_2, Length<EventA>{3});
 static_assert(LatA::leq(ε, bumped_1));
 static_assert(LatA::leq(bumped_1, bumped_2));
 static_assert(LatA::leq(bumped_2, bumped_3));
-static_assert(LatA::leq(ε, bumped_3));   // transitive append
+static_assert(LatA::leq(ε, bumped_3));  // transitive append
 
 // Diagnostic name.
 static_assert(LatA::name() == "SeqPrefixLattice");
@@ -344,20 +336,21 @@ static_assert(std::is_same_v<LatB::sequence_element_type, EventB>);
 // Graded<Absolute, SeqPrefixLattice<Element>, T> stores both the inner
 // value AND the 8-byte length grade.  CRUCIBLE_GRADED_LAYOUT_INVARIANT
 // does NOT apply — dynamic grade by structural necessity.
-struct OneByteValue { char c{0}; };
-struct EightByteValue { unsigned long long v{0}; };
+struct OneByteValue {
+    char c{0};
+};
+struct EightByteValue {
+    unsigned long long v{0};
+};
 
 template <typename T>
-using AppendOnlyGraded =
-    Graded<ModalityKind::Absolute, SeqPrefixLattice<EventA>, T>;
+using AppendOnlyGraded = Graded<ModalityKind::Absolute, SeqPrefixLattice<EventA>, T>;
 
 // 1B value + 8B grade with 8B alignment → 16 bytes (1 + 7 padding + 8).
-static_assert(sizeof(AppendOnlyGraded<OneByteValue>) ==
-              sizeof(OneByteValue) + sizeof(LatA::element_type) + 7);
+static_assert(sizeof(AppendOnlyGraded<OneByteValue>) == sizeof(OneByteValue) + sizeof(LatA::element_type) + 7);
 
 // 8B value + 8B grade with 8B alignment → 16 bytes exactly.
-static_assert(sizeof(AppendOnlyGraded<EightByteValue>) ==
-              sizeof(EightByteValue) + sizeof(LatA::element_type));
+static_assert(sizeof(AppendOnlyGraded<EightByteValue>) == sizeof(EightByteValue) + sizeof(LatA::element_type));
 
 // ── Runtime smoke test ──────────────────────────────────────────────
 //
@@ -373,20 +366,20 @@ inline void runtime_smoke_test() {
     Length<EventA> b{n_b};
 
     // Lattice ops at runtime.
-    [[maybe_unused]] bool                l = LatA::leq(a, b);
-    [[maybe_unused]] LatA::element_type  j = LatA::join(a, b);
-    [[maybe_unused]] LatA::element_type  m = LatA::meet(a, b);
-    [[maybe_unused]] LatA::element_type  bot = LatA::bottom();
-    [[maybe_unused]] LatA::element_type  top = LatA::top();
+    [[maybe_unused]] bool l = LatA::leq(a, b);
+    [[maybe_unused]] LatA::element_type j = LatA::join(a, b);
+    [[maybe_unused]] LatA::element_type m = LatA::meet(a, b);
+    [[maybe_unused]] LatA::element_type bot = LatA::bottom();
+    [[maybe_unused]] LatA::element_type top = LatA::top();
 
     // Graded<Absolute, SeqPrefixLattice<EventA>, T> at runtime.
     OneByteValue v{42};
     AppendOnlyGraded<OneByteValue> initial{v, LatA::bottom()};
-    auto widened   = initial.weaken(a);                  // weaken to length 5
-    auto widened2  = widened.weaken(b);                  // advance to length 17
-    auto composed  = initial.compose(widened2);          // join with longer
-    auto rv_widen  = std::move(widened2).weaken(b);      // rvalue-this weaken
-    auto rv_comp   = std::move(initial).compose(composed); // rvalue-this compose
+    auto widened = initial.weaken(a);  // weaken to length 5
+    auto widened2 = widened.weaken(b);  // advance to length 17
+    auto composed = initial.compose(widened2);  // join with longer
+    auto rv_widen = std::move(widened2).weaken(b);  // rvalue-this weaken
+    auto rv_comp = std::move(initial).compose(composed);  // rvalue-this compose
 
     [[maybe_unused]] auto g1 = composed.grade();
     [[maybe_unused]] auto v1 = composed.peek().c;

@@ -88,8 +88,7 @@ namespace crucible::concurrent::topology_constexpr {
 // Default: conservative_l1d_per_core (32 KiB)
 
 #ifdef CRUCIBLE_L1D_PER_CORE_BYTES
-inline constexpr std::size_t l1d_per_core_bytes_v =
-    static_cast<std::size_t>(CRUCIBLE_L1D_PER_CORE_BYTES);
+inline constexpr std::size_t l1d_per_core_bytes_v = static_cast<std::size_t>(CRUCIBLE_L1D_PER_CORE_BYTES);
 #else
 inline constexpr std::size_t l1d_per_core_bytes_v = conservative_l1d_per_core;
 #endif
@@ -99,8 +98,7 @@ inline constexpr std::size_t l1d_per_core_bytes_v = conservative_l1d_per_core;
 // Default: conservative_l2_per_core (256 KiB)
 
 #ifdef CRUCIBLE_L2_PER_CORE_BYTES
-inline constexpr std::size_t l2_per_core_bytes_v =
-    static_cast<std::size_t>(CRUCIBLE_L2_PER_CORE_BYTES);
+inline constexpr std::size_t l2_per_core_bytes_v = static_cast<std::size_t>(CRUCIBLE_L2_PER_CORE_BYTES);
 #else
 inline constexpr std::size_t l2_per_core_bytes_v = conservative_l2_per_core;
 #endif
@@ -110,8 +108,7 @@ inline constexpr std::size_t l2_per_core_bytes_v = conservative_l2_per_core;
 // Default: conservative_l3_total (16 MiB)
 
 #ifdef CRUCIBLE_L3_TOTAL_BYTES
-inline constexpr std::size_t l3_total_bytes_v =
-    static_cast<std::size_t>(CRUCIBLE_L3_TOTAL_BYTES);
+inline constexpr std::size_t l3_total_bytes_v = static_cast<std::size_t>(CRUCIBLE_L3_TOTAL_BYTES);
 #else
 inline constexpr std::size_t l3_total_bytes_v = conservative_l3_total;
 #endif
@@ -122,21 +119,16 @@ inline constexpr std::size_t l3_total_bytes_v = conservative_l3_total;
 // typo, e.g. KB-vs-MB confusion).  Fires at preprocessor-time as a
 // static_assert in this header.
 
-static_assert(l1d_per_core_bytes_v > 0,
-              "FIXY-V-223: l1d_per_core_bytes_v must be > 0 — check "
-              "CRUCIBLE_L1D_PER_CORE_BYTES override value.");
-static_assert(l2_per_core_bytes_v > 0,
-              "FIXY-V-223: l2_per_core_bytes_v must be > 0 — check "
-              "CRUCIBLE_L2_PER_CORE_BYTES override value.");
-static_assert(l3_total_bytes_v > 0,
-              "FIXY-V-223: l3_total_bytes_v must be > 0 — check "
-              "CRUCIBLE_L3_TOTAL_BYTES override value.");
-static_assert(l1d_per_core_bytes_v < l2_per_core_bytes_v,
-              "FIXY-V-223: l1d_per_core_bytes_v < l2_per_core_bytes_v "
-              "must hold — overrides likely confused KB/MB units.");
-static_assert(l2_per_core_bytes_v < l3_total_bytes_v,
-              "FIXY-V-223: l2_per_core_bytes_v < l3_total_bytes_v "
-              "must hold — overrides likely confused KB/MB/GB units.");
+static_assert(l1d_per_core_bytes_v > 0, "FIXY-V-223: l1d_per_core_bytes_v must be > 0 — check "
+                                        "CRUCIBLE_L1D_PER_CORE_BYTES override value.");
+static_assert(l2_per_core_bytes_v > 0, "FIXY-V-223: l2_per_core_bytes_v must be > 0 — check "
+                                       "CRUCIBLE_L2_PER_CORE_BYTES override value.");
+static_assert(l3_total_bytes_v > 0, "FIXY-V-223: l3_total_bytes_v must be > 0 — check "
+                                    "CRUCIBLE_L3_TOTAL_BYTES override value.");
+static_assert(l1d_per_core_bytes_v < l2_per_core_bytes_v, "FIXY-V-223: l1d_per_core_bytes_v < l2_per_core_bytes_v "
+                                                          "must hold — overrides likely confused KB/MB units.");
+static_assert(l2_per_core_bytes_v < l3_total_bytes_v, "FIXY-V-223: l2_per_core_bytes_v < l3_total_bytes_v "
+                                                      "must hold — overrides likely confused KB/MB/GB units.");
 
 // ─── Provenance witness ──────────────────────────────────────────────
 // `is_l1d_overridden_v` etc. let diagnostics distinguish "default

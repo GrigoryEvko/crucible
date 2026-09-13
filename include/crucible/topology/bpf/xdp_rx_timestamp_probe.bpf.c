@@ -21,8 +21,7 @@ struct {
 } topology_rx_timestamp_events SEC(".maps");
 
 SEC("xdp")
-int crucible_topology_xdp_rx_timestamp_probe(struct xdp_md *ctx)
-{
+int crucible_topology_xdp_rx_timestamp_probe(struct xdp_md* ctx) {
     (void)ctx;
     return XDP_PASS;
 }

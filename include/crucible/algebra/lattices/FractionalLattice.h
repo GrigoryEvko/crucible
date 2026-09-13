@@ -153,10 +153,7 @@ struct Rational {
     // operator<=> path additionally widens to __int128 as
     // defense-in-depth — see file header comment).
     [[nodiscard]] constexpr bool is_well_formed() const noexcept {
-        return den > 0
-            && num >= 0
-            && num <= MAX_SAFE_MAGNITUDE
-            && den <= MAX_SAFE_MAGNITUDE;
+        return den > 0 && num >= 0 && num <= MAX_SAFE_MAGNITUDE && den <= MAX_SAFE_MAGNITUDE;
     }
 
     // ── int128 typedef for cross-product defense-in-depth ──────────
@@ -183,8 +180,7 @@ struct Rational {
         // misbehaving caller that bypasses the contract still gets
         // the mathematically correct answer rather than a UB-induced
         // wrong direction).
-        return (static_cast<wide_signed>(a.num) * b.den)
-            == (static_cast<wide_signed>(b.num) * a.den);
+        return (static_cast<wide_signed>(a.num) * b.den) == (static_cast<wide_signed>(b.num) * a.den);
     }
 
     [[nodiscard]] friend constexpr auto operator<=>(Rational a, Rational b) noexcept {
@@ -192,8 +188,7 @@ struct Rational {
         // ensures correctness for any int64 inputs; assumes positive
         // denominators (is_well_formed() is the discoverable check
         // that lattice ops contract-assert at the boundary).
-        return (static_cast<wide_signed>(a.num) * b.den)
-           <=> (static_cast<wide_signed>(b.num) * a.den);
+        return (static_cast<wide_signed>(a.num) * b.den) <=> (static_cast<wide_signed>(b.num) * a.den);
     }
 };
 
@@ -232,17 +227,19 @@ struct Rational {
 // == 2^62, reducing to 2/1.  Generally num128 == 2^63 ⟹ gcd ≥ 2^62 ⟹
 // reduced numerator ≤ 2; for num128 ≤ 2^63 - 1 the cast was already
 // lossless.  den128 = a.den·b.den ≤ 2^62 always fits.
-[[nodiscard]] constexpr Rational simplify_wide(
-    Rational::wide_signed num, Rational::wide_signed den) noexcept {
+[[nodiscard]] constexpr Rational simplify_wide(Rational::wide_signed num, Rational::wide_signed den) noexcept {
     using W = Rational::wide_signed;
     if (num == 0) return Rational{0, 1};
     // den > 0 for well-formed inputs (product of positive denominators).
     W a = num < 0 ? -num : num;
     W b = den;
-    while (b != 0) { const W t = a % b; a = b; b = t; }  // __int128 Euclid
+    while (b != 0) {
+        const W t = a % b;
+        a = b;
+        b = t;
+    }  // __int128 Euclid
     const W g = a;  // gcd(|num|, den), g ≥ 1
-    return Rational{static_cast<std::int64_t>(num / g),
-                    static_cast<std::int64_t>(den / g)};
+    return Rational{static_cast<std::int64_t>(num / g), static_cast<std::int64_t>(den / g)};
 }
 
 // ── FractionalLattice ───────────────────────────────────────────────
@@ -250,12 +247,8 @@ struct FractionalLattice {
     using element_type = Rational;
 
     // Lattice ops (chain order on rationals in [0, 1]).
-    [[nodiscard]] static constexpr element_type bottom() noexcept {
-        return Rational{0, 1};
-    }
-    [[nodiscard]] static constexpr element_type top() noexcept {
-        return Rational{1, 1};
-    }
+    [[nodiscard]] static constexpr element_type bottom() noexcept { return Rational{0, 1}; }
+    [[nodiscard]] static constexpr element_type top() noexcept { return Rational{1, 1}; }
     [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept {
         // Boundary discipline — every Rational consumed by the lattice
         // ops MUST satisfy is_well_formed() per the file-header
@@ -278,12 +271,8 @@ struct FractionalLattice {
     }
 
     // Semiring ops.
-    [[nodiscard]] static constexpr element_type zero() noexcept {
-        return Rational{0, 1};
-    }
-    [[nodiscard]] static constexpr element_type one() noexcept {
-        return Rational{1, 1};
-    }
+    [[nodiscard]] static constexpr element_type zero() noexcept { return Rational{0, 1}; }
+    [[nodiscard]] static constexpr element_type one() noexcept { return Rational{1, 1}; }
     // add: rational addition with simplification.  Used to combine
     // shares (e.g. when readers return their fractions to upgrade
     // to a writer permission).  Cross-products use wide_signed
@@ -294,8 +283,7 @@ struct FractionalLattice {
     [[nodiscard]] static constexpr element_type add(element_type a, element_type b) noexcept {
         contract_assert(a.is_well_formed() && b.is_well_formed());
         using W = Rational::wide_signed;
-        const W num128 = static_cast<W>(a.num) * b.den
-                       + static_cast<W>(b.num) * a.den;
+        const W num128 = static_cast<W>(a.num) * b.den + static_cast<W>(b.num) * a.den;
         const W den128 = static_cast<W>(a.den) * b.den;
         // The additive numerator sum reaches 2·(MAX_SAFE_MAGNITUDE)² =
         // 2^63 at the inclusive bound (a == b == 2^31/2^31 == 1) — ONE
@@ -320,9 +308,7 @@ struct FractionalLattice {
         });
     }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return "FractionalLattice";
-    }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "FractionalLattice"; }
 };
 
 // ── Self-test ───────────────────────────────────────────────────────
@@ -355,14 +341,13 @@ static_assert(simplify(Rational{5, 5}) == Rational{1, 1});
 
 // is_well_formed enforces the CSL share invariant
 // (0 ≤ num ≤ MAX_SAFE_MAGNITUDE, 0 < den ≤ MAX_SAFE_MAGNITUDE).
-static_assert(Rational{}.is_well_formed());            // default {0, 1}
+static_assert(Rational{}.is_well_formed());  // default {0, 1}
 static_assert(Rational{1, 2}.is_well_formed());
 static_assert(Rational{0, 1}.is_well_formed());
-static_assert(Rational{Rational::MAX_SAFE_MAGNITUDE,
-                       Rational::MAX_SAFE_MAGNITUDE}.is_well_formed());
-static_assert(!Rational{1, -2}.is_well_formed());      // negative den
-static_assert(!Rational{-1, 2}.is_well_formed());      // negative num
-static_assert(!Rational{1, 0}.is_well_formed());       // zero den
+static_assert(Rational{Rational::MAX_SAFE_MAGNITUDE, Rational::MAX_SAFE_MAGNITUDE}.is_well_formed());
+static_assert(!Rational{1, -2}.is_well_formed());  // negative den
+static_assert(!Rational{-1, 2}.is_well_formed());  // negative num
+static_assert(!Rational{1, 0}.is_well_formed());  // zero den
 
 // AUDIT-FRAC-OVERFLOW regression — values just past the magnitude
 // bound are rejected by is_well_formed().  Pre-fix, Rational{2^40, 1}
@@ -388,56 +373,46 @@ static_assert(!Rational{std::numeric_limits<std::int64_t>::max(), 1}.is_well_for
 // pre-fix, leq(Rational{2^40, 1}, Rational{1, 2^25}) returned `true`
 // because 2^40 × 2^25 = 2^65 wrapped to 0 — flipping the comparison.
 // __int128 makes the answer correct even outside the contract.
-static_assert(Rational{1, std::int64_t{1} << 25}
-            < Rational{std::int64_t{1} << 40, 1});
-static_assert(!(Rational{std::int64_t{1} << 40, 1}
-              < Rational{1, std::int64_t{1} << 25}));
+static_assert(Rational{1, std::int64_t{1} << 25} < Rational{std::int64_t{1} << 40, 1});
+static_assert(!(Rational{std::int64_t{1} << 40, 1} < Rational{1, std::int64_t{1} << 25}));
 
 // Lattice axioms — spot-check at a representative span of CSL shares
 // (0, 1/4, 1/2, 3/4, 1).  Pure spot-check (not exhaustive) because
 // FractionalLattice is over INFINITE ℚ ∩ [0, 1] — full coverage
 // requires axiom witnesses, not exhaustion.  The verify_*_at helpers
 // themselves cover the full axiom family per witness triple.
-constexpr Rational r0   = FractionalLattice::bottom();
-constexpr Rational r14  = Rational{1, 4};
-constexpr Rational r12  = Rational{1, 2};
-constexpr Rational r34  = Rational{3, 4};
-constexpr Rational r1   = FractionalLattice::top();
+constexpr Rational r0 = FractionalLattice::bottom();
+constexpr Rational r14 = Rational{1, 4};
+constexpr Rational r12 = Rational{1, 2};
+constexpr Rational r34 = Rational{3, 4};
+constexpr Rational r1 = FractionalLattice::top();
 
-static_assert(verify_bounded_lattice_axioms_at<FractionalLattice>(r0,  r0,  r0));
-static_assert(verify_bounded_lattice_axioms_at<FractionalLattice>(r0,  r12, r1));
+static_assert(verify_bounded_lattice_axioms_at<FractionalLattice>(r0, r0, r0));
+static_assert(verify_bounded_lattice_axioms_at<FractionalLattice>(r0, r12, r1));
 static_assert(verify_bounded_lattice_axioms_at<FractionalLattice>(r14, r12, r34));
 static_assert(verify_bounded_lattice_axioms_at<FractionalLattice>(r12, r34, r1));
-static_assert(verify_bounded_lattice_axioms_at<FractionalLattice>(r1,  r1,  r1));
+static_assert(verify_bounded_lattice_axioms_at<FractionalLattice>(r1, r1, r1));
 static_assert(verify_bounded_lattice_axioms_at<FractionalLattice>(r34, r12, r14));  // descending
-static_assert(verify_bounded_lattice_axioms_at<FractionalLattice>(r0,  r14, r1));   // mixed ends
+static_assert(verify_bounded_lattice_axioms_at<FractionalLattice>(r0, r14, r1));  // mixed ends
 
 // Semiring axioms — at the same witness span.
-static_assert(verify_semiring_axioms_at<FractionalLattice>(r0,  r0,  r0));
+static_assert(verify_semiring_axioms_at<FractionalLattice>(r0, r0, r0));
 static_assert(verify_semiring_axioms_at<FractionalLattice>(r14, r14, r14));
-static_assert(verify_semiring_axioms_at<FractionalLattice>(r0,  r12, r1));
+static_assert(verify_semiring_axioms_at<FractionalLattice>(r0, r12, r1));
 static_assert(verify_semiring_axioms_at<FractionalLattice>(r14, r12, r34));
-static_assert(verify_semiring_axioms_at<FractionalLattice>(r1,  r1,  r1));
+static_assert(verify_semiring_axioms_at<FractionalLattice>(r1, r1, r1));
 
 // CSL identities.
 static_assert(FractionalLattice::add(r12, r12) == r1,
-    "Two halves combine to a full share (split readers → write upgrade).");
-static_assert(FractionalLattice::add(r14, r14) == r12,
-    "Two quarters combine to a half (partial reader merge).");
-static_assert(FractionalLattice::mul(r12, r12) == r14,
-    "Half of a half is a quarter (recursive split).");
-static_assert(FractionalLattice::mul(r1, r12) == r12,
-    "Multiplicative identity: 1 × x = x.");
-static_assert(FractionalLattice::mul(r0, r12) == r0,
-    "Multiplicative absorption: 0 × x = 0.");
-static_assert(FractionalLattice::leq(r14, r12),
-    "1/4 ⊑ 1/2 in the chain order on shares.");
-static_assert(!FractionalLattice::leq(r12, r14),
-    "1/2 ⋢ 1/4 (more share is greater, not less).");
-static_assert(FractionalLattice::join(r14, r12) == r12,
-    "Join is max — joining readers picks the biggest share.");
-static_assert(FractionalLattice::meet(r14, r12) == r14,
-    "Meet is min — meeting picks the smallest share.");
+              "Two halves combine to a full share (split readers → write upgrade).");
+static_assert(FractionalLattice::add(r14, r14) == r12, "Two quarters combine to a half (partial reader merge).");
+static_assert(FractionalLattice::mul(r12, r12) == r14, "Half of a half is a quarter (recursive split).");
+static_assert(FractionalLattice::mul(r1, r12) == r12, "Multiplicative identity: 1 × x = x.");
+static_assert(FractionalLattice::mul(r0, r12) == r0, "Multiplicative absorption: 0 × x = 0.");
+static_assert(FractionalLattice::leq(r14, r12), "1/4 ⊑ 1/2 in the chain order on shares.");
+static_assert(!FractionalLattice::leq(r12, r14), "1/2 ⋢ 1/4 (more share is greater, not less).");
+static_assert(FractionalLattice::join(r14, r12) == r12, "Join is max — joining readers picks the biggest share.");
+static_assert(FractionalLattice::meet(r14, r12) == r14, "Meet is min — meeting picks the smallest share.");
 
 // ── AUDIT-FRAC-ADD-OVERFLOW regression ──────────────────────────────
 //
@@ -452,22 +427,18 @@ static_assert(FractionalLattice::meet(r14, r12) == r14,
 // correct and the cast lossless.  These static_asserts would FAIL TO
 // COMPILE pre-fix (the consteval std::gcd UB poisons the constant
 // expression), so they pin the fix structurally.
-static_assert(FractionalLattice::add(
-        Rational{Rational::MAX_SAFE_MAGNITUDE, Rational::MAX_SAFE_MAGNITUDE},
-        Rational{Rational::MAX_SAFE_MAGNITUDE, Rational::MAX_SAFE_MAGNITUDE})
-    == Rational{2, 1},
-    "add of two max-magnitude full shares (1 + 1) must reduce to 2/1 "
-    "without int64 overflow.");
-static_assert(FractionalLattice::add(
-        Rational{Rational::MAX_SAFE_MAGNITUDE, 1},
-        Rational{Rational::MAX_SAFE_MAGNITUDE, 1})
-    == Rational{std::int64_t{2} * Rational::MAX_SAFE_MAGNITUDE, 1},
-    "add of two 2^31/1 shares must give 2^32/1 (numerator 2^32 fits int64).");
+static_assert(FractionalLattice::add(Rational{Rational::MAX_SAFE_MAGNITUDE, Rational::MAX_SAFE_MAGNITUDE},
+                                     Rational{Rational::MAX_SAFE_MAGNITUDE, Rational::MAX_SAFE_MAGNITUDE})
+                  == Rational{2, 1},
+              "add of two max-magnitude full shares (1 + 1) must reduce to 2/1 "
+              "without int64 overflow.");
+static_assert(FractionalLattice::add(Rational{Rational::MAX_SAFE_MAGNITUDE, 1},
+                                     Rational{Rational::MAX_SAFE_MAGNITUDE, 1})
+                  == Rational{std::int64_t{2} * Rational::MAX_SAFE_MAGNITUDE, 1},
+              "add of two 2^31/1 shares must give 2^32/1 (numerator 2^32 fits int64).");
 // Equivalence with the small-magnitude representation: 1 + 1 via the
 // canonical top()/top() path agrees with the max-magnitude path.
-static_assert(FractionalLattice::add(FractionalLattice::top(),
-                                     FractionalLattice::top())
-    == Rational{2, 1});
+static_assert(FractionalLattice::add(FractionalLattice::top(), FractionalLattice::top()) == Rational{2, 1});
 
 // Diagnostic name.
 static_assert(FractionalLattice::name() == "FractionalLattice");
@@ -478,21 +449,24 @@ static_assert(FractionalLattice::name() == "FractionalLattice");
 // Rational is non-empty so [[no_unique_address]] grade_ in Graded
 // stores the full 16 bytes.  CRUCIBLE_GRADED_LAYOUT_INVARIANT does
 // NOT apply.
-struct OneByteValue { char c{0}; };
-struct EightByteValue { unsigned long long v{0}; };
+struct OneByteValue {
+    char c{0};
+};
+struct EightByteValue {
+    unsigned long long v{0};
+};
 
 template <typename T>
-using SharedPermissionGraded =
-    Graded<ModalityKind::Absolute, FractionalLattice, T>;
+using SharedPermissionGraded = Graded<ModalityKind::Absolute, FractionalLattice, T>;
 
 // Verify the runtime overhead is exactly the Rational cost +
 // alignment for T.
-static_assert(sizeof(SharedPermissionGraded<OneByteValue>) ==
-              sizeof(OneByteValue) + sizeof(Rational) + 7,  // 1 + 16 + 7 padding
-    "SharedPermission<T> for 1B T should pad to 8B-alignment with 16B Rational.");
-static_assert(sizeof(SharedPermissionGraded<EightByteValue>) ==
-              sizeof(EightByteValue) + sizeof(Rational),    // 8 + 16 = 24
-    "SharedPermission<T> for 8B T has no padding — exactly 24B.");
+static_assert(sizeof(SharedPermissionGraded<OneByteValue>)
+                  == sizeof(OneByteValue) + sizeof(Rational) + 7,  // 1 + 16 + 7 padding
+              "SharedPermission<T> for 1B T should pad to 8B-alignment with 16B Rational.");
+static_assert(sizeof(SharedPermissionGraded<EightByteValue>)
+                  == sizeof(EightByteValue) + sizeof(Rational),  // 8 + 16 = 24
+              "SharedPermission<T> for 8B T has no padding — exactly 24B.");
 
 // ── Runtime smoke test ──────────────────────────────────────────────
 //
@@ -509,14 +483,14 @@ inline void runtime_smoke_test() {
     Rational b{numB, denB};
 
     // Lattice ops at runtime.
-    [[maybe_unused]] bool     l = FractionalLattice::leq(a, b);
+    [[maybe_unused]] bool l = FractionalLattice::leq(a, b);
     [[maybe_unused]] Rational j = FractionalLattice::join(a, b);
     [[maybe_unused]] Rational m = FractionalLattice::meet(a, b);
 
     // Semiring ops at runtime — exercises simplify, gcd, cross-prods.
-    [[maybe_unused]] Rational s   = FractionalLattice::add(a, b);  // 1/4 + 1/2 = 3/4
-    [[maybe_unused]] Rational p   = FractionalLattice::mul(a, b);  // 1/4 × 1/2 = 1/8
-    [[maybe_unused]] Rational ss  = simplify(Rational{numA + numB, denA + denB});
+    [[maybe_unused]] Rational s = FractionalLattice::add(a, b);  // 1/4 + 1/2 = 3/4
+    [[maybe_unused]] Rational p = FractionalLattice::mul(a, b);  // 1/4 × 1/2 = 1/8
+    [[maybe_unused]] Rational ss = simplify(Rational{numA + numB, denA + denB});
 
     // AUDIT-FRAC-OVERFLOW — exercise the boundary near
     // MAX_SAFE_MAGNITUDE through the runtime path so the
@@ -533,8 +507,7 @@ inline void runtime_smoke_test() {
     // soundness property without entangling simplify-behavior on
     // bound-exceeding intermediates.
     Rational large_lo{1, Rational::MAX_SAFE_MAGNITUDE};
-    Rational large_hi{Rational::MAX_SAFE_MAGNITUDE - 1,
-                      Rational::MAX_SAFE_MAGNITUDE};
+    Rational large_hi{Rational::MAX_SAFE_MAGNITUDE - 1, Rational::MAX_SAFE_MAGNITUDE};
     [[maybe_unused]] bool large_leq = FractionalLattice::leq(large_lo, large_hi);
     [[maybe_unused]] Rational large_join = FractionalLattice::join(large_lo, large_hi);
     [[maybe_unused]] Rational large_meet = FractionalLattice::meet(large_lo, large_hi);
@@ -547,10 +520,10 @@ inline void runtime_smoke_test() {
     // Build the chain in ascending order: bottom → 3/4 → top.
     OneByteValue v{42};
     SharedPermissionGraded<OneByteValue> initial{v, FractionalLattice::bottom()};
-    auto widened    = initial.weaken(Rational{3, 4});                  // 0   → 3/4
-    auto widened_max = widened.weaken(FractionalLattice::top());       // 3/4 → 1
-    auto composed    = initial.compose(widened_max);                   // join with top
-    auto rv_widen    = std::move(widened_max).weaken(FractionalLattice::top());  // 1 → 1 (idempotent reflexive)
+    auto widened = initial.weaken(Rational{3, 4});  // 0   → 3/4
+    auto widened_max = widened.weaken(FractionalLattice::top());  // 3/4 → 1
+    auto composed = initial.compose(widened_max);  // join with top
+    auto rv_widen = std::move(widened_max).weaken(FractionalLattice::top());  // 1 → 1 (idempotent reflexive)
 
     // Exercise rvalue-compose on a moved-into helper handle so the
     // returned Graded can be consumed without aliasing `rv_widen` or
@@ -559,7 +532,7 @@ inline void runtime_smoke_test() {
     SharedPermissionGraded<OneByteValue> for_consume = rv_widen.compose(composed);
     OneByteValue consumed = std::move(for_consume).consume();
 
-    [[maybe_unused]] auto g  = composed.grade();
+    [[maybe_unused]] auto g = composed.grade();
     [[maybe_unused]] auto v1 = composed.peek().c;
     [[maybe_unused]] auto v2 = consumed.c;
 }

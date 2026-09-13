@@ -166,8 +166,7 @@ namespace crucible::fixy::effect {
 
 template <class C>
 concept RowEngagementWitnessed =
-    ::crucible::effects::IsComputation<std::remove_cvref_t<C>>
-    && (std::remove_cvref_t<C>::effect_count_in_row() > 0);
+    ::crucible::effects::IsComputation<std::remove_cvref_t<C>> && (std::remove_cvref_t<C>::effect_count_in_row() > 0);
 
 }  // namespace crucible::fixy::effect
 
@@ -182,56 +181,56 @@ namespace crucible::fixy::effect::self_test {
 namespace eff = ::crucible::effects;
 
 // (1) STRUCTURAL axis — non-Computation types reject.
-static_assert(!RowEngagementWitnessed<int>,
-    "FIXY-V-219 self-test: `int` is not a Computation — "
-    "RowEngagementWitnessed must reject via IsComputation.");
+static_assert(!RowEngagementWitnessed<int>, "FIXY-V-219 self-test: `int` is not a Computation — "
+                                            "RowEngagementWitnessed must reject via IsComputation.");
 
 static_assert(!RowEngagementWitnessed<eff::Row<eff::Effect::Bg>>,
-    "FIXY-V-219 self-test: a bare Row is not a Computation — "
-    "RowEngagementWitnessed must reject the wrong-carrier shape.");
+              "FIXY-V-219 self-test: a bare Row is not a Computation — "
+              "RowEngagementWitnessed must reject the wrong-carrier shape.");
 
 // (2) SEMANTIC axis — empty-row Computations reject.
 static_assert(!RowEngagementWitnessed<eff::Computation<eff::Row<>, int>>,
-    "FIXY-V-219 self-test: Computation<Row<>, int> is pure (empty row) — "
-    "RowEngagementWitnessed must reject the no-engagement case.");
+              "FIXY-V-219 self-test: Computation<Row<>, int> is pure (empty row) — "
+              "RowEngagementWitnessed must reject the no-engagement case.");
 
 // (2-cvref) — cvref decay; the concept strips before testing.
 static_assert(!RowEngagementWitnessed<eff::Computation<eff::Row<>, int>&>,
-    "FIXY-V-219 self-test: cvref-stripped lvalue empty-row still rejects.");
+              "FIXY-V-219 self-test: cvref-stripped lvalue empty-row still rejects.");
 
 static_assert(!RowEngagementWitnessed<const eff::Computation<eff::Row<>, int>&>,
-    "FIXY-V-219 self-test: cvref-stripped const-lvalue empty-row still rejects.");
+              "FIXY-V-219 self-test: cvref-stripped const-lvalue empty-row still rejects.");
 
 // (3) POSITIVE — a single-cap Computation accepts.
 static_assert(RowEngagementWitnessed<eff::Computation<eff::Row<eff::Effect::Bg>, int>>,
-    "FIXY-V-219 self-test: Computation<Row<Bg>, int> has a non-empty row — "
-    "RowEngagementWitnessed must accept the engaged case.");
+              "FIXY-V-219 self-test: Computation<Row<Bg>, int> has a non-empty row — "
+              "RowEngagementWitnessed must accept the engaged case.");
 
 // (3-multi) — multi-cap Computation also accepts.
-static_assert(RowEngagementWitnessed<
-    eff::Computation<eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO>, double>>,
+static_assert(
+    RowEngagementWitnessed<eff::Computation<eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO>, double>>,
     "FIXY-V-219 self-test: multi-cap Computation accepted by the concept.");
 
 // (3-via-lift) — the canonical engaged-construction path: lift<Cap>(x)
 // returns a Computation<Row<Cap>, T> that satisfies the concept.
 // `lift` is consteval; the result type is the witness.
-static_assert([] consteval {
-    auto bg = eff::Computation<eff::Row<>, int>::template lift<eff::Effect::Bg>(7);
-    return RowEngagementWitnessed<decltype(bg)>;
-}(),
+static_assert(
+    [] consteval {
+        auto bg = eff::Computation<eff::Row<>, int>::template lift<eff::Effect::Bg>(7);
+        return RowEngagementWitnessed<decltype(bg)>;
+    }(),
     "FIXY-V-219 self-test: lift<Bg>(x) produces a row-engaged "
     "Computation — RowEngagementWitnessed must accept the lift result.");
 
 // (3-via-then) — chained construction via `then` (monadic bind)
 // produces a row-engaged Computation (the result row is the
 // row-union of the source and the bound continuation).
-static_assert([] consteval {
-    auto bg = eff::Computation<eff::Row<>, int>::template lift<eff::Effect::Bg>(10);
-    auto chained = bg.then([](int x) {
-        return eff::Computation<eff::Row<>, int>::template lift<eff::Effect::IO>(x + 1);
-    });
-    return RowEngagementWitnessed<decltype(chained)>;
-}(),
+static_assert(
+    [] consteval {
+        auto bg = eff::Computation<eff::Row<>, int>::template lift<eff::Effect::Bg>(10);
+        auto chained =
+            bg.then([](int x) { return eff::Computation<eff::Row<>, int>::template lift<eff::Effect::IO>(x + 1); });
+        return RowEngagementWitnessed<decltype(chained)>;
+    }(),
     "FIXY-V-219 self-test: then-chained Computation carries the row-union; "
     "RowEngagementWitnessed must accept the engaged result.");
 
@@ -253,16 +252,16 @@ static_assert([] consteval {
 // Companion to FIXY-FOUND-014's open closure surface.  When 014
 // closes, a `RowEngagementProvenancePinned<C>` sibling layers
 // discipline-checking on top; this concept stays type-level-honest.
-static_assert([] consteval {
-    // Pure source value — int{42} has no effect-row history.
-    int pure_source = 42;
-    // Cast the pure value into an "engaged" Computation via lift.
-    // FIXY-FOUND-014's open hole: lift does not gate on whether
-    // `pure_source` was produced under a Bg-capable context.
-    auto forged_engaged =
-        eff::Computation<eff::Row<>, int>::template lift<eff::Effect::Bg>(pure_source);
-    return RowEngagementWitnessed<decltype(forged_engaged)>;
-}(),
+static_assert(
+    [] consteval {
+        // Pure source value — int{42} has no effect-row history.
+        int pure_source = 42;
+        // Cast the pure value into an "engaged" Computation via lift.
+        // FIXY-FOUND-014's open hole: lift does not gate on whether
+        // `pure_source` was produced under a Bg-capable context.
+        auto forged_engaged = eff::Computation<eff::Row<>, int>::template lift<eff::Effect::Bg>(pure_source);
+        return RowEngagementWitnessed<decltype(forged_engaged)>;
+    }(),
     "FIXY-FOUND-110: RowEngagementWitnessed is structurally-honest "
     "but discipline-blind — it accepts lift<Bg>(pure_value) because "
     "the result's TYPE claims Row<Bg>, regardless of whether the "
@@ -277,12 +276,11 @@ static_assert([] consteval {
 // be updated in parallel.  Cardinality witness pattern from
 // FIXY-V-218 / V-217.
 inline constexpr std::size_t effect_surface_cardinality = 1;
-static_assert(effect_surface_cardinality == 1,
-    "FIXY-V-219 cardinality sentinel: fixy::effect:: ships exactly one "
-    "concept today (RowEngagementWitnessed).  If a sibling concept lands "
-    "(e.g. RowEngagementProvenancePinned per FIXY-FOUND-110 forward "
-    "shape, once FIXY-FOUND-014 closes), bump this constant AND refresh "
-    "the umbrella doc-block at the top of fixy/Effect.h to enumerate "
-    "the new entry.");
+static_assert(effect_surface_cardinality == 1, "FIXY-V-219 cardinality sentinel: fixy::effect:: ships exactly one "
+                                               "concept today (RowEngagementWitnessed).  If a sibling concept lands "
+                                               "(e.g. RowEngagementProvenancePinned per FIXY-FOUND-110 forward "
+                                               "shape, once FIXY-FOUND-014 closes), bump this constant AND refresh "
+                                               "the umbrella doc-block at the top of fixy/Effect.h to enumerate "
+                                               "the new entry.");
 
 }  // namespace crucible::fixy::effect::self_test

@@ -117,13 +117,10 @@ struct perm_tags_unique_impl : std::true_type {};
 
 template <typename Head, typename... Tail>
 struct perm_tags_unique_impl<Head, Tail...>
-    : std::bool_constant<
-          ((!std::is_same_v<Head, Tail>) && ...)
-       && perm_tags_unique_impl<Tail...>::value> {};
+    : std::bool_constant<((!std::is_same_v<Head, Tail>) && ...) && perm_tags_unique_impl<Tail...>::value> {};
 
 template <typename... Tags>
-inline constexpr bool perm_tags_unique_v =
-    perm_tags_unique_impl<Tags...>::value;
+inline constexpr bool perm_tags_unique_v = perm_tags_unique_impl<Tags...>::value;
 
 }  // namespace detail
 
@@ -132,11 +129,11 @@ inline constexpr bool perm_tags_unique_v =
 template <typename... Tags>
 struct PermSet {
     static_assert(detail::perm_tags_unique_v<Tags...>,
-        "crucible::session::diagnostic [PermissionImbalance]: "
-        "PermSet<Tags...> requires unique Tags.  A duplicate permission "
-        "tag means the same CSL authority was inserted twice, usually by "
-        "passing the same Permission<Tag> token through a mint boundary "
-        "more than once.");
+                  "crucible::session::diagnostic [PermissionImbalance]: "
+                  "PermSet<Tags...> requires unique Tags.  A duplicate permission "
+                  "tag means the same CSL authority was inserted twice, usually by "
+                  "passing the same Permission<Tag> token through a mint boundary "
+                  "more than once.");
 
     static constexpr std::size_t size = sizeof...(Tags);
 };
@@ -154,14 +151,12 @@ template <typename PS, typename Q>
 struct perm_set_contains_impl;
 
 template <typename... Ts, typename Q>
-struct perm_set_contains_impl<PermSet<Ts...>, Q>
-    : std::bool_constant<(std::is_same_v<Ts, Q> || ...)> {};
+struct perm_set_contains_impl<PermSet<Ts...>, Q> : std::bool_constant<(std::is_same_v<Ts, Q> || ...)> {};
 
 }  // namespace detail
 
 template <typename PS, typename Q>
-inline constexpr bool perm_set_contains_v =
-    detail::perm_set_contains_impl<PS, Q>::value;
+inline constexpr bool perm_set_contains_v = detail::perm_set_contains_impl<PS, Q>::value;
 
 // ── perm_set_insert_t (unique-prepend) ───────────────────────────────
 //
@@ -186,8 +181,7 @@ struct perm_set_insert_branch<PermSet<Ts...>, Q, /*Already=*/false> {
 }  // namespace detail
 
 template <typename PS, typename Q>
-struct perm_set_insert
-    : detail::perm_set_insert_branch<PS, Q, perm_set_contains_v<PS, Q>> {};
+struct perm_set_insert : detail::perm_set_insert_branch<PS, Q, perm_set_contains_v<PS, Q>> {};
 
 template <typename PS, typename Q>
 using perm_set_insert_t = typename perm_set_insert<PS, Q>::type;
@@ -221,10 +215,7 @@ struct perm_set_remove_impl<PermSet<Head, Tail...>, Q> {
         using type = PermSet<Head, Xs...>;
     };
 
-    using type = std::conditional_t<
-        std::is_same_v<Head, Q>,
-        rec_type,
-        typename prepend_head<rec_type>::type>;
+    using type = std::conditional_t<std::is_same_v<Head, Q>, rec_type, typename prepend_head<rec_type>::type>;
 };
 
 }  // namespace detail
@@ -246,14 +237,12 @@ template <typename PS1, typename PS2>
 struct perm_set_subset_impl;
 
 template <typename... T1s, typename PS2>
-struct perm_set_subset_impl<PermSet<T1s...>, PS2>
-    : std::bool_constant<(perm_set_contains_v<PS2, T1s> && ...)> {};
+struct perm_set_subset_impl<PermSet<T1s...>, PS2> : std::bool_constant<(perm_set_contains_v<PS2, T1s> && ...)> {};
 
 }  // namespace detail
 
 template <typename PS1, typename PS2>
-inline constexpr bool perm_set_subset_v =
-    detail::perm_set_subset_impl<PS1, PS2>::value;
+inline constexpr bool perm_set_subset_v = detail::perm_set_subset_impl<PS1, PS2>::value;
 
 // ── perm_set_disjoint_v (PS1 ∩ PS2 = ∅) ────────────────────────────
 //
@@ -267,14 +256,12 @@ template <typename PS1, typename PS2>
 struct perm_set_disjoint_impl;
 
 template <typename... T1s, typename PS2>
-struct perm_set_disjoint_impl<PermSet<T1s...>, PS2>
-    : std::bool_constant<((!perm_set_contains_v<PS2, T1s>) && ...)> {};
+struct perm_set_disjoint_impl<PermSet<T1s...>, PS2> : std::bool_constant<((!perm_set_contains_v<PS2, T1s>) && ...)> {};
 
 }  // namespace detail
 
 template <typename PS1, typename PS2>
-inline constexpr bool perm_set_disjoint_v =
-    detail::perm_set_disjoint_impl<PS1, PS2>::value;
+inline constexpr bool perm_set_disjoint_v = detail::perm_set_disjoint_impl<PS1, PS2>::value;
 
 // ── perm_set_equal_v (order-insensitive equality) ───────────────────
 //
@@ -285,9 +272,7 @@ inline constexpr bool perm_set_disjoint_v =
 
 template <typename PS1, typename PS2>
 inline constexpr bool perm_set_equal_v =
-    PS1::size == PS2::size
-    && perm_set_subset_v<PS1, PS2>
-    && perm_set_subset_v<PS2, PS1>;
+    PS1::size == PS2::size && perm_set_subset_v<PS1, PS2> && perm_set_subset_v<PS2, PS1>;
 
 // ── perm_set_union_t (DISJOINT union) ───────────────────────────────
 //
@@ -308,15 +293,14 @@ struct perm_set_union_impl;
 
 template <typename... T1s, typename... T2s>
 struct perm_set_union_impl<PermSet<T1s...>, PermSet<T2s...>> {
-    static_assert(
-        ((!perm_set_contains_v<PermSet<T1s...>, T2s>) && ...),
-        "crucible::session::diagnostic [PermissionImbalance]: "
-        "perm_set_union_t requires disjoint operands — a permission "
-        "tag appears in both PermSets.  A CSL permission cannot be "
-        "held by two participants simultaneously.  Verify the call "
-        "site does not double-insert a tag, and check that "
-        "mint_permission_split's children remain disjoint along the "
-        "session protocol.");
+    static_assert(((!perm_set_contains_v<PermSet<T1s...>, T2s>) && ...),
+                  "crucible::session::diagnostic [PermissionImbalance]: "
+                  "perm_set_union_t requires disjoint operands — a permission "
+                  "tag appears in both PermSets.  A CSL permission cannot be "
+                  "held by two participants simultaneously.  Verify the call "
+                  "site does not double-insert a tag, and check that "
+                  "mint_permission_split's children remain disjoint along the "
+                  "session protocol.");
     using type = PermSet<T1s..., T2s...>;
 };
 
@@ -345,8 +329,7 @@ struct perm_set_difference_impl<PermSet<>, PS2> {
 
 template <typename Head, typename... Tail, typename PS2>
 struct perm_set_difference_impl<PermSet<Head, Tail...>, PS2> {
-    using rec_type =
-        typename perm_set_difference_impl<PermSet<Tail...>, PS2>::type;
+    using rec_type = typename perm_set_difference_impl<PermSet<Tail...>, PS2>::type;
 
     template <typename S>
     struct prepend_head;
@@ -356,10 +339,7 @@ struct perm_set_difference_impl<PermSet<Head, Tail...>, PS2> {
         using type = PermSet<Head, Xs...>;
     };
 
-    using type = std::conditional_t<
-        perm_set_contains_v<PS2, Head>,
-        rec_type,
-        typename prepend_head<rec_type>::type>;
+    using type = std::conditional_t<perm_set_contains_v<PS2, Head>, rec_type, typename prepend_head<rec_type>::type>;
 };
 
 }  // namespace detail
@@ -368,8 +348,7 @@ template <typename PS1, typename PS2>
 struct perm_set_difference : detail::perm_set_difference_impl<PS1, PS2> {};
 
 template <typename PS1, typename PS2>
-using perm_set_difference_t =
-    typename perm_set_difference<PS1, PS2>::type;
+using perm_set_difference_t = typename perm_set_difference<PS1, PS2>::type;
 
 // ── perm_set_canonicalize_t (identity in v1) ────────────────────────
 //
@@ -422,105 +401,69 @@ static_assert(PermSet<A_tag, B_tag, C_tag>::size == 3);
 
 // ── contains ────────────────────────────────────────────────────────
 static_assert(!perm_set_contains_v<EmptyPermSet, A_tag>);
-static_assert( perm_set_contains_v<PermSet<A_tag>, A_tag>);
+static_assert(perm_set_contains_v<PermSet<A_tag>, A_tag>);
 static_assert(!perm_set_contains_v<PermSet<A_tag>, B_tag>);
-static_assert( perm_set_contains_v<PermSet<A_tag, B_tag, C_tag>, B_tag>);
+static_assert(perm_set_contains_v<PermSet<A_tag, B_tag, C_tag>, B_tag>);
 static_assert(!perm_set_contains_v<PermSet<A_tag, B_tag, C_tag>, D_tag>);
 
 // ── insert (unique-prepend) ────────────────────────────────────────
-static_assert(std::is_same_v<
-    perm_set_insert_t<EmptyPermSet, A_tag>,
-    PermSet<A_tag>>);
-static_assert(std::is_same_v<
-    perm_set_insert_t<PermSet<B_tag>, A_tag>,
-    PermSet<A_tag, B_tag>>);
-static_assert(std::is_same_v<                       // no-op when present
-    perm_set_insert_t<PermSet<A_tag>, A_tag>,
-    PermSet<A_tag>>);
-static_assert(std::is_same_v<
-    perm_set_insert_t<PermSet<A_tag, B_tag>, C_tag>,
-    PermSet<C_tag, A_tag, B_tag>>);
+static_assert(std::is_same_v<perm_set_insert_t<EmptyPermSet, A_tag>, PermSet<A_tag>>);
+static_assert(std::is_same_v<perm_set_insert_t<PermSet<B_tag>, A_tag>, PermSet<A_tag, B_tag>>);
+static_assert(std::is_same_v<  // no-op when present
+              perm_set_insert_t<PermSet<A_tag>, A_tag>, PermSet<A_tag>>);
+static_assert(std::is_same_v<perm_set_insert_t<PermSet<A_tag, B_tag>, C_tag>, PermSet<C_tag, A_tag, B_tag>>);
 
 // ── remove (filter) ────────────────────────────────────────────────
-static_assert(std::is_same_v<                       // no-op on empty
-    perm_set_remove_t<EmptyPermSet, A_tag>,
-    PermSet<>>);
-static_assert(std::is_same_v<
-    perm_set_remove_t<PermSet<A_tag>, A_tag>,
-    PermSet<>>);
-static_assert(std::is_same_v<                       // no-op when absent
-    perm_set_remove_t<PermSet<A_tag>, B_tag>,
-    PermSet<A_tag>>);
-static_assert(std::is_same_v<
-    perm_set_remove_t<PermSet<A_tag, B_tag>, A_tag>,
-    PermSet<B_tag>>);
-static_assert(std::is_same_v<
-    perm_set_remove_t<PermSet<A_tag, B_tag, C_tag>, B_tag>,
-    PermSet<A_tag, C_tag>>);
+static_assert(std::is_same_v<  // no-op on empty
+              perm_set_remove_t<EmptyPermSet, A_tag>, PermSet<>>);
+static_assert(std::is_same_v<perm_set_remove_t<PermSet<A_tag>, A_tag>, PermSet<>>);
+static_assert(std::is_same_v<  // no-op when absent
+              perm_set_remove_t<PermSet<A_tag>, B_tag>, PermSet<A_tag>>);
+static_assert(std::is_same_v<perm_set_remove_t<PermSet<A_tag, B_tag>, A_tag>, PermSet<B_tag>>);
+static_assert(std::is_same_v<perm_set_remove_t<PermSet<A_tag, B_tag, C_tag>, B_tag>, PermSet<A_tag, C_tag>>);
 
 // ── subset ──────────────────────────────────────────────────────────
-static_assert( perm_set_subset_v<EmptyPermSet, EmptyPermSet>);
-static_assert( perm_set_subset_v<EmptyPermSet, PermSet<A_tag>>);
-static_assert( perm_set_subset_v<PermSet<A_tag>, PermSet<A_tag>>);
-static_assert( perm_set_subset_v<PermSet<A_tag>, PermSet<A_tag, B_tag>>);
+static_assert(perm_set_subset_v<EmptyPermSet, EmptyPermSet>);
+static_assert(perm_set_subset_v<EmptyPermSet, PermSet<A_tag>>);
+static_assert(perm_set_subset_v<PermSet<A_tag>, PermSet<A_tag>>);
+static_assert(perm_set_subset_v<PermSet<A_tag>, PermSet<A_tag, B_tag>>);
 static_assert(!perm_set_subset_v<PermSet<A_tag, C_tag>, PermSet<A_tag, B_tag>>);
 static_assert(!perm_set_subset_v<PermSet<A_tag>, EmptyPermSet>);
 
 // ── disjoint ───────────────────────────────────────────────────────
-static_assert( perm_set_disjoint_v<EmptyPermSet, EmptyPermSet>);
-static_assert( perm_set_disjoint_v<EmptyPermSet, PermSet<A_tag>>);
-static_assert( perm_set_disjoint_v<PermSet<A_tag>, EmptyPermSet>);
-static_assert( perm_set_disjoint_v<PermSet<A_tag>, PermSet<B_tag, C_tag>>);
+static_assert(perm_set_disjoint_v<EmptyPermSet, EmptyPermSet>);
+static_assert(perm_set_disjoint_v<EmptyPermSet, PermSet<A_tag>>);
+static_assert(perm_set_disjoint_v<PermSet<A_tag>, EmptyPermSet>);
+static_assert(perm_set_disjoint_v<PermSet<A_tag>, PermSet<B_tag, C_tag>>);
 static_assert(!perm_set_disjoint_v<PermSet<A_tag>, PermSet<A_tag>>);
 static_assert(!perm_set_disjoint_v<PermSet<A_tag, B_tag>, PermSet<C_tag, B_tag>>);
 
 // ── equality (order-insensitive) ───────────────────────────────────
-static_assert( perm_set_equal_v<EmptyPermSet, EmptyPermSet>);
-static_assert( perm_set_equal_v<PermSet<A_tag>, PermSet<A_tag>>);
-static_assert( perm_set_equal_v<PermSet<A_tag, B_tag>, PermSet<B_tag, A_tag>>);
-static_assert( perm_set_equal_v<
-    PermSet<A_tag, B_tag, C_tag>,
-    PermSet<C_tag, A_tag, B_tag>>);
+static_assert(perm_set_equal_v<EmptyPermSet, EmptyPermSet>);
+static_assert(perm_set_equal_v<PermSet<A_tag>, PermSet<A_tag>>);
+static_assert(perm_set_equal_v<PermSet<A_tag, B_tag>, PermSet<B_tag, A_tag>>);
+static_assert(perm_set_equal_v<PermSet<A_tag, B_tag, C_tag>, PermSet<C_tag, A_tag, B_tag>>);
 static_assert(!perm_set_equal_v<PermSet<A_tag>, PermSet<B_tag>>);
 static_assert(!perm_set_equal_v<PermSet<A_tag>, PermSet<A_tag, B_tag>>);
 static_assert(!perm_set_equal_v<PermSet<A_tag, B_tag>, PermSet<A_tag, C_tag>>);
 
 // ── disjoint union ─────────────────────────────────────────────────
-static_assert(std::is_same_v<
-    perm_set_union_t<EmptyPermSet, EmptyPermSet>,
-    PermSet<>>);
-static_assert(std::is_same_v<
-    perm_set_union_t<EmptyPermSet, PermSet<A_tag>>,
-    PermSet<A_tag>>);
-static_assert(std::is_same_v<
-    perm_set_union_t<PermSet<A_tag>, PermSet<B_tag>>,
-    PermSet<A_tag, B_tag>>);
-static_assert(std::is_same_v<
-    perm_set_union_t<PermSet<A_tag, B_tag>, PermSet<C_tag>>,
-    PermSet<A_tag, B_tag, C_tag>>);
+static_assert(std::is_same_v<perm_set_union_t<EmptyPermSet, EmptyPermSet>, PermSet<>>);
+static_assert(std::is_same_v<perm_set_union_t<EmptyPermSet, PermSet<A_tag>>, PermSet<A_tag>>);
+static_assert(std::is_same_v<perm_set_union_t<PermSet<A_tag>, PermSet<B_tag>>, PermSet<A_tag, B_tag>>);
+static_assert(std::is_same_v<perm_set_union_t<PermSet<A_tag, B_tag>, PermSet<C_tag>>, PermSet<A_tag, B_tag, C_tag>>);
 
 // ── difference ─────────────────────────────────────────────────────
-static_assert(std::is_same_v<
-    perm_set_difference_t<EmptyPermSet, PermSet<A_tag>>,
-    PermSet<>>);
-static_assert(std::is_same_v<
-    perm_set_difference_t<PermSet<A_tag, B_tag>, EmptyPermSet>,
-    PermSet<A_tag, B_tag>>);
-static_assert(std::is_same_v<
-    perm_set_difference_t<PermSet<A_tag>, PermSet<A_tag>>,
-    PermSet<>>);
-static_assert(std::is_same_v<
-    perm_set_difference_t<PermSet<A_tag, B_tag, C_tag>, PermSet<B_tag>>,
-    PermSet<A_tag, C_tag>>);
-static_assert(std::is_same_v<
-    perm_set_difference_t<PermSet<A_tag, B_tag, C_tag>,
-                          PermSet<A_tag, C_tag>>,
-    PermSet<B_tag>>);
+static_assert(std::is_same_v<perm_set_difference_t<EmptyPermSet, PermSet<A_tag>>, PermSet<>>);
+static_assert(std::is_same_v<perm_set_difference_t<PermSet<A_tag, B_tag>, EmptyPermSet>, PermSet<A_tag, B_tag>>);
+static_assert(std::is_same_v<perm_set_difference_t<PermSet<A_tag>, PermSet<A_tag>>, PermSet<>>);
+static_assert(
+    std::is_same_v<perm_set_difference_t<PermSet<A_tag, B_tag, C_tag>, PermSet<B_tag>>, PermSet<A_tag, C_tag>>);
+static_assert(
+    std::is_same_v<perm_set_difference_t<PermSet<A_tag, B_tag, C_tag>, PermSet<A_tag, C_tag>>, PermSet<B_tag>>);
 
 // ── canonicalize (identity in v1) ──────────────────────────────────
-static_assert(std::is_same_v<
-    perm_set_canonicalize_t<PermSet<A_tag, B_tag, C_tag>>,
-    PermSet<A_tag, B_tag, C_tag>>);
+static_assert(std::is_same_v<perm_set_canonicalize_t<PermSet<A_tag, B_tag, C_tag>>, PermSet<A_tag, B_tag, C_tag>>);
 
 // ── sizeof claims (proof-token discipline) ─────────────────────────
 //
@@ -554,9 +497,8 @@ inline void runtime_smoke_test() noexcept {
     // Equality of canonicalised forms agrees with bidirectional
     // containment.  When FOUND-E10 lands, the two will collapse to
     // the same `is_same_v` check; until then both paths must agree.
-    static_assert(perm_set_equal_v<
-        perm_set_canonicalize_t<PermSet<A_tag, B_tag>>,
-        perm_set_canonicalize_t<PermSet<B_tag, A_tag>>>);
+    static_assert(perm_set_equal_v<perm_set_canonicalize_t<PermSet<A_tag, B_tag>>,
+                                   perm_set_canonicalize_t<PermSet<B_tag, A_tag>>>);
 }
 
 }  // namespace crucible::safety::proto::detail::permset_smoke

@@ -63,36 +63,48 @@ enum class NetworkBackendError : std::uint8_t {
     EmptyContentHash,
 };
 
-[[nodiscard]] constexpr std::string_view
-network_backend_vendor_name(NetworkBackendVendor vendor) noexcept {
+[[nodiscard]] constexpr std::string_view network_backend_vendor_name(NetworkBackendVendor vendor) noexcept {
     switch (vendor) {
-        case NetworkBackendVendor::Cpu: return "cpu";
-        case NetworkBackendVendor::Nv: return "nv";
-        case NetworkBackendVendor::Am: return "am";
-        case NetworkBackendVendor::Intel: return "intel";
-        case NetworkBackendVendor::Mellanox: return "mellanox";
-        case NetworkBackendVendor::Broadcom: return "broadcom";
-        default: return "<unknown NetworkBackendVendor>";
+        case NetworkBackendVendor::Cpu:
+            return "cpu";
+        case NetworkBackendVendor::Nv:
+            return "nv";
+        case NetworkBackendVendor::Am:
+            return "am";
+        case NetworkBackendVendor::Intel:
+            return "intel";
+        case NetworkBackendVendor::Mellanox:
+            return "mellanox";
+        case NetworkBackendVendor::Broadcom:
+            return "broadcom";
+        default:
+            return "<unknown NetworkBackendVendor>";
     }
 }
 
-[[nodiscard]] constexpr std::string_view
-network_artifact_kind_name(NetworkArtifactKind kind) noexcept {
+[[nodiscard]] constexpr std::string_view network_artifact_kind_name(NetworkArtifactKind kind) noexcept {
     switch (kind) {
-        case NetworkArtifactKind::SocketOracle: return "socket-oracle";
-        case NetworkArtifactKind::CudaAwareRdma: return "cuda-aware-rdma";
-        case NetworkArtifactKind::RocmAwareRdma: return "rocm-aware-rdma";
-        case NetworkArtifactKind::IntelIpuRdma: return "intel-ipu-rdma";
-        case NetworkArtifactKind::DpuOffload: return "dpu-offload";
-        case NetworkArtifactKind::SwitchPipeline: return "switch-pipeline";
-        default: return "<unknown NetworkArtifactKind>";
+        case NetworkArtifactKind::SocketOracle:
+            return "socket-oracle";
+        case NetworkArtifactKind::CudaAwareRdma:
+            return "cuda-aware-rdma";
+        case NetworkArtifactKind::RocmAwareRdma:
+            return "rocm-aware-rdma";
+        case NetworkArtifactKind::IntelIpuRdma:
+            return "intel-ipu-rdma";
+        case NetworkArtifactKind::DpuOffload:
+            return "dpu-offload";
+        case NetworkArtifactKind::SwitchPipeline:
+            return "switch-pipeline";
+        default:
+            return "<unknown NetworkArtifactKind>";
     }
 }
 
-[[nodiscard]] constexpr std::string_view
-network_backend_error_name(NetworkBackendError error) noexcept {
+[[nodiscard]] constexpr std::string_view network_backend_error_name(NetworkBackendError error) noexcept {
     switch (error) {
-        case NetworkBackendError::None: return "None";
+        case NetworkBackendError::None:
+            return "None";
         case NetworkBackendError::BackendUnavailable:
             return "BackendUnavailable";
         case NetworkBackendError::UnsupportedCogKind:
@@ -103,7 +115,8 @@ network_backend_error_name(NetworkBackendError error) noexcept {
             return "RecipeForbidsAlgorithm";
         case NetworkBackendError::EmptyContentHash:
             return "EmptyContentHash";
-        default: return "<unknown NetworkBackendError>";
+        default:
+            return "<unknown NetworkBackendError>";
     }
 }
 
@@ -121,54 +134,47 @@ struct NetworkBackendTraits;
 template <>
 struct NetworkBackendTraits<NetworkBackendVendor::Cpu> {
     using source = wip_source::CpuNetwork;
-    static constexpr NetworkArtifactKind artifact_kind =
-        NetworkArtifactKind::SocketOracle;
+    static constexpr NetworkArtifactKind artifact_kind = NetworkArtifactKind::SocketOracle;
     static constexpr bool has_emit_path = false;
 };
 
 template <>
 struct NetworkBackendTraits<NetworkBackendVendor::Nv> {
     using source = wip_source::NvNetwork;
-    static constexpr NetworkArtifactKind artifact_kind =
-        NetworkArtifactKind::CudaAwareRdma;
+    static constexpr NetworkArtifactKind artifact_kind = NetworkArtifactKind::CudaAwareRdma;
     static constexpr bool has_emit_path = false;
 };
 
 template <>
 struct NetworkBackendTraits<NetworkBackendVendor::Am> {
     using source = wip_source::AmNetwork;
-    static constexpr NetworkArtifactKind artifact_kind =
-        NetworkArtifactKind::RocmAwareRdma;
+    static constexpr NetworkArtifactKind artifact_kind = NetworkArtifactKind::RocmAwareRdma;
     static constexpr bool has_emit_path = false;
 };
 
 template <>
 struct NetworkBackendTraits<NetworkBackendVendor::Intel> {
     using source = wip_source::IntelNetwork;
-    static constexpr NetworkArtifactKind artifact_kind =
-        NetworkArtifactKind::IntelIpuRdma;
+    static constexpr NetworkArtifactKind artifact_kind = NetworkArtifactKind::IntelIpuRdma;
     static constexpr bool has_emit_path = false;
 };
 
 template <>
 struct NetworkBackendTraits<NetworkBackendVendor::Mellanox> {
     using source = wip_source::MellanoxNetwork;
-    static constexpr NetworkArtifactKind artifact_kind =
-        NetworkArtifactKind::DpuOffload;
+    static constexpr NetworkArtifactKind artifact_kind = NetworkArtifactKind::DpuOffload;
     static constexpr bool has_emit_path = false;
 };
 
 template <>
 struct NetworkBackendTraits<NetworkBackendVendor::Broadcom> {
     using source = wip_source::BroadcomNetwork;
-    static constexpr NetworkArtifactKind artifact_kind =
-        NetworkArtifactKind::SwitchPipeline;
+    static constexpr NetworkArtifactKind artifact_kind = NetworkArtifactKind::SwitchPipeline;
     static constexpr bool has_emit_path = false;
 };
 
 template <NetworkBackendVendor Vendor>
-inline constexpr bool network_backend_has_emit_path_v =
-    NetworkBackendTraits<Vendor>::has_emit_path;
+inline constexpr bool network_backend_has_emit_path_v = NetworkBackendTraits<Vendor>::has_emit_path;
 
 template <NetworkBackendVendor Vendor, cog::CogKind Kind>
 [[nodiscard]] consteval bool backend_accepts_cog_kind() noexcept {
@@ -190,25 +196,20 @@ template <NetworkBackendVendor Vendor, cog::CogKind Kind>
 }
 
 template <ir::Ir001OpKind Kind>
-inline constexpr bool ir001_network_kernel_kind_v =
-    ir::Ir001PointToPointKind<Kind> || ir::Ir001CollectiveKind<Kind>;
+inline constexpr bool ir001_network_kernel_kind_v = ir::Ir001PointToPointKind<Kind> || ir::Ir001CollectiveKind<Kind>;
 
 template <NetworkBackendVendor Vendor, cog::CogKind Kind>
-concept BackendAcceptsCog =
-    backend_accepts_cog_kind<Vendor, Kind>();
+concept BackendAcceptsCog = backend_accepts_cog_kind<Vendor, Kind>();
 
 template <class Node>
-concept NetworkKernelNode =
-    ir::Ir001NodeLike<Node> && ir001_network_kernel_kind_v<Node::kind>;
+concept NetworkKernelNode = ir::Ir001NodeLike<Node> && ir001_network_kernel_kind_v<Node::kind>;
 
 struct NetworkKernelArtifact {
     NetworkBackendVendor vendor = NetworkBackendVendor::Cpu;
     NetworkArtifactKind artifact_kind = NetworkArtifactKind::SocketOracle;
     ir::Ir001OpKind op_kind = ir::Ir001OpKind::AllReduce;
-    net::NetworkCollectiveAlgorithm algorithm =
-        net::NetworkCollectiveAlgorithm::Ring;
-    net::NetworkEquivalenceClass equivalence =
-        net::NetworkEquivalenceClass::OrderedTolerance;
+    net::NetworkCollectiveAlgorithm algorithm = net::NetworkCollectiveAlgorithm::Ring;
+    net::NetworkEquivalenceClass equivalence = net::NetworkEquivalenceClass::OrderedTolerance;
     ContentHash content_hash{};
     std::uint64_t target_caps_class_hash = 0;
     std::uint64_t cog_kernel_cache_key = 0;
@@ -219,47 +220,37 @@ struct NetworkKernelArtifact {
 static_assert(std::is_trivially_copyable_v<NetworkKernelArtifact>);
 
 template <NetworkBackendVendor Vendor>
-using DeclaredNetworkKernel = safety::Tagged<
-    NetworkKernelArtifact, typename NetworkBackendTraits<Vendor>::source>;
+using DeclaredNetworkKernel = safety::Tagged<NetworkKernelArtifact, typename NetworkBackendTraits<Vendor>::source>;
 
 template <NetworkBackendVendor Vendor, class Kernel>
-concept NetworkKernelFor =
-    std::same_as<Kernel, DeclaredNetworkKernel<Vendor>>;
+concept NetworkKernelFor = std::same_as<Kernel, DeclaredNetworkKernel<Vendor>>;
 
 template <NetworkBackendVendor Vendor, cog::CogKind Kind>
 struct NetworkBackend {
     static constexpr NetworkBackendVendor vendor = Vendor;
     static constexpr cog::CogKind cog_kind = Kind;
-    static constexpr NetworkArtifactKind artifact_kind =
-        NetworkBackendTraits<Vendor>::artifact_kind;
-    static constexpr bool supported_cog =
-        backend_accepts_cog_kind<Vendor, Kind>();
+    static constexpr NetworkArtifactKind artifact_kind = NetworkBackendTraits<Vendor>::artifact_kind;
+    static constexpr bool supported_cog = backend_accepts_cog_kind<Vendor, Kind>();
 };
 
 template <NetworkBackendVendor Vendor, cog::CogKind Kind, class Node>
-concept NetworkBackendCanPlan =
-    BackendAcceptsCog<Vendor, Kind> && NetworkKernelNode<Node>;
+concept NetworkBackendCanPlan = BackendAcceptsCog<Vendor, Kind> && NetworkKernelNode<Node>;
 
 template <NetworkBackendVendor Vendor, cog::CogKind Kind, NetworkKernelNode Node>
     requires BackendAcceptsCog<Vendor, Kind>
-[[nodiscard]] constexpr std::expected<DeclaredNetworkKernel<Vendor>,
-                                      NetworkBackendError>
-plan_network_kernel(
-    CogMimic<Kind> const& mimic,
-    ir::DeclaredIr001Node<Node> node,
-    net::DeclaredNetworkRecipeConstraints constraints) noexcept {
+[[nodiscard]] constexpr std::expected<DeclaredNetworkKernel<Vendor>, NetworkBackendError>
+plan_network_kernel(CogMimic<Kind> const& mimic, ir::DeclaredIr001Node<Node> node,
+                    net::DeclaredNetworkRecipeConstraints constraints) noexcept {
     auto const& raw_node = node.value();
     if (raw_node.content_hash.raw() == 0) {
         return std::unexpected(NetworkBackendError::EmptyContentHash);
     }
-    if (mimic.identity == nullptr || mimic.identity->uuid.is_zero()
-        || mimic.identity->kind != Kind) {
+    if (mimic.identity == nullptr || mimic.identity->uuid.is_zero() || mimic.identity->kind != Kind) {
         return std::unexpected(NetworkBackendError::UnsupportedCogKind);
     }
 
     auto const participants = []<class N>(N const& n) constexpr {
-        if constexpr (std::same_as<typename N::attrs_type,
-                                   ir::CollectiveAttrs>) {
+        if constexpr (std::same_as<typename N::attrs_type, ir::CollectiveAttrs>) {
             return n.attrs.participants.count.value();
         } else {
             return std::uint16_t{1};
@@ -270,11 +261,8 @@ plan_network_kernel(
     if (!count.has_value()) {
         return std::unexpected(NetworkBackendError::RecipeForbidsAlgorithm);
     }
-    if constexpr (std::same_as<typename Node::attrs_type,
-                               ir::CollectiveAttrs>) {
-        if (auto ok = net::algorithm_eligible(
-                constraints, raw_node.attrs.algorithm, *count);
-            !ok.has_value()) {
+    if constexpr (std::same_as<typename Node::attrs_type, ir::CollectiveAttrs>) {
+        if (auto ok = net::algorithm_eligible(constraints, raw_node.attrs.algorithm, *count); !ok.has_value()) {
             return std::unexpected(NetworkBackendError::RecipeForbidsAlgorithm);
         }
     }
@@ -283,20 +271,19 @@ plan_network_kernel(
         .vendor = Vendor,
         .artifact_kind = NetworkBackendTraits<Vendor>::artifact_kind,
         .op_kind = Node::kind,
-        .algorithm = [&] constexpr {
-            if constexpr (std::same_as<typename Node::attrs_type,
-                                       ir::CollectiveAttrs>) {
-                return raw_node.attrs.algorithm;
-            } else {
-                return net::NetworkCollectiveAlgorithm::Ring;
-            }
-        }(),
+        .algorithm =
+            [&] constexpr {
+                if constexpr (std::same_as<typename Node::attrs_type, ir::CollectiveAttrs>) {
+                    return raw_node.attrs.algorithm;
+                } else {
+                    return net::NetworkCollectiveAlgorithm::Ring;
+                }
+            }(),
         .equivalence = constraints.value().equivalence,
         .content_hash = raw_node.content_hash,
         .target_caps_class_hash = mimic.target_caps_class_hash(),
         .cog_kernel_cache_key = mimic.cog_kernel_cache_key(),
-        .estimated_descriptor_bytes =
-            static_cast<std::uint32_t>(64U + 16U * participants),
+        .estimated_descriptor_bytes = static_cast<std::uint32_t>(64U + 16U * participants),
         .participants = participants,
     }};
 
@@ -330,15 +317,9 @@ emit_network_kernel(DeclaredNetworkKernel<Vendor> const&) noexcept {
     return std::unexpected(NetworkBackendError::BackendUnavailable);
 }
 
-static_assert(sizeof(DeclaredNetworkKernel<NetworkBackendVendor::Cpu>)
-              == sizeof(NetworkKernelArtifact));
-static_assert(NetworkBackendCanPlan<NetworkBackendVendor::Cpu,
-                                    cog::CogKind::CpuSocket,
-                                    ir::AllReduceOp>);
-static_assert(NetworkBackendCanPlan<NetworkBackendVendor::Nv,
-                                    cog::CogKind::Gpu,
-                                    ir::SendOp>);
-static_assert(!BackendAcceptsCog<NetworkBackendVendor::Mellanox,
-                                 cog::CogKind::Gpu>);
+static_assert(sizeof(DeclaredNetworkKernel<NetworkBackendVendor::Cpu>) == sizeof(NetworkKernelArtifact));
+static_assert(NetworkBackendCanPlan<NetworkBackendVendor::Cpu, cog::CogKind::CpuSocket, ir::AllReduceOp>);
+static_assert(NetworkBackendCanPlan<NetworkBackendVendor::Nv, cog::CogKind::Gpu, ir::SendOp>);
+static_assert(!BackendAcceptsCog<NetworkBackendVendor::Mellanox, cog::CogKind::Gpu>);
 
 }  // namespace crucible::mimic::_wip::network

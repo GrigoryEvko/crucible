@@ -134,14 +134,10 @@ template <ProgressClass_v Class, typename T>
 class [[nodiscard]] Progress {
 public:
     // ── Public type aliases ─────────────────────────────────────────
-    using value_type   = T;
+    using value_type = T;
     using lattice_type = ProgressLattice::At<Class>;
-    using graded_type  = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Absolute,
-        lattice_type,
-        T>;
-    static constexpr ::crucible::algebra::ModalityKind modality =
-        ::crucible::algebra::ModalityKind::Absolute;
+    using graded_type = ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
+    static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::Absolute;
 
     // The pinned class — exposed as a static constexpr for callers
     // doing class-aware dispatch without instantiating the wrapper.
@@ -151,34 +147,30 @@ private:
     graded_type impl_;
 
 public:
-
     // ── Construction ────────────────────────────────────────────────
-    constexpr Progress() noexcept(
-        std::is_nothrow_default_constructible_v<T>)
+    constexpr Progress() noexcept(std::is_nothrow_default_constructible_v<T>)
         : impl_{T{}, typename lattice_type::element_type{}} {}
 
-    constexpr explicit Progress(T value) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    constexpr explicit Progress(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(value), typename lattice_type::element_type{}} {}
 
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr explicit Progress(std::in_place_t, Args&&... args)
-        noexcept(std::is_nothrow_constructible_v<T, Args...>
-                 && std::is_nothrow_move_constructible_v<T>)
-        : impl_{T(std::forward<Args>(args)...),
-                typename lattice_type::element_type{}} {}
+    constexpr explicit Progress(std::in_place_t, Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
+                                                                          && std::is_nothrow_move_constructible_v<T>)
+        : impl_{T(std::forward<Args>(args)...), typename lattice_type::element_type{}} {}
 
-    constexpr Progress(const Progress&)            = default;
-    constexpr Progress(Progress&&)                 = default;
+    constexpr Progress(const Progress&) = default;
+    constexpr Progress(Progress&&) = default;
     constexpr Progress& operator=(const Progress&) = default;
-    constexpr Progress& operator=(Progress&&)      = default;
-    ~Progress()                                    = default;
+    constexpr Progress& operator=(Progress&&) = default;
+    ~Progress() = default;
 
-    [[nodiscard]] friend constexpr bool operator==(
-        Progress const& a, Progress const& b) noexcept(
-        noexcept(a.peek() == b.peek()))
-        requires requires(T const& x, T const& y) { { x == y } -> std::convertible_to<bool>; }
+    [[nodiscard]] friend constexpr bool operator==(Progress const& a,
+                                                   Progress const& b) noexcept(noexcept(a.peek() == b.peek()))
+        requires requires(T const& x, T const& y) {
+            { x == y } -> std::convertible_to<bool>;
+        }
     {
         return a.peek() == b.peek();
     }
@@ -187,37 +179,21 @@ public:
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return graded_type::lattice_name();
-    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 
     // ── Read-only access ────────────────────────────────────────────
-    [[nodiscard]] constexpr T const& peek() const& noexcept {
-        return impl_.peek();
-    }
+    [[nodiscard]] constexpr T const& peek() const& noexcept { return impl_.peek(); }
 
-    [[nodiscard]] constexpr T consume() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return std::move(impl_).consume();
     }
 
-    [[nodiscard]] constexpr T& peek_mut() & noexcept {
-        return impl_.peek_mut();
-    }
+    [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(); }
 
     // ── swap ────────────────────────────────────────────────────────
-    constexpr void swap(Progress& other)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
-        impl_.swap(other.impl_);
-    }
+    constexpr void swap(Progress& other) noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
 
-    friend constexpr void swap(Progress& a, Progress& b)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
-        a.swap(b);
-    }
+    friend constexpr void swap(Progress& a, Progress& b) noexcept(std::is_nothrow_swappable_v<T>) { a.swap(b); }
 
     // ── satisfies<RequiredClass> ───────────────────────────────────
     template <ProgressClass_v RequiredClass>
@@ -225,42 +201,45 @@ public:
 
     // ── relax<WeakerClass> ─────────────────────────────────────────
     template <ProgressClass_v WeakerClass>
-        requires (ProgressLattice::leq(WeakerClass, Class))
-    [[nodiscard]] constexpr Progress<WeakerClass, T> relax() const&
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
+        requires(ProgressLattice::leq(WeakerClass, Class))
+    [[nodiscard]] constexpr Progress<WeakerClass, T> relax() const& noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
     {
         return Progress<WeakerClass, T>{this->peek()};
     }
 
     template <ProgressClass_v WeakerClass>
-        requires (ProgressLattice::leq(WeakerClass, Class))
-    [[nodiscard]] constexpr Progress<WeakerClass, T> relax() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
-        return Progress<WeakerClass, T>{
-            std::move(impl_).consume()};
+        requires(ProgressLattice::leq(WeakerClass, Class))
+    [[nodiscard]] constexpr Progress<WeakerClass, T> relax() && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return Progress<WeakerClass, T>{std::move(impl_).consume()};
     }
 };
 
 // ── Convenience aliases ─────────────────────────────────────────────
 namespace progress {
-    template <typename T> using Bounded     = Progress<ProgressClass_v::Bounded,     T>;
-    template <typename T> using Productive  = Progress<ProgressClass_v::Productive,  T>;
-    template <typename T> using Terminating = Progress<ProgressClass_v::Terminating, T>;
-    template <typename T> using MayDiverge  = Progress<ProgressClass_v::MayDiverge,  T>;
+template <typename T>
+using Bounded = Progress<ProgressClass_v::Bounded, T>;
+template <typename T>
+using Productive = Progress<ProgressClass_v::Productive, T>;
+template <typename T>
+using Terminating = Progress<ProgressClass_v::Terminating, T>;
+template <typename T>
+using MayDiverge = Progress<ProgressClass_v::MayDiverge, T>;
 }  // namespace progress
 
 // ── Layout invariants ───────────────────────────────────────────────
 namespace detail::progress_layout {
 
-template <typename T> using BoundedP    = Progress<ProgressClass_v::Bounded,     T>;
-template <typename T> using ProductiveP = Progress<ProgressClass_v::Productive,  T>;
-template <typename T> using MayDivergeP = Progress<ProgressClass_v::MayDiverge,  T>;
+template <typename T>
+using BoundedP = Progress<ProgressClass_v::Bounded, T>;
+template <typename T>
+using ProductiveP = Progress<ProgressClass_v::Productive, T>;
+template <typename T>
+using MayDivergeP = Progress<ProgressClass_v::MayDiverge, T>;
 
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(BoundedP,    char);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(BoundedP,    int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(BoundedP,    double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(BoundedP, char);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(BoundedP, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(BoundedP, double);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(ProductiveP, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(ProductiveP, double);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(MayDivergeP, int);
@@ -268,19 +247,19 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(MayDivergeP, double);
 
 }  // namespace detail::progress_layout
 
-static_assert(sizeof(Progress<ProgressClass_v::Bounded,     int>)    == sizeof(int));
-static_assert(sizeof(Progress<ProgressClass_v::Productive,  int>)    == sizeof(int));
-static_assert(sizeof(Progress<ProgressClass_v::Terminating, int>)    == sizeof(int));
-static_assert(sizeof(Progress<ProgressClass_v::MayDiverge,  int>)    == sizeof(int));
-static_assert(sizeof(Progress<ProgressClass_v::Bounded,     double>) == sizeof(double));
+static_assert(sizeof(Progress<ProgressClass_v::Bounded, int>) == sizeof(int));
+static_assert(sizeof(Progress<ProgressClass_v::Productive, int>) == sizeof(int));
+static_assert(sizeof(Progress<ProgressClass_v::Terminating, int>) == sizeof(int));
+static_assert(sizeof(Progress<ProgressClass_v::MayDiverge, int>) == sizeof(int));
+static_assert(sizeof(Progress<ProgressClass_v::Bounded, double>) == sizeof(double));
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::progress_self_test {
 
-using BoundedInt    = Progress<ProgressClass_v::Bounded,     int>;
-using ProductiveInt = Progress<ProgressClass_v::Productive,  int>;
-using TermInt       = Progress<ProgressClass_v::Terminating, int>;
-using DivergeInt    = Progress<ProgressClass_v::MayDiverge,  int>;
+using BoundedInt = Progress<ProgressClass_v::Bounded, int>;
+using ProductiveInt = Progress<ProgressClass_v::Productive, int>;
+using TermInt = Progress<ProgressClass_v::Terminating, int>;
+using DivergeInt = Progress<ProgressClass_v::MayDiverge, int>;
 
 // ── Construction paths ─────────────────────────────────────────────
 inline constexpr BoundedInt p_default{};
@@ -294,10 +273,10 @@ inline constexpr BoundedInt p_in_place{std::in_place, 7};
 static_assert(p_in_place.peek() == 7);
 
 // ── Pinned class accessor ──────────────────────────────────────────
-static_assert(BoundedInt::cls    == ProgressClass_v::Bounded);
+static_assert(BoundedInt::cls == ProgressClass_v::Bounded);
 static_assert(ProductiveInt::cls == ProgressClass_v::Productive);
-static_assert(TermInt::cls       == ProgressClass_v::Terminating);
-static_assert(DivergeInt::cls    == ProgressClass_v::MayDiverge);
+static_assert(TermInt::cls == ProgressClass_v::Terminating);
+static_assert(DivergeInt::cls == ProgressClass_v::MayDiverge);
 
 // ── satisfies<RequiredClass> — subsumption-up direction ───────────
 //
@@ -307,26 +286,26 @@ static_assert(DivergeInt::cls    == ProgressClass_v::MayDiverge);
 // Bounded (chain top, index 3) satisfies every consumer.  THIS IS
 // THE LOAD-BEARING POSITIVE TEST: Bounded-tier values pass every
 // concept gate (including the strict deadline-sensitive gate).
-static_assert(BoundedInt::satisfies<ProgressClass_v::Bounded>);     // self
+static_assert(BoundedInt::satisfies<ProgressClass_v::Bounded>);  // self
 static_assert(BoundedInt::satisfies<ProgressClass_v::Productive>);  // below
-static_assert(BoundedInt::satisfies<ProgressClass_v::Terminating>); // below
+static_assert(BoundedInt::satisfies<ProgressClass_v::Terminating>);  // below
 static_assert(BoundedInt::satisfies<ProgressClass_v::MayDiverge>);  // below (bottom)
 
 // Productive (index 2) satisfies: Productive (self) + Terminating +
 // MayDiverge (below).  FAILS on Bounded (above).
-static_assert( ProductiveInt::satisfies<ProgressClass_v::Productive>);  // self
-static_assert( ProductiveInt::satisfies<ProgressClass_v::Terminating>); // below
-static_assert( ProductiveInt::satisfies<ProgressClass_v::MayDiverge>);  // below
-static_assert(!ProductiveInt::satisfies<ProgressClass_v::Bounded>,      // above ✗
-    "Productive MUST NOT satisfy Bounded — Productive guarantees "
-    "progress per step but no wall-clock bound.  If this fires, "
-    "productive-but-unbounded functions could silently flow into "
-    "deadline-sensitive call sites (Forge phases, CNTP heartbeats).");
+static_assert(ProductiveInt::satisfies<ProgressClass_v::Productive>);  // self
+static_assert(ProductiveInt::satisfies<ProgressClass_v::Terminating>);  // below
+static_assert(ProductiveInt::satisfies<ProgressClass_v::MayDiverge>);  // below
+static_assert(!ProductiveInt::satisfies<ProgressClass_v::Bounded>,  // above ✗
+              "Productive MUST NOT satisfy Bounded — Productive guarantees "
+              "progress per step but no wall-clock bound.  If this fires, "
+              "productive-but-unbounded functions could silently flow into "
+              "deadline-sensitive call sites (Forge phases, CNTP heartbeats).");
 
 // Terminating (index 1) satisfies: Terminating (self) + MayDiverge.
 // FAILS on Productive and Bounded.
-static_assert( TermInt::satisfies<ProgressClass_v::Terminating>);
-static_assert( TermInt::satisfies<ProgressClass_v::MayDiverge>);
+static_assert(TermInt::satisfies<ProgressClass_v::Terminating>);
+static_assert(TermInt::satisfies<ProgressClass_v::MayDiverge>);
 static_assert(!TermInt::satisfies<ProgressClass_v::Productive>);
 static_assert(!TermInt::satisfies<ProgressClass_v::Bounded>);
 
@@ -334,33 +313,29 @@ static_assert(!TermInt::satisfies<ProgressClass_v::Bounded>);
 // values are admissible only in escape-hatch contexts.  THE LOAD-
 // BEARING REJECTION: MayDiverge values cannot pass any gate
 // requiring termination.
-static_assert( DivergeInt::satisfies<ProgressClass_v::MayDiverge>);
+static_assert(DivergeInt::satisfies<ProgressClass_v::MayDiverge>);
 static_assert(!DivergeInt::satisfies<ProgressClass_v::Terminating>,
-    "MayDiverge MUST NOT satisfy Terminating — this is the load-"
-    "bearing rejection that Forge phase admission gates depend on. "
-    "If this fires, Inferlet user code (or any may-diverge "
-    "subroutine) could silently flow into a Forge phase declared "
-    "Bounded, breaking the FORGE.md §5 wall-clock budget.");
+              "MayDiverge MUST NOT satisfy Terminating — this is the load-"
+              "bearing rejection that Forge phase admission gates depend on. "
+              "If this fires, Inferlet user code (or any may-diverge "
+              "subroutine) could silently flow into a Forge phase declared "
+              "Bounded, breaking the FORGE.md §5 wall-clock budget.");
 static_assert(!DivergeInt::satisfies<ProgressClass_v::Productive>);
 static_assert(!DivergeInt::satisfies<ProgressClass_v::Bounded>);
 
 // ── relax<WeakerClass> — DOWN-the-lattice conversion ─────────────
-inline constexpr auto from_bounded_to_productive =
-    BoundedInt{42}.relax<ProgressClass_v::Productive>();
+inline constexpr auto from_bounded_to_productive = BoundedInt{42}.relax<ProgressClass_v::Productive>();
 static_assert(from_bounded_to_productive.peek() == 42);
 static_assert(from_bounded_to_productive.cls == ProgressClass_v::Productive);
 
-inline constexpr auto from_bounded_to_diverge =
-    BoundedInt{99}.relax<ProgressClass_v::MayDiverge>();
+inline constexpr auto from_bounded_to_diverge = BoundedInt{99}.relax<ProgressClass_v::MayDiverge>();
 static_assert(from_bounded_to_diverge.peek() == 99);
 static_assert(from_bounded_to_diverge.cls == ProgressClass_v::MayDiverge);
 
-inline constexpr auto from_term_to_diverge =
-    TermInt{7}.relax<ProgressClass_v::MayDiverge>();
+inline constexpr auto from_term_to_diverge = TermInt{7}.relax<ProgressClass_v::MayDiverge>();
 static_assert(from_term_to_diverge.peek() == 7);
 
-inline constexpr auto from_productive_to_self =
-    ProductiveInt{8}.relax<ProgressClass_v::Productive>();   // identity
+inline constexpr auto from_productive_to_self = ProductiveInt{8}.relax<ProgressClass_v::Productive>();  // identity
 static_assert(from_productive_to_self.peek() == 8);
 
 // SFINAE-style detector — proves the requires-clause's correctness.
@@ -369,32 +344,32 @@ concept can_relax = requires(W w) {
     { std::move(w).template relax<T_target>() };
 };
 
-static_assert( can_relax<BoundedInt,    ProgressClass_v::Productive>);   // ✓ down
-static_assert( can_relax<BoundedInt,    ProgressClass_v::MayDiverge>);   // ✓ down (full chain)
-static_assert( can_relax<BoundedInt,    ProgressClass_v::Bounded>);      // ✓ self
-static_assert( can_relax<ProductiveInt, ProgressClass_v::Terminating>);  // ✓ down
-static_assert( can_relax<ProductiveInt, ProgressClass_v::Productive>);   // ✓ self
-static_assert(!can_relax<ProductiveInt, ProgressClass_v::Bounded>,        // ✗ up
-    "relax<Bounded> on a Productive-pinned wrapper MUST be rejected "
-    "— claiming a stronger termination guarantee than the source "
-    "provides defeats the deadline-sensitive admission gate.");
-static_assert(!can_relax<TermInt,       ProgressClass_v::Productive>);   // ✗ up
-static_assert(!can_relax<DivergeInt,    ProgressClass_v::Terminating>,    // ✗ up
-    "relax<Terminating> on a MayDiverge-pinned wrapper MUST be "
-    "rejected — THIS IS THE LOAD-BEARING REJECTION for the Forge "
-    "phase wall-clock discipline.  Without it, Inferlet user code "
-    "could claim Terminating compliance and silently flow into "
-    "Forge phases requiring Bounded-or-stronger termination.");
-static_assert(!can_relax<DivergeInt,    ProgressClass_v::Bounded>);      // ✗ up
+static_assert(can_relax<BoundedInt, ProgressClass_v::Productive>);  // ✓ down
+static_assert(can_relax<BoundedInt, ProgressClass_v::MayDiverge>);  // ✓ down (full chain)
+static_assert(can_relax<BoundedInt, ProgressClass_v::Bounded>);  // ✓ self
+static_assert(can_relax<ProductiveInt, ProgressClass_v::Terminating>);  // ✓ down
+static_assert(can_relax<ProductiveInt, ProgressClass_v::Productive>);  // ✓ self
+static_assert(!can_relax<ProductiveInt, ProgressClass_v::Bounded>,  // ✗ up
+              "relax<Bounded> on a Productive-pinned wrapper MUST be rejected "
+              "— claiming a stronger termination guarantee than the source "
+              "provides defeats the deadline-sensitive admission gate.");
+static_assert(!can_relax<TermInt, ProgressClass_v::Productive>);  // ✗ up
+static_assert(!can_relax<DivergeInt, ProgressClass_v::Terminating>,  // ✗ up
+              "relax<Terminating> on a MayDiverge-pinned wrapper MUST be "
+              "rejected — THIS IS THE LOAD-BEARING REJECTION for the Forge "
+              "phase wall-clock discipline.  Without it, Inferlet user code "
+              "could claim Terminating compliance and silently flow into "
+              "Forge phases requiring Bounded-or-stronger termination.");
+static_assert(!can_relax<DivergeInt, ProgressClass_v::Bounded>);  // ✗ up
 // MayDiverge reflexivity — chain endpoint admits relax to itself.
-static_assert( can_relax<DivergeInt,    ProgressClass_v::MayDiverge>);   // ✓ self at bottom
+static_assert(can_relax<DivergeInt, ProgressClass_v::MayDiverge>);  // ✓ self at bottom
 
 // ── Diagnostic forwarders ─────────────────────────────────────────
 static_assert(BoundedInt::value_type_name().ends_with("int"));
-static_assert(BoundedInt::lattice_name()    == "ProgressLattice::At<Bounded>");
+static_assert(BoundedInt::lattice_name() == "ProgressLattice::At<Bounded>");
 static_assert(ProductiveInt::lattice_name() == "ProgressLattice::At<Productive>");
-static_assert(TermInt::lattice_name()       == "ProgressLattice::At<Terminating>");
-static_assert(DivergeInt::lattice_name()    == "ProgressLattice::At<MayDiverge>");
+static_assert(TermInt::lattice_name() == "ProgressLattice::At<Terminating>");
+static_assert(DivergeInt::lattice_name() == "ProgressLattice::At<MayDiverge>");
 
 // ── swap exchanges T values within the same class pin ────────────
 [[nodiscard]] consteval bool swap_exchanges_within_same_class() noexcept {
@@ -446,11 +421,11 @@ concept can_equality_compare = requires(W const& a, W const& b) {
     { a == b } -> std::convertible_to<bool>;
 };
 
-static_assert( can_equality_compare<BoundedInt>);
+static_assert(can_equality_compare<BoundedInt>);
 static_assert(!can_equality_compare<Progress<ProgressClass_v::Bounded, NoEqualityT>>);
 
 static_assert(!std::is_copy_constructible_v<Progress<ProgressClass_v::Bounded, NoEqualityT>>,
-    "Progress<Class, T> must transitively inherit T's copy-deletion.");
+              "Progress<Class, T> must transitively inherit T's copy-deletion.");
 static_assert(std::is_move_constructible_v<Progress<ProgressClass_v::Bounded, NoEqualityT>>);
 
 // ── relax reflexivity ─────────────────────────────────────────────
@@ -482,10 +457,10 @@ concept can_relax_lvalue = requires(W const& w) {
 };
 
 using BoundedMoveOnly = Progress<ProgressClass_v::Bounded, MoveOnlyT>;
-static_assert( can_relax_rvalue<BoundedMoveOnly, ProgressClass_v::Productive>,
-    "relax<>() && MUST work for move-only T.");
+static_assert(can_relax_rvalue<BoundedMoveOnly, ProgressClass_v::Productive>,
+              "relax<>() && MUST work for move-only T.");
 static_assert(!can_relax_lvalue<BoundedMoveOnly, ProgressClass_v::Productive>,
-    "relax<>() const& on move-only T MUST be rejected.");
+              "relax<>() const& on move-only T MUST be rejected.");
 
 [[nodiscard]] consteval bool relax_move_only_works() noexcept {
     BoundedMoveOnly src{MoveOnlyT{77}};
@@ -500,13 +475,12 @@ static_assert(BoundedInt::lattice_name().size() > 0);
 static_assert(BoundedInt::lattice_name().starts_with("ProgressLattice::At<"));
 
 // ── Convenience aliases resolve correctly ────────────────────────
-static_assert(progress::Bounded<int>::cls     == ProgressClass_v::Bounded);
-static_assert(progress::Productive<int>::cls  == ProgressClass_v::Productive);
+static_assert(progress::Bounded<int>::cls == ProgressClass_v::Bounded);
+static_assert(progress::Productive<int>::cls == ProgressClass_v::Productive);
 static_assert(progress::Terminating<int>::cls == ProgressClass_v::Terminating);
-static_assert(progress::MayDiverge<int>::cls  == ProgressClass_v::MayDiverge);
+static_assert(progress::MayDiverge<int>::cls == ProgressClass_v::MayDiverge);
 
-static_assert(std::is_same_v<progress::Bounded<double>,
-                             Progress<ProgressClass_v::Bounded, double>>);
+static_assert(std::is_same_v<progress::Bounded<double>, Progress<ProgressClass_v::Bounded, double>>);
 
 // ── Forge phase admission simulation — THE LOAD-BEARING SCENARIO ─
 //
@@ -523,35 +497,28 @@ static_assert(std::is_same_v<progress::Bounded<double>,
 //   bearing for FORGE.md §5)
 
 template <typename W>
-concept is_forge_phase_admissible =
-    W::template satisfies<ProgressClass_v::Bounded>;
+concept is_forge_phase_admissible = W::template satisfies<ProgressClass_v::Bounded>;
 
-static_assert( is_forge_phase_admissible<BoundedInt>,
-    "Bounded-tier value MUST pass the Forge phase admission gate.");
-static_assert(!is_forge_phase_admissible<ProductiveInt>,
-    "Productive-tier value MUST be REJECTED at the Forge phase "
-    "admission gate — productive guarantees per-step progress but "
-    "no wall-clock bound, which is insufficient for FORGE.md §5 "
-    "phase budgets (Phase A = 50ms, Phase H = 500ms, etc.).");
-static_assert(!is_forge_phase_admissible<TermInt>,
-    "Terminating-tier value MUST be REJECTED at the Forge phase "
-    "gate — terminating guarantees eventual halt but no time bound.");
-static_assert(!is_forge_phase_admissible<DivergeInt>,
-    "MayDiverge-tier value MUST be REJECTED at the Forge phase "
-    "gate — escape-hatch values cannot enter deadline-sensitive "
-    "compilation phases.");
+static_assert(is_forge_phase_admissible<BoundedInt>, "Bounded-tier value MUST pass the Forge phase admission gate.");
+static_assert(!is_forge_phase_admissible<ProductiveInt>, "Productive-tier value MUST be REJECTED at the Forge phase "
+                                                         "admission gate — productive guarantees per-step progress but "
+                                                         "no wall-clock bound, which is insufficient for FORGE.md §5 "
+                                                         "phase budgets (Phase A = 50ms, Phase H = 500ms, etc.).");
+static_assert(!is_forge_phase_admissible<TermInt>, "Terminating-tier value MUST be REJECTED at the Forge phase "
+                                                   "gate — terminating guarantees eventual halt but no time bound.");
+static_assert(!is_forge_phase_admissible<DivergeInt>, "MayDiverge-tier value MUST be REJECTED at the Forge phase "
+                                                      "gate — escape-hatch values cannot enter deadline-sensitive "
+                                                      "compilation phases.");
 
 // Productive admission gate (relaxed — for BackgroundThread::drain).
 template <typename W>
-concept is_productive_admissible =
-    W::template satisfies<ProgressClass_v::Productive>;
+concept is_productive_admissible = W::template satisfies<ProgressClass_v::Productive>;
 
-static_assert( is_productive_admissible<BoundedInt>);     // stronger ✓
-static_assert( is_productive_admissible<ProductiveInt>);  // self ✓
-static_assert(!is_productive_admissible<TermInt>,
-    "Terminating value MUST be REJECTED at the Productive gate "
-    "(BackgroundThread::drain) — every iteration must drain at "
-    "least one entry, not just eventually halt.");
+static_assert(is_productive_admissible<BoundedInt>);  // stronger ✓
+static_assert(is_productive_admissible<ProductiveInt>);  // self ✓
+static_assert(!is_productive_admissible<TermInt>, "Terminating value MUST be REJECTED at the Productive gate "
+                                                  "(BackgroundThread::drain) — every iteration must drain at "
+                                                  "least one entry, not just eventually halt.");
 static_assert(!is_productive_admissible<DivergeInt>);
 
 // ── Runtime smoke test ─────────────────────────────────────────────
@@ -594,16 +561,16 @@ inline void runtime_smoke_test() {
     int extracted = std::move(orig).consume();
     if (extracted != 55) std::abort();
 
-    progress::Bounded<int>     alias_bounded{123};
-    progress::Productive<int>  alias_prod{456};
-    progress::MayDiverge<int>  alias_diverge{789};
+    progress::Bounded<int> alias_bounded{123};
+    progress::Productive<int> alias_prod{456};
+    progress::MayDiverge<int> alias_diverge{789};
     [[maybe_unused]] auto bv = alias_bounded.peek();
     [[maybe_unused]] auto pv = alias_prod.peek();
     [[maybe_unused]] auto dv = alias_diverge.peek();
 
-    [[maybe_unused]] bool can_bounded_pass    = is_forge_phase_admissible<BoundedInt>;
+    [[maybe_unused]] bool can_bounded_pass = is_forge_phase_admissible<BoundedInt>;
     [[maybe_unused]] bool can_productive_pass = is_forge_phase_admissible<ProductiveInt>;
-    [[maybe_unused]] bool can_diverge_pass    = is_forge_phase_admissible<DivergeInt>;
+    [[maybe_unused]] bool can_diverge_pass = is_forge_phase_admissible<DivergeInt>;
 }
 
 }  // namespace detail::progress_self_test

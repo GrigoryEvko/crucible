@@ -144,36 +144,29 @@ namespace pdiag = ::crucible::safety::proto::diagnostic;
 // ── A. Base + representative-tag type identity ─────────────────────
 static_assert(std::is_same_v<tag_base, pdiag::tag_base>);
 static_assert(std::is_same_v<SubtypeMismatch, pdiag::SubtypeMismatch>);
-static_assert(std::is_same_v<ShapeMismatch_SelectVsOffer,
-                             pdiag::ShapeMismatch_SelectVsOffer>);
-static_assert(std::is_same_v<ProtocolViolation_Self_Loop,
-                             pdiag::ProtocolViolation_Self_Loop>);
+static_assert(std::is_same_v<ShapeMismatch_SelectVsOffer, pdiag::ShapeMismatch_SelectVsOffer>);
+static_assert(std::is_same_v<ProtocolViolation_Self_Loop, pdiag::ProtocolViolation_Self_Loop>);
 static_assert(std::is_same_v<Catalog, pdiag::Catalog>);
 
 // ── B. Tags derive from tag_base; tag_base itself is not a tag ─────
 static_assert(std::is_base_of_v<tag_base, SubtypeMismatch>);
 static_assert(is_diagnostic_class_v<SubtypeMismatch>);
 static_assert(is_diagnostic_class_v<BranchCount_Mismatch>);
-static_assert(!is_diagnostic_class_v<tag_base>,
-    "tag_base is the base sentinel, not itself a diagnostic class.");
-static_assert(!is_diagnostic_class_v<int>,
-    "a fundamental type is not a diagnostic class.");
+static_assert(!is_diagnostic_class_v<tag_base>, "tag_base is the base sentinel, not itself a diagnostic class.");
+static_assert(!is_diagnostic_class_v<int>, "a fundamental type is not a diagnostic class.");
 
 // ── C. Distinct tags do not collapse ───────────────────────────────
 static_assert(!std::is_same_v<SubtypeMismatch, ShapeMismatch_SendVsRecv>);
-static_assert(!std::is_same_v<ShapeMismatch_SendVsRecv,
-                              ShapeMismatch_SelectVsOffer>);
+static_assert(!std::is_same_v<ShapeMismatch_SendVsRecv, ShapeMismatch_SelectVsOffer>);
 
 // ── D. Accessors + Diagnostic<> wrapper route through ──────────────
-static_assert(!diagnostic_name_v<SubtypeMismatch>.empty(),
-    "every shipped tag carries a non-empty name.");
+static_assert(!diagnostic_name_v<SubtypeMismatch>.empty(), "every shipped tag carries a non-empty name.");
 static_assert(!diagnostic_description_v<SubtypeMismatch>.empty());
 static_assert(!diagnostic_remediation_v<SubtypeMismatch>.empty());
 static_assert(is_diagnostic_v<Diagnostic<SubtypeMismatch, int, double>>,
-    "Diagnostic<Tag, Ctx...> is recognised by its shape trait.");
+              "Diagnostic<Tag, Ctx...> is recognised by its shape trait.");
 static_assert(!is_diagnostic_v<int>);
-static_assert(std::is_same_v<
-    Diagnostic<SubtypeMismatch, int>::diagnostic_class, SubtypeMismatch>);
+static_assert(std::is_same_v<Diagnostic<SubtypeMismatch, int>::diagnostic_class, SubtypeMismatch>);
 
 // ── E. Catalog / catalog_size / 23-tag triple cross-check ──────────
 //
@@ -185,26 +178,23 @@ static_assert(std::is_same_v<
 // source-of-truth Catalog tuple; THIS fixy-side header holds only
 // the FLOOR pin (`>= 23`) catching the inverse direction (a tag
 // removed from the substrate Catalog).
-static_assert(catalog_size >= 23,
-    "fixy::sess::diagnostic::catalog_size floor: regressed below 23 "
-    "— a tag was removed from SessionDiagnostic.h's Catalog without "
-    "updating both the colocated ceiling pin AND this floor witness.");
-static_assert(std::tuple_size_v<Catalog> >= 23,
-    "fixy::sess::diagnostic::Catalog tuple-size floor: same removal "
-    "drift as above, expanded to the structural-identity form.");
+static_assert(catalog_size >= 23, "fixy::sess::diagnostic::catalog_size floor: regressed below 23 "
+                                  "— a tag was removed from SessionDiagnostic.h's Catalog without "
+                                  "updating both the colocated ceiling pin AND this floor witness.");
+static_assert(std::tuple_size_v<Catalog> >= 23, "fixy::sess::diagnostic::Catalog tuple-size floor: same removal "
+                                                "drift as above, expanded to the structural-identity form.");
 static_assert(std::tuple_size_v<Catalog> == catalog_size,
-    "Catalog arity and catalog_size must agree through the fixy path.");
+              "Catalog arity and catalog_size must agree through the fixy path.");
 static_assert(std::is_same_v<std::tuple_element_t<8, Catalog>, SubtypeMismatch>,
-    "Catalog position 8 is SubtypeMismatch (frozen ordinal).");
+              "Catalog position 8 is SubtypeMismatch (frozen ordinal).");
 
 // ── F. Cardinality witness — count of items U-052g surfaces ────────
 //
 //   tag_base (1) + diagnostic tags (23) + classifier/accessors (4) +
 //   Diagnostic wrapper + shape (3) + Catalog/catalog_size (2)  ── 33
 constexpr int u052g_surface_cardinality = 33;
-static_assert(u052g_surface_cardinality == 33,
-    "fixy::sess::diagnostic:: U-052g surface cardinality drifted — "
-    "update SessDiagnostic.h using-decls AND this sentinel in lockstep.");
+static_assert(u052g_surface_cardinality == 33, "fixy::sess::diagnostic:: U-052g surface cardinality drifted — "
+                                               "update SessDiagnostic.h using-decls AND this sentinel in lockstep.");
 
 }  // namespace crucible::fixy::sess::diagnostic::u052g_self_test
 
@@ -224,23 +214,30 @@ namespace crucible::fixy::sess::diagnostic {
 // no runtime state, no I/O.
 
 inline void runtime_smoke_test() noexcept {
-    using Tag  = SubtypeMismatch;
+    using Tag = SubtypeMismatch;
     using Diag = Diagnostic<Tag, int, double>;
 
-    [[maybe_unused]] constexpr bool is_tag   = is_diagnostic_class_v<Tag>;
-    [[maybe_unused]] constexpr bool not_tag  = is_diagnostic_class_v<int>;
-    [[maybe_unused]] constexpr bool is_diag  = is_diagnostic_v<Diag>;
+    [[maybe_unused]] constexpr bool is_tag = is_diagnostic_class_v<Tag>;
+    [[maybe_unused]] constexpr bool not_tag = is_diagnostic_class_v<int>;
+    [[maybe_unused]] constexpr bool is_diag = is_diagnostic_v<Diag>;
     [[maybe_unused]] constexpr std::size_t n = catalog_size;
 
-    [[maybe_unused]] const std::string_view nm  = diagnostic_name_v<Tag>;
-    [[maybe_unused]] const std::string_view ds  = diagnostic_description_v<Tag>;
-    [[maybe_unused]] const std::string_view rm  = diagnostic_remediation_v<Tag>;
+    [[maybe_unused]] const std::string_view nm = diagnostic_name_v<Tag>;
+    [[maybe_unused]] const std::string_view ds = diagnostic_description_v<Tag>;
+    [[maybe_unused]] const std::string_view rm = diagnostic_remediation_v<Tag>;
 
     [[maybe_unused]] const Diag d{};
     [[maybe_unused]] const std::string_view dnm = Diag::name;
 
-    (void) is_tag; (void) not_tag; (void) is_diag; (void) n;
-    (void) nm; (void) ds; (void) rm; (void) d; (void) dnm;
+    (void)is_tag;
+    (void)not_tag;
+    (void)is_diag;
+    (void)n;
+    (void)nm;
+    (void)ds;
+    (void)rm;
+    (void)d;
+    (void)dnm;
 }
 
 }  // namespace crucible::fixy::sess::diagnostic

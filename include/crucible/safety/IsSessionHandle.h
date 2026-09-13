@@ -97,16 +97,14 @@ void* to_session_base(...) noexcept;
 
 // SFINAE-friendly conversion probe.
 template <typename T>
-using session_base_probe_t =
-    decltype(detail::to_session_base(std::declval<T*>()));
+using session_base_probe_t = decltype(detail::to_session_base(std::declval<T*>()));
 
 // is_session_handle_impl: true iff session_base_probe_t<T> resolves
 // to a SessionHandleBase<P, D>* (i.e., the templated overload won
 // over the void* fallback).
 template <typename T>
 struct is_session_handle_impl {
-    static constexpr bool value = !std::is_same_v<
-        session_base_probe_t<T>, void*>;
+    static constexpr bool value = !std::is_same_v<session_base_probe_t<T>, void*>;
 };
 
 // Proto extractor: decompose the resolved base-pointer type.
@@ -118,9 +116,7 @@ struct session_base_decomp {
 };
 
 template <typename Proto, typename Derived>
-struct session_base_decomp<
-    ::crucible::safety::proto::SessionHandleBase<Proto, Derived>*>
-{
+struct session_base_decomp<::crucible::safety::proto::SessionHandleBase<Proto, Derived>*> {
     using proto = Proto;
     using derived = Derived;
     static constexpr bool matches = true;
@@ -133,8 +129,7 @@ struct session_base_decomp<
 // ═════════════════════════════════════════════════════════════════════
 
 template <typename T>
-inline constexpr bool is_session_handle_v =
-    detail::is_session_handle_impl<std::remove_cvref_t<T>>::value;
+inline constexpr bool is_session_handle_v = detail::is_session_handle_impl<std::remove_cvref_t<T>>::value;
 
 template <typename T>
 concept IsSessionHandle = is_session_handle_v<T>;
@@ -142,8 +137,7 @@ concept IsSessionHandle = is_session_handle_v<T>;
 template <typename T>
     requires is_session_handle_v<T>
 using session_handle_proto_t =
-    typename detail::session_base_decomp<
-        detail::session_base_probe_t<std::remove_cvref_t<T>>>::proto;
+    typename detail::session_base_decomp<detail::session_base_probe_t<std::remove_cvref_t<T>>>::proto;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Self-test block ────────────────────────────────────────────────
@@ -163,11 +157,15 @@ static_assert(!is_session_handle_v<void>);
 static_assert(!is_session_handle_v<char>);
 
 // A foreign type that has no relation to SessionHandleBase — rejected.
-struct foreign_type { int x; };
+struct foreign_type {
+    int x;
+};
 static_assert(!is_session_handle_v<foreign_type>);
 
 // Pointer-to-handle is NOT a handle (remove_cvref does not strip ptrs).
-struct foreign_with_unrelated_base { int y; };
+struct foreign_with_unrelated_base {
+    int y;
+};
 static_assert(!is_session_handle_v<foreign_with_unrelated_base*>);
 
 // IsSessionHandle concept rejects non-handles.

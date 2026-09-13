@@ -9,8 +9,7 @@
 #include "common.h"
 
 SEC("tracepoint/sock/inet_sock_set_state")
-int crucible_wd_socket_lifecycle(void *ctx)
-{
+int crucible_wd_socket_lifecycle(void* ctx) {
     (void)ctx;
     return 0;
 }

@@ -73,8 +73,7 @@ template <>
 struct concept_gate<Category::NumericalTierMismatch> {
     static constexpr bool defined = true;
     template <typename T>
-    static constexpr bool admits_type =
-        ::crucible::safety::extract::is_numerical_tier_v<T>;
+    static constexpr bool admits_type = ::crucible::safety::extract::is_numerical_tier_v<T>;
     template <auto FnPtr>
     static constexpr bool admits_function = false;
 };
@@ -84,8 +83,7 @@ template <>
 struct concept_gate<Category::ConsistencyMismatch> {
     static constexpr bool defined = true;
     template <typename T>
-    static constexpr bool admits_type =
-        ::crucible::safety::extract::is_consistency_v<T>;
+    static constexpr bool admits_type = ::crucible::safety::extract::is_consistency_v<T>;
     template <auto FnPtr>
     static constexpr bool admits_function = false;
 };
@@ -95,8 +93,7 @@ template <>
 struct concept_gate<Category::LifetimeViolation> {
     static constexpr bool defined = true;
     template <typename T>
-    static constexpr bool admits_type =
-        ::crucible::safety::extract::is_opaque_lifetime_v<T>;
+    static constexpr bool admits_type = ::crucible::safety::extract::is_opaque_lifetime_v<T>;
     template <auto FnPtr>
     static constexpr bool admits_function = false;
 };
@@ -106,8 +103,7 @@ template <>
 struct concept_gate<Category::DetSafeLeak> {
     static constexpr bool defined = true;
     template <typename T>
-    static constexpr bool admits_type =
-        ::crucible::safety::extract::is_det_safe_v<T>;
+    static constexpr bool admits_type = ::crucible::safety::extract::is_det_safe_v<T>;
     template <auto FnPtr>
     static constexpr bool admits_function = false;
 };
@@ -117,8 +113,7 @@ template <>
 struct concept_gate<Category::CipherTierViolation> {
     static constexpr bool defined = true;
     template <typename T>
-    static constexpr bool admits_type =
-        ::crucible::safety::extract::is_cipher_tier_v<T>;
+    static constexpr bool admits_type = ::crucible::safety::extract::is_cipher_tier_v<T>;
     template <auto FnPtr>
     static constexpr bool admits_function = false;
 };
@@ -128,8 +123,7 @@ template <>
 struct concept_gate<Category::ResidencyHeatViolation> {
     static constexpr bool defined = true;
     template <typename T>
-    static constexpr bool admits_type =
-        ::crucible::safety::extract::is_residency_heat_v<T>;
+    static constexpr bool admits_type = ::crucible::safety::extract::is_residency_heat_v<T>;
     template <auto FnPtr>
     static constexpr bool admits_function = false;
 };
@@ -139,8 +133,7 @@ template <>
 struct concept_gate<Category::VendorBackendMismatch> {
     static constexpr bool defined = true;
     template <typename T>
-    static constexpr bool admits_type =
-        ::crucible::safety::extract::is_vendor_v<T>;
+    static constexpr bool admits_type = ::crucible::safety::extract::is_vendor_v<T>;
     template <auto FnPtr>
     static constexpr bool admits_function = false;
 };
@@ -150,8 +143,7 @@ template <>
 struct concept_gate<Category::CrashClassMismatch> {
     static constexpr bool defined = true;
     template <typename T>
-    static constexpr bool admits_type =
-        ::crucible::safety::extract::is_crash_v<T>;
+    static constexpr bool admits_type = ::crucible::safety::extract::is_crash_v<T>;
     template <auto FnPtr>
     static constexpr bool admits_function = false;
 };
@@ -161,8 +153,7 @@ template <>
 struct concept_gate<Category::BudgetExceeded> {
     static constexpr bool defined = true;
     template <typename T>
-    static constexpr bool admits_type =
-        ::crucible::safety::extract::is_budgeted_v<T>;
+    static constexpr bool admits_type = ::crucible::safety::extract::is_budgeted_v<T>;
     template <auto FnPtr>
     static constexpr bool admits_function = false;
 };
@@ -172,8 +163,7 @@ template <>
 struct concept_gate<Category::EpochMismatch> {
     static constexpr bool defined = true;
     template <typename T>
-    static constexpr bool admits_type =
-        ::crucible::safety::extract::is_epoch_versioned_v<T>;
+    static constexpr bool admits_type = ::crucible::safety::extract::is_epoch_versioned_v<T>;
     template <auto FnPtr>
     static constexpr bool admits_function = false;
 };
@@ -183,8 +173,7 @@ template <>
 struct concept_gate<Category::NumaPlacementMismatch> {
     static constexpr bool defined = true;
     template <typename T>
-    static constexpr bool admits_type =
-        ::crucible::safety::extract::is_numa_placement_v<T>;
+    static constexpr bool admits_type = ::crucible::safety::extract::is_numa_placement_v<T>;
     template <auto FnPtr>
     static constexpr bool admits_function = false;
 };
@@ -194,8 +183,7 @@ template <>
 struct concept_gate<Category::RecipeSpecMismatch> {
     static constexpr bool defined = true;
     template <typename T>
-    static constexpr bool admits_type =
-        ::crucible::safety::extract::is_recipe_spec_v<T>;
+    static constexpr bool admits_type = ::crucible::safety::extract::is_recipe_spec_v<T>;
     template <auto FnPtr>
     static constexpr bool admits_function = false;
 };
@@ -215,27 +203,20 @@ namespace detail {
 // was deleted but not replaced — restore or delete the corresponding
 // test entry.
 [[nodiscard]] consteval bool all_d_series_gates_defined() noexcept {
-    return is_gate_defined_v<Category::NumericalTierMismatch>
-        && is_gate_defined_v<Category::ConsistencyMismatch>
-        && is_gate_defined_v<Category::LifetimeViolation>
-        && is_gate_defined_v<Category::DetSafeLeak>
-        && is_gate_defined_v<Category::CipherTierViolation>
-        && is_gate_defined_v<Category::ResidencyHeatViolation>
-        && is_gate_defined_v<Category::VendorBackendMismatch>
-        && is_gate_defined_v<Category::CrashClassMismatch>
-        && is_gate_defined_v<Category::BudgetExceeded>
-        && is_gate_defined_v<Category::EpochMismatch>
-        && is_gate_defined_v<Category::NumaPlacementMismatch>
-        && is_gate_defined_v<Category::RecipeSpecMismatch>;
+    return is_gate_defined_v<Category::NumericalTierMismatch> && is_gate_defined_v<Category::ConsistencyMismatch>
+        && is_gate_defined_v<Category::LifetimeViolation> && is_gate_defined_v<Category::DetSafeLeak>
+        && is_gate_defined_v<Category::CipherTierViolation> && is_gate_defined_v<Category::ResidencyHeatViolation>
+        && is_gate_defined_v<Category::VendorBackendMismatch> && is_gate_defined_v<Category::CrashClassMismatch>
+        && is_gate_defined_v<Category::BudgetExceeded> && is_gate_defined_v<Category::EpochMismatch>
+        && is_gate_defined_v<Category::NumaPlacementMismatch> && is_gate_defined_v<Category::RecipeSpecMismatch>;
 }
 
-static_assert(all_d_series_gates_defined(),
-    "FOUND-E17: at least one D-series concept_gate specialization is "
-    "missing from CheatProbeGates.h.  The 12 D-series detectors "
-    "(D21-D24, D30 batch) must each have a concept_gate<Category::X> "
-    "specialization wiring admits_type to the corresponding "
-    "is_X_v<T> trait.  Restore the missing specialization OR delete "
-    "the gate-defined check above if the wrapper is being retired.");
+static_assert(all_d_series_gates_defined(), "FOUND-E17: at least one D-series concept_gate specialization is "
+                                            "missing from CheatProbeGates.h.  The 12 D-series detectors "
+                                            "(D21-D24, D30 batch) must each have a concept_gate<Category::X> "
+                                            "specialization wiring admits_type to the corresponding "
+                                            "is_X_v<T> trait.  Restore the missing specialization OR delete "
+                                            "the gate-defined check above if the wrapper is being retired.");
 
 }  // namespace detail
 

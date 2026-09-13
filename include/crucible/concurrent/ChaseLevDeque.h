@@ -79,8 +79,8 @@
 #include <crucible/Platform.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/Pinned.h>
-#include <crucible/fixy/Hw.h>                 // FIXY-V-264: grant::hw::barrier<Arch, Kind> + which_dim
-#include <crucible/fixy/Dim.h>                // FIXY-V-264: dim::DimensionAxis (BarrierStrength)
+#include <crucible/fixy/Hw.h>  // FIXY-V-264: grant::hw::barrier<Arch, Kind> + which_dim
+#include <crucible/fixy/Dim.h>  // FIXY-V-264: dim::DimensionAxis (BarrierStrength)
 #include <crucible/algebra/lattices/BarrierStrengthLattice.h>  // FIXY-V-264: leq/join over fence strength
 
 #include <array>
@@ -108,10 +108,10 @@ namespace crucible::concurrent {
 // per target) and proves SeqCst is the lattice join of the two strengths.
 namespace chaselev_hw {
 
-namespace fh   = ::crucible::fixy::hw;
-namespace fgh  = ::crucible::fixy::grant::hw;
-using BSL      = ::crucible::algebra::lattices::BarrierStrengthLattice;
-using BS       = ::crucible::fixy::hw::BarrierStrength;  // == lattices::BarrierStrength
+namespace fh = ::crucible::fixy::hw;
+namespace fgh = ::crucible::fixy::grant::hw;
+using BSL = ::crucible::algebra::lattices::BarrierStrengthLattice;
+using BS = ::crucible::fixy::hw::BarrierStrength;  // == lattices::BarrierStrength
 
 // The strongest fence the algorithm needs (the two §3.3 seq_cst points),
 // expressed portably (compiler lowers std::atomic_thread_fence per arch).
@@ -150,9 +150,7 @@ static_assert(BSL::join(BS::ReleaseStore, BS::SeqCst) == BS::SeqCst,
 
 template <typename T>
 concept DequeValue =
-    std::is_trivially_copyable_v<T> &&
-    std::is_trivially_destructible_v<T> &&
-    std::atomic<T>::is_always_lock_free;
+    std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T> && std::atomic<T>::is_always_lock_free;
 
 // ── ChaseLevDeque<T, Capacity> ────────────────────────────────────
 
@@ -162,8 +160,7 @@ public:
     using value_type = T;
     static constexpr std::size_t channel_capacity = Capacity;
 
-    static_assert(std::has_single_bit(Capacity),
-                  "Capacity must be a power of two");
+    static_assert(std::has_single_bit(Capacity), "Capacity must be a power of two");
     // FIXY-FOUND-117: Capacity ≥ 2 — the Chase-Lev / Lê 2013 ABA-safety
     // proof relies on top and bottom being SEPARATELY-indexed cells when
     // the deque holds at least one element.  At Capacity = 1, MASK = 0
@@ -182,16 +179,14 @@ public:
     // chase_lev_deque, test_concurrency_collision_fuzzer §10) require
     // Cap ≥ 4 to exercise meaningful steal-vs-pop interleavings.  The
     // tighter pin makes the implicit proof-precondition explicit.
-    static_assert(Capacity >= 2,
-                  "Capacity must be >= 2 — Lê 2013 ABA-safety proof "
-                  "assumes top and bottom index DISTINCT cells; at Cap=1, "
-                  "MASK=0 collapses all accesses to cell[0] and the proof's "
-                  "separability assumption breaks.  Cap=1 also isn't a "
-                  "useful work-stealing deque (0 or 1 elements only).");
-    static_assert(Capacity <= (std::size_t{1} << 30),
-                  "Capacity must fit in 31-bit signed range "
-                  "(top/bottom are int64; Capacity ≤ 2^30 keeps the "
-                  "subtraction safe under any deque state)");
+    static_assert(Capacity >= 2, "Capacity must be >= 2 — Lê 2013 ABA-safety proof "
+                                 "assumes top and bottom index DISTINCT cells; at Cap=1, "
+                                 "MASK=0 collapses all accesses to cell[0] and the proof's "
+                                 "separability assumption breaks.  Cap=1 also isn't a "
+                                 "useful work-stealing deque (0 or 1 elements only).");
+    static_assert(Capacity <= (std::size_t{1} << 30), "Capacity must fit in 31-bit signed range "
+                                                      "(top/bottom are int64; Capacity ≤ 2^30 keeps the "
+                                                      "subtraction safe under any deque state)");
 
 private:
     static constexpr int64_t MASK = static_cast<int64_t>(Capacity - 1);
@@ -287,9 +282,7 @@ public:
         // compare_exchange_advance enforces monotonicity at the
         // type level (pre: t < t+1).  Seq_cst on success acts as
         // the RMW fence Lê 2013 §3.3 requires.
-        if (!top_.compare_exchange_advance(t, t + 1,
-                std::memory_order_seq_cst,
-                std::memory_order_relaxed)) {
+        if (!top_.compare_exchange_advance(t, t + 1, std::memory_order_seq_cst, std::memory_order_relaxed)) {
             // Thief got it.
             bottom_.store(b + 1, std::memory_order_relaxed);
             return std::nullopt;
@@ -340,9 +333,7 @@ public:
         // and other thieves.  The pre() compiles to nothing under
         // hot-TU contract semantics; the runtime CAS is the same
         // libstdc++ compare_exchange_strong as before.
-        if (!top_.compare_exchange_advance(t, t + 1,
-                std::memory_order_seq_cst,
-                std::memory_order_relaxed)) {
+        if (!top_.compare_exchange_advance(t, t + 1, std::memory_order_seq_cst, std::memory_order_relaxed)) {
             return std::nullopt;  // contention; caller may retry
         }
 
@@ -356,19 +347,15 @@ public:
     // NEVER for correctness invariants in caller logic.
 
     [[nodiscard]] std::size_t size_approx() const noexcept {
-        const int64_t t = top_.get();          // acquire
+        const int64_t t = top_.get();  // acquire
         const int64_t b = bottom_.load(std::memory_order_acquire);
         const int64_t diff = b - t;
         return diff > 0 ? static_cast<std::size_t>(diff) : 0;
     }
 
-    [[nodiscard]] bool empty_approx() const noexcept {
-        return size_approx() == 0;
-    }
+    [[nodiscard]] bool empty_approx() const noexcept { return size_approx() == 0; }
 
-    [[nodiscard]] static constexpr std::size_t capacity() noexcept {
-        return Capacity;
-    }
+    [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
 private:
     // ── Storage layout ────────────────────────────────────────────

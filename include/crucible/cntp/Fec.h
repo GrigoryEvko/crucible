@@ -13,8 +13,8 @@
 #include <crucible/safety/Linear.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/Simd.h>
-#include <crucible/fixy/Vendor.h>           // FIXY-V-263: vendor::intrinsic<V,I> + canonical aliases
-#include <crucible/fixy/Simd.h>             // FIXY-V-263: simd::width<W> + width_* aliases
+#include <crucible/fixy/Vendor.h>  // FIXY-V-263: vendor::intrinsic<V,I> + canonical aliases
+#include <crucible/fixy/Simd.h>  // FIXY-V-263: simd::width<W> + width_* aliases
 
 #include <algorithm>
 #include <array>
@@ -25,7 +25,7 @@
 #include <expected>
 #include <iterator>
 #include <limits>
-#include <memory>        // FIXY-U-082: std::start_lifetime_as for SIMD type-pun
+#include <memory>  // FIXY-U-082: std::start_lifetime_as for SIMD type-pun
 #include <span>
 #include <type_traits>
 #include <utility>
@@ -39,10 +39,7 @@
 namespace crucible::cntp {
 
 template <std::uint8_t K, std::uint8_t M>
-concept ReedSolomonShape =
-    K > 0 &&
-    M > 0 &&
-    (static_cast<unsigned>(K) + static_cast<unsigned>(M)) <= 256U;
+concept ReedSolomonShape = K > 0 && M > 0 && (static_cast<unsigned>(K) + static_cast<unsigned>(M)) <= 256U;
 
 enum class FecError : std::uint8_t {
     LengthOverflow,
@@ -60,22 +57,20 @@ using LinearShardBuffer = safety::Linear<Buffer>;
 
 template <typename T>
 concept ByteElement =
-    std::same_as<std::remove_cv_t<T>, std::byte> ||
-    (sizeof(T) == 1 && std::is_trivially_copyable_v<T>);
+    std::same_as<std::remove_cv_t<T>, std::byte> || (sizeof(T) == 1 && std::is_trivially_copyable_v<T>);
 
 template <typename Buffer>
-concept ByteContiguousBuffer = requires(Buffer const& buffer) {
-    std::data(buffer);
-    std::size(buffer);
-} && std::is_pointer_v<decltype(std::data(std::declval<Buffer const&>()))> &&
-     ByteElement<std::remove_pointer_t<
-         decltype(std::data(std::declval<Buffer const&>()))>>;
+concept ByteContiguousBuffer =
+    requires(Buffer const& buffer) {
+        std::data(buffer);
+        std::size(buffer);
+    } && std::is_pointer_v<decltype(std::data(std::declval<Buffer const&>()))>
+    && ByteElement<std::remove_pointer_t<decltype(std::data(std::declval<Buffer const&>()))>>;
 
 template <typename Buffer>
 concept MutableByteContiguousBuffer =
-    ByteContiguousBuffer<Buffer> &&
-    (!std::is_const_v<std::remove_pointer_t<
-        decltype(std::data(std::declval<Buffer&>()))>>);
+    ByteContiguousBuffer<Buffer>
+    && (!std::is_const_v<std::remove_pointer_t<decltype(std::data(std::declval<Buffer&>()))>>);
 
 namespace detail {
 
@@ -94,8 +89,7 @@ struct GfTables {
     std::uint16_t x = 1;
     for (std::uint16_t i = 0; i < 255; ++i) {
         tables.exp[i] = static_cast<std::uint8_t>(x);
-        tables.log[static_cast<std::uint8_t>(x)] =
-            static_cast<std::uint8_t>(i);
+        tables.log[static_cast<std::uint8_t>(x)] = static_cast<std::uint8_t>(i);
         x = static_cast<std::uint16_t>(x << 1U);
         if ((x & 0x100U) != 0U) {
             x ^= gf_poly;
@@ -110,8 +104,7 @@ struct GfTables {
             if (a == 0 || b == 0) {
                 tables.mul[a][b] = 0;
             } else {
-                const auto e = static_cast<std::size_t>(tables.log[a]) +
-                               static_cast<std::size_t>(tables.log[b]);
+                const auto e = static_cast<std::size_t>(tables.log[a]) + static_cast<std::size_t>(tables.log[b]);
                 tables.mul[a][b] = tables.exp[e];
             }
         }
@@ -124,28 +117,20 @@ struct GfTables {
 
 inline constexpr GfTables gf = make_gf_tables();
 
-[[nodiscard, gnu::const]] constexpr std::uint8_t
-mul(std::uint8_t a, std::uint8_t b) noexcept {
-    return gf.mul[a][b];
-}
+[[nodiscard, gnu::const]] constexpr std::uint8_t mul(std::uint8_t a, std::uint8_t b) noexcept { return gf.mul[a][b]; }
 
-[[nodiscard, gnu::const]] constexpr std::uint8_t
-inv(std::uint8_t a) noexcept {
-    return gf.inv[a];
-}
+[[nodiscard, gnu::const]] constexpr std::uint8_t inv(std::uint8_t a) noexcept { return gf.inv[a]; }
 
 template <std::size_t N>
 using SquareMatrix = std::array<std::array<std::uint8_t, N>, N>;
 
 template <std::uint8_t K, std::uint8_t M>
 using GeneratorMatrix =
-    std::array<std::array<std::uint8_t, K>,
-               static_cast<std::size_t>(K) + static_cast<std::size_t>(M)>;
+    std::array<std::array<std::uint8_t, K>, static_cast<std::size_t>(K) + static_cast<std::size_t>(M)>;
 
 template <std::uint8_t K, std::uint8_t M>
     requires ReedSolomonShape<K, M>
-[[nodiscard]] consteval GeneratorMatrix<K, M>
-make_generator_matrix() noexcept {
+[[nodiscard]] consteval GeneratorMatrix<K, M> make_generator_matrix() noexcept {
     GeneratorMatrix<K, M> matrix{};
 
     for (std::size_t row = 0; row < K; ++row) {
@@ -156,16 +141,14 @@ make_generator_matrix() noexcept {
         const auto y = static_cast<std::uint8_t>(K + parity);
         for (std::size_t col = 0; col < K; ++col) {
             const auto x = static_cast<std::uint8_t>(col);
-            matrix[static_cast<std::size_t>(K) + parity][col] =
-                inv(static_cast<std::uint8_t>(x ^ y));
+            matrix[static_cast<std::size_t>(K) + parity][col] = inv(static_cast<std::uint8_t>(x ^ y));
         }
     }
     return matrix;
 }
 
 template <std::size_t N>
-[[nodiscard]] constexpr bool
-invert_matrix(SquareMatrix<N> input, SquareMatrix<N>& inverse) noexcept {
+[[nodiscard]] constexpr bool invert_matrix(SquareMatrix<N> input, SquareMatrix<N>& inverse) noexcept {
     for (std::size_t i = 0; i < N; ++i) {
         inverse[i].fill(0);
         inverse[i][i] = 1;
@@ -207,15 +190,13 @@ invert_matrix(SquareMatrix<N> input, SquareMatrix<N>& inverse) noexcept {
     return true;
 }
 
-#if defined(__AVX2__) || \
-    ((defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__))
+#if defined(__AVX2__) || ((defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__))
 struct alignas(32) NibbleTables {
     alignas(32) std::array<std::uint8_t, 32> lo{};
     alignas(32) std::array<std::uint8_t, 32> hi{};
 };
 
-[[nodiscard]] inline NibbleTables
-make_nibble_tables(std::uint8_t coeff) noexcept {
+[[nodiscard]] inline NibbleTables make_nibble_tables(std::uint8_t coeff) noexcept {
     NibbleTables tables{};
     for (std::uint8_t i = 0; i < 16; ++i) {
         const auto lo = mul(coeff, i);
@@ -273,8 +254,7 @@ using ActiveSimdWidth = fs::width_scalar;  // portable byte-at-a-time GF(2^8)
 // routes to the SimdIsa axis (FIXY-V-253).
 static_assert(::crucible::fixy::grant::IsGrantTag<ActiveSimdWidth>,
               "FIXY-V-263: the active simd::width grant must be well-formed");
-static_assert(::crucible::fixy::grant::which_dim_v<ActiveSimdWidth>
-                  == ::crucible::fixy::dim::DimensionAxis::SimdIsa,
+static_assert(::crucible::fixy::grant::which_dim_v<ActiveSimdWidth> == ::crucible::fixy::dim::DimensionAxis::SimdIsa,
               "FIXY-V-263: simd::width routes to the SimdIsa axis");
 
 #if defined(__AVX2__) || ((defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__))
@@ -297,28 +277,19 @@ static_assert(::crucible::fixy::grant::which_dim_v<ActiveVendorIsa>
 // and the kernels here use AVX2/NEON-exclusive shuffle ops (_mm256_shuffle_epi8
 // / vqtbl1q_u8) for GF(2^8) nibble-table lookup that std::simd doesn't
 // expose at this level of detail.
-CRUCIBLE_HOT void xor_bytes_avx2(std::byte* dst,
-                                 std::byte const* src,
-                                 std::size_t len) noexcept {
+CRUCIBLE_HOT void xor_bytes_avx2(std::byte* dst, std::byte const* src, std::size_t len) noexcept {
     std::size_t i = 0;
     for (; i + 32 <= len; i += 32) {
-        auto const a = _mm256_loadu_si256(
-            std::start_lifetime_as<const __m256i>(dst + i));
-        auto const b = _mm256_loadu_si256(
-            std::start_lifetime_as<const __m256i>(src + i));
-        _mm256_storeu_si256(
-            std::start_lifetime_as<__m256i>(dst + i),
-            _mm256_xor_si256(a, b));
+        auto const a = _mm256_loadu_si256(std::start_lifetime_as<const __m256i>(dst + i));
+        auto const b = _mm256_loadu_si256(std::start_lifetime_as<const __m256i>(src + i));
+        _mm256_storeu_si256(std::start_lifetime_as<__m256i>(dst + i), _mm256_xor_si256(a, b));
     }
     for (; i < len; ++i) {
         dst[i] ^= src[i];
     }
 }
 
-CRUCIBLE_HOT void mul_xor_avx2(std::byte* dst,
-                               std::byte const* src,
-                               std::uint8_t coeff,
-                               std::size_t len) noexcept {
+CRUCIBLE_HOT void mul_xor_avx2(std::byte* dst, std::byte const* src, std::uint8_t coeff, std::size_t len) noexcept {
     if (coeff == 0) {
         return;
     }
@@ -328,55 +299,38 @@ CRUCIBLE_HOT void mul_xor_avx2(std::byte* dst,
     }
 
     const auto tables = make_nibble_tables(coeff);
-    const auto lo_table = _mm256_load_si256(
-        std::start_lifetime_as<const __m256i>(tables.lo.data()));
-    const auto hi_table = _mm256_load_si256(
-        std::start_lifetime_as<const __m256i>(tables.hi.data()));
+    const auto lo_table = _mm256_load_si256(std::start_lifetime_as<const __m256i>(tables.lo.data()));
+    const auto hi_table = _mm256_load_si256(std::start_lifetime_as<const __m256i>(tables.hi.data()));
     const auto mask = _mm256_set1_epi8(0x0f);
 
     std::size_t i = 0;
     for (; i + 32 <= len; i += 32) {
-        const auto bytes = _mm256_loadu_si256(
-            std::start_lifetime_as<const __m256i>(src + i));
+        const auto bytes = _mm256_loadu_si256(std::start_lifetime_as<const __m256i>(src + i));
         const auto lo = _mm256_and_si256(bytes, mask);
         const auto hi = _mm256_and_si256(_mm256_srli_epi16(bytes, 4), mask);
-        const auto prod = _mm256_xor_si256(
-            _mm256_shuffle_epi8(lo_table, lo),
-            _mm256_shuffle_epi8(hi_table, hi));
-        const auto old = _mm256_loadu_si256(
-            std::start_lifetime_as<const __m256i>(dst + i));
-        _mm256_storeu_si256(
-            std::start_lifetime_as<__m256i>(dst + i),
-            _mm256_xor_si256(old, prod));
+        const auto prod = _mm256_xor_si256(_mm256_shuffle_epi8(lo_table, lo), _mm256_shuffle_epi8(hi_table, hi));
+        const auto old = _mm256_loadu_si256(std::start_lifetime_as<const __m256i>(dst + i));
+        _mm256_storeu_si256(std::start_lifetime_as<__m256i>(dst + i), _mm256_xor_si256(old, prod));
     }
     for (; i < len; ++i) {
-        dst[i] ^= static_cast<std::byte>(
-            mul(static_cast<std::uint8_t>(src[i]), coeff));
+        dst[i] ^= static_cast<std::byte>(mul(static_cast<std::uint8_t>(src[i]), coeff));
     }
 }
 #elif (defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__)
 // FIXY-U-082 / fixy-A5-028: same start_lifetime_as discipline as AVX2 path.
-CRUCIBLE_HOT void xor_bytes_neon(std::byte* dst,
-                                 std::byte const* src,
-                                 std::size_t len) noexcept {
+CRUCIBLE_HOT void xor_bytes_neon(std::byte* dst, std::byte const* src, std::size_t len) noexcept {
     std::size_t i = 0;
     for (; i + 16 <= len; i += 16) {
-        auto const a = vld1q_u8(
-            std::start_lifetime_as<const std::uint8_t>(dst + i));
-        auto const b = vld1q_u8(
-            std::start_lifetime_as<const std::uint8_t>(src + i));
-        vst1q_u8(std::start_lifetime_as<std::uint8_t>(dst + i),
-                 veorq_u8(a, b));
+        auto const a = vld1q_u8(std::start_lifetime_as<const std::uint8_t>(dst + i));
+        auto const b = vld1q_u8(std::start_lifetime_as<const std::uint8_t>(src + i));
+        vst1q_u8(std::start_lifetime_as<std::uint8_t>(dst + i), veorq_u8(a, b));
     }
     for (; i < len; ++i) {
         dst[i] ^= src[i];
     }
 }
 
-CRUCIBLE_HOT void mul_xor_neon(std::byte* dst,
-                               std::byte const* src,
-                               std::uint8_t coeff,
-                               std::size_t len) noexcept {
+CRUCIBLE_HOT void mul_xor_neon(std::byte* dst, std::byte const* src, std::uint8_t coeff, std::size_t len) noexcept {
     if (coeff == 0) {
         return;
     }
@@ -392,36 +346,26 @@ CRUCIBLE_HOT void mul_xor_neon(std::byte* dst,
 
     std::size_t i = 0;
     for (; i + 16 <= len; i += 16) {
-        const auto bytes = vld1q_u8(
-            std::start_lifetime_as<const std::uint8_t>(src + i));
+        const auto bytes = vld1q_u8(std::start_lifetime_as<const std::uint8_t>(src + i));
         const auto lo = vandq_u8(bytes, mask);
         const auto hi = vandq_u8(vshrq_n_u8(bytes, 4), mask);
-        const auto prod = veorq_u8(vqtbl1q_u8(lo_table, lo),
-                                   vqtbl1q_u8(hi_table, hi));
-        const auto old = vld1q_u8(
-            std::start_lifetime_as<const std::uint8_t>(dst + i));
-        vst1q_u8(std::start_lifetime_as<std::uint8_t>(dst + i),
-                 veorq_u8(old, prod));
+        const auto prod = veorq_u8(vqtbl1q_u8(lo_table, lo), vqtbl1q_u8(hi_table, hi));
+        const auto old = vld1q_u8(std::start_lifetime_as<const std::uint8_t>(dst + i));
+        vst1q_u8(std::start_lifetime_as<std::uint8_t>(dst + i), veorq_u8(old, prod));
     }
     for (; i < len; ++i) {
-        dst[i] ^= static_cast<std::byte>(
-            mul(static_cast<std::uint8_t>(src[i]), coeff));
+        dst[i] ^= static_cast<std::byte>(mul(static_cast<std::uint8_t>(src[i]), coeff));
     }
 }
 #endif
 
-CRUCIBLE_HOT void xor_bytes_scalar(std::byte* dst,
-                                   std::byte const* src,
-                                   std::size_t len) noexcept {
+CRUCIBLE_HOT void xor_bytes_scalar(std::byte* dst, std::byte const* src, std::size_t len) noexcept {
     for (std::size_t i = 0; i < len; ++i) {
         dst[i] ^= src[i];
     }
 }
 
-CRUCIBLE_HOT void mul_xor(std::byte* dst,
-                          std::byte const* src,
-                          std::uint8_t coeff,
-                          std::size_t len) noexcept {
+CRUCIBLE_HOT void mul_xor(std::byte* dst, std::byte const* src, std::uint8_t coeff, std::size_t len) noexcept {
     if (coeff == 0) {
         return;
     }
@@ -435,28 +379,21 @@ CRUCIBLE_HOT void mul_xor(std::byte* dst,
         return;
     }
     for (std::size_t i = 0; i < len; ++i) {
-        dst[i] ^= static_cast<std::byte>(
-            mul(static_cast<std::uint8_t>(src[i]), coeff));
+        dst[i] ^= static_cast<std::byte>(mul(static_cast<std::uint8_t>(src[i]), coeff));
     }
 #endif
 }
 
 template <ByteContiguousBuffer Buffer>
-[[nodiscard]] inline std::span<const std::byte>
-bytes(Buffer const& buffer) noexcept {
+[[nodiscard]] inline std::span<const std::byte> bytes(Buffer const& buffer) noexcept {
     // FIXY-U-082 / fixy-A5-028: std::as_bytes is the C++20 typed-span →
     // byte-span idiom; strict-aliasing-safe, zero-cost.
-    return std::as_bytes(std::span{
-        std::data(buffer),
-        static_cast<std::size_t>(std::size(buffer))});
+    return std::as_bytes(std::span{std::data(buffer), static_cast<std::size_t>(std::size(buffer))});
 }
 
 template <MutableByteContiguousBuffer Buffer>
-[[nodiscard]] inline std::span<std::byte>
-mutable_bytes(Buffer& buffer) noexcept {
-    return std::as_writable_bytes(std::span{
-        std::data(buffer),
-        static_cast<std::size_t>(std::size(buffer))});
+[[nodiscard]] inline std::span<std::byte> mutable_bytes(Buffer& buffer) noexcept {
+    return std::as_writable_bytes(std::span{std::data(buffer), static_cast<std::size_t>(std::size(buffer))});
 }
 
 }  // namespace detail
@@ -467,21 +404,17 @@ class ReedSolomon {
 public:
     static constexpr std::uint8_t data_shards = K;
     static constexpr std::uint8_t parity_shards = M;
-    static constexpr std::uint16_t total_shards =
-        static_cast<std::uint16_t>(K) + static_cast<std::uint16_t>(M);
+    static constexpr std::uint16_t total_shards = static_cast<std::uint16_t>(K) + static_cast<std::uint16_t>(M);
     static constexpr std::size_t alignment = 32;
-    using concurrent_budget =
-        effects::ConcurrentRow<effects::SmBudget<1>>;
+    using concurrent_budget = effects::ConcurrentRow<effects::SmBudget<1>>;
 
-    [[nodiscard]] static constexpr std::size_t
-    shard_bytes_for(std::size_t input_size) noexcept {
+    [[nodiscard]] static constexpr std::size_t shard_bytes_for(std::size_t input_size) noexcept {
         const auto q = input_size / K;
         const auto r = input_size % K;
         return q + (r == 0 ? 0U : 1U);
     }
 
-    [[nodiscard]] static constexpr std::size_t
-    encoded_size_for(std::size_t input_size) noexcept {
+    [[nodiscard]] static constexpr std::size_t encoded_size_for(std::size_t input_size) noexcept {
         const auto shard_bytes = shard_bytes_for(input_size);
         constexpr auto max = std::numeric_limits<std::size_t>::max();
         if (shard_bytes > max / total_shards) {
@@ -490,9 +423,8 @@ public:
         return shard_bytes * total_shards;
     }
 
-    [[nodiscard]] std::expected<void, FecError>
-    encode(std::span<const std::byte> input,
-           std::span<std::byte> output_with_parity) const noexcept {
+    [[nodiscard]] std::expected<void, FecError> encode(std::span<const std::byte> input,
+                                                       std::span<std::byte> output_with_parity) const noexcept {
         if (input.empty()) {
             return std::unexpected(FecError::InvalidInputSize);
         }
@@ -509,25 +441,18 @@ public:
         std::memcpy(output_with_parity.data(), input.data(), input.size());
 
         for (std::size_t p = 0; p < M; ++p) {
-            auto* parity = output_with_parity.data() +
-                (static_cast<std::size_t>(K) + p) * shard_bytes;
+            auto* parity = output_with_parity.data() + (static_cast<std::size_t>(K) + p) * shard_bytes;
             for (std::size_t d = 0; d < K; ++d) {
-                auto const* data =
-                    output_with_parity.data() + d * shard_bytes;
-                detail::mul_xor(
-                    parity,
-                    data,
-                    generator_[static_cast<std::size_t>(K) + p][d],
-                    shard_bytes);
+                auto const* data = output_with_parity.data() + d * shard_bytes;
+                detail::mul_xor(parity, data, generator_[static_cast<std::size_t>(K) + p][d], shard_bytes);
             }
         }
         return {};
     }
 
-    [[nodiscard]] std::expected<void, FecError>
-    decode(std::span<const std::byte> received,
-           std::span<const bool> erasure_mask,
-           std::span<std::byte> output) const noexcept {
+    [[nodiscard]] std::expected<void, FecError> decode(std::span<const std::byte> received,
+                                                       std::span<const bool> erasure_mask,
+                                                       std::span<std::byte> output) const noexcept {
         if (received.empty() || (received.size() % total_shards) != 0) {
             return std::unexpected(FecError::InvalidInputSize);
         }
@@ -536,9 +461,7 @@ public:
         }
 
         const auto shard_bytes = received.size() / total_shards;
-        if (output.empty() ||
-            output.size() >
-                static_cast<std::size_t>(K) * shard_bytes) {
+        if (output.empty() || output.size() > static_cast<std::size_t>(K) * shard_bytes) {
             return std::unexpected(FecError::InvalidOutputSize);
         }
 
@@ -572,46 +495,38 @@ public:
             if (out_offset >= output.size()) {
                 break;
             }
-            const auto live_bytes =
-                std::min(shard_bytes, output.size() - out_offset);
+            const auto live_bytes = std::min(shard_bytes, output.size() - out_offset);
             auto* dst = output.data() + out_offset;
             std::memset(dst, 0, live_bytes);
 
             for (std::size_t src = 0; src < K; ++src) {
-                auto const* shard =
-                    received.data() + selected[src] * shard_bytes;
-                detail::mul_xor(dst, shard, inverse[out_shard][src],
-                                live_bytes);
+                auto const* shard = received.data() + selected[src] * shard_bytes;
+                detail::mul_xor(dst, shard, inverse[out_shard][src], live_bytes);
             }
         }
         return {};
     }
 
     template <ByteContiguousBuffer Input, MutableByteContiguousBuffer Output>
-    [[nodiscard]] std::expected<void, FecError>
-    encode_owned(LinearShardBuffer<Input>&& input,
-                 Output& output) const noexcept {
+    [[nodiscard]] std::expected<void, FecError> encode_owned(LinearShardBuffer<Input>&& input,
+                                                             Output& output) const noexcept {
         return encode(detail::bytes(input.peek()), detail::mutable_bytes(output));
     }
 
     template <ByteContiguousBuffer Input, MutableByteContiguousBuffer Output>
-    [[nodiscard]] std::expected<void, FecError>
-    decode_owned(LinearShardBuffer<Input>&& received,
-                 std::span<const bool> erasure_mask,
-                 Output& output) const noexcept {
-        return decode(detail::bytes(received.peek()), erasure_mask,
-                      detail::mutable_bytes(output));
+    [[nodiscard]] std::expected<void, FecError> decode_owned(LinearShardBuffer<Input>&& received,
+                                                             std::span<const bool> erasure_mask,
+                                                             Output& output) const noexcept {
+        return decode(detail::bytes(received.peek()), erasure_mask, detail::mutable_bytes(output));
     }
 
 private:
-    inline static constexpr auto generator_ =
-        detail::make_generator_matrix<K, M>();
+    inline static constexpr auto generator_ = detail::make_generator_matrix<K, M>();
 };
 
 template <std::uint8_t K, std::uint8_t M>
     requires ReedSolomonShape<K, M>
-[[nodiscard]] constexpr ReedSolomon<K, M>
-mint_reed_solomon(effects::Init) noexcept {
+[[nodiscard]] constexpr ReedSolomon<K, M> mint_reed_solomon(effects::Init) noexcept {
     return ReedSolomon<K, M>{};
 }
 
@@ -619,7 +534,6 @@ static_assert(ReedSolomonShape<10, 2>);
 static_assert(!ReedSolomonShape<0, 2>);
 static_assert(!ReedSolomonShape<10, 0>);
 static_assert(!ReedSolomonShape<255, 2>);
-static_assert(sizeof(LinearShardBuffer<std::span<std::byte>>) ==
-              sizeof(std::span<std::byte>));
+static_assert(sizeof(LinearShardBuffer<std::span<std::byte>>) == sizeof(std::span<std::byte>));
 
 }  // namespace crucible::cntp

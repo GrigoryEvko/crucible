@@ -40,14 +40,10 @@ std::atomic<int> g_default_sink_format{0};
     if (cached != unknown) return cached == json;
 
     const char* format = std::getenv("CRUCIBLE_DIAG_FORMAT");
-    const int selected =
-        format != nullptr && std::strcmp(format, "json") == 0 ? json : text;
+    const int selected = format != nullptr && std::strcmp(format, "json") == 0 ? json : text;
     int expected = unknown;
-    if (g_default_sink_format.compare_exchange_strong(
-            expected,
-            selected,
-            std::memory_order_acq_rel,
-            std::memory_order_acquire)) {
+    if (g_default_sink_format.compare_exchange_strong(expected, selected, std::memory_order_acq_rel,
+                                                      std::memory_order_acquire)) {
         return selected == json;
     }
     return expected == json;
@@ -73,9 +69,7 @@ std::atomic<int> g_default_sink_format{0};
 // `\n` at the end forces a flush.  No allocation, no stdio buffer
 // growth — fits in any reasonable scratch buffer fprintf uses.
 
-void default_violation_sink(Category cat,
-                            std::string_view fn,
-                            std::string_view detail) noexcept {
+void default_violation_sink(Category cat, std::string_view fn, std::string_view detail) noexcept {
     if (default_sink_wants_json()) {
         (void)emit_json_violation(stderr, cat, fn, detail);
         return;
@@ -109,17 +103,13 @@ violation_sink_t set_violation_sink(violation_sink_t sink) noexcept {
 // ── current_violation_sink ──────────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 
-violation_sink_t current_violation_sink() noexcept {
-    return g_sink.load(std::memory_order_acquire);
-}
+violation_sink_t current_violation_sink() noexcept { return g_sink.load(std::memory_order_acquire); }
 
 // ═════════════════════════════════════════════════════════════════════
 // ── report_violation ────────────────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 
-void report_violation(Category cat,
-                      std::string_view fn,
-                      std::string_view detail) noexcept {
+void report_violation(Category cat, std::string_view fn, std::string_view detail) noexcept {
     const auto sink = g_sink.load(std::memory_order_acquire);
     if (sink) [[likely]] {
         sink(cat, fn, detail);
@@ -131,9 +121,7 @@ void report_violation(Category cat,
 // ── report_violation_and_abort ──────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 
-void report_violation_and_abort(Category cat,
-                                std::string_view fn,
-                                std::string_view detail) noexcept {
+void report_violation_and_abort(Category cat, std::string_view fn, std::string_view detail) noexcept {
     report_violation(cat, fn, detail);
     std::abort();
 }
@@ -162,13 +150,8 @@ thread_local char tls_loc_buf[loc_buf_capacity];
 // Uses snprintf which is bounded; truncation on overflow is silent
 // (the parser can detect via missing '@' marker).
 std::string_view format_loc(std::source_location loc) noexcept {
-    const int n = std::snprintf(
-        tls_loc_buf, loc_buf_capacity,
-        "%s:%u:%u@%s",
-        loc.file_name(),
-        loc.line(),
-        loc.column(),
-        loc.function_name());
+    const int n = std::snprintf(tls_loc_buf, loc_buf_capacity, "%s:%u:%u@%s", loc.file_name(), loc.line(), loc.column(),
+                                loc.function_name());
     if (n < 0) {
         // snprintf encoding error — return an empty view rather than
         // emit garbage; the caller's diagnostic still includes
@@ -177,23 +160,17 @@ std::string_view format_loc(std::source_location loc) noexcept {
         return {};
     }
     const std::size_t len =
-        static_cast<std::size_t>(n) >= loc_buf_capacity
-            ? loc_buf_capacity - 1
-            : static_cast<std::size_t>(n);
+        static_cast<std::size_t>(n) >= loc_buf_capacity ? loc_buf_capacity - 1 : static_cast<std::size_t>(n);
     return {tls_loc_buf, len};
 }
 
 }  // namespace
 
-void report_violation_at(Category cat,
-                         std::string_view detail,
-                         std::source_location loc) noexcept {
+void report_violation_at(Category cat, std::string_view detail, std::source_location loc) noexcept {
     report_violation(cat, format_loc(loc), detail);
 }
 
-void report_violation_at_and_abort(Category cat,
-                                   std::string_view detail,
-                                   std::source_location loc) noexcept {
+void report_violation_at_and_abort(Category cat, std::string_view detail, std::source_location loc) noexcept {
     report_violation_at(cat, detail, loc);
     std::abort();
 }

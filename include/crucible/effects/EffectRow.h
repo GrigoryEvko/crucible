@@ -151,8 +151,7 @@ template <Effect... Es>
 }
 
 template <Effect... Es>
-inline constexpr auto canonical_effect_pack_v =
-    compute_canonical_effect_pack<Es...>();
+inline constexpr auto canonical_effect_pack_v = compute_canonical_effect_pack<Es...>();
 
 }  // namespace detail
 
@@ -165,12 +164,10 @@ template <Effect E0, Effect... Es>
 struct canonical_row<Row<E0, Es...>> {
 private:
     template <std::size_t... Is>
-    static auto build(std::index_sequence<Is...>)
-        -> Row<detail::canonical_effect_pack_v<E0, Es...>.data[Is]...>;
+    static auto build(std::index_sequence<Is...>) -> Row<detail::canonical_effect_pack_v<E0, Es...>.data[Is]...>;
 
 public:
-    using type = decltype(build(std::make_index_sequence<
-        detail::canonical_effect_pack_v<E0, Es...>.count>{}));
+    using type = decltype(build(std::make_index_sequence<detail::canonical_effect_pack_v<E0, Es...>.count>{}));
 };
 
 // Canonical form of a row type.  Idempotent: applying it to an
@@ -231,8 +228,7 @@ inline constexpr std::size_t row_pack_size_v = R::size;
 // Set cardinality — sort+dedup'd count.  Matches the hash invariant.
 // `row_unique_size_v<Row<A, B, A>> == 2` (assuming A != B).
 template <typename R>
-inline constexpr std::size_t row_unique_size_v =
-    row_pack_size_v<canonical_row_t<R>>;
+inline constexpr std::size_t row_unique_size_v = row_pack_size_v<canonical_row_t<R>>;
 
 // Legacy / bare alias for `row_pack_size_v`.  Many production sites
 // already read this; the rename to `row_pack_size_v` is a clarity
@@ -285,11 +281,7 @@ struct row_insert_unique;
 
 template <Effect... Es, Effect E>
 struct row_insert_unique<Row<Es...>, E> {
-    using type = std::conditional_t<
-        ((Es == E) || ...),
-        Row<Es...>,
-        Row<Es..., E>
-    >;
+    using type = std::conditional_t<((Es == E) || ...), Row<Es...>, Row<Es..., E>>;
 };
 
 template <typename R, Effect E>
@@ -308,10 +300,7 @@ struct row_union_recursive<R1, Row<>> {
 
 template <typename R1, Effect Head, Effect... Tail>
 struct row_union_recursive<R1, Row<Head, Tail...>> {
-    using type = typename row_union_recursive<
-        row_insert_unique_t<R1, Head>,
-        Row<Tail...>
-    >::type;
+    using type = typename row_union_recursive<row_insert_unique_t<R1, Head>, Row<Tail...>>::type;
 };
 
 // row_concat<Rs...>: concatenate a pack of Row<...>s.  Used by the
@@ -344,11 +333,10 @@ struct row_difference_impl;
 template <Effect... E1s, typename R2>
 struct row_difference_impl<Row<E1s...>, R2> {
     template <Effect E>
-    using keep_or_drop = std::conditional_t<
-        row_contains_v<R2, E>,
-        Row<>,        // drop — present in R2
-        Row<E>        // keep — absent from R2
-    >;
+    using keep_or_drop = std::conditional_t<row_contains_v<R2, E>,
+                                            Row<>,  // drop — present in R2
+                                            Row<E>  // keep — absent from R2
+                                            >;
 
     using type = typename row_concat<keep_or_drop<E1s>...>::type;
 };
@@ -361,11 +349,10 @@ struct row_intersection_impl;
 template <Effect... E1s, typename R2>
 struct row_intersection_impl<Row<E1s...>, R2> {
     template <Effect E>
-    using keep_or_drop = std::conditional_t<
-        row_contains_v<R2, E>,
-        Row<E>,       // keep — present in R2
-        Row<>         // drop — absent from R2
-    >;
+    using keep_or_drop = std::conditional_t<row_contains_v<R2, E>,
+                                            Row<E>,  // keep — present in R2
+                                            Row<>  // drop — absent from R2
+                                            >;
 
     using type = typename row_concat<keep_or_drop<E1s>...>::type;
 };
@@ -383,16 +370,13 @@ struct row_intersection_impl<Row<E1s...>, R2> {
 // both expressions yield `Row<IO, Block, Bg>` as a type, and the
 // type-level invariant agrees with the hash invariant.
 template <typename R1, typename R2>
-using row_union_t = canonical_row_t<
-    typename detail::row_union_recursive<R1, R2>::type>;
+using row_union_t = canonical_row_t<typename detail::row_union_recursive<R1, R2>::type>;
 
 template <typename R1, typename R2>
-using row_difference_t = canonical_row_t<
-    typename detail::row_difference_impl<R1, R2>::type>;
+using row_difference_t = canonical_row_t<typename detail::row_difference_impl<R1, R2>::type>;
 
 template <typename R1, typename R2>
-using row_intersection_t = canonical_row_t<
-    typename detail::row_intersection_impl<R1, R2>::type>;
+using row_intersection_t = canonical_row_t<typename detail::row_intersection_impl<R1, R2>::type>;
 
 // ── Subrow concept ──────────────────────────────────────────────────
 //
@@ -404,8 +388,7 @@ template <typename R1, typename R2>
 struct is_subrow : std::false_type {};
 
 template <Effect... E1s, Effect... E2s>
-struct is_subrow<Row<E1s...>, Row<E2s...>>
-    : std::bool_constant<(row_contains_v<Row<E2s...>, E1s> && ...)> {};
+struct is_subrow<Row<E1s...>, Row<E2s...>> : std::bool_constant<(row_contains_v<Row<E2s...>, E1s> && ...)> {};
 
 template <typename R1, typename R2>
 inline constexpr bool is_subrow_v = is_subrow<R1, R2>::value;
@@ -416,37 +399,37 @@ concept Subrow = is_subrow_v<R1, R2>;
 // ── Self-test block ─────────────────────────────────────────────────
 namespace detail::effect_row_self_test {
 
-using R_empty       = Row<>;
-using R_alloc       = Row<Effect::Alloc>;
-using R_io          = Row<Effect::IO>;
-using R_alloc_io    = Row<Effect::Alloc, Effect::IO>;
+using R_empty = Row<>;
+using R_alloc = Row<Effect::Alloc>;
+using R_io = Row<Effect::IO>;
+using R_alloc_io = Row<Effect::Alloc, Effect::IO>;
 using R_alloc_io_bg = Row<Effect::Alloc, Effect::IO, Effect::Bg>;
 
 // Sizes match the pack.
-static_assert(row_size_v<R_empty>       == 0);
-static_assert(row_size_v<R_alloc>       == 1);
-static_assert(row_size_v<R_alloc_io>    == 2);
+static_assert(row_size_v<R_empty> == 0);
+static_assert(row_size_v<R_alloc> == 1);
+static_assert(row_size_v<R_alloc_io> == 2);
 static_assert(row_size_v<R_alloc_io_bg> == 3);
 
 // Membership.
-static_assert(!row_contains_v<R_empty,    Effect::Alloc>);
-static_assert( row_contains_v<R_alloc,    Effect::Alloc>);
-static_assert(!row_contains_v<R_alloc,    Effect::IO>);
-static_assert( row_contains_v<R_alloc_io, Effect::Alloc>);
-static_assert( row_contains_v<R_alloc_io, Effect::IO>);
+static_assert(!row_contains_v<R_empty, Effect::Alloc>);
+static_assert(row_contains_v<R_alloc, Effect::Alloc>);
+static_assert(!row_contains_v<R_alloc, Effect::IO>);
+static_assert(row_contains_v<R_alloc_io, Effect::Alloc>);
+static_assert(row_contains_v<R_alloc_io, Effect::IO>);
 static_assert(!row_contains_v<R_alloc_io, Effect::Bg>);
 
 // Subrow inclusion (substitution principle).
-static_assert( is_subrow_v<R_empty, R_empty>);
-static_assert( is_subrow_v<R_empty, R_alloc>);          // ∅ ⊆ {Alloc}
-static_assert( is_subrow_v<R_alloc, R_alloc_io>);        // {A} ⊆ {A, I}
-static_assert(!is_subrow_v<R_alloc_io, R_alloc>);        // {A, I} ⊄ {A}
-static_assert( is_subrow_v<R_alloc_io, R_alloc_io_bg>);  // {A, I} ⊆ {A, I, B}
-static_assert(!is_subrow_v<R_io, R_alloc>);              // {I} ⊄ {A}
+static_assert(is_subrow_v<R_empty, R_empty>);
+static_assert(is_subrow_v<R_empty, R_alloc>);  // ∅ ⊆ {Alloc}
+static_assert(is_subrow_v<R_alloc, R_alloc_io>);  // {A} ⊆ {A, I}
+static_assert(!is_subrow_v<R_alloc_io, R_alloc>);  // {A, I} ⊄ {A}
+static_assert(is_subrow_v<R_alloc_io, R_alloc_io_bg>);  // {A, I} ⊆ {A, I, B}
+static_assert(!is_subrow_v<R_io, R_alloc>);  // {I} ⊄ {A}
 
 // Concept-form mirror.
-static_assert( Subrow<R_empty, R_alloc_io>);
-static_assert( Subrow<R_alloc, R_alloc_io_bg>);
+static_assert(Subrow<R_empty, R_alloc_io>);
+static_assert(Subrow<R_alloc, R_alloc_io_bg>);
 static_assert(!Subrow<R_alloc_io, R_alloc>);
 
 // ── Set-algebra coverage (METX-2 #474 + fixy-A3-001) ────────────────
@@ -469,24 +452,24 @@ static_assert(is_subrow_v<row_union_t<R_empty, R_alloc_io>, R_alloc_io>);
 // Union — every input row is contained in the result.
 using R_union_a_io = row_union_t<R_alloc, R_io>;
 static_assert(is_subrow_v<R_alloc, R_union_a_io>);
-static_assert(is_subrow_v<R_io,    R_union_a_io>);
+static_assert(is_subrow_v<R_io, R_union_a_io>);
 static_assert(row_size_v<R_union_a_io> == 2);
 
 // Union — duplicates absorbed (no double-insert).
 using R_union_dup = row_union_t<R_alloc_io, R_alloc>;
 static_assert(row_size_v<R_union_dup> == 2);  // Alloc not duplicated.
 static_assert(is_subrow_v<R_alloc_io, R_union_dup>);
-static_assert(is_subrow_v<R_alloc,    R_union_dup>);
+static_assert(is_subrow_v<R_alloc, R_union_dup>);
 static_assert(!row_contains_v<R_union_dup, Effect::Bg>);
 
 // Union — commutativity up to Subrow.
-using R_left  = row_union_t<R_alloc, R_io>;
+using R_left = row_union_t<R_alloc, R_io>;
 using R_right = row_union_t<R_io, R_alloc>;
 static_assert(is_subrow_v<R_left, R_right>);
 static_assert(is_subrow_v<R_right, R_left>);
 
 // Union — associativity up to Subrow.
-using R_lr_then_bg     = row_union_t<row_union_t<R_alloc, R_io>, Row<Effect::Bg>>;
+using R_lr_then_bg = row_union_t<row_union_t<R_alloc, R_io>, Row<Effect::Bg>>;
 using R_lr_then_bg_alt = row_union_t<R_alloc, row_union_t<R_io, Row<Effect::Bg>>>;
 static_assert(is_subrow_v<R_lr_then_bg, R_lr_then_bg_alt>);
 static_assert(is_subrow_v<R_lr_then_bg_alt, R_lr_then_bg>);
@@ -501,8 +484,8 @@ static_assert(std::is_same_v<row_difference_t<R_alloc_io, R_alloc_io>, R_empty>)
 using R_diff = row_difference_t<R_alloc_io_bg, R_alloc>;
 static_assert(row_size_v<R_diff> == 2);
 static_assert(!row_contains_v<R_diff, Effect::Alloc>);
-static_assert( row_contains_v<R_diff, Effect::IO>);
-static_assert( row_contains_v<R_diff, Effect::Bg>);
+static_assert(row_contains_v<R_diff, Effect::IO>);
+static_assert(row_contains_v<R_diff, Effect::Bg>);
 
 // Intersection — ∅ ∩ A = ∅; A ∩ A = A; commutative up to Subrow.
 static_assert(row_size_v<row_intersection_t<R_empty, R_alloc_io>> == 0);
@@ -520,15 +503,14 @@ static_assert(row_size_v<R_inter_disjoint> == 0);
 // Test, Block} — every Effect atom — exercises the difference-of-
 // union-equals-intersection-of-differences shape that downstream
 // graded-modal effects code relies on.
-using R_universe = Row<Effect::Alloc, Effect::IO, Effect::Block,
-                       Effect::Bg, Effect::Init, Effect::Test>;
+using R_universe = Row<Effect::Alloc, Effect::IO, Effect::Block, Effect::Bg, Effect::Init, Effect::Test>;
 static_assert(row_size_v<R_universe> == effect_count);
 static_assert(is_subrow_v<R_alloc_io, R_universe>);
 static_assert(is_subrow_v<R_alloc_io_bg, R_universe>);
 
 // Self-difference / intersection corner — A \ A = ∅; A ∩ ∅ = ∅.
-static_assert(row_size_v<row_difference_t<R_universe, R_universe>>      == 0);
-static_assert(row_size_v<row_intersection_t<R_universe, R_empty>>       == 0);
+static_assert(row_size_v<row_difference_t<R_universe, R_universe>> == 0);
+static_assert(row_size_v<row_intersection_t<R_universe, R_empty>> == 0);
 
 // ── canonical_row_t<R> coverage (fixy-A3-001) ───────────────────────
 //
@@ -542,43 +524,32 @@ static_assert(row_size_v<row_intersection_t<R_universe, R_empty>>       == 0);
 static_assert(std::is_same_v<canonical_row_t<Row<>>, Row<>>);
 
 // Singleton: canonical_row_t is a no-op (already sorted, no dupes).
-static_assert(std::is_same_v<
-    canonical_row_t<Row<Effect::Bg>>,
-    Row<Effect::Bg>>);
+static_assert(std::is_same_v<canonical_row_t<Row<Effect::Bg>>, Row<Effect::Bg>>);
 
 // Already-sorted, no dupes: canonical_row_t is a no-op (idempotent).
-static_assert(std::is_same_v<
-    canonical_row_t<Row<Effect::Alloc, Effect::IO>>,
-    Row<Effect::Alloc, Effect::IO>>);
+static_assert(std::is_same_v<canonical_row_t<Row<Effect::Alloc, Effect::IO>>, Row<Effect::Alloc, Effect::IO>>);
 
 // Reversed pair: canonical_row_t sorts to underlying-value order.
-static_assert(std::is_same_v<
-    canonical_row_t<Row<Effect::IO, Effect::Alloc>>,
-    Row<Effect::Alloc, Effect::IO>>);
+static_assert(std::is_same_v<canonical_row_t<Row<Effect::IO, Effect::Alloc>>, Row<Effect::Alloc, Effect::IO>>);
 
 // Duplicate-atom drift: canonical_row_t collapses to the unique set.
 //
 // `Row<Bg, IO, Bg>` has Bg=3 / IO=1 / Bg=3.  Sort → {1, 3, 3} →
 // {IO, Bg, Bg}.  Dedup → {IO, Bg}.  Final type Row<IO, Bg>.
-static_assert(std::is_same_v<
-    canonical_row_t<Row<Effect::Bg, Effect::IO, Effect::Bg>>,
-    Row<Effect::IO, Effect::Bg>>);
+static_assert(std::is_same_v<canonical_row_t<Row<Effect::Bg, Effect::IO, Effect::Bg>>, Row<Effect::IO, Effect::Bg>>);
 
 // Triple-replicated atom collapses to singleton.
-static_assert(std::is_same_v<
-    canonical_row_t<Row<Effect::IO, Effect::IO, Effect::IO>>,
-    Row<Effect::IO>>);
+static_assert(std::is_same_v<canonical_row_t<Row<Effect::IO, Effect::IO, Effect::IO>>, Row<Effect::IO>>);
 
 // Interleaved duplicates with extra atom: full sort+dedup chain.
 //
 // `Row<Bg, IO, Bg, Block>` — values {3, 1, 3, 2}.  Sort → {1, 2, 3, 3}.
 // Dedup → {1, 2, 3} == {IO, Block, Bg}.
-static_assert(std::is_same_v<
-    canonical_row_t<Row<Effect::Bg, Effect::IO, Effect::Bg, Effect::Block>>,
-    Row<Effect::IO, Effect::Block, Effect::Bg>>);
+static_assert(std::is_same_v<canonical_row_t<Row<Effect::Bg, Effect::IO, Effect::Bg, Effect::Block>>,
+                             Row<Effect::IO, Effect::Block, Effect::Bg>>);
 
 // canonical_row_t is idempotent.
-using R_canon_once  = canonical_row_t<Row<Effect::Bg, Effect::Alloc, Effect::Bg>>;
+using R_canon_once = canonical_row_t<Row<Effect::Bg, Effect::Alloc, Effect::Bg>>;
 using R_canon_twice = canonical_row_t<R_canon_once>;
 static_assert(std::is_same_v<R_canon_once, R_canon_twice>);
 static_assert(std::is_same_v<R_canon_once, Row<Effect::Alloc, Effect::Bg>>);
@@ -603,7 +574,7 @@ using R_dup = Row<Effect::Bg, Effect::IO, Effect::Bg>;
 
 // LENS 1 — pack size: positional count, includes duplicate Bg.
 static_assert(row_pack_size_v<R_dup> == 3);
-static_assert(row_size_v<R_dup>      == 3);  // legacy alias for pack
+static_assert(row_size_v<R_dup> == 3);  // legacy alias for pack
 
 // LENS 2 — unique size: set cardinality, dedups Bg.
 static_assert(row_unique_size_v<R_dup> == 2);
@@ -612,20 +583,19 @@ static_assert(row_unique_size_v<R_dup> == 2);
 // no separate trait, but the doc-block above names it so readers
 // don't go looking for one.  Spot-check the agreement by routing
 // through canonical_row_t (the hash internally does the same):
-static_assert(row_pack_size_v<canonical_row_t<R_dup>>
-            == row_unique_size_v<R_dup>);
+static_assert(row_pack_size_v<canonical_row_t<R_dup>> == row_unique_size_v<R_dup>);
 
 // On canonical rows the three lenses agree.  Set-algebra outputs are
 // canonical (fixy-A3-001), so production sites pass through this
 // equality automatically.
 using R_canon = canonical_row_t<R_dup>;
-static_assert(row_pack_size_v<R_canon>   == 2);
+static_assert(row_pack_size_v<R_canon> == 2);
 static_assert(row_unique_size_v<R_canon> == 2);
 
 // Empty row: all three lenses are 0.
-static_assert(row_pack_size_v<Row<>>   == 0);
+static_assert(row_pack_size_v<Row<>> == 0);
 static_assert(row_unique_size_v<Row<>> == 0);
-static_assert(row_size_v<Row<>>        == 0);
+static_assert(row_size_v<Row<>> == 0);
 
 }  // namespace effect_row_a3_031_witness
 
@@ -635,33 +605,27 @@ static_assert(row_size_v<Row<>>        == 0);
 // equivalent-order constructions; post-fix the type identities hold.
 
 // row_union_t auto-dedups intra-R1 duplicates AND sorts the output.
-static_assert(std::is_same_v<
-    row_union_t<Row<Effect::Bg, Effect::IO, Effect::Bg>, Row<Effect::Block>>,
-    Row<Effect::IO, Effect::Block, Effect::Bg>>);
+static_assert(std::is_same_v<row_union_t<Row<Effect::Bg, Effect::IO, Effect::Bg>, Row<Effect::Block>>,
+                             Row<Effect::IO, Effect::Block, Effect::Bg>>);
 
 // row_union_t commutative AT THE TYPE LEVEL (was only Subrow-equal pre-fix).
-static_assert(std::is_same_v<
-    row_union_t<R_alloc, R_io>,
-    row_union_t<R_io, R_alloc>>);
+static_assert(std::is_same_v<row_union_t<R_alloc, R_io>, row_union_t<R_io, R_alloc>>);
 
 // row_union_t associative AT THE TYPE LEVEL (was only Subrow-equal pre-fix).
 static_assert(std::is_same_v<R_lr_then_bg, R_lr_then_bg_alt>);
 
 // row_difference_t output is canonical (drops dupes inside R1).
-static_assert(std::is_same_v<
-    row_difference_t<Row<Effect::Bg, Effect::IO, Effect::Bg>, Row<Effect::Block>>,
-    Row<Effect::IO, Effect::Bg>>);
+static_assert(std::is_same_v<row_difference_t<Row<Effect::Bg, Effect::IO, Effect::Bg>, Row<Effect::Block>>,
+                             Row<Effect::IO, Effect::Bg>>);
 
 // row_intersection_t output is canonical (no order leak from
 // keep_or_drop walk over R1).
-static_assert(std::is_same_v<
-    row_intersection_t<Row<Effect::Bg, Effect::IO>, Row<Effect::IO, Effect::Bg>>,
-    Row<Effect::IO, Effect::Bg>>);
+static_assert(std::is_same_v<row_intersection_t<Row<Effect::Bg, Effect::IO>, Row<Effect::IO, Effect::Bg>>,
+                             Row<Effect::IO, Effect::Bg>>);
 
 // Reordered inputs to set ops yield the same canonical type.
-static_assert(std::is_same_v<
-    row_union_t<Row<Effect::Test, Effect::Alloc>, Row<Effect::Bg>>,
-    row_union_t<Row<Effect::Bg>, Row<Effect::Alloc, Effect::Test>>>);
+static_assert(std::is_same_v<row_union_t<Row<Effect::Test, Effect::Alloc>, Row<Effect::Bg>>,
+                             row_union_t<Row<Effect::Bg>, Row<Effect::Alloc, Effect::Test>>>);
 
 // ── Runtime smoke test (fixy-A3-021) ────────────────────────────────
 //
@@ -687,7 +651,7 @@ inline void runtime_smoke_test() {
     [[maybe_unused]] auto sz2 = sizeof(r_empty);
 
     // Drive `size` member through a runtime read path.
-    [[maybe_unused]] std::size_t n_bg    = decltype(r_bg)::size;
+    [[maybe_unused]] std::size_t n_bg = decltype(r_bg)::size;
     [[maybe_unused]] std::size_t n_bg_io = decltype(r_bg_io)::size;
     [[maybe_unused]] std::size_t n_empty = EmptyRow::size;
 }

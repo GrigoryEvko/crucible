@@ -45,8 +45,7 @@ enum class CalibrationError : std::uint8_t {
     InvalidDriftBasisPoints = 16,
 };
 
-[[nodiscard]] std::string_view
-calibration_error_name(CalibrationError error) noexcept;
+[[nodiscard]] std::string_view calibration_error_name(CalibrationError error) noexcept;
 
 enum class CalibrationTrigger : std::uint8_t {
     Startup = 0,
@@ -62,36 +61,24 @@ enum class CalibrationBackend : std::uint8_t {
     SwitchProbe = 3,
 };
 
-using CalibrationIterations =
-    safety::Bounded<std::uint32_t{1}, std::uint32_t{65'535}, std::uint32_t>;
-using WarmupIterations =
-    safety::Bounded<std::uint32_t{0}, std::uint32_t{65'535}, std::uint32_t>;
-using TrimBasisPoints =
-    safety::Bounded<std::uint16_t{0}, std::uint16_t{1'000}, std::uint16_t>;
-using RuntimeBudgetMs =
-    safety::Bounded<std::uint32_t{1}, std::uint32_t{86'400'000}, std::uint32_t>;
-using CalibrationSampleCount =
-    safety::Bounded<std::uint16_t{1}, std::uint16_t{65'535}, std::uint16_t>;
-using DriftBasisPoints =
-    safety::Bounded<std::uint16_t{1}, std::uint16_t{10'000}, std::uint16_t>;
+using CalibrationIterations = safety::Bounded<std::uint32_t{1}, std::uint32_t{65'535}, std::uint32_t>;
+using WarmupIterations = safety::Bounded<std::uint32_t{0}, std::uint32_t{65'535}, std::uint32_t>;
+using TrimBasisPoints = safety::Bounded<std::uint16_t{0}, std::uint16_t{1'000}, std::uint16_t>;
+using RuntimeBudgetMs = safety::Bounded<std::uint32_t{1}, std::uint32_t{86'400'000}, std::uint32_t>;
+using CalibrationSampleCount = safety::Bounded<std::uint16_t{1}, std::uint16_t{65'535}, std::uint16_t>;
+using DriftBasisPoints = safety::Bounded<std::uint16_t{1}, std::uint16_t{10'000}, std::uint16_t>;
 
-inline constexpr auto calibration_quantiles_valid =
-    [](LatencyQuantiles q) constexpr noexcept {
-        return q.p50_ns > 0u
-            && q.p50_ns <= q.p99_ns
-            && q.p99_ns <= q.p999_ns;
-    };
+inline constexpr auto calibration_quantiles_valid = [](LatencyQuantiles q) constexpr noexcept {
+    return q.p50_ns > 0u && q.p50_ns <= q.p99_ns && q.p99_ns <= q.p999_ns;
+};
 
-using CalibrationLatencyQuantiles =
-    safety::Refined<calibration_quantiles_valid, LatencyQuantiles>;
+using CalibrationLatencyQuantiles = safety::Refined<calibration_quantiles_valid, LatencyQuantiles>;
 
-inline constexpr auto finite_positive_throughput =
-    [](double value) constexpr noexcept {
-        return value > 0.0 && value <= 1.0e30;
-    };
+inline constexpr auto finite_positive_throughput = [](double value) constexpr noexcept {
+    return value > 0.0 && value <= 1.0e30;
+};
 
-using CalibratedThroughput =
-    safety::Refined<finite_positive_throughput, double>;
+using CalibratedThroughput = safety::Refined<finite_positive_throughput, double>;
 
 struct CalibrationPlan {
     CalibrationIterations iterations{std::uint32_t{1000}};
@@ -112,10 +99,9 @@ template <CogKind K>
 concept CalibratableCogKind = HasCaps<K> && HasOpcodeTable<K>;
 
 template <class Ctx>
-concept CtxFitsCalibration =
-    effects::IsExecCtx<Ctx>
-    && (effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Init>>
-        || effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Bg>>);
+concept CtxFitsCalibration = effects::IsExecCtx<Ctx>
+                          && (effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Init>>
+                              || effects::CtxAdmits<Ctx, effects::Row<effects::Effect::Bg>>);
 
 template <CogKind K>
     requires CalibratableCogKind<K>
@@ -144,8 +130,7 @@ struct CalibrationResult {
     Caps target_caps{};
     Table opcode_table{};
     CalibrationPlan plan{};
-    safety::Tagged<std::uint16_t, safety::source::Calibrated>
-        entry_count{std::uint16_t{0}};
+    safety::Tagged<std::uint16_t, safety::source::Calibrated> entry_count{std::uint16_t{0}};
 };
 
 [[nodiscard]] constexpr std::expected<CalibrationIterations, CalibrationError>
@@ -153,8 +138,7 @@ admit_calibration_iterations(std::uint32_t iterations) noexcept {
     if (iterations == 0u || iterations > 65'535u) {
         return std::unexpected(CalibrationError::InvalidIterations);
     }
-    return CalibrationIterations{
-        iterations, typename CalibrationIterations::Trusted{}};
+    return CalibrationIterations{iterations, typename CalibrationIterations::Trusted{}};
 }
 
 [[nodiscard]] constexpr std::expected<WarmupIterations, CalibrationError>
@@ -162,8 +146,7 @@ admit_warmup_iterations(std::uint32_t iterations) noexcept {
     if (iterations > 65'535u) {
         return std::unexpected(CalibrationError::InvalidWarmupIterations);
     }
-    return WarmupIterations{
-        iterations, typename WarmupIterations::Trusted{}};
+    return WarmupIterations{iterations, typename WarmupIterations::Trusted{}};
 }
 
 [[nodiscard]] constexpr std::expected<TrimBasisPoints, CalibrationError>
@@ -171,8 +154,7 @@ admit_trim_basis_points(std::uint16_t basis_points) noexcept {
     if (basis_points > 1'000u) {
         return std::unexpected(CalibrationError::InvalidTrimBasisPoints);
     }
-    return TrimBasisPoints{
-        basis_points, typename TrimBasisPoints::Trusted{}};
+    return TrimBasisPoints{basis_points, typename TrimBasisPoints::Trusted{}};
 }
 
 [[nodiscard]] constexpr std::expected<RuntimeBudgetMs, CalibrationError>
@@ -188,19 +170,15 @@ admit_sample_count(std::uint32_t samples) noexcept {
     if (samples == 0u || samples > 65'535u) {
         return std::unexpected(CalibrationError::InvalidSampleCount);
     }
-    return CalibrationSampleCount{
-        static_cast<std::uint16_t>(samples),
-        typename CalibrationSampleCount::Trusted{}};
+    return CalibrationSampleCount{static_cast<std::uint16_t>(samples), typename CalibrationSampleCount::Trusted{}};
 }
 
-[[nodiscard]] constexpr std::expected<CalibrationLatencyQuantiles,
-                                      CalibrationError>
+[[nodiscard]] constexpr std::expected<CalibrationLatencyQuantiles, CalibrationError>
 admit_latency_quantiles(LatencyQuantiles q) noexcept {
     if (!calibration_quantiles_valid(q)) {
         return std::unexpected(CalibrationError::InvalidLatencyQuantiles);
     }
-    return CalibrationLatencyQuantiles{
-        q, typename CalibrationLatencyQuantiles::Trusted{}};
+    return CalibrationLatencyQuantiles{q, typename CalibrationLatencyQuantiles::Trusted{}};
 }
 
 [[nodiscard]] constexpr std::expected<CalibratedThroughput, CalibrationError>
@@ -208,8 +186,7 @@ admit_throughput_per_sec(double throughput) noexcept {
     if (!finite_positive_throughput(throughput)) {
         return std::unexpected(CalibrationError::InvalidThroughput);
     }
-    return CalibratedThroughput{
-        throughput, typename CalibratedThroughput::Trusted{}};
+    return CalibratedThroughput{throughput, typename CalibratedThroughput::Trusted{}};
 }
 
 [[nodiscard]] constexpr std::expected<DriftBasisPoints, CalibrationError>
@@ -217,19 +194,16 @@ admit_drift_basis_points(std::uint16_t basis_points) noexcept {
     if (basis_points == 0u || basis_points > 10'000u) {
         return std::unexpected(CalibrationError::InvalidDriftBasisPoints);
     }
-    return DriftBasisPoints{
-        basis_points, typename DriftBasisPoints::Trusted{}};
+    return DriftBasisPoints{basis_points, typename DriftBasisPoints::Trusted{}};
 }
 
-[[nodiscard]] constexpr bool
-should_recalibrate(DriftSignal signal) noexcept {
+[[nodiscard]] constexpr bool should_recalibrate(DriftSignal signal) noexcept {
     return signal.observed_drift_bps.value() >= signal.threshold_bps.value();
 }
 
 template <CogKind K>
     requires CalibratableCogKind<K>
-[[nodiscard]] constexpr std::expected<void, CalibrationError>
-validate_identity_for(CogIdentity identity) noexcept {
+[[nodiscard]] constexpr std::expected<void, CalibrationError> validate_identity_for(CogIdentity identity) noexcept {
     if (identity.uuid.is_zero()) {
         return std::unexpected(CalibrationError::ZeroCog);
     }
@@ -241,8 +215,7 @@ validate_identity_for(CogIdentity identity) noexcept {
 
 template <CogKind K>
     requires CalibratableCogKind<K>
-[[nodiscard]] constexpr OpcodeLatencyEntry<K>
-make_latency_entry(CalibrationSample<K> sample) noexcept {
+[[nodiscard]] constexpr OpcodeLatencyEntry<K> make_latency_entry(CalibrationSample<K> sample) noexcept {
     return OpcodeLatencyEntry<K>{
         .opcode = sample.opcode,
         .size_bucket = sample.size_bucket,
@@ -250,12 +223,9 @@ make_latency_entry(CalibrationSample<K> sample) noexcept {
         .transpose_mode = sample.transpose_mode,
         .message_size_bucket = sample.message_size_bucket,
         .latency_cycles = sample.latency_cycles,
-        .latency = OrderedLatencyQuantiles{
-            sample.latency.value(), typename OrderedLatencyQuantiles::Trusted{}},
+        .latency = OrderedLatencyQuantiles{sample.latency.value(), typename OrderedLatencyQuantiles::Trusted{}},
         .throughput_per_sec = sample.throughput_per_sec.value(),
-        .sample_count = safety::Tagged<std::uint16_t,
-                                       safety::source::Calibrated>{
-            sample.sample_count.value()},
+        .sample_count = safety::Tagged<std::uint16_t, safety::source::Calibrated>{sample.sample_count.value()},
     };
 }
 
@@ -282,9 +252,7 @@ validate_latency_entry(OpcodeLatencyEntry<K> const& entry) noexcept {
 template <CogKind K>
     requires CalibratableCogKind<K>
 [[nodiscard]] constexpr std::expected<CalibrationResult<K>, CalibrationError>
-build_calibration_result(CogIdentity identity,
-                         caps_for_t<K> caps,
-                         std::span<const OpcodeLatencyEntry<K>> entries,
+build_calibration_result(CogIdentity identity, caps_for_t<K> caps, std::span<const OpcodeLatencyEntry<K>> entries,
                          CalibrationPlan plan = {}) noexcept {
     auto valid_identity = validate_identity_for<K>(identity);
     if (!valid_identity.has_value()) {
@@ -305,15 +273,14 @@ build_calibration_result(CogIdentity identity,
     return CalibrationResult<K>{
         .identity = identity,
         .target_caps = caps,
-        .opcode_table = OpcodeLatencyTable<K>{
-            .entries = safety::Tagged<std::span<const OpcodeLatencyEntry<K>>,
-                                      safety::source::Calibrated>{entries},
-            .calibration_age_seconds = safety::Stale<double>::fresh(0.0),
-        },
+        .opcode_table =
+            OpcodeLatencyTable<K>{
+                .entries = safety::Tagged<std::span<const OpcodeLatencyEntry<K>>, safety::source::Calibrated>{entries},
+                .calibration_age_seconds = safety::Stale<double>::fresh(0.0),
+            },
         .plan = plan,
-        .entry_count = safety::Tagged<std::uint16_t,
-                                      safety::source::Calibrated>{
-            static_cast<std::uint16_t>(entries.size())},
+        .entry_count =
+            safety::Tagged<std::uint16_t, safety::source::Calibrated>{static_cast<std::uint16_t>(entries.size())},
     };
 }
 
@@ -331,9 +298,7 @@ calibrate_cog(Ctx const&, CogIdentity identity, CalibrationPlan = {}) noexcept {
 template <CogKind K, class Ctx>
     requires CalibratableCogKind<K> && CtxFitsCalibration<Ctx>
 [[nodiscard]] constexpr std::expected<CalibrationResult<K>, CalibrationError>
-calibrate_specific_opcodes(Ctx const&,
-                           CogIdentity identity,
-                           std::span<const opcodes_for_t<K>> opcodes,
+calibrate_specific_opcodes(Ctx const&, CogIdentity identity, std::span<const opcodes_for_t<K>> opcodes,
                            CalibrationPlan = {}) noexcept {
     auto valid_identity = validate_identity_for<K>(identity);
     if (!valid_identity.has_value()) {
@@ -348,10 +313,7 @@ calibrate_specific_opcodes(Ctx const&,
 template <CogKind K, class Ctx>
     requires CalibratableCogKind<K> && CtxFitsCalibration<Ctx>
 [[nodiscard]] constexpr std::expected<CalibrationResult<K>, CalibrationError>
-recalibrate_drifted(Ctx const& ctx,
-                    CogIdentity identity,
-                    DriftSignal drift,
-                    CalibrationPlan plan = {}) noexcept {
+recalibrate_drifted(Ctx const& ctx, CogIdentity identity, DriftSignal drift, CalibrationPlan plan = {}) noexcept {
     if (!should_recalibrate(drift)) {
         return std::unexpected(CalibrationError::DriftBelowThreshold);
     }

@@ -102,7 +102,7 @@
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/lattices/ConsistencyLattice.h>
 
-#include <cstdlib>      // std::abort in the runtime smoke test
+#include <cstdlib>  // std::abort in the runtime smoke test
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -127,14 +127,10 @@ template <Consistency_v Level, typename T>
 class [[nodiscard]] Consistency {
 public:
     // ── Public type aliases ─────────────────────────────────────────
-    using value_type   = T;
+    using value_type = T;
     using lattice_type = ConsistencyLattice::At<Level>;
-    using graded_type  = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Absolute,
-        lattice_type,
-        T>;
-    static constexpr ::crucible::algebra::ModalityKind modality =
-        ::crucible::algebra::ModalityKind::Absolute;
+    using graded_type = ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
+    static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::Absolute;
 
     // The pinned level — exposed as a static constexpr for callers
     // doing level-aware dispatch without instantiating the wrapper.
@@ -146,7 +142,6 @@ private:
     graded_type impl_;
 
 public:
-
     // ── Construction ────────────────────────────────────────────────
     //
     // Default: T{} at the pinned level.
@@ -162,46 +157,43 @@ public:
     // prefer the explicit-T constructor at commit-completion sites
     // — the default ctor exists for compatibility with std::array<
     // Consistency<...>, N> / struct-field default-init contexts.
-    constexpr Consistency() noexcept(
-        std::is_nothrow_default_constructible_v<T>)
+    constexpr Consistency() noexcept(std::is_nothrow_default_constructible_v<T>)
         : impl_{T{}, typename lattice_type::element_type{}} {}
 
     // Explicit construction from a T value.  The most common
     // production pattern — a commit completion produces a value
     // under the declared consistency protocol; the wrapper binds
     // that level into the type.
-    constexpr explicit Consistency(T value) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    constexpr explicit Consistency(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(value), typename lattice_type::element_type{}} {}
 
     // In-place construction — avoids moving T through a temporary.
     // Mirrors NumericalTier's std::in_place_t pattern.
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr explicit Consistency(std::in_place_t, Args&&... args)
-        noexcept(std::is_nothrow_constructible_v<T, Args...>
-                 && std::is_nothrow_move_constructible_v<T>)
-        : impl_{T(std::forward<Args>(args)...),
-                typename lattice_type::element_type{}} {}
+    constexpr explicit Consistency(std::in_place_t, Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
+                                                                             && std::is_nothrow_move_constructible_v<T>)
+        : impl_{T(std::forward<Args>(args)...), typename lattice_type::element_type{}} {}
 
     // Defaulted copy/move/destroy — Consistency IS COPYABLE.  A
     // level pin is a static property of the value; copying a value
     // copies its consistency promise unchanged.
-    constexpr Consistency(const Consistency&)            = default;
-    constexpr Consistency(Consistency&&)                 = default;
+    constexpr Consistency(const Consistency&) = default;
+    constexpr Consistency(Consistency&&) = default;
     constexpr Consistency& operator=(const Consistency&) = default;
-    constexpr Consistency& operator=(Consistency&&)      = default;
-    ~Consistency()                                       = default;
+    constexpr Consistency& operator=(Consistency&&) = default;
+    ~Consistency() = default;
 
     // Equality: compares value bytes within the SAME level pin.
     // Cross-level comparison is rejected at overload resolution
     // because the friend takes two `Consistency const&` of identical
     // <Level, T> instantiation.  Mirrors NumericalTier's family-
     // parity discipline.
-    [[nodiscard]] friend constexpr bool operator==(
-        Consistency const& a, Consistency const& b) noexcept(
-        noexcept(a.peek() == b.peek()))
-        requires requires(T const& x, T const& y) { { x == y } -> std::convertible_to<bool>; }
+    [[nodiscard]] friend constexpr bool operator==(Consistency const& a,
+                                                   Consistency const& b) noexcept(noexcept(a.peek() == b.peek()))
+        requires requires(T const& x, T const& y) {
+            { x == y } -> std::convertible_to<bool>;
+        }
     {
         return a.peek() == b.peek();
     }
@@ -213,18 +205,12 @@ public:
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return graded_type::lattice_name();
-    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 
     // ── Read-only access ────────────────────────────────────────────
-    [[nodiscard]] constexpr T const& peek() const& noexcept {
-        return impl_.peek();
-    }
+    [[nodiscard]] constexpr T const& peek() const& noexcept { return impl_.peek(); }
 
-    [[nodiscard]] constexpr T consume() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return std::move(impl_).consume();
     }
 
@@ -234,22 +220,12 @@ public:
     // Absolute modality gate.  Mutating T cannot violate the level
     // pin: the level is a TYPE-LEVEL fact about how the value was
     // committed, not about the value's current bytes.
-    [[nodiscard]] constexpr T& peek_mut() & noexcept {
-        return impl_.peek_mut();
-    }
+    [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(); }
 
     // ── swap (forwarded from Graded substrate) ─────────────────────
-    constexpr void swap(Consistency& other)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
-        impl_.swap(other.impl_);
-    }
+    constexpr void swap(Consistency& other) noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
 
-    friend constexpr void swap(Consistency& a, Consistency& b)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
-        a.swap(b);
-    }
+    friend constexpr void swap(Consistency& a, Consistency& b) noexcept(std::is_nothrow_swappable_v<T>) { a.swap(b); }
 
     // ── satisfies<RequiredLevel> — static subsumption check ────────
     //
@@ -284,21 +260,17 @@ public:
     // strengthen a level pin once the value was committed under a
     // weaker protocol.
     template <Consistency_v WeakerLevel>
-        requires (ConsistencyLattice::leq(WeakerLevel, Level))
-    [[nodiscard]] constexpr Consistency<WeakerLevel, T> relax() const&
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
+        requires(ConsistencyLattice::leq(WeakerLevel, Level))
+    [[nodiscard]] constexpr Consistency<WeakerLevel, T> relax() const& noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
     {
         return Consistency<WeakerLevel, T>{this->peek()};
     }
 
     template <Consistency_v WeakerLevel>
-        requires (ConsistencyLattice::leq(WeakerLevel, Level))
-    [[nodiscard]] constexpr Consistency<WeakerLevel, T> relax() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
-        return Consistency<WeakerLevel, T>{
-            std::move(impl_).consume()};
+        requires(ConsistencyLattice::leq(WeakerLevel, Level))
+    [[nodiscard]] constexpr Consistency<WeakerLevel, T> relax() && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return Consistency<WeakerLevel, T>{std::move(impl_).consume()};
     }
 };
 
@@ -309,11 +281,16 @@ public:
 // Per-level aliases for the most common production sites.  Mirrors
 // the consistency:: namespace in ConsistencyLattice.h's tier set.
 namespace consistency {
-    template <typename T> using Eventual         = Consistency<Consistency_v::EVENTUAL,          T>;
-    template <typename T> using ReadYourWrites   = Consistency<Consistency_v::READ_YOUR_WRITES,  T>;
-    template <typename T> using CausalPrefix     = Consistency<Consistency_v::CAUSAL_PREFIX,     T>;
-    template <typename T> using BoundedStaleness = Consistency<Consistency_v::BOUNDED_STALENESS, T>;
-    template <typename T> using Strong           = Consistency<Consistency_v::STRONG,            T>;
+template <typename T>
+using Eventual = Consistency<Consistency_v::EVENTUAL, T>;
+template <typename T>
+using ReadYourWrites = Consistency<Consistency_v::READ_YOUR_WRITES, T>;
+template <typename T>
+using CausalPrefix = Consistency<Consistency_v::CAUSAL_PREFIX, T>;
+template <typename T>
+using BoundedStaleness = Consistency<Consistency_v::BOUNDED_STALENESS, T>;
+template <typename T>
+using Strong = Consistency<Consistency_v::STRONG, T>;
 }  // namespace consistency
 
 // ── Layout invariants ───────────────────────────────────────────────
@@ -323,15 +300,18 @@ namespace consistency {
 // (1B, 4B, 8B) and across the full level spectrum.
 namespace detail::consistency_layout {
 
-template <typename T> using StrongC   = Consistency<Consistency_v::STRONG,            T>;
-template <typename T> using BoundedC  = Consistency<Consistency_v::BOUNDED_STALENESS, T>;
-template <typename T> using EventualC = Consistency<Consistency_v::EVENTUAL,          T>;
+template <typename T>
+using StrongC = Consistency<Consistency_v::STRONG, T>;
+template <typename T>
+using BoundedC = Consistency<Consistency_v::BOUNDED_STALENESS, T>;
+template <typename T>
+using EventualC = Consistency<Consistency_v::EVENTUAL, T>;
 
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(StrongC,   char);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(StrongC,   int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(StrongC,   double);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(BoundedC,  int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(BoundedC,  double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(StrongC, char);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(StrongC, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(StrongC, double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(BoundedC, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(BoundedC, double);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(EventualC, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(EventualC, double);
 
@@ -339,19 +319,19 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(EventualC, double);
 
 // Direct sizeof witnesses — EBO collapse must hold for the
 // production-typical T sizes regardless of which level is pinned.
-static_assert(sizeof(Consistency<Consistency_v::EVENTUAL,          int>)    == sizeof(int));
-static_assert(sizeof(Consistency<Consistency_v::READ_YOUR_WRITES,  int>)    == sizeof(int));
-static_assert(sizeof(Consistency<Consistency_v::CAUSAL_PREFIX,     int>)    == sizeof(int));
-static_assert(sizeof(Consistency<Consistency_v::BOUNDED_STALENESS, int>)    == sizeof(int));
-static_assert(sizeof(Consistency<Consistency_v::STRONG,            int>)    == sizeof(int));
-static_assert(sizeof(Consistency<Consistency_v::STRONG,            double>) == sizeof(double));
+static_assert(sizeof(Consistency<Consistency_v::EVENTUAL, int>) == sizeof(int));
+static_assert(sizeof(Consistency<Consistency_v::READ_YOUR_WRITES, int>) == sizeof(int));
+static_assert(sizeof(Consistency<Consistency_v::CAUSAL_PREFIX, int>) == sizeof(int));
+static_assert(sizeof(Consistency<Consistency_v::BOUNDED_STALENESS, int>) == sizeof(int));
+static_assert(sizeof(Consistency<Consistency_v::STRONG, int>) == sizeof(int));
+static_assert(sizeof(Consistency<Consistency_v::STRONG, double>) == sizeof(double));
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::consistency_self_test {
 
-using StrongInt   = Consistency<Consistency_v::STRONG,           int>;
-using CausalInt   = Consistency<Consistency_v::CAUSAL_PREFIX,    int>;
-using EventualInt = Consistency<Consistency_v::EVENTUAL,         int>;
+using StrongInt = Consistency<Consistency_v::STRONG, int>;
+using CausalInt = Consistency<Consistency_v::CAUSAL_PREFIX, int>;
+using EventualInt = Consistency<Consistency_v::EVENTUAL, int>;
 
 // ── Construction paths ─────────────────────────────────────────────
 inline constexpr StrongInt c_default{};
@@ -362,8 +342,8 @@ inline constexpr StrongInt c_explicit{42};
 static_assert(c_explicit.peek() == 42);
 
 // ── Pinned level accessor ──────────────────────────────────────────
-static_assert(StrongInt::level   == Consistency_v::STRONG);
-static_assert(CausalInt::level   == Consistency_v::CAUSAL_PREFIX);
+static_assert(StrongInt::level == Consistency_v::STRONG);
+static_assert(CausalInt::level == Consistency_v::CAUSAL_PREFIX);
 static_assert(EventualInt::level == Consistency_v::EVENTUAL);
 
 // ── satisfies<RequiredLevel> — subsumption-up direction ────────────
@@ -376,39 +356,35 @@ static_assert(StrongInt::satisfies<Consistency_v::READ_YOUR_WRITES>);
 static_assert(StrongInt::satisfies<Consistency_v::EVENTUAL>);
 
 // A CAUSAL_PREFIX producer satisfies weaker-or-equal consumers only.
-static_assert( CausalInt::satisfies<Consistency_v::CAUSAL_PREFIX>);    // self
-static_assert( CausalInt::satisfies<Consistency_v::READ_YOUR_WRITES>); // weaker
-static_assert( CausalInt::satisfies<Consistency_v::EVENTUAL>);
-static_assert(!CausalInt::satisfies<Consistency_v::BOUNDED_STALENESS>); // stronger
+static_assert(CausalInt::satisfies<Consistency_v::CAUSAL_PREFIX>);  // self
+static_assert(CausalInt::satisfies<Consistency_v::READ_YOUR_WRITES>);  // weaker
+static_assert(CausalInt::satisfies<Consistency_v::EVENTUAL>);
+static_assert(!CausalInt::satisfies<Consistency_v::BOUNDED_STALENESS>);  // stronger
 static_assert(!CausalInt::satisfies<Consistency_v::STRONG>);
 
 // An EVENTUAL producer satisfies only EVENTUAL consumers.
-static_assert( EventualInt::satisfies<Consistency_v::EVENTUAL>);
+static_assert(EventualInt::satisfies<Consistency_v::EVENTUAL>);
 static_assert(!EventualInt::satisfies<Consistency_v::READ_YOUR_WRITES>);
 static_assert(!EventualInt::satisfies<Consistency_v::STRONG>);
 
 // ── relax<WeakerLevel> — DOWN-the-lattice conversion ───────────────
 //
 // STRONG relaxes to any level.
-inline constexpr auto from_strong_to_causal =
-    StrongInt{42}.relax<Consistency_v::CAUSAL_PREFIX>();
+inline constexpr auto from_strong_to_causal = StrongInt{42}.relax<Consistency_v::CAUSAL_PREFIX>();
 static_assert(from_strong_to_causal.peek() == 42);
 static_assert(from_strong_to_causal.level == Consistency_v::CAUSAL_PREFIX);
 
-inline constexpr auto from_strong_to_eventual =
-    StrongInt{99}.relax<Consistency_v::EVENTUAL>();
+inline constexpr auto from_strong_to_eventual = StrongInt{99}.relax<Consistency_v::EVENTUAL>();
 static_assert(from_strong_to_eventual.peek() == 99);
 static_assert(from_strong_to_eventual.level == Consistency_v::EVENTUAL);
 
 // CAUSAL_PREFIX relaxes to weaker (RYW / EVENTUAL) but NOT to
 // stronger (BOUNDED_STALENESS / STRONG).
-inline constexpr auto from_causal_to_ryw =
-    CausalInt{7}.relax<Consistency_v::READ_YOUR_WRITES>();
+inline constexpr auto from_causal_to_ryw = CausalInt{7}.relax<Consistency_v::READ_YOUR_WRITES>();
 static_assert(from_causal_to_ryw.peek() == 7);
 static_assert(from_causal_to_ryw.level == Consistency_v::READ_YOUR_WRITES);
 
-inline constexpr auto from_causal_to_self =
-    CausalInt{8}.relax<Consistency_v::CAUSAL_PREFIX>();   // identity relax
+inline constexpr auto from_causal_to_self = CausalInt{8}.relax<Consistency_v::CAUSAL_PREFIX>();  // identity relax
 static_assert(from_causal_to_self.peek() == 8);
 
 // SFINAE-style detector pinning the requires-clause.
@@ -417,12 +393,12 @@ concept can_relax = requires(W w) {
     { std::move(w).template relax<T_target>() };
 };
 
-static_assert( can_relax<StrongInt,   Consistency_v::CAUSAL_PREFIX>);     // ✓ down
-static_assert( can_relax<StrongInt,   Consistency_v::EVENTUAL>);          // ✓ down
-static_assert( can_relax<CausalInt,   Consistency_v::READ_YOUR_WRITES>);  // ✓ down
-static_assert( can_relax<CausalInt,   Consistency_v::CAUSAL_PREFIX>);     // ✓ self
-static_assert(!can_relax<CausalInt,   Consistency_v::BOUNDED_STALENESS>); // ✗ up
-static_assert(!can_relax<CausalInt,   Consistency_v::STRONG>);            // ✗ up
+static_assert(can_relax<StrongInt, Consistency_v::CAUSAL_PREFIX>);  // ✓ down
+static_assert(can_relax<StrongInt, Consistency_v::EVENTUAL>);  // ✓ down
+static_assert(can_relax<CausalInt, Consistency_v::READ_YOUR_WRITES>);  // ✓ down
+static_assert(can_relax<CausalInt, Consistency_v::CAUSAL_PREFIX>);  // ✓ self
+static_assert(!can_relax<CausalInt, Consistency_v::BOUNDED_STALENESS>);  // ✗ up
+static_assert(!can_relax<CausalInt, Consistency_v::STRONG>);  // ✗ up
 static_assert(!can_relax<EventualInt, Consistency_v::READ_YOUR_WRITES>);  // ✗ up
 
 // ── Diagnostic forwarders ─────────────────────────────────────────
@@ -433,8 +409,8 @@ static_assert(!can_relax<EventualInt, Consistency_v::READ_YOUR_WRITES>);  // ✗
 static_assert(StrongInt::value_type_name().ends_with("int"));
 
 // lattice_name forwards to the hand-written At<Level>::name string.
-static_assert(StrongInt::lattice_name()   == "ConsistencyLattice::At<STRONG>");
-static_assert(CausalInt::lattice_name()   == "ConsistencyLattice::At<CAUSAL_PREFIX>");
+static_assert(StrongInt::lattice_name() == "ConsistencyLattice::At<STRONG>");
+static_assert(CausalInt::lattice_name() == "ConsistencyLattice::At<CAUSAL_PREFIX>");
 static_assert(EventualInt::lattice_name() == "ConsistencyLattice::At<EVENTUAL>");
 
 // ── swap exchanges T values within the same level pin ─────────────
@@ -488,7 +464,7 @@ concept can_equality_compare = requires(W const& a, W const& b) {
     { a == b } -> std::convertible_to<bool>;
 };
 
-static_assert( can_equality_compare<StrongInt>);
+static_assert(can_equality_compare<StrongInt>);
 static_assert(!can_equality_compare<Consistency<Consistency_v::STRONG, NoEqualityT>>);
 
 // ── relax reflexivity ─────────────────────────────────────────────
@@ -505,14 +481,13 @@ static_assert(StrongInt::lattice_name().size() > 0);
 static_assert(StrongInt::lattice_name().starts_with("ConsistencyLattice::At<"));
 
 // ── Convenience aliases resolve correctly ────────────────────────
-static_assert(consistency::Strong<int>::level         == Consistency_v::STRONG);
+static_assert(consistency::Strong<int>::level == Consistency_v::STRONG);
 static_assert(consistency::BoundedStaleness<int>::level == Consistency_v::BOUNDED_STALENESS);
-static_assert(consistency::CausalPrefix<int>::level   == Consistency_v::CAUSAL_PREFIX);
+static_assert(consistency::CausalPrefix<int>::level == Consistency_v::CAUSAL_PREFIX);
 static_assert(consistency::ReadYourWrites<int>::level == Consistency_v::READ_YOUR_WRITES);
-static_assert(consistency::Eventual<int>::level       == Consistency_v::EVENTUAL);
+static_assert(consistency::Eventual<int>::level == Consistency_v::EVENTUAL);
 
-static_assert(std::is_same_v<consistency::Strong<double>,
-                             Consistency<Consistency_v::STRONG, double>>);
+static_assert(std::is_same_v<consistency::Strong<double>, Consistency<Consistency_v::STRONG, double>>);
 
 // ── Runtime smoke test ─────────────────────────────────────────────
 //
@@ -568,7 +543,7 @@ inline void runtime_smoke_test() {
     if (extracted != 55) std::abort();
 
     // Convenience-alias instantiation at runtime.
-    consistency::Strong<int>          alias_form{123};
+    consistency::Strong<int> alias_form{123};
     consistency::CausalPrefix<double> causal_form{3.14};
     [[maybe_unused]] auto av = alias_form.peek();
     [[maybe_unused]] auto cv = causal_form.peek();

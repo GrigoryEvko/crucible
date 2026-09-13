@@ -88,60 +88,49 @@ using ::crucible::observe::metrics_sample_at;
 
 namespace crucible::fixy::observe::self_test {
 
-static_assert(std::is_same_v<
-    decltype(&::crucible::fixy::observe::mint_metrics_writer),
-    decltype(&::crucible::observe::mint_metrics_writer)>,
-    "FIXY-V-214: fixy::observe::mint_metrics_writer must alias "
-    "observe::mint_metrics_writer.");
+static_assert(std::is_same_v<decltype(&::crucible::fixy::observe::mint_metrics_writer),
+                             decltype(&::crucible::observe::mint_metrics_writer)>,
+              "FIXY-V-214: fixy::observe::mint_metrics_writer must alias "
+              "observe::mint_metrics_writer.");
 
-static_assert(std::is_same_v<
-    decltype(&::crucible::fixy::observe::mint_keeper_metrics_reader),
-    decltype(&::crucible::observe::mint_keeper_metrics_reader)>,
-    "FIXY-V-214: fixy::observe::mint_keeper_metrics_reader must "
-    "alias observe::mint_keeper_metrics_reader.");
+static_assert(std::is_same_v<decltype(&::crucible::fixy::observe::mint_keeper_metrics_reader),
+                             decltype(&::crucible::observe::mint_keeper_metrics_reader)>,
+              "FIXY-V-214: fixy::observe::mint_keeper_metrics_reader must "
+              "alias observe::mint_keeper_metrics_reader.");
 
-static_assert(std::is_same_v<
-    decltype(&::crucible::fixy::observe::mint_canopy_metrics_reader),
-    decltype(&::crucible::observe::mint_canopy_metrics_reader)>,
-    "FIXY-V-214: fixy::observe::mint_canopy_metrics_reader must "
-    "alias observe::mint_canopy_metrics_reader.");
+static_assert(std::is_same_v<decltype(&::crucible::fixy::observe::mint_canopy_metrics_reader),
+                             decltype(&::crucible::observe::mint_canopy_metrics_reader)>,
+              "FIXY-V-214: fixy::observe::mint_canopy_metrics_reader must "
+              "alias observe::mint_canopy_metrics_reader.");
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::observe::RuntimeMetrics,
-    ::crucible::observe::RuntimeMetrics>,
-    "FIXY-V-214: RuntimeMetrics carrier identity.");
+static_assert(std::is_same_v<::crucible::fixy::observe::RuntimeMetrics, ::crucible::observe::RuntimeMetrics>,
+              "FIXY-V-214: RuntimeMetrics carrier identity.");
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::observe::RuntimeMetricsSample,
-    ::crucible::observe::RuntimeMetricsSample>,
+static_assert(
+    std::is_same_v<::crucible::fixy::observe::RuntimeMetricsSample, ::crucible::observe::RuntimeMetricsSample>,
     "FIXY-V-214: RuntimeMetricsSample (Stale<>) carrier identity.");
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::observe::RuntimeMetricsComputation,
-    ::crucible::observe::RuntimeMetricsComputation>,
-    "FIXY-V-214: RuntimeMetricsComputation (Bg row) carrier identity.");
+static_assert(std::is_same_v<::crucible::fixy::observe::RuntimeMetricsComputation,
+                             ::crucible::observe::RuntimeMetricsComputation>,
+              "FIXY-V-214: RuntimeMetricsComputation (Bg row) carrier identity.");
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::observe::RuntimeMetricsChannel,
-    ::crucible::observe::RuntimeMetricsChannel>,
+static_assert(
+    std::is_same_v<::crucible::fixy::observe::RuntimeMetricsChannel, ::crucible::observe::RuntimeMetricsChannel>,
     "FIXY-V-214: RuntimeMetricsChannel (SwmrSession) carrier identity.");
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::observe::RuntimeMetricsWriter,
-    ::crucible::observe::RuntimeMetricsWriter>,
+static_assert(
+    std::is_same_v<::crucible::fixy::observe::RuntimeMetricsWriter, ::crucible::observe::RuntimeMetricsWriter>,
     "FIXY-V-214: RuntimeMetricsWriter handle alias identity.");
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::observe::RuntimeMetricsReader,
-    ::crucible::observe::RuntimeMetricsReader>,
+static_assert(
+    std::is_same_v<::crucible::fixy::observe::RuntimeMetricsReader, ::crucible::observe::RuntimeMetricsReader>,
     "FIXY-V-214: RuntimeMetricsReader handle alias identity.");
 
 // (10) Stale<> wrapping survives.  Sample MUST be a Stale<> over the
 //      payload, not an unwrapped RuntimeMetrics — otherwise the
 //      staleness-propagation surface silently degrades to "fresh".
-static_assert(!std::is_same_v<
-    ::crucible::fixy::observe::RuntimeMetricsSample,
-    ::crucible::fixy::observe::RuntimeMetrics>,
+static_assert(
+    !std::is_same_v<::crucible::fixy::observe::RuntimeMetricsSample, ::crucible::fixy::observe::RuntimeMetrics>,
     "FIXY-V-214: RuntimeMetricsSample must remain Stale<RuntimeMetrics>, "
     "not collapse to bare RuntimeMetrics through the re-export.");
 

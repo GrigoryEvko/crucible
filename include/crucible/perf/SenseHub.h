@@ -46,17 +46,17 @@
 
 #include <crucible/algebra/lattices/SyscallFamilyLattice.h>  // FIXY-V-179
 #include <crucible/effects/Capabilities.h>  // effects::Init capability tag
-#include <crucible/effects/EffectRow.h>     // FIXY-U-083: row_contains_v
-#include <crucible/effects/ExecCtx.h>       // FIXY-U-083: IsExecCtx, row_type_of_t
-#include <crucible/fixy/syscall/Per.h>                       // FIXY-V-179
-#include <crucible/safety/Borrowed.h>       // safety::Borrowed<T, Source>
-#include <crucible/safety/Refined.h>        // safety::Refined / bounded_above
+#include <crucible/effects/EffectRow.h>  // FIXY-U-083: row_contains_v
+#include <crucible/effects/ExecCtx.h>  // FIXY-U-083: IsExecCtx, row_type_of_t
+#include <crucible/fixy/syscall/Per.h>  // FIXY-V-179
+#include <crucible/safety/Borrowed.h>  // safety::Borrowed<T, Source>
+#include <crucible/safety/Refined.h>  // safety::Refined / bounded_above
 
 #include <array>
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <tuple>                            // FIXY-V-179
+#include <tuple>  // FIXY-V-179
 
 namespace crucible::perf {
 
@@ -66,100 +66,100 @@ namespace crucible::perf {
 // so each subsystem lives on its own cache line.
 enum Idx : uint32_t {
     // ── Cache line 0: Network State ──────────────────────────────
-    NET_TCP_ESTABLISHED     = 0,
-    NET_TCP_LISTEN          = 1,
-    NET_TCP_TIME_WAIT       = 2,
-    NET_TCP_CLOSE_WAIT      = 3,
-    NET_TCP_OTHER           = 4,
-    NET_UDP_ACTIVE          = 5,
-    NET_UNIX_ACTIVE         = 6,
-    NET_TX_BYTES            = 7,
+    NET_TCP_ESTABLISHED = 0,
+    NET_TCP_LISTEN = 1,
+    NET_TCP_TIME_WAIT = 2,
+    NET_TCP_CLOSE_WAIT = 3,
+    NET_TCP_OTHER = 4,
+    NET_UDP_ACTIVE = 5,
+    NET_UNIX_ACTIVE = 6,
+    NET_TX_BYTES = 7,
 
     // ── Cache line 1: I/O + Files ────────────────────────────────
-    NET_RX_BYTES            = 8,
-    FD_CURRENT              = 9,
-    FD_OPEN_OPS             = 10,
-    IO_READ_BYTES           = 11,
-    IO_WRITE_BYTES          = 12,
-    IO_READ_OPS             = 13,
-    IO_WRITE_OPS            = 14,
-    MEM_MMAP_COUNT          = 15,
+    NET_RX_BYTES = 8,
+    FD_CURRENT = 9,
+    FD_OPEN_OPS = 10,
+    IO_READ_BYTES = 11,
+    IO_WRITE_BYTES = 12,
+    IO_READ_OPS = 13,
+    IO_WRITE_OPS = 14,
+    MEM_MMAP_COUNT = 15,
 
     // ── Cache line 2: Memory + Scheduler Core ────────────────────
-    MEM_MUNMAP_COUNT        = 16,
-    MEM_PAGE_FAULTS_MIN     = 17,
-    MEM_PAGE_FAULTS_MAJ     = 18,
-    MEM_BRK_CALLS           = 19,
-    SCHED_CTX_VOL           = 20,
-    SCHED_CTX_INVOL         = 21,
-    SCHED_MIGRATIONS        = 22,
-    SCHED_RUNTIME_NS        = 23,
+    MEM_MUNMAP_COUNT = 16,
+    MEM_PAGE_FAULTS_MIN = 17,
+    MEM_PAGE_FAULTS_MAJ = 18,
+    MEM_BRK_CALLS = 19,
+    SCHED_CTX_VOL = 20,
+    SCHED_CTX_INVOL = 21,
+    SCHED_MIGRATIONS = 22,
+    SCHED_RUNTIME_NS = 23,
 
     // ── Cache line 3: Scheduler + Contention ─────────────────────
-    SCHED_WAIT_NS           = 24,
-    FUTEX_WAIT_COUNT        = 25,
-    FUTEX_WAIT_NS           = 26,
-    THREADS_CREATED         = 27,
-    SCHED_SLEEP_NS          = 28,
-    SCHED_IOWAIT_NS         = 29,
-    SCHED_BLOCKED_NS        = 30,
-    WAKEUPS_RECEIVED        = 31,
+    SCHED_WAIT_NS = 24,
+    FUTEX_WAIT_COUNT = 25,
+    FUTEX_WAIT_NS = 26,
+    THREADS_CREATED = 27,
+    SCHED_SLEEP_NS = 28,
+    SCHED_IOWAIT_NS = 29,
+    SCHED_BLOCKED_NS = 30,
+    WAKEUPS_RECEIVED = 31,
 
     // ── Cache line 4: CPU Extended ───────────────────────────────
-    KERNEL_LOCK_COUNT       = 32,
-    KERNEL_LOCK_NS          = 33,
-    SOFTIRQ_STOLEN_NS       = 34,
-    THREADS_EXITED          = 35,
-    CPU_FREQ_CHANGES        = 36,
-    WAKEUPS_SENT            = 37,
+    KERNEL_LOCK_COUNT = 32,
+    KERNEL_LOCK_NS = 33,
+    SOFTIRQ_STOLEN_NS = 34,
+    THREADS_EXITED = 35,
+    CPU_FREQ_CHANGES = 36,
+    WAKEUPS_SENT = 37,
 
     // ── Cache line 5: Memory Pressure ────────────────────────────
-    RSS_ANON_BYTES          = 40,
-    RSS_FILE_BYTES          = 41,
-    RSS_SWAP_ENTRIES        = 42,
-    RSS_SHMEM_BYTES         = 43,
-    DIRECT_RECLAIM_COUNT    = 44,
-    DIRECT_RECLAIM_NS       = 45,
-    SWAP_OUT_PAGES          = 46,
-    THP_COLLAPSE_OK         = 47,
+    RSS_ANON_BYTES = 40,
+    RSS_FILE_BYTES = 41,
+    RSS_SWAP_ENTRIES = 42,
+    RSS_SHMEM_BYTES = 43,
+    DIRECT_RECLAIM_COUNT = 44,
+    DIRECT_RECLAIM_NS = 45,
+    SWAP_OUT_PAGES = 46,
+    THP_COLLAPSE_OK = 47,
 
     // ── Cache line 6: Memory Advanced + Block I/O ────────────────
-    THP_COLLAPSE_FAIL       = 48,
-    NUMA_MIGRATE_PAGES      = 49,
-    COMPACTION_STALLS       = 50,
-    EXTFRAG_EVENTS          = 51,
-    DISK_READ_BYTES         = 52,
-    DISK_WRITE_BYTES        = 53,
-    DISK_IO_LATENCY_NS      = 54,
-    DISK_IO_COUNT           = 55,
+    THP_COLLAPSE_FAIL = 48,
+    NUMA_MIGRATE_PAGES = 49,
+    COMPACTION_STALLS = 50,
+    EXTFRAG_EVENTS = 51,
+    DISK_READ_BYTES = 52,
+    DISK_WRITE_BYTES = 53,
+    DISK_IO_LATENCY_NS = 54,
+    DISK_IO_COUNT = 55,
 
     // ── Cache line 7: I/O Advanced + Net Health ──────────────────
-    PAGE_CACHE_MISSES       = 56,
-    READAHEAD_PAGES         = 57,
-    WRITE_THROTTLE_JIFFIES  = 58,
-    IO_UNPLUG_COUNT         = 59,
-    TCP_RETRANSMIT_COUNT    = 60,
-    TCP_RST_SENT            = 61,
-    TCP_ERROR_COUNT         = 62,
-    SKB_DROP_COUNT          = 63,
+    PAGE_CACHE_MISSES = 56,
+    READAHEAD_PAGES = 57,
+    WRITE_THROTTLE_JIFFIES = 58,
+    IO_UNPLUG_COUNT = 59,
+    TCP_RETRANSMIT_COUNT = 60,
+    TCP_RST_SENT = 61,
+    TCP_ERROR_COUNT = 62,
+    SKB_DROP_COUNT = 63,
 
     // ── Cache line 8: Net Health + Reliability ───────────────────
-    TCP_MIN_SRTT_US         = 64,
-    TCP_MAX_SRTT_US         = 65,
-    TCP_LAST_CWND           = 66,
-    TCP_CONG_LOSS           = 67,
-    SIGNAL_FATAL_COUNT      = 68,
-    SIGNAL_LAST_SIGNO       = 69,
-    OOM_KILLS_SYSTEM        = 70,
-    OOM_KILL_US             = 71,
+    TCP_MIN_SRTT_US = 64,
+    TCP_MAX_SRTT_US = 65,
+    TCP_LAST_CWND = 66,
+    TCP_CONG_LOSS = 67,
+    SIGNAL_FATAL_COUNT = 68,
+    SIGNAL_LAST_SIGNO = 69,
+    OOM_KILLS_SYSTEM = 70,
+    OOM_KILL_US = 71,
 
     // ── Cache line 9: Reliability + Reserved ─────────────────────
-    RECLAIM_STALL_LOOPS     = 72,
-    THERMAL_MAX_TRIP        = 73,
-    MCE_COUNT               = 74,
+    RECLAIM_STALL_LOOPS = 72,
+    THERMAL_MAX_TRIP = 73,
+    MCE_COUNT = 74,
 
     // 11-cache-line layout — slots 75..95 reserved for future growth.
-    NUM_COUNTERS            = 96,
+    NUM_COUNTERS = 96,
 };
 
 // A point-in-time read of all 96 counters.  Diffing two snapshots
@@ -171,9 +171,7 @@ enum Idx : uint32_t {
 struct Snapshot {
     std::array<uint64_t, NUM_COUNTERS> counters{};
 
-    [[nodiscard]] uint64_t operator[](Idx i) const noexcept {
-        return counters[static_cast<uint32_t>(i)];
-    }
+    [[nodiscard]] uint64_t operator[](Idx i) const noexcept { return counters[static_cast<uint32_t>(i)]; }
 
     // Delta semantics with saturation-on-underflow.
     //
@@ -210,8 +208,7 @@ struct Snapshot {
             uint64_t diff = 0;
             // Equivalent to std::sub_sat(counters[i], older.counters[i]) —
             // migrate once libstdc++ exposes __cpp_lib_saturation_arithmetic.
-            if (__builtin_sub_overflow(counters[i], older.counters[i], &diff))
-                [[unlikely]] {
+            if (__builtin_sub_overflow(counters[i], older.counters[i], &diff)) [[unlikely]] {
                 diff = 0;  // gauge decreased; saturate to zero
             }
             r.counters[i] = diff;
@@ -229,7 +226,7 @@ static_assert(sizeof(Snapshot) == NUM_COUNTERS * sizeof(uint64_t),
               "mmap contract with BPF_F_MMAPABLE array map depends on it");
 
 class SenseHub {
- public:
+public:
     // Load the embedded BPF program, set target_tgid to getpid(),
     // attach every tracepoint, mmap the counter array.  Returns
     // std::nullopt if any step fails (missing CAP_BPF, kernel lacks
@@ -251,8 +248,7 @@ class SenseHub {
     //
     // The diagnostic line (if any) is printed to stderr unless
     // CRUCIBLE_PERF_QUIET=1 is set in the environment.
-    [[nodiscard]] static std::optional<SenseHub>
-        load(::crucible::effects::Init) noexcept;
+    [[nodiscard]] static std::optional<SenseHub> load(::crucible::effects::Init) noexcept;
 
     // ~50 ns volatile read of 12 cache lines.
     [[nodiscard]] Snapshot read() const noexcept;
@@ -265,8 +261,7 @@ class SenseHub {
     // names that owner explicitly.  The view always spans
     // NUM_COUNTERS elements when present, and is the empty span
     // (`.empty() == true`) on a moved-from / un-loaded SenseHub.
-    [[nodiscard]] safety::Borrowed<const volatile uint64_t, SenseHub>
-        counters_view() const noexcept;
+    [[nodiscard]] safety::Borrowed<const volatile uint64_t, SenseHub> counters_view() const noexcept;
 
     // Number of bpf_link attachments the kernel accepted.  Bounded
     // above by the State::links inplace_vector capacity (64); the
@@ -278,26 +273,23 @@ class SenseHub {
     // raw count.  For every unattachable tracepoint (old kernel,
     // CONFIG_* missing), one program is silently dropped; inspect
     // this to know how much coverage we have.
-    [[nodiscard]] safety::Refined<safety::bounded_above<64>, std::size_t>
-        attached_programs() const noexcept;
+    [[nodiscard]] safety::Refined<safety::bounded_above<64>, std::size_t> attached_programs() const noexcept;
 
     // Number of bpf_program__attach calls that failed (returned
     // NULL or an ERR_PTR).  Same `bounded_above<64>` envelope as
     // attached_programs() — both counters originate from the same
     // bounded program-iteration loop.  Non-zero means some
     // subsystems are dark; set CRUCIBLE_PERF_VERBOSE=1 to see which ones.
-    [[nodiscard]] safety::Refined<safety::bounded_above<64>, std::size_t>
-        attach_failures() const noexcept;
+    [[nodiscard]] safety::Refined<safety::bounded_above<64>, std::size_t> attach_failures() const noexcept;
 
-    SenseHub(const SenseHub&) =
-        delete("SenseHub owns unique BPF object + mmap — copying would double-close");
-    SenseHub& operator=(const SenseHub&) =
-        delete("SenseHub owns unique BPF object + mmap — copying would double-close");
+    SenseHub(const SenseHub&) = delete("SenseHub owns unique BPF object + mmap — copying would double-close");
+    SenseHub&
+    operator=(const SenseHub&) = delete("SenseHub owns unique BPF object + mmap — copying would double-close");
     SenseHub(SenseHub&&) noexcept;
     SenseHub& operator=(SenseHub&&) noexcept;
     ~SenseHub();
 
- private:
+private:
     struct State;
     SenseHub() noexcept;
 
@@ -313,9 +305,8 @@ class SenseHub {
 // and background-drain contexts must not engage this surface; the
 // Ctx-fit gate enforces that at the type level.
 template <class Ctx>
-concept CtxFitsSenseHubMint =
-       ::crucible::effects::IsExecCtx<Ctx>
-    && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Init>;
+concept CtxFitsSenseHubMint = ::crucible::effects::IsExecCtx<Ctx>
+                           && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Init>;
 
 // ── FIXY-V-179 — syscall-grant declaration ────────────────────────────
 //
@@ -332,28 +323,24 @@ concept CtxFitsSenseHubMint =
 // pass-through capability admitting blocking work without `Block` in
 // the row.  This declaration is a CLASSIFICATION annotation, not a
 // row-subrow tightening (see V-180 doc-block for the rationale).
-using mint_sense_hub_syscall_grants = std::tuple<
-    ::crucible::fixy::grant::syscall::per<
-        ::crucible::fixy::grant::syscall::SyscallId::bpf>,
-    ::crucible::fixy::grant::syscall::per<
-        ::crucible::fixy::grant::syscall::SyscallId::perf_event_open>,
-    ::crucible::fixy::grant::syscall::per<
-        ::crucible::fixy::grant::syscall::SyscallId::mmap>>;
+using mint_sense_hub_syscall_grants =
+    std::tuple<::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::bpf>,
+               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::perf_event_open>,
+               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::mmap>>;
 
 namespace detail::v179_sense_hub_grant_check {
 namespace fsc = ::crucible::fixy::grant::syscall;
 namespace fll = ::crucible::algebra::lattices;
-static_assert(::crucible::fixy::grant::family_tier_v<
-    fsc::per<fsc::SyscallId::bpf>>             == fll::SyscallFamily::Privilege);
-static_assert(::crucible::fixy::grant::family_tier_v<
-    fsc::per<fsc::SyscallId::perf_event_open>> == fll::SyscallFamily::Privilege);
-static_assert(::crucible::fixy::grant::family_tier_v<
-    fsc::per<fsc::SyscallId::mmap>>            == fll::SyscallFamily::MemoryMapping);
+static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::bpf>> == fll::SyscallFamily::Privilege);
+static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::perf_event_open>>
+              == fll::SyscallFamily::Privilege);
+static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::mmap>>
+              == fll::SyscallFamily::MemoryMapping);
 static_assert(std::tuple_size_v<mint_sense_hub_syscall_grants> == 3,
-    "FIXY-V-179: mint_sense_hub_syscall_grants drifted from 3 entries.  "
-    "If you added a syscall to SenseHub::load(), append the new "
-    "per<SyscallId::X> to the tuple AND extend SyscallId in "
-    "fixy/syscall/Per.h (append-only) AND add a family_tier_v check.");
+              "FIXY-V-179: mint_sense_hub_syscall_grants drifted from 3 entries.  "
+              "If you added a syscall to SenseHub::load(), append the new "
+              "per<SyscallId::X> to the tuple AND extend SyscallId in "
+              "fixy/syscall/Per.h (append-only) AND add a family_tier_v check.");
 }  // namespace detail::v179_sense_hub_grant_check
 
 template <::crucible::effects::IsExecCtx Ctx>
@@ -362,8 +349,7 @@ template <::crucible::effects::IsExecCtx Ctx>
 // loading + tracepoint attach via bpf()/perf_event_open + mmaps the
 // kernel ringbuf + heap-allocates std::unique_ptr<State>.  CLAUDE.md
 // §XXI: compile-time evaluation would lie about the runtime cost.
-[[nodiscard]] inline std::optional<SenseHub>
-mint_sense_hub(Ctx const&, ::crucible::effects::Init init) noexcept {
+[[nodiscard]] inline std::optional<SenseHub> mint_sense_hub(Ctx const&, ::crucible::effects::Init init) noexcept {
     return SenseHub::load(init);
 }
 

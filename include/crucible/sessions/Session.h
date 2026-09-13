@@ -192,14 +192,14 @@ using ::crucible::algebra::lattices::GenerationLattice;
 template <typename T, typename Rest>
 struct Send {
     using message_type = T;
-    using next         = Rest;
+    using next = Rest;
 };
 
 // Receive a value of type T, then continue as Rest.
 template <typename T, typename Rest>
 struct Recv {
     using message_type = T;
-    using next         = Rest;
+    using next = Rest;
 };
 
 // Internal choice: THIS endpoint picks one of Branches...
@@ -312,9 +312,7 @@ struct VendorPinned : Proto {
 // Canopy epoch and Relay generation.  The runtime values still live
 // in safety::EpochVersioned<T>; this context only carries admission
 // facts for session-combinator construction.
-template <std::uint64_t CurrentEpoch,
-          std::uint64_t CurrentGeneration,
-          typename InnerLoopCtx = void>
+template <std::uint64_t CurrentEpoch, std::uint64_t CurrentGeneration, typename InnerLoopCtx = void>
 struct EpochCtx {
     using inner_loop_ctx = InnerLoopCtx;
     static constexpr std::uint64_t current_epoch = CurrentEpoch;
@@ -337,133 +335,107 @@ struct session_loop_ctx_traits<void> {
     static constexpr std::uint64_t current_generation = 0;
 };
 
-template <std::uint64_t CurrentEpoch,
-          std::uint64_t CurrentGeneration,
-          typename InnerLoopCtx>
-struct session_loop_ctx_traits<
-    EpochCtx<CurrentEpoch, CurrentGeneration, InnerLoopCtx>> {
-    using inner_loop_ctx =
-        typename session_loop_ctx_traits<InnerLoopCtx>::inner_loop_ctx;
+template <std::uint64_t CurrentEpoch, std::uint64_t CurrentGeneration, typename InnerLoopCtx>
+struct session_loop_ctx_traits<EpochCtx<CurrentEpoch, CurrentGeneration, InnerLoopCtx>> {
+    using inner_loop_ctx = typename session_loop_ctx_traits<InnerLoopCtx>::inner_loop_ctx;
     static constexpr bool explicit_epoch = true;
     static constexpr std::uint64_t current_epoch = CurrentEpoch;
     static constexpr std::uint64_t current_generation = CurrentGeneration;
 };
 
 template <typename LoopCtx>
-using session_loop_ctx_inner_t =
-    typename session_loop_ctx_traits<LoopCtx>::inner_loop_ctx;
+using session_loop_ctx_inner_t = typename session_loop_ctx_traits<LoopCtx>::inner_loop_ctx;
 
 template <typename LoopCtx>
-inline constexpr bool session_loop_ctx_has_explicit_epoch_v =
-    session_loop_ctx_traits<LoopCtx>::explicit_epoch;
+inline constexpr bool session_loop_ctx_has_explicit_epoch_v = session_loop_ctx_traits<LoopCtx>::explicit_epoch;
 
 template <typename LoopCtx>
-inline constexpr std::uint64_t session_loop_ctx_epoch_v =
-    session_loop_ctx_traits<LoopCtx>::current_epoch;
+inline constexpr std::uint64_t session_loop_ctx_epoch_v = session_loop_ctx_traits<LoopCtx>::current_epoch;
 
 template <typename LoopCtx>
-inline constexpr std::uint64_t session_loop_ctx_generation_v =
-    session_loop_ctx_traits<LoopCtx>::current_generation;
+inline constexpr std::uint64_t session_loop_ctx_generation_v = session_loop_ctx_traits<LoopCtx>::current_generation;
 
-template <typename LoopCtx,
-          std::uint64_t MinEpoch,
-          std::uint64_t MinGeneration>
+template <typename LoopCtx, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
 inline constexpr bool session_epoch_threshold_valid_v =
-    EpochLattice::leq(Epoch{0}, Epoch{MinEpoch}) &&
-    GenerationLattice::leq(Generation{0}, Generation{MinGeneration});
+    EpochLattice::leq(Epoch{0}, Epoch{MinEpoch}) && GenerationLattice::leq(Generation{0}, Generation{MinGeneration});
 
-template <typename LoopCtx,
-          std::uint64_t MinEpoch,
-          std::uint64_t MinGeneration>
+template <typename LoopCtx, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
 inline constexpr bool session_loop_ctx_epoch_satisfies_v =
-    session_epoch_threshold_valid_v<LoopCtx, MinEpoch, MinGeneration> &&
-    session_loop_ctx_has_explicit_epoch_v<LoopCtx> &&
-    EpochLattice::leq(Epoch{MinEpoch},
-                      Epoch{session_loop_ctx_epoch_v<LoopCtx>}) &&
-    GenerationLattice::leq(
-        Generation{MinGeneration},
-        Generation{session_loop_ctx_generation_v<LoopCtx>});
+    session_epoch_threshold_valid_v<LoopCtx, MinEpoch, MinGeneration> && session_loop_ctx_has_explicit_epoch_v<LoopCtx>
+    && EpochLattice::leq(Epoch{MinEpoch}, Epoch{session_loop_ctx_epoch_v<LoopCtx>})
+    && GenerationLattice::leq(Generation{MinGeneration}, Generation{session_loop_ctx_generation_v<LoopCtx>});
 
-template <typename LoopCtx,
-          std::uint64_t MinEpoch,
-          std::uint64_t MinGeneration>
+template <typename LoopCtx, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
 inline constexpr bool session_loop_ctx_epoch_matches_v =
-    session_loop_ctx_epoch_satisfies_v<LoopCtx, MinEpoch, MinGeneration> &&
-    EpochLattice::leq(Epoch{session_loop_ctx_epoch_v<LoopCtx>},
-                      Epoch{MinEpoch}) &&
-    GenerationLattice::leq(
-        Generation{session_loop_ctx_generation_v<LoopCtx>},
-        Generation{MinGeneration});
+    session_loop_ctx_epoch_satisfies_v<LoopCtx, MinEpoch, MinGeneration>
+    && EpochLattice::leq(Epoch{session_loop_ctx_epoch_v<LoopCtx>}, Epoch{MinEpoch})
+    && GenerationLattice::leq(Generation{session_loop_ctx_generation_v<LoopCtx>}, Generation{MinGeneration});
 
 template <typename LoopCtx, typename NewInnerLoopCtx>
 struct session_loop_ctx_rebind_inner {
     using type = NewInnerLoopCtx;
 };
 
-template <std::uint64_t CurrentEpoch,
-          std::uint64_t CurrentGeneration,
-          typename InnerLoopCtx,
-          typename NewInnerLoopCtx>
-struct session_loop_ctx_rebind_inner<
-    EpochCtx<CurrentEpoch, CurrentGeneration, InnerLoopCtx>,
-    NewInnerLoopCtx> {
-    using type = EpochCtx<
-        CurrentEpoch,
-        CurrentGeneration,
-        typename session_loop_ctx_rebind_inner<
-            InnerLoopCtx,
-            NewInnerLoopCtx>::type>;
+template <std::uint64_t CurrentEpoch, std::uint64_t CurrentGeneration, typename InnerLoopCtx, typename NewInnerLoopCtx>
+struct session_loop_ctx_rebind_inner<EpochCtx<CurrentEpoch, CurrentGeneration, InnerLoopCtx>, NewInnerLoopCtx> {
+    using type = EpochCtx<CurrentEpoch, CurrentGeneration,
+                          typename session_loop_ctx_rebind_inner<InnerLoopCtx, NewInnerLoopCtx>::type>;
 };
 
 template <typename LoopCtx, typename NewInnerLoopCtx>
-using session_loop_ctx_rebind_inner_t =
-    typename session_loop_ctx_rebind_inner<
-        LoopCtx,
-        NewInnerLoopCtx>::type;
+using session_loop_ctx_rebind_inner_t = typename session_loop_ctx_rebind_inner<LoopCtx, NewInnerLoopCtx>::type;
 
 // ═════════════════════════════════════════════════════════════════
 // ── Shape traits (is_*_v) ───────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════
 
-template <typename P> struct is_send   : std::false_type {};
+template <typename P>
+struct is_send : std::false_type {};
 template <typename T, typename R>
 struct is_send<Send<T, R>> : std::true_type {};
 template <VendorBackend V, typename P>
 struct is_send<VendorPinned<V, P>> : is_send<P> {};
 
-template <typename P> struct is_recv   : std::false_type {};
+template <typename P>
+struct is_recv : std::false_type {};
 template <typename T, typename R>
 struct is_recv<Recv<T, R>> : std::true_type {};
 template <VendorBackend V, typename P>
 struct is_recv<VendorPinned<V, P>> : is_recv<P> {};
 
-template <typename P> struct is_select : std::false_type {};
+template <typename P>
+struct is_select : std::false_type {};
 template <typename... Bs>
 struct is_select<Select<Bs...>> : std::true_type {};
 template <VendorBackend V, typename P>
 struct is_select<VendorPinned<V, P>> : is_select<P> {};
 
-template <typename P> struct is_offer  : std::false_type {};
+template <typename P>
+struct is_offer : std::false_type {};
 template <typename... Bs>
 struct is_offer<Offer<Bs...>> : std::true_type {};
 template <VendorBackend V, typename P>
 struct is_offer<VendorPinned<V, P>> : is_offer<P> {};
 
-template <typename P> struct is_loop   : std::false_type {};
+template <typename P>
+struct is_loop : std::false_type {};
 template <typename B>
 struct is_loop<Loop<B>> : std::true_type {};
 template <VendorBackend V, typename P>
 struct is_loop<VendorPinned<V, P>> : is_loop<P> {};
 
-template <typename P> struct is_end      : std::bool_constant<std::is_same_v<P, End>>      {};
+template <typename P>
+struct is_end : std::bool_constant<std::is_same_v<P, End>> {};
 template <VendorBackend V, typename P>
 struct is_end<VendorPinned<V, P>> : is_end<P> {};
 
-template <typename P> struct is_continue : std::bool_constant<std::is_same_v<P, Continue>> {};
+template <typename P>
+struct is_continue : std::bool_constant<std::is_same_v<P, Continue>> {};
 template <VendorBackend V, typename P>
 struct is_continue<VendorPinned<V, P>> : is_continue<P> {};
 
-template <typename P> struct is_vendor_pinned : std::false_type {
+template <typename P>
+struct is_vendor_pinned : std::false_type {
     using protocol = P;
     static constexpr VendorBackend vendor_backend = VendorBackend::Portable;
 };
@@ -473,18 +445,24 @@ struct is_vendor_pinned<VendorPinned<V, P>> : std::true_type {
     static constexpr VendorBackend vendor_backend = V;
 };
 
-template <typename P> inline constexpr bool is_send_v     = is_send<P>::value;
-template <typename P> inline constexpr bool is_recv_v     = is_recv<P>::value;
-template <typename P> inline constexpr bool is_select_v   = is_select<P>::value;
-template <typename P> inline constexpr bool is_offer_v    = is_offer<P>::value;
-template <typename P> inline constexpr bool is_loop_v     = is_loop<P>::value;
-template <typename P> inline constexpr bool is_end_v      = is_end<P>::value;
-template <typename P> inline constexpr bool is_continue_v = is_continue<P>::value;
+template <typename P>
+inline constexpr bool is_send_v = is_send<P>::value;
+template <typename P>
+inline constexpr bool is_recv_v = is_recv<P>::value;
+template <typename P>
+inline constexpr bool is_select_v = is_select<P>::value;
+template <typename P>
+inline constexpr bool is_offer_v = is_offer<P>::value;
+template <typename P>
+inline constexpr bool is_loop_v = is_loop<P>::value;
+template <typename P>
+inline constexpr bool is_end_v = is_end<P>::value;
+template <typename P>
+inline constexpr bool is_continue_v = is_continue<P>::value;
 template <typename P>
 inline constexpr bool is_vendor_pinned_v = is_vendor_pinned<P>::value;
 template <typename P>
-inline constexpr VendorBackend protocol_vendor_v =
-    is_vendor_pinned<P>::vendor_backend;
+inline constexpr VendorBackend protocol_vendor_v = is_vendor_pinned<P>::vendor_backend;
 template <typename P>
 using protocol_inner_t = typename is_vendor_pinned<P>::protocol;
 
@@ -531,13 +509,16 @@ using protocol_inner_t = typename is_vendor_pinned<P>::protocol;
 // orthogonal — structurally valid at the type level, but unrunnable
 // when reified as a handle anywhere in the tree.
 
-template <typename P> struct is_empty_choice : std::false_type {};
+template <typename P>
+struct is_empty_choice : std::false_type {};
 
 // Specialise only on the two empty variants — Select<>/Offer<> with
 // ANY branches are NOT empty themselves, so the recursive
 // specializations below handle them.
-template <> struct is_empty_choice<Select<>> : std::true_type {};
-template <> struct is_empty_choice<Offer<>>  : std::true_type {};
+template <>
+struct is_empty_choice<Select<>> : std::true_type {};
+template <>
+struct is_empty_choice<Offer<>> : std::true_type {};
 
 // Annotated-but-empty Offer (#367): `Offer<Sender<Role>>` declares a
 // sender but no branches — the empty-choice rejection applies equally
@@ -564,22 +545,19 @@ struct is_empty_choice<Loop<Body>> : is_empty_choice<Body> {};
 // this partial spec matches only when there is at least one branch.
 template <typename First, typename... Rest>
 struct is_empty_choice<Select<First, Rest...>>
-    : std::bool_constant<(is_empty_choice<First>::value
-                          || ... || is_empty_choice<Rest>::value)> {};
+    : std::bool_constant<(is_empty_choice<First>::value || ... || is_empty_choice<Rest>::value)> {};
 
 // Non-empty Offer<Bs...>: OR-fold across branches.
 template <typename First, typename... Rest>
 struct is_empty_choice<Offer<First, Rest...>>
-    : std::bool_constant<(is_empty_choice<First>::value
-                          || ... || is_empty_choice<Rest>::value)> {};
+    : std::bool_constant<(is_empty_choice<First>::value || ... || is_empty_choice<Rest>::value)> {};
 
 // Sender-annotated Offer with at least one real branch: OR-fold
 // across the real branches.  Sender<Role> is a type-level tag and
 // is not itself a branch — see is_well_formed's symmetric handling.
 template <typename Role, typename First, typename... Rest>
 struct is_empty_choice<Offer<Sender<Role>, First, Rest...>>
-    : std::bool_constant<(is_empty_choice<First>::value
-                          || ... || is_empty_choice<Rest>::value)> {};
+    : std::bool_constant<(is_empty_choice<First>::value || ... || is_empty_choice<Rest>::value)> {};
 
 template <VendorBackend V, typename P>
 struct is_empty_choice<VendorPinned<V, P>> : is_empty_choice<P> {};
@@ -605,10 +583,17 @@ inline constexpr bool is_head_v = !is_loop_v<P>;
 // ── dual_of<P> — type-level protocol inversion ──────────────────
 // ═════════════════════════════════════════════════════════════════
 
-template <typename P> struct dual_of;
+template <typename P>
+struct dual_of;
 
-template <> struct dual_of<End>      { using type = End; };
-template <> struct dual_of<Continue> { using type = Continue; };
+template <>
+struct dual_of<End> {
+    using type = End;
+};
+template <>
+struct dual_of<Continue> {
+    using type = Continue;
+};
 
 template <typename T, typename R>
 struct dual_of<Send<T, R>> {
@@ -693,12 +678,10 @@ template <typename T, typename R>
 struct is_dual_involutive<Recv<T, R>> : is_dual_involutive<R> {};
 
 template <typename... Bs>
-struct is_dual_involutive<Select<Bs...>>
-    : std::bool_constant<(is_dual_involutive<Bs>::value && ...)> {};
+struct is_dual_involutive<Select<Bs...>> : std::bool_constant<(is_dual_involutive<Bs>::value && ...)> {};
 
 template <typename... Bs>
-struct is_dual_involutive<Offer<Bs...>>
-    : std::bool_constant<(is_dual_involutive<Bs>::value && ...)> {};
+struct is_dual_involutive<Offer<Bs...>> : std::bool_constant<(is_dual_involutive<Bs>::value && ...)> {};
 
 // Sender-annotated Offer is the asymmetric specialization — dual
 // drops the tag, round-trip cannot restore it.  Reports false even
@@ -771,26 +754,23 @@ inline constexpr bool is_dual_involutive_v = is_dual_involutive<P>::value;
 // Audit: grep "ensure_dual<"  →  every channel-establishment pair.
 
 template <typename P1, typename P2>
-inline constexpr bool is_dual_v =
-    std::is_same_v<dual_of_t<P1>, P2> ||
-    std::is_same_v<P1, dual_of_t<P2>>;
+inline constexpr bool is_dual_v = std::is_same_v<dual_of_t<P1>, P2> || std::is_same_v<P1, dual_of_t<P2>>;
 
 template <typename P1, typename P2>
 consteval void ensure_dual() noexcept {
-    static_assert(is_dual_v<P1, P2>,
-        "crucible::session::diagnostic [Dual_Mismatch]: "
-        "ensure_dual<P1, P2>(): the two endpoint protocols are NOT "
-        "structural duals.  One side's Send must pair with the other "
-        "side's Recv; one side's Select must pair with the other "
-        "side's Offer; Loop pairs with Loop, End with End, Continue "
-        "with Continue.  Inspect dual_of_t<P1> against P2 (they must "
-        "be the same type).  Without this duality the framework's "
-        "deadlock-freedom guarantee does NOT hold — runtime hangs and "
-        "transport-byte misinterpretation become possible.  Common "
-        "causes: (a) one side missing a Send/Recv step the other side "
-        "has, (b) Select/Offer mismatch (one endpoint internal-choice, "
-        "other endpoint should be external-choice), (c) branch types "
-        "of a Select/Offer pair don't dualize element-wise.");
+    static_assert(is_dual_v<P1, P2>, "crucible::session::diagnostic [Dual_Mismatch]: "
+                                     "ensure_dual<P1, P2>(): the two endpoint protocols are NOT "
+                                     "structural duals.  One side's Send must pair with the other "
+                                     "side's Recv; one side's Select must pair with the other "
+                                     "side's Offer; Loop pairs with Loop, End with End, Continue "
+                                     "with Continue.  Inspect dual_of_t<P1> against P2 (they must "
+                                     "be the same type).  Without this duality the framework's "
+                                     "deadlock-freedom guarantee does NOT hold — runtime hangs and "
+                                     "transport-byte misinterpretation become possible.  Common "
+                                     "causes: (a) one side missing a Send/Recv step the other side "
+                                     "has, (b) Select/Offer mismatch (one endpoint internal-choice, "
+                                     "other endpoint should be external-choice), (c) branch types "
+                                     "of a Select/Offer pair don't dualize element-wise.");
 }
 
 // Convenience inline-callable form for use at namespace scope (e.g.,
@@ -811,13 +791,18 @@ consteval void ensure_dual() noexcept {
 // handled at stepping time by the LoopCtx mechanism, not at
 // composition time.
 
-template <typename P, typename Q> struct compose;
+template <typename P, typename Q>
+struct compose;
 
 template <typename Q>
-struct compose<End, Q> { using type = Q; };
+struct compose<End, Q> {
+    using type = Q;
+};
 
 template <typename Q>
-struct compose<Continue, Q> { using type = Continue; };
+struct compose<Continue, Q> {
+    using type = Continue;
+};
 
 template <typename T, typename R, typename Q>
 struct compose<Send<T, R>, Q> {
@@ -907,10 +892,8 @@ namespace detail {
 template <std::size_t BranchIndex, typename Q, typename... Bs>
 struct rewrite_branches {
     template <std::size_t I>
-    using at = std::conditional_t<
-        I == BranchIndex,
-        compose_t<std::tuple_element_t<I, std::tuple<Bs...>>, Q>,
-        std::tuple_element_t<I, std::tuple<Bs...>>>;
+    using at = std::conditional_t<I == BranchIndex, compose_t<std::tuple_element_t<I, std::tuple<Bs...>>, Q>,
+                                  std::tuple_element_t<I, std::tuple<Bs...>>>;
 
     template <typename Idxs>
     struct unpack;
@@ -918,7 +901,7 @@ struct rewrite_branches {
     template <std::size_t... Is>
     struct unpack<std::index_sequence<Is...>> {
         using as_select = Select<at<Is>...>;
-        using as_offer  = Offer<at<Is>...>;
+        using as_offer = Offer<at<Is>...>;
     };
 };
 }  // namespace detail
@@ -929,26 +912,26 @@ struct compose_at_branch;
 // Reaching the choice: Select<Bs...>.
 template <typename... Bs, std::size_t I, typename Q>
 struct compose_at_branch<Select<Bs...>, I, Q> {
-    static_assert(I < sizeof...(Bs),
-        "crucible::session::diagnostic [Branch_Compose_Index_Out_Of_Range]: "
-        "compose_at_branch_t<Select<Bs...>, I, Q>: branch index I is "
-        "out of range for the reached Select.  The Select has fewer "
-        "branches than the index requested; verify I < sizeof...(Bs) "
-        "at the call site (decltype-expose `branch_count` if needed).");
-    using type = typename detail::rewrite_branches<I, Q, Bs...>::template
-        unpack<std::make_index_sequence<sizeof...(Bs)>>::as_select;
+    static_assert(I < sizeof...(Bs), "crucible::session::diagnostic [Branch_Compose_Index_Out_Of_Range]: "
+                                     "compose_at_branch_t<Select<Bs...>, I, Q>: branch index I is "
+                                     "out of range for the reached Select.  The Select has fewer "
+                                     "branches than the index requested; verify I < sizeof...(Bs) "
+                                     "at the call site (decltype-expose `branch_count` if needed).");
+    using type =
+        typename detail::rewrite_branches<I, Q,
+                                          Bs...>::template unpack<std::make_index_sequence<sizeof...(Bs)>>::as_select;
 };
 
 // Reaching the choice: Offer<Bs...>.
 template <typename... Bs, std::size_t I, typename Q>
 struct compose_at_branch<Offer<Bs...>, I, Q> {
-    static_assert(I < sizeof...(Bs),
-        "crucible::session::diagnostic [Branch_Compose_Index_Out_Of_Range]: "
-        "compose_at_branch_t<Offer<Bs...>, I, Q>: branch index I is "
-        "out of range for the reached Offer.  The Offer has fewer "
-        "branches than the index requested.");
-    using type = typename detail::rewrite_branches<I, Q, Bs...>::template
-        unpack<std::make_index_sequence<sizeof...(Bs)>>::as_offer;
+    static_assert(I < sizeof...(Bs), "crucible::session::diagnostic [Branch_Compose_Index_Out_Of_Range]: "
+                                     "compose_at_branch_t<Offer<Bs...>, I, Q>: branch index I is "
+                                     "out of range for the reached Offer.  The Offer has fewer "
+                                     "branches than the index requested.");
+    using type =
+        typename detail::rewrite_branches<I, Q,
+                                          Bs...>::template unpack<std::make_index_sequence<sizeof...(Bs)>>::as_offer;
 };
 
 // Sender-annotated Offer (#367): index I ranges over REAL branches
@@ -956,20 +939,18 @@ struct compose_at_branch<Offer<Bs...>, I, Q> {
 // on Bs... alone and rebuild with the sender preserved at position 0.
 template <typename Role, typename... Bs, std::size_t I, typename Q>
 struct compose_at_branch<Offer<Sender<Role>, Bs...>, I, Q> {
-    static_assert(I < sizeof...(Bs),
-        "crucible::session::diagnostic [Branch_Compose_Index_Out_Of_Range]: "
-        "compose_at_branch_t<Offer<Sender<Role>, Bs...>, I, Q>: branch "
-        "index I is out of range for the reached sender-annotated "
-        "Offer.  Branches are counted WITHOUT the Sender<Role> tag — "
-        "an Offer<Sender<R>, B0, B1> has 2 branches, not 3.");
+    static_assert(I < sizeof...(Bs), "crucible::session::diagnostic [Branch_Compose_Index_Out_Of_Range]: "
+                                     "compose_at_branch_t<Offer<Sender<Role>, Bs...>, I, Q>: branch "
+                                     "index I is out of range for the reached sender-annotated "
+                                     "Offer.  Branches are counted WITHOUT the Sender<Role> tag — "
+                                     "an Offer<Sender<R>, B0, B1> has 2 branches, not 3.");
 
     template <std::size_t J>
-    using at = std::conditional_t<
-        J == I,
-        compose_t<std::tuple_element_t<J, std::tuple<Bs...>>, Q>,
-        std::tuple_element_t<J, std::tuple<Bs...>>>;
+    using at = std::conditional_t<J == I, compose_t<std::tuple_element_t<J, std::tuple<Bs...>>, Q>,
+                                  std::tuple_element_t<J, std::tuple<Bs...>>>;
 
-    template <typename Idxs> struct build;
+    template <typename Idxs>
+    struct build;
     template <std::size_t... Js>
     struct build<std::index_sequence<Js...>> {
         using type = Offer<Sender<Role>, at<Js>...>;
@@ -1008,25 +989,23 @@ struct compose_at_branch<VendorPinned<V, P>, I, Q> {
 // named diagnostic.
 template <std::size_t I, typename Q>
 struct compose_at_branch<End, I, Q> {
-    static_assert(sizeof(Q) == 0,
-        "crucible::session::diagnostic [Branch_Compose_No_Choice]: "
-        "compose_at_branch_t<P, I, Q>: walked P's spine to End without "
-        "encountering a Select<Bs...> or Offer<Bs...> to compose at.  "
-        "Branch-asymmetric composition requires P to contain a choice "
-        "combinator at some position reachable from the head via "
-        "Send/Recv/Loop pass-through.  If you intended UNIFORM "
-        "composition (every End → Q), use the existing compose_t<P, Q> "
-        "instead.");
+    static_assert(sizeof(Q) == 0, "crucible::session::diagnostic [Branch_Compose_No_Choice]: "
+                                  "compose_at_branch_t<P, I, Q>: walked P's spine to End without "
+                                  "encountering a Select<Bs...> or Offer<Bs...> to compose at.  "
+                                  "Branch-asymmetric composition requires P to contain a choice "
+                                  "combinator at some position reachable from the head via "
+                                  "Send/Recv/Loop pass-through.  If you intended UNIFORM "
+                                  "composition (every End → Q), use the existing compose_t<P, Q> "
+                                  "instead.");
 };
 
 template <std::size_t I, typename Q>
 struct compose_at_branch<Continue, I, Q> {
-    static_assert(sizeof(Q) == 0,
-        "crucible::session::diagnostic [Branch_Compose_No_Choice]: "
-        "compose_at_branch_t<P, I, Q>: walked P's spine to Continue "
-        "without encountering a Select or Offer.  Continue is a loop-"
-        "back marker, not a choice point; compose_at_branch is meant "
-        "for choice combinators.");
+    static_assert(sizeof(Q) == 0, "crucible::session::diagnostic [Branch_Compose_No_Choice]: "
+                                  "compose_at_branch_t<P, I, Q>: walked P's spine to Continue "
+                                  "without encountering a Select or Offer.  Continue is a loop-"
+                                  "back marker, not a choice point; compose_at_branch is meant "
+                                  "for choice combinators.");
 };
 
 template <typename P, std::size_t I, typename Q>
@@ -1063,25 +1042,19 @@ template <typename LoopCtx>
 struct is_well_formed<End, LoopCtx> : std::true_type {};
 
 template <typename LoopCtx>
-struct is_well_formed<Continue, LoopCtx>
-    : std::bool_constant<!std::is_void_v<
-          session_loop_ctx_inner_t<LoopCtx>>> {};
+struct is_well_formed<Continue, LoopCtx> : std::bool_constant<!std::is_void_v<session_loop_ctx_inner_t<LoopCtx>>> {};
 
 template <typename T, typename R, typename LoopCtx>
-struct is_well_formed<Send<T, R>, LoopCtx>
-    : is_well_formed<R, LoopCtx> {};
+struct is_well_formed<Send<T, R>, LoopCtx> : is_well_formed<R, LoopCtx> {};
 
 template <typename T, typename R, typename LoopCtx>
-struct is_well_formed<Recv<T, R>, LoopCtx>
-    : is_well_formed<R, LoopCtx> {};
+struct is_well_formed<Recv<T, R>, LoopCtx> : is_well_formed<R, LoopCtx> {};
 
 template <typename... Bs, typename LoopCtx>
-struct is_well_formed<Select<Bs...>, LoopCtx>
-    : std::bool_constant<(is_well_formed<Bs, LoopCtx>::value && ...)> {};
+struct is_well_formed<Select<Bs...>, LoopCtx> : std::bool_constant<(is_well_formed<Bs, LoopCtx>::value && ...)> {};
 
 template <typename... Bs, typename LoopCtx>
-struct is_well_formed<Offer<Bs...>, LoopCtx>
-    : std::bool_constant<(is_well_formed<Bs, LoopCtx>::value && ...)> {};
+struct is_well_formed<Offer<Bs...>, LoopCtx> : std::bool_constant<(is_well_formed<Bs, LoopCtx>::value && ...)> {};
 
 // Sender-annotated Offer (#367): check only the REAL branches
 // (Bs...); the Sender<Role> tag is a type-level annotation, not a
@@ -1102,14 +1075,11 @@ struct is_well_formed<Loop<B>, LoopCtx>
     // are rejected at the well-formedness gate.  Terminal states as
     // BRANCH positions inside a Select/Offer body remain accepted
     // (canonical example: Loop<Select<Send<int, Continue>, Stop>>).
-    : std::bool_constant<
-          !is_terminal_state<B>::value
-          && is_well_formed<B, session_loop_ctx_rebind_inner_t<LoopCtx, Loop<B>>>::value
-      > {};
+    : std::bool_constant<!is_terminal_state<B>::value
+                         && is_well_formed<B, session_loop_ctx_rebind_inner_t<LoopCtx, Loop<B>>>::value> {};
 
 template <VendorBackend V, typename P, typename LoopCtx>
-struct is_well_formed<VendorPinned<V, P>, LoopCtx>
-    : is_well_formed<P, LoopCtx> {};
+struct is_well_formed<VendorPinned<V, P>, LoopCtx> : is_well_formed<P, LoopCtx> {};
 
 template <typename P>
 inline constexpr bool is_well_formed_v = is_well_formed<P>::value;
@@ -1179,12 +1149,9 @@ public:
     constexpr bool was_marked() const noexcept { return true; }
     constexpr void move_from(consumed_tracker&) noexcept {}
     // RELEASE: no construction-site info to expose; render a sentinel.
-    constexpr std::source_location construction_loc() const noexcept {
-        return std::source_location{};
-    }
+    constexpr std::source_location construction_loc() const noexcept { return std::source_location{}; }
 };
-static_assert(std::is_empty_v<consumed_tracker>,
-    "Release-mode consumed_tracker must be std::is_empty_v for EBO.");
+static_assert(std::is_empty_v<consumed_tracker>, "Release-mode consumed_tracker must be std::is_empty_v for EBO.");
 
 #else
 
@@ -1197,15 +1164,13 @@ class consumed_tracker {
     // in DEBUG builds — the release-mode tracker is empty and EBO-
     // collapses to zero bytes.
     std::source_location loc_{};
+
 public:
     constexpr consumed_tracker() noexcept = default;
-    constexpr explicit consumed_tracker(std::source_location loc) noexcept
-        : loc_{loc} {}
+    constexpr explicit consumed_tracker(std::source_location loc) noexcept : loc_{loc} {}
     constexpr void mark() noexcept { flag_ = true; }
     constexpr bool was_marked() const noexcept { return flag_; }
-    constexpr std::source_location construction_loc() const noexcept {
-        return loc_;
-    }
+    constexpr std::source_location construction_loc() const noexcept { return loc_; }
 
     // Self-safe move.  When &other == *this (reachable via aliasing
     // or chained moves like `h = std::move(h);`), the naive
@@ -1215,9 +1180,10 @@ public:
     // abandonment-check invariant (#365).  The guard short-circuits
     // self-aliasing, leaving the tracker exactly as it was.
     constexpr void move_from(consumed_tracker& other) noexcept {
-        if (this == &other) [[unlikely]] return;
-        flag_       = other.flag_;
-        loc_        = other.loc_;        // inherit source-location
+        if (this == &other) [[unlikely]]
+            return;
+        flag_ = other.flag_;
+        loc_ = other.loc_;  // inherit source-location
         other.flag_ = true;
     }
 };
@@ -1255,7 +1221,7 @@ constexpr std::string_view pretty_function_raw_() noexcept {
 
 template <typename T>
 constexpr std::string_view type_name() noexcept {
-    constexpr std::string_view raw    = pretty_function_raw_<T>();
+    constexpr std::string_view raw = pretty_function_raw_<T>();
     constexpr std::string_view marker = "T = ";
 
     constexpr auto pos = raw.find(marker);
@@ -1271,14 +1237,13 @@ constexpr std::string_view type_name() noexcept {
     // appears when the template has multiple parameters with default-
     // arg metadata, e.g. our `[with T = ...; std::string_view = ...]`)
     // OR the closing ']' of the with-clause if no ';' is present.
-    constexpr auto semi    = raw.find(';', start);
+    constexpr auto semi = raw.find(';', start);
     constexpr auto bracket = raw.find(']', start);
-    constexpr auto end     = (semi != std::string_view::npos
-                              && (bracket == std::string_view::npos || semi < bracket))
-                                 ? semi
-                                 : bracket;
+    constexpr auto end =
+        (semi != std::string_view::npos && (bracket == std::string_view::npos || semi < bracket)) ? semi : bracket;
 
-    if (end == std::string_view::npos) [[unlikely]] return raw.substr(start);
+    if (end == std::string_view::npos) [[unlikely]]
+        return raw.substr(start);
     return raw.substr(start, end - start);
 }
 
@@ -1453,9 +1418,7 @@ struct OwnerLifetimeBoundEarlyExit : tag_base {};
 // — user extensions plug in automatically by inheriting from
 // detach_reason::tag_base.
 template <typename T>
-concept DetachReason =
-    std::is_base_of_v<detach_reason::tag_base, T>
-    && !std::is_same_v<T, detach_reason::tag_base>;
+concept DetachReason = std::is_base_of_v<detach_reason::tag_base, T> && !std::is_same_v<T, detach_reason::tag_base>;
 
 // ═════════════════════════════════════════════════════════════════
 // ── SessionHandleBase<Proto> — lifetime-tracked CRTP base ────────
@@ -1535,8 +1498,7 @@ public:
     // user's call to mint_session_handle / .send / .recv / etc.).
     // RELEASE collapses the loc into a no-op via consumed_tracker's
     // empty-class branch — zero per-handle overhead.
-    constexpr explicit SessionHandleBase(std::source_location loc) noexcept
-        : tracker_{loc} {}
+    constexpr explicit SessionHandleBase(std::source_location loc) noexcept : tracker_{loc} {}
 
     // Static accessor for the protocol's compile-time-rendered name
     // (#379).  Inherited by every SessionHandle specialisation, so
@@ -1554,9 +1516,7 @@ public:
     // Returns a std::string_view pointing into the program's
     // constant data — safe to store and pass around for the lifetime
     // of the program.  Zero allocation; computed at compile time.
-    [[nodiscard]] static constexpr std::string_view protocol_name() noexcept {
-        return detail::type_name<Proto>();
-    }
+    [[nodiscard]] static constexpr std::string_view protocol_name() noexcept { return detail::type_name<Proto>(); }
 
     // Static accessor for the DERIVED wrapper class's bare template
     // name (#429), via C++26 P2996 reflection — "SessionHandle" /
@@ -1597,8 +1557,7 @@ public:
     // ONLY Proto; full_handle_type_name() returns the WRAPPER's
     // full instantiation.  When `Derived` is `void`, returns the empty
     // string; callers fall back to wrapper_name().
-    [[nodiscard]] static constexpr std::string_view
-    full_handle_type_name() noexcept {
+    [[nodiscard]] static constexpr std::string_view full_handle_type_name() noexcept {
         if constexpr (!std::is_void_v<Derived>) {
             return detail::type_name<Derived>();
         } else {
@@ -1649,21 +1608,20 @@ public:
     // call, so the diagnostic comes from this string rather than from
     // the GCC-version-specific "no matching function" wrapper text.
     // Audit grep: `[DetachReason_Required]`.
-    void detach() && = delete(
-        "[DetachReason_Required] SessionHandle::detach() requires a typed "
-        "reason tag from detach_reason::*.  Pass one of "
-        "detach_reason::InfiniteLoopProtocol{} (Loop<X> with no close "
-        "branch), TransportClosedOutOfBand{} (peer crash), "
-        "TestInstrumentation{} (test code only), AsyncCancellation{} "
-        "(jthread stop_token), or OwnerLifetimeBoundEarlyExit{} "
-        "(bridge/wrapper destructor).  Per #376, the tag NAMES the audit "
-        "class so per-class greps stay mechanical.");
+    void detach() && = delete("[DetachReason_Required] SessionHandle::detach() requires a typed "
+                              "reason tag from detach_reason::*.  Pass one of "
+                              "detach_reason::InfiniteLoopProtocol{} (Loop<X> with no close "
+                              "branch), TransportClosedOutOfBand{} (peer crash), "
+                              "TestInstrumentation{} (test code only), AsyncCancellation{} "
+                              "(jthread stop_token), or OwnerLifetimeBoundEarlyExit{} "
+                              "(bridge/wrapper destructor).  Per #376, the tag NAMES the audit "
+                              "class so per-class greps stay mechanical.");
 
     // Linear — copy-deleted with reason.
-    SessionHandleBase(const SessionHandleBase&)
-        = delete("SessionHandle is linear — protocol progress is consumed, not copied.");
-    SessionHandleBase& operator=(const SessionHandleBase&)
-        = delete("SessionHandle is linear — protocol progress is consumed, not copied.");
+    SessionHandleBase(const SessionHandleBase&) =
+        delete("SessionHandle is linear — protocol progress is consumed, not copied.");
+    SessionHandleBase& operator=(const SessionHandleBase&) =
+        delete("SessionHandle is linear — protocol progress is consumed, not copied.");
 
     // Move semantics mark the source as consumed so its destructor
     // check skips the abort.  The MOVED-INTO handle inherits the
@@ -1682,14 +1640,11 @@ public:
     // layered: consumed_tracker::move_from short-circuits the
     // primitive case (#365), and the explicit early return below
     // documents the contract at the boundary the user calls.
-    constexpr SessionHandleBase(SessionHandleBase&& other) noexcept
-    {
-        tracker_.move_from(other.tracker_);
-    }
+    constexpr SessionHandleBase(SessionHandleBase&& other) noexcept { tracker_.move_from(other.tracker_); }
 
-    constexpr SessionHandleBase& operator=(SessionHandleBase&& other) noexcept
-    {
-        if (this == &other) [[unlikely]] return *this;
+    constexpr SessionHandleBase& operator=(SessionHandleBase&& other) noexcept {
+        if (this == &other) [[unlikely]]
+            return *this;
         tracker_.move_from(other.tracker_);
         return *this;
     }
@@ -1719,12 +1674,12 @@ public:
             //      one-line per-reason explanation) so the developer
             //      can pick the right tag without consulting docs.
             constexpr auto pname = detail::type_name<Proto>();
-            constexpr auto hint  = detail::next_method_hint<Proto>();
+            constexpr auto hint = detail::next_method_hint<Proto>();
             const auto loc = tracker_.construction_loc();
             const char* loc_file = loc.file_name();
             const char* loc_func = loc.function_name();
-            const auto loc_line  = loc.line();
-            const auto loc_col   = loc.column();
+            const auto loc_line = loc.line();
+            const auto loc_col = loc.column();
             // file_name() returns "" when the location is default-
             // constructed (handle minted without an explicit loc).  Render
             // a sentinel in that case so the diagnostic stays unambiguous.
@@ -1734,63 +1689,60 @@ public:
                 constexpr auto wname = detail::wrapper_class_name<Derived>();
                 constexpr auto fname = detail::type_name<Derived>();
                 std::fprintf(stderr,
-                    "\n"
-                    "═════════════════════════════════════════════════════════════════════\n"
-                    "crucible::safety::proto: ABANDONMENT DETECTED (non-terminal handle)\n"
-                    "═════════════════════════════════════════════════════════════════════\n"
-                    "  Wrapper class:    %.*s\n"
-                    "  Full handle type: %.*s\n"
-                    "  Protocol head:    %.*s\n",
-                    static_cast<int>(wname.size()), wname.data(),
-                    static_cast<int>(fname.size()), fname.data(),
-                    static_cast<int>(pname.size()), pname.data());
+                             "\n"
+                             "═════════════════════════════════════════════════════════════════════\n"
+                             "crucible::safety::proto: ABANDONMENT DETECTED (non-terminal handle)\n"
+                             "═════════════════════════════════════════════════════════════════════\n"
+                             "  Wrapper class:    %.*s\n"
+                             "  Full handle type: %.*s\n"
+                             "  Protocol head:    %.*s\n",
+                             static_cast<int>(wname.size()), wname.data(), static_cast<int>(fname.size()), fname.data(),
+                             static_cast<int>(pname.size()), pname.data());
             } else {
                 std::fprintf(stderr,
-                    "\n"
-                    "═════════════════════════════════════════════════════════════════════\n"
-                    "crucible::safety::proto: ABANDONMENT DETECTED (non-terminal handle)\n"
-                    "═════════════════════════════════════════════════════════════════════\n"
-                    "  Wrapper class:    SessionHandle (Derived not provided to base)\n"
-                    "  Protocol head:    %.*s\n",
-                    static_cast<int>(pname.size()), pname.data());
+                             "\n"
+                             "═════════════════════════════════════════════════════════════════════\n"
+                             "crucible::safety::proto: ABANDONMENT DETECTED (non-terminal handle)\n"
+                             "═════════════════════════════════════════════════════════════════════\n"
+                             "  Wrapper class:    SessionHandle (Derived not provided to base)\n"
+                             "  Protocol head:    %.*s\n",
+                             static_cast<int>(pname.size()), pname.data());
             }
             if (have_loc) {
                 std::fprintf(stderr,
-                    "  Construction at:  %s:%u:%u\n"
-                    "  In function:      %s\n",
-                    loc_file, static_cast<unsigned>(loc_line),
-                    static_cast<unsigned>(loc_col), loc_func);
+                             "  Construction at:  %s:%u:%u\n"
+                             "  In function:      %s\n",
+                             loc_file, static_cast<unsigned>(loc_line), static_cast<unsigned>(loc_col), loc_func);
             } else {
-                std::fprintf(stderr,
-                    "  Construction at:  <unknown — handle minted without "
-                    "source_location capture>\n");
+                std::fprintf(stderr, "  Construction at:  <unknown — handle minted without "
+                                     "source_location capture>\n");
             }
             std::fprintf(stderr,
-                "  Expected action:  call .%.*s\n"
-                "\n"
-                "The handle was destroyed via its destructor without being\n"
-                "consumed via a &&-qualified consumer method.  Either:\n"
-                "  1. Consume the handle by calling its appropriate consumer\n"
-                "     method (close / send / recv / pick / branch / delegate /\n"
-                "     accept / base / rollback), OR\n"
-                "  2. Advance the protocol to a terminal state (End or Stop), OR\n"
-                "  3. Explicitly abandon via std::move(handle).detach(reason),\n"
-                "     where `reason` is one of:\n"
-                "       * detach_reason::InfiniteLoopProtocol\n"
-                "           — Loop<X> with no close branch; transport-level close.\n"
-                "       * detach_reason::TransportClosedOutOfBand\n"
-                "           — peer crash detected (CNTP RETRY_EXC, SWIM dead, fd close).\n"
-                "       * detach_reason::TestInstrumentation\n"
-                "           — test code intentionally drops at a known-safe point.\n"
-                "       * detach_reason::AsyncCancellation\n"
-                "           — std::jthread stop_token fired mid-protocol.\n"
-                "       * detach_reason::OwnerLifetimeBoundEarlyExit\n"
-                "           — bridge/wrapper destructor; last-resort abandonment.\n"
-                "\n"
-                "See safety/Session.h §SessionHandleBase for the full lifetime\n"
-                "contract.  The framework cannot recover the protocol; aborting.\n"
-                "═════════════════════════════════════════════════════════════════════\n",
-                static_cast<int>(hint.size()), hint.data());
+                         "  Expected action:  call .%.*s\n"
+                         "\n"
+                         "The handle was destroyed via its destructor without being\n"
+                         "consumed via a &&-qualified consumer method.  Either:\n"
+                         "  1. Consume the handle by calling its appropriate consumer\n"
+                         "     method (close / send / recv / pick / branch / delegate /\n"
+                         "     accept / base / rollback), OR\n"
+                         "  2. Advance the protocol to a terminal state (End or Stop), OR\n"
+                         "  3. Explicitly abandon via std::move(handle).detach(reason),\n"
+                         "     where `reason` is one of:\n"
+                         "       * detach_reason::InfiniteLoopProtocol\n"
+                         "           — Loop<X> with no close branch; transport-level close.\n"
+                         "       * detach_reason::TransportClosedOutOfBand\n"
+                         "           — peer crash detected (CNTP RETRY_EXC, SWIM dead, fd close).\n"
+                         "       * detach_reason::TestInstrumentation\n"
+                         "           — test code intentionally drops at a known-safe point.\n"
+                         "       * detach_reason::AsyncCancellation\n"
+                         "           — std::jthread stop_token fired mid-protocol.\n"
+                         "       * detach_reason::OwnerLifetimeBoundEarlyExit\n"
+                         "           — bridge/wrapper destructor; last-resort abandonment.\n"
+                         "\n"
+                         "See safety/Session.h §SessionHandleBase for the full lifetime\n"
+                         "contract.  The framework cannot recover the protocol; aborting.\n"
+                         "═════════════════════════════════════════════════════════════════════\n",
+                         static_cast<int>(hint.size()), hint.data());
             std::abort();
         }
 #endif
@@ -1846,24 +1798,19 @@ namespace detail {
 template <typename Proto, typename Resource, typename LoopCtx>
 [[nodiscard]] constexpr auto make_session_handle(
     Resource r,
-    std::source_location loc = std::source_location::current())
-    noexcept(std::is_nothrow_move_constructible_v<Resource>)
-    -> SessionHandle<Proto, Resource, LoopCtx>
-{
+    std::source_location loc = std::source_location::current()) noexcept(std::is_nothrow_move_constructible_v<Resource>)
+    -> SessionHandle<Proto, Resource, LoopCtx> {
     return SessionHandle<Proto, Resource, LoopCtx>{std::move(r), loc};
 }
 
 template <typename R, typename Resource, typename LoopCtx>
-[[nodiscard]] constexpr auto step_to_next(
-    Resource r,
-    std::source_location loc = std::source_location::current()) noexcept
-{
+[[nodiscard]] constexpr auto step_to_next(Resource r,
+                                          std::source_location loc = std::source_location::current()) noexcept {
     if constexpr (std::is_same_v<R, Continue>) {
         using ActiveLoopCtx = session_loop_ctx_inner_t<LoopCtx>;
-        static_assert(!std::is_void_v<ActiveLoopCtx>,
-            "crucible::session::diagnostic [Continue_Without_Loop]: "
-            "proto: Continue appears outside a Loop context.  "
-            "Every Continue must have an enclosing Loop<Body>.");
+        static_assert(!std::is_void_v<ActiveLoopCtx>, "crucible::session::diagnostic [Continue_Without_Loop]: "
+                                                      "proto: Continue appears outside a Loop context.  "
+                                                      "Every Continue must have an enclosing Loop<Body>.");
         using NextBody = typename ActiveLoopCtx::body;
         // NextBody may itself begin with Loop or Continue (unlikely but
         // syntactically legal) — recurse.  Forward `loc` so the
@@ -1877,10 +1824,9 @@ template <typename R, typename Resource, typename LoopCtx>
         // (which would already be ill-formed — caught by is_well_formed).
         return step_to_next<InnerBody, Resource, InnerCtx>(std::move(r), loc);
     } else {
-        static_assert(is_head_v<R>,
-            "crucible::session::diagnostic [Protocol_Ill_Formed]: "
-            "proto: unexpected protocol shape after resolution.  "
-            "Only Send/Recv/Select/Offer/End/Continue are valid heads.");
+        static_assert(is_head_v<R>, "crucible::session::diagnostic [Protocol_Ill_Formed]: "
+                                    "proto: unexpected protocol shape after resolution.  "
+                                    "Only Send/Recv/Select/Offer/End/Continue are valid heads.");
         return make_session_handle<R, Resource, LoopCtx>(std::move(r), loc);
     }
 }
@@ -1892,9 +1838,8 @@ template <typename R, typename Resource, typename LoopCtx>
 // ═════════════════════════════════════════════════════════════════
 
 template <typename Resource, typename LoopCtx>
-class [[nodiscard]] SessionHandle<End, Resource, LoopCtx>
-    : public SessionHandleBase<End, SessionHandle<End, Resource, LoopCtx>>
-{
+class [[nodiscard]]
+SessionHandle<End, Resource, LoopCtx> : public SessionHandleBase<End, SessionHandle<End, Resource, LoopCtx>> {
     Resource resource_;
 
     template <typename P, typename R, typename L>
@@ -1906,44 +1851,39 @@ class [[nodiscard]] SessionHandle<End, Resource, LoopCtx>
     // `SessionHandle<End, Res, Ctx>{res}` user call site is rejected
     // ("is private"), so the factory's gate cannot be bypassed.
     template <typename FProto, typename FRes, typename FLoop>
-    friend constexpr auto detail::make_session_handle(FRes, std::source_location)
-        noexcept(std::is_nothrow_move_constructible_v<FRes>)
-        -> SessionHandle<FProto, FRes, FLoop>;
+    friend constexpr auto
+        detail::make_session_handle(FRes, std::source_location) noexcept(std::is_nothrow_move_constructible_v<FRes>)
+            -> SessionHandle<FProto, FRes, FLoop>;
 
     // ── Construction (used by detail::make_session_handle only) ────
-    constexpr explicit SessionHandle(
-        Resource r,
-        std::source_location loc = std::source_location::current())
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : SessionHandleBase<End, SessionHandle<End, Resource, LoopCtx>>{loc}
-        , resource_{std::move(r)} {}
+    constexpr explicit SessionHandle(Resource r, std::source_location loc = std::source_location::current()) noexcept(
+        std::is_nothrow_move_constructible_v<Resource>)
+        : SessionHandleBase<End, SessionHandle<End, Resource, LoopCtx>>{loc}, resource_{std::move(r)} {}
 
 public:
-    using protocol      = End;
+    using protocol = End;
     using resource_type = Resource;
-    using loop_ctx      = LoopCtx;
+    using loop_ctx = LoopCtx;
 
     // Copy-delete with reason inherited from SessionHandleBase<End>.
     // Move-ctor/assign: = default invokes base's custom move (which
     // sets source.consumed_ = true) + default-moves Resource.
     // Destructor: = default invokes base's dtor (which skips the check
     // because is_terminal_state_v<End> is true).
-    constexpr SessionHandle(SessionHandle&&) noexcept            = default;
+    constexpr SessionHandle(SessionHandle&&) noexcept = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
-    ~SessionHandle()                                             = default;
+    ~SessionHandle() = default;
 
     // Terminal operation — consumes the handle, yields the Resource.
-    [[nodiscard]] constexpr Resource close() &&
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-    {
+    [[nodiscard]] constexpr Resource close() && noexcept(std::is_nothrow_move_constructible_v<Resource>) {
         this->mark_consumed_();
         return std::move(resource_);
     }
 
     // Diagnostic borrow — does NOT consume the handle; useful for
     // logging / inspection before the explicit close().
-    [[nodiscard]] constexpr Resource&       resource() &        noexcept { return resource_; }
-    [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return resource_; }
+    [[nodiscard]] constexpr Resource& resource() & noexcept { return resource_; }
+    [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
 
 // ═════════════════════════════════════════════════════════════════
@@ -1952,40 +1892,35 @@ public:
 
 template <typename T, typename R, typename Resource, typename LoopCtx>
 class [[nodiscard]] SessionHandle<Send<T, R>, Resource, LoopCtx>
-    : public SessionHandleBase<Send<T, R>,
-                               SessionHandle<Send<T, R>, Resource, LoopCtx>>
-{
+    : public SessionHandleBase<Send<T, R>, SessionHandle<Send<T, R>, Resource, LoopCtx>> {
     Resource resource_;
 
-    template <typename P, typename Res, typename L> friend class SessionHandle;
+    template <typename P, typename Res, typename L>
+    friend class SessionHandle;
     // detail::make_session_handle is the SOLE authorized constructor
     // (fix-04) — direct `SessionHandle<Send<T,R>, Res, Ctx>{res}` is
     // rejected ("is private"), so mint_session_handle / step_to_next
     // gates cannot be bypassed.
     template <typename FProto, typename FRes, typename FLoop>
-    friend constexpr auto detail::make_session_handle(FRes, std::source_location)
-        noexcept(std::is_nothrow_move_constructible_v<FRes>)
-        -> SessionHandle<FProto, FRes, FLoop>;
+    friend constexpr auto
+        detail::make_session_handle(FRes, std::source_location) noexcept(std::is_nothrow_move_constructible_v<FRes>)
+            -> SessionHandle<FProto, FRes, FLoop>;
 
     // ── Construction (used by detail::make_session_handle only) ────
-    constexpr explicit SessionHandle(
-        Resource r,
-        std::source_location loc = std::source_location::current())
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : SessionHandleBase<Send<T, R>,
-                            SessionHandle<Send<T, R>, Resource, LoopCtx>>{loc}
-        , resource_{std::move(r)} {}
+    constexpr explicit SessionHandle(Resource r, std::source_location loc = std::source_location::current()) noexcept(
+        std::is_nothrow_move_constructible_v<Resource>)
+        : SessionHandleBase<Send<T, R>, SessionHandle<Send<T, R>, Resource, LoopCtx>>{loc}, resource_{std::move(r)} {}
 
 public:
-    using protocol      = Send<T, R>;
-    using message_type  = T;
-    using continuation  = R;
+    using protocol = Send<T, R>;
+    using message_type = T;
+    using continuation = R;
     using resource_type = Resource;
-    using loop_ctx      = LoopCtx;
+    using loop_ctx = LoopCtx;
 
-    constexpr SessionHandle(SessionHandle&&) noexcept            = default;
+    constexpr SessionHandle(SessionHandle&&) noexcept = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
-    ~SessionHandle()                                             = default;
+    ~SessionHandle() = default;
 
     // Send via user-supplied Transport.  Transport signature:
     //   void(Resource&, T&&)
@@ -1993,18 +1928,17 @@ public:
     // resolution applied by step_to_next).
     template <typename Transport>
         requires std::is_invocable_v<Transport, Resource&, T&&>
-    [[nodiscard]] constexpr auto send(T value, Transport transport) &&
-        noexcept(std::is_nothrow_invocable_v<Transport, Resource&, T&&>
-                 && std::is_nothrow_move_constructible_v<Resource>
-                 && std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr auto
+    send(T value, Transport transport) && noexcept(std::is_nothrow_invocable_v<Transport, Resource&, T&&>
+                                                   && std::is_nothrow_move_constructible_v<Resource>
+                                                   && std::is_nothrow_move_constructible_v<T>) {
         std::invoke(transport, resource_, std::move(value));
         this->mark_consumed_();
         return detail::step_to_next<R, Resource, LoopCtx>(std::move(resource_));
     }
 
-    [[nodiscard]] constexpr Resource&       resource() &        noexcept { return resource_; }
-    [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return resource_; }
+    [[nodiscard]] constexpr Resource& resource() & noexcept { return resource_; }
+    [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
 
 // ═════════════════════════════════════════════════════════════════
@@ -2013,59 +1947,53 @@ public:
 
 template <typename T, typename R, typename Resource, typename LoopCtx>
 class [[nodiscard]] SessionHandle<Recv<T, R>, Resource, LoopCtx>
-    : public SessionHandleBase<Recv<T, R>,
-                               SessionHandle<Recv<T, R>, Resource, LoopCtx>>
-{
+    : public SessionHandleBase<Recv<T, R>, SessionHandle<Recv<T, R>, Resource, LoopCtx>> {
     Resource resource_;
 
-    template <typename P, typename Res, typename L> friend class SessionHandle;
+    template <typename P, typename Res, typename L>
+    friend class SessionHandle;
     // detail::make_session_handle is the SOLE authorized constructor
     // (fix-04) — direct `SessionHandle<Recv<T,R>, Res, Ctx>{res}` is
     // rejected ("is private"), so mint_session_handle / step_to_next
     // gates cannot be bypassed.
     template <typename FProto, typename FRes, typename FLoop>
-    friend constexpr auto detail::make_session_handle(FRes, std::source_location)
-        noexcept(std::is_nothrow_move_constructible_v<FRes>)
-        -> SessionHandle<FProto, FRes, FLoop>;
+    friend constexpr auto
+        detail::make_session_handle(FRes, std::source_location) noexcept(std::is_nothrow_move_constructible_v<FRes>)
+            -> SessionHandle<FProto, FRes, FLoop>;
 
     // ── Construction (used by detail::make_session_handle only) ────
-    constexpr explicit SessionHandle(
-        Resource r,
-        std::source_location loc = std::source_location::current())
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : SessionHandleBase<Recv<T, R>,
-                            SessionHandle<Recv<T, R>, Resource, LoopCtx>>{loc}
-        , resource_{std::move(r)} {}
+    constexpr explicit SessionHandle(Resource r, std::source_location loc = std::source_location::current()) noexcept(
+        std::is_nothrow_move_constructible_v<Resource>)
+        : SessionHandleBase<Recv<T, R>, SessionHandle<Recv<T, R>, Resource, LoopCtx>>{loc}, resource_{std::move(r)} {}
 
 public:
-    using protocol      = Recv<T, R>;
-    using message_type  = T;
-    using continuation  = R;
+    using protocol = Recv<T, R>;
+    using message_type = T;
+    using continuation = R;
     using resource_type = Resource;
-    using loop_ctx      = LoopCtx;
+    using loop_ctx = LoopCtx;
 
-    constexpr SessionHandle(SessionHandle&&) noexcept            = default;
+    constexpr SessionHandle(SessionHandle&&) noexcept = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
-    ~SessionHandle()                                             = default;
+    ~SessionHandle() = default;
 
     // Receive via Transport.  Transport signature:
     //   T(Resource&)
     // Returns (received value, next-handle).
     template <typename Transport>
         requires std::is_invocable_r_v<T, Transport, Resource&>
-    [[nodiscard]] constexpr auto recv(Transport transport) &&
-        noexcept(std::is_nothrow_invocable_r_v<T, Transport, Resource&>
-                 && std::is_nothrow_move_constructible_v<Resource>
-                 && std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr auto
+    recv(Transport transport) && noexcept(std::is_nothrow_invocable_r_v<T, Transport, Resource&>
+                                          && std::is_nothrow_move_constructible_v<Resource>
+                                          && std::is_nothrow_move_constructible_v<T>) {
         T value = std::invoke(transport, resource_);
         this->mark_consumed_();
         auto next = detail::step_to_next<R, Resource, LoopCtx>(std::move(resource_));
         return std::pair{std::move(value), std::move(next)};
     }
 
-    [[nodiscard]] constexpr Resource&       resource() &        noexcept { return resource_; }
-    [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return resource_; }
+    [[nodiscard]] constexpr Resource& resource() & noexcept { return resource_; }
+    [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
 
 // ═════════════════════════════════════════════════════════════════
@@ -2074,12 +2002,11 @@ public:
 
 template <typename... Branches, typename Resource, typename LoopCtx>
 class [[nodiscard]] SessionHandle<Select<Branches...>, Resource, LoopCtx>
-    : public SessionHandleBase<Select<Branches...>,
-                               SessionHandle<Select<Branches...>, Resource, LoopCtx>>
-{
+    : public SessionHandleBase<Select<Branches...>, SessionHandle<Select<Branches...>, Resource, LoopCtx>> {
     Resource resource_;
 
-    template <typename P, typename Res, typename L> friend class SessionHandle;
+    template <typename P, typename Res, typename L>
+    friend class SessionHandle;
     // detail::make_session_handle is the SOLE authorized constructor
     // (fix-04) — direct `SessionHandle<Select<...>, Res, Ctx>{res}`
     // is rejected ("is private"), so mint_session_handle / step_to_next
@@ -2087,23 +2014,20 @@ class [[nodiscard]] SessionHandle<Select<Branches...>, Resource, LoopCtx>
     // below still fires belt-and-braces on any (now factory-only)
     // Select<> instantiation.
     template <typename FProto, typename FRes, typename FLoop>
-    friend constexpr auto detail::make_session_handle(FRes, std::source_location)
-        noexcept(std::is_nothrow_move_constructible_v<FRes>)
-        -> SessionHandle<FProto, FRes, FLoop>;
+    friend constexpr auto
+        detail::make_session_handle(FRes, std::source_location) noexcept(std::is_nothrow_move_constructible_v<FRes>)
+            -> SessionHandle<FProto, FRes, FLoop>;
 
     // ── Construction (used by detail::make_session_handle only) ────
-    constexpr explicit SessionHandle(
-        Resource r,
-        std::source_location loc = std::source_location::current())
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : SessionHandleBase<Select<Branches...>,
-                            SessionHandle<Select<Branches...>, Resource, LoopCtx>>{loc}
-        , resource_{std::move(r)} {}
+    constexpr explicit SessionHandle(Resource r, std::source_location loc = std::source_location::current()) noexcept(
+        std::is_nothrow_move_constructible_v<Resource>)
+        : SessionHandleBase<Select<Branches...>, SessionHandle<Select<Branches...>, Resource, LoopCtx>>{loc},
+          resource_{std::move(r)} {}
 
 public:
-    using protocol       = Select<Branches...>;
-    using resource_type  = Resource;
-    using loop_ctx       = LoopCtx;
+    using protocol = Select<Branches...>;
+    using resource_type = Resource;
+    using loop_ctx = LoopCtx;
 
     static constexpr std::size_t branch_count = sizeof...(Branches);
 
@@ -2114,16 +2038,15 @@ public:
     // discipline by going around the factory.  Subtyping-level uses
     // of `Select<>` (Gay-Hole 2005 minimum subtype) are unaffected
     // — they don't instantiate this class.
-    static_assert(branch_count > 0,
-        "crucible::session::diagnostic [Empty_Choice_Combinator]: "
-        "SessionHandle<Select<>>: cannot construct a runnable handle "
-        "on Select<> with zero branches — there is no branch for "
-        ".pick<I>() to select.  See mint_session_handle for the full "
-        "diagnostic and remediation.");
+    static_assert(branch_count > 0, "crucible::session::diagnostic [Empty_Choice_Combinator]: "
+                                    "SessionHandle<Select<>>: cannot construct a runnable handle "
+                                    "on Select<> with zero branches — there is no branch for "
+                                    ".pick<I>() to select.  See mint_session_handle for the full "
+                                    "diagnostic and remediation.");
 
-    constexpr SessionHandle(SessionHandle&&) noexcept            = default;
+    constexpr SessionHandle(SessionHandle&&) noexcept = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
-    ~SessionHandle()                                             = default;
+    ~SessionHandle() = default;
 
     // Pick branch I and signal the choice to peer via Transport.
     // Transport signature: void(Resource&, std::size_t).
@@ -2138,17 +2061,15 @@ public:
     // the rest of the framework apply here too.
     template <std::size_t I, typename Transport>
         requires std::is_invocable_v<Transport, Resource&, std::size_t>
-    [[nodiscard]] constexpr auto select(Transport transport) &&
-        noexcept(std::is_nothrow_invocable_v<Transport, Resource&, std::size_t>
-                 && std::is_nothrow_move_constructible_v<Resource>)
-    {
-        static_assert(I < sizeof...(Branches),
-            "crucible::session::diagnostic [Branch_Index_Out_Of_Range]: "
-            "SessionHandle<Select<...>>::select<I>(transport): branch "
-            "index I is out of range for this Select position.  The "
-            "protocol has fewer branches than the index requested; "
-            "verify I < branch_count at the call site (decltype("
-            "handle)::branch_count is exposed for compile-time queries).");
+    [[nodiscard]] constexpr auto
+    select(Transport transport) && noexcept(std::is_nothrow_invocable_v<Transport, Resource&, std::size_t>
+                                            && std::is_nothrow_move_constructible_v<Resource>) {
+        static_assert(I < sizeof...(Branches), "crucible::session::diagnostic [Branch_Index_Out_Of_Range]: "
+                                               "SessionHandle<Select<...>>::select<I>(transport): branch "
+                                               "index I is out of range for this Select position.  The "
+                                               "protocol has fewer branches than the index requested; "
+                                               "verify I < branch_count at the call site (decltype("
+                                               "handle)::branch_count is exposed for compile-time queries).");
         std::invoke(transport, resource_, I);
         this->mark_consumed_();
         using Chosen = std::tuple_element_t<I, std::tuple<Branches...>>;
@@ -2175,15 +2096,12 @@ public:
     //   grep "select_local<"   — every wire-omitting call site
     //   grep "select<.*>(.*)"  — every wire-based call site
     template <std::size_t I>
-    [[nodiscard]] constexpr auto select_local() &&
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-    {
-        static_assert(I < sizeof...(Branches),
-            "crucible::session::diagnostic [Branch_Index_Out_Of_Range]: "
-            "SessionHandle<Select<...>>::select_local<I>(): branch index "
-            "I is out of range for this Select position.  The protocol "
-            "has fewer branches than the index requested; verify I < "
-            "branch_count at the call site.");
+    [[nodiscard]] constexpr auto select_local() && noexcept(std::is_nothrow_move_constructible_v<Resource>) {
+        static_assert(I < sizeof...(Branches), "crucible::session::diagnostic [Branch_Index_Out_Of_Range]: "
+                                               "SessionHandle<Select<...>>::select_local<I>(): branch index "
+                                               "I is out of range for this Select position.  The protocol "
+                                               "has fewer branches than the index requested; verify I < "
+                                               "branch_count at the call site.");
         this->mark_consumed_();
         using Chosen = std::tuple_element_t<I, std::tuple<Branches...>>;
         return detail::step_to_next<Chosen, Resource, LoopCtx>(std::move(resource_));
@@ -2197,19 +2115,18 @@ public:
     // which on a wire-based session means the peer never receives
     // the branch choice and silently drifts off-protocol.
     template <std::size_t I>
-    void select() && = delete(
-        "[Wire_Variant_Required] SessionHandle<Select<...>>::select<I>() "
-        "without arguments is no longer allowed (#377).  Choose one: "
-        "(a) `select<I>(transport)` to signal the branch choice over "
-        "the wire (the peer sees the I-th branch and stays in sync), "
-        "OR (b) `select_local<I>()` to advance the local handle WITHOUT "
-        "signalling the peer (in-memory channels and unit tests only — "
-        "wire-based sessions where the peer doesn't observe the "
-        "choice will silently drift off-protocol).  Per #377, the "
-        "framework refuses to guess which one you meant.");
+    void select() && = delete("[Wire_Variant_Required] SessionHandle<Select<...>>::select<I>() "
+                              "without arguments is no longer allowed (#377).  Choose one: "
+                              "(a) `select<I>(transport)` to signal the branch choice over "
+                              "the wire (the peer sees the I-th branch and stays in sync), "
+                              "OR (b) `select_local<I>()` to advance the local handle WITHOUT "
+                              "signalling the peer (in-memory channels and unit tests only — "
+                              "wire-based sessions where the peer doesn't observe the "
+                              "choice will silently drift off-protocol).  Per #377, the "
+                              "framework refuses to guess which one you meant.");
 
-    [[nodiscard]] constexpr Resource&       resource() &        noexcept { return resource_; }
-    [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return resource_; }
+    [[nodiscard]] constexpr Resource& resource() & noexcept { return resource_; }
+    [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
 
 // ═════════════════════════════════════════════════════════════════
@@ -2218,35 +2135,31 @@ public:
 
 template <typename... Branches, typename Resource, typename LoopCtx>
 class [[nodiscard]] SessionHandle<Offer<Branches...>, Resource, LoopCtx>
-    : public SessionHandleBase<Offer<Branches...>,
-                               SessionHandle<Offer<Branches...>, Resource, LoopCtx>>
-{
+    : public SessionHandleBase<Offer<Branches...>, SessionHandle<Offer<Branches...>, Resource, LoopCtx>> {
     Resource resource_;
 
-    template <typename P, typename Res, typename L> friend class SessionHandle;
+    template <typename P, typename Res, typename L>
+    friend class SessionHandle;
     // detail::make_session_handle is the SOLE authorized constructor
     // (fix-04) — direct `SessionHandle<Offer<...>, Res, Ctx>{res}` is
     // rejected ("is private"), so mint_session_handle / step_to_next
     // gates cannot be bypassed.  The branch_count > 0 static_assert
     // below still fires belt-and-braces on any Offer<> instantiation.
     template <typename FProto, typename FRes, typename FLoop>
-    friend constexpr auto detail::make_session_handle(FRes, std::source_location)
-        noexcept(std::is_nothrow_move_constructible_v<FRes>)
-        -> SessionHandle<FProto, FRes, FLoop>;
+    friend constexpr auto
+        detail::make_session_handle(FRes, std::source_location) noexcept(std::is_nothrow_move_constructible_v<FRes>)
+            -> SessionHandle<FProto, FRes, FLoop>;
 
     // ── Construction (used by detail::make_session_handle only) ────
-    constexpr explicit SessionHandle(
-        Resource r,
-        std::source_location loc = std::source_location::current())
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : SessionHandleBase<Offer<Branches...>,
-                            SessionHandle<Offer<Branches...>, Resource, LoopCtx>>{loc}
-        , resource_{std::move(r)} {}
+    constexpr explicit SessionHandle(Resource r, std::source_location loc = std::source_location::current()) noexcept(
+        std::is_nothrow_move_constructible_v<Resource>)
+        : SessionHandleBase<Offer<Branches...>, SessionHandle<Offer<Branches...>, Resource, LoopCtx>>{loc},
+          resource_{std::move(r)} {}
 
 public:
-    using protocol      = Offer<Branches...>;
+    using protocol = Offer<Branches...>;
     using resource_type = Resource;
-    using loop_ctx      = LoopCtx;
+    using loop_ctx = LoopCtx;
 
     static constexpr std::size_t branch_count = sizeof...(Branches);
 
@@ -2255,16 +2168,15 @@ public:
     // Offer<>, ...>` cannot happen because there is no peer label
     // that could decode to a valid branch.  Subtyping-level uses
     // (Gay-Hole 2005) are unaffected.
-    static_assert(branch_count > 0,
-        "crucible::session::diagnostic [Empty_Choice_Combinator]: "
-        "SessionHandle<Offer<>>: cannot construct a runnable handle "
-        "on Offer<> with zero branches — there is no label the peer "
-        "can send.  See mint_session_handle for the full diagnostic "
-        "and remediation.");
+    static_assert(branch_count > 0, "crucible::session::diagnostic [Empty_Choice_Combinator]: "
+                                    "SessionHandle<Offer<>>: cannot construct a runnable handle "
+                                    "on Offer<> with zero branches — there is no label the peer "
+                                    "can send.  See mint_session_handle for the full diagnostic "
+                                    "and remediation.");
 
-    constexpr SessionHandle(SessionHandle&&) noexcept            = default;
+    constexpr SessionHandle(SessionHandle&&) noexcept = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
-    ~SessionHandle()                                             = default;
+    ~SessionHandle() = default;
 
     // Receive peer's branch choice via Transport, then invoke handler
     // with the resulting branch handle.
@@ -2276,8 +2188,7 @@ public:
     // called — the protocol is broken and there is no safe recovery.
     template <typename Transport, typename Handler>
         requires std::is_invocable_r_v<std::size_t, Transport, Resource&>
-    constexpr auto branch(Transport transport, Handler handler) &&
-    {
+    constexpr auto branch(Transport transport, Handler handler) && {
         const std::size_t idx = std::invoke(transport, resource_);
         this->mark_consumed_();
         return dispatch_branch_(idx, std::move(resource_), std::move(handler),
@@ -2300,15 +2211,12 @@ public:
     // Out-of-range I → named [Branch_Index_Out_Of_Range] (#433),
     // mirror of Select::select_local<I>'s discipline.
     template <std::size_t I>
-    [[nodiscard]] constexpr auto pick_local() &&
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-    {
-        static_assert(I < sizeof...(Branches),
-            "crucible::session::diagnostic [Branch_Index_Out_Of_Range]: "
-            "SessionHandle<Offer<...>>::pick_local<I>(): branch index "
-            "I is out of range for this Offer position.  The protocol "
-            "has fewer branches than the index requested; verify I < "
-            "branch_count at the call site.");
+    [[nodiscard]] constexpr auto pick_local() && noexcept(std::is_nothrow_move_constructible_v<Resource>) {
+        static_assert(I < sizeof...(Branches), "crucible::session::diagnostic [Branch_Index_Out_Of_Range]: "
+                                               "SessionHandle<Offer<...>>::pick_local<I>(): branch index "
+                                               "I is out of range for this Offer position.  The protocol "
+                                               "has fewer branches than the index requested; verify I < "
+                                               "branch_count at the call site.");
         this->mark_consumed_();
         using Chosen = std::tuple_element_t<I, std::tuple<Branches...>>;
         return detail::step_to_next<Chosen, Resource, LoopCtx>(std::move(resource_));
@@ -2322,18 +2230,17 @@ public:
     // sessions where the peer didn't send the matching label silently
     // diverged off-protocol.
     template <std::size_t I>
-    void pick() && = delete(
-        "[Wire_Variant_Required] SessionHandle<Offer<...>>::pick<I>() "
-        "without arguments is no longer allowed (#377).  Use "
-        "`pick_local<I>()` to advance the local handle WITHOUT "
-        "receiving a peer label (in-memory channels and unit tests "
-        "only — wire-based sessions where the peer's actual choice "
-        "differs from I will silently drift off-protocol).  Per #377, "
-        "the framework refuses to guess that the peer-skipping "
-        "variant was what you meant.");
+    void pick() && = delete("[Wire_Variant_Required] SessionHandle<Offer<...>>::pick<I>() "
+                            "without arguments is no longer allowed (#377).  Use "
+                            "`pick_local<I>()` to advance the local handle WITHOUT "
+                            "receiving a peer label (in-memory channels and unit tests "
+                            "only — wire-based sessions where the peer's actual choice "
+                            "differs from I will silently drift off-protocol).  Per #377, "
+                            "the framework refuses to guess that the peer-skipping "
+                            "variant was what you meant.");
 
-    [[nodiscard]] constexpr Resource&       resource() &        noexcept { return resource_; }
-    [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return resource_; }
+    [[nodiscard]] constexpr Resource& resource() & noexcept { return resource_; }
+    [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 
 private:
     // Construct the branch-I handle with Continue / Loop resolution.
@@ -2344,12 +2251,7 @@ private:
     }
 
     template <std::size_t... Is, typename Handler>
-    static constexpr auto dispatch_branch_(
-        std::size_t                 idx,
-        Resource                    res,
-        Handler                     handler,
-        std::index_sequence<Is...>)
-    {
+    static constexpr auto dispatch_branch_(std::size_t idx, Resource res, Handler handler, std::index_sequence<Is...>) {
         if (idx >= sizeof...(Branches)) [[unlikely]] {
             std::abort();  // broken protocol — no safe recovery
         }
@@ -2359,31 +2261,34 @@ private:
         // fact that we assign to a single std::optional<Result> /
         // single expression evaluation below.
         using FirstHandle = decltype(make_branch_handle_<0>(std::declval<Resource>()));
-        using Result      = std::invoke_result_t<Handler&&, FirstHandle>;
+        using Result = std::invoke_result_t<Handler&&, FirstHandle>;
 
         if constexpr (std::is_void_v<Result>) {
             // Void path — dispatch, no return value to collect.
             bool dispatched = false;
-            ([&]() {
-                if (!dispatched && idx == Is) {
-                    std::invoke(std::move(handler),
-                                make_branch_handle_<Is>(std::move(res)));
-                    dispatched = true;
-                }
-            }(), ...);
+            (
+                [&]() {
+                    if (!dispatched && idx == Is) {
+                        std::invoke(std::move(handler), make_branch_handle_<Is>(std::move(res)));
+                        dispatched = true;
+                    }
+                }(),
+                ...);
             // dispatched must be true (idx was bounds-checked above).
         } else {
             // Non-void — collect via optional emplace.
             std::optional<Result> result;
             bool dispatched = false;
-            ([&]() {
-                if (!dispatched && idx == Is) {
-                    result.emplace(std::invoke(std::move(handler),
-                                                make_branch_handle_<Is>(std::move(res))));
-                    dispatched = true;
-                }
-            }(), ...);
-            if (!result) [[unlikely]] std::abort();
+            (
+                [&]() {
+                    if (!dispatched && idx == Is) {
+                        result.emplace(std::invoke(std::move(handler), make_branch_handle_<Is>(std::move(res))));
+                        dispatched = true;
+                    }
+                }(),
+                ...);
+            if (!result) [[unlikely]]
+                std::abort();
             return std::move(*result);
         }
     }
@@ -2461,8 +2366,7 @@ template <typename Resource>
 concept SessionResource =
     !std::is_reference_v<Resource>
     || (std::is_lvalue_reference_v<Resource>
-        && std::derived_from<std::remove_reference_t<Resource>,
-                              safety::Pinned<std::remove_reference_t<Resource>>>);
+        && std::derived_from<std::remove_reference_t<Resource>, safety::Pinned<std::remove_reference_t<Resource>>>);
 
 // ─── WellFormedRunnableProtocol concept (FIXY-FOUND-079) ────────────
 //
@@ -2493,9 +2397,7 @@ concept SessionResource =
 // rejected.
 
 template <typename Proto>
-concept WellFormedRunnableProtocol =
-    is_well_formed_v<Proto> &&
-    !is_empty_choice_v<Proto>;
+concept WellFormedRunnableProtocol = is_well_formed_v<Proto> && !is_empty_choice_v<Proto>;
 
 // ═════════════════════════════════════════════════════════════════
 // ── Factory: mint_session_handle<Proto>(resource) ───────────────
@@ -2514,15 +2416,12 @@ concept WellFormedRunnableProtocol =
 
 template <typename Proto, typename Resource>
     requires WellFormedRunnableProtocol<Proto> && SessionResource<Resource>
-[[nodiscard]] constexpr auto mint_session_handle(
-    Resource r,
-    std::source_location loc = std::source_location::current()) noexcept
-{
-    static_assert(is_well_formed_v<Proto>,
-        "crucible::session::diagnostic [Protocol_Ill_Formed]: "
-        "proto: protocol is ill-formed.  Most likely cause: a Continue "
-        "appears outside any enclosing Loop<Body>.  Every Continue must "
-        "have a Loop above it in the protocol tree.");
+[[nodiscard]] constexpr auto mint_session_handle(Resource r,
+                                                 std::source_location loc = std::source_location::current()) noexcept {
+    static_assert(is_well_formed_v<Proto>, "crucible::session::diagnostic [Protocol_Ill_Formed]: "
+                                           "proto: protocol is ill-formed.  Most likely cause: a Continue "
+                                           "appears outside any enclosing Loop<Body>.  Every Continue must "
+                                           "have a Loop above it in the protocol tree.");
 
     // Reject Select<> / Offer<> with zero branches (#364).  These are
     // valid TYPE operands in subtyping theory (Gay-Hole 2005 rule:
@@ -2532,35 +2431,33 @@ template <typename Proto, typename Resource>
     // label the peer can send.  Reject at the handle boundary so
     // subtyping-level reasoning stays permissive while handle
     // construction stays safe.
-    static_assert(!is_empty_choice_v<Proto>,
-        "crucible::session::diagnostic [Empty_Choice_Combinator]: "
-        "proto: mint_session_handle<Proto> — Proto contains a "
-        "reachable empty Select<> / Offer<> / Offer<Sender<R>> "
-        "(top-level or nested under Send/Recv/Loop/branch/Delegate/"
-        "Accept).  Cannot construct a runnable handle: Select<> has "
-        "no branch for .pick<I>() to select; Offer<> has no label "
-        "the peer can signal.  The trait walks recursively (fixy-"
-        "CR-14) so nested empties are caught at mint time, not at "
-        "the eventual .pick<I>() / .recv() that hits the dead-end.  "
-        "If you intend a type-level subtyping witness, use "
-        "is_subtype_sync_v<...> directly; if you intend a runnable "
-        "handle, add at least one branch at every reachable choice "
-        "position (e.g., Select<Send<Stop, End>>).");
+    static_assert(!is_empty_choice_v<Proto>, "crucible::session::diagnostic [Empty_Choice_Combinator]: "
+                                             "proto: mint_session_handle<Proto> — Proto contains a "
+                                             "reachable empty Select<> / Offer<> / Offer<Sender<R>> "
+                                             "(top-level or nested under Send/Recv/Loop/branch/Delegate/"
+                                             "Accept).  Cannot construct a runnable handle: Select<> has "
+                                             "no branch for .pick<I>() to select; Offer<> has no label "
+                                             "the peer can signal.  The trait walks recursively (fixy-"
+                                             "CR-14) so nested empties are caught at mint time, not at "
+                                             "the eventual .pick<I>() / .recv() that hits the dead-end.  "
+                                             "If you intend a type-level subtyping witness, use "
+                                             "is_subtype_sync_v<...> directly; if you intend a runnable "
+                                             "handle, add at least one branch at every reachable choice "
+                                             "position (e.g., Select<Send<Stop, End>>).");
 
-    static_assert(SessionResource<Resource>,
-        "crucible::session::diagnostic [SessionResource_NotPinned]: "
-        "mint_session_handle<Proto, Resource>: Resource must be either "
-        "a value type (handle owns it by value) or an lvalue reference "
-        "to a type derived from safety::Pinned<T>.  An lvalue reference "
-        "to a non-Pinned object lets a subsequent move of the channel "
-        "leave live handles dangling (use-after-free).  Either: (a) "
-        "make the channel Pinned by deriving it from "
-        "safety::Pinned<ChannelType>, or (b) pass the channel by "
-        "value (copies are fine for value-like channels), or (c) wrap "
-        "the channel in std::reference_wrapper if the caller's "
-        "lifetime contract is satisfied by other means.  Rvalue-"
-        "reference Resource is also rejected — the handle would bind "
-        "to a temporary and dangle immediately on return.");
+    static_assert(SessionResource<Resource>, "crucible::session::diagnostic [SessionResource_NotPinned]: "
+                                             "mint_session_handle<Proto, Resource>: Resource must be either "
+                                             "a value type (handle owns it by value) or an lvalue reference "
+                                             "to a type derived from safety::Pinned<T>.  An lvalue reference "
+                                             "to a non-Pinned object lets a subsequent move of the channel "
+                                             "leave live handles dangling (use-after-free).  Either: (a) "
+                                             "make the channel Pinned by deriving it from "
+                                             "safety::Pinned<ChannelType>, or (b) pass the channel by "
+                                             "value (copies are fine for value-like channels), or (c) wrap "
+                                             "the channel in std::reference_wrapper if the caller's "
+                                             "lifetime contract is satisfied by other means.  Rvalue-"
+                                             "reference Resource is also rejected — the handle would bind "
+                                             "to a temporary and dangle immediately on return.");
 
     if constexpr (is_loop_v<Proto>) {
         using Body = typename Proto::body;
@@ -2572,9 +2469,8 @@ template <typename Proto, typename Resource>
         // intermediate handle.
         return detail::step_to_next<Body, Resource, Proto>(std::move(r), loc);
     } else {
-        static_assert(!std::is_same_v<Proto, Continue>,
-            "crucible::session::diagnostic [Continue_Without_Loop]: "
-            "proto: Continue cannot be the top-level protocol.");
+        static_assert(!std::is_same_v<Proto, Continue>, "crucible::session::diagnostic [Continue_Without_Loop]: "
+                                                        "proto: Continue cannot be the top-level protocol.");
         return detail::make_session_handle<Proto, Resource, void>(std::move(r), loc);
     }
 }
@@ -2588,8 +2484,8 @@ template <typename Proto, typename Resource>
 // Include SessionMint.h and call the ctx-bound overload.
 
 template <typename Proto, typename ResourceA, typename ResourceB>
-void mint_channel(ResourceA, ResourceB) noexcept
-    = delete("mint_channel<Proto>(resource_a, resource_b) is removed.  Include SessionMint.h and call mint_channel<Proto>(ctx_a, ctx_b, resource_a, resource_b) so both endpoints are row-admitted.");
+void mint_channel(ResourceA, ResourceB) noexcept = delete(
+    "mint_channel<Proto>(resource_a, resource_b) is removed.  Include SessionMint.h and call mint_channel<Proto>(ctx_a, ctx_b, resource_a, resource_b) so both endpoints are row-admitted.");
 
 // ═════════════════════════════════════════════════════════════════
 // ── Framework self-test static_asserts ──────────────────────────
@@ -2619,16 +2515,13 @@ static_assert(std::is_same_v<dual_of_t<Send<int, End>>, Recv<int, End>>);
 static_assert(std::is_same_v<dual_of_t<Recv<int, End>>, Send<int, End>>);
 static_assert(std::is_same_v<dual_of_t<Select<End, End>>, Offer<End, End>>);
 static_assert(std::is_same_v<dual_of_t<Offer<End, End>>, Select<End, End>>);
-static_assert(std::is_same_v<dual_of_t<Loop<Send<int, Continue>>>,
-                              Loop<Recv<int, Continue>>>);
+static_assert(std::is_same_v<dual_of_t<Loop<Send<int, Continue>>>, Loop<Recv<int, Continue>>>);
 
 // Duality involution (dual(dual(P)) == P) — holds on the closed
 // core (Sender-free Offer + everything else).
-static_assert(std::is_same_v<dual_of_t<dual_of_t<Send<int, End>>>,
-                              Send<int, End>>);
-static_assert(std::is_same_v<
-    dual_of_t<dual_of_t<Loop<Select<Send<int, Continue>, End>>>>,
-    Loop<Select<Send<int, Continue>, End>>>);
+static_assert(std::is_same_v<dual_of_t<dual_of_t<Send<int, End>>>, Send<int, End>>);
+static_assert(std::is_same_v<dual_of_t<dual_of_t<Loop<Select<Send<int, Continue>, End>>>>,
+                             Loop<Select<Send<int, Continue>, End>>>);
 static_assert(is_dual_involutive_v<Send<int, End>>);
 static_assert(is_dual_involutive_v<Loop<Select<Send<int, Continue>, End>>>);
 static_assert(is_dual_involutive_v<Offer<Send<int, End>, Recv<int, End>>>);
@@ -2638,43 +2531,34 @@ static_assert(is_dual_involutive_v<Offer<Send<int, End>, Recv<int, End>>>);
 // trip loses information.  Locked into CI here so any future
 // "fix" that silently restores involution will red this rail.
 namespace fixy_cr_11_involution_asymmetry {
-    struct RoleA {};
-    using Annotated = Offer<Sender<RoleA>, Recv<int, End>>;
-    using RoundTrip = dual_of_t<dual_of_t<Annotated>>;
-    using Stripped  = Offer<Recv<int, End>>;
-    static_assert(!std::is_same_v<RoundTrip, Annotated>,
-        "fixy-CR-11: dual of Sender-annotated Offer drops the role "
-        "tag; involution fails by design (residual gap).");
-    static_assert(std::is_same_v<RoundTrip, Stripped>,
-        "fixy-CR-11: the round-trip produces the un-annotated form "
-        "— locked so a future fix can replace this assertion when "
-        "Recipient<Role> on Select restores symmetry.");
-    static_assert(!is_dual_involutive_v<Annotated>,
-        "fixy-CR-11: is_dual_involutive_v reports false on Sender-"
-        "annotated Offer so generic code can refuse the protocol.");
-    static_assert(is_dual_involutive_v<Stripped>,
-        "fixy-CR-11: un-annotated Offer remains involutive.");
-}
+struct RoleA {};
+using Annotated = Offer<Sender<RoleA>, Recv<int, End>>;
+using RoundTrip = dual_of_t<dual_of_t<Annotated>>;
+using Stripped = Offer<Recv<int, End>>;
+static_assert(!std::is_same_v<RoundTrip, Annotated>, "fixy-CR-11: dual of Sender-annotated Offer drops the role "
+                                                     "tag; involution fails by design (residual gap).");
+static_assert(std::is_same_v<RoundTrip, Stripped>, "fixy-CR-11: the round-trip produces the un-annotated form "
+                                                   "— locked so a future fix can replace this assertion when "
+                                                   "Recipient<Role> on Select restores symmetry.");
+static_assert(!is_dual_involutive_v<Annotated>, "fixy-CR-11: is_dual_involutive_v reports false on Sender-"
+                                                "annotated Offer so generic code can refuse the protocol.");
+static_assert(is_dual_involutive_v<Stripped>, "fixy-CR-11: un-annotated Offer remains involutive.");
+}  // namespace fixy_cr_11_involution_asymmetry
 
 // Composition
-static_assert(std::is_same_v<compose_t<End, Send<int, End>>,
-                              Send<int, End>>);
-static_assert(std::is_same_v<
-    compose_t<Send<int, End>, Recv<bool, End>>,
-    Send<int, Recv<bool, End>>>);
-static_assert(std::is_same_v<
-    compose_t<Send<int, Select<End, End>>, Recv<bool, End>>,
-    Send<int, Select<Recv<bool, End>, Recv<bool, End>>>>);
-static_assert(std::is_same_v<
-    compose_t<Loop<Send<int, Continue>>, Recv<bool, End>>,
-    Loop<Send<int, Continue>>>);  // Continue isn't End; loop body stays closed
+static_assert(std::is_same_v<compose_t<End, Send<int, End>>, Send<int, End>>);
+static_assert(std::is_same_v<compose_t<Send<int, End>, Recv<bool, End>>, Send<int, Recv<bool, End>>>);
+static_assert(std::is_same_v<compose_t<Send<int, Select<End, End>>, Recv<bool, End>>,
+                             Send<int, Select<Recv<bool, End>, Recv<bool, End>>>>);
+static_assert(std::is_same_v<compose_t<Loop<Send<int, Continue>>, Recv<bool, End>>,
+                             Loop<Send<int, Continue>>>);  // Continue isn't End; loop body stays closed
 
 // Well-formedness
 static_assert(is_well_formed_v<End>);
 static_assert(is_well_formed_v<Send<int, End>>);
 static_assert(is_well_formed_v<Loop<Send<int, Continue>>>);
 static_assert(is_well_formed_v<Loop<Select<Send<int, Continue>, End>>>);
-static_assert(!is_well_formed_v<Continue>);             // Continue outside Loop
+static_assert(!is_well_formed_v<Continue>);  // Continue outside Loop
 static_assert(!is_well_formed_v<Send<int, Continue>>);  // Continue outside Loop
 static_assert(!is_well_formed_v<Select<Continue, End>>);
 
@@ -2695,49 +2579,38 @@ static_assert(!is_loop_v<End>);
 
 // The MPMC protocol shape is well-formed + involutive under dual.
 namespace mpmc_shape_test {
-    struct Item {};
-    using ProducerP = Loop<Select<Send<Item, Continue>, End>>;
-    using ConsumerP = dual_of_t<ProducerP>;
-    static_assert(is_well_formed_v<ProducerP>);
-    static_assert(is_well_formed_v<ConsumerP>);
-    static_assert(std::is_same_v<ConsumerP,
-        Loop<Offer<Recv<Item, Continue>, End>>>);
-    static_assert(std::is_same_v<dual_of_t<ConsumerP>, ProducerP>);
-}
+struct Item {};
+using ProducerP = Loop<Select<Send<Item, Continue>, End>>;
+using ConsumerP = dual_of_t<ProducerP>;
+static_assert(is_well_formed_v<ProducerP>);
+static_assert(is_well_formed_v<ConsumerP>);
+static_assert(std::is_same_v<ConsumerP, Loop<Offer<Recv<Item, Continue>, End>>>);
+static_assert(std::is_same_v<dual_of_t<ConsumerP>, ProducerP>);
+}  // namespace mpmc_shape_test
 
 // Request/response server shape
 namespace req_resp_test {
-    struct Req  {};
-    struct Resp {};
-    using Server = Loop<Recv<Req, Send<Resp, Continue>>>;
-    using Client = dual_of_t<Server>;
-    static_assert(std::is_same_v<Client,
-        Loop<Send<Req, Recv<Resp, Continue>>>>);
-    static_assert(is_well_formed_v<Server>);
-    static_assert(is_well_formed_v<Client>);
-}
+struct Req {};
+struct Resp {};
+using Server = Loop<Recv<Req, Send<Resp, Continue>>>;
+using Client = dual_of_t<Server>;
+static_assert(std::is_same_v<Client, Loop<Send<Req, Recv<Resp, Continue>>>>);
+static_assert(is_well_formed_v<Server>);
+static_assert(is_well_formed_v<Client>);
+}  // namespace req_resp_test
 
 // Two-phase commit coordinator shape
 namespace two_pc_test {
-    struct Prepare {};
-    struct Vote    {};
-    struct Commit  {};
-    struct Abort   {};
-    using Coord = Send<Prepare,
-                  Recv<Vote,
-                  Select<
-                      Send<Commit, End>,
-                      Send<Abort,  End>>>>;
-    using Follower = dual_of_t<Coord>;
-    static_assert(std::is_same_v<Follower,
-        Recv<Prepare,
-        Send<Vote,
-        Offer<
-            Recv<Commit, End>,
-            Recv<Abort,  End>>>>>);
-    static_assert(is_well_formed_v<Coord>);
-    static_assert(is_well_formed_v<Follower>);
-}
+struct Prepare {};
+struct Vote {};
+struct Commit {};
+struct Abort {};
+using Coord = Send<Prepare, Recv<Vote, Select<Send<Commit, End>, Send<Abort, End>>>>;
+using Follower = dual_of_t<Coord>;
+static_assert(std::is_same_v<Follower, Recv<Prepare, Send<Vote, Offer<Recv<Commit, End>, Recv<Abort, End>>>>>);
+static_assert(is_well_formed_v<Coord>);
+static_assert(is_well_formed_v<Follower>);
+}  // namespace two_pc_test
 
 // ─── FIXY-FOUND-079 SFINAE-visibility self-test ─────────────────────
 //
@@ -2755,22 +2628,24 @@ namespace two_pc_test {
 // block verifies the SOFT-FAIL (SFINAE-discriminating) path.
 
 namespace mint_sfinae_test {
-    struct FakeRes { int sentinel = 0; };
+struct FakeRes {
+    int sentinel = 0;
+};
 
-    // ── Concept-itself sanity (the load-bearing claim of FIXY-FOUND-079) ──
-    // WellFormedRunnableProtocol IS the SFINAE-visible gate; verifying
-    // the concept's truth table is sufficient because the requires-clause
-    // on mint_session_handle is exactly `WellFormedRunnableProtocol<Proto>
-    // && SessionResource<Resource>`, so overload resolution returns the
-    // same answer as the concept (modulo the resource gate).
-    static_assert(WellFormedRunnableProtocol<End>);
-    static_assert(WellFormedRunnableProtocol<Send<int, End>>);
-    static_assert(WellFormedRunnableProtocol<Loop<Send<int, Continue>>>);
-    static_assert(!WellFormedRunnableProtocol<Continue>);
-    static_assert(!WellFormedRunnableProtocol<Send<int, Continue>>);
-    static_assert(!WellFormedRunnableProtocol<Select<>>);
-    static_assert(!WellFormedRunnableProtocol<Offer<>>);
-    static_assert(!WellFormedRunnableProtocol<Loop<End>>);
+// ── Concept-itself sanity (the load-bearing claim of FIXY-FOUND-079) ──
+// WellFormedRunnableProtocol IS the SFINAE-visible gate; verifying
+// the concept's truth table is sufficient because the requires-clause
+// on mint_session_handle is exactly `WellFormedRunnableProtocol<Proto>
+// && SessionResource<Resource>`, so overload resolution returns the
+// same answer as the concept (modulo the resource gate).
+static_assert(WellFormedRunnableProtocol<End>);
+static_assert(WellFormedRunnableProtocol<Send<int, End>>);
+static_assert(WellFormedRunnableProtocol<Loop<Send<int, Continue>>>);
+static_assert(!WellFormedRunnableProtocol<Continue>);
+static_assert(!WellFormedRunnableProtocol<Send<int, Continue>>);
+static_assert(!WellFormedRunnableProtocol<Select<>>);
+static_assert(!WellFormedRunnableProtocol<Offer<>>);
+static_assert(!WellFormedRunnableProtocol<Loop<End>>);
 }  // namespace mint_sfinae_test
 
 }  // namespace detail::self_test
@@ -2797,28 +2672,33 @@ namespace mint_sfinae_test {
 
 #ifdef NDEBUG
 namespace detail::release_size_test {
-    struct OneByteRes  { char x; };
-    struct FourByteRes { int  x; };
-    struct EightByteRes { double x; };
+struct OneByteRes {
+    char x;
+};
+struct FourByteRes {
+    int x;
+};
+struct EightByteRes {
+    double x;
+};
 
-    static_assert(sizeof(SessionHandle<End, OneByteRes>) == sizeof(OneByteRes),
-        "Release-mode SessionHandle<End, OneByteRes> must equal sizeof(OneByteRes) "
-        "— the EBO must collapse SessionHandleBase to zero bytes.  If this fires, "
-        "see the comment block above the assert for remediation.");
+static_assert(sizeof(SessionHandle<End, OneByteRes>) == sizeof(OneByteRes),
+              "Release-mode SessionHandle<End, OneByteRes> must equal sizeof(OneByteRes) "
+              "— the EBO must collapse SessionHandleBase to zero bytes.  If this fires, "
+              "see the comment block above the assert for remediation.");
 
-    static_assert(sizeof(SessionHandle<End, FourByteRes>) == sizeof(FourByteRes),
-        "Release-mode SessionHandle<End, FourByteRes> must equal sizeof(FourByteRes).");
+static_assert(sizeof(SessionHandle<End, FourByteRes>) == sizeof(FourByteRes),
+              "Release-mode SessionHandle<End, FourByteRes> must equal sizeof(FourByteRes).");
 
-    static_assert(sizeof(SessionHandle<End, EightByteRes>) == sizeof(EightByteRes),
-        "Release-mode SessionHandle<End, EightByteRes> must equal sizeof(EightByteRes).");
+static_assert(sizeof(SessionHandle<End, EightByteRes>) == sizeof(EightByteRes),
+              "Release-mode SessionHandle<End, EightByteRes> must equal sizeof(EightByteRes).");
 
-    // Same property holds for non-terminal protocol states — Send, Recv,
-    // Select, Offer all derive from SessionHandleBase<Proto> and inherit
-    // the EBO collapse.
-    static_assert(sizeof(SessionHandle<Send<int, End>, FourByteRes>)
-                  == sizeof(FourByteRes),
-        "Release-mode SessionHandle<Send, FourByteRes> must equal sizeof(FourByteRes).");
-}
+// Same property holds for non-terminal protocol states — Send, Recv,
+// Select, Offer all derive from SessionHandleBase<Proto> and inherit
+// the EBO collapse.
+static_assert(sizeof(SessionHandle<Send<int, End>, FourByteRes>) == sizeof(FourByteRes),
+              "Release-mode SessionHandle<Send, FourByteRes> must equal sizeof(FourByteRes).");
+}  // namespace detail::release_size_test
 #endif  // NDEBUG
 
 }  // namespace crucible::safety::proto

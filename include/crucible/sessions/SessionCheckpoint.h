@@ -125,7 +125,7 @@ namespace crucible::safety::proto {
 
 template <typename ProtoBase, typename ProtoRollback>
 struct CheckpointedSession {
-    using base     = ProtoBase;
+    using base = ProtoBase;
     using rollback = ProtoRollback;
 };
 
@@ -138,18 +138,23 @@ template <typename B, typename R>
 struct is_checkpointed_session<CheckpointedSession<B, R>> : std::true_type {};
 
 template <typename P>
-inline constexpr bool is_checkpointed_session_v =
-    is_checkpointed_session<P>::value;
+inline constexpr bool is_checkpointed_session_v = is_checkpointed_session<P>::value;
 
 // ─── Branch extractors ────────────────────────────────────────────
 
-template <typename P> struct checkpoint_base;
+template <typename P>
+struct checkpoint_base;
 template <typename B, typename R>
-struct checkpoint_base<CheckpointedSession<B, R>> { using type = B; };
+struct checkpoint_base<CheckpointedSession<B, R>> {
+    using type = B;
+};
 
-template <typename P> struct checkpoint_rollback;
+template <typename P>
+struct checkpoint_rollback;
 template <typename B, typename R>
-struct checkpoint_rollback<CheckpointedSession<B, R>> { using type = R; };
+struct checkpoint_rollback<CheckpointedSession<B, R>> {
+    using type = R;
+};
 
 template <typename P>
 using checkpoint_base_t = typename checkpoint_base<P>::type;
@@ -166,9 +171,7 @@ using checkpoint_rollback_t = typename checkpoint_rollback<P>::type;
 
 template <typename B, typename R>
 struct dual_of<CheckpointedSession<B, R>> {
-    using type = CheckpointedSession<
-        typename dual_of<B>::type,
-        typename dual_of<R>::type>;
+    using type = CheckpointedSession<typename dual_of<B>::type, typename dual_of<R>::type>;
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -191,8 +194,7 @@ struct dual_of<CheckpointedSession<B, R>> {
 
 template <typename B, typename R>
 struct is_dual_involutive<CheckpointedSession<B, R>>
-    : std::bool_constant<is_dual_involutive<B>::value &&
-                         is_dual_involutive<R>::value> {};
+    : std::bool_constant<is_dual_involutive<B>::value && is_dual_involutive<R>::value> {};
 
 // ═════════════════════════════════════════════════════════════════════
 // ── is_empty_choice<CheckpointedSession<B, R>> (fixy-A2-004) ───────
@@ -230,8 +232,7 @@ struct is_dual_involutive<CheckpointedSession<B, R>>
 
 template <typename B, typename R>
 struct is_empty_choice<CheckpointedSession<B, R>>
-    : std::bool_constant<is_empty_choice<B>::value ||
-                         is_empty_choice<R>::value> {};
+    : std::bool_constant<is_empty_choice<B>::value || is_empty_choice<R>::value> {};
 
 // ═════════════════════════════════════════════════════════════════════
 // ── compose<CheckpointedSession<P, R>, Q> ──────────────────────────
@@ -242,9 +243,7 @@ struct is_empty_choice<CheckpointedSession<B, R>>
 
 template <typename B, typename R, typename Q>
 struct compose<CheckpointedSession<B, R>, Q> {
-    using type = CheckpointedSession<
-        typename compose<B, Q>::type,
-        typename compose<R, Q>::type>;
+    using type = CheckpointedSession<typename compose<B, Q>::type, typename compose<R, Q>::type>;
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -303,10 +302,7 @@ struct compose<CheckpointedSession<B, R>, Q> {
 
 template <typename B, typename R, typename LoopCtx>
 struct is_well_formed<CheckpointedSession<B, R>, LoopCtx>
-    : std::bool_constant<
-          is_well_formed<B, LoopCtx>::value &&
-          is_well_formed<R, LoopCtx>::value
-      > {};
+    : std::bool_constant<is_well_formed<B, LoopCtx>::value && is_well_formed<R, LoopCtx>::value> {};
 
 // ═════════════════════════════════════════════════════════════════════
 // ── is_subtype_sync: product subtyping ─────────────────────────────
@@ -319,22 +315,14 @@ struct is_well_formed<CheckpointedSession<B, R>, LoopCtx>
 // narrower base + narrower rollback is a refinement of a wider pair.
 
 template <typename B1, typename R1, typename B2, typename R2>
-struct is_subtype_sync_structural<CheckpointedSession<B1, R1>,
-                                  CheckpointedSession<B2, R2>>
-    : std::bool_constant<
-          is_subtype_sync_structural<B1, B2>::value &&
-          is_subtype_sync_structural<R1, R2>::value
-      > {};
+struct is_subtype_sync_structural<CheckpointedSession<B1, R1>, CheckpointedSession<B2, R2>>
+    : std::bool_constant<is_subtype_sync_structural<B1, B2>::value && is_subtype_sync_structural<R1, R2>::value> {};
 
 namespace detail::subtype {
 
 template <typename B1, typename R1, typename B2, typename R2>
-struct protocol_grade_satisfies<CheckpointedSession<B1, R1>,
-                                CheckpointedSession<B2, R2>>
-    : std::bool_constant<
-          protocol_grade_satisfies<B1, B2>::value &&
-          protocol_grade_satisfies<R1, R2>::value
-      > {};
+struct protocol_grade_satisfies<CheckpointedSession<B1, R1>, CheckpointedSession<B2, R2>>
+    : std::bool_constant<protocol_grade_satisfies<B1, B2>::value && protocol_grade_satisfies<R1, R2>::value> {};
 
 }  // namespace detail::subtype
 
@@ -384,8 +372,7 @@ struct protocol_grade_satisfies<CheckpointedSession<B1, R1>,
 
 template <typename B, typename R>
 struct is_terminal_state<CheckpointedSession<B, R>>
-    : std::bool_constant<is_terminal_state<B>::value &&
-                         is_terminal_state<R>::value> {};
+    : std::bool_constant<is_terminal_state<B>::value && is_terminal_state<R>::value> {};
 
 // ═════════════════════════════════════════════════════════════════════
 // ── all_offers_have_crash_branch<CheckpointedSession<B, R>, Peer> ──
@@ -422,10 +409,8 @@ namespace detail::crash {
 
 template <typename B, typename R, typename PeerTag>
 struct all_offers_have_crash_branch<CheckpointedSession<B, R>, PeerTag>
-    : std::bool_constant<
-          all_offers_have_crash_branch<B, PeerTag>::value &&
-          all_offers_have_crash_branch<R, PeerTag>::value
-      > {};
+    : std::bool_constant<all_offers_have_crash_branch<B, PeerTag>::value
+                         && all_offers_have_crash_branch<R, PeerTag>::value> {};
 
 }  // namespace detail::crash
 
@@ -439,14 +424,10 @@ struct all_offers_have_crash_branch<CheckpointedSession<B, R>, PeerTag>
 // Neither transition is silently automatic — both require an
 // explicit method call that consumes *this.
 
-template <typename ProtoBase, typename ProtoRollback,
-          typename Resource, typename LoopCtx>
-class [[nodiscard]] SessionHandle<CheckpointedSession<ProtoBase, ProtoRollback>,
-                                   Resource, LoopCtx>
+template <typename ProtoBase, typename ProtoRollback, typename Resource, typename LoopCtx>
+class [[nodiscard]] SessionHandle<CheckpointedSession<ProtoBase, ProtoRollback>, Resource, LoopCtx>
     : public SessionHandleBase<CheckpointedSession<ProtoBase, ProtoRollback>,
-                               SessionHandle<CheckpointedSession<ProtoBase, ProtoRollback>,
-                                             Resource, LoopCtx>>
-{
+                               SessionHandle<CheckpointedSession<ProtoBase, ProtoRollback>, Resource, LoopCtx>> {
     Resource resource_;
 
     template <typename P, typename R, typename L>
@@ -457,40 +438,34 @@ class [[nodiscard]] SessionHandle<CheckpointedSession<ProtoBase, ProtoRollback>,
     // <...>, Res, Ctx>{res}` is rejected ("is private"), so
     // mint_session_handle / step_to_next gates cannot be bypassed.
     template <typename FProto, typename FRes, typename FLoop>
-    friend constexpr auto detail::make_session_handle(FRes, std::source_location)
-        noexcept(std::is_nothrow_move_constructible_v<FRes>)
-        -> SessionHandle<FProto, FRes, FLoop>;
+    friend constexpr auto
+        detail::make_session_handle(FRes, std::source_location) noexcept(std::is_nothrow_move_constructible_v<FRes>)
+            -> SessionHandle<FProto, FRes, FLoop>;
 
     // ── Construction (used by detail::make_session_handle only) ────
-    constexpr explicit SessionHandle(
-        Resource r,
-        std::source_location loc = std::source_location::current())
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
+    constexpr explicit SessionHandle(Resource r, std::source_location loc = std::source_location::current()) noexcept(
+        std::is_nothrow_move_constructible_v<Resource>)
         : SessionHandleBase<CheckpointedSession<ProtoBase, ProtoRollback>,
-                            SessionHandle<CheckpointedSession<ProtoBase, ProtoRollback>,
-                                          Resource, LoopCtx>>{loc}
-        , resource_{std::move(r)} {}
+                            SessionHandle<CheckpointedSession<ProtoBase, ProtoRollback>, Resource, LoopCtx>>{loc},
+          resource_{std::move(r)} {}
 
 public:
-    using protocol         = CheckpointedSession<ProtoBase, ProtoRollback>;
-    using base_protocol    = ProtoBase;
+    using protocol = CheckpointedSession<ProtoBase, ProtoRollback>;
+    using base_protocol = ProtoBase;
     using rollback_protocol = ProtoRollback;
-    using resource_type    = Resource;
-    using loop_ctx         = LoopCtx;
+    using resource_type = Resource;
+    using loop_ctx = LoopCtx;
 
-    constexpr SessionHandle(SessionHandle&&) noexcept            = default;
+    constexpr SessionHandle(SessionHandle&&) noexcept = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
-    ~SessionHandle()                                             = default;
+    ~SessionHandle() = default;
 
     // Pick the BASE (normal, "commit") path.  Consumes *this and
     // returns a handle advanced to ProtoBase.  Loop/Continue
     // resolution applied by step_to_next.
-    [[nodiscard]] constexpr auto base() &&
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-    {
+    [[nodiscard]] constexpr auto base() && noexcept(std::is_nothrow_move_constructible_v<Resource>) {
         this->mark_consumed_();
-        return detail::step_to_next<ProtoBase, Resource, LoopCtx>(
-            std::move(resource_));
+        return detail::step_to_next<ProtoBase, Resource, LoopCtx>(std::move(resource_));
     }
 
     // Pick the ROLLBACK (abort/retry) path.  Consumes *this and
@@ -498,17 +473,14 @@ public:
     // is responsible for restoring any checkpointed state before
     // calling this — the framework does NOT automatically manage
     // runtime state; only the protocol typing.
-    [[nodiscard]] constexpr auto rollback() &&
-        noexcept(std::is_nothrow_move_constructible_v<Resource>)
-    {
+    [[nodiscard]] constexpr auto rollback() && noexcept(std::is_nothrow_move_constructible_v<Resource>) {
         this->mark_consumed_();
-        return detail::step_to_next<ProtoRollback, Resource, LoopCtx>(
-            std::move(resource_));
+        return detail::step_to_next<ProtoRollback, Resource, LoopCtx>(std::move(resource_));
     }
 
     // Diagnostic borrows — do NOT consume the handle.
-    [[nodiscard]] constexpr Resource&       resource() &        noexcept { return resource_; }
-    [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return resource_; }
+    [[nodiscard]] constexpr Resource& resource() & noexcept { return resource_; }
+    [[nodiscard]] constexpr const Resource& resource() const& noexcept { return resource_; }
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -523,17 +495,16 @@ concept Checkpointed = is_checkpointed_session_v<P>;
 // boundary function signatures.
 template <typename P, typename ExpectedBase, typename ExpectedRollback>
 consteval void assert_checkpointed_matches() noexcept {
-    static_assert(is_checkpointed_session_v<P>,
-        "crucible::session::diagnostic [ProtocolViolation_State]: "
-        "assert_checkpointed_matches: P is not a CheckpointedSession.");
+    static_assert(is_checkpointed_session_v<P>, "crucible::session::diagnostic [ProtocolViolation_State]: "
+                                                "assert_checkpointed_matches: P is not a CheckpointedSession.");
     static_assert(std::is_same_v<checkpoint_base_t<P>, ExpectedBase>,
-        "crucible::session::diagnostic [ProtocolViolation_State]: "
-        "assert_checkpointed_matches: base branch does not match "
-        "ExpectedBase.");
+                  "crucible::session::diagnostic [ProtocolViolation_State]: "
+                  "assert_checkpointed_matches: base branch does not match "
+                  "ExpectedBase.");
     static_assert(std::is_same_v<checkpoint_rollback_t<P>, ExpectedRollback>,
-        "crucible::session::diagnostic [ProtocolViolation_State]: "
-        "assert_checkpointed_matches: rollback branch does not match "
-        "ExpectedRollback.");
+                  "crucible::session::diagnostic [ProtocolViolation_State]: "
+                  "assert_checkpointed_matches: rollback branch does not match "
+                  "ExpectedRollback.");
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -545,23 +516,23 @@ namespace detail::checkpoint_self_test {
 
 // ─── Fixture protocols ─────────────────────────────────────────────
 
-struct Request  {};
+struct Request {};
 struct Response {};
-struct Error    {};
+struct Error {};
 
-using CommitPath   = Send<Request, Recv<Response, End>>;
+using CommitPath = Send<Request, Recv<Response, End>>;
 using RollbackPath = Send<Request, Recv<Error, End>>;
 
 using CkptSession = CheckpointedSession<CommitPath, RollbackPath>;
 
 // ─── Shape traits ─────────────────────────────────────────────────
 
-static_assert( is_checkpointed_session_v<CkptSession>);
+static_assert(is_checkpointed_session_v<CkptSession>);
 static_assert(!is_checkpointed_session_v<End>);
 static_assert(!is_checkpointed_session_v<Send<int, End>>);
 static_assert(!is_checkpointed_session_v<Select<End, End>>);
 
-static_assert(std::is_same_v<checkpoint_base_t<CkptSession>,     CommitPath>);
+static_assert(std::is_same_v<checkpoint_base_t<CkptSession>, CommitPath>);
 static_assert(std::is_same_v<checkpoint_rollback_t<CkptSession>, RollbackPath>);
 
 // is_head_v inherited from Session.h — CheckpointedSession is not Loop,
@@ -571,9 +542,8 @@ static_assert(is_head_v<CkptSession>);
 // ─── Duality ──────────────────────────────────────────────────────
 
 // Both branches dualise.
-static_assert(std::is_same_v<
-    dual_of_t<CkptSession>,
-    CheckpointedSession<dual_of_t<CommitPath>, dual_of_t<RollbackPath>>>);
+static_assert(
+    std::is_same_v<dual_of_t<CkptSession>, CheckpointedSession<dual_of_t<CommitPath>, dual_of_t<RollbackPath>>>);
 
 // Involution.
 static_assert(std::is_same_v<dual_of_t<dual_of_t<CkptSession>>, CkptSession>);
@@ -583,23 +553,17 @@ static_assert(std::is_same_v<dual_of_t<dual_of_t<CkptSession>>, CkptSession>);
 using After = Send<int, End>;
 
 // compose extends BOTH branches.
-static_assert(std::is_same_v<
-    compose_t<CkptSession, After>,
-    CheckpointedSession<
-        compose_t<CommitPath,   After>,
-        compose_t<RollbackPath, After>>>);
+static_assert(std::is_same_v<compose_t<CkptSession, After>,
+                             CheckpointedSession<compose_t<CommitPath, After>, compose_t<RollbackPath, After>>>);
 
 // Compose-identity: compose<Ckpt, End> == Ckpt.
-static_assert(std::is_same_v<
-    compose_t<CkptSession, End>,
-    CkptSession>);
+static_assert(std::is_same_v<compose_t<CkptSession, End>, CkptSession>);
 
 // Dual / compose commute:
 //   dual(compose(C, Q)) == compose(dual(C), dual(Q))
 // This is the load-bearing reason for the "extend both" compose rule.
-static_assert(std::is_same_v<
-    dual_of_t<compose_t<CkptSession, After>>,
-    compose_t<dual_of_t<CkptSession>, dual_of_t<After>>>);
+static_assert(
+    std::is_same_v<dual_of_t<compose_t<CkptSession, After>>, compose_t<dual_of_t<CkptSession>, dual_of_t<After>>>);
 
 // ─── Well-formedness ──────────────────────────────────────────────
 
@@ -613,9 +577,7 @@ using CkptWithBadRollback = CheckpointedSession<End, Continue>;
 static_assert(!is_well_formed_v<CkptWithBadRollback>);
 
 // Inside a Loop, Continue in either branch is well-formed.
-using CkptInsideLoop = Loop<CheckpointedSession<
-    Send<int, Continue>,
-    Send<int, End>>>;
+using CkptInsideLoop = Loop<CheckpointedSession<Send<int, Continue>, Send<int, End>>>;
 static_assert(is_well_formed_v<CkptInsideLoop>);
 
 // ─── Terminal-state classification (fixy-A2-029) ──────────────────
@@ -635,29 +597,23 @@ static_assert(is_terminal_state_v<CheckpointedSession<Stop, Stop>>);
 
 // Mixed-tier crash terminals — Stop_g<Abort> ≠ Stop_g<Throw>, but both
 // are terminal under the Stop_g<C> spec at SessionCrash.h:183.
-static_assert(is_terminal_state_v<CheckpointedSession<
-    Stop_g<CrashClass::Abort>, Stop_g<CrashClass::Throw>>>);
+static_assert(is_terminal_state_v<CheckpointedSession<Stop_g<CrashClass::Abort>, Stop_g<CrashClass::Throw>>>);
 
 // VendorPinned-wrapped terminal recurses via
 // is_terminal_state<VendorPinned<V, P>> at Session.h:1135.
-static_assert(is_terminal_state_v<CheckpointedSession<
-    VendorPinned<VendorBackend::NV, End>, End>>);
-static_assert(is_terminal_state_v<CheckpointedSession<
-    End, VendorPinned<VendorBackend::AMD, Stop>>>);
+static_assert(is_terminal_state_v<CheckpointedSession<VendorPinned<VendorBackend::NV, End>, End>>);
+static_assert(is_terminal_state_v<CheckpointedSession<End, VendorPinned<VendorBackend::AMD, Stop>>>);
 
 // Non-terminal base — handle still owes the peer a Send before close.
 static_assert(!is_terminal_state_v<CheckpointedSession<Send<int, End>, End>>);
 // Non-terminal rollback — symmetric.
 static_assert(!is_terminal_state_v<CheckpointedSession<End, Recv<int, End>>>);
 // Both branches carry work.
-static_assert(!is_terminal_state_v<CheckpointedSession<
-    Send<int, End>, Recv<int, End>>>);
+static_assert(!is_terminal_state_v<CheckpointedSession<Send<int, End>, Recv<int, End>>>);
 // Choice combinator at either branch is non-terminal — handle still
 // owes a .pick<I>() / .offer().
-static_assert(!is_terminal_state_v<CheckpointedSession<
-    Select<Send<int, End>>, End>>);
-static_assert(!is_terminal_state_v<CheckpointedSession<
-    End, Offer<Recv<int, End>>>>);
+static_assert(!is_terminal_state_v<CheckpointedSession<Select<Send<int, End>>, End>>);
+static_assert(!is_terminal_state_v<CheckpointedSession<End, Offer<Recv<int, End>>>>);
 
 // Loop<CheckpointedSession<End, End>> is now ill-formed because the
 // trait correctly classifies the body as terminal — closes the silent
@@ -674,12 +630,10 @@ using NarrowerCommit = Send<Request, Recv<Response, End>>;  // same in this case
 // Construct a genuinely-narrower base via Select narrowing.
 struct MsgA {};
 struct MsgB {};
-using WiderSelectCkpt = CheckpointedSession<
-    Select<Send<MsgA, End>, Send<MsgB, End>>,  // 2-branch Select
-    End>;
-using NarrowerSelectCkpt = CheckpointedSession<
-    Select<Send<MsgA, End>>,                    // 1-branch Select
-    End>;
+using WiderSelectCkpt = CheckpointedSession<Select<Send<MsgA, End>, Send<MsgB, End>>,  // 2-branch Select
+                                            End>;
+using NarrowerSelectCkpt = CheckpointedSession<Select<Send<MsgA, End>>,  // 1-branch Select
+                                               End>;
 
 // NarrowerSelect IS a subtype of WiderSelect (per Gay-Hole: fewer
 // Select branches is a subtype).  Product subtyping lifts this.
@@ -697,7 +651,9 @@ static_assert(!is_subtype_sync_v<End, CkptSession>);
 
 template <typename P>
     requires Checkpointed<P>
-consteval bool requires_checkpointed() { return true; }
+consteval bool requires_checkpointed() {
+    return true;
+}
 static_assert(requires_checkpointed<CkptSession>());
 
 consteval bool check_assert_matches() {
@@ -712,16 +668,11 @@ static_assert(check_assert_matches());
 // checkpoint whose base is itself a checkpointed session.  Well-formed,
 // dualises correctly, composes correctly.
 
-using NestedCkpt = CheckpointedSession<
-    CheckpointedSession<Send<int, End>, Send<bool, End>>,
-    End>;
+using NestedCkpt = CheckpointedSession<CheckpointedSession<Send<int, End>, Send<bool, End>>, End>;
 
 static_assert(is_well_formed_v<NestedCkpt>);
-static_assert(std::is_same_v<
-    dual_of_t<NestedCkpt>,
-    CheckpointedSession<
-        CheckpointedSession<Recv<int, End>, Recv<bool, End>>,
-        End>>);
+static_assert(std::is_same_v<dual_of_t<NestedCkpt>,
+                             CheckpointedSession<CheckpointedSession<Recv<int, End>, Recv<bool, End>>, End>>);
 
 // Involution through nesting.
 static_assert(std::is_same_v<dual_of_t<dual_of_t<NestedCkpt>>, NestedCkpt>);
@@ -732,62 +683,52 @@ static_assert(std::is_same_v<dual_of_t<dual_of_t<NestedCkpt>>, NestedCkpt>);
 // composite (the conservative B ∧ R conjunction matches
 // Session.h:680-684's policy on Sender-annotated Offer).
 namespace fixy_a2_003_is_dual_involutive_checkpointed {
-    struct RoleA {};
-    using InvolutiveBoth =
-        CheckpointedSession<Send<int, End>, Recv<int, End>>;
-    static_assert(is_dual_involutive_v<InvolutiveBoth>);
+struct RoleA {};
+using InvolutiveBoth = CheckpointedSession<Send<int, End>, Recv<int, End>>;
+static_assert(is_dual_involutive_v<InvolutiveBoth>);
 
-    using NonInvBase =
-        CheckpointedSession<Offer<Sender<RoleA>, Recv<int, End>>, End>;
-    static_assert(!is_dual_involutive_v<NonInvBase>);
+using NonInvBase = CheckpointedSession<Offer<Sender<RoleA>, Recv<int, End>>, End>;
+static_assert(!is_dual_involutive_v<NonInvBase>);
 
-    using NonInvRecovery =
-        CheckpointedSession<End, Offer<Sender<RoleA>, Recv<int, End>>>;
-    static_assert(!is_dual_involutive_v<NonInvRecovery>);
+using NonInvRecovery = CheckpointedSession<End, Offer<Sender<RoleA>, Recv<int, End>>>;
+static_assert(!is_dual_involutive_v<NonInvRecovery>);
 
-    using NestedCkptInvolutive = CheckpointedSession<NestedCkpt, End>;
-    static_assert(is_dual_involutive_v<NestedCkptInvolutive>);
-}
+using NestedCkptInvolutive = CheckpointedSession<NestedCkpt, End>;
+static_assert(is_dual_involutive_v<NestedCkptInvolutive>);
+}  // namespace fixy_a2_003_is_dual_involutive_checkpointed
 
 // fixy-A2-004 — is_empty_choice distributes disjunctively over BOTH
 // branches.  Empty Select<>/Offer<> in EITHER B or R is a defect
 // because both arms execute at runtime (Try(B) | RollbackTo(R)), so
 // the mint-gate reachability invariant rejects either-branch defects.
 namespace fixy_a2_004_is_empty_choice_checkpointed {
-    // Pure, no empty Choice in either branch.
-    using HealthyCkpt =
-        CheckpointedSession<Send<int, End>, Recv<int, End>>;
-    static_assert(!is_empty_choice_v<HealthyCkpt>);
+// Pure, no empty Choice in either branch.
+using HealthyCkpt = CheckpointedSession<Send<int, End>, Recv<int, End>>;
+static_assert(!is_empty_choice_v<HealthyCkpt>);
 
-    // Empty Select<> in base branch — defect surfaces.
-    using EmptySelectInBase =
-        CheckpointedSession<Select<>, End>;
-    static_assert(is_empty_choice_v<EmptySelectInBase>);
+// Empty Select<> in base branch — defect surfaces.
+using EmptySelectInBase = CheckpointedSession<Select<>, End>;
+static_assert(is_empty_choice_v<EmptySelectInBase>);
 
-    // Empty Offer<> in recovery branch — defect surfaces symmetrically.
-    using EmptyOfferInRecovery =
-        CheckpointedSession<End, Offer<>>;
-    static_assert(is_empty_choice_v<EmptyOfferInRecovery>);
+// Empty Offer<> in recovery branch — defect surfaces symmetrically.
+using EmptyOfferInRecovery = CheckpointedSession<End, Offer<>>;
+static_assert(is_empty_choice_v<EmptyOfferInRecovery>);
 
-    // Buried inside Send/Recv continuation — recursive primary spec
-    // already handles Send<_, K> / Recv<_, K> via is_empty_choice<K>,
-    // so the CheckpointedSession layer projects through cleanly.
-    using BuriedEmpty =
-        CheckpointedSession<Send<int, Select<>>, End>;
-    static_assert(is_empty_choice_v<BuriedEmpty>);
+// Buried inside Send/Recv continuation — recursive primary spec
+// already handles Send<_, K> / Recv<_, K> via is_empty_choice<K>,
+// so the CheckpointedSession layer projects through cleanly.
+using BuriedEmpty = CheckpointedSession<Send<int, Select<>>, End>;
+static_assert(is_empty_choice_v<BuriedEmpty>);
 
-    // Loop-wrapped empty Choice in recovery branch.
-    using LoopEmptyRecovery =
-        CheckpointedSession<End, Loop<Offer<>>>;
-    static_assert(is_empty_choice_v<LoopEmptyRecovery>);
+// Loop-wrapped empty Choice in recovery branch.
+using LoopEmptyRecovery = CheckpointedSession<End, Loop<Offer<>>>;
+static_assert(is_empty_choice_v<LoopEmptyRecovery>);
 
-    // Nested CheckpointedSession with empty Choice in INNERMOST base —
-    // disjunction propagates outward through both levels.
-    using NestedEmpty = CheckpointedSession<
-        CheckpointedSession<Select<>, End>,
-        End>;
-    static_assert(is_empty_choice_v<NestedEmpty>);
-}
+// Nested CheckpointedSession with empty Choice in INNERMOST base —
+// disjunction propagates outward through both levels.
+using NestedEmpty = CheckpointedSession<CheckpointedSession<Select<>, End>, End>;
+static_assert(is_empty_choice_v<NestedEmpty>);
+}  // namespace fixy_a2_004_is_empty_choice_checkpointed
 
 }  // namespace detail::checkpoint_self_test
 #endif  // CRUCIBLE_SESSION_SELF_TESTS

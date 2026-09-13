@@ -53,15 +53,13 @@ namespace detail {
 template <typename T>
 struct is_owned_region_impl : std::false_type {
     using value_type = void;
-    using tag_type   = void;
+    using tag_type = void;
 };
 
 template <typename T, typename Tag>
-struct is_owned_region_impl<::crucible::safety::OwnedRegion<T, Tag>>
-    : std::true_type
-{
+struct is_owned_region_impl<::crucible::safety::OwnedRegion<T, Tag>> : std::true_type {
     using value_type = T;
-    using tag_type   = Tag;
+    using tag_type = Tag;
 };
 
 }  // namespace detail
@@ -71,8 +69,7 @@ struct is_owned_region_impl<::crucible::safety::OwnedRegion<T, Tag>>
 // ═════════════════════════════════════════════════════════════════════
 
 template <typename T>
-inline constexpr bool is_owned_region_v =
-    detail::is_owned_region_impl<std::remove_cvref_t<T>>::value;
+inline constexpr bool is_owned_region_v = detail::is_owned_region_impl<std::remove_cvref_t<T>>::value;
 
 template <typename T>
 concept IsOwnedRegion = is_owned_region_v<T>;
@@ -83,13 +80,11 @@ concept IsOwnedRegion = is_owned_region_v<T>;
 
 template <typename T>
     requires is_owned_region_v<T>
-using owned_region_value_t =
-    typename detail::is_owned_region_impl<std::remove_cvref_t<T>>::value_type;
+using owned_region_value_t = typename detail::is_owned_region_impl<std::remove_cvref_t<T>>::value_type;
 
 template <typename T>
     requires is_owned_region_v<T>
-using owned_region_tag_t =
-    typename detail::is_owned_region_impl<std::remove_cvref_t<T>>::tag_type;
+using owned_region_tag_t = typename detail::is_owned_region_impl<std::remove_cvref_t<T>>::tag_type;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Self-test block ────────────────────────────────────────────────
@@ -104,9 +99,9 @@ namespace detail::is_owned_region_self_test {
 struct test_tag_a {};
 struct test_tag_b {};
 
-using OR_int_a    = ::crucible::safety::OwnedRegion<int, test_tag_a>;
+using OR_int_a = ::crucible::safety::OwnedRegion<int, test_tag_a>;
 using OR_double_a = ::crucible::safety::OwnedRegion<double, test_tag_a>;
-using OR_int_b    = ::crucible::safety::OwnedRegion<int, test_tag_b>;
+using OR_int_b = ::crucible::safety::OwnedRegion<int, test_tag_b>;
 
 // ── Positive cases ────────────────────────────────────────────────
 
@@ -130,7 +125,10 @@ static_assert(!is_owned_region_v<void>);
 static_assert(!is_owned_region_v<test_tag_a>);
 
 // A struct that has the same shape but is not OwnedRegion is rejected.
-struct LookalikeRegion { int* base; std::size_t count; };
+struct LookalikeRegion {
+    int* base;
+    std::size_t count;
+};
 static_assert(!is_owned_region_v<LookalikeRegion>);
 
 // ── Concept form ─────────────────────────────────────────────────
@@ -147,19 +145,13 @@ static_assert(std::is_same_v<owned_region_tag_t<OR_int_a>, test_tag_a>);
 static_assert(std::is_same_v<owned_region_tag_t<OR_int_b>, test_tag_b>);
 
 // Cv-ref stripping — value_type / tag_type both unwrap.
-static_assert(std::is_same_v<
-    owned_region_value_t<OR_int_a const&>, int>);
-static_assert(std::is_same_v<
-    owned_region_tag_t<OR_int_a&&>, test_tag_a>);
+static_assert(std::is_same_v<owned_region_value_t<OR_int_a const&>, int>);
+static_assert(std::is_same_v<owned_region_tag_t<OR_int_a&&>, test_tag_a>);
 
 // Distinct (T, Tag) → distinct trait specializations; element types
 // agree only when they actually do.
-static_assert(std::is_same_v<
-    owned_region_value_t<OR_int_a>,
-    owned_region_value_t<OR_int_b>>);
-static_assert(!std::is_same_v<
-    owned_region_tag_t<OR_int_a>,
-    owned_region_tag_t<OR_int_b>>);
+static_assert(std::is_same_v<owned_region_value_t<OR_int_a>, owned_region_value_t<OR_int_b>>);
+static_assert(!std::is_same_v<owned_region_tag_t<OR_int_a>, owned_region_tag_t<OR_int_b>>);
 
 }  // namespace detail::is_owned_region_self_test
 

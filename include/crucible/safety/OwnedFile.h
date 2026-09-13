@@ -71,14 +71,15 @@ public:
         // Dtor swallows fclose errors — see close_explicit() for the
         // diagnostic variant.  Standard practice: errors during dtor
         // are unactionable (already on the cleanup path).
-        if (fp_ != nullptr) { (void)std::fclose(fp_); }
+        if (fp_ != nullptr) {
+            (void)std::fclose(fp_);
+        }
     }
 
-    OwnedFile(const OwnedFile&)            = delete("FILE* is unique; copy would double-close on destruction");
+    OwnedFile(const OwnedFile&) = delete("FILE* is unique; copy would double-close on destruction");
     OwnedFile& operator=(const OwnedFile&) = delete("FILE* is unique; copy would double-close on destruction");
 
-    OwnedFile(OwnedFile&& other) noexcept
-        : fp_{std::exchange(other.fp_, nullptr)} {}
+    OwnedFile(OwnedFile&& other) noexcept : fp_{std::exchange(other.fp_, nullptr)} {}
 
     OwnedFile& operator=(OwnedFile&& other) noexcept {
         if (this != &other) {
@@ -89,8 +90,8 @@ public:
     }
 
     // ── Observation surface ────────────────────────────────────────
-    [[nodiscard]] bool       is_open() const noexcept { return fp_ != nullptr; }
-    explicit operator        bool()    const noexcept { return fp_ != nullptr; }
+    [[nodiscard]] bool is_open() const noexcept { return fp_ != nullptr; }
+    explicit operator bool() const noexcept { return fp_ != nullptr; }
 
     // Borrow the raw FILE* — for handing into stdio API calls
     // (fread / fwrite / fseek / ftell / feof / ferror).  Caller must
@@ -100,9 +101,7 @@ public:
 
     // Yield ownership — caller becomes responsible for fclose().
     // Returns the raw FILE* and leaves *this in the no-op-dtor state.
-    [[nodiscard]] std::FILE* release() noexcept {
-        return std::exchange(fp_, nullptr);
-    }
+    [[nodiscard]] std::FILE* release() noexcept { return std::exchange(fp_, nullptr); }
 
     // Explicit close returning errno on failure.  The dtor swallows
     // errors; callers who need to know whether the buffer flushed
@@ -116,7 +115,6 @@ public:
     }
 };
 
-static_assert(sizeof(OwnedFile) == sizeof(std::FILE*),
-              "OwnedFile must be a zero-cost FILE* wrapper");
+static_assert(sizeof(OwnedFile) == sizeof(std::FILE*), "OwnedFile must be a zero-cost FILE* wrapper");
 
 }  // namespace crucible::safety

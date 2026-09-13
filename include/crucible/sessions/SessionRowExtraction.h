@@ -129,8 +129,7 @@ struct payload_row_effect {
 };
 
 template <::crucible::safety::Tolerance Tier, class InnerRow>
-struct payload_row_effect<NumericalPayloadRow<Tier, InnerRow>>
-    : payload_row_effect<InnerRow> {};
+struct payload_row_effect<NumericalPayloadRow<Tier, InnerRow>> : payload_row_effect<InnerRow> {};
 
 template <class PayloadRow>
 using payload_row_effect_t = typename payload_row_effect<PayloadRow>::type;
@@ -169,47 +168,38 @@ struct payload_row<::crucible::effects::Capability<E, S>> {
 // T at the bottom of the chain.
 
 template <auto Pred, class T>
-struct payload_row<::crucible::safety::Refined<Pred, T>>
-    : payload_row<T> {};
+struct payload_row<::crucible::safety::Refined<Pred, T>> : payload_row<T> {};
 
 template <auto Pred, class T>
-struct payload_row<::crucible::safety::SealedRefined<Pred, T>>
-    : payload_row<T> {};
+struct payload_row<::crucible::safety::SealedRefined<Pred, T>> : payload_row<T> {};
 
 template <class T, class Tag>
-struct payload_row<::crucible::safety::Tagged<T, Tag>>
-    : payload_row<T> {};
+struct payload_row<::crucible::safety::Tagged<T, Tag>> : payload_row<T> {};
 
 template <class T>
-struct payload_row<::crucible::safety::Linear<T>>
-    : payload_row<T> {};
+struct payload_row<::crucible::safety::Linear<T>> : payload_row<T> {};
 
 template <class T>
-struct payload_row<::crucible::safety::Stale<T>>
-    : payload_row<T> {};
+struct payload_row<::crucible::safety::Stale<T>> : payload_row<T> {};
 
 // ContentAddressed<T> is a session-level payload marker that quotients
 // payloads by content hash (Appendix D.5).  It carries no effects of
 // its own — the underlying T is what carries the row.  Transparent
 // unwrap.
 template <class T>
-struct payload_row<ContentAddressed<T>>
-    : payload_row<T> {};
+struct payload_row<ContentAddressed<T>> : payload_row<T> {};
 
 // Permission-flow payload markers are transparent for row accounting:
 // the wrapper moves or borrows CSL authority, while the carried value T
 // is still the thing whose effect row must be admitted by the ctx.
 template <class T, class Tag>
-struct payload_row<Transferable<T, Tag>>
-    : payload_row<T> {};
+struct payload_row<Transferable<T, Tag>> : payload_row<T> {};
 
 template <class T, class Tag>
-struct payload_row<Borrowed<T, Tag>>
-    : payload_row<T> {};
+struct payload_row<Borrowed<T, Tag>> : payload_row<T> {};
 
 template <class T, class Tag>
-struct payload_row<Returned<T, Tag>>
-    : payload_row<T> {};
+struct payload_row<Returned<T, Tag>> : payload_row<T> {};
 
 // ── Single-axis policy wrappers (chain-lattice family) ─────────────
 //
@@ -226,28 +216,28 @@ struct payload_row<Returned<T, Tag>>
 // admitting the protocol on a HotFgCtx (Row<>) that should reject it.
 
 template <auto V, class T>
-struct payload_row<::crucible::safety::HotPath<V, T>>        : payload_row<T> {};
+struct payload_row<::crucible::safety::HotPath<V, T>> : payload_row<T> {};
 
 template <auto V, class T>
-struct payload_row<::crucible::safety::DetSafe<V, T>>        : payload_row<T> {};
+struct payload_row<::crucible::safety::DetSafe<V, T>> : payload_row<T> {};
 
 template <auto V, class T>
-struct payload_row<::crucible::safety::AllocClass<V, T>>     : payload_row<T> {};
+struct payload_row<::crucible::safety::AllocClass<V, T>> : payload_row<T> {};
 
 template <auto V, class T>
-struct payload_row<::crucible::safety::ResidencyHeat<V, T>>  : payload_row<T> {};
+struct payload_row<::crucible::safety::ResidencyHeat<V, T>> : payload_row<T> {};
 
 template <auto V, class T>
-struct payload_row<::crucible::safety::CipherTier<V, T>>     : payload_row<T> {};
+struct payload_row<::crucible::safety::CipherTier<V, T>> : payload_row<T> {};
 
 template <auto V, class T>
-struct payload_row<::crucible::safety::MemOrder<V, T>>       : payload_row<T> {};
+struct payload_row<::crucible::safety::MemOrder<V, T>> : payload_row<T> {};
 
 template <auto V, class T>
-struct payload_row<::crucible::safety::Wait<V, T>>           : payload_row<T> {};
+struct payload_row<::crucible::safety::Wait<V, T>> : payload_row<T> {};
 
 template <auto V, class T>
-struct payload_row<::crucible::safety::Progress<V, T>>       : payload_row<T> {};
+struct payload_row<::crucible::safety::Progress<V, T>> : payload_row<T> {};
 
 template <::crucible::safety::Tolerance V, class T>
 struct payload_row<::crucible::safety::NumericalTier<V, T>> {
@@ -255,13 +245,13 @@ struct payload_row<::crucible::safety::NumericalTier<V, T>> {
 };
 
 template <auto V, class T>
-struct payload_row<::crucible::safety::Vendor<V, T>>         : payload_row<T> {};
+struct payload_row<::crucible::safety::Vendor<V, T>> : payload_row<T> {};
 
 template <auto V, class T>
-struct payload_row<::crucible::safety::Crash<V, T>>          : payload_row<T> {};
+struct payload_row<::crucible::safety::Crash<V, T>> : payload_row<T> {};
 
 template <auto V, class T>
-struct payload_row<::crucible::safety::Consistency<V, T>>    : payload_row<T> {};
+struct payload_row<::crucible::safety::Consistency<V, T>> : payload_row<T> {};
 
 template <auto V, class T>
 struct payload_row<::crucible::safety::OpaqueLifetime<V, T>> : payload_row<T> {};
@@ -273,19 +263,19 @@ struct payload_row<::crucible::safety::OpaqueLifetime<V, T>> : payload_row<T> {}
 // the underlying T.
 
 template <class T>
-struct payload_row<::crucible::safety::Secret<T>>            : payload_row<T> {};
+struct payload_row<::crucible::safety::Secret<T>> : payload_row<T> {};
 
 template <class T>
-struct payload_row<::crucible::safety::Budgeted<T>>          : payload_row<T> {};
+struct payload_row<::crucible::safety::Budgeted<T>> : payload_row<T> {};
 
 template <class T>
-struct payload_row<::crucible::safety::EpochVersioned<T>>    : payload_row<T> {};
+struct payload_row<::crucible::safety::EpochVersioned<T>> : payload_row<T> {};
 
 template <class T>
-struct payload_row<::crucible::safety::NumaPlacement<T>>     : payload_row<T> {};
+struct payload_row<::crucible::safety::NumaPlacement<T>> : payload_row<T> {};
 
 template <class T>
-struct payload_row<::crucible::safety::RecipeSpec<T>>        : payload_row<T> {};
+struct payload_row<::crucible::safety::RecipeSpec<T>> : payload_row<T> {};
 
 // ── Mutation family — state-holder wrappers ────────────────────────
 //
@@ -295,23 +285,20 @@ struct payload_row<::crucible::safety::RecipeSpec<T>>        : payload_row<T> {}
 // T matters for effect propagation.
 
 template <class T, class Cmp>
-struct payload_row<::crucible::safety::Monotonic<T, Cmp>>    : payload_row<T> {};
+struct payload_row<::crucible::safety::Monotonic<T, Cmp>> : payload_row<T> {};
 
 template <class T, auto Max, class Cmp>
-struct payload_row<::crucible::safety::BoundedMonotonic<T, Max, Cmp>>
-    : payload_row<T> {};
+struct payload_row<::crucible::safety::BoundedMonotonic<T, Max, Cmp>> : payload_row<T> {};
 
 template <class T>
-struct payload_row<::crucible::safety::WriteOnce<T>>         : payload_row<T> {};
+struct payload_row<::crucible::safety::WriteOnce<T>> : payload_row<T> {};
 
 template <class T, class Cmp>
     requires std::is_trivially_copyable_v<T>
-struct payload_row<::crucible::safety::AtomicMonotonic<T, Cmp>>
-    : payload_row<T> {};
+struct payload_row<::crucible::safety::AtomicMonotonic<T, Cmp>> : payload_row<T> {};
 
 template <class T, template <class...> class Storage>
-struct payload_row<::crucible::safety::AppendOnly<T, Storage>>
-    : payload_row<T> {};
+struct payload_row<::crucible::safety::AppendOnly<T, Storage>> : payload_row<T> {};
 
 // ── TimeOrdered — happens-before lattice wrapper ───────────────────
 //
@@ -319,8 +306,7 @@ struct payload_row<::crucible::safety::AppendOnly<T, Storage>>
 // is identity.  Transparent unwrap to T.
 
 template <class T, std::size_t N, class Tag>
-struct payload_row<::crucible::safety::TimeOrdered<T, N, Tag>>
-    : payload_row<T> {};
+struct payload_row<::crucible::safety::TimeOrdered<T, N, Tag>> : payload_row<T> {};
 
 // ── protocol_effect_row<Proto> — higher-order capability walker ────
 //
@@ -399,28 +385,24 @@ struct protocol_effect_row<Stop_g<C>> {
 // both of which are visible above.
 template <class T, class K>
 struct protocol_effect_row<Send<T, K>> {
-    using type = ::crucible::effects::row_union_t<
-        payload_row_effect_t<typename payload_row<T>::type>,
-        typename protocol_effect_row<K>::type>;
+    using type = ::crucible::effects::row_union_t<payload_row_effect_t<typename payload_row<T>::type>,
+                                                  typename protocol_effect_row<K>::type>;
 };
 
 // Recv<T, K>: symmetric to Send.
 template <class T, class K>
 struct protocol_effect_row<Recv<T, K>> {
-    using type = ::crucible::effects::row_union_t<
-        payload_row_effect_t<typename payload_row<T>::type>,
-        typename protocol_effect_row<K>::type>;
+    using type = ::crucible::effects::row_union_t<payload_row_effect_t<typename payload_row<T>::type>,
+                                                  typename protocol_effect_row<K>::type>;
 };
 
 // Loop<B>: walk the body.
 template <class B>
-struct protocol_effect_row<Loop<B>>
-    : protocol_effect_row<B> {};
+struct protocol_effect_row<Loop<B>> : protocol_effect_row<B> {};
 
 // VendorPinned<V, P>: walk the inner protocol; vendor-axis is non-effect.
 template <VendorBackend V, class P>
-struct protocol_effect_row<VendorPinned<V, P>>
-    : protocol_effect_row<P> {};
+struct protocol_effect_row<VendorPinned<V, P>> : protocol_effect_row<P> {};
 
 namespace detail::protocol_effect_row_fold {
 
@@ -439,8 +421,7 @@ struct row_union_pack<R> {
 
 template <class R1, class R2, class... Rest>
 struct row_union_pack<R1, R2, Rest...> {
-    using type = typename row_union_pack<
-        ::crucible::effects::row_union_t<R1, R2>, Rest...>::type;
+    using type = typename row_union_pack<::crucible::effects::row_union_t<R1, R2>, Rest...>::type;
 };
 
 template <class... Rows>
@@ -452,31 +433,27 @@ using row_union_pack_t = typename row_union_pack<Rows...>::type;
 // any, so the surrounding Ctx must admit the worst case).
 template <class... Branches>
 struct protocol_effect_row<Select<Branches...>> {
-    using type = detail::protocol_effect_row_fold::row_union_pack_t<
-        typename protocol_effect_row<Branches>::type...>;
+    using type = detail::protocol_effect_row_fold::row_union_pack_t<typename protocol_effect_row<Branches>::type...>;
 };
 
 // Offer<Branches...>: symmetric — the offerer must support every branch.
 template <class... Branches>
 struct protocol_effect_row<Offer<Branches...>> {
-    using type = detail::protocol_effect_row_fold::row_union_pack_t<
-        typename protocol_effect_row<Branches>::type...>;
+    using type = detail::protocol_effect_row_fold::row_union_pack_t<typename protocol_effect_row<Branches>::type...>;
 };
 
 // Offer<Sender<Role>, Branches...>: sender-typed Offer; Sender wrapper
 // carries no payload, walk the same branch pack.
 template <class Role, class... Branches>
 struct protocol_effect_row<Offer<Sender<Role>, Branches...>> {
-    using type = detail::protocol_effect_row_fold::row_union_pack_t<
-        typename protocol_effect_row<Branches>::type...>;
+    using type = detail::protocol_effect_row_fold::row_union_pack_t<typename protocol_effect_row<Branches>::type...>;
 };
 
 // CheckpointedSession<Base, Rollback>: BOTH branches are reachable.
 template <class Base, class Rollback>
 struct protocol_effect_row<CheckpointedSession<Base, Rollback>> {
-    using type = ::crucible::effects::row_union_t<
-        typename protocol_effect_row<Base>::type,
-        typename protocol_effect_row<Rollback>::type>;
+    using type = ::crucible::effects::row_union_t<typename protocol_effect_row<Base>::type,
+                                                  typename protocol_effect_row<Rollback>::type>;
 };
 
 // Delegate<T, K>: mirror `proto_row_admitted_by<Delegate, Ctx>`'s
@@ -486,8 +463,7 @@ struct protocol_effect_row<CheckpointedSession<Base, Rollback>> {
 // inside K still surface via the payload_row<DelegatedSession<...>>
 // specialisation below.
 template <class T, class K>
-struct protocol_effect_row<Delegate<T, K>>
-    : protocol_effect_row<K> {};
+struct protocol_effect_row<Delegate<T, K>> : protocol_effect_row<K> {};
 
 // fixy-A2-028 bottom-preservation: Delegate<Stop_g<C>, K> ALIGNS WITH
 // `compose<Delegate<Stop_g<C>, K>, Q> = Stop_g<C>` (SessionDelegate.h
@@ -510,8 +486,7 @@ struct protocol_effect_row<Delegate<Stop_g<C>, K>> {
 
 // Accept<T, K>: symmetric to Delegate.
 template <class T, class K>
-struct protocol_effect_row<Accept<T, K>>
-    : protocol_effect_row<K> {};
+struct protocol_effect_row<Accept<T, K>> : protocol_effect_row<K> {};
 
 // fixy-A2-028 bottom-preservation: Accept<Stop_g<C>, K> mirrors the
 // Delegate-side rule for the same reason — the recipient accepted an
@@ -527,17 +502,11 @@ struct protocol_effect_row<Accept<Stop_g<C>, K>> {
 // The bottom-preservation specs above propagate transparently — when
 // T = Stop_g<C>, this inherits from `protocol_effect_row<Delegate<
 // Stop_g<C>, K>>` which yields `Row<>`.
-template <class T, class K,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
-struct protocol_effect_row<
-    EpochedDelegate<T, K, MinEpoch, MinGeneration>>
-    : protocol_effect_row<Delegate<T, K>> {};
+template <class T, class K, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct protocol_effect_row<EpochedDelegate<T, K, MinEpoch, MinGeneration>> : protocol_effect_row<Delegate<T, K>> {};
 
-template <class T, class K,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
-struct protocol_effect_row<
-    EpochedAccept<T, K, MinEpoch, MinGeneration>>
-    : protocol_effect_row<Accept<T, K>> {};
+template <class T, class K, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct protocol_effect_row<EpochedAccept<T, K, MinEpoch, MinGeneration>> : protocol_effect_row<Accept<T, K>> {};
 
 template <class Proto>
 using protocol_effect_row_t = typename protocol_effect_row<Proto>::type;
@@ -571,149 +540,104 @@ namespace eff = ::crucible::effects;
 namespace saf = ::crucible::safety;
 
 // ── Default: bare types yield Row<> ────────────────────────────────
-static_assert(std::is_same_v<payload_row_t<int>,    eff::Row<>>);
+static_assert(std::is_same_v<payload_row_t<int>, eff::Row<>>);
 static_assert(std::is_same_v<payload_row_t<double>, eff::Row<>>);
-static_assert(std::is_same_v<payload_row_t<void*>,  eff::Row<>>);
-static_assert(std::is_same_v<payload_row_t<char>,   eff::Row<>>);
+static_assert(std::is_same_v<payload_row_t<void*>, eff::Row<>>);
+static_assert(std::is_same_v<payload_row_t<char>, eff::Row<>>);
 
-struct UserPod { int x; double y; };
+struct UserPod {
+    int x;
+    double y;
+};
 static_assert(std::is_same_v<payload_row_t<UserPod>, eff::Row<>>);
 
 // ── Computation<R, T> yields R ─────────────────────────────────────
-static_assert(std::is_same_v<
-    payload_row_t<eff::Computation<eff::Row<>, int>>,
-    eff::Row<>>);
+static_assert(std::is_same_v<payload_row_t<eff::Computation<eff::Row<>, int>>, eff::Row<>>);
 
-static_assert(std::is_same_v<
-    payload_row_t<eff::Computation<eff::Row<eff::Effect::Bg>, int>>,
-    eff::Row<eff::Effect::Bg>>);
+static_assert(
+    std::is_same_v<payload_row_t<eff::Computation<eff::Row<eff::Effect::Bg>, int>>, eff::Row<eff::Effect::Bg>>);
 
-static_assert(std::is_same_v<
-    payload_row_t<eff::Computation<eff::Row<eff::Effect::Bg, eff::Effect::Alloc>, double>>,
-    eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>);
+static_assert(std::is_same_v<payload_row_t<eff::Computation<eff::Row<eff::Effect::Bg, eff::Effect::Alloc>, double>>,
+                             eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>);
 
 // ── Capability<E, S> yields Row<E> ─────────────────────────────────
-static_assert(std::is_same_v<
-    payload_row_t<eff::Capability<eff::Effect::Alloc, eff::Bg>>,
-    eff::Row<eff::Effect::Alloc>>);
+static_assert(
+    std::is_same_v<payload_row_t<eff::Capability<eff::Effect::Alloc, eff::Bg>>, eff::Row<eff::Effect::Alloc>>);
 
-static_assert(std::is_same_v<
-    payload_row_t<eff::Capability<eff::Effect::IO, eff::Init>>,
-    eff::Row<eff::Effect::IO>>);
+static_assert(std::is_same_v<payload_row_t<eff::Capability<eff::Effect::IO, eff::Init>>, eff::Row<eff::Effect::IO>>);
 
-static_assert(std::is_same_v<
-    payload_row_t<eff::Capability<eff::Effect::Block, eff::Test>>,
-    eff::Row<eff::Effect::Block>>);
+static_assert(
+    std::is_same_v<payload_row_t<eff::Capability<eff::Effect::Block, eff::Test>>, eff::Row<eff::Effect::Block>>);
 
 // ── Refined<P, T> unwraps ──────────────────────────────────────────
-static_assert(std::is_same_v<
-    payload_row_t<saf::Refined<saf::positive, int>>,
-    eff::Row<>>);
+static_assert(std::is_same_v<payload_row_t<saf::Refined<saf::positive, int>>, eff::Row<>>);
 
-static_assert(std::is_same_v<
-    payload_row_t<saf::Refined<saf::positive,
-                                eff::Computation<eff::Row<eff::Effect::Bg>, int>>>,
-    eff::Row<eff::Effect::Bg>>);
+static_assert(
+    std::is_same_v<payload_row_t<saf::Refined<saf::positive, eff::Computation<eff::Row<eff::Effect::Bg>, int>>>,
+                   eff::Row<eff::Effect::Bg>>);
 
 // ── SealedRefined unwraps similarly ────────────────────────────────
-static_assert(std::is_same_v<
-    payload_row_t<saf::SealedRefined<saf::positive,
-                                      eff::Computation<eff::Row<eff::Effect::IO>, int>>>,
-    eff::Row<eff::Effect::IO>>);
+static_assert(
+    std::is_same_v<payload_row_t<saf::SealedRefined<saf::positive, eff::Computation<eff::Row<eff::Effect::IO>, int>>>,
+                   eff::Row<eff::Effect::IO>>);
 
 // ── Linear<T> unwraps ──────────────────────────────────────────────
-static_assert(std::is_same_v<
-    payload_row_t<saf::Linear<eff::Computation<eff::Row<eff::Effect::IO>, int>>>,
-    eff::Row<eff::Effect::IO>>);
+static_assert(std::is_same_v<payload_row_t<saf::Linear<eff::Computation<eff::Row<eff::Effect::IO>, int>>>,
+                             eff::Row<eff::Effect::IO>>);
 
-static_assert(std::is_same_v<
-    payload_row_t<saf::Linear<int>>,
-    eff::Row<>>);
+static_assert(std::is_same_v<payload_row_t<saf::Linear<int>>, eff::Row<>>);
 
 // ── Tagged<T, Tag> unwraps ─────────────────────────────────────────
 struct ProvTag {};
-static_assert(std::is_same_v<
-    payload_row_t<saf::Tagged<eff::Computation<eff::Row<eff::Effect::Bg>, int>, ProvTag>>,
-    eff::Row<eff::Effect::Bg>>);
+static_assert(std::is_same_v<payload_row_t<saf::Tagged<eff::Computation<eff::Row<eff::Effect::Bg>, int>, ProvTag>>,
+                             eff::Row<eff::Effect::Bg>>);
 
-static_assert(std::is_same_v<
-    payload_row_t<saf::Tagged<int, ProvTag>>,
-    eff::Row<>>);
+static_assert(std::is_same_v<payload_row_t<saf::Tagged<int, ProvTag>>, eff::Row<>>);
 
 // ── Stale<T> unwraps ───────────────────────────────────────────────
-static_assert(std::is_same_v<
-    payload_row_t<saf::Stale<eff::Computation<eff::Row<eff::Effect::Alloc>, int>>>,
-    eff::Row<eff::Effect::Alloc>>);
+static_assert(std::is_same_v<payload_row_t<saf::Stale<eff::Computation<eff::Row<eff::Effect::Alloc>, int>>>,
+                             eff::Row<eff::Effect::Alloc>>);
 
 // ── Composed unwrap chains ─────────────────────────────────────────
 //
 // The payload_row<> chain handles arbitrary nesting transparently:
 // Refined<P, Linear<Tagged<Computation<R, T>, Tag>>> → R.
 
-using ComposedT =
-    saf::Refined<saf::positive,
-        saf::Linear<
-            saf::Tagged<
-                eff::Computation<eff::Row<eff::Effect::Bg, eff::Effect::Alloc>, int>,
-                ProvTag>>>;
-static_assert(std::is_same_v<
-    payload_row_t<ComposedT>,
-    eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>);
+using ComposedT = saf::Refined<
+    saf::positive,
+    saf::Linear<saf::Tagged<eff::Computation<eff::Row<eff::Effect::Bg, eff::Effect::Alloc>, int>, ProvTag>>>;
+static_assert(std::is_same_v<payload_row_t<ComposedT>, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>);
 
-using FourLayerT =
-    saf::Linear<
-        saf::Refined<saf::positive,
-            saf::Tagged<
-                saf::Stale<eff::Computation<eff::Row<eff::Effect::IO>, int>>,
-                ProvTag>>>;
-static_assert(std::is_same_v<
-    payload_row_t<FourLayerT>,
-    eff::Row<eff::Effect::IO>>);
+using FourLayerT = saf::Linear<
+    saf::Refined<saf::positive, saf::Tagged<saf::Stale<eff::Computation<eff::Row<eff::Effect::IO>, int>>, ProvTag>>>;
+static_assert(std::is_same_v<payload_row_t<FourLayerT>, eff::Row<eff::Effect::IO>>);
 
 // ── Composed unwrap that bottoms out at bare T → Row<> ─────────────
-using BarelyComposedT =
-    saf::Refined<saf::positive,
-        saf::Linear<
-            saf::Tagged<int, ProvTag>>>;
-static_assert(std::is_same_v<
-    payload_row_t<BarelyComposedT>,
-    eff::Row<>>);
+using BarelyComposedT = saf::Refined<saf::positive, saf::Linear<saf::Tagged<int, ProvTag>>>;
+static_assert(std::is_same_v<payload_row_t<BarelyComposedT>, eff::Row<>>);
 
 // ── ContentAddressed<T> unwraps ────────────────────────────────────
 //
 // CA is a session-level quotient marker; the underlying T's row is
 // preserved.  Composes with the other unwrap chains.
 
-static_assert(std::is_same_v<
-    payload_row_t<ContentAddressed<int>>,
-    eff::Row<>>);
+static_assert(std::is_same_v<payload_row_t<ContentAddressed<int>>, eff::Row<>>);
 
-static_assert(std::is_same_v<
-    payload_row_t<ContentAddressed<eff::Computation<eff::Row<eff::Effect::Bg>, int>>>,
-    eff::Row<eff::Effect::Bg>>);
+static_assert(std::is_same_v<payload_row_t<ContentAddressed<eff::Computation<eff::Row<eff::Effect::Bg>, int>>>,
+                             eff::Row<eff::Effect::Bg>>);
 
 // Composed: ContentAddressed<Refined<P, Computation<R, T>>> → R.
-using CaRefinedT =
-    ContentAddressed<saf::Refined<saf::positive,
-        eff::Computation<eff::Row<eff::Effect::IO>, int>>>;
-static_assert(std::is_same_v<
-    payload_row_t<CaRefinedT>,
-    eff::Row<eff::Effect::IO>>);
+using CaRefinedT = ContentAddressed<saf::Refined<saf::positive, eff::Computation<eff::Row<eff::Effect::IO>, int>>>;
+static_assert(std::is_same_v<payload_row_t<CaRefinedT>, eff::Row<eff::Effect::IO>>);
 
 // Permission-flow markers are row-transparent: they move or lend CSL
 // authority, but they must not hide the carried value's effect row from
 // the protocol admission walker.
 struct WirePerm {};
 using IoComp = eff::Computation<eff::Row<eff::Effect::IO>, int>;
-static_assert(std::is_same_v<
-    payload_row_t<Transferable<IoComp, WirePerm>>,
-    eff::Row<eff::Effect::IO>>);
-static_assert(std::is_same_v<
-    payload_row_t<Borrowed<IoComp, WirePerm>>,
-    eff::Row<eff::Effect::IO>>);
-static_assert(std::is_same_v<
-    payload_row_t<Returned<IoComp, WirePerm>>,
-    eff::Row<eff::Effect::IO>>);
+static_assert(std::is_same_v<payload_row_t<Transferable<IoComp, WirePerm>>, eff::Row<eff::Effect::IO>>);
+static_assert(std::is_same_v<payload_row_t<Borrowed<IoComp, WirePerm>>, eff::Row<eff::Effect::IO>>);
+static_assert(std::is_same_v<payload_row_t<Returned<IoComp, WirePerm>>, eff::Row<eff::Effect::IO>>);
 
 // ── AUDIT-2: cross-wrapper soundness — every shipped graded wrapper
 //            propagates inner effect rows transparently ────────────
@@ -732,69 +656,53 @@ using BareInt = int;
 
 // Single-axis policy wrappers — verify Bg-effect propagation through
 // each.  (Axis values picked to be valid for each enum.)
-static_assert(std::is_same_v<payload_row_t<saf::HotPath<saf::HotPathTier_v::Hot, BgComp>>,
-                              eff::Row<eff::Effect::Bg>>);
-static_assert(std::is_same_v<payload_row_t<saf::HotPath<saf::HotPathTier_v::Hot, BareInt>>,
-                              eff::Row<>>);
+static_assert(std::is_same_v<payload_row_t<saf::HotPath<saf::HotPathTier_v::Hot, BgComp>>, eff::Row<eff::Effect::Bg>>);
+static_assert(std::is_same_v<payload_row_t<saf::HotPath<saf::HotPathTier_v::Hot, BareInt>>, eff::Row<>>);
 
-static_assert(std::is_same_v<payload_row_t<saf::DetSafe<saf::DetSafeTier_v::Pure, BgComp>>,
-                              eff::Row<eff::Effect::Bg>>);
-static_assert(std::is_same_v<payload_row_t<saf::DetSafe<saf::DetSafeTier_v::Pure, BareInt>>,
-                              eff::Row<>>);
+static_assert(std::is_same_v<payload_row_t<saf::DetSafe<saf::DetSafeTier_v::Pure, BgComp>>, eff::Row<eff::Effect::Bg>>);
+static_assert(std::is_same_v<payload_row_t<saf::DetSafe<saf::DetSafeTier_v::Pure, BareInt>>, eff::Row<>>);
 
-static_assert(std::is_same_v<payload_row_t<saf::AllocClass<saf::AllocClassTag_v::Arena, BgComp>>,
-                              eff::Row<eff::Effect::Bg>>);
+static_assert(
+    std::is_same_v<payload_row_t<saf::AllocClass<saf::AllocClassTag_v::Arena, BgComp>>, eff::Row<eff::Effect::Bg>>);
 
-static_assert(std::is_same_v<payload_row_t<saf::ResidencyHeat<saf::ResidencyHeatTag_v::Hot, BgComp>>,
-                              eff::Row<eff::Effect::Bg>>);
+static_assert(
+    std::is_same_v<payload_row_t<saf::ResidencyHeat<saf::ResidencyHeatTag_v::Hot, BgComp>>, eff::Row<eff::Effect::Bg>>);
 
-static_assert(std::is_same_v<payload_row_t<saf::CipherTier<saf::CipherTierTag_v::Hot, BgComp>>,
-                              eff::Row<eff::Effect::Bg>>);
+static_assert(
+    std::is_same_v<payload_row_t<saf::CipherTier<saf::CipherTierTag_v::Hot, BgComp>>, eff::Row<eff::Effect::Bg>>);
 
-static_assert(std::is_same_v<payload_row_t<saf::MemOrder<saf::MemOrderTag_v::Acquire, BgComp>>,
-                              eff::Row<eff::Effect::Bg>>);
+static_assert(
+    std::is_same_v<payload_row_t<saf::MemOrder<saf::MemOrderTag_v::Acquire, BgComp>>, eff::Row<eff::Effect::Bg>>);
 
-static_assert(std::is_same_v<payload_row_t<saf::Wait<saf::WaitStrategy_v::SpinPause, BgComp>>,
-                              eff::Row<eff::Effect::Bg>>);
+static_assert(
+    std::is_same_v<payload_row_t<saf::Wait<saf::WaitStrategy_v::SpinPause, BgComp>>, eff::Row<eff::Effect::Bg>>);
 
-static_assert(std::is_same_v<payload_row_t<saf::Progress<saf::ProgressClass_v::Terminating, BgComp>>,
-                              eff::Row<eff::Effect::Bg>>);
+static_assert(
+    std::is_same_v<payload_row_t<saf::Progress<saf::ProgressClass_v::Terminating, BgComp>>, eff::Row<eff::Effect::Bg>>);
 
-using BitexactBgRow =
-    payload_row_t<saf::NumericalTier<
-        ::crucible::algebra::lattices::Tolerance::BITEXACT, BgComp>>;
-static_assert(BitexactBgRow::tolerance
-              == ::crucible::algebra::lattices::Tolerance::BITEXACT);
-static_assert(std::is_same_v<typename BitexactBgRow::effect_row,
-                              eff::Row<eff::Effect::Bg>>);
-static_assert(std::is_same_v<
-    payload_effect_row_t<saf::NumericalTier<
-        ::crucible::algebra::lattices::Tolerance::BITEXACT, BgComp>>,
-    eff::Row<eff::Effect::Bg>>);
+using BitexactBgRow = payload_row_t<saf::NumericalTier<::crucible::algebra::lattices::Tolerance::BITEXACT, BgComp>>;
+static_assert(BitexactBgRow::tolerance == ::crucible::algebra::lattices::Tolerance::BITEXACT);
+static_assert(std::is_same_v<typename BitexactBgRow::effect_row, eff::Row<eff::Effect::Bg>>);
+static_assert(
+    std::is_same_v<payload_effect_row_t<saf::NumericalTier<::crucible::algebra::lattices::Tolerance::BITEXACT, BgComp>>,
+                   eff::Row<eff::Effect::Bg>>);
 static_assert(!std::is_same_v<BitexactBgRow, eff::Row<eff::Effect::Bg>>);
 
-static_assert(std::is_same_v<payload_row_t<saf::Vendor<saf::VendorBackend_v::CPU, BgComp>>,
-                              eff::Row<eff::Effect::Bg>>);
+static_assert(std::is_same_v<payload_row_t<saf::Vendor<saf::VendorBackend_v::CPU, BgComp>>, eff::Row<eff::Effect::Bg>>);
 
-static_assert(std::is_same_v<payload_row_t<saf::Crash<saf::CrashClass_v::NoThrow, BgComp>>,
-                              eff::Row<eff::Effect::Bg>>);
+static_assert(std::is_same_v<payload_row_t<saf::Crash<saf::CrashClass_v::NoThrow, BgComp>>, eff::Row<eff::Effect::Bg>>);
 
 // Single-T policy wrappers — verify Bg propagation.
-static_assert(std::is_same_v<payload_row_t<saf::Secret<BgComp>>,
-                              eff::Row<eff::Effect::Bg>>);
-static_assert(std::is_same_v<payload_row_t<saf::Secret<BareInt>>,
-                              eff::Row<>>);
+static_assert(std::is_same_v<payload_row_t<saf::Secret<BgComp>>, eff::Row<eff::Effect::Bg>>);
+static_assert(std::is_same_v<payload_row_t<saf::Secret<BareInt>>, eff::Row<>>);
 
 // Mutation family — verify Bg propagation.
-static_assert(std::is_same_v<payload_row_t<saf::Monotonic<BgComp>>,
-                              eff::Row<eff::Effect::Bg>>);
-static_assert(std::is_same_v<payload_row_t<saf::WriteOnce<BgComp>>,
-                              eff::Row<eff::Effect::Bg>>);
+static_assert(std::is_same_v<payload_row_t<saf::Monotonic<BgComp>>, eff::Row<eff::Effect::Bg>>);
+static_assert(std::is_same_v<payload_row_t<saf::WriteOnce<BgComp>>, eff::Row<eff::Effect::Bg>>);
 
 // TimeOrdered — verify Bg propagation.
 struct TimeTag {};
-static_assert(std::is_same_v<payload_row_t<saf::TimeOrdered<BgComp, 4, TimeTag>>,
-                              eff::Row<eff::Effect::Bg>>);
+static_assert(std::is_same_v<payload_row_t<saf::TimeOrdered<BgComp, 4, TimeTag>>, eff::Row<eff::Effect::Bg>>);
 
 // ── Cross-axis nesting: HotPath<Hot, Refined<P, Computation<R, T>>> ─
 //
@@ -802,18 +710,17 @@ static_assert(std::is_same_v<payload_row_t<saf::TimeOrdered<BgComp, 4, TimeTag>>
 // nesting-order.  Bg row should propagate through ALL outer layers.
 
 // NumericalTier uses bare `Tolerance` (no `_v` alias) — fully qualify.
-using DeepStack =
-    saf::HotPath<saf::HotPathTier_v::Hot,
-        saf::DetSafe<saf::DetSafeTier_v::Pure,
-            saf::NumericalTier<::crucible::algebra::lattices::Tolerance::BITEXACT,
-                saf::Refined<saf::positive,
-                    eff::Computation<eff::Row<eff::Effect::Bg, eff::Effect::Alloc>, int>>>>>;
-static_assert(payload_row_t<DeepStack>::tolerance
-              == ::crucible::algebra::lattices::Tolerance::BITEXACT);
-static_assert(std::is_same_v<typename payload_row_t<DeepStack>::effect_row,
-                              eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>);
-static_assert(std::is_same_v<payload_effect_row_t<DeepStack>,
-                              eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>);
+using DeepStack = saf::HotPath<
+    saf::HotPathTier_v::Hot,
+    saf::DetSafe<
+        saf::DetSafeTier_v::Pure,
+        saf::NumericalTier<
+            ::crucible::algebra::lattices::Tolerance::BITEXACT,
+            saf::Refined<saf::positive, eff::Computation<eff::Row<eff::Effect::Bg, eff::Effect::Alloc>, int>>>>>;
+static_assert(payload_row_t<DeepStack>::tolerance == ::crucible::algebra::lattices::Tolerance::BITEXACT);
+static_assert(
+    std::is_same_v<typename payload_row_t<DeepStack>::effect_row, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>);
+static_assert(std::is_same_v<payload_effect_row_t<DeepStack>, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>);
 
 // ── fixy-A2-010: DelegatedSession higher-order capability ──────────
 //
@@ -827,74 +734,46 @@ struct DSPermTag {};
 // (a) DelegatedSession<End, EmptyPermSet> — inner protocol has no
 //     operations, so no effects flow.
 using IPS_empty = ::crucible::safety::proto::EmptyPermSet;
-static_assert(std::is_same_v<
-    payload_row_t<DelegatedSession<End, IPS_empty>>,
-    eff::Row<>>);
-static_assert(std::is_same_v<
-    protocol_effect_row_t<End>,
-    eff::Row<>>);
+static_assert(std::is_same_v<payload_row_t<DelegatedSession<End, IPS_empty>>, eff::Row<>>);
+static_assert(std::is_same_v<protocol_effect_row_t<End>, eff::Row<>>);
 
 // (b) DelegatedSession<Send<Computation<Row<IO>, int>, End>, ...> —
 //     inner protocol has a Send carrying an IO payload, so the outer
 //     payload_row must surface IO.
-using InnerIo =
-    Send<eff::Computation<eff::Row<eff::Effect::IO>, int>, End>;
-static_assert(std::is_same_v<
-    protocol_effect_row_t<InnerIo>,
-    eff::Row<eff::Effect::IO>>);
-static_assert(std::is_same_v<
-    payload_row_t<DelegatedSession<InnerIo, IPS_empty>>,
-    eff::Row<eff::Effect::IO>>);
+using InnerIo = Send<eff::Computation<eff::Row<eff::Effect::IO>, int>, End>;
+static_assert(std::is_same_v<protocol_effect_row_t<InnerIo>, eff::Row<eff::Effect::IO>>);
+static_assert(std::is_same_v<payload_row_t<DelegatedSession<InnerIo, IPS_empty>>, eff::Row<eff::Effect::IO>>);
 
 // (c) Deeper inner protocol with Bg + Alloc payloads on chained Send
 //     and Recv — union accumulates correctly.
-using InnerBgAlloc =
-    Send<eff::Computation<eff::Row<eff::Effect::Bg>, int>,
-    Recv<eff::Computation<eff::Row<eff::Effect::Alloc>, int>,
-    End>>;
-static_assert(::crucible::effects::is_subrow_v<
-    eff::Row<eff::Effect::Bg, eff::Effect::Alloc>,
-    protocol_effect_row_t<InnerBgAlloc>>);
-static_assert(::crucible::effects::is_subrow_v<
-    protocol_effect_row_t<InnerBgAlloc>,
-    eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>);
-static_assert(::crucible::effects::is_subrow_v<
-    eff::Row<eff::Effect::Bg, eff::Effect::Alloc>,
-    payload_row_t<DelegatedSession<InnerBgAlloc, IPS_empty>>>);
+using InnerBgAlloc = Send<eff::Computation<eff::Row<eff::Effect::Bg>, int>,
+                          Recv<eff::Computation<eff::Row<eff::Effect::Alloc>, int>, End>>;
+static_assert(::crucible::effects::is_subrow_v<eff::Row<eff::Effect::Bg, eff::Effect::Alloc>,
+                                               protocol_effect_row_t<InnerBgAlloc>>);
+static_assert(::crucible::effects::is_subrow_v<protocol_effect_row_t<InnerBgAlloc>,
+                                               eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>);
+static_assert(::crucible::effects::is_subrow_v<eff::Row<eff::Effect::Bg, eff::Effect::Alloc>,
+                                               payload_row_t<DelegatedSession<InnerBgAlloc, IPS_empty>>>);
 
 // (d) Loop<Send<IO, Continue>> — Loop transparently unwraps.
-using InnerLoopIo =
-    Loop<Send<eff::Computation<eff::Row<eff::Effect::IO>, int>, Continue>>;
-static_assert(std::is_same_v<
-    payload_row_t<DelegatedSession<InnerLoopIo, IPS_empty>>,
-    eff::Row<eff::Effect::IO>>);
+using InnerLoopIo = Loop<Send<eff::Computation<eff::Row<eff::Effect::IO>, int>, Continue>>;
+static_assert(std::is_same_v<payload_row_t<DelegatedSession<InnerLoopIo, IPS_empty>>, eff::Row<eff::Effect::IO>>);
 
 // (e) Select<End, Send<IO, End>>: branch walker takes the union of
 //     reachable branch effects.
-using InnerSelectIo =
-    Select<End,
-           Send<eff::Computation<eff::Row<eff::Effect::IO>, int>, End>>;
-static_assert(std::is_same_v<
-    protocol_effect_row_t<InnerSelectIo>,
-    eff::Row<eff::Effect::IO>>);
+using InnerSelectIo = Select<End, Send<eff::Computation<eff::Row<eff::Effect::IO>, int>, End>>;
+static_assert(std::is_same_v<protocol_effect_row_t<InnerSelectIo>, eff::Row<eff::Effect::IO>>);
 
 // (f) Delegate<X, K> nested inside InnerProto: by the existing
 //     proto_row_admitted_by<Delegate> discipline, T is bypassed at the
 //     sender's row gate.  Effect comes from K alone.
-using InnerDelegate =
-    Delegate<Send<eff::Computation<eff::Row<eff::Effect::Block>, int>, End>,
-             Send<eff::Computation<eff::Row<eff::Effect::Bg>, int>, End>>;
-static_assert(std::is_same_v<
-    protocol_effect_row_t<InnerDelegate>,
-    eff::Row<eff::Effect::Bg>>);
+using InnerDelegate = Delegate<Send<eff::Computation<eff::Row<eff::Effect::Block>, int>, End>,
+                               Send<eff::Computation<eff::Row<eff::Effect::Bg>, int>, End>>;
+static_assert(std::is_same_v<protocol_effect_row_t<InnerDelegate>, eff::Row<eff::Effect::Bg>>);
 
 // (g) Stop_g<C> is a terminal — no effects.
-static_assert(std::is_same_v<
-    protocol_effect_row_t<Stop_g<CrashClass::Abort>>,
-    eff::Row<>>);
-static_assert(std::is_same_v<
-    protocol_effect_row_t<Stop>,
-    eff::Row<>>);
+static_assert(std::is_same_v<protocol_effect_row_t<Stop_g<CrashClass::Abort>>, eff::Row<>>);
+static_assert(std::is_same_v<protocol_effect_row_t<Stop>, eff::Row<>>);
 
 // (g.1) fixy-A2-028 — Delegate<Stop_g<C>, K> with K carrying Bg.
 //       Before the bottom-preservation specialisation the trait
@@ -903,95 +782,59 @@ static_assert(std::is_same_v<
 //       preservation and reports Row<>.  Pin BOTH ENDS — the
 //       standalone protocol AND the composed protocol — so the row
 //       no longer narrows across the composition boundary.
-using InnerBgRecv =
-    Recv<eff::Computation<eff::Row<eff::Effect::Bg>, int>, End>;
+using InnerBgRecv = Recv<eff::Computation<eff::Row<eff::Effect::Bg>, int>, End>;
 using DelegateStopWithBg = Delegate<Stop_g<CrashClass::Abort>, InnerBgRecv>;
 
-static_assert(std::is_same_v<
-    protocol_effect_row_t<DelegateStopWithBg>,
-    eff::Row<>>,
-    "fixy-A2-028: Delegate<Stop_g<C>, K> must carry empty row "
-    "(carrier is bottom, K unreachable, aligns with compose rule)");
+static_assert(std::is_same_v<protocol_effect_row_t<DelegateStopWithBg>, eff::Row<>>,
+              "fixy-A2-028: Delegate<Stop_g<C>, K> must carry empty row "
+              "(carrier is bottom, K unreachable, aligns with compose rule)");
 
-using DelegateStopComposed =
-    ::crucible::safety::proto::compose_t<DelegateStopWithBg, End>;
-static_assert(std::is_same_v<
-    DelegateStopComposed, Stop_g<CrashClass::Abort>>);
-static_assert(std::is_same_v<
-    protocol_effect_row_t<DelegateStopComposed>,
-    eff::Row<>>,
-    "fixy-A2-028: composing Delegate<Stop_g<C>, K> ⊕ Q yields "
-    "Stop_g<C> with empty row — must match pre-composition row");
+using DelegateStopComposed = ::crucible::safety::proto::compose_t<DelegateStopWithBg, End>;
+static_assert(std::is_same_v<DelegateStopComposed, Stop_g<CrashClass::Abort>>);
+static_assert(std::is_same_v<protocol_effect_row_t<DelegateStopComposed>, eff::Row<>>,
+              "fixy-A2-028: composing Delegate<Stop_g<C>, K> ⊕ Q yields "
+              "Stop_g<C> with empty row — must match pre-composition row");
 
-static_assert(std::is_same_v<
-    protocol_effect_row_t<DelegateStopWithBg>,
-    protocol_effect_row_t<DelegateStopComposed>>,
-    "fixy-A2-028: NO row narrowing under composition");
+static_assert(std::is_same_v<protocol_effect_row_t<DelegateStopWithBg>, protocol_effect_row_t<DelegateStopComposed>>,
+              "fixy-A2-028: NO row narrowing under composition");
 
 // (g.2) Symmetric for Accept-of-Stop.
 using AcceptStopWithBg = Accept<Stop_g<CrashClass::Abort>, InnerBgRecv>;
-static_assert(std::is_same_v<
-    protocol_effect_row_t<AcceptStopWithBg>,
-    eff::Row<>>);
-using AcceptStopComposed =
-    ::crucible::safety::proto::compose_t<AcceptStopWithBg, End>;
-static_assert(std::is_same_v<
-    AcceptStopComposed, Stop_g<CrashClass::Abort>>);
-static_assert(std::is_same_v<
-    protocol_effect_row_t<AcceptStopComposed>,
-    eff::Row<>>);
-static_assert(std::is_same_v<
-    protocol_effect_row_t<AcceptStopWithBg>,
-    protocol_effect_row_t<AcceptStopComposed>>);
+static_assert(std::is_same_v<protocol_effect_row_t<AcceptStopWithBg>, eff::Row<>>);
+using AcceptStopComposed = ::crucible::safety::proto::compose_t<AcceptStopWithBg, End>;
+static_assert(std::is_same_v<AcceptStopComposed, Stop_g<CrashClass::Abort>>);
+static_assert(std::is_same_v<protocol_effect_row_t<AcceptStopComposed>, eff::Row<>>);
+static_assert(std::is_same_v<protocol_effect_row_t<AcceptStopWithBg>, protocol_effect_row_t<AcceptStopComposed>>);
 
 // (g.3) Epoched variants inherit through the un-epoched specs —
 //       EpochedDelegate<Stop_g<C>, K, E, G> walks to
 //       Delegate<Stop_g<C>, K>'s bottom-preservation rule and reports
 //       Row<>.  Pin against the compose result.
-using EpochedDelegateStopWithBg =
-    EpochedDelegate<Stop_g<CrashClass::Abort>, InnerBgRecv, 1, 1>;
-static_assert(std::is_same_v<
-    protocol_effect_row_t<EpochedDelegateStopWithBg>,
-    eff::Row<>>);
-using EpochedDelegateStopComposed = ::crucible::safety::proto::compose_t<
-    EpochedDelegateStopWithBg, End>;
-static_assert(std::is_same_v<
-    EpochedDelegateStopComposed, Stop_g<CrashClass::Abort>>);
-static_assert(std::is_same_v<
-    protocol_effect_row_t<EpochedDelegateStopComposed>,
-    eff::Row<>>);
+using EpochedDelegateStopWithBg = EpochedDelegate<Stop_g<CrashClass::Abort>, InnerBgRecv, 1, 1>;
+static_assert(std::is_same_v<protocol_effect_row_t<EpochedDelegateStopWithBg>, eff::Row<>>);
+using EpochedDelegateStopComposed = ::crucible::safety::proto::compose_t<EpochedDelegateStopWithBg, End>;
+static_assert(std::is_same_v<EpochedDelegateStopComposed, Stop_g<CrashClass::Abort>>);
+static_assert(std::is_same_v<protocol_effect_row_t<EpochedDelegateStopComposed>, eff::Row<>>);
 
-using EpochedAcceptStopWithBg =
-    EpochedAccept<Stop_g<CrashClass::Abort>, InnerBgRecv, 1, 1>;
-static_assert(std::is_same_v<
-    protocol_effect_row_t<EpochedAcceptStopWithBg>,
-    eff::Row<>>);
-using EpochedAcceptStopComposed = ::crucible::safety::proto::compose_t<
-    EpochedAcceptStopWithBg, End>;
-static_assert(std::is_same_v<
-    EpochedAcceptStopComposed, Stop_g<CrashClass::Abort>>);
-static_assert(std::is_same_v<
-    protocol_effect_row_t<EpochedAcceptStopComposed>,
-    eff::Row<>>);
+using EpochedAcceptStopWithBg = EpochedAccept<Stop_g<CrashClass::Abort>, InnerBgRecv, 1, 1>;
+static_assert(std::is_same_v<protocol_effect_row_t<EpochedAcceptStopWithBg>, eff::Row<>>);
+using EpochedAcceptStopComposed = ::crucible::safety::proto::compose_t<EpochedAcceptStopWithBg, End>;
+static_assert(std::is_same_v<EpochedAcceptStopComposed, Stop_g<CrashClass::Abort>>);
+static_assert(std::is_same_v<protocol_effect_row_t<EpochedAcceptStopComposed>, eff::Row<>>);
 
 // (g.4) Non-crashed Delegate<T, K> with K carrying Bg STILL reports
 //       K's row — the bottom-preservation rule is narrowly scoped to
 //       T = Stop_g<C>.  This pins that we did not over-collapse.
 using DelegateLiveWithBg = Delegate<End, InnerBgRecv>;
-static_assert(std::is_same_v<
-    protocol_effect_row_t<DelegateLiveWithBg>,
-    eff::Row<eff::Effect::Bg>>,
-    "fixy-A2-028: non-crashed Delegate<T, K> must still walk K");
+static_assert(std::is_same_v<protocol_effect_row_t<DelegateLiveWithBg>, eff::Row<eff::Effect::Bg>>,
+              "fixy-A2-028: non-crashed Delegate<T, K> must still walk K");
 
 // (h) The whole point of the gap-closure: a `Send<DelegatedSession,
 //     End>` previously yielded Row<> on the outer Send walker (the
 //     primary payload_row<> fallback).  After the spec it correctly
 //     surfaces every effect the inner protocol carries.
-using OuterSendCarryingDelegated =
-    Send<DelegatedSession<InnerIo, IPS_empty>, End>;
-static_assert(std::is_same_v<
-    protocol_effect_row_t<OuterSendCarryingDelegated>,
-    eff::Row<eff::Effect::IO>>);
+using OuterSendCarryingDelegated = Send<DelegatedSession<InnerIo, IPS_empty>, End>;
+static_assert(std::is_same_v<protocol_effect_row_t<OuterSendCarryingDelegated>, eff::Row<eff::Effect::IO>>);
 
 }  // namespace detail::payload_row_self_test
 
@@ -1009,17 +852,13 @@ static_assert(std::is_same_v<
     // test-only witness path for this smoke test.
     auto bg = eff::testing::bg();
     auto cap = eff::mint_cap<eff::Effect::Alloc>(bg);
-    static_assert(std::is_same_v<payload_row_t<decltype(cap)>,
-                                  eff::Row<eff::Effect::Alloc>>);
+    static_assert(std::is_same_v<payload_row_t<decltype(cap)>, eff::Row<eff::Effect::Alloc>>);
     static_cast<void>(cap);
 
     // Composed payload at runtime (just type-level, no construction —
     // the composed type uses Trusted refined construction below).
-    using ComposedT =
-        saf::Refined<saf::positive,
-            eff::Computation<eff::Row<eff::Effect::Bg>, int>>;
-    static_assert(std::is_same_v<payload_row_t<ComposedT>,
-                                  eff::Row<eff::Effect::Bg>>);
+    using ComposedT = saf::Refined<saf::positive, eff::Computation<eff::Row<eff::Effect::Bg>, int>>;
+    static_assert(std::is_same_v<payload_row_t<ComposedT>, eff::Row<eff::Effect::Bg>>);
 }
 
 }  // namespace crucible::safety::proto

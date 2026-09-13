@@ -173,7 +173,7 @@
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/lattices/WitnessLattice.h>
 
-#include <cstdlib>      // std::abort in the runtime smoke test
+#include <cstdlib>  // std::abort in the runtime smoke test
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -196,14 +196,10 @@ template <Witness_v Tier, typename T>
 class [[nodiscard]] Witness {
 public:
     // ── Public type aliases ─────────────────────────────────────────
-    using value_type   = T;
+    using value_type = T;
     using lattice_type = WitnessLattice::At<Tier>;
-    using graded_type  = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Comonad,
-        lattice_type,
-        T>;
-    static constexpr ::crucible::algebra::ModalityKind modality =
-        ::crucible::algebra::ModalityKind::Comonad;
+    using graded_type = ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Comonad, lattice_type, T>;
+    static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::Comonad;
 
     // The pinned tier — exposed as a static constexpr for callers
     // doing tier-aware dispatch without instantiating the wrapper.
@@ -218,7 +214,6 @@ private:
     graded_type impl_;
 
 public:
-
     // ── Construction ────────────────────────────────────────────────
     //
     // Default: T{} at the pinned tier.
@@ -234,16 +229,14 @@ public:
     // that have actually discharged the proof obligation — the
     // default ctor exists for compatibility with std::array<
     // Witness<...>, N> / struct-field default-init contexts.
-    constexpr Witness() noexcept(
-        std::is_nothrow_default_constructible_v<T>)
+    constexpr Witness() noexcept(std::is_nothrow_default_constructible_v<T>)
         : impl_{T{}, typename lattice_type::element_type{}} {}
 
     // Explicit construction from a T value.  The most common
     // production pattern — a proof-producing site produces a value
     // alongside the discharge witness; the wrapper binds that tier
     // into the type.
-    constexpr explicit Witness(T value) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    constexpr explicit Witness(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(value), typename lattice_type::element_type{}} {}
 
     // In-place construction — avoids moving T through a temporary.
@@ -251,11 +244,9 @@ public:
     // pattern.
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr explicit Witness(std::in_place_t, Args&&... args)
-        noexcept(std::is_nothrow_constructible_v<T, Args...>
-                 && std::is_nothrow_move_constructible_v<T>)
-        : impl_{T(std::forward<Args>(args)...),
-                typename lattice_type::element_type{}} {}
+    constexpr explicit Witness(std::in_place_t, Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
+                                                                         && std::is_nothrow_move_constructible_v<T>)
+        : impl_{T(std::forward<Args>(args)...), typename lattice_type::element_type{}} {}
 
     // Defaulted copy/move/destroy — Witness IS COPYABLE.  A tier
     // pin is a static property of the value's proof strength;
@@ -263,21 +254,22 @@ public:
     // is the OPPOSITE of Secret<T>, which deletes copy to enforce
     // information-flow non-duplication — witness IS metadata, not
     // a classified channel.
-    constexpr Witness(const Witness&)            = default;
-    constexpr Witness(Witness&&)                 = default;
+    constexpr Witness(const Witness&) = default;
+    constexpr Witness(Witness&&) = default;
     constexpr Witness& operator=(const Witness&) = default;
-    constexpr Witness& operator=(Witness&&)      = default;
-    ~Witness()                                   = default;
+    constexpr Witness& operator=(Witness&&) = default;
+    ~Witness() = default;
 
     // Equality: compares value bytes within the SAME tier pin.
     // Cross-tier comparison is rejected at overload resolution
     // because the friend takes two `Witness const&` of identical
     // <Tier, T> instantiation.  Mirrors Consistency.h's family-
     // parity discipline.
-    [[nodiscard]] friend constexpr bool operator==(
-        Witness const& a, Witness const& b) noexcept(
-        noexcept(a.peek() == b.peek()))
-        requires requires(T const& x, T const& y) { { x == y } -> std::convertible_to<bool>; }
+    [[nodiscard]] friend constexpr bool operator==(Witness const& a,
+                                                   Witness const& b) noexcept(noexcept(a.peek() == b.peek()))
+        requires requires(T const& x, T const& y) {
+            { x == y } -> std::convertible_to<bool>;
+        }
     {
         return a.peek() == b.peek();
     }
@@ -289,18 +281,12 @@ public:
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return graded_type::lattice_name();
-    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 
     // ── Read-only access ────────────────────────────────────────────
-    [[nodiscard]] constexpr T const& peek() const& noexcept {
-        return impl_.peek();
-    }
+    [[nodiscard]] constexpr T const& peek() const& noexcept { return impl_.peek(); }
 
-    [[nodiscard]] constexpr T consume() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return std::move(impl_).consume();
     }
 
@@ -312,9 +298,7 @@ public:
     // the operation.  Mutating T cannot violate the tier pin: the
     // tier is a TYPE-LEVEL fact about how the value was produced,
     // not about the value's current bytes.
-    [[nodiscard]] constexpr T& peek_mut() & noexcept {
-        return impl_.peek_mut();
-    }
+    [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(); }
 
     // ── extract — Comonad counit ────────────────────────────────────
     //
@@ -330,24 +314,14 @@ public:
     // also `&&`-qualified, also returns T): the methods do the same
     // thing at the substrate level; the asymmetry is at the gate —
     // declassify requires a `secret_policy::*` tag; extract is open.
-    [[nodiscard]] constexpr T extract() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr T extract() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return std::move(impl_).extract();
     }
 
     // ── swap (forwarded from Graded substrate) ─────────────────────
-    constexpr void swap(Witness& other)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
-        impl_.swap(other.impl_);
-    }
+    constexpr void swap(Witness& other) noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
 
-    friend constexpr void swap(Witness& a, Witness& b)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
-        a.swap(b);
-    }
+    friend constexpr void swap(Witness& a, Witness& b) noexcept(std::is_nothrow_swappable_v<T>) { a.swap(b); }
 
     // ── satisfies<RequiredTier> — static subsumption check ─────────
     //
@@ -382,21 +356,17 @@ public:
     // strengthen a tier pin once the value was produced under a
     // weaker proof regime.
     template <Witness_v WeakerTier>
-        requires (WitnessLattice::leq(WeakerTier, Tier))
-    [[nodiscard]] constexpr Witness<WeakerTier, T> relax() const&
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
+        requires(WitnessLattice::leq(WeakerTier, Tier))
+    [[nodiscard]] constexpr Witness<WeakerTier, T> relax() const& noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
     {
         return Witness<WeakerTier, T>{this->peek()};
     }
 
     template <Witness_v WeakerTier>
-        requires (WitnessLattice::leq(WeakerTier, Tier))
-    [[nodiscard]] constexpr Witness<WeakerTier, T> relax() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
-        return Witness<WeakerTier, T>{
-            std::move(impl_).consume()};
+        requires(WitnessLattice::leq(WeakerTier, Tier))
+    [[nodiscard]] constexpr Witness<WeakerTier, T> relax() && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return Witness<WeakerTier, T>{std::move(impl_).consume()};
     }
 };
 
@@ -408,9 +378,8 @@ public:
 // Args...>` (load-bearing soundness check).
 template <Witness_v Tier, typename T, typename... Args>
     requires std::is_constructible_v<T, Args...>
-[[nodiscard]] constexpr Witness<Tier, T> mint_witness(Args&&... args)
-    noexcept(std::is_nothrow_constructible_v<T, Args...>)
-{
+[[nodiscard]] constexpr Witness<Tier, T>
+mint_witness(Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>) {
     return Witness<Tier, T>{std::in_place, std::forward<Args>(args)...};
 }
 
@@ -429,10 +398,14 @@ template <Witness_v Tier, typename T, typename... Args>
 // separate from the G9 metasystem's proof-strength tags while
 // preserving the parallel-vocabulary intent.
 namespace witness_tier {
-    template <typename T> using Unwitnessed       = Witness<Witness_v::UNWITNESSED,       T>;
-    template <typename T> using TypeChecked       = Witness<Witness_v::TYPE_CHECKED,      T>;
-    template <typename T> using TestPassed        = Witness<Witness_v::TEST_PASSED,       T>;
-    template <typename T> using FormallyVerified  = Witness<Witness_v::FORMALLY_VERIFIED, T>;
+template <typename T>
+using Unwitnessed = Witness<Witness_v::UNWITNESSED, T>;
+template <typename T>
+using TypeChecked = Witness<Witness_v::TYPE_CHECKED, T>;
+template <typename T>
+using TestPassed = Witness<Witness_v::TEST_PASSED, T>;
+template <typename T>
+using FormallyVerified = Witness<Witness_v::FORMALLY_VERIFIED, T>;
 }  // namespace witness_tier
 
 // ── Layout invariants ───────────────────────────────────────────────
@@ -442,38 +415,42 @@ namespace witness_tier {
 // (1B, 4B, 8B) and across the full tier spectrum.
 namespace detail::witness_layout {
 
-template <typename T> using FormallyW = Witness<Witness_v::FORMALLY_VERIFIED, T>;
-template <typename T> using TestedW   = Witness<Witness_v::TEST_PASSED,       T>;
-template <typename T> using TypedW    = Witness<Witness_v::TYPE_CHECKED,      T>;
-template <typename T> using UnwitW    = Witness<Witness_v::UNWITNESSED,       T>;
+template <typename T>
+using FormallyW = Witness<Witness_v::FORMALLY_VERIFIED, T>;
+template <typename T>
+using TestedW = Witness<Witness_v::TEST_PASSED, T>;
+template <typename T>
+using TypedW = Witness<Witness_v::TYPE_CHECKED, T>;
+template <typename T>
+using UnwitW = Witness<Witness_v::UNWITNESSED, T>;
 
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(FormallyW, char);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(FormallyW, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(FormallyW, double);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(TestedW,   int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(TestedW,   double);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(TypedW,    int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(UnwitW,    int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(UnwitW,    double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(TestedW, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(TestedW, double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(TypedW, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(UnwitW, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(UnwitW, double);
 
 }  // namespace detail::witness_layout
 
 // Direct sizeof witnesses — EBO collapse must hold for the
 // production-typical T sizes regardless of which tier is pinned.
-static_assert(sizeof(Witness<Witness_v::UNWITNESSED,       int>)    == sizeof(int));
-static_assert(sizeof(Witness<Witness_v::TYPE_CHECKED,      int>)    == sizeof(int));
-static_assert(sizeof(Witness<Witness_v::TEST_PASSED,       int>)    == sizeof(int));
-static_assert(sizeof(Witness<Witness_v::FORMALLY_VERIFIED, int>)    == sizeof(int));
+static_assert(sizeof(Witness<Witness_v::UNWITNESSED, int>) == sizeof(int));
+static_assert(sizeof(Witness<Witness_v::TYPE_CHECKED, int>) == sizeof(int));
+static_assert(sizeof(Witness<Witness_v::TEST_PASSED, int>) == sizeof(int));
+static_assert(sizeof(Witness<Witness_v::FORMALLY_VERIFIED, int>) == sizeof(int));
 static_assert(sizeof(Witness<Witness_v::FORMALLY_VERIFIED, double>) == sizeof(double));
-static_assert(sizeof(Witness<Witness_v::FORMALLY_VERIFIED, char>)   == sizeof(char));
+static_assert(sizeof(Witness<Witness_v::FORMALLY_VERIFIED, char>) == sizeof(char));
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::witness_self_test {
 
-using FormallyInt   = Witness<Witness_v::FORMALLY_VERIFIED, int>;
-using TestedInt     = Witness<Witness_v::TEST_PASSED,       int>;
-using TypedInt      = Witness<Witness_v::TYPE_CHECKED,      int>;
-using UnwitnessedInt = Witness<Witness_v::UNWITNESSED,      int>;
+using FormallyInt = Witness<Witness_v::FORMALLY_VERIFIED, int>;
+using TestedInt = Witness<Witness_v::TEST_PASSED, int>;
+using TypedInt = Witness<Witness_v::TYPE_CHECKED, int>;
+using UnwitnessedInt = Witness<Witness_v::UNWITNESSED, int>;
 
 // ── Construction paths ─────────────────────────────────────────────
 inline constexpr FormallyInt w_default{};
@@ -484,9 +461,9 @@ inline constexpr FormallyInt w_explicit{42};
 static_assert(w_explicit.peek() == 42);
 
 // ── Pinned tier accessor ───────────────────────────────────────────
-static_assert(FormallyInt::tier    == Witness_v::FORMALLY_VERIFIED);
-static_assert(TestedInt::tier      == Witness_v::TEST_PASSED);
-static_assert(TypedInt::tier       == Witness_v::TYPE_CHECKED);
+static_assert(FormallyInt::tier == Witness_v::FORMALLY_VERIFIED);
+static_assert(TestedInt::tier == Witness_v::TEST_PASSED);
+static_assert(TypedInt::tier == Witness_v::TYPE_CHECKED);
 static_assert(UnwitnessedInt::tier == Witness_v::UNWITNESSED);
 
 // ── satisfies<RequiredTier> — subsumption-up direction ─────────────
@@ -498,19 +475,19 @@ static_assert(FormallyInt::satisfies<Witness_v::TYPE_CHECKED>);
 static_assert(FormallyInt::satisfies<Witness_v::UNWITNESSED>);
 
 // A TEST_PASSED producer satisfies weaker-or-equal consumers only.
-static_assert( TestedInt::satisfies<Witness_v::TEST_PASSED>);  // self
-static_assert( TestedInt::satisfies<Witness_v::TYPE_CHECKED>); // weaker
-static_assert( TestedInt::satisfies<Witness_v::UNWITNESSED>);
-static_assert(!TestedInt::satisfies<Witness_v::FORMALLY_VERIFIED>); // stronger
+static_assert(TestedInt::satisfies<Witness_v::TEST_PASSED>);  // self
+static_assert(TestedInt::satisfies<Witness_v::TYPE_CHECKED>);  // weaker
+static_assert(TestedInt::satisfies<Witness_v::UNWITNESSED>);
+static_assert(!TestedInt::satisfies<Witness_v::FORMALLY_VERIFIED>);  // stronger
 
 // A TYPE_CHECKED producer satisfies TYPE_CHECKED and UNWITNESSED only.
-static_assert( TypedInt::satisfies<Witness_v::TYPE_CHECKED>);
-static_assert( TypedInt::satisfies<Witness_v::UNWITNESSED>);
+static_assert(TypedInt::satisfies<Witness_v::TYPE_CHECKED>);
+static_assert(TypedInt::satisfies<Witness_v::UNWITNESSED>);
 static_assert(!TypedInt::satisfies<Witness_v::TEST_PASSED>);
 static_assert(!TypedInt::satisfies<Witness_v::FORMALLY_VERIFIED>);
 
 // An UNWITNESSED producer satisfies only UNWITNESSED consumers.
-static_assert( UnwitnessedInt::satisfies<Witness_v::UNWITNESSED>);
+static_assert(UnwitnessedInt::satisfies<Witness_v::UNWITNESSED>);
 static_assert(!UnwitnessedInt::satisfies<Witness_v::TYPE_CHECKED>);
 static_assert(!UnwitnessedInt::satisfies<Witness_v::TEST_PASSED>);
 static_assert(!UnwitnessedInt::satisfies<Witness_v::FORMALLY_VERIFIED>);
@@ -518,39 +495,34 @@ static_assert(!UnwitnessedInt::satisfies<Witness_v::FORMALLY_VERIFIED>);
 // ── relax<WeakerTier> — DOWN-the-lattice conversion ────────────────
 //
 // FORMALLY_VERIFIED relaxes to any tier.
-inline constexpr auto from_formally_to_tested =
-    FormallyInt{42}.relax<Witness_v::TEST_PASSED>();
+inline constexpr auto from_formally_to_tested = FormallyInt{42}.relax<Witness_v::TEST_PASSED>();
 static_assert(from_formally_to_tested.peek() == 42);
 static_assert(from_formally_to_tested.tier == Witness_v::TEST_PASSED);
 
-inline constexpr auto from_formally_to_unwitnessed =
-    FormallyInt{99}.relax<Witness_v::UNWITNESSED>();
+inline constexpr auto from_formally_to_unwitnessed = FormallyInt{99}.relax<Witness_v::UNWITNESSED>();
 static_assert(from_formally_to_unwitnessed.peek() == 99);
 static_assert(from_formally_to_unwitnessed.tier == Witness_v::UNWITNESSED);
 
 // TEST_PASSED relaxes to TYPE_CHECKED.
-inline constexpr auto from_tested_to_typed =
-    TestedInt{7}.relax<Witness_v::TYPE_CHECKED>();
+inline constexpr auto from_tested_to_typed = TestedInt{7}.relax<Witness_v::TYPE_CHECKED>();
 static_assert(from_tested_to_typed.peek() == 7);
 static_assert(from_tested_to_typed.tier == Witness_v::TYPE_CHECKED);
 
 // Reflexive: relax<SameTier> is a no-op.
-inline constexpr auto identity_relax =
-    FormallyInt{100}.relax<Witness_v::FORMALLY_VERIFIED>();
+inline constexpr auto identity_relax = FormallyInt{100}.relax<Witness_v::FORMALLY_VERIFIED>();
 static_assert(identity_relax.peek() == 100);
 static_assert(identity_relax.tier == Witness_v::FORMALLY_VERIFIED);
 
 // ── mint_witness §XXI factory ──────────────────────────────────────
-inline constexpr auto minted_formally =
-    mint_witness<Witness_v::FORMALLY_VERIFIED, int>(123);
+inline constexpr auto minted_formally = mint_witness<Witness_v::FORMALLY_VERIFIED, int>(123);
 static_assert(minted_formally.peek() == 123);
 static_assert(minted_formally.tier == Witness_v::FORMALLY_VERIFIED);
 
 // ── Convenience aliases round-trip ─────────────────────────────────
 static_assert(std::is_same_v<witness_tier::FormallyVerified<int>, FormallyInt>);
-static_assert(std::is_same_v<witness_tier::TestPassed<int>,        TestedInt>);
-static_assert(std::is_same_v<witness_tier::TypeChecked<int>,       TypedInt>);
-static_assert(std::is_same_v<witness_tier::Unwitnessed<int>,       UnwitnessedInt>);
+static_assert(std::is_same_v<witness_tier::TestPassed<int>, TestedInt>);
+static_assert(std::is_same_v<witness_tier::TypeChecked<int>, TypedInt>);
+static_assert(std::is_same_v<witness_tier::Unwitnessed<int>, UnwitnessedInt>);
 
 // ── Equality at same tier ──────────────────────────────────────────
 static_assert(FormallyInt{42} == FormallyInt{42});
@@ -575,7 +547,7 @@ static_assert(FormallyInt::modality == ::crucible::algebra::ModalityKind::Comona
 // / consume() and a constexpr-vs-runtime divergence would silently
 // misroute witness reads.
 inline void runtime_smoke_test() {
-    int seed = 17;                                          // non-constant
+    int seed = 17;  // non-constant
 
     FormallyInt w{seed * 2};
     if (w.peek() != 34) std::abort();
@@ -603,7 +575,7 @@ inline void runtime_smoke_test() {
 
     // Copy semantics — Witness IS COPYABLE (metadata, not classified).
     FormallyInt c1{seed};
-    FormallyInt c2 = c1;                                    // copy ctor
+    FormallyInt c2 = c1;  // copy ctor
     if (c1.peek() != c2.peek()) std::abort();
     if (c1.peek() != 17) std::abort();
 

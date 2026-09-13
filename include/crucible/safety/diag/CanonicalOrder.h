@@ -180,14 +180,12 @@ inline constexpr int kCanonicalLayerCount = 16;
 
 template <typename W>
 concept HasCanonicalLayerIndex = requires {
-    { canonical_layer_index<std::remove_cvref_t<W>>::value }
-        -> std::convertible_to<int>;
+    { canonical_layer_index<std::remove_cvref_t<W>>::value } -> std::convertible_to<int>;
 };
 
 template <typename W>
     requires HasCanonicalLayerIndex<W>
-inline constexpr int canonical_layer_index_v
-    = canonical_layer_index<std::remove_cvref_t<W>>::value;
+inline constexpr int canonical_layer_index_v = canonical_layer_index<std::remove_cvref_t<W>>::value;
 
 // ── is_canonically_ordered<Stack>() — the actual predicate ─────────
 //
@@ -232,8 +230,7 @@ template <typename Stack>
 }
 
 template <typename Stack>
-inline constexpr bool is_canonically_ordered_v
-    = is_canonically_ordered<Stack>();
+inline constexpr bool is_canonically_ordered_v = is_canonically_ordered<Stack>();
 
 template <typename Stack>
 concept CanonicallyOrdered = is_canonically_ordered_v<Stack>;
@@ -250,33 +247,31 @@ namespace _selftest {
 
 // (1) Per-wrapper layer-index pins.  Out-of-tree positions zero-
 //     based; the comment beside each cites the §XVI doc line.
-static_assert(canonical_layer_index_v<HotPath<HotPathTier_v::Hot, int>>       ==  0);
-static_assert(canonical_layer_index_v<DetSafe<DetSafeTier_v::Pure, int>>      ==  1);
+static_assert(canonical_layer_index_v<HotPath<HotPathTier_v::Hot, int>> == 0);
+static_assert(canonical_layer_index_v<DetSafe<DetSafeTier_v::Pure, int>> == 1);
 // NumericalTier uses the Tolerance enum (not a _v alias).
-static_assert(canonical_layer_index_v<NumericalTier<::crucible::algebra::lattices::Tolerance::BITEXACT, int>> ==  2);
-static_assert(canonical_layer_index_v<Vendor<VendorBackend_v::NV, int>>        ==  3);
+static_assert(canonical_layer_index_v<NumericalTier<::crucible::algebra::lattices::Tolerance::BITEXACT, int>> == 2);
+static_assert(canonical_layer_index_v<Vendor<VendorBackend_v::NV, int>> == 3);
 static_assert(canonical_layer_index_v<ResidencyHeat<ResidencyHeatTag_v::Hot, int>> == 4);
-static_assert(canonical_layer_index_v<CipherTier<CipherTierTag_v::Hot, int>>   ==  5);
+static_assert(canonical_layer_index_v<CipherTier<CipherTierTag_v::Hot, int>> == 5);
 static_assert(canonical_layer_index_v<AllocClass<AllocClassTag_v::Arena, int>> == 6);
-static_assert(canonical_layer_index_v<Wait<WaitStrategy_v::SpinPause, int>>    == 7);
+static_assert(canonical_layer_index_v<Wait<WaitStrategy_v::SpinPause, int>> == 7);
 // MemOrder uses MemOrderTag_v.  Use the SeqCst entry as a stable witness.
-static_assert(canonical_layer_index_v<MemOrder<MemOrderTag_v::SeqCst, int>>    == 8);
+static_assert(canonical_layer_index_v<MemOrder<MemOrderTag_v::SeqCst, int>> == 8);
 static_assert(canonical_layer_index_v<Progress<ProgressClass_v::Bounded, int>> == 9);
-static_assert(canonical_layer_index_v<Stale<int>>                              == 10);
-static_assert(canonical_layer_index_v<Tagged<int, source::FromUser>>           == 11);
+static_assert(canonical_layer_index_v<Stale<int>> == 10);
+static_assert(canonical_layer_index_v<Tagged<int, source::FromUser>> == 11);
 // Refined needs a concrete predicate; the bounded_above<8> mint
 // exists in Refined.h's predicate corner.
-static_assert(canonical_layer_index_v<Refined<bounded_above<int{8}>, int>>     == 12);
-static_assert(canonical_layer_index_v<Secret<int>>                             == 13);
-static_assert(canonical_layer_index_v<Linear<int>>                             == 14);
-static_assert(canonical_layer_index_v<
-    ::crucible::effects::Computation<::crucible::effects::Row<>, int>>         == 15);
+static_assert(canonical_layer_index_v<Refined<bounded_above<int{8}>, int>> == 12);
+static_assert(canonical_layer_index_v<Secret<int>> == 13);
+static_assert(canonical_layer_index_v<Linear<int>> == 14);
+static_assert(canonical_layer_index_v<::crucible::effects::Computation<::crucible::effects::Row<>, int>> == 15);
 
 // (2) Cardinality pin.
-static_assert(kCanonicalLayerCount == 16,
-    "FIXY-FOUND-048: §XVI canonical wrapper-nesting order ships 16 "
-    "positions (HotPath through Computation).  A new canonical layer "
-    "requires updating both CLAUDE.md §XVI AND this pin.");
+static_assert(kCanonicalLayerCount == 16, "FIXY-FOUND-048: §XVI canonical wrapper-nesting order ships 16 "
+                                          "positions (HotPath through Computation).  A new canonical layer "
+                                          "requires updating both CLAUDE.md §XVI AND this pin.");
 
 // (3) Vacuously-canonical: bare payload is trivially in order.
 static_assert(is_canonically_ordered_v<int>);
@@ -287,28 +282,24 @@ static_assert(is_canonically_ordered_v<Linear<int>>);
 static_assert(is_canonically_ordered_v<HotPath<HotPathTier_v::Hot, int>>);
 
 // (5) Canonical two-layer: HotPath ⊃ Linear (0 < 14).
-static_assert(is_canonically_ordered_v<
-    HotPath<HotPathTier_v::Hot, Linear<int>>>);
+static_assert(is_canonically_ordered_v<HotPath<HotPathTier_v::Hot, Linear<int>>>);
 
 // (6) INVERTED two-layer: Linear ⊃ HotPath (14 > 0) — rejected.
-static_assert(!is_canonically_ordered_v<
-    Linear<HotPath<HotPathTier_v::Hot, int>>>);
+static_assert(!is_canonically_ordered_v<Linear<HotPath<HotPathTier_v::Hot, int>>>);
 
 // (7) Same canonical layer twice (e.g. HotPath ⊃ HotPath) is a
 //     defect — strict increase, equal is rejected.
-static_assert(!is_canonically_ordered_v<
-    HotPath<HotPathTier_v::Hot,
-        HotPath<HotPathTier_v::Cold, int>>>);
+static_assert(!is_canonically_ordered_v<HotPath<HotPathTier_v::Hot, HotPath<HotPathTier_v::Cold, int>>>);
 
 // (8) Full §XVI stack — the canonical example from CLAUDE.md §XVI.
 //     HotPath ⊃ DetSafe ⊃ NumericalTier ⊃ Vendor ⊃ Computation<Row<>, T>
-static_assert(is_canonically_ordered_v<
-    HotPath<HotPathTier_v::Hot,
-        DetSafe<DetSafeTier_v::Pure,
-            NumericalTier<::crucible::algebra::lattices::Tolerance::BITEXACT,
-                Vendor<VendorBackend_v::NV,
-                    ::crucible::effects::Computation<
-                        ::crucible::effects::Row<>, int>>>>>>);
+static_assert(
+    is_canonically_ordered_v<
+        HotPath<HotPathTier_v::Hot,
+                DetSafe<DetSafeTier_v::Pure,
+                        NumericalTier<::crucible::algebra::lattices::Tolerance::BITEXACT,
+                                      Vendor<VendorBackend_v::NV,
+                                             ::crucible::effects::Computation<::crucible::effects::Row<>, int>>>>>>);
 
 // (9) Off-tree wrapper does NOT disrupt canonical descent.
 //     Linear<T> at position 14, with Stale<T> at position 10 INSIDE,
@@ -316,18 +307,14 @@ static_assert(is_canonically_ordered_v<
 //     two canonical layers passes through neutrally.  Witness:
 //     Tagged<...> at position 11 wrapping Refined at position 12 is
 //     canonical (11 < 12).
-static_assert(is_canonically_ordered_v<
-    Tagged<Refined<bounded_above<int{8}>, int>, source::FromUser>>);
+static_assert(is_canonically_ordered_v<Tagged<Refined<bounded_above<int{8}>, int>, source::FromUser>>);
 
 // (10) Triple-stack mid-§XVI: Stale ⊃ Tagged ⊃ Refined (10 < 11 < 12).
-static_assert(is_canonically_ordered_v<
-    Stale<Tagged<Refined<bounded_above<int{8}>, int>, source::FromUser>>>);
+static_assert(is_canonically_ordered_v<Stale<Tagged<Refined<bounded_above<int{8}>, int>, source::FromUser>>>);
 
 // (11) Inverting that triple: Refined ⊃ Tagged ⊃ Stale (12 > 11 > 10)
 //      — rejected.
-static_assert(!is_canonically_ordered_v<
-    Refined<bounded_above<int{8}>,
-        Tagged<Stale<int>, source::FromUser>>>);
+static_assert(!is_canonically_ordered_v<Refined<bounded_above<int{8}>, Tagged<Stale<int>, source::FromUser>>>);
 
 }  // namespace _selftest
 }  // namespace crucible::safety::diag::canonical_order

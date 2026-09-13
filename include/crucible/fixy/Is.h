@@ -136,60 +136,92 @@ namespace crucible::fixy::is {
 // All concepts live in `crucible::safety::extract`; re-define each as
 // a template alias delegating to the substrate concept.
 
-template <typename T> concept IsAllocClass     = ::crucible::safety::extract::IsAllocClass<T>;
-template <typename T> concept IsBits           = ::crucible::safety::extract::IsBits<T>;
-template <typename T> concept IsBorrowed       = ::crucible::safety::extract::IsBorrowed<T>;
-template <typename T> concept IsBorrowedRef    = ::crucible::safety::extract::IsBorrowedRef<T>;
-template <typename T> concept IsBudgeted       = ::crucible::safety::extract::IsBudgeted<T>;
-template <typename T> concept IsCipherTier     = ::crucible::safety::extract::IsCipherTier<T>;
-template <typename T> concept IsConsistency    = ::crucible::safety::extract::IsConsistency<T>;
-template <typename T> concept IsCrash          = ::crucible::safety::extract::IsCrash<T>;
-template <typename T> concept IsDetSafe        = ::crucible::safety::extract::IsDetSafe<T>;
-template <typename T> concept IsEpochVersioned = ::crucible::safety::extract::IsEpochVersioned<T>;
-template <typename T> concept IsHotPath        = ::crucible::safety::extract::IsHotPath<T>;
-template <typename T> concept IsLinear         = ::crucible::safety::extract::IsLinear<T>;
-template <typename T> concept IsMemOrder       = ::crucible::safety::extract::IsMemOrder<T>;
-template <typename T> concept IsNumaPlacement  = ::crucible::safety::extract::IsNumaPlacement<T>;
-template <typename T> concept IsNumericalTier  = ::crucible::safety::extract::IsNumericalTier<T>;
-template <typename T> concept IsOpaqueLifetime = ::crucible::safety::extract::IsOpaqueLifetime<T>;
-template <typename T> concept IsProgress       = ::crucible::safety::extract::IsProgress<T>;
-template <typename T> concept IsRecipeSpec     = ::crucible::safety::extract::IsRecipeSpec<T>;
-template <typename T> concept IsReduceInto     = ::crucible::safety::extract::IsReduceInto<T>;
-template <typename T> concept IsRefined        = ::crucible::safety::extract::IsRefined<T>;
-template <typename T> concept IsResidencyHeat  = ::crucible::safety::extract::IsResidencyHeat<T>;
-template <typename T> concept IsSecret         = ::crucible::safety::extract::IsSecret<T>;
-template <typename T> concept IsStale          = ::crucible::safety::extract::IsStale<T>;
-template <typename T> concept IsTagged         = ::crucible::safety::extract::IsTagged<T>;
-template <typename T> concept IsVendor         = ::crucible::safety::extract::IsVendor<T>;
-template <typename T> concept IsWait           = ::crucible::safety::extract::IsWait<T>;
+template <typename T>
+concept IsAllocClass = ::crucible::safety::extract::IsAllocClass<T>;
+template <typename T>
+concept IsBits = ::crucible::safety::extract::IsBits<T>;
+template <typename T>
+concept IsBorrowed = ::crucible::safety::extract::IsBorrowed<T>;
+template <typename T>
+concept IsBorrowedRef = ::crucible::safety::extract::IsBorrowedRef<T>;
+template <typename T>
+concept IsBudgeted = ::crucible::safety::extract::IsBudgeted<T>;
+template <typename T>
+concept IsCipherTier = ::crucible::safety::extract::IsCipherTier<T>;
+template <typename T>
+concept IsConsistency = ::crucible::safety::extract::IsConsistency<T>;
+template <typename T>
+concept IsCrash = ::crucible::safety::extract::IsCrash<T>;
+template <typename T>
+concept IsDetSafe = ::crucible::safety::extract::IsDetSafe<T>;
+template <typename T>
+concept IsEpochVersioned = ::crucible::safety::extract::IsEpochVersioned<T>;
+template <typename T>
+concept IsHotPath = ::crucible::safety::extract::IsHotPath<T>;
+template <typename T>
+concept IsLinear = ::crucible::safety::extract::IsLinear<T>;
+template <typename T>
+concept IsMemOrder = ::crucible::safety::extract::IsMemOrder<T>;
+template <typename T>
+concept IsNumaPlacement = ::crucible::safety::extract::IsNumaPlacement<T>;
+template <typename T>
+concept IsNumericalTier = ::crucible::safety::extract::IsNumericalTier<T>;
+template <typename T>
+concept IsOpaqueLifetime = ::crucible::safety::extract::IsOpaqueLifetime<T>;
+template <typename T>
+concept IsProgress = ::crucible::safety::extract::IsProgress<T>;
+template <typename T>
+concept IsRecipeSpec = ::crucible::safety::extract::IsRecipeSpec<T>;
+template <typename T>
+concept IsReduceInto = ::crucible::safety::extract::IsReduceInto<T>;
+template <typename T>
+concept IsRefined = ::crucible::safety::extract::IsRefined<T>;
+template <typename T>
+concept IsResidencyHeat = ::crucible::safety::extract::IsResidencyHeat<T>;
+template <typename T>
+concept IsSecret = ::crucible::safety::extract::IsSecret<T>;
+template <typename T>
+concept IsStale = ::crucible::safety::extract::IsStale<T>;
+template <typename T>
+concept IsTagged = ::crucible::safety::extract::IsTagged<T>;
+template <typename T>
+concept IsVendor = ::crucible::safety::extract::IsVendor<T>;
+template <typename T>
+concept IsWait = ::crucible::safety::extract::IsWait<T>;
 
 // ─── Structural-wrapper recognizers ───────────────────────────────
 
-template <typename T> concept IsOwnedRegion    = ::crucible::safety::extract::IsOwnedRegion<T>;
+template <typename T>
+concept IsOwnedRegion = ::crucible::safety::extract::IsOwnedRegion<T>;
 
 // ─── Permission tokens (linear + fractional) ──────────────────────
 
-template <typename T> concept IsPermission       = ::crucible::safety::extract::IsPermission<T>;
-template <typename T> concept IsSharedPermission = ::crucible::safety::extract::IsSharedPermission<T>;
+template <typename T>
+concept IsPermission = ::crucible::safety::extract::IsPermission<T>;
+template <typename T>
+concept IsSharedPermission = ::crucible::safety::extract::IsSharedPermission<T>;
 
 template <typename T, typename Tag>
-concept IsPermissionFor =
-    ::crucible::safety::extract::IsPermissionFor<T, Tag>;
+concept IsPermissionFor = ::crucible::safety::extract::IsPermissionFor<T, Tag>;
 
 template <typename T, typename Tag>
-concept IsSharedPermissionFor =
-    ::crucible::safety::extract::IsSharedPermissionFor<T, Tag>;
+concept IsSharedPermissionFor = ::crucible::safety::extract::IsSharedPermissionFor<T, Tag>;
 
 // ─── Session handles (protocol typestate) ─────────────────────────
 
-template <typename T> concept IsSessionHandle = ::crucible::safety::extract::IsSessionHandle<T>;
+template <typename T>
+concept IsSessionHandle = ::crucible::safety::extract::IsSessionHandle<T>;
 
 // ─── SPSC / SWMR handle shapes (substrate concepts) ───────────────
 
-template <typename T> concept IsConsumerHandle = ::crucible::safety::extract::IsConsumerHandle<T>;
-template <typename T> concept IsProducerHandle = ::crucible::safety::extract::IsProducerHandle<T>;
-template <typename T> concept IsSwmrReader     = ::crucible::safety::extract::IsSwmrReader<T>;
-template <typename T> concept IsSwmrWriter     = ::crucible::safety::extract::IsSwmrWriter<T>;
+template <typename T>
+concept IsConsumerHandle = ::crucible::safety::extract::IsConsumerHandle<T>;
+template <typename T>
+concept IsProducerHandle = ::crucible::safety::extract::IsProducerHandle<T>;
+template <typename T>
+concept IsSwmrReader = ::crucible::safety::extract::IsSwmrReader<T>;
+template <typename T>
+concept IsSwmrWriter = ::crucible::safety::extract::IsSwmrWriter<T>;
 
 // ─── Witness-tier recognizer (proof-relevance lattice) ────────────
 
@@ -354,17 +386,14 @@ namespace crucible::fixy::is::self_test {
 //     witnesses that the alias reaches the substrate concept's logic
 //     (`safety::Linear<int>` is pulled in transitively by IsLinear.h),
 //     not just a stub returning false.
-static_assert(IsLinear<::crucible::safety::Linear<int>>,
-    "fixy::is::IsLinear must recognise safety::Linear<int>.");
+static_assert(IsLinear<::crucible::safety::Linear<int>>, "fixy::is::IsLinear must recognise safety::Linear<int>.");
 static_assert(IsLinear<::crucible::safety::Linear<int>>
-           == ::crucible::safety::extract::IsLinear<
-                  ::crucible::safety::Linear<int>>,
-    "fixy::is::IsLinear must agree with safety::extract::IsLinear on "
-    "every payload (alias, not shadow).");
-static_assert(!IsLinear<int>,
-    "fixy::is::IsLinear must reject bare types.");
+                  == ::crucible::safety::extract::IsLinear<::crucible::safety::Linear<int>>,
+              "fixy::is::IsLinear must agree with safety::extract::IsLinear on "
+              "every payload (alias, not shadow).");
+static_assert(!IsLinear<int>, "fixy::is::IsLinear must reject bare types.");
 static_assert(is_linear_v<::crucible::safety::Linear<int>>,
-    "fixy::is::is_linear_v trait must mirror the concept alias.");
+              "fixy::is::is_linear_v trait must mirror the concept alias.");
 
 // (2) IsSecret — second Graded-backed family.  Negative-case
 //     agreement scales the witness pattern across recognizers.
@@ -373,8 +402,7 @@ static_assert(is_secret_v<int> == ::crucible::safety::extract::is_secret_v<int>)
 
 // (3) IsPermissionFor — 2-arg parameterised concept; proves the
 //     two-template-parameter alias form preserves substrate behaviour.
-static_assert(IsPermissionFor<int, int>
-           == ::crucible::safety::extract::IsPermissionFor<int, int>);
+static_assert(IsPermissionFor<int, int> == ::crucible::safety::extract::IsPermissionFor<int, int>);
 
 // (4) IsWitness — cross-namespace witness branch.  Substrate lives in
 //     `safety::witness::`, not `safety::extract::`; the alias must
@@ -384,12 +412,10 @@ static_assert(IsWitness<int> == ::crucible::safety::witness::IsWitness<int>);
 // (5) linear_value_t — substrate type-alias parity (fixy-L-06).
 //     Witnesses that the slot-extractor alias re-export resolves to
 //     the substrate template, identity preserved at instantiation.
-static_assert(std::is_same_v<
-    linear_value_t<::crucible::safety::Linear<int>>,
-    ::crucible::safety::extract::linear_value_t<
-        ::crucible::safety::Linear<int>>>,
-    "fixy-L-06: fixy::is::linear_value_t must alias "
-    "safety::extract::linear_value_t (same template, not a shadow).");
+static_assert(std::is_same_v<linear_value_t<::crucible::safety::Linear<int>>,
+                             ::crucible::safety::extract::linear_value_t<::crucible::safety::Linear<int>>>,
+              "fixy-L-06: fixy::is::linear_value_t must alias "
+              "safety::extract::linear_value_t (same template, not a shadow).");
 
 // (6) tagged_tag_t — second slot-extractor family.  Two-parameter
 //     wrapper (Tagged<T, Source>) extractor — exercises the path
@@ -398,11 +424,10 @@ namespace L06_TaggedProbe {
 struct ProbeSource {};
 }  // namespace L06_TaggedProbe
 
-static_assert(std::is_same_v<
-    tagged_tag_t<::crucible::safety::Tagged<int,
-        L06_TaggedProbe::ProbeSource>>,
-    ::crucible::safety::extract::tagged_tag_t<
-        ::crucible::safety::Tagged<int, L06_TaggedProbe::ProbeSource>>>,
+static_assert(
+    std::is_same_v<
+        tagged_tag_t<::crucible::safety::Tagged<int, L06_TaggedProbe::ProbeSource>>,
+        ::crucible::safety::extract::tagged_tag_t<::crucible::safety::Tagged<int, L06_TaggedProbe::ProbeSource>>>,
     "fixy-L-06: fixy::is::tagged_tag_t must alias "
     "safety::extract::tagged_tag_t (two-arg wrapper, second-slot "
     "extractor).");
@@ -410,10 +435,9 @@ static_assert(std::is_same_v<
 // (7) is_valid_witness_v — witness-registry trait re-export.  Bare
 //     types fall through to the primary template (= true); the path
 //     identity is what we witness, not the value.
-static_assert(is_valid_witness_v<int>
-           == ::crucible::safety::witness::is_valid_witness_v<int>,
-    "fixy-L-06: fixy::is::is_valid_witness_v must alias the substrate "
-    "safety::witness::is_valid_witness_v trait, not a shadowing redef.");
+static_assert(is_valid_witness_v<int> == ::crucible::safety::witness::is_valid_witness_v<int>,
+              "fixy-L-06: fixy::is::is_valid_witness_v must alias the substrate "
+              "safety::witness::is_valid_witness_v trait, not a shadowing redef.");
 
 // (8) fixy-L-05: cross-axis 4-path closure within fixy::is::.
 //
@@ -432,45 +456,44 @@ static_assert(is_valid_witness_v<int>
 //     using-decl block above.
 
 // 13 Graded-backed value-wrapper recognizers (positive + negative each).
-static_assert(IsLinear        <::crucible::safety::Linear<int>>
-           == is_linear_v     <::crucible::safety::Linear<int>>);
-static_assert(IsLinear<int>         == is_linear_v<int>);
-static_assert(IsSecret<int>         == is_secret_v<int>);
-static_assert(IsTagged<int>         == is_tagged_v<int>);
-static_assert(IsRefined<int>        == is_refined_v<int>);
-static_assert(IsStale<int>          == is_stale_v<int>);
-static_assert(IsHotPath<int>        == is_hot_path_v<int>);
-static_assert(IsDetSafe<int>        == is_det_safe_v<int>);
-static_assert(IsNumericalTier<int>  == is_numerical_tier_v<int>);
-static_assert(IsVendor<int>         == is_vendor_v<int>);
-static_assert(IsResidencyHeat<int>  == is_residency_heat_v<int>);
-static_assert(IsCipherTier<int>     == is_cipher_tier_v<int>);
-static_assert(IsAllocClass<int>     == is_alloc_class_v<int>);
-static_assert(IsWait<int>           == is_wait_v<int>);
-static_assert(IsMemOrder<int>       == is_mem_order_v<int>);
-static_assert(IsProgress<int>       == is_progress_v<int>);
-static_assert(IsBudgeted<int>       == is_budgeted_v<int>);
-static_assert(IsBits<int>           == is_bits_v<int>);
-static_assert(IsBorrowed<int>       == is_borrowed_v<int>);
-static_assert(IsBorrowedRef<int>    == is_borrowed_ref_v<int>);
-static_assert(IsConsistency<int>    == is_consistency_v<int>);
-static_assert(IsCrash<int>          == is_crash_v<int>);
+static_assert(IsLinear<::crucible::safety::Linear<int>> == is_linear_v<::crucible::safety::Linear<int>>);
+static_assert(IsLinear<int> == is_linear_v<int>);
+static_assert(IsSecret<int> == is_secret_v<int>);
+static_assert(IsTagged<int> == is_tagged_v<int>);
+static_assert(IsRefined<int> == is_refined_v<int>);
+static_assert(IsStale<int> == is_stale_v<int>);
+static_assert(IsHotPath<int> == is_hot_path_v<int>);
+static_assert(IsDetSafe<int> == is_det_safe_v<int>);
+static_assert(IsNumericalTier<int> == is_numerical_tier_v<int>);
+static_assert(IsVendor<int> == is_vendor_v<int>);
+static_assert(IsResidencyHeat<int> == is_residency_heat_v<int>);
+static_assert(IsCipherTier<int> == is_cipher_tier_v<int>);
+static_assert(IsAllocClass<int> == is_alloc_class_v<int>);
+static_assert(IsWait<int> == is_wait_v<int>);
+static_assert(IsMemOrder<int> == is_mem_order_v<int>);
+static_assert(IsProgress<int> == is_progress_v<int>);
+static_assert(IsBudgeted<int> == is_budgeted_v<int>);
+static_assert(IsBits<int> == is_bits_v<int>);
+static_assert(IsBorrowed<int> == is_borrowed_v<int>);
+static_assert(IsBorrowedRef<int> == is_borrowed_ref_v<int>);
+static_assert(IsConsistency<int> == is_consistency_v<int>);
+static_assert(IsCrash<int> == is_crash_v<int>);
 static_assert(IsEpochVersioned<int> == is_epoch_versioned_v<int>);
-static_assert(IsNumaPlacement<int>  == is_numa_placement_v<int>);
+static_assert(IsNumaPlacement<int> == is_numa_placement_v<int>);
 static_assert(IsOpaqueLifetime<int> == is_opaque_lifetime_v<int>);
-static_assert(IsRecipeSpec<int>     == is_recipe_spec_v<int>);
-static_assert(IsReduceInto<int>     == is_reduce_into_v<int>);
+static_assert(IsRecipeSpec<int> == is_recipe_spec_v<int>);
+static_assert(IsReduceInto<int> == is_reduce_into_v<int>);
 
 // Structural-wrapper + Permission + Session + SPSC/SWMR-handle
 // recognizers (one negative witness each — positive cases live in the
 // substrate header self_tests; we only witness fixy-side path agreement).
-static_assert(IsOwnedRegion<int>     == is_owned_region_v<int>);
-static_assert(IsPermission<int>      == is_permission_v<int>);
+static_assert(IsOwnedRegion<int> == is_owned_region_v<int>);
+static_assert(IsPermission<int> == is_permission_v<int>);
 static_assert(IsSharedPermission<int> == is_shared_permission_v<int>);
-static_assert(IsSessionHandle<int>   == is_session_handle_v<int>);
-static_assert(IsConsumerHandle<int>  == is_consumer_handle_v<int>);
-static_assert(IsProducerHandle<int>  == is_producer_handle_v<int>);
-static_assert(IsSwmrReader<int>      == is_swmr_reader_v<int>);
-static_assert(IsSwmrWriter<int>      == is_swmr_writer_v<int>);
+static_assert(IsSessionHandle<int> == is_session_handle_v<int>);
+static_assert(IsConsumerHandle<int> == is_consumer_handle_v<int>);
+static_assert(IsProducerHandle<int> == is_producer_handle_v<int>);
+static_assert(IsSwmrReader<int> == is_swmr_reader_v<int>);
+static_assert(IsSwmrWriter<int> == is_swmr_writer_v<int>);
 
 }  // namespace crucible::fixy::is::self_test

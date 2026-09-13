@@ -127,7 +127,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/safety/ConstantTime.h>
-#include <crucible/safety/Secret.h>          // for DeclassificationPolicy concept
+#include <crucible/safety/Secret.h>  // for DeclassificationPolicy concept
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionSubtype.h>
 
@@ -182,24 +182,22 @@ public:
 
     // Construct from raw T.  Move-in (T is trivially copyable so
     // this is a copy at the value level, but we move the wrapper).
-    constexpr explicit CTPayload(T v) noexcept
-        : value_{std::move(v)} {}
+    constexpr explicit CTPayload(T v) noexcept : value_{std::move(v)} {}
 
     // In-place construction.
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr explicit CTPayload(std::in_place_t, Args&&... args)
-        noexcept(std::is_nothrow_constructible_v<T, Args...>)
+    constexpr explicit CTPayload(std::in_place_t, Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>)
         : value_{std::forward<Args>(args)...} {}
 
     // Move-only.  Copy is deleted with audit-readable reason.
-    CTPayload(const CTPayload&)
-        = delete("CTPayload wraps CT-required data; classified values cannot silently duplicate");
-    CTPayload& operator=(const CTPayload&)
-        = delete("CTPayload wraps CT-required data; classified values cannot silently duplicate");
-    CTPayload(CTPayload&&)            noexcept = default;
+    CTPayload(const CTPayload&) =
+        delete("CTPayload wraps CT-required data; classified values cannot silently duplicate");
+    CTPayload& operator=(const CTPayload&) =
+        delete("CTPayload wraps CT-required data; classified values cannot silently duplicate");
+    CTPayload(CTPayload&&) noexcept = default;
     CTPayload& operator=(CTPayload&&) noexcept = default;
-    ~CTPayload()                                = default;
+    ~CTPayload() = default;
 
     // ── Comparison: explicitly deleted ─────────────────────────────
     //
@@ -208,10 +206,10 @@ public:
     // diagnostic; reviewers reading the error message learn the
     // pattern at the rejection site.
 
-    bool operator==(const CTPayload&) const
-        = delete("CTPayload comparison must use crucible::safety::ct::eq() to avoid timing side-channel; operator== is deleted to enforce this at compile time");
-    bool operator!=(const CTPayload&) const
-        = delete("CTPayload comparison must use crucible::safety::ct::eq() to avoid timing side-channel; operator!= is deleted to enforce this at compile time");
+    bool operator==(const CTPayload&) const = delete(
+        "CTPayload comparison must use crucible::safety::ct::eq() to avoid timing side-channel; operator== is deleted to enforce this at compile time");
+    bool operator!=(const CTPayload&) const = delete(
+        "CTPayload comparison must use crucible::safety::ct::eq() to avoid timing side-channel; operator!= is deleted to enforce this at compile time");
 
     // ── Byte-level read access ─────────────────────────────────────
     //
@@ -313,8 +311,8 @@ struct requires_ct<detail::ct_self_test::TestTag> : std::true_type {};
 namespace detail::ct_self_test {
 
 // requires_ct trait fires for opted-in types.
-static_assert( requires_ct_v<TestTag>);
-static_assert( RequiresCT<TestTag>);
+static_assert(requires_ct_v<TestTag>);
+static_assert(RequiresCT<TestTag>);
 
 // Default: not CT-required.
 static_assert(!requires_ct_v<int>);
@@ -324,11 +322,11 @@ static_assert(!RequiresCT<int>);
 // type is rejected at template instantiation.
 using TagPayload = CTPayload<TestTag>;
 
-static_assert( is_ct_payload_v<TagPayload>);
+static_assert(is_ct_payload_v<TagPayload>);
 static_assert(!is_ct_payload_v<TestTag>);
 static_assert(!is_ct_payload_v<int>);
 
-static_assert( CTPayloadType<TagPayload>);
+static_assert(CTPayloadType<TagPayload>);
 static_assert(!CTPayloadType<TestTag>);
 
 // ct_payload_value_type_t extracts the inner T.
@@ -337,7 +335,7 @@ static_assert(std::is_same_v<ct_payload_value_type_t<int>, int>);
 
 // Move-only discipline.
 static_assert(!std::is_copy_constructible_v<TagPayload>);
-static_assert( std::is_move_constructible_v<TagPayload>);
+static_assert(std::is_move_constructible_v<TagPayload>);
 
 // Zero-cost size guarantee.
 static_assert(sizeof(TagPayload) == sizeof(TestTag));
@@ -363,9 +361,7 @@ static_assert(!has_operator_eq<TagPayload, TagPayload>);
 using namespace crucible::safety::proto;
 
 // Reflexivity: CTPayload<T> ⩽ CTPayload<T>.
-static_assert(is_subtype_sync_v<
-    Send<TagPayload, End>,
-    Send<TagPayload, End>>);
+static_assert(is_subtype_sync_v<Send<TagPayload, End>, Send<TagPayload, End>>);
 
 // DELIBERATELY ABSENT axioms: CTPayload subsort is one-way-rejected.
 //
@@ -373,21 +369,13 @@ static_assert(is_subtype_sync_v<
 // to Send<T, K> — the wrapper's audit-discipline is what makes
 // `grep CTPayload<` mechanically discoverable.  Same for Recv.
 
-static_assert(!is_subtype_sync_v<
-    Send<TagPayload, End>,
-    Send<TestTag,    End>>);
+static_assert(!is_subtype_sync_v<Send<TagPayload, End>, Send<TestTag, End>>);
 
-static_assert(!is_subtype_sync_v<
-    Send<TestTag,    End>,
-    Send<TagPayload, End>>);
+static_assert(!is_subtype_sync_v<Send<TestTag, End>, Send<TagPayload, End>>);
 
-static_assert(!is_subtype_sync_v<
-    Recv<TagPayload, End>,
-    Recv<TestTag,    End>>);
+static_assert(!is_subtype_sync_v<Recv<TagPayload, End>, Recv<TestTag, End>>);
 
-static_assert(!is_subtype_sync_v<
-    Recv<TestTag,    End>,
-    Recv<TagPayload, End>>);
+static_assert(!is_subtype_sync_v<Recv<TestTag, End>, Recv<TagPayload, End>>);
 
 }  // namespace detail::ct_self_test
 #endif  // CRUCIBLE_SESSION_SELF_TESTS

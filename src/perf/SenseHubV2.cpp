@@ -32,15 +32,13 @@ struct SenseHubV2::State {
     int placeholder = 0;
 };
 
-SenseHubV2::SenseHubV2(std::unique_ptr<State> s) noexcept
-    : state_{std::move(s)} {}
+SenseHubV2::SenseHubV2(std::unique_ptr<State> s) noexcept : state_{std::move(s)} {}
 
-SenseHubV2::SenseHubV2(SenseHubV2&&) noexcept            = default;
+SenseHubV2::SenseHubV2(SenseHubV2&&) noexcept = default;
 SenseHubV2& SenseHubV2::operator=(SenseHubV2&&) noexcept = default;
-SenseHubV2::~SenseHubV2() noexcept                       = default;
+SenseHubV2::~SenseHubV2() noexcept = default;
 
-std::optional<SenseHubV2>
-SenseHubV2::load(::crucible::effects::Init) noexcept {
+std::optional<SenseHubV2> SenseHubV2::load(::crucible::effects::Init) noexcept {
     // STUB: full impl pending.  v1 SenseHub remains the production
     // loader.  Returning nullopt here means consumers that try to use
     // v2 today get a clean "unavailable" signal instead of a broken
@@ -56,18 +54,14 @@ GaugeSnapshot SenseHubV2::read_gauges() const noexcept {
     return GaugeSnapshot{};  // all zeros
 }
 
-safety::Borrowed<const volatile uint64_t, SenseHubV2>
-SenseHubV2::counters_view() const noexcept {
+safety::Borrowed<const volatile uint64_t, SenseHubV2> SenseHubV2::counters_view() const noexcept {
     return {nullptr, 0};
 }
 
-safety::Borrowed<const volatile uint64_t, SenseHubV2>
-SenseHubV2::gauges_view() const noexcept {
-    return {nullptr, 0};
-}
+safety::Borrowed<const volatile uint64_t, SenseHubV2> SenseHubV2::gauges_view() const noexcept { return {nullptr, 0}; }
 
 LoadReport SenseHubV2::coverage() const noexcept {
     return LoadReport{};  // all default — nothing loaded yet
 }
 
-} // namespace crucible::perf
+}  // namespace crucible::perf

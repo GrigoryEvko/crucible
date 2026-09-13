@@ -46,9 +46,7 @@ public:
     using slot_type = SlotPtr;
     using size_type = std::size_t;
 
-    static constexpr std::string_view wrapper_kind() noexcept {
-        return "structural::SwissTableBuffer";
-    }
+    static constexpr std::string_view wrapper_kind() noexcept { return "structural::SwissTableBuffer"; }
 
     constexpr SwissTableBuffer() noexcept = default;
 
@@ -64,17 +62,18 @@ public:
     // The slot array begins at offset `capacity` from backing_, which
     // is always a multiple of kGroupWidth (≥16) → always 8-byte aligned.
     [[nodiscard]] static SwissTableBuffer allocate(size_type capacity) {
-        if (capacity == 0) [[unlikely]] return SwissTableBuffer{};
+        if (capacity == 0) [[unlikely]]
+            return SwissTableBuffer{};
         // Caller-side discipline: capacity must be power-of-two.
         const size_type slot_bytes = capacity * sizeof(SlotPtr);
-        const size_type total      = capacity + slot_bytes;
-        const size_type rounded    = (total + 63) & ~size_type{63};
+        const size_type total = capacity + slot_bytes;
+        const size_type rounded = (total + 63) & ~size_type{63};
         void* raw = std::aligned_alloc(64, rounded);
-        if (!raw) [[unlikely]] std::abort();
+        if (!raw) [[unlikely]]
+            std::abort();
 
-        ctrl_type* ctrl  = static_cast<ctrl_type*>(raw);
-        slot_type* slots = std::start_lifetime_as_array<slot_type>(
-            static_cast<char*>(raw) + capacity, capacity);
+        ctrl_type* ctrl = static_cast<ctrl_type*>(raw);
+        slot_type* slots = std::start_lifetime_as_array<slot_type>(static_cast<char*>(raw) + capacity, capacity);
 
         return SwissTableBuffer{raw, ctrl, slots, capacity, rounded};
     }
@@ -83,8 +82,11 @@ public:
     SwissTableBuffer& operator=(const SwissTableBuffer&) = delete("SwissTableBuffer is move-only");
 
     SwissTableBuffer(SwissTableBuffer&& other) noexcept
-        : backing_{other.backing_}, ctrl_{other.ctrl_}, slots_{other.slots_},
-          capacity_{other.capacity_}, alloc_bytes_{other.alloc_bytes_} {
+        : backing_{other.backing_},
+          ctrl_{other.ctrl_},
+          slots_{other.slots_},
+          capacity_{other.capacity_},
+          alloc_bytes_{other.alloc_bytes_} {
         other.backing_ = nullptr;
         other.ctrl_ = nullptr;
         other.slots_ = nullptr;
@@ -95,10 +97,10 @@ public:
     SwissTableBuffer& operator=(SwissTableBuffer&& other) noexcept {
         if (this != &other) {
             reset();
-            backing_     = other.backing_;
-            ctrl_        = other.ctrl_;
-            slots_       = other.slots_;
-            capacity_    = other.capacity_;
+            backing_ = other.backing_;
+            ctrl_ = other.ctrl_;
+            slots_ = other.slots_;
+            capacity_ = other.capacity_;
             alloc_bytes_ = other.alloc_bytes_;
             other.backing_ = nullptr;
             other.ctrl_ = nullptr;
@@ -122,27 +124,26 @@ public:
         }
     }
 
-    [[nodiscard]] ctrl_type*       ctrl()    noexcept       { return ctrl_; }
-    [[nodiscard]] const ctrl_type* ctrl()    const noexcept { return ctrl_; }
-    [[nodiscard]] slot_type*       slots()   noexcept       { return slots_; }
-    [[nodiscard]] const slot_type* slots()   const noexcept { return slots_; }
+    [[nodiscard]] ctrl_type* ctrl() noexcept { return ctrl_; }
+    [[nodiscard]] const ctrl_type* ctrl() const noexcept { return ctrl_; }
+    [[nodiscard]] slot_type* slots() noexcept { return slots_; }
+    [[nodiscard]] const slot_type* slots() const noexcept { return slots_; }
 
-    [[nodiscard]] size_type capacity()    const noexcept { return capacity_; }
+    [[nodiscard]] size_type capacity() const noexcept { return capacity_; }
     [[nodiscard]] size_type alloc_bytes() const noexcept { return alloc_bytes_; }
-    [[nodiscard]] bool      empty()       const noexcept { return capacity_ == 0; }
+    [[nodiscard]] bool empty() const noexcept { return capacity_ == 0; }
     [[nodiscard]] explicit operator bool() const noexcept { return backing_ != nullptr; }
 
 private:
-    explicit SwissTableBuffer(void* backing, ctrl_type* ctrl, slot_type* slots,
-                              size_type capacity, size_type alloc_bytes) noexcept
-        : backing_{backing}, ctrl_{ctrl}, slots_{slots},
-          capacity_{capacity}, alloc_bytes_{alloc_bytes} {}
+    explicit SwissTableBuffer(void* backing, ctrl_type* ctrl, slot_type* slots, size_type capacity,
+                              size_type alloc_bytes) noexcept
+        : backing_{backing}, ctrl_{ctrl}, slots_{slots}, capacity_{capacity}, alloc_bytes_{alloc_bytes} {}
 
-    void*      backing_     = nullptr;
-    ctrl_type* ctrl_        = nullptr;
-    slot_type* slots_       = nullptr;
-    size_type  capacity_    = 0;
-    size_type  alloc_bytes_ = 0;
+    void* backing_ = nullptr;
+    ctrl_type* ctrl_ = nullptr;
+    slot_type* slots_ = nullptr;
+    size_type capacity_ = 0;
+    size_type alloc_bytes_ = 0;
 };
 
 template <typename S>

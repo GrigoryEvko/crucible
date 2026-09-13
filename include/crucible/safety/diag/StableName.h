@@ -107,7 +107,7 @@
 // FOUND-E09 — stable_function_id<FnPtr>
 // FOUND-E10 — canonicalize_pack<Ts...>
 
-#include <crucible/Expr.h>             // detail::fmix64
+#include <crucible/Expr.h>  // detail::fmix64
 #include <crucible/Platform.h>
 
 #include <array>
@@ -142,7 +142,7 @@ namespace crucible::safety::diag {
 namespace detail {
 
 inline constexpr std::uint64_t FNV1A_OFFSET_BASIS = 0xcbf29ce484222325ULL;
-inline constexpr std::uint64_t FNV1A_PRIME        = 0x00000100000001b3ULL;
+inline constexpr std::uint64_t FNV1A_PRIME = 0x00000100000001b3ULL;
 
 [[nodiscard]] consteval std::uint64_t fnv1a_64(std::string_view s) noexcept {
     std::uint64_t h = FNV1A_OFFSET_BASIS;
@@ -178,9 +178,7 @@ inline constexpr std::uint64_t FNV1A_PRIME        = 0x00000100000001b3ULL;
 // `consteval` is the structural fix — never re-introduce a parallel
 // `combine_ids_runtime` or any other name.  CI grep guard at
 // scripts/check-no-combine-ids-duplicate.sh enforces this.
-[[nodiscard]] constexpr std::uint64_t combine_ids(
-    std::uint64_t a, std::uint64_t b) noexcept
-{
+[[nodiscard]] constexpr std::uint64_t combine_ids(std::uint64_t a, std::uint64_t b) noexcept {
     a ^= b + 0x9e3779b97f4a7c15ULL + (a << 6) + (a >> 2);
     return ::crucible::detail::fmix64(a);
 }
@@ -215,8 +213,7 @@ inline constexpr std::uint64_t FNV1A_PRIME        = 0x00000100000001b3ULL;
 // linked).
 
 template <typename T>
-inline constexpr std::string_view stable_name_of =
-    std::meta::display_string_of(^^T);
+inline constexpr std::string_view stable_name_of = std::meta::display_string_of(^^T);
 
 // ═════════════════════════════════════════════════════════════════════
 // ── stable_type_id<T> — 64-bit content hash (FOUND-E08) ────────────
@@ -241,8 +238,7 @@ inline constexpr std::string_view stable_name_of =
 //   static_assert(stable_type_id<int> != stable_type_id<float>);
 
 template <typename T>
-inline constexpr std::uint64_t stable_type_id =
-    detail::hash_name(stable_name_of<T>);
+inline constexpr std::uint64_t stable_type_id = detail::hash_name(stable_name_of<T>);
 
 // ═════════════════════════════════════════════════════════════════════
 // ── canonicalize_pack<Ts...> — sort-by-name pack (FOUND-E10) ───────
@@ -281,9 +277,10 @@ namespace detail {
 template <typename... Ts>
 [[nodiscard]] consteval auto sort_indices_by_stable_name() noexcept {
     constexpr std::size_t N = sizeof...(Ts);
-    std::array<std::string_view, N> const names{ stable_name_of<Ts>... };
+    std::array<std::string_view, N> const names{stable_name_of<Ts>...};
     std::array<std::size_t, N> indices{};
-    for (std::size_t i = 0; i < N; ++i) indices[i] = i;
+    for (std::size_t i = 0; i < N; ++i)
+        indices[i] = i;
     // Bubble sort: simple, stable, sufficient for small N.
     for (std::size_t i = 0; i < N; ++i) {
         for (std::size_t j = i + 1; j < N; ++j) {
@@ -299,8 +296,7 @@ template <typename... Ts>
 
 // Materialize the sorted std::tuple from the indices.
 template <typename Tuple, std::size_t... Is>
-auto reassemble_tuple_impl(std::index_sequence<Is...>)
-    -> std::tuple<std::tuple_element_t<Is, Tuple>...>;
+auto reassemble_tuple_impl(std::index_sequence<Is...>) -> std::tuple<std::tuple_element_t<Is, Tuple>...>;
 
 }  // namespace detail
 
@@ -354,8 +350,7 @@ using canonicalize_pack_t = typename canonicalize_pack<Ts...>::type;
 
 template <auto FnPtr>
 inline constexpr std::uint64_t stable_function_id =
-    detail::hash_name(
-        std::meta::display_string_of(^^std::remove_pointer_t<decltype(FnPtr)>));
+    detail::hash_name(std::meta::display_string_of(^^std::remove_pointer_t<decltype(FnPtr)>));
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Self-test block — invariants asserted at header inclusion ──────
@@ -382,21 +377,21 @@ static_assert(stable_name_of<float>.ends_with("float"));
 // similar input strings; collisions across primitives are
 // vanishingly improbable.
 
-static_assert(stable_type_id<int>    != stable_type_id<float>);
-static_assert(stable_type_id<int>    != stable_type_id<double>);
-static_assert(stable_type_id<float>  != stable_type_id<double>);
-static_assert(stable_type_id<int>    != stable_type_id<unsigned int>);
-static_assert(stable_type_id<int>    != stable_type_id<long>);
-static_assert(stable_type_id<void>   != stable_type_id<int>);
-static_assert(stable_type_id<char>   != stable_type_id<unsigned char>);
-static_assert(stable_type_id<short>  != stable_type_id<int>);
+static_assert(stable_type_id<int> != stable_type_id<float>);
+static_assert(stable_type_id<int> != stable_type_id<double>);
+static_assert(stable_type_id<float> != stable_type_id<double>);
+static_assert(stable_type_id<int> != stable_type_id<unsigned int>);
+static_assert(stable_type_id<int> != stable_type_id<long>);
+static_assert(stable_type_id<void> != stable_type_id<int>);
+static_assert(stable_type_id<char> != stable_type_id<unsigned char>);
+static_assert(stable_type_id<short> != stable_type_id<int>);
 
 // stable_type_id is non-zero for every type encountered (FNV-1a
 // offset basis is non-zero, and FNV-1a never reduces to zero except
 // for very pathological inputs that don't occur with type names).
-static_assert(stable_type_id<int>   != 0);
+static_assert(stable_type_id<int> != 0);
 static_assert(stable_type_id<float> != 0);
-static_assert(stable_type_id<void>  != 0);
+static_assert(stable_type_id<void> != 0);
 
 // stable_type_id is consistent across the variable template: same T
 // always yields the same value.  (Trivially true for inline constexpr
@@ -428,68 +423,54 @@ static_assert(stable_type_id<int> == stable_type_id<int>);
 // static_assert could not (e.g., constant folder bypass per
 // PR c++/124241, even patched).
 
-static_assert(stable_type_id<int>                == 0x038bf5d93760ba14ULL);
-static_assert(stable_type_id<unsigned int>       == 0x3e40352bf14d5e8cULL);
-static_assert(stable_type_id<float>              == 0xaac94173610ce8ebULL);
-static_assert(stable_type_id<double>             == 0x5a427827acb3b7f4ULL);
-static_assert(stable_type_id<void>               == 0x7095b61429cf52a0ULL);
-static_assert(stable_type_id<char>               == 0x24810aa534fd4e53ULL);
-static_assert(stable_type_id<unsigned char>      == 0xeb532a1cd85a3221ULL);
-static_assert(stable_type_id<signed char>        == 0xe668b88a72723d2eULL);
-static_assert(stable_type_id<short>              == 0x76a26fe7af41346dULL);
-static_assert(stable_type_id<long>               == 0xb398537731c4a05dULL);
-static_assert(stable_type_id<long long>          == 0x8e73a318de406be0ULL);
+static_assert(stable_type_id<int> == 0x038bf5d93760ba14ULL);
+static_assert(stable_type_id<unsigned int> == 0x3e40352bf14d5e8cULL);
+static_assert(stable_type_id<float> == 0xaac94173610ce8ebULL);
+static_assert(stable_type_id<double> == 0x5a427827acb3b7f4ULL);
+static_assert(stable_type_id<void> == 0x7095b61429cf52a0ULL);
+static_assert(stable_type_id<char> == 0x24810aa534fd4e53ULL);
+static_assert(stable_type_id<unsigned char> == 0xeb532a1cd85a3221ULL);
+static_assert(stable_type_id<signed char> == 0xe668b88a72723d2eULL);
+static_assert(stable_type_id<short> == 0x76a26fe7af41346dULL);
+static_assert(stable_type_id<long> == 0xb398537731c4a05dULL);
+static_assert(stable_type_id<long long> == 0x8e73a318de406be0ULL);
 static_assert(stable_type_id<unsigned long long> == 0xcb9dc82adf69491aULL);
-static_assert(stable_type_id<bool>               == 0xc7dfd75159543180ULL);
+static_assert(stable_type_id<bool> == 0xc7dfd75159543180ULL);
 
 // ─── canonicalize_pack<Ts...> sorts by stable name ─────────────────
 
 // Empty pack → empty tuple.
-static_assert(std::is_same_v<
-    canonicalize_pack_t<>,
-    std::tuple<>>);
+static_assert(std::is_same_v<canonicalize_pack_t<>, std::tuple<>>);
 
 // Single element → unchanged.
-static_assert(std::is_same_v<
-    canonicalize_pack_t<int>,
-    std::tuple<int>>);
+static_assert(std::is_same_v<canonicalize_pack_t<int>, std::tuple<int>>);
 
 // Order-invariance: int + float in either order produces the same
 // canonical tuple.  Note: the SORTED order depends on which name
 // "int" or "float" comes first lexicographically, which depends on
 // display_string_of's output — but it is the SAME canonical order
 // regardless of the input permutation.
-static_assert(std::is_same_v<
-    canonicalize_pack_t<int, float>,
-    canonicalize_pack_t<float, int>>);
+static_assert(std::is_same_v<canonicalize_pack_t<int, float>, canonicalize_pack_t<float, int>>);
 
-static_assert(std::is_same_v<
-    canonicalize_pack_t<int, float, double>,
-    canonicalize_pack_t<float, double, int>>);
+static_assert(std::is_same_v<canonicalize_pack_t<int, float, double>, canonicalize_pack_t<float, double, int>>);
 
-static_assert(std::is_same_v<
-    canonicalize_pack_t<int, float, double>,
-    canonicalize_pack_t<double, int, float>>);
+static_assert(std::is_same_v<canonicalize_pack_t<int, float, double>, canonicalize_pack_t<double, int, float>>);
 
 // Mixed-cardinality permutations all collapse to one canonical form.
-static_assert(std::is_same_v<
-    canonicalize_pack_t<char, short, int, long>,
-    canonicalize_pack_t<long, int, short, char>>);
+static_assert(std::is_same_v<canonicalize_pack_t<char, short, int, long>, canonicalize_pack_t<long, int, short, char>>);
 
 // Adjacent duplicates remain (V1 dedup-deferred).
-static_assert(std::is_same_v<
-    canonicalize_pack_t<int, int>,
-    std::tuple<int, int>>);
+static_assert(std::is_same_v<canonicalize_pack_t<int, int>, std::tuple<int, int>>);
 
 // ─── stable_function_id<FnPtr> distinguishes signatures ────────────
 
 namespace fn_test {
-inline void f0()                 noexcept {}
-inline void f1(int)              noexcept {}
-inline void f2(float)            noexcept {}
-inline int  f3(int)              noexcept { return 0; }
-inline void f4(int, int)         noexcept {}
-inline void f5(int, float)       noexcept {}
+inline void f0() noexcept {}
+inline void f1(int) noexcept {}
+inline void f2(float) noexcept {}
+inline int f3(int) noexcept { return 0; }
+inline void f4(int, int) noexcept {}
+inline void f5(int, float) noexcept {}
 }  // namespace fn_test
 
 // Different signatures → different IDs.
@@ -513,8 +494,7 @@ static_assert(detail::fnv1a_64("") == detail::FNV1A_OFFSET_BASIS);
 // Single-character "a" = 0x61.  FNV-1a step:
 //   h = OFFSET_BASIS ^ 0x61
 //   h *= PRIME
-constexpr std::uint64_t expected_fnv_a =
-    (detail::FNV1A_OFFSET_BASIS ^ 0x61ULL) * detail::FNV1A_PRIME;
+constexpr std::uint64_t expected_fnv_a = (detail::FNV1A_OFFSET_BASIS ^ 0x61ULL) * detail::FNV1A_PRIME;
 static_assert(detail::fnv1a_64("a") == expected_fnv_a);
 
 // Two characters "ab" = 0x61, 0x62.
@@ -528,8 +508,7 @@ static_assert(detail::fnv1a_64("ab") == expected_fnv_ab);
 
 // hash_name composes fnv1a_64 with fmix64; verify ordering of the
 // composition (regression-detect if someone swaps them).
-static_assert(detail::hash_name("test") ==
-              ::crucible::detail::fmix64(detail::fnv1a_64("test")));
+static_assert(detail::hash_name("test") == ::crucible::detail::fmix64(detail::fnv1a_64("test")));
 
 // combine_ids is order-sensitive.
 static_assert(detail::combine_ids(1, 2) != detail::combine_ids(2, 1));

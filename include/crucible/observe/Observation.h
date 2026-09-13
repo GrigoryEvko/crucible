@@ -50,14 +50,9 @@ static_assert(std::is_trivially_destructible_v<Observation>);
 
 using ObservationSnapshot = ::crucible::concurrent::AtomicSnapshot<Observation>;
 
-[[nodiscard]] constexpr Observation
-make_observation(
-    ObservationKind kind,
-    ObservationSource source,
-    std::uint32_t metric_id,
-    std::uint64_t value,
-    std::uint64_t sequence = 0) noexcept
-{
+[[nodiscard]] constexpr Observation make_observation(ObservationKind kind, ObservationSource source,
+                                                     std::uint32_t metric_id, std::uint64_t value,
+                                                     std::uint64_t sequence = 0) noexcept {
     return Observation{
         .kind = kind,
         .source = source,
@@ -68,58 +63,31 @@ make_observation(
     };
 }
 
-[[nodiscard]] constexpr Observation
-latency_ns(
-    std::uint32_t metric_id,
-    std::uint64_t value,
-    std::uint64_t sequence = 0,
-    ObservationSource source = ObservationSource::Runtime) noexcept
-{
-    return make_observation(
-        ObservationKind::LatencyNs, source, metric_id, value, sequence);
+[[nodiscard]] constexpr Observation latency_ns(std::uint32_t metric_id, std::uint64_t value, std::uint64_t sequence = 0,
+                                               ObservationSource source = ObservationSource::Runtime) noexcept {
+    return make_observation(ObservationKind::LatencyNs, source, metric_id, value, sequence);
 }
 
-[[nodiscard]] constexpr Observation
-energy_pj(
-    std::uint32_t metric_id,
-    std::uint64_t value,
-    std::uint64_t sequence = 0,
-    ObservationSource source = ObservationSource::Runtime) noexcept
-{
-    return make_observation(
-        ObservationKind::EnergyPj, source, metric_id, value, sequence);
+[[nodiscard]] constexpr Observation energy_pj(std::uint32_t metric_id, std::uint64_t value, std::uint64_t sequence = 0,
+                                              ObservationSource source = ObservationSource::Runtime) noexcept {
+    return make_observation(ObservationKind::EnergyPj, source, metric_id, value, sequence);
 }
 
-[[nodiscard]] constexpr Observation
-power_mw(
-    std::uint32_t metric_id,
-    std::uint64_t value,
-    std::uint64_t sequence = 0,
-    ObservationSource source = ObservationSource::Runtime) noexcept
-{
-    return make_observation(
-        ObservationKind::PowerMw, source, metric_id, value, sequence);
+[[nodiscard]] constexpr Observation power_mw(std::uint32_t metric_id, std::uint64_t value, std::uint64_t sequence = 0,
+                                             ObservationSource source = ObservationSource::Runtime) noexcept {
+    return make_observation(ObservationKind::PowerMw, source, metric_id, value, sequence);
 }
 
-[[nodiscard]] constexpr Observation
-bits_transferred(
-    std::uint32_t metric_id,
-    std::uint64_t value,
-    std::uint64_t sequence = 0,
-    ObservationSource source = ObservationSource::Runtime) noexcept
-{
-    return make_observation(
-        ObservationKind::BitsTransferred, source, metric_id, value, sequence);
+[[nodiscard]] constexpr Observation bits_transferred(std::uint32_t metric_id, std::uint64_t value,
+                                                     std::uint64_t sequence = 0,
+                                                     ObservationSource source = ObservationSource::Runtime) noexcept {
+    return make_observation(ObservationKind::BitsTransferred, source, metric_id, value, sequence);
 }
 
-inline void
-record_observation(ObservationSnapshot& sink, Observation observation) noexcept {
+inline void record_observation(ObservationSnapshot& sink, Observation observation) noexcept {
     sink.publish(observation);
 }
 
-[[nodiscard]] inline Observation
-latest_observation(ObservationSnapshot const& sink) noexcept {
-    return sink.load();
-}
+[[nodiscard]] inline Observation latest_observation(ObservationSnapshot const& sink) noexcept { return sink.load(); }
 
 }  // namespace crucible::observe

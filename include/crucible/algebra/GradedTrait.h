@@ -157,8 +157,7 @@ struct is_graded_specialization<Graded<M, L, T>> : std::true_type {};
 // metafunction-shape stable for anyone using `is_graded_specialization<T>`
 // directly.
 template <typename T>
-inline constexpr bool is_graded_specialization_v =
-    is_graded_specialization<std::remove_cvref_t<T>>::value;
+inline constexpr bool is_graded_specialization_v = is_graded_specialization<std::remove_cvref_t<T>>::value;
 
 // ── graded_modality — extract the ModalityKind value from a Graded ──
 //
@@ -171,8 +170,7 @@ template <typename T>
 struct graded_modality;
 
 template <ModalityKind M, typename L, typename T>
-struct graded_modality<Graded<M, L, T>>
-    : std::integral_constant<ModalityKind, M> {};
+struct graded_modality<Graded<M, L, T>> : std::integral_constant<ModalityKind, M> {};
 
 template <typename T>
 inline constexpr ModalityKind graded_modality_v = graded_modality<T>::value;
@@ -234,7 +232,7 @@ template <typename W>
 concept GradedWrapper = requires {
     // Public typedefs.
     typename W::value_type;
-    typename W::lattice_type;          // C2: family-wide alias
+    typename W::lattice_type;  // C2: family-wide alias
     typename W::graded_type;
 
     // C1: graded_type must actually be a Graded<...> specialization,
@@ -243,29 +241,26 @@ concept GradedWrapper = requires {
 
     // CHEAT-2: substrate lattice consistency.  Wrapper's claimed
     // lattice_type must match the substrate's lattice template arg.
-    requires std::same_as<typename W::lattice_type,
-                          typename W::graded_type::lattice_type>;
+    requires std::same_as<typename W::lattice_type, typename W::graded_type::lattice_type>;
 
     // CHEAT-1: substrate value_type consistency, with opt-out for
     // regime-3 wrappers (AppendOnly's Storage<T> case).  Default is
     // strict equality; wrappers that legitimately decouple
     // user-facing value_type from substrate value_type specialize
     // value_type_decoupled<W> to std::true_type.
-    requires (value_type_decoupled_v<W>
-              || std::same_as<typename W::value_type,
-                              typename W::graded_type::value_type>);
+    requires(value_type_decoupled_v<W> || std::same_as<typename W::value_type, typename W::graded_type::value_type>);
 
     // CHEAT-5: modality consistency.  Wrapper exposes `static
     // constexpr ModalityKind modality = ...;` declaring its modality;
     // concept verifies it matches the substrate's modality template
     // arg.  Catches wrapper-says-Absolute-but-substrate-is-Comonad
     // bugs that the prior concept admitted.
-    requires (W::modality == graded_modality_v<typename W::graded_type>);
+    requires(W::modality == graded_modality_v<typename W::graded_type>);
 
     // Diagnostic forwarders — must be noexcept, must return
     // string_view (L3: noexcept enforcement).
     { W::value_type_name() } noexcept -> std::same_as<std::string_view>;
-    { W::lattice_name()    } noexcept -> std::same_as<std::string_view>;
+    { W::lattice_name() } noexcept -> std::same_as<std::string_view>;
 
     // CHEAT-3: forwarder fidelity at concept level.  The forwarders
     // must return the SAME strings as the substrate's forwarders
@@ -274,10 +269,8 @@ concept GradedWrapper = requires {
     // forward.  Both expressions are consteval (forwarders are
     // consteval and substrate's are consteval), so the comparison
     // is a constant expression.
-    requires (W::value_type_name() ==
-              W::graded_type::value_type_name());
-    requires (W::lattice_name() ==
-              W::graded_type::lattice_name());
+    requires(W::value_type_name() == W::graded_type::value_type_name());
+    requires(W::lattice_name() == W::graded_type::lattice_name());
 };
 
 // ── Auto-specialize is_graded_wrapper_v from the concept ──────────
@@ -304,26 +297,23 @@ inline constexpr bool is_graded_wrapper_v<W> = true;
 
 namespace detail::is_graded_specialization_self_test {
 
-using GraderAB = Graded<ModalityKind::Absolute,
-                        ::crucible::algebra::detail::lattice_self_test::TrivialBoolLattice,
-                        bool>;
+using GraderAB =
+    Graded<ModalityKind::Absolute, ::crucible::algebra::detail::lattice_self_test::TrivialBoolLattice, bool>;
 
 // Strict-identity positive cases — bare specialization holds.
-static_assert( is_graded_specialization_v<GraderAB>);
+static_assert(is_graded_specialization_v<GraderAB>);
 
 // cv-ref symmetry with IsGraded.  All four shapes must AGREE.
-static_assert( is_graded_specialization_v<GraderAB const>);
-static_assert( is_graded_specialization_v<GraderAB&>);
-static_assert( is_graded_specialization_v<GraderAB const&>);
-static_assert( is_graded_specialization_v<GraderAB&&>);
-static_assert( is_graded_specialization_v<GraderAB const&&>);
+static_assert(is_graded_specialization_v<GraderAB const>);
+static_assert(is_graded_specialization_v<GraderAB&>);
+static_assert(is_graded_specialization_v<GraderAB const&>);
+static_assert(is_graded_specialization_v<GraderAB&&>);
+static_assert(is_graded_specialization_v<GraderAB const&&>);
 
 // Cross-trait symmetry: every shape that IsGraded accepts must also
 // pass is_graded_specialization_v.  Equivalent under cv-ref strip.
-static_assert(IsGraded<GraderAB const&>
-              == is_graded_specialization_v<GraderAB const&>);
-static_assert(IsGraded<GraderAB&&>
-              == is_graded_specialization_v<GraderAB&&>);
+static_assert(IsGraded<GraderAB const&> == is_graded_specialization_v<GraderAB const&>);
+static_assert(IsGraded<GraderAB&&> == is_graded_specialization_v<GraderAB&&>);
 
 // Negative cases — non-Graded types still rejected by both.
 static_assert(!is_graded_specialization_v<int>);
@@ -332,10 +322,8 @@ static_assert(!is_graded_specialization_v<void>);
 static_assert(!is_graded_specialization_v<::crucible::algebra::detail::lattice_self_test::TrivialBoolLattice>);
 
 // Both-rejects symmetry on non-Graded types.
-static_assert(IsGraded<int const&>
-              == is_graded_specialization_v<int const&>);
-static_assert(IsGraded<void>
-              == is_graded_specialization_v<void>);
+static_assert(IsGraded<int const&> == is_graded_specialization_v<int const&>);
+static_assert(IsGraded<void> == is_graded_specialization_v<void>);
 
 // ── Runtime smoke test (fixy-A3-021) ────────────────────────────────
 //
@@ -358,7 +346,7 @@ inline void runtime_smoke_test() {
     // walls instantiated above are exercised through runtime semantics.
     [[maybe_unused]] bool t1 = is_graded_specialization_v<decltype(g)>;
     [[maybe_unused]] bool t2 = is_graded_specialization_v<decltype((g))>;  // lvalue ref
-    [[maybe_unused]] bool t3 = is_graded_specialization_v<int>;            // negative
+    [[maybe_unused]] bool t3 = is_graded_specialization_v<int>;  // negative
 }
 
 }  // namespace detail::is_graded_specialization_self_test

@@ -113,10 +113,10 @@ enum class TlsVersion : std::uint8_t {
 };
 
 enum class MtlsCipherSuite : std::uint8_t {
-    TlsAes256GcmSha384       = 1u << 0,
+    TlsAes256GcmSha384 = 1u << 0,
     TlsChacha20Poly1305Sha256 = 1u << 1,
-    TlsAes128GcmSha256       = 1u << 2,
-    LegacyRsa3desSha         = 1u << 3,
+    TlsAes128GcmSha256 = 1u << 2,
+    LegacyRsa3desSha = 1u << 3,
 };
 
 enum class MtlsKeyAlgorithm : std::uint8_t {
@@ -135,13 +135,10 @@ concept SupportedMtlsVersion = Version == TlsVersion::V13;
 
 template <MtlsCipherSuite Suite>
 concept ApprovedMtlsCipherSuite =
-    Suite == MtlsCipherSuite::TlsAes256GcmSha384 ||
-    Suite == MtlsCipherSuite::TlsChacha20Poly1305Sha256;
+    Suite == MtlsCipherSuite::TlsAes256GcmSha384 || Suite == MtlsCipherSuite::TlsChacha20Poly1305Sha256;
 
 template <MtlsKeyAlgorithm Algorithm>
-concept ApprovedMtlsKeyAlgorithm =
-    Algorithm == MtlsKeyAlgorithm::Ed25519 ||
-    Algorithm == MtlsKeyAlgorithm::EcdsaP256;
+concept ApprovedMtlsKeyAlgorithm = Algorithm == MtlsKeyAlgorithm::Ed25519 || Algorithm == MtlsKeyAlgorithm::EcdsaP256;
 
 using MtlsCipherMask = safety::Bits<MtlsCipherSuite>;
 
@@ -151,9 +148,7 @@ struct MtlsCertificateBytes {
     std::array<std::byte, max_bytes> bytes{};
     std::uint16_t size = 0;
 
-    [[nodiscard]] constexpr std::span<const std::byte> view() const noexcept {
-        return {bytes.data(), size};
-    }
+    [[nodiscard]] constexpr std::span<const std::byte> view() const noexcept { return {bytes.data(), size}; }
 };
 
 struct MtlsPrivateKeyBytes {
@@ -168,9 +163,7 @@ struct MtlsPrivateKeyBytes {
     MtlsPrivateKeyBytes& operator=(MtlsPrivateKeyBytes const&) = delete;
 
     constexpr MtlsPrivateKeyBytes(MtlsPrivateKeyBytes&& other) noexcept
-        : bytes{other.bytes},
-          nbytes{other.nbytes},
-          algorithm{other.algorithm} {
+        : bytes{other.bytes}, nbytes{other.nbytes}, algorithm{other.algorithm} {
         other.zeroize();
     }
 
@@ -187,13 +180,9 @@ struct MtlsPrivateKeyBytes {
 
     constexpr ~MtlsPrivateKeyBytes() noexcept { zeroize(); }
 
-    [[nodiscard]] constexpr std::size_t size_bytes() const noexcept {
-        return nbytes;
-    }
+    [[nodiscard]] constexpr std::size_t size_bytes() const noexcept { return nbytes; }
 
-    [[nodiscard]] constexpr std::size_t size() const noexcept {
-        return nbytes;
-    }
+    [[nodiscard]] constexpr std::size_t size() const noexcept { return nbytes; }
 
     constexpr void zeroize() noexcept {
         for (auto& b : bytes) {
@@ -210,17 +199,14 @@ struct MtlsDnsName {
     std::array<char, max_bytes> bytes{};
     std::uint8_t size = 0;
 
-    [[nodiscard]] constexpr std::string_view view() const noexcept {
-        return {bytes.data(), size};
-    }
+    [[nodiscard]] constexpr std::string_view view() const noexcept { return {bytes.data(), size}; }
 
-    [[nodiscard]] static constexpr std::expected<MtlsDnsName, MtlsError>
-    from(std::string_view name) noexcept {
+    [[nodiscard]] static constexpr std::expected<MtlsDnsName, MtlsError> from(std::string_view name) noexcept {
         if (name.empty()) {
             return std::unexpected(MtlsError::EmptyPeerName);
         }
-        if (name.size() > max_bytes || name.front() == '.' ||
-            name.back() == '.' || name.front() == '-' || name.back() == '-') {
+        if (name.size() > max_bytes || name.front() == '.' || name.back() == '.' || name.front() == '-'
+            || name.back() == '-') {
             return std::unexpected(MtlsError::InvalidPeerName);
         }
 
@@ -230,11 +216,7 @@ struct MtlsDnsName {
             const char c = name[i];
             const bool dot = c == '.';
             const bool ok =
-                (c >= 'a' && c <= 'z') ||
-                (c >= 'A' && c <= 'Z') ||
-                (c >= '0' && c <= '9') ||
-                c == '-' ||
-                dot;
+                (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || dot;
             if (!ok || (dot && previous_dot)) {
                 return std::unexpected(MtlsError::InvalidPeerName);
             }
@@ -254,8 +236,7 @@ struct MtlsSha256Fingerprint {
 
 using MtlsCertificate = safety::Linear<MtlsCertificateBytes>;
 using MtlsPrivateKey = safety::Secret<MtlsPrivateKeyBytes>;
-using MtlsCertificateFingerprint =
-    safety::Tagged<MtlsSha256Fingerprint, safety::source::Mtls>;
+using MtlsCertificateFingerprint = safety::Tagged<MtlsSha256Fingerprint, safety::source::Mtls>;
 
 struct MtlsPolicy {
     static constexpr std::size_t max_peer_names = 8;
@@ -273,8 +254,7 @@ struct MtlsPolicy {
     std::uint8_t allowed_peer_count = 0;
 
     [[nodiscard]] constexpr std::expected<void, MtlsError>
-    allow_peer_with_pin(MtlsDnsName name,
-                        MtlsCertificateFingerprint fingerprint) noexcept {
+    allow_peer_with_pin(MtlsDnsName name, MtlsCertificateFingerprint fingerprint) noexcept {
         if (allowed_peer_count >= max_peer_names) {
             return std::unexpected(MtlsError::TooManyPeerNames);
         }
@@ -292,18 +272,15 @@ struct MtlsConfig {
     MtlsPolicy policy{};
 };
 
-using DeclaredMtlsConfig =
-    safety::Tagged<MtlsConfig, safety::source::Mtls>;
+using DeclaredMtlsConfig = safety::Tagged<MtlsConfig, safety::source::Mtls>;
 
 struct MtlsPeerIdentity {
     MtlsDnsName dns_name{};
-    MtlsCertificateFingerprint certificate_sha256{
-        MtlsSha256Fingerprint{}};
+    MtlsCertificateFingerprint certificate_sha256{MtlsSha256Fingerprint{}};
     MtlsCipherSuite cipher = MtlsCipherSuite::TlsAes256GcmSha384;
 };
 
-using AuthenticatedMtlsPeer =
-    safety::Tagged<MtlsPeerIdentity, safety::source::Mtls>;
+using AuthenticatedMtlsPeer = safety::Tagged<MtlsPeerIdentity, safety::source::Mtls>;
 
 class MtlsConnection {
 public:
@@ -313,20 +290,16 @@ public:
     MtlsConnection& operator=(MtlsConnection&&) = default;
 
     [[nodiscard]] SocketFd socket() const noexcept { return socket_; }
-    [[nodiscard]] AuthenticatedMtlsPeer const& authenticated_peer() const noexcept {
-        return peer_;
-    }
+    [[nodiscard]] AuthenticatedMtlsPeer const& authenticated_peer() const noexcept { return peer_; }
 
 private:
     SocketFd socket_;
     AuthenticatedMtlsPeer peer_;
 
-    constexpr MtlsConnection(SocketFd socket, AuthenticatedMtlsPeer peer) noexcept
-        : socket_{socket}, peer_{peer} {}
+    constexpr MtlsConnection(SocketFd socket, AuthenticatedMtlsPeer peer) noexcept : socket_{socket}, peer_{peer} {}
 
-    friend std::expected<MtlsConnection, MtlsError>
-    connect_mtls(SocketFd, DeclaredMtlsConfig const&, MtlsDnsName,
-                 MtlsCertificateFingerprint) noexcept;
+    friend std::expected<MtlsConnection, MtlsError> connect_mtls(SocketFd, DeclaredMtlsConfig const&, MtlsDnsName,
+                                                                 MtlsCertificateFingerprint) noexcept;
 };
 
 [[nodiscard]] std::expected<MtlsCertificate, MtlsError>
@@ -334,8 +307,7 @@ admit_x509_certificate_pem(std::span<const std::byte> pem) noexcept;
 
 template <MtlsKeyAlgorithm Algorithm>
     requires ApprovedMtlsKeyAlgorithm<Algorithm>
-[[nodiscard]] std::expected<MtlsPrivateKey, MtlsError>
-admit_private_key_pem(std::span<const std::byte> pem) noexcept {
+[[nodiscard]] std::expected<MtlsPrivateKey, MtlsError> admit_private_key_pem(std::span<const std::byte> pem) noexcept {
     if (pem.empty()) {
         return std::unexpected(MtlsError::EmptyPrivateKey);
     }
@@ -349,8 +321,7 @@ admit_private_key_pem(std::span<const std::byte> pem) noexcept {
     }
     out.nbytes = static_cast<std::uint16_t>(pem.size());
     out.algorithm = Algorithm;
-    return std::expected<MtlsPrivateKey, MtlsError>{
-        std::in_place, std::move(out)};
+    return std::expected<MtlsPrivateKey, MtlsError>{std::in_place, std::move(out)};
 }
 
 [[nodiscard]] constexpr std::expected<MtlsCertificateFingerprint, MtlsError>
@@ -365,17 +336,12 @@ admit_certificate_fingerprint(MtlsSha256Fingerprint fingerprint) noexcept {
     return MtlsCertificateFingerprint{fingerprint};
 }
 
-template <TlsVersion MinVersion = TlsVersion::V13,
-          MtlsCipherSuite Primary = MtlsCipherSuite::TlsAes256GcmSha384,
+template <TlsVersion MinVersion = TlsVersion::V13, MtlsCipherSuite Primary = MtlsCipherSuite::TlsAes256GcmSha384,
           MtlsCipherSuite Secondary = MtlsCipherSuite::TlsChacha20Poly1305Sha256>
-    requires SupportedMtlsVersion<MinVersion> &&
-             ApprovedMtlsCipherSuite<Primary> &&
-             ApprovedMtlsCipherSuite<Secondary>
-[[nodiscard]] constexpr DeclaredMtlsConfig
-mint_mtls_config(MtlsCertificate ca_cert,
-                 MtlsCertificate client_cert,
-                 MtlsPrivateKey client_key,
-                 MtlsPolicy policy = {}) noexcept {
+    requires SupportedMtlsVersion<MinVersion> && ApprovedMtlsCipherSuite<Primary> && ApprovedMtlsCipherSuite<Secondary>
+[[nodiscard]] constexpr DeclaredMtlsConfig mint_mtls_config(MtlsCertificate ca_cert, MtlsCertificate client_cert,
+                                                            MtlsPrivateKey client_key,
+                                                            MtlsPolicy policy = {}) noexcept {
     policy.min_version = MinVersion;
     policy.max_version = TlsVersion::V13;
     policy.allowed_ciphers = MtlsCipherMask{Primary, Secondary};
@@ -387,21 +353,15 @@ mint_mtls_config(MtlsCertificate ca_cert,
     }};
 }
 
-[[nodiscard]] constexpr bool
-mtls_cipher_is_approved(MtlsCipherSuite suite) noexcept {
-    return suite == MtlsCipherSuite::TlsAes256GcmSha384 ||
-           suite == MtlsCipherSuite::TlsChacha20Poly1305Sha256;
+[[nodiscard]] constexpr bool mtls_cipher_is_approved(MtlsCipherSuite suite) noexcept {
+    return suite == MtlsCipherSuite::TlsAes256GcmSha384 || suite == MtlsCipherSuite::TlsChacha20Poly1305Sha256;
 }
 
-[[nodiscard]] constexpr bool
-mtls_policy_allows_cipher(MtlsPolicy const& policy,
-                          MtlsCipherSuite suite) noexcept {
+[[nodiscard]] constexpr bool mtls_policy_allows_cipher(MtlsPolicy const& policy, MtlsCipherSuite suite) noexcept {
     return mtls_cipher_is_approved(suite) && policy.allowed_ciphers.test(suite);
 }
 
-[[nodiscard]] constexpr bool
-mtls_policy_allows_peer_name(MtlsPolicy const& policy,
-                             MtlsDnsName peer) noexcept {
+[[nodiscard]] constexpr bool mtls_policy_allows_peer_name(MtlsPolicy const& policy, MtlsDnsName peer) noexcept {
     for (std::uint8_t i = 0; i < policy.allowed_peer_count; ++i) {
         if (policy.allowed_peer_dns[i].view() == peer.view()) {
             return true;
@@ -410,29 +370,24 @@ mtls_policy_allows_peer_name(MtlsPolicy const& policy,
     return false;
 }
 
-[[nodiscard]] constexpr std::expected<void, MtlsError>
-validate_mtls_policy(MtlsPolicy const& policy) noexcept {
+[[nodiscard]] constexpr std::expected<void, MtlsError> validate_mtls_policy(MtlsPolicy const& policy) noexcept {
     if (!policy.verify_peer) {
         return std::unexpected(MtlsError::PeerVerificationDisabled);
     }
     if (!policy.require_peer_cert) {
         return std::unexpected(MtlsError::PeerCertificateNotRequired);
     }
-    if (policy.min_version != TlsVersion::V13 ||
-        policy.max_version != TlsVersion::V13) {
+    if (policy.min_version != TlsVersion::V13 || policy.max_version != TlsVersion::V13) {
         return std::unexpected(MtlsError::UnsupportedTlsVersion);
     }
-    if (!mtls_policy_allows_cipher(
-            policy, MtlsCipherSuite::TlsAes256GcmSha384) &&
-        !mtls_policy_allows_cipher(
-            policy, MtlsCipherSuite::TlsChacha20Poly1305Sha256)) {
+    if (!mtls_policy_allows_cipher(policy, MtlsCipherSuite::TlsAes256GcmSha384)
+        && !mtls_policy_allows_cipher(policy, MtlsCipherSuite::TlsChacha20Poly1305Sha256)) {
         return std::unexpected(MtlsError::UnsupportedCipherSuite);
     }
     return {};
 }
 
-[[nodiscard]] constexpr std::expected<void, MtlsError>
-validate_mtls_config(DeclaredMtlsConfig const& config) noexcept {
+[[nodiscard]] constexpr std::expected<void, MtlsError> validate_mtls_config(DeclaredMtlsConfig const& config) noexcept {
     auto const& raw = config.value();
     if (raw.ca_cert.peek().size == 0 || raw.client_cert.peek().size == 0) {
         return std::unexpected(MtlsError::EmptyCertificate);
@@ -444,10 +399,8 @@ validate_mtls_config(DeclaredMtlsConfig const& config) noexcept {
 }
 
 [[nodiscard]] std::expected<AuthenticatedMtlsPeer, MtlsError>
-admit_mtls_peer_from_handshake(DeclaredMtlsConfig const& config,
-                               MtlsDnsName peer_dns,
-                               MtlsCertificateFingerprint peer_fingerprint,
-                               MtlsCipherSuite chosen_cipher) noexcept;
+admit_mtls_peer_from_handshake(DeclaredMtlsConfig const& config, MtlsDnsName peer_dns,
+                               MtlsCertificateFingerprint peer_fingerprint, MtlsCipherSuite chosen_cipher) noexcept;
 
 // FIXY-U-087: stub-vs-live deprecation discipline.  The four data-plane
 // entrypoints below are STUBS (see `data_plane_implemented = false` above).
@@ -459,31 +412,26 @@ admit_mtls_peer_from_handshake(DeclaredMtlsConfig const& config,
 // "-Wdeprecated-declarations"/pop`.  When `data_plane_implemented` flips to
 // true the attribute is removed in lockstep with the pragma teardown.
 [[nodiscard, deprecated("CRUCIBLE_STUB: TLS 1.3 handshake not yet implemented; "
-    "returns MtlsError::BackendUnavailable until BoringSSL/kTLS backend ships; "
-    "see fixy-A5-001 / FIXY-U-087")]]
-std::expected<MtlsConnection, MtlsError>
-connect_mtls(SocketFd socket,
-             DeclaredMtlsConfig const& config,
-             MtlsDnsName peer_dns,
-             MtlsCertificateFingerprint peer_fingerprint) noexcept;
+                        "returns MtlsError::BackendUnavailable until BoringSSL/kTLS backend ships; "
+                        "see fixy-A5-001 / FIXY-U-087")]]
+std::expected<MtlsConnection, MtlsError> connect_mtls(SocketFd socket, DeclaredMtlsConfig const& config,
+                                                      MtlsDnsName peer_dns,
+                                                      MtlsCertificateFingerprint peer_fingerprint) noexcept;
 
 [[nodiscard, deprecated("CRUCIBLE_STUB: mTLS record-layer send not yet "
-    "implemented; returns MtlsError::BackendUnavailable; see fixy-A5-001 / "
-    "FIXY-U-087")]]
-std::expected<std::size_t, MtlsError>
-mtls_send(MtlsConnection& connection, std::span<const std::byte> bytes) noexcept;
+                        "implemented; returns MtlsError::BackendUnavailable; see fixy-A5-001 / "
+                        "FIXY-U-087")]]
+std::expected<std::size_t, MtlsError> mtls_send(MtlsConnection& connection, std::span<const std::byte> bytes) noexcept;
 
 [[nodiscard, deprecated("CRUCIBLE_STUB: mTLS record-layer recv not yet "
-    "implemented; returns MtlsError::BackendUnavailable; see fixy-A5-001 / "
-    "FIXY-U-087")]]
-std::expected<std::size_t, MtlsError>
-mtls_recv(MtlsConnection& connection, std::span<std::byte> bytes) noexcept;
+                        "implemented; returns MtlsError::BackendUnavailable; see fixy-A5-001 / "
+                        "FIXY-U-087")]]
+std::expected<std::size_t, MtlsError> mtls_recv(MtlsConnection& connection, std::span<std::byte> bytes) noexcept;
 
 [[nodiscard, deprecated("CRUCIBLE_STUB: kTLS TLS_TX/TLS_RX socket-option "
-    "install not yet implemented; returns MtlsError::KtlsOffloadDeferred; "
-    "see fixy-A5-001 / FIXY-U-087")]]
-std::expected<void, MtlsError>
-enable_ktls_offload(MtlsConnection& connection, NicInterfaceName iface) noexcept;
+                        "install not yet implemented; returns MtlsError::KtlsOffloadDeferred; "
+                        "see fixy-A5-001 / FIXY-U-087")]]
+std::expected<void, MtlsError> enable_ktls_offload(MtlsConnection& connection, NicInterfaceName iface) noexcept;
 
 static_assert(sizeof(MtlsCertificate) == sizeof(MtlsCertificateBytes));
 static_assert(sizeof(MtlsPrivateKey) == sizeof(MtlsPrivateKeyBytes));

@@ -49,21 +49,28 @@ using ::crucible::algebra::lattices::ToleranceLattice;
 using ::crucible::algebra::lattices::VendorBackend;
 using ::crucible::algebra::lattices::VendorLattice;
 
-template <typename T> struct ContentAddressed;
-template <typename T, typename Tag> struct Transferable;
-template <typename T, typename Tag> struct Borrowed;
-template <typename T, typename Tag> struct Returned;
-template <typename InnerProto, typename InnerPS> struct DelegatedSession;
-template <typename T, typename K> struct Delegate;
-template <typename T, typename K> struct Accept;
-template <typename T, typename K,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+template <typename T>
+struct ContentAddressed;
+template <typename T, typename Tag>
+struct Transferable;
+template <typename T, typename Tag>
+struct Borrowed;
+template <typename T, typename Tag>
+struct Returned;
+template <typename InnerProto, typename InnerPS>
+struct DelegatedSession;
+template <typename T, typename K>
+struct Delegate;
+template <typename T, typename K>
+struct Accept;
+template <typename T, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
 struct EpochedDelegate;
-template <typename T, typename K,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+template <typename T, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
 struct EpochedAccept;
-template <typename Base, typename Rollback> struct CheckpointedSession;
-template <CrashClass C> struct Stop_g;
+template <typename Base, typename Rollback>
+struct CheckpointedSession;
+template <CrashClass C>
+struct Stop_g;
 
 namespace axis {
 struct Vendor {};
@@ -79,31 +86,17 @@ namespace detail::session_grade {
 struct PresenceLattice {
     using element_type = bool;
 
-    [[nodiscard]] static constexpr element_type bottom() noexcept {
-        return false;
-    }
-    [[nodiscard]] static constexpr element_type top() noexcept {
-        return true;
-    }
-    [[nodiscard]] static constexpr bool leq(bool a, bool b) noexcept {
-        return !a || b;
-    }
-    [[nodiscard]] static constexpr bool join(bool a, bool b) noexcept {
-        return a || b;
-    }
-    [[nodiscard]] static constexpr bool meet(bool a, bool b) noexcept {
-        return a && b;
-    }
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return "PresenceLattice";
-    }
+    [[nodiscard]] static constexpr element_type bottom() noexcept { return false; }
+    [[nodiscard]] static constexpr element_type top() noexcept { return true; }
+    [[nodiscard]] static constexpr bool leq(bool a, bool b) noexcept { return !a || b; }
+    [[nodiscard]] static constexpr bool join(bool a, bool b) noexcept { return a || b; }
+    [[nodiscard]] static constexpr bool meet(bool a, bool b) noexcept { return a && b; }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "PresenceLattice"; }
 
     template <bool Present>
     struct At {
         struct element_type {
-            [[nodiscard]] constexpr bool operator==(element_type) const noexcept {
-                return true;
-            }
+            [[nodiscard]] constexpr bool operator==(element_type) const noexcept { return true; }
         };
 
         static constexpr bool present = Present;
@@ -124,54 +117,23 @@ struct PresenceLattice {
     };
 };
 
-template <VendorBackend V,
-          Tolerance N,
-          CipherTierTag C,
-          CrashClass K,
-          bool E,
-          bool M>
+template <VendorBackend V, Tolerance N, CipherTierTag C, CrashClass K, bool E, bool M>
 struct make {
-    using type = ProductLattice<
-        VendorLattice::At<V>,
-        ToleranceLattice::At<N>,
-        CipherTierLattice::At<C>,
-        CrashLattice::At<K>,
-        PresenceLattice::At<E>,
-        PresenceLattice::At<M>>;
+    using type = ProductLattice<VendorLattice::At<V>, ToleranceLattice::At<N>, CipherTierLattice::At<C>,
+                                CrashLattice::At<K>, PresenceLattice::At<E>, PresenceLattice::At<M>>;
 };
 
-template <VendorBackend V,
-          Tolerance N,
-          CipherTierTag C,
-          CrashClass K,
-          bool E,
-          bool M>
+template <VendorBackend V, Tolerance N, CipherTierTag C, CrashClass K, bool E, bool M>
 using make_t = typename make<V, N, C, K, E, M>::type;
 
-using bottom_t = make_t<
-    VendorBackend::None,
-    Tolerance::RELAXED,
-    CipherTierTag::Cold,
-    CrashClass::Abort,
-    false,
-    false>;
+using bottom_t = make_t<VendorBackend::None, Tolerance::RELAXED, CipherTierTag::Cold, CrashClass::Abort, false, false>;
 
 template <typename Grade>
 struct values;
 
-template <VendorBackend V,
-          Tolerance N,
-          CipherTierTag C,
-          CrashClass K,
-          bool E,
-          bool M>
-struct values<ProductLattice<
-    VendorLattice::At<V>,
-    ToleranceLattice::At<N>,
-    CipherTierLattice::At<C>,
-    CrashLattice::At<K>,
-    PresenceLattice::At<E>,
-    PresenceLattice::At<M>>> {
+template <VendorBackend V, Tolerance N, CipherTierTag C, CrashClass K, bool E, bool M>
+struct values<ProductLattice<VendorLattice::At<V>, ToleranceLattice::At<N>, CipherTierLattice::At<C>,
+                             CrashLattice::At<K>, PresenceLattice::At<E>, PresenceLattice::At<M>>> {
     static constexpr VendorBackend vendor = V;
     static constexpr Tolerance numerical_tier = N;
     static constexpr CipherTierTag cipher_tier = C;
@@ -186,10 +148,8 @@ struct join {
     using bv = values<B>;
 
     using type = make_t<
-        VendorLattice::join(av::vendor, bv::vendor),
-        ToleranceLattice::join(av::numerical_tier, bv::numerical_tier),
-        CipherTierLattice::join(av::cipher_tier, bv::cipher_tier),
-        CrashLattice::join(av::crash_class, bv::crash_class),
+        VendorLattice::join(av::vendor, bv::vendor), ToleranceLattice::join(av::numerical_tier, bv::numerical_tier),
+        CipherTierLattice::join(av::cipher_tier, bv::cipher_tier), CrashLattice::join(av::crash_class, bv::crash_class),
         PresenceLattice::join(av::epoch_versioned, bv::epoch_versioned),
         PresenceLattice::join(av::numa_placement, bv::numa_placement)>;
 };
@@ -220,13 +180,12 @@ struct satisfies {
     using pv = values<Provided>;
     using rv = values<Required>;
 
-    static constexpr bool value =
-        VendorLattice::leq(rv::vendor, pv::vendor) &&
-        ToleranceLattice::leq(rv::numerical_tier, pv::numerical_tier) &&
-        CipherTierLattice::leq(rv::cipher_tier, pv::cipher_tier) &&
-        CrashLattice::leq(rv::crash_class, pv::crash_class) &&
-        PresenceLattice::leq(rv::epoch_versioned, pv::epoch_versioned) &&
-        PresenceLattice::leq(rv::numa_placement, pv::numa_placement);
+    static constexpr bool value = VendorLattice::leq(rv::vendor, pv::vendor)
+                               && ToleranceLattice::leq(rv::numerical_tier, pv::numerical_tier)
+                               && CipherTierLattice::leq(rv::cipher_tier, pv::cipher_tier)
+                               && CrashLattice::leq(rv::crash_class, pv::crash_class)
+                               && PresenceLattice::leq(rv::epoch_versioned, pv::epoch_versioned)
+                               && PresenceLattice::leq(rv::numa_placement, pv::numa_placement);
 };
 
 template <typename Provided, typename Required>
@@ -246,58 +205,33 @@ struct payload_grade {
 };
 
 template <typename Payload>
-using payload_grade_t =
-    typename payload_grade<std::remove_cvref_t<Payload>>::type;
+using payload_grade_t = typename payload_grade<std::remove_cvref_t<Payload>>::type;
 
 template <VendorBackend V, typename T>
 struct payload_grade<::crucible::safety::Vendor<V, T>> {
     using type = detail::session_grade::join_t<
-        detail::session_grade::make_t<
-            V,
-            Tolerance::RELAXED,
-            CipherTierTag::Cold,
-            CrashClass::Abort,
-            false,
-            false>,
+        detail::session_grade::make_t<V, Tolerance::RELAXED, CipherTierTag::Cold, CrashClass::Abort, false, false>,
         payload_grade_t<T>>;
 };
 
 template <Tolerance N, typename T>
 struct payload_grade<::crucible::safety::NumericalTier<N, T>> {
     using type = detail::session_grade::join_t<
-        detail::session_grade::make_t<
-            VendorBackend::None,
-            N,
-            CipherTierTag::Cold,
-            CrashClass::Abort,
-            false,
-            false>,
+        detail::session_grade::make_t<VendorBackend::None, N, CipherTierTag::Cold, CrashClass::Abort, false, false>,
         payload_grade_t<T>>;
 };
 
 template <CipherTierTag C, typename T>
 struct payload_grade<::crucible::safety::CipherTier<C, T>> {
     using type = detail::session_grade::join_t<
-        detail::session_grade::make_t<
-            VendorBackend::None,
-            Tolerance::RELAXED,
-            C,
-            CrashClass::Abort,
-            false,
-            false>,
+        detail::session_grade::make_t<VendorBackend::None, Tolerance::RELAXED, C, CrashClass::Abort, false, false>,
         payload_grade_t<T>>;
 };
 
 template <CrashClass K, typename T>
 struct payload_grade<::crucible::safety::Crash<K, T>> {
     using type = detail::session_grade::join_t<
-        detail::session_grade::make_t<
-            VendorBackend::None,
-            Tolerance::RELAXED,
-            CipherTierTag::Cold,
-            K,
-            false,
-            false>,
+        detail::session_grade::make_t<VendorBackend::None, Tolerance::RELAXED, CipherTierTag::Cold, K, false, false>,
         payload_grade_t<T>>;
 };
 
@@ -309,26 +243,16 @@ struct payload_grade<::crucible::safety::Crash<K, T>> {
 template <typename T>
 struct payload_grade<::crucible::safety::EpochVersioned<T>> {
     using type = detail::session_grade::join_t<
-        detail::session_grade::make_t<
-            VendorBackend::None,
-            Tolerance::RELAXED,
-            CipherTierTag::Cold,
-            CrashClass::Abort,
-            true,
-            false>,
+        detail::session_grade::make_t<VendorBackend::None, Tolerance::RELAXED, CipherTierTag::Cold, CrashClass::Abort,
+                                      true, false>,
         payload_grade_t<T>>;
 };
 
 template <typename T>
 struct payload_grade<::crucible::safety::NumaPlacement<T>> {
     using type = detail::session_grade::join_t<
-        detail::session_grade::make_t<
-            VendorBackend::None,
-            Tolerance::RELAXED,
-            CipherTierTag::Cold,
-            CrashClass::Abort,
-            false,
-            true>,
+        detail::session_grade::make_t<VendorBackend::None, Tolerance::RELAXED, CipherTierTag::Cold, CrashClass::Abort,
+                                      false, true>,
         payload_grade_t<T>>;
 };
 
@@ -354,43 +278,37 @@ struct grade_for_axis;
 
 template <typename T>
 struct grade_for_axis<axis::Vendor, T> {
-    static constexpr VendorBackend value =
-        detail::session_grade::values<payload_grade_t<T>>::vendor;
+    static constexpr VendorBackend value = detail::session_grade::values<payload_grade_t<T>>::vendor;
     using type = VendorLattice::At<value>;
 };
 
 template <typename T>
 struct grade_for_axis<axis::NumericalTier, T> {
-    static constexpr Tolerance value =
-        detail::session_grade::values<payload_grade_t<T>>::numerical_tier;
+    static constexpr Tolerance value = detail::session_grade::values<payload_grade_t<T>>::numerical_tier;
     using type = ToleranceLattice::At<value>;
 };
 
 template <typename T>
 struct grade_for_axis<axis::CipherTier, T> {
-    static constexpr CipherTierTag value =
-        detail::session_grade::values<payload_grade_t<T>>::cipher_tier;
+    static constexpr CipherTierTag value = detail::session_grade::values<payload_grade_t<T>>::cipher_tier;
     using type = CipherTierLattice::At<value>;
 };
 
 template <typename T>
 struct grade_for_axis<axis::CrashClass, T> {
-    static constexpr CrashClass value =
-        detail::session_grade::values<payload_grade_t<T>>::crash_class;
+    static constexpr CrashClass value = detail::session_grade::values<payload_grade_t<T>>::crash_class;
     using type = CrashLattice::At<value>;
 };
 
 template <typename T>
 struct grade_for_axis<axis::EpochVersioned, T> {
-    static constexpr bool value =
-        detail::session_grade::values<payload_grade_t<T>>::epoch_versioned;
+    static constexpr bool value = detail::session_grade::values<payload_grade_t<T>>::epoch_versioned;
     using type = detail::session_grade::PresenceLattice::At<value>;
 };
 
 template <typename T>
 struct grade_for_axis<axis::NumaPlacement, T> {
-    static constexpr bool value =
-        detail::session_grade::values<payload_grade_t<T>>::numa_placement;
+    static constexpr bool value = detail::session_grade::values<payload_grade_t<T>>::numa_placement;
     using type = detail::session_grade::PresenceLattice::At<value>;
 };
 
@@ -398,15 +316,13 @@ template <typename Axis, typename T>
 using grade_for_axis_t = typename grade_for_axis<Axis, T>::type;
 
 template <typename Axis, typename T>
-inline constexpr auto grade_for_axis_v =
-    grade_for_axis<Axis, T>::value;
+inline constexpr auto grade_for_axis_v = grade_for_axis<Axis, T>::value;
 
 template <typename P>
 struct protocol_grade {
-    static_assert(sizeof(P) == 0,
-        "protocol_grade<P>: unsupported session combinator.  Add a "
-        "SessionGrade.h specialization so the protocol grade cannot "
-        "silently collapse to bottom.");
+    static_assert(sizeof(P) == 0, "protocol_grade<P>: unsupported session combinator.  Add a "
+                                  "SessionGrade.h specialization so the protocol grade cannot "
+                                  "silently collapse to bottom.");
 };
 
 template <>
@@ -421,16 +337,12 @@ struct protocol_grade<Continue> {
 
 template <typename T, typename K>
 struct protocol_grade<Send<T, K>> {
-    using type = detail::session_grade::join_t<
-        payload_grade_t<T>,
-        protocol_grade_t<K>>;
+    using type = detail::session_grade::join_t<payload_grade_t<T>, protocol_grade_t<K>>;
 };
 
 template <typename T, typename K>
 struct protocol_grade<Recv<T, K>> {
-    using type = detail::session_grade::join_t<
-        payload_grade_t<T>,
-        protocol_grade_t<K>>;
+    using type = detail::session_grade::join_t<payload_grade_t<T>, protocol_grade_t<K>>;
 };
 
 template <typename Body>
@@ -438,110 +350,74 @@ struct protocol_grade<Loop<Body>> : protocol_grade<Body> {};
 
 template <typename... Branches>
 struct protocol_grade<Select<Branches...>> {
-    using type = detail::session_grade::join_many_t<
-        protocol_grade_t<Branches>...>;
+    using type = detail::session_grade::join_many_t<protocol_grade_t<Branches>...>;
 };
 
 template <typename... Branches>
 struct protocol_grade<Offer<Branches...>> {
-    using type = detail::session_grade::join_many_t<
-        protocol_grade_t<Branches>...>;
+    using type = detail::session_grade::join_many_t<protocol_grade_t<Branches>...>;
 };
 
 template <typename Role, typename... Branches>
 struct protocol_grade<Offer<Sender<Role>, Branches...>> {
-    using type = detail::session_grade::join_many_t<
-        protocol_grade_t<Branches>...>;
+    using type = detail::session_grade::join_many_t<protocol_grade_t<Branches>...>;
 };
 
 template <VendorBackend V, typename P>
 struct protocol_grade<VendorPinned<V, P>> {
     using type = detail::session_grade::join_t<
-        detail::session_grade::make_t<
-            V,
-            Tolerance::RELAXED,
-            CipherTierTag::Cold,
-            CrashClass::Abort,
-            false,
-            false>,
+        detail::session_grade::make_t<V, Tolerance::RELAXED, CipherTierTag::Cold, CrashClass::Abort, false, false>,
         protocol_grade_t<P>>;
 };
 
 template <CrashClass C>
 struct protocol_grade<Stop_g<C>> {
-    using type = detail::session_grade::make_t<
-        VendorBackend::None,
-        Tolerance::RELAXED,
-        CipherTierTag::Cold,
-        C,
-        false,
-        false>;
+    using type =
+        detail::session_grade::make_t<VendorBackend::None, Tolerance::RELAXED, CipherTierTag::Cold, C, false, false>;
 };
 
 template <typename T, typename K>
 struct protocol_grade<Delegate<T, K>> {
-    using type = detail::session_grade::join_t<
-        protocol_grade_t<T>,
-        protocol_grade_t<K>>;
+    using type = detail::session_grade::join_t<protocol_grade_t<T>, protocol_grade_t<K>>;
 };
 
 template <typename T, typename K>
-struct protocol_grade<Accept<T, K>>
-    : protocol_grade<Delegate<T, K>> {};
+struct protocol_grade<Accept<T, K>> : protocol_grade<Delegate<T, K>> {};
 
-template <typename T, typename K,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
-struct protocol_grade<EpochedDelegate<T, K, MinEpoch, MinGeneration>>
-    : protocol_grade<Delegate<T, K>> {};
+template <typename T, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct protocol_grade<EpochedDelegate<T, K, MinEpoch, MinGeneration>> : protocol_grade<Delegate<T, K>> {};
 
-template <typename T, typename K,
-          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
-struct protocol_grade<EpochedAccept<T, K, MinEpoch, MinGeneration>>
-    : protocol_grade<Delegate<T, K>> {};
+template <typename T, typename K, std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct protocol_grade<EpochedAccept<T, K, MinEpoch, MinGeneration>> : protocol_grade<Delegate<T, K>> {};
 
 template <typename Base, typename Rollback>
 struct protocol_grade<CheckpointedSession<Base, Rollback>> {
-    using type = detail::session_grade::join_t<
-        protocol_grade_t<Base>,
-        protocol_grade_t<Rollback>>;
+    using type = detail::session_grade::join_t<protocol_grade_t<Base>, protocol_grade_t<Rollback>>;
 };
 
 template <typename P>
-using protocol_vendor_t =
-    VendorLattice::At<
-        detail::session_grade::values<protocol_grade_t<P>>::vendor>;
+using protocol_vendor_t = VendorLattice::At<detail::session_grade::values<protocol_grade_t<P>>::vendor>;
 
 template <typename P>
 using protocol_numerical_tier_t =
-    ToleranceLattice::At<
-        detail::session_grade::values<
-            protocol_grade_t<P>>::numerical_tier>;
+    ToleranceLattice::At<detail::session_grade::values<protocol_grade_t<P>>::numerical_tier>;
 
 template <typename P>
-using protocol_cipher_tier_t =
-    CipherTierLattice::At<
-        detail::session_grade::values<protocol_grade_t<P>>::cipher_tier>;
+using protocol_cipher_tier_t = CipherTierLattice::At<detail::session_grade::values<protocol_grade_t<P>>::cipher_tier>;
 
 template <typename P>
-using protocol_crash_class_t =
-    CrashLattice::At<
-        detail::session_grade::values<protocol_grade_t<P>>::crash_class>;
+using protocol_crash_class_t = CrashLattice::At<detail::session_grade::values<protocol_grade_t<P>>::crash_class>;
 
 template <typename P>
 using protocol_epoch_versioned_t =
-    detail::session_grade::PresenceLattice::At<
-        detail::session_grade::values<
-            protocol_grade_t<P>>::epoch_versioned>;
+    detail::session_grade::PresenceLattice::At<detail::session_grade::values<protocol_grade_t<P>>::epoch_versioned>;
 
 template <typename P>
 using protocol_numa_placement_t =
-    detail::session_grade::PresenceLattice::At<
-        detail::session_grade::values<
-            protocol_grade_t<P>>::numa_placement>;
+    detail::session_grade::PresenceLattice::At<detail::session_grade::values<protocol_grade_t<P>>::numa_placement>;
 
 template <typename P>
-inline constexpr VendorBackend protocol_grade_vendor_v =
-    detail::session_grade::values<protocol_grade_t<P>>::vendor;
+inline constexpr VendorBackend protocol_grade_vendor_v = detail::session_grade::values<protocol_grade_t<P>>::vendor;
 
 template <typename P>
 inline constexpr Tolerance protocol_grade_numerical_tier_v =
@@ -565,9 +441,7 @@ inline constexpr bool protocol_grade_numa_placement_v =
 
 template <typename Provided, typename Required>
 inline constexpr bool protocol_grade_aggregate_satisfies_v =
-    detail::session_grade::satisfies_v<
-        protocol_grade_t<Provided>,
-        protocol_grade_t<Required>>;
+    detail::session_grade::satisfies_v<protocol_grade_t<Provided>, protocol_grade_t<Required>>;
 
 namespace detail::session_grade_self_test {
 
@@ -576,89 +450,50 @@ struct Peer {};
 struct WorkPerm {};
 struct RoleA {};
 
-using MultiAxisPayload =
-    ::crucible::safety::NumericalTier<
-        Tolerance::BITEXACT,
-        ::crucible::safety::Vendor<
-            VendorBackend::NV,
-            ::crucible::safety::CipherTier<
-                CipherTierTag::Hot,
-                ::crucible::safety::Crash<
-                    CrashClass::NoThrow,
-                    ResultTensor>>>>;
+using MultiAxisPayload = ::crucible::safety::NumericalTier<
+    Tolerance::BITEXACT,
+    ::crucible::safety::Vendor<VendorBackend::NV,
+                               ::crucible::safety::CipherTier<
+                                   CipherTierTag::Hot, ::crucible::safety::Crash<CrashClass::NoThrow, ResultTensor>>>>;
 
 using MultiAxisProto = Send<MultiAxisPayload, End>;
-using MultiAxisExpected = ProductLattice<
-    VendorLattice::At<VendorBackend::NV>,
-    ToleranceLattice::At<Tolerance::BITEXACT>,
-    CipherTierLattice::At<CipherTierTag::Hot>,
-    CrashLattice::At<CrashClass::NoThrow>,
-    detail::session_grade::PresenceLattice::At<false>,
-    detail::session_grade::PresenceLattice::At<false>>;
+using MultiAxisExpected =
+    ProductLattice<VendorLattice::At<VendorBackend::NV>, ToleranceLattice::At<Tolerance::BITEXACT>,
+                   CipherTierLattice::At<CipherTierTag::Hot>, CrashLattice::At<CrashClass::NoThrow>,
+                   detail::session_grade::PresenceLattice::At<false>,
+                   detail::session_grade::PresenceLattice::At<false>>;
 
-static_assert(std::is_same_v<
-    protocol_grade_t<MultiAxisProto>,
-    MultiAxisExpected>);
-static_assert(std::is_same_v<
-    protocol_vendor_t<MultiAxisProto>,
-    VendorLattice::At<VendorBackend::NV>>);
-static_assert(std::is_same_v<
-    protocol_numerical_tier_t<MultiAxisProto>,
-    ToleranceLattice::At<Tolerance::BITEXACT>>);
-static_assert(std::is_same_v<
-    protocol_cipher_tier_t<MultiAxisProto>,
-    CipherTierLattice::At<CipherTierTag::Hot>>);
-static_assert(std::is_same_v<
-    protocol_crash_class_t<MultiAxisProto>,
-    CrashLattice::At<CrashClass::NoThrow>>);
-static_assert(std::is_same_v<
-    protocol_epoch_versioned_t<MultiAxisProto>,
-    detail::session_grade::PresenceLattice::At<false>>);
-static_assert(std::is_same_v<
-    protocol_numa_placement_t<MultiAxisProto>,
-    detail::session_grade::PresenceLattice::At<false>>);
+static_assert(std::is_same_v<protocol_grade_t<MultiAxisProto>, MultiAxisExpected>);
+static_assert(std::is_same_v<protocol_vendor_t<MultiAxisProto>, VendorLattice::At<VendorBackend::NV>>);
+static_assert(std::is_same_v<protocol_numerical_tier_t<MultiAxisProto>, ToleranceLattice::At<Tolerance::BITEXACT>>);
+static_assert(std::is_same_v<protocol_cipher_tier_t<MultiAxisProto>, CipherTierLattice::At<CipherTierTag::Hot>>);
+static_assert(std::is_same_v<protocol_crash_class_t<MultiAxisProto>, CrashLattice::At<CrashClass::NoThrow>>);
+static_assert(
+    std::is_same_v<protocol_epoch_versioned_t<MultiAxisProto>, detail::session_grade::PresenceLattice::At<false>>);
+static_assert(
+    std::is_same_v<protocol_numa_placement_t<MultiAxisProto>, detail::session_grade::PresenceLattice::At<false>>);
 
-using BranchJoinProto = Select<
-    Send<::crucible::safety::NumericalTier<
-             Tolerance::ULP_FP16, int>, End>,
-    Send<::crucible::safety::NumericalTier<
-             Tolerance::BITEXACT, int>, End>>;
-static_assert(protocol_grade_numerical_tier_v<BranchJoinProto>
-              == Tolerance::BITEXACT);
+using BranchJoinProto = Select<Send<::crucible::safety::NumericalTier<Tolerance::ULP_FP16, int>, End>,
+                               Send<::crucible::safety::NumericalTier<Tolerance::BITEXACT, int>, End>>;
+static_assert(protocol_grade_numerical_tier_v<BranchJoinProto> == Tolerance::BITEXACT);
 
-using PermissionMarkerProto = Send<
-    Transferable<ContentAddressed<MultiAxisPayload>, WorkPerm>,
-    End>;
-static_assert(std::is_same_v<
-    protocol_grade_t<PermissionMarkerProto>,
-    MultiAxisExpected>);
+using PermissionMarkerProto = Send<Transferable<ContentAddressed<MultiAxisPayload>, WorkPerm>, End>;
+static_assert(std::is_same_v<protocol_grade_t<PermissionMarkerProto>, MultiAxisExpected>);
 
-using PinnedProto = VendorPinned<
-    VendorBackend::AMD,
-    Recv<int, End>>;
-static_assert(protocol_grade_vendor_v<PinnedProto>
-              == VendorBackend::AMD);
+using PinnedProto = VendorPinned<VendorBackend::AMD, Recv<int, End>>;
+static_assert(protocol_grade_vendor_v<PinnedProto> == VendorBackend::AMD);
 
-using AnnotatedOffer = Offer<
-    Sender<RoleA>,
-    Recv<MultiAxisPayload, End>,
-    Send<int, End>>;
-static_assert(protocol_grade_vendor_v<AnnotatedOffer>
-              == VendorBackend::NV);
+using AnnotatedOffer = Offer<Sender<RoleA>, Recv<MultiAxisPayload, End>, Send<int, End>>;
+static_assert(protocol_grade_vendor_v<AnnotatedOffer> == VendorBackend::NV);
 
-using EpochPayload =
-    ::crucible::safety::EpochVersioned<MultiAxisPayload>;
-using NumaPayload =
-    ::crucible::safety::NumaPlacement<EpochPayload>;
+using EpochPayload = ::crucible::safety::EpochVersioned<MultiAxisPayload>;
+using NumaPayload = ::crucible::safety::NumaPlacement<EpochPayload>;
 using RuntimeGradeProto = Send<NumaPayload, End>;
 static_assert(protocol_grade_epoch_versioned_v<RuntimeGradeProto>);
 static_assert(protocol_grade_numa_placement_v<RuntimeGradeProto>);
-static_assert(protocol_grade_vendor_v<RuntimeGradeProto>
-              == VendorBackend::NV);
-static_assert(protocol_grade_aggregate_satisfies_v<RuntimeGradeProto,
-                                                   MultiAxisProto>);
-static_assert(!protocol_grade_aggregate_satisfies_v<MultiAxisProto,
-                                                    RuntimeGradeProto>);
+static_assert(protocol_grade_vendor_v<RuntimeGradeProto> == VendorBackend::NV);
+static_assert(protocol_grade_aggregate_satisfies_v<RuntimeGradeProto, MultiAxisProto>);
+static_assert(!protocol_grade_aggregate_satisfies_v<MultiAxisProto, RuntimeGradeProto>);
 
 }  // namespace detail::session_grade_self_test
 

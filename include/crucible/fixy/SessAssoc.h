@@ -123,11 +123,11 @@ namespace crucible::fixy::sess::assoc::v059_self_test {
 namespace proto = ::crucible::safety::proto;
 
 // ASCII fixture tags — minimal G that exercises every export.
-struct MySess {};        // session tag
-struct OtherSess {};     // different session tag (for wrong-tag witness)
+struct MySess {};  // session tag
+struct OtherSess {};  // different session tag (for wrong-tag witness)
 struct Alice {};
 struct Bob {};
-struct Stranger {};      // role NOT in G_bin
+struct Stranger {};  // role NOT in G_bin
 struct Ping {};
 
 // Minimal well-formed G: one-message Alice → Bob.
@@ -139,52 +139,43 @@ using GammaRefl = projected_context_t<G_bin, MySess>;
 // ── A. Role-list helpers reach (variable identity) ─────────────────
 // Substrate's `role_list_subset` class template lives in `detail::assoc::`
 // and is not part of the public surface — only the `_v` form is.
-static_assert(role_list_subset_v<proto::RoleList<Alice>,
-                                 proto::RoleList<Alice, Bob>>
-              == proto::role_list_subset_v<proto::RoleList<Alice>,
-                                           proto::RoleList<Alice, Bob>>,
-    "role_list_subset_v must reach identically through fixy::");
-static_assert(role_list_subset_v<proto::RoleList<Alice>,
-                                 proto::RoleList<Alice, Bob>>,
-    "{Alice} ⊆ {Alice, Bob} must hold (subset is reflexive on each Rs).");
-static_assert(!role_list_subset_v<proto::RoleList<Stranger>,
-                                  proto::RoleList<Alice, Bob>>,
-    "Stranger ∉ {Alice, Bob} — subset must reject.");
-static_assert(role_lists_equal_as_sets_v<proto::RoleList<Alice, Bob>,
-                                         proto::RoleList<Bob,   Alice>>,
-    "Set equality is order-insensitive (Alice,Bob == Bob,Alice).");
+static_assert(role_list_subset_v<proto::RoleList<Alice>, proto::RoleList<Alice, Bob>>
+                  == proto::role_list_subset_v<proto::RoleList<Alice>, proto::RoleList<Alice, Bob>>,
+              "role_list_subset_v must reach identically through fixy::");
+static_assert(role_list_subset_v<proto::RoleList<Alice>, proto::RoleList<Alice, Bob>>,
+              "{Alice} ⊆ {Alice, Bob} must hold (subset is reflexive on each Rs).");
+static_assert(!role_list_subset_v<proto::RoleList<Stranger>, proto::RoleList<Alice, Bob>>,
+              "Stranger ∉ {Alice, Bob} — subset must reject.");
+static_assert(role_lists_equal_as_sets_v<proto::RoleList<Alice, Bob>, proto::RoleList<Bob, Alice>>,
+              "Set equality is order-insensitive (Alice,Bob == Bob,Alice).");
 
 // ── B. Domain projection trait reach ────────────────────────────────
-static_assert(role_lists_equal_as_sets_v<
-    domain_roles_for_session_t<GammaRefl, MySess>,
-    proto::RoleList<Alice, Bob>>,
-    "GammaRefl's domain (restricted to MySess) must be {Alice, Bob}.");
-static_assert(std::is_same_v<
-    domain_roles_for_session_t<GammaRefl, OtherSess>,
-    proto::EmptyRoleList>,
-    "GammaRefl's domain for OtherSess is empty (no entries tagged OtherSess).");
+static_assert(role_lists_equal_as_sets_v<domain_roles_for_session_t<GammaRefl, MySess>, proto::RoleList<Alice, Bob>>,
+              "GammaRefl's domain (restricted to MySess) must be {Alice, Bob}.");
+static_assert(std::is_same_v<domain_roles_for_session_t<GammaRefl, OtherSess>, proto::EmptyRoleList>,
+              "GammaRefl's domain for OtherSess is empty (no entries tagged OtherSess).");
 
 // ── C. Per-condition trait reach ────────────────────────────────────
-static_assert(domain_matches_v<GammaRefl, G_bin, MySess>
-              == proto::domain_matches_v<GammaRefl, G_bin, MySess>,
-    "domain_matches_v must reach identically through fixy::");
+static_assert(domain_matches_v<GammaRefl, G_bin, MySess> == proto::domain_matches_v<GammaRefl, G_bin, MySess>,
+              "domain_matches_v must reach identically through fixy::");
 static_assert(all_entries_refine_projection_v<GammaRefl, G_bin, MySess>
-              == proto::all_entries_refine_projection_v<GammaRefl, G_bin, MySess>,
-    "all_entries_refine_projection_v must reach identically.");
+                  == proto::all_entries_refine_projection_v<GammaRefl, G_bin, MySess>,
+              "all_entries_refine_projection_v must reach identically.");
 static_assert(domain_matches_v<GammaRefl, G_bin, MySess>);
 static_assert(all_entries_refine_projection_v<GammaRefl, G_bin, MySess>);
 
 // ── D. The association invariant proper ────────────────────────────
-static_assert(is_associated_v<GammaRefl, G_bin, MySess>
-              == proto::is_associated_v<GammaRefl, G_bin, MySess>,
-    "is_associated_v must reach identically through fixy::");
+static_assert(is_associated_v<GammaRefl, G_bin, MySess> == proto::is_associated_v<GammaRefl, G_bin, MySess>,
+              "is_associated_v must reach identically through fixy::");
 static_assert(is_associated_v<GammaRefl, G_bin, MySess>,
-    "Reflexive association: projected_context_t<G, S> ⊑_s G always holds.");
+              "Reflexive association: projected_context_t<G, S> ⊑_s G always holds.");
 
 // AssociatedWith concept reach.
 template <typename G_arg, typename G_, typename S>
     requires AssociatedWith<G_arg, G_, S>
-consteval bool requires_associated_witness() { return true; }
+consteval bool requires_associated_witness() {
+    return true;
+}
 static_assert(requires_associated_witness<GammaRefl, G_bin, MySess>());
 
 // assert_associated helper reach (consteval call site).
@@ -195,16 +186,12 @@ consteval bool check_fixy_assert_associated() {
 static_assert(check_fixy_assert_associated());
 
 // ── E. Canonical Δ generator reach ──────────────────────────────────
-static_assert(std::is_same_v<
-    projected_context_t<G_bin, MySess>,
-    proto::projected_context_t<G_bin, MySess>>,
-    "projected_context_t must reach identically through fixy::");
+static_assert(std::is_same_v<projected_context_t<G_bin, MySess>, proto::projected_context_t<G_bin, MySess>>,
+              "projected_context_t must reach identically through fixy::");
 
 // Empty-G's reflexive Δ is EmptyContext.
-static_assert(std::is_same_v<
-    projected_context_t<proto::End_G, MySess>,
-    proto::EmptyContext>,
-    "projected_context_t<End_G, S> must be EmptyContext (no roles).");
+static_assert(std::is_same_v<projected_context_t<proto::End_G, MySess>, proto::EmptyContext>,
+              "projected_context_t<End_G, S> must be EmptyContext (no roles).");
 
 // ── F. Cardinality witness — count of items V-059 surfaces ──────────
 //
@@ -214,9 +201,8 @@ static_assert(std::is_same_v<
 //   + association invariant (3: is_associated_v + AssociatedWith + assert_associated)
 //   + canonical Δ generator (1: projected_context_t)              ──── 9
 constexpr int v059_surface_cardinality = 9;
-static_assert(v059_surface_cardinality == 9,
-    "fixy::sess::assoc:: V-059 surface cardinality drifted — update "
-    "SessAssoc.h using-decls AND this sentinel in lockstep.");
+static_assert(v059_surface_cardinality == 9, "fixy::sess::assoc:: V-059 surface cardinality drifted — update "
+                                             "SessAssoc.h using-decls AND this sentinel in lockstep.");
 
 }  // namespace crucible::fixy::sess::assoc::v059_self_test
 
@@ -242,22 +228,24 @@ inline void runtime_smoke_test() noexcept {
     using G = proto::Transmission<RA, RB, M, proto::End_G>;
     using Gamma = projected_context_t<G, S>;
 
-    [[maybe_unused]] constexpr bool dom    = domain_matches_v<Gamma, G, S>;
+    [[maybe_unused]] constexpr bool dom = domain_matches_v<Gamma, G, S>;
     [[maybe_unused]] constexpr bool refine = all_entries_refine_projection_v<Gamma, G, S>;
-    [[maybe_unused]] constexpr bool assoc  = is_associated_v<Gamma, G, S>;
-    [[maybe_unused]] constexpr bool subset = role_list_subset_v<
-        proto::RoleList<RA>, proto::RoleList<RA, RB>>;
-    [[maybe_unused]] constexpr bool equal  = role_lists_equal_as_sets_v<
-        proto::RoleList<RA, RB>, proto::RoleList<RB, RA>>;
+    [[maybe_unused]] constexpr bool assoc = is_associated_v<Gamma, G, S>;
+    [[maybe_unused]] constexpr bool subset = role_list_subset_v<proto::RoleList<RA>, proto::RoleList<RA, RB>>;
+    [[maybe_unused]] constexpr bool equal =
+        role_lists_equal_as_sets_v<proto::RoleList<RA, RB>, proto::RoleList<RB, RA>>;
     using DomRoles = domain_roles_for_session_t<Gamma, S>;
     using EmptyDom = domain_roles_for_session_t<Gamma, OS>;
-    [[maybe_unused]] constexpr bool dr_ok =
-        role_lists_equal_as_sets_v<DomRoles, proto::RoleList<RA, RB>>;
-    [[maybe_unused]] constexpr bool ed_ok =
-        std::is_same_v<EmptyDom, proto::EmptyRoleList>;
+    [[maybe_unused]] constexpr bool dr_ok = role_lists_equal_as_sets_v<DomRoles, proto::RoleList<RA, RB>>;
+    [[maybe_unused]] constexpr bool ed_ok = std::is_same_v<EmptyDom, proto::EmptyRoleList>;
 
-    (void) dom; (void) refine; (void) assoc; (void) subset;
-    (void) equal; (void) dr_ok; (void) ed_ok;
+    (void)dom;
+    (void)refine;
+    (void)assoc;
+    (void)subset;
+    (void)equal;
+    (void)dr_ok;
+    (void)ed_ok;
 }
 
 }  // namespace crucible::fixy::sess::assoc

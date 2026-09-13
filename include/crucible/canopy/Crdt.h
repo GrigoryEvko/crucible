@@ -33,24 +33,15 @@ template <typename State>
 using GossipedState = safety::Tagged<State, safety::source::Gossiped>;
 
 template <std::size_t Capacity>
-concept CrdtCapacity =
-    Capacity > 0 &&
-    Capacity <= static_cast<std::size_t>(
-        std::numeric_limits<std::uint16_t>::max());
+concept CrdtCapacity = Capacity > 0 && Capacity <= static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max());
 
 template <std::size_t Capacity>
     requires CrdtCapacity<Capacity>
-using CrdtIndex =
-    safety::Refined<safety::bounded_above<
-                        static_cast<std::uint16_t>(Capacity - 1)>,
-                    std::uint16_t>;
+using CrdtIndex = safety::Refined<safety::bounded_above<static_cast<std::uint16_t>(Capacity - 1)>, std::uint16_t>;
 
 template <std::size_t Capacity>
     requires CrdtCapacity<Capacity>
-using CrdtCount =
-    safety::Refined<safety::bounded_above<
-                        static_cast<std::uint16_t>(Capacity)>,
-                    std::uint16_t>;
+using CrdtCount = safety::Refined<safety::bounded_above<static_cast<std::uint16_t>(Capacity)>, std::uint16_t>;
 
 template <std::size_t MaxReplicas>
     requires CrdtCapacity<MaxReplicas>
@@ -60,8 +51,7 @@ using CounterAmount = safety::Refined<safety::positive, std::uint64_t>;
 
 namespace detail {
 
-[[nodiscard]] constexpr std::uint64_t
-sat_add(std::uint64_t a, std::uint64_t b) noexcept {
+[[nodiscard]] constexpr std::uint64_t sat_add(std::uint64_t a, std::uint64_t b) noexcept {
     const std::uint64_t max = std::numeric_limits<std::uint64_t>::max();
     return a > max - b ? max : a + b;
 }
@@ -97,39 +87,32 @@ sat_add(std::uint64_t a, std::uint64_t b) noexcept {
 template <typename T>
 [[nodiscard]] constexpr std::uint64_t stable_hash(T const& value) noexcept {
     if constexpr (std::is_enum_v<T>) {
-        return crdt_fmix64(
-            static_cast<std::uint64_t>(std::to_underlying(value)));
+        return crdt_fmix64(static_cast<std::uint64_t>(std::to_underlying(value)));
     } else if constexpr (std::is_integral_v<T>) {
         return crdt_fmix64(static_cast<std::uint64_t>(value));
     } else if constexpr (std::is_floating_point_v<T>) {
         if constexpr (sizeof(T) == 4) {
-            return crdt_fmix64(static_cast<std::uint64_t>(
-                std::bit_cast<std::uint32_t>(value)));
+            return crdt_fmix64(static_cast<std::uint64_t>(std::bit_cast<std::uint32_t>(value)));
         } else {
-            static_assert(sizeof(T) == 8,
-                "stable_hash<T> floating-point dispatch requires "
-                "4- or 8-byte T (fixy-A5-003)");
+            static_assert(sizeof(T) == 8, "stable_hash<T> floating-point dispatch requires "
+                                          "4- or 8-byte T (fixy-A5-003)");
             return crdt_fmix64(std::bit_cast<std::uint64_t>(value));
         }
     } else if constexpr (std::is_pointer_v<T>) {
         return crdt_fmix64(std::bit_cast<std::uintptr_t>(value));
     } else {
-        static_assert(false,
-            "stable_hash<T> requires T to be enum, integer, floating-"
-            "point, or pointer.  Class types must supply an explicit "
-            "specialization that defines a cross-process-stable bit "
-            "pattern (fixy-A5-003).  std::hash is intentionally NOT "
-            "used because its output varies across libstdc++ versions "
-            "and would silently corrupt CRDT convergence.");
+        static_assert(false, "stable_hash<T> requires T to be enum, integer, floating-"
+                             "point, or pointer.  Class types must supply an explicit "
+                             "specialization that defines a cross-process-stable bit "
+                             "pattern (fixy-A5-003).  std::hash is intentionally NOT "
+                             "used because its output varies across libstdc++ versions "
+                             "and would silently corrupt CRDT convergence.");
     }
 }
 
 template <typename T>
 concept HashableValue =
-    std::default_initializable<T> &&
-    std::copyable<T> &&
-    std::equality_comparable<T> &&
-    requires(T const& v) {
+    std::default_initializable<T> && std::copyable<T> && std::equality_comparable<T> && requires(T const& v) {
         { stable_hash<T>(v) } -> std::convertible_to<std::size_t>;
     };
 
@@ -145,9 +128,7 @@ struct BoundedHashSetState {
     std::uint16_t count = 0;
 
     [[nodiscard]] constexpr CrdtCount<Capacity> size() const noexcept {
-        return CrdtCount<Capacity>{
-            count,
-            typename CrdtCount<Capacity>::Trusted{}};
+        return CrdtCount<Capacity>{count, typename CrdtCount<Capacity>::Trusted{}};
     }
 
     [[nodiscard]] bool well_formed() const noexcept {
@@ -159,8 +140,7 @@ struct BoundedHashSetState {
     }
 
     [[nodiscard]] bool contains(T const& value) const {
-        const std::size_t start =
-            static_cast<std::size_t>(stable_hash<T>(value)) % Capacity;
+        const std::size_t start = static_cast<std::size_t>(stable_hash<T>(value)) % Capacity;
         for (std::size_t n = 0; n < Capacity; ++n) {
             const std::size_t idx = (start + n) % Capacity;
             if (!slots[idx].occupied) {
@@ -174,8 +154,7 @@ struct BoundedHashSetState {
     }
 
     [[nodiscard]] bool insert(T const& value) {
-        const std::size_t start =
-            static_cast<std::size_t>(stable_hash<T>(value)) % Capacity;
+        const std::size_t start = static_cast<std::size_t>(stable_hash<T>(value)) % Capacity;
         for (std::size_t n = 0; n < Capacity; ++n) {
             const std::size_t idx = (start + n) % Capacity;
             if (slots[idx].occupied && slots[idx].value == value) {
@@ -206,9 +185,7 @@ struct BoundedHashSetState {
         return true;
     }
 
-    [[nodiscard]] friend bool operator==(
-        BoundedHashSetState const& a,
-        BoundedHashSetState const& b) {
+    [[nodiscard]] friend bool operator==(BoundedHashSetState const& a, BoundedHashSetState const& b) {
         if (a.count != b.count) {
             return false;
         }
@@ -228,15 +205,10 @@ struct BoundedTaggedState {
     std::uint16_t count = 0;
 
     [[nodiscard]] constexpr CrdtCount<Capacity> size() const noexcept {
-        return CrdtCount<Capacity>{
-            count,
-            typename CrdtCount<Capacity>::Trusted{}};
+        return CrdtCount<Capacity>{count, typename CrdtCount<Capacity>::Trusted{}};
     }
 
-    [[nodiscard]] constexpr bool well_formed() const noexcept {
-        return count <= Capacity;
-    }
-
+    [[nodiscard]] constexpr bool well_formed() const noexcept { return count <= Capacity; }
 };
 
 }  // namespace detail
@@ -250,9 +222,7 @@ public:
     using local_value_type = LocalWrite<T>;
     using gossiped_state_type = GossipedState<state_type>;
 
-    [[nodiscard]] bool add(local_value_type value) {
-        return state_.insert(value.value());
-    }
+    [[nodiscard]] bool add(local_value_type value) { return state_.insert(value.value()); }
 
     [[nodiscard]] bool merge(gossiped_state_type const& other) {
         state_type staged = state_;
@@ -277,17 +247,11 @@ public:
         return staged.merge(b) ? staged : a;
     }
 
-    [[nodiscard]] state_type state() const {
-        return state_;
-    }
+    [[nodiscard]] state_type state() const { return state_; }
 
-    [[nodiscard]] bool contains(T const& value) const {
-        return state_.contains(value);
-    }
+    [[nodiscard]] bool contains(T const& value) const { return state_.contains(value); }
 
-    [[nodiscard]] CrdtCount<Capacity> size() const noexcept {
-        return state_.size();
-    }
+    [[nodiscard]] CrdtCount<Capacity> size() const noexcept { return state_.size(); }
 
 private:
     state_type state_{};
@@ -306,17 +270,9 @@ struct OrSetEntry {
     bool removed = false;
 };
 
-template <
-    typename T,
-    typename TagId = std::uint64_t,
-    std::size_t Capacity = 128>
-    requires CrdtCapacity<Capacity> &&
-             std::default_initializable<T> &&
-             std::copyable<T> &&
-             std::equality_comparable<T> &&
-             std::default_initializable<TagId> &&
-             std::copyable<TagId> &&
-             std::equality_comparable<TagId>
+template <typename T, typename TagId = std::uint64_t, std::size_t Capacity = 128>
+    requires CrdtCapacity<Capacity> && std::default_initializable<T> && std::copyable<T> && std::equality_comparable<T>
+          && std::default_initializable<TagId> && std::copyable<TagId> && std::equality_comparable<TagId>
 class OrSet : public safety::Pinned<OrSet<T, TagId, Capacity>> {
 public:
     using value_type = T;
@@ -376,13 +332,10 @@ public:
         return tmp.merge_state_into_(staged, b) ? staged : a;
     }
 
-    [[nodiscard]] state_type state() const {
-        return state_;
-    }
+    [[nodiscard]] state_type state() const { return state_; }
 
 private:
-    [[nodiscard]] std::optional<std::uint16_t>
-    find_(state_type const& state, T const& value, TagId const& tag) const {
+    [[nodiscard]] std::optional<std::uint16_t> find_(state_type const& state, T const& value, TagId const& tag) const {
         for (std::uint16_t i = 0; i < state.count; ++i) {
             auto const& e = state.entries[i];
             if (e.value == value && e.tag == tag) {
@@ -394,8 +347,7 @@ private:
 
     [[nodiscard]] bool upsert_into_(state_type& state, entry_type incoming) const {
         if (auto idx = find_(state, incoming.value, incoming.tag)) {
-            state.entries[*idx].removed =
-                state.entries[*idx].removed || incoming.removed;
+            state.entries[*idx].removed = state.entries[*idx].removed || incoming.removed;
             return true;
         }
         if (state.count == Capacity) {
@@ -406,13 +358,9 @@ private:
         return true;
     }
 
-    [[nodiscard]] bool upsert_(entry_type incoming) {
-        return upsert_into_(state_, incoming);
-    }
+    [[nodiscard]] bool upsert_(entry_type incoming) { return upsert_into_(state_, incoming); }
 
-    [[nodiscard]] bool merge_state_into_(
-        state_type& target,
-        state_type const& other) const {
+    [[nodiscard]] bool merge_state_into_(state_type& target, state_type const& other) const {
         if (!other.well_formed()) {
             return false;
         }
@@ -439,18 +387,13 @@ struct LwwRegisterState {
     Clock clock{};
     bool has_value = false;
 
-    [[nodiscard]] friend constexpr bool operator==(
-        LwwRegisterState const&,
-        LwwRegisterState const&) = default;
+    [[nodiscard]] friend constexpr bool operator==(LwwRegisterState const&, LwwRegisterState const&) = default;
 };
 
 template <typename V, typename Clock>
-    requires std::default_initializable<V> &&
-             std::copyable<V> &&
-             std::totally_ordered<V> &&
-             std::default_initializable<Clock> &&
-             std::copyable<Clock> &&
-             std::three_way_comparable<Clock, std::strong_ordering>
+    requires std::default_initializable<V> && std::copyable<V> && std::totally_ordered<V>
+          && std::default_initializable<Clock> && std::copyable<Clock>
+          && std::three_way_comparable<Clock, std::strong_ordering>
 class LwwRegister : public safety::Pinned<LwwRegister<V, Clock>> {
 public:
     using value_type = V;
@@ -461,10 +404,8 @@ public:
     using gossiped_state_type = GossipedState<state_type>;
 
     [[nodiscard]] bool assign(local_write_type write) noexcept {
-        state_ = merge(state_, state_type{
-            .value = write.value().value,
-            .clock = write.value().clock,
-            .has_value = true});
+        state_ =
+            merge(state_, state_type{.value = write.value().value, .clock = write.value().clock, .has_value = true});
         return true;
     }
 
@@ -478,8 +419,7 @@ public:
         return true;
     }
 
-    [[nodiscard]] static constexpr state_type
-    merge(state_type a, state_type b) noexcept {
+    [[nodiscard]] static constexpr state_type merge(state_type a, state_type b) noexcept {
         if (!a.has_value) {
             return b;
         }
@@ -496,9 +436,7 @@ public:
         return b.value < a.value ? a : b;
     }
 
-    [[nodiscard]] constexpr state_type state() const noexcept {
-        return state_;
-    }
+    [[nodiscard]] constexpr state_type state() const noexcept { return state_; }
 
     [[nodiscard]] constexpr std::optional<V> value() const {
         if (!state_.has_value) {
@@ -523,9 +461,7 @@ template <std::size_t MaxReplicas>
 struct GCounterState {
     safety::FixedArray<std::uint64_t, MaxReplicas> counts{};
 
-    [[nodiscard]] friend constexpr bool operator==(
-        GCounterState const&,
-        GCounterState const&) = default;
+    [[nodiscard]] friend constexpr bool operator==(GCounterState const&, GCounterState const&) = default;
 };
 
 template <std::size_t MaxReplicas>
@@ -554,8 +490,7 @@ public:
         return true;
     }
 
-    [[nodiscard]] static constexpr state_type
-    merge(state_type a, state_type b) noexcept {
+    [[nodiscard]] static constexpr state_type merge(state_type a, state_type b) noexcept {
         for (std::size_t i = 0; i < MaxReplicas; ++i) {
             if (a.counts[i] < b.counts[i]) {
                 a.counts[i] = b.counts[i];
@@ -564,9 +499,7 @@ public:
         return a;
     }
 
-    [[nodiscard]] constexpr state_type state() const noexcept {
-        return state_;
-    }
+    [[nodiscard]] constexpr state_type state() const noexcept { return state_; }
 
     [[nodiscard]] constexpr std::uint64_t value() const noexcept {
         std::uint64_t sum = 0;
@@ -586,9 +519,7 @@ struct PNCounterState {
     GCounterState<MaxReplicas> positive{};
     GCounterState<MaxReplicas> negative{};
 
-    [[nodiscard]] friend constexpr bool operator==(
-        PNCounterState const&,
-        PNCounterState const&) = default;
+    [[nodiscard]] friend constexpr bool operator==(PNCounterState const&, PNCounterState const&) = default;
 };
 
 template <std::size_t MaxReplicas>
@@ -624,16 +555,13 @@ public:
         return true;
     }
 
-    [[nodiscard]] static constexpr state_type
-    merge(state_type a, state_type b) noexcept {
+    [[nodiscard]] static constexpr state_type merge(state_type a, state_type b) noexcept {
         a.positive = GCounter<MaxReplicas>::merge(a.positive, b.positive);
         a.negative = GCounter<MaxReplicas>::merge(a.negative, b.negative);
         return a;
     }
 
-    [[nodiscard]] constexpr state_type state() const noexcept {
-        return state_;
-    }
+    [[nodiscard]] constexpr state_type state() const noexcept { return state_; }
 
     [[nodiscard]] constexpr std::uint64_t positive() const noexcept {
         std::uint64_t sum = 0;
@@ -656,18 +584,12 @@ public:
         const std::uint64_t neg = negative();
         if (pos >= neg) {
             const std::uint64_t diff = pos - neg;
-            const auto max = static_cast<std::uint64_t>(
-                std::numeric_limits<std::int64_t>::max());
-            return diff > max
-                ? std::numeric_limits<std::int64_t>::max()
-                : static_cast<std::int64_t>(diff);
+            const auto max = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
+            return diff > max ? std::numeric_limits<std::int64_t>::max() : static_cast<std::int64_t>(diff);
         }
         const std::uint64_t diff = neg - pos;
-        const auto min_abs = static_cast<std::uint64_t>(
-            std::numeric_limits<std::int64_t>::max()) + 1u;
-        return diff >= min_abs
-            ? std::numeric_limits<std::int64_t>::min()
-            : -static_cast<std::int64_t>(diff);
+        const auto min_abs = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()) + 1u;
+        return diff >= min_abs ? std::numeric_limits<std::int64_t>::min() : -static_cast<std::int64_t>(diff);
     }
 
 private:
@@ -675,10 +597,7 @@ private:
 };
 
 template <typename V, std::size_t MaxNodes, typename ClockTag = void>
-    requires CrdtCapacity<MaxNodes> &&
-             std::default_initializable<V> &&
-             std::copyable<V> &&
-             std::totally_ordered<V>
+    requires CrdtCapacity<MaxNodes> && std::default_initializable<V> && std::copyable<V> && std::totally_ordered<V>
 struct MVRegisterVersion {
     V value{};
     VectorClockSnapshot<MaxNodes, ClockTag> clock{};
@@ -693,27 +612,17 @@ struct MVRegisterState {
     std::uint16_t count = 0;
 };
 
-template <
-    typename V,
-    std::size_t MaxVersions = 16,
-    std::size_t MaxNodes = 8,
-    typename ClockTag = void>
-    requires CrdtCapacity<MaxVersions> &&
-             CrdtCapacity<MaxNodes> &&
-             std::default_initializable<V> &&
-             std::copyable<V> &&
-             std::totally_ordered<V>
-class MVRegister
-    : public safety::Pinned<MVRegister<V, MaxVersions, MaxNodes, ClockTag>> {
+template <typename V, std::size_t MaxVersions = 16, std::size_t MaxNodes = 8, typename ClockTag = void>
+    requires CrdtCapacity<MaxVersions> && CrdtCapacity<MaxNodes> && std::default_initializable<V> && std::copyable<V>
+          && std::totally_ordered<V>
+class MVRegister : public safety::Pinned<MVRegister<V, MaxVersions, MaxNodes, ClockTag>> {
 public:
     using version_type = MVRegisterVersion<V, MaxNodes, ClockTag>;
     using state_type = MVRegisterState<V, MaxVersions, MaxNodes, ClockTag>;
     using local_write_type = LocalWrite<version_type>;
     using gossiped_state_type = GossipedState<state_type>;
 
-    [[nodiscard]] bool assign(local_write_type version) {
-        return insert_version_(version.value());
-    }
+    [[nodiscard]] bool assign(local_write_type version) { return insert_version_(version.value()); }
 
     [[nodiscard]] bool merge(gossiped_state_type const& other) {
         state_type staged = state_;
@@ -739,26 +648,18 @@ public:
         return tmp.merge_state_into_(staged, b) ? staged : a;
     }
 
-    [[nodiscard]] state_type state() const {
-        return state_;
-    }
+    [[nodiscard]] state_type state() const { return state_; }
 
     [[nodiscard]] CrdtCount<MaxVersions> size() const noexcept {
-        return CrdtCount<MaxVersions>{
-            state_.count,
-            typename CrdtCount<MaxVersions>::Trusted{}};
+        return CrdtCount<MaxVersions>{state_.count, typename CrdtCount<MaxVersions>::Trusted{}};
     }
 
 private:
-    [[nodiscard]] static bool same_version_(
-        version_type const& a,
-        version_type const& b) {
+    [[nodiscard]] static bool same_version_(version_type const& a, version_type const& b) {
         return a.value == b.value && a.clock == b.clock;
     }
 
-    [[nodiscard]] static bool clock_less_(
-        version_type const& a,
-        version_type const& b) noexcept {
+    [[nodiscard]] static bool clock_less_(version_type const& a, version_type const& b) noexcept {
         for (std::size_t i = 0; i < MaxNodes; ++i) {
             if (a.clock.entries[i] != b.clock.entries[i]) {
                 return a.clock.entries[i] < b.clock.entries[i];
@@ -767,9 +668,7 @@ private:
         return false;
     }
 
-    [[nodiscard]] static bool version_less_(
-        version_type const& a,
-        version_type const& b) {
+    [[nodiscard]] static bool version_less_(version_type const& a, version_type const& b) {
         if (clock_less_(a, b)) {
             return true;
         }
@@ -792,9 +691,7 @@ private:
         }
     }
 
-    [[nodiscard]] static bool insert_version_into_(
-        state_type& state,
-        version_type incoming) {
+    [[nodiscard]] static bool insert_version_into_(state_type& state, version_type incoming) {
         if (state.count > MaxVersions) {
             return false;
         }
@@ -824,13 +721,9 @@ private:
         return true;
     }
 
-    [[nodiscard]] bool insert_version_(version_type incoming) {
-        return insert_version_into_(state_, incoming);
-    }
+    [[nodiscard]] bool insert_version_(version_type incoming) { return insert_version_into_(state_, incoming); }
 
-    [[nodiscard]] static bool merge_state_into_(
-        state_type& target,
-        state_type const& other) {
+    [[nodiscard]] static bool merge_state_into_(state_type& target, state_type const& other) {
         if (other.count > MaxVersions) {
             return false;
         }
@@ -861,25 +754,15 @@ struct RgaNode {
 };
 
 template <typename T, std::size_t Capacity>
-    requires CrdtCapacity<Capacity> &&
-             std::default_initializable<T> &&
-             std::copyable<T>
+    requires CrdtCapacity<Capacity> && std::default_initializable<T> && std::copyable<T>
 struct RgaMaterialized {
     safety::FixedArray<T, Capacity> values{};
     std::uint16_t count = 0;
 };
 
-template <
-    typename T,
-    typename Id = std::uint64_t,
-    std::size_t Capacity = 128>
-    requires CrdtCapacity<Capacity> &&
-             std::default_initializable<T> &&
-             std::copyable<T> &&
-             std::totally_ordered<T> &&
-             std::default_initializable<Id> &&
-             std::copyable<Id> &&
-             std::totally_ordered<Id>
+template <typename T, typename Id = std::uint64_t, std::size_t Capacity = 128>
+    requires CrdtCapacity<Capacity> && std::default_initializable<T> && std::copyable<T> && std::totally_ordered<T>
+          && std::default_initializable<Id> && std::copyable<Id> && std::totally_ordered<Id>
 class RgaList : public safety::Pinned<RgaList<T, Id, Capacity>> {
 public:
     using value_type = T;
@@ -894,10 +777,7 @@ public:
 
     [[nodiscard]] bool insert_after(local_insert_type insert) {
         auto const& op = insert.value();
-        return upsert_(node_type{
-            .id = op.id,
-            .after = op.after,
-            .value = op.value});
+        return upsert_(node_type{.id = op.id, .after = op.after, .value = op.value});
     }
 
     [[nodiscard]] bool erase(local_erase_type id) noexcept {
@@ -932,9 +812,7 @@ public:
         return tmp.merge_state_into_(staged, b) ? staged : a;
     }
 
-    [[nodiscard]] state_type state() const {
-        return state_;
-    }
+    [[nodiscard]] state_type state() const { return state_; }
 
     [[nodiscard]] materialized_type materialize() const {
         materialized_type out{};
@@ -944,8 +822,7 @@ public:
     }
 
 private:
-    [[nodiscard]] static std::optional<std::uint16_t>
-    find_in_(state_type const& state, Id const& id) {
+    [[nodiscard]] static std::optional<std::uint16_t> find_in_(state_type const& state, Id const& id) {
         for (std::uint16_t i = 0; i < state.count; ++i) {
             if (state.entries[i].id == id) {
                 return i;
@@ -954,19 +831,13 @@ private:
         return std::nullopt;
     }
 
-    [[nodiscard]] std::optional<std::uint16_t> find_(Id const& id) const {
-        return find_in_(state_, id);
-    }
+    [[nodiscard]] std::optional<std::uint16_t> find_(Id const& id) const { return find_in_(state_, id); }
 
-    [[nodiscard]] static bool upsert_into_(
-        state_type& state,
-        node_type incoming) {
+    [[nodiscard]] static bool upsert_into_(state_type& state, node_type incoming) {
         if (auto idx = find_in_(state, incoming.id)) {
             auto& existing = state.entries[*idx];
-            const bool incoming_preferred =
-                incoming.after < existing.after ||
-                (incoming.after == existing.after &&
-                 incoming.value < existing.value);
+            const bool incoming_preferred = incoming.after < existing.after
+                                         || (incoming.after == existing.after && incoming.value < existing.value);
             if (incoming_preferred) {
                 const bool removed = existing.tombstone || incoming.tombstone;
                 existing = incoming;
@@ -984,13 +855,9 @@ private:
         return true;
     }
 
-    [[nodiscard]] bool upsert_(node_type incoming) {
-        return upsert_into_(state_, incoming);
-    }
+    [[nodiscard]] bool upsert_(node_type incoming) { return upsert_into_(state_, incoming); }
 
-    [[nodiscard]] static bool merge_state_into_(
-        state_type& target,
-        state_type const& other) {
+    [[nodiscard]] static bool merge_state_into_(state_type& target, state_type const& other) {
         if (!other.well_formed()) {
             return false;
         }
@@ -1002,10 +869,7 @@ private:
         return true;
     }
 
-    void emit_after_(
-        Id const& parent,
-        safety::FixedArray<bool, Capacity>& visited,
-        materialized_type& out) const {
+    void emit_after_(Id const& parent, safety::FixedArray<bool, Capacity>& visited, materialized_type& out) const {
         for (;;) {
             std::optional<std::uint16_t> next{};
             for (std::uint16_t i = 0; i < state_.count; ++i) {

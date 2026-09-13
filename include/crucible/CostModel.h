@@ -25,7 +25,7 @@
 
 #include <crucible/Types.h>
 #include <crucible/effects/EffectRow.h>
-#include <crucible/fixy/Wrap.h>   // FIXY-U-096s: Refined / bounded_above / in_range / all_of / power_of_two via the fixy umbrella
+#include <crucible/fixy/Wrap.h>  // FIXY-U-096s: Refined / bounded_above / in_range / all_of / power_of_two via the fixy umbrella
 
 #include <algorithm>
 #include <cmath>
@@ -57,12 +57,11 @@ namespace crucible {
 // EBO collapse: `Refined<bounded_above<255>, uint16_t>` is regime-1 ⇒
 // sizeof(ValidRegsPerThread) == sizeof(uint16_t) == 2 B.  The
 // KernelConfig field layout is unchanged.
-using ValidRegsPerThread =
-    fixy::wrap::Refined<fixy::wrap::bounded_above<uint16_t{255}>, uint16_t>;
+using ValidRegsPerThread = fixy::wrap::Refined<fixy::wrap::bounded_above<uint16_t{255}>, uint16_t>;
 static_assert(sizeof(ValidRegsPerThread) == sizeof(uint16_t),
-    "ValidRegsPerThread must EBO-collapse to sizeof(uint16_t) — "
-    "Refined<bounded_above<255>, uint16_t> is regime-1, the BoolLattice "
-    "has empty element_type so the wrapper carries no extra storage.");
+              "ValidRegsPerThread must EBO-collapse to sizeof(uint16_t) — "
+              "Refined<bounded_above<255>, uint16_t> is regime-1, the BoolLattice "
+              "has empty element_type so the wrapper carries no extra storage.");
 
 // ── Validated warp / wavefront size (#896 WRAP-CostModel-2) ─────────────
 //
@@ -108,15 +107,14 @@ static_assert(sizeof(ValidRegsPerThread) == sizeof(uint16_t),
 // All access via `.value()` on the field; the layout-bounding gate
 // pin the structural invariant at every preset writer
 // (blackwell_b200 / hopper_h100 / mi300x / ampere_a100).
-using ValidWarpSize = fixy::wrap::Refined<
-    fixy::wrap::all_of<fixy::wrap::power_of_two,
-                   fixy::wrap::bounded_above<uint16_t{128}>>,
-    uint16_t>;
+using ValidWarpSize =
+    fixy::wrap::Refined<fixy::wrap::all_of<fixy::wrap::power_of_two, fixy::wrap::bounded_above<uint16_t{128}>>,
+                        uint16_t>;
 static_assert(sizeof(ValidWarpSize) == sizeof(uint16_t),
-    "ValidWarpSize must EBO-collapse to sizeof(uint16_t) — "
-    "Refined<all_of<power_of_two, bounded_above<128>>, uint16_t> is "
-    "regime-1, the BoolLattice over the AllOf predicate has empty "
-    "element_type so the wrapper carries no extra storage.");
+              "ValidWarpSize must EBO-collapse to sizeof(uint16_t) — "
+              "Refined<all_of<power_of_two, bounded_above<128>>, uint16_t> is "
+              "regime-1, the BoolLattice over the AllOf predicate has empty "
+              "element_type so the wrapper carries no extra storage.");
 
 // ═══════════════════════════════════════════════════════════════════
 // ValidUtilization: structural [0, 1] dimensionless ratio
@@ -157,10 +155,10 @@ static_assert(sizeof(ValidWarpSize) == sizeof(uint16_t),
 // ═══════════════════════════════════════════════════════════════════
 using ValidUtilization = fixy::wrap::Refined<fixy::wrap::in_range<0.0f, 1.0f>, float>;
 static_assert(sizeof(ValidUtilization) == sizeof(float),
-    "ValidUtilization must EBO-collapse to sizeof(float) — "
-    "Refined<in_range<0.0f, 1.0f>, float> is regime-1, the BoolLattice "
-    "over InRange has empty element_type so the wrapper carries no "
-    "extra storage.");
+              "ValidUtilization must EBO-collapse to sizeof(float) — "
+              "Refined<in_range<0.0f, 1.0f>, float> is regime-1, the BoolLattice "
+              "over InRange has empty element_type so the wrapper carries no "
+              "extra storage.");
 
 // ═══════════════════════════════════════════════════════════════════
 // HardwareProfile: Measurable hardware specifications (Z3 axioms)
@@ -174,114 +172,119 @@ static_assert(sizeof(ValidUtilization) == sizeof(float),
 // ═══════════════════════════════════════════════════════════════════
 
 struct HardwareProfile {
-  // ── Compute fabric ─────────────────────────────────────────────
-  // Z3: (define-const num_sms Int 128)
-  uint32_t num_sms = 0;             // Streaming multiprocessors (NVIDIA) or CUs (AMD)
-  // Threads per warp (32 NVIDIA) or wavefront (64 AMD).  Bounded at the
-  // type level by `power_of_two ∧ ≤ 128` (#896 WRAP-CostModel-2) — see
-  // ValidWarpSize comment block above for the per-vendor ceiling
-  // discussion and the EBO collapse static_assert.
-  ValidWarpSize warp_size{uint16_t{32}};
-  uint16_t max_warps_per_sm = 64;   // Max concurrent warps per SM
+    // ── Compute fabric ─────────────────────────────────────────────
+    // Z3: (define-const num_sms Int 128)
+    uint32_t num_sms = 0;  // Streaming multiprocessors (NVIDIA) or CUs (AMD)
+    // Threads per warp (32 NVIDIA) or wavefront (64 AMD).  Bounded at the
+    // type level by `power_of_two ∧ ≤ 128` (#896 WRAP-CostModel-2) — see
+    // ValidWarpSize comment block above for the per-vendor ceiling
+    // discussion and the EBO collapse static_assert.
+    ValidWarpSize warp_size{uint16_t{32}};
+    uint16_t max_warps_per_sm = 64;  // Max concurrent warps per SM
 
-  // ── Register file (per SM) ─────────────────────────────────────
-  // Z3: (define-const regs_per_sm Int 65536)
-  uint32_t regs_per_sm = 65536;     // 32-bit registers per SM (256KB = 65536 × 4B)
+    // ── Register file (per SM) ─────────────────────────────────────
+    // Z3: (define-const regs_per_sm Int 65536)
+    uint32_t regs_per_sm = 65536;  // 32-bit registers per SM (256KB = 65536 × 4B)
 
-  // The hardware cap on registers per thread.  255 on every shipped
-  // backend (NVIDIA Hopper / Blackwell SM_VERSION ≥ 80, AMD CDNA3+/
-  // RDNA3+).  Reuses the `ValidRegsPerThread` alias defined for
-  // KernelConfig::regs_per_thread (#897) — both fields obey the same
-  // structural constraint (≤ 255) and share the same ctor gate, so
-  // re-typing the cap closes the *receiving* end of the validate_config
-  // C2 check (`cfg.regs_per_thread.value() ≤ hw.max_regs_per_thread`):
-  // a hostile preset writer or deserialised snapshot setting this
-  // field to 999 or UINT16_MAX is structurally rejected at the
-  // type-system boundary, just like the kernel-side counterpart.
-  // Layout: regime-1 EBO collapse keeps sizeof == sizeof(uint16_t),
-  // preserving the trailing `pad0` slot.
-  ValidRegsPerThread max_regs_per_thread{uint16_t{255}};
-  uint16_t pad0 = 0;
+    // The hardware cap on registers per thread.  255 on every shipped
+    // backend (NVIDIA Hopper / Blackwell SM_VERSION ≥ 80, AMD CDNA3+/
+    // RDNA3+).  Reuses the `ValidRegsPerThread` alias defined for
+    // KernelConfig::regs_per_thread (#897) — both fields obey the same
+    // structural constraint (≤ 255) and share the same ctor gate, so
+    // re-typing the cap closes the *receiving* end of the validate_config
+    // C2 check (`cfg.regs_per_thread.value() ≤ hw.max_regs_per_thread`):
+    // a hostile preset writer or deserialised snapshot setting this
+    // field to 999 or UINT16_MAX is structurally rejected at the
+    // type-system boundary, just like the kernel-side counterpart.
+    // Layout: regime-1 EBO collapse keeps sizeof == sizeof(uint16_t),
+    // preserving the trailing `pad0` slot.
+    ValidRegsPerThread max_regs_per_thread{uint16_t{255}};
+    uint16_t pad0 = 0;
 
-  // ── On-chip memory (bytes per SM) ──────────────────────────────
-  // Z3: (define-const smem_per_sm Int 233472)
-  uint32_t smem_per_sm = 233472;    // Shared memory (228KB on Blackwell, 228KB on Hopper)
-  uint32_t tmem_per_sm = 0;         // Tensor memory (64KB on Blackwell, 0 otherwise)
-  uint32_t l1_per_sm = 262144;      // L1 cache (256KB typical, may share budget with smem)
+    // ── On-chip memory (bytes per SM) ──────────────────────────────
+    // Z3: (define-const smem_per_sm Int 233472)
+    uint32_t smem_per_sm = 233472;  // Shared memory (228KB on Blackwell, 228KB on Hopper)
+    uint32_t tmem_per_sm = 0;  // Tensor memory (64KB on Blackwell, 0 otherwise)
+    uint32_t l1_per_sm = 262144;  // L1 cache (256KB typical, may share budget with smem)
 
-  // ── Global memory hierarchy ────────────────────────────────────
-  // Z3: (define-const l2_bytes Int 52428800)
-  uint64_t l2_bytes = 0;            // L2 cache total (50MB B200, 256MB MI300X)
-  uint64_t hbm_bytes = 0;           // HBM total (192GB B200, 80GB H100)
+    // ── Global memory hierarchy ────────────────────────────────────
+    // Z3: (define-const l2_bytes Int 52428800)
+    uint64_t l2_bytes = 0;  // L2 cache total (50MB B200, 256MB MI300X)
+    uint64_t hbm_bytes = 0;  // HBM total (192GB B200, 80GB H100)
 
-  // ── Bandwidth (GB/s = bytes/ns) ────────────────────────────────
-  // Each level: sustained throughput. GB/s = B/ns (unit identity).
-  // Z3: (define-const hbm_bw Real 8000.0)  ; 8000 bytes/ns = 8 TB/s
-  float smem_bw_per_sm = 0;         // Shared memory bandwidth per SM
-  float l2_bw = 0;                  // L2 cache bandwidth (aggregate, all SMs)
-  float hbm_bw = 0;                 // HBM bandwidth (aggregate)
+    // ── Bandwidth (GB/s = bytes/ns) ────────────────────────────────
+    // Each level: sustained throughput. GB/s = B/ns (unit identity).
+    // Z3: (define-const hbm_bw Real 8000.0)  ; 8000 bytes/ns = 8 TB/s
+    float smem_bw_per_sm = 0;  // Shared memory bandwidth per SM
+    float l2_bw = 0;  // L2 cache bandwidth (aggregate, all SMs)
+    float hbm_bw = 0;  // HBM bandwidth (aggregate)
 
-  // ── Latency (ns) ───────────────────────────────────────────────
-  // Z3: (define-const hbm_latency Real 400.0)
-  float smem_latency = 20;          // Shared memory access (~20ns)
-  float l2_latency = 200;           // L2 cache access (~200ns)
-  float hbm_latency = 400;          // HBM access (~400ns)
-  float launch_ns = 3000;           // Kernel dispatch overhead (~3μs)
+    // ── Latency (ns) ───────────────────────────────────────────────
+    // Z3: (define-const hbm_latency Real 400.0)
+    float smem_latency = 20;  // Shared memory access (~20ns)
+    float l2_latency = 200;  // L2 cache access (~200ns)
+    float hbm_latency = 400;  // HBM access (~400ns)
+    float launch_ns = 3000;  // Kernel dispatch overhead (~3μs)
 
-  // ── Peak throughput (TFLOPS, whole chip) ────────────────────────
-  // Tensor core ops at matching precision; scalar ALUs otherwise.
-  // Z3: (define-const peak_fp16 Real 1125.0)  ; 1125 TFLOPS
-  float peak_fp64 = 0;              // FP64 (scalar or tensor core)
-  float peak_fp32 = 0;              // FP32 (scalar)
-  float peak_tf32 = 0;              // TF32 (tensor core, Ampere+)
-  float peak_fp16 = 0;              // FP16 (tensor core)
-  float peak_bf16 = 0;              // BF16 (tensor core)
-  float peak_fp8 = 0;               // FP8 (tensor core, Hopper+)
-  float peak_fp4 = 0;               // FP4 (tensor core, Blackwell+)
-  float peak_int8 = 0;              // INT8 (tensor core)
+    // ── Peak throughput (TFLOPS, whole chip) ────────────────────────
+    // Tensor core ops at matching precision; scalar ALUs otherwise.
+    // Z3: (define-const peak_fp16 Real 1125.0)  ; 1125 TFLOPS
+    float peak_fp64 = 0;  // FP64 (scalar or tensor core)
+    float peak_fp32 = 0;  // FP32 (scalar)
+    float peak_tf32 = 0;  // TF32 (tensor core, Ampere+)
+    float peak_fp16 = 0;  // FP16 (tensor core)
+    float peak_bf16 = 0;  // BF16 (tensor core)
+    float peak_fp8 = 0;  // FP8 (tensor core, Hopper+)
+    float peak_fp4 = 0;  // FP4 (tensor core, Blackwell+)
+    float peak_int8 = 0;  // INT8 (tensor core)
 
-  // ── SM architecture version ────────────────────────────────────
-  uint32_t sm_version = 0;          // e.g. 90 (Hopper), 100 (Blackwell)
+    // ── SM architecture version ────────────────────────────────────
+    uint32_t sm_version = 0;  // e.g. 90 (Hopper), 100 (Blackwell)
 
-  // ── Derived quantities (not Z3 axioms — computed from axioms) ──
+    // ── Derived quantities (not Z3 axioms — computed from axioms) ──
 
-  [[nodiscard]] constexpr uint32_t max_threads_per_sm() const {
-    return static_cast<uint32_t>(warp_size.value()) * max_warps_per_sm;
-  }
-
-  [[nodiscard]] constexpr uint64_t total_threads() const {
-    return static_cast<uint64_t>(num_sms) * max_threads_per_sm();
-  }
-
-  // Peak throughput for a given ScalarType.
-  // Z3: (define-fun peak_for_dtype ((dtype ScalarType)) Real ...)
-  [[nodiscard]] constexpr float peak_tflops(ScalarType dtype) const {
-    switch (dtype) {
-      case ScalarType::Double:      return peak_fp64;
-      case ScalarType::Float:       return peak_fp32;
-      case ScalarType::Half:        return peak_fp16;
-      case ScalarType::BFloat16:    return peak_bf16;
-      case ScalarType::Float8_e5m2:
-      case ScalarType::Float8_e4m3fn:
-      case ScalarType::Float8_e5m2fnuz:
-      case ScalarType::Float8_e4m3fnuz:
-                                    return peak_fp8;
-      default:                      return peak_fp32;
+    [[nodiscard]] constexpr uint32_t max_threads_per_sm() const {
+        return static_cast<uint32_t>(warp_size.value()) * max_warps_per_sm;
     }
-  }
 
-  // Roofline ridge point: arithmetic intensity (FLOP/byte) where
-  // compute and memory are balanced. Below → memory-bound. Above → compute-bound.
-  //
-  // ridge = peak_flops_per_ns / hbm_bytes_per_ns
-  //       = (peak_tflops * 1e3) / hbm_bw
-  //
-  // Z3: (define-fun ridge ((dtype ScalarType)) Real
-  //       (/ (* (peak_for_dtype dtype) 1000.0) hbm_bw))
-  [[nodiscard]] constexpr float ridge_point(ScalarType dtype) const {
-    float peak = peak_tflops(dtype);
-    return (hbm_bw > 0) ? (peak * 1e3f) / hbm_bw : 0.0f;
-  }
+    [[nodiscard]] constexpr uint64_t total_threads() const {
+        return static_cast<uint64_t>(num_sms) * max_threads_per_sm();
+    }
+
+    // Peak throughput for a given ScalarType.
+    // Z3: (define-fun peak_for_dtype ((dtype ScalarType)) Real ...)
+    [[nodiscard]] constexpr float peak_tflops(ScalarType dtype) const {
+        switch (dtype) {
+            case ScalarType::Double:
+                return peak_fp64;
+            case ScalarType::Float:
+                return peak_fp32;
+            case ScalarType::Half:
+                return peak_fp16;
+            case ScalarType::BFloat16:
+                return peak_bf16;
+            case ScalarType::Float8_e5m2:
+            case ScalarType::Float8_e4m3fn:
+            case ScalarType::Float8_e5m2fnuz:
+            case ScalarType::Float8_e4m3fnuz:
+                return peak_fp8;
+            default:
+                return peak_fp32;
+        }
+    }
+
+    // Roofline ridge point: arithmetic intensity (FLOP/byte) where
+    // compute and memory are balanced. Below → memory-bound. Above → compute-bound.
+    //
+    // ridge = peak_flops_per_ns / hbm_bytes_per_ns
+    //       = (peak_tflops * 1e3) / hbm_bw
+    //
+    // Z3: (define-fun ridge ((dtype ScalarType)) Real
+    //       (/ (* (peak_for_dtype dtype) 1000.0) hbm_bw))
+    [[nodiscard]] constexpr float ridge_point(ScalarType dtype) const {
+        float peak = peak_tflops(dtype);
+        return (hbm_bw > 0) ? (peak * 1e3f) / hbm_bw : 0.0f;
+    }
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -294,130 +297,130 @@ struct HardwareProfile {
 
 // NVIDIA Blackwell B200 (sm_100) — 2024/2025
 [[nodiscard]] constexpr HardwareProfile blackwell_b200() {
-  HardwareProfile hw{};
-  hw.num_sms = 128;
-  hw.warp_size = ValidWarpSize{uint16_t{32}};
-  hw.max_warps_per_sm = 64;
-  hw.regs_per_sm = 65536;
-  hw.max_regs_per_thread = ValidRegsPerThread{uint16_t{255}};
-  hw.smem_per_sm = 233472;        // 228KB
-  hw.tmem_per_sm = 65536;         // 64KB tensor memory
-  hw.l1_per_sm = 262144;          // 256KB
-  hw.l2_bytes = 50ULL << 20;      // 50MB
-  hw.hbm_bytes = 192ULL << 30;    // 192GB HBM3e
-  hw.smem_bw_per_sm = 1000;       // ~1 TB/s per SM
-  hw.l2_bw = 12000;               // ~12 TB/s aggregate
-  hw.hbm_bw = 8000;               // 8 TB/s
-  hw.smem_latency = 20;
-  hw.l2_latency = 150;
-  hw.hbm_latency = 350;
-  hw.launch_ns = 3000;
-  hw.peak_fp64 = 45;
-  hw.peak_fp32 = 90;
-  hw.peak_tf32 = 225;
-  hw.peak_fp16 = 1125;            // No sparsity
-  hw.peak_bf16 = 1125;
-  hw.peak_fp8 = 2250;
-  hw.peak_fp4 = 4500;
-  hw.peak_int8 = 2250;
-  hw.sm_version = 100;
-  return hw;
+    HardwareProfile hw{};
+    hw.num_sms = 128;
+    hw.warp_size = ValidWarpSize{uint16_t{32}};
+    hw.max_warps_per_sm = 64;
+    hw.regs_per_sm = 65536;
+    hw.max_regs_per_thread = ValidRegsPerThread{uint16_t{255}};
+    hw.smem_per_sm = 233472;  // 228KB
+    hw.tmem_per_sm = 65536;  // 64KB tensor memory
+    hw.l1_per_sm = 262144;  // 256KB
+    hw.l2_bytes = 50ULL << 20;  // 50MB
+    hw.hbm_bytes = 192ULL << 30;  // 192GB HBM3e
+    hw.smem_bw_per_sm = 1000;  // ~1 TB/s per SM
+    hw.l2_bw = 12000;  // ~12 TB/s aggregate
+    hw.hbm_bw = 8000;  // 8 TB/s
+    hw.smem_latency = 20;
+    hw.l2_latency = 150;
+    hw.hbm_latency = 350;
+    hw.launch_ns = 3000;
+    hw.peak_fp64 = 45;
+    hw.peak_fp32 = 90;
+    hw.peak_tf32 = 225;
+    hw.peak_fp16 = 1125;  // No sparsity
+    hw.peak_bf16 = 1125;
+    hw.peak_fp8 = 2250;
+    hw.peak_fp4 = 4500;
+    hw.peak_int8 = 2250;
+    hw.sm_version = 100;
+    return hw;
 }
 
 // NVIDIA Hopper H100 SXM (sm_90) — 2023
 [[nodiscard]] constexpr HardwareProfile hopper_h100() {
-  HardwareProfile hw{};
-  hw.num_sms = 132;
-  hw.warp_size = ValidWarpSize{uint16_t{32}};
-  hw.max_warps_per_sm = 64;
-  hw.regs_per_sm = 65536;
-  hw.max_regs_per_thread = ValidRegsPerThread{uint16_t{255}};
-  hw.smem_per_sm = 233472;        // 228KB
-  hw.tmem_per_sm = 0;             // No tensor memory
-  hw.l1_per_sm = 262144;          // 256KB
-  hw.l2_bytes = 50ULL << 20;      // 50MB
-  hw.hbm_bytes = 80ULL << 30;     // 80GB HBM3
-  hw.smem_bw_per_sm = 800;
-  hw.l2_bw = 9000;
-  hw.hbm_bw = 3350;               // 3.35 TB/s
-  hw.smem_latency = 20;
-  hw.l2_latency = 200;
-  hw.hbm_latency = 400;
-  hw.launch_ns = 4000;
-  hw.peak_fp64 = 34;
-  hw.peak_fp32 = 67;
-  hw.peak_tf32 = 495;
-  hw.peak_fp16 = 990;
-  hw.peak_bf16 = 990;
-  hw.peak_fp8 = 1979;
-  hw.peak_fp4 = 0;                // Not supported
-  hw.peak_int8 = 1979;
-  hw.sm_version = 90;
-  return hw;
+    HardwareProfile hw{};
+    hw.num_sms = 132;
+    hw.warp_size = ValidWarpSize{uint16_t{32}};
+    hw.max_warps_per_sm = 64;
+    hw.regs_per_sm = 65536;
+    hw.max_regs_per_thread = ValidRegsPerThread{uint16_t{255}};
+    hw.smem_per_sm = 233472;  // 228KB
+    hw.tmem_per_sm = 0;  // No tensor memory
+    hw.l1_per_sm = 262144;  // 256KB
+    hw.l2_bytes = 50ULL << 20;  // 50MB
+    hw.hbm_bytes = 80ULL << 30;  // 80GB HBM3
+    hw.smem_bw_per_sm = 800;
+    hw.l2_bw = 9000;
+    hw.hbm_bw = 3350;  // 3.35 TB/s
+    hw.smem_latency = 20;
+    hw.l2_latency = 200;
+    hw.hbm_latency = 400;
+    hw.launch_ns = 4000;
+    hw.peak_fp64 = 34;
+    hw.peak_fp32 = 67;
+    hw.peak_tf32 = 495;
+    hw.peak_fp16 = 990;
+    hw.peak_bf16 = 990;
+    hw.peak_fp8 = 1979;
+    hw.peak_fp4 = 0;  // Not supported
+    hw.peak_int8 = 1979;
+    hw.sm_version = 90;
+    return hw;
 }
 
 // AMD Instinct MI300X (gfx942) — 2024
 [[nodiscard]] constexpr HardwareProfile mi300x() {
-  HardwareProfile hw{};
-  hw.num_sms = 304;               // Compute Units
-  hw.warp_size = ValidWarpSize{uint16_t{64}};  // Wavefront size
-  hw.max_warps_per_sm = 32;       // Max wavefronts per CU
-  hw.regs_per_sm = 65536;         // 256KB VGPR per CU
-  hw.max_regs_per_thread = ValidRegsPerThread{uint16_t{255}};
-  hw.smem_per_sm = 65536;         // 64KB LDS per CU
-  hw.tmem_per_sm = 0;
-  hw.l1_per_sm = 131072;          // 128KB L1 vector cache per CU
-  hw.l2_bytes = 256ULL << 20;     // 256MB Infinity Cache
-  hw.hbm_bytes = 192ULL << 30;    // 192GB HBM3
-  hw.smem_bw_per_sm = 600;
-  hw.l2_bw = 7000;
-  hw.hbm_bw = 5300;               // 5.3 TB/s
-  hw.smem_latency = 25;
-  hw.l2_latency = 180;
-  hw.hbm_latency = 380;
-  hw.launch_ns = 4000;
-  hw.peak_fp64 = 81;
-  hw.peak_fp32 = 164;
-  hw.peak_tf32 = 0;               // No TF32 on AMD
-  hw.peak_fp16 = 1300;
-  hw.peak_bf16 = 1300;
-  hw.peak_fp8 = 2600;
-  hw.peak_fp4 = 0;
-  hw.peak_int8 = 2600;
-  hw.sm_version = 0;              // AMD doesn't use sm_version
-  return hw;
+    HardwareProfile hw{};
+    hw.num_sms = 304;  // Compute Units
+    hw.warp_size = ValidWarpSize{uint16_t{64}};  // Wavefront size
+    hw.max_warps_per_sm = 32;  // Max wavefronts per CU
+    hw.regs_per_sm = 65536;  // 256KB VGPR per CU
+    hw.max_regs_per_thread = ValidRegsPerThread{uint16_t{255}};
+    hw.smem_per_sm = 65536;  // 64KB LDS per CU
+    hw.tmem_per_sm = 0;
+    hw.l1_per_sm = 131072;  // 128KB L1 vector cache per CU
+    hw.l2_bytes = 256ULL << 20;  // 256MB Infinity Cache
+    hw.hbm_bytes = 192ULL << 30;  // 192GB HBM3
+    hw.smem_bw_per_sm = 600;
+    hw.l2_bw = 7000;
+    hw.hbm_bw = 5300;  // 5.3 TB/s
+    hw.smem_latency = 25;
+    hw.l2_latency = 180;
+    hw.hbm_latency = 380;
+    hw.launch_ns = 4000;
+    hw.peak_fp64 = 81;
+    hw.peak_fp32 = 164;
+    hw.peak_tf32 = 0;  // No TF32 on AMD
+    hw.peak_fp16 = 1300;
+    hw.peak_bf16 = 1300;
+    hw.peak_fp8 = 2600;
+    hw.peak_fp4 = 0;
+    hw.peak_int8 = 2600;
+    hw.sm_version = 0;  // AMD doesn't use sm_version
+    return hw;
 }
 
 // NVIDIA Ampere A100 SXM (sm_80) — 2020, still widely deployed
 [[nodiscard]] constexpr HardwareProfile ampere_a100() {
-  HardwareProfile hw{};
-  hw.num_sms = 108;
-  hw.warp_size = ValidWarpSize{uint16_t{32}};
-  hw.max_warps_per_sm = 64;
-  hw.regs_per_sm = 65536;
-  hw.max_regs_per_thread = ValidRegsPerThread{uint16_t{255}};
-  hw.smem_per_sm = 167936;        // 164KB
-  hw.tmem_per_sm = 0;
-  hw.l1_per_sm = 196608;          // 192KB
-  hw.l2_bytes = 40ULL << 20;      // 40MB
-  hw.hbm_bytes = 80ULL << 30;     // 80GB HBM2e
-  hw.smem_bw_per_sm = 600;
-  hw.l2_bw = 6000;
-  hw.hbm_bw = 2039;               // ~2 TB/s
-  hw.smem_latency = 25;
-  hw.l2_latency = 200;
-  hw.hbm_latency = 450;
-  hw.launch_ns = 5000;
-  hw.peak_fp64 = 19;
-  hw.peak_fp32 = 19;
-  hw.peak_tf32 = 156;
-  hw.peak_fp16 = 312;
-  hw.peak_bf16 = 312;
-  hw.peak_fp8 = 0;                // Not supported
-  hw.peak_fp4 = 0;
-  hw.peak_int8 = 624;
-  hw.sm_version = 80;
-  return hw;
+    HardwareProfile hw{};
+    hw.num_sms = 108;
+    hw.warp_size = ValidWarpSize{uint16_t{32}};
+    hw.max_warps_per_sm = 64;
+    hw.regs_per_sm = 65536;
+    hw.max_regs_per_thread = ValidRegsPerThread{uint16_t{255}};
+    hw.smem_per_sm = 167936;  // 164KB
+    hw.tmem_per_sm = 0;
+    hw.l1_per_sm = 196608;  // 192KB
+    hw.l2_bytes = 40ULL << 20;  // 40MB
+    hw.hbm_bytes = 80ULL << 30;  // 80GB HBM2e
+    hw.smem_bw_per_sm = 600;
+    hw.l2_bw = 6000;
+    hw.hbm_bw = 2039;  // ~2 TB/s
+    hw.smem_latency = 25;
+    hw.l2_latency = 200;
+    hw.hbm_latency = 450;
+    hw.launch_ns = 5000;
+    hw.peak_fp64 = 19;
+    hw.peak_fp32 = 19;
+    hw.peak_tf32 = 156;
+    hw.peak_fp16 = 312;
+    hw.peak_bf16 = 312;
+    hw.peak_fp8 = 0;  // Not supported
+    hw.peak_fp4 = 0;
+    hw.peak_int8 = 624;
+    hw.sm_version = 80;
+    return hw;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -430,19 +433,19 @@ struct HardwareProfile {
 // ═══════════════════════════════════════════════════════════════════
 
 struct KernelConfig {
-  uint16_t tile_m = 128;           // Output tile rows per threadblock
-  uint16_t tile_n = 128;           // Output tile cols per threadblock
-  uint16_t tile_k = 32;            // Reduction tile depth per step
-  uint8_t pipeline_stages = 3;     // Async copy pipeline depth (1-7)
-  uint8_t warps_per_block = 8;     // Warps per threadblock (1-32)
-  uint32_t smem_bytes = 0;         // Shared memory allocation (bytes)
-  // Estimated registers per thread.  Bounded above by 255 at the type
-  // level (#897 WRAP-CostModel-3) — see ValidRegsPerThread above the
-  // KernelConfig comment block for the per-hardware ceiling discussion
-  // and the EBO collapse static_assert.
-  ValidRegsPerThread regs_per_thread{uint16_t{64}};
-  uint8_t vec_width = 4;           // Elements per vectorized load/store
-  uint8_t pad0 = 0;
+    uint16_t tile_m = 128;  // Output tile rows per threadblock
+    uint16_t tile_n = 128;  // Output tile cols per threadblock
+    uint16_t tile_k = 32;  // Reduction tile depth per step
+    uint8_t pipeline_stages = 3;  // Async copy pipeline depth (1-7)
+    uint8_t warps_per_block = 8;  // Warps per threadblock (1-32)
+    uint32_t smem_bytes = 0;  // Shared memory allocation (bytes)
+    // Estimated registers per thread.  Bounded above by 255 at the type
+    // level (#897 WRAP-CostModel-3) — see ValidRegsPerThread above the
+    // KernelConfig comment block for the per-hardware ceiling discussion
+    // and the EBO collapse static_assert.
+    ValidRegsPerThread regs_per_thread{uint16_t{64}};
+    uint8_t vec_width = 4;  // Elements per vectorized load/store
+    uint8_t pad0 = 0;
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -462,21 +465,20 @@ struct KernelConfig {
 //   (assert (> tile_n 0))                                         ; C6
 //   (assert (> tile_k 0))                                         ; C7
 //   (assert (and (>= pipeline_stages 1) (<= pipeline_stages 7)))  ; C8
-[[nodiscard]] constexpr bool validate_config(
-    const KernelConfig& cfg, const HardwareProfile& hw) {
-  // C1: shared memory fits in per-SM budget
-  if (cfg.smem_bytes > hw.smem_per_sm) return false;
-  // C2: register count within hardware limit
-  if (cfg.regs_per_thread.value() > hw.max_regs_per_thread.value()) return false;
-  // C3: at least one warp per block
-  if (cfg.warps_per_block == 0) return false;
-  // C4: threads per block ≤ hardware max (1024 on NVIDIA, 1024 on AMD)
-  if (static_cast<uint32_t>(cfg.warps_per_block) * hw.warp_size.value() > 1024) return false;
-  // C5-C7: tile sizes are positive
-  if (cfg.tile_m == 0 || cfg.tile_n == 0 || cfg.tile_k == 0) return false;
-  // C8: pipeline stages in valid range
-  if (cfg.pipeline_stages == 0 || cfg.pipeline_stages > 7) return false;
-  return true;
+[[nodiscard]] constexpr bool validate_config(const KernelConfig& cfg, const HardwareProfile& hw) {
+    // C1: shared memory fits in per-SM budget
+    if (cfg.smem_bytes > hw.smem_per_sm) return false;
+    // C2: register count within hardware limit
+    if (cfg.regs_per_thread.value() > hw.max_regs_per_thread.value()) return false;
+    // C3: at least one warp per block
+    if (cfg.warps_per_block == 0) return false;
+    // C4: threads per block ≤ hardware max (1024 on NVIDIA, 1024 on AMD)
+    if (static_cast<uint32_t>(cfg.warps_per_block) * hw.warp_size.value() > 1024) return false;
+    // C5-C7: tile sizes are positive
+    if (cfg.tile_m == 0 || cfg.tile_n == 0 || cfg.tile_k == 0) return false;
+    // C8: pipeline stages in valid range
+    if (cfg.pipeline_stages == 0 || cfg.pipeline_stages > 7) return false;
+    return true;
 }
 
 // WRAP-CostModel-8: evaluator functions below are pure projections of
@@ -492,32 +494,32 @@ struct KernelConfig {
 // ═══════════════════════════════════════════════════════════════════
 
 struct CostBreakdown {
-  double compute_ns = 0;           // FLOPs / (peak × wave_eff × occupancy)
-  double memory_ns = 0;            // latency + bytes / bandwidth
-  double launch_ns = 0;            // Kernel dispatch overhead
-  double total_ns = 0;             // max(compute, memory) + launch
+    double compute_ns = 0;  // FLOPs / (peak × wave_eff × occupancy)
+    double memory_ns = 0;  // latency + bytes / bandwidth
+    double launch_ns = 0;  // Kernel dispatch overhead
+    double total_ns = 0;  // max(compute, memory) + launch
 
-  uint64_t flops = 0;             // Total floating-point operations
-  uint64_t bytes = 0;             // Total memory traffic (at bottleneck level)
+    uint64_t flops = 0;  // Total floating-point operations
+    uint64_t bytes = 0;  // Total memory traffic (at bottleneck level)
 
-  float arithmetic_intensity = 0;  // FLOP/byte (roofline X-axis)
-  // Per #898 WRAP-CostModel-4, the symmetric receiver fields adopt
-  // the same Refined type as the producer functions wave_efficiency()
-  // and sm_occupancy().  ValidUtilization pins the [0, 1] bound at
-  // the type level so MAP-Elites bucketization and bottleneck
-  // classification (UNDERUTIL when wave_efficiency < 0.1f below)
-  // operate on values that are guaranteed in-range without per-read
-  // sanity checks.  Both default-constructed to ValidUtilization{0.0f}
-  // — the value 0.0f satisfies in_range<0.0f, 1.0f> trivially.
-  ValidUtilization wave_efficiency{0.0f}; // Thread utilization [0,1]
-  ValidUtilization occupancy{0.0f};       // SM occupancy [0,1]
+    float arithmetic_intensity = 0;  // FLOP/byte (roofline X-axis)
+    // Per #898 WRAP-CostModel-4, the symmetric receiver fields adopt
+    // the same Refined type as the producer functions wave_efficiency()
+    // and sm_occupancy().  ValidUtilization pins the [0, 1] bound at
+    // the type level so MAP-Elites bucketization and bottleneck
+    // classification (UNDERUTIL when wave_efficiency < 0.1f below)
+    // operate on values that are guaranteed in-range without per-read
+    // sanity checks.  Both default-constructed to ValidUtilization{0.0f}
+    // — the value 0.0f satisfies in_range<0.0f, 1.0f> trivially.
+    ValidUtilization wave_efficiency{0.0f};  // Thread utilization [0,1]
+    ValidUtilization occupancy{0.0f};  // SM occupancy [0,1]
 
-  enum class Bottleneck : uint8_t {
-    COMPUTE,     // compute_ns > memory_ns (GPU doing useful work)
-    MEMORY,      // memory_ns > compute_ns (bandwidth starved)
-    LAUNCH,      // launch_ns dominates (tiny kernel — FUSE IT)
-    UNDERUTIL,   // wave_efficiency < 10% (too few elements for this GPU)
-  } bottleneck = Bottleneck::LAUNCH;
+    enum class Bottleneck : uint8_t {
+        COMPUTE,  // compute_ns > memory_ns (GPU doing useful work)
+        MEMORY,  // memory_ns > compute_ns (bandwidth starved)
+        LAUNCH,  // launch_ns dominates (tiny kernel — FUSE IT)
+        UNDERUTIL,  // wave_efficiency < 10% (too few elements for this GPU)
+    } bottleneck = Bottleneck::LAUNCH;
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -538,22 +540,19 @@ struct CostBreakdown {
 // ═══════════════════════════════════════════════════════════════════
 
 template <typename CallerRow = ::crucible::effects::Row<>>
-    requires ::crucible::effects::Subrow<
-        CallerRow, ::crucible::effects::Row<>>
-[[nodiscard]] constexpr ValidUtilization wave_efficiency(
-    uint64_t elements, const HardwareProfile& hw) {
-  uint64_t tpw = static_cast<uint64_t>(hw.num_sms) * hw.warp_size.value();
-  if (tpw == 0 || elements == 0) return ValidUtilization{0.0f};
-  uint64_t waves = (elements + tpw - 1) / tpw;
-  // waves × tpw ≥ elements by construction (ceil-div upper bound),
-  // and IEEE 754 round-to-nearest is monotonic on non-negative
-  // inputs, so the quotient lands in [0.0f, 1.0f] exactly.  The
-  // Refined ctor's `pre(in_range<0.0f, 1.0f>(v))` therefore never
-  // fires under documented inputs; it is the soundness witness that
-  // catches any caller-introduced inversion (numerator/denominator
-  // swap, off-by-one tile width).
-  return ValidUtilization{
-      static_cast<float>(elements) / static_cast<float>(waves * tpw)};
+    requires ::crucible::effects::Subrow<CallerRow, ::crucible::effects::Row<>>
+[[nodiscard]] constexpr ValidUtilization wave_efficiency(uint64_t elements, const HardwareProfile& hw) {
+    uint64_t tpw = static_cast<uint64_t>(hw.num_sms) * hw.warp_size.value();
+    if (tpw == 0 || elements == 0) return ValidUtilization{0.0f};
+    uint64_t waves = (elements + tpw - 1) / tpw;
+    // waves × tpw ≥ elements by construction (ceil-div upper bound),
+    // and IEEE 754 round-to-nearest is monotonic on non-negative
+    // inputs, so the quotient lands in [0.0f, 1.0f] exactly.  The
+    // Refined ctor's `pre(in_range<0.0f, 1.0f>(v))` therefore never
+    // fires under documented inputs; it is the soundness witness that
+    // catches any caller-introduced inversion (numerator/denominator
+    // swap, off-by-one tile width).
+    return ValidUtilization{static_cast<float>(elements) / static_cast<float>(waves * tpw)};
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -578,50 +577,47 @@ template <typename CallerRow = ::crucible::effects::Row<>>
 // ═══════════════════════════════════════════════════════════════════
 
 template <typename CallerRow = ::crucible::effects::Row<>>
-    requires ::crucible::effects::Subrow<
-        CallerRow, ::crucible::effects::Row<>>
-[[nodiscard]] constexpr ValidUtilization sm_occupancy(
-    ValidRegsPerThread regs_per_thread, uint32_t smem_per_block,
-    uint16_t warps_per_block, const HardwareProfile& hw) {
-  // Hoist warp_size unwrap to a single .value() call — the field is
-  // type-bounded to a power-of-two ≤ 128 by ValidWarpSize (#896), so
-  // every consumer below sees a uint16_t in the trusted range without
-  // re-checking the predicate.
-  const uint16_t warp_v = hw.warp_size.value();
-  uint32_t max_threads = static_cast<uint32_t>(warp_v) * hw.max_warps_per_sm;
-  if (max_threads == 0) return ValidUtilization{0.0f};
+    requires ::crucible::effects::Subrow<CallerRow, ::crucible::effects::Row<>>
+[[nodiscard]] constexpr ValidUtilization sm_occupancy(ValidRegsPerThread regs_per_thread, uint32_t smem_per_block,
+                                                      uint16_t warps_per_block, const HardwareProfile& hw) {
+    // Hoist warp_size unwrap to a single .value() call — the field is
+    // type-bounded to a power-of-two ≤ 128 by ValidWarpSize (#896), so
+    // every consumer below sees a uint16_t in the trusted range without
+    // re-checking the predicate.
+    const uint16_t warp_v = hw.warp_size.value();
+    uint32_t max_threads = static_cast<uint32_t>(warp_v) * hw.max_warps_per_sm;
+    if (max_threads == 0) return ValidUtilization{0.0f};
 
-  // Register-limited: how many threads can fit in the register file.
-  // regs_per_thread is type-bounded to [0, 255] by ValidRegsPerThread —
-  // any caller passing > 255 is rejected at construction (semantic=enforce
-  // → contract violation handler; constexpr context → ill-formed per
-  // P1494R5).  The function body therefore only needs to handle the
-  // 0..255 range, with the 0 case explicitly guarded below.
-  const uint16_t regs_v = regs_per_thread.value();
-  uint32_t reg_limited = max_threads;
-  if (regs_v > 0) {
-    reg_limited = hw.regs_per_sm / regs_v;
-    reg_limited = (reg_limited / warp_v) * warp_v; // warp granularity
-  }
+    // Register-limited: how many threads can fit in the register file.
+    // regs_per_thread is type-bounded to [0, 255] by ValidRegsPerThread —
+    // any caller passing > 255 is rejected at construction (semantic=enforce
+    // → contract violation handler; constexpr context → ill-formed per
+    // P1494R5).  The function body therefore only needs to handle the
+    // 0..255 range, with the 0 case explicitly guarded below.
+    const uint16_t regs_v = regs_per_thread.value();
+    uint32_t reg_limited = max_threads;
+    if (regs_v > 0) {
+        reg_limited = hw.regs_per_sm / regs_v;
+        reg_limited = (reg_limited / warp_v) * warp_v;  // warp granularity
+    }
 
-  // Shared-memory-limited: how many blocks fit, × threads per block
-  uint32_t smem_limited = max_threads;
-  if (smem_per_block > 0) {
-    uint32_t blocks = hw.smem_per_sm / smem_per_block;
-    uint32_t tpb = static_cast<uint32_t>(warps_per_block) * warp_v;
-    smem_limited = blocks * tpb;
-  }
+    // Shared-memory-limited: how many blocks fit, × threads per block
+    uint32_t smem_limited = max_threads;
+    if (smem_per_block > 0) {
+        uint32_t blocks = hw.smem_per_sm / smem_per_block;
+        uint32_t tpb = static_cast<uint32_t>(warps_per_block) * warp_v;
+        smem_limited = blocks * tpb;
+    }
 
-  uint32_t actual = std::min({reg_limited, smem_limited, max_threads});
-  // `actual ≤ max_threads` by construction (std::min third operand).
-  // IEEE 754 round-to-nearest is monotonic on non-negative inputs, so
-  // the float quotient is in [0.0f, 1.0f] exactly.  The Refined ctor's
-  // `pre(in_range<0.0f, 1.0f>(v))` is the soundness witness that
-  // catches any future caller-introduced inversion (e.g. a regression
-  // where reg_limited is computed without the warp-granularity round-
-  // down and exceeds max_threads).
-  return ValidUtilization{
-      static_cast<float>(actual) / static_cast<float>(max_threads)};
+    uint32_t actual = std::min({reg_limited, smem_limited, max_threads});
+    // `actual ≤ max_threads` by construction (std::min third operand).
+    // IEEE 754 round-to-nearest is monotonic on non-negative inputs, so
+    // the float quotient is in [0.0f, 1.0f] exactly.  The Refined ctor's
+    // `pre(in_range<0.0f, 1.0f>(v))` is the soundness witness that
+    // catches any future caller-introduced inversion (e.g. a regression
+    // where reg_limited is computed without the warp-granularity round-
+    // down and exceeds max_threads).
+    return ValidUtilization{static_cast<float>(actual) / static_cast<float>(max_threads)};
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -642,81 +638,68 @@ template <typename CallerRow = ::crucible::effects::Row<>>
 // ═══════════════════════════════════════════════════════════════════
 
 template <typename CallerRow = ::crucible::effects::Row<>>
-    requires ::crucible::effects::Subrow<
-        CallerRow, ::crucible::effects::Row<>>
-[[nodiscard]] inline CostBreakdown evaluate_cost(
-    uint64_t flops, uint64_t bytes, uint64_t elements,
-    ScalarType dtype,
-    const KernelConfig& cfg,
-    const HardwareProfile& hw) {
-  CostBreakdown cb;
-  cb.flops = flops;
-  cb.bytes = bytes;
-  cb.launch_ns = hw.launch_ns;
+    requires ::crucible::effects::Subrow<CallerRow, ::crucible::effects::Row<>>
+[[nodiscard]] inline CostBreakdown evaluate_cost(uint64_t flops, uint64_t bytes, uint64_t elements, ScalarType dtype,
+                                                 const KernelConfig& cfg, const HardwareProfile& hw) {
+    CostBreakdown cb;
+    cb.flops = flops;
+    cb.bytes = bytes;
+    cb.launch_ns = hw.launch_ns;
 
-  // Arithmetic intensity (roofline X-axis)
-  cb.arithmetic_intensity = (bytes > 0)
-      ? static_cast<float>(flops) / static_cast<float>(bytes) : 0.0f;
+    // Arithmetic intensity (roofline X-axis)
+    cb.arithmetic_intensity = (bytes > 0) ? static_cast<float>(flops) / static_cast<float>(bytes) : 0.0f;
 
-  // Wave efficiency
-  cb.wave_efficiency = wave_efficiency<CallerRow>(elements, hw);
+    // Wave efficiency
+    cb.wave_efficiency = wave_efficiency<CallerRow>(elements, hw);
 
-  // SM occupancy.  Pass the typed regs_per_thread directly — sm_occupancy
-  // now consumes ValidRegsPerThread, so the caller cannot smuggle an
-  // out-of-range raw uint16_t past the function boundary.
-  cb.occupancy = sm_occupancy<CallerRow>(
-      cfg.regs_per_thread, cfg.smem_bytes, cfg.warps_per_block, hw);
+    // SM occupancy.  Pass the typed regs_per_thread directly — sm_occupancy
+    // now consumes ValidRegsPerThread, so the caller cannot smuggle an
+    // out-of-range raw uint16_t past the function boundary.
+    cb.occupancy = sm_occupancy<CallerRow>(cfg.regs_per_thread, cfg.smem_bytes, cfg.warps_per_block, hw);
 
-  // Compute time: flops / (effective throughput)
-  // peak_tflops × 1e3 converts TFLOPS → FLOPS/ns
-  float peak = hw.peak_tflops(dtype);
-  // ValidUtilization unwraps via .value() — the [0, 1] bound is type-
-  // pinned (#898 WRAP-CostModel-4), so the > 0 checks below filter
-  // exactly the structural-zero cases (no waves filled / max_threads
-  // == 0) without any extra runtime sanity branch.
-  if (peak > 0 && cb.wave_efficiency.value() > 0
-               && cb.occupancy.value() > 0) {
-    double effective = static_cast<double>(peak) * 1e3
-                     * static_cast<double>(cb.wave_efficiency.value())
-                     * static_cast<double>(cb.occupancy.value());
-    cb.compute_ns = static_cast<double>(flops) / effective;
-  }
+    // Compute time: flops / (effective throughput)
+    // peak_tflops × 1e3 converts TFLOPS → FLOPS/ns
+    float peak = hw.peak_tflops(dtype);
+    // ValidUtilization unwraps via .value() — the [0, 1] bound is type-
+    // pinned (#898 WRAP-CostModel-4), so the > 0 checks below filter
+    // exactly the structural-zero cases (no waves filled / max_threads
+    // == 0) without any extra runtime sanity branch.
+    if (peak > 0 && cb.wave_efficiency.value() > 0 && cb.occupancy.value() > 0) {
+        double effective = static_cast<double>(peak) * 1e3 * static_cast<double>(cb.wave_efficiency.value())
+                         * static_cast<double>(cb.occupancy.value());
+        cb.compute_ns = static_cast<double>(flops) / effective;
+    }
 
-  // Memory time: latency + transfer
-  // hbm_bw is in GB/s = bytes/ns (unit identity)
-  if (hw.hbm_bw > 0) {
-    cb.memory_ns = static_cast<double>(hw.hbm_latency)
-                 + static_cast<double>(bytes)
-                 / static_cast<double>(hw.hbm_bw);
-  }
+    // Memory time: latency + transfer
+    // hbm_bw is in GB/s = bytes/ns (unit identity)
+    if (hw.hbm_bw > 0) {
+        cb.memory_ns =
+            static_cast<double>(hw.hbm_latency) + static_cast<double>(bytes) / static_cast<double>(hw.hbm_bw);
+    }
 
-  // Total = max(compute, memory) + launch
-  cb.total_ns = std::max(cb.compute_ns, cb.memory_ns) + cb.launch_ns;
+    // Total = max(compute, memory) + launch
+    cb.total_ns = std::max(cb.compute_ns, cb.memory_ns) + cb.launch_ns;
 
-  // Classify bottleneck
-  if (cb.launch_ns > std::max(cb.compute_ns, cb.memory_ns) * 2.0)
-    cb.bottleneck = CostBreakdown::Bottleneck::LAUNCH;
-  else if (cb.wave_efficiency.value() < 0.1f)
-    cb.bottleneck = CostBreakdown::Bottleneck::UNDERUTIL;
-  else if (cb.compute_ns > cb.memory_ns)
-    cb.bottleneck = CostBreakdown::Bottleneck::COMPUTE;
-  else
-    cb.bottleneck = CostBreakdown::Bottleneck::MEMORY;
+    // Classify bottleneck
+    if (cb.launch_ns > std::max(cb.compute_ns, cb.memory_ns) * 2.0)
+        cb.bottleneck = CostBreakdown::Bottleneck::LAUNCH;
+    else if (cb.wave_efficiency.value() < 0.1f)
+        cb.bottleneck = CostBreakdown::Bottleneck::UNDERUTIL;
+    else if (cb.compute_ns > cb.memory_ns)
+        cb.bottleneck = CostBreakdown::Bottleneck::COMPUTE;
+    else
+        cb.bottleneck = CostBreakdown::Bottleneck::MEMORY;
 
-  return cb;
+    return cb;
 }
 
 // Convenience: evaluate with default kernel config (for quick estimation)
 template <typename CallerRow = ::crucible::effects::Row<>>
-    requires ::crucible::effects::Subrow<
-        CallerRow, ::crucible::effects::Row<>>
-[[nodiscard]] inline CostBreakdown evaluate_cost(
-    uint64_t flops, uint64_t bytes, uint64_t elements,
-    ScalarType dtype,
-    const HardwareProfile& hw) {
-  KernelConfig default_cfg{};
-  return evaluate_cost<CallerRow>(
-      flops, bytes, elements, dtype, default_cfg, hw);
+    requires ::crucible::effects::Subrow<CallerRow, ::crucible::effects::Row<>>
+[[nodiscard]] inline CostBreakdown evaluate_cost(uint64_t flops, uint64_t bytes, uint64_t elements, ScalarType dtype,
+                                                 const HardwareProfile& hw) {
+    KernelConfig default_cfg{};
+    return evaluate_cost<CallerRow>(flops, bytes, elements, dtype, default_cfg, hw);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -730,28 +713,26 @@ template <typename CallerRow = ::crucible::effects::Row<>>
 // ═══════════════════════════════════════════════════════════════════
 
 struct FusionBenefit {
-  double unfused_ns = 0;           // Sum of individual kernel costs
-  double fused_ns = 0;             // Cost of one fused kernel
-  double saved_ns = 0;             // unfused - fused
-  uint64_t saved_bytes = 0;        // Intermediate bytes kept out of HBM
-  uint32_t saved_launches = 0;     // Eliminated kernel dispatches
-  float speedup = 0;               // unfused / fused (>1.0 = fusion wins)
+    double unfused_ns = 0;  // Sum of individual kernel costs
+    double fused_ns = 0;  // Cost of one fused kernel
+    double saved_ns = 0;  // unfused - fused
+    uint64_t saved_bytes = 0;  // Intermediate bytes kept out of HBM
+    uint32_t saved_launches = 0;  // Eliminated kernel dispatches
+    float speedup = 0;  // unfused / fused (>1.0 = fusion wins)
 };
 
 template <typename CallerRow = ::crucible::effects::Row<>>
-    requires ::crucible::effects::Subrow<
-        CallerRow, ::crucible::effects::Row<>>
-[[nodiscard]] inline FusionBenefit compute_fusion_benefit(
-    double unfused_ns, double fused_ns,
-    uint64_t saved_bytes, uint32_t saved_launches) {
-  FusionBenefit fb;
-  fb.unfused_ns = unfused_ns;
-  fb.fused_ns = fused_ns;
-  fb.saved_ns = unfused_ns - fused_ns;
-  fb.saved_bytes = saved_bytes;
-  fb.saved_launches = saved_launches;
-  fb.speedup = (fused_ns > 0) ? static_cast<float>(unfused_ns / fused_ns) : 0.0f;
-  return fb;
+    requires ::crucible::effects::Subrow<CallerRow, ::crucible::effects::Row<>>
+[[nodiscard]] inline FusionBenefit compute_fusion_benefit(double unfused_ns, double fused_ns, uint64_t saved_bytes,
+                                                          uint32_t saved_launches) {
+    FusionBenefit fb;
+    fb.unfused_ns = unfused_ns;
+    fb.fused_ns = fused_ns;
+    fb.saved_ns = unfused_ns - fused_ns;
+    fb.saved_bytes = saved_bytes;
+    fb.saved_launches = saved_launches;
+    fb.speedup = (fused_ns > 0) ? static_cast<float>(unfused_ns / fused_ns) : 0.0f;
+    return fb;
 }
 
-} // namespace crucible
+}  // namespace crucible

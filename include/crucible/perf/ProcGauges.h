@@ -79,18 +79,21 @@ public:
     ScopedFd() noexcept = default;
     explicit ScopedFd(int fd) noexcept : fd_{fd} {}
     ~ScopedFd() noexcept;
-    ScopedFd(const ScopedFd&) =
-        delete("ScopedFd owns a Linux file descriptor; copying would double-close on destruct");
+    ScopedFd(const ScopedFd&) = delete("ScopedFd owns a Linux file descriptor; copying would double-close on destruct");
     ScopedFd& operator=(const ScopedFd&) =
         delete("ScopedFd owns a Linux file descriptor; copying would double-close on destruct");
     ScopedFd(ScopedFd&& other) noexcept : fd_{other.fd_} { other.fd_ = -1; }
     ScopedFd& operator=(ScopedFd&& other) noexcept {
-        if (this != &other) { close_(); fd_ = other.fd_; other.fd_ = -1; }
+        if (this != &other) {
+            close_();
+            fd_ = other.fd_;
+            other.fd_ = -1;
+        }
         return *this;
     }
 
-    [[nodiscard]] int  raw()    const noexcept { return fd_; }
-    [[nodiscard]] bool valid()  const noexcept { return fd_ >= 0; }
+    [[nodiscard]] int raw() const noexcept { return fd_; }
+    [[nodiscard]] bool valid() const noexcept { return fd_ >= 0; }
 
 private:
     int fd_ = -1;
@@ -118,8 +121,7 @@ public:
     // UNAVAILABLE to slots whose source failed to open.  Capability-
     // typed (Init only — opening these files is one-time-at-startup
     // work).
-    [[nodiscard]] static std::optional<ProcGauges>
-        init(::crucible::effects::Init) noexcept;
+    [[nodiscard]] static std::optional<ProcGauges> init(::crucible::effects::Init) noexcept;
 
     // populate() reads every owned fd via pread(offset=0), parses,
     // and writes the resulting gauge values into `gauge_array` at the
@@ -153,11 +155,11 @@ private:
     // (kernel CONFIG missing, EACCES, etc.), the fd remains invalid
     // and populate() writes UNAVAILABLE to the corresponding slot
     // instead of 0.
-    ScopedFd fd_slabinfo_;        // /proc/slabinfo
-    ScopedFd fd_interrupts_;      // /proc/interrupts
-    ScopedFd fd_softnet_stat_;    // /proc/net/softnet_stat
-    ScopedFd fd_snmp_;            // /proc/net/snmp
-    ScopedFd fd_proc_net_tcp_;    // /proc/net/tcp
+    ScopedFd fd_slabinfo_;  // /proc/slabinfo
+    ScopedFd fd_interrupts_;  // /proc/interrupts
+    ScopedFd fd_softnet_stat_;  // /proc/net/softnet_stat
+    ScopedFd fd_snmp_;  // /proc/net/snmp
+    ScopedFd fd_proc_net_tcp_;  // /proc/net/tcp
 
     // /sys/block requires per-device fds (each `stat` is an
     // independent file).  init() enumerates /sys/block/* once via
@@ -166,16 +168,16 @@ private:
     // hot-plugged after init() are NOT picked up — re-init the
     // ProcGauges instance to refresh.
     std::array<ScopedFd, MAX_BLOCK_DEVS> fd_block_stats_;
-    std::size_t                          num_block_devs_ = 0;
+    std::size_t num_block_devs_ = 0;
 
 #ifdef CRUCIBLE_SENSE_HUB_EXTENDED
-    ScopedFd fd_vmstat_;          // /proc/vmstat
-    ScopedFd fd_loadavg_;         // /proc/loadavg
-    ScopedFd fd_pressure_cpu_;    // /proc/pressure/cpu  (kernel 4.20+
-                                  // + CONFIG_PSI=y; UNAVAILABLE if
-                                  // either is missing)
-    ScopedFd fd_pressure_memory_; // /proc/pressure/memory
-    ScopedFd fd_pressure_io_;     // /proc/pressure/io
+    ScopedFd fd_vmstat_;  // /proc/vmstat
+    ScopedFd fd_loadavg_;  // /proc/loadavg
+    ScopedFd fd_pressure_cpu_;  // /proc/pressure/cpu  (kernel 4.20+
+    // + CONFIG_PSI=y; UNAVAILABLE if
+    // either is missing)
+    ScopedFd fd_pressure_memory_;  // /proc/pressure/memory
+    ScopedFd fd_pressure_io_;  // /proc/pressure/io
 #endif
 
     // Per-source scratch buffer.  Sized for the largest /proc file we
@@ -212,9 +214,7 @@ private:
     // Extended readers — see vmstat/loadavg/PSI parse helpers
     [[nodiscard]] uint64_t read_numa_hit_ratio_x100_() const noexcept;
     [[nodiscard]] uint64_t read_tcp_established_current_() const noexcept;
-    void                   read_loadavg_x100_(uint64_t& out_1m,
-                                              uint64_t& out_5m,
-                                              uint64_t& out_15m) const noexcept;
+    void read_loadavg_x100_(uint64_t& out_1m, uint64_t& out_5m, uint64_t& out_15m) const noexcept;
     // PSI readers return UNAVAILABLE if /proc/pressure/* failed to
     // open (kernel <4.20 OR CONFIG_PSI=n).
     //
@@ -223,8 +223,7 @@ private:
     // (whose `data()` is not guaranteed NUL-terminated, latent walk-off
     // for any future caller passing a sub-view); changed to `const char*`
     // so the contract is stated honestly in the type.
-    [[nodiscard]] uint64_t read_pressure_avg10_x100_(int fd,
-                                                     const char* kind) const noexcept;
+    [[nodiscard]] uint64_t read_pressure_avg10_x100_(int fd, const char* kind) const noexcept;
 #endif
 };
 
@@ -281,4 +280,4 @@ private:
 //   "full avg10=<float> avg60=<float> avg300=<float> total=<u64>"
 // We expose `some avg10` × 100 as the basic indicator.
 
-} // namespace crucible::perf
+}  // namespace crucible::perf

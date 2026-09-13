@@ -36,85 +36,57 @@ using ConsumerProto = Loop<Recv<T, Continue>>;
 template <typename Grid>
 struct is_calendar_grid_session_surface : std::false_type {};
 
-template <::crucible::concurrent::SpscValue T,
-          std::size_t NumProducers,
-          std::size_t NumBuckets,
-          std::size_t BucketCap,
-          typename KeyExtractor,
-          std::uint64_t QuantumNs,
-          typename UserTag>
-struct is_calendar_grid_session_surface<
-    ::crucible::concurrent::PermissionedCalendarGrid<
-        T, NumProducers, NumBuckets, BucketCap, KeyExtractor,
-        QuantumNs, UserTag>> : std::true_type {};
+template <::crucible::concurrent::SpscValue T, std::size_t NumProducers, std::size_t NumBuckets, std::size_t BucketCap,
+          typename KeyExtractor, std::uint64_t QuantumNs, typename UserTag>
+struct is_calendar_grid_session_surface<::crucible::concurrent::PermissionedCalendarGrid<
+    T, NumProducers, NumBuckets, BucketCap, KeyExtractor, QuantumNs, UserTag>> : std::true_type {};
 
 template <typename Grid>
-concept CalendarGridSessionSurface =
-    is_calendar_grid_session_surface<std::remove_cvref_t<Grid>>::value;
+concept CalendarGridSessionSurface = is_calendar_grid_session_surface<std::remove_cvref_t<Grid>>::value;
 
 template <CalendarGridSessionSurface Grid, std::size_t P>
 [[nodiscard]] constexpr auto mint_calendar_grid_producer(
     Grid& grid,
-    ::crucible::safety::Permission<
-        ::crucible::concurrent::calendar_tag::Producer<
-            typename Grid::user_tag, P>>&& perm) noexcept
-{
+    ::crucible::safety::Permission<::crucible::concurrent::calendar_tag::Producer<typename Grid::user_tag, P>>&&
+        perm) noexcept {
     return grid.template producer<P>(std::move(perm));
 }
 
 template <CalendarGridSessionSurface Grid>
 [[nodiscard]] constexpr auto mint_calendar_grid_consumer(
     Grid& grid,
-    ::crucible::safety::Permission<
-        ::crucible::concurrent::calendar_tag::Consumer<
-            typename Grid::user_tag>>&& perm) noexcept
-{
+    ::crucible::safety::Permission<::crucible::concurrent::calendar_tag::Consumer<typename Grid::user_tag>>&&
+        perm) noexcept {
     return grid.consumer(std::move(perm));
 }
 
-template <CalendarGridSessionSurface Grid,
-          std::size_t P,
-          ::crucible::effects::IsExecCtx Ctx>
-[[nodiscard]] constexpr auto
-mint_producer_session(Ctx const& ctx,
-                      typename Grid::template ProducerHandle<P>& handle)
-    noexcept
-{
+template <CalendarGridSessionSurface Grid, std::size_t P, ::crucible::effects::IsExecCtx Ctx>
+[[nodiscard]] constexpr auto mint_producer_session(Ctx const& ctx,
+                                                   typename Grid::template ProducerHandle<P>& handle) noexcept {
     using T = typename Grid::value_type;
     return mint_permissioned_session<ProducerProto<T>>(ctx, &handle);
 }
 
-template <CalendarGridSessionSurface Grid,
-          ::crucible::effects::IsExecCtx Ctx>
-[[nodiscard]] constexpr auto
-mint_consumer_session(Ctx const& ctx,
-                      typename Grid::ConsumerHandle& handle) noexcept
-{
+template <CalendarGridSessionSurface Grid, ::crucible::effects::IsExecCtx Ctx>
+[[nodiscard]] constexpr auto mint_consumer_session(Ctx const& ctx, typename Grid::ConsumerHandle& handle) noexcept {
     using T = typename Grid::value_type;
     return mint_permissioned_session<ConsumerProto<T>>(ctx, &handle);
 }
 
-template <CalendarGridSessionSurface Grid,
-          std::size_t P,
+template <CalendarGridSessionSurface Grid, std::size_t P,
           ::crucible::effects::IsExecCtx Ctx = ::crucible::effects::HotFgCtx>
-using ProducerSessionHandle = decltype(
-    mint_producer_session<Grid, P>(
-        std::declval<Ctx const&>(),
-        std::declval<typename Grid::template ProducerHandle<P>&>()));
+using ProducerSessionHandle = decltype(mint_producer_session<Grid, P>(
+    std::declval<Ctx const&>(), std::declval<typename Grid::template ProducerHandle<P>&>()));
 
-template <CalendarGridSessionSurface Grid,
-          ::crucible::effects::IsExecCtx Ctx = ::crucible::effects::HotFgCtx>
-using ConsumerSessionHandle = decltype(
-    mint_consumer_session<Grid>(
-        std::declval<Ctx const&>(),
-        std::declval<typename Grid::ConsumerHandle&>()));
+template <CalendarGridSessionSurface Grid, ::crucible::effects::IsExecCtx Ctx = ::crucible::effects::HotFgCtx>
+using ConsumerSessionHandle =
+    decltype(mint_consumer_session<Grid>(std::declval<Ctx const&>(), std::declval<typename Grid::ConsumerHandle&>()));
 
-inline constexpr auto blocking_push =
-    [](auto& hp, auto&& value) noexcept {
-        while (!hp->try_push(std::forward<decltype(value)>(value))) {
-            CRUCIBLE_SPIN_PAUSE;
-        }
-    };
+inline constexpr auto blocking_push = [](auto& hp, auto&& value) noexcept {
+    while (!hp->try_push(std::forward<decltype(value)>(value))) {
+        CRUCIBLE_SPIN_PAUSE;
+    }
+};
 
 inline constexpr auto blocking_pop = [](auto& hp) noexcept {
     for (;;) {
@@ -124,18 +96,15 @@ inline constexpr auto blocking_pop = [](auto& hp) noexcept {
 };
 
 template <CalendarGridSessionSurface Grid, std::size_t P>
-[[nodiscard, gnu::always_inline]] inline bool producer_session_try_push(
-    ProducerSessionHandle<Grid, P>& session,
-    typename Grid::value_type const& value) noexcept
-{
+[[nodiscard, gnu::always_inline]] inline bool
+producer_session_try_push(ProducerSessionHandle<Grid, P>& session, typename Grid::value_type const& value) noexcept {
     return session.resource()->try_push(value);
 }
 
 template <CalendarGridSessionSurface Grid>
 [[nodiscard, gnu::always_inline]]
 inline std::optional<typename Grid::value_type>
-consumer_session_try_pop(ConsumerSessionHandle<Grid>& session) noexcept
-{
+consumer_session_try_pop(ConsumerSessionHandle<Grid>& session) noexcept {
     return session.resource()->try_pop();
 }
 
@@ -148,46 +117,32 @@ struct Job {
 };
 
 struct Key {
-    static std::uint64_t key(Job const& job) noexcept {
-        return job.deadline_ns;
-    }
+    static std::uint64_t key(Job const& job) noexcept { return job.deadline_ns; }
 };
 
-using Grid = ::crucible::concurrent::PermissionedCalendarGrid<
-    Job, 2, 8, 16, Key, 1'000'000ULL, Tag>;
+using Grid = ::crucible::concurrent::PermissionedCalendarGrid<Job, 2, 8, 16, Key, 1'000'000ULL, Tag>;
 using Producer0 = Grid::ProducerHandle<0>;
 using Consumer = Grid::ConsumerHandle;
 using ProducerSession0 = ProducerSessionHandle<Grid, 0>;
 using ConsumerSession = ConsumerSessionHandle<Grid>;
 
 static_assert(CalendarGridSessionSurface<Grid>);
-static_assert(std::is_same_v<ProducerProto<Job>,
-                             Loop<Send<Job, Continue>>>);
-static_assert(std::is_same_v<ConsumerProto<Job>,
-                             Loop<Recv<Job, Continue>>>);
-static_assert(std::is_same_v<typename ProducerSession0::protocol,
-                             Send<Job, Continue>>);
-static_assert(std::is_same_v<typename ConsumerSession::protocol,
-                             Recv<Job, Continue>>);
-static_assert(std::is_same_v<typename ProducerSession0::perm_set,
-                             EmptyPermSet>);
-static_assert(std::is_same_v<typename ConsumerSession::perm_set,
-                             EmptyPermSet>);
+static_assert(std::is_same_v<ProducerProto<Job>, Loop<Send<Job, Continue>>>);
+static_assert(std::is_same_v<ConsumerProto<Job>, Loop<Recv<Job, Continue>>>);
+static_assert(std::is_same_v<typename ProducerSession0::protocol, Send<Job, Continue>>);
+static_assert(std::is_same_v<typename ConsumerSession::protocol, Recv<Job, Continue>>);
+static_assert(std::is_same_v<typename ProducerSession0::perm_set, EmptyPermSet>);
+static_assert(std::is_same_v<typename ConsumerSession::perm_set, EmptyPermSet>);
 
-static_assert(sizeof(PermissionedSessionHandle<End, EmptyPermSet,
-                                                Producer0*>)
+static_assert(sizeof(PermissionedSessionHandle<End, EmptyPermSet, Producer0*>)
               == sizeof(SessionHandle<End, Producer0*>));
-static_assert(sizeof(PermissionedSessionHandle<End, EmptyPermSet,
-                                                Consumer*>)
-              == sizeof(SessionHandle<End, Consumer*>));
-static_assert(sizeof(ProducerSession0)
-              == sizeof(SessionHandle<typename ProducerSession0::protocol,
-                                      Producer0*,
-                                      typename ProducerSession0::loop_ctx>));
-static_assert(sizeof(ConsumerSession)
-              == sizeof(SessionHandle<typename ConsumerSession::protocol,
-                                      Consumer*,
-                                      typename ConsumerSession::loop_ctx>));
+static_assert(sizeof(PermissionedSessionHandle<End, EmptyPermSet, Consumer*>) == sizeof(SessionHandle<End, Consumer*>));
+static_assert(
+    sizeof(ProducerSession0)
+    == sizeof(SessionHandle<typename ProducerSession0::protocol, Producer0*, typename ProducerSession0::loop_ctx>));
+static_assert(
+    sizeof(ConsumerSession)
+    == sizeof(SessionHandle<typename ConsumerSession::protocol, Consumer*, typename ConsumerSession::loop_ctx>));
 
 }  // namespace detail::calendar_grid_session_self_test
 

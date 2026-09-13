@@ -152,7 +152,7 @@
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/lattices/JoinPolicyLattice.h>
 
-#include <cstdlib>      // std::abort in the runtime smoke test
+#include <cstdlib>  // std::abort in the runtime smoke test
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -175,14 +175,10 @@ template <JoinPolicy_v Tier, typename T>
 class [[nodiscard]] JoinPolicy {
 public:
     // ── Public type aliases ─────────────────────────────────────────
-    using value_type   = T;
+    using value_type = T;
     using lattice_type = JoinPolicyLattice::At<Tier>;
-    using graded_type  = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Comonad,
-        lattice_type,
-        T>;
-    static constexpr ::crucible::algebra::ModalityKind modality =
-        ::crucible::algebra::ModalityKind::Comonad;
+    using graded_type = ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Comonad, lattice_type, T>;
+    static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::Comonad;
 
     // The pinned tier — exposed as a static constexpr for callers
     // doing tier-aware dispatch without instantiating the wrapper.
@@ -196,7 +192,6 @@ private:
     graded_type impl_;
 
 public:
-
     // ── Construction ────────────────────────────────────────────────
     //
     // Default: T{} at the pinned tier.
@@ -212,27 +207,23 @@ public:
     // the join — the default ctor exists for compatibility with
     // std::array<JoinPolicy<...>, N> / struct-field default-init
     // contexts.
-    constexpr JoinPolicy() noexcept(
-        std::is_nothrow_default_constructible_v<T>)
+    constexpr JoinPolicy() noexcept(std::is_nothrow_default_constructible_v<T>)
         : impl_{T{}, typename lattice_type::element_type{}} {}
 
     // Explicit construction from a T value.  The most common
     // production pattern — a fork-join site produces a value
     // alongside the engagement discipline; the wrapper binds that
     // tier into the type.
-    constexpr explicit JoinPolicy(T value) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    constexpr explicit JoinPolicy(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(value), typename lattice_type::element_type{}} {}
 
     // In-place construction — avoids moving T through a temporary.
     // Mirrors Witness.h's std::in_place_t pattern.
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr explicit JoinPolicy(std::in_place_t, Args&&... args)
-        noexcept(std::is_nothrow_constructible_v<T, Args...>
-                 && std::is_nothrow_move_constructible_v<T>)
-        : impl_{T(std::forward<Args>(args)...),
-                typename lattice_type::element_type{}} {}
+    constexpr explicit JoinPolicy(std::in_place_t, Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
+                                                                            && std::is_nothrow_move_constructible_v<T>)
+        : impl_{T(std::forward<Args>(args)...), typename lattice_type::element_type{}} {}
 
     // Defaulted copy/move/destroy — JoinPolicy IS COPYABLE.  A tier
     // pin is a static property of the value's engagement strictness;
@@ -240,21 +231,22 @@ public:
     // the OPPOSITE of Secret<T>, which deletes copy to enforce
     // information-flow non-duplication — policy IS metadata, not a
     // classified channel.
-    constexpr JoinPolicy(const JoinPolicy&)            = default;
-    constexpr JoinPolicy(JoinPolicy&&)                 = default;
+    constexpr JoinPolicy(const JoinPolicy&) = default;
+    constexpr JoinPolicy(JoinPolicy&&) = default;
     constexpr JoinPolicy& operator=(const JoinPolicy&) = default;
-    constexpr JoinPolicy& operator=(JoinPolicy&&)      = default;
-    ~JoinPolicy()                                      = default;
+    constexpr JoinPolicy& operator=(JoinPolicy&&) = default;
+    ~JoinPolicy() = default;
 
     // Equality: compares value bytes within the SAME tier pin.
     // Cross-tier comparison is rejected at overload resolution
     // because the friend takes two `JoinPolicy const&` of identical
     // <Tier, T> instantiation.  Mirrors Witness.h's family-parity
     // discipline.
-    [[nodiscard]] friend constexpr bool operator==(
-        JoinPolicy const& a, JoinPolicy const& b) noexcept(
-        noexcept(a.peek() == b.peek()))
-        requires requires(T const& x, T const& y) { { x == y } -> std::convertible_to<bool>; }
+    [[nodiscard]] friend constexpr bool operator==(JoinPolicy const& a,
+                                                   JoinPolicy const& b) noexcept(noexcept(a.peek() == b.peek()))
+        requires requires(T const& x, T const& y) {
+            { x == y } -> std::convertible_to<bool>;
+        }
     {
         return a.peek() == b.peek();
     }
@@ -266,18 +258,12 @@ public:
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return graded_type::lattice_name();
-    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 
     // ── Read-only access ────────────────────────────────────────────
-    [[nodiscard]] constexpr T const& peek() const& noexcept {
-        return impl_.peek();
-    }
+    [[nodiscard]] constexpr T const& peek() const& noexcept { return impl_.peek(); }
 
-    [[nodiscard]] constexpr T consume() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return std::move(impl_).consume();
     }
 
@@ -289,9 +275,7 @@ public:
     // the operation.  Mutating T cannot violate the tier pin: the
     // tier is a TYPE-LEVEL fact about how the value was produced,
     // not about the value's current bytes.
-    [[nodiscard]] constexpr T& peek_mut() & noexcept {
-        return impl_.peek_mut();
-    }
+    [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(); }
 
     // ── extract — Comonad counit ────────────────────────────────────
     //
@@ -307,24 +291,14 @@ public:
     // all three return T): the methods do the same thing at the
     // substrate level; the asymmetry is at the gate — declassify
     // requires a `secret_policy::*` tag; extract is open.
-    [[nodiscard]] constexpr T extract() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr T extract() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return std::move(impl_).extract();
     }
 
     // ── swap (forwarded from Graded substrate) ─────────────────────
-    constexpr void swap(JoinPolicy& other)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
-        impl_.swap(other.impl_);
-    }
+    constexpr void swap(JoinPolicy& other) noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
 
-    friend constexpr void swap(JoinPolicy& a, JoinPolicy& b)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
-        a.swap(b);
-    }
+    friend constexpr void swap(JoinPolicy& a, JoinPolicy& b) noexcept(std::is_nothrow_swappable_v<T>) { a.swap(b); }
 
     // ── satisfies<RequiredTier> — static subsumption check ─────────
     //
@@ -361,21 +335,17 @@ public:
     // strengthen a tier pin once the value was produced under a
     // weaker engagement regime.
     template <JoinPolicy_v WeakerTier>
-        requires (JoinPolicyLattice::leq(WeakerTier, Tier))
-    [[nodiscard]] constexpr JoinPolicy<WeakerTier, T> relax() const&
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
+        requires(JoinPolicyLattice::leq(WeakerTier, Tier))
+    [[nodiscard]] constexpr JoinPolicy<WeakerTier, T> relax() const& noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
     {
         return JoinPolicy<WeakerTier, T>{this->peek()};
     }
 
     template <JoinPolicy_v WeakerTier>
-        requires (JoinPolicyLattice::leq(WeakerTier, Tier))
-    [[nodiscard]] constexpr JoinPolicy<WeakerTier, T> relax() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
-        return JoinPolicy<WeakerTier, T>{
-            std::move(impl_).consume()};
+        requires(JoinPolicyLattice::leq(WeakerTier, Tier))
+    [[nodiscard]] constexpr JoinPolicy<WeakerTier, T> relax() && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return JoinPolicy<WeakerTier, T>{std::move(impl_).consume()};
     }
 };
 
@@ -387,9 +357,8 @@ public:
 // Args...>` (load-bearing soundness check).
 template <JoinPolicy_v Tier, typename T, typename... Args>
     requires std::is_constructible_v<T, Args...>
-[[nodiscard]] constexpr JoinPolicy<Tier, T> mint_join_policy(Args&&... args)
-    noexcept(std::is_nothrow_constructible_v<T, Args...>)
-{
+[[nodiscard]] constexpr JoinPolicy<Tier, T>
+mint_join_policy(Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>) {
     return JoinPolicy<Tier, T>{std::in_place, std::forward<Args>(args)...};
 }
 
@@ -404,12 +373,18 @@ template <JoinPolicy_v Tier, typename T, typename... Args>
 // that might land at a parallel-vocabulary site, AND to keep the
 // vocabulary parallel with Witness.h's `witness_tier::` convention.
 namespace join_policy_tier {
-    template <typename T> using Forget        = JoinPolicy<JoinPolicy_v::FORGET,        T>;
-    template <typename T> using Detach        = JoinPolicy<JoinPolicy_v::DETACH,        T>;
-    template <typename T> using Abandon       = JoinPolicy<JoinPolicy_v::ABANDON,       T>;
-    template <typename T> using Cancel        = JoinPolicy<JoinPolicy_v::CANCEL,        T>;
-    template <typename T> using WaitDeadline  = JoinPolicy<JoinPolicy_v::WAIT_DEADLINE, T>;
-    template <typename T> using JoinAll       = JoinPolicy<JoinPolicy_v::JOIN_ALL,      T>;
+template <typename T>
+using Forget = JoinPolicy<JoinPolicy_v::FORGET, T>;
+template <typename T>
+using Detach = JoinPolicy<JoinPolicy_v::DETACH, T>;
+template <typename T>
+using Abandon = JoinPolicy<JoinPolicy_v::ABANDON, T>;
+template <typename T>
+using Cancel = JoinPolicy<JoinPolicy_v::CANCEL, T>;
+template <typename T>
+using WaitDeadline = JoinPolicy<JoinPolicy_v::WAIT_DEADLINE, T>;
+template <typename T>
+using JoinAll = JoinPolicy<JoinPolicy_v::JOIN_ALL, T>;
 }  // namespace join_policy_tier
 
 // ── Layout invariants ───────────────────────────────────────────────
@@ -419,46 +394,52 @@ namespace join_policy_tier {
 // (1B, 4B, 8B) and across the full tier spectrum.
 namespace detail::join_policy_layout {
 
-template <typename T> using JoinAllJP       = JoinPolicy<JoinPolicy_v::JOIN_ALL,      T>;
-template <typename T> using WaitDeadlineJP  = JoinPolicy<JoinPolicy_v::WAIT_DEADLINE, T>;
-template <typename T> using CancelJP        = JoinPolicy<JoinPolicy_v::CANCEL,        T>;
-template <typename T> using AbandonJP       = JoinPolicy<JoinPolicy_v::ABANDON,       T>;
-template <typename T> using DetachJP        = JoinPolicy<JoinPolicy_v::DETACH,        T>;
-template <typename T> using ForgetJP        = JoinPolicy<JoinPolicy_v::FORGET,        T>;
+template <typename T>
+using JoinAllJP = JoinPolicy<JoinPolicy_v::JOIN_ALL, T>;
+template <typename T>
+using WaitDeadlineJP = JoinPolicy<JoinPolicy_v::WAIT_DEADLINE, T>;
+template <typename T>
+using CancelJP = JoinPolicy<JoinPolicy_v::CANCEL, T>;
+template <typename T>
+using AbandonJP = JoinPolicy<JoinPolicy_v::ABANDON, T>;
+template <typename T>
+using DetachJP = JoinPolicy<JoinPolicy_v::DETACH, T>;
+template <typename T>
+using ForgetJP = JoinPolicy<JoinPolicy_v::FORGET, T>;
 
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(JoinAllJP,      char);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(JoinAllJP,      int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(JoinAllJP,      double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(JoinAllJP, char);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(JoinAllJP, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(JoinAllJP, double);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(WaitDeadlineJP, int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(CancelJP,       int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(CancelJP,       double);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(AbandonJP,      int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(DetachJP,       int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(ForgetJP,       int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(ForgetJP,       double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(CancelJP, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(CancelJP, double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(AbandonJP, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(DetachJP, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(ForgetJP, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(ForgetJP, double);
 
 }  // namespace detail::join_policy_layout
 
 // Direct sizeof witnesses — EBO collapse must hold for the
 // production-typical T sizes regardless of which tier is pinned.
-static_assert(sizeof(JoinPolicy<JoinPolicy_v::FORGET,        int>)    == sizeof(int));
-static_assert(sizeof(JoinPolicy<JoinPolicy_v::DETACH,        int>)    == sizeof(int));
-static_assert(sizeof(JoinPolicy<JoinPolicy_v::ABANDON,       int>)    == sizeof(int));
-static_assert(sizeof(JoinPolicy<JoinPolicy_v::CANCEL,        int>)    == sizeof(int));
-static_assert(sizeof(JoinPolicy<JoinPolicy_v::WAIT_DEADLINE, int>)    == sizeof(int));
-static_assert(sizeof(JoinPolicy<JoinPolicy_v::JOIN_ALL,      int>)    == sizeof(int));
-static_assert(sizeof(JoinPolicy<JoinPolicy_v::JOIN_ALL,      double>) == sizeof(double));
-static_assert(sizeof(JoinPolicy<JoinPolicy_v::JOIN_ALL,      char>)   == sizeof(char));
+static_assert(sizeof(JoinPolicy<JoinPolicy_v::FORGET, int>) == sizeof(int));
+static_assert(sizeof(JoinPolicy<JoinPolicy_v::DETACH, int>) == sizeof(int));
+static_assert(sizeof(JoinPolicy<JoinPolicy_v::ABANDON, int>) == sizeof(int));
+static_assert(sizeof(JoinPolicy<JoinPolicy_v::CANCEL, int>) == sizeof(int));
+static_assert(sizeof(JoinPolicy<JoinPolicy_v::WAIT_DEADLINE, int>) == sizeof(int));
+static_assert(sizeof(JoinPolicy<JoinPolicy_v::JOIN_ALL, int>) == sizeof(int));
+static_assert(sizeof(JoinPolicy<JoinPolicy_v::JOIN_ALL, double>) == sizeof(double));
+static_assert(sizeof(JoinPolicy<JoinPolicy_v::JOIN_ALL, char>) == sizeof(char));
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::join_policy_self_test {
 
-using JoinAllInt       = JoinPolicy<JoinPolicy_v::JOIN_ALL,      int>;
-using WaitDeadlineInt  = JoinPolicy<JoinPolicy_v::WAIT_DEADLINE, int>;
-using CancelInt        = JoinPolicy<JoinPolicy_v::CANCEL,        int>;
-using AbandonInt       = JoinPolicy<JoinPolicy_v::ABANDON,       int>;
-using DetachInt        = JoinPolicy<JoinPolicy_v::DETACH,        int>;
-using ForgetInt        = JoinPolicy<JoinPolicy_v::FORGET,        int>;
+using JoinAllInt = JoinPolicy<JoinPolicy_v::JOIN_ALL, int>;
+using WaitDeadlineInt = JoinPolicy<JoinPolicy_v::WAIT_DEADLINE, int>;
+using CancelInt = JoinPolicy<JoinPolicy_v::CANCEL, int>;
+using AbandonInt = JoinPolicy<JoinPolicy_v::ABANDON, int>;
+using DetachInt = JoinPolicy<JoinPolicy_v::DETACH, int>;
+using ForgetInt = JoinPolicy<JoinPolicy_v::FORGET, int>;
 
 // ── Construction paths ─────────────────────────────────────────────
 inline constexpr JoinAllInt jp_default{};
@@ -469,12 +450,12 @@ inline constexpr JoinAllInt jp_explicit{42};
 static_assert(jp_explicit.peek() == 42);
 
 // ── Pinned tier accessor ───────────────────────────────────────────
-static_assert(JoinAllInt::tier       == JoinPolicy_v::JOIN_ALL);
-static_assert(WaitDeadlineInt::tier  == JoinPolicy_v::WAIT_DEADLINE);
-static_assert(CancelInt::tier        == JoinPolicy_v::CANCEL);
-static_assert(AbandonInt::tier       == JoinPolicy_v::ABANDON);
-static_assert(DetachInt::tier        == JoinPolicy_v::DETACH);
-static_assert(ForgetInt::tier        == JoinPolicy_v::FORGET);
+static_assert(JoinAllInt::tier == JoinPolicy_v::JOIN_ALL);
+static_assert(WaitDeadlineInt::tier == JoinPolicy_v::WAIT_DEADLINE);
+static_assert(CancelInt::tier == JoinPolicy_v::CANCEL);
+static_assert(AbandonInt::tier == JoinPolicy_v::ABANDON);
+static_assert(DetachInt::tier == JoinPolicy_v::DETACH);
+static_assert(ForgetInt::tier == JoinPolicy_v::FORGET);
 
 // ── satisfies<RequiredTier> — subsumption-up direction ─────────────
 //
@@ -487,15 +468,15 @@ static_assert(JoinAllInt::satisfies<JoinPolicy_v::DETACH>);
 static_assert(JoinAllInt::satisfies<JoinPolicy_v::FORGET>);
 
 // A CANCEL producer satisfies weaker-or-equal consumers only.
-static_assert( CancelInt::satisfies<JoinPolicy_v::CANCEL>);       // self
-static_assert( CancelInt::satisfies<JoinPolicy_v::ABANDON>);      // weaker
-static_assert( CancelInt::satisfies<JoinPolicy_v::DETACH>);
-static_assert( CancelInt::satisfies<JoinPolicy_v::FORGET>);
-static_assert(!CancelInt::satisfies<JoinPolicy_v::WAIT_DEADLINE>); // stricter
+static_assert(CancelInt::satisfies<JoinPolicy_v::CANCEL>);  // self
+static_assert(CancelInt::satisfies<JoinPolicy_v::ABANDON>);  // weaker
+static_assert(CancelInt::satisfies<JoinPolicy_v::DETACH>);
+static_assert(CancelInt::satisfies<JoinPolicy_v::FORGET>);
+static_assert(!CancelInt::satisfies<JoinPolicy_v::WAIT_DEADLINE>);  // stricter
 static_assert(!CancelInt::satisfies<JoinPolicy_v::JOIN_ALL>);
 
 // A FORGET producer satisfies only FORGET consumers.
-static_assert( ForgetInt::satisfies<JoinPolicy_v::FORGET>);
+static_assert(ForgetInt::satisfies<JoinPolicy_v::FORGET>);
 static_assert(!ForgetInt::satisfies<JoinPolicy_v::DETACH>);
 static_assert(!ForgetInt::satisfies<JoinPolicy_v::CANCEL>);
 static_assert(!ForgetInt::satisfies<JoinPolicy_v::JOIN_ALL>);
@@ -503,47 +484,41 @@ static_assert(!ForgetInt::satisfies<JoinPolicy_v::JOIN_ALL>);
 // ── relax<WeakerTier> — DOWN-the-lattice conversion ────────────────
 //
 // JOIN_ALL relaxes to any tier.
-inline constexpr auto from_join_all_to_cancel =
-    JoinAllInt{42}.relax<JoinPolicy_v::CANCEL>();
+inline constexpr auto from_join_all_to_cancel = JoinAllInt{42}.relax<JoinPolicy_v::CANCEL>();
 static_assert(from_join_all_to_cancel.peek() == 42);
 static_assert(from_join_all_to_cancel.tier == JoinPolicy_v::CANCEL);
 
-inline constexpr auto from_join_all_to_forget =
-    JoinAllInt{99}.relax<JoinPolicy_v::FORGET>();
+inline constexpr auto from_join_all_to_forget = JoinAllInt{99}.relax<JoinPolicy_v::FORGET>();
 static_assert(from_join_all_to_forget.peek() == 99);
 static_assert(from_join_all_to_forget.tier == JoinPolicy_v::FORGET);
 
 // WAIT_DEADLINE relaxes to CANCEL.
-inline constexpr auto from_wait_to_cancel =
-    WaitDeadlineInt{7}.relax<JoinPolicy_v::CANCEL>();
+inline constexpr auto from_wait_to_cancel = WaitDeadlineInt{7}.relax<JoinPolicy_v::CANCEL>();
 static_assert(from_wait_to_cancel.peek() == 7);
 static_assert(from_wait_to_cancel.tier == JoinPolicy_v::CANCEL);
 
 // CANCEL relaxes to ABANDON.
-inline constexpr auto from_cancel_to_abandon =
-    CancelInt{55}.relax<JoinPolicy_v::ABANDON>();
+inline constexpr auto from_cancel_to_abandon = CancelInt{55}.relax<JoinPolicy_v::ABANDON>();
 static_assert(from_cancel_to_abandon.peek() == 55);
 static_assert(from_cancel_to_abandon.tier == JoinPolicy_v::ABANDON);
 
 // Reflexive: relax<SameTier> is a no-op.
-inline constexpr auto identity_relax =
-    JoinAllInt{100}.relax<JoinPolicy_v::JOIN_ALL>();
+inline constexpr auto identity_relax = JoinAllInt{100}.relax<JoinPolicy_v::JOIN_ALL>();
 static_assert(identity_relax.peek() == 100);
 static_assert(identity_relax.tier == JoinPolicy_v::JOIN_ALL);
 
 // ── mint_join_policy §XXI factory ──────────────────────────────────
-inline constexpr auto minted_join_all =
-    mint_join_policy<JoinPolicy_v::JOIN_ALL, int>(123);
+inline constexpr auto minted_join_all = mint_join_policy<JoinPolicy_v::JOIN_ALL, int>(123);
 static_assert(minted_join_all.peek() == 123);
 static_assert(minted_join_all.tier == JoinPolicy_v::JOIN_ALL);
 
 // ── Convenience aliases round-trip ─────────────────────────────────
-static_assert(std::is_same_v<join_policy_tier::JoinAll<int>,       JoinAllInt>);
-static_assert(std::is_same_v<join_policy_tier::WaitDeadline<int>,  WaitDeadlineInt>);
-static_assert(std::is_same_v<join_policy_tier::Cancel<int>,        CancelInt>);
-static_assert(std::is_same_v<join_policy_tier::Abandon<int>,       AbandonInt>);
-static_assert(std::is_same_v<join_policy_tier::Detach<int>,        DetachInt>);
-static_assert(std::is_same_v<join_policy_tier::Forget<int>,        ForgetInt>);
+static_assert(std::is_same_v<join_policy_tier::JoinAll<int>, JoinAllInt>);
+static_assert(std::is_same_v<join_policy_tier::WaitDeadline<int>, WaitDeadlineInt>);
+static_assert(std::is_same_v<join_policy_tier::Cancel<int>, CancelInt>);
+static_assert(std::is_same_v<join_policy_tier::Abandon<int>, AbandonInt>);
+static_assert(std::is_same_v<join_policy_tier::Detach<int>, DetachInt>);
+static_assert(std::is_same_v<join_policy_tier::Forget<int>, ForgetInt>);
 
 // ── Equality at same tier ──────────────────────────────────────────
 static_assert(JoinAllInt{42} == JoinAllInt{42});
@@ -568,7 +543,7 @@ static_assert(JoinAllInt::modality == ::crucible::algebra::ModalityKind::Comonad
 // and a constexpr-vs-runtime divergence would silently misroute
 // policy reads.
 inline void runtime_smoke_test() {
-    int seed = 17;                                          // non-constant
+    int seed = 17;  // non-constant
 
     JoinAllInt jp{seed * 2};
     if (jp.peek() != 34) std::abort();
@@ -606,7 +581,7 @@ inline void runtime_smoke_test() {
 
     // Copy semantics — JoinPolicy IS COPYABLE (metadata, not classified).
     JoinAllInt c1{seed};
-    JoinAllInt c2 = c1;                                     // copy ctor
+    JoinAllInt c2 = c1;  // copy ctor
     if (c1.peek() != c2.peek()) std::abort();
     if (c1.peek() != 17) std::abort();
 

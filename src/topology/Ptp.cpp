@@ -32,33 +32,25 @@ namespace {
 // CRUCIBLE_PRE(Fd::is_valid_pattern(fd)).
 using LocalFd = ::crucible::safety::FileHandle;
 
-[[nodiscard]] constexpr clockid_t
-clockid_from_fd(PtpClockFd fd) noexcept {
+[[nodiscard]] constexpr clockid_t clockid_from_fd(PtpClockFd fd) noexcept {
     const auto raw = static_cast<unsigned int>(fd.value());
-    const auto encoded =
-        (static_cast<unsigned long>(~raw) << 3u) | 3ul;
+    const auto encoded = (static_cast<unsigned long>(~raw) << 3u) | 3ul;
     return static_cast<clockid_t>(encoded);
 }
 
-[[nodiscard]] constexpr bool
-timespec_nonzero(timespec const& ts) noexcept {
-    return ts.tv_sec != 0 || ts.tv_nsec != 0;
-}
+[[nodiscard]] constexpr bool timespec_nonzero(timespec const& ts) noexcept { return ts.tv_sec != 0 || ts.tv_nsec != 0; }
 
-[[nodiscard]] std::expected<PtpTimestampNs, PtpError>
-timestamp_from_timespec(timespec const& ts) noexcept {
+[[nodiscard]] std::expected<PtpTimestampNs, PtpError> timestamp_from_timespec(timespec const& ts) noexcept {
     if (ts.tv_sec < 0 || ts.tv_nsec < 0 || ts.tv_nsec >= 1'000'000'000L) {
         return std::unexpected(PtpError::ClockReadFailed);
     }
 
     const auto seconds = static_cast<std::uint64_t>(ts.tv_sec);
     constexpr auto limit = std::numeric_limits<std::uint64_t>::max();
-    if (seconds > (limit - static_cast<std::uint64_t>(ts.tv_nsec)) /
-                      1'000'000'000ull) {
+    if (seconds > (limit - static_cast<std::uint64_t>(ts.tv_nsec)) / 1'000'000'000ull) {
         return std::unexpected(PtpError::TimestampOverflow);
     }
-    return PtpTimestampNs{
-        seconds * 1'000'000'000ull + static_cast<std::uint64_t>(ts.tv_nsec)};
+    return PtpTimestampNs{seconds * 1'000'000'000ull + static_cast<std::uint64_t>(ts.tv_nsec)};
 }
 
 }  // namespace
@@ -67,9 +59,7 @@ PtpClock::PtpClock(PtpClockFd fd) noexcept : fd_{fd.value()} {}
 
 PtpClock::~PtpClock() noexcept { close(); }
 
-PtpClock::PtpClock(PtpClock&& other) noexcept : fd_{other.fd_} {
-    other.fd_ = -1;
-}
+PtpClock::PtpClock(PtpClock&& other) noexcept : fd_{other.fd_} { other.fd_ = -1; }
 
 PtpClock& PtpClock::operator=(PtpClock&& other) noexcept {
     if (this != &other) {
@@ -85,9 +75,7 @@ PtpClockFd PtpClock::fd() const noexcept {
     return PtpClockFd{fd_, typename PtpClockFd::Trusted{}};
 }
 
-bool PtpClock::valid() const noexcept {
-    return fd_ >= 0;
-}
+bool PtpClock::valid() const noexcept { return fd_ >= 0; }
 
 PtpClockFd PtpClock::release() noexcept {
     CRUCIBLE_PRE(fd_ >= 0);
@@ -105,44 +93,65 @@ void PtpClock::close() noexcept {
 
 std::string_view ptp_error_name(PtpError error) noexcept {
     switch (error) {
-        case PtpError::None:           return "None";
-        case PtpError::ZeroNic:        return "ZeroNic";
-        case PtpError::NonNicCog:      return "NonNicCog";
-        case PtpError::InvalidClockFd: return "InvalidClockFd";
-        case PtpError::NoTimestamp:    return "NoTimestamp";
-        case PtpError::Degraded:       return "Degraded";
-        case PtpError::InvalidDeviceIndex: return "InvalidDeviceIndex";
-        case PtpError::OpenClockFailed: return "OpenClockFailed";
-        case PtpError::ClockReadFailed: return "ClockReadFailed";
-        case PtpError::ClockCapsUnavailable: return "ClockCapsUnavailable";
+        case PtpError::None:
+            return "None";
+        case PtpError::ZeroNic:
+            return "ZeroNic";
+        case PtpError::NonNicCog:
+            return "NonNicCog";
+        case PtpError::InvalidClockFd:
+            return "InvalidClockFd";
+        case PtpError::NoTimestamp:
+            return "NoTimestamp";
+        case PtpError::Degraded:
+            return "Degraded";
+        case PtpError::InvalidDeviceIndex:
+            return "InvalidDeviceIndex";
+        case PtpError::OpenClockFailed:
+            return "OpenClockFailed";
+        case PtpError::ClockReadFailed:
+            return "ClockReadFailed";
+        case PtpError::ClockCapsUnavailable:
+            return "ClockCapsUnavailable";
         case PtpError::SocketTimestampingFailed:
             return "SocketTimestampingFailed";
         case PtpError::HardwareTimestampingFailed:
             return "HardwareTimestampingFailed";
-        case PtpError::RecvFailed: return "RecvFailed";
-        case PtpError::InvalidReceiveBuffer: return "InvalidReceiveBuffer";
-        case PtpError::TimestampOverflow: return "TimestampOverflow";
+        case PtpError::RecvFailed:
+            return "RecvFailed";
+        case PtpError::InvalidReceiveBuffer:
+            return "InvalidReceiveBuffer";
+        case PtpError::TimestampOverflow:
+            return "TimestampOverflow";
         case PtpError::MalformedTimestampControl:
             return "MalformedTimestampControl";
-        default:                       return "<unknown PtpError>";
+        default:
+            return "<unknown PtpError>";
     }
 }
 
 std::string_view ptp_servo_state_name(PtpServoState state) noexcept {
     switch (state) {
-        case PtpServoState::Unknown:      return "Unknown";
-        case PtpServoState::Initializing: return "Initializing";
-        case PtpServoState::Listening:    return "Listening";
-        case PtpServoState::Slave:        return "Slave";
-        case PtpServoState::Master:       return "Master";
-        case PtpServoState::Faulty:       return "Faulty";
-        case PtpServoState::Degraded:     return "Degraded";
-        default:                          return "<unknown PtpServoState>";
+        case PtpServoState::Unknown:
+            return "Unknown";
+        case PtpServoState::Initializing:
+            return "Initializing";
+        case PtpServoState::Listening:
+            return "Listening";
+        case PtpServoState::Slave:
+            return "Slave";
+        case PtpServoState::Master:
+            return "Master";
+        case PtpServoState::Faulty:
+            return "Faulty";
+        case PtpServoState::Degraded:
+            return "Degraded";
+        default:
+            return "<unknown PtpServoState>";
     }
 }
 
-std::string_view
-ptp_degradation_reason_name(PtpDegradationReason reason) noexcept {
+std::string_view ptp_degradation_reason_name(PtpDegradationReason reason) noexcept {
     switch (reason) {
         case PtpDegradationReason::None:
             return "None";
@@ -164,9 +173,7 @@ ptp_degradation_reason_name(PtpDegradationReason reason) noexcept {
 }
 
 std::expected<TimestampedPacketView, PtpError>
-timestamp_packet_view(std::span<const std::byte> payload,
-                      PtpTimestampNs timestamp,
-                      std::uint64_t sequence) noexcept {
+timestamp_packet_view(std::span<const std::byte> payload, PtpTimestampNs timestamp, std::uint64_t sequence) noexcept {
     if (payload.empty()) {
         return std::unexpected(PtpError::Degraded);
     }
@@ -177,8 +184,7 @@ timestamp_packet_view(std::span<const std::byte> payload,
     };
 }
 
-std::expected<OwnedPtpClock, PtpError>
-open_ptp_clock(PtpDeviceIndex index) noexcept {
+std::expected<OwnedPtpClock, PtpError> open_ptp_clock(PtpDeviceIndex index) noexcept {
     const auto path = ptp_device_path(index);
     LocalFd fd{::open(path.bytes.data(), O_RDONLY | O_CLOEXEC)};
     if (!fd.is_open()) {
@@ -186,12 +192,10 @@ open_ptp_clock(PtpDeviceIndex index) noexcept {
         return std::unexpected(PtpError::OpenClockFailed);
     }
     const int raw = fd.release();
-    return OwnedPtpClock{
-        PtpClock{PtpClockFd{raw, typename PtpClockFd::Trusted{}}}};
+    return OwnedPtpClock{PtpClock{PtpClockFd{raw, typename PtpClockFd::Trusted{}}}};
 }
 
-std::expected<PtpClockCaps, PtpError>
-query_ptp_clock_caps(PtpClockFd fd) noexcept {
+std::expected<PtpClockCaps, PtpError> query_ptp_clock_caps(PtpClockFd fd) noexcept {
     ptp_clock_caps caps{};
     const int rc = ::ioctl(fd.value(), PTP_CLOCK_GETCAPS2, &caps);
     if (rc != 0) {
@@ -211,8 +215,7 @@ query_ptp_clock_caps(PtpClockFd fd) noexcept {
     };
 }
 
-std::expected<PtpTimestampNs, PtpError>
-ptp_now(PtpClockFd fd) noexcept {
+std::expected<PtpTimestampNs, PtpError> ptp_now(PtpClockFd fd) noexcept {
     timespec ts{};
     const int rc = ::clock_gettime(clockid_from_fd(fd), &ts);
     if (rc != 0) {
@@ -230,31 +233,18 @@ ptp_now(PtpClockFd fd) noexcept {
     // matters here — future federation-cache keys discriminate ptp_now
     // results from CLOCK_BOOTTIME results even though both project to
     // the same (DetSafe, Suspend, Pinning) tuple.
-    auto bytes = ::crucible::safety::mint_clock_source<
-        ::crucible::safety::ClockSource_v::PtpHwClock,
-        std::uint64_t>(
-        static_cast<std::uint64_t>(ts.tv_sec >= 0 ? ts.tv_sec : 0)
-            * 1'000'000'000ull
+    auto bytes = ::crucible::safety::mint_clock_source<::crucible::safety::ClockSource_v::PtpHwClock, std::uint64_t>(
+        static_cast<std::uint64_t>(ts.tv_sec >= 0 ? ts.tv_sec : 0) * 1'000'000'000ull
         + static_cast<std::uint64_t>(ts.tv_nsec >= 0 ? ts.tv_nsec : 0));
     static_cast<void>(std::move(bytes).consume());
     return timestamp_from_timespec(ts);
 }
 
-std::expected<void, PtpError>
-enable_socket_timestamping(cntp::SocketFd socket) noexcept {
-    const int flags =
-        SOF_TIMESTAMPING_RX_HARDWARE |
-        SOF_TIMESTAMPING_RX_SOFTWARE |
-        SOF_TIMESTAMPING_RAW_HARDWARE |
-        SOF_TIMESTAMPING_SOFTWARE |
-        SOF_TIMESTAMPING_OPT_CMSG |
-        SOF_TIMESTAMPING_OPT_TSONLY;
-    const int rc = ::setsockopt(
-        socket.value(),
-        SOL_SOCKET,
-        SO_TIMESTAMPING,
-        &flags,
-        static_cast<socklen_t>(sizeof(flags)));
+std::expected<void, PtpError> enable_socket_timestamping(cntp::SocketFd socket) noexcept {
+    const int flags = SOF_TIMESTAMPING_RX_HARDWARE | SOF_TIMESTAMPING_RX_SOFTWARE | SOF_TIMESTAMPING_RAW_HARDWARE
+                    | SOF_TIMESTAMPING_SOFTWARE | SOF_TIMESTAMPING_OPT_CMSG | SOF_TIMESTAMPING_OPT_TSONLY;
+    const int rc =
+        ::setsockopt(socket.value(), SOL_SOCKET, SO_TIMESTAMPING, &flags, static_cast<socklen_t>(sizeof(flags)));
     if (rc != 0) {
         static_cast<void>(errno);
         return std::unexpected(PtpError::SocketTimestampingFailed);
@@ -262,9 +252,8 @@ enable_socket_timestamping(cntp::SocketFd socket) noexcept {
     return {};
 }
 
-std::expected<void, PtpError>
-configure_hardware_timestamping(cntp::SocketFd control_socket,
-                                cntp::NicInterfaceName iface) noexcept {
+std::expected<void, PtpError> configure_hardware_timestamping(cntp::SocketFd control_socket,
+                                                              cntp::NicInterfaceName iface) noexcept {
     hwtstamp_config config{
         .flags = 0,
         .tx_type = HWTSTAMP_TX_ON,
@@ -294,9 +283,8 @@ configure_hardware_timestamping(cntp::SocketFd control_socket,
     return {};
 }
 
-std::expected<TimestampedPacket, PtpError>
-recv_with_hw_timestamp(cntp::SocketFd socket,
-                       std::span<std::byte> buffer) noexcept {
+std::expected<TimestampedPacket, PtpError> recv_with_hw_timestamp(cntp::SocketFd socket,
+                                                                  std::span<std::byte> buffer) noexcept {
     if (buffer.empty()) {
         return std::unexpected(PtpError::InvalidReceiveBuffer);
     }
@@ -322,11 +310,8 @@ recv_with_hw_timestamp(cntp::SocketFd socket,
         return std::unexpected(PtpError::RecvFailed);
     }
 
-    for (cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
-         cmsg != nullptr;
-         cmsg = CMSG_NXTHDR(&msg, cmsg)) {
-        if (cmsg->cmsg_level != SOL_SOCKET ||
-            cmsg->cmsg_type != SCM_TIMESTAMPING) {
+    for (cmsghdr* cmsg = CMSG_FIRSTHDR(&msg); cmsg != nullptr; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
+        if (cmsg->cmsg_level != SOL_SOCKET || cmsg->cmsg_type != SCM_TIMESTAMPING) {
             continue;
         }
         if (cmsg->cmsg_len < CMSG_LEN(sizeof(timespec) * 3u)) {
@@ -340,8 +325,7 @@ recv_with_hw_timestamp(cntp::SocketFd socket,
             return std::unexpected(PtpError::NoTimestamp);
         }
 
-        auto timestamp =
-            timestamp_from_timespec(has_hardware ? ts[2] : ts[0]);
+        auto timestamp = timestamp_from_timespec(has_hardware ? ts[2] : ts[0]);
         if (!timestamp.has_value()) {
             return std::unexpected(timestamp.error());
         }

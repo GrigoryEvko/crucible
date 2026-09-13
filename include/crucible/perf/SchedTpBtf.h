@@ -68,9 +68,9 @@
 
 #include <crucible/algebra/lattices/SyscallFamilyLattice.h>  // FIXY-V-179
 #include <crucible/effects/Capabilities.h>
-#include <crucible/effects/EffectRow.h>     // FIXY-U-083: row_contains_v
-#include <crucible/effects/ExecCtx.h>       // FIXY-U-083: IsExecCtx, row_type_of_t
-#include <crucible/fixy/syscall/Per.h>                       // FIXY-V-179
+#include <crucible/effects/EffectRow.h>  // FIXY-U-083: row_contains_v
+#include <crucible/effects/ExecCtx.h>  // FIXY-U-083: IsExecCtx, row_type_of_t
+#include <crucible/fixy/syscall/Per.h>  // FIXY-V-179
 #include <crucible/safety/Borrowed.h>
 #include <crucible/safety/Refined.h>
 
@@ -78,29 +78,27 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <tuple>                            // FIXY-V-179
+#include <tuple>  // FIXY-V-179
 
 namespace crucible::perf {
 
 class SchedTpBtf {
- public:
+public:
     // ─── Snapshot — consumer-shaped delta semantics ──────────────────
     //
     // Same shape as SchedSwitch::Snapshot — BTF-typed sched_switch
     // produces the same TimelineSchedEvent layout, so consumers that
     // accept either facade can use the same Snapshot diff idiom.
     struct Snapshot {
-        uint64_t ctx_switches   = 0;
+        uint64_t ctx_switches = 0;
         uint64_t timeline_index = 0;
 
         [[nodiscard]] Snapshot operator-(const Snapshot& older) const noexcept {
             Snapshot r;
-            if (__builtin_sub_overflow(ctx_switches, older.ctx_switches,
-                                        &r.ctx_switches)) [[unlikely]] {
+            if (__builtin_sub_overflow(ctx_switches, older.ctx_switches, &r.ctx_switches)) [[unlikely]] {
                 r.ctx_switches = 0;
             }
-            if (__builtin_sub_overflow(timeline_index, older.timeline_index,
-                                        &r.timeline_index)) [[unlikely]] {
+            if (__builtin_sub_overflow(timeline_index, older.timeline_index, &r.timeline_index)) [[unlikely]] {
                 r.timeline_index = 0;
             }
             return r;
@@ -121,8 +119,7 @@ class SchedTpBtf {
     // Same `effects::Init` capability gate as the other GAPS-004
     // facades — hot-path code holds no Init token, so this can never
     // be called from a hot frame.
-    [[nodiscard]] static std::optional<SchedTpBtf>
-        load(::crucible::effects::Init) noexcept;
+    [[nodiscard]] static std::optional<SchedTpBtf> load(::crucible::effects::Init) noexcept;
 
     // Total context switches recorded for our process since load().
     // ~1 µs (one bpf_map_lookup_elem against the cs_count ARRAY map).
@@ -136,8 +133,7 @@ class SchedTpBtf {
     // unchanged.  See SchedSwitch.h for the ts_ns-LAST completion
     // discipline and ACQUIRE-load reader idiom.  Empty span on
     // moved-from / un-loaded.
-    [[nodiscard]] safety::Borrowed<const TimelineSchedEvent, SchedTpBtf>
-        timeline_view() const noexcept;
+    [[nodiscard]] safety::Borrowed<const TimelineSchedEvent, SchedTpBtf> timeline_view() const noexcept;
 
     // Current write_idx of the sched_timeline ring buffer.  Reader
     // uses this to find the latest valid slot via
@@ -149,24 +145,21 @@ class SchedTpBtf {
     // SEC("tp_btf/sched_switch") program; cap of 8 matches the
     // inplace_vector<...,8> shape used by every other facade for
     // uniformity.
-    [[nodiscard]] safety::Refined<safety::bounded_above<8>, std::size_t>
-        attached_programs() const noexcept;
+    [[nodiscard]] safety::Refined<safety::bounded_above<8>, std::size_t> attached_programs() const noexcept;
 
     // bpf_program__attach failures.  Same bound as attached_programs.
     // Non-zero means BTF is unavailable on this kernel — set
     // CRUCIBLE_PERF_VERBOSE=1 to see why.
-    [[nodiscard]] safety::Refined<safety::bounded_above<8>, std::size_t>
-        attach_failures() const noexcept;
+    [[nodiscard]] safety::Refined<safety::bounded_above<8>, std::size_t> attach_failures() const noexcept;
 
-    SchedTpBtf(const SchedTpBtf&) =
-        delete("SchedTpBtf owns unique BPF object + mmap — copying would double-close");
-    SchedTpBtf& operator=(const SchedTpBtf&) =
-        delete("SchedTpBtf owns unique BPF object + mmap — copying would double-close");
+    SchedTpBtf(const SchedTpBtf&) = delete("SchedTpBtf owns unique BPF object + mmap — copying would double-close");
+    SchedTpBtf&
+    operator=(const SchedTpBtf&) = delete("SchedTpBtf owns unique BPF object + mmap — copying would double-close");
     SchedTpBtf(SchedTpBtf&&) noexcept;
     SchedTpBtf& operator=(SchedTpBtf&&) noexcept;
     ~SchedTpBtf();
 
- private:
+private:
     struct State;
     SchedTpBtf() noexcept;
 
@@ -182,9 +175,8 @@ class SchedTpBtf {
 // row.  Hot foreground and background-drain contexts must not engage
 // this surface; the Ctx-fit gate enforces that at the type level.
 template <class Ctx>
-concept CtxFitsSchedTpBtfMint =
-       ::crucible::effects::IsExecCtx<Ctx>
-    && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Init>;
+concept CtxFitsSchedTpBtfMint = ::crucible::effects::IsExecCtx<Ctx>
+                             && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Init>;
 
 // ── FIXY-V-179 — syscall-grant declaration ────────────────────────────
 //
@@ -196,25 +188,21 @@ concept CtxFitsSchedTpBtfMint =
 //   bpf             (41) → Privilege      → Row<IO, Block>     [V-179]
 //   perf_event_open (42) → Privilege      → Row<IO, Block>     [V-179]
 //   mmap            (21) → MemoryMapping  → Row<IO>
-using mint_sched_tp_btf_syscall_grants = std::tuple<
-    ::crucible::fixy::grant::syscall::per<
-        ::crucible::fixy::grant::syscall::SyscallId::bpf>,
-    ::crucible::fixy::grant::syscall::per<
-        ::crucible::fixy::grant::syscall::SyscallId::perf_event_open>,
-    ::crucible::fixy::grant::syscall::per<
-        ::crucible::fixy::grant::syscall::SyscallId::mmap>>;
+using mint_sched_tp_btf_syscall_grants =
+    std::tuple<::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::bpf>,
+               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::perf_event_open>,
+               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::mmap>>;
 
 namespace detail::v179_sched_tp_btf_grant_check {
 namespace fsc = ::crucible::fixy::grant::syscall;
 namespace fll = ::crucible::algebra::lattices;
-static_assert(::crucible::fixy::grant::family_tier_v<
-    fsc::per<fsc::SyscallId::bpf>>             == fll::SyscallFamily::Privilege);
-static_assert(::crucible::fixy::grant::family_tier_v<
-    fsc::per<fsc::SyscallId::perf_event_open>> == fll::SyscallFamily::Privilege);
-static_assert(::crucible::fixy::grant::family_tier_v<
-    fsc::per<fsc::SyscallId::mmap>>            == fll::SyscallFamily::MemoryMapping);
+static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::bpf>> == fll::SyscallFamily::Privilege);
+static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::perf_event_open>>
+              == fll::SyscallFamily::Privilege);
+static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::mmap>>
+              == fll::SyscallFamily::MemoryMapping);
 static_assert(std::tuple_size_v<mint_sched_tp_btf_syscall_grants> == 3,
-    "FIXY-V-179: mint_sched_tp_btf_syscall_grants drifted from 3 entries.");
+              "FIXY-V-179: mint_sched_tp_btf_syscall_grants drifted from 3 entries.");
 }  // namespace detail::v179_sched_tp_btf_grant_check
 
 template <::crucible::effects::IsExecCtx Ctx>
@@ -224,8 +212,7 @@ template <::crucible::effects::IsExecCtx Ctx>
 // histogram array, and heap-allocates std::unique_ptr<State>.
 // CLAUDE.md §XXI: compile-time evaluation would lie about the
 // runtime cost.
-[[nodiscard]] inline std::optional<SchedTpBtf>
-mint_sched_tp_btf(Ctx const&, ::crucible::effects::Init init) noexcept {
+[[nodiscard]] inline std::optional<SchedTpBtf> mint_sched_tp_btf(Ctx const&, ::crucible::effects::Init init) noexcept {
     return SchedTpBtf::load(init);
 }
 

@@ -135,8 +135,7 @@ template <typename R, typename... Args>
 struct is_noexcept_function<R(Args...)> : std::false_type {};
 
 template <typename F>
-inline constexpr bool is_noexcept_function_v =
-    is_noexcept_function<F>::value;
+inline constexpr bool is_noexcept_function_v = is_noexcept_function<F>::value;
 
 }  // namespace detail
 
@@ -147,14 +146,12 @@ inline constexpr bool is_noexcept_function_v =
 template <auto FnPtr>
 struct signature_traits {
     // The reflection of the function (not the pointer).
-    static constexpr auto function_reflection =
-        ^^std::remove_pointer_t<decltype(FnPtr)>;
+    static constexpr auto function_reflection = ^^std::remove_pointer_t<decltype(FnPtr)>;
 
     // Materialize the parameter-info vector into a static-storage
     // span so callers can splice across consteval→runtime boundaries
     // (per the GCC 16 reflection gotcha — see header doc).
-    static constexpr auto params = std::define_static_array(
-        std::meta::parameters_of(function_reflection));
+    static constexpr auto params = std::define_static_array(std::meta::parameters_of(function_reflection));
 
     static constexpr std::size_t arity = params.size();
 
@@ -170,26 +167,23 @@ struct signature_traits {
     // `typename [: ... :]`.  See GCC 16 P2996 implementation note in
     // safety/diag/StableName.h.
     template <std::size_t I>
-        requires (I < arity)
-    using param_type_t = typename [:params[I]:];
+        requires(I < arity)
+    using param_type_t = typename[:params[I]:];
 
     // Return type — `void` is fully supported.
-    using return_type =
-        typename [:std::meta::return_type_of(function_reflection):];
+    using return_type = typename[:std::meta::return_type_of(function_reflection):];
 
     // The bare function type (not the pointer).  Useful for
     // `std::is_invocable`-style checks where the consumer wants the
     // call-shape rather than the pointer kind.
-    using function_type =
-        typename [:^^std::remove_pointer_t<decltype(FnPtr)>:];
+    using function_type = typename[:^^std::remove_pointer_t<decltype(FnPtr)>:];
 
     // noexcept-ness of the function — extracted via partial
     // specialization on the function type.  Reflection's
     // `is_noexcept` query is not yet shipped in libstdc++ 16, so the
     // canonical type-trait pattern is used; the function_type is
     // already in hand from above.
-    static constexpr bool is_noexcept =
-        detail::is_noexcept_function_v<function_type>;
+    static constexpr bool is_noexcept = detail::is_noexcept_function_v<function_type>;
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -226,20 +220,22 @@ namespace detail::signature_traits_self_test {
 // ── Witness functions (free functions, distinct signatures) ────────
 
 inline void witness_nullary() noexcept {}
-inline int  witness_int_returning() noexcept { return 0; }
+inline int witness_int_returning() noexcept { return 0; }
 
-inline void witness_unary_int(int)            noexcept {}
-inline void witness_unary_int_ref(int&)       noexcept {}
-inline void witness_unary_int_rref(int&&)     noexcept {}
+inline void witness_unary_int(int) noexcept {}
+inline void witness_unary_int_ref(int&) noexcept {}
+inline void witness_unary_int_rref(int&&) noexcept {}
 inline void witness_unary_int_cref(int const&) noexcept {}
-inline void witness_unary_int_ptr(int*)       noexcept {}
+inline void witness_unary_int_ptr(int*) noexcept {}
 
-inline void witness_binary(int, double)       noexcept {}
+inline void witness_binary(int, double) noexcept {}
 inline void witness_ternary(int, double, char) noexcept {}
 
 inline auto witness_returning_double(int) noexcept -> double { return 0.0; }
 
-struct UserType { int v = 0; };
+struct UserType {
+    int v = 0;
+};
 inline void witness_user_cref(UserType const&) noexcept {}
 
 // ── arity claims ───────────────────────────────────────────────────
@@ -258,50 +254,36 @@ static_assert(arity_v<&witness_binary> == 2);
 
 // ── param_type_t splice — primitives ───────────────────────────────
 
-static_assert(std::is_same_v<
-    param_type_t<&witness_unary_int, 0>, int>);
+static_assert(std::is_same_v<param_type_t<&witness_unary_int, 0>, int>);
 
-static_assert(std::is_same_v<
-    param_type_t<&witness_unary_int_ref, 0>, int&>);
+static_assert(std::is_same_v<param_type_t<&witness_unary_int_ref, 0>, int&>);
 
-static_assert(std::is_same_v<
-    param_type_t<&witness_unary_int_rref, 0>, int&&>);
+static_assert(std::is_same_v<param_type_t<&witness_unary_int_rref, 0>, int&&>);
 
-static_assert(std::is_same_v<
-    param_type_t<&witness_unary_int_cref, 0>, int const&>);
+static_assert(std::is_same_v<param_type_t<&witness_unary_int_cref, 0>, int const&>);
 
-static_assert(std::is_same_v<
-    param_type_t<&witness_unary_int_ptr, 0>, int*>);
+static_assert(std::is_same_v<param_type_t<&witness_unary_int_ptr, 0>, int*>);
 
 // ── param_type_t splice — multi-argument ordering ───────────────────
 
-static_assert(std::is_same_v<
-    param_type_t<&witness_binary, 0>, int>);
-static_assert(std::is_same_v<
-    param_type_t<&witness_binary, 1>, double>);
+static_assert(std::is_same_v<param_type_t<&witness_binary, 0>, int>);
+static_assert(std::is_same_v<param_type_t<&witness_binary, 1>, double>);
 
-static_assert(std::is_same_v<
-    param_type_t<&witness_ternary, 0>, int>);
-static_assert(std::is_same_v<
-    param_type_t<&witness_ternary, 1>, double>);
-static_assert(std::is_same_v<
-    param_type_t<&witness_ternary, 2>, char>);
+static_assert(std::is_same_v<param_type_t<&witness_ternary, 0>, int>);
+static_assert(std::is_same_v<param_type_t<&witness_ternary, 1>, double>);
+static_assert(std::is_same_v<param_type_t<&witness_ternary, 2>, char>);
 
 // ── param_type_t splice — user types preserve qualifiers ───────────
 
-static_assert(std::is_same_v<
-    param_type_t<&witness_user_cref, 0>, UserType const&>);
+static_assert(std::is_same_v<param_type_t<&witness_user_cref, 0>, UserType const&>);
 
 // ── return_type extraction ─────────────────────────────────────────
 
-static_assert(std::is_same_v<
-    return_type_t<&witness_nullary>, void>);
+static_assert(std::is_same_v<return_type_t<&witness_nullary>, void>);
 
-static_assert(std::is_same_v<
-    return_type_t<&witness_int_returning>, int>);
+static_assert(std::is_same_v<return_type_t<&witness_int_returning>, int>);
 
-static_assert(std::is_same_v<
-    return_type_t<&witness_returning_double>, double>);
+static_assert(std::is_same_v<return_type_t<&witness_returning_double>, double>);
 
 // ── Distinct function pointers produce distinct trait specializations
 //     (sanity: the trait is parameterized on FnPtr value, not on the
@@ -309,17 +291,15 @@ static_assert(std::is_same_v<
 //      still produce distinct trait instantiations) ─────────────────
 
 inline void witness_alpha(int) noexcept {}
-inline void witness_beta(int)  noexcept {}
+inline void witness_beta(int) noexcept {}
 
 static_assert(arity_v<&witness_alpha> == arity_v<&witness_beta>);
-static_assert(std::is_same_v<
-    param_type_t<&witness_alpha, 0>,
-    param_type_t<&witness_beta, 0>>);
+static_assert(std::is_same_v<param_type_t<&witness_alpha, 0>, param_type_t<&witness_beta, 0>>);
 
 // ── noexcept detection ────────────────────────────────────────────
 
-inline void witness_throwing(int)               { /* may throw */ }
-inline void witness_nothrowing(int) noexcept    {}
+inline void witness_throwing(int) { /* may throw */ }
+inline void witness_nothrowing(int) noexcept {}
 
 static_assert(is_noexcept_v<&witness_nothrowing>);
 static_assert(!is_noexcept_v<&witness_throwing>);
@@ -332,29 +312,21 @@ static_assert(is_noexcept_v<&witness_nullary>);
 
 // ── function_type extraction (bare function type, not pointer) ────
 
-static_assert(std::is_same_v<
-    function_type_t<&witness_unary_int>, void(int) noexcept>);
-static_assert(std::is_same_v<
-    function_type_t<&witness_throwing>, void(int)>);
-static_assert(std::is_same_v<
-    function_type_t<&witness_nullary>, void() noexcept>);
-static_assert(std::is_same_v<
-    function_type_t<&witness_int_returning>, int() noexcept>);
+static_assert(std::is_same_v<function_type_t<&witness_unary_int>, void(int) noexcept>);
+static_assert(std::is_same_v<function_type_t<&witness_throwing>, void(int)>);
+static_assert(std::is_same_v<function_type_t<&witness_nullary>, void() noexcept>);
+static_assert(std::is_same_v<function_type_t<&witness_int_returning>, int() noexcept>);
 
 // ── Higher arity (4+ args) — confirms params indexing is not
 //     special-cased to small arities.  ───────────────────────────
 
-inline void witness_quaternary(int, double, char, float)
-    noexcept {}
-inline void witness_quinary(int, double, char, float, long)
-    noexcept {}
+inline void witness_quaternary(int, double, char, float) noexcept {}
+inline void witness_quinary(int, double, char, float, long) noexcept {}
 
 static_assert(arity_v<&witness_quaternary> == 4);
 static_assert(arity_v<&witness_quinary> == 5);
-static_assert(std::is_same_v<
-    param_type_t<&witness_quaternary, 3>, float>);
-static_assert(std::is_same_v<
-    param_type_t<&witness_quinary, 4>, long>);
+static_assert(std::is_same_v<param_type_t<&witness_quaternary, 3>, float>);
+static_assert(std::is_same_v<param_type_t<&witness_quinary, 4>, long>);
 
 // ── Array-decay parameters — `int[5]` decays to `int*` per the C
 //     adjusted-parameter-type rule. ─────────────────────────────
@@ -362,8 +334,7 @@ static_assert(std::is_same_v<
 inline void witness_array_decay(int[5]) noexcept {}
 
 static_assert(arity_v<&witness_array_decay> == 1);
-static_assert(std::is_same_v<
-    param_type_t<&witness_array_decay, 0>, int*>);
+static_assert(std::is_same_v<param_type_t<&witness_array_decay, 0>, int*>);
 
 // ── Function-decay parameters — `int()` decays to `int(*)()` per
 //     the C adjusted-parameter-type rule. ───────────────────────
@@ -371,8 +342,7 @@ static_assert(std::is_same_v<
 inline void witness_function_decay(int()) noexcept {}
 
 static_assert(arity_v<&witness_function_decay> == 1);
-static_assert(std::is_same_v<
-    param_type_t<&witness_function_decay, 0>, int(*)()>);
+static_assert(std::is_same_v<param_type_t<&witness_function_decay, 0>, int (*)()>);
 
 }  // namespace detail::signature_traits_self_test
 
@@ -454,10 +424,8 @@ inline bool signature_traits_smoke_test() noexcept {
         ok = ok && (arity_v<&witness_nullary> == 0);
         ok = ok && (arity_v<&witness_unary_int> == 1);
         ok = ok && (arity_v<&witness_binary> == 2);
-        ok = ok && std::is_same_v<
-            param_type_t<&witness_unary_int, 0>, int>;
-        ok = ok && std::is_same_v<
-            return_type_t<&witness_int_returning>, int>;
+        ok = ok && std::is_same_v<param_type_t<&witness_unary_int, 0>, int>;
+        ok = ok && std::is_same_v<return_type_t<&witness_int_returning>, int>;
         ok = ok && is_noexcept_v<&witness_nothrowing>;
         ok = ok && !is_noexcept_v<&witness_throwing>;
     }

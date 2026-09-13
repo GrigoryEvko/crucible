@@ -185,7 +185,7 @@ struct is_subsort<Refined<Pred, T>, T> : std::true_type {};
 // predicate_implies type-level specialisation.
 
 template <auto P, auto Q, typename T>
-    requires (implies_v<P, Q> && !std::is_same_v<decltype(P), decltype(Q)>)
+    requires(implies_v<P, Q> && !std::is_same_v<decltype(P), decltype(Q)>)
 struct is_subsort<Refined<P, T>, Refined<Q, T>> : std::true_type {};
 
 // ═════════════════════════════════════════════════════════════════════
@@ -272,8 +272,7 @@ struct is_subsort<Tagged<T, vessel_trust::Validated>, T> : std::true_type {};
 // Refined position via Send/Recv covariance.
 
 template <auto Pred, typename T, typename V>
-struct is_subsort<Refined<Pred, Tagged<T, V>>, Tagged<T, V>>
-    : std::true_type {};
+struct is_subsort<Refined<Pred, Tagged<T, V>>, Tagged<T, V>> : std::true_type {};
 
 // ═════════════════════════════════════════════════════════════════════
 // ── NumericalTier<Tight, P> ⩽ NumericalTier<Loose, P> ──────────────
@@ -291,8 +290,7 @@ struct is_subsort<Refined<Pred, Tagged<T, V>>, Tagged<T, V>>
 // payload values.
 
 template <Tolerance ProducerTier, Tolerance ConsumerTier, typename P>
-struct is_subsort<NumericalTier<ProducerTier, P>,
-                  NumericalTier<ConsumerTier, P>>
+struct is_subsort<NumericalTier<ProducerTier, P>, NumericalTier<ConsumerTier, P>>
     : std::bool_constant<ToleranceLattice::leq(ConsumerTier, ProducerTier)> {};
 
 // ═════════════════════════════════════════════════════════════════════
@@ -311,16 +309,24 @@ namespace detail::payload_subsort_self_test {
 
 // ── Fixture payloads ───────────────────────────────────────────────
 
-struct DispatchRequest { int op_id; };
-struct MemoryPlanByte  { unsigned char value; };
-struct ConfigEntry     { int field; };
-struct TensorTile      { float value[4]; };
+struct DispatchRequest {
+    int op_id;
+};
+struct MemoryPlanByte {
+    unsigned char value;
+};
+struct ConfigEntry {
+    int field;
+};
+struct TensorTile {
+    float value[4];
+};
 
 // ── Refined<P, T> ⩽ T positive cases ──────────────────────────────
 
-static_assert(is_subsort_v<Refined<positive, int>,            int>);
-static_assert(is_subsort_v<Refined<non_negative, int>,        int>);
-static_assert(is_subsort_v<Refined<non_zero, int>,            int>);
+static_assert(is_subsort_v<Refined<positive, int>, int>);
+static_assert(is_subsort_v<Refined<non_negative, int>, int>);
+static_assert(is_subsort_v<Refined<non_zero, int>, int>);
 static_assert(is_subsort_v<Refined<bounded_above<1024>, int>, int>);
 
 // Reverse direction is false (default primary template) — a bare T
@@ -330,20 +336,13 @@ static_assert(!is_subsort_v<int, Refined<non_negative, int>>);
 
 // ── Tagged<T, V> ⩽ T for safe-to-erase tags ────────────────────────
 
-static_assert(is_subsort_v<Tagged<DispatchRequest, source::Sanitized>,
-                            DispatchRequest>);
-static_assert(is_subsort_v<Tagged<DispatchRequest, source::FromInternal>,
-                            DispatchRequest>);
-static_assert(is_subsort_v<Tagged<ConfigEntry, source::FromConfig>,
-                            ConfigEntry>);
-static_assert(is_subsort_v<Tagged<ConfigEntry, source::FromDb>,
-                            ConfigEntry>);
-static_assert(is_subsort_v<Tagged<MemoryPlanByte, source::Durable>,
-                            MemoryPlanByte>);
-static_assert(is_subsort_v<Tagged<MemoryPlanByte, source::Computed>,
-                            MemoryPlanByte>);
-static_assert(is_subsort_v<Tagged<DispatchRequest, vessel_trust::Validated>,
-                            DispatchRequest>);
+static_assert(is_subsort_v<Tagged<DispatchRequest, source::Sanitized>, DispatchRequest>);
+static_assert(is_subsort_v<Tagged<DispatchRequest, source::FromInternal>, DispatchRequest>);
+static_assert(is_subsort_v<Tagged<ConfigEntry, source::FromConfig>, ConfigEntry>);
+static_assert(is_subsort_v<Tagged<ConfigEntry, source::FromDb>, ConfigEntry>);
+static_assert(is_subsort_v<Tagged<MemoryPlanByte, source::Durable>, MemoryPlanByte>);
+static_assert(is_subsort_v<Tagged<MemoryPlanByte, source::Computed>, MemoryPlanByte>);
+static_assert(is_subsort_v<Tagged<DispatchRequest, vessel_trust::Validated>, DispatchRequest>);
 
 // ── Tagged<T, V> ⩽ T for UNSAFE tags is FALSE ──────────────────────
 //
@@ -351,31 +350,25 @@ static_assert(is_subsort_v<Tagged<DispatchRequest, vessel_trust::Validated>,
 // retagged before flowing to a bare-T position; the type system
 // must not silently flow them.
 
-static_assert(!is_subsort_v<Tagged<DispatchRequest, source::External>,
-                             DispatchRequest>);
-static_assert(!is_subsort_v<Tagged<DispatchRequest, source::FromUser>,
-                             DispatchRequest>);
-static_assert(!is_subsort_v<Tagged<DispatchRequest, vessel_trust::FromPytorch>,
-                             DispatchRequest>);
+static_assert(!is_subsort_v<Tagged<DispatchRequest, source::External>, DispatchRequest>);
+static_assert(!is_subsort_v<Tagged<DispatchRequest, source::FromUser>, DispatchRequest>);
+static_assert(!is_subsort_v<Tagged<DispatchRequest, vessel_trust::FromPytorch>, DispatchRequest>);
 
 // ── Reverse direction is FALSE for every tag ───────────────────────
 
-static_assert(!is_subsort_v<DispatchRequest,
-                             Tagged<DispatchRequest, source::Sanitized>>);
-static_assert(!is_subsort_v<DispatchRequest,
-                             Tagged<DispatchRequest, source::External>>);
-static_assert(!is_subsort_v<DispatchRequest,
-                             Tagged<DispatchRequest, vessel_trust::Validated>>);
+static_assert(!is_subsort_v<DispatchRequest, Tagged<DispatchRequest, source::Sanitized>>);
+static_assert(!is_subsort_v<DispatchRequest, Tagged<DispatchRequest, source::External>>);
+static_assert(!is_subsort_v<DispatchRequest, Tagged<DispatchRequest, vessel_trust::Validated>>);
 
 // ── trust::* and access::* are NOT auto-flowed (epistemic content) ─
 
-static_assert(!is_subsort_v<Tagged<int, trust::Verified>,   int>);
-static_assert(!is_subsort_v<Tagged<int, trust::Tested>,     int>);
+static_assert(!is_subsort_v<Tagged<int, trust::Verified>, int>);
+static_assert(!is_subsort_v<Tagged<int, trust::Tested>, int>);
 static_assert(!is_subsort_v<Tagged<int, trust::Unverified>, int>);
-static_assert(!is_subsort_v<Tagged<int, trust::Assumed>,    int>);
-static_assert(!is_subsort_v<Tagged<int, access::RO>,        int>);
+static_assert(!is_subsort_v<Tagged<int, trust::Assumed>, int>);
+static_assert(!is_subsort_v<Tagged<int, access::RO>, int>);
 static_assert(!is_subsort_v<Tagged<int, access::WriteOnce>, int>);
-static_assert(!is_subsort_v<Tagged<int, access::AppendOnly>,int>);
+static_assert(!is_subsort_v<Tagged<int, access::AppendOnly>, int>);
 
 // ── version::V<N> is NOT auto-flowed ───────────────────────────────
 
@@ -384,86 +377,57 @@ static_assert(!is_subsort_v<Tagged<int, version::V<2>>, int>);
 
 // ── Stacked Refined<P, Tagged<T, V>> ⩽ Tagged<T, V> ────────────────
 
-static_assert(is_subsort_v<
-    Refined<positive, Tagged<int, source::Sanitized>>,
-    Tagged<int, source::Sanitized>>);
+static_assert(is_subsort_v<Refined<positive, Tagged<int, source::Sanitized>>, Tagged<int, source::Sanitized>>);
 
-static_assert(is_subsort_v<
-    Refined<bounded_above<1024>, Tagged<int, vessel_trust::Validated>>,
-    Tagged<int, vessel_trust::Validated>>);
+static_assert(is_subsort_v<Refined<bounded_above<1024>, Tagged<int, vessel_trust::Validated>>,
+                           Tagged<int, vessel_trust::Validated>>);
 
 // And the reverse remains false.
-static_assert(!is_subsort_v<
-    Tagged<int, source::Sanitized>,
-    Refined<positive, Tagged<int, source::Sanitized>>>);
+static_assert(!is_subsort_v<Tagged<int, source::Sanitized>, Refined<positive, Tagged<int, source::Sanitized>>>);
 
 // ── Reflexivity / identity (via primary is_same path) ──────────────
 
-static_assert(is_subsort_v<Tagged<int, source::Sanitized>,
-                            Tagged<int, source::Sanitized>>);
-static_assert(is_subsort_v<Refined<positive, int>,
-                            Refined<positive, int>>);
+static_assert(is_subsort_v<Tagged<int, source::Sanitized>, Tagged<int, source::Sanitized>>);
+static_assert(is_subsort_v<Refined<positive, int>, Refined<positive, int>>);
 static_assert(is_subsort_v<int, int>);
 
 // ── NumericalTier<Tight, P> ⩽ NumericalTier<Loose, P> ──────────────
 
 using BitexactTile = NumericalTier<Tolerance::BITEXACT, TensorTile>;
-using Fp32Tile     = NumericalTier<Tolerance::ULP_FP32, TensorTile>;
-using Fp16Tile     = NumericalTier<Tolerance::ULP_FP16, TensorTile>;
-using RelaxedTile  = NumericalTier<Tolerance::RELAXED, TensorTile>;
+using Fp32Tile = NumericalTier<Tolerance::ULP_FP32, TensorTile>;
+using Fp16Tile = NumericalTier<Tolerance::ULP_FP16, TensorTile>;
+using RelaxedTile = NumericalTier<Tolerance::RELAXED, TensorTile>;
 
-static_assert( is_subsort_v<BitexactTile, RelaxedTile>);
-static_assert( is_subsort_v<BitexactTile, Fp16Tile>);
-static_assert( is_subsort_v<Fp32Tile,     Fp16Tile>);
-static_assert(!is_subsort_v<RelaxedTile,  BitexactTile>);
-static_assert(!is_subsort_v<Fp16Tile,     Fp32Tile>);
+static_assert(is_subsort_v<BitexactTile, RelaxedTile>);
+static_assert(is_subsort_v<BitexactTile, Fp16Tile>);
+static_assert(is_subsort_v<Fp32Tile, Fp16Tile>);
+static_assert(!is_subsort_v<RelaxedTile, BitexactTile>);
+static_assert(!is_subsort_v<Fp16Tile, Fp32Tile>);
 
-static_assert( is_subtype_sync_v<
-    Send<BitexactTile, End>,
-    Send<RelaxedTile, End>>);
+static_assert(is_subtype_sync_v<Send<BitexactTile, End>, Send<RelaxedTile, End>>);
 
-static_assert(!is_subtype_sync_v<
-    Send<RelaxedTile, End>,
-    Send<BitexactTile, End>>);
+static_assert(!is_subtype_sync_v<Send<RelaxedTile, End>, Send<BitexactTile, End>>);
 
-static_assert( is_subtype_sync_v<
-    Recv<RelaxedTile, End>,
-    Recv<BitexactTile, End>>);
+static_assert(is_subtype_sync_v<Recv<RelaxedTile, End>, Recv<BitexactTile, End>>);
 
-static_assert(!is_subtype_sync_v<
-    Recv<BitexactTile, End>,
-    Recv<RelaxedTile, End>>);
+static_assert(!is_subtype_sync_v<Recv<BitexactTile, End>, Recv<RelaxedTile, End>>);
 
-static_assert( CompatibleClient<
-    Send<BitexactTile, End>,
-    Recv<RelaxedTile, End>>);
+static_assert(CompatibleClient<Send<BitexactTile, End>, Recv<RelaxedTile, End>>);
 
-static_assert(!CompatibleClient<
-    Send<RelaxedTile, End>,
-    Recv<BitexactTile, End>>);
+static_assert(!CompatibleClient<Send<RelaxedTile, End>, Recv<BitexactTile, End>>);
 
-static_assert( CompatibleServer<
-    Recv<RelaxedTile, End>,
-    Send<BitexactTile, End>>);
+static_assert(CompatibleServer<Recv<RelaxedTile, End>, Send<BitexactTile, End>>);
 
-static_assert(!CompatibleServer<
-    Recv<BitexactTile, End>,
-    Send<RelaxedTile, End>>);
+static_assert(!CompatibleServer<Recv<BitexactTile, End>, Send<RelaxedTile, End>>);
 
-static_assert( CompatibleClient<
-    Loop<Send<BitexactTile, Continue>>,
-    Loop<Recv<RelaxedTile, Continue>>>);
+static_assert(CompatibleClient<Loop<Send<BitexactTile, Continue>>, Loop<Recv<RelaxedTile, Continue>>>);
 
-static_assert(!CompatibleClient<
-    Loop<Send<RelaxedTile, Continue>>,
-    Loop<Recv<BitexactTile, Continue>>>);
+static_assert(!CompatibleClient<Loop<Send<RelaxedTile, Continue>>, Loop<Recv<BitexactTile, Continue>>>);
 
 // ── Different tags are unrelated ───────────────────────────────────
 
-static_assert(!is_subsort_v<Tagged<int, source::Sanitized>,
-                             Tagged<int, source::FromInternal>>);
-static_assert(!is_subsort_v<Tagged<int, source::FromConfig>,
-                             Tagged<int, source::FromDb>>);
+static_assert(!is_subsort_v<Tagged<int, source::Sanitized>, Tagged<int, source::FromInternal>>);
+static_assert(!is_subsort_v<Tagged<int, source::FromConfig>, Tagged<int, source::FromDb>>);
 
 // ── Cross-predicate refinement via implies_v (#227 + §22) ──────────
 //
@@ -472,59 +436,44 @@ static_assert(!is_subsort_v<Tagged<int, source::FromConfig>,
 // Where no implication exists, they remain unrelated siblings.
 
 // positive ⇒ non_negative  → Refined<positive, T> ⩽ Refined<non_neg, T>
-static_assert( is_subsort_v<Refined<positive, int>,
-                             Refined<non_negative, int>>);
+static_assert(is_subsort_v<Refined<positive, int>, Refined<non_negative, int>>);
 // reverse rejected
-static_assert(!is_subsort_v<Refined<non_negative, int>,
-                             Refined<positive, int>>);
+static_assert(!is_subsort_v<Refined<non_negative, int>, Refined<positive, int>>);
 
 // positive ⇒ non_zero
-static_assert( is_subsort_v<Refined<positive, int>,
-                             Refined<non_zero, int>>);
+static_assert(is_subsort_v<Refined<positive, int>, Refined<non_zero, int>>);
 
 // power_of_two ⇒ non_zero
-static_assert( is_subsort_v<Refined<power_of_two, std::size_t>,
-                             Refined<non_zero, std::size_t>>);
+static_assert(is_subsort_v<Refined<power_of_two, std::size_t>, Refined<non_zero, std::size_t>>);
 
 // non_zero does NOT imply non_negative (non_zero admits negative
 // values like -3; non_negative does not).
-static_assert(!is_subsort_v<Refined<non_zero, int>,
-                             Refined<non_negative, int>>);
+static_assert(!is_subsort_v<Refined<non_zero, int>, Refined<non_negative, int>>);
 
 // Parameterised: BoundedAbove<8> ⇒ BoundedAbove<16>
-static_assert( is_subsort_v<Refined<bounded_above<8u>, unsigned>,
-                             Refined<bounded_above<16u>, unsigned>>);
-static_assert(!is_subsort_v<Refined<bounded_above<16u>, unsigned>,
-                             Refined<bounded_above<8u>, unsigned>>);
+static_assert(is_subsort_v<Refined<bounded_above<8u>, unsigned>, Refined<bounded_above<16u>, unsigned>>);
+static_assert(!is_subsort_v<Refined<bounded_above<16u>, unsigned>, Refined<bounded_above<8u>, unsigned>>);
 
 // Parameterised: InRange<10, 20> ⇒ InRange<0, 100>
-static_assert( is_subsort_v<Refined<in_range<10, 20>, int>,
-                             Refined<in_range<0, 100>, int>>);
+static_assert(is_subsort_v<Refined<in_range<10, 20>, int>, Refined<in_range<0, 100>, int>>);
 // Strictly tighter range strictly inside looser one.
-static_assert(!is_subsort_v<Refined<in_range<0, 100>, int>,
-                             Refined<in_range<10, 20>, int>>);
+static_assert(!is_subsort_v<Refined<in_range<0, 100>, int>, Refined<in_range<10, 20>, int>>);
 // Disjoint ranges: neither subtype.
-static_assert(!is_subsort_v<Refined<in_range<0, 10>, int>,
-                             Refined<in_range<20, 30>, int>>);
+static_assert(!is_subsort_v<Refined<in_range<0, 10>, int>, Refined<in_range<20, 30>, int>>);
 
 // Parameterised: InRange<L, H> ⇒ BoundedAbove<H>
-static_assert( is_subsort_v<Refined<in_range<0, 100>, int>,
-                             Refined<bounded_above<100>, int>>);
+static_assert(is_subsort_v<Refined<in_range<0, 100>, int>, Refined<bounded_above<100>, int>>);
 
 // Parameterised: Aligned<64> ⇒ Aligned<32> ⇒ Aligned<8>
 //   (transitivity is the USER's contract per SessionSubtype.h note,
 //    not auto-closed; each direct step is checked here)
-static_assert( is_subsort_v<Refined<aligned<64>, void*>,
-                             Refined<aligned<32>, void*>>);
-static_assert( is_subsort_v<Refined<aligned<32>, void*>,
-                             Refined<aligned<8>, void*>>);
-static_assert(!is_subsort_v<Refined<aligned<8>, void*>,
-                             Refined<aligned<32>, void*>>);
+static_assert(is_subsort_v<Refined<aligned<64>, void*>, Refined<aligned<32>, void*>>);
+static_assert(is_subsort_v<Refined<aligned<32>, void*>, Refined<aligned<8>, void*>>);
+static_assert(!is_subsort_v<Refined<aligned<8>, void*>, Refined<aligned<32>, void*>>);
 
 // Reflexivity remains intact via the std::is_same fall-through (the
 // strengthening spec's `!std::is_same_v` guard prevents shadowing).
-static_assert( is_subsort_v<Refined<positive, int>,
-                             Refined<positive, int>>);
+static_assert(is_subsort_v<Refined<positive, int>, Refined<positive, int>>);
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Protocol-level composition: Send / Recv covariance picks up ────
@@ -544,18 +493,14 @@ static_assert( is_subsort_v<Refined<positive, int>,
 // produce the predicate from nothing).
 
 // Send: refined payload flows to bare-payload position (covariance).
-static_assert(is_subtype_sync_v<
-    Send<Refined<positive, int>, End>,
-    Send<int, End>>);
+static_assert(is_subtype_sync_v<Send<Refined<positive, int>, End>, Send<int, End>>);
 
 // The reverse direction is rejected: a sender promising bare int
 // cannot stand where Send<Refined<positive, int>, End> is expected,
 // because the recipient at that position is entitled to the
 // predicate.  Covariance + (T ⩽ Refined<P, T> is false) = the whole
 // Send relation is false in this direction.
-static_assert(!is_subtype_sync_v<
-    Send<int, End>,
-    Send<Refined<positive, int>, End>>);
+static_assert(!is_subtype_sync_v<Send<int, End>, Send<Refined<positive, int>, End>>);
 
 // Recv: payload contravariance.  A receiver expecting a Refined value
 // can stand where the supertype expects a bare-payload Recv (because
@@ -573,85 +518,57 @@ static_assert(!is_subtype_sync_v<
 // producer to consumer" direction works on Send; the "looser is
 // substitutable for stricter" direction works on Recv.
 
-static_assert(is_subtype_sync_v<
-    Recv<int, End>,
-    Recv<Refined<positive, int>, End>>);
+static_assert(is_subtype_sync_v<Recv<int, End>, Recv<Refined<positive, int>, End>>);
 
-static_assert(!is_subtype_sync_v<
-    Recv<Refined<positive, int>, End>,
-    Recv<int, End>>);
+static_assert(!is_subtype_sync_v<Recv<Refined<positive, int>, End>, Recv<int, End>>);
 
 // Tagged provenance through Send: Sanitized flows to bare.
-static_assert(is_subtype_sync_v<
-    Send<Tagged<int, source::Sanitized>, End>,
-    Send<int, End>>);
+static_assert(is_subtype_sync_v<Send<Tagged<int, source::Sanitized>, End>, Send<int, End>>);
 
 // External does NOT flow to bare — the load-bearing FFI gap-closure.
-static_assert(!is_subtype_sync_v<
-    Send<Tagged<int, source::External>, End>,
-    Send<int, End>>);
+static_assert(!is_subtype_sync_v<Send<Tagged<int, source::External>, End>, Send<int, End>>);
 
 // vessel_trust::Validated flows to bare; FromPytorch does not.
-static_assert(is_subtype_sync_v<
-    Send<Tagged<int, vessel_trust::Validated>, End>,
-    Send<int, End>>);
+static_assert(is_subtype_sync_v<Send<Tagged<int, vessel_trust::Validated>, End>, Send<int, End>>);
 
-static_assert(!is_subtype_sync_v<
-    Send<Tagged<int, vessel_trust::FromPytorch>, End>,
-    Send<int, End>>);
+static_assert(!is_subtype_sync_v<Send<Tagged<int, vessel_trust::FromPytorch>, End>, Send<int, End>>);
 
 // Recv contravariance for Tagged: a recipient willing to accept bare
 // int can substitute for one expecting Sanitized, because they're
 // happy with the looser type.
-static_assert(is_subtype_sync_v<
-    Recv<int, End>,
-    Recv<Tagged<int, source::Sanitized>, End>>);
+static_assert(is_subtype_sync_v<Recv<int, End>, Recv<Tagged<int, source::Sanitized>, End>>);
 
 // Loop / Continue propagation (the axioms compose through Loop bodies).
-static_assert(is_subtype_sync_v<
-    Loop<Send<Refined<positive, int>, Continue>>,
-    Loop<Send<int, Continue>>>);
+static_assert(is_subtype_sync_v<Loop<Send<Refined<positive, int>, Continue>>, Loop<Send<int, Continue>>>);
 
 // ── Cross-predicate strengthening through Send / Recv (#227 + §22) ─
 
 // Send covariance: stronger refinement subsumes weaker.
-static_assert(is_subtype_sync_v<
-    Send<Refined<positive, int>, End>,
-    Send<Refined<non_negative, int>, End>>);
+static_assert(is_subtype_sync_v<Send<Refined<positive, int>, End>, Send<Refined<non_negative, int>, End>>);
 
 // Reverse rejected: the recipient at the supertype position is
 // entitled to the stronger predicate; weaker doesn't satisfy.
-static_assert(!is_subtype_sync_v<
-    Send<Refined<non_negative, int>, End>,
-    Send<Refined<positive, int>, End>>);
+static_assert(!is_subtype_sync_v<Send<Refined<non_negative, int>, End>, Send<Refined<positive, int>, End>>);
 
 // Recv contravariance: the looser-payload recipient stands where the
 // stricter-payload position is expected.
-static_assert(is_subtype_sync_v<
-    Recv<Refined<non_negative, int>, End>,
-    Recv<Refined<positive, int>, End>>);
+static_assert(is_subtype_sync_v<Recv<Refined<non_negative, int>, End>, Recv<Refined<positive, int>, End>>);
 
-static_assert(!is_subtype_sync_v<
-    Recv<Refined<positive, int>, End>,
-    Recv<Refined<non_negative, int>, End>>);
+static_assert(!is_subtype_sync_v<Recv<Refined<positive, int>, End>, Recv<Refined<non_negative, int>, End>>);
 
 // Parameterised: tighter BoundedAbove subtypes looser via Send.
-static_assert(is_subtype_sync_v<
-    Send<Refined<bounded_above<1024u>, unsigned>, End>,
-    Send<Refined<bounded_above<4096u>, unsigned>, End>>);
+static_assert(is_subtype_sync_v<Send<Refined<bounded_above<1024u>, unsigned>, End>,
+                                Send<Refined<bounded_above<4096u>, unsigned>, End>>);
 
 // Loop body strengthening composes through Continue.
-static_assert(is_subtype_sync_v<
-    Loop<Send<Refined<positive, int>, Continue>>,
-    Loop<Send<Refined<non_negative, int>, Continue>>>);
+static_assert(
+    is_subtype_sync_v<Loop<Send<Refined<positive, int>, Continue>>, Loop<Send<Refined<non_negative, int>, Continue>>>);
 
 // Select branch covariance: each branch's Send-payload subsumption
 // flows independently.
-static_assert(is_subtype_sync_v<
-    Select<Send<Refined<positive, int>, End>,
-           Send<Tagged<MemoryPlanByte, source::Sanitized>, End>>,
-    Select<Send<int, End>,
-           Send<MemoryPlanByte, End>>>);
+static_assert(
+    is_subtype_sync_v<Select<Send<Refined<positive, int>, End>, Send<Tagged<MemoryPlanByte, source::Sanitized>, End>>,
+                      Select<Send<int, End>, Send<MemoryPlanByte, End>>>);
 
 // Offer branch contravariance: a wider Offer with refined-payload
 // Recvs is a subtype of a narrower Offer with bare-payload Recvs (the
@@ -670,9 +587,7 @@ static_assert(is_subtype_sync_v<
 // asymmetry, the receiver of the looser type can stand for the
 // receiver of the stricter type.
 
-static_assert(is_subtype_sync_v<
-    Offer<Recv<int, End>>,
-    Offer<Recv<Refined<positive, int>, End>>>);
+static_assert(is_subtype_sync_v<Offer<Recv<int, End>>, Offer<Recv<Refined<positive, int>, End>>>);
 
 }  // namespace detail::payload_subsort_self_test
 #endif  // CRUCIBLE_SESSION_SELF_TESTS

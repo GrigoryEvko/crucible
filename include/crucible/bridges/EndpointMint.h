@@ -92,21 +92,14 @@ namespace crucible::bridges {
 // Receiver's both writing to the same log produces a unified audit
 // trail with monotonic step_ids across both sides).
 
-template <class Substr,
-          ::crucible::concurrent::Direction Dir,
-          ::crucible::effects::IsExecCtx Ctx>
+template <class Substr, ::crucible::concurrent::Direction Dir, ::crucible::effects::IsExecCtx Ctx>
     requires ::crucible::concurrent::IsBridgeableDirection<Substr, Dir>
-[[nodiscard]] constexpr auto mint_recording_endpoint(
-    ::crucible::concurrent::Endpoint<Substr, Dir, Ctx>&& ep,
-    ::crucible::safety::proto::SessionEventLog& log,
-    ::crucible::safety::proto::RoleTagId self_role,
-    ::crucible::safety::proto::RoleTagId peer_role) noexcept
-{
-    return ::crucible::safety::proto::mint_recording_session(
-        std::move(ep).into_bare_session(),
-        log,
-        self_role,
-        peer_role);
+[[nodiscard]] constexpr auto mint_recording_endpoint(::crucible::concurrent::Endpoint<Substr, Dir, Ctx>&& ep,
+                                                     ::crucible::safety::proto::SessionEventLog& log,
+                                                     ::crucible::safety::proto::RoleTagId self_role,
+                                                     ::crucible::safety::proto::RoleTagId peer_role) noexcept {
+    return ::crucible::safety::proto::mint_recording_session(std::move(ep).into_bare_session(), log, self_role,
+                                                             peer_role);
 }
 
 // ── mint_crash_watched_endpoint<PeerTag>(ep, flag) ─────────────────
@@ -119,31 +112,24 @@ template <class Substr,
 //
 // Returns the standard CrashWatchedHandle from bridges/CrashTransport.h.
 
-template <class PeerTag,
-          class Substr,
-          ::crucible::concurrent::Direction Dir,
-          ::crucible::effects::IsExecCtx Ctx>
+template <class PeerTag, class Substr, ::crucible::concurrent::Direction Dir, ::crucible::effects::IsExecCtx Ctx>
     requires ::crucible::concurrent::IsBridgeableDirection<Substr, Dir>
-[[nodiscard]] constexpr auto mint_crash_watched_endpoint(
-    ::crucible::concurrent::Endpoint<Substr, Dir, Ctx>&& ep,
-    ::crucible::safety::OneShotFlag& flag) noexcept
-{
-    return ::crucible::safety::proto::mint_crash_watched_session<PeerTag>(
-        std::move(ep).into_bare_session(),
-        flag);
+[[nodiscard]] constexpr auto mint_crash_watched_endpoint(::crucible::concurrent::Endpoint<Substr, Dir, Ctx>&& ep,
+                                                         ::crucible::safety::OneShotFlag& flag) noexcept {
+    return ::crucible::safety::proto::mint_crash_watched_session<PeerTag>(std::move(ep).into_bare_session(), flag);
 }
 
 // ── Self-test block ─────────────────────────────────────────────────
 namespace detail::endpoint_mint_self_test {
 
-namespace eff   = ::crucible::effects;
-namespace conc  = ::crucible::concurrent;
+namespace eff = ::crucible::effects;
+namespace conc = ::crucible::concurrent;
 namespace proto = ::crucible::safety::proto;
 
 struct UserTag {};
 using SmallSpsc = conc::PermissionedSpscChannel<int, 64, UserTag>;
-using ProdEp    = conc::Endpoint<SmallSpsc, conc::Direction::Producer, eff::HotFgCtx>;
-using ConsEp    = conc::Endpoint<SmallSpsc, conc::Direction::Consumer, eff::BgDrainCtx>;
+using ProdEp = conc::Endpoint<SmallSpsc, conc::Direction::Producer, eff::HotFgCtx>;
+using ConsEp = conc::Endpoint<SmallSpsc, conc::Direction::Consumer, eff::BgDrainCtx>;
 
 // ── Type-level pinning of the bridge view return types ─────────────
 //
@@ -162,19 +148,12 @@ using ConsHead = proto::Recv<int, proto::Continue>;
 
 // RecordingSessionHandle parametrized over the same Proto + bare
 // SessionHandle Resource (Handle*).
-using ExpectedRecording =
-    proto::RecordingSessionHandle<ProdHead,
-                                   typename SmallSpsc::ProducerHandle*,
-                                   ProdProto>;
+using ExpectedRecording = proto::RecordingSessionHandle<ProdHead, typename SmallSpsc::ProducerHandle*, ProdProto>;
 
 // CrashWatchedHandle parametrized similarly with a PeerTag.
 struct PeerA {};
-using ExpectedCrashWatched =
-    proto::CrashWatchedHandle<ProdHead,
-                               typename SmallSpsc::ProducerHandle*,
-                               PeerA,
-                               proto::CrashClass::Abort,
-                               ProdProto>;
+using ExpectedCrashWatched = proto::CrashWatchedHandle<ProdHead, typename SmallSpsc::ProducerHandle*, PeerA,
+                                                       proto::CrashClass::Abort, ProdProto>;
 
 }  // namespace detail::endpoint_mint_self_test
 

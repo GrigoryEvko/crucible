@@ -78,7 +78,7 @@
 // ═════════════════════════════════════════════════════════════════════
 
 #include <crucible/Platform.h>
-#include <crucible/safety/Diagnostic.h>           // Category enum
+#include <crucible/safety/Diagnostic.h>  // Category enum
 
 #include <source_location>
 #include <string_view>
@@ -100,8 +100,7 @@ namespace crucible::safety::diag {
 // Sinks MUST be noexcept and async-signal-safe-aware (the runtime
 // may invoke from contexts including signal handlers).
 
-using violation_sink_t =
-    void (*)(Category, std::string_view, std::string_view) noexcept;
+using violation_sink_t = void (*)(Category, std::string_view, std::string_view) noexcept;
 
 // ── default_violation_sink — fprintf-to-stderr emitter ────────────
 //
@@ -112,9 +111,7 @@ using violation_sink_t =
 // responsible).  Uses fprintf to stderr; this is NOT signal-safe but
 // is async-signal-OK on Linux/glibc for the common case.
 [[gnu::cold]]
-void default_violation_sink(Category cat,
-                            std::string_view fn,
-                            std::string_view detail) noexcept;
+void default_violation_sink(Category cat, std::string_view fn, std::string_view detail) noexcept;
 
 // ── set_violation_sink — install a custom sink ────────────────────
 //
@@ -149,9 +146,7 @@ violation_sink_t current_violation_sink() noexcept;
 //       return std::unexpected{Error::PredicateFailed};
 //   }
 [[gnu::cold]]
-void report_violation(Category cat,
-                      std::string_view fn,
-                      std::string_view detail) noexcept;
+void report_violation(Category cat, std::string_view fn, std::string_view detail) noexcept;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── report_violation_and_abort — emit + std::abort ─────────────────
@@ -169,9 +164,7 @@ void report_violation(Category cat,
 //   * Reached an unreachable arm of a typestate machine (the type
 //     system says we shouldn't be here)
 [[gnu::cold]] [[noreturn]]
-void report_violation_and_abort(Category cat,
-                                std::string_view fn,
-                                std::string_view detail) noexcept;
+void report_violation_and_abort(Category cat, std::string_view fn, std::string_view detail) noexcept;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── report_violation_at — source_location-capturing variant ────────
@@ -191,16 +184,12 @@ void report_violation_and_abort(Category cat,
 // function name + file/line.
 
 [[gnu::cold]]
-void report_violation_at(
-    Category cat,
-    std::string_view detail,
-    std::source_location loc = std::source_location::current()) noexcept;
+void report_violation_at(Category cat, std::string_view detail,
+                         std::source_location loc = std::source_location::current()) noexcept;
 
 [[gnu::cold]] [[noreturn]]
-void report_violation_at_and_abort(
-    Category cat,
-    std::string_view detail,
-    std::source_location loc = std::source_location::current()) noexcept;
+void report_violation_at_and_abort(Category cat, std::string_view detail,
+                                   std::source_location loc = std::source_location::current()) noexcept;
 
 }  // namespace crucible::safety::diag
 
@@ -227,8 +216,7 @@ void report_violation_at_and_abort(
 // `_AND_ABORT` variant aborts after emission (use for unrecoverable
 // MemSafe / NullSafe / DetSafe axiom violations).
 
-#define CRUCIBLE_RUNTIME_VIOLATION(category, detail) \
-    ::crucible::safety::diag::report_violation_at((category), (detail))
+#define CRUCIBLE_RUNTIME_VIOLATION(category, detail) ::crucible::safety::diag::report_violation_at((category), (detail))
 
 #define CRUCIBLE_RUNTIME_VIOLATION_AND_ABORT(category, detail) \
     ::crucible::safety::diag::report_violation_at_and_abort((category), (detail))

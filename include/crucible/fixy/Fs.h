@@ -73,19 +73,19 @@
 //   5. commit_atomic with Path<External> target rejected.
 //   6. mint_file in a ctx that lacks the Block cap rejected.
 
-#include <crucible/fixy/Grant.h>            // grant_base, which_dim primary
-#include <crucible/safety/DimensionTraits.h>// DimensionAxis::SyscallSurface
-#include <crucible/safety/Path.h>           // Path<Source> + sanitize_path
-                                            // (transitively pulls
-                                            // PathTraversal.h via V-233
-                                            // back-edge include)
-#include <crucible/safety/source/Path.h>    // FromUserPath/Env/Config
+#include <crucible/fixy/Grant.h>  // grant_base, which_dim primary
+#include <crucible/safety/DimensionTraits.h>  // DimensionAxis::SyscallSurface
+#include <crucible/safety/Path.h>  // Path<Source> + sanitize_path
+// (transitively pulls
+// PathTraversal.h via V-233
+// back-edge include)
+#include <crucible/safety/source/Path.h>  // FromUserPath/Env/Config
 
-#include <crucible/handles/FileHandle.h>    // safety::FileHandle
-#include <crucible/safety/Linear.h>         // safety::Linear
+#include <crucible/handles/FileHandle.h>  // safety::FileHandle
+#include <crucible/safety/Linear.h>  // safety::Linear
 
-#include <crucible/effects/ExecCtx.h>       // IsExecCtx + row_type_of_t
-#include <crucible/effects/EffectRow.h>     // row_contains_v
+#include <crucible/effects/ExecCtx.h>  // IsExecCtx + row_type_of_t
+#include <crucible/effects/EffectRow.h>  // row_contains_v
 #include <crucible/effects/Capabilities.h>  // effects::Effect
 
 #include <fcntl.h>
@@ -113,29 +113,29 @@ namespace crucible::fixy::fs {
 // type-level identities only.
 
 namespace open_mode {
-struct ReadOnly       final {};
-struct WriteCreate    final {};  // O_WRONLY | O_CREAT
-struct WriteAppend    final {};  // O_WRONLY | O_CREAT | O_APPEND
-struct WriteTruncate  final {};  // O_WRONLY | O_CREAT | O_TRUNC
-struct ReadWrite      final {};  // O_RDWR  | O_CREAT
-struct TmpFile        final {};  // O_TMPFILE | O_RDWR  (anonymous temp)
+struct ReadOnly final {};
+struct WriteCreate final {};  // O_WRONLY | O_CREAT
+struct WriteAppend final {};  // O_WRONLY | O_CREAT | O_APPEND
+struct WriteTruncate final {};  // O_WRONLY | O_CREAT | O_TRUNC
+struct ReadWrite final {};  // O_RDWR  | O_CREAT
+struct TmpFile final {};  // O_TMPFILE | O_RDWR  (anonymous temp)
 }  // namespace open_mode
 
 template <typename Mode>
 struct open_mode_flags;  // primary undefined — specialized per tag
 
-template <> struct open_mode_flags<open_mode::ReadOnly>
-    : std::integral_constant<int, O_RDONLY> {};
-template <> struct open_mode_flags<open_mode::WriteCreate>
-    : std::integral_constant<int, O_WRONLY | O_CREAT> {};
-template <> struct open_mode_flags<open_mode::WriteAppend>
-    : std::integral_constant<int, O_WRONLY | O_CREAT | O_APPEND> {};
-template <> struct open_mode_flags<open_mode::WriteTruncate>
-    : std::integral_constant<int, O_WRONLY | O_CREAT | O_TRUNC> {};
-template <> struct open_mode_flags<open_mode::ReadWrite>
-    : std::integral_constant<int, O_RDWR | O_CREAT> {};
-template <> struct open_mode_flags<open_mode::TmpFile>
-    : std::integral_constant<int, O_TMPFILE | O_RDWR> {};
+template <>
+struct open_mode_flags<open_mode::ReadOnly> : std::integral_constant<int, O_RDONLY> {};
+template <>
+struct open_mode_flags<open_mode::WriteCreate> : std::integral_constant<int, O_WRONLY | O_CREAT> {};
+template <>
+struct open_mode_flags<open_mode::WriteAppend> : std::integral_constant<int, O_WRONLY | O_CREAT | O_APPEND> {};
+template <>
+struct open_mode_flags<open_mode::WriteTruncate> : std::integral_constant<int, O_WRONLY | O_CREAT | O_TRUNC> {};
+template <>
+struct open_mode_flags<open_mode::ReadWrite> : std::integral_constant<int, O_RDWR | O_CREAT> {};
+template <>
+struct open_mode_flags<open_mode::TmpFile> : std::integral_constant<int, O_TMPFILE | O_RDWR> {};
 
 template <typename Mode>
 inline constexpr int open_mode_flags_v = open_mode_flags<Mode>::value;
@@ -151,35 +151,35 @@ inline constexpr int open_mode_flags_v = open_mode_flags<Mode>::value;
 // fd-leak-to-child bug; the default-on discipline prevents it.
 
 namespace flag {
-struct CloseOnExec    final {};  // O_CLOEXEC (default-on)
-struct NoFollow       final {};  // O_NOFOLLOW  — refuse symlinks
-struct Directory      final {};  // O_DIRECTORY — must be dir
-struct DataSync       final {};  // O_DSYNC     — data-synced writes
-struct FullSync       final {};  // O_SYNC      — data+meta synced
-struct Direct         final {};  // O_DIRECT    — bypass page cache
-struct NonBlock       final {};  // O_NONBLOCK  — non-blocking I/O
-struct Path           final {};  // O_PATH      — pathfd, no real open
+struct CloseOnExec final {};  // O_CLOEXEC (default-on)
+struct NoFollow final {};  // O_NOFOLLOW  — refuse symlinks
+struct Directory final {};  // O_DIRECTORY — must be dir
+struct DataSync final {};  // O_DSYNC     — data-synced writes
+struct FullSync final {};  // O_SYNC      — data+meta synced
+struct Direct final {};  // O_DIRECT    — bypass page cache
+struct NonBlock final {};  // O_NONBLOCK  — non-blocking I/O
+struct Path final {};  // O_PATH      — pathfd, no real open
 }  // namespace flag
 
 template <typename Flag>
 struct flag_bits;  // primary undefined — specialized per tag
 
-template <> struct flag_bits<flag::CloseOnExec>
-    : std::integral_constant<int, O_CLOEXEC> {};
-template <> struct flag_bits<flag::NoFollow>
-    : std::integral_constant<int, O_NOFOLLOW> {};
-template <> struct flag_bits<flag::Directory>
-    : std::integral_constant<int, O_DIRECTORY> {};
-template <> struct flag_bits<flag::DataSync>
-    : std::integral_constant<int, O_DSYNC> {};
-template <> struct flag_bits<flag::FullSync>
-    : std::integral_constant<int, O_SYNC> {};
-template <> struct flag_bits<flag::Direct>
-    : std::integral_constant<int, O_DIRECT> {};
-template <> struct flag_bits<flag::NonBlock>
-    : std::integral_constant<int, O_NONBLOCK> {};
-template <> struct flag_bits<flag::Path>
-    : std::integral_constant<int, O_PATH> {};
+template <>
+struct flag_bits<flag::CloseOnExec> : std::integral_constant<int, O_CLOEXEC> {};
+template <>
+struct flag_bits<flag::NoFollow> : std::integral_constant<int, O_NOFOLLOW> {};
+template <>
+struct flag_bits<flag::Directory> : std::integral_constant<int, O_DIRECTORY> {};
+template <>
+struct flag_bits<flag::DataSync> : std::integral_constant<int, O_DSYNC> {};
+template <>
+struct flag_bits<flag::FullSync> : std::integral_constant<int, O_SYNC> {};
+template <>
+struct flag_bits<flag::Direct> : std::integral_constant<int, O_DIRECT> {};
+template <>
+struct flag_bits<flag::NonBlock> : std::integral_constant<int, O_NONBLOCK> {};
+template <>
+struct flag_bits<flag::Path> : std::integral_constant<int, O_PATH> {};
 
 template <typename Flag>
 inline constexpr int flag_bits_v = flag_bits<Flag>::value;
@@ -194,11 +194,11 @@ inline constexpr int flag_bits_v = flag_bits<Flag>::value;
 // it: if you don't need durability, don't call sync().
 
 namespace sync_op {
-struct None             final {};  // no syscall — page-cache only
-struct Fdatasync        final {};  // ::fdatasync   (data-only)
-struct Fsync            final {};  // ::fsync       (data + metadata)
-struct Msync            final {};  // ::msync       (memory-mapped)
-struct FsyncParentDir   final {};  // ::fsync(dirfd) — directory entry
+struct None final {};  // no syscall — page-cache only
+struct Fdatasync final {};  // ::fdatasync   (data-only)
+struct Fsync final {};  // ::fsync       (data + metadata)
+struct Msync final {};  // ::msync       (memory-mapped)
+struct FsyncParentDir final {};  // ::fsync(dirfd) — directory entry
 }  // namespace sync_op
 
 // ═════════════════════════════════════════════════════════════════════
@@ -212,10 +212,10 @@ struct FsyncParentDir   final {};  // ::fsync(dirfd) — directory entry
 // — fails if target exists, avoiding the silent-overwrite race.
 
 namespace atomicity {
-struct None                 final {};  // no atomicity (caller assumes ok)
-struct Rename               final {};  // ::rename     (last-writer-wins)
-struct RenameAt2NoReplace   final {};  // ::renameat2(RENAME_NOREPLACE)
-struct LinkAtomic           final {};  // ::linkat(AT_EMPTY_PATH)
+struct None final {};  // no atomicity (caller assumes ok)
+struct Rename final {};  // ::rename     (last-writer-wins)
+struct RenameAt2NoReplace final {};  // ::renameat2(RENAME_NOREPLACE)
+struct LinkAtomic final {};  // ::linkat(AT_EMPTY_PATH)
 }  // namespace atomicity
 
 // ═════════════════════════════════════════════════════════════════════
@@ -249,16 +249,16 @@ namespace fs {
 // EBO-collapsible (sizeof == 1 standalone, 0 inside aggregators).
 
 template <typename Mode>
-struct mode             final : grant_base {};
+struct mode final : grant_base {};
 
 template <typename Flag>
-struct with_flag        final : grant_base {};
+struct with_flag final : grant_base {};
 
 template <typename SyncOp>
-struct durable          final : grant_base {};
+struct durable final : grant_base {};
 
 template <typename Atomicity>
-struct atomic_write     final : grant_base {};
+struct atomic_write final : grant_base {};
 
 }  // namespace fs
 
@@ -269,14 +269,13 @@ struct atomic_write     final : grant_base {};
 // treats them uniformly.
 
 template <typename Mode>
-struct which_dim<fs::mode<Mode>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::SyscallSurface> {};
+struct which_dim<fs::mode<Mode>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::SyscallSurface> {};
 template <typename Flag>
-struct which_dim<fs::with_flag<Flag>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::SyscallSurface> {};
+struct which_dim<fs::with_flag<Flag>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::SyscallSurface> {
+};
 template <typename SyncOp>
-struct which_dim<fs::durable<SyncOp>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::SyscallSurface> {};
+struct which_dim<fs::durable<SyncOp>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::SyscallSurface> {
+};
 template <typename Atomicity>
 struct which_dim<fs::atomic_write<Atomicity>>
     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::SyscallSurface> {};
@@ -303,12 +302,11 @@ class [[nodiscard]] Dirfd {
 
 public:
     Dirfd() noexcept = default;
-    explicit Dirfd(::crucible::safety::FileHandle&& fd) noexcept
-        : fd_{std::move(fd)} {}
+    explicit Dirfd(::crucible::safety::FileHandle&& fd) noexcept : fd_{std::move(fd)} {}
 
-    Dirfd(const Dirfd&)            = delete("Dirfd holds an fd; copy would double-close");
+    Dirfd(const Dirfd&) = delete("Dirfd holds an fd; copy would double-close");
     Dirfd& operator=(const Dirfd&) = delete("Dirfd holds an fd; copy would double-close");
-    Dirfd(Dirfd&&) noexcept            = default;
+    Dirfd(Dirfd&&) noexcept = default;
     Dirfd& operator=(Dirfd&&) noexcept = default;
 
     [[nodiscard]] int get() const noexcept { return fd_.get(); }
@@ -362,20 +360,17 @@ do_open_dirfd_impl(const char* dir_path) noexcept;
 
 // Durability syscall dispatch.  fd >= 0 expected; caller pre-checks.
 // SyncOpTag::Msync returns EINVAL (route through mmap surface).
-[[nodiscard]] ::std::expected<void, ::std::error_code>
-do_sync_impl(int fd, SyncOpTag op) noexcept;
+[[nodiscard]] ::std::expected<void, ::std::error_code> do_sync_impl(int fd, SyncOpTag op) noexcept;
 
 // Commit-atomic syscall dispatch.  None returns success (no-op);
 // LinkAtomic returns ENOSYS until V-228's CipherDurable wires the
 // O_TMPFILE + linkat fd channel.
-[[nodiscard]] ::std::expected<void, ::std::error_code>
-do_commit_atomic_impl(const char* tmp, const char* target,
-                      AtomicityTag atomicity) noexcept;
+[[nodiscard]] ::std::expected<void, ::std::error_code> do_commit_atomic_impl(const char* tmp, const char* target,
+                                                                             AtomicityTag atomicity) noexcept;
 
 }  // namespace detail::impl
 
-[[nodiscard]] inline std::expected<Dirfd, std::error_code>
-open_dirfd(const ::std::filesystem::path& dir) noexcept {
+[[nodiscard]] inline std::expected<Dirfd, std::error_code> open_dirfd(const ::std::filesystem::path& dir) noexcept {
     auto fh = detail::impl::do_open_dirfd_impl(dir.c_str());
     if (!fh) {
         return std::unexpected{fh.error()};
@@ -404,8 +399,8 @@ struct grant_open_flags<::crucible::fixy::grant::fs::mode<Mode>>
     : std::integral_constant<int, open_mode_flags_v<Mode>> {};
 
 template <typename Flag>
-struct grant_open_flags<::crucible::fixy::grant::fs::with_flag<Flag>>
-    : std::integral_constant<int, flag_bits_v<Flag>> {};
+struct grant_open_flags<::crucible::fixy::grant::fs::with_flag<Flag>> : std::integral_constant<int, flag_bits_v<Flag>> {
+};
 
 template <typename G>
 inline constexpr int grant_open_flags_v = grant_open_flags<G>::value;
@@ -430,8 +425,7 @@ inline constexpr bool has_mode_v = (is_mode_grant<Grants>::value || ...);
 
 // duplicate_mode<Grants...> — strictly more than one mode<X> in pack.
 template <typename... Grants>
-inline constexpr bool has_duplicate_mode_v =
-    (static_cast<int>(is_mode_grant<Grants>::value) + ...) > 1;
+inline constexpr bool has_duplicate_mode_v = (static_cast<int>(is_mode_grant<Grants>::value) + ...) > 1;
 
 }  // namespace detail
 
@@ -450,12 +444,8 @@ inline constexpr bool has_duplicate_mode_v =
 template <typename Ctx>
 concept CtxAdmitsIoBlock =
     ::crucible::effects::IsExecCtx<Ctx>
-    && ::crucible::effects::row_contains_v<
-           ::crucible::effects::row_type_of_t<Ctx>,
-           ::crucible::effects::Effect::IO>
-    && ::crucible::effects::row_contains_v<
-           ::crucible::effects::row_type_of_t<Ctx>,
-           ::crucible::effects::Effect::Block>;
+    && ::crucible::effects::row_contains_v<::crucible::effects::row_type_of_t<Ctx>, ::crucible::effects::Effect::IO>
+    && ::crucible::effects::row_contains_v<::crucible::effects::row_type_of_t<Ctx>, ::crucible::effects::Effect::Block>;
 
 // `CtxFitsFileMint<Ctx, Grants...>` — single soundness gate on
 // `mint_file<Grants...>(ctx, Path<Sanitized>)`.  Bundles:
@@ -468,9 +458,7 @@ concept CtxAdmitsIoBlock =
 
 template <typename Ctx, typename... Grants>
 concept CtxFitsFileMint =
-    CtxAdmitsIoBlock<Ctx>
-    && detail::has_mode_v<Grants...>
-    && !detail::has_duplicate_mode_v<Grants...>;
+    CtxAdmitsIoBlock<Ctx> && detail::has_mode_v<Grants...> && !detail::has_duplicate_mode_v<Grants...>;
 
 // `CtxFitsSync<Ctx, SyncOp>` — single soundness gate on
 // `sync<SyncOp>(ctx, h)`.  Bundles:
@@ -480,9 +468,7 @@ concept CtxFitsFileMint =
 //       programmer error — fixture #4).
 
 template <typename Ctx, typename SyncOp>
-concept CtxFitsSync =
-    CtxAdmitsIoBlock<Ctx>
-    && !std::is_same_v<SyncOp, sync_op::None>;
+concept CtxFitsSync = CtxAdmitsIoBlock<Ctx> && !std::is_same_v<SyncOp, sync_op::None>;
 
 // `CtxFitsCommitAtomic<Ctx, Atomicity>` — single soundness gate on
 // `commit_atomic<Atomicity>(ctx, tmp, target)`.  Bundles ctx fit +
@@ -491,8 +477,7 @@ concept CtxFitsSync =
 template <typename Ctx, typename Atomicity>
 concept CtxFitsCommitAtomic =
     CtxAdmitsIoBlock<Ctx>
-    && (std::is_same_v<Atomicity, atomicity::None>
-        || std::is_same_v<Atomicity, atomicity::Rename>
+    && (std::is_same_v<Atomicity, atomicity::None> || std::is_same_v<Atomicity, atomicity::Rename>
         || std::is_same_v<Atomicity, atomicity::RenameAt2NoReplace>
         || std::is_same_v<Atomicity, atomicity::LinkAtomic>);
 
@@ -516,11 +501,8 @@ concept CtxFitsCommitAtomic =
 
 template <typename... Grants, ::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsFileMint<Ctx, Grants...>
-[[nodiscard]] inline std::expected<::crucible::safety::Linear<::crucible::safety::FileHandle>,
-                                   std::error_code>
-mint_file(Ctx const&,
-          Path<::crucible::safety::source::Sanitized> sanitized_path,
-          mode_t                                       perms = 0644) noexcept {
+[[nodiscard]] inline std::expected<::crucible::safety::Linear<::crucible::safety::FileHandle>, std::error_code>
+mint_file(Ctx const&, Path<::crucible::safety::source::Sanitized> sanitized_path, mode_t perms = 0644) noexcept {
     constexpr int flags = detail::fold_open_flags<Grants...>();
     // V-229: syscall body lives in src/fixy/Fs.cpp.  This template
     // remains inline because the Grants-pack-dependent `flags` compile
@@ -528,13 +510,11 @@ mint_file(Ctx const&,
     // O_TMPFILE requires a directory argument; for now we route every
     // mint_file through ::open() on the full path.  V-225/V-229 may
     // grow an openat(dirfd, basename) variant for sandboxed callers.
-    auto fh = detail::impl::do_open_impl(sanitized_path.value().c_str(),
-                                         flags, perms);
+    auto fh = detail::impl::do_open_impl(sanitized_path.value().c_str(), flags, perms);
     if (!fh) {
         return std::unexpected{fh.error()};
     }
-    return ::crucible::safety::Linear<::crucible::safety::FileHandle>{
-        std::move(*fh)};
+    return ::crucible::safety::Linear<::crucible::safety::FileHandle>{std::move(*fh)};
 }
 
 // ── sync<SyncOp>(ctx, FileHandle const&) ─────────────────────────────
@@ -546,9 +526,8 @@ mint_file(Ctx const&,
 
 template <typename SyncOp, ::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsSync<Ctx, SyncOp>
-[[nodiscard]] inline std::expected<void, std::error_code>
-sync(Ctx const&,
-     const ::crucible::safety::FileHandle& h) noexcept {
+[[nodiscard]] inline std::expected<void, std::error_code> sync(Ctx const&,
+                                                               const ::crucible::safety::FileHandle& h) noexcept {
     if (!h.is_open()) {
         return std::unexpected{std::error_code{EBADF, std::system_category()}};
     }
@@ -566,10 +545,9 @@ sync(Ctx const&,
         } else if constexpr (std::is_same_v<SyncOp, sync_op::Msync>) {
             return detail::impl::SyncOpTag::Msync;
         } else {
-            static_assert(std::is_same_v<SyncOp, sync_op::Fdatasync> ||
-                          std::is_same_v<SyncOp, sync_op::Fsync> ||
-                          std::is_same_v<SyncOp, sync_op::Msync> ||
-                          std::is_same_v<SyncOp, sync_op::FsyncParentDir>,
+            static_assert(std::is_same_v<SyncOp, sync_op::Fdatasync> || std::is_same_v<SyncOp, sync_op::Fsync>
+                              || std::is_same_v<SyncOp, sync_op::Msync>
+                              || std::is_same_v<SyncOp, sync_op::FsyncParentDir>,
                           "FIXY-V-224 sync<SyncOp>: SyncOp must be a sync_op:: tag");
             return detail::impl::SyncOpTag::Fdatasync;  // unreachable
         }
@@ -590,8 +568,7 @@ sync(Ctx const&,
 template <typename Atomicity, ::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsCommitAtomic<Ctx, Atomicity>
 [[nodiscard]] inline std::expected<void, std::error_code>
-commit_atomic(Ctx const&,
-              Path<::crucible::safety::source::Sanitized> tmp,
+commit_atomic(Ctx const&, Path<::crucible::safety::source::Sanitized> tmp,
               Path<::crucible::safety::source::Sanitized> target) noexcept {
     // V-229: compile-time map Atomicity -> AtomicityTag; syscall body
     // lives in src/fixy/Fs.cpp.  LinkAtomic still returns ENOSYS until
@@ -607,17 +584,14 @@ commit_atomic(Ctx const&,
         } else if constexpr (std::is_same_v<Atomicity, atomicity::None>) {
             return detail::impl::AtomicityTag::None;
         } else {
-            static_assert(std::is_same_v<Atomicity, atomicity::None> ||
-                          std::is_same_v<Atomicity, atomicity::Rename> ||
-                          std::is_same_v<Atomicity, atomicity::RenameAt2NoReplace> ||
-                          std::is_same_v<Atomicity, atomicity::LinkAtomic>,
+            static_assert(std::is_same_v<Atomicity, atomicity::None> || std::is_same_v<Atomicity, atomicity::Rename>
+                              || std::is_same_v<Atomicity, atomicity::RenameAt2NoReplace>
+                              || std::is_same_v<Atomicity, atomicity::LinkAtomic>,
                           "FIXY-V-224 commit_atomic<Atomicity>: Atomicity must be an atomicity:: tag");
             return detail::impl::AtomicityTag::None;  // unreachable
         }
     }();
-    return detail::impl::do_commit_atomic_impl(tmp.value().c_str(),
-                                               target.value().c_str(),
-                                               at);
+    return detail::impl::do_commit_atomic_impl(tmp.value().c_str(), target.value().c_str(), at);
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -664,16 +638,11 @@ using read_only = ::crucible::fixy::grant::fs::mode<open_mode::ReadOnly>;
 // does not detect template-param-constraint form; rq column shows '-'
 // pending a scanner extension follow-up).
 template <::crucible::effects::IsExecCtx Ctx>
-[[nodiscard]] inline auto
-mint_durable_truncate_file(Ctx const& ctx,
-                           Path<::crucible::safety::source::Sanitized> p,
-                           mode_t perms = 0644) noexcept
-{
-    return mint_file<
-        ::crucible::fixy::grant::fs::mode<open_mode::WriteTruncate>,
-        ::crucible::fixy::grant::fs::durable<sync_op::Fsync>,
-        ::crucible::fixy::grant::fs::atomic_write<atomicity::LinkAtomic>
-    >(ctx, std::move(p), perms);
+[[nodiscard]] inline auto mint_durable_truncate_file(Ctx const& ctx, Path<::crucible::safety::source::Sanitized> p,
+                                                     mode_t perms = 0644) noexcept {
+    return mint_file<::crucible::fixy::grant::fs::mode<open_mode::WriteTruncate>,
+                     ::crucible::fixy::grant::fs::durable<sync_op::Fsync>,
+                     ::crucible::fixy::grant::fs::atomic_write<atomicity::LinkAtomic>>(ctx, std::move(p), perms);
 }
 
 // `mint_durable_append_file` — write+append with O_DSYNC at the
@@ -698,16 +667,11 @@ mint_durable_truncate_file(Ctx const& ctx,
 // above: file open syscalls + FileHandle owns an fd.  Append form differs
 // only in grant stack (Fdatasync + DataSync rather than Fsync + LinkAtomic).
 template <::crucible::effects::IsExecCtx Ctx>
-[[nodiscard]] inline auto
-mint_durable_append_file(Ctx const& ctx,
-                         Path<::crucible::safety::source::Sanitized> p,
-                         mode_t perms = 0644) noexcept
-{
-    return mint_file<
-        ::crucible::fixy::grant::fs::mode<open_mode::WriteAppend>,
-        ::crucible::fixy::grant::fs::durable<sync_op::Fdatasync>,
-        ::crucible::fixy::grant::fs::with_flag<flag::DataSync>
-    >(ctx, std::move(p), perms);
+[[nodiscard]] inline auto mint_durable_append_file(Ctx const& ctx, Path<::crucible::safety::source::Sanitized> p,
+                                                   mode_t perms = 0644) noexcept {
+    return mint_file<::crucible::fixy::grant::fs::mode<open_mode::WriteAppend>,
+                     ::crucible::fixy::grant::fs::durable<sync_op::Fdatasync>,
+                     ::crucible::fixy::grant::fs::with_flag<flag::DataSync>>(ctx, std::move(p), perms);
 }
 
 }  // namespace crucible::fixy::fs
@@ -725,32 +689,32 @@ namespace at_ = atomicity;
 using D = ::crucible::fixy::dim::DimensionAxis;
 
 // ── Layer 1: every type tag is a distinct empty-final marker ──────
-static_assert(sizeof(om::ReadOnly)       == 1);
-static_assert(sizeof(om::WriteCreate)    == 1);
-static_assert(sizeof(om::WriteAppend)    == 1);
-static_assert(sizeof(om::WriteTruncate)  == 1);
-static_assert(sizeof(om::ReadWrite)      == 1);
-static_assert(sizeof(om::TmpFile)        == 1);
+static_assert(sizeof(om::ReadOnly) == 1);
+static_assert(sizeof(om::WriteCreate) == 1);
+static_assert(sizeof(om::WriteAppend) == 1);
+static_assert(sizeof(om::WriteTruncate) == 1);
+static_assert(sizeof(om::ReadWrite) == 1);
+static_assert(sizeof(om::TmpFile) == 1);
 
-static_assert(sizeof(fl::CloseOnExec)    == 1);
-static_assert(sizeof(fl::NoFollow)       == 1);
-static_assert(sizeof(fl::Directory)      == 1);
-static_assert(sizeof(fl::DataSync)       == 1);
+static_assert(sizeof(fl::CloseOnExec) == 1);
+static_assert(sizeof(fl::NoFollow) == 1);
+static_assert(sizeof(fl::Directory) == 1);
+static_assert(sizeof(fl::DataSync) == 1);
 
-static_assert(sizeof(so::None)           == 1);
-static_assert(sizeof(so::Fdatasync)      == 1);
-static_assert(sizeof(so::Fsync)          == 1);
+static_assert(sizeof(so::None) == 1);
+static_assert(sizeof(so::Fdatasync) == 1);
+static_assert(sizeof(so::Fsync) == 1);
 
-static_assert(sizeof(at_::None)              == 1);
+static_assert(sizeof(at_::None) == 1);
 static_assert(sizeof(at_::RenameAt2NoReplace) == 1);
-static_assert(sizeof(at_::LinkAtomic)        == 1);
+static_assert(sizeof(at_::LinkAtomic) == 1);
 
 // ── Layer 2: flag-fold maps each tag to its POSIX O_* value ───────
-static_assert(open_mode_flags_v<om::ReadOnly>      == O_RDONLY);
+static_assert(open_mode_flags_v<om::ReadOnly> == O_RDONLY);
 static_assert(open_mode_flags_v<om::WriteTruncate> == (O_WRONLY | O_CREAT | O_TRUNC));
-static_assert(open_mode_flags_v<om::TmpFile>       == (O_TMPFILE | O_RDWR));
-static_assert(flag_bits_v<fl::CloseOnExec>         == O_CLOEXEC);
-static_assert(flag_bits_v<fl::NoFollow>            == O_NOFOLLOW);
+static_assert(open_mode_flags_v<om::TmpFile> == (O_TMPFILE | O_RDWR));
+static_assert(flag_bits_v<fl::CloseOnExec> == O_CLOEXEC);
+static_assert(flag_bits_v<fl::NoFollow> == O_NOFOLLOW);
 
 // ── Layer 3: grant tags structurally valid + on SyscallSurface ────
 using ::crucible::fixy::grant::which_dim_v;
@@ -762,32 +726,25 @@ static_assert(IsGrantTag<gfs::with_flag<fl::NoFollow>>);
 static_assert(IsGrantTag<gfs::durable<so::Fsync>>);
 static_assert(IsGrantTag<gfs::atomic_write<at_::LinkAtomic>>);
 
-static_assert(which_dim_v<gfs::mode<om::ReadOnly> >            == D::SyscallSurface);
-static_assert(which_dim_v<gfs::with_flag<fl::NoFollow> >       == D::SyscallSurface);
-static_assert(which_dim_v<gfs::durable<so::Fsync> >            == D::SyscallSurface);
-static_assert(which_dim_v<gfs::atomic_write<at_::LinkAtomic> > == D::SyscallSurface);
+static_assert(which_dim_v<gfs::mode<om::ReadOnly>> == D::SyscallSurface);
+static_assert(which_dim_v<gfs::with_flag<fl::NoFollow>> == D::SyscallSurface);
+static_assert(which_dim_v<gfs::durable<so::Fsync>> == D::SyscallSurface);
+static_assert(which_dim_v<gfs::atomic_write<at_::LinkAtomic>> == D::SyscallSurface);
 
 // ── Layer 4: parametric grant distinctness — different mode tags ──
-static_assert(!std::is_same_v<gfs::mode<om::ReadOnly>,
-                              gfs::mode<om::WriteTruncate>>);
-static_assert(!std::is_same_v<gfs::with_flag<fl::NoFollow>,
-                              gfs::with_flag<fl::Direct>>);
-static_assert(!std::is_same_v<gfs::durable<so::Fdatasync>,
-                              gfs::durable<so::Fsync>>);
+static_assert(!std::is_same_v<gfs::mode<om::ReadOnly>, gfs::mode<om::WriteTruncate>>);
+static_assert(!std::is_same_v<gfs::with_flag<fl::NoFollow>, gfs::with_flag<fl::Direct>>);
+static_assert(!std::is_same_v<gfs::durable<so::Fdatasync>, gfs::durable<so::Fsync>>);
 
 // ── Layer 5: mint_file domain — has_mode + no duplicate-mode ──────
-static_assert( detail::has_mode_v<gfs::mode<om::ReadOnly>>);
+static_assert(detail::has_mode_v<gfs::mode<om::ReadOnly>>);
 static_assert(!detail::has_mode_v<gfs::with_flag<fl::NoFollow>>);
-static_assert( detail::has_duplicate_mode_v<gfs::mode<om::ReadOnly>,
-                                            gfs::mode<om::WriteTruncate>>);
-static_assert(!detail::has_duplicate_mode_v<gfs::mode<om::ReadOnly>,
-                                            gfs::with_flag<fl::NoFollow>>);
+static_assert(detail::has_duplicate_mode_v<gfs::mode<om::ReadOnly>, gfs::mode<om::WriteTruncate>>);
+static_assert(!detail::has_duplicate_mode_v<gfs::mode<om::ReadOnly>, gfs::with_flag<fl::NoFollow>>);
 
 // ── Layer 6: flag-fold ORs the pack + O_CLOEXEC ───────────────────
-static_assert(detail::fold_open_flags<gfs::mode<om::ReadOnly>>() ==
-              (O_RDONLY | O_CLOEXEC));
-static_assert(detail::fold_open_flags<gfs::mode<om::WriteTruncate>,
-                                      gfs::with_flag<fl::NoFollow>>() ==
-              (O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_CLOEXEC));
+static_assert(detail::fold_open_flags<gfs::mode<om::ReadOnly>>() == (O_RDONLY | O_CLOEXEC));
+static_assert(detail::fold_open_flags<gfs::mode<om::WriteTruncate>, gfs::with_flag<fl::NoFollow>>()
+              == (O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_CLOEXEC));
 
 }  // namespace crucible::fixy::fs::detail::v224_self_test

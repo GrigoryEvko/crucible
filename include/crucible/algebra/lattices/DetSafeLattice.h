@@ -150,29 +150,36 @@ namespace crucible::algebra::lattices {
 // contract (Pure satisfies any consumer) is preserved.  See lattice
 // docblock above for the divergence rationale.
 enum class DetSafeTier : std::uint8_t {
-    NonDeterministicSyscall = 0,    // bottom: any non-pinnable syscall
-    FilesystemMtime         = 1,    // externally mutable timestamp
-    EntropyRead             = 2,    // /dev/urandom, getrandom(2), hardware RNG
-    WallClockRead           = 3,    // system_clock::now() — non-monotonic
-    MonotonicClockRead      = 4,    // steady_clock::now() — bounded within run
-    PhiloxRng               = 5,    // counter-based PRNG, replay-deterministic
-    Pure                    = 6,    // top: pure function of declared inputs
+    NonDeterministicSyscall = 0,  // bottom: any non-pinnable syscall
+    FilesystemMtime = 1,  // externally mutable timestamp
+    EntropyRead = 2,  // /dev/urandom, getrandom(2), hardware RNG
+    WallClockRead = 3,  // system_clock::now() — non-monotonic
+    MonotonicClockRead = 4,  // steady_clock::now() — bounded within run
+    PhiloxRng = 5,  // counter-based PRNG, replay-deterministic
+    Pure = 6,  // top: pure function of declared inputs
 };
 
 // Cardinality + diagnostic name via reflection.
-inline constexpr std::size_t det_safe_tier_count =
-    std::meta::enumerators_of(^^DetSafeTier).size();
+inline constexpr std::size_t det_safe_tier_count = std::meta::enumerators_of(^^DetSafeTier).size();
 
 [[nodiscard]] consteval std::string_view det_safe_tier_name(DetSafeTier t) noexcept {
     switch (t) {
-        case DetSafeTier::NonDeterministicSyscall: return "NonDeterministicSyscall";
-        case DetSafeTier::FilesystemMtime:         return "FilesystemMtime";
-        case DetSafeTier::EntropyRead:             return "EntropyRead";
-        case DetSafeTier::WallClockRead:           return "WallClockRead";
-        case DetSafeTier::MonotonicClockRead:      return "MonotonicClockRead";
-        case DetSafeTier::PhiloxRng:               return "PhiloxRng";
-        case DetSafeTier::Pure:                    return "Pure";
-        default:                                    return std::string_view{"<unknown DetSafeTier>"};
+        case DetSafeTier::NonDeterministicSyscall:
+            return "NonDeterministicSyscall";
+        case DetSafeTier::FilesystemMtime:
+            return "FilesystemMtime";
+        case DetSafeTier::EntropyRead:
+            return "EntropyRead";
+        case DetSafeTier::WallClockRead:
+            return "WallClockRead";
+        case DetSafeTier::MonotonicClockRead:
+            return "MonotonicClockRead";
+        case DetSafeTier::PhiloxRng:
+            return "PhiloxRng";
+        case DetSafeTier::Pure:
+            return "Pure";
+        default:
+            return std::string_view{"<unknown DetSafeTier>"};
     }
 }
 
@@ -181,16 +188,10 @@ inline constexpr std::size_t det_safe_tier_count =
 // Inherits leq/join/meet from ChainLatticeOps<DetSafeTier> — see
 // ChainLattice.h for the rationale.
 struct DetSafeLattice : ChainLatticeOps<DetSafeTier> {
-    [[nodiscard]] static constexpr element_type bottom() noexcept {
-        return DetSafeTier::NonDeterministicSyscall;
-    }
-    [[nodiscard]] static constexpr element_type top() noexcept {
-        return DetSafeTier::Pure;
-    }
+    [[nodiscard]] static constexpr element_type bottom() noexcept { return DetSafeTier::NonDeterministicSyscall; }
+    [[nodiscard]] static constexpr element_type top() noexcept { return DetSafeTier::Pure; }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return "DetSafeLattice";
-    }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "DetSafeLattice"; }
 
     // ── At<T>: singleton sub-lattice at a fixed type-level tier ─────
     //
@@ -201,19 +202,15 @@ struct DetSafeLattice : ChainLatticeOps<DetSafeTier> {
     struct At {
         struct element_type {
             using det_safe_tier_value_type = DetSafeTier;
-            [[nodiscard]] constexpr operator det_safe_tier_value_type() const noexcept {
-                return T;
-            }
-            [[nodiscard]] constexpr bool operator==(element_type) const noexcept {
-                return true;
-            }
+            [[nodiscard]] constexpr operator det_safe_tier_value_type() const noexcept { return T; }
+            [[nodiscard]] constexpr bool operator==(element_type) const noexcept { return true; }
         };
 
         static constexpr DetSafeTier tier = T;
 
         [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-        [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
         [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
 
@@ -242,42 +239,38 @@ struct DetSafeLattice : ChainLatticeOps<DetSafeTier> {
 
 // ── Convenience aliases ─────────────────────────────────────────────
 namespace det_safe_tier {
-    using NdsTier        = DetSafeLattice::At<DetSafeTier::NonDeterministicSyscall>;
-    using FsMtimeTier    = DetSafeLattice::At<DetSafeTier::FilesystemMtime>;
-    using EntropyTier    = DetSafeLattice::At<DetSafeTier::EntropyRead>;
-    using WallClockTier  = DetSafeLattice::At<DetSafeTier::WallClockRead>;
-    using MonoClockTier  = DetSafeLattice::At<DetSafeTier::MonotonicClockRead>;
-    using PhiloxTier     = DetSafeLattice::At<DetSafeTier::PhiloxRng>;
-    using PureTier       = DetSafeLattice::At<DetSafeTier::Pure>;
+using NdsTier = DetSafeLattice::At<DetSafeTier::NonDeterministicSyscall>;
+using FsMtimeTier = DetSafeLattice::At<DetSafeTier::FilesystemMtime>;
+using EntropyTier = DetSafeLattice::At<DetSafeTier::EntropyRead>;
+using WallClockTier = DetSafeLattice::At<DetSafeTier::WallClockRead>;
+using MonoClockTier = DetSafeLattice::At<DetSafeTier::MonotonicClockRead>;
+using PhiloxTier = DetSafeLattice::At<DetSafeTier::PhiloxRng>;
+using PureTier = DetSafeLattice::At<DetSafeTier::Pure>;
 }  // namespace det_safe_tier
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::det_safe_lattice_self_test {
 
 // Cardinality + reflection-based name coverage.
-static_assert(det_safe_tier_count == 7,
-    "DetSafeTier catalog diverged from {NDS, FsMtime, Entropy, WallClock, "
-    "MonoClock, Philox, Pure}; confirm intent and update the Cipher "
-    "write-fence + Philox return type plumbing.");
+static_assert(det_safe_tier_count == 7, "DetSafeTier catalog diverged from {NDS, FsMtime, Entropy, WallClock, "
+                                        "MonoClock, Philox, Pure}; confirm intent and update the Cipher "
+                                        "write-fence + Philox return type plumbing.");
 
 [[nodiscard]] consteval bool every_det_safe_tier_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^DetSafeTier));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^DetSafeTier));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
-        if (det_safe_tier_name([:en:]) ==
-            std::string_view{"<unknown DetSafeTier>"}) {
+        if (det_safe_tier_name([:en:]) == std::string_view{"<unknown DetSafeTier>"}) {
             return false;
         }
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_det_safe_tier_has_name(),
-    "det_safe_tier_name() switch missing arm for at least one tier — "
-    "add the arm or the new tier leaks the '<unknown DetSafeTier>' "
-    "sentinel into runtime observer's debug output.");
+static_assert(every_det_safe_tier_has_name(), "det_safe_tier_name() switch missing arm for at least one tier — "
+                                              "add the arm or the new tier leaks the '<unknown DetSafeTier>' "
+                                              "sentinel into runtime observer's debug output.");
 
 // Concept conformance — full lattice + each At<T> sub-lattice.
 static_assert(Lattice<DetSafeLattice>);
@@ -300,35 +293,33 @@ static_assert(std::is_empty_v<det_safe_tier::MonoClockTier::element_type>);
 // (DetSafeTier)³ = 343 triples each.  Both verifiers extracted into
 // ChainLattice.h — adding a new tier auto-extends coverage.
 static_assert(verify_chain_lattice_exhaustive<DetSafeLattice>(),
-    "DetSafeLattice's chain-order lattice axioms must hold at every "
-    "(DetSafeTier)³ triple — failure indicates a defect in leq/join/meet "
-    "or in the underlying enum encoding.");
+              "DetSafeLattice's chain-order lattice axioms must hold at every "
+              "(DetSafeTier)³ triple — failure indicates a defect in leq/join/meet "
+              "or in the underlying enum encoding.");
 static_assert(verify_chain_lattice_distributive_exhaustive<DetSafeLattice>(),
-    "DetSafeLattice's chain order must satisfy distributivity at every "
-    "(DetSafeTier)³ triple — a chain order always does, so failure "
-    "would indicate a defect in join or meet.");
+              "DetSafeLattice's chain order must satisfy distributivity at every "
+              "(DetSafeTier)³ triple — a chain order always does, so failure "
+              "would indicate a defect in join or meet.");
 
 // Direct order witnesses — the entire chain is increasing, with Pure
 // at the top (strongest replay-safety) and NDS at the bottom.
-static_assert( DetSafeLattice::leq(DetSafeTier::NonDeterministicSyscall, DetSafeTier::FilesystemMtime));
-static_assert( DetSafeLattice::leq(DetSafeTier::FilesystemMtime,         DetSafeTier::EntropyRead));
-static_assert( DetSafeLattice::leq(DetSafeTier::EntropyRead,             DetSafeTier::WallClockRead));
-static_assert( DetSafeLattice::leq(DetSafeTier::WallClockRead,           DetSafeTier::MonotonicClockRead));
-static_assert( DetSafeLattice::leq(DetSafeTier::MonotonicClockRead,      DetSafeTier::PhiloxRng));
-static_assert( DetSafeLattice::leq(DetSafeTier::PhiloxRng,               DetSafeTier::Pure));
-static_assert( DetSafeLattice::leq(DetSafeTier::NonDeterministicSyscall, DetSafeTier::Pure));   // transitive endpoints
-static_assert(!DetSafeLattice::leq(DetSafeTier::Pure,                    DetSafeTier::NonDeterministicSyscall));
-static_assert(!DetSafeLattice::leq(DetSafeTier::PhiloxRng,               DetSafeTier::MonotonicClockRead));
+static_assert(DetSafeLattice::leq(DetSafeTier::NonDeterministicSyscall, DetSafeTier::FilesystemMtime));
+static_assert(DetSafeLattice::leq(DetSafeTier::FilesystemMtime, DetSafeTier::EntropyRead));
+static_assert(DetSafeLattice::leq(DetSafeTier::EntropyRead, DetSafeTier::WallClockRead));
+static_assert(DetSafeLattice::leq(DetSafeTier::WallClockRead, DetSafeTier::MonotonicClockRead));
+static_assert(DetSafeLattice::leq(DetSafeTier::MonotonicClockRead, DetSafeTier::PhiloxRng));
+static_assert(DetSafeLattice::leq(DetSafeTier::PhiloxRng, DetSafeTier::Pure));
+static_assert(DetSafeLattice::leq(DetSafeTier::NonDeterministicSyscall, DetSafeTier::Pure));  // transitive endpoints
+static_assert(!DetSafeLattice::leq(DetSafeTier::Pure, DetSafeTier::NonDeterministicSyscall));
+static_assert(!DetSafeLattice::leq(DetSafeTier::PhiloxRng, DetSafeTier::MonotonicClockRead));
 
 // Pin bottom / top to the chain endpoints.
 static_assert(DetSafeLattice::bottom() == DetSafeTier::NonDeterministicSyscall);
-static_assert(DetSafeLattice::top()    == DetSafeTier::Pure);
+static_assert(DetSafeLattice::top() == DetSafeTier::Pure);
 
 // Join strengthens (max); meet weakens (min).
-static_assert(DetSafeLattice::join(DetSafeTier::NonDeterministicSyscall, DetSafeTier::Pure)
-              == DetSafeTier::Pure);
-static_assert(DetSafeLattice::join(DetSafeTier::PhiloxRng, DetSafeTier::MonotonicClockRead)
-              == DetSafeTier::PhiloxRng);
+static_assert(DetSafeLattice::join(DetSafeTier::NonDeterministicSyscall, DetSafeTier::Pure) == DetSafeTier::Pure);
+static_assert(DetSafeLattice::join(DetSafeTier::PhiloxRng, DetSafeTier::MonotonicClockRead) == DetSafeTier::PhiloxRng);
 static_assert(DetSafeLattice::meet(DetSafeTier::NonDeterministicSyscall, DetSafeTier::Pure)
               == DetSafeTier::NonDeterministicSyscall);
 static_assert(DetSafeLattice::meet(DetSafeTier::PhiloxRng, DetSafeTier::MonotonicClockRead)
@@ -336,46 +327,47 @@ static_assert(DetSafeLattice::meet(DetSafeTier::PhiloxRng, DetSafeTier::Monotoni
 
 // Diagnostic names.
 static_assert(DetSafeLattice::name() == "DetSafeLattice");
-static_assert(det_safe_tier::NdsTier::name()        == "DetSafeLattice::At<NonDeterministicSyscall>");
-static_assert(det_safe_tier::FsMtimeTier::name()    == "DetSafeLattice::At<FilesystemMtime>");
-static_assert(det_safe_tier::EntropyTier::name()    == "DetSafeLattice::At<EntropyRead>");
-static_assert(det_safe_tier::WallClockTier::name()  == "DetSafeLattice::At<WallClockRead>");
-static_assert(det_safe_tier::MonoClockTier::name()  == "DetSafeLattice::At<MonotonicClockRead>");
-static_assert(det_safe_tier::PhiloxTier::name()     == "DetSafeLattice::At<PhiloxRng>");
-static_assert(det_safe_tier::PureTier::name()       == "DetSafeLattice::At<Pure>");
+static_assert(det_safe_tier::NdsTier::name() == "DetSafeLattice::At<NonDeterministicSyscall>");
+static_assert(det_safe_tier::FsMtimeTier::name() == "DetSafeLattice::At<FilesystemMtime>");
+static_assert(det_safe_tier::EntropyTier::name() == "DetSafeLattice::At<EntropyRead>");
+static_assert(det_safe_tier::WallClockTier::name() == "DetSafeLattice::At<WallClockRead>");
+static_assert(det_safe_tier::MonoClockTier::name() == "DetSafeLattice::At<MonotonicClockRead>");
+static_assert(det_safe_tier::PhiloxTier::name() == "DetSafeLattice::At<PhiloxRng>");
+static_assert(det_safe_tier::PureTier::name() == "DetSafeLattice::At<Pure>");
 
 // Reflection-driven coverage check on At<T>::name().
 [[nodiscard]] consteval bool every_at_det_safe_tier_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^DetSafeTier));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^DetSafeTier));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
-        if (DetSafeLattice::At<([:en:])>::name() ==
-            std::string_view{"DetSafeLattice::At<?>"}) {
+        if (DetSafeLattice::At<([:en:])>::name() == std::string_view{"DetSafeLattice::At<?>"}) {
             return false;
         }
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_at_det_safe_tier_has_name(),
-    "DetSafeLattice::At<T>::name() switch missing an arm for at "
-    "least one tier — add the arm or the new tier leaks the "
-    "'DetSafeLattice::At<?>' sentinel.");
+static_assert(every_at_det_safe_tier_has_name(), "DetSafeLattice::At<T>::name() switch missing an arm for at "
+                                                 "least one tier — add the arm or the new tier leaks the "
+                                                 "'DetSafeLattice::At<?>' sentinel.");
 
 // Convenience aliases resolve correctly.
-static_assert(det_safe_tier::NdsTier::tier        == DetSafeTier::NonDeterministicSyscall);
-static_assert(det_safe_tier::FsMtimeTier::tier    == DetSafeTier::FilesystemMtime);
-static_assert(det_safe_tier::EntropyTier::tier    == DetSafeTier::EntropyRead);
-static_assert(det_safe_tier::WallClockTier::tier  == DetSafeTier::WallClockRead);
-static_assert(det_safe_tier::MonoClockTier::tier  == DetSafeTier::MonotonicClockRead);
-static_assert(det_safe_tier::PhiloxTier::tier     == DetSafeTier::PhiloxRng);
-static_assert(det_safe_tier::PureTier::tier       == DetSafeTier::Pure);
+static_assert(det_safe_tier::NdsTier::tier == DetSafeTier::NonDeterministicSyscall);
+static_assert(det_safe_tier::FsMtimeTier::tier == DetSafeTier::FilesystemMtime);
+static_assert(det_safe_tier::EntropyTier::tier == DetSafeTier::EntropyRead);
+static_assert(det_safe_tier::WallClockTier::tier == DetSafeTier::WallClockRead);
+static_assert(det_safe_tier::MonoClockTier::tier == DetSafeTier::MonotonicClockRead);
+static_assert(det_safe_tier::PhiloxTier::tier == DetSafeTier::PhiloxRng);
+static_assert(det_safe_tier::PureTier::tier == DetSafeTier::Pure);
 
 // ── Layout invariants on Graded<...,At<T>,T_> ───────────────────────
-struct OneByteValue   { char c{0}; };
-struct EightByteValue { unsigned long long v{0}; };
+struct OneByteValue {
+    char c{0};
+};
+struct EightByteValue {
+    unsigned long long v{0};
+};
 
 // PureTier — the most semantically-loaded tier (Cipher write-fence
 // gate, Philox return type for now-pinned values).  Witnessed against
@@ -407,26 +399,26 @@ inline void runtime_smoke_test() {
     // Full DetSafeLattice ops at runtime.
     DetSafeTier a = DetSafeTier::NonDeterministicSyscall;
     DetSafeTier b = DetSafeTier::Pure;
-    [[maybe_unused]] bool        l1   = DetSafeLattice::leq(a, b);
-    [[maybe_unused]] DetSafeTier j1   = DetSafeLattice::join(a, b);
-    [[maybe_unused]] DetSafeTier m1   = DetSafeLattice::meet(a, b);
-    [[maybe_unused]] DetSafeTier bot  = DetSafeLattice::bottom();
-    [[maybe_unused]] DetSafeTier top  = DetSafeLattice::top();
+    [[maybe_unused]] bool l1 = DetSafeLattice::leq(a, b);
+    [[maybe_unused]] DetSafeTier j1 = DetSafeLattice::join(a, b);
+    [[maybe_unused]] DetSafeTier m1 = DetSafeLattice::meet(a, b);
+    [[maybe_unused]] DetSafeTier bot = DetSafeLattice::bottom();
+    [[maybe_unused]] DetSafeTier top = DetSafeLattice::top();
 
     // Mid-tier ops — chain through the clock-read portion.
-    DetSafeTier mono   = DetSafeTier::MonotonicClockRead;
+    DetSafeTier mono = DetSafeTier::MonotonicClockRead;
     DetSafeTier philox = DetSafeTier::PhiloxRng;
-    [[maybe_unused]] DetSafeTier j2 = DetSafeLattice::join(mono, philox);    // PhiloxRng (more pure)
-    [[maybe_unused]] DetSafeTier m2 = DetSafeLattice::meet(mono, philox);    // MonotonicClockRead
+    [[maybe_unused]] DetSafeTier j2 = DetSafeLattice::join(mono, philox);  // PhiloxRng (more pure)
+    [[maybe_unused]] DetSafeTier m2 = DetSafeLattice::meet(mono, philox);  // MonotonicClockRead
 
     // Graded<Absolute, PureTier, T> at runtime.
     OneByteValue v{42};
     PureGraded<OneByteValue> initial{v, det_safe_tier::PureTier::bottom()};
-    auto widened   = initial.weaken(det_safe_tier::PureTier::top());
-    auto composed  = initial.compose(widened);
-    auto rv_widen  = std::move(widened).weaken(det_safe_tier::PureTier::top());
+    auto widened = initial.weaken(det_safe_tier::PureTier::top());
+    auto composed = initial.compose(widened);
+    auto rv_widen = std::move(widened).weaken(det_safe_tier::PureTier::top());
 
-    [[maybe_unused]] auto g  = rv_widen.grade();
+    [[maybe_unused]] auto g = rv_widen.grade();
     [[maybe_unused]] auto vc = composed.peek().c;
 
     // Conversion: At<DetSafeTier>::element_type → DetSafeTier at runtime.

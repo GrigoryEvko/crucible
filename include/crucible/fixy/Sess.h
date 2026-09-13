@@ -244,32 +244,25 @@ using ::crucible::safety::proto::is_delegated_session_v;
 // from "structurally rejected" to "coinductively decided".
 
 template <typename P>
-inline constexpr bool phi_safe_v =
-    ::crucible::safety::proto::phi_safe_v<P>;
+inline constexpr bool phi_safe_v = ::crucible::safety::proto::phi_safe_v<P>;
 
 template <typename P>
-inline constexpr bool phi_df_v =
-    ::crucible::safety::proto::phi_df_v<P>;
+inline constexpr bool phi_df_v = ::crucible::safety::proto::phi_df_v<P>;
 
 template <typename P>
-inline constexpr bool phi_term_v =
-    ::crucible::safety::proto::phi_term_v<P>;
+inline constexpr bool phi_term_v = ::crucible::safety::proto::phi_term_v<P>;
 
 template <typename P>
-inline constexpr bool phi_nterm_v =
-    ::crucible::safety::proto::phi_nterm_v<P>;
+inline constexpr bool phi_nterm_v = ::crucible::safety::proto::phi_nterm_v<P>;
 
 template <typename P>
-inline constexpr bool phi_live_v =
-    ::crucible::safety::proto::phi_live_v<P>;
+inline constexpr bool phi_live_v = ::crucible::safety::proto::phi_live_v<P>;
 
 template <typename P>
-inline constexpr bool phi_live_plus_v =
-    ::crucible::safety::proto::phi_live_plus_v<P>;
+inline constexpr bool phi_live_plus_v = ::crucible::safety::proto::phi_live_plus_v<P>;
 
 template <typename P>
-inline constexpr bool phi_live_pp_v =
-    ::crucible::safety::proto::phi_live_pp_v<P>;
+inline constexpr bool phi_live_pp_v = ::crucible::safety::proto::phi_live_pp_v<P>;
 
 // ─── Crash-stop family (BSYZ22 / BHYZ23) ──────────────────────────
 //
@@ -376,21 +369,17 @@ namespace fixy_v168_sentinel_probes {
 struct NonExecCtxProbe {};
 }  // namespace fixy_v168_sentinel_probes
 
-static_assert(!CtxFitsPermissionedProtocol<
-                  ::crucible::safety::proto::End,
-                  fixy_v168_sentinel_probes::NonExecCtxProbe,
-                  EmptyPermSet>,
-    "FIXY-V-168: fixy::sess::CtxFitsPermissionedProtocol must "
-    "reject a non-IsExecCtx Ctx argument through the umbrella.  If "
-    "this red-lights, the using-decl above is either missing or "
-    "resolves to a different substrate concept.");
+static_assert(!CtxFitsPermissionedProtocol<::crucible::safety::proto::End, fixy_v168_sentinel_probes::NonExecCtxProbe,
+                                           EmptyPermSet>,
+              "FIXY-V-168: fixy::sess::CtxFitsPermissionedProtocol must "
+              "reject a non-IsExecCtx Ctx argument through the umbrella.  If "
+              "this red-lights, the using-decl above is either missing or "
+              "resolves to a different substrate concept.");
 
-static_assert(!CtxFitsChannel<
-                  ::crucible::safety::proto::End,
-                  fixy_v168_sentinel_probes::NonExecCtxProbe,
-                  fixy_v168_sentinel_probes::NonExecCtxProbe>,
-    "FIXY-V-168: fixy::sess::CtxFitsChannel must reject "
-    "non-IsExecCtx CtxA/CtxB through the umbrella.");
+static_assert(!CtxFitsChannel<::crucible::safety::proto::End, fixy_v168_sentinel_probes::NonExecCtxProbe,
+                              fixy_v168_sentinel_probes::NonExecCtxProbe>,
+              "FIXY-V-168: fixy::sess::CtxFitsChannel must reject "
+              "non-IsExecCtx CtxA/CtxB through the umbrella.");
 
 // `ProtocolPermissionedRunnable` is a permissive structural witness
 // over the protocol shape alone; the cell below confirms it ADMITS
@@ -400,34 +389,29 @@ static_assert(!CtxFitsChannel<
 // protocol fixture justifies the wiring).
 namespace fixy_v168_sentinel_probes {
 struct PayloadProbe {};
-using SendEndProbe = ::crucible::safety::proto::Send<
-    PayloadProbe, ::crucible::safety::proto::End>;
+using SendEndProbe = ::crucible::safety::proto::Send<PayloadProbe, ::crucible::safety::proto::End>;
 }  // namespace fixy_v168_sentinel_probes
 
-static_assert(ProtocolPermissionedRunnable<
-                  ::crucible::safety::proto::End>,
-    "FIXY-V-168: fixy::sess::ProtocolPermissionedRunnable must "
-    "admit the End terminal protocol through the umbrella.");
-static_assert(ProtocolPermissionedRunnable<
-                  fixy_v168_sentinel_probes::SendEndProbe>,
-    "FIXY-V-168: fixy::sess::ProtocolPermissionedRunnable must "
-    "admit Send<Probe, End> through the umbrella.");
+static_assert(ProtocolPermissionedRunnable<::crucible::safety::proto::End>,
+              "FIXY-V-168: fixy::sess::ProtocolPermissionedRunnable must "
+              "admit the End terminal protocol through the umbrella.");
+static_assert(ProtocolPermissionedRunnable<fixy_v168_sentinel_probes::SendEndProbe>,
+              "FIXY-V-168: fixy::sess::ProtocolPermissionedRunnable must "
+              "admit Send<Probe, End> through the umbrella.");
 
 // `ProtocolVendorAdmittedByLoopCtx` / `ProtocolEpochAdmittedByLoopCtx`
 // are LoopCtx-templated.  Reaching them through the umbrella with
 // `void` as the LoopCtx witness — the default for protocols that
 // declare no vendor/epoch positions — exercises the concept body
 // without requiring a fully-formed EpochCtx fixture.
-static_assert(ProtocolVendorAdmittedByLoopCtx<
-                  ::crucible::safety::proto::End, void>,
-    "FIXY-V-168: fixy::sess::ProtocolVendorAdmittedByLoopCtx must "
-    "admit End under the no-LoopCtx (void) sentinel through the "
-    "umbrella.");
-static_assert(ProtocolEpochAdmittedByLoopCtx<
-                  ::crucible::safety::proto::End, void>,
-    "FIXY-V-168: fixy::sess::ProtocolEpochAdmittedByLoopCtx must "
-    "admit End under the no-LoopCtx (void) sentinel through the "
-    "umbrella.");
+static_assert(ProtocolVendorAdmittedByLoopCtx<::crucible::safety::proto::End, void>,
+              "FIXY-V-168: fixy::sess::ProtocolVendorAdmittedByLoopCtx must "
+              "admit End under the no-LoopCtx (void) sentinel through the "
+              "umbrella.");
+static_assert(ProtocolEpochAdmittedByLoopCtx<::crucible::safety::proto::End, void>,
+              "FIXY-V-168: fixy::sess::ProtocolEpochAdmittedByLoopCtx must "
+              "admit End under the no-LoopCtx (void) sentinel through the "
+              "umbrella.");
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Recording / crash-watched handle re-exports ────────────────────
@@ -457,10 +441,8 @@ using ::crucible::safety::proto::SessionHandleBase;
 using ::crucible::safety::proto::SessionHandle;
 using ::crucible::safety::proto::PermissionedSessionHandle;
 
-template <typename Proto, typename PS, typename Resource,
-          typename LoopCtx = void>
-using PSH = ::crucible::safety::proto::PermissionedSessionHandle<
-    Proto, PS, Resource, LoopCtx>;
+template <typename Proto, typename PS, typename Resource, typename LoopCtx = void>
+using PSH = ::crucible::safety::proto::PermissionedSessionHandle<Proto, PS, Resource, LoopCtx>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── FixyMintSessionRemoved — structured deletion diagnostic ────────
@@ -492,32 +474,28 @@ using PSH = ::crucible::safety::proto::PermissionedSessionHandle<
 
 namespace diag {
 
-struct FixyMintSessionRemoved final
-    : ::crucible::safety::diag::tag_base {
+struct FixyMintSessionRemoved final : ::crucible::safety::diag::tag_base {
     static constexpr ::std::string_view name = "FixyMintSessionRemoved";
-    static constexpr ::std::string_view description =
-        "Bare `mint_session<Proto>(ctx, resource)` and "
-        "`mint_session<Proto>(resource)` are `= delete`d in "
-        "sessions/SessionMint.h.  Production code constructs typed "
-        "session handles via `mint_permissioned_session<Proto>(ctx, "
-        "resource, perms...)`, which threads CSL Permission tokens "
-        "through the protocol's position so the local row-flow "
-        "closure check fires per FOUND-C v1.  The bare mint_session "
-        "spelling was structurally unable to carry the permission "
-        "evolution and was removed.";
-    static constexpr ::std::string_view remediation =
-        "Replace the call site with "
-        "`mint_permissioned_session<Proto>(ctx, resource, perms...)`.  "
-        "For protocols that do not transfer wire-level permissions, "
-        "spell the call as "
-        "`mint_permissioned_session<Proto>(ctx, resource)` — the "
-        "perms pack is variadic and the empty-PermSet shim is the "
-        "current default surface (sessions/SessionMint.h:935).";
+    static constexpr ::std::string_view description = "Bare `mint_session<Proto>(ctx, resource)` and "
+                                                      "`mint_session<Proto>(resource)` are `= delete`d in "
+                                                      "sessions/SessionMint.h.  Production code constructs typed "
+                                                      "session handles via `mint_permissioned_session<Proto>(ctx, "
+                                                      "resource, perms...)`, which threads CSL Permission tokens "
+                                                      "through the protocol's position so the local row-flow "
+                                                      "closure check fires per FOUND-C v1.  The bare mint_session "
+                                                      "spelling was structurally unable to carry the permission "
+                                                      "evolution and was removed.";
+    static constexpr ::std::string_view remediation = "Replace the call site with "
+                                                      "`mint_permissioned_session<Proto>(ctx, resource, perms...)`.  "
+                                                      "For protocols that do not transfer wire-level permissions, "
+                                                      "spell the call as "
+                                                      "`mint_permissioned_session<Proto>(ctx, resource)` — the "
+                                                      "perms pack is variadic and the empty-PermSet shim is the "
+                                                      "current default surface (sessions/SessionMint.h:935).";
 };
 
-static_assert(::crucible::safety::diag::is_diagnostic_class_v<
-                  FixyMintSessionRemoved>,
-    "FixyMintSessionRemoved must inherit safety::diag::tag_base.");
+static_assert(::crucible::safety::diag::is_diagnostic_class_v<FixyMintSessionRemoved>,
+              "FixyMintSessionRemoved must inherit safety::diag::tag_base.");
 
 }  // namespace diag
 
@@ -654,32 +632,29 @@ namespace pattern = ::crucible::safety::proto::pattern;
 
 namespace self_test {
 
-static_assert(std::is_same_v<Send<int, End>,
-                             ::crucible::safety::proto::Send<int, End>>,
-    "fixy::sess::Send alias must be identical to safety::proto::Send.");
+static_assert(std::is_same_v<Send<int, End>, ::crucible::safety::proto::Send<int, End>>,
+              "fixy::sess::Send alias must be identical to safety::proto::Send.");
 
-static_assert(std::is_same_v<Recv<int, End>,
-                             ::crucible::safety::proto::Recv<int, End>>,
-    "fixy::sess::Recv alias must be identical to safety::proto::Recv.");
+static_assert(std::is_same_v<Recv<int, End>, ::crucible::safety::proto::Recv<int, End>>,
+              "fixy::sess::Recv alias must be identical to safety::proto::Recv.");
 
-static_assert(std::is_same_v<Loop<End>,
-                             ::crucible::safety::proto::Loop<End>>,
-    "fixy::sess::Loop alias must be identical to safety::proto::Loop.");
+static_assert(std::is_same_v<Loop<End>, ::crucible::safety::proto::Loop<End>>,
+              "fixy::sess::Loop alias must be identical to safety::proto::Loop.");
 
 static_assert(std::is_same_v<Stop, ::crucible::safety::proto::Stop>,
-    "fixy::sess::Stop alias must be identical to safety::proto::Stop.");
+              "fixy::sess::Stop alias must be identical to safety::proto::Stop.");
 
 static_assert(std::is_same_v<End, ::crucible::safety::proto::End>,
-    "fixy::sess::End alias must be identical to safety::proto::End.");
+              "fixy::sess::End alias must be identical to safety::proto::End.");
 
 static_assert(std::is_same_v<Continue, ::crucible::safety::proto::Continue>,
-    "fixy::sess::Continue alias must be identical to safety::proto::Continue.");
+              "fixy::sess::Continue alias must be identical to safety::proto::Continue.");
 
-static_assert(std::is_same_v<
-    EpochedDelegate<Send<int, End>, End, 0, 0>,
-    ::crucible::safety::proto::EpochedDelegate<
-        ::crucible::safety::proto::Send<int, ::crucible::safety::proto::End>,
-        ::crucible::safety::proto::End, 0, 0>>,
+static_assert(
+    std::is_same_v<
+        EpochedDelegate<Send<int, End>, End, 0, 0>,
+        ::crucible::safety::proto::EpochedDelegate<::crucible::safety::proto::Send<int, ::crucible::safety::proto::End>,
+                                                   ::crucible::safety::proto::End, 0, 0>>,
     "fixy::sess::EpochedDelegate alias must be identical to "
     "safety::proto::EpochedDelegate.");
 
@@ -689,106 +664,85 @@ static_assert(std::is_same_v<
 // drift breaks the build at the umbrella, not three TUs deep.
 
 // EpochCtx — value-template identity through a sample instantiation.
-static_assert(std::is_same_v<EpochCtx<5, 3>,
-                             ::crucible::safety::proto::EpochCtx<5, 3>>,
-    "fixy::sess::EpochCtx alias must be identical to safety::proto::EpochCtx.");
+static_assert(std::is_same_v<EpochCtx<5, 3>, ::crucible::safety::proto::EpochCtx<5, 3>>,
+              "fixy::sess::EpochCtx alias must be identical to safety::proto::EpochCtx.");
 
 // Protocol-shape predicates — value identity through a representative
 // protocol head.
-static_assert(is_send_v<Send<int, End>> ==
-              ::crucible::safety::proto::is_send_v<
-                  ::crucible::safety::proto::Send<
-                      int, ::crucible::safety::proto::End>>,
+static_assert(
+    is_send_v<Send<int, End>>
+        == ::crucible::safety::proto::is_send_v<::crucible::safety::proto::Send<int, ::crucible::safety::proto::End>>,
     "fixy::sess::is_send_v must mirror safety::proto::is_send_v.");
 
-static_assert(is_recv_v<Recv<int, End>> ==
-              ::crucible::safety::proto::is_recv_v<
-                  ::crucible::safety::proto::Recv<
-                      int, ::crucible::safety::proto::End>>,
+static_assert(
+    is_recv_v<Recv<int, End>>
+        == ::crucible::safety::proto::is_recv_v<::crucible::safety::proto::Recv<int, ::crucible::safety::proto::End>>,
     "fixy::sess::is_recv_v must mirror safety::proto::is_recv_v.");
 
-static_assert(is_loop_v<Loop<End>> ==
-              ::crucible::safety::proto::is_loop_v<
-                  ::crucible::safety::proto::Loop<
-                      ::crucible::safety::proto::End>>,
+static_assert(
+    is_loop_v<Loop<End>>
+        == ::crucible::safety::proto::is_loop_v<::crucible::safety::proto::Loop<::crucible::safety::proto::End>>,
     "fixy::sess::is_loop_v must mirror safety::proto::is_loop_v.");
 
 // PermSet — empty + insert + remove + contains + subset + disjoint.
-static_assert(std::is_same_v<EmptyPermSet,
-                             ::crucible::safety::proto::EmptyPermSet>,
-    "fixy::sess::EmptyPermSet alias must be identical to "
-    "safety::proto::EmptyPermSet.");
+static_assert(std::is_same_v<EmptyPermSet, ::crucible::safety::proto::EmptyPermSet>,
+              "fixy::sess::EmptyPermSet alias must be identical to "
+              "safety::proto::EmptyPermSet.");
 
 namespace u012_permset_witness {
 struct TagA {};
 struct TagB {};
-using PS  = PermSet<TagA>;
+using PS = PermSet<TagA>;
 using PS2 = perm_set_insert_t<PS, TagB>;
 using PS3 = perm_set_remove_t<PS2, TagA>;
-static_assert(perm_set_contains_v<PS, TagA>,
-    "fixy::sess::perm_set_contains_v must agree with substrate.");
-static_assert(!perm_set_contains_v<PS, TagB>,
-    "fixy::sess::perm_set_contains_v must reject missing tag.");
-static_assert(perm_set_subset_v<PS, PS2>,
-    "fixy::sess::perm_set_subset_v must accept PS ⊆ PS ∪ {TagB}.");
+static_assert(perm_set_contains_v<PS, TagA>, "fixy::sess::perm_set_contains_v must agree with substrate.");
+static_assert(!perm_set_contains_v<PS, TagB>, "fixy::sess::perm_set_contains_v must reject missing tag.");
+static_assert(perm_set_subset_v<PS, PS2>, "fixy::sess::perm_set_subset_v must accept PS ⊆ PS ∪ {TagB}.");
 static_assert(perm_set_disjoint_v<PermSet<TagA>, PermSet<TagB>>,
-    "fixy::sess::perm_set_disjoint_v must accept disjoint PermSets.");
-static_assert(std::is_same_v<PS3, PermSet<TagB>>,
-    "fixy::sess::perm_set_remove_t<PS+TagB, TagA> must yield {TagB}.");
+              "fixy::sess::perm_set_disjoint_v must accept disjoint PermSets.");
+static_assert(std::is_same_v<PS3, PermSet<TagB>>, "fixy::sess::perm_set_remove_t<PS+TagB, TagA> must yield {TagB}.");
 }  // namespace u012_permset_witness
 
 // Payload permission markers — Transferable / Borrowed / Returned /
 // DelegatedSession identity.
-static_assert(std::is_same_v<
-    Transferable<int, u012_permset_witness::TagA>,
-    ::crucible::safety::proto::Transferable<
-        int, u012_permset_witness::TagA>>,
-    "fixy::sess::Transferable alias must be identical to "
-    "safety::proto::Transferable.");
+static_assert(std::is_same_v<Transferable<int, u012_permset_witness::TagA>,
+                             ::crucible::safety::proto::Transferable<int, u012_permset_witness::TagA>>,
+              "fixy::sess::Transferable alias must be identical to "
+              "safety::proto::Transferable.");
 
-static_assert(std::is_same_v<
-    Borrowed<int, u012_permset_witness::TagA>,
-    ::crucible::safety::proto::Borrowed<
-        int, u012_permset_witness::TagA>>,
-    "fixy::sess::Borrowed alias must be identical to "
-    "safety::proto::Borrowed.");
+static_assert(std::is_same_v<Borrowed<int, u012_permset_witness::TagA>,
+                             ::crucible::safety::proto::Borrowed<int, u012_permset_witness::TagA>>,
+              "fixy::sess::Borrowed alias must be identical to "
+              "safety::proto::Borrowed.");
 
-static_assert(std::is_same_v<
-    Returned<int, u012_permset_witness::TagA>,
-    ::crucible::safety::proto::Returned<
-        int, u012_permset_witness::TagA>>,
-    "fixy::sess::Returned alias must be identical to "
-    "safety::proto::Returned.");
+static_assert(std::is_same_v<Returned<int, u012_permset_witness::TagA>,
+                             ::crucible::safety::proto::Returned<int, u012_permset_witness::TagA>>,
+              "fixy::sess::Returned alias must be identical to "
+              "safety::proto::Returned.");
 
-static_assert(is_transferable_v<
-    Transferable<int, u012_permset_witness::TagA>>,
-    "fixy::sess::is_transferable_v must accept Transferable<T, Tag>.");
-static_assert(is_borrowed_v<
-    Borrowed<int, u012_permset_witness::TagA>>,
-    "fixy::sess::is_borrowed_v must accept Borrowed<T, Tag>.");
-static_assert(is_returned_v<
-    Returned<int, u012_permset_witness::TagA>>,
-    "fixy::sess::is_returned_v must accept Returned<T, Tag>.");
-static_assert(!is_transferable_v<int>,
-    "fixy::sess::is_transferable_v must reject plain T.");
+static_assert(is_transferable_v<Transferable<int, u012_permset_witness::TagA>>,
+              "fixy::sess::is_transferable_v must accept Transferable<T, Tag>.");
+static_assert(is_borrowed_v<Borrowed<int, u012_permset_witness::TagA>>,
+              "fixy::sess::is_borrowed_v must accept Borrowed<T, Tag>.");
+static_assert(is_returned_v<Returned<int, u012_permset_witness::TagA>>,
+              "fixy::sess::is_returned_v must accept Returned<T, Tag>.");
+static_assert(!is_transferable_v<int>, "fixy::sess::is_transferable_v must reject plain T.");
 
 // SessionHandle / SessionHandleBase / PermissionedSessionHandle (PSH)
 // identity.  Use the same template-arg shape the substrate exposes —
 // SessionHandleBase<Proto, Derived=void> and SessionHandle<Proto, Resource, LoopCtx=void>.
-static_assert(std::is_same_v<
-    SessionHandleBase<Send<int, End>>,
-    ::crucible::safety::proto::SessionHandleBase<
-        ::crucible::safety::proto::Send<int, ::crucible::safety::proto::End>>>,
-    "fixy::sess::SessionHandleBase alias must be identical to "
-    "safety::proto::SessionHandleBase.");
+static_assert(std::is_same_v<SessionHandleBase<Send<int, End>>,
+                             ::crucible::safety::proto::SessionHandleBase<
+                                 ::crucible::safety::proto::Send<int, ::crucible::safety::proto::End>>>,
+              "fixy::sess::SessionHandleBase alias must be identical to "
+              "safety::proto::SessionHandleBase.");
 
-static_assert(std::is_same_v<
-    PSH<Send<int, End>, EmptyPermSet, int>,
-    ::crucible::safety::proto::PermissionedSessionHandle<
-        ::crucible::safety::proto::Send<int, ::crucible::safety::proto::End>,
-        ::crucible::safety::proto::EmptyPermSet, int, void>>,
-    "fixy::sess::PSH alias must yield "
-    "safety::proto::PermissionedSessionHandle<Proto, PS, Resource, void>.");
+static_assert(std::is_same_v<PSH<Send<int, End>, EmptyPermSet, int>,
+                             ::crucible::safety::proto::PermissionedSessionHandle<
+                                 ::crucible::safety::proto::Send<int, ::crucible::safety::proto::End>,
+                                 ::crucible::safety::proto::EmptyPermSet, int, void>>,
+              "fixy::sess::PSH alias must yield "
+              "safety::proto::PermissionedSessionHandle<Proto, PS, Resource, void>.");
 
 }  // namespace self_test
 
@@ -809,32 +763,26 @@ inline void runtime_smoke_test() noexcept {
     using PS0 = EmptyPermSet;
     using PS1 = perm_set_insert_t<PS0, WitnessTag>;
     using PS2 = perm_set_remove_t<PS1, WitnessTag>;
-    static_assert(std::is_same_v<PS0, PS2>,
-        "fixy::sess::runtime_smoke_test: insert+remove round-trips.");
-    static_assert(perm_set_contains_v<PS1, WitnessTag>,
-        "fixy::sess::runtime_smoke_test: contains after insert.");
+    static_assert(std::is_same_v<PS0, PS2>, "fixy::sess::runtime_smoke_test: insert+remove round-trips.");
+    static_assert(perm_set_contains_v<PS1, WitnessTag>, "fixy::sess::runtime_smoke_test: contains after insert.");
     static_assert(!perm_set_contains_v<PS0, WitnessTag>,
-        "fixy::sess::runtime_smoke_test: empty PermSet contains nothing.");
+                  "fixy::sess::runtime_smoke_test: empty PermSet contains nothing.");
 
     // Payload markers — type-witness via predicates (markers carry
     // non-default-constructible token fields, so we exercise the
     // is_*_v predicates instead of constructing instances).
     static_assert(is_transferable_v<Transferable<int, WitnessTag>>,
-        "fixy::sess::runtime_smoke_test: is_transferable_v accepts marker.");
+                  "fixy::sess::runtime_smoke_test: is_transferable_v accepts marker.");
     static_assert(is_borrowed_v<Borrowed<int, WitnessTag>>,
-        "fixy::sess::runtime_smoke_test: is_borrowed_v accepts marker.");
+                  "fixy::sess::runtime_smoke_test: is_borrowed_v accepts marker.");
     static_assert(is_returned_v<Returned<int, WitnessTag>>,
-        "fixy::sess::runtime_smoke_test: is_returned_v accepts marker.");
-    static_assert(!is_transferable_v<int>,
-        "fixy::sess::runtime_smoke_test: is_transferable_v rejects plain T.");
+                  "fixy::sess::runtime_smoke_test: is_returned_v accepts marker.");
+    static_assert(!is_transferable_v<int>, "fixy::sess::runtime_smoke_test: is_transferable_v rejects plain T.");
 
     // Protocol predicates — exercise variable templates.
-    static_assert(is_send_v<Send<int, End>>,
-        "fixy::sess::runtime_smoke_test: is_send_v identifies Send head.");
-    static_assert(!is_send_v<End>,
-        "fixy::sess::runtime_smoke_test: is_send_v rejects End.");
-    static_assert(is_loop_v<Loop<End>>,
-        "fixy::sess::runtime_smoke_test: is_loop_v identifies Loop head.");
+    static_assert(is_send_v<Send<int, End>>, "fixy::sess::runtime_smoke_test: is_send_v identifies Send head.");
+    static_assert(!is_send_v<End>, "fixy::sess::runtime_smoke_test: is_send_v rejects End.");
+    static_assert(is_loop_v<Loop<End>>, "fixy::sess::runtime_smoke_test: is_loop_v identifies Loop head.");
 }
 
 }  // namespace crucible::fixy::sess

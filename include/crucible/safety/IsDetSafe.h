@@ -30,9 +30,7 @@ struct is_det_safe_impl : std::false_type {
 };
 
 template <DetSafeTier_v Tier, typename U>
-struct is_det_safe_impl<::crucible::safety::DetSafe<Tier, U>>
-    : std::true_type
-{
+struct is_det_safe_impl<::crucible::safety::DetSafe<Tier, U>> : std::true_type {
     using value_type = U;
     static constexpr DetSafeTier_v tier = Tier;
     static constexpr bool has_tier = true;
@@ -41,32 +39,26 @@ struct is_det_safe_impl<::crucible::safety::DetSafe<Tier, U>>
 }  // namespace detail
 
 template <typename T>
-inline constexpr bool is_det_safe_v =
-    detail::is_det_safe_impl<std::remove_cvref_t<T>>::value;
+inline constexpr bool is_det_safe_v = detail::is_det_safe_impl<std::remove_cvref_t<T>>::value;
 
 template <typename T>
 concept IsDetSafe = is_det_safe_v<T>;
 
 template <typename T>
     requires is_det_safe_v<T>
-using det_safe_value_t =
-    typename detail::is_det_safe_impl<std::remove_cvref_t<T>>::value_type;
+using det_safe_value_t = typename detail::is_det_safe_impl<std::remove_cvref_t<T>>::value_type;
 
 template <typename T>
     requires is_det_safe_v<T>
-inline constexpr DetSafeTier_v det_safe_tier_v =
-    detail::is_det_safe_impl<std::remove_cvref_t<T>>::tier;
+inline constexpr DetSafeTier_v det_safe_tier_v = detail::is_det_safe_impl<std::remove_cvref_t<T>>::tier;
 
 // ── Self-test ─────────────────────────────────────────────────────
 
 namespace detail::is_det_safe_self_test {
 
-using DS_int_pure =
-    ::crucible::safety::DetSafe<DetSafeTier_v::Pure, int>;
-using DS_double_philox =
-    ::crucible::safety::DetSafe<DetSafeTier_v::PhiloxRng, double>;
-using DS_int_nds =
-    ::crucible::safety::DetSafe<DetSafeTier_v::NonDeterministicSyscall, int>;
+using DS_int_pure = ::crucible::safety::DetSafe<DetSafeTier_v::Pure, int>;
+using DS_double_philox = ::crucible::safety::DetSafe<DetSafeTier_v::PhiloxRng, double>;
+using DS_int_nds = ::crucible::safety::DetSafe<DetSafeTier_v::NonDeterministicSyscall, int>;
 
 static_assert(is_det_safe_v<DS_int_pure>);
 static_assert(is_det_safe_v<DS_double_philox>);
@@ -79,7 +71,10 @@ static_assert(!is_det_safe_v<int>);
 static_assert(!is_det_safe_v<int*>);
 static_assert(!is_det_safe_v<void>);
 
-struct LookalikeDetSafe { int value; DetSafeTier_v tier; };
+struct LookalikeDetSafe {
+    int value;
+    DetSafeTier_v tier;
+};
 static_assert(!is_det_safe_v<LookalikeDetSafe>);
 
 static_assert(!is_det_safe_v<DS_int_pure*>);
@@ -91,10 +86,8 @@ static_assert(std::is_same_v<det_safe_value_t<DS_int_pure>, int>);
 static_assert(std::is_same_v<det_safe_value_t<DS_double_philox>, double>);
 
 static_assert(det_safe_tier_v<DS_int_pure> == DetSafeTier_v::Pure);
-static_assert(det_safe_tier_v<DS_double_philox>
-              == DetSafeTier_v::PhiloxRng);
-static_assert(det_safe_tier_v<DS_int_nds>
-              == DetSafeTier_v::NonDeterministicSyscall);
+static_assert(det_safe_tier_v<DS_double_philox> == DetSafeTier_v::PhiloxRng);
+static_assert(det_safe_tier_v<DS_int_nds> == DetSafeTier_v::NonDeterministicSyscall);
 
 }  // namespace detail::is_det_safe_self_test
 

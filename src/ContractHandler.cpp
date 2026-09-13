@@ -36,17 +36,17 @@
 // post-mortem tooling expects.
 
 #include <crucible/Platform.h>
-#include <crucible/safety/Pre.h>   // crucible::detail::contract_failed declaration
+#include <crucible/safety/Pre.h>  // crucible::detail::contract_failed declaration
 
 #include <contracts>
 #include <cstdio>
 #include <cstdlib>
 
 #if !defined(CRUCIBLE_CONTRACT_NO_STACKTRACE)
-  #if __has_include(<stacktrace>) && defined(__cpp_lib_stacktrace)
-    #include <stacktrace>
-    #define CRUCIBLE_CONTRACT_HAS_STACKTRACE 1
-  #endif
+#if __has_include(<stacktrace>) && defined(__cpp_lib_stacktrace)
+#include <stacktrace>
+#define CRUCIBLE_CONTRACT_HAS_STACKTRACE 1
+#endif
 #endif
 
 // ─── Internal helpers ──────────────────────────────────────────────
@@ -60,16 +60,13 @@ void emit_stack_trace_() noexcept {
     std::fprintf(stderr, "  stack trace (most recent call first):\n");
     int depth = 0;
     for (auto const& entry : trace) {
-        if (depth >= 16) break;     // bound at 16 frames; deeper traces
-        auto desc = entry.description();   // are noise on a hot path
+        if (depth >= 16) break;  // bound at 16 frames; deeper traces
+        auto desc = entry.description();  // are noise on a hot path
         auto file = entry.source_file();
         auto line = entry.source_line();
-        std::fprintf(stderr, "    #%-2d %s",
-                     depth,
-                     desc.empty() ? "(unknown)" : desc.c_str());
+        std::fprintf(stderr, "    #%-2d %s", depth, desc.empty() ? "(unknown)" : desc.c_str());
         if (!file.empty() && line != 0) {
-            std::fprintf(stderr, " at %s:%u",
-                         file.c_str(), static_cast<unsigned>(line));
+            std::fprintf(stderr, " at %s:%u", file.c_str(), static_cast<unsigned>(line));
         }
         std::fputc('\n', stderr);
         ++depth;
@@ -78,17 +75,12 @@ void emit_stack_trace_() noexcept {
 }
 
 [[gnu::cold]]
-void emit_violation_diagnostic(char const* comment,
-                               char const* file,
-                               unsigned line,
-                               char const* fn,
+void emit_violation_diagnostic(char const* comment, char const* file, unsigned line, char const* fn,
                                char const* annotation = nullptr) noexcept {
     std::fprintf(stderr,
                  "crucible: contract violation: %s\n"
                  "  at %s:%u in %s\n",
-                 comment ? comment : "(no comment)",
-                 file ? file : "(unknown file)",
-                 line,
+                 comment ? comment : "(no comment)", file ? file : "(unknown file)", line,
                  fn ? fn : "(unknown function)");
     if (annotation && *annotation) {
         std::fprintf(stderr, "  note: %s\n", annotation);
@@ -99,19 +91,13 @@ void emit_violation_diagnostic(char const* comment,
 }  // namespace
 
 // ─── P2900 weak hook ───────────────────────────────────────────────
-extern "C++"
-[[gnu::weak, noreturn]]
-void handle_contract_violation(
-    const std::contracts::contract_violation& v) noexcept;
+extern "C++" [[gnu::weak, noreturn]]
+void handle_contract_violation(const std::contracts::contract_violation& v) noexcept;
 
 [[gnu::weak, noreturn]]
-void handle_contract_violation(
-    const std::contracts::contract_violation& v) noexcept {
+void handle_contract_violation(const std::contracts::contract_violation& v) noexcept {
     const std::source_location loc = v.location();
-    emit_violation_diagnostic(v.comment(),
-                              loc.file_name(),
-                              loc.line(),
-                              loc.function_name(),
+    emit_violation_diagnostic(v.comment(), loc.file_name(), loc.line(), loc.function_name(),
                               /*annotation=*/nullptr);
     ::crucible::detail::breakpoint_if_debugging();
     std::abort();
@@ -129,10 +115,7 @@ void handle_contract_violation(
 namespace crucible::detail {
 
 [[noreturn, gnu::cold]]
-void contract_failed(char const* expr,
-                     char const* file,
-                     int line,
-                     char const* fn) noexcept {
+void contract_failed(char const* expr, char const* file, int line, char const* fn) noexcept {
     emit_violation_diagnostic(expr, file, static_cast<unsigned>(line), fn,
                               /*annotation=*/nullptr);
     ::crucible::detail::breakpoint_if_debugging();
@@ -140,11 +123,7 @@ void contract_failed(char const* expr,
 }
 
 [[noreturn, gnu::cold]]
-void contract_failed_msg(char const* expr,
-                         char const* file,
-                         int line,
-                         char const* fn,
-                         char const* msg) noexcept {
+void contract_failed_msg(char const* expr, char const* file, int line, char const* fn, char const* msg) noexcept {
     emit_violation_diagnostic(expr, file, static_cast<unsigned>(line), fn, msg);
     ::crucible::detail::breakpoint_if_debugging();
     std::abort();

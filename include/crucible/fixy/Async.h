@@ -80,10 +80,10 @@
 //   mint_mbarrier_arrive : ARM-trunk scope        + System (⊤) scope
 //   mint_mbarrier_wait   : ARM-trunk scope        + non-ctx
 
-#include <crucible/fixy/Grant.h>                          // grant_base, which_dim, IsGrantTag
-#include <crucible/fixy/Dim.h>                            // dim::DimensionAxis
+#include <crucible/fixy/Grant.h>  // grant_base, which_dim, IsGrantTag
+#include <crucible/fixy/Dim.h>  // dim::DimensionAxis
 #include <crucible/algebra/lattices/MemoryScopeLattice.h>  // MemoryScope (V-265)
-#include <crucible/effects/ExecCtx.h>                     // effects::IsExecCtx
+#include <crucible/effects/ExecCtx.h>  // effects::IsExecCtx
 
 #include <cstdint>
 #include <type_traits>
@@ -150,8 +150,7 @@ struct which_dim<async::mbarrier_wait<Scope>>
 
 // Engagement marker for the Synchronization axis (V-270 ships the first
 // which_dim-routed grants on it, so the named alias lands here).
-using accept_default_strict_for_Synchronization =
-    accept_default_strict_for<dim::DimensionAxis::Synchronization>;
+using accept_default_strict_for_Synchronization = accept_default_strict_for<dim::DimensionAxis::Synchronization>;
 
 }  // namespace crucible::fixy::grant
 
@@ -165,15 +164,15 @@ namespace ga = ::crucible::fixy::grant::async;
 
 // ── Copy aliases — pin the canonical accel scopes, leave Stages/Bytes ─
 template <std::uint8_t Stages, std::uint32_t Bytes>
-using copy_cta = ga::copy<Stages, MemoryScope::Cta, Bytes>;       // cp.async → .shared::cta
+using copy_cta = ga::copy<Stages, MemoryScope::Cta, Bytes>;  // cp.async → .shared::cta
 template <std::uint8_t Stages, std::uint32_t Bytes>
 using copy_cluster = ga::copy<Stages, MemoryScope::Cluster, Bytes>;  // TMA → .shared::cluster
 
 // ── mbarrier aliases — the cta / cluster barrier shapes ───────────────
-using mbarrier_arrive_cta     = ga::mbarrier_arrive<MemoryScope::Cta>;
-using mbarrier_wait_cta       = ga::mbarrier_wait<MemoryScope::Cta>;
+using mbarrier_arrive_cta = ga::mbarrier_arrive<MemoryScope::Cta>;
+using mbarrier_wait_cta = ga::mbarrier_wait<MemoryScope::Cta>;
 using mbarrier_arrive_cluster = ga::mbarrier_arrive<MemoryScope::Cluster>;
-using mbarrier_wait_cluster   = ga::mbarrier_wait<MemoryScope::Cluster>;
+using mbarrier_wait_cluster = ga::mbarrier_wait<MemoryScope::Cluster>;
 
 // ── §XXI ctx-fit concepts — ONE concept per mint ─────────────────────
 
@@ -184,39 +183,30 @@ concept CtxFitsAsyncGrant = ::crucible::effects::IsExecCtx<Ctx>;
 // async copy requires a non-degenerate pipeline (Stages>=1), a non-empty
 // transfer (Bytes>0), and an accelerator-realizable scope.
 template <typename Ctx, std::uint8_t Stages, MemoryScope Scope, std::uint32_t Bytes>
-concept CtxFitsAsyncCopyMint =
-    CtxFitsAsyncGrant<Ctx>
-    && (Stages >= 1)
-    && (Bytes > 0)
-    && async_scope_realizable(Scope);
+concept CtxFitsAsyncCopyMint = CtxFitsAsyncGrant<Ctx> && (Stages >= 1) && (Bytes > 0) && async_scope_realizable(Scope);
 
 // mbarrier arrive/wait require only an accelerator-realizable scope.
 template <typename Ctx, MemoryScope Scope>
-concept CtxFitsMbarrierMint =
-    CtxFitsAsyncGrant<Ctx> && async_scope_realizable(Scope);
+concept CtxFitsMbarrierMint = CtxFitsAsyncGrant<Ctx> && async_scope_realizable(Scope);
 
 // ── mint_async_copy<Stages, Scope, Bytes>(ctx) → copy<Stages, Scope, Bytes> ─
-template <std::uint8_t Stages, MemoryScope Scope, std::uint32_t Bytes,
-          ::crucible::effects::IsExecCtx Ctx>
+template <std::uint8_t Stages, MemoryScope Scope, std::uint32_t Bytes, ::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsAsyncCopyMint<Ctx, Stages, Scope, Bytes>
-[[nodiscard]] constexpr ga::copy<Stages, Scope, Bytes>
-mint_async_copy(Ctx const&) noexcept {
+[[nodiscard]] constexpr ga::copy<Stages, Scope, Bytes> mint_async_copy(Ctx const&) noexcept {
     return {};
 }
 
 // ── mint_mbarrier_arrive<Scope>(ctx) → mbarrier_arrive<Scope> ─────────
 template <MemoryScope Scope, ::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsMbarrierMint<Ctx, Scope>
-[[nodiscard]] constexpr ga::mbarrier_arrive<Scope>
-mint_mbarrier_arrive(Ctx const&) noexcept {
+[[nodiscard]] constexpr ga::mbarrier_arrive<Scope> mint_mbarrier_arrive(Ctx const&) noexcept {
     return {};
 }
 
 // ── mint_mbarrier_wait<Scope>(ctx) → mbarrier_wait<Scope> ─────────────
 template <MemoryScope Scope, ::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsMbarrierMint<Ctx, Scope>
-[[nodiscard]] constexpr ga::mbarrier_wait<Scope>
-mint_mbarrier_wait(Ctx const&) noexcept {
+[[nodiscard]] constexpr ga::mbarrier_wait<Scope> mint_mbarrier_wait(Ctx const&) noexcept {
     return {};
 }
 
@@ -240,85 +230,74 @@ static_assert(IsGrantTag<ga::mbarrier_arrive<MemoryScope::Cta>>);
 static_assert(IsGrantTag<ga::mbarrier_wait<MemoryScope::Cluster>>);
 
 // ── Layer 2: sizeof — EBO-collapsible (1 byte standalone) ─────────────
-static_assert(sizeof(ga::copy<4, MemoryScope::Gpu, 256>)        == 1);
-static_assert(sizeof(ga::mbarrier_arrive<MemoryScope::Warp>)    == 1);
-static_assert(sizeof(ga::mbarrier_wait<MemoryScope::Cta>)       == 1);
+static_assert(sizeof(ga::copy<4, MemoryScope::Gpu, 256>) == 1);
+static_assert(sizeof(ga::mbarrier_arrive<MemoryScope::Warp>) == 1);
+static_assert(sizeof(ga::mbarrier_wait<MemoryScope::Cta>) == 1);
 
 // ── Layer 3: which_dim routing — every family to Synchronization ──────
-static_assert(which_dim_v<ga::copy<2, MemoryScope::Cta, 16>>    == D::Synchronization);
+static_assert(which_dim_v<ga::copy<2, MemoryScope::Cta, 16>> == D::Synchronization);
 static_assert(which_dim_v<ga::mbarrier_arrive<MemoryScope::Cta>> == D::Synchronization);
-static_assert(which_dim_v<ga::mbarrier_wait<MemoryScope::Cta>>  == D::Synchronization);
-static_assert(which_dim_v<copy_cta<2, 16>>                      == D::Synchronization);
-static_assert(which_dim_v<mbarrier_arrive_cluster>              == D::Synchronization);
+static_assert(which_dim_v<ga::mbarrier_wait<MemoryScope::Cta>> == D::Synchronization);
+static_assert(which_dim_v<copy_cta<2, 16>> == D::Synchronization);
+static_assert(which_dim_v<mbarrier_arrive_cluster> == D::Synchronization);
 
 // ── Layer 4: NTTP / type distinctness ─────────────────────────────────
-static_assert(!std::is_same_v<ga::copy<2, MemoryScope::Cta, 16>,
-                              ga::copy<4, MemoryScope::Cta, 16>>);   // Stages
-static_assert(!std::is_same_v<ga::copy<2, MemoryScope::Cta, 16>,
-                              ga::copy<2, MemoryScope::Cluster, 16>>); // Scope
-static_assert(!std::is_same_v<ga::copy<2, MemoryScope::Cta, 16>,
-                              ga::copy<2, MemoryScope::Cta, 32>>);    // Bytes
+static_assert(!std::is_same_v<ga::copy<2, MemoryScope::Cta, 16>, ga::copy<4, MemoryScope::Cta, 16>>);  // Stages
+static_assert(!std::is_same_v<ga::copy<2, MemoryScope::Cta, 16>, ga::copy<2, MemoryScope::Cluster, 16>>);  // Scope
+static_assert(!std::is_same_v<ga::copy<2, MemoryScope::Cta, 16>, ga::copy<2, MemoryScope::Cta, 32>>);  // Bytes
 static_assert(!std::is_same_v<ga::mbarrier_arrive<MemoryScope::Cta>,
                               ga::mbarrier_wait<MemoryScope::Cta>>);  // arrive ≠ wait
 static_assert(!std::is_same_v<mbarrier_arrive_cta, mbarrier_arrive_cluster>);
-static_assert( std::is_same_v<copy_cta<2, 16>, ga::copy<2, MemoryScope::Cta, 16>>);
+static_assert(std::is_same_v<copy_cta<2, 16>, ga::copy<2, MemoryScope::Cta, 16>>);
 
 // ── Layer 5: the accel-scope realizability predicate truth table ──────
-static_assert( async_scope_realizable(MemoryScope::Warp));
-static_assert( async_scope_realizable(MemoryScope::Cta));
-static_assert( async_scope_realizable(MemoryScope::Cluster));
-static_assert( async_scope_realizable(MemoryScope::Gpu));
-static_assert(!async_scope_realizable(MemoryScope::Thread));   // ⊥ sentinel
-static_assert(!async_scope_realizable(MemoryScope::System));   // ⊤ sentinel
-static_assert(!async_scope_realizable(MemoryScope::Inner));    // ARM trunk
-static_assert(!async_scope_realizable(MemoryScope::Outer));    // ARM trunk
+static_assert(async_scope_realizable(MemoryScope::Warp));
+static_assert(async_scope_realizable(MemoryScope::Cta));
+static_assert(async_scope_realizable(MemoryScope::Cluster));
+static_assert(async_scope_realizable(MemoryScope::Gpu));
+static_assert(!async_scope_realizable(MemoryScope::Thread));  // ⊥ sentinel
+static_assert(!async_scope_realizable(MemoryScope::System));  // ⊤ sentinel
+static_assert(!async_scope_realizable(MemoryScope::Inner));  // ARM trunk
+static_assert(!async_scope_realizable(MemoryScope::Outer));  // ARM trunk
 
 // ── Layer 6: the three §XXI mints synthesize the right grant types ────
 constexpr eff::TestRunnerCtx ctx{};
 
-static_assert(std::is_same_v<
-    decltype(mint_async_copy<2, MemoryScope::Cta, 16>(ctx)),
-    ga::copy<2, MemoryScope::Cta, 16>>);
-static_assert(std::is_same_v<
-    decltype(mint_mbarrier_arrive<MemoryScope::Cluster>(ctx)),
-    ga::mbarrier_arrive<MemoryScope::Cluster>>);
-static_assert(std::is_same_v<
-    decltype(mint_mbarrier_wait<MemoryScope::Cta>(ctx)),
-    ga::mbarrier_wait<MemoryScope::Cta>>);
+static_assert(
+    std::is_same_v<decltype(mint_async_copy<2, MemoryScope::Cta, 16>(ctx)), ga::copy<2, MemoryScope::Cta, 16>>);
+static_assert(std::is_same_v<decltype(mint_mbarrier_arrive<MemoryScope::Cluster>(ctx)),
+                             ga::mbarrier_arrive<MemoryScope::Cluster>>);
+static_assert(std::is_same_v<decltype(mint_mbarrier_wait<MemoryScope::Cta>(ctx)), ga::mbarrier_wait<MemoryScope::Cta>>);
 
 // ── Layer 7: mint concept gates reject the mismatch classes (positive
 //    side — the HS14 fixtures witness the negative side at compile-fail) ─
-static_assert( CtxFitsAsyncCopyMint<eff::TestRunnerCtx, 2, MemoryScope::Cta, 16>);
+static_assert(CtxFitsAsyncCopyMint<eff::TestRunnerCtx, 2, MemoryScope::Cta, 16>);
 static_assert(!CtxFitsAsyncCopyMint<eff::TestRunnerCtx, 0, MemoryScope::Cta, 16>);  // Stages==0
-static_assert(!CtxFitsAsyncCopyMint<eff::TestRunnerCtx, 2, MemoryScope::Cta, 0>);   // Bytes==0
-static_assert(!CtxFitsAsyncCopyMint<eff::TestRunnerCtx, 2, MemoryScope::Inner, 16>); // ARM scope
-static_assert(!CtxFitsAsyncCopyMint<int, 2, MemoryScope::Cta, 16>);                 // non-ctx
-static_assert( CtxFitsMbarrierMint<eff::TestRunnerCtx, MemoryScope::Cta>);
-static_assert( CtxFitsMbarrierMint<eff::TestRunnerCtx, MemoryScope::Gpu>);
-static_assert(!CtxFitsMbarrierMint<eff::TestRunnerCtx, MemoryScope::System>);       // ⊤ sentinel
-static_assert(!CtxFitsMbarrierMint<eff::TestRunnerCtx, MemoryScope::Inner>);        // ARM scope
-static_assert(!CtxFitsMbarrierMint<int, MemoryScope::Cta>);                         // non-ctx
+static_assert(!CtxFitsAsyncCopyMint<eff::TestRunnerCtx, 2, MemoryScope::Cta, 0>);  // Bytes==0
+static_assert(!CtxFitsAsyncCopyMint<eff::TestRunnerCtx, 2, MemoryScope::Inner, 16>);  // ARM scope
+static_assert(!CtxFitsAsyncCopyMint<int, 2, MemoryScope::Cta, 16>);  // non-ctx
+static_assert(CtxFitsMbarrierMint<eff::TestRunnerCtx, MemoryScope::Cta>);
+static_assert(CtxFitsMbarrierMint<eff::TestRunnerCtx, MemoryScope::Gpu>);
+static_assert(!CtxFitsMbarrierMint<eff::TestRunnerCtx, MemoryScope::System>);  // ⊤ sentinel
+static_assert(!CtxFitsMbarrierMint<eff::TestRunnerCtx, MemoryScope::Inner>);  // ARM scope
+static_assert(!CtxFitsMbarrierMint<int, MemoryScope::Cta>);  // non-ctx
 
 // ── Layer 8: engagement marker routes to the Synchronization axis ─────
-static_assert(which_dim_v<::crucible::fixy::grant::accept_default_strict_for_Synchronization>
-              == D::Synchronization);
+static_assert(which_dim_v<::crucible::fixy::grant::accept_default_strict_for_Synchronization> == D::Synchronization);
 
 // ── Runtime smoke test — non-constant args defeat consteval folding,
 //    catching SFINAE / inline-body bugs the static_asserts can mask. ───
 inline void runtime_smoke_test() {
     eff::TestRunnerCtx live_ctx{};
 
-    [[maybe_unused]] auto copy_grant    =
-        mint_async_copy<3, MemoryScope::Cta, 128>(live_ctx);
-    [[maybe_unused]] auto arrive_grant  =
-        mint_mbarrier_arrive<MemoryScope::Cta>(live_ctx);
-    [[maybe_unused]] auto wait_grant    =
-        mint_mbarrier_wait<MemoryScope::Cluster>(live_ctx);
+    [[maybe_unused]] auto copy_grant = mint_async_copy<3, MemoryScope::Cta, 128>(live_ctx);
+    [[maybe_unused]] auto arrive_grant = mint_mbarrier_arrive<MemoryScope::Cta>(live_ctx);
+    [[maybe_unused]] auto wait_grant = mint_mbarrier_wait<MemoryScope::Cluster>(live_ctx);
 
     // Direct alias construction round-trips too.
-    [[maybe_unused]] copy_cta<2, 16>     dbuf{};
+    [[maybe_unused]] copy_cta<2, 16> dbuf{};
     [[maybe_unused]] mbarrier_arrive_cta arr{};
-    [[maybe_unused]] mbarrier_wait_cta   wt{};
+    [[maybe_unused]] mbarrier_wait_cta wt{};
 }
 
 }  // namespace crucible::fixy::async::detail::v270_self_test

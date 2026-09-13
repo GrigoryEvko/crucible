@@ -160,13 +160,11 @@ constexpr std::uint32_t canonicalize(float x) noexcept {
 // one brace.
 
 struct CanonicalizeRecipeSpec {
-    ::crucible::RoundingMode         rounding    = ::crucible::RoundingMode::RN;
+    ::crucible::RoundingMode rounding = ::crucible::RoundingMode::RN;
     ::crucible::ReductionDeterminism determinism = ::crucible::ReductionDeterminism::ORDERED;
 
     constexpr CanonicalizeRecipeSpec() noexcept = default;
-    constexpr CanonicalizeRecipeSpec(
-        ::crucible::RoundingMode r,
-        ::crucible::ReductionDeterminism d) noexcept
+    constexpr CanonicalizeRecipeSpec(::crucible::RoundingMode r, ::crucible::ReductionDeterminism d) noexcept
         : rounding{r}, determinism{d} {}
     // Project from a full NumericalRecipe (non-explicit so call sites
     // can write `canonicalize_for<{recipe}>(x)`).
@@ -196,34 +194,30 @@ struct CanonicalizeRecipeSpec {
 template <CanonicalizeRecipeSpec Spec>
 [[nodiscard, gnu::const]]
 constexpr std::uint64_t canonicalize_for(double x) noexcept {
-    static_assert(::crucible::is_bitexact(Spec.determinism),
-                  "fixy::fp::canonicalize_for<Spec> requires "
-                  "ReductionDeterminism::BITEXACT_TC or BITEXACT_STRICT — "
-                  "merkle-hashing a double under UNORDERED/ORDERED tiers "
-                  "would lock content_hash to a non-portable bit pattern "
-                  "(cross-vendor drift exceeds 1 ULP). See "
-                  "NumericalRecipe.h is_bitexact() + FORGE.md §19.1.");
-    static_assert(Spec.rounding == ::crucible::RoundingMode::RN,
-                  "fixy::fp::canonicalize_for<Spec> requires "
-                  "RoundingMode::RN (round-to-nearest, ties to even) — "
-                  "merkle-folding under RZ/RM/RP would silently lock "
-                  "content_hash to a rounding mode no default kernel "
-                  "realizes. See NumericalRecipe.h:55 + Mimic backend "
-                  "rounding pinning.");
+    static_assert(::crucible::is_bitexact(Spec.determinism), "fixy::fp::canonicalize_for<Spec> requires "
+                                                             "ReductionDeterminism::BITEXACT_TC or BITEXACT_STRICT — "
+                                                             "merkle-hashing a double under UNORDERED/ORDERED tiers "
+                                                             "would lock content_hash to a non-portable bit pattern "
+                                                             "(cross-vendor drift exceeds 1 ULP). See "
+                                                             "NumericalRecipe.h is_bitexact() + FORGE.md §19.1.");
+    static_assert(Spec.rounding == ::crucible::RoundingMode::RN, "fixy::fp::canonicalize_for<Spec> requires "
+                                                                 "RoundingMode::RN (round-to-nearest, ties to even) — "
+                                                                 "merkle-folding under RZ/RM/RP would silently lock "
+                                                                 "content_hash to a rounding mode no default kernel "
+                                                                 "realizes. See NumericalRecipe.h:55 + Mimic backend "
+                                                                 "rounding pinning.");
     return canonicalize(x);
 }
 
 template <CanonicalizeRecipeSpec Spec>
 [[nodiscard, gnu::const]]
 constexpr std::uint32_t canonicalize_for(float x) noexcept {
-    static_assert(::crucible::is_bitexact(Spec.determinism),
-                  "fixy::fp::canonicalize_for<Spec> requires "
-                  "ReductionDeterminism::BITEXACT_TC or BITEXACT_STRICT "
-                  "for the float overload (same rationale as double).");
-    static_assert(Spec.rounding == ::crucible::RoundingMode::RN,
-                  "fixy::fp::canonicalize_for<Spec> requires "
-                  "RoundingMode::RN for the float overload (same "
-                  "rationale as double).");
+    static_assert(::crucible::is_bitexact(Spec.determinism), "fixy::fp::canonicalize_for<Spec> requires "
+                                                             "ReductionDeterminism::BITEXACT_TC or BITEXACT_STRICT "
+                                                             "for the float overload (same rationale as double).");
+    static_assert(Spec.rounding == ::crucible::RoundingMode::RN, "fixy::fp::canonicalize_for<Spec> requires "
+                                                                 "RoundingMode::RN for the float overload (same "
+                                                                 "rationale as double).");
     return canonicalize(x);
 }
 
@@ -245,48 +239,34 @@ namespace detail::fp_canonicalize_self_test {
 
 // Cell (a): NaN canonicalization. ALL NaN bit patterns project to
 // the single canonical qNaN.
-static_assert(canonicalize(std::numeric_limits<double>::quiet_NaN())
-              == kCanonicalQNaN64,
+static_assert(canonicalize(std::numeric_limits<double>::quiet_NaN()) == kCanonicalQNaN64,
               "V-093 cell (a): quiet NaN must project to canonical qNaN");
-static_assert(canonicalize(std::numeric_limits<float>::quiet_NaN())
-              == kCanonicalQNaN32,
+static_assert(canonicalize(std::numeric_limits<float>::quiet_NaN()) == kCanonicalQNaN32,
               "V-093 cell (a): quiet NaN (float) must project to canonical qNaN");
 // Custom NaN bit pattern (different payload) also projects:
-static_assert(canonicalize(std::bit_cast<double>(
-                  std::uint64_t{0x7FFABCDEF0123456ULL}))
-              == kCanonicalQNaN64,
+static_assert(canonicalize(std::bit_cast<double>(std::uint64_t{0x7FFABCDEF0123456ULL})) == kCanonicalQNaN64,
               "V-093 cell (a): custom-payload NaN must project to canonical qNaN");
-static_assert(canonicalize(std::bit_cast<float>(
-                  std::uint32_t{0xFFC12345U}))
-              == kCanonicalQNaN32,
+static_assert(canonicalize(std::bit_cast<float>(std::uint32_t{0xFFC12345U})) == kCanonicalQNaN32,
               "V-093 cell (a): negative-sign NaN (float) must project to canonical qNaN");
 
 // Cell (b): ±0 canonicalization. Both signed zeros → +0.
-static_assert(canonicalize(0.0) == 0,
-              "V-093 cell (b): +0.0 must canonicalize to bit pattern 0");
-static_assert(canonicalize(-0.0) == 0,
-              "V-093 cell (b): -0.0 must canonicalize to bit pattern 0");
-static_assert(canonicalize(0.0f) == 0,
-              "V-093 cell (b): +0.0f must canonicalize to bit pattern 0");
-static_assert(canonicalize(-0.0f) == 0,
-              "V-093 cell (b): -0.0f must canonicalize to bit pattern 0");
+static_assert(canonicalize(0.0) == 0, "V-093 cell (b): +0.0 must canonicalize to bit pattern 0");
+static_assert(canonicalize(-0.0) == 0, "V-093 cell (b): -0.0 must canonicalize to bit pattern 0");
+static_assert(canonicalize(0.0f) == 0, "V-093 cell (b): +0.0f must canonicalize to bit pattern 0");
+static_assert(canonicalize(-0.0f) == 0, "V-093 cell (b): -0.0f must canonicalize to bit pattern 0");
 // Sanity: -0.0 bit-cast WITHOUT canonicalize is NOT zero (proves the
 // projection is doing real work, not a tautology).
-static_assert(std::bit_cast<std::uint64_t>(-0.0) != 0,
-              "V-093 cell (b) sanity: -0.0 raw bit pattern is non-zero");
+static_assert(std::bit_cast<std::uint64_t>(-0.0) != 0, "V-093 cell (b) sanity: -0.0 raw bit pattern is non-zero");
 
 // Cell (c): finite non-zero values pass through unchanged.
-static_assert(canonicalize(1.0) == std::bit_cast<std::uint64_t>(1.0),
-              "V-093 cell (c): finite values pass through");
+static_assert(canonicalize(1.0) == std::bit_cast<std::uint64_t>(1.0), "V-093 cell (c): finite values pass through");
 static_assert(canonicalize(-3.14) == std::bit_cast<std::uint64_t>(-3.14),
               "V-093 cell (c): negative finite values pass through");
 static_assert(canonicalize(std::numeric_limits<double>::infinity())
-              == std::bit_cast<std::uint64_t>(
-                  std::numeric_limits<double>::infinity()),
+                  == std::bit_cast<std::uint64_t>(std::numeric_limits<double>::infinity()),
               "V-093 cell (c): +Inf passes through");
 static_assert(canonicalize(-std::numeric_limits<double>::infinity())
-              == std::bit_cast<std::uint64_t>(
-                  -std::numeric_limits<double>::infinity()),
+                  == std::bit_cast<std::uint64_t>(-std::numeric_limits<double>::infinity()),
               "V-093 cell (c): -Inf passes through (sign preserved)");
 
 // Cell (d): recipe-gated overload accepts a canonical
@@ -297,25 +277,21 @@ inline constexpr CanonicalizeRecipeSpec kCanonicalSpec{
     ::crucible::RoundingMode::RN,
     ::crucible::ReductionDeterminism::BITEXACT_STRICT,
 };
-static_assert(canonicalize_for<kCanonicalSpec>(1.5) ==
-              std::bit_cast<std::uint64_t>(1.5),
+static_assert(canonicalize_for<kCanonicalSpec>(1.5) == std::bit_cast<std::uint64_t>(1.5),
               "V-093 cell (d): canonical spec accepts finite double");
-static_assert(canonicalize_for<kCanonicalSpec>(-0.0) == 0,
-              "V-093 cell (d): canonical spec still canonicalizes ±0");
-static_assert(canonicalize_for<kCanonicalSpec>(2.5f) ==
-              std::bit_cast<std::uint32_t>(2.5f),
+static_assert(canonicalize_for<kCanonicalSpec>(-0.0) == 0, "V-093 cell (d): canonical spec still canonicalizes ±0");
+static_assert(canonicalize_for<kCanonicalSpec>(2.5f) == std::bit_cast<std::uint32_t>(2.5f),
               "V-093 cell (d): canonical spec accepts finite float");
 // Implicit-conversion path from a full NumericalRecipe — proves the
 // projection ctor binds the recipe's two relevant fields into the
 // structural NTTP-eligible Spec.
 inline constexpr ::crucible::NumericalRecipe kCanonicalRecipe{
     .reduction_algo = ::crucible::ReductionAlgo::PAIRWISE,
-    .rounding       = ::crucible::RoundingMode::RN,
-    .determinism    = ::crucible::ReductionDeterminism::BITEXACT_TC,
-    .hash           = ::crucible::RecipeHash{},
+    .rounding = ::crucible::RoundingMode::RN,
+    .determinism = ::crucible::ReductionDeterminism::BITEXACT_TC,
+    .hash = ::crucible::RecipeHash{},
 };
-static_assert(canonicalize_for<CanonicalizeRecipeSpec{kCanonicalRecipe}>(3.5) ==
-              std::bit_cast<std::uint64_t>(3.5),
+static_assert(canonicalize_for<CanonicalizeRecipeSpec{kCanonicalRecipe}>(3.5) == std::bit_cast<std::uint64_t>(3.5),
               "V-093 cell (d): projection ctor from NumericalRecipe");
 
 }  // namespace detail::fp_canonicalize_self_test

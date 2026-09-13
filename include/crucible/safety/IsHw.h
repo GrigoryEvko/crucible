@@ -39,32 +39,29 @@ struct is_hw_impl<::crucible::safety::Hw<Tier, U>> : std::true_type {
 }  // namespace detail
 
 template <typename T>
-inline constexpr bool is_hw_v =
-    detail::is_hw_impl<std::remove_cvref_t<T>>::value;
+inline constexpr bool is_hw_v = detail::is_hw_impl<std::remove_cvref_t<T>>::value;
 
 template <typename T>
 concept IsHw = is_hw_v<T>;
 
 template <typename T>
     requires is_hw_v<T>
-using hw_value_t =
-    typename detail::is_hw_impl<std::remove_cvref_t<T>>::value_type;
+using hw_value_t = typename detail::is_hw_impl<std::remove_cvref_t<T>>::value_type;
 
 template <typename T>
     requires is_hw_v<T>
-inline constexpr HwInstruction_v hw_tier_v =
-    detail::is_hw_impl<std::remove_cvref_t<T>>::tier;
+inline constexpr HwInstruction_v hw_tier_v = detail::is_hw_impl<std::remove_cvref_t<T>>::tier;
 
 // ── Self-test ─────────────────────────────────────────────────────
 
 namespace detail::is_hw_self_test {
 
-using H_int_none   = ::crucible::safety::Hw<HwInstruction_v::NoneAllowed,         int>;
-using H_int_scalar = ::crucible::safety::Hw<HwInstruction_v::Scalar,             int>;
-using H_int_vec    = ::crucible::safety::Hw<HwInstruction_v::Vectorizable,       int>;
-using H_int_tsc    = ::crucible::safety::Hw<HwInstruction_v::NonDeterministicTsc, int>;
-using H_int_msr    = ::crucible::safety::Hw<HwInstruction_v::PrivilegedMsr,      int>;
-using H_double_vec = ::crucible::safety::Hw<HwInstruction_v::Vectorizable,       double>;
+using H_int_none = ::crucible::safety::Hw<HwInstruction_v::NoneAllowed, int>;
+using H_int_scalar = ::crucible::safety::Hw<HwInstruction_v::Scalar, int>;
+using H_int_vec = ::crucible::safety::Hw<HwInstruction_v::Vectorizable, int>;
+using H_int_tsc = ::crucible::safety::Hw<HwInstruction_v::NonDeterministicTsc, int>;
+using H_int_msr = ::crucible::safety::Hw<HwInstruction_v::PrivilegedMsr, int>;
+using H_double_vec = ::crucible::safety::Hw<HwInstruction_v::Vectorizable, double>;
 
 static_assert(is_hw_v<H_int_none>);
 static_assert(is_hw_v<H_int_scalar>);
@@ -81,7 +78,10 @@ static_assert(!is_hw_v<int*>);
 static_assert(!is_hw_v<void>);
 static_assert(!is_hw_v<H_int_vec*>);
 
-struct LookalikeHw { int value; HwInstruction_v tier; };
+struct LookalikeHw {
+    int value;
+    HwInstruction_v tier;
+};
 static_assert(!is_hw_v<LookalikeHw>);
 
 static_assert(IsHw<H_int_vec>);
@@ -90,11 +90,11 @@ static_assert(!IsHw<int>);
 static_assert(std::is_same_v<hw_value_t<H_int_vec>, int>);
 static_assert(std::is_same_v<hw_value_t<H_double_vec>, double>);
 
-static_assert(hw_tier_v<H_int_none>   == HwInstruction_v::NoneAllowed);
+static_assert(hw_tier_v<H_int_none> == HwInstruction_v::NoneAllowed);
 static_assert(hw_tier_v<H_int_scalar> == HwInstruction_v::Scalar);
-static_assert(hw_tier_v<H_int_vec>    == HwInstruction_v::Vectorizable);
-static_assert(hw_tier_v<H_int_tsc>    == HwInstruction_v::NonDeterministicTsc);
-static_assert(hw_tier_v<H_int_msr>    == HwInstruction_v::PrivilegedMsr);
+static_assert(hw_tier_v<H_int_vec> == HwInstruction_v::Vectorizable);
+static_assert(hw_tier_v<H_int_tsc> == HwInstruction_v::NonDeterministicTsc);
+static_assert(hw_tier_v<H_int_msr> == HwInstruction_v::PrivilegedMsr);
 
 static_assert(hw_tier_v<H_int_scalar> != hw_tier_v<H_int_vec>);
 

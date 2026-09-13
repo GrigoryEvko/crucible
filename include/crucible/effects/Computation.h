@@ -96,7 +96,8 @@ class Computation;
 // over it); the requires-clause inside the class body is checked at
 // then()'s instantiation, by which time the specialization is visible.
 namespace detail {
-template <typename> struct is_computation : std::false_type {};
+template <typename>
+struct is_computation : std::false_type {};
 
 // FIXY-FOUND-107: extract_admits_payload — gate to reject extract on
 // engagement-laundered nested Computations.  Specialized for
@@ -110,15 +111,14 @@ template <typename> struct is_computation : std::false_type {};
 // admit extract.  This recursively forbids
 //     Computation<Row<>, Computation<Row<Bg>, U>>::extract()
 // where the outer Row<> launders the inner Row<Bg>'s engagement.
-template <typename> struct extract_admits_payload : std::true_type {};
+template <typename>
+struct extract_admits_payload : std::true_type {};
 template <typename T>
-inline constexpr bool extract_admits_payload_v =
-    extract_admits_payload<T>::value;
-}
+inline constexpr bool extract_admits_payload_v = extract_admits_payload<T>::value;
+}  // namespace detail
 
 template <typename T>
-concept IsComputation =
-    detail::is_computation<std::remove_cvref_t<T>>::value;
+concept IsComputation = detail::is_computation<std::remove_cvref_t<T>>::value;
 
 // ── Computation<R, T> ───────────────────────────────────────────────
 template <typename R, typename T>
@@ -126,12 +126,13 @@ class [[nodiscard]] Computation {
     // Cross-specialization friendship — `then`'s body needs to read
     // the inner T of a Computation<R2, U> returned from the bind
     // callback.  Standard monadic-carrier idiom; no broader access.
-    template <typename, typename> friend class Computation;
+    template <typename, typename>
+    friend class Computation;
 
 public:
     // ── Public type aliases ─────────────────────────────────────────
-    using row_type    = R;
-    using value_type  = T;
+    using row_type = R;
+    using value_type = T;
 
     // The substrate identity (FOUND-H04).  Downstream code targeting
     // the Graded substrate uniformly (FOUND-I cache key federation,
@@ -158,18 +159,16 @@ public:
     // ── Diagnostic ──────────────────────────────────────────────────
     //
     // Static rather than per-instance; the row is type-level only.
-    [[nodiscard]] static consteval std::size_t effect_count_in_row() noexcept {
-        return row_size_v<R>;
-    }
+    [[nodiscard]] static consteval std::size_t effect_count_in_row() noexcept { return row_size_v<R>; }
 
     // ── Object semantics (defaulted; see Graded.h for the rationale
     //     on NOT specifying explicit noexcept on `= default`) ─────────
-    constexpr Computation()                              = default;
-    constexpr Computation(const Computation&)            = default;
-    constexpr Computation(Computation&&)                 = default;
+    constexpr Computation() = default;
+    constexpr Computation(const Computation&) = default;
+    constexpr Computation(Computation&&) = default;
     constexpr Computation& operator=(const Computation&) = default;
-    constexpr Computation& operator=(Computation&&)      = default;
-    ~Computation()                                       = default;
+    constexpr Computation& operator=(Computation&&) = default;
+    ~Computation() = default;
 
     // ── Value-taking constructor ────────────────────────────────────
     //
@@ -180,8 +179,7 @@ public:
     // Forwards into the substrate's two-arg ctor with a default-
     // constructed grade (the empty-struct singleton inhabitant of
     // At<Es...>::element_type).
-    explicit constexpr Computation(T x)
-        noexcept(std::is_nothrow_move_constructible_v<T>)
+    explicit constexpr Computation(T x) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(x), typename graded_type::grade_type{}} {}
 
     // ── Public operations (METX-1 #473 bodies, H04 substrate-routed) ─
@@ -189,9 +187,8 @@ public:
     // `mk` — pure-value lift into the empty row.  Concrete row R must
     // BE the empty row (substitution principle is the caller's job at
     // alias-declaration time; here we only admit the no-effect case).
-    [[nodiscard]] static constexpr Computation mk(T x)
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-        requires (row_size_v<R> == 0)
+    [[nodiscard]] static constexpr Computation mk(T x) noexcept(std::is_nothrow_move_constructible_v<T>)
+        requires(row_size_v<R> == 0)
     {
         return Computation{std::move(x)};
     }
@@ -210,9 +207,8 @@ public:
     // pure-row lift derives authority from the empty-row R constraint
     // itself — there's nothing left to gate at the ctx level.  Compare
     // with `mint_computation_in_ctx<Cap, Ctx>` (below) which IS Ctx-bound.
-    [[nodiscard]] static constexpr Computation mint_computation(T x)
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-        requires (row_size_v<R> == 0)
+    [[nodiscard]] static constexpr Computation mint_computation(T x) noexcept(std::is_nothrow_move_constructible_v<T>)
+        requires(row_size_v<R> == 0)
     {
         return Computation{std::move(x)};
     }
@@ -235,17 +231,14 @@ public:
     //
     // The constraint recursively rejects: T = Computation<R', U>
     // requires R' to be empty AND U to also admit extract.
-    [[nodiscard]] constexpr const T& extract() const & noexcept
-        requires (row_size_v<R> == 0)
-              && detail::extract_admits_payload_v<T>
+    [[nodiscard]] constexpr const T& extract() const& noexcept
+        requires(row_size_v<R> == 0) && detail::extract_admits_payload_v<T>
     {
         return impl_.peek();
     }
 
-    [[nodiscard]] constexpr T extract() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-        requires (row_size_v<R> == 0)
-              && detail::extract_admits_payload_v<T>
+    [[nodiscard]] constexpr T extract() && noexcept(std::is_nothrow_move_constructible_v<T>)
+        requires(row_size_v<R> == 0) && detail::extract_admits_payload_v<T>
     {
         return std::move(impl_).consume();
     }
@@ -294,10 +287,8 @@ public:
     // call-site source, not just in the ticket text.
     template <Effect Cap>
         requires IsEffect<Cap>
-    [[nodiscard]] static constexpr auto lift(T x)
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-        -> Computation<Row<Cap>, T>
-    {
+    [[nodiscard]] static constexpr auto lift(T x) noexcept(std::is_nothrow_move_constructible_v<T>)
+        -> Computation<Row<Cap>, T> {
         return Computation<Row<Cap>, T>{std::move(x)};
     }
 
@@ -340,13 +331,10 @@ public:
     // -O3 — the parameter is unused at runtime, only its TYPE
     // matters at substitution.
     template <Effect Cap, class Ctx>
-        requires IsEffect<Cap>
-              && ::crucible::effects::IsExecCtx<Ctx>
+        requires IsEffect<Cap> && ::crucible::effects::IsExecCtx<Ctx>
               && row_contains_v<typename std::remove_cvref_t<Ctx>::row_type, Cap>
-    [[nodiscard]] static constexpr auto lift_in(Ctx const&, T x)
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-        -> Computation<Row<Cap>, T>
-    {
+    [[nodiscard]] static constexpr auto lift_in(Ctx const&, T x) noexcept(std::is_nothrow_move_constructible_v<T>)
+        -> Computation<Row<Cap>, T> {
         return Computation<Row<Cap>, T>{std::move(x)};
     }
 
@@ -365,13 +353,11 @@ public:
     // boxes ticked from the canonical mints table.  Binary-identical
     // codegen at -O3 with `lift_in` (zero-overhead alias).
     template <Effect Cap, class Ctx>
-        requires IsEffect<Cap>
-              && ::crucible::effects::IsExecCtx<Ctx>
+        requires IsEffect<Cap> && ::crucible::effects::IsExecCtx<Ctx>
               && row_contains_v<typename std::remove_cvref_t<Ctx>::row_type, Cap>
-    [[nodiscard]] static constexpr auto mint_computation_in_ctx(Ctx const&, T x)
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-        -> Computation<Row<Cap>, T>
-    {
+    [[nodiscard]] static constexpr auto mint_computation_in_ctx(Ctx const&,
+                                                                T x) noexcept(std::is_nothrow_move_constructible_v<T>)
+        -> Computation<Row<Cap>, T> {
         return Computation<Row<Cap>, T>{std::move(x)};
     }
 
@@ -429,21 +415,14 @@ public:
     // the Linear<T> via std::move, which works for move-only T by
     // construction.
     template <typename R2>
-        requires Subrow<R, R2>
-              && (row_size_v<R> > 0 || row_size_v<R2> == 0)
-              && std::is_copy_constructible_v<T>
-    [[nodiscard]] constexpr Computation<R2, T> weaken() const &
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
-    {
+        requires Subrow<R, R2> && (row_size_v<R> > 0 || row_size_v<R2> == 0) && std::is_copy_constructible_v<T>
+    [[nodiscard]] constexpr Computation<R2, T> weaken() const& noexcept(std::is_nothrow_copy_constructible_v<T>) {
         return Computation<R2, T>{impl_.peek()};
     }
 
     template <typename R2>
-        requires Subrow<R, R2>
-              && (row_size_v<R> > 0 || row_size_v<R2> == 0)
-    [[nodiscard]] constexpr Computation<R2, T> weaken() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+        requires Subrow<R, R2> && (row_size_v<R> > 0 || row_size_v<R2> == 0)
+    [[nodiscard]] constexpr Computation<R2, T> weaken() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return Computation<R2, T>{std::move(impl_).consume()};
     }
 
@@ -459,27 +438,22 @@ public:
 
     template <typename F>
         requires std::is_invocable_v<F, const T&>
-    [[nodiscard]] constexpr auto map(F&& f) const &
-        noexcept(std::is_nothrow_invocable_v<F, const T&>
-                 && std::is_nothrow_move_constructible_v<
-                        std::invoke_result_t<F, const T&>>)
-        -> Computation<R, std::invoke_result_t<F, const T&>>
-    {
+    [[nodiscard]] constexpr auto
+    map(F&& f) const& noexcept(std::is_nothrow_invocable_v<F, const T&>
+                               && std::is_nothrow_move_constructible_v<std::invoke_result_t<F, const T&>>)
+        -> Computation<R, std::invoke_result_t<F, const T&>> {
         using U = std::invoke_result_t<F, const T&>;
         return Computation<R, U>{std::forward<F>(f)(impl_.peek())};
     }
 
     template <typename F>
         requires std::is_invocable_v<F, T>
-    [[nodiscard]] constexpr auto map(F&& f) &&
-        noexcept(std::is_nothrow_invocable_v<F, T>
-                 && std::is_nothrow_move_constructible_v<
-                        std::invoke_result_t<F, T>>)
-        -> Computation<R, std::invoke_result_t<F, T>>
-    {
+    [[nodiscard]] constexpr auto
+    map(F&& f) && noexcept(std::is_nothrow_invocable_v<F, T>
+                           && std::is_nothrow_move_constructible_v<std::invoke_result_t<F, T>>)
+        -> Computation<R, std::invoke_result_t<F, T>> {
         using U = std::invoke_result_t<F, T>;
-        return Computation<R, U>{
-            std::forward<F>(f)(std::move(impl_).consume())};
+        return Computation<R, U>{std::forward<F>(f)(std::move(impl_).consume())};
     }
 
     // ── then(k) — monadic bind, accumulates effect rows ─────────────
@@ -523,36 +497,28 @@ public:
     // no public-field exposure required.
 
     template <typename F>
-        requires std::is_invocable_v<F, const T&>
-              && IsComputation<std::invoke_result_t<F, const T&>>
-              && detail::extract_admits_payload_v<
-                     typename std::invoke_result_t<F, const T&>::value_type>
-    [[nodiscard]] constexpr auto then(F&& k) const &
-        -> Computation<
-            row_union_t<R, typename std::invoke_result_t<F, const T&>::row_type>,
-            typename std::invoke_result_t<F, const T&>::value_type>
-    {
-        using Inner  = std::invoke_result_t<F, const T&>;
-        using R2     = typename Inner::row_type;
-        using U      = typename Inner::value_type;
+        requires std::is_invocable_v<F, const T&> && IsComputation<std::invoke_result_t<F, const T&>>
+              && detail::extract_admits_payload_v<typename std::invoke_result_t<F, const T&>::value_type>
+    [[nodiscard]] constexpr auto
+    then(F&& k) const& -> Computation<row_union_t<R, typename std::invoke_result_t<F, const T&>::row_type>,
+                                      typename std::invoke_result_t<F, const T&>::value_type> {
+        using Inner = std::invoke_result_t<F, const T&>;
+        using R2 = typename Inner::row_type;
+        using U = typename Inner::value_type;
         using Result = Computation<row_union_t<R, R2>, U>;
         Inner intermediate = std::forward<F>(k)(impl_.peek());
         return Result{std::move(intermediate.impl_).consume()};
     }
 
     template <typename F>
-        requires std::is_invocable_v<F, T>
-              && IsComputation<std::invoke_result_t<F, T>>
-              && detail::extract_admits_payload_v<
-                     typename std::invoke_result_t<F, T>::value_type>
-    [[nodiscard]] constexpr auto then(F&& k) &&
-        -> Computation<
-            row_union_t<R, typename std::invoke_result_t<F, T>::row_type>,
-            typename std::invoke_result_t<F, T>::value_type>
-    {
-        using Inner  = std::invoke_result_t<F, T>;
-        using R2     = typename Inner::row_type;
-        using U      = typename Inner::value_type;
+        requires std::is_invocable_v<F, T> && IsComputation<std::invoke_result_t<F, T>>
+              && detail::extract_admits_payload_v<typename std::invoke_result_t<F, T>::value_type>
+    [[nodiscard]] constexpr auto
+    then(F&& k) && -> Computation<row_union_t<R, typename std::invoke_result_t<F, T>::row_type>,
+                                  typename std::invoke_result_t<F, T>::value_type> {
+        using Inner = std::invoke_result_t<F, T>;
+        using R2 = typename Inner::row_type;
+        using U = typename Inner::value_type;
         using Result = Computation<row_union_t<R, R2>, U>;
         Inner intermediate = std::forward<F>(k)(std::move(impl_).consume());
         return Result{std::move(intermediate.impl_).consume()};
@@ -566,13 +532,9 @@ public:
     // (FOUND-I-series row_hash), or any future Graded-targeting
     // operation.  Two overloads to allow zero-copy borrow on lvalue
     // and move-out on rvalue source.
-    [[nodiscard]] constexpr const graded_type& graded() const & noexcept {
-        return impl_;
-    }
+    [[nodiscard]] constexpr const graded_type& graded() const& noexcept { return impl_; }
 
-    [[nodiscard]] constexpr graded_type graded() &&
-        noexcept(std::is_nothrow_move_constructible_v<graded_type>)
-    {
+    [[nodiscard]] constexpr graded_type graded() && noexcept(std::is_nothrow_move_constructible_v<graded_type>) {
         return std::move(impl_);
     }
 };
@@ -592,37 +554,37 @@ struct is_computation<Computation<R, T>> : std::true_type {};
 // is non-empty (engaged) OR U itself recursively fails the check.
 template <typename R, typename U>
 struct extract_admits_payload<Computation<R, U>>
-    : std::bool_constant<(row_size_v<R> == 0)
-                       && extract_admits_payload<U>::value> {};
+    : std::bool_constant<(row_size_v<R> == 0) && extract_admits_payload<U>::value> {};
 }  // namespace detail
 
 // ── Layout invariant macro (used by METX-4 compat aliases) ─────────
-#define CRUCIBLE_COMPUTATION_LAYOUT_INVARIANT(ComputationAlias, T_)         \
-    static_assert(sizeof(ComputationAlias<T_>) == sizeof(T_),               \
-                  "Computation alias " #ComputationAlias " over " #T_       \
-                  " violates the zero-overhead contract; review "           \
+#define CRUCIBLE_COMPUTATION_LAYOUT_INVARIANT(ComputationAlias, T_)                                                   \
+    static_assert(sizeof(ComputationAlias<T_>) == sizeof(T_),                                                         \
+                  "Computation alias " #ComputationAlias " over " #T_ " violates the zero-overhead contract; review " \
                   "[[no_unique_address]] usage")
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::computation_self_test {
 
 struct EmptyValue {};
-struct OneByteValue { char c{0}; };
-struct EightByteValue { unsigned long long v{0}; };
+struct OneByteValue {
+    char c{0};
+};
+struct EightByteValue {
+    unsigned long long v{0};
+};
 
-using C_empty       = Computation<Row<>, EmptyValue>;
-using C_one_byte    = Computation<Row<>, OneByteValue>;
-using C_eight_byte  = Computation<Row<Effect::Bg>, EightByteValue>;
+using C_empty = Computation<Row<>, EmptyValue>;
+using C_one_byte = Computation<Row<>, OneByteValue>;
+using C_eight_byte = Computation<Row<Effect::Bg>, EightByteValue>;
 
 // Type aliases reachable.
-static_assert(std::is_same_v<C_empty::row_type,   Row<>>);
+static_assert(std::is_same_v<C_empty::row_type, Row<>>);
 static_assert(std::is_same_v<C_empty::value_type, EmptyValue>);
 
 // FOUND-H04: substrate identity reachable through graded_type alias.
-static_assert(std::is_same_v<C_empty::graded_type,
-                             ComputationGraded<Row<>, EmptyValue>>);
-static_assert(std::is_same_v<C_eight_byte::graded_type,
-                             ComputationGraded<Row<Effect::Bg>, EightByteValue>>);
+static_assert(std::is_same_v<C_empty::graded_type, ComputationGraded<Row<>, EmptyValue>>);
+static_assert(std::is_same_v<C_eight_byte::graded_type, ComputationGraded<Row<Effect::Bg>, EightByteValue>>);
 
 // Default-constructible.
 static_assert(std::is_default_constructible_v<C_empty>);
@@ -631,8 +593,8 @@ static_assert(std::is_default_constructible_v<C_eight_byte>);
 
 // Layout — the row is type-level only, no runtime cost.  H04
 // substrate-backed storage preserves this exactly via Graded's EBO.
-static_assert(sizeof(C_empty)      == 1);
-static_assert(sizeof(C_one_byte)   == sizeof(OneByteValue));
+static_assert(sizeof(C_empty) == 1);
+static_assert(sizeof(C_one_byte) == sizeof(OneByteValue));
 static_assert(sizeof(C_eight_byte) == sizeof(EightByteValue));
 
 // FOUND-H04-AUDIT-2: layout parity with the substrate.  sizeof was
@@ -640,24 +602,23 @@ static_assert(sizeof(C_eight_byte) == sizeof(EightByteValue));
 // layout parity lock the wrapping further so that ANY divergence
 // from the substrate's layout — including padding insertion or a
 // codegen-visible attribute change — is caught at compile time.
-static_assert(alignof(C_empty)      == alignof(typename C_empty::graded_type));
-static_assert(alignof(C_one_byte)   == alignof(typename C_one_byte::graded_type));
+static_assert(alignof(C_empty) == alignof(typename C_empty::graded_type));
+static_assert(alignof(C_one_byte) == alignof(typename C_one_byte::graded_type));
 static_assert(alignof(C_eight_byte) == alignof(typename C_eight_byte::graded_type));
 
 // Trivial copyability is preserved when T is itself trivially
 // copyable — graded_type stores T by value in regime-1 EBO, so the
 // composition is trivially copyable iff T is.  Locks the property
 // the substrate already promises.
-static_assert(std::is_trivially_copyable_v<C_empty>
-              == std::is_trivially_copyable_v<typename C_empty::graded_type>);
+static_assert(std::is_trivially_copyable_v<C_empty> == std::is_trivially_copyable_v<typename C_empty::graded_type>);
 static_assert(std::is_trivially_copyable_v<C_one_byte>
               == std::is_trivially_copyable_v<typename C_one_byte::graded_type>);
 static_assert(std::is_trivially_copyable_v<C_eight_byte>
               == std::is_trivially_copyable_v<typename C_eight_byte::graded_type>);
 
 // Effect counts on row reachable.
-static_assert(C_empty::effect_count_in_row()      == 0);
-static_assert(C_one_byte::effect_count_in_row()   == 0);
+static_assert(C_empty::effect_count_in_row() == 0);
+static_assert(C_one_byte::effect_count_in_row() == 0);
 static_assert(C_eight_byte::effect_count_in_row() == 1);
 
 // Layout invariant macro fires correctly.
@@ -669,32 +630,35 @@ CRUCIBLE_COMPUTATION_LAYOUT_INVARIANT(ComputationOverEmptyRow, EightByteValue);
 // ── Operation coverage (METX-1 #473 bodies) ─────────────────────────
 //
 // `mk` → `extract` round-trip for the empty row.
-static_assert([] consteval {
-    auto pure = Computation<Row<>, int>::mk(42);
-    return pure.extract() == 42;
-}(),
-"mk/extract round-trip on Computation<EmptyRow, int> failed.");
+static_assert(
+    [] consteval {
+        auto pure = Computation<Row<>, int>::mk(42);
+        return pure.extract() == 42;
+    }(),
+    "mk/extract round-trip on Computation<EmptyRow, int> failed.");
 
 // `lift<Cap>` from a pure value into a single-effect row.
-static_assert([] consteval {
-    auto bg = Computation<Row<>, int>::lift<Effect::Bg>(7);
-    using BgComp = decltype(bg);
-    return std::is_same_v<BgComp, Computation<Row<Effect::Bg>, int>>;
-}(),
-"lift<Bg> did not produce Computation<Row<Bg>, T>.");
+static_assert(
+    [] consteval {
+        auto bg = Computation<Row<>, int>::lift<Effect::Bg>(7);
+        using BgComp = decltype(bg);
+        return std::is_same_v<BgComp, Computation<Row<Effect::Bg>, int>>;
+    }(),
+    "lift<Bg> did not produce Computation<Row<Bg>, T>.");
 
 // `weaken` widens by Subrow.  Empty → {Bg} → {Bg, Alloc, IO} chain.
 //
 // Final value access uses the H04 substrate accessor since `widest`
 // has a non-empty row (cannot use extract() — gated off).  Equivalent
 // observation: the wrapped value survives every type-level widening.
-static_assert([] consteval {
-    auto bg     = Computation<Row<>, int>::lift<Effect::Bg>(13);
-    auto wider  = bg.template weaken<Row<Effect::Bg, Effect::Alloc>>();
-    auto widest = wider.template weaken<Row<Effect::Bg, Effect::Alloc, Effect::IO>>();
-    return widest.graded().peek() == 13;
-}(),
-"weaken-chain through nested Subrow did not preserve the inner value.");
+static_assert(
+    [] consteval {
+        auto bg = Computation<Row<>, int>::lift<Effect::Bg>(13);
+        auto wider = bg.template weaken<Row<Effect::Bg, Effect::Alloc>>();
+        auto widest = wider.template weaken<Row<Effect::Bg, Effect::Alloc, Effect::IO>>();
+        return widest.graded().peek() == 13;
+    }(),
+    "weaken-chain through nested Subrow did not preserve the inner value.");
 
 // `weaken` rvalue overload moves instead of copies (correctness check
 // via consteval round-trip; the move-vs-copy choice is observable in
@@ -715,15 +679,15 @@ static_assert(
 // Witness: `int` is copy-constructible and BOTH lvalue and rvalue
 // weaken must work.
 
-static_assert(requires(Computation<Row<Effect::Bg>, int> const& c) {
-    c.template weaken<Row<Effect::Bg, Effect::IO>>();
-}, "FIXY-FOUND-106 regression: lvalue weaken must remain available "
-   "for copy-constructible payloads.");
+static_assert(
+    requires(Computation<Row<Effect::Bg>, int> const& c) { c.template weaken<Row<Effect::Bg, Effect::IO>>(); },
+    "FIXY-FOUND-106 regression: lvalue weaken must remain available "
+    "for copy-constructible payloads.");
 
-static_assert(requires(Computation<Row<Effect::Bg>, int>&& c) {
-    std::move(c).template weaken<Row<Effect::Bg, Effect::IO>>();
-}, "FIXY-FOUND-106 regression: rvalue weaken must remain available "
-   "for copy-constructible payloads.");
+static_assert(
+    requires(Computation<Row<Effect::Bg>, int>&& c) { std::move(c).template weaken<Row<Effect::Bg, Effect::IO>>(); },
+    "FIXY-FOUND-106 regression: rvalue weaken must remain available "
+    "for copy-constructible payloads.");
 
 // The structural claim — "lvalue weaken's requires-clause includes
 // is_copy_constructible_v<T>" — is enforced by the requires-clause
@@ -734,9 +698,8 @@ static_assert(requires(Computation<Row<Effect::Bg>, int>&& c) {
 // template member.  The full neg-compile fixture lives under
 // test/safety_neg/ instead (deferred HS14 follow-up — beyond cycle-
 // ship scope).
-static_assert(std::is_copy_constructible_v<int>,
-    "FIXY-FOUND-106 sanity: int is copy-constructible (positive-case "
-    "witness for the requires-clause).");
+static_assert(std::is_copy_constructible_v<int>, "FIXY-FOUND-106 sanity: int is copy-constructible (positive-case "
+                                                 "witness for the requires-clause).");
 
 // ── FIXY-FOUND-106-AUDIT: trait-level pin for the negative case ────
 //
@@ -763,15 +726,15 @@ struct MoveOnlyProbe {
 };
 
 static_assert(!std::is_copy_constructible_v<MoveOnlyProbe>,
-    "FIXY-FOUND-106-AUDIT: the SFINAE gate depends on "
-    "std::is_copy_constructible_v returning false for deleted-copy "
-    "types.  If this assertion ever fires, the lvalue weaken overload "
-    "stops gating move-only payloads and silently re-admits the bug.");
+              "FIXY-FOUND-106-AUDIT: the SFINAE gate depends on "
+              "std::is_copy_constructible_v returning false for deleted-copy "
+              "types.  If this assertion ever fires, the lvalue weaken overload "
+              "stops gating move-only payloads and silently re-admits the bug.");
 
 static_assert(std::is_move_constructible_v<MoveOnlyProbe>,
-    "FIXY-FOUND-106-AUDIT: rvalue weaken on move-only T relies on T "
-    "being move-constructible.  If this assertion fires, the rvalue "
-    "overload's `std::move(impl_).consume()` path itself stops working.");
+              "FIXY-FOUND-106-AUDIT: rvalue weaken on move-only T relies on T "
+              "being move-constructible.  If this assertion fires, the rvalue "
+              "overload's `std::move(impl_).consume()` path itself stops working.");
 
 }  // namespace fixy_found_106_trait_pin
 
@@ -788,28 +751,23 @@ static_assert(detail::extract_admits_payload_v<int>);
 static_assert(detail::extract_admits_payload_v<double>);
 
 // Pure Computation payload admits (Row<>-wrapped Row<>-wrapped T).
-static_assert(detail::extract_admits_payload_v<
-    Computation<Row<>, int>>);
+static_assert(detail::extract_admits_payload_v<Computation<Row<>, int>>);
 
 // Engaged Computation payload REJECTED — this is the laundering case.
-static_assert(!detail::extract_admits_payload_v<
-    Computation<Row<Effect::Bg>, int>>);
-static_assert(!detail::extract_admits_payload_v<
-    Computation<Row<Effect::Alloc, Effect::IO>, int>>);
+static_assert(!detail::extract_admits_payload_v<Computation<Row<Effect::Bg>, int>>);
+static_assert(!detail::extract_admits_payload_v<Computation<Row<Effect::Alloc, Effect::IO>, int>>);
 
 // Recursive case: Computation<Row<>, Computation<Row<Bg>, T>> —
 // outer row is pure but the wrapped value is itself engaged.
 // The recursion rejects.
-static_assert(!detail::extract_admits_payload_v<
-    Computation<Row<>, Computation<Row<Effect::Bg>, int>>>);
+static_assert(!detail::extract_admits_payload_v<Computation<Row<>, Computation<Row<Effect::Bg>, int>>>);
 
 // Deeper nesting: pure → pure → engaged.  Recursion sees through.
-static_assert(!detail::extract_admits_payload_v<
-    Computation<Row<>, Computation<Row<>, Computation<Row<Effect::Bg>, int>>>>);
+static_assert(
+    !detail::extract_admits_payload_v<Computation<Row<>, Computation<Row<>, Computation<Row<Effect::Bg>, int>>>>);
 
 // Deeper nesting: pure → pure → pure.  Admits all the way down.
-static_assert(detail::extract_admits_payload_v<
-    Computation<Row<>, Computation<Row<>, Computation<Row<>, int>>>>);
+static_assert(detail::extract_admits_payload_v<Computation<Row<>, Computation<Row<>, Computation<Row<>, int>>>>);
 
 // ── Behavioral witnesses via requires-expression ───────────────────
 //
@@ -826,12 +784,13 @@ static_assert(detail::extract_admits_payload_v<
 // above are the sufficient evidence the gate rejects.
 
 // Pure outer + pure inner: extract admits.
-static_assert(requires(Computation<Row<>, Computation<Row<>, int>> const& c) {
-    c.extract();
-}, "FIXY-FOUND-107: pure-outer + pure-inner Computation must admit extract.");
+static_assert(
+    requires(Computation<Row<>, Computation<Row<>, int>> const& c) { c.extract(); },
+    "FIXY-FOUND-107: pure-outer + pure-inner Computation must admit extract.");
 
 // Plain payloads still admit (regression — gate must not over-restrict).
-static_assert(requires(Computation<Row<>, int> const& c) { c.extract(); },
+static_assert(
+    requires(Computation<Row<>, int> const& c) { c.extract(); },
     "FIXY-FOUND-107 regression: plain int payload must still admit extract.");
 
 }  // namespace fixy_found_107
@@ -848,36 +807,32 @@ static_assert(requires(Computation<Row<>, int> const& c) { c.extract(); },
 namespace fixy_found_108 {
 
 // Plain payload — legitimate, admits.
-constexpr auto legit_callback = [](int x) {
-    return Computation<Row<>, int>::mk(x + 1);
-};
-static_assert(requires(Computation<Row<>, int> const& c) {
-    c.then(legit_callback);
-}, "FIXY-FOUND-108 regression: plain-payload then-callback must admit.");
+constexpr auto legit_callback = [](int x) { return Computation<Row<>, int>::mk(x + 1); };
+static_assert(
+    requires(Computation<Row<>, int> const& c) { c.then(legit_callback); },
+    "FIXY-FOUND-108 regression: plain-payload then-callback must admit.");
 
 // Nested-pure payload — legitimate (R3 is empty), admits.
 constexpr auto nested_pure_callback = [](int) {
     using Inner = Computation<Row<>, int>;
     return Computation<Row<>, Inner>::mk(Inner::mk(42));
 };
-static_assert(requires(Computation<Row<>, int> const& c) {
-    c.then(nested_pure_callback);
-}, "FIXY-FOUND-108 regression: nested-pure-payload then must admit "
-   "(the inner row is empty — no laundering).");
+static_assert(
+    requires(Computation<Row<>, int> const& c) { c.then(nested_pure_callback); },
+    "FIXY-FOUND-108 regression: nested-pure-payload then must admit "
+    "(the inner row is empty — no laundering).");
 
 // Engaged-nested payload — the laundering shape — REJECTED.
 // Asserted at trait level (the !requires-around-call form hits the
 // GCC 16 hard-error trap documented in fixy_found_107).
 using LaunderingInner = Computation<Row<Effect::Bg>, int>;
 using LaunderingCallback = decltype([](int) {
-    return Computation<Row<>, LaunderingInner>::mk(
-        Computation<Row<>, int>::lift<Effect::Bg>(42));
+    return Computation<Row<>, LaunderingInner>::mk(Computation<Row<>, int>::lift<Effect::Bg>(42));
 });
-static_assert(
-    !detail::extract_admits_payload_v<LaunderingInner>,
-    "FIXY-FOUND-108: callback returning Computation<R2, Computation<"
-    "Row<Bg>, U>> must NOT admit through then — inner Bg row would "
-    "be laundered past the outer row_union.");
+static_assert(!detail::extract_admits_payload_v<LaunderingInner>,
+              "FIXY-FOUND-108: callback returning Computation<R2, Computation<"
+              "Row<Bg>, U>> must NOT admit through then — inner Bg row would "
+              "be laundered past the outer row_union.");
 
 }  // namespace fixy_found_108
 
@@ -938,21 +893,16 @@ namespace fixy_found_014 {
 // Plain int → Computation<Row<Bg>, int>; no Bg-effecting code
 // ever ran during the production of `42`, the claim is naked.
 static_assert(
-    std::is_same_v<
-        decltype(Computation<Row<>, int>::lift<Effect::Bg>(42)),
-        Computation<Row<Effect::Bg>, int>>,
+    std::is_same_v<decltype(Computation<Row<>, int>::lift<Effect::Bg>(42)), Computation<Row<Effect::Bg>, int>>,
     "FIXY-FOUND-014 SURFACE: lift<Bg>(pure int) yields engaged Row<Bg>. "
     "This static_assert PASSING is the documented open-hole status. "
     "When the rigorous ctx-witnessed closure lands (lift_in<Cap,Ctx>), "
     "this sentinel is the migration anchor.");
 
 // Same forge with IO; structural — not Bg-specific.
-static_assert(
-    std::is_same_v<
-        decltype(Computation<Row<>, int>::lift<Effect::IO>(7)),
-        Computation<Row<Effect::IO>, int>>,
-    "FIXY-FOUND-014 SURFACE: lift<IO>(pure int) yields engaged Row<IO>. "
-    "Same open-hole status as the Bg case above.");
+static_assert(std::is_same_v<decltype(Computation<Row<>, int>::lift<Effect::IO>(7)), Computation<Row<Effect::IO>, int>>,
+              "FIXY-FOUND-014 SURFACE: lift<IO>(pure int) yields engaged Row<IO>. "
+              "Same open-hole status as the Bg case above.");
 
 // Demonstration that the GATE that IS in place — `IsEffect<Cap>` —
 // correctly admits every legitimate Effect enumerator.  This pins
@@ -963,24 +913,20 @@ static_assert(
 // (test_effects.cpp) — pinning it again here would require a
 // SFINAE detector that's brittle across GCC versions for static
 // member templates.
-static_assert(
-    IsEffect<Effect::Bg>  && IsEffect<Effect::IO>
- && IsEffect<Effect::Alloc> && IsEffect<Effect::Block>,
-    "FIXY-FOUND-014: lift<Cap>'s `IsEffect<Cap>` gate must accept "
-    "every documented Effect enumerator.  If this reds, IsEffect "
-    "stopped recognising a core Effect atom — investigate "
-    "Capabilities.h:IsEffect before chasing lift call-site errors.");
+static_assert(IsEffect<Effect::Bg> && IsEffect<Effect::IO> && IsEffect<Effect::Alloc> && IsEffect<Effect::Block>,
+              "FIXY-FOUND-014: lift<Cap>'s `IsEffect<Cap>` gate must accept "
+              "every documented Effect enumerator.  If this reds, IsEffect "
+              "stopped recognising a core Effect atom — investigate "
+              "Capabilities.h:IsEffect before chasing lift call-site errors.");
 
 // And: row arithmetic remains honest.  `effect_count_in_row()` on
 // the lift result reports 1 — i.e., the lift's row claim is
 // type-visible.  Companion to FOUND-051 (effect_count pinning).
-static_assert(
-    decltype(Computation<Row<>, int>::lift<Effect::Bg>(0))
-        ::effect_count_in_row() == 1u,
-    "FIXY-FOUND-014: lift<Cap> result has effect_count_in_row()==1. "
-    "The forged claim IS type-visible to RowEngagementWitnessed band-3 "
-    "consumers (fixy/Effect.h:172) — provenance is what's missing, "
-    "not the engagement claim itself.");
+static_assert(decltype(Computation<Row<>, int>::lift<Effect::Bg>(0))::effect_count_in_row() == 1u,
+              "FIXY-FOUND-014: lift<Cap> result has effect_count_in_row()==1. "
+              "The forged claim IS type-visible to RowEngagementWitnessed band-3 "
+              "consumers (fixy/Effect.h:172) — provenance is what's missing, "
+              "not the engagement claim itself.");
 
 // ── FIXY-FOUND-014 rigorous closure (2026-05-25 follow-up) ─────────
 //
@@ -994,158 +940,145 @@ static_assert(
 // (false on positive) or over-rejects (true on negative).
 
 // Predicate the gate uses — pinned both ways:
-static_assert(
-    row_contains_v<typename ::crucible::effects::BgDrainCtx::row_type,
-                   Effect::Bg>,
-    "FIXY-FOUND-014: BgDrainCtx::row_type IS Row<Bg, Alloc> per "
-    "ExecCtx.h:806-813.  BgDrainCtx MUST witness Bg — that is the "
-    "production Bg-thread context, and lift_in<Bg>(BgDrainCtx{}, x) "
-    "is the canonical migration target for unwitnessed lift<Bg>(x) "
-    "calls in production Forge / Mimic / Cipher code.");
+static_assert(row_contains_v<typename ::crucible::effects::BgDrainCtx::row_type, Effect::Bg>,
+              "FIXY-FOUND-014: BgDrainCtx::row_type IS Row<Bg, Alloc> per "
+              "ExecCtx.h:806-813.  BgDrainCtx MUST witness Bg — that is the "
+              "production Bg-thread context, and lift_in<Bg>(BgDrainCtx{}, x) "
+              "is the canonical migration target for unwitnessed lift<Bg>(x) "
+              "calls in production Forge / Mimic / Cipher code.");
 
-static_assert(
-    !row_contains_v<typename ::crucible::effects::HotFgCtx::row_type,
-                    Effect::Bg>,
-    "FIXY-FOUND-014: HotFgCtx::row_type IS Row<> per ExecCtx.h:792-801. "
-    "HotFgCtx MUST NOT witness Bg — fg-thread code in the recording "
-    "pipeline must not synthesize Bg-claimed Computations.  If this "
-    "reds, the closure's gate has lost its discriminating power.");
+static_assert(!row_contains_v<typename ::crucible::effects::HotFgCtx::row_type, Effect::Bg>,
+              "FIXY-FOUND-014: HotFgCtx::row_type IS Row<> per ExecCtx.h:792-801. "
+              "HotFgCtx MUST NOT witness Bg — fg-thread code in the recording "
+              "pipeline must not synthesize Bg-claimed Computations.  If this "
+              "reds, the closure's gate has lost its discriminating power.");
 
 // Positive demonstration: lift_in<Bg> in BgDrainCtx admits.  The
 // requires-clause's third predicate evaluates true, the function is
 // in the overload set, the call succeeds, and the result type is
 // the same engaged Computation the unwitnessed lift<Bg> produces.
 // What's NEW is provenance: the call SITE proves the ctx-permission.
-static_assert(
-    std::is_same_v<
-        decltype(Computation<Row<>, int>::template lift_in<Effect::Bg>(
-            std::declval<::crucible::effects::BgDrainCtx const&>(), 42)),
-        Computation<Row<Effect::Bg>, int>>,
-    "FIXY-FOUND-014 RIGOROUS CLOSURE: lift_in<Bg>(BgDrainCtx{}, int) "
-    "yields Computation<Row<Bg>, int>.  Witnessed-form ADMITS when "
-    "ctx's row contains the requested effect.  Production call "
-    "sites prefer this form over bare lift<Bg>(x).");
+static_assert(std::is_same_v<decltype(Computation<Row<>, int>::template lift_in<Effect::Bg>(
+                                 std::declval<::crucible::effects::BgDrainCtx const&>(), 42)),
+                             Computation<Row<Effect::Bg>, int>>,
+              "FIXY-FOUND-014 RIGOROUS CLOSURE: lift_in<Bg>(BgDrainCtx{}, int) "
+              "yields Computation<Row<Bg>, int>.  Witnessed-form ADMITS when "
+              "ctx's row contains the requested effect.  Production call "
+              "sites prefer this form over bare lift<Bg>(x).");
 
 // Same effect_count pin as the bare-lift case, applied to the
 // witnessed form to prove the result type is identical (only the
 // CONSTRUCTION PATH gained a gate).
-static_assert(
-    decltype(Computation<Row<>, int>::template lift_in<Effect::Bg>(
-        std::declval<::crucible::effects::BgDrainCtx const&>(), 0))
-            ::effect_count_in_row() == 1u,
-    "FIXY-FOUND-014 RIGOROUS CLOSURE: lift_in<Bg> result has "
-    "effect_count_in_row()==1, identical to bare lift<Bg>.  The "
-    "type-level engagement claim is preserved; only the construction "
-    "gate gained a witness.");
+static_assert(decltype(Computation<Row<>, int>::template lift_in<Effect::Bg>(
+                  std::declval<::crucible::effects::BgDrainCtx const&>(), 0))::effect_count_in_row()
+                  == 1u,
+              "FIXY-FOUND-014 RIGOROUS CLOSURE: lift_in<Bg> result has "
+              "effect_count_in_row()==1, identical to bare lift<Bg>.  The "
+              "type-level engagement claim is preserved; only the construction "
+              "gate gained a witness.");
 
 }  // namespace fixy_found_014
 
 // extract() rvalue overload moves; correctness checked by replicating
 // the value with a move-only-equivalent payload (int suffices for
 // noexcept inference).
-static_assert(
-    noexcept(std::declval<Computation<Row<>, int>>().extract()),
-    "Computation<EmptyRow, int>::extract() && must be noexcept for trivially-"
-    "move-constructible payloads.");
+static_assert(noexcept(std::declval<Computation<Row<>, int>>().extract()),
+              "Computation<EmptyRow, int>::extract() && must be noexcept for trivially-"
+              "move-constructible payloads.");
 
 // ── map / then coverage ────────────────────────────────────────────
 //
 // IsComputation discriminator — gates then() at the type level.
-static_assert( IsComputation<Computation<Row<>, int>>);
-static_assert( IsComputation<Computation<Row<Effect::Bg>, double>>);
-static_assert( IsComputation<Computation<Row<>, int>&>);              // cvref-strip
-static_assert( IsComputation<const Computation<Row<>, int>&>);        // cvref-strip
+static_assert(IsComputation<Computation<Row<>, int>>);
+static_assert(IsComputation<Computation<Row<Effect::Bg>, double>>);
+static_assert(IsComputation<Computation<Row<>, int>&>);  // cvref-strip
+static_assert(IsComputation<const Computation<Row<>, int>&>);  // cvref-strip
 static_assert(!IsComputation<int>);
 static_assert(!IsComputation<Row<Effect::Bg>>);
 
 // map: row preserved, value type may change.
-static_assert([] consteval {
-    auto pure = Computation<Row<>, int>::mk(7);
-    auto doubled = pure.map([](int x) { return x * 2; });
-    using Doubled = decltype(doubled);
-    return std::is_same_v<Doubled::row_type, Row<>>
-        && std::is_same_v<Doubled::value_type, int>
-        && doubled.extract() == 14;
-}(),
-"map preserves row and applies the function pointwise.");
+static_assert(
+    [] consteval {
+        auto pure = Computation<Row<>, int>::mk(7);
+        auto doubled = pure.map([](int x) { return x * 2; });
+        using Doubled = decltype(doubled);
+        return std::is_same_v<Doubled::row_type, Row<>> && std::is_same_v<Doubled::value_type, int>
+            && doubled.extract() == 14;
+    }(),
+    "map preserves row and applies the function pointwise.");
 
 // map: value type can change shape (int -> double).
-static_assert([] consteval {
-    auto pure = Computation<Row<>, int>::mk(3);
-    auto as_double = pure.map([](int x) -> double { return x + 0.5; });
-    using D = decltype(as_double);
-    return std::is_same_v<D::row_type, Row<>>
-        && std::is_same_v<D::value_type, double>;
-}(),
-"map admits value-type changes (T -> U) while preserving the row.");
+static_assert(
+    [] consteval {
+        auto pure = Computation<Row<>, int>::mk(3);
+        auto as_double = pure.map([](int x) -> double { return x + 0.5; });
+        using D = decltype(as_double);
+        return std::is_same_v<D::row_type, Row<>> && std::is_same_v<D::value_type, double>;
+    }(),
+    "map admits value-type changes (T -> U) while preserving the row.");
 
 // then: row accumulates via row_union; sequencing two effectful steps
 // produces a Computation whose row contains every effect of either
 // step (with set-union semantics — duplicates absorbed).
-static_assert([] consteval {
-    auto bg = Computation<Row<>, int>::lift<Effect::Bg>(10);
-    auto chained = bg.then([](int x) {
-        return Computation<Row<>, int>::lift<Effect::IO>(x + 1);
-    });
-    using Chained = decltype(chained);
-    // Result row should contain BOTH Bg (from outer) and IO (from inner).
-    return is_subrow_v<Row<Effect::Bg>, Chained::row_type>
-        && is_subrow_v<Row<Effect::IO>, Chained::row_type>
-        && std::is_same_v<Chained::value_type, int>;
-}(),
-"then accumulates the inner Computation's row into the outer's via "
-"row_union_t — both sides' effects are preserved in the result.");
+static_assert(
+    [] consteval {
+        auto bg = Computation<Row<>, int>::lift<Effect::Bg>(10);
+        auto chained = bg.then([](int x) { return Computation<Row<>, int>::lift<Effect::IO>(x + 1); });
+        using Chained = decltype(chained);
+        // Result row should contain BOTH Bg (from outer) and IO (from inner).
+        return is_subrow_v<Row<Effect::Bg>, Chained::row_type> && is_subrow_v<Row<Effect::IO>, Chained::row_type>
+            && std::is_same_v<Chained::value_type, int>;
+    }(),
+    "then accumulates the inner Computation's row into the outer's via "
+    "row_union_t — both sides' effects are preserved in the result.");
 
 // then: rvalue overload moves through the chain.
-static_assert([] consteval {
-    auto bg = Computation<Row<>, int>::lift<Effect::Bg>(100);
-    auto chained = std::move(bg).then([](int x) {
-        return Computation<Row<>, int>::lift<Effect::Bg>(x);
-    });
-    // Both sides have Bg; the union should be just Bg (set semantics).
-    using Chained = decltype(chained);
-    return is_subrow_v<Row<Effect::Bg>, Chained::row_type>
-        && is_subrow_v<Chained::row_type, Row<Effect::Bg>>;  // mutual ⊑ = equal
-}(),
-"then with overlapping rows absorbs duplicates via row_union's set "
-"semantics — Subrow-equality holds in both directions.");
+static_assert(
+    [] consteval {
+        auto bg = Computation<Row<>, int>::lift<Effect::Bg>(100);
+        auto chained = std::move(bg).then([](int x) { return Computation<Row<>, int>::lift<Effect::Bg>(x); });
+        // Both sides have Bg; the union should be just Bg (set semantics).
+        using Chained = decltype(chained);
+        return is_subrow_v<Row<Effect::Bg>, Chained::row_type>
+            && is_subrow_v<Chained::row_type, Row<Effect::Bg>>;  // mutual ⊑ = equal
+    }(),
+    "then with overlapping rows absorbs duplicates via row_union's set "
+    "semantics — Subrow-equality holds in both directions.");
 
 // then: empty-empty case (the special case that monad laws bottom on).
-static_assert([] consteval {
-    auto pure = Computation<Row<>, int>::mk(5);
-    auto chained = pure.then([](int x) {
-        return Computation<Row<>, int>::mk(x * 2);
-    });
-    return chained.extract() == 10
-        && std::is_same_v<decltype(chained)::row_type, Row<>>;
-}(),
-"then on empty rows produces a result also at the empty row (monad "
-"left/right unit law instance).");
+static_assert(
+    [] consteval {
+        auto pure = Computation<Row<>, int>::mk(5);
+        auto chained = pure.then([](int x) { return Computation<Row<>, int>::mk(x * 2); });
+        return chained.extract() == 10 && std::is_same_v<decltype(chained)::row_type, Row<>>;
+    }(),
+    "then on empty rows produces a result also at the empty row (monad "
+    "left/right unit law instance).");
 
 // ── FOUND-H04 substrate accessor coverage ──────────────────────────
 //
 // graded() returns the underlying ComputationGraded.  Drive both
 // lvalue and rvalue overloads + verify the type identity.
 
-static_assert([] consteval {
-    auto pure = Computation<Row<>, int>::mk(99);
-    auto const& g = pure.graded();
-    using G = std::remove_cvref_t<decltype(g)>;
-    return std::is_same_v<G, ComputationGraded<Row<>, int>>
-        && g.peek() == 99;
-}(),
-"graded() lvalue overload exposes the substrate view at the correct "
-"specialization.");
+static_assert(
+    [] consteval {
+        auto pure = Computation<Row<>, int>::mk(99);
+        auto const& g = pure.graded();
+        using G = std::remove_cvref_t<decltype(g)>;
+        return std::is_same_v<G, ComputationGraded<Row<>, int>> && g.peek() == 99;
+    }(),
+    "graded() lvalue overload exposes the substrate view at the correct "
+    "specialization.");
 
-static_assert([] consteval {
-    auto pure = Computation<Row<Effect::Bg>, int>{77};
-    auto g    = std::move(pure).graded();   // rvalue overload
-    using G = decltype(g);
-    return std::is_same_v<G, ComputationGraded<Row<Effect::Bg>, int>>
-        && g.peek() == 77;
-}(),
-"graded() rvalue overload moves the substrate out at the correct "
-"specialization.");
+static_assert(
+    [] consteval {
+        auto pure = Computation<Row<Effect::Bg>, int>{77};
+        auto g = std::move(pure).graded();  // rvalue overload
+        using G = decltype(g);
+        return std::is_same_v<G, ComputationGraded<Row<Effect::Bg>, int>> && g.peek() == 77;
+    }(),
+    "graded() rvalue overload moves the substrate out at the correct "
+    "specialization.");
 
 }  // namespace detail::computation_self_test
 
@@ -1161,29 +1094,24 @@ static_assert([] consteval {
 inline void runtime_smoke_test_computation() {
     // mk + extract through both lvalue and rvalue.
     auto pure_lvalue = Computation<Row<>, int>::mk(100);
-    int  read_lvalue = pure_lvalue.extract();          // const T& overload
-    int  read_rvalue = std::move(pure_lvalue).extract();  // T&& overload
+    int read_lvalue = pure_lvalue.extract();  // const T& overload
+    int read_rvalue = std::move(pure_lvalue).extract();  // T&& overload
     (void)read_lvalue;
     (void)read_rvalue;
 
     // lift into a single-effect row.
     auto bg_pure = Computation<Row<>, int>::lift<Effect::Bg>(200);
-    static_assert(std::is_same_v<
-        decltype(bg_pure),
-        Computation<Row<Effect::Bg>, int>
-    >);
+    static_assert(std::is_same_v<decltype(bg_pure), Computation<Row<Effect::Bg>, int>>);
 
     // weaken to a strictly-larger row through both lvalue and rvalue.
-    auto bg_widened_lvalue =
-        bg_pure.template weaken<Row<Effect::Bg, Effect::Alloc>>();
-    auto bg_widened_rvalue =
-        std::move(bg_pure).template weaken<Row<Effect::Bg, Effect::IO>>();
+    auto bg_widened_lvalue = bg_pure.template weaken<Row<Effect::Bg, Effect::Alloc>>();
+    auto bg_widened_rvalue = std::move(bg_pure).template weaken<Row<Effect::Bg, Effect::IO>>();
     (void)bg_widened_lvalue;
     (void)bg_widened_rvalue;
 
     // map: pure-value transformation, row preserved.  Lvalue and
     // rvalue overloads exercise the const-ref vs T-by-value paths.
-    auto map_pure   = Computation<Row<>, int>::mk(7);
+    auto map_pure = Computation<Row<>, int>::mk(7);
     auto map_lvalue = map_pure.map([](int x) { return x + 1; });
     auto map_rvalue = std::move(map_pure).map([](int x) { return x * 2; });
     (void)map_lvalue;
@@ -1193,30 +1121,21 @@ inline void runtime_smoke_test_computation() {
     // accumulates Bg into the result row via row_union.  Both lvalue
     // and rvalue then() overloads exercised.
     auto then_pure = Computation<Row<>, int>::mk(11);
-    auto then_lvalue = then_pure.then([](int x) {
-        return Computation<Row<>, int>::lift<Effect::Bg>(x + 100);
-    });
-    auto then_rvalue = std::move(then_pure).then([](int x) {
-        return Computation<Row<>, int>::lift<Effect::IO>(x + 200);
-    });
-    static_assert(std::is_same_v<
-        decltype(then_lvalue)::row_type,
-        Row<Effect::Bg>
-    >);
-    static_assert(std::is_same_v<
-        decltype(then_rvalue)::row_type,
-        Row<Effect::IO>
-    >);
+    auto then_lvalue = then_pure.then([](int x) { return Computation<Row<>, int>::lift<Effect::Bg>(x + 100); });
+    auto then_rvalue =
+        std::move(then_pure).then([](int x) { return Computation<Row<>, int>::lift<Effect::IO>(x + 200); });
+    static_assert(std::is_same_v<decltype(then_lvalue)::row_type, Row<Effect::Bg>>);
+    static_assert(std::is_same_v<decltype(then_rvalue)::row_type, Row<Effect::IO>>);
     (void)then_lvalue;
     (void)then_rvalue;
 
     // FOUND-H04 substrate accessor — drive both overloads at runtime.
     auto graded_lvalue_owner = Computation<Row<Effect::Bg>, int>{555};
-    auto const& g_view = graded_lvalue_owner.graded();   // const& overload
+    auto const& g_view = graded_lvalue_owner.graded();  // const& overload
     [[maybe_unused]] int peeked = g_view.peek();
 
     auto graded_rvalue_owner = Computation<Row<Effect::Bg>, int>{666};
-    auto g_moved = std::move(graded_rvalue_owner).graded();   // && overload
+    auto g_moved = std::move(graded_rvalue_owner).graded();  // && overload
     [[maybe_unused]] int peeked_moved = g_moved.peek();
 }
 

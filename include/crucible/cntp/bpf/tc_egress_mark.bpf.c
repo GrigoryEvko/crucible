@@ -13,8 +13,7 @@
 #endif
 
 SEC("tc")
-int crucible_cntp_tc_egress_mark(struct __sk_buff *skb)
-{
+int crucible_cntp_tc_egress_mark(struct __sk_buff* skb) {
     (void)skb;
     return TC_ACT_OK;
 }

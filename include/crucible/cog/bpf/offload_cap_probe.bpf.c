@@ -9,8 +9,7 @@
 #include "common.h"
 
 SEC("tracepoint/net/net_dev_start_xmit")
-int crucible_cog_offload_cap_probe(void *ctx)
-{
+int crucible_cog_offload_cap_probe(void* ctx) {
     (void)ctx;
     return 0;
 }

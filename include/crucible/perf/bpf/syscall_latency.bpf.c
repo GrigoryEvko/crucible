@@ -64,10 +64,8 @@ struct {
 /* ─── Tracepoint handlers ──────────────────────────────────────────── */
 
 SEC("tracepoint/raw_syscalls/sys_enter")
-int handle_sys_enter(struct trace_event_raw_sys_enter *ctx)
-{
-    if (!is_target())
-        return 0;
+int handle_sys_enter(struct trace_event_raw_sys_enter* ctx) {
+    if (!is_target()) return 0;
 
     __u32 tid = get_tid();
     struct syscall_start_val val = {
@@ -80,10 +78,8 @@ int handle_sys_enter(struct trace_event_raw_sys_enter *ctx)
 }
 
 SEC("tracepoint/raw_syscalls/sys_exit")
-int handle_sys_exit(struct trace_event_raw_sys_exit *ctx)
-{
-    if (!is_target())
-        return 0;
+int handle_sys_exit(struct trace_event_raw_sys_exit* ctx) {
+    if (!is_target()) return 0;
 
     /* GAPS-004e (2026-05-04): single bpf_ktime_get_ns() per event.
      * Was two calls (one for delta, one for ts_ns) — wasted ~50 ns/event.
@@ -92,24 +88,21 @@ int handle_sys_exit(struct trace_event_raw_sys_exit *ctx)
     __u64 now = bpf_ktime_get_ns();
 
     __u32 tid = get_tid();
-    struct syscall_start_val *start = bpf_map_lookup_elem(&syscall_start, &tid);
-    if (!start)
-        return 0;
+    struct syscall_start_val* start = bpf_map_lookup_elem(&syscall_start, &tid);
+    if (!start) return 0;
 
     __u64 delta = now - start->ts;
     __u32 nr = start->nr;
     bpf_map_delete_elem(&syscall_start, &tid);
 
     /* Update per-syscall stats */
-    struct syscall_stats *stats = bpf_map_lookup_elem(&syscall_latency, &nr);
+    struct syscall_stats* stats = bpf_map_lookup_elem(&syscall_latency, &nr);
     if (stats) {
         __sync_fetch_and_add(&stats->count, 1);
         __sync_fetch_and_add(&stats->total_ns, delta);
-        if (delta > stats->max_ns)
-            stats->max_ns = delta;
+        if (delta > stats->max_ns) stats->max_ns = delta;
         /* min_ns uses compare-and-swap (approximate under contention) */
-        if (stats->min_ns == 0 || delta < stats->min_ns)
-            stats->min_ns = delta;
+        if (stats->min_ns == 0 || delta < stats->min_ns) stats->min_ns = delta;
     } else {
         struct syscall_stats new_stats = {
             .count = 1,
@@ -122,7 +115,7 @@ int handle_sys_exit(struct trace_event_raw_sys_exit *ctx)
 
     /* Emit to zero-copy timeline (ts_ns written last for ordering) */
     __u32 tl_zero = 0;
-    struct syscall_timeline *tl = bpf_map_lookup_elem(&syscall_timeline, &tl_zero);
+    struct syscall_timeline* tl = bpf_map_lookup_elem(&syscall_timeline, &tl_zero);
     if (tl) {
         __u64 idx = __sync_fetch_and_add(&tl->hdr.write_idx, 1);
         __u32 slot = (__u32)(idx & TIMELINE_MASK);
@@ -147,9 +140,8 @@ int handle_sys_exit(struct trace_event_raw_sys_exit *ctx)
 
     /* Increment total counter */
     __u32 zero = 0;
-    __u64 *cnt = bpf_map_lookup_elem(&total_syscalls, &zero);
-    if (cnt)
-        __sync_fetch_and_add(cnt, 1);
+    __u64* cnt = bpf_map_lookup_elem(&total_syscalls, &zero);
+    if (cnt) __sync_fetch_and_add(cnt, 1);
 
     return 0;
 }

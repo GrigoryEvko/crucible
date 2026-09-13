@@ -110,9 +110,7 @@ template <std::unsigned_integral T>
 // indicates corruption or a refactor error; we trap, not silently
 // return `false`.  Pre-condition fires at consteval AND runtime via
 // CRUCIBLE_PRE.
-[[nodiscard]] constexpr bool eq(std::span<const std::byte> a,
-                                 std::span<const std::byte> b) noexcept
-{
+[[nodiscard]] constexpr bool eq(std::span<const std::byte> a, std::span<const std::byte> b) noexcept {
     CRUCIBLE_PRE(a.size() == b.size());
     std::byte acc{0};
     for (std::size_t i = 0; i < a.size(); ++i) {
@@ -168,9 +166,7 @@ template <std::unsigned_integral T>
 [[nodiscard]] constexpr T less(T a, T b) noexcept {
     constexpr int bits = static_cast<int>(sizeof(T) * 8);
     T const diff = static_cast<T>(a - b);
-    T const lt   = static_cast<T>(
-        (static_cast<T>(~a) & b) |
-        (static_cast<T>(static_cast<T>(~a) | b) & diff));
+    T const lt = static_cast<T>((static_cast<T>(~a) & b) | (static_cast<T>(static_cast<T>(~a) | b) & diff));
     return static_cast<T>(lt >> (bits - 1)) & T{1};
 }
 
@@ -207,7 +203,7 @@ inline void runtime_smoke_test() {
     // Non-constant seed — keeps the bit-pattern outside the constant
     // folder's view, mirroring the discipline used in the algebra
     // headers (feedback_algebra_runtime_smoke_test_discipline).
-    const std::uint8_t  seed8  = static_cast<std::uint8_t>(0xA5);
+    const std::uint8_t seed8 = static_cast<std::uint8_t>(0xA5);
     const std::uint16_t seed16 = static_cast<std::uint16_t>(0xC3A5);
     const std::uint32_t seed32 = 0xDEADBEEFu;
     const std::uint64_t seed64 = 0xCAFEBABEDEADBEEFull;
@@ -252,19 +248,19 @@ inline void runtime_smoke_test() {
     if (less<std::uint64_t>(2ull, 2ull) != 0u) std::abort();
     if (less<std::uint64_t>(3ull, 2ull) != 0u) std::abort();
     // W2: narrow-unsigned regression witnesses.
-    if (less<std::uint8_t>(std::uint8_t{5},   std::uint8_t{250}) != std::uint8_t{1}) std::abort();
-    if (less<std::uint8_t>(std::uint8_t{250}, std::uint8_t{5})   != std::uint8_t{0}) std::abort();
+    if (less<std::uint8_t>(std::uint8_t{5}, std::uint8_t{250}) != std::uint8_t{1}) std::abort();
+    if (less<std::uint8_t>(std::uint8_t{250}, std::uint8_t{5}) != std::uint8_t{0}) std::abort();
     if (less<std::uint16_t>(std::uint16_t{0x000A}, std::uint16_t{0xFFFF}) != std::uint16_t{1}) std::abort();
     if (less<std::uint16_t>(std::uint16_t{0xFFFF}, std::uint16_t{0x000A}) != std::uint16_t{0}) std::abort();
     // W1: same-width borrow-loss regression witnesses.
-    if (less<std::uint32_t>(0xFFFFFFFFu, 1u)               != 0u)    std::abort();
-    if (less<std::uint32_t>(1u, 0xFFFFFFFFu)               != 1u)    std::abort();
-    if (less<std::uint64_t>(0xFFFFFFFFFFFFFFFFull, 1ull)   != 0ull)  std::abort();
-    if (less<std::uint64_t>(1ull, 0xFFFFFFFFFFFFFFFFull)   != 1ull)  std::abort();
+    if (less<std::uint32_t>(0xFFFFFFFFu, 1u) != 0u) std::abort();
+    if (less<std::uint32_t>(1u, 0xFFFFFFFFu) != 1u) std::abort();
+    if (less<std::uint64_t>(0xFFFFFFFFFFFFFFFFull, 1ull) != 0ull) std::abort();
+    if (less<std::uint64_t>(1ull, 0xFFFFFFFFFFFFFFFFull) != 1ull) std::abort();
     // W3: wide-distance crossing the half-range boundary.
-    if (less<std::uint8_t>(std::uint8_t{0},  std::uint8_t{0x80}) != std::uint8_t{1}) std::abort();
-    if (less<std::uint64_t>(0ull, 0x8000000000000000ull)   != 1ull)  std::abort();
-    if (less<std::uint64_t>(0x8000000000000000ull, 0ull)   != 0ull)  std::abort();
+    if (less<std::uint8_t>(std::uint8_t{0}, std::uint8_t{0x80}) != std::uint8_t{1}) std::abort();
+    if (less<std::uint64_t>(0ull, 0x8000000000000000ull) != 1ull) std::abort();
+    if (less<std::uint64_t>(0x8000000000000000ull, 0ull) != 0ull) std::abort();
     (void)seed16;
 
     // is_zero: 0 → 1, anything else → 0.
@@ -282,24 +278,18 @@ inline void runtime_smoke_test() {
     if (a != 0x12345678u || b != seed32) std::abort();
 
     // eq: span-only signature.  Equal contents → true; unequal → false.
-    const std::byte buf_a[8] = {
-        std::byte{0x01}, std::byte{0x02}, std::byte{0x03}, std::byte{0x04},
-        std::byte{0x05}, std::byte{0x06}, std::byte{0x07}, std::byte{0x08}
-    };
-    const std::byte buf_b[8] = {
-        std::byte{0x01}, std::byte{0x02}, std::byte{0x03}, std::byte{0x04},
-        std::byte{0x05}, std::byte{0x06}, std::byte{0x07}, std::byte{0x08}
-    };
-    const std::byte buf_c[8] = {
-        std::byte{0x01}, std::byte{0x02}, std::byte{0x03}, std::byte{0x04},
-        std::byte{0x05}, std::byte{0x06}, std::byte{0x07}, std::byte{0x09}
-    };
+    const std::byte buf_a[8] = {std::byte{0x01}, std::byte{0x02}, std::byte{0x03}, std::byte{0x04},
+                                std::byte{0x05}, std::byte{0x06}, std::byte{0x07}, std::byte{0x08}};
+    const std::byte buf_b[8] = {std::byte{0x01}, std::byte{0x02}, std::byte{0x03}, std::byte{0x04},
+                                std::byte{0x05}, std::byte{0x06}, std::byte{0x07}, std::byte{0x08}};
+    const std::byte buf_c[8] = {std::byte{0x01}, std::byte{0x02}, std::byte{0x03}, std::byte{0x04},
+                                std::byte{0x05}, std::byte{0x06}, std::byte{0x07}, std::byte{0x09}};
     if (!eq(std::span<const std::byte>{buf_a}, std::span<const std::byte>{buf_b})) std::abort();
-    if (eq(std::span<const std::byte>{buf_a},  std::span<const std::byte>{buf_c})) std::abort();
+    if (eq(std::span<const std::byte>{buf_a}, std::span<const std::byte>{buf_c})) std::abort();
     // Empty-span vacuous-truth.
     if (!eq(std::span<const std::byte>{}, std::span<const std::byte>{})) std::abort();
 }
 
 }  // namespace detail::ct_self_test
 
-} // namespace crucible::safety::ct
+}  // namespace crucible::safety::ct

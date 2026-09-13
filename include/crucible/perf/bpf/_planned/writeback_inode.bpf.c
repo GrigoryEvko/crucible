@@ -40,11 +40,8 @@
  * ─── KNOWN LIMITS ─────────────────────────────────────────────────────
  * - inode_no → file path resolution is expensive; do at userspace
  *   via `iter_task` walk (sibling) finding the open fd by inode,
- *   OR by `find /proc/*/fd -inum N` scan at bench-end.
- * - Per-mount aggregation requires bdi (backing device info)
- *   association; LRU_HASH on bdi_id covers that.
- * - bcachefs / fuse / overlayfs all funnel through these
- *   tracepoints; per-FS-type breakdown via inode->sb_id (added
+ *   OR by `find /proc/*/ fd - inum N` scan at bench - end.* -Per - mount aggregation requires bdi(backing device info) * association;
+LRU_HASH on bdi_id covers that.* -bcachefs / fuse / overlayfs all funnel through these* tracepoints; per-FS-type breakdown via inode->sb_id (added
  *   field via BPF_CORE_READ if available).
  *
  * ─── SIBLING REFS ─────────────────────────────────────────────────────

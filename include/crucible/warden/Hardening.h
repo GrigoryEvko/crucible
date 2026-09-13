@@ -28,7 +28,7 @@
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/ExecCtx.h>
-#include <crucible/fixy/syscall/Per.h>            // FIXY-V-180: SyscallId + per<Id>
+#include <crucible/fixy/syscall/Per.h>  // FIXY-V-180: SyscallId + per<Id>
 #include <crucible/algebra/lattices/SyscallFamilyLattice.h>  // FIXY-V-180: family_tier check
 
 #include <bit>
@@ -37,34 +37,34 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <tuple>           // FIXY-V-180: mint_hardening_syscall_grants
+#include <tuple>  // FIXY-V-180: mint_hardening_syscall_grants
 #include <utility>
 #include <vector>
 
 #ifdef __linux__
-#  include <sched.h>
-#  include <sys/mman.h>
-#  include <sys/prctl.h>
-#  include <sys/resource.h>
-#  include <sys/syscall.h>
-#  include <sys/types.h>
-#  include <unistd.h>
+#include <sched.h>
+#include <sys/mman.h>
+#include <sys/prctl.h>
+#include <sys/resource.h>
+#include <sys/syscall.h>
+#include <sys/types.h>
+#include <unistd.h>
 // Kernel-ABI constants. Defined here when toolchain headers lag behind the
 // running kernel (common in glibc packaging). Values come from the upstream
 // Linux UAPI headers and are stable. Comments cite the kernel version that
 // introduced each constant so it's clear what we're feature-gating against.
-#  ifndef MADV_COLLAPSE
-#    define MADV_COLLAPSE 25          // Linux 6.1 (2022-12). include/uapi/asm-generic/mman-common.h
-#  endif
-#  ifndef MLOCK_ONFAULT
-#    define MLOCK_ONFAULT 0x01        // Linux 4.4 (2016-01). include/uapi/asm-generic/mman.h
-#  endif
-#  ifndef SCHED_DEADLINE
-#    define SCHED_DEADLINE 6          // Linux 3.14 (2014-03). include/uapi/linux/sched.h
-#  endif
-#  ifndef PR_SET_THP_DISABLE
-#    define PR_SET_THP_DISABLE 41     // Linux 3.15 (2014-06). include/uapi/linux/prctl.h
-#  endif
+#ifndef MADV_COLLAPSE
+#define MADV_COLLAPSE 25  // Linux 6.1 (2022-12). include/uapi/asm-generic/mman-common.h
+#endif
+#ifndef MLOCK_ONFAULT
+#define MLOCK_ONFAULT 0x01  // Linux 4.4 (2016-01). include/uapi/asm-generic/mman.h
+#endif
+#ifndef SCHED_DEADLINE
+#define SCHED_DEADLINE 6  // Linux 3.14 (2014-03). include/uapi/linux/sched.h
+#endif
+#ifndef PR_SET_THP_DISABLE
+#define PR_SET_THP_DISABLE 41  // Linux 3.15 (2014-06). include/uapi/linux/prctl.h
+#endif
 #endif
 
 namespace crucible::warden {
@@ -74,31 +74,30 @@ namespace crucible::warden {
 #ifdef __linux__
 
 struct sched_attr_t {
-    uint32_t size            = 0;
-    uint32_t sched_policy    = 0;
-    uint64_t sched_flags     = 0;
-    int32_t  sched_nice      = 0;
-    uint32_t sched_priority  = 0;
-    uint64_t sched_runtime   = 0;
-    uint64_t sched_deadline  = 0;
-    uint64_t sched_period    = 0;
+    uint32_t size = 0;
+    uint32_t sched_policy = 0;
+    uint64_t sched_flags = 0;
+    int32_t sched_nice = 0;
+    uint32_t sched_priority = 0;
+    uint64_t sched_runtime = 0;
+    uint64_t sched_deadline = 0;
+    uint64_t sched_period = 0;
 };
 
-[[nodiscard, gnu::always_inline]] inline int
-sched_setattr_sys(pid_t pid, const sched_attr_t* attr, unsigned flags) noexcept {
+[[nodiscard, gnu::always_inline]] inline int sched_setattr_sys(pid_t pid, const sched_attr_t* attr,
+                                                               unsigned flags) noexcept {
     return static_cast<int>(::syscall(SYS_sched_setattr, pid, attr, flags));
 }
-[[nodiscard, gnu::always_inline]] inline int
-sched_getattr_sys(pid_t pid, sched_attr_t* attr, unsigned size, unsigned flags) noexcept {
+[[nodiscard, gnu::always_inline]] inline int sched_getattr_sys(pid_t pid, sched_attr_t* attr, unsigned size,
+                                                               unsigned flags) noexcept {
     return static_cast<int>(::syscall(SYS_sched_getattr, pid, attr, size, flags));
 }
 
-[[nodiscard, gnu::always_inline]] inline int
-mlock2_sys(const void* addr, size_t len, unsigned flags) noexcept {
+[[nodiscard, gnu::always_inline]] inline int mlock2_sys(const void* addr, size_t len, unsigned flags) noexcept {
     return static_cast<int>(::syscall(SYS_mlock2, addr, len, flags));
 }
 
-#endif // __linux__
+#endif  // __linux__
 
 // ── Diagnostics ────────────────────────────────────────────────────
 
@@ -122,13 +121,16 @@ namespace detail {
     }
 }
 
-} // namespace detail
+}  // namespace detail
 
 // ── AppliedPolicy: RAII revert-on-destroy ──────────────────────────
 
 class AppliedPolicy {
- public:
-    struct LockedRegion { void* addr; size_t len; };
+public:
+    struct LockedRegion {
+        void* addr;
+        size_t len;
+    };
 
     AppliedPolicy() noexcept = default;
 
@@ -136,7 +138,13 @@ class AppliedPolicy {
     AppliedPolicy(const AppliedPolicy&) = delete("AppliedPolicy owns prior-state memory; copying would revert twice");
     AppliedPolicy& operator=(const AppliedPolicy&) = delete("same reason");
     AppliedPolicy(AppliedPolicy&& o) noexcept { swap_(o); }
-    AppliedPolicy& operator=(AppliedPolicy&& o) noexcept { if (this != &o) { revert(); swap_(o); } return *this; }
+    AppliedPolicy& operator=(AppliedPolicy&& o) noexcept {
+        if (this != &o) {
+            revert();
+            swap_(o);
+        }
+        return *this;
+    }
 
     ~AppliedPolicy() noexcept { revert(); }
 
@@ -186,12 +194,12 @@ class AppliedPolicy {
     }
 
     // Observers — what actually took effect.
-    [[nodiscard]] bool scheduler_applied()   const noexcept { return prior_sched_set_; }
-    [[nodiscard]] bool affinity_applied()    const noexcept { return prior_affinity_set_; }
-    [[nodiscard]] size_t regions_locked()    const noexcept { return locked_.size(); }
-    [[nodiscard]] int pinned_cpu()           const noexcept { return pinned_cpu_; }
+    [[nodiscard]] bool scheduler_applied() const noexcept { return prior_sched_set_; }
+    [[nodiscard]] bool affinity_applied() const noexcept { return prior_affinity_set_; }
+    [[nodiscard]] size_t regions_locked() const noexcept { return locked_.size(); }
+    [[nodiscard]] int pinned_cpu() const noexcept { return pinned_cpu_; }
 
- private:
+private:
     friend class Hardening;
     void swap_(AppliedPolicy& o) noexcept {
         std::swap(reverted_, o.reverted_);
@@ -206,25 +214,25 @@ class AppliedPolicy {
         locked_.swap(o.locked_);
     }
 
-    bool         reverted_              = false;
+    bool reverted_ = false;
 #ifdef __linux__
     sched_attr_t prior_sched_{};
-    cpu_set_t    prior_affinity_{};
+    cpu_set_t prior_affinity_{};
 #else
-    int          prior_sched_ = 0;
-    int          prior_affinity_ = 0;
+    int prior_sched_ = 0;
+    int prior_affinity_ = 0;
 #endif
-    bool         prior_sched_set_       = false;
-    bool         prior_affinity_set_    = false;
-    bool         thp_globally_disabled_ = false;  // we disabled THP and need to re-enable
-    int          pinned_cpu_            = -1;
+    bool prior_sched_set_ = false;
+    bool prior_affinity_set_ = false;
+    bool thp_globally_disabled_ = false;  // we disabled THP and need to re-enable
+    int pinned_cpu_ = -1;
     std::vector<LockedRegion> locked_{};
 };
 
 // ── Hardening: the apply() function + helpers ─────────────────────
 
 class Hardening {
- public:
+public:
     // Apply the policy to the calling thread / process. Returns an
     // RAII guard; hold it as long as the policy should be in effect.
     // On failure of any single mechanism, logs a warning (unless
@@ -242,7 +250,7 @@ class Hardening {
                 cpu_set_t prior;
                 CPU_ZERO(&prior);
                 if (::sched_getaffinity(0, sizeof(prior), &prior) == 0) {
-                    g.prior_affinity_     = prior;
+                    g.prior_affinity_ = prior;
                     g.prior_affinity_set_ = true;
 
                     cpu_set_t set;
@@ -266,15 +274,14 @@ class Hardening {
         bool realtime_allowed = true;
         if (p.hot_sched != SchedClass::Other && g.pinned_cpu_ >= 0) {
             const auto iso = isolated_cpus();
-            const bool on_isolcpu = std::find(iso.begin(), iso.end(),
-                                              g.pinned_cpu_) != iso.end();
+            const bool on_isolcpu = std::find(iso.begin(), iso.end(), g.pinned_cpu_) != iso.end();
             if (!on_isolcpu) {
                 const char* force = std::getenv("CRUCIBLE_WARDEN_FORCE");
                 if (!force || std::strcmp(force, "1") != 0) {
                     std::fprintf(stderr,
-                        "[warden] CPU %d not isolated — skipping RT class "
-                        "(set CRUCIBLE_WARDEN_FORCE=1 or boot isolcpus=%d).\n",
-                        g.pinned_cpu_, g.pinned_cpu_);
+                                 "[warden] CPU %d not isolated — skipping RT class "
+                                 "(set CRUCIBLE_WARDEN_FORCE=1 or boot isolcpus=%d).\n",
+                                 g.pinned_cpu_, g.pinned_cpu_);
                     realtime_allowed = false;
                 }
             }
@@ -283,36 +290,36 @@ class Hardening {
         if (p.hot_sched != SchedClass::Other && realtime_allowed) {
             sched_attr_t prior{};
             if (sched_getattr_sys(0, &prior, sizeof(prior), 0) == 0) {
-                g.prior_sched_     = prior;
+                g.prior_sched_ = prior;
                 g.prior_sched_set_ = true;
             }
             sched_attr_t attr{};
             attr.size = sizeof(attr);
             switch (p.hot_sched) {
-            case SchedClass::Fifo:
-                attr.sched_policy   = SCHED_FIFO;
-                attr.sched_priority = static_cast<uint32_t>(p.hot_rt_priority);
-                break;
-            case SchedClass::RoundRobin:
-                attr.sched_policy   = SCHED_RR;
-                attr.sched_priority = static_cast<uint32_t>(p.hot_rt_priority);
-                break;
-            case SchedClass::Batch:
-                attr.sched_policy = SCHED_BATCH;
-                break;
-            case SchedClass::Idle:
-                attr.sched_policy = SCHED_IDLE;
-                break;
-            case SchedClass::Deadline:
-                attr.sched_policy   = SCHED_DEADLINE;
-                attr.sched_runtime  = p.hot_runtime_ns;
-                attr.sched_deadline = p.hot_deadline_ns;
-                attr.sched_period   = p.hot_period_ns;
-                break;
-            case SchedClass::Other:
-            default:
-                attr.sched_policy = SCHED_OTHER;
-                break;
+                case SchedClass::Fifo:
+                    attr.sched_policy = SCHED_FIFO;
+                    attr.sched_priority = static_cast<uint32_t>(p.hot_rt_priority);
+                    break;
+                case SchedClass::RoundRobin:
+                    attr.sched_policy = SCHED_RR;
+                    attr.sched_priority = static_cast<uint32_t>(p.hot_rt_priority);
+                    break;
+                case SchedClass::Batch:
+                    attr.sched_policy = SCHED_BATCH;
+                    break;
+                case SchedClass::Idle:
+                    attr.sched_policy = SCHED_IDLE;
+                    break;
+                case SchedClass::Deadline:
+                    attr.sched_policy = SCHED_DEADLINE;
+                    attr.sched_runtime = p.hot_runtime_ns;
+                    attr.sched_deadline = p.hot_deadline_ns;
+                    attr.sched_period = p.hot_period_ns;
+                    break;
+                case SchedClass::Other:
+                default:
+                    attr.sched_policy = SCHED_OTHER;
+                    break;
             }
             if (sched_setattr_sys(0, &attr, 0) != 0) {
                 const int err = errno;
@@ -320,18 +327,17 @@ class Hardening {
                 // DL root domain (kernel 5.8+); fall back to FIFO.
                 if (p.hot_sched == SchedClass::Deadline && err == EPERM) {
                     sched_attr_t fifo{};
-                    fifo.size           = sizeof(fifo);
-                    fifo.sched_policy   = SCHED_FIFO;
-                    fifo.sched_priority =
-                        static_cast<uint32_t>(p.hot_rt_priority);
+                    fifo.size = sizeof(fifo);
+                    fifo.sched_policy = SCHED_FIFO;
+                    fifo.sched_priority = static_cast<uint32_t>(p.hot_rt_priority);
                     if (sched_setattr_sys(0, &fifo, 0) == 0) {
                         std::fprintf(stderr,
-                            "[warden] SCHED_DEADLINE EPERM — fell back to "
-                            "SCHED_FIFO prio=%d\n", p.hot_rt_priority);
+                                     "[warden] SCHED_DEADLINE EPERM — fell back to "
+                                     "SCHED_FIFO prio=%d\n",
+                                     p.hot_rt_priority);
                     } else {
                         g.prior_sched_set_ = false;
-                        detail::warn("sched_setattr (FIFO fallback)",
-                                     errno);
+                        detail::warn("sched_setattr (FIFO fallback)", errno);
                     }
                 } else {
                     g.prior_sched_set_ = false;
@@ -367,7 +373,8 @@ class Hardening {
             }
         }
 #else
-        (void)g; (void)p;
+        (void)g;
+        (void)p;
 #endif
 
         return g;
@@ -395,7 +402,9 @@ class Hardening {
         detail::warn("mlock2/mlock", errno);
         return false;
 #else
-        (void)g; (void)addr; (void)len;
+        (void)g;
+        (void)addr;
+        (void)len;
         return false;
 #endif
     }
@@ -406,12 +415,11 @@ class Hardening {
 #ifdef __linux__
         if (addr == nullptr || len == 0) return false;
 
-        const uintptr_t raw       = std::bit_cast<uintptr_t>(addr);
-        const uintptr_t aligned   = (raw + kHugePageBytes - 1)
-                                  & ~(kHugePageBytes - 1);
-        const size_t    lost_head = aligned - raw;
+        const uintptr_t raw = std::bit_cast<uintptr_t>(addr);
+        const uintptr_t aligned = (raw + kHugePageBytes - 1) & ~(kHugePageBytes - 1);
+        const size_t lost_head = aligned - raw;
         if (lost_head >= len) return false;
-        const size_t usable      = len - lost_head;
+        const size_t usable = len - lost_head;
         const size_t aligned_len = usable & ~(kHugePageBytes - 1);
         if (aligned_len == 0) return false;
 
@@ -420,7 +428,8 @@ class Hardening {
         detail::warn("madvise(MADV_HUGEPAGE)", errno);
         return false;
 #else
-        (void)addr; (void)len;
+        (void)addr;
+        (void)len;
         return false;
 #endif
     }
@@ -431,12 +440,11 @@ class Hardening {
 #ifdef __linux__
         if (addr == nullptr || len == 0) return false;
 
-        const uintptr_t raw       = std::bit_cast<uintptr_t>(addr);
-        const uintptr_t aligned   = (raw + kHugePageBytes - 1)
-                                  & ~(kHugePageBytes - 1);
-        const size_t    lost_head = aligned - raw;
+        const uintptr_t raw = std::bit_cast<uintptr_t>(addr);
+        const uintptr_t aligned = (raw + kHugePageBytes - 1) & ~(kHugePageBytes - 1);
+        const size_t lost_head = aligned - raw;
         if (lost_head >= len) return false;
-        const size_t usable      = len - lost_head;
+        const size_t usable = len - lost_head;
         const size_t aligned_len = usable & ~(kHugePageBytes - 1);
         if (aligned_len == 0) return false;
 
@@ -448,7 +456,8 @@ class Hardening {
         }
         return false;
 #else
-        (void)addr; (void)len;
+        (void)addr;
+        (void)len;
         return false;
 #endif
     }
@@ -462,17 +471,17 @@ class Hardening {
         if (addr == nullptr || len == 0) return;
         const size_t page = static_cast<size_t>(::sysconf(_SC_PAGESIZE));
         volatile unsigned char* p = static_cast<unsigned char*>(addr);
-        for (size_t off = 0; off < len; off += page) p[off] = p[off];
+        for (size_t off = 0; off < len; off += page)
+            p[off] = p[off];
 #else
-        (void)addr; (void)len;
+        (void)addr;
+        (void)len;
 #endif
     }
 };
 
 // Free-function shorthand matching the CRUCIBLE.md §16 spec.
-[[nodiscard]] inline AppliedPolicy apply(const Policy& p) noexcept {
-    return Hardening::apply(p);
-}
+[[nodiscard]] inline AppliedPolicy apply(const Policy& p) noexcept { return Hardening::apply(p); }
 
 // ── §XXI Universal Mint Pattern — mint_hardening (FIXY-U-084) ─────────
 //
@@ -487,9 +496,7 @@ class Hardening {
 // The mint is the §XXI authorization point; downstream apply() callers
 // can continue to use the bare free function during the migration period.
 template <class Ctx>
-concept CtxFitsHardeningMint =
-       effects::IsExecCtx<Ctx>
-    && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
+concept CtxFitsHardeningMint = effects::IsExecCtx<Ctx> && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
 
 // ── FIXY-V-180 — syscall-grant declaration ────────────────────────────
 //
@@ -527,21 +534,14 @@ concept CtxFitsHardeningMint =
 //
 // The type is a tuple — distinct types per syscall, federation-cache
 // discriminable (V-098 NTTP discipline).
-using mint_hardening_syscall_grants = std::tuple<
-    ::crucible::fixy::grant::syscall::per<
-        ::crucible::fixy::grant::syscall::SyscallId::sched_setaffinity>,
-    ::crucible::fixy::grant::syscall::per<
-        ::crucible::fixy::grant::syscall::SyscallId::sched_setattr>,
-    ::crucible::fixy::grant::syscall::per<
-        ::crucible::fixy::grant::syscall::SyscallId::mlock>,
-    ::crucible::fixy::grant::syscall::per<
-        ::crucible::fixy::grant::syscall::SyscallId::mlock2>,
-    ::crucible::fixy::grant::syscall::per<
-        ::crucible::fixy::grant::syscall::SyscallId::munlock>,
-    ::crucible::fixy::grant::syscall::per<
-        ::crucible::fixy::grant::syscall::SyscallId::madvise>,
-    ::crucible::fixy::grant::syscall::per<
-        ::crucible::fixy::grant::syscall::SyscallId::prctl>>;
+using mint_hardening_syscall_grants =
+    std::tuple<::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::sched_setaffinity>,
+               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::sched_setattr>,
+               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::mlock>,
+               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::mlock2>,
+               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::munlock>,
+               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::madvise>,
+               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::prctl>>;
 
 // Lock the declared family_tier for every grant in the set against
 // V-098's per<Id> classifier — drift here reds at parse, before any
@@ -550,36 +550,34 @@ namespace detail::v180_hardening_grant_check {
 namespace fsc = ::crucible::fixy::grant::syscall;
 namespace fll = ::crucible::algebra::lattices;
 
-static_assert(::crucible::fixy::grant::family_tier_v<
-    fsc::per<fsc::SyscallId::sched_setaffinity>> == fll::SyscallFamily::ThreadSync);
-static_assert(::crucible::fixy::grant::family_tier_v<
-    fsc::per<fsc::SyscallId::sched_setattr>>    == fll::SyscallFamily::ThreadSync);
-static_assert(::crucible::fixy::grant::family_tier_v<
-    fsc::per<fsc::SyscallId::mlock>>            == fll::SyscallFamily::MemoryMapping);
-static_assert(::crucible::fixy::grant::family_tier_v<
-    fsc::per<fsc::SyscallId::mlock2>>           == fll::SyscallFamily::MemoryMapping);
-static_assert(::crucible::fixy::grant::family_tier_v<
-    fsc::per<fsc::SyscallId::munlock>>          == fll::SyscallFamily::MemoryMapping);
-static_assert(::crucible::fixy::grant::family_tier_v<
-    fsc::per<fsc::SyscallId::madvise>>          == fll::SyscallFamily::MemoryMapping);
-static_assert(::crucible::fixy::grant::family_tier_v<
-    fsc::per<fsc::SyscallId::prctl>>            == fll::SyscallFamily::Privilege);
+static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::sched_setaffinity>>
+              == fll::SyscallFamily::ThreadSync);
+static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::sched_setattr>>
+              == fll::SyscallFamily::ThreadSync);
+static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::mlock>>
+              == fll::SyscallFamily::MemoryMapping);
+static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::mlock2>>
+              == fll::SyscallFamily::MemoryMapping);
+static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::munlock>>
+              == fll::SyscallFamily::MemoryMapping);
+static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::madvise>>
+              == fll::SyscallFamily::MemoryMapping);
+static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::prctl>> == fll::SyscallFamily::Privilege);
 
 // Tuple cardinality pin — adding a syscall to the set must update both
 // the using-decl above AND this sentinel.
 static_assert(std::tuple_size_v<mint_hardening_syscall_grants> == 7,
-    "FIXY-V-180: mint_hardening_syscall_grants drifted from 7 entries.  "
-    "If you added a syscall to Hardening::apply(), append the new "
-    "per<SyscallId::X> to the tuple AND extend SyscallId in "
-    "fixy/syscall/Per.h (append-only) AND add a family_tier_v check "
-    "below.  If you removed a syscall, the federation-cache key drifts; "
-    "audit before committing.");
+              "FIXY-V-180: mint_hardening_syscall_grants drifted from 7 entries.  "
+              "If you added a syscall to Hardening::apply(), append the new "
+              "per<SyscallId::X> to the tuple AND extend SyscallId in "
+              "fixy/syscall/Per.h (append-only) AND add a family_tier_v check "
+              "below.  If you removed a syscall, the federation-cache key drifts; "
+              "audit before committing.");
 }  // namespace detail::v180_hardening_grant_check
 
 template <effects::IsExecCtx Ctx>
     requires CtxFitsHardeningMint<Ctx>
-[[nodiscard]] inline AppliedPolicy
-mint_hardening(Ctx const&, const Policy& policy) noexcept {
+[[nodiscard]] inline AppliedPolicy mint_hardening(Ctx const&, const Policy& policy) noexcept {
     return Hardening::apply(policy);
 }
 
@@ -587,4 +585,4 @@ static_assert(CtxFitsHardeningMint<effects::ColdInitCtx>);
 static_assert(!CtxFitsHardeningMint<effects::BgDrainCtx>);
 static_assert(!CtxFitsHardeningMint<effects::HotFgCtx>);
 
-} // namespace crucible::warden
+}  // namespace crucible::warden

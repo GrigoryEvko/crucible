@@ -76,7 +76,7 @@
 //                of `mint_permission_fork`.
 
 #include <crucible/fixy/Grant.h>
-#include <crucible/fixy/grant/Ctrl.h>     // FIXY-V-244 canonical grant::ctrl::throws<>
+#include <crucible/fixy/grant/Ctrl.h>  // FIXY-V-244 canonical grant::ctrl::throws<>
 
 #include <tuple>
 #include <type_traits>
@@ -107,33 +107,26 @@ using throws = ::crucible::fixy::grant::ctrl::throws<>;
 namespace detail {
 
 template <typename Needle, typename Haystack>
-inline constexpr bool type_tree_match_v =
-    std::is_same_v<std::remove_cvref_t<Haystack>, Needle>;
+inline constexpr bool type_tree_match_v = std::is_same_v<std::remove_cvref_t<Haystack>, Needle>;
 
 template <typename Needle, typename Haystack>
-struct type_tree_contains
-    : std::bool_constant<type_tree_match_v<Needle, Haystack>> {};
+struct type_tree_contains : std::bool_constant<type_tree_match_v<Needle, Haystack>> {};
 
 // Recursive specialization: `Haystack` is itself a template instantiation
 // `Tmpl<Args...>`.  Fold over Args.
-template <typename Needle,
-          template <typename...> class Tmpl,
-          typename... Args>
+template <typename Needle, template <typename...> class Tmpl, typename... Args>
 struct type_tree_contains<Needle, Tmpl<Args...>>
-    : std::bool_constant<
-          type_tree_match_v<Needle, Tmpl<Args...>>
-          || (type_tree_contains<Needle, Args>::value || ...)> {};
+    : std::bool_constant<type_tree_match_v<Needle, Tmpl<Args...>> || (type_tree_contains<Needle, Args>::value || ...)> {
+};
 
 }  // namespace detail
 
 template <typename Needle, typename Haystack>
-inline constexpr bool type_tree_contains_v =
-    detail::type_tree_contains<Needle, Haystack>::value;
+inline constexpr bool type_tree_contains_v = detail::type_tree_contains<Needle, Haystack>::value;
 
 // ─── Convenience: detect `throws` in arbitrary type ───────────────────
 template <typename T>
-inline constexpr bool type_tree_contains_throws_v =
-    type_tree_contains_v<throws, T>;
+inline constexpr bool type_tree_contains_throws_v = type_tree_contains_v<throws, T>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Surface integrity sentinels ──────────────────────────────────────
@@ -166,18 +159,15 @@ static_assert(type_tree_contains_v<throws, throws volatile>);
 static_assert(type_tree_contains_v<throws, std::tuple<throws>>);
 static_assert(type_tree_contains_v<throws, std::tuple<int, throws>>);
 static_assert(type_tree_contains_v<throws, std::tuple<int, throws const&>>);
-static_assert(type_tree_contains_v<throws,
-              std::tuple<int, std::tuple<throws, double>>>);
-static_assert(type_tree_contains_v<throws,
-              std::tuple<int, std::tuple<unrelated_tag, std::tuple<throws>>>>);
+static_assert(type_tree_contains_v<throws, std::tuple<int, std::tuple<throws, double>>>);
+static_assert(type_tree_contains_v<throws, std::tuple<int, std::tuple<unrelated_tag, std::tuple<throws>>>>);
 
 // ─── (4) type_tree_contains witnesses — negative ─────────────────────
 static_assert(!type_tree_contains_v<throws, int>);
 static_assert(!type_tree_contains_v<throws, int const&>);
 static_assert(!type_tree_contains_v<throws, unrelated_tag>);
 static_assert(!type_tree_contains_v<throws, std::tuple<int, double>>);
-static_assert(!type_tree_contains_v<throws,
-              std::tuple<int, std::tuple<unrelated_tag, double>>>);
+static_assert(!type_tree_contains_v<throws, std::tuple<int, std::tuple<unrelated_tag, double>>>);
 
 // ─── (5) Convenience alias agrees with primary trait ─────────────────
 static_assert(type_tree_contains_throws_v<throws>);

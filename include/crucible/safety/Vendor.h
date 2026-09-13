@@ -147,7 +147,7 @@
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/lattices/VendorLattice.h>
 
-#include <cstdlib>      // std::abort in the runtime smoke test
+#include <cstdlib>  // std::abort in the runtime smoke test
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -165,14 +165,10 @@ template <VendorBackend_v Backend, typename T>
 class [[nodiscard]] Vendor {
 public:
     // ── Public type aliases ─────────────────────────────────────────
-    using value_type   = T;
+    using value_type = T;
     using lattice_type = VendorLattice::At<Backend>;
-    using graded_type  = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Absolute,
-        lattice_type,
-        T>;
-    static constexpr ::crucible::algebra::ModalityKind modality =
-        ::crucible::algebra::ModalityKind::Absolute;
+    using graded_type = ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
+    static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::Absolute;
 
     // The pinned backend — exposed as a static constexpr for callers
     // doing backend-aware dispatch without instantiating the wrapper.
@@ -182,7 +178,6 @@ private:
     graded_type impl_;
 
 public:
-
     // ── Construction ────────────────────────────────────────────────
     //
     // Default: T{} at the pinned backend.
@@ -202,40 +197,37 @@ public:
     // Vendor<None, T> default-construction is the canonical
     // "uninitialized backend slot" pattern — KernelCacheSlot uses
     // this as the zero state before a vendor is bound.
-    constexpr Vendor() noexcept(
-        std::is_nothrow_default_constructible_v<T>)
+    constexpr Vendor() noexcept(std::is_nothrow_default_constructible_v<T>)
         : impl_{T{}, typename lattice_type::element_type{}} {}
 
     // Explicit construction from a T value.  The most common
     // production pattern — a backend-anchored production site
     // constructs the wrapper at the appropriate vendor.
-    constexpr explicit Vendor(T value) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    constexpr explicit Vendor(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(value), typename lattice_type::element_type{}} {}
 
     // In-place construction.
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr explicit Vendor(std::in_place_t, Args&&... args)
-        noexcept(std::is_nothrow_constructible_v<T, Args...>
-                 && std::is_nothrow_move_constructible_v<T>)
-        : impl_{T(std::forward<Args>(args)...),
-                typename lattice_type::element_type{}} {}
+    constexpr explicit Vendor(std::in_place_t, Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
+                                                                        && std::is_nothrow_move_constructible_v<T>)
+        : impl_{T(std::forward<Args>(args)...), typename lattice_type::element_type{}} {}
 
     // Defaulted copy/move/destroy — Vendor IS COPYABLE within the
     // same backend pin.
-    constexpr Vendor(const Vendor&)            = default;
-    constexpr Vendor(Vendor&&)                 = default;
+    constexpr Vendor(const Vendor&) = default;
+    constexpr Vendor(Vendor&&) = default;
     constexpr Vendor& operator=(const Vendor&) = default;
-    constexpr Vendor& operator=(Vendor&&)      = default;
-    ~Vendor()                                  = default;
+    constexpr Vendor& operator=(Vendor&&) = default;
+    ~Vendor() = default;
 
     // Equality: compares value bytes within the SAME backend pin.
     // Cross-backend comparison rejected at overload resolution.
-    [[nodiscard]] friend constexpr bool operator==(
-        Vendor const& a, Vendor const& b) noexcept(
-        noexcept(a.peek() == b.peek()))
-        requires requires(T const& x, T const& y) { { x == y } -> std::convertible_to<bool>; }
+    [[nodiscard]] friend constexpr bool operator==(Vendor const& a,
+                                                   Vendor const& b) noexcept(noexcept(a.peek() == b.peek()))
+        requires requires(T const& x, T const& y) {
+            { x == y } -> std::convertible_to<bool>;
+        }
     {
         return a.peek() == b.peek();
     }
@@ -244,37 +236,21 @@ public:
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return graded_type::lattice_name();
-    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 
     // ── Read-only access ────────────────────────────────────────────
-    [[nodiscard]] constexpr T const& peek() const& noexcept {
-        return impl_.peek();
-    }
+    [[nodiscard]] constexpr T const& peek() const& noexcept { return impl_.peek(); }
 
-    [[nodiscard]] constexpr T consume() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return std::move(impl_).consume();
     }
 
-    [[nodiscard]] constexpr T& peek_mut() & noexcept {
-        return impl_.peek_mut();
-    }
+    [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(); }
 
     // ── swap ────────────────────────────────────────────────────────
-    constexpr void swap(Vendor& other)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
-        impl_.swap(other.impl_);
-    }
+    constexpr void swap(Vendor& other) noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
 
-    friend constexpr void swap(Vendor& a, Vendor& b)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
-        a.swap(b);
-    }
+    friend constexpr void swap(Vendor& a, Vendor& b) noexcept(std::is_nothrow_swappable_v<T>) { a.swap(b); }
 
     // ── satisfies<RequiredBackend> — partial-order subsumption ─────
     //
@@ -298,8 +274,7 @@ public:
     //                      ::satisfies<VendorBackend_v::AMD>);
     //   // ✓ — NV does NOT subsume AMD (they're incomparable)
     template <VendorBackend_v RequiredBackend>
-    static constexpr bool satisfies =
-        VendorLattice::leq(RequiredBackend, Backend);
+    static constexpr bool satisfies = VendorLattice::leq(RequiredBackend, Backend);
 
     // ── relax<WeakerBackend> — convert to a less-strict backend ────
     //
@@ -317,76 +292,84 @@ public:
     // Compile error when WeakerBackend ⊄ Backend in the lattice —
     // would CLAIM more vendor portability than the source provides.
     template <VendorBackend_v WeakerBackend>
-        requires (VendorLattice::leq(WeakerBackend, Backend))
-    [[nodiscard]] constexpr Vendor<WeakerBackend, T> relax() const&
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
+        requires(VendorLattice::leq(WeakerBackend, Backend))
+    [[nodiscard]] constexpr Vendor<WeakerBackend, T> relax() const& noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
     {
         return Vendor<WeakerBackend, T>{this->peek()};
     }
 
     template <VendorBackend_v WeakerBackend>
-        requires (VendorLattice::leq(WeakerBackend, Backend))
-    [[nodiscard]] constexpr Vendor<WeakerBackend, T> relax() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
-        return Vendor<WeakerBackend, T>{
-            std::move(impl_).consume()};
+        requires(VendorLattice::leq(WeakerBackend, Backend))
+    [[nodiscard]] constexpr Vendor<WeakerBackend, T> relax() && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return Vendor<WeakerBackend, T>{std::move(impl_).consume()};
     }
 };
 
 // ── Convenience aliases ─────────────────────────────────────────────
 namespace vendor {
-    template <typename T> using None     = Vendor<VendorBackend_v::None,     T>;
-    template <typename T> using Cpu      = Vendor<VendorBackend_v::CPU,      T>;
-    template <typename T> using Nv       = Vendor<VendorBackend_v::NV,       T>;
-    template <typename T> using Amd      = Vendor<VendorBackend_v::AMD,      T>;
-    template <typename T> using Tpu      = Vendor<VendorBackend_v::TPU,      T>;
-    template <typename T> using Trn      = Vendor<VendorBackend_v::TRN,      T>;
-    template <typename T> using Cer      = Vendor<VendorBackend_v::CER,      T>;
-    template <typename T> using Portable = Vendor<VendorBackend_v::Portable, T>;
+template <typename T>
+using None = Vendor<VendorBackend_v::None, T>;
+template <typename T>
+using Cpu = Vendor<VendorBackend_v::CPU, T>;
+template <typename T>
+using Nv = Vendor<VendorBackend_v::NV, T>;
+template <typename T>
+using Amd = Vendor<VendorBackend_v::AMD, T>;
+template <typename T>
+using Tpu = Vendor<VendorBackend_v::TPU, T>;
+template <typename T>
+using Trn = Vendor<VendorBackend_v::TRN, T>;
+template <typename T>
+using Cer = Vendor<VendorBackend_v::CER, T>;
+template <typename T>
+using Portable = Vendor<VendorBackend_v::Portable, T>;
 }  // namespace vendor
 
 // ── Layout invariants ───────────────────────────────────────────────
 namespace detail::vendor_layout {
 
-template <typename T> using PortableV = Vendor<VendorBackend_v::Portable, T>;
-template <typename T> using NvV       = Vendor<VendorBackend_v::NV,       T>;
-template <typename T> using AmdV      = Vendor<VendorBackend_v::AMD,      T>;
-template <typename T> using NoneV     = Vendor<VendorBackend_v::None,     T>;
+template <typename T>
+using PortableV = Vendor<VendorBackend_v::Portable, T>;
+template <typename T>
+using NvV = Vendor<VendorBackend_v::NV, T>;
+template <typename T>
+using AmdV = Vendor<VendorBackend_v::AMD, T>;
+template <typename T>
+using NoneV = Vendor<VendorBackend_v::None, T>;
 
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(PortableV, char);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(PortableV, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(PortableV, double);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(NvV,       int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(NvV,       double);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(AmdV,      int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(AmdV,      double);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoneV,     int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(NvV, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(NvV, double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(AmdV, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(AmdV, double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoneV, int);
 
 }  // namespace detail::vendor_layout
 
-static_assert(sizeof(Vendor<VendorBackend_v::Portable, int>)    == sizeof(int));
-static_assert(sizeof(Vendor<VendorBackend_v::NV,       int>)    == sizeof(int));
-static_assert(sizeof(Vendor<VendorBackend_v::AMD,      int>)    == sizeof(int));
-static_assert(sizeof(Vendor<VendorBackend_v::TPU,      int>)    == sizeof(int));
-static_assert(sizeof(Vendor<VendorBackend_v::TRN,      int>)    == sizeof(int));
-static_assert(sizeof(Vendor<VendorBackend_v::CER,      int>)    == sizeof(int));
-static_assert(sizeof(Vendor<VendorBackend_v::CPU,      int>)    == sizeof(int));
-static_assert(sizeof(Vendor<VendorBackend_v::None,     int>)    == sizeof(int));
+static_assert(sizeof(Vendor<VendorBackend_v::Portable, int>) == sizeof(int));
+static_assert(sizeof(Vendor<VendorBackend_v::NV, int>) == sizeof(int));
+static_assert(sizeof(Vendor<VendorBackend_v::AMD, int>) == sizeof(int));
+static_assert(sizeof(Vendor<VendorBackend_v::TPU, int>) == sizeof(int));
+static_assert(sizeof(Vendor<VendorBackend_v::TRN, int>) == sizeof(int));
+static_assert(sizeof(Vendor<VendorBackend_v::CER, int>) == sizeof(int));
+static_assert(sizeof(Vendor<VendorBackend_v::CPU, int>) == sizeof(int));
+static_assert(sizeof(Vendor<VendorBackend_v::None, int>) == sizeof(int));
 static_assert(sizeof(Vendor<VendorBackend_v::Portable, double>) == sizeof(double));
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::vendor_self_test {
 
 using PortableInt = Vendor<VendorBackend_v::Portable, int>;
-using CpuInt      = Vendor<VendorBackend_v::CPU,      int>;
-using NvInt       = Vendor<VendorBackend_v::NV,       int>;
-using AmdInt      = Vendor<VendorBackend_v::AMD,      int>;
-using TpuInt      = Vendor<VendorBackend_v::TPU,      int>;
-using TrnInt      = Vendor<VendorBackend_v::TRN,      int>;
-using CerInt      = Vendor<VendorBackend_v::CER,      int>;
-using NoneInt     = Vendor<VendorBackend_v::None,     int>;
+using CpuInt = Vendor<VendorBackend_v::CPU, int>;
+using NvInt = Vendor<VendorBackend_v::NV, int>;
+using AmdInt = Vendor<VendorBackend_v::AMD, int>;
+using TpuInt = Vendor<VendorBackend_v::TPU, int>;
+using TrnInt = Vendor<VendorBackend_v::TRN, int>;
+using CerInt = Vendor<VendorBackend_v::CER, int>;
+using NoneInt = Vendor<VendorBackend_v::None, int>;
 
 // ── Construction paths ─────────────────────────────────────────────
 inline constexpr NvInt n_default{};
@@ -401,13 +384,13 @@ static_assert(n_in_place.peek() == 7);
 
 // ── Pinned backend accessor ───────────────────────────────────────
 static_assert(PortableInt::backend == VendorBackend_v::Portable);
-static_assert(CpuInt::backend      == VendorBackend_v::CPU);
-static_assert(NvInt::backend       == VendorBackend_v::NV);
-static_assert(AmdInt::backend      == VendorBackend_v::AMD);
-static_assert(TpuInt::backend      == VendorBackend_v::TPU);
-static_assert(TrnInt::backend      == VendorBackend_v::TRN);
-static_assert(CerInt::backend      == VendorBackend_v::CER);
-static_assert(NoneInt::backend     == VendorBackend_v::None);
+static_assert(CpuInt::backend == VendorBackend_v::CPU);
+static_assert(NvInt::backend == VendorBackend_v::NV);
+static_assert(AmdInt::backend == VendorBackend_v::AMD);
+static_assert(TpuInt::backend == VendorBackend_v::TPU);
+static_assert(TrnInt::backend == VendorBackend_v::TRN);
+static_assert(CerInt::backend == VendorBackend_v::CER);
+static_assert(NoneInt::backend == VendorBackend_v::None);
 
 // ── satisfies<RequiredBackend> — partial-order subsumption ────────
 //
@@ -422,83 +405,75 @@ static_assert(PortableInt::satisfies<VendorBackend_v::CER>);
 static_assert(PortableInt::satisfies<VendorBackend_v::None>);
 
 // Each specific vendor satisfies ONLY itself + None.
-static_assert( NvInt::satisfies<VendorBackend_v::NV>);    // self
-static_assert( NvInt::satisfies<VendorBackend_v::None>);  // bottom
-static_assert(!NvInt::satisfies<VendorBackend_v::AMD>,    // INCOMPARABLE — load-bearing reject
-    "Vendor<NV>::satisfies<AMD> MUST be FALSE — this is the LOAD-"
-    "BEARING REJECTION that distinguishes the partial-order "
-    "VendorLattice from a chain.  If this fires, NV and AMD have "
-    "become comparable, and an NV kernel could silently flow into "
-    "an AMD-required function — exactly the bug Vendor was designed "
-    "to prevent.  See VendorLattice.h's non_distributive_witness "
-    "block for the lattice-shape guard against the same regression.");
+static_assert(NvInt::satisfies<VendorBackend_v::NV>);  // self
+static_assert(NvInt::satisfies<VendorBackend_v::None>);  // bottom
+static_assert(!NvInt::satisfies<VendorBackend_v::AMD>,  // INCOMPARABLE — load-bearing reject
+              "Vendor<NV>::satisfies<AMD> MUST be FALSE — this is the LOAD-"
+              "BEARING REJECTION that distinguishes the partial-order "
+              "VendorLattice from a chain.  If this fires, NV and AMD have "
+              "become comparable, and an NV kernel could silently flow into "
+              "an AMD-required function — exactly the bug Vendor was designed "
+              "to prevent.  See VendorLattice.h's non_distributive_witness "
+              "block for the lattice-shape guard against the same regression.");
 static_assert(!NvInt::satisfies<VendorBackend_v::TPU>);
 static_assert(!NvInt::satisfies<VendorBackend_v::TRN>);
 static_assert(!NvInt::satisfies<VendorBackend_v::CER>);
 static_assert(!NvInt::satisfies<VendorBackend_v::CPU>);
-static_assert(!NvInt::satisfies<VendorBackend_v::Portable>,    // STRONGER
-    "Vendor<NV>::satisfies<Portable> MUST be FALSE — an NV-pinned "
-    "kernel does NOT satisfy a Portable requirement (Portable "
-    "demands universal coverage; NV provides only NV).");
+static_assert(!NvInt::satisfies<VendorBackend_v::Portable>,  // STRONGER
+              "Vendor<NV>::satisfies<Portable> MUST be FALSE — an NV-pinned "
+              "kernel does NOT satisfy a Portable requirement (Portable "
+              "demands universal coverage; NV provides only NV).");
 
 // AMD: same shape — only AMD + None.
-static_assert( AmdInt::satisfies<VendorBackend_v::AMD>);
-static_assert( AmdInt::satisfies<VendorBackend_v::None>);
+static_assert(AmdInt::satisfies<VendorBackend_v::AMD>);
+static_assert(AmdInt::satisfies<VendorBackend_v::None>);
 static_assert(!AmdInt::satisfies<VendorBackend_v::NV>);
 static_assert(!AmdInt::satisfies<VendorBackend_v::TPU>);
 static_assert(!AmdInt::satisfies<VendorBackend_v::Portable>);
 
 // CPU: same shape.
-static_assert( CpuInt::satisfies<VendorBackend_v::CPU>);
-static_assert( CpuInt::satisfies<VendorBackend_v::None>);
+static_assert(CpuInt::satisfies<VendorBackend_v::CPU>);
+static_assert(CpuInt::satisfies<VendorBackend_v::None>);
 static_assert(!CpuInt::satisfies<VendorBackend_v::NV>);
 static_assert(!CpuInt::satisfies<VendorBackend_v::Portable>);
 
 // None satisfies only None.
-static_assert( NoneInt::satisfies<VendorBackend_v::None>);
+static_assert(NoneInt::satisfies<VendorBackend_v::None>);
 static_assert(!NoneInt::satisfies<VendorBackend_v::NV>);
 static_assert(!NoneInt::satisfies<VendorBackend_v::CPU>);
 static_assert(!NoneInt::satisfies<VendorBackend_v::Portable>,
-    "Vendor<None>::satisfies<Portable> MUST be FALSE — None has "
-    "no kernel; cannot satisfy any consumer requirement.");
+              "Vendor<None>::satisfies<Portable> MUST be FALSE — None has "
+              "no kernel; cannot satisfy any consumer requirement.");
 
 // ── relax<WeakerBackend> — DOWN-the-lattice conversion ────────────
 
 // Portable can relax to ANY backend (it's the top).
-inline constexpr auto from_portable_to_nv =
-    PortableInt{42}.relax<VendorBackend_v::NV>();
+inline constexpr auto from_portable_to_nv = PortableInt{42}.relax<VendorBackend_v::NV>();
 static_assert(from_portable_to_nv.peek() == 42);
 static_assert(from_portable_to_nv.backend == VendorBackend_v::NV);
 
-inline constexpr auto from_portable_to_amd =
-    PortableInt{42}.relax<VendorBackend_v::AMD>();
+inline constexpr auto from_portable_to_amd = PortableInt{42}.relax<VendorBackend_v::AMD>();
 static_assert(from_portable_to_amd.backend == VendorBackend_v::AMD);
 
-inline constexpr auto from_portable_to_none =
-    PortableInt{42}.relax<VendorBackend_v::None>();
+inline constexpr auto from_portable_to_none = PortableInt{42}.relax<VendorBackend_v::None>();
 static_assert(from_portable_to_none.backend == VendorBackend_v::None);
 
 // Any backend can relax to None.
-inline constexpr auto from_nv_to_none =
-    NvInt{99}.relax<VendorBackend_v::None>();
+inline constexpr auto from_nv_to_none = NvInt{99}.relax<VendorBackend_v::None>();
 static_assert(from_nv_to_none.peek() == 99);
 static_assert(from_nv_to_none.backend == VendorBackend_v::None);
 
-inline constexpr auto from_amd_to_none =
-    AmdInt{99}.relax<VendorBackend_v::None>();
+inline constexpr auto from_amd_to_none = AmdInt{99}.relax<VendorBackend_v::None>();
 static_assert(from_amd_to_none.backend == VendorBackend_v::None);
 
 // Reflexivity at every backend.
-inline constexpr auto from_nv_to_nv =
-    NvInt{55}.relax<VendorBackend_v::NV>();
+inline constexpr auto from_nv_to_nv = NvInt{55}.relax<VendorBackend_v::NV>();
 static_assert(from_nv_to_nv.peek() == 55);
 
-inline constexpr auto from_portable_to_portable =
-    PortableInt{77}.relax<VendorBackend_v::Portable>();
+inline constexpr auto from_portable_to_portable = PortableInt{77}.relax<VendorBackend_v::Portable>();
 static_assert(from_portable_to_portable.peek() == 77);
 
-inline constexpr auto from_none_to_none =
-    NoneInt{0}.relax<VendorBackend_v::None>();
+inline constexpr auto from_none_to_none = NoneInt{0}.relax<VendorBackend_v::None>();
 static_assert(from_none_to_none.peek() == 0);
 
 // ── relax SFINAE detector — partial-order check ───────────────────
@@ -508,57 +483,55 @@ concept can_relax = requires(W w) {
 };
 
 // Portable can relax to anything.
-static_assert( can_relax<PortableInt, VendorBackend_v::Portable>);
-static_assert( can_relax<PortableInt, VendorBackend_v::CPU>);
-static_assert( can_relax<PortableInt, VendorBackend_v::NV>);
-static_assert( can_relax<PortableInt, VendorBackend_v::AMD>);
-static_assert( can_relax<PortableInt, VendorBackend_v::TPU>);
-static_assert( can_relax<PortableInt, VendorBackend_v::TRN>);
-static_assert( can_relax<PortableInt, VendorBackend_v::CER>);
-static_assert( can_relax<PortableInt, VendorBackend_v::None>);
+static_assert(can_relax<PortableInt, VendorBackend_v::Portable>);
+static_assert(can_relax<PortableInt, VendorBackend_v::CPU>);
+static_assert(can_relax<PortableInt, VendorBackend_v::NV>);
+static_assert(can_relax<PortableInt, VendorBackend_v::AMD>);
+static_assert(can_relax<PortableInt, VendorBackend_v::TPU>);
+static_assert(can_relax<PortableInt, VendorBackend_v::TRN>);
+static_assert(can_relax<PortableInt, VendorBackend_v::CER>);
+static_assert(can_relax<PortableInt, VendorBackend_v::None>);
 
 // Any backend can relax to None or itself.
-static_assert( can_relax<NvInt,       VendorBackend_v::NV>);
-static_assert( can_relax<NvInt,       VendorBackend_v::None>);
-static_assert( can_relax<AmdInt,      VendorBackend_v::AMD>);
-static_assert( can_relax<AmdInt,      VendorBackend_v::None>);
-static_assert( can_relax<NoneInt,     VendorBackend_v::None>);
+static_assert(can_relax<NvInt, VendorBackend_v::NV>);
+static_assert(can_relax<NvInt, VendorBackend_v::None>);
+static_assert(can_relax<AmdInt, VendorBackend_v::AMD>);
+static_assert(can_relax<AmdInt, VendorBackend_v::None>);
+static_assert(can_relax<NoneInt, VendorBackend_v::None>);
 
 // Cross-vendor relax REJECTED.  THE LOAD-BEARING NEGATIVE.
-static_assert(!can_relax<NvInt, VendorBackend_v::AMD>,
-    "relax<AMD> on a Vendor<NV> wrapper MUST be REJECTED — "
-    "this is the LOAD-BEARING SAFETY GUARANTEE that the partial-"
-    "order VendorLattice provides over a chain interpretation. "
-    "If this fires, an NV-pinned kernel can silently re-type to "
-    "AMD, defeating the entire reason Vendor<> was implemented as "
-    "a partial order.");
-static_assert(!can_relax<NvInt,  VendorBackend_v::TPU>);
-static_assert(!can_relax<NvInt,  VendorBackend_v::TRN>);
-static_assert(!can_relax<NvInt,  VendorBackend_v::CER>);
-static_assert(!can_relax<NvInt,  VendorBackend_v::CPU>);
+static_assert(!can_relax<NvInt, VendorBackend_v::AMD>, "relax<AMD> on a Vendor<NV> wrapper MUST be REJECTED — "
+                                                       "this is the LOAD-BEARING SAFETY GUARANTEE that the partial-"
+                                                       "order VendorLattice provides over a chain interpretation. "
+                                                       "If this fires, an NV-pinned kernel can silently re-type to "
+                                                       "AMD, defeating the entire reason Vendor<> was implemented as "
+                                                       "a partial order.");
+static_assert(!can_relax<NvInt, VendorBackend_v::TPU>);
+static_assert(!can_relax<NvInt, VendorBackend_v::TRN>);
+static_assert(!can_relax<NvInt, VendorBackend_v::CER>);
+static_assert(!can_relax<NvInt, VendorBackend_v::CPU>);
 static_assert(!can_relax<AmdInt, VendorBackend_v::NV>);
 static_assert(!can_relax<TpuInt, VendorBackend_v::CER>);
 
 // Relax UP rejected (specific → Portable).
-static_assert(!can_relax<NvInt,   VendorBackend_v::Portable>,
-    "relax<Portable> on a Vendor<NV> wrapper MUST be REJECTED — "
-    "claiming Portable from an NV-pinned source would defeat the "
-    "cross-vendor numerics CI's ability to distinguish portable "
-    "kernels (genuinely runs everywhere) from NV-specialized "
-    "kernels (runs on NV only).");
-static_assert(!can_relax<AmdInt,  VendorBackend_v::Portable>);
-static_assert(!can_relax<NoneInt, VendorBackend_v::NV>,
-    "relax<NV> on a Vendor<None> wrapper MUST be REJECTED — "
-    "None has no kernel to specialize; claiming NV from None "
-    "would synthesize a backend pin out of nothing.");
+static_assert(!can_relax<NvInt, VendorBackend_v::Portable>,
+              "relax<Portable> on a Vendor<NV> wrapper MUST be REJECTED — "
+              "claiming Portable from an NV-pinned source would defeat the "
+              "cross-vendor numerics CI's ability to distinguish portable "
+              "kernels (genuinely runs everywhere) from NV-specialized "
+              "kernels (runs on NV only).");
+static_assert(!can_relax<AmdInt, VendorBackend_v::Portable>);
+static_assert(!can_relax<NoneInt, VendorBackend_v::NV>, "relax<NV> on a Vendor<None> wrapper MUST be REJECTED — "
+                                                        "None has no kernel to specialize; claiming NV from None "
+                                                        "would synthesize a backend pin out of nothing.");
 static_assert(!can_relax<NoneInt, VendorBackend_v::Portable>);
 
 // ── Diagnostic forwarders ─────────────────────────────────────────
 static_assert(NvInt::value_type_name().ends_with("int"));
-static_assert(NvInt::lattice_name()       == "VendorLattice::At<NV>");
-static_assert(AmdInt::lattice_name()      == "VendorLattice::At<AMD>");
+static_assert(NvInt::lattice_name() == "VendorLattice::At<NV>");
+static_assert(AmdInt::lattice_name() == "VendorLattice::At<AMD>");
 static_assert(PortableInt::lattice_name() == "VendorLattice::At<Portable>");
-static_assert(NoneInt::lattice_name()     == "VendorLattice::At<None>");
+static_assert(NoneInt::lattice_name() == "VendorLattice::At<None>");
 
 // ── swap exchanges T values within the same backend pin ─────────
 [[nodiscard]] consteval bool swap_exchanges_within_same_backend() noexcept {
@@ -611,14 +584,14 @@ concept can_equality_compare = requires(W const& a, W const& b) {
     { a == b } -> std::convertible_to<bool>;
 };
 
-static_assert( can_equality_compare<NvInt>);
+static_assert(can_equality_compare<NvInt>);
 static_assert(!can_equality_compare<Vendor<VendorBackend_v::NV, NoEqualityT>>);
 
 // NoEqualityT has DELETED copy ctor — the wrapper inherits.
 static_assert(!std::is_copy_constructible_v<Vendor<VendorBackend_v::NV, NoEqualityT>>,
-    "Vendor<Backend, T> must transitively inherit T's copy-deletion. "
-    "If this fires, NoEqualityT's deleted copy ctor is no longer "
-    "visible through the wrapper.");
+              "Vendor<Backend, T> must transitively inherit T's copy-deletion. "
+              "If this fires, NoEqualityT's deleted copy ctor is no longer "
+              "visible through the wrapper.");
 static_assert(std::is_move_constructible_v<Vendor<VendorBackend_v::NV, NoEqualityT>>);
 
 // ── relax<>() && works on move-only T ─────────────────────────────
@@ -642,12 +615,12 @@ concept can_relax_lvalue = requires(W const& w) {
 };
 
 using PortableMoveOnly = Vendor<VendorBackend_v::Portable, MoveOnlyT>;
-static_assert( can_relax_rvalue<PortableMoveOnly, VendorBackend_v::NV>,
-    "relax<>() && MUST work for move-only T — the rvalue overload "
-    "moves through consume(), no copy required.");
+static_assert(can_relax_rvalue<PortableMoveOnly, VendorBackend_v::NV>,
+              "relax<>() && MUST work for move-only T — the rvalue overload "
+              "moves through consume(), no copy required.");
 static_assert(!can_relax_lvalue<PortableMoveOnly, VendorBackend_v::NV>,
-    "relax<>() const& on move-only T MUST be rejected — the const& "
-    "overload requires copy_constructible<T>.");
+              "relax<>() const& on move-only T MUST be rejected — the const& "
+              "overload requires copy_constructible<T>.");
 
 [[nodiscard]] consteval bool relax_move_only_works() noexcept {
     PortableMoveOnly src{MoveOnlyT{77}};
@@ -663,12 +636,11 @@ static_assert(NvInt::lattice_name().starts_with("VendorLattice::At<"));
 
 // ── Convenience aliases resolve correctly ────────────────────────
 static_assert(vendor::Portable<int>::backend == VendorBackend_v::Portable);
-static_assert(vendor::Nv<int>::backend       == VendorBackend_v::NV);
-static_assert(vendor::Amd<int>::backend      == VendorBackend_v::AMD);
-static_assert(vendor::None<int>::backend     == VendorBackend_v::None);
+static_assert(vendor::Nv<int>::backend == VendorBackend_v::NV);
+static_assert(vendor::Amd<int>::backend == VendorBackend_v::AMD);
+static_assert(vendor::None<int>::backend == VendorBackend_v::None);
 
-static_assert(std::is_same_v<vendor::Nv<double>,
-                             Vendor<VendorBackend_v::NV, double>>);
+static_assert(std::is_same_v<vendor::Nv<double>, Vendor<VendorBackend_v::NV, double>>);
 
 // ── Mimic vendor-dispatch admission simulations — load-bearing ───
 //
@@ -680,17 +652,14 @@ static_assert(std::is_same_v<vendor::Nv<double>,
 template <typename W>
 concept is_nv_admissible = W::template satisfies<VendorBackend_v::NV>;
 
-static_assert( is_nv_admissible<PortableInt>,
-    "Portable kernel MUST pass the NV admission gate.");
-static_assert( is_nv_admissible<NvInt>,
-    "NV kernel MUST pass the NV admission gate (reflexive).");
-static_assert(!is_nv_admissible<AmdInt>,
-    "AMD kernel MUST be REJECTED at the NV admission gate — "
-    "this is the LOAD-BEARING TEST.  Without this rejection, an "
-    "AMD-pinned kernel could be sent to mimic::nv::launch_kernel "
-    "and the NV driver would reject the AMDGPU PTX bitstream "
-    "minutes into the run.  With the wrapper, the bug is caught "
-    "at compile time.");
+static_assert(is_nv_admissible<PortableInt>, "Portable kernel MUST pass the NV admission gate.");
+static_assert(is_nv_admissible<NvInt>, "NV kernel MUST pass the NV admission gate (reflexive).");
+static_assert(!is_nv_admissible<AmdInt>, "AMD kernel MUST be REJECTED at the NV admission gate — "
+                                         "this is the LOAD-BEARING TEST.  Without this rejection, an "
+                                         "AMD-pinned kernel could be sent to mimic::nv::launch_kernel "
+                                         "and the NV driver would reject the AMDGPU PTX bitstream "
+                                         "minutes into the run.  With the wrapper, the bug is caught "
+                                         "at compile time.");
 static_assert(!is_nv_admissible<TpuInt>);
 static_assert(!is_nv_admissible<CpuInt>);
 static_assert(!is_nv_admissible<NoneInt>);
@@ -698,12 +667,10 @@ static_assert(!is_nv_admissible<NoneInt>);
 template <typename W>
 concept is_portable_required = W::template satisfies<VendorBackend_v::Portable>;
 
-static_assert( is_portable_required<PortableInt>,
-    "Portable kernel MUST pass the Portable-required gate.");
-static_assert(!is_portable_required<NvInt>,
-    "NV kernel MUST be REJECTED at the Portable-required gate — "
-    "the cross-vendor numerics CI's reference oracle requires "
-    "true portability (not vendor-specific compilation).");
+static_assert(is_portable_required<PortableInt>, "Portable kernel MUST pass the Portable-required gate.");
+static_assert(!is_portable_required<NvInt>, "NV kernel MUST be REJECTED at the Portable-required gate — "
+                                            "the cross-vendor numerics CI's reference oracle requires "
+                                            "true portability (not vendor-specific compilation).");
 static_assert(!is_portable_required<AmdInt>);
 static_assert(!is_portable_required<CpuInt>);
 
@@ -736,9 +703,9 @@ inline void runtime_smoke_test() {
 
     // relax — Portable to specific vendor.
     PortableInt source{77};
-    auto specialized_nv  = source.relax<VendorBackend_v::NV>();
+    auto specialized_nv = source.relax<VendorBackend_v::NV>();
     auto specialized_amd = std::move(source).relax<VendorBackend_v::AMD>();
-    [[maybe_unused]] auto vnv  = specialized_nv.peek();
+    [[maybe_unused]] auto vnv = specialized_nv.peek();
     [[maybe_unused]] auto vamd = specialized_amd.peek();
 
     // relax — any vendor to None.
@@ -762,17 +729,17 @@ inline void runtime_smoke_test() {
 
     // Convenience-alias instantiation.
     vendor::Portable<int> alias_portable{123};
-    vendor::Nv<int>       alias_nv{456};
-    vendor::Amd<int>      alias_amd{789};
-    vendor::None<int>     alias_none{0};
+    vendor::Nv<int> alias_nv{456};
+    vendor::Amd<int> alias_amd{789};
+    vendor::None<int> alias_none{0};
     [[maybe_unused]] auto vp = alias_portable.peek();
     [[maybe_unused]] auto vn = alias_nv.peek();
     [[maybe_unused]] auto vd = alias_amd.peek();
     [[maybe_unused]] auto vo = alias_none.peek();
 
     // Mimic admission simulations at runtime.
-    [[maybe_unused]] bool can_nv_pass        = is_nv_admissible<PortableInt>;
-    [[maybe_unused]] bool can_portable_pass  = is_portable_required<PortableInt>;
+    [[maybe_unused]] bool can_nv_pass = is_nv_admissible<PortableInt>;
+    [[maybe_unused]] bool can_portable_pass = is_portable_required<PortableInt>;
 }
 
 }  // namespace detail::vendor_self_test

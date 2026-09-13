@@ -62,16 +62,14 @@ struct BoolLattice {
     // one possible value — "Pred holds").
     struct element_type {
         using predicate_type = Pred;
-        [[nodiscard]] constexpr bool operator==(element_type) const noexcept {
-            return true;
-        }
+        [[nodiscard]] constexpr bool operator==(element_type) const noexcept { return true; }
     };
 
     using predicate_type = Pred;
 
     [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-    [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-    [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+    [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+    [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
     [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
     [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
 
@@ -79,9 +77,7 @@ struct BoolLattice {
     // Used by SessionDiagnostic / Cipher serialize / debug print to
     // identify which predicate the BoolLattice carries.  E.g.
     // BoolLattice<positive>::name() returns "positive".
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return std::meta::display_string_of(^^Pred);
-    }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return std::meta::display_string_of(^^Pred); }
 };
 
 // ── Self-test ───────────────────────────────────────────────────────
@@ -94,15 +90,21 @@ namespace detail::bool_lattice_self_test {
 // BoolLattice.
 struct positive {
     template <typename T>
-    [[nodiscard]] static constexpr bool check(T const& v) noexcept { return v > T{0}; }
+    [[nodiscard]] static constexpr bool check(T const& v) noexcept {
+        return v > T{0};
+    }
 };
 struct non_negative {
     template <typename T>
-    [[nodiscard]] static constexpr bool check(T const& v) noexcept { return v >= T{0}; }
+    [[nodiscard]] static constexpr bool check(T const& v) noexcept {
+        return v >= T{0};
+    }
 };
 struct non_zero {
     template <typename T>
-    [[nodiscard]] static constexpr bool check(T const& v) noexcept { return v != T{0}; }
+    [[nodiscard]] static constexpr bool check(T const& v) noexcept {
+        return v != T{0};
+    }
 };
 
 // Concept conformance.
@@ -119,12 +121,9 @@ static_assert(std::is_empty_v<BoolLattice<non_zero>::element_type>);
 
 // Lattice axioms hold (trivially — single-element lattice).  Use
 // arbitrary witnesses; they're all the same value.
-static_assert(verify_bounded_lattice_axioms_at<BoolLattice<positive>>(
-    {}, {}, {}));
-static_assert(verify_bounded_lattice_axioms_at<BoolLattice<non_negative>>(
-    {}, {}, {}));
-static_assert(verify_bounded_lattice_axioms_at<BoolLattice<non_zero>>(
-    {}, {}, {}));
+static_assert(verify_bounded_lattice_axioms_at<BoolLattice<positive>>({}, {}, {}));
+static_assert(verify_bounded_lattice_axioms_at<BoolLattice<non_negative>>({}, {}, {}));
+static_assert(verify_bounded_lattice_axioms_at<BoolLattice<non_zero>>({}, {}, {}));
 
 // Diagnostic name comes from reflection on Pred.  GCC 16's
 // std::meta::display_string_of returns a name whose qualification
@@ -144,8 +143,12 @@ static_assert(std::is_same_v<BoolLattice<positive>::predicate_type, positive>);
 static_assert(std::is_same_v<BoolLattice<positive>::element_type::predicate_type, positive>);
 
 // ── Layout invariants on Graded<...,BoolLattice<P>,T> ───────────────
-struct OneByteValue { char c{0}; };
-struct EightByteValue { unsigned long long v{0}; };
+struct OneByteValue {
+    char c{0};
+};
+struct EightByteValue {
+    unsigned long long v{0};
+};
 
 template <typename T>
 using RefinedPositive = Graded<ModalityKind::Absolute, BoolLattice<positive>, T>;
@@ -171,16 +174,16 @@ inline void runtime_smoke_test() {
     using L = BoolLattice<positive>;
     L::element_type a{};
     L::element_type b{};
-    [[maybe_unused]] bool             l = L::leq(a, b);
-    [[maybe_unused]] L::element_type  j = L::join(a, b);
-    [[maybe_unused]] L::element_type  m = L::meet(a, b);
+    [[maybe_unused]] bool l = L::leq(a, b);
+    [[maybe_unused]] L::element_type j = L::join(a, b);
+    [[maybe_unused]] L::element_type m = L::meet(a, b);
 
     OneByteValue v{42};
     RefinedPositive<OneByteValue> initial{v, L::bottom()};
-    auto widened   = initial.weaken(L::top());
-    auto composed  = initial.compose(widened);
-    auto rv_widen  = std::move(widened).weaken(L::top());
-    auto rv_comp   = std::move(initial).compose(composed);
+    auto widened = initial.weaken(L::top());
+    auto composed = initial.compose(widened);
+    auto rv_widen = std::move(widened).weaken(L::top());
+    auto rv_comp = std::move(initial).compose(composed);
 
     [[maybe_unused]] auto g1 = composed.grade();
     [[maybe_unused]] auto v1 = composed.peek().c;

@@ -17,8 +17,7 @@ struct {
 } cntp_wip_bbr_model_events SEC(".maps");
 
 SEC("sockops")
-int crucible_cntp_wip_bbr_model_sample(struct bpf_sock_ops *ops)
-{
+int crucible_cntp_wip_bbr_model_sample(struct bpf_sock_ops* ops) {
     (void)ops;
     return 0;
 }

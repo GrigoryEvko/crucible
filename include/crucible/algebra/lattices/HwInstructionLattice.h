@@ -160,60 +160,62 @@ namespace crucible::algebra::lattices {
 // Ordinal 0 = smallest set (NoneAllowed, no hw instructions); ordinal 4
 // = largest set (PrivilegedMsr, ring-0 MSR/port I/O).
 enum class HwInstruction : std::uint8_t {
-    NoneAllowed         = 0,  // bottom — no hw instructions; stance::PureLinear default
-    Scalar              = 1,  // scalar arithmetic + control flow; no SIMD
-    Vectorizable        = 2,  // SIMD intrinsics (composes with V-256 SimdWidthPinned)
+    NoneAllowed = 0,  // bottom — no hw instructions; stance::PureLinear default
+    Scalar = 1,  // scalar arithmetic + control flow; no SIMD
+    Vectorizable = 2,  // SIMD intrinsics (composes with V-256 SimdWidthPinned)
     NonDeterministicTsc = 3,  // rdtsc/rdtscp; couples to DetSafe downgrade
-    PrivilegedMsr       = 4,  // top — rdmsr/wrmsr/IN/OUT ring-0; needs Permission<Root>
+    PrivilegedMsr = 4,  // top — rdmsr/wrmsr/IN/OUT ring-0; needs Permission<Root>
 };
 
 [[nodiscard]] consteval std::string_view hw_instruction_name(HwInstruction t) noexcept {
     switch (t) {
-        case HwInstruction::NoneAllowed:         return "NoneAllowed";
-        case HwInstruction::Scalar:              return "Scalar";
-        case HwInstruction::Vectorizable:        return "Vectorizable";
-        case HwInstruction::NonDeterministicTsc: return "NonDeterministicTsc";
-        case HwInstruction::PrivilegedMsr:       return "PrivilegedMsr";
-        default:                                 return std::string_view{"<unknown HwInstruction>"};
+        case HwInstruction::NoneAllowed:
+            return "NoneAllowed";
+        case HwInstruction::Scalar:
+            return "Scalar";
+        case HwInstruction::Vectorizable:
+            return "Vectorizable";
+        case HwInstruction::NonDeterministicTsc:
+            return "NonDeterministicTsc";
+        case HwInstruction::PrivilegedMsr:
+            return "PrivilegedMsr";
+        default:
+            return std::string_view{"<unknown HwInstruction>"};
     }
 }
 
 struct HwInstructionLattice : ChainLatticeOps<HwInstruction> {
-    [[nodiscard]] static constexpr HwInstruction bottom() noexcept {
-        return HwInstruction::NoneAllowed;
-    }
-    [[nodiscard]] static constexpr HwInstruction top() noexcept {
-        return HwInstruction::PrivilegedMsr;
-    }
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return "HwInstructionLattice";
-    }
+    [[nodiscard]] static constexpr HwInstruction bottom() noexcept { return HwInstruction::NoneAllowed; }
+    [[nodiscard]] static constexpr HwInstruction top() noexcept { return HwInstruction::PrivilegedMsr; }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "HwInstructionLattice"; }
 
     template <HwInstruction T>
     struct At {
         struct element_type {
             using hw_instruction_value_type = HwInstruction;
-            [[nodiscard]] constexpr operator hw_instruction_value_type() const noexcept {
-                return T;
-            }
-            [[nodiscard]] constexpr bool operator==(element_type) const noexcept {
-                return true;
-            }
+            [[nodiscard]] constexpr operator hw_instruction_value_type() const noexcept { return T; }
+            [[nodiscard]] constexpr bool operator==(element_type) const noexcept { return true; }
         };
         static constexpr HwInstruction tier = T;
         [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-        [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
         [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static consteval std::string_view name() noexcept {
             switch (T) {
-                case HwInstruction::NoneAllowed:         return "HwInstructionLattice::At<NoneAllowed>";
-                case HwInstruction::Scalar:              return "HwInstructionLattice::At<Scalar>";
-                case HwInstruction::Vectorizable:        return "HwInstructionLattice::At<Vectorizable>";
-                case HwInstruction::NonDeterministicTsc: return "HwInstructionLattice::At<NonDeterministicTsc>";
-                case HwInstruction::PrivilegedMsr:       return "HwInstructionLattice::At<PrivilegedMsr>";
-                default:                                 return "HwInstructionLattice::At<?>";
+                case HwInstruction::NoneAllowed:
+                    return "HwInstructionLattice::At<NoneAllowed>";
+                case HwInstruction::Scalar:
+                    return "HwInstructionLattice::At<Scalar>";
+                case HwInstruction::Vectorizable:
+                    return "HwInstructionLattice::At<Vectorizable>";
+                case HwInstruction::NonDeterministicTsc:
+                    return "HwInstructionLattice::At<NonDeterministicTsc>";
+                case HwInstruction::PrivilegedMsr:
+                    return "HwInstructionLattice::At<PrivilegedMsr>";
+                default:
+                    return "HwInstructionLattice::At<?>";
             }
         }
     };
@@ -223,17 +225,15 @@ struct HwInstructionLattice : ChainLatticeOps<HwInstruction> {
 namespace detail::hw_instruction_lattice_self_test {
 
 // Catalog cardinality — the capability chain has exactly 5 tiers.
-inline constexpr std::size_t hw_instruction_count =
-    std::meta::enumerators_of(^^HwInstruction).size();
+inline constexpr std::size_t hw_instruction_count = std::meta::enumerators_of(^^HwInstruction).size();
 
-static_assert(hw_instruction_count == 5,
-    "HwInstruction diverged from {NoneAllowed, Scalar, Vectorizable, "
-    "NonDeterministicTsc, PrivilegedMsr}.  Adding a new capability tier "
-    "requires (a) appending at the next free ordinal (append-only per "
-    "FOUND-I04), (b) the matching hw_instruction_name() switch arm, (c) "
-    "the matching At<T> singleton name() arm, AND (d) the V-254 Hw<> "
-    "wrapper's row_hash + V-260 collision rules.  Reusing an existing "
-    "ordinal silently changes every stored row_hash without warning.");
+static_assert(hw_instruction_count == 5, "HwInstruction diverged from {NoneAllowed, Scalar, Vectorizable, "
+                                         "NonDeterministicTsc, PrivilegedMsr}.  Adding a new capability tier "
+                                         "requires (a) appending at the next free ordinal (append-only per "
+                                         "FOUND-I04), (b) the matching hw_instruction_name() switch arm, (c) "
+                                         "the matching At<T> singleton name() arm, AND (d) the V-254 Hw<> "
+                                         "wrapper's row_hash + V-260 collision rules.  Reusing an existing "
+                                         "ordinal silently changes every stored row_hash without warning.");
 
 // Bottom-element pin — ordinal 0 is the smallest set (NoneAllowed: no hw
 // instructions, the stance::PureLinear strict default).
@@ -249,21 +249,19 @@ static_assert(std::is_same_v<std::underlying_type_t<HwInstruction>, std::uint8_t
 // Reflection-driven name coverage — every enumerator must resolve to a
 // non-sentinel, non-empty name.  Auto-extends if the enum grows.
 [[nodiscard]] consteval bool every_hw_instruction_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^HwInstruction));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^HwInstruction));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
         const auto candidate = hw_instruction_name([:en:]);
         if (candidate == std::string_view{"<unknown HwInstruction>"}) return false;
-        if (candidate.empty())                                        return false;
+        if (candidate.empty()) return false;
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_hw_instruction_has_name(),
-    "hw_instruction_name() switch missing an arm for at least one "
-    "HwInstruction enumerator.");
+static_assert(every_hw_instruction_has_name(), "hw_instruction_name() switch missing an arm for at least one "
+                                               "HwInstruction enumerator.");
 
 // Concept conformance — chain lattice satisfies Lattice + BoundedLattice
 // and NOT Semiring (the chain order has no independent ⊕/⊗; the
@@ -276,36 +274,36 @@ static_assert(!::crucible::algebra::Semiring<HwInstructionLattice>);
 // Exhaustive lattice-axiom verifier on (axis)³ triples.  Chain orders
 // are always distributive — failure indicates a leq/join/meet defect.
 static_assert(verify_chain_lattice_exhaustive<HwInstructionLattice>(),
-    "HwInstructionLattice chain-order lattice axioms failed at some "
-    "triple — leq/join/meet defect.");
+              "HwInstructionLattice chain-order lattice axioms failed at some "
+              "triple — leq/join/meet defect.");
 static_assert(verify_chain_lattice_distributive_exhaustive<HwInstructionLattice>(),
-    "HwInstructionLattice chain failed distributivity — leq/join/meet "
-    "defect.");
+              "HwInstructionLattice chain failed distributivity — leq/join/meet "
+              "defect.");
 
 // Bottom / top pins on the lattice surface (catches enum-reorder drift).
 static_assert(HwInstructionLattice::bottom() == HwInstruction::NoneAllowed);
-static_assert(HwInstructionLattice::top()    == HwInstruction::PrivilegedMsr);
+static_assert(HwInstructionLattice::top() == HwInstruction::PrivilegedMsr);
 
 // Lattice top-level diagnostic name pin.
 static_assert(HwInstructionLattice::name() == std::string_view{"HwInstructionLattice"});
 
 // Strict-chain order pin (bottom ⊏ top witness).
-static_assert( HwInstructionLattice::leq(HwInstruction::NoneAllowed, HwInstruction::PrivilegedMsr));
+static_assert(HwInstructionLattice::leq(HwInstruction::NoneAllowed, HwInstruction::PrivilegedMsr));
 static_assert(!HwInstructionLattice::leq(HwInstruction::PrivilegedMsr, HwInstruction::NoneAllowed));
 
 // Mid-chain ordering — every tier strictly subsumes the previous (the
 // strict-default stance progression: Pure→prod→bench→hardening).
-static_assert(HwInstructionLattice::leq(HwInstruction::NoneAllowed,         HwInstruction::Scalar));
-static_assert(HwInstructionLattice::leq(HwInstruction::Scalar,              HwInstruction::Vectorizable));
-static_assert(HwInstructionLattice::leq(HwInstruction::Vectorizable,        HwInstruction::NonDeterministicTsc));
+static_assert(HwInstructionLattice::leq(HwInstruction::NoneAllowed, HwInstruction::Scalar));
+static_assert(HwInstructionLattice::leq(HwInstruction::Scalar, HwInstruction::Vectorizable));
+static_assert(HwInstructionLattice::leq(HwInstruction::Vectorizable, HwInstruction::NonDeterministicTsc));
 static_assert(HwInstructionLattice::leq(HwInstruction::NonDeterministicTsc, HwInstruction::PrivilegedMsr));
 // Transitive endpoints + the hot-path/Mimic-portable admission witness.
 static_assert(HwInstructionLattice::leq(HwInstruction::NoneAllowed, HwInstruction::PrivilegedMsr));
-static_assert(HwInstructionLattice::leq(HwInstruction::Scalar,      HwInstruction::NonDeterministicTsc));
+static_assert(HwInstructionLattice::leq(HwInstruction::Scalar, HwInstruction::NonDeterministicTsc));
 
 // Reverse direction must fail for non-equal pairs.
-static_assert(!HwInstructionLattice::leq(HwInstruction::Scalar,              HwInstruction::NoneAllowed));
-static_assert(!HwInstructionLattice::leq(HwInstruction::PrivilegedMsr,       HwInstruction::NonDeterministicTsc));
+static_assert(!HwInstructionLattice::leq(HwInstruction::Scalar, HwInstruction::NoneAllowed));
+static_assert(!HwInstructionLattice::leq(HwInstruction::PrivilegedMsr, HwInstruction::NonDeterministicTsc));
 static_assert(!HwInstructionLattice::leq(HwInstruction::NonDeterministicTsc, HwInstruction::Vectorizable));
 
 // ── FIXY-FOUND-010: convention divergence + security concern ──────────
@@ -365,47 +363,40 @@ static_assert(!HwInstructionLattice::leq(HwInstruction::NonDeterministicTsc, HwI
 // Join semantics — par=join (wider-instruction-class-dominates).
 // Composing a Vectorizable site with an rdtsc site yields the higher
 // tier (the region as a whole reads the TSC).
-static_assert(HwInstructionLattice::join(HwInstruction::Vectorizable,
-                                         HwInstruction::NonDeterministicTsc)
+static_assert(HwInstructionLattice::join(HwInstruction::Vectorizable, HwInstruction::NonDeterministicTsc)
               == HwInstruction::NonDeterministicTsc);
 // NoneAllowed is the join identity (composing with a no-hw site never
 // widens the instruction class).
-static_assert(HwInstructionLattice::join(HwInstruction::NoneAllowed,
-                                         HwInstruction::Scalar)
-              == HwInstruction::Scalar);
+static_assert(HwInstructionLattice::join(HwInstruction::NoneAllowed, HwInstruction::Scalar) == HwInstruction::Scalar);
 
 // FIXY-FOUND-010 security-witness pin — join of NoneAllowed and the
 // PrivilegedMsr top yields PrivilegedMsr (= wider = LATENT escalation
 // surface if any consumer reads compose as "strictest-wins").  Pinning
 // this side directly red-flags any future refactor that changes the
 // chain direction without coordinated cross-tree fix.
-static_assert(HwInstructionLattice::join(HwInstruction::NoneAllowed,
-                                         HwInstruction::PrivilegedMsr)
-              == HwInstruction::PrivilegedMsr,
-    "FIXY-FOUND-010: join(NoneAllowed, PrivilegedMsr) returns "
-    "PrivilegedMsr (top = widest capability).  A consumer treating "
-    "compose as 'strictest-wins capability-minimization' would "
-    "silently inherit MSR access.  Consumers wanting the tightest "
-    "capability floor MUST call MEET.");
+static_assert(HwInstructionLattice::join(HwInstruction::NoneAllowed, HwInstruction::PrivilegedMsr)
+                  == HwInstruction::PrivilegedMsr,
+              "FIXY-FOUND-010: join(NoneAllowed, PrivilegedMsr) returns "
+              "PrivilegedMsr (top = widest capability).  A consumer treating "
+              "compose as 'strictest-wins capability-minimization' would "
+              "silently inherit MSR access.  Consumers wanting the tightest "
+              "capability floor MUST call MEET.");
 
 // Meet semantics — and=meet (tighter-instruction-floor).  At an admission
 // gate, meeting a permissive binding with a tight policy yields the floor.
-static_assert(HwInstructionLattice::meet(HwInstruction::PrivilegedMsr,
-                                         HwInstruction::Scalar)
-              == HwInstruction::Scalar);
+static_assert(HwInstructionLattice::meet(HwInstruction::PrivilegedMsr, HwInstruction::Scalar) == HwInstruction::Scalar);
 
 // FIXY-FOUND-010 capability-minimization witness — for a CSL/admission
 // gate doing capability-minimization (grant only what both parties
 // admit), MEET is the correct operator.  meet(NoneAllowed, anything)
 // = NoneAllowed (the strict-default floor).  Pinning this side proves
 // the bottom-element absorption property the CSL gate relies on.
-static_assert(HwInstructionLattice::meet(HwInstruction::NoneAllowed,
-                                         HwInstruction::PrivilegedMsr)
-              == HwInstruction::NoneAllowed,
-    "FIXY-FOUND-010: meet(NoneAllowed, PrivilegedMsr) = NoneAllowed "
-    "(bottom).  CSL/admission gates wanting capability-minimization "
-    "(grant only what every participant admits) MUST call MEET — "
-    "calling JOIN silently grants the widest party's capabilities.");
+static_assert(HwInstructionLattice::meet(HwInstruction::NoneAllowed, HwInstruction::PrivilegedMsr)
+                  == HwInstruction::NoneAllowed,
+              "FIXY-FOUND-010: meet(NoneAllowed, PrivilegedMsr) = NoneAllowed "
+              "(bottom).  CSL/admission gates wanting capability-minimization "
+              "(grant only what every participant admits) MUST call MEET — "
+              "calling JOIN silently grants the widest party's capabilities.");
 
 // At<T> singleton — empty element_type for EBO collapse at every use
 // site.  V-254's `Graded<Absolute, At<T>, P>` relies on this.
@@ -417,45 +408,43 @@ static_assert(std::is_empty_v<HwInstructionLattice::At<HwInstruction::Privileged
 
 // At<T>::tier pins the enum value at the type level — what V-254+
 // wrappers key on for compile-time admission decisions.
-static_assert(HwInstructionLattice::At<HwInstruction::Vectorizable>::tier
-              == HwInstruction::Vectorizable);
+static_assert(HwInstructionLattice::At<HwInstruction::Vectorizable>::tier == HwInstruction::Vectorizable);
 
 // At<I>::name() coverage — reflection-driven, mirrors the enum-name probe.
 [[nodiscard]] consteval bool every_at_hw_instruction_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^HwInstruction));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^HwInstruction));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
-        if (HwInstructionLattice::At<([:en:])>::name() ==
-            std::string_view{"HwInstructionLattice::At<?>"}) {
+        if (HwInstructionLattice::At<([:en:])>::name() == std::string_view{"HwInstructionLattice::At<?>"}) {
             return false;
         }
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_at_hw_instruction_has_name(),
-    "HwInstructionLattice::At<I>::name() switch missing an arm.");
+static_assert(every_at_hw_instruction_has_name(), "HwInstructionLattice::At<I>::name() switch missing an arm.");
 
 // ── Layout invariants — Graded<Absolute, At<T>, P> == sizeof(P) ─────
 //
 // Extra-rigor proof (beyond the std::is_empty_v witnesses) that the
 // regime-1 EBO collapse actually holds for the V-254 wrapper shape.
-struct OneByteValue   { char c{0}; };
-struct EightByteValue { unsigned long long v{0}; };
+struct OneByteValue {
+    char c{0};
+};
+struct EightByteValue {
+    unsigned long long v{0};
+};
 
 template <typename T_>
-using NoneAllowedGraded = Graded<ModalityKind::Absolute,
-                                 HwInstructionLattice::At<HwInstruction::NoneAllowed>, T_>;
+using NoneAllowedGraded = Graded<ModalityKind::Absolute, HwInstructionLattice::At<HwInstruction::NoneAllowed>, T_>;
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoneAllowedGraded, OneByteValue);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoneAllowedGraded, EightByteValue);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoneAllowedGraded, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoneAllowedGraded, double);
 
 template <typename T_>
-using PrivilegedMsrGraded = Graded<ModalityKind::Absolute,
-                                   HwInstructionLattice::At<HwInstruction::PrivilegedMsr>, T_>;
+using PrivilegedMsrGraded = Graded<ModalityKind::Absolute, HwInstructionLattice::At<HwInstruction::PrivilegedMsr>, T_>;
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(PrivilegedMsrGraded, EightByteValue);
 
 // Runtime smoke test — per feedback_algebra_runtime_smoke_test_discipline:
@@ -464,14 +453,14 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(PrivilegedMsrGraded, EightByteValue);
 inline void hw_instruction_lattice_runtime_smoke_test() {
     HwInstruction a = HwInstruction::NoneAllowed;
     HwInstruction b = HwInstruction::PrivilegedMsr;
-    [[maybe_unused]] bool          rl = HwInstructionLattice::leq(a, b);
+    [[maybe_unused]] bool rl = HwInstructionLattice::leq(a, b);
     [[maybe_unused]] HwInstruction rj = HwInstructionLattice::join(a, b);
     [[maybe_unused]] HwInstruction rm = HwInstructionLattice::meet(a, b);
     [[maybe_unused]] HwInstruction bot = HwInstructionLattice::bottom();
     [[maybe_unused]] HwInstruction topv = HwInstructionLattice::top();
 
     // Mid-chain witnesses — the production stance progression.
-    HwInstruction prod  = HwInstruction::Vectorizable;
+    HwInstruction prod = HwInstruction::Vectorizable;
     HwInstruction bench = HwInstruction::NonDeterministicTsc;
     [[maybe_unused]] HwInstruction rj2 = HwInstructionLattice::join(prod, bench);
     [[maybe_unused]] HwInstruction rm2 = HwInstructionLattice::meet(prod, bench);
@@ -484,12 +473,11 @@ inline void hw_instruction_lattice_runtime_smoke_test() {
 
     // Graded carrier round-trip on the regime-1 EBO shape.
     OneByteValue payload{7};
-    NoneAllowedGraded<OneByteValue> initial{
-        payload, HwInstructionLattice::At<HwInstruction::NoneAllowed>::bottom()};
-    auto widened  = initial.weaken(HwInstructionLattice::At<HwInstruction::NoneAllowed>::top());
+    NoneAllowedGraded<OneByteValue> initial{payload, HwInstructionLattice::At<HwInstruction::NoneAllowed>::bottom()};
+    auto widened = initial.weaken(HwInstructionLattice::At<HwInstruction::NoneAllowed>::top());
     auto composed = initial.compose(widened);
-    [[maybe_unused]] auto grade   = widened.grade();
-    [[maybe_unused]] auto peeked  = composed.peek().c;
+    [[maybe_unused]] auto grade = widened.grade();
+    [[maybe_unused]] auto peeked = composed.peek().c;
 }
 
 }  // namespace detail::hw_instruction_lattice_self_test

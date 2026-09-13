@@ -136,7 +136,8 @@ namespace crucible::concurrent {
 
 namespace calendar_tag {
 
-template <typename UserTag> struct Whole {};
+template <typename UserTag>
+struct Whole {};
 
 template <typename UserTag, std::size_t P>
 using Producer = safety::Producer<Whole<UserTag>, P>;
@@ -149,52 +150,39 @@ using Consumer = safety::Consumer<Whole<UserTag>, 0>;
 // ── KeyExtractor concept ──────────────────────────────────────────
 
 template <typename E, typename T>
-concept KeyExtractorOf =
-    requires(const T& item) {
-        { E::key(item) } noexcept -> std::same_as<std::uint64_t>;
-    };
+concept KeyExtractorOf = requires(const T& item) {
+    { E::key(item) } noexcept -> std::same_as<std::uint64_t>;
+};
 
 // ── PermissionedCalendarGrid<T, M, NumBuckets, Cap, KeyExtractor,
 //                             QuantumNs, UserTag> ──────────────────
 
-template <SpscValue T,
-          std::size_t NumProducers,
-          std::size_t NumBuckets,
-          std::size_t BucketCap,
-          typename KeyExtractor,
-          std::uint64_t QuantumNs,
-          typename UserTag = void>
+template <SpscValue T, std::size_t NumProducers, std::size_t NumBuckets, std::size_t BucketCap, typename KeyExtractor,
+          std::uint64_t QuantumNs, typename UserTag = void>
 class PermissionedCalendarGrid
-    : public safety::Pinned<PermissionedCalendarGrid<T, NumProducers, NumBuckets,
-                                                      BucketCap, KeyExtractor,
-                                                      QuantumNs, UserTag>>
-{
-    static_assert(NumProducers > 0,
-                  "PermissionedCalendarGrid: NumProducers must be > 0");
-    static_assert(NumBuckets > 0,
-                  "PermissionedCalendarGrid: NumBuckets must be > 0");
-    static_assert(BucketCap > 0,
-                  "PermissionedCalendarGrid: BucketCap must be > 0");
-    static_assert(QuantumNs > 0,
-                  "PermissionedCalendarGrid: QuantumNs must be > 0");
-    static_assert(KeyExtractorOf<KeyExtractor, T>,
-                  "KeyExtractor must provide static "
-                  "uint64_t key(const T&) noexcept");
+    : public safety::Pinned<
+          PermissionedCalendarGrid<T, NumProducers, NumBuckets, BucketCap, KeyExtractor, QuantumNs, UserTag>> {
+    static_assert(NumProducers > 0, "PermissionedCalendarGrid: NumProducers must be > 0");
+    static_assert(NumBuckets > 0, "PermissionedCalendarGrid: NumBuckets must be > 0");
+    static_assert(BucketCap > 0, "PermissionedCalendarGrid: BucketCap must be > 0");
+    static_assert(QuantumNs > 0, "PermissionedCalendarGrid: QuantumNs must be > 0");
+    static_assert(KeyExtractorOf<KeyExtractor, T>, "KeyExtractor must provide static "
+                                                   "uint64_t key(const T&) noexcept");
 
 public:
-    using value_type     = T;
-    using user_tag       = UserTag;
-    using whole_tag      = calendar_tag::Whole<UserTag>;
-    using consumer_tag   = calendar_tag::Consumer<UserTag>;
-    using key_extractor  = KeyExtractor;
+    using value_type = T;
+    using user_tag = UserTag;
+    using whole_tag = calendar_tag::Whole<UserTag>;
+    using consumer_tag = calendar_tag::Consumer<UserTag>;
+    using key_extractor = KeyExtractor;
 
     template <std::size_t P>
     using producer_tag = calendar_tag::Producer<UserTag, P>;
 
     static constexpr std::size_t num_producers = NumProducers;
-    static constexpr std::size_t num_buckets   = NumBuckets;
-    static constexpr std::size_t bucket_cap    = BucketCap;
-    static constexpr std::uint64_t quantum_ns  = QuantumNs;
+    static constexpr std::size_t num_buckets = NumBuckets;
+    static constexpr std::size_t bucket_cap = BucketCap;
+    static constexpr std::uint64_t quantum_ns = QuantumNs;
 
     constexpr PermissionedCalendarGrid() noexcept = default;
 
@@ -206,28 +194,23 @@ public:
 
     template <std::size_t P>
     class ProducerHandle {
-        static_assert(P < NumProducers,
-                      "ProducerHandle<P>: P must be < NumProducers");
+        static_assert(P < NumProducers, "ProducerHandle<P>: P must be < NumProducers");
 
         PermissionedCalendarGrid& grid_;
         [[no_unique_address]] safety::Permission<producer_tag<P>> perm_;
 
-        constexpr ProducerHandle(PermissionedCalendarGrid& g,
-                                 safety::Permission<producer_tag<P>>&& p) noexcept
+        constexpr ProducerHandle(PermissionedCalendarGrid& g, safety::Permission<producer_tag<P>>&& p) noexcept
             : grid_{g}, perm_{std::move(p)} {}
         friend class PermissionedCalendarGrid;
 
     public:
-        ProducerHandle(const ProducerHandle&)
-            = delete("ProducerHandle owns the row's Producer Permission — "
-                     "copy would duplicate the linear token");
-        ProducerHandle& operator=(const ProducerHandle&)
-            = delete("ProducerHandle owns the row's Producer Permission — "
-                     "assignment would overwrite the linear token");
+        ProducerHandle(const ProducerHandle&) = delete("ProducerHandle owns the row's Producer Permission — "
+                                                       "copy would duplicate the linear token");
+        ProducerHandle& operator=(const ProducerHandle&) = delete("ProducerHandle owns the row's Producer Permission — "
+                                                                  "assignment would overwrite the linear token");
         constexpr ProducerHandle(ProducerHandle&&) noexcept = default;
-        ProducerHandle& operator=(ProducerHandle&&)
-            = delete("ProducerHandle binds to ONE row for life — "
-                     "the row index is part of the type");
+        ProducerHandle& operator=(ProducerHandle&&) = delete("ProducerHandle binds to ONE row for life — "
+                                                             "the row index is part of the type");
 
         static constexpr std::size_t row_index = P;
 
@@ -250,24 +233,19 @@ public:
         // target bucket, calls SpscRing::try_push_batch per run.
         // Stops at the first partial-batch (bucket full) and returns
         // total items pushed.
-        [[nodiscard, gnu::hot]] std::size_t try_push_batch(
-            std::span<const T> items) noexcept
-        {
+        [[nodiscard, gnu::hot]] std::size_t try_push_batch(std::span<const T> items) noexcept {
             std::size_t total = 0;
             std::size_t i = 0;
             while (i < items.size()) {
                 const std::size_t bucket = grid_.bucket_for_(items[i]);
                 std::size_t run_end = i + 1;
-                while (run_end < items.size()
-                    && grid_.bucket_for_(items[run_end]) == bucket)
-                {
+                while (run_end < items.size() && grid_.bucket_for_(items[run_end]) == bucket) {
                     ++run_end;
                 }
                 const std::size_t want = run_end - i;
-                const std::size_t pushed = grid_.rings_[P][bucket]
-                    .try_push_batch(items.subspan(i, want));
+                const std::size_t pushed = grid_.rings_[P][bucket].try_push_batch(items.subspan(i, want));
                 total += pushed;
-                if (pushed < want) break;     // bucket full, stop
+                if (pushed < want) break;  // bucket full, stop
                 i = run_end;
             }
             return total;
@@ -288,9 +266,7 @@ public:
             }
             return true;
         }
-        [[nodiscard]] static constexpr std::size_t capacity() noexcept {
-            return NumBuckets * BucketCap;
-        }
+        [[nodiscard]] static constexpr std::size_t capacity() noexcept { return NumBuckets * BucketCap; }
     };
 
     // ── ConsumerHandle ────────────────────────────────────────────
@@ -305,21 +281,17 @@ public:
         PermissionedCalendarGrid& grid_;
         [[no_unique_address]] safety::Permission<consumer_tag> perm_;
 
-        constexpr ConsumerHandle(PermissionedCalendarGrid& g,
-                                 safety::Permission<consumer_tag>&& p) noexcept
+        constexpr ConsumerHandle(PermissionedCalendarGrid& g, safety::Permission<consumer_tag>&& p) noexcept
             : grid_{g}, perm_{std::move(p)} {}
         friend class PermissionedCalendarGrid;
 
     public:
-        ConsumerHandle(const ConsumerHandle&)
-            = delete("ConsumerHandle owns the unique Consumer Permission "
-                     "— copy would duplicate the linear token");
-        ConsumerHandle& operator=(const ConsumerHandle&)
-            = delete("ConsumerHandle owns the unique Consumer Permission "
-                     "— assignment would overwrite the linear token");
+        ConsumerHandle(const ConsumerHandle&) = delete("ConsumerHandle owns the unique Consumer Permission "
+                                                       "— copy would duplicate the linear token");
+        ConsumerHandle& operator=(const ConsumerHandle&) = delete("ConsumerHandle owns the unique Consumer Permission "
+                                                                  "— assignment would overwrite the linear token");
         constexpr ConsumerHandle(ConsumerHandle&&) noexcept = default;
-        ConsumerHandle& operator=(ConsumerHandle&&)
-            = delete("ConsumerHandle binds to ONE consumer for life");
+        ConsumerHandle& operator=(ConsumerHandle&&) = delete("ConsumerHandle binds to ONE consumer for life");
 
         // Pop the highest-priority item (lowest bucket index from
         // current_bucket).  Scans up to NumBuckets buckets; returns
@@ -333,11 +305,10 @@ public:
             // would shift the scan window forward.  cur_origin +
             // scan is the absolute bucket counter being inspected;
             // % NumBuckets yields the physical bucket index.
-            const std::uint64_t cur_origin =
-                grid_.current_bucket_.peek_relaxed();
+            const std::uint64_t cur_origin = grid_.current_bucket_.peek_relaxed();
             for (std::size_t scan = 0; scan < NumBuckets; ++scan) {
                 const std::uint64_t this_b = cur_origin + scan;
-                const std::size_t   bucket = this_b % NumBuckets;
+                const std::size_t bucket = this_b % NumBuckets;
                 for (std::size_t p = 0; p < NumProducers; ++p) {
                     if (auto v = grid_.rings_[p][bucket].try_pop()) {
                         return v;
@@ -355,26 +326,18 @@ public:
         // M producer rows) before advancing.  Per-item cost
         // amortizes to the SPSC store-port floor (~0.075-0.5 ns)
         // when the current bucket has items.
-        [[nodiscard, gnu::hot]] std::size_t try_pop_batch(
-            std::span<T> out) noexcept
-        {
+        [[nodiscard, gnu::hot]] std::size_t try_pop_batch(std::span<T> out) noexcept {
             if (out.empty()) return 0;
             std::size_t total = 0;
             // Snapshot cur ONCE; absolute scan position is
             // cur_origin + scan.  Same rationale as try_pop.
-            const std::uint64_t cur_origin =
-                grid_.current_bucket_.peek_relaxed();
-            for (std::size_t scan = 0;
-                 scan < NumBuckets && total < out.size(); ++scan)
-            {
+            const std::uint64_t cur_origin = grid_.current_bucket_.peek_relaxed();
+            for (std::size_t scan = 0; scan < NumBuckets && total < out.size(); ++scan) {
                 const std::uint64_t this_b = cur_origin + scan;
-                const std::size_t   bucket = this_b % NumBuckets;
+                const std::size_t bucket = this_b % NumBuckets;
                 std::size_t bucket_got = 0;
-                for (std::size_t p = 0;
-                     p < NumProducers && total < out.size(); ++p)
-                {
-                    const std::size_t got = grid_.rings_[p][bucket]
-                        .try_pop_batch(out.subspan(total));
+                for (std::size_t p = 0; p < NumProducers && total < out.size(); ++p) {
+                    const std::size_t got = grid_.rings_[p][bucket].try_pop_batch(out.subspan(total));
                     total += got;
                     bucket_got += got;
                 }
@@ -394,18 +357,10 @@ public:
 
         // Channel-level diagnostics.  Consumer sees the whole grid
         // (drains across all M producer rows × NumBuckets buckets).
-        [[nodiscard]] bool empty_approx() const noexcept {
-            return grid_.empty_approx();
-        }
-        [[nodiscard]] std::size_t size_approx() const noexcept {
-            return grid_.size_approx();
-        }
-        [[nodiscard]] std::uint64_t current_bucket() const noexcept {
-            return grid_.current_bucket_.peek_relaxed();
-        }
-        [[nodiscard]] static constexpr std::size_t capacity() noexcept {
-            return NumProducers * NumBuckets * BucketCap;
-        }
+        [[nodiscard]] bool empty_approx() const noexcept { return grid_.empty_approx(); }
+        [[nodiscard]] std::size_t size_approx() const noexcept { return grid_.size_approx(); }
+        [[nodiscard]] std::uint64_t current_bucket() const noexcept { return grid_.current_bucket_.peek_relaxed(); }
+        [[nodiscard]] static constexpr std::size_t capacity() noexcept { return NumProducers * NumBuckets * BucketCap; }
     };
 
     // ── Factories ─────────────────────────────────────────────────
@@ -415,16 +370,12 @@ public:
     // hands them to producer<P>() and consumer().
 
     template <std::size_t P>
-    [[nodiscard]] constexpr ProducerHandle<P> producer(
-        safety::Permission<producer_tag<P>>&& perm) noexcept
-    {
+    [[nodiscard]] constexpr ProducerHandle<P> producer(safety::Permission<producer_tag<P>>&& perm) noexcept {
         static_assert(P < NumProducers, "producer<P>: P must be < NumProducers");
         return ProducerHandle<P>{*this, std::move(perm)};
     }
 
-    [[nodiscard]] constexpr ConsumerHandle consumer(
-        safety::Permission<consumer_tag>&& perm) noexcept
-    {
+    [[nodiscard]] constexpr ConsumerHandle consumer(safety::Permission<consumer_tag>&& perm) noexcept {
         return ConsumerHandle{*this, std::move(perm)};
     }
 
@@ -438,9 +389,8 @@ public:
     template <typename Body>
         requires std::is_invocable_v<Body>
     [[nodiscard]] safety::Permission<whole_tag>
-    with_recombined_access(safety::Permission<whole_tag>&& whole, Body&& body)
-        noexcept(std::is_nothrow_invocable_v<Body>)
-    {
+    with_recombined_access(safety::Permission<whole_tag>&& whole,
+                           Body&& body) noexcept(std::is_nothrow_invocable_v<Body>) {
         std::forward<Body>(body)();
         return std::move(whole);
     }
@@ -448,14 +398,10 @@ public:
     // ── Diagnostics (universal Permissioned* surface) ─────────────
 
     // Linear permissions on all endpoints; no atomic exclusivity flag.
-    [[nodiscard]] static constexpr bool is_exclusive_active() noexcept {
-        return false;
-    }
+    [[nodiscard]] static constexpr bool is_exclusive_active() noexcept { return false; }
 
     // Channel-level capacity = M × NumBuckets × BucketCap.
-    [[nodiscard]] static constexpr std::size_t capacity() noexcept {
-        return NumProducers * NumBuckets * BucketCap;
-    }
+    [[nodiscard]] static constexpr std::size_t capacity() noexcept { return NumProducers * NumBuckets * BucketCap; }
 
     // True iff every cell appears empty (snapshot read; not exact
     // under concurrent push).
@@ -481,9 +427,7 @@ public:
 
     // Current bucket pointer (consumer's drain position).  Read-only
     // diagnostic; advances monotonically as consumer drains.
-    [[nodiscard]] std::uint64_t current_bucket() const noexcept {
-        return current_bucket_.peek_relaxed();
-    }
+    [[nodiscard]] std::uint64_t current_bucket() const noexcept { return current_bucket_.peek_relaxed(); }
 
 private:
     // Compute target bucket index for an item.  Calendar queue rule:
@@ -501,9 +445,9 @@ private:
     // NumBuckets to bound this collision (typical: NumBuckets >
     // expected priority window in QuantumNs units).
     [[nodiscard, gnu::pure]] std::size_t bucket_for_(const T& item) const noexcept {
-        const std::uint64_t k       = KeyExtractor::key(item);
-        const std::uint64_t target  = k / QuantumNs;
-        const std::uint64_t cur     = current_bucket_.peek_relaxed();
+        const std::uint64_t k = KeyExtractor::key(item);
+        const std::uint64_t target = k / QuantumNs;
+        const std::uint64_t cur = current_bucket_.peek_relaxed();
         const std::uint64_t clamped = (target > cur) ? target : cur;
         return clamped % NumBuckets;
     }
@@ -514,10 +458,8 @@ private:
     // try_pop.  Monotonic-direction enforced by AtomicMonotonic.
     void advance_past_(std::uint64_t value) noexcept {
         std::uint64_t expected = value;
-        (void)current_bucket_.compare_exchange_advance_weak(
-            expected, value + 1,
-            std::memory_order_acq_rel,
-            std::memory_order_acquire);
+        (void)current_bucket_.compare_exchange_advance_weak(expected, value + 1, std::memory_order_acq_rel,
+                                                            std::memory_order_acquire);
     }
 
     // Storage: M × NumBuckets independent SpscRings.
@@ -528,8 +470,7 @@ private:
     // — slightly less cache-friendly than the alternative layout,
     // but it matches the "producer-private row" CSL discipline (each
     // ProducerHandle<P> holds Permission<Producer<P>> over rings_[P][*]).
-    std::array<std::array<SpscRing<T, BucketCap>, NumBuckets>, NumProducers>
-        rings_{};
+    std::array<std::array<SpscRing<T, BucketCap>, NumBuckets>, NumProducers> rings_{};
 
     // Drain pointer.  Monotonic, single-consumer (linear permission
     // ensures sole writer).  Producers read-only via peek_relaxed.

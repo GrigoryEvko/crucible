@@ -76,10 +76,8 @@ struct {
  *   ctx[2]: long           syscall number (NR)
  */
 SEC("tp_btf/sys_enter")
-int handle_sys_enter_btf(u64 *ctx)
-{
-    if (!is_target())
-        return 0;
+int handle_sys_enter_btf(u64* ctx) {
+    if (!is_target()) return 0;
 
     __u32 tid = get_tid();
     long syscall_id = (long)ctx[2];
@@ -102,10 +100,8 @@ int handle_sys_enter_btf(u64 *ctx)
  *   ctx[2]: long           return value (not used)
  */
 SEC("tp_btf/sys_exit")
-int handle_sys_exit_btf(u64 *ctx)
-{
-    if (!is_target())
-        return 0;
+int handle_sys_exit_btf(u64* ctx) {
+    if (!is_target()) return 0;
 
     /* GAPS-004f-AUDIT (2026-05-04): single bpf_ktime_get_ns() per event.
      * Was two calls (one for delta, one for ts_ns) — wasted ~50 ns/event.
@@ -115,23 +111,20 @@ int handle_sys_exit_btf(u64 *ctx)
     __u64 now = bpf_ktime_get_ns();
 
     __u32 tid = get_tid();
-    struct syscall_start_val *start = bpf_map_lookup_elem(&syscall_start, &tid);
-    if (!start)
-        return 0;
+    struct syscall_start_val* start = bpf_map_lookup_elem(&syscall_start, &tid);
+    if (!start) return 0;
 
     __u64 delta = now - start->ts;
     __u32 nr = start->nr;
     bpf_map_delete_elem(&syscall_start, &tid);
 
     /* Update per-syscall stats */
-    struct syscall_stats *stats = bpf_map_lookup_elem(&syscall_latency, &nr);
+    struct syscall_stats* stats = bpf_map_lookup_elem(&syscall_latency, &nr);
     if (stats) {
         __sync_fetch_and_add(&stats->count, 1);
         __sync_fetch_and_add(&stats->total_ns, delta);
-        if (delta > stats->max_ns)
-            stats->max_ns = delta;
-        if (stats->min_ns == 0 || delta < stats->min_ns)
-            stats->min_ns = delta;
+        if (delta > stats->max_ns) stats->max_ns = delta;
+        if (stats->min_ns == 0 || delta < stats->min_ns) stats->min_ns = delta;
     } else {
         struct syscall_stats new_stats = {
             .count = 1,
@@ -144,7 +137,7 @@ int handle_sys_exit_btf(u64 *ctx)
 
     /* Emit to zero-copy timeline */
     __u32 tl_zero = 0;
-    struct syscall_timeline *tl = bpf_map_lookup_elem(&syscall_timeline, &tl_zero);
+    struct syscall_timeline* tl = bpf_map_lookup_elem(&syscall_timeline, &tl_zero);
     if (tl) {
         __u64 idx = __sync_fetch_and_add(&tl->hdr.write_idx, 1);
         __u32 slot = (__u32)(idx & TIMELINE_MASK);
@@ -166,9 +159,8 @@ int handle_sys_exit_btf(u64 *ctx)
 
     /* Increment total counter */
     __u32 zero = 0;
-    __u64 *cnt = bpf_map_lookup_elem(&total_syscalls, &zero);
-    if (cnt)
-        __sync_fetch_and_add(cnt, 1);
+    __u64* cnt = bpf_map_lookup_elem(&total_syscalls, &zero);
+    if (cnt) __sync_fetch_and_add(cnt, 1);
 
     return 0;
 }

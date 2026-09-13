@@ -26,13 +26,13 @@
 namespace crucible::cntp {
 
 enum class CcAlgorithm : std::uint16_t {
-    Bbr3   = 1u << 0,
-    Cubic  = 1u << 1,
-    Dctcp  = 1u << 2,
-    Reno   = 1u << 3,
-    Vegas  = 1u << 4,
-    Bbr2   = 1u << 5,
-    Bbr1   = 1u << 6,
+    Bbr3 = 1u << 0,
+    Cubic = 1u << 1,
+    Dctcp = 1u << 2,
+    Reno = 1u << 3,
+    Vegas = 1u << 4,
+    Bbr2 = 1u << 5,
+    Bbr1 = 1u << 6,
     Custom = 1u << 7,
 };
 
@@ -66,12 +66,9 @@ struct KernelCcName {
     std::array<char, max_bytes> bytes{};
     std::uint8_t size = 0;
 
-    [[nodiscard]] constexpr std::string_view view() const noexcept {
-        return {bytes.data(), size};
-    }
+    [[nodiscard]] constexpr std::string_view view() const noexcept { return {bytes.data(), size}; }
 
-    [[nodiscard]] static constexpr std::expected<KernelCcName, CcError>
-    from(std::string_view name) noexcept {
+    [[nodiscard]] static constexpr std::expected<KernelCcName, CcError> from(std::string_view name) noexcept {
         if (name.empty() || name.size() >= max_bytes) {
             return std::unexpected(CcError::InvalidAlgorithmName);
         }
@@ -79,11 +76,7 @@ struct KernelCcName {
         KernelCcName out{};
         for (std::size_t i = 0; i < name.size(); ++i) {
             const char c = name[i];
-            const bool ok =
-                (c >= 'a' && c <= 'z') ||
-                (c >= '0' && c <= '9') ||
-                c == '_' ||
-                c == '-';
+            const bool ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
             if (!ok) {
                 return std::unexpected(CcError::InvalidAlgorithmName);
             }
@@ -102,52 +95,50 @@ struct CcSelection {
     KernelCcName kernel_name{};
 };
 
-using DeclaredCcChoice =
-    safety::Tagged<CcSelection, safety::source::CcAlgorithm>;
+using DeclaredCcChoice = safety::Tagged<CcSelection, safety::source::CcAlgorithm>;
 
 struct CcAvailability {
     CcAlgorithmMask algorithms{};
 
-    [[nodiscard]] constexpr bool contains(CcAlgorithm algorithm) const noexcept {
-        return algorithms.test(algorithm);
-    }
+    [[nodiscard]] constexpr bool contains(CcAlgorithm algorithm) const noexcept { return algorithms.test(algorithm); }
 };
 
 template <CcAlgorithm Algorithm, LinkClass Link>
-concept CcCompatible =
-    Algorithm != CcAlgorithm::Custom &&
-    (Algorithm != CcAlgorithm::Dctcp ||
-     Link == LinkClass::LosslessDatacenterFabric);
+concept CcCompatible = Algorithm != CcAlgorithm::Custom
+                    && (Algorithm != CcAlgorithm::Dctcp || Link == LinkClass::LosslessDatacenterFabric);
 
 template <class Module>
 concept CustomCcModule = requires {
     { Module::congestion_control_name() } -> std::convertible_to<std::string_view>;
-} && requires {
-    requires KernelCcName::from(Module::congestion_control_name()).has_value();
-};
+} && requires { requires KernelCcName::from(Module::congestion_control_name()).has_value(); };
 
-[[nodiscard]] constexpr std::expected<SocketFd, CcError>
-admit_socket_fd(int fd) noexcept {
+[[nodiscard]] constexpr std::expected<SocketFd, CcError> admit_socket_fd(int fd) noexcept {
     if (fd < 0) {
         return std::unexpected(CcError::InvalidSocketFd);
     }
     return SocketFd{fd, typename SocketFd::Trusted{}};
 }
 
-[[nodiscard]] constexpr std::expected<KernelCcName, CcError>
-kernel_name_for(CcAlgorithm algorithm) noexcept {
+[[nodiscard]] constexpr std::expected<KernelCcName, CcError> kernel_name_for(CcAlgorithm algorithm) noexcept {
     // fixy-A5-018: Bbr3 is registered under "bbr3" by the out-of-tree
     // Google patchset (drivers/net/tcp_bbr3.c).  Mapping Bbr3 → "bbr"
     // was a misread of upstream Linux: the in-tree "bbr" module is
     // BBRv1, not v3.  Bbr1 owns the literal "bbr" name.
     switch (algorithm) {
-        case CcAlgorithm::Bbr3:  return KernelCcName::from("bbr3");
-        case CcAlgorithm::Cubic: return KernelCcName::from("cubic");
-        case CcAlgorithm::Dctcp: return KernelCcName::from("dctcp");
-        case CcAlgorithm::Reno:  return KernelCcName::from("reno");
-        case CcAlgorithm::Vegas: return KernelCcName::from("vegas");
-        case CcAlgorithm::Bbr2:  return KernelCcName::from("bbr2");
-        case CcAlgorithm::Bbr1:  return KernelCcName::from("bbr");
+        case CcAlgorithm::Bbr3:
+            return KernelCcName::from("bbr3");
+        case CcAlgorithm::Cubic:
+            return KernelCcName::from("cubic");
+        case CcAlgorithm::Dctcp:
+            return KernelCcName::from("dctcp");
+        case CcAlgorithm::Reno:
+            return KernelCcName::from("reno");
+        case CcAlgorithm::Vegas:
+            return KernelCcName::from("vegas");
+        case CcAlgorithm::Bbr2:
+            return KernelCcName::from("bbr2");
+        case CcAlgorithm::Bbr1:
+            return KernelCcName::from("bbr");
         case CcAlgorithm::Custom:
             return std::unexpected(CcError::InvalidAlgorithmName);
         default:
@@ -176,20 +167,16 @@ template <class Module, LinkClass Link>
     }};
 }
 
-[[nodiscard]] std::expected<CcAlgorithm, CcError>
-algorithm_from_kernel_name(std::string_view name) noexcept;
+[[nodiscard]] std::expected<CcAlgorithm, CcError> algorithm_from_kernel_name(std::string_view name) noexcept;
 
-[[nodiscard]] std::expected<CcAvailability, CcError>
-parse_available_congestion_control(std::string_view text) noexcept;
+[[nodiscard]] std::expected<CcAvailability, CcError> parse_available_congestion_control(std::string_view text) noexcept;
 
-[[nodiscard]] std::expected<CcAvailability, CcError>
-read_available_congestion_control() noexcept;
+[[nodiscard]] std::expected<CcAvailability, CcError> read_available_congestion_control() noexcept;
 
 [[nodiscard]] bool kernel_supports(CcAlgorithm algorithm) noexcept;
 
 template <LinkClass Link>
-[[nodiscard]] constexpr std::expected<DeclaredCcChoice, CcError>
-recommend_cc(CcAvailability availability) noexcept {
+[[nodiscard]] constexpr std::expected<DeclaredCcChoice, CcError> recommend_cc(CcAvailability availability) noexcept {
     if constexpr (Link == LinkClass::LosslessDatacenterFabric) {
         if (availability.contains(CcAlgorithm::Dctcp)) {
             return mint_cc_choice<CcAlgorithm::Dctcp, Link>();
@@ -218,14 +205,11 @@ recommend_cc(CcAvailability availability) noexcept {
     return std::unexpected(CcError::AlgorithmUnavailable);
 }
 
-[[nodiscard]] std::expected<void, CcError>
-set_cc_for_socket(SocketFd fd, DeclaredCcChoice choice) noexcept;
+[[nodiscard]] std::expected<void, CcError> set_cc_for_socket(SocketFd fd, DeclaredCcChoice choice) noexcept;
 
-[[nodiscard]] std::expected<CcAlgorithm, CcError>
-query_cc_for_socket(SocketFd fd) noexcept;
+[[nodiscard]] std::expected<CcAlgorithm, CcError> query_cc_for_socket(SocketFd fd) noexcept;
 
-[[nodiscard]] std::expected<CcSelection, CcError>
-query_cc_selection_for_socket(SocketFd fd) noexcept;
+[[nodiscard]] std::expected<CcSelection, CcError> query_cc_selection_for_socket(SocketFd fd) noexcept;
 
 // fixy-A5-016 worked example: cap-row-gated entry points for EVERY
 // syscall-touching surface in this header.  Four operations cross
@@ -267,29 +251,26 @@ query_cc_selection_for_socket(SocketFd fd) noexcept;
 // parameter is an empty struct (sizeof == 1, EBO-collapsible).
 template <effects::IsExecCtx Ctx>
     requires effects::CtxOwnsCapability<Ctx, effects::Effect::IO>
-[[nodiscard]] std::expected<void, CcError>
-set_cc_for_socket(Ctx const&, SocketFd fd, DeclaredCcChoice choice) noexcept {
+[[nodiscard]] std::expected<void, CcError> set_cc_for_socket(Ctx const&, SocketFd fd,
+                                                             DeclaredCcChoice choice) noexcept {
     return set_cc_for_socket(fd, choice);
 }
 
 template <effects::IsExecCtx Ctx>
     requires effects::CtxOwnsCapability<Ctx, effects::Effect::IO>
-[[nodiscard]] std::expected<CcAlgorithm, CcError>
-query_cc_for_socket(Ctx const&, SocketFd fd) noexcept {
+[[nodiscard]] std::expected<CcAlgorithm, CcError> query_cc_for_socket(Ctx const&, SocketFd fd) noexcept {
     return query_cc_for_socket(fd);
 }
 
 template <effects::IsExecCtx Ctx>
     requires effects::CtxOwnsCapability<Ctx, effects::Effect::IO>
-[[nodiscard]] std::expected<CcSelection, CcError>
-query_cc_selection_for_socket(Ctx const&, SocketFd fd) noexcept {
+[[nodiscard]] std::expected<CcSelection, CcError> query_cc_selection_for_socket(Ctx const&, SocketFd fd) noexcept {
     return query_cc_selection_for_socket(fd);
 }
 
 template <effects::IsExecCtx Ctx>
     requires effects::CtxOwnsCapability<Ctx, effects::Effect::IO>
-[[nodiscard]] std::expected<CcAvailability, CcError>
-read_available_congestion_control(Ctx const&) noexcept {
+[[nodiscard]] std::expected<CcAvailability, CcError> read_available_congestion_control(Ctx const&) noexcept {
     return read_available_congestion_control();
 }
 

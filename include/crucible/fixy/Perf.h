@@ -230,45 +230,29 @@ namespace crucible::fixy::perf::self_test {
 // introduces a shadowed local declaration or rewrites the using-
 // decl to import a different symbol reds the build at include time.
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::perf::LockContention,
-    ::crucible::perf::LockContention>,
-    "fixy::perf::LockContention must alias substrate.");
+static_assert(std::is_same_v<::crucible::fixy::perf::LockContention, ::crucible::perf::LockContention>,
+              "fixy::perf::LockContention must alias substrate.");
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::perf::PmuSample,
-    ::crucible::perf::PmuSample>,
-    "fixy::perf::PmuSample must alias substrate.");
+static_assert(std::is_same_v<::crucible::fixy::perf::PmuSample, ::crucible::perf::PmuSample>,
+              "fixy::perf::PmuSample must alias substrate.");
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::perf::SchedSwitch,
-    ::crucible::perf::SchedSwitch>,
-    "fixy::perf::SchedSwitch must alias substrate.");
+static_assert(std::is_same_v<::crucible::fixy::perf::SchedSwitch, ::crucible::perf::SchedSwitch>,
+              "fixy::perf::SchedSwitch must alias substrate.");
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::perf::SchedTpBtf,
-    ::crucible::perf::SchedTpBtf>,
-    "fixy::perf::SchedTpBtf must alias substrate.");
+static_assert(std::is_same_v<::crucible::fixy::perf::SchedTpBtf, ::crucible::perf::SchedTpBtf>,
+              "fixy::perf::SchedTpBtf must alias substrate.");
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::perf::SenseHub,
-    ::crucible::perf::SenseHub>,
-    "fixy::perf::SenseHub must alias substrate.");
+static_assert(std::is_same_v<::crucible::fixy::perf::SenseHub, ::crucible::perf::SenseHub>,
+              "fixy::perf::SenseHub must alias substrate.");
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::perf::SyscallLatency,
-    ::crucible::perf::SyscallLatency>,
-    "fixy::perf::SyscallLatency must alias substrate.");
+static_assert(std::is_same_v<::crucible::fixy::perf::SyscallLatency, ::crucible::perf::SyscallLatency>,
+              "fixy::perf::SyscallLatency must alias substrate.");
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::perf::SyscallTpBtf,
-    ::crucible::perf::SyscallTpBtf>,
-    "fixy::perf::SyscallTpBtf must alias substrate.");
+static_assert(std::is_same_v<::crucible::fixy::perf::SyscallTpBtf, ::crucible::perf::SyscallTpBtf>,
+              "fixy::perf::SyscallTpBtf must alias substrate.");
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::perf::WorkloadProfiler,
-    ::crucible::perf::WorkloadProfiler>,
-    "fixy::perf::WorkloadProfiler must alias substrate.");
+static_assert(std::is_same_v<::crucible::fixy::perf::WorkloadProfiler, ::crucible::perf::WorkloadProfiler>,
+              "fixy::perf::WorkloadProfiler must alias substrate.");
 
 // ─── FIXY-V-074 — dispatch surface identity witness ────────────────
 //
@@ -276,9 +260,8 @@ static_assert(std::is_same_v<
 // WorkloadProfiler::recommend(); dispatch_workload_decision is the
 // only routing site that admits it.  Both alias the substrate.
 
-static_assert(std::is_same_v<
-    ::crucible::fixy::perf::TaggedParallelismDecision,
-    ::crucible::perf::TaggedParallelismDecision>,
+static_assert(
+    std::is_same_v<::crucible::fixy::perf::TaggedParallelismDecision, ::crucible::perf::TaggedParallelismDecision>,
     "fixy::perf::TaggedParallelismDecision must alias substrate.");
 
 // ─── Positive concept admittance (ColdInitCtx — the Init-row carrier)
@@ -286,110 +269,86 @@ static_assert(std::is_same_v<
 // Each CtxFitsXMint must admit ColdInitCtx (carries Init in its
 // effect row).  Substrate ships these asserts at each mint site.
 
-static_assert(::crucible::fixy::perf::CtxFitsLockContentionMint<
-    ::crucible::effects::ColdInitCtx>,
-    "fixy::perf::CtxFitsLockContentionMint must admit ColdInitCtx.");
+static_assert(::crucible::fixy::perf::CtxFitsLockContentionMint<::crucible::effects::ColdInitCtx>,
+              "fixy::perf::CtxFitsLockContentionMint must admit ColdInitCtx.");
 
-static_assert(::crucible::fixy::perf::CtxFitsPmuSampleMint<
-    ::crucible::effects::ColdInitCtx>,
-    "fixy::perf::CtxFitsPmuSampleMint must admit ColdInitCtx.");
+static_assert(::crucible::fixy::perf::CtxFitsPmuSampleMint<::crucible::effects::ColdInitCtx>,
+              "fixy::perf::CtxFitsPmuSampleMint must admit ColdInitCtx.");
 
-static_assert(::crucible::fixy::perf::CtxFitsSchedSwitchMint<
-    ::crucible::effects::ColdInitCtx>,
-    "fixy::perf::CtxFitsSchedSwitchMint must admit ColdInitCtx.");
+static_assert(::crucible::fixy::perf::CtxFitsSchedSwitchMint<::crucible::effects::ColdInitCtx>,
+              "fixy::perf::CtxFitsSchedSwitchMint must admit ColdInitCtx.");
 
-static_assert(::crucible::fixy::perf::CtxFitsSchedTpBtfMint<
-    ::crucible::effects::ColdInitCtx>,
-    "fixy::perf::CtxFitsSchedTpBtfMint must admit ColdInitCtx.");
+static_assert(::crucible::fixy::perf::CtxFitsSchedTpBtfMint<::crucible::effects::ColdInitCtx>,
+              "fixy::perf::CtxFitsSchedTpBtfMint must admit ColdInitCtx.");
 
-static_assert(::crucible::fixy::perf::CtxFitsSenseHubMint<
-    ::crucible::effects::ColdInitCtx>,
-    "fixy::perf::CtxFitsSenseHubMint must admit ColdInitCtx.");
+static_assert(::crucible::fixy::perf::CtxFitsSenseHubMint<::crucible::effects::ColdInitCtx>,
+              "fixy::perf::CtxFitsSenseHubMint must admit ColdInitCtx.");
 
-static_assert(::crucible::fixy::perf::CtxFitsSyscallLatencyMint<
-    ::crucible::effects::ColdInitCtx>,
-    "fixy::perf::CtxFitsSyscallLatencyMint must admit ColdInitCtx.");
+static_assert(::crucible::fixy::perf::CtxFitsSyscallLatencyMint<::crucible::effects::ColdInitCtx>,
+              "fixy::perf::CtxFitsSyscallLatencyMint must admit ColdInitCtx.");
 
-static_assert(::crucible::fixy::perf::CtxFitsSyscallTpBtfMint<
-    ::crucible::effects::ColdInitCtx>,
-    "fixy::perf::CtxFitsSyscallTpBtfMint must admit ColdInitCtx.");
+static_assert(::crucible::fixy::perf::CtxFitsSyscallTpBtfMint<::crucible::effects::ColdInitCtx>,
+              "fixy::perf::CtxFitsSyscallTpBtfMint must admit ColdInitCtx.");
 
-static_assert(::crucible::fixy::perf::CtxFitsWorkloadProfilerMint<
-    ::crucible::effects::ColdInitCtx>,
-    "fixy::perf::CtxFitsWorkloadProfilerMint must admit ColdInitCtx.");
+static_assert(::crucible::fixy::perf::CtxFitsWorkloadProfilerMint<::crucible::effects::ColdInitCtx>,
+              "fixy::perf::CtxFitsWorkloadProfilerMint must admit ColdInitCtx.");
 
 // ─── Negative concept rejection (BgDrainCtx — Bg+Alloc, no Init)
 //
 // Steady-state drain context carries Row<Bg, Alloc>; cannot stand
 // up fresh BPF programs.  Substrate rejects; fixy:: must too.
 
-static_assert(!::crucible::fixy::perf::CtxFitsLockContentionMint<
-    ::crucible::effects::BgDrainCtx>,
-    "fixy::perf::CtxFitsLockContentionMint must reject BgDrainCtx.");
+static_assert(!::crucible::fixy::perf::CtxFitsLockContentionMint<::crucible::effects::BgDrainCtx>,
+              "fixy::perf::CtxFitsLockContentionMint must reject BgDrainCtx.");
 
-static_assert(!::crucible::fixy::perf::CtxFitsPmuSampleMint<
-    ::crucible::effects::BgDrainCtx>,
-    "fixy::perf::CtxFitsPmuSampleMint must reject BgDrainCtx.");
+static_assert(!::crucible::fixy::perf::CtxFitsPmuSampleMint<::crucible::effects::BgDrainCtx>,
+              "fixy::perf::CtxFitsPmuSampleMint must reject BgDrainCtx.");
 
-static_assert(!::crucible::fixy::perf::CtxFitsSchedSwitchMint<
-    ::crucible::effects::BgDrainCtx>,
-    "fixy::perf::CtxFitsSchedSwitchMint must reject BgDrainCtx.");
+static_assert(!::crucible::fixy::perf::CtxFitsSchedSwitchMint<::crucible::effects::BgDrainCtx>,
+              "fixy::perf::CtxFitsSchedSwitchMint must reject BgDrainCtx.");
 
-static_assert(!::crucible::fixy::perf::CtxFitsSchedTpBtfMint<
-    ::crucible::effects::BgDrainCtx>,
-    "fixy::perf::CtxFitsSchedTpBtfMint must reject BgDrainCtx.");
+static_assert(!::crucible::fixy::perf::CtxFitsSchedTpBtfMint<::crucible::effects::BgDrainCtx>,
+              "fixy::perf::CtxFitsSchedTpBtfMint must reject BgDrainCtx.");
 
-static_assert(!::crucible::fixy::perf::CtxFitsSenseHubMint<
-    ::crucible::effects::BgDrainCtx>,
-    "fixy::perf::CtxFitsSenseHubMint must reject BgDrainCtx.");
+static_assert(!::crucible::fixy::perf::CtxFitsSenseHubMint<::crucible::effects::BgDrainCtx>,
+              "fixy::perf::CtxFitsSenseHubMint must reject BgDrainCtx.");
 
-static_assert(!::crucible::fixy::perf::CtxFitsSyscallLatencyMint<
-    ::crucible::effects::BgDrainCtx>,
-    "fixy::perf::CtxFitsSyscallLatencyMint must reject BgDrainCtx.");
+static_assert(!::crucible::fixy::perf::CtxFitsSyscallLatencyMint<::crucible::effects::BgDrainCtx>,
+              "fixy::perf::CtxFitsSyscallLatencyMint must reject BgDrainCtx.");
 
-static_assert(!::crucible::fixy::perf::CtxFitsSyscallTpBtfMint<
-    ::crucible::effects::BgDrainCtx>,
-    "fixy::perf::CtxFitsSyscallTpBtfMint must reject BgDrainCtx.");
+static_assert(!::crucible::fixy::perf::CtxFitsSyscallTpBtfMint<::crucible::effects::BgDrainCtx>,
+              "fixy::perf::CtxFitsSyscallTpBtfMint must reject BgDrainCtx.");
 
-static_assert(!::crucible::fixy::perf::CtxFitsWorkloadProfilerMint<
-    ::crucible::effects::BgDrainCtx>,
-    "fixy::perf::CtxFitsWorkloadProfilerMint must reject BgDrainCtx.");
+static_assert(!::crucible::fixy::perf::CtxFitsWorkloadProfilerMint<::crucible::effects::BgDrainCtx>,
+              "fixy::perf::CtxFitsWorkloadProfilerMint must reject BgDrainCtx.");
 
 // ─── Negative concept rejection (HotFgCtx — empty row, no Init)
 //
 // Hot foreground carries Row<> (empty); fails Init conjunct trivially.
 
-static_assert(!::crucible::fixy::perf::CtxFitsLockContentionMint<
-    ::crucible::effects::HotFgCtx>,
-    "fixy::perf::CtxFitsLockContentionMint must reject HotFgCtx.");
+static_assert(!::crucible::fixy::perf::CtxFitsLockContentionMint<::crucible::effects::HotFgCtx>,
+              "fixy::perf::CtxFitsLockContentionMint must reject HotFgCtx.");
 
-static_assert(!::crucible::fixy::perf::CtxFitsPmuSampleMint<
-    ::crucible::effects::HotFgCtx>,
-    "fixy::perf::CtxFitsPmuSampleMint must reject HotFgCtx.");
+static_assert(!::crucible::fixy::perf::CtxFitsPmuSampleMint<::crucible::effects::HotFgCtx>,
+              "fixy::perf::CtxFitsPmuSampleMint must reject HotFgCtx.");
 
-static_assert(!::crucible::fixy::perf::CtxFitsSchedSwitchMint<
-    ::crucible::effects::HotFgCtx>,
-    "fixy::perf::CtxFitsSchedSwitchMint must reject HotFgCtx.");
+static_assert(!::crucible::fixy::perf::CtxFitsSchedSwitchMint<::crucible::effects::HotFgCtx>,
+              "fixy::perf::CtxFitsSchedSwitchMint must reject HotFgCtx.");
 
-static_assert(!::crucible::fixy::perf::CtxFitsSchedTpBtfMint<
-    ::crucible::effects::HotFgCtx>,
-    "fixy::perf::CtxFitsSchedTpBtfMint must reject HotFgCtx.");
+static_assert(!::crucible::fixy::perf::CtxFitsSchedTpBtfMint<::crucible::effects::HotFgCtx>,
+              "fixy::perf::CtxFitsSchedTpBtfMint must reject HotFgCtx.");
 
-static_assert(!::crucible::fixy::perf::CtxFitsSenseHubMint<
-    ::crucible::effects::HotFgCtx>,
-    "fixy::perf::CtxFitsSenseHubMint must reject HotFgCtx.");
+static_assert(!::crucible::fixy::perf::CtxFitsSenseHubMint<::crucible::effects::HotFgCtx>,
+              "fixy::perf::CtxFitsSenseHubMint must reject HotFgCtx.");
 
-static_assert(!::crucible::fixy::perf::CtxFitsSyscallLatencyMint<
-    ::crucible::effects::HotFgCtx>,
-    "fixy::perf::CtxFitsSyscallLatencyMint must reject HotFgCtx.");
+static_assert(!::crucible::fixy::perf::CtxFitsSyscallLatencyMint<::crucible::effects::HotFgCtx>,
+              "fixy::perf::CtxFitsSyscallLatencyMint must reject HotFgCtx.");
 
-static_assert(!::crucible::fixy::perf::CtxFitsSyscallTpBtfMint<
-    ::crucible::effects::HotFgCtx>,
-    "fixy::perf::CtxFitsSyscallTpBtfMint must reject HotFgCtx.");
+static_assert(!::crucible::fixy::perf::CtxFitsSyscallTpBtfMint<::crucible::effects::HotFgCtx>,
+              "fixy::perf::CtxFitsSyscallTpBtfMint must reject HotFgCtx.");
 
-static_assert(!::crucible::fixy::perf::CtxFitsWorkloadProfilerMint<
-    ::crucible::effects::HotFgCtx>,
-    "fixy::perf::CtxFitsWorkloadProfilerMint must reject HotFgCtx.");
+static_assert(!::crucible::fixy::perf::CtxFitsWorkloadProfilerMint<::crucible::effects::HotFgCtx>,
+              "fixy::perf::CtxFitsWorkloadProfilerMint must reject HotFgCtx.");
 
 // ─── FIXY-V-074 — dispatch concept admittance witnesses ────────────
 //
@@ -401,26 +360,22 @@ static_assert(!::crucible::fixy::perf::CtxFitsWorkloadProfilerMint<
 // witness both halves of the gate.
 
 // Bg-row contexts (BgDrainCtx + BgCompileCtx): admitted.
-static_assert(::crucible::fixy::perf::CtxFitsWorkloadDecisionDispatch<
-    ::crucible::effects::BgDrainCtx>,
-    "fixy::perf::CtxFitsWorkloadDecisionDispatch must admit BgDrainCtx.");
+static_assert(::crucible::fixy::perf::CtxFitsWorkloadDecisionDispatch<::crucible::effects::BgDrainCtx>,
+              "fixy::perf::CtxFitsWorkloadDecisionDispatch must admit BgDrainCtx.");
 
-static_assert(::crucible::fixy::perf::CtxFitsWorkloadDecisionDispatch<
-    ::crucible::effects::BgCompileCtx>,
-    "fixy::perf::CtxFitsWorkloadDecisionDispatch must admit BgCompileCtx.");
+static_assert(::crucible::fixy::perf::CtxFitsWorkloadDecisionDispatch<::crucible::effects::BgCompileCtx>,
+              "fixy::perf::CtxFitsWorkloadDecisionDispatch must admit BgCompileCtx.");
 
 // Empty / Init-only rows: rejected.  HotFgCtx (empty row) is the
 // load-bearing rejection — V-074 prohibits routing profiler-authored
 // decisions through the foreground hot-call site.
-static_assert(!::crucible::fixy::perf::CtxFitsWorkloadDecisionDispatch<
-    ::crucible::effects::HotFgCtx>,
-    "fixy::perf::CtxFitsWorkloadDecisionDispatch must reject HotFgCtx "
-    "(empty Row<> — V-074's load-bearing rejection).");
+static_assert(!::crucible::fixy::perf::CtxFitsWorkloadDecisionDispatch<::crucible::effects::HotFgCtx>,
+              "fixy::perf::CtxFitsWorkloadDecisionDispatch must reject HotFgCtx "
+              "(empty Row<> — V-074's load-bearing rejection).");
 
-static_assert(!::crucible::fixy::perf::CtxFitsWorkloadDecisionDispatch<
-    ::crucible::effects::ColdInitCtx>,
-    "fixy::perf::CtxFitsWorkloadDecisionDispatch must reject ColdInitCtx "
-    "(Init row carries no Bg).");
+static_assert(!::crucible::fixy::perf::CtxFitsWorkloadDecisionDispatch<::crucible::effects::ColdInitCtx>,
+              "fixy::perf::CtxFitsWorkloadDecisionDispatch must reject ColdInitCtx "
+              "(Init row carries no Bg).");
 
 // ─── Cardinality witness ─────────────────────────────────────────
 //
@@ -443,16 +398,15 @@ static_assert(!::crucible::fixy::perf::CtxFitsWorkloadDecisionDispatch<
 
 inline constexpr int perf_mint_cardinality = 8;
 
-static_assert(perf_mint_cardinality == 8,
-    "ceiling: fixy::perf:: re-exports exactly 8 V1 mint factories — "
-    "mint_lock_contention, mint_pmu_sample, mint_sched_switch, "
-    "mint_sched_tp_btf, mint_sense_hub, mint_syscall_latency, "
-    "mint_syscall_tp_btf, mint_workload_profiler.  (mint_sense_hub_v2 "
-    "lives in fixy::perf::v2:: via the FIXY-U-122 sub-umbrella.)  "
-    "If you add or remove a V1 mint, update BOTH the constant "
-    "AND this colocated ceiling pin in the same edit.  The "
-    "sibling test_fixy_perf.cpp holds only a >= floor and "
-    "auto-tracks growth — see feedback_catalog_cardinality_test_drift.");
+static_assert(perf_mint_cardinality == 8, "ceiling: fixy::perf:: re-exports exactly 8 V1 mint factories — "
+                                          "mint_lock_contention, mint_pmu_sample, mint_sched_switch, "
+                                          "mint_sched_tp_btf, mint_sense_hub, mint_syscall_latency, "
+                                          "mint_syscall_tp_btf, mint_workload_profiler.  (mint_sense_hub_v2 "
+                                          "lives in fixy::perf::v2:: via the FIXY-U-122 sub-umbrella.)  "
+                                          "If you add or remove a V1 mint, update BOTH the constant "
+                                          "AND this colocated ceiling pin in the same edit.  The "
+                                          "sibling test_fixy_perf.cpp holds only a >= floor and "
+                                          "auto-tracks growth — see feedback_catalog_cardinality_test_drift.");
 
 }  // namespace crucible::fixy::perf::self_test
 
@@ -474,22 +428,17 @@ inline void runtime_smoke_test() noexcept {
     // Touch one positive + one negative from each of the three classes
     // (Init-tier admit, Bg-tier reject, HotFg-tier reject) to make the
     // smoke representative of the full sentinel coverage.
-    constexpr bool admits_cold = CtxFitsSenseHubMint<
-        ::crucible::effects::ColdInitCtx>;
-    constexpr bool rejects_bg = !CtxFitsPmuSampleMint<
-        ::crucible::effects::BgDrainCtx>;
-    constexpr bool rejects_hot = !CtxFitsLockContentionMint<
-        ::crucible::effects::HotFgCtx>;
+    constexpr bool admits_cold = CtxFitsSenseHubMint<::crucible::effects::ColdInitCtx>;
+    constexpr bool rejects_bg = !CtxFitsPmuSampleMint<::crucible::effects::BgDrainCtx>;
+    constexpr bool rejects_hot = !CtxFitsLockContentionMint<::crucible::effects::HotFgCtx>;
     (void)admits_cold;
     (void)rejects_bg;
     (void)rejects_hot;
 
     // FIXY-V-074 — dispatch concept admits Bg-row ctx, rejects empty/Init.
     // Orthogonal gate from the mint family above.
-    constexpr bool dispatch_admits_bg = CtxFitsWorkloadDecisionDispatch<
-        ::crucible::effects::BgDrainCtx>;
-    constexpr bool dispatch_rejects_hot = !CtxFitsWorkloadDecisionDispatch<
-        ::crucible::effects::HotFgCtx>;
+    constexpr bool dispatch_admits_bg = CtxFitsWorkloadDecisionDispatch<::crucible::effects::BgDrainCtx>;
+    constexpr bool dispatch_rejects_hot = !CtxFitsWorkloadDecisionDispatch<::crucible::effects::HotFgCtx>;
     (void)dispatch_admits_bg;
     (void)dispatch_rejects_hot;
 }

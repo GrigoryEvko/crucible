@@ -57,8 +57,7 @@ struct IncastConfig {
     PositiveSenderCount expected_senders{std::uint16_t{1}};
 };
 
-using DeclaredIncastConfig =
-    safety::Tagged<IncastConfig, safety::source::IncastConfig>;
+using DeclaredIncastConfig = safety::Tagged<IncastConfig, safety::source::IncastConfig>;
 
 [[nodiscard]] constexpr std::expected<PositiveCreditBytes, IncastError>
 admit_credit_bytes(std::uint32_t bytes) noexcept {
@@ -68,8 +67,7 @@ admit_credit_bytes(std::uint32_t bytes) noexcept {
     return PositiveCreditBytes{bytes, typename PositiveCreditBytes::Trusted{}};
 }
 
-[[nodiscard]] constexpr std::expected<PositiveRtoMinUsec, IncastError>
-admit_rto_min_usec(std::uint32_t usec) noexcept {
+[[nodiscard]] constexpr std::expected<PositiveRtoMinUsec, IncastError> admit_rto_min_usec(std::uint32_t usec) noexcept {
     if (usec == 0) {
         return std::unexpected(IncastError::InvalidRtoMin);
     }
@@ -90,14 +88,11 @@ mint_incast_config(IncastConfig config) noexcept {
 }
 
 template <LinkClass Link>
-    requires (Link == LinkClass::LosslessDatacenterFabric)
+    requires(Link == LinkClass::LosslessDatacenterFabric)
 [[nodiscard]] constexpr DeclaredIncastConfig
-mint_dctcp_incast_config(PositiveCreditBytes initial_credit =
-                             PositiveCreditBytes{std::uint32_t{64 * 1024}},
-                         PositiveRtoMinUsec rto_min =
-                             PositiveRtoMinUsec{std::uint32_t{10'000}},
-                         PositiveSenderCount senders =
-                             PositiveSenderCount{std::uint16_t{1}}) noexcept {
+mint_dctcp_incast_config(PositiveCreditBytes initial_credit = PositiveCreditBytes{std::uint32_t{64 * 1024}},
+                         PositiveRtoMinUsec rto_min = PositiveRtoMinUsec{std::uint32_t{10'000}},
+                         PositiveSenderCount senders = PositiveSenderCount{std::uint16_t{1}}) noexcept {
     return DeclaredIncastConfig{IncastConfig{
         .enable_dctcp = true,
         .enable_ecn = true,
@@ -108,11 +103,10 @@ mint_dctcp_incast_config(PositiveCreditBytes initial_credit =
     }};
 }
 
-[[nodiscard]] std::expected<void, IncastError>
-set_socket_rto_min_usec(SocketFd fd, PositiveRtoMinUsec rto_min) noexcept;
+[[nodiscard]] std::expected<void, IncastError> set_socket_rto_min_usec(SocketFd fd,
+                                                                       PositiveRtoMinUsec rto_min) noexcept;
 
-[[nodiscard]] std::expected<void, IncastError>
-apply_incast_config(SocketFd fd, DeclaredIncastConfig config) noexcept;
+[[nodiscard]] std::expected<void, IncastError> apply_incast_config(SocketFd fd, DeclaredIncastConfig config) noexcept;
 
 static_assert(sizeof(PositiveCreditBytes) == sizeof(std::uint32_t));
 static_assert(sizeof(PositiveRtoMinUsec) == sizeof(std::uint32_t));

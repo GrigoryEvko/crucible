@@ -98,13 +98,9 @@ namespace crucible::safety {
 // User code can define more; each is a stateless lambda or a
 // constexpr-callable function object.
 
-inline constexpr auto positive = [](auto x) constexpr noexcept {
-    return x > decltype(x){0};
-};
+inline constexpr auto positive = [](auto x) constexpr noexcept { return x > decltype(x){0}; };
 
-inline constexpr auto non_negative = [](auto x) constexpr noexcept {
-    return x >= decltype(x){0};
-};
+inline constexpr auto non_negative = [](auto x) constexpr noexcept { return x >= decltype(x){0}; };
 
 // non_zero differs from positive for unsigned types (positive is "> 0",
 // which for unsigned is also "!= 0", but explicit non_zero documents
@@ -137,9 +133,7 @@ inline constexpr auto is_zero = [](const auto& x) constexpr noexcept {
         return x == decltype(x){0};
 };
 
-inline constexpr auto non_null = [](auto* p) constexpr noexcept {
-    return p != nullptr;
-};
+inline constexpr auto non_null = [](auto* p) constexpr noexcept { return p != nullptr; };
 
 inline constexpr auto power_of_two = [](auto x) constexpr noexcept {
     using U = decltype(x);
@@ -147,9 +141,7 @@ inline constexpr auto power_of_two = [](auto x) constexpr noexcept {
 };
 
 // Non-empty predicate for containers.
-inline constexpr auto non_empty = [](const auto& c) constexpr noexcept {
-    return !c.empty();
-};
+inline constexpr auto non_empty = [](const auto& c) constexpr noexcept { return !c.empty(); };
 
 // ── Parameterised predicates (struct-template form) ────────────────
 //
@@ -185,9 +177,7 @@ inline constexpr Aligned<Alignment> aligned{};
 
 template <auto Lo, auto Hi>
 struct InRange {
-    constexpr bool operator()(auto x) const noexcept {
-        return x >= decltype(x)(Lo) && x <= decltype(x)(Hi);
-    }
+    constexpr bool operator()(auto x) const noexcept { return x >= decltype(x)(Lo) && x <= decltype(x)(Hi); }
 };
 
 template <auto Lo, auto Hi>
@@ -195,9 +185,7 @@ inline constexpr InRange<Lo, Hi> in_range{};
 
 template <auto Max>
 struct BoundedAbove {
-    constexpr bool operator()(auto x) const noexcept {
-        return x <= decltype(x)(Max);
-    }
+    constexpr bool operator()(auto x) const noexcept { return x <= decltype(x)(Max); }
 };
 
 template <auto Max>
@@ -206,9 +194,7 @@ inline constexpr BoundedAbove<Max> bounded_above{};
 // Length-ge predicate for spans / strings / any .size()-having container.
 template <std::size_t N>
 struct LengthGe {
-    constexpr bool operator()(const auto& c) const noexcept {
-        return c.size() >= N;
-    }
+    constexpr bool operator()(const auto& c) const noexcept { return c.size() >= N; }
 };
 
 template <std::size_t N>
@@ -239,7 +225,7 @@ inline constexpr LengthGe<N> length_ge{};
 // reference parameter matches the contract's view of the constructed
 // value before std::move.
 template <auto Pred, typename T>
-concept PredicateInvocableOn = requires (T const& v) {
+concept PredicateInvocableOn = requires(T const& v) {
     { Pred(v) } -> std::convertible_to<bool>;
 };
 
@@ -248,7 +234,7 @@ concept PredicateInvocableOn = requires (T const& v) {
 template <auto Pred, typename T>
 class [[nodiscard]] Refined {
 public:
-    using value_type     = T;
+    using value_type = T;
     using predicate_type = decltype(Pred);
     // Lattice carrying the predicate at the type level.  Pred is an
     // auto-NTTP (a value); BoolLattice takes the predicate's TYPE,
@@ -257,18 +243,15 @@ public:
     // qualified at file scope but auto-NTTPs strip the const — same
     // discipline as the predicate_implies specialisations below
     // (probed on GCC 16; see commit log for #227).
-    using lattice_type = ::crucible::algebra::lattices::BoolLattice<
-        std::remove_cv_t<decltype(Pred)>>;
+    using lattice_type = ::crucible::algebra::lattices::BoolLattice<std::remove_cv_t<decltype(Pred)>>;
 
     // Modality declaration — Round-4 CHEAT-5; see Linear.h for the
     // rationale.  Refined is Absolute (predicate is a static type-
     // level property, not a monadic structure).
-    static constexpr ::crucible::algebra::ModalityKind modality =
-        ::crucible::algebra::ModalityKind::Absolute;
+    static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::Absolute;
 
     // Public per GRADED-TRAIT-1 — see Linear.h for the rationale.
-    using graded_type = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
+    using graded_type = ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
 
 private:
     // Empty-lattice grade_type collapses via [[no_unique_address]] in
@@ -276,7 +259,6 @@ private:
     graded_type impl_;
 
 public:
-
     // Tag for skipping the predicate check.  Use only when the caller
     // has already proven the invariant (internal paths, re-wrapping
     // already-validated boundary data).
@@ -290,8 +272,7 @@ public:
     // because they never instantiate the constructor.
     constexpr explicit Refined(T v) noexcept(std::is_nothrow_move_constructible_v<T>)
         requires PredicateInvocableOn<Pred, T>
-        pre(Pred(v))
-        : impl_{std::move(v), typename lattice_type::element_type{}} {}
+    pre(Pred(v)) : impl_{std::move(v), typename lattice_type::element_type{}} {}
 
     // Trusted construction — no check, caller-asserted invariant.
     // No PredicateInvocableOn requirement — the Trusted path explicitly
@@ -303,36 +284,31 @@ public:
     // Refinement applies to the value; once constructed the invariant
     // holds.  Copy/move just preserve the value (defaulted from
     // graded_type, which is itself defaulted).
-    Refined(const Refined&)            = default;
-    Refined(Refined&&)                 = default;
+    Refined(const Refined&) = default;
+    Refined(Refined&&) = default;
     Refined& operator=(const Refined&) = default;
-    Refined& operator=(Refined&&)      = default;
+    Refined& operator=(Refined&&) = default;
 
     // Explicit accessor — no implicit conversion.  Forwards to
     // Graded::peek() under the hood.
-    [[nodiscard]] constexpr const T& value() const noexcept {
-        return impl_.peek();
-    }
+    [[nodiscard]] constexpr const T& value() const noexcept { return impl_.peek(); }
 
     // Explicit raw extraction for re-wrapping paths.  Forwards to
     // Graded::consume() — rvalue-this consumes the inner value.
-    [[nodiscard]] constexpr T into() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr T into() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return std::move(impl_).consume();
     }
 
     // Equality / ordering on the underlying value.  Refined values of
     // the same Pred and T compare by their inner T (forwarded through
     // Graded::peek()).
-    friend constexpr bool operator==(const Refined& a, const Refined& b)
-        noexcept(noexcept(a.impl_.peek() == b.impl_.peek()))
-    {
+    friend constexpr bool operator==(const Refined& a,
+                                     const Refined& b) noexcept(noexcept(a.impl_.peek() == b.impl_.peek())) {
         return a.impl_.peek() == b.impl_.peek();
     }
 
-    friend constexpr auto operator<=>(const Refined& a, const Refined& b)
-        noexcept(noexcept(a.impl_.peek() <=> b.impl_.peek()))
+    friend constexpr auto operator<=>(const Refined& a,
+                                      const Refined& b) noexcept(noexcept(a.impl_.peek() <=> b.impl_.peek()))
         requires std::three_way_comparable<T>
     {
         return a.impl_.peek() <=> b.impl_.peek();
@@ -356,15 +332,13 @@ public:
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return graded_type::lattice_name();
-    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 };
 
 // Zero-cost guarantee: a Refined is exactly its underlying T.
-static_assert(sizeof(Refined<positive,    int>)    == sizeof(int));
-static_assert(sizeof(Refined<non_null,    void*>)  == sizeof(void*));
-static_assert(sizeof(Refined<power_of_two,std::size_t>) == sizeof(std::size_t));
+static_assert(sizeof(Refined<positive, int>) == sizeof(int));
+static_assert(sizeof(Refined<non_null, void*>) == sizeof(void*));
+static_assert(sizeof(Refined<power_of_two, std::size_t>) == sizeof(std::size_t));
 
 // Zero-cost guarantee for the parameterised struct-template predicates
 // (refactored from inline-constexpr-auto lambdas to enable
@@ -372,10 +346,10 @@ static_assert(sizeof(Refined<power_of_two,std::size_t>) == sizeof(std::size_t));
 // / InRange<L,H> / BoundedAbove<M> / LengthGe<N> is an empty class
 // (no data members), so [[no_unique_address]]-equivalent EBO collapses
 // the predicate's footprint to zero inside Refined<Pred, T>.
-static_assert(sizeof(Refined<aligned<64>,         void*>) == sizeof(void*));
-static_assert(sizeof(Refined<bounded_above<1024u>, int>)   == sizeof(int));
-static_assert(sizeof(Refined<in_range<0, 100>,    int>)   == sizeof(int));
-static_assert(sizeof(Refined<length_ge<1>,        void*>) == sizeof(void*));
+static_assert(sizeof(Refined<aligned<64>, void*>) == sizeof(void*));
+static_assert(sizeof(Refined<bounded_above<1024u>, int>) == sizeof(int));
+static_assert(sizeof(Refined<in_range<0, 100>, int>) == sizeof(int));
+static_assert(sizeof(Refined<length_ge<1>, void*>) == sizeof(void*));
 
 // ── §XXI Universal Mint factory — fixy-A1-005 (#1547) ──────────────
 //
@@ -410,9 +384,7 @@ static_assert(sizeof(Refined<length_ge<1>,        void*>) == sizeof(void*));
 
 template <auto Pred, typename T>
     requires PredicateInvocableOn<Pred, T>
-[[nodiscard]] constexpr Refined<Pred, T> mint_refined(T value)
-    noexcept(std::is_nothrow_move_constructible_v<T>)
-{
+[[nodiscard]] constexpr Refined<Pred, T> mint_refined(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
     return Refined<Pred, T>{std::move(value)};
 }
 
@@ -422,12 +394,18 @@ template <auto Pred, typename T>
 // anonymous Refined<positive, T> at every call site (per code_guide
 // §XVI: "Every load-bearing predicate gets a named alias").
 
-template <typename T> using NonNull       = Refined<non_null, T>;
-template <typename T> using Positive      = Refined<positive, T>;
-template <typename T> using NonNegative   = Refined<non_negative, T>;
-template <typename T> using PowerOfTwo    = Refined<power_of_two, T>;
-template <typename T> using NonZero       = Refined<non_zero, T>;
-template <typename T> using NonEmpty      = Refined<non_empty, T>;
+template <typename T>
+using NonNull = Refined<non_null, T>;
+template <typename T>
+using Positive = Refined<positive, T>;
+template <typename T>
+using NonNegative = Refined<non_negative, T>;
+template <typename T>
+using PowerOfTwo = Refined<power_of_two, T>;
+template <typename T>
+using NonZero = Refined<non_zero, T>;
+template <typename T>
+using NonEmpty = Refined<non_empty, T>;
 
 // CLAUDE.md §XVI canonical example: "every load-bearing predicate gets
 // a named alias — PositiveInt, NonNullTraceEntry, ValidSlotId,
@@ -439,7 +417,8 @@ template <typename T> using NonEmpty      = Refined<non_empty, T>;
 // strengthen to MinLengthSpan<N, T> for N > 1 without re-validating.
 // non_empty is a simpler `!c.empty()` lambda — useful for containers
 // where .size() is not O(1) (rare in Crucible), but redundant here.
-template <typename T> using NonEmptySpan  = Refined<length_ge<std::size_t{1}>, std::span<T>>;
+template <typename T>
+using NonEmptySpan = Refined<length_ge<std::size_t{1}>, std::span<T>>;
 
 // ── FIXY-U-160 — parameterised §XVI named aliases ───────────────────
 //
@@ -483,8 +462,10 @@ template <typename T> using NonEmptySpan  = Refined<length_ge<std::size_t{1}>, s
 // degenerate-but-well-formed alias for "any-length container", and
 // the predicate_implies axiom `length_ge<0> ⇒ non_empty` is correctly
 // REJECTED by the soundness witness (see U-159b static_asserts).
-template <std::size_t N, typename T> using MinLength  = Refined<length_ge<N>, T>;
-template <auto Max, typename T>      using MaxBounded = Refined<bounded_above<Max>, T>;
+template <std::size_t N, typename T>
+using MinLength = Refined<length_ge<N>, T>;
+template <auto Max, typename T>
+using MaxBounded = Refined<bounded_above<Max>, T>;
 
 // ── FIXY-U-161 — closing §XVI parameterised-alias surface ───────────
 //
@@ -536,7 +517,8 @@ template <auto Max, typename T>      using MaxBounded = Refined<bounded_above<Ma
 //   * New bridge (added below): WithinRange<L, H> ⇒ NonNegative when
 //     L ≥ 0 — closes the gap from the parameterised in_range surface
 //     to the unparameterised non_negative surface.
-template <std::size_t N, typename T> using AlignedTo   = Refined<aligned<N>, T>;
+template <std::size_t N, typename T>
+using AlignedTo = Refined<aligned<N>, T>;
 template <auto Lo, auto Hi, typename T>
 using WithinRange = Refined<in_range<Lo, Hi>, T>;
 
@@ -573,8 +555,7 @@ using RefinedLinear = Refined<Pred, Linear<T>>;
 
 // Zero-cost: Linear<Refined<P, T>> is exactly sizeof(T) — Linear is
 // zero-overhead, Refined is zero-overhead, both storage-transparent.
-static_assert(sizeof(LinearRefined<non_null, void*>) == sizeof(void*),
-              "LinearRefined must collapse to sizeof(T)");
+static_assert(sizeof(LinearRefined<non_null, void*>) == sizeof(void*), "LinearRefined must collapse to sizeof(T)");
 
 // Zero-cost: new aliases (NonZero / NonEmpty / NonEmptySpan) must
 // collapse to sizeof(T) exactly like the four existing aliases above.
@@ -585,9 +566,9 @@ static_assert(sizeof(LinearRefined<non_null, void*>) == sizeof(void*),
 // container (NonEmpty over std::span — since span has both .empty()
 // AND .size(), it admits both predicates), and parameterised
 // length_ge<1> over span (NonEmptySpan).
-static_assert(sizeof(NonZero<int>)              == sizeof(int));
-static_assert(sizeof(NonEmpty<std::span<int>>)  == sizeof(std::span<int>));
-static_assert(sizeof(NonEmptySpan<int>)         == sizeof(std::span<int>));
+static_assert(sizeof(NonZero<int>) == sizeof(int));
+static_assert(sizeof(NonEmpty<std::span<int>>) == sizeof(std::span<int>));
+static_assert(sizeof(NonEmptySpan<int>) == sizeof(std::span<int>));
 
 // ═════════════════════════════════════════════════════════════════════
 // ── implies_v<P, Q> — cross-predicate implication trait  (#227) ────
@@ -639,8 +620,7 @@ template <typename PType, typename QType>
 struct predicate_implies : std::false_type {};
 
 template <auto P, auto Q>
-inline constexpr bool implies_v =
-    predicate_implies<decltype(P), decltype(Q)>::value;
+inline constexpr bool implies_v = predicate_implies<decltype(P), decltype(Q)>::value;
 
 // ── Unparameterised-lambda implications ────────────────────────────
 //
@@ -649,21 +629,15 @@ inline constexpr bool implies_v =
 // power_of_two ⇒ non_zero   (the definition requires x ≠ 0)
 
 template <>
-struct predicate_implies<
-    std::remove_cv_t<decltype(positive)>,
-    std::remove_cv_t<decltype(non_negative)>>
+struct predicate_implies<std::remove_cv_t<decltype(positive)>, std::remove_cv_t<decltype(non_negative)>>
     : std::true_type {};
 
 template <>
-struct predicate_implies<
-    std::remove_cv_t<decltype(positive)>,
-    std::remove_cv_t<decltype(non_zero)>>
-    : std::true_type {};
+struct predicate_implies<std::remove_cv_t<decltype(positive)>, std::remove_cv_t<decltype(non_zero)>> : std::true_type {
+};
 
 template <>
-struct predicate_implies<
-    std::remove_cv_t<decltype(power_of_two)>,
-    std::remove_cv_t<decltype(non_zero)>>
+struct predicate_implies<std::remove_cv_t<decltype(power_of_two)>, std::remove_cv_t<decltype(non_zero)>>
     : std::true_type {};
 
 // ── FIXY-U-159b — propagation closure for new alias surface ────────
@@ -687,16 +661,12 @@ struct predicate_implies<
 // vacuously safe (the RHS type doesn't exist for non-pointer T).
 
 template <>
-struct predicate_implies<
-    std::remove_cv_t<decltype(non_null)>,
-    std::remove_cv_t<decltype(non_zero)>>
-    : std::true_type {};
+struct predicate_implies<std::remove_cv_t<decltype(non_null)>, std::remove_cv_t<decltype(non_zero)>> : std::true_type {
+};
 
 template <>
-struct predicate_implies<
-    std::remove_cv_t<decltype(non_zero)>,
-    std::remove_cv_t<decltype(non_null)>>
-    : std::true_type {};
+struct predicate_implies<std::remove_cv_t<decltype(non_zero)>, std::remove_cv_t<decltype(non_null)>> : std::true_type {
+};
 
 // ── Parameterised-predicate implications (type-level partial specs) ─
 //
@@ -708,19 +678,19 @@ struct predicate_implies<
 // Aligned<N> ⇒ Aligned<M>   when N ≥ M ∧ N mod M = 0
 //   (e.g. 64-byte aligned implies 32-byte aligned)
 template <std::size_t N, std::size_t M>
-    requires (N >= M && M > 0 && (N % M == 0))
+    requires(N >= M && M > 0 && (N % M == 0))
 struct predicate_implies<Aligned<N>, Aligned<M>> : std::true_type {};
 
 // BoundedAbove<N> ⇒ BoundedAbove<M>   when N ≤ M
 //   (smaller ceiling implies larger ceiling; e.g. x ≤ 8 ⇒ x ≤ 16)
 template <auto N, auto M>
-    requires (N <= M)
+    requires(N <= M)
 struct predicate_implies<BoundedAbove<N>, BoundedAbove<M>> : std::true_type {};
 
 // InRange<L1, H1> ⇒ InRange<L2, H2>   when L2 ≤ L1 ∧ H1 ≤ H2
 //   (tighter range implies looser range)
 template <auto L1, auto H1, auto L2, auto H2>
-    requires (L2 <= L1 && H1 <= H2)
+    requires(L2 <= L1 && H1 <= H2)
 struct predicate_implies<InRange<L1, H1>, InRange<L2, H2>> : std::true_type {};
 
 // InRange<L, H> ⇒ BoundedAbove<H>
@@ -731,7 +701,7 @@ struct predicate_implies<InRange<L, H>, BoundedAbove<H>> : std::true_type {};
 // LengthGe<N> ⇒ LengthGe<M>   when N ≥ M
 //   (longer-than-N implies longer-than-M for M ≤ N)
 template <std::size_t N, std::size_t M>
-    requires (N >= M)
+    requires(N >= M)
 struct predicate_implies<LengthGe<N>, LengthGe<M>> : std::true_type {};
 
 // ── FIXY-U-159b — parameterised ⇒ unparameterised bridge ───────────
@@ -754,11 +724,8 @@ struct predicate_implies<LengthGe<N>, LengthGe<M>> : std::true_type {};
 // `length_ge<0> ⇒ non_empty` would be UNSOUND — the requires-clause
 // is load-bearing soundness, not decoration.
 template <std::size_t N>
-    requires (N >= 1)
-struct predicate_implies<
-    LengthGe<N>,
-    std::remove_cv_t<decltype(non_empty)>>
-    : std::true_type {};
+    requires(N >= 1)
+struct predicate_implies<LengthGe<N>, std::remove_cv_t<decltype(non_empty)>> : std::true_type {};
 
 // ── FIXY-U-161 — parameterised ⇒ unparameterised bridge ────────────
 //
@@ -784,11 +751,8 @@ struct predicate_implies<
 // signed and unsigned NTTPs (unsigned is always ≥ 0; signed is
 // checked at compile time).
 template <auto L, auto H>
-    requires (L >= 0)
-struct predicate_implies<
-    InRange<L, H>,
-    std::remove_cv_t<decltype(non_negative)>>
-    : std::true_type {};
+    requires(L >= 0)
+struct predicate_implies<InRange<L, H>, std::remove_cv_t<decltype(non_negative)>> : std::true_type {};
 
 // ── FIXY-U-164 — InRange ⇒ positive direct bridge ──────────────────
 //
@@ -815,11 +779,8 @@ struct predicate_implies<
 // gate.  Same conservative-but-sound discipline as the U-162
 // BoundedBelow⇒positive bridge's N ≥ 1 gate.
 template <auto L, auto H>
-    requires (L >= 1)
-struct predicate_implies<
-    InRange<L, H>,
-    std::remove_cv_t<decltype(positive)>>
-    : std::true_type {};
+    requires(L >= 1)
+struct predicate_implies<InRange<L, H>, std::remove_cv_t<decltype(positive)>> : std::true_type {};
 
 // ── FIXY-U-165 — InRange ⇒ non_zero direct bridge (disjunctive) ────
 //
@@ -850,11 +811,8 @@ struct predicate_implies<
 // excluded as conservative under-assertion.  Same for H ≤ -1 in the
 // negative direction.
 template <auto L, auto H>
-    requires (L >= 1 || H <= -1)
-struct predicate_implies<
-    InRange<L, H>,
-    std::remove_cv_t<decltype(non_zero)>>
-    : std::true_type {};
+    requires(L >= 1 || H <= -1)
+struct predicate_implies<InRange<L, H>, std::remove_cv_t<decltype(non_zero)>> : std::true_type {};
 
 // ── FIXY-U-159b — closure axioms (verify the propagation fires) ────
 //
@@ -864,17 +822,13 @@ struct predicate_implies<
 // Mirrors the static_assert(sizeof(...)) discipline of the alias
 // zero-cost guarantees above.
 
-static_assert(implies_v<non_null, non_zero>,
-    "FIXY-U-159b: non_null ⇒ non_zero (pointer non-null ≡ pointer non-zero).");
-static_assert(implies_v<non_zero, non_null>,
-    "FIXY-U-159b: non_zero ⇒ non_null (bidirectional for pointer T).");
-static_assert(implies_v<length_ge<1>, non_empty>,
-    "FIXY-U-159b: length_ge<1> ⇒ non_empty (size ≥ 1 ⇒ !empty per STL).");
-static_assert(implies_v<length_ge<8>, non_empty>,
-    "FIXY-U-159b: length_ge<N> ⇒ non_empty for any N ≥ 1.");
+static_assert(implies_v<non_null, non_zero>, "FIXY-U-159b: non_null ⇒ non_zero (pointer non-null ≡ pointer non-zero).");
+static_assert(implies_v<non_zero, non_null>, "FIXY-U-159b: non_zero ⇒ non_null (bidirectional for pointer T).");
+static_assert(implies_v<length_ge<1>, non_empty>, "FIXY-U-159b: length_ge<1> ⇒ non_empty (size ≥ 1 ⇒ !empty per STL).");
+static_assert(implies_v<length_ge<8>, non_empty>, "FIXY-U-159b: length_ge<N> ⇒ non_empty for any N ≥ 1.");
 static_assert(!implies_v<length_ge<0>, non_empty>,
-    "FIXY-U-159b: length_ge<0> is vacuous; must NOT imply non_empty "
-    "(soundness — empty container satisfies length_ge<0> but not non_empty).");
+              "FIXY-U-159b: length_ge<0> is vacuous; must NOT imply non_empty "
+              "(soundness — empty container satisfies length_ge<0> but not non_empty).");
 
 // Transitive closure witnesses — the new axioms compose with the
 // pre-existing LengthGe<N> ⇒ LengthGe<M> (N ≥ M) chain.  A length_ge<8>
@@ -882,31 +836,29 @@ static_assert(!implies_v<length_ge<0>, non_empty>,
 // is structural; transitivity is provided by SessionSubtype's
 // is_subsort fold, not by predicate_implies itself, so we witness
 // each hop directly.
-static_assert(implies_v<length_ge<8>, length_ge<1>>,
-    "FIXY-U-159b: length_ge transitivity hop (parameterised pair).");
+static_assert(implies_v<length_ge<8>, length_ge<1>>, "FIXY-U-159b: length_ge transitivity hop (parameterised pair).");
 
 // ── FIXY-U-161 — closure axioms for in_range ⇒ non_negative bridge ─
 //
 // Witness propagation at L ≥ 0 cardinalities and the soundness gate
 // at L < 0 (must NOT imply non_negative when L is negative).
 static_assert(implies_v<in_range<0, 100>, non_negative>,
-    "FIXY-U-161: in_range<0, 100> ⇒ non_negative (L ≥ 0 lower bound).");
+              "FIXY-U-161: in_range<0, 100> ⇒ non_negative (L ≥ 0 lower bound).");
 static_assert(implies_v<in_range<5, 100>, non_negative>,
-    "FIXY-U-161: in_range<5, 100> ⇒ non_negative (positive lower bound).");
-static_assert(implies_v<in_range<0u, 255u>, non_negative>,
-    "FIXY-U-161: unsigned NTTP carries non_negative trivially.");
+              "FIXY-U-161: in_range<5, 100> ⇒ non_negative (positive lower bound).");
+static_assert(implies_v<in_range<0u, 255u>, non_negative>, "FIXY-U-161: unsigned NTTP carries non_negative trivially.");
 static_assert(!implies_v<in_range<-5, 100>, non_negative>,
-    "FIXY-U-161: in_range<-5, 100> admits negative values; "
-    "must NOT imply non_negative (soundness — the L ≥ 0 requires "
-    "clause is load-bearing, not decoration).");
+              "FIXY-U-161: in_range<-5, 100> admits negative values; "
+              "must NOT imply non_negative (soundness — the L ≥ 0 requires "
+              "clause is load-bearing, not decoration).");
 
 // Transitivity hop into pre-existing axioms: in_range<5, 100> ⇒
 // in_range<0, 200> (via tighter→looser axiom) ⇒ non_negative (via
 // L=0 ≥ 0 bridge).  Direct hop witnessed; transitive chain is fold
 // in SessionPayloadSubsort.
 static_assert(implies_v<in_range<5, 100>, in_range<0, 200>>,
-    "FIXY-U-161: InRange tighter ⇒ looser (precondition for "
-    "transitive chain to non_negative through the L=0 bridge).");
+              "FIXY-U-161: InRange tighter ⇒ looser (precondition for "
+              "transitive chain to non_negative through the L=0 bridge).");
 
 // ── FIXY-U-164 — closure axioms for InRange ⇒ positive bridge ──────
 //
@@ -915,17 +867,13 @@ static_assert(implies_v<in_range<5, 100>, in_range<0, 200>>,
 // in_range (parameterised) and positive (unparameterised) without
 // requiring transitive composition through bounded_below.
 
-static_assert(implies_v<in_range<1, 100>, positive>,
-    "FIXY-U-164: in_range<1, 100> ⇒ positive (boundary L=1 case).");
-static_assert(implies_v<in_range<5, 100>, positive>,
-    "FIXY-U-164: in_range<5, 100> ⇒ positive (tighter lower bound).");
-static_assert(!implies_v<in_range<0, 100>, positive>,
-    "FIXY-U-164: in_range<0, 100> must NOT imply positive "
-    "(admits x=0 which is NOT positive; soundness — L ≥ 1 gate is "
-    "load-bearing).");
-static_assert(!implies_v<in_range<-5, 100>, positive>,
-    "FIXY-U-164: in_range<-5, 100> must NOT imply positive "
-    "(admits negative values; soundness — L ≥ 1 gate).");
+static_assert(implies_v<in_range<1, 100>, positive>, "FIXY-U-164: in_range<1, 100> ⇒ positive (boundary L=1 case).");
+static_assert(implies_v<in_range<5, 100>, positive>, "FIXY-U-164: in_range<5, 100> ⇒ positive (tighter lower bound).");
+static_assert(!implies_v<in_range<0, 100>, positive>, "FIXY-U-164: in_range<0, 100> must NOT imply positive "
+                                                      "(admits x=0 which is NOT positive; soundness — L ≥ 1 gate is "
+                                                      "load-bearing).");
+static_assert(!implies_v<in_range<-5, 100>, positive>, "FIXY-U-164: in_range<-5, 100> must NOT imply positive "
+                                                       "(admits negative values; soundness — L ≥ 1 gate).");
 
 // ── FIXY-U-165 — closure axioms for InRange ⇒ non_zero bridge ──────
 //
@@ -933,27 +881,23 @@ static_assert(!implies_v<in_range<-5, 100>, positive>,
 // soundness case where neither branch fires (range straddles 0).
 
 // L ≥ 1 branch (positive range; reuses U-164's positive subsumption):
-static_assert(implies_v<in_range<1, 100>, non_zero>,
-    "FIXY-U-165: in_range<1, 100> ⇒ non_zero (L≥1 branch, boundary).");
-static_assert(implies_v<in_range<5, 100>, non_zero>,
-    "FIXY-U-165: in_range<5, 100> ⇒ non_zero (L≥1 branch, interior).");
+static_assert(implies_v<in_range<1, 100>, non_zero>, "FIXY-U-165: in_range<1, 100> ⇒ non_zero (L≥1 branch, boundary).");
+static_assert(implies_v<in_range<5, 100>, non_zero>, "FIXY-U-165: in_range<5, 100> ⇒ non_zero (L≥1 branch, interior).");
 
 // H ≤ -1 branch (negative range; the load-bearing new case):
 static_assert(implies_v<in_range<-100, -1>, non_zero>,
-    "FIXY-U-165: in_range<-100, -1> ⇒ non_zero (H≤-1 branch, boundary).");
+              "FIXY-U-165: in_range<-100, -1> ⇒ non_zero (H≤-1 branch, boundary).");
 static_assert(implies_v<in_range<-100, -5>, non_zero>,
-    "FIXY-U-165: in_range<-100, -5> ⇒ non_zero (H≤-1 branch, interior).");
+              "FIXY-U-165: in_range<-100, -5> ⇒ non_zero (H≤-1 branch, interior).");
 
 // Soundness — straddling 0 must NOT propagate:
-static_assert(!implies_v<in_range<0, 100>, non_zero>,
-    "FIXY-U-165: in_range<0, 100> must NOT imply non_zero "
-    "(admits x=0; soundness — neither L≥1 nor H≤-1 holds).");
-static_assert(!implies_v<in_range<-5, 5>, non_zero>,
-    "FIXY-U-165: in_range<-5, 5> must NOT imply non_zero "
-    "(admits x=0; soundness — range straddles zero).");
+static_assert(!implies_v<in_range<0, 100>, non_zero>, "FIXY-U-165: in_range<0, 100> must NOT imply non_zero "
+                                                      "(admits x=0; soundness — neither L≥1 nor H≤-1 holds).");
+static_assert(!implies_v<in_range<-5, 5>, non_zero>, "FIXY-U-165: in_range<-5, 5> must NOT imply non_zero "
+                                                     "(admits x=0; soundness — range straddles zero).");
 static_assert(!implies_v<in_range<-100, 0>, non_zero>,
-    "FIXY-U-165: in_range<-100, 0> must NOT imply non_zero "
-    "(admits x=0 at the upper bound; soundness — H=0 violates H≤-1).");
+              "FIXY-U-165: in_range<-100, 0> must NOT imply non_zero "
+              "(admits x=0 at the upper bound; soundness — H=0 violates H≤-1).");
 
 namespace detail::refined_self_test {
 
@@ -963,7 +907,7 @@ namespace detail::refined_self_test {
 // trusted-bypass / mint factory surfaces with non-constant input
 // per feedback_algebra_runtime_smoke_test_discipline.
 inline void runtime_smoke_test() {
-    int seed = 42;                                            // non-constant
+    int seed = 42;  // non-constant
 
     // Checked construction — pre(positive(seed)) must hold.
     Refined<positive, int> p{seed};
@@ -1034,4 +978,4 @@ inline void runtime_smoke_test() {
 
 }  // namespace detail::refined_self_test
 
-} // namespace crucible::safety
+}  // namespace crucible::safety

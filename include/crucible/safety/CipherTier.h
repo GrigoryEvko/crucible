@@ -146,7 +146,7 @@
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/lattices/CipherTierLattice.h>
 
-#include <cstdlib>      // std::abort in the runtime smoke test
+#include <cstdlib>  // std::abort in the runtime smoke test
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -164,14 +164,10 @@ template <CipherTierTag_v Tier, typename T>
 class [[nodiscard]] CipherTier {
 public:
     // ── Public type aliases ─────────────────────────────────────────
-    using value_type   = T;
+    using value_type = T;
     using lattice_type = CipherTierLattice::At<Tier>;
-    using graded_type  = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Absolute,
-        lattice_type,
-        T>;
-    static constexpr ::crucible::algebra::ModalityKind modality =
-        ::crucible::algebra::ModalityKind::Absolute;
+    using graded_type = ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
+    static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::Absolute;
 
     // The pinned tier — exposed as a static constexpr for callers
     // doing tier-aware dispatch without instantiating the wrapper.
@@ -181,7 +177,6 @@ private:
     graded_type impl_;
 
 public:
-
     // ── Construction ────────────────────────────────────────────────
     //
     // Default: T{} at the pinned tier.
@@ -198,40 +193,37 @@ public:
     // the explicit-T constructor at tier-anchored production sites;
     // the default ctor exists for compatibility with
     // std::array<CipherTier<Hot, T>, N> / struct-field default-init.
-    constexpr CipherTier() noexcept(
-        std::is_nothrow_default_constructible_v<T>)
+    constexpr CipherTier() noexcept(std::is_nothrow_default_constructible_v<T>)
         : impl_{T{}, typename lattice_type::element_type{}} {}
 
     // Explicit construction from a T value.  The most common
     // production pattern — a tier-anchored production site
     // constructs the wrapper at the appropriate tier.
-    constexpr explicit CipherTier(T value) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    constexpr explicit CipherTier(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(value), typename lattice_type::element_type{}} {}
 
     // In-place construction.
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr explicit CipherTier(std::in_place_t, Args&&... args)
-        noexcept(std::is_nothrow_constructible_v<T, Args...>
-                 && std::is_nothrow_move_constructible_v<T>)
-        : impl_{T(std::forward<Args>(args)...),
-                typename lattice_type::element_type{}} {}
+    constexpr explicit CipherTier(std::in_place_t, Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
+                                                                            && std::is_nothrow_move_constructible_v<T>)
+        : impl_{T(std::forward<Args>(args)...), typename lattice_type::element_type{}} {}
 
     // Defaulted copy/move/destroy — CipherTier IS COPYABLE within
     // the same tier pin.
-    constexpr CipherTier(const CipherTier&)            = default;
-    constexpr CipherTier(CipherTier&&)                 = default;
+    constexpr CipherTier(const CipherTier&) = default;
+    constexpr CipherTier(CipherTier&&) = default;
     constexpr CipherTier& operator=(const CipherTier&) = default;
-    constexpr CipherTier& operator=(CipherTier&&)      = default;
-    ~CipherTier()                                      = default;
+    constexpr CipherTier& operator=(CipherTier&&) = default;
+    ~CipherTier() = default;
 
     // Equality: compares value bytes within the SAME tier pin.
     // Cross-tier comparison rejected at overload resolution.
-    [[nodiscard]] friend constexpr bool operator==(
-        CipherTier const& a, CipherTier const& b) noexcept(
-        noexcept(a.peek() == b.peek()))
-        requires requires(T const& x, T const& y) { { x == y } -> std::convertible_to<bool>; }
+    [[nodiscard]] friend constexpr bool operator==(CipherTier const& a,
+                                                   CipherTier const& b) noexcept(noexcept(a.peek() == b.peek()))
+        requires requires(T const& x, T const& y) {
+            { x == y } -> std::convertible_to<bool>;
+        }
     {
         return a.peek() == b.peek();
     }
@@ -240,37 +232,21 @@ public:
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return graded_type::lattice_name();
-    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 
     // ── Read-only access ────────────────────────────────────────────
-    [[nodiscard]] constexpr T const& peek() const& noexcept {
-        return impl_.peek();
-    }
+    [[nodiscard]] constexpr T const& peek() const& noexcept { return impl_.peek(); }
 
-    [[nodiscard]] constexpr T consume() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return std::move(impl_).consume();
     }
 
-    [[nodiscard]] constexpr T& peek_mut() & noexcept {
-        return impl_.peek_mut();
-    }
+    [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(); }
 
     // ── swap ────────────────────────────────────────────────────────
-    constexpr void swap(CipherTier& other)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
-        impl_.swap(other.impl_);
-    }
+    constexpr void swap(CipherTier& other) noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
 
-    friend constexpr void swap(CipherTier& a, CipherTier& b)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
-        a.swap(b);
-    }
+    friend constexpr void swap(CipherTier& a, CipherTier& b) noexcept(std::is_nothrow_swappable_v<T>) { a.swap(b); }
 
     // ── satisfies<RequiredTier> — static subsumption check ────────
     //
@@ -301,41 +277,43 @@ public:
     // Compile error when WeakerTier > Tier — would CLAIM more
     // persistence-recovery strength than the source provides.
     template <CipherTierTag_v WeakerTier>
-        requires (CipherTierLattice::leq(WeakerTier, Tier))
-    [[nodiscard]] constexpr CipherTier<WeakerTier, T> relax() const&
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
+        requires(CipherTierLattice::leq(WeakerTier, Tier))
+    [[nodiscard]] constexpr CipherTier<WeakerTier, T> relax() const& noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
     {
         return CipherTier<WeakerTier, T>{this->peek()};
     }
 
     template <CipherTierTag_v WeakerTier>
-        requires (CipherTierLattice::leq(WeakerTier, Tier))
-    [[nodiscard]] constexpr CipherTier<WeakerTier, T> relax() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
-        return CipherTier<WeakerTier, T>{
-            std::move(impl_).consume()};
+        requires(CipherTierLattice::leq(WeakerTier, Tier))
+    [[nodiscard]] constexpr CipherTier<WeakerTier, T> relax() && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return CipherTier<WeakerTier, T>{std::move(impl_).consume()};
     }
 };
 
 // ── Convenience aliases ─────────────────────────────────────────────
 namespace cipher_tier {
-    template <typename T> using Hot  = CipherTier<CipherTierTag_v::Hot,  T>;
-    template <typename T> using Warm = CipherTier<CipherTierTag_v::Warm, T>;
-    template <typename T> using Cold = CipherTier<CipherTierTag_v::Cold, T>;
+template <typename T>
+using Hot = CipherTier<CipherTierTag_v::Hot, T>;
+template <typename T>
+using Warm = CipherTier<CipherTierTag_v::Warm, T>;
+template <typename T>
+using Cold = CipherTier<CipherTierTag_v::Cold, T>;
 }  // namespace cipher_tier
 
 // ── Layout invariants ───────────────────────────────────────────────
 namespace detail::cipher_tier_layout {
 
-template <typename T> using HotC  = CipherTier<CipherTierTag_v::Hot,  T>;
-template <typename T> using WarmC = CipherTier<CipherTierTag_v::Warm, T>;
-template <typename T> using ColdC = CipherTier<CipherTierTag_v::Cold, T>;
+template <typename T>
+using HotC = CipherTier<CipherTierTag_v::Hot, T>;
+template <typename T>
+using WarmC = CipherTier<CipherTierTag_v::Warm, T>;
+template <typename T>
+using ColdC = CipherTier<CipherTierTag_v::Cold, T>;
 
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(HotC,  char);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(HotC,  int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(HotC,  double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(HotC, char);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(HotC, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(HotC, double);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(WarmC, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(WarmC, double);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(ColdC, int);
@@ -343,17 +321,17 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(ColdC, double);
 
 }  // namespace detail::cipher_tier_layout
 
-static_assert(sizeof(CipherTier<CipherTierTag_v::Hot,  int>)    == sizeof(int));
-static_assert(sizeof(CipherTier<CipherTierTag_v::Warm, int>)    == sizeof(int));
-static_assert(sizeof(CipherTier<CipherTierTag_v::Cold, int>)    == sizeof(int));
-static_assert(sizeof(CipherTier<CipherTierTag_v::Hot,  double>) == sizeof(double));
+static_assert(sizeof(CipherTier<CipherTierTag_v::Hot, int>) == sizeof(int));
+static_assert(sizeof(CipherTier<CipherTierTag_v::Warm, int>) == sizeof(int));
+static_assert(sizeof(CipherTier<CipherTierTag_v::Cold, int>) == sizeof(int));
+static_assert(sizeof(CipherTier<CipherTierTag_v::Hot, double>) == sizeof(double));
 static_assert(sizeof(CipherTier<CipherTierTag_v::Warm, double>) == sizeof(double));
 static_assert(sizeof(CipherTier<CipherTierTag_v::Cold, double>) == sizeof(double));
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::cipher_tier_self_test {
 
-using HotInt  = CipherTier<CipherTierTag_v::Hot,  int>;
+using HotInt = CipherTier<CipherTierTag_v::Hot, int>;
 using WarmInt = CipherTier<CipherTierTag_v::Warm, int>;
 using ColdInt = CipherTier<CipherTierTag_v::Cold, int>;
 
@@ -369,7 +347,7 @@ inline constexpr HotInt h_in_place{std::in_place, 7};
 static_assert(h_in_place.peek() == 7);
 
 // ── Pinned tier accessor ──────────────────────────────────────────
-static_assert(HotInt::tier  == CipherTierTag_v::Hot);
+static_assert(HotInt::tier == CipherTierTag_v::Hot);
 static_assert(WarmInt::tier == CipherTierTag_v::Warm);
 static_assert(ColdInt::tier == CipherTierTag_v::Cold);
 
@@ -385,37 +363,33 @@ static_assert(HotInt::satisfies<CipherTierTag_v::Warm>);
 static_assert(HotInt::satisfies<CipherTierTag_v::Cold>);
 
 // Warm satisfies Warm and Cold; FAILS on Hot.
-static_assert( WarmInt::satisfies<CipherTierTag_v::Warm>);    // self
-static_assert( WarmInt::satisfies<CipherTierTag_v::Cold>);    // weaker
-static_assert(!WarmInt::satisfies<CipherTierTag_v::Hot>,      // STRONGER fails ✓
-    "Warm MUST NOT satisfy Hot — this is the load-bearing rejection "
-    "that the Keeper hot-tier reshard gates depend on.  If this fires, "
-    "an NVMe-backed value could be passed where a RAM-replicated value "
-    "is required, leading to blocking-disk-IO at the worst possible "
-    "moment (cluster-failure recovery fan-in).");
+static_assert(WarmInt::satisfies<CipherTierTag_v::Warm>);  // self
+static_assert(WarmInt::satisfies<CipherTierTag_v::Cold>);  // weaker
+static_assert(!WarmInt::satisfies<CipherTierTag_v::Hot>,  // STRONGER fails ✓
+              "Warm MUST NOT satisfy Hot — this is the load-bearing rejection "
+              "that the Keeper hot-tier reshard gates depend on.  If this fires, "
+              "an NVMe-backed value could be passed where a RAM-replicated value "
+              "is required, leading to blocking-disk-IO at the worst possible "
+              "moment (cluster-failure recovery fan-in).");
 
 // Cold satisfies only Cold.
-static_assert( ColdInt::satisfies<CipherTierTag_v::Cold>);
+static_assert(ColdInt::satisfies<CipherTierTag_v::Cold>);
 static_assert(!ColdInt::satisfies<CipherTierTag_v::Warm>);
 static_assert(!ColdInt::satisfies<CipherTierTag_v::Hot>);
 
 // ── relax<WeakerTier> — DOWN-the-lattice conversion ───────────────
-inline constexpr auto from_hot_to_warm =
-    HotInt{42}.relax<CipherTierTag_v::Warm>();
+inline constexpr auto from_hot_to_warm = HotInt{42}.relax<CipherTierTag_v::Warm>();
 static_assert(from_hot_to_warm.peek() == 42);
 static_assert(from_hot_to_warm.tier == CipherTierTag_v::Warm);
 
-inline constexpr auto from_hot_to_cold =
-    HotInt{99}.relax<CipherTierTag_v::Cold>();
+inline constexpr auto from_hot_to_cold = HotInt{99}.relax<CipherTierTag_v::Cold>();
 static_assert(from_hot_to_cold.peek() == 99);
 static_assert(from_hot_to_cold.tier == CipherTierTag_v::Cold);
 
-inline constexpr auto from_warm_to_cold =
-    WarmInt{7}.relax<CipherTierTag_v::Cold>();
+inline constexpr auto from_warm_to_cold = WarmInt{7}.relax<CipherTierTag_v::Cold>();
 static_assert(from_warm_to_cold.peek() == 7);
 
-inline constexpr auto from_warm_to_self =
-    WarmInt{8}.relax<CipherTierTag_v::Warm>();   // identity
+inline constexpr auto from_warm_to_self = WarmInt{8}.relax<CipherTierTag_v::Warm>();  // identity
 static_assert(from_warm_to_self.peek() == 8);
 
 // SFINAE-style detector — proves the requires-clause's correctness.
@@ -424,29 +398,29 @@ concept can_relax = requires(W w) {
     { std::move(w).template relax<T_target>() };
 };
 
-static_assert( can_relax<HotInt,  CipherTierTag_v::Warm>);    // ✓ down
-static_assert( can_relax<HotInt,  CipherTierTag_v::Cold>);    // ✓ down
-static_assert( can_relax<HotInt,  CipherTierTag_v::Hot>);     // ✓ self
-static_assert( can_relax<WarmInt, CipherTierTag_v::Cold>);    // ✓ down
-static_assert( can_relax<WarmInt, CipherTierTag_v::Warm>);    // ✓ self
-static_assert(!can_relax<WarmInt, CipherTierTag_v::Hot>,       // ✗ up
-    "relax<Hot> on a Warm-pinned wrapper MUST be rejected — "
-    "this is the load-bearing claim-stronger-than-source rejection. "
-    "If this fires, a CipherTier<Cold> value could silently claim "
-    "Hot-tier residency, defeating the persistence-tier discipline "
-    "(downstream Cipher operations would never wait on the actual "
-    "S3/NVMe IO required to materialize the value).");
-static_assert(!can_relax<ColdInt, CipherTierTag_v::Warm>);    // ✗ up
-static_assert(!can_relax<ColdInt, CipherTierTag_v::Hot>);     // ✗ up
+static_assert(can_relax<HotInt, CipherTierTag_v::Warm>);  // ✓ down
+static_assert(can_relax<HotInt, CipherTierTag_v::Cold>);  // ✓ down
+static_assert(can_relax<HotInt, CipherTierTag_v::Hot>);  // ✓ self
+static_assert(can_relax<WarmInt, CipherTierTag_v::Cold>);  // ✓ down
+static_assert(can_relax<WarmInt, CipherTierTag_v::Warm>);  // ✓ self
+static_assert(!can_relax<WarmInt, CipherTierTag_v::Hot>,  // ✗ up
+              "relax<Hot> on a Warm-pinned wrapper MUST be rejected — "
+              "this is the load-bearing claim-stronger-than-source rejection. "
+              "If this fires, a CipherTier<Cold> value could silently claim "
+              "Hot-tier residency, defeating the persistence-tier discipline "
+              "(downstream Cipher operations would never wait on the actual "
+              "S3/NVMe IO required to materialize the value).");
+static_assert(!can_relax<ColdInt, CipherTierTag_v::Warm>);  // ✗ up
+static_assert(!can_relax<ColdInt, CipherTierTag_v::Hot>);  // ✗ up
 // Cold reflexivity — the bottom of the chain still admits relax to
 // itself (leq is reflexive at every point including bottom).  Pinning
 // this proves the requires-clause uses ≤ not strict-< at the chain
 // endpoint.
-static_assert( can_relax<ColdInt, CipherTierTag_v::Cold>);    // ✓ self at bottom
+static_assert(can_relax<ColdInt, CipherTierTag_v::Cold>);  // ✓ self at bottom
 
 // ── Diagnostic forwarders ─────────────────────────────────────────
 static_assert(HotInt::value_type_name().ends_with("int"));
-static_assert(HotInt::lattice_name()  == "CipherTierLattice::At<Hot>");
+static_assert(HotInt::lattice_name() == "CipherTierLattice::At<Hot>");
 static_assert(WarmInt::lattice_name() == "CipherTierLattice::At<Warm>");
 static_assert(ColdInt::lattice_name() == "CipherTierLattice::At<Cold>");
 
@@ -501,16 +475,16 @@ concept can_equality_compare = requires(W const& a, W const& b) {
     { a == b } -> std::convertible_to<bool>;
 };
 
-static_assert( can_equality_compare<HotInt>);
+static_assert(can_equality_compare<HotInt>);
 static_assert(!can_equality_compare<CipherTier<CipherTierTag_v::Hot, NoEqualityT>>);
 
 // NoEqualityT has DELETED copy ctor — CipherTier<Hot, NoEqualityT>
 // must inherit that deletion.  Pins the structural property that
 // T's move-only-ness propagates through the wrapper layer.
 static_assert(!std::is_copy_constructible_v<CipherTier<CipherTierTag_v::Hot, NoEqualityT>>,
-    "CipherTier<Tier, T> must transitively inherit T's copy-deletion. "
-    "If this fires, NoEqualityT's deleted copy ctor is no longer "
-    "visible through the wrapper.");
+              "CipherTier<Tier, T> must transitively inherit T's copy-deletion. "
+              "If this fires, NoEqualityT's deleted copy ctor is no longer "
+              "visible through the wrapper.");
 static_assert(std::is_move_constructible_v<CipherTier<CipherTierTag_v::Hot, NoEqualityT>>);
 
 // ── relax reflexivity ─────────────────────────────────────────────
@@ -550,12 +524,12 @@ concept can_relax_lvalue = requires(W const& w) {
 };
 
 using HotMoveOnly = CipherTier<CipherTierTag_v::Hot, MoveOnlyT>;
-static_assert( can_relax_rvalue<HotMoveOnly, CipherTierTag_v::Warm>,
-    "relax<>() && MUST work for move-only T — the rvalue overload "
-    "moves through consume(), no copy required.");
+static_assert(can_relax_rvalue<HotMoveOnly, CipherTierTag_v::Warm>,
+              "relax<>() && MUST work for move-only T — the rvalue overload "
+              "moves through consume(), no copy required.");
 static_assert(!can_relax_lvalue<HotMoveOnly, CipherTierTag_v::Warm>,
-    "relax<>() const& on move-only T MUST be rejected — the const& "
-    "overload requires copy_constructible<T>.");
+              "relax<>() const& on move-only T MUST be rejected — the const& "
+              "overload requires copy_constructible<T>.");
 
 [[nodiscard]] consteval bool relax_move_only_works() noexcept {
     HotMoveOnly src{MoveOnlyT{77}};
@@ -570,12 +544,11 @@ static_assert(HotInt::lattice_name().size() > 0);
 static_assert(HotInt::lattice_name().starts_with("CipherTierLattice::At<"));
 
 // ── Convenience aliases resolve correctly ────────────────────────
-static_assert(cipher_tier::Hot<int>::tier  == CipherTierTag_v::Hot);
+static_assert(cipher_tier::Hot<int>::tier == CipherTierTag_v::Hot);
 static_assert(cipher_tier::Warm<int>::tier == CipherTierTag_v::Warm);
 static_assert(cipher_tier::Cold<int>::tier == CipherTierTag_v::Cold);
 
-static_assert(std::is_same_v<cipher_tier::Hot<double>,
-                             CipherTier<CipherTierTag_v::Hot, double>>);
+static_assert(std::is_same_v<cipher_tier::Hot<double>, CipherTier<CipherTierTag_v::Hot, double>>);
 
 // ── Hot-tier reshard admission simulation — load-bearing scenario ─
 //
@@ -595,19 +568,15 @@ static_assert(std::is_same_v<cipher_tier::Hot<double>,
 //   Cold-tier values are REJECTED (✓)
 
 template <typename W>
-concept is_hot_reshard_admissible =
-    W::template satisfies<CipherTierTag_v::Hot>;
+concept is_hot_reshard_admissible = W::template satisfies<CipherTierTag_v::Hot>;
 
-static_assert( is_hot_reshard_admissible<HotInt>,
-    "Hot-tier value MUST pass the Keeper hot-reshard admission gate.");
-static_assert(!is_hot_reshard_admissible<WarmInt>,
-    "Warm-tier value MUST be REJECTED at the hot-reshard admission "
-    "gate — this is the LOAD-BEARING TEST.  Without this rejection, "
-    "the recovery path could silently block on NVMe IO when zero-cost "
-    "RAM replication was the contract.");
-static_assert(!is_hot_reshard_admissible<ColdInt>,
-    "Cold-tier value MUST be REJECTED at the hot-reshard admission "
-    "gate.");
+static_assert(is_hot_reshard_admissible<HotInt>, "Hot-tier value MUST pass the Keeper hot-reshard admission gate.");
+static_assert(!is_hot_reshard_admissible<WarmInt>, "Warm-tier value MUST be REJECTED at the hot-reshard admission "
+                                                   "gate — this is the LOAD-BEARING TEST.  Without this rejection, "
+                                                   "the recovery path could silently block on NVMe IO when zero-cost "
+                                                   "RAM replication was the contract.");
+static_assert(!is_hot_reshard_admissible<ColdInt>, "Cold-tier value MUST be REJECTED at the hot-reshard admission "
+                                                   "gate.");
 
 // ── Warm-or-better publish admission simulation — second scenario ─
 //
@@ -620,22 +589,18 @@ static_assert(!is_hot_reshard_admissible<ColdInt>,
 // fresh state to NVMe).
 
 template <typename W>
-concept is_warm_publish_admissible =
-    W::template satisfies<CipherTierTag_v::Warm>;
+concept is_warm_publish_admissible = W::template satisfies<CipherTierTag_v::Warm>;
 
-static_assert( is_warm_publish_admissible<HotInt>,
-    "Hot-tier value MUST pass the Cipher::publish_warm admission "
-    "gate (Hot subsumes Warm — replicating Hot to Warm is a valid "
-    "downgrade).");
-static_assert( is_warm_publish_admissible<WarmInt>,
-    "Warm-tier value MUST pass the Cipher::publish_warm admission "
-    "gate (self-admission).");
-static_assert(!is_warm_publish_admissible<ColdInt>,
-    "Cold-tier value MUST be REJECTED at the Cipher::publish_warm "
-    "admission gate — Cold is BELOW Warm in the chain; allowing "
-    "publication of a Cold-tier value as Warm would defeat the "
-    "freshness guarantee that downstream runtime drift-attribution "
-    "depends on.");
+static_assert(is_warm_publish_admissible<HotInt>, "Hot-tier value MUST pass the Cipher::publish_warm admission "
+                                                  "gate (Hot subsumes Warm — replicating Hot to Warm is a valid "
+                                                  "downgrade).");
+static_assert(is_warm_publish_admissible<WarmInt>, "Warm-tier value MUST pass the Cipher::publish_warm admission "
+                                                   "gate (self-admission).");
+static_assert(!is_warm_publish_admissible<ColdInt>, "Cold-tier value MUST be REJECTED at the Cipher::publish_warm "
+                                                    "admission gate — Cold is BELOW Warm in the chain; allowing "
+                                                    "publication of a Cold-tier value as Warm would defeat the "
+                                                    "freshness guarantee that downstream runtime drift-attribution "
+                                                    "depends on.");
 
 // ── Runtime smoke test ─────────────────────────────────────────────
 inline void runtime_smoke_test() {
@@ -686,7 +651,7 @@ inline void runtime_smoke_test() {
     if (extracted != 55) std::abort();
 
     // Convenience-alias instantiation.
-    cipher_tier::Hot<int>  alias_hot{123};
+    cipher_tier::Hot<int> alias_hot{123};
     cipher_tier::Warm<int> alias_warm{456};
     cipher_tier::Cold<int> alias_cold{789};
     [[maybe_unused]] auto av = alias_hot.peek();
@@ -694,7 +659,7 @@ inline void runtime_smoke_test() {
     [[maybe_unused]] auto cv = alias_cold.peek();
 
     // Hot-reshard + Warm-publish admission simulations at runtime.
-    [[maybe_unused]] bool can_hot_reshard  = is_hot_reshard_admissible<HotInt>;
+    [[maybe_unused]] bool can_hot_reshard = is_hot_reshard_admissible<HotInt>;
     [[maybe_unused]] bool can_warm_publish = is_warm_publish_admissible<HotInt>;
 }
 

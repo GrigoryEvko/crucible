@@ -85,7 +85,7 @@
 #include <meta>
 #include <string_view>
 #include <type_traits>
-#include <utility>          // FIXY-FOUND-137: std::to_underlying
+#include <utility>  // FIXY-FOUND-137: std::to_underlying
 
 namespace crucible::algebra::lattices {
 
@@ -94,8 +94,8 @@ enum class NumaNodeId : std::uint8_t {
     // 0..253 are CONCRETE node IDs — production NUMA systems
     // typically have 1-16 nodes; the 254-value range is comfortably
     // future-proof.
-    None = 254,    // bottom: unbound
-    Any  = 255,    // top: wildcard
+    None = 254,  // bottom: unbound
+    Any = 255,  // top: wildcard
 };
 
 // FIXY-FOUND-137: sentinel cardinality + wire-format value pins.
@@ -111,60 +111,52 @@ enum class NumaNodeId : std::uint8_t {
 //   (b) wire-format pins on None / Any underlying values lock the
 //       Cipher / federation row_hash layout — changing 254/255 would
 //       silently re-key every persisted NUMA-tagged value.
-inline constexpr std::size_t numa_node_id_sentinel_count =
-    std::meta::enumerators_of(^^NumaNodeId).size();
+inline constexpr std::size_t numa_node_id_sentinel_count = std::meta::enumerators_of(^^NumaNodeId).size();
 
-static_assert(numa_node_id_sentinel_count == 2,
-    "FIXY-FOUND-137: NumaNodeId is a sparse enum with exactly two "
-    "named sentinels (None=254, Any=255) plus 254 concrete-numeric "
-    "node-id slots.  Adding a third sentinel requires (a) picking a "
-    "value below 254 that doesn't collide with the concrete-ID range, "
-    "(b) extending NumaNodeLattice::leq/join/meet to place the new "
-    "sentinel in the partial order, and (c) bumping this assertion.");
+static_assert(numa_node_id_sentinel_count == 2, "FIXY-FOUND-137: NumaNodeId is a sparse enum with exactly two "
+                                                "named sentinels (None=254, Any=255) plus 254 concrete-numeric "
+                                                "node-id slots.  Adding a third sentinel requires (a) picking a "
+                                                "value below 254 that doesn't collide with the concrete-ID range, "
+                                                "(b) extending NumaNodeLattice::leq/join/meet to place the new "
+                                                "sentinel in the partial order, and (c) bumping this assertion.");
 
 static_assert(std::to_underlying(NumaNodeId::None) == 254,
-    "FIXY-FOUND-137 wire-format pin: NumaNodeId::None must remain 254 "
-    "for Cipher persistence + row_hash cross-build determinism.  "
-    "Changing this value invalidates every persisted NUMA-tagged "
-    "value.");
+              "FIXY-FOUND-137 wire-format pin: NumaNodeId::None must remain 254 "
+              "for Cipher persistence + row_hash cross-build determinism.  "
+              "Changing this value invalidates every persisted NUMA-tagged "
+              "value.");
 static_assert(std::to_underlying(NumaNodeId::Any) == 255,
-    "FIXY-FOUND-137 wire-format pin: NumaNodeId::Any must remain 255 "
-    "(uint8_t top) so the wildcard-top is bit-identical across builds "
-    "and serializer/deserializer halves.");
+              "FIXY-FOUND-137 wire-format pin: NumaNodeId::Any must remain 255 "
+              "(uint8_t top) so the wildcard-top is bit-identical across builds "
+              "and serializer/deserializer halves.");
 
 // ── NumaNodeLattice — partial-order with wildcard top ──────────────
 struct NumaNodeLattice {
     using element_type = NumaNodeId;
 
-    [[nodiscard]] static constexpr element_type bottom() noexcept {
-        return NumaNodeId::None;
-    }
-    [[nodiscard]] static constexpr element_type top() noexcept {
-        return NumaNodeId::Any;
-    }
+    [[nodiscard]] static constexpr element_type bottom() noexcept { return NumaNodeId::None; }
+    [[nodiscard]] static constexpr element_type top() noexcept { return NumaNodeId::Any; }
 
     [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept {
         if (a == b) return true;
-        if (a == NumaNodeId::None) return true;       // bottom under everything
-        if (b == NumaNodeId::Any)  return true;       // everything under top
-        return false;                                  // specific != specific siblings
+        if (a == NumaNodeId::None) return true;  // bottom under everything
+        if (b == NumaNodeId::Any) return true;  // everything under top
+        return false;  // specific != specific siblings
     }
 
     [[nodiscard]] static constexpr element_type join(element_type a, element_type b) noexcept {
         if (leq(a, b)) return b;
         if (leq(b, a)) return a;
-        return NumaNodeId::Any;                        // siblings → top
+        return NumaNodeId::Any;  // siblings → top
     }
 
     [[nodiscard]] static constexpr element_type meet(element_type a, element_type b) noexcept {
         if (leq(a, b)) return a;
         if (leq(b, a)) return b;
-        return NumaNodeId::None;                       // siblings → bottom
+        return NumaNodeId::None;  // siblings → bottom
     }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return "NumaNodeLattice";
-    }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "NumaNodeLattice"; }
 };
 
 // ── Self-test ───────────────────────────────────────────────────────
@@ -180,13 +172,13 @@ static_assert(std::is_trivially_copyable_v<NumaNodeId>);
 
 // Bounds.
 static_assert(NumaNodeLattice::bottom() == NumaNodeId::None);
-static_assert(NumaNodeLattice::top()    == NumaNodeId::Any);
+static_assert(NumaNodeLattice::top() == NumaNodeId::Any);
 
 // Reflexivity.
 static_assert(NumaNodeLattice::leq(NumaNodeId::None, NumaNodeId::None));
-static_assert(NumaNodeLattice::leq(NumaNodeId::Any,  NumaNodeId::Any));
-static_assert(NumaNodeLattice::leq(NumaNodeId{0},     NumaNodeId{0}));
-static_assert(NumaNodeLattice::leq(NumaNodeId{42},    NumaNodeId{42}));
+static_assert(NumaNodeLattice::leq(NumaNodeId::Any, NumaNodeId::Any));
+static_assert(NumaNodeLattice::leq(NumaNodeId{0}, NumaNodeId{0}));
+static_assert(NumaNodeLattice::leq(NumaNodeId{42}, NumaNodeId{42}));
 
 // Bottom under everything.
 static_assert(NumaNodeLattice::leq(NumaNodeId::None, NumaNodeId::Any));
@@ -194,27 +186,27 @@ static_assert(NumaNodeLattice::leq(NumaNodeId::None, NumaNodeId{0}));
 static_assert(NumaNodeLattice::leq(NumaNodeId::None, NumaNodeId{42}));
 
 // Everything under top.
-static_assert(NumaNodeLattice::leq(NumaNodeId{0},  NumaNodeId::Any));
+static_assert(NumaNodeLattice::leq(NumaNodeId{0}, NumaNodeId::Any));
 static_assert(NumaNodeLattice::leq(NumaNodeId{42}, NumaNodeId::Any));
 static_assert(NumaNodeLattice::leq(NumaNodeId::None, NumaNodeId::Any));
 
 // Sibling rejection — load-bearing for partial-order discipline.
-static_assert(!NumaNodeLattice::leq(NumaNodeId{0},  NumaNodeId{1}));
-static_assert(!NumaNodeLattice::leq(NumaNodeId{1},  NumaNodeId{0}));
+static_assert(!NumaNodeLattice::leq(NumaNodeId{0}, NumaNodeId{1}));
+static_assert(!NumaNodeLattice::leq(NumaNodeId{1}, NumaNodeId{0}));
 static_assert(!NumaNodeLattice::leq(NumaNodeId{42}, NumaNodeId{43}));
 
 // Join witnesses.
 static_assert(NumaNodeLattice::join(NumaNodeId{0}, NumaNodeId{0}) == NumaNodeId{0});
 static_assert(NumaNodeLattice::join(NumaNodeId{0}, NumaNodeId::None) == NumaNodeId{0});
-static_assert(NumaNodeLattice::join(NumaNodeId{0}, NumaNodeId::Any)  == NumaNodeId::Any);
-static_assert(NumaNodeLattice::join(NumaNodeId{0}, NumaNodeId{1})    == NumaNodeId::Any);
+static_assert(NumaNodeLattice::join(NumaNodeId{0}, NumaNodeId::Any) == NumaNodeId::Any);
+static_assert(NumaNodeLattice::join(NumaNodeId{0}, NumaNodeId{1}) == NumaNodeId::Any);
 static_assert(NumaNodeLattice::join(NumaNodeId::None, NumaNodeId::Any) == NumaNodeId::Any);
 
 // Meet witnesses.
 static_assert(NumaNodeLattice::meet(NumaNodeId{0}, NumaNodeId{0}) == NumaNodeId{0});
 static_assert(NumaNodeLattice::meet(NumaNodeId{0}, NumaNodeId::None) == NumaNodeId::None);
-static_assert(NumaNodeLattice::meet(NumaNodeId{0}, NumaNodeId::Any)  == NumaNodeId{0});
-static_assert(NumaNodeLattice::meet(NumaNodeId{0}, NumaNodeId{1})    == NumaNodeId::None);
+static_assert(NumaNodeLattice::meet(NumaNodeId{0}, NumaNodeId::Any) == NumaNodeId{0});
+static_assert(NumaNodeLattice::meet(NumaNodeId{0}, NumaNodeId{1}) == NumaNodeId::None);
 static_assert(NumaNodeLattice::meet(NumaNodeId::None, NumaNodeId::Any) == NumaNodeId::None);
 
 // Idempotence.
@@ -223,11 +215,11 @@ static_assert(NumaNodeLattice::meet(NumaNodeId{42}, NumaNodeId{42}) == NumaNodeI
 
 // Bound identities.
 static_assert(NumaNodeLattice::join(NumaNodeId{42}, NumaNodeLattice::bottom()) == NumaNodeId{42});
-static_assert(NumaNodeLattice::meet(NumaNodeId{42}, NumaNodeLattice::top())    == NumaNodeId{42});
+static_assert(NumaNodeLattice::meet(NumaNodeId{42}, NumaNodeLattice::top()) == NumaNodeId{42});
 
 // Antisymmetry — siblings reject in both directions.
 static_assert(!NumaNodeLattice::leq(NumaNodeId{0}, NumaNodeId{1})
-           && !NumaNodeLattice::leq(NumaNodeId{1}, NumaNodeId{0}));
+              && !NumaNodeLattice::leq(NumaNodeId{1}, NumaNodeId{0}));
 
 // ── Transitivity — load-bearing for partial-order axioms ─────────
 //
@@ -237,14 +229,12 @@ static_assert(!NumaNodeLattice::leq(NumaNodeId{0}, NumaNodeId{1})
 // gate could admit values via a fan-in chain that no single
 // pairwise leq accepts.
 [[nodiscard]] consteval bool transitivity_witness() noexcept {
-    NumaNodeId bot     = NumaNodeId::None;
-    NumaNodeId nodeA   {2};
-    NumaNodeId topv    = NumaNodeId::Any;
-    return  NumaNodeLattice::leq(bot,   nodeA)
-        &&  NumaNodeLattice::leq(nodeA, topv)
-        &&  NumaNodeLattice::leq(bot,   topv)            // transitive
-        &&  NumaNodeLattice::leq(bot,   bot)
-        &&  NumaNodeLattice::leq(topv,  topv);
+    NumaNodeId bot = NumaNodeId::None;
+    NumaNodeId nodeA{2};
+    NumaNodeId topv = NumaNodeId::Any;
+    return NumaNodeLattice::leq(bot, nodeA) && NumaNodeLattice::leq(nodeA, topv)
+        && NumaNodeLattice::leq(bot, topv)  // transitive
+        && NumaNodeLattice::leq(bot, bot) && NumaNodeLattice::leq(topv, topv);
 }
 static_assert(transitivity_witness());
 
@@ -283,17 +273,13 @@ static_assert(transitivity_witness());
 [[nodiscard]] consteval bool non_distributive_witness() noexcept {
     NumaNodeId a{0}, b{1}, c{2};
     auto lhs = NumaNodeLattice::meet(a, NumaNodeLattice::join(b, c));
-    auto rhs = NumaNodeLattice::join(NumaNodeLattice::meet(a, b),
-                                      NumaNodeLattice::meet(a, c));
-    return lhs == NumaNodeId{0}
-        && rhs == NumaNodeId::None
-        && lhs != rhs;            // NOT distributive — structural
+    auto rhs = NumaNodeLattice::join(NumaNodeLattice::meet(a, b), NumaNodeLattice::meet(a, c));
+    return lhs == NumaNodeId{0} && rhs == NumaNodeId::None && lhs != rhs;  // NOT distributive — structural
 }
-static_assert(non_distributive_witness(),
-    "NumaNodeLattice's non-distributivity is a STRUCTURAL CLAIM "
-    "(M3 substructure).  If this fires, the lattice's join/meet "
-    "tables changed and the partial-order shape diverged from the "
-    "documented M3-with-sentinels topology.");
+static_assert(non_distributive_witness(), "NumaNodeLattice's non-distributivity is a STRUCTURAL CLAIM "
+                                          "(M3 substructure).  If this fires, the lattice's join/meet "
+                                          "tables changed and the partial-order shape diverged from the "
+                                          "documented M3-with-sentinels topology.");
 
 // ── Associativity — required for the Lattice concept ─────────────
 [[nodiscard]] consteval bool associativity_witness() noexcept {
@@ -304,10 +290,9 @@ static_assert(non_distributive_witness(),
         auto rhs_meet = NumaNodeLattice::meet(a, NumaNodeLattice::meet(b, c));
         return lhs_join == rhs_join && lhs_meet == rhs_meet;
     };
-    return  check(NumaNodeId{0},     NumaNodeId{1},      NumaNodeId{2})
-         && check(NumaNodeId::None,  NumaNodeId{0},      NumaNodeId::Any)
-         && check(NumaNodeId{42},    NumaNodeId::Any,    NumaNodeId::None)
-         && check(NumaNodeId{5},     NumaNodeId{5},      NumaNodeId{6});
+    return check(NumaNodeId{0}, NumaNodeId{1}, NumaNodeId{2}) && check(NumaNodeId::None, NumaNodeId{0}, NumaNodeId::Any)
+        && check(NumaNodeId{42}, NumaNodeId::Any, NumaNodeId::None)
+        && check(NumaNodeId{5}, NumaNodeId{5}, NumaNodeId{6});
 }
 static_assert(associativity_witness());
 
@@ -320,10 +305,9 @@ static_assert(associativity_witness());
         auto lhs2 = NumaNodeLattice::meet(a, NumaNodeLattice::join(a, b));
         return lhs1 == a && lhs2 == a;
     };
-    return  check(NumaNodeId{0},     NumaNodeId{1})    // siblings
-         && check(NumaNodeId::None,  NumaNodeId::Any)  // bottom + top
-         && check(NumaNodeId{42},    NumaNodeId::Any)
-         && check(NumaNodeId::None,  NumaNodeId{0});
+    return check(NumaNodeId{0}, NumaNodeId{1})  // siblings
+        && check(NumaNodeId::None, NumaNodeId::Any)  // bottom + top
+        && check(NumaNodeId{42}, NumaNodeId::Any) && check(NumaNodeId::None, NumaNodeId{0});
 }
 static_assert(absorption_witness());
 
@@ -333,38 +317,32 @@ static_assert(absorption_witness());
 // The bounded-lattice rollup covers idempotence, commutativity,
 // associativity, absorption, partial-order, bottom/top identity —
 // every law NumaNodeLattice claims to satisfy.
-static_assert(verify_bounded_lattice_axioms_at<NumaNodeLattice>(
-    NumaNodeId::None, NumaNodeId{2}, NumaNodeId::Any));
-static_assert(verify_bounded_lattice_axioms_at<NumaNodeLattice>(
-    NumaNodeId{0}, NumaNodeId{1}, NumaNodeId{2}));
-static_assert(verify_bounded_lattice_axioms_at<NumaNodeLattice>(
-    NumaNodeId{42}, NumaNodeId{42}, NumaNodeId{43}));
-static_assert(verify_bounded_lattice_axioms_at<NumaNodeLattice>(
-    NumaNodeId::None, NumaNodeId::None, NumaNodeId::Any));
+static_assert(verify_bounded_lattice_axioms_at<NumaNodeLattice>(NumaNodeId::None, NumaNodeId{2}, NumaNodeId::Any));
+static_assert(verify_bounded_lattice_axioms_at<NumaNodeLattice>(NumaNodeId{0}, NumaNodeId{1}, NumaNodeId{2}));
+static_assert(verify_bounded_lattice_axioms_at<NumaNodeLattice>(NumaNodeId{42}, NumaNodeId{42}, NumaNodeId{43}));
+static_assert(verify_bounded_lattice_axioms_at<NumaNodeLattice>(NumaNodeId::None, NumaNodeId::None, NumaNodeId::Any));
 
 inline void runtime_smoke_test() {
-    NumaNodeId                bot   = NumaNodeLattice::bottom();
-    NumaNodeId                topv  = NumaNodeLattice::top();
-    NumaNodeId                node2 {2};
-    [[maybe_unused]] bool     l     = NumaNodeLattice::leq(bot, topv);
-    [[maybe_unused]] NumaNodeId j   = NumaNodeLattice::join(node2, topv);
-    [[maybe_unused]] NumaNodeId m   = NumaNodeLattice::meet(node2, bot);
+    NumaNodeId bot = NumaNodeLattice::bottom();
+    NumaNodeId topv = NumaNodeLattice::top();
+    NumaNodeId node2{2};
+    [[maybe_unused]] bool l = NumaNodeLattice::leq(bot, topv);
+    [[maybe_unused]] NumaNodeId j = NumaNodeLattice::join(node2, topv);
+    [[maybe_unused]] NumaNodeId m = NumaNodeLattice::meet(node2, bot);
 
     // Sibling join → top (wildcard).
-    NumaNodeId joined_siblings =
-        NumaNodeLattice::join(NumaNodeId{0}, NumaNodeId{1});
+    NumaNodeId joined_siblings = NumaNodeLattice::join(NumaNodeId{0}, NumaNodeId{1});
     if (joined_siblings != NumaNodeId::Any) std::abort();
 
     // Sibling meet → bottom (none).
-    NumaNodeId meet_siblings =
-        NumaNodeLattice::meet(NumaNodeId{0}, NumaNodeId{1});
+    NumaNodeId meet_siblings = NumaNodeLattice::meet(NumaNodeId{0}, NumaNodeId{1});
     if (meet_siblings != NumaNodeId::None) std::abort();
 
     // Lattice over Graded substrate.
     using NumaNodeGraded = Graded<ModalityKind::Absolute, NumaNodeLattice, int>;
-    NumaNodeGraded            v{42, NumaNodeId{2}};
-    [[maybe_unused]] auto     g  = v.grade();
-    [[maybe_unused]] auto     vp = v.peek();
+    NumaNodeGraded v{42, NumaNodeId{2}};
+    [[maybe_unused]] auto g = v.grade();
+    [[maybe_unused]] auto vp = v.peek();
 }
 
 }  // namespace detail::numa_node_lattice_self_test

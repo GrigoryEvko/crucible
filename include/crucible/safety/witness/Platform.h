@@ -58,7 +58,8 @@ using current_arch_tag = AArch64;
 #elif defined(__riscv)
 using current_arch_tag = RISCV;
 #else
-#error "crucible::safety::witness: unsupported architecture — supported tags are X86_64 / AArch64 / RISCV (see CLAUDE.md §XIV)."
+#error \
+    "crucible::safety::witness: unsupported architecture — supported tags are X86_64 / AArch64 / RISCV (see CLAUDE.md §XIV)."
 #endif
 
 }  // namespace crucible::safety::witness::arch

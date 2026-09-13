@@ -166,26 +166,25 @@ namespace crucible::algebra {
 
 template <ModalityKind M, Lattice L, typename T>
 class [[nodiscard]] Graded {
-    static_assert(IsModality<M>,
-        "Graded<M, L, T>: M must be one of Comonad / RelativeMonad / "
-        "Absolute / Relative / Quotient / Coeffect.  See "
-        "algebra/Modality.h.  Quotient and Coeffect use the generic "
-        "peek / grade / weaken / compose / consume / peek_mut-on-"
-        "empty-grade operations; extract and inject remain gated on "
-        "Comonad and RelativeMonad respectively.");
+    static_assert(IsModality<M>, "Graded<M, L, T>: M must be one of Comonad / RelativeMonad / "
+                                 "Absolute / Relative / Quotient / Coeffect.  See "
+                                 "algebra/Modality.h.  Quotient and Coeffect use the generic "
+                                 "peek / grade / weaken / compose / consume / peek_mut-on-"
+                                 "empty-grade operations; extract and inject remain gated on "
+                                 "Comonad and RelativeMonad respectively.");
 
 public:
     // ── Public type aliases ─────────────────────────────────────────
     static constexpr ModalityKind modality = M;
 
     using modality_kind_type = ModalityKind;
-    using lattice_type       = L;
-    using value_type         = T;
-    using grade_type         = LatticeElement<L>;
+    using lattice_type = L;
+    using value_type = T;
+    using grade_type = LatticeElement<L>;
 
 private:
     // ── Layout (NSDMI per InitSafe; EBO for empty types) ────────────
-    [[no_unique_address]] T          inner_{};
+    [[no_unique_address]] T inner_{};
     [[no_unique_address]] grade_type grade_{};
 
 public:
@@ -235,12 +234,12 @@ public:
     // ── Object semantics (defaulted; implicit noexcept inferred from T
     //     and grade_type — explicit noexcept on `= default` would be
     //     ill-formed if either had a throwing default ctor) ──────────
-    constexpr Graded()                         = default;
-    constexpr Graded(const Graded&)            = default;
-    constexpr Graded(Graded&&)                 = default;
+    constexpr Graded() = default;
+    constexpr Graded(const Graded&) = default;
+    constexpr Graded(Graded&&) = default;
     constexpr Graded& operator=(const Graded&) = default;
-    constexpr Graded& operator=(Graded&&)      = default;
-    ~Graded()                                  = default;
+    constexpr Graded& operator=(Graded&&) = default;
+    ~Graded() = default;
 
     // ── Explicit construction with value + grade ────────────────────
     //
@@ -249,9 +248,8 @@ public:
     // grades (FractionalLattice's rational, StalenessSemiring's int)
     // moving avoids an extra copy when the caller already had an
     // rvalue.
-    constexpr Graded(T value, grade_type grade) noexcept(
-        std::is_nothrow_move_constructible_v<T> &&
-        std::is_nothrow_move_constructible_v<grade_type>)
+    constexpr Graded(T value, grade_type grade) noexcept(std::is_nothrow_move_constructible_v<T>
+                                                         && std::is_nothrow_move_constructible_v<grade_type>)
         : inner_{std::move(value)}, grade_{std::move(grade)} {}
 
     // ── Construction at the lattice's bottom element (when bounded) ─
@@ -269,8 +267,7 @@ public:
     // The T==element_type and derived-grade specializations expose the
     // matching pair below; consumers can call either form regardless of
     // which specialization fires.
-    [[nodiscard]] static constexpr Graded at_bottom(T value) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    [[nodiscard]] static constexpr Graded at_bottom(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
         requires BoundedBelowLattice<L>
     {
         // GCC 16.0.1 ICEs (cp/pt.cc:17244) on template-dependent
@@ -279,35 +276,25 @@ public:
         // equivalent runtime checking under enforce semantic.  See
         // feedback_gcc16_c26_contract_gotchas memory for the rule.
         Graded result{std::move(value), L::bottom()};
-        contract_assert(L::leq(result.grade(), L::bottom())
-                     && L::leq(L::bottom(), result.grade()));
+        contract_assert(L::leq(result.grade(), L::bottom()) && L::leq(L::bottom(), result.grade()));
         return result;
     }
 
-    [[nodiscard]] static constexpr Graded at_bottom() noexcept(
-        std::is_nothrow_default_constructible_v<T>
-        && std::is_nothrow_move_constructible_v<T>)
-        requires BoundedBelowLattice<L>
-              && std::default_initializable<T>
+    [[nodiscard]] static constexpr Graded at_bottom() noexcept(std::is_nothrow_default_constructible_v<T>
+                                                               && std::is_nothrow_move_constructible_v<T>)
+        requires BoundedBelowLattice<L> && std::default_initializable<T>
     {
         Graded result{T{}, L::bottom()};
-        contract_assert(L::leq(result.grade(), L::bottom())
-                     && L::leq(L::bottom(), result.grade()));
+        contract_assert(L::leq(result.grade(), L::bottom()) && L::leq(L::bottom(), result.grade()));
         return result;
     }
 
     // ── Access ──────────────────────────────────────────────────────
-    [[nodiscard]] constexpr T const& peek() const& noexcept {
-        return inner_;
-    }
-    [[nodiscard]] constexpr T consume() && noexcept(
-        std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr T const& peek() const& noexcept { return inner_; }
+    [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return std::move(inner_);
     }
-    [[nodiscard]] constexpr grade_type grade() const noexcept(
-        std::is_nothrow_copy_constructible_v<grade_type>)
-    {
+    [[nodiscard]] constexpr grade_type grade() const noexcept(std::is_nothrow_copy_constructible_v<grade_type>) {
         return grade_;
     }
 
@@ -352,25 +339,23 @@ public:
     // invalidate.
 
     [[nodiscard]] constexpr T& peek_mut() & noexcept
-        requires (AbsoluteModality<M> || std::is_empty_v<grade_type>)
+        requires(AbsoluteModality<M> || std::is_empty_v<grade_type>)
     {
         return inner_;
     }
 
-    constexpr void swap(Graded& other)
-        noexcept(std::is_nothrow_swappable_v<T>
-                 && std::is_nothrow_swappable_v<grade_type>)
-        requires (AbsoluteModality<M> || std::is_empty_v<grade_type>)
+    constexpr void swap(Graded& other) noexcept(std::is_nothrow_swappable_v<T>
+                                                && std::is_nothrow_swappable_v<grade_type>)
+        requires(AbsoluteModality<M> || std::is_empty_v<grade_type>)
     {
         using std::swap;
         swap(inner_, other.inner_);
         swap(grade_, other.grade_);
     }
 
-    friend constexpr void swap(Graded& a, Graded& b)
-        noexcept(std::is_nothrow_swappable_v<T>
-                 && std::is_nothrow_swappable_v<grade_type>)
-        requires (AbsoluteModality<M> || std::is_empty_v<grade_type>)
+    friend constexpr void swap(Graded& a, Graded& b) noexcept(std::is_nothrow_swappable_v<T>
+                                                              && std::is_nothrow_swappable_v<grade_type>)
+        requires(AbsoluteModality<M> || std::is_empty_v<grade_type>)
     {
         a.swap(b);
     }
@@ -380,8 +365,7 @@ public:
     // Aliased wrappers may rename this — Secret<T>::declassify<Policy>()
     // is the named counit with audit-discoverable policy tag.  The
     // bare Graded::extract() is the unnamed counit.
-    [[nodiscard]] constexpr T extract() && noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    [[nodiscard]] constexpr T extract() && noexcept(std::is_nothrow_move_constructible_v<T>)
         requires ComonadModality<M>
     {
         return std::move(inner_);
@@ -393,18 +377,17 @@ public:
     // parameters must be const.  Local copy `g` is non-const so we
     // can std::move it into the constructor; copy is no-op for empty
     // grade types and one small-struct copy for non-empty.
-    [[nodiscard]] static constexpr Graded inject(T value, grade_type grade) noexcept(
-        std::is_nothrow_move_constructible_v<T> &&
-        std::is_nothrow_copy_constructible_v<grade_type> &&
-        std::is_nothrow_move_constructible_v<grade_type>)
+    [[nodiscard]] static constexpr Graded
+    inject(T value, grade_type grade) noexcept(std::is_nothrow_move_constructible_v<T>
+                                               && std::is_nothrow_copy_constructible_v<grade_type>
+                                               && std::is_nothrow_move_constructible_v<grade_type>)
         requires RelativeMonadModality<M>
     {
         // post-via-contract_assert (GCC 16 ICE on `post()` w/ template
         // expressions — see feedback_gcc16_c26_contract_gotchas).
         grade_type expected = grade;  // copy for the assertion
         Graded result{std::move(value), std::move(grade)};
-        contract_assert(L::leq(result.grade(), expected)
-                     && L::leq(expected, result.grade()));
+        contract_assert(L::leq(result.grade(), expected) && L::leq(expected, result.grade()));
         return result;
     }
 
@@ -422,28 +405,22 @@ public:
     // gcc16_c26_contract_gotchas rule #6).
     //
     // C++26 clause order: noexcept → requires → pre → body.
-    [[nodiscard]] constexpr Graded weaken(grade_type new_grade) const&
-        noexcept(std::is_nothrow_copy_constructible_v<T> &&
-                 std::is_nothrow_copy_constructible_v<grade_type>)
+    [[nodiscard]] constexpr Graded
+    weaken(grade_type new_grade) const& noexcept(std::is_nothrow_copy_constructible_v<T>
+                                                 && std::is_nothrow_copy_constructible_v<grade_type>)
         requires std::copy_constructible<T>
-        pre (L::leq(grade_, new_grade))
-    {
+    pre(L::leq(grade_, new_grade)) {
         Graded result{inner_, new_grade};
-        contract_assert(L::leq(result.grade(), new_grade)
-                     && L::leq(new_grade, result.grade()));
+        contract_assert(L::leq(result.grade(), new_grade) && L::leq(new_grade, result.grade()));
         return result;
     }
 
-    [[nodiscard]] constexpr Graded weaken(grade_type new_grade) &&
-        noexcept(std::is_nothrow_move_constructible_v<T> &&
-                 std::is_nothrow_copy_constructible_v<grade_type> &&
-                 std::is_nothrow_move_constructible_v<grade_type>)
-        pre (L::leq(grade_, new_grade))
-    {
+    [[nodiscard]] constexpr Graded weaken(grade_type new_grade) && noexcept(
+        std::is_nothrow_move_constructible_v<T> && std::is_nothrow_copy_constructible_v<grade_type>
+        && std::is_nothrow_move_constructible_v<grade_type>) pre(L::leq(grade_, new_grade)) {
         grade_type expected = new_grade;  // copy for the assertion
         Graded result{std::move(inner_), std::move(new_grade)};
-        contract_assert(L::leq(result.grade(), expected)
-                     && L::leq(expected, result.grade()));
+        contract_assert(L::leq(result.grade(), expected) && L::leq(expected, result.grade()));
         return result;
     }
 
@@ -452,26 +429,22 @@ public:
     // for symmetry with the Reader-monad analogy.  Same const&-vs-&&
     // ref-qualifier discipline as weaken.  Post-condition via
     // contract_assert (GCC 16 ICE workaround).
-    [[nodiscard]] constexpr Graded compose(Graded const& other) const&
-        noexcept(std::is_nothrow_copy_constructible_v<T> &&
-                 std::is_nothrow_copy_constructible_v<grade_type>)
+    [[nodiscard]] constexpr Graded
+    compose(Graded const& other) const& noexcept(std::is_nothrow_copy_constructible_v<T>
+                                                 && std::is_nothrow_copy_constructible_v<grade_type>)
         requires std::copy_constructible<T>
     {
         grade_type expected = L::join(grade_, other.grade_);
         Graded result{inner_, expected};
-        contract_assert(L::leq(result.grade(), expected)
-                     && L::leq(expected, result.grade()));
+        contract_assert(L::leq(result.grade(), expected) && L::leq(expected, result.grade()));
         return result;
     }
 
-    [[nodiscard]] constexpr Graded compose(Graded const& other) &&
-        noexcept(std::is_nothrow_move_constructible_v<T> &&
-                 std::is_nothrow_copy_constructible_v<grade_type>)
-    {
+    [[nodiscard]] constexpr Graded compose(Graded const& other) && noexcept(
+        std::is_nothrow_move_constructible_v<T> && std::is_nothrow_copy_constructible_v<grade_type>) {
         grade_type expected = L::join(grade_, other.grade_);
         Graded result{std::move(inner_), expected};
-        contract_assert(L::leq(result.grade(), expected)
-                     && L::leq(expected, result.grade()));
+        contract_assert(L::leq(result.grade(), expected) && L::leq(expected, result.grade()));
         return result;
     }
 };
@@ -520,9 +493,9 @@ public:
     static constexpr ModalityKind modality = M;
 
     using modality_kind_type = ModalityKind;
-    using lattice_type       = L;
-    using value_type         = T;
-    using grade_type         = LatticeElement<L>;  // == T by selection
+    using lattice_type = L;
+    using value_type = T;
+    using grade_type = LatticeElement<L>;  // == T by selection
 
 private:
     // ── Layout (single field — half the primary's cost) ─────────────
@@ -545,12 +518,12 @@ public:
     }
 
     // ── Object semantics (defaulted, mirror primary) ────────────────
-    constexpr Graded()                         = default;
-    constexpr Graded(const Graded&)            = default;
-    constexpr Graded(Graded&&)                 = default;
+    constexpr Graded() = default;
+    constexpr Graded(const Graded&) = default;
+    constexpr Graded(Graded&&) = default;
     constexpr Graded& operator=(const Graded&) = default;
-    constexpr Graded& operator=(Graded&&)      = default;
-    ~Graded()                                  = default;
+    constexpr Graded& operator=(Graded&&) = default;
+    ~Graded() = default;
 
     // ── Two-arg constructor (API parity with primary) ───────────────
     //
@@ -577,10 +550,8 @@ public:
     //       An in-body `contract_assert` with a false predicate makes
     //       a consteval call non-constant and is not subject to the
     //       pure-clause bypass, so the guard cannot be skipped.
-    constexpr Graded(T value, grade_type grade) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
-        : value_{std::move(value)}
-    {
+    constexpr Graded(T value, grade_type grade) noexcept(std::is_nothrow_move_constructible_v<T>)
+        : value_{std::move(value)} {
         // value_ already holds value; the grade arg is a witness that
         // must be lattice-equivalent to it.  Guard FIRST, then discard.
         contract_assert(L::leq(value_, grade) && L::leq(grade, value_));
@@ -594,8 +565,7 @@ public:
     // When the caller knows the value and grade are identical (the
     // typical case for Monotonic), this is the natural construction
     // form.  Saves one copy + one move vs the two-arg ctor.
-    constexpr explicit Graded(T value_or_grade) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    constexpr explicit Graded(T value_or_grade) noexcept(std::is_nothrow_move_constructible_v<T>)
         : value_{std::move(value_or_grade)} {}
 
     // ── Construction at bottom (BoundedBelowLattice only) ───────────
@@ -603,20 +573,17 @@ public:
     // Two overloads to mirror the primary's at_bottom(T value)
     // signature plus the natural no-arg form.  Both produce a Graded
     // at L::bottom().
-    [[nodiscard]] static constexpr Graded at_bottom() noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    [[nodiscard]] static constexpr Graded at_bottom() noexcept(std::is_nothrow_move_constructible_v<T>)
         requires BoundedBelowLattice<L>
     {
         return Graded{L::bottom()};
     }
 
-    [[nodiscard]] static constexpr Graded at_bottom(T value) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    [[nodiscard]] static constexpr Graded at_bottom(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
         requires BoundedBelowLattice<L>
     {
         Graded result{std::move(value)};
-        contract_assert(L::leq(result.grade(), L::bottom())
-                     && L::leq(L::bottom(), result.grade()));
+        contract_assert(L::leq(result.grade(), L::bottom()) && L::leq(L::bottom(), result.grade()));
         return result;
     }
 
@@ -624,17 +591,11 @@ public:
     //
     // peek() and grade() BOTH return value_ — they are the same field
     // in this specialization.  The duality is by construction.
-    [[nodiscard]] constexpr T const& peek() const& noexcept {
-        return value_;
-    }
-    [[nodiscard]] constexpr T consume() && noexcept(
-        std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr T const& peek() const& noexcept { return value_; }
+    [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return std::move(value_);
     }
-    [[nodiscard]] constexpr grade_type grade() const noexcept(
-        std::is_nothrow_copy_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr grade_type grade() const noexcept(std::is_nothrow_copy_constructible_v<T>) {
         return value_;  // grade_type IS T here, by the specialization's selector
     }
 
@@ -645,29 +606,26 @@ public:
     // — almost never true for value types but preserved for
     // consistency with the primary template's gate principle.
     [[nodiscard]] constexpr T& peek_mut() & noexcept
-        requires (AbsoluteModality<M> || std::is_empty_v<grade_type>)
+        requires(AbsoluteModality<M> || std::is_empty_v<grade_type>)
     {
         return value_;
     }
 
-    constexpr void swap(Graded& other)
-        noexcept(std::is_nothrow_swappable_v<T>)
-        requires (AbsoluteModality<M> || std::is_empty_v<grade_type>)
+    constexpr void swap(Graded& other) noexcept(std::is_nothrow_swappable_v<T>)
+        requires(AbsoluteModality<M> || std::is_empty_v<grade_type>)
     {
         using std::swap;
         swap(value_, other.value_);
     }
 
-    friend constexpr void swap(Graded& a, Graded& b)
-        noexcept(std::is_nothrow_swappable_v<T>)
-        requires (AbsoluteModality<M> || std::is_empty_v<grade_type>)
+    friend constexpr void swap(Graded& a, Graded& b) noexcept(std::is_nothrow_swappable_v<T>)
+        requires(AbsoluteModality<M> || std::is_empty_v<grade_type>)
     {
         a.swap(b);
     }
 
     // ── Comonad counit (extract from a Comonad-form value) ──────────
-    [[nodiscard]] constexpr T extract() && noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    [[nodiscard]] constexpr T extract() && noexcept(std::is_nothrow_move_constructible_v<T>)
         requires ComonadModality<M>
     {
         return std::move(value_);
@@ -676,15 +634,14 @@ public:
     // ── RelativeMonad unit (inject into a RelativeMonad-form value) ─
     //
     // Same equivalence precondition as the two-arg constructor.
-    [[nodiscard]] static constexpr Graded inject(T value, grade_type grade) noexcept(
-        std::is_nothrow_move_constructible_v<T> &&
-        std::is_nothrow_copy_constructible_v<T>)
+    [[nodiscard]] static constexpr Graded inject(T value,
+                                                 grade_type grade) noexcept(std::is_nothrow_move_constructible_v<T>
+                                                                            && std::is_nothrow_copy_constructible_v<T>)
         requires RelativeMonadModality<M>
     {
         T expected = grade;  // copy for assertion
         Graded result{std::move(value)};
-        contract_assert(L::leq(result.grade(), expected)
-                     && L::leq(expected, result.grade()));
+        contract_assert(L::leq(result.grade(), expected) && L::leq(expected, result.grade()));
         return result;
     }
 
@@ -695,50 +652,40 @@ public:
     // because they're the same field — no inner-vs-grade desync
     // possible.  This is the structural fix that motivates the
     // entire specialization.
-    [[nodiscard]] constexpr Graded weaken(grade_type new_grade) const&
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
+    [[nodiscard]] constexpr Graded weaken(grade_type new_grade) const& noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
-        pre (L::leq(value_, new_grade))
-    {
+    pre(L::leq(value_, new_grade)) {
         T expected = new_grade;  // copy for the post-assertion
         Graded result{std::move(new_grade)};
-        contract_assert(L::leq(result.grade(), expected)
-                     && L::leq(expected, result.grade()));
+        contract_assert(L::leq(result.grade(), expected) && L::leq(expected, result.grade()));
         return result;
     }
 
-    [[nodiscard]] constexpr Graded weaken(grade_type new_grade) &&
-        noexcept(std::is_nothrow_move_constructible_v<T> &&
-                 std::is_nothrow_copy_constructible_v<T>)
-        pre (L::leq(value_, new_grade))
-    {
+    [[nodiscard]] constexpr Graded weaken(grade_type new_grade) && noexcept(std::is_nothrow_move_constructible_v<T>
+                                                                            && std::is_nothrow_copy_constructible_v<T>)
+        pre(L::leq(value_, new_grade)) {
         T expected = new_grade;  // copy for the post-assertion
         Graded result{std::move(new_grade)};
-        contract_assert(L::leq(result.grade(), expected)
-                     && L::leq(expected, result.grade()));
+        contract_assert(L::leq(result.grade(), expected) && L::leq(expected, result.grade()));
         return result;
     }
 
     // ── compose: join two grades (and thus two values) via L::join ──
-    [[nodiscard]] constexpr Graded compose(Graded const& other) const&
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
+    [[nodiscard]] constexpr Graded compose(Graded const& other) const& noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
     {
         T expected = L::join(value_, other.value_);
         Graded result{expected};  // explicit-single-arg ctor
-        contract_assert(L::leq(result.grade(), expected)
-                     && L::leq(expected, result.grade()));
+        contract_assert(L::leq(result.grade(), expected) && L::leq(expected, result.grade()));
         return result;
     }
 
-    [[nodiscard]] constexpr Graded compose(Graded const& other) &&
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
+    [[nodiscard]] constexpr Graded compose(Graded const& other) && noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
     {
         T expected = L::join(value_, other.value_);
         Graded result{expected};
-        contract_assert(L::leq(result.grade(), expected)
-                     && L::leq(expected, result.grade()));
+        contract_assert(L::leq(result.grade(), expected) && L::leq(expected, result.grade()));
         return result;
     }
 };
@@ -761,7 +708,7 @@ public:
 // Lattices opt in by adding the static method.  Lattices that don't
 // fall through to the standard 2-field Graded layout.
 template <typename L, typename T>
-concept LatticeDerivesGrade = requires (T const& v) {
+concept LatticeDerivesGrade = requires(T const& v) {
     { L::grade_of(v) } -> std::same_as<typename L::element_type>;
 };
 
@@ -804,16 +751,15 @@ concept LatticeDerivesGrade = requires (T const& v) {
 //     storage, cost paid per wrapper.
 
 template <ModalityKind M, Lattice L, typename T>
-    requires LatticeDerivesGrade<L, T>
-          && (!std::is_same_v<typename L::element_type, T>)
+    requires LatticeDerivesGrade<L, T> && (!std::is_same_v<typename L::element_type, T>)
 class [[nodiscard]] Graded<M, L, T> {
 public:
     static constexpr ModalityKind modality = M;
 
     using modality_kind_type = ModalityKind;
-    using lattice_type       = L;
-    using value_type         = T;
-    using grade_type         = LatticeElement<L>;
+    using lattice_type = L;
+    using value_type = T;
+    using grade_type = LatticeElement<L>;
 
 private:
     // Single field — grade computed via L::grade_of(value_).
@@ -832,12 +778,12 @@ public:
     }
 
     // ── Object semantics (defaulted; mirror primary) ────────────────
-    constexpr Graded()                         = default;
-    constexpr Graded(const Graded&)            = default;
-    constexpr Graded(Graded&&)                 = default;
+    constexpr Graded() = default;
+    constexpr Graded(const Graded&) = default;
+    constexpr Graded(Graded&&) = default;
     constexpr Graded& operator=(const Graded&) = default;
-    constexpr Graded& operator=(Graded&&)      = default;
-    ~Graded()                                  = default;
+    constexpr Graded& operator=(Graded&&) = default;
+    ~Graded() = default;
 
     // ── Two-arg ctor (API parity with primary) ──────────────────────
     //
@@ -856,14 +802,11 @@ public:
     // the witness grade is DISCARDED, this guard is the ONLY barrier
     // against a forged grade silently constructing a Graded — it must
     // fire at consteval AND runtime regardless of TU semantic.
-    constexpr Graded(T value, grade_type grade) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
-        : value_{std::move(value)}
-    {
+    constexpr Graded(T value, grade_type grade) noexcept(std::is_nothrow_move_constructible_v<T>)
+        : value_{std::move(value)} {
         // value_ holds value; the grade arg is a witness that must
         // equal what L derives from value_.  Guard FIRST, then discard.
-        contract_assert(L::leq(L::grade_of(value_), grade)
-                     && L::leq(grade, L::grade_of(value_)));
+        contract_assert(L::leq(L::grade_of(value_), grade) && L::leq(grade, L::grade_of(value_)));
         // grade is consumed; we don't store it.
         (void)grade;
     }
@@ -873,9 +816,7 @@ public:
     // The natural construction form for this specialization — pass
     // the value; the grade derives.  No grade-equivalence check
     // because the user isn't asserting one.
-    constexpr explicit Graded(T value) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
-        : value_{std::move(value)} {}
+    constexpr explicit Graded(T value) noexcept(std::is_nothrow_move_constructible_v<T>) : value_{std::move(value)} {}
 
     // ── at_bottom: produce a value whose derived grade IS bottom ────
     //
@@ -896,25 +837,20 @@ public:
     // — the contract enforces this at construction.  Under enforce
     // semantic a non-conforming `at_bottom(value)` aborts; at consteval
     // it poisons the surrounding constant expression.
-    [[nodiscard]] static constexpr Graded at_bottom() noexcept(
-        std::is_nothrow_default_constructible_v<T> &&
-        std::is_nothrow_move_constructible_v<T>)
-        requires BoundedBelowLattice<L>
-              && std::default_initializable<T>
+    [[nodiscard]] static constexpr Graded at_bottom() noexcept(std::is_nothrow_default_constructible_v<T>
+                                                               && std::is_nothrow_move_constructible_v<T>)
+        requires BoundedBelowLattice<L> && std::default_initializable<T>
     {
         Graded result{T{}};
-        contract_assert(L::leq(result.grade(), L::bottom())
-                     && L::leq(L::bottom(), result.grade()));
+        contract_assert(L::leq(result.grade(), L::bottom()) && L::leq(L::bottom(), result.grade()));
         return result;
     }
 
-    [[nodiscard]] static constexpr Graded at_bottom(T value) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    [[nodiscard]] static constexpr Graded at_bottom(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
         requires BoundedBelowLattice<L>
     {
         Graded result{std::move(value)};
-        contract_assert(L::leq(result.grade(), L::bottom())
-                     && L::leq(L::bottom(), result.grade()));
+        contract_assert(L::leq(result.grade(), L::bottom()) && L::leq(L::bottom(), result.grade()));
         return result;
     }
 
@@ -925,17 +861,11 @@ public:
     // is `vector.size()` — O(1).  For lattices with more expensive
     // derivations, callers should cache the result if they need it
     // multiple times.
-    [[nodiscard]] constexpr T const& peek() const& noexcept {
-        return value_;
-    }
-    [[nodiscard]] constexpr T consume() && noexcept(
-        std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr T const& peek() const& noexcept { return value_; }
+    [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return std::move(value_);
     }
-    [[nodiscard]] constexpr grade_type grade() const noexcept(
-        noexcept(L::grade_of(std::declval<T const&>())))
-    {
+    [[nodiscard]] constexpr grade_type grade() const noexcept(noexcept(L::grade_of(std::declval<T const&>()))) {
         return L::grade_of(value_);
     }
 
@@ -953,42 +883,38 @@ public:
     // implicitly updates both views — the wrapper above (e.g.
     // AppendOnly) provides the discipline.
     [[nodiscard]] constexpr T& peek_mut() & noexcept
-        requires (AbsoluteModality<M> || std::is_empty_v<grade_type>)
+        requires(AbsoluteModality<M> || std::is_empty_v<grade_type>)
     {
         return value_;
     }
 
-    constexpr void swap(Graded& other)
-        noexcept(std::is_nothrow_swappable_v<T>)
-        requires (AbsoluteModality<M> || std::is_empty_v<grade_type>)
+    constexpr void swap(Graded& other) noexcept(std::is_nothrow_swappable_v<T>)
+        requires(AbsoluteModality<M> || std::is_empty_v<grade_type>)
     {
         using std::swap;
         swap(value_, other.value_);
     }
 
-    friend constexpr void swap(Graded& a, Graded& b)
-        noexcept(std::is_nothrow_swappable_v<T>)
-        requires (AbsoluteModality<M> || std::is_empty_v<grade_type>)
+    friend constexpr void swap(Graded& a, Graded& b) noexcept(std::is_nothrow_swappable_v<T>)
+        requires(AbsoluteModality<M> || std::is_empty_v<grade_type>)
     {
         a.swap(b);
     }
 
     // ── Comonad counit ──────────────────────────────────────────────
-    [[nodiscard]] constexpr T extract() && noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    [[nodiscard]] constexpr T extract() && noexcept(std::is_nothrow_move_constructible_v<T>)
         requires ComonadModality<M>
     {
         return std::move(value_);
     }
 
     // ── RelativeMonad unit ──────────────────────────────────────────
-    [[nodiscard]] static constexpr Graded inject(T value, grade_type grade) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    [[nodiscard]] static constexpr Graded inject(T value,
+                                                 grade_type grade) noexcept(std::is_nothrow_move_constructible_v<T>)
         requires RelativeMonadModality<M>
     {
         Graded result{std::move(value)};
-        contract_assert(L::leq(result.grade(), grade)
-                     && L::leq(grade, result.grade()));
+        contract_assert(L::leq(result.grade(), grade) && L::leq(grade, result.grade()));
         return result;
     }
 
@@ -1048,26 +974,20 @@ public:
 // What we DO assert (sizeof + alignof + trivial-trait parity) is the
 // closest tractable approximation to "behaviorally interchangeable
 // at the byte level for memcpy / bit_cast purposes".
-#define CRUCIBLE_GRADED_LAYOUT_INVARIANT(GradedAlias, T_)                       \
-    static_assert(sizeof(GradedAlias<T_>) == sizeof(T_),                        \
-                  "Graded alias " #GradedAlias " over " #T_                     \
-                  ": sizeof mismatch — review [[no_unique_address]] usage "     \
-                  "and lattice element type");                                  \
-    static_assert(alignof(GradedAlias<T_>) == alignof(T_),                      \
-                  "Graded alias " #GradedAlias " over " #T_                     \
-                  ": alignof mismatch — over-aligned grade_type forced "        \
-                  "wrapper alignment > T's alignment");                         \
-    static_assert(std::is_trivially_destructible_v<T_> ==                       \
-                  std::is_trivially_destructible_v<GradedAlias<T_>>,            \
-                  "Graded alias " #GradedAlias " over " #T_                     \
-                  ": trivial-destructibility parity broken — grade_type "       \
-                  "introduced a non-trivial destructor (would force "           \
-                  "non-trivial wrapper dtor and break arena bulk-free paths)"); \
-    static_assert(std::is_trivially_copyable_v<T_> ==                           \
-                  std::is_trivially_copyable_v<GradedAlias<T_>>,                \
-                  "Graded alias " #GradedAlias " over " #T_                     \
-                  ": trivial-copyability parity broken — wrapper is no "        \
-                  "longer memcpy-safe (would break Cipher serialize / SPSC "    \
+#define CRUCIBLE_GRADED_LAYOUT_INVARIANT(GradedAlias, T_)                                                             \
+    static_assert(sizeof(GradedAlias<T_>) == sizeof(T_),                                                              \
+                  "Graded alias " #GradedAlias " over " #T_ ": sizeof mismatch — review [[no_unique_address]] usage " \
+                  "and lattice element type");                                                                        \
+    static_assert(alignof(GradedAlias<T_>) == alignof(T_),                                                            \
+                  "Graded alias " #GradedAlias " over " #T_ ": alignof mismatch — over-aligned grade_type forced "    \
+                  "wrapper alignment > T's alignment");                                                               \
+    static_assert(std::is_trivially_destructible_v<T_> == std::is_trivially_destructible_v<GradedAlias<T_>>,          \
+                  "Graded alias " #GradedAlias " over " #T_ ": trivial-destructibility parity broken — grade_type "   \
+                  "introduced a non-trivial destructor (would force "                                                 \
+                  "non-trivial wrapper dtor and break arena bulk-free paths)");                                       \
+    static_assert(std::is_trivially_copyable_v<T_> == std::is_trivially_copyable_v<GradedAlias<T_>>,                  \
+                  "Graded alias " #GradedAlias " over " #T_ ": trivial-copyability parity broken — wrapper is no "    \
+                  "longer memcpy-safe (would break Cipher serialize / SPSC "                                          \
                   "ring entry copy paths)")
 
 // ── Self-test ───────────────────────────────────────────────────────
@@ -1088,7 +1008,7 @@ using ::crucible::algebra::detail::lattice_self_test::TrivialBoolLattice;
 struct TrivialEmptyLattice {
     using element_type = std::integral_constant<int, 1>;
     [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-    [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
+    [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
     [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
     [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
     [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
@@ -1099,14 +1019,18 @@ static_assert(BoundedLattice<TrivialEmptyLattice>);
 static_assert(std::is_empty_v<TrivialEmptyLattice::element_type>);
 
 struct EmptyValue {};
-struct OneByteValue { char c{0}; };
-struct EightByteValue { unsigned long long v{0}; };
+struct OneByteValue {
+    char c{0};
+};
+struct EightByteValue {
+    unsigned long long v{0};
+};
 
 // Type instantiation under each modality.
-using GComonad   = Graded<ModalityKind::Comonad,       TrivialBoolLattice, EmptyValue>;
-using GRelMonad  = Graded<ModalityKind::RelativeMonad, TrivialBoolLattice, EmptyValue>;
-using GAbsolute  = Graded<ModalityKind::Absolute,      TrivialBoolLattice, EmptyValue>;
-using GRelative  = Graded<ModalityKind::Relative,      TrivialBoolLattice, EmptyValue>;
+using GComonad = Graded<ModalityKind::Comonad, TrivialBoolLattice, EmptyValue>;
+using GRelMonad = Graded<ModalityKind::RelativeMonad, TrivialBoolLattice, EmptyValue>;
+using GAbsolute = Graded<ModalityKind::Absolute, TrivialBoolLattice, EmptyValue>;
+using GRelative = Graded<ModalityKind::Relative, TrivialBoolLattice, EmptyValue>;
 
 static_assert(std::is_default_constructible_v<GComonad>);
 static_assert(std::is_default_constructible_v<GRelMonad>);
@@ -1114,15 +1038,15 @@ static_assert(std::is_default_constructible_v<GAbsolute>);
 static_assert(std::is_default_constructible_v<GRelative>);
 
 // Type aliases reachable.
-static_assert(std::is_same_v<GAbsolute::value_type,   EmptyValue>);
+static_assert(std::is_same_v<GAbsolute::value_type, EmptyValue>);
 static_assert(std::is_same_v<GAbsolute::lattice_type, TrivialBoolLattice>);
-static_assert(std::is_same_v<GAbsolute::grade_type,   bool>);
+static_assert(std::is_same_v<GAbsolute::grade_type, bool>);
 static_assert(GAbsolute::modality == ModalityKind::Absolute);
 
 // Diagnostic names propagate.
 static_assert(GAbsolute::modality_name() == "Absolute");
-static_assert(GAbsolute::lattice_name()  == "TrivialBool");
-static_assert(GComonad::modality_name()  == "Comonad");
+static_assert(GAbsolute::lattice_name() == "TrivialBool");
+static_assert(GComonad::modality_name() == "Comonad");
 
 // ── Layout: dynamic grade (TrivialBool's bool element) ─────────────
 //
@@ -1146,13 +1070,13 @@ static_assert(sizeof(GEightByte) == 16);
 // TrivialEmptyLattice's element_type is empty (std::integral_constant
 // is an empty class).  Both inner_ and grade_ EBO-collapse when the
 // value is also empty; non-empty value preserves its size exactly.
-using GEmptyGrade_Empty    = Graded<ModalityKind::Absolute, TrivialEmptyLattice, EmptyValue>;
-using GEmptyGrade_OneByte  = Graded<ModalityKind::Absolute, TrivialEmptyLattice, OneByteValue>;
-using GEmptyGrade_EightB   = Graded<ModalityKind::Absolute, TrivialEmptyLattice, EightByteValue>;
+using GEmptyGrade_Empty = Graded<ModalityKind::Absolute, TrivialEmptyLattice, EmptyValue>;
+using GEmptyGrade_OneByte = Graded<ModalityKind::Absolute, TrivialEmptyLattice, OneByteValue>;
+using GEmptyGrade_EightB = Graded<ModalityKind::Absolute, TrivialEmptyLattice, EightByteValue>;
 
-static_assert(sizeof(GEmptyGrade_Empty)    == 1);                          // C++ minimum-object-size
-static_assert(sizeof(GEmptyGrade_OneByte)  == sizeof(OneByteValue));       // EBO grade
-static_assert(sizeof(GEmptyGrade_EightB)   == sizeof(EightByteValue));     // EBO grade
+static_assert(sizeof(GEmptyGrade_Empty) == 1);  // C++ minimum-object-size
+static_assert(sizeof(GEmptyGrade_OneByte) == sizeof(OneByteValue));  // EBO grade
+static_assert(sizeof(GEmptyGrade_EightB) == sizeof(EightByteValue));  // EBO grade
 
 // Construction with value + grade.
 constexpr GOneByte g_at_top{OneByteValue{}, true};
@@ -1181,17 +1105,19 @@ static_assert(g_composed.grade() == true);
 // ── Capability gates via concept (concepts SFINAE cleanly; inline
 //     `requires(...) { ... }` against member-function constraints
 //     emits a hard error in some GCC versions, hence the indirection) ─
-template <typename G> concept CanExtract = requires(G g) { std::move(g).extract(); };
-template <typename G> concept CanInject  = requires { G::inject(typename G::value_type{}, typename G::grade_type{}); };
+template <typename G>
+concept CanExtract = requires(G g) { std::move(g).extract(); };
+template <typename G>
+concept CanInject = requires { G::inject(typename G::value_type{}, typename G::grade_type{}); };
 
 // Comonad-only: extract counit reachable iff modality == Comonad.
-static_assert( CanExtract<GComonad>);
+static_assert(CanExtract<GComonad>);
 static_assert(!CanExtract<GAbsolute>);
 static_assert(!CanExtract<GRelMonad>);
 static_assert(!CanExtract<GRelative>);
 
 // RelativeMonad-only: inject unit reachable iff modality == RelativeMonad.
-static_assert( CanInject<GRelMonad>);
+static_assert(CanInject<GRelMonad>);
 static_assert(!CanInject<GComonad>);
 static_assert(!CanInject<GAbsolute>);
 static_assert(!CanInject<GRelative>);
@@ -1209,10 +1135,10 @@ static_assert(!CanInject<GRelative>);
 // the surface uniform (modulo each specialization's intrinsic
 // requirements: primary's no-arg needs default_initializable<T>;
 // derived-grade's one-arg runtime-asserts grade_of(value) == bottom).
-template <typename G> concept CanAtBottomNoArg =
-    requires { G::at_bottom(); };
-template <typename G> concept CanAtBottomValue =
-    requires (typename G::value_type v) { G::at_bottom(std::move(v)); };
+template <typename G>
+concept CanAtBottomNoArg = requires { G::at_bottom(); };
+template <typename G>
+concept CanAtBottomValue = requires(typename G::value_type v) { G::at_bottom(std::move(v)); };
 
 // Primary template — TrivialBoolLattice is BoundedBelow,
 // OneByteValue != bool, so this hits the primary template path.
@@ -1271,13 +1197,12 @@ static_assert(g_derived_bot_noarg.grade() == MiniDerivedLattice::bottom());
 
 // at_bottom(value) one-arg accepts a bottom-deriving value (empty
 // container ⇒ size 0 ⇒ MiniDerivedLattice::bottom()).
-constexpr GDerivedSeq g_derived_bot_value =
-    GDerivedSeq::at_bottom(MiniContainer{});
+constexpr GDerivedSeq g_derived_bot_value = GDerivedSeq::at_bottom(MiniContainer{});
 static_assert(g_derived_bot_value.grade() == MiniDerivedLattice::bottom());
 
 // Layout invariant macro fires correctly on the EBO-collapsed path.
-template <typename T> using AbsoluteOverEmpty =
-    Graded<ModalityKind::Absolute, TrivialEmptyLattice, T>;
+template <typename T>
+using AbsoluteOverEmpty = Graded<ModalityKind::Absolute, TrivialEmptyLattice, T>;
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(AbsoluteOverEmpty, OneByteValue);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(AbsoluteOverEmpty, EightByteValue);
 
@@ -1296,10 +1221,10 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(AbsoluteOverEmpty, double);
 // so future maintainers see the concrete asymmetry.
 static_assert(std::is_trivially_default_constructible_v<int>);
 static_assert(!std::is_trivially_default_constructible_v<AbsoluteOverEmpty<int>>,
-    "Graded's NSDMI-initialized inner_/grade_ members make the implicit "
-    "default ctor non-trivial — the layout-invariant macro must NOT assert "
-    "trivial-default-constructibility parity.  See macro doc-comment for "
-    "rationale.");
+              "Graded's NSDMI-initialized inner_/grade_ members make the implicit "
+              "default ctor non-trivial — the layout-invariant macro must NOT assert "
+              "trivial-default-constructibility parity.  See macro doc-comment for "
+              "rationale.");
 
 // The other parity claims still hold for trivially-X T:
 static_assert(std::is_trivially_destructible_v<int>);
@@ -1326,15 +1251,15 @@ struct MoveOnlyValue {
 using GMoveOnly = Graded<ModalityKind::Absolute, TrivialEmptyLattice, MoveOnlyValue>;
 
 // const& overloads SFINAE away for move-only T; only && remains.
-template <typename G> concept HasConstWeaken =
-    requires(G const& g, typename G::grade_type r) { g.weaken(r); };
-template <typename G> concept HasRvalueWeaken =
-    requires(G g, typename G::grade_type r) { std::move(g).weaken(r); };
+template <typename G>
+concept HasConstWeaken = requires(G const& g, typename G::grade_type r) { g.weaken(r); };
+template <typename G>
+concept HasRvalueWeaken = requires(G g, typename G::grade_type r) { std::move(g).weaken(r); };
 
-static_assert( HasConstWeaken<GOneByte>);    // copyable T → both available
-static_assert( HasRvalueWeaken<GOneByte>);
-static_assert(!HasConstWeaken<GMoveOnly>);   // move-only T → const& gated off
-static_assert( HasRvalueWeaken<GMoveOnly>);  // && always works
+static_assert(HasConstWeaken<GOneByte>);  // copyable T → both available
+static_assert(HasRvalueWeaken<GOneByte>);
+static_assert(!HasConstWeaken<GMoveOnly>);  // move-only T → const& gated off
+static_assert(HasRvalueWeaken<GMoveOnly>);  // && always works
 
 // ── Runtime smoke test ──────────────────────────────────────────────
 //
@@ -1348,10 +1273,10 @@ static_assert( HasRvalueWeaken<GMoveOnly>);  // && always works
 // the call entirely under -O3, but the front-end still type-checks.
 inline void runtime_smoke_test() {
     OneByteValue value{42};
-    GOneByte initial{value, false};                         // runtime ctor
-    GOneByte widened   = initial.weaken(true);              // runtime weaken (lvalue this)
-    GOneByte composed  = initial.compose(widened);          // runtime compose (lvalue this)
-    GOneByte moved     = std::move(widened).weaken(true);   // runtime weaken (rvalue this)
+    GOneByte initial{value, false};  // runtime ctor
+    GOneByte widened = initial.weaken(true);  // runtime weaken (lvalue this)
+    GOneByte composed = initial.compose(widened);  // runtime compose (lvalue this)
+    GOneByte moved = std::move(widened).weaken(true);  // runtime weaken (rvalue this)
     GOneByte mcomposed = std::move(initial).compose(composed);  // runtime compose (rvalue this)
 
     // Use the results so the optimizer can't elide the calls.
@@ -1365,18 +1290,18 @@ inline void runtime_smoke_test() {
     // through non-constant args on each Graded specialization so the
     // contract_assert(...) bodies execute under runtime semantics
     // (the static_asserts above only cover consteval).
-    GOneByte prim_noarg   = GOneByte::at_bottom();
-    GOneByte prim_value   = GOneByte::at_bottom(OneByteValue{static_cast<char>(value.c + 1)});
+    GOneByte prim_noarg = GOneByte::at_bottom();
+    GOneByte prim_value = GOneByte::at_bottom(OneByteValue{static_cast<char>(value.c + 1)});
     [[maybe_unused]] bool gb1 = prim_noarg.grade();
-    [[maybe_unused]] auto  vb1 = prim_value.peek().c;
+    [[maybe_unused]] auto vb1 = prim_value.peek().c;
 
     GBoolElement same_noarg = GBoolElement::at_bottom();
     GBoolElement same_value = GBoolElement::at_bottom(false);
     [[maybe_unused]] bool gs1 = same_noarg.grade();
     [[maybe_unused]] bool gs2 = same_value.grade();
 
-    GDerivedSeq der_noarg   = GDerivedSeq::at_bottom();
-    GDerivedSeq der_value   = GDerivedSeq::at_bottom(MiniContainer{});
+    GDerivedSeq der_noarg = GDerivedSeq::at_bottom();
+    GDerivedSeq der_value = GDerivedSeq::at_bottom(MiniContainer{});
     [[maybe_unused]] std::size_t gd1 = der_noarg.grade();
     [[maybe_unused]] std::size_t gd2 = der_value.grade();
 }
@@ -1414,8 +1339,7 @@ inline constexpr bool is_graded_v_impl<Graded<M, L, V>> = true;
 }  // namespace detail
 
 template <typename T>
-inline constexpr bool is_graded_v =
-    detail::is_graded_v_impl<std::remove_cvref_t<T>>;
+inline constexpr bool is_graded_v = detail::is_graded_v_impl<std::remove_cvref_t<T>>;
 
 template <typename T>
 concept IsGraded = is_graded_v<T>;
@@ -1426,9 +1350,8 @@ namespace detail::is_graded_self_test {
 // in algebra/Lattice.h's self-test block) — both live under
 // crucible::algebra::detail::, so the unqualified spelling resolves
 // after standard ADL lookup at the same nested-namespace scope.
-using GraderAB = Graded<ModalityKind::Absolute,
-                        ::crucible::algebra::detail::lattice_self_test::TrivialBoolLattice,
-                        bool>;
+using GraderAB =
+    Graded<ModalityKind::Absolute, ::crucible::algebra::detail::lattice_self_test::TrivialBoolLattice, bool>;
 
 static_assert(IsGraded<GraderAB>);
 static_assert(IsGraded<GraderAB const>);

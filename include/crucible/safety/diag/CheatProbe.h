@@ -96,7 +96,7 @@
 // CI catches gate weakening at build time.
 
 #include <crucible/Platform.h>
-#include <crucible/safety/Diagnostic.h>           // Category enum + tag_of_t
+#include <crucible/safety/Diagnostic.h>  // Category enum + tag_of_t
 
 #include <type_traits>
 
@@ -148,24 +148,22 @@ inline constexpr bool is_gate_defined_v = concept_gate<C>::defined;
 
 template <typename T, Category C>
 struct cheat_probe_type {
-    static constexpr bool admits =
-        concept_gate<C>::template admits_type<T>;
+    static constexpr bool admits = concept_gate<C>::template admits_type<T>;
     static constexpr bool gate_defined = concept_gate<C>::defined;
 
     // Skip the assertion when the gate is undefined.  This lets
     // probes ship before their gates do; the probe activates when
     // the gate's concept_gate<C> specialization lands.
-    static_assert(!gate_defined || !admits,
-        "[CheatProbe_TypeAdmitted] A cheat type was spuriously "
-        "admitted by the concept gate for the named Category.\n"
-        "Recovery:\n"
-        "  (a) The gate's predicate has been weakened — restore the\n"
-        "      stricter form that previously rejected this type.\n"
-        "  (b) The cheat was registered by mistake — remove this\n"
-        "      probe instance.\n"
-        "Gate location: see the concept_gate<...> specialization\n"
-        "for this Category.  Cheat catalog discipline: every gate's\n"
-        "rejection is locked by ≥1 probe.");
+    static_assert(!gate_defined || !admits, "[CheatProbe_TypeAdmitted] A cheat type was spuriously "
+                                            "admitted by the concept gate for the named Category.\n"
+                                            "Recovery:\n"
+                                            "  (a) The gate's predicate has been weakened — restore the\n"
+                                            "      stricter form that previously rejected this type.\n"
+                                            "  (b) The cheat was registered by mistake — remove this\n"
+                                            "      probe instance.\n"
+                                            "Gate location: see the concept_gate<...> specialization\n"
+                                            "for this Category.  Cheat catalog discipline: every gate's\n"
+                                            "rejection is locked by ≥1 probe.");
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -180,21 +178,19 @@ struct cheat_probe_type {
 
 template <auto FnPtr, Category C>
 struct cheat_probe_function {
-    static constexpr bool admits =
-        concept_gate<C>::template admits_function<FnPtr>;
+    static constexpr bool admits = concept_gate<C>::template admits_function<FnPtr>;
     static constexpr bool gate_defined = concept_gate<C>::defined;
 
-    static_assert(!gate_defined || !admits,
-        "[CheatProbe_FunctionAdmitted] A cheat function pointer was "
-        "spuriously admitted by the concept gate for the named "
-        "Category.\n"
-        "Recovery:\n"
-        "  (a) The gate's predicate has been weakened — restore the\n"
-        "      stricter form that previously rejected this function.\n"
-        "  (b) The cheat was registered by mistake — remove this\n"
-        "      probe instance.\n"
-        "Gate location: see the concept_gate<...> specialization\n"
-        "for this Category.");
+    static_assert(!gate_defined || !admits, "[CheatProbe_FunctionAdmitted] A cheat function pointer was "
+                                            "spuriously admitted by the concept gate for the named "
+                                            "Category.\n"
+                                            "Recovery:\n"
+                                            "  (a) The gate's predicate has been weakened — restore the\n"
+                                            "      stricter form that previously rejected this function.\n"
+                                            "  (b) The cheat was registered by mistake — remove this\n"
+                                            "      probe instance.\n"
+                                            "Gate location: see the concept_gate<...> specialization\n"
+                                            "for this Category.");
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -260,8 +256,7 @@ using gate_template = decltype(&concept_gate<Category::EffectRowMismatch>::defin
 //     case the specialization lands in the same header and the
 //     ordering is fine).
 
-static_assert(std::is_same_v<gate_template, const bool*>,
-    "concept_gate<C>::defined must be a static constexpr bool");
+static_assert(std::is_same_v<gate_template, const bool*>, "concept_gate<C>::defined must be a static constexpr bool");
 
 }  // namespace detail::cheat_probe_shape_check
 

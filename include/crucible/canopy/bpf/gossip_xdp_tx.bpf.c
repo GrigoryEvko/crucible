@@ -13,8 +13,7 @@
 #endif
 
 SEC("xdp")
-int crucible_canopy_gossip_xdp_tx(struct xdp_md *ctx)
-{
+int crucible_canopy_gossip_xdp_tx(struct xdp_md* ctx) {
     (void)ctx;
     return XDP_PASS;
 }

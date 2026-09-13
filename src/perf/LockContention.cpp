@@ -31,23 +31,23 @@
 
 #include <crucible/safety/Mutation.h>  // safety::WriteOnce / WriteOnceNonNull / Monotonic
 #include <crucible/safety/OwnedMmap.h>  // FIXY-V-236 — RAII mmap region
-#include <crucible/safety/Pinned.h>    // safety::NonMovable<T>
+#include <crucible/safety/Pinned.h>  // safety::NonMovable<T>
 
 #include <sys/mman.h>
 
-#include <bit>          // std::bit_cast — §III-clean volatile-drop on uint8_t*
+#include <bit>  // std::bit_cast — §III-clean volatile-drop on uint8_t*
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <memory>       // std::start_lifetime_as / start_lifetime_as_array (P2590R2)
+#include <memory>  // std::start_lifetime_as / start_lifetime_as_array (P2590R2)
 
 #include <inplace_vector>
-#include <optional>     // FIXY-V-236 — std::optional<OwnedMmap>
+#include <optional>  // FIXY-V-236 — std::optional<OwnedMmap>
 
 extern "C" {
 extern const unsigned char lock_contention_bpf_bytecode[];
-extern const unsigned int  lock_contention_bpf_bytecode_len;
+extern const unsigned int lock_contention_bpf_bytecode_len;
 }
 
 namespace crucible::perf {
@@ -73,26 +73,26 @@ using ::crucible::perf::detail::verbose;
 // FIXY-V-236: per-hub phantom Tag + residency metadata for the mmap'd
 // ringbuf; distinct Tag forbids cross-hub mapping swaps at compile time.
 struct LockContentionRingbufTag {};
-struct ReadOnlyProt           {};
-struct SharedShare            {};
+struct ReadOnlyProt {};
+struct SharedShare {};
 
 struct LockContention::State : crucible::safety::NonMovable<LockContention::State> {
-    struct bpf_object*                       obj = nullptr;
+    struct bpf_object* obj = nullptr;
     std::inplace_vector<struct bpf_link*, 8> links{};
 
     // FIXY-V-236: RAII OwnedMmap replaces {WriteOnceNonNull, WriteOnce}.
-    using TimelineMmap =
-        ::crucible::safety::OwnedMmap<LockContentionRingbufTag, ReadOnlyProt, SharedShare>;
-    std::optional<TimelineMmap>                 timeline_mmap{};
+    using TimelineMmap = ::crucible::safety::OwnedMmap<LockContentionRingbufTag, ReadOnlyProt, SharedShare>;
+    std::optional<TimelineMmap> timeline_mmap{};
 
-    Fd                                          wait_count_fd{-1};
+    Fd wait_count_fd{-1};
 
-    safety::Monotonic<size_t>                   attach_fail_cnt{0};
+    safety::Monotonic<size_t> attach_fail_cnt{0};
 
     State() = default;
 
     ~State() {
-        for (struct bpf_link* l : links) if (l != nullptr) bpf_link__destroy(l);
+        for (struct bpf_link* l : links)
+            if (l != nullptr) bpf_link__destroy(l);
         // FIXY-V-236: timeline_mmap dtor unmaps automatically.
         if (obj != nullptr) bpf_object__close(obj);
     }
@@ -109,12 +109,9 @@ std::optional<LockContention> LockContention::load(::crucible::effects::Init) no
     const auto report = [](const char* why, int err = 0) {
         if (quiet()) return;
         if (err != 0) {
-            std::fprintf(stderr,
-                "[crucible::perf] lock_contention unavailable: %s (%s)\n",
-                why, std::strerror(err));
+            std::fprintf(stderr, "[crucible::perf] lock_contention unavailable: %s (%s)\n", why, std::strerror(err));
         } else {
-            std::fprintf(stderr,
-                "[crucible::perf] lock_contention unavailable: %s\n", why);
+            std::fprintf(stderr, "[crucible::perf] lock_contention unavailable: %s\n", why);
         }
     };
 
@@ -122,12 +119,10 @@ std::optional<LockContention> LockContention::load(::crucible::effects::Init) no
 
     // ── 1. Parse the embedded ELF ──────────────────────────────────
     struct bpf_object_open_opts opts{};
-    opts.sz          = sizeof(opts);
+    opts.sz = sizeof(opts);
     opts.object_name = "crucible_lock_contention";
-    struct bpf_object* obj = bpf_object__open_mem(
-        lock_contention_bpf_bytecode,
-        static_cast<size_t>(lock_contention_bpf_bytecode_len),
-        &opts);
+    struct bpf_object* obj = bpf_object__open_mem(lock_contention_bpf_bytecode,
+                                                  static_cast<size_t>(lock_contention_bpf_bytecode_len), &opts);
     if (obj == nullptr || libbpf_get_error(obj) != 0) {
         const int e = libbpf_errno(obj, errno);
         state->obj = nullptr;
@@ -141,9 +136,8 @@ std::optional<LockContention> LockContention::load(::crucible::effects::Init) no
         size_t vsz = 0;
         const void* current = bpf_map__initial_value(rodata, &vsz);
         if (current != nullptr && vsz >= sizeof(uint32_t)) {
-            std::string rewritten(
-                static_cast<const char*>(current), vsz);
-            const Tgid     tgid     = current_tgid();
+            std::string rewritten(static_cast<const char*>(current), vsz);
+            const Tgid tgid = current_tgid();
             const uint32_t tgid_raw = tgid.value();
             std::memcpy(rewritten.data(), &tgid_raw, sizeof(tgid_raw));
             (void)bpf_map__set_initial_value(rodata, rewritten.data(), vsz);
@@ -156,7 +150,8 @@ std::optional<LockContention> LockContention::load(::crucible::effects::Init) no
     // ── 4. Verify, JIT, allocate maps ──────────────────────────────
     if (const int err = bpf_object__load(state->obj); err != 0) {
         report("bpf_object__load failed (apply CAP_BPF+CAP_PERFMON+CAP_DAC_READ_SEARCH; "
-               "verifier rejected, missing CAP_BPF, or kernel too old)", -err);
+               "verifier rejected, missing CAP_BPF, or kernel too old)",
+               -err);
         return std::nullopt;
     }
 
@@ -168,15 +163,13 @@ std::optional<LockContention> LockContention::load(::crucible::effects::Init) no
     bpf_object__for_each_program(prog, state->obj) {
         if (!bpf_program__autoload(prog)) continue;
         struct bpf_link* link = bpf_program__attach(prog);
-        const long       lerr = libbpf_get_error(link);
+        const long lerr = libbpf_get_error(link);
         if (link == nullptr || lerr != 0) {
             state->attach_fail_cnt.bump();
             if (verbose()) {
                 const char* sec = bpf_program__section_name(prog);
-                std::fprintf(stderr,
-                    "[crucible::perf] lock_contention attach failed for %s (%s)\n",
-                    sec ? sec : "<anon>",
-                    std::strerror(lerr ? static_cast<int>(-lerr) : errno));
+                std::fprintf(stderr, "[crucible::perf] lock_contention attach failed for %s (%s)\n",
+                             sec ? sec : "<anon>", std::strerror(lerr ? static_cast<int>(-lerr) : errno));
             }
             continue;
         }
@@ -184,9 +177,8 @@ std::optional<LockContention> LockContention::load(::crucible::effects::Init) no
             bpf_link__destroy(link);
             state->attach_fail_cnt.bump();
             if (verbose()) {
-                std::fprintf(stderr,
-                    "[crucible::perf] lock_contention link capacity exhausted "
-                    "(bump inplace_vector size)\n");
+                std::fprintf(stderr, "[crucible::perf] lock_contention link capacity exhausted "
+                                     "(bump inplace_vector size)\n");
             }
             continue;
         }
@@ -206,8 +198,7 @@ std::optional<LockContention> LockContention::load(::crucible::effects::Init) no
     }
 
     // ── 7. mmap the lock_timeline ring buffer ──────────────────────
-    struct bpf_map* timeline_map =
-        bpf_object__find_map_by_name(state->obj, "lock_timeline");
+    struct bpf_map* timeline_map = bpf_object__find_map_by_name(state->obj, "lock_timeline");
     if (timeline_map == nullptr) {
         report("lock_timeline map not found in object (bytecode/header out of sync — rebuild)");
         return std::nullopt;
@@ -222,14 +213,13 @@ std::optional<LockContention> LockContention::load(::crucible::effects::Init) no
     const size_t page = static_cast<size_t>(page_l);
     // sizeof(TimelineHeader) + sizeof(events[TIMELINE_CAPACITY])
     //   = 64 + (4096 * 32) = 131136 bytes.  Round to page granularity.
-    const size_t bytes          = sizeof(TimelineHeader) +
-                                  TIMELINE_CAPACITY * sizeof(TimelineLockEvent);
+    const size_t bytes = sizeof(TimelineHeader) + TIMELINE_CAPACITY * sizeof(TimelineLockEvent);
     const size_t mmap_len_bytes = (bytes + page - 1) & ~(page - 1);
-    void* mmap_address = ::mmap(nullptr, mmap_len_bytes, PROT_READ, MAP_SHARED,
-                                timeline_fd.value(), 0);
+    void* mmap_address = ::mmap(nullptr, mmap_len_bytes, PROT_READ, MAP_SHARED, timeline_fd.value(), 0);
     if (mmap_address == MAP_FAILED) {
         report("mmap of lock_timeline failed (apply CAP_BPF; "
-               "BPF_F_MMAPABLE requires CAP_BPF or kernel ≥ 5.5)", errno);
+               "BPF_F_MMAPABLE requires CAP_BPF or kernel ≥ 5.5)",
+               errno);
         return std::nullopt;
     }
     // FIXY-V-236: structural RAII closure via OwnedMmap.
@@ -238,25 +228,22 @@ std::optional<LockContention> LockContention::load(::crucible::effects::Init) no
     // Capture the lock_wait_count FD for wait_count() lookups.  The
     // map is a 1-element ARRAY map (not mmap-able as currently
     // declared in lock_contention.bpf.c), so reads require a syscall.
-    if (struct bpf_map* wc =
-            bpf_object__find_map_by_name(state->obj, "lock_wait_count");
-        wc != nullptr) {
+    if (struct bpf_map* wc = bpf_object__find_map_by_name(state->obj, "lock_wait_count"); wc != nullptr) {
         state->wait_count_fd = map_fd(wc);
     } else {
         // Soft failure — the timeline still works without
         // lock_wait_count, and wait_count() returns 0 when fd is -1.
         if (verbose()) {
-            std::fprintf(stderr,
-                "[crucible::perf] lock_contention lock_wait_count map missing — "
-                "wait_count() will return 0\n");
+            std::fprintf(stderr, "[crucible::perf] lock_contention lock_wait_count map missing — "
+                                 "wait_count() will return 0\n");
         }
     }
 
     if (!quiet() && state->attach_fail_cnt.get() != 0) {
         std::fprintf(stderr,
-            "[crucible::perf] lock_contention partial: %zu program(s) failed to attach "
-            "(set CRUCIBLE_PERF_VERBOSE=1 to see which)\n",
-            state->attach_fail_cnt.get());
+                     "[crucible::perf] lock_contention partial: %zu program(s) failed to attach "
+                     "(set CRUCIBLE_PERF_VERBOSE=1 to see which)\n",
+                     state->attach_fail_cnt.get());
     }
 
     LockContention h;
@@ -267,15 +254,14 @@ std::optional<LockContention> LockContention::load(::crucible::effects::Init) no
 uint64_t LockContention::wait_count() const noexcept {
     if (state_ == nullptr || state_->wait_count_fd.value() < 0) return 0;
     const uint32_t key = 0;
-    uint64_t       value = 0;
+    uint64_t value = 0;
     if (bpf_map_lookup_elem(state_->wait_count_fd.value(), &key, &value) != 0) {
         return 0;
     }
     return value;
 }
 
-safety::Borrowed<const TimelineLockEvent, LockContention>
-LockContention::timeline_view() const noexcept {
+safety::Borrowed<const TimelineLockEvent, LockContention> LockContention::timeline_view() const noexcept {
     if (state_ == nullptr || !state_->timeline_mmap) {
         return safety::Borrowed<const TimelineLockEvent, LockContention>{};
     }
@@ -288,10 +274,8 @@ LockContention::timeline_view() const noexcept {
     // const _Tp triggers libstdc++ 16's asm clobber "=m"(*__s) writing
     // through a const-qualified array location.
     auto* events = std::start_lifetime_as_array<TimelineLockEvent>(
-        std::bit_cast<const uint8_t*>(base + sizeof(TimelineHeader)),
-        TIMELINE_CAPACITY);
-    return safety::Borrowed<const TimelineLockEvent, LockContention>{
-        events, TIMELINE_CAPACITY};
+        std::bit_cast<const uint8_t*>(base + sizeof(TimelineHeader)), TIMELINE_CAPACITY);
+    return safety::Borrowed<const TimelineLockEvent, LockContention>{events, TIMELINE_CAPACITY};
 }
 
 uint64_t LockContention::timeline_write_index() const noexcept {
@@ -305,22 +289,19 @@ uint64_t LockContention::timeline_write_index() const noexcept {
     return hdr->write_idx;
 }
 
-safety::Refined<safety::bounded_above<8>, std::size_t>
-LockContention::attached_programs() const noexcept {
+safety::Refined<safety::bounded_above<8>, std::size_t> LockContention::attached_programs() const noexcept {
     using R = safety::Refined<safety::bounded_above<8>, std::size_t>;
     return R{(state_ != nullptr) ? state_->links.size() : std::size_t{0}};
 }
 
-safety::Refined<safety::bounded_above<8>, std::size_t>
-LockContention::attach_failures() const noexcept {
+safety::Refined<safety::bounded_above<8>, std::size_t> LockContention::attach_failures() const noexcept {
     using R = safety::Refined<safety::bounded_above<8>, std::size_t>;
-    return R{(state_ != nullptr) ? state_->attach_fail_cnt.get()
-                                 : std::size_t{0}};
+    return R{(state_ != nullptr) ? state_->attach_fail_cnt.get() : std::size_t{0}};
 }
 
 LockContention::Snapshot LockContention::snapshot() const noexcept {
     return Snapshot{
-        .wait_count     = wait_count(),
+        .wait_count = wait_count(),
         .timeline_index = timeline_write_index(),
     };
 }

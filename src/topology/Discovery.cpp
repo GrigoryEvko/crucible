@@ -11,19 +11,16 @@ namespace crucible::topology {
 namespace {
 
 [[nodiscard]] constexpr std::string_view trim(std::string_view s) noexcept {
-    while (!s.empty() && (s.front() == ' ' || s.front() == '\t' ||
-                         s.front() == '\r' || s.front() == '\n')) {
+    while (!s.empty() && (s.front() == ' ' || s.front() == '\t' || s.front() == '\r' || s.front() == '\n')) {
         s.remove_prefix(1);
     }
-    while (!s.empty() && (s.back() == ' ' || s.back() == '\t' ||
-                         s.back() == '\r' || s.back() == '\n')) {
+    while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '\r' || s.back() == '\n')) {
         s.remove_suffix(1);
     }
     return s;
 }
 
-[[nodiscard]] constexpr std::pair<std::string_view, std::string_view>
-split_key_value(std::string_view line) noexcept {
+[[nodiscard]] constexpr std::pair<std::string_view, std::string_view> split_key_value(std::string_view line) noexcept {
     const std::size_t colon = line.find(':');
     if (colon != std::string_view::npos) {
         return {trim(line.substr(0, colon)), trim(line.substr(colon + 1))};
@@ -35,8 +32,7 @@ split_key_value(std::string_view line) noexcept {
     return {trim(line), std::string_view{}};
 }
 
-[[nodiscard]] constexpr bool contains_ci(std::string_view haystack,
-                                         std::string_view needle) noexcept {
+[[nodiscard]] constexpr bool contains_ci(std::string_view haystack, std::string_view needle) noexcept {
     if (needle.empty() || needle.size() > haystack.size()) {
         return false;
     }
@@ -58,14 +54,12 @@ split_key_value(std::string_view line) noexcept {
     return false;
 }
 
-[[nodiscard]] constexpr DiscoveryNodeKind node_kind_from_lspci(std::string_view cls,
-                                                               std::string_view dev) noexcept {
+[[nodiscard]] constexpr DiscoveryNodeKind node_kind_from_lspci(std::string_view cls, std::string_view dev) noexcept {
     if (contains_ci(cls, "ethernet") || contains_ci(cls, "network")) {
         return DiscoveryNodeKind::NicPort;
     }
-    if (contains_ci(cls, "vga") || contains_ci(cls, "3d") ||
-        contains_ci(dev, "gpu") || contains_ci(dev, "nvidia") ||
-        contains_ci(dev, "amd")) {
+    if (contains_ci(cls, "vga") || contains_ci(cls, "3d") || contains_ci(dev, "gpu") || contains_ci(dev, "nvidia")
+        || contains_ci(dev, "amd")) {
         return DiscoveryNodeKind::Gpu;
     }
     if (contains_ci(cls, "non-volatile") || contains_ci(dev, "nvme")) {
@@ -97,12 +91,8 @@ split_key_value(std::string_view line) noexcept {
 
 template <std::size_t MaxNodes, std::size_t MaxEdges>
 [[nodiscard]] std::expected<void, DiscoveryError>
-flush_lspci_record(DiscoverySnapshot<MaxNodes, MaxEdges>& snapshot,
-                   std::string_view slot,
-                   std::string_view cls,
-                   std::string_view vendor,
-                   std::string_view device,
-                   std::uint16_t& records,
+flush_lspci_record(DiscoverySnapshot<MaxNodes, MaxEdges>& snapshot, std::string_view slot, std::string_view cls,
+                   std::string_view vendor, std::string_view device, std::uint16_t& records,
                    std::uint16_t& admitted) noexcept {
     if (slot.empty() && cls.empty() && vendor.empty() && device.empty()) {
         return {};
@@ -139,65 +129,102 @@ flush_lspci_record(DiscoverySnapshot<MaxNodes, MaxEdges>& snapshot,
 
 std::string_view discovery_error_name(DiscoveryError error) noexcept {
     switch (error) {
-        case DiscoveryError::EmptyInput:             return "EmptyInput";
-        case DiscoveryError::MalformedRecord:        return "MalformedRecord";
-        case DiscoveryError::TooManyNodes:           return "TooManyNodes";
-        case DiscoveryError::TooManyEdges:           return "TooManyEdges";
-        case DiscoveryError::InvalidNodeIndex:       return "InvalidNodeIndex";
-        case DiscoveryError::InvalidInterfaceName:   return "InvalidInterfaceName";
-        case DiscoveryError::MissingRequiredField:   return "MissingRequiredField";
-        case DiscoveryError::UnsupportedSource:      return "UnsupportedSource";
-        case DiscoveryError::RediscoveryRequiresBg:  return "RediscoveryRequiresBg";
-        default:                                     return "<unknown DiscoveryError>";
+        case DiscoveryError::EmptyInput:
+            return "EmptyInput";
+        case DiscoveryError::MalformedRecord:
+            return "MalformedRecord";
+        case DiscoveryError::TooManyNodes:
+            return "TooManyNodes";
+        case DiscoveryError::TooManyEdges:
+            return "TooManyEdges";
+        case DiscoveryError::InvalidNodeIndex:
+            return "InvalidNodeIndex";
+        case DiscoveryError::InvalidInterfaceName:
+            return "InvalidInterfaceName";
+        case DiscoveryError::MissingRequiredField:
+            return "MissingRequiredField";
+        case DiscoveryError::UnsupportedSource:
+            return "UnsupportedSource";
+        case DiscoveryError::RediscoveryRequiresBg:
+            return "RediscoveryRequiresBg";
+        default:
+            return "<unknown DiscoveryError>";
     }
 }
 
 std::string_view discovery_source_name(DiscoverySource source) noexcept {
     switch (source) {
-        case DiscoverySource::PcieLspci:       return "PcieLspci";
-        case DiscoverySource::PcieSysfs:       return "PcieSysfs";
-        case DiscoverySource::NicSysfs:        return "NicSysfs";
-        case DiscoverySource::EthtoolInfo:     return "EthtoolInfo";
-        case DiscoverySource::EthtoolFeatures: return "EthtoolFeatures";
-        case DiscoverySource::Lldp:            return "Lldp";
-        case DiscoverySource::Gpu:             return "Gpu";
-        case DiscoverySource::Nvme:            return "Nvme";
-        case DiscoverySource::NvSwitch:        return "NvSwitch";
-        case DiscoverySource::Optical:         return "Optical";
-        case DiscoverySource::Udev:            return "Udev";
-        default:                               return "<unknown DiscoverySource>";
+        case DiscoverySource::PcieLspci:
+            return "PcieLspci";
+        case DiscoverySource::PcieSysfs:
+            return "PcieSysfs";
+        case DiscoverySource::NicSysfs:
+            return "NicSysfs";
+        case DiscoverySource::EthtoolInfo:
+            return "EthtoolInfo";
+        case DiscoverySource::EthtoolFeatures:
+            return "EthtoolFeatures";
+        case DiscoverySource::Lldp:
+            return "Lldp";
+        case DiscoverySource::Gpu:
+            return "Gpu";
+        case DiscoverySource::Nvme:
+            return "Nvme";
+        case DiscoverySource::NvSwitch:
+            return "NvSwitch";
+        case DiscoverySource::Optical:
+            return "Optical";
+        case DiscoverySource::Udev:
+            return "Udev";
+        default:
+            return "<unknown DiscoverySource>";
     }
 }
 
 std::string_view discovery_outcome_name(DiscoveryOutcome outcome) noexcept {
     switch (outcome) {
-        case DiscoveryOutcome::NotAttempted: return "NotAttempted";
-        case DiscoveryOutcome::Complete:     return "Complete";
-        case DiscoveryOutcome::Partial:      return "Partial";
-        case DiscoveryOutcome::Failed:       return "Failed";
-        default:                             return "<unknown DiscoveryOutcome>";
+        case DiscoveryOutcome::NotAttempted:
+            return "NotAttempted";
+        case DiscoveryOutcome::Complete:
+            return "Complete";
+        case DiscoveryOutcome::Partial:
+            return "Partial";
+        case DiscoveryOutcome::Failed:
+            return "Failed";
+        default:
+            return "<unknown DiscoveryOutcome>";
     }
 }
 
 std::string_view discovery_node_kind_name(DiscoveryNodeKind kind) noexcept {
     switch (kind) {
-        case DiscoveryNodeKind::Unknown:            return "Unknown";
-        case DiscoveryNodeKind::Gpu:                return "Gpu";
-        case DiscoveryNodeKind::NicPort:            return "NicPort";
-        case DiscoveryNodeKind::NicCard:            return "NicCard";
-        case DiscoveryNodeKind::NvSwitch:           return "NvSwitch";
-        case DiscoveryNodeKind::NvmeNamespace:      return "NvmeNamespace";
-        case DiscoveryNodeKind::NvmeDrive:          return "NvmeDrive";
-        case DiscoveryNodeKind::PcieRoot:           return "PcieRoot";
-        case DiscoveryNodeKind::PcieLaneGroup:      return "PcieLaneGroup";
-        case DiscoveryNodeKind::OpticalTransceiver: return "OpticalTransceiver";
-        default:                                    return "<unknown DiscoveryNodeKind>";
+        case DiscoveryNodeKind::Unknown:
+            return "Unknown";
+        case DiscoveryNodeKind::Gpu:
+            return "Gpu";
+        case DiscoveryNodeKind::NicPort:
+            return "NicPort";
+        case DiscoveryNodeKind::NicCard:
+            return "NicCard";
+        case DiscoveryNodeKind::NvSwitch:
+            return "NvSwitch";
+        case DiscoveryNodeKind::NvmeNamespace:
+            return "NvmeNamespace";
+        case DiscoveryNodeKind::NvmeDrive:
+            return "NvmeDrive";
+        case DiscoveryNodeKind::PcieRoot:
+            return "PcieRoot";
+        case DiscoveryNodeKind::PcieLaneGroup:
+            return "PcieLaneGroup";
+        case DiscoveryNodeKind::OpticalTransceiver:
+            return "OpticalTransceiver";
+        default:
+            return "<unknown DiscoveryNodeKind>";
     }
 }
 
-std::expected<DiscoverySourceStatus, DiscoveryError>
-parse_lspci_vmm_tree(ExternalDiscoveryText text,
-                     DefaultDiscoverySnapshot& snapshot) noexcept {
+std::expected<DiscoverySourceStatus, DiscoveryError> parse_lspci_vmm_tree(ExternalDiscoveryText text,
+                                                                          DefaultDiscoverySnapshot& snapshot) noexcept {
     std::string_view input = text.value();
     if (trim(input).empty()) {
         return std::unexpected(DiscoveryError::EmptyInput);
@@ -212,14 +239,11 @@ parse_lspci_vmm_tree(ExternalDiscoveryText text,
 
     while (!input.empty()) {
         const std::size_t nl = input.find('\n');
-        std::string_view line = nl == std::string_view::npos
-            ? input
-            : input.substr(0, nl);
+        std::string_view line = nl == std::string_view::npos ? input : input.substr(0, nl);
         input = nl == std::string_view::npos ? std::string_view{} : input.substr(nl + 1);
         line = trim(line);
         if (line.empty()) {
-            auto flushed = flush_lspci_record(snapshot, slot, cls, vendor,
-                                              device, records, admitted);
+            auto flushed = flush_lspci_record(snapshot, slot, cls, vendor, device, records, admitted);
             if (!flushed.has_value()) {
                 return std::unexpected(flushed.error());
             }
@@ -237,28 +261,23 @@ parse_lspci_vmm_tree(ExternalDiscoveryText text,
             device = value;
         }
     }
-    auto flushed = flush_lspci_record(snapshot, slot, cls, vendor,
-                                      device, records, admitted);
+    auto flushed = flush_lspci_record(snapshot, slot, cls, vendor, device, records, admitted);
     if (!flushed.has_value()) {
         return std::unexpected(flushed.error());
     }
     DiscoverySourceStatus status{
         .source = DiscoverySource::PcieLspci,
-        .outcome = admitted == records ? DiscoveryOutcome::Complete
-                                       : DiscoveryOutcome::Partial,
+        .outcome = admitted == records ? DiscoveryOutcome::Complete : DiscoveryOutcome::Partial,
         .records_seen = records,
         .records_admitted = admitted,
-        .error = admitted == records ? DiscoveryError::EmptyInput
-                                     : DiscoveryError::MalformedRecord,
+        .error = admitted == records ? DiscoveryError::EmptyInput : DiscoveryError::MalformedRecord,
     };
     static_cast<void>(snapshot.record(status));
     return status;
 }
 
 std::expected<DiscoverySourceStatus, DiscoveryError>
-parse_ethtool_info(ExternalDiscoveryText text,
-                   DefaultDiscoverySnapshot& snapshot,
-                   std::uint16_t node_index) noexcept {
+parse_ethtool_info(ExternalDiscoveryText text, DefaultDiscoverySnapshot& snapshot, std::uint16_t node_index) noexcept {
     if (node_index >= snapshot.node_count()) {
         return std::unexpected(DiscoveryError::InvalidNodeIndex);
     }
@@ -273,9 +292,7 @@ parse_ethtool_info(ExternalDiscoveryText text,
     std::string_view bus{};
     while (!input.empty()) {
         const std::size_t nl = input.find('\n');
-        std::string_view line = nl == std::string_view::npos
-            ? input
-            : input.substr(0, nl);
+        std::string_view line = nl == std::string_view::npos ? input : input.substr(0, nl);
         input = nl == std::string_view::npos ? std::string_view{} : input.substr(nl + 1);
         auto [key, value] = split_key_value(line);
         if (key == "driver") {
@@ -303,8 +320,7 @@ parse_ethtool_info(ExternalDiscoveryText text,
         .outcome = records == 0 ? DiscoveryOutcome::Failed : DiscoveryOutcome::Complete,
         .records_seen = records,
         .records_admitted = records,
-        .error = records == 0 ? DiscoveryError::MissingRequiredField
-                              : DiscoveryError::EmptyInput,
+        .error = records == 0 ? DiscoveryError::MissingRequiredField : DiscoveryError::EmptyInput,
     };
     static_cast<void>(snapshot.record(status));
     return status;
@@ -319,9 +335,7 @@ parse_ethtool_features(ExternalDiscoveryText text) noexcept {
     safety::Bits<cog::NicFeature> bits{};
     while (!input.empty()) {
         const std::size_t nl = input.find('\n');
-        std::string_view line = nl == std::string_view::npos
-            ? input
-            : input.substr(0, nl);
+        std::string_view line = nl == std::string_view::npos ? input : input.substr(0, nl);
         input = nl == std::string_view::npos ? std::string_view{} : input.substr(nl + 1);
         auto [key, value] = split_key_value(line);
         const bool enabled = contains_ci(value, "on");
@@ -347,9 +361,8 @@ parse_ethtool_features(ExternalDiscoveryText text) noexcept {
     return bits;
 }
 
-std::expected<DiscoverySourceStatus, DiscoveryError>
-parse_lldp_neighbors(ExternalDiscoveryText text,
-                     DefaultDiscoverySnapshot& snapshot) noexcept {
+std::expected<DiscoverySourceStatus, DiscoveryError> parse_lldp_neighbors(ExternalDiscoveryText text,
+                                                                          DefaultDiscoverySnapshot& snapshot) noexcept {
     std::string_view input = text.value();
     if (trim(input).empty()) {
         return std::unexpected(DiscoveryError::EmptyInput);
@@ -394,9 +407,7 @@ parse_lldp_neighbors(ExternalDiscoveryText text,
 
     while (!input.empty()) {
         const std::size_t nl = input.find('\n');
-        std::string_view line = nl == std::string_view::npos
-            ? input
-            : input.substr(0, nl);
+        std::string_view line = nl == std::string_view::npos ? input : input.substr(0, nl);
         input = nl == std::string_view::npos ? std::string_view{} : input.substr(nl + 1);
         line = trim(line);
         if (line.empty()) {
@@ -428,8 +439,7 @@ parse_lldp_neighbors(ExternalDiscoveryText text,
         .outcome = admitted == 0 ? DiscoveryOutcome::Failed : DiscoveryOutcome::Complete,
         .records_seen = records,
         .records_admitted = admitted,
-        .error = admitted == 0 ? DiscoveryError::MissingRequiredField
-                               : DiscoveryError::EmptyInput,
+        .error = admitted == 0 ? DiscoveryError::MissingRequiredField : DiscoveryError::EmptyInput,
     };
     static_cast<void>(snapshot.record(status));
     return status;

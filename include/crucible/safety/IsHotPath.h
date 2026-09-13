@@ -21,9 +21,7 @@ struct is_hot_path_impl : std::false_type {
 };
 
 template <HotPathTier_v Tier, typename U>
-struct is_hot_path_impl<::crucible::safety::HotPath<Tier, U>>
-    : std::true_type
-{
+struct is_hot_path_impl<::crucible::safety::HotPath<Tier, U>> : std::true_type {
     using value_type = U;
     static constexpr HotPathTier_v tier = Tier;
 };
@@ -31,28 +29,24 @@ struct is_hot_path_impl<::crucible::safety::HotPath<Tier, U>>
 }  // namespace detail
 
 template <typename T>
-inline constexpr bool is_hot_path_v =
-    detail::is_hot_path_impl<std::remove_cvref_t<T>>::value;
+inline constexpr bool is_hot_path_v = detail::is_hot_path_impl<std::remove_cvref_t<T>>::value;
 
 template <typename T>
 concept IsHotPath = is_hot_path_v<T>;
 
 template <typename T>
     requires is_hot_path_v<T>
-using hot_path_value_t =
-    typename detail::is_hot_path_impl<
-        std::remove_cvref_t<T>>::value_type;
+using hot_path_value_t = typename detail::is_hot_path_impl<std::remove_cvref_t<T>>::value_type;
 
 template <typename T>
     requires is_hot_path_v<T>
-inline constexpr HotPathTier_v hot_path_tier_v =
-    detail::is_hot_path_impl<std::remove_cvref_t<T>>::tier;
+inline constexpr HotPathTier_v hot_path_tier_v = detail::is_hot_path_impl<std::remove_cvref_t<T>>::tier;
 
 namespace detail::is_hot_path_self_test {
 
-using HP_int_hot   = ::crucible::safety::HotPath<HotPathTier_v::Hot,  int>;
-using HP_int_warm  = ::crucible::safety::HotPath<HotPathTier_v::Warm, int>;
-using HP_int_cold  = ::crucible::safety::HotPath<HotPathTier_v::Cold, int>;
+using HP_int_hot = ::crucible::safety::HotPath<HotPathTier_v::Hot, int>;
+using HP_int_warm = ::crucible::safety::HotPath<HotPathTier_v::Warm, int>;
+using HP_int_cold = ::crucible::safety::HotPath<HotPathTier_v::Cold, int>;
 using HP_double_hot = ::crucible::safety::HotPath<HotPathTier_v::Hot, double>;
 
 static_assert(is_hot_path_v<HP_int_hot>);
@@ -67,7 +61,10 @@ static_assert(!is_hot_path_v<int*>);
 static_assert(!is_hot_path_v<void>);
 static_assert(!is_hot_path_v<HP_int_hot*>);
 
-struct LookalikeHotPath { int value; HotPathTier_v tier; };
+struct LookalikeHotPath {
+    int value;
+    HotPathTier_v tier;
+};
 static_assert(!is_hot_path_v<LookalikeHotPath>);
 
 static_assert(IsHotPath<HP_int_hot>);
@@ -76,7 +73,7 @@ static_assert(!IsHotPath<int>);
 static_assert(std::is_same_v<hot_path_value_t<HP_int_hot>, int>);
 static_assert(std::is_same_v<hot_path_value_t<HP_double_hot>, double>);
 
-static_assert(hot_path_tier_v<HP_int_hot>  == HotPathTier_v::Hot);
+static_assert(hot_path_tier_v<HP_int_hot> == HotPathTier_v::Hot);
 static_assert(hot_path_tier_v<HP_int_warm> == HotPathTier_v::Warm);
 static_assert(hot_path_tier_v<HP_int_cold> == HotPathTier_v::Cold);
 

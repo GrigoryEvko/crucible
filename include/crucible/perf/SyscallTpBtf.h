@@ -72,9 +72,9 @@
 
 #include <crucible/algebra/lattices/SyscallFamilyLattice.h>  // FIXY-V-179
 #include <crucible/effects/Capabilities.h>
-#include <crucible/effects/EffectRow.h>     // FIXY-U-083: row_contains_v
-#include <crucible/effects/ExecCtx.h>       // FIXY-U-083: IsExecCtx, row_type_of_t
-#include <crucible/fixy/syscall/Per.h>                       // FIXY-V-179
+#include <crucible/effects/EffectRow.h>  // FIXY-U-083: row_contains_v
+#include <crucible/effects/ExecCtx.h>  // FIXY-U-083: IsExecCtx, row_type_of_t
+#include <crucible/fixy/syscall/Per.h>  // FIXY-V-179
 #include <crucible/safety/Borrowed.h>
 #include <crucible/safety/Refined.h>
 
@@ -82,12 +82,12 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <tuple>                            // FIXY-V-179
+#include <tuple>  // FIXY-V-179
 
 namespace crucible::perf {
 
 class SyscallTpBtf {
- public:
+public:
     // ─── Snapshot — consumer-shaped delta semantics ──────────────────
     //
     // Same shape as SyscallLatency::Snapshot — BTF-typed syscalls
@@ -99,12 +99,10 @@ class SyscallTpBtf {
 
         [[nodiscard]] Snapshot operator-(const Snapshot& older) const noexcept {
             Snapshot r;
-            if (__builtin_sub_overflow(total_syscalls, older.total_syscalls,
-                                        &r.total_syscalls)) [[unlikely]] {
+            if (__builtin_sub_overflow(total_syscalls, older.total_syscalls, &r.total_syscalls)) [[unlikely]] {
                 r.total_syscalls = 0;
             }
-            if (__builtin_sub_overflow(timeline_index, older.timeline_index,
-                                        &r.timeline_index)) [[unlikely]] {
+            if (__builtin_sub_overflow(timeline_index, older.timeline_index, &r.timeline_index)) [[unlikely]] {
                 r.timeline_index = 0;
             }
             return r;
@@ -124,8 +122,7 @@ class SyscallTpBtf {
     //
     // Same `effects::Init` capability gate as every other facade in
     // the GAPS-004 series.
-    [[nodiscard]] static std::optional<SyscallTpBtf>
-        load(::crucible::effects::Init) noexcept;
+    [[nodiscard]] static std::optional<SyscallTpBtf> load(::crucible::effects::Init) noexcept;
 
     // Total syscalls recorded for our process since load().  ~1 µs
     // (one bpf_map_lookup_elem against the total_syscalls ARRAY map).
@@ -144,8 +141,7 @@ class SyscallTpBtf {
     // handles this one unchanged.  See SyscallLatency.h for the
     // ts_ns-LAST completion discipline and ACQUIRE-load reader
     // idiom.  Empty span on moved-from / un-loaded.
-    [[nodiscard]] safety::Borrowed<const TimelineSyscallEvent, SyscallTpBtf>
-        timeline_view() const noexcept;
+    [[nodiscard]] safety::Borrowed<const TimelineSyscallEvent, SyscallTpBtf> timeline_view() const noexcept;
 
     // Current write_idx of the syscall_timeline ring buffer.  Reader
     // uses this to find the latest valid slot via
@@ -157,24 +153,22 @@ class SyscallTpBtf {
     // tp_btf programs (sys_enter + sys_exit); both must attach for
     // load() to succeed.  Cap of 8 matches the
     // inplace_vector<...,8> shape used by every other facade.
-    [[nodiscard]] safety::Refined<safety::bounded_above<8>, std::size_t>
-        attached_programs() const noexcept;
+    [[nodiscard]] safety::Refined<safety::bounded_above<8>, std::size_t> attached_programs() const noexcept;
 
     // bpf_program__attach failures.  Same bound as attached_programs.
     // Non-zero means BTF is unavailable on this kernel — set
     // CRUCIBLE_PERF_VERBOSE=1 to see why.
-    [[nodiscard]] safety::Refined<safety::bounded_above<8>, std::size_t>
-        attach_failures() const noexcept;
+    [[nodiscard]] safety::Refined<safety::bounded_above<8>, std::size_t> attach_failures() const noexcept;
 
     SyscallTpBtf(const SyscallTpBtf&) =
         delete("SyscallTpBtf owns unique BPF object + mmap — copying would double-close");
-    SyscallTpBtf& operator=(const SyscallTpBtf&) =
-        delete("SyscallTpBtf owns unique BPF object + mmap — copying would double-close");
+    SyscallTpBtf&
+    operator=(const SyscallTpBtf&) = delete("SyscallTpBtf owns unique BPF object + mmap — copying would double-close");
     SyscallTpBtf(SyscallTpBtf&&) noexcept;
     SyscallTpBtf& operator=(SyscallTpBtf&&) noexcept;
     ~SyscallTpBtf();
 
- private:
+private:
     struct State;
     SyscallTpBtf() noexcept;
 
@@ -191,9 +185,8 @@ class SyscallTpBtf {
 // background-drain contexts must not engage this surface; the
 // Ctx-fit gate enforces that at the type level.
 template <class Ctx>
-concept CtxFitsSyscallTpBtfMint =
-       ::crucible::effects::IsExecCtx<Ctx>
-    && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Init>;
+concept CtxFitsSyscallTpBtfMint = ::crucible::effects::IsExecCtx<Ctx>
+                               && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Init>;
 
 // ── FIXY-V-179 — syscall-grant declaration ────────────────────────────
 //
@@ -205,25 +198,21 @@ concept CtxFitsSyscallTpBtfMint =
 //   bpf             (41) → Privilege      → Row<IO, Block>     [V-179]
 //   perf_event_open (42) → Privilege      → Row<IO, Block>     [V-179]
 //   mmap            (21) → MemoryMapping  → Row<IO>
-using mint_syscall_tp_btf_syscall_grants = std::tuple<
-    ::crucible::fixy::grant::syscall::per<
-        ::crucible::fixy::grant::syscall::SyscallId::bpf>,
-    ::crucible::fixy::grant::syscall::per<
-        ::crucible::fixy::grant::syscall::SyscallId::perf_event_open>,
-    ::crucible::fixy::grant::syscall::per<
-        ::crucible::fixy::grant::syscall::SyscallId::mmap>>;
+using mint_syscall_tp_btf_syscall_grants =
+    std::tuple<::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::bpf>,
+               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::perf_event_open>,
+               ::crucible::fixy::grant::syscall::per<::crucible::fixy::grant::syscall::SyscallId::mmap>>;
 
 namespace detail::v179_syscall_tp_btf_grant_check {
 namespace fsc = ::crucible::fixy::grant::syscall;
 namespace fll = ::crucible::algebra::lattices;
-static_assert(::crucible::fixy::grant::family_tier_v<
-    fsc::per<fsc::SyscallId::bpf>>             == fll::SyscallFamily::Privilege);
-static_assert(::crucible::fixy::grant::family_tier_v<
-    fsc::per<fsc::SyscallId::perf_event_open>> == fll::SyscallFamily::Privilege);
-static_assert(::crucible::fixy::grant::family_tier_v<
-    fsc::per<fsc::SyscallId::mmap>>            == fll::SyscallFamily::MemoryMapping);
+static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::bpf>> == fll::SyscallFamily::Privilege);
+static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::perf_event_open>>
+              == fll::SyscallFamily::Privilege);
+static_assert(::crucible::fixy::grant::family_tier_v<fsc::per<fsc::SyscallId::mmap>>
+              == fll::SyscallFamily::MemoryMapping);
 static_assert(std::tuple_size_v<mint_syscall_tp_btf_syscall_grants> == 3,
-    "FIXY-V-179: mint_syscall_tp_btf_syscall_grants drifted from 3 entries.");
+              "FIXY-V-179: mint_syscall_tp_btf_syscall_grants drifted from 3 entries.");
 }  // namespace detail::v179_syscall_tp_btf_grant_check
 
 template <::crucible::effects::IsExecCtx Ctx>
@@ -233,8 +222,8 @@ template <::crucible::effects::IsExecCtx Ctx>
 // tracepoints, mmaps the per-CPU histogram array, and heap-
 // allocates std::unique_ptr<State>.  CLAUDE.md §XXI: compile-time
 // evaluation would lie about the runtime cost.
-[[nodiscard]] inline std::optional<SyscallTpBtf>
-mint_syscall_tp_btf(Ctx const&, ::crucible::effects::Init init) noexcept {
+[[nodiscard]] inline std::optional<SyscallTpBtf> mint_syscall_tp_btf(Ctx const&,
+                                                                     ::crucible::effects::Init init) noexcept {
     return SyscallTpBtf::load(init);
 }
 

@@ -100,20 +100,17 @@ namespace crucible::safety {
 template <auto Pred, typename T>
 class [[nodiscard]] SealedRefined {
 public:
-    using value_type     = T;
+    using value_type = T;
     using predicate_type = decltype(Pred);
     // Same Graded substrate as Refined<Pred, T> — identical lattice,
     // modality, storage layout.  The wrapper adds no state; the
     // "sealed" property is enforced by the absence of a destructive
     // extractor in the public surface.
-    using lattice_type = ::crucible::algebra::lattices::BoolLattice<
-        std::remove_cv_t<decltype(Pred)>>;
+    using lattice_type = ::crucible::algebra::lattices::BoolLattice<std::remove_cv_t<decltype(Pred)>>;
     // Modality declaration — Round-4 CHEAT-5; see safety/Linear.h.
-    static constexpr ::crucible::algebra::ModalityKind modality =
-        ::crucible::algebra::ModalityKind::Absolute;
+    static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::Absolute;
     // Public per GRADED-TRAIT-1 — see safety/Linear.h for the rationale.
-    using graded_type    = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
+    using graded_type = ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
 
 private:
     graded_type impl_;
@@ -129,37 +126,31 @@ public:
     // PredicateInvocableOn concept upgrades a Pred(T) invocability
     // mismatch from a contract-clause SFINAE wall into a clean
     // concept-violation diagnostic at the call site.
-    constexpr explicit SealedRefined(T v)
-        noexcept(std::is_nothrow_move_constructible_v<T>)
+    constexpr explicit SealedRefined(T v) noexcept(std::is_nothrow_move_constructible_v<T>)
         requires PredicateInvocableOn<Pred, T>
-        pre(Pred(v))
-        : impl_{std::move(v), typename lattice_type::element_type{}} {}
+    pre(Pred(v)) : impl_{std::move(v), typename lattice_type::element_type{}} {}
 
     // Trusted construction — no predicate check.
-    constexpr SealedRefined(T v, Trusted)
-        noexcept(std::is_nothrow_move_constructible_v<T>)
+    constexpr SealedRefined(T v, Trusted) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(v), typename lattice_type::element_type{}} {}
 
     // Conversion from Refined<Pred, T>.  Trusted because Refined's
     // own invariant proves Pred(value).  Consumes the Refined.
-    constexpr explicit SealedRefined(Refined<Pred, T>&& r)
-        noexcept(std::is_nothrow_move_constructible_v<T>)
+    constexpr explicit SealedRefined(Refined<Pred, T>&& r) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(r).into(), typename lattice_type::element_type{}} {}
 
     // Copy/move are defaulted — moving a SealedRefined doesn't
     // violate sealing because the moved-to value carries the same
     // (predicate-satisfying) bytes.  The discipline is "no destructive
     // EXTRACTION", not "no MOVEMENT".
-    SealedRefined(const SealedRefined&)            = default;
-    SealedRefined(SealedRefined&&)                 = default;
+    SealedRefined(const SealedRefined&) = default;
+    SealedRefined(SealedRefined&&) = default;
     SealedRefined& operator=(const SealedRefined&) = default;
-    SealedRefined& operator=(SealedRefined&&)      = default;
+    SealedRefined& operator=(SealedRefined&&) = default;
 
     // Read-only access — forwards through Graded::peek().  This is
     // the ONLY way to observe the underlying T.
-    [[nodiscard]] constexpr const T& value() const noexcept {
-        return impl_.peek();
-    }
+    [[nodiscard]] constexpr const T& value() const noexcept { return impl_.peek(); }
 
     // No `into() &&` — the load-bearing difference from Refined.
     // No `value_mut()` — no mutable accessor.  Any change to the
@@ -167,14 +158,13 @@ public:
     // which re-fires the predicate.
 
     // Equality / ordering on the underlying value.
-    friend constexpr bool operator==(const SealedRefined& a, const SealedRefined& b)
-        noexcept(noexcept(a.impl_.peek() == b.impl_.peek()))
-    {
+    friend constexpr bool operator==(const SealedRefined& a,
+                                     const SealedRefined& b) noexcept(noexcept(a.impl_.peek() == b.impl_.peek())) {
         return a.impl_.peek() == b.impl_.peek();
     }
 
-    friend constexpr auto operator<=>(const SealedRefined& a, const SealedRefined& b)
-        noexcept(noexcept(a.impl_.peek() <=> b.impl_.peek()))
+    friend constexpr auto operator<=>(const SealedRefined& a,
+                                      const SealedRefined& b) noexcept(noexcept(a.impl_.peek() <=> b.impl_.peek()))
         requires std::three_way_comparable<T>
     {
         return a.impl_.peek() <=> b.impl_.peek();
@@ -194,9 +184,7 @@ public:
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return graded_type::lattice_name();
-    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 };
 
 // Zero-cost guarantee — SealedRefined adds zero state over
@@ -207,8 +195,8 @@ public:
 // Witness instantiations.  Use the same `positive` / `non_null` /
 // `power_of_two` etc. predicates that Refined.h uses (they are in
 // scope through the Refined.h include above).
-static_assert(sizeof(SealedRefined<positive,    int>)   == sizeof(int));
-static_assert(sizeof(SealedRefined<non_null,    void*>) == sizeof(void*));
+static_assert(sizeof(SealedRefined<positive, int>) == sizeof(int));
+static_assert(sizeof(SealedRefined<non_null, void*>) == sizeof(void*));
 
 // ── §XXI Universal Mint factory — fixy-A1-005 (#1547) ──────────────
 //
@@ -236,9 +224,8 @@ static_assert(sizeof(SealedRefined<non_null,    void*>) == sizeof(void*));
 
 template <auto Pred, typename T>
     requires PredicateInvocableOn<Pred, T>
-[[nodiscard]] constexpr SealedRefined<Pred, T> mint_sealed_refined(T value)
-    noexcept(std::is_nothrow_move_constructible_v<T>)
-{
+[[nodiscard]] constexpr SealedRefined<Pred, T>
+mint_sealed_refined(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
     return SealedRefined<Pred, T>{std::move(value)};
 }
 
@@ -252,7 +239,7 @@ namespace detail::sealed_refined_self_test {
 // has no such method, so a body that compiles without one is the
 // witness.
 inline void runtime_smoke_test() {
-    int seed = 5;                                            // non-constant
+    int seed = 5;  // non-constant
 
     SealedRefined<positive, int> sp{seed};
     if (sp.value() != 5) std::abort();
@@ -263,8 +250,7 @@ inline void runtime_smoke_test() {
 
     // Trusted bypass — invariant predicate skipped.
     int sentinel = -3;
-    SealedRefined<positive, int> tp{sentinel,
-                                    SealedRefined<positive, int>::Trusted{}};
+    SealedRefined<positive, int> tp{sentinel, SealedRefined<positive, int>::Trusted{}};
     if (tp.value() != -3) std::abort();
 
     // Conversion from Refined — consumes Refined, preserves invariant.

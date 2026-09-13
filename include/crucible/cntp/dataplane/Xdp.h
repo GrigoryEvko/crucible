@@ -35,39 +35,39 @@
 namespace crucible::cntp::dataplane {
 
 enum class XdpAction : std::uint8_t {
-    Aborted  = 0,
-    Drop     = 1,
-    Pass     = 2,
-    Tx       = 3,
+    Aborted = 0,
+    Drop = 1,
+    Pass = 2,
+    Tx = 3,
     Redirect = 4,
 };
 
 enum class XdpMode : std::uint8_t {
     Generic = 0,
-    Native  = 1,
+    Native = 1,
     Offload = 2,
 };
 
 enum class XdpProgramKind : std::uint8_t {
-    FlowFilter      = 0,
-    AfXdpRedirect   = 1,
+    FlowFilter = 0,
+    AfXdpRedirect = 1,
     GossipMulticast = 2,
-    TcamAcl         = 3,
+    TcamAcl = 3,
 };
 
 enum class BpfMapKind : std::uint8_t {
-    Hash        = 0,
-    LruHash     = 1,
-    Array       = 2,
+    Hash = 0,
+    LruHash = 1,
+    Array = 2,
     PerCpuArray = 3,
-    DevMap      = 4,
-    XskMap      = 5,
+    DevMap = 4,
+    XskMap = 5,
 };
 
 enum class BpfMapUpdate : std::uint8_t {
-    Any     = 0,
+    Any = 0,
     NoExist = 1,
-    Exist   = 2,
+    Exist = 2,
 };
 
 enum class XdpError : std::uint8_t {
@@ -107,31 +107,21 @@ struct BpfMapSpec {
     PositiveMapEntries max_entries{std::uint32_t{1}};
 };
 
-using DeclaredXdpProgram =
-    safety::Tagged<XdpProgramSpec, safety::source::Xdp>;
-using DeclaredBpfMap =
-    safety::Tagged<BpfMapSpec, safety::source::BpfMap>;
+using DeclaredXdpProgram = safety::Tagged<XdpProgramSpec, safety::source::Xdp>;
+using DeclaredBpfMap = safety::Tagged<BpfMapSpec, safety::source::BpfMap>;
 
 template <class Ctx>
-concept CtxFitsXdpMint =
-       effects::IsExecCtx<Ctx>
-    && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
+concept CtxFitsXdpMint = effects::IsExecCtx<Ctx> && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
 
 template <class T>
-concept BpfScalar =
-       std::is_trivially_copyable_v<T>
-    && std::is_standard_layout_v<T>;
+concept BpfScalar = std::is_trivially_copyable_v<T> && std::is_standard_layout_v<T>;
 
 template <class K>
-concept BpfKey =
-       BpfScalar<K>
-    && std::has_unique_object_representations_v<K>
-    && requires(K a, K b) {
-           { a == b } -> std::convertible_to<bool>;
-       };
+concept BpfKey = BpfScalar<K> && std::has_unique_object_representations_v<K> && requires(K a, K b) {
+    { a == b } -> std::convertible_to<bool>;
+};
 
-[[nodiscard]] constexpr std::expected<XdpIfIndex, XdpError>
-admit_xdp_ifindex(std::uint32_t ifindex) noexcept {
+[[nodiscard]] constexpr std::expected<XdpIfIndex, XdpError> admit_xdp_ifindex(std::uint32_t ifindex) noexcept {
     if (ifindex == 0) {
         return std::unexpected(XdpError::InvalidIfIndex);
     }
@@ -143,8 +133,7 @@ admit_bpf_map_entries(std::uint32_t entries) noexcept {
     if (entries == 0) {
         return std::unexpected(XdpError::InvalidMapEntries);
     }
-    return PositiveMapEntries{
-        entries, typename PositiveMapEntries::Trusted{}};
+    return PositiveMapEntries{entries, typename PositiveMapEntries::Trusted{}};
 }
 
 [[nodiscard]] constexpr std::expected<PositiveMapElementBytes, XdpError>
@@ -152,12 +141,10 @@ admit_bpf_map_element_bytes(std::uint16_t bytes) noexcept {
     if (bytes == 0) {
         return std::unexpected(XdpError::InvalidMapElementSize);
     }
-    return PositiveMapElementBytes{
-        bytes, typename PositiveMapElementBytes::Trusted{}};
+    return PositiveMapElementBytes{bytes, typename PositiveMapElementBytes::Trusted{}};
 }
 
-[[nodiscard]] constexpr safety::Bits<cog::NicFeature>
-xdp_required_features(XdpMode mode) noexcept {
+[[nodiscard]] constexpr safety::Bits<cog::NicFeature> xdp_required_features(XdpMode mode) noexcept {
     switch (mode) {
         case XdpMode::Native:
             return safety::Bits<cog::NicFeature>{cog::NicFeature::XdpNative};
@@ -171,12 +158,9 @@ xdp_required_features(XdpMode mode) noexcept {
 
 template <class Ctx>
     requires CtxFitsXdpMint<Ctx>
-[[nodiscard]] constexpr DeclaredXdpProgram
-mint_xdp_program(Ctx const&,
-                 cntp::NicInterfaceName iface,
-                 XdpIfIndex ifindex,
-                 XdpProgramKind kind,
-                 XdpMode mode = XdpMode::Native) noexcept {
+[[nodiscard]] constexpr DeclaredXdpProgram mint_xdp_program(Ctx const&, cntp::NicInterfaceName iface,
+                                                            XdpIfIndex ifindex, XdpProgramKind kind,
+                                                            XdpMode mode = XdpMode::Native) noexcept {
     return DeclaredXdpProgram{XdpProgramSpec{
         .interface = iface,
         .ifindex = ifindex,
@@ -187,8 +171,8 @@ mint_xdp_program(Ctx const&,
 }
 
 template <BpfScalar Key, BpfScalar Value>
-[[nodiscard]] constexpr std::expected<DeclaredBpfMap, XdpError>
-mint_bpf_map_spec(BpfMapKind kind, PositiveMapEntries entries) noexcept {
+[[nodiscard]] constexpr std::expected<DeclaredBpfMap, XdpError> mint_bpf_map_spec(BpfMapKind kind,
+                                                                                  PositiveMapEntries entries) noexcept {
     if constexpr (sizeof(Key) > std::numeric_limits<std::uint16_t>::max()
                   || sizeof(Value) > std::numeric_limits<std::uint16_t>::max()) {
         return std::unexpected(XdpError::InvalidMapElementSize);
@@ -208,21 +192,18 @@ mint_bpf_map_spec(BpfMapKind kind, PositiveMapEntries entries) noexcept {
     }};
 }
 
-[[nodiscard]] constexpr std::expected<void, XdpError>
-xdp_admit_nic(cog::CogIdentity const& identity,
-              cog::NicPortTargetCaps const& caps,
-              DeclaredXdpProgram program) noexcept {
+[[nodiscard]] constexpr std::expected<void, XdpError> xdp_admit_nic(cog::CogIdentity const& identity,
+                                                                    cog::NicPortTargetCaps const& caps,
+                                                                    DeclaredXdpProgram program) noexcept {
     if (identity.kind != cog::CogKind::NicPort) {
         return std::unexpected(XdpError::WrongCogKind);
     }
 
     XdpProgramSpec const& spec = program.value();
-    if (spec.required_features.test(cog::NicFeature::XdpNative)
-        && !caps.features.test(cog::NicFeature::XdpNative)) {
+    if (spec.required_features.test(cog::NicFeature::XdpNative) && !caps.features.test(cog::NicFeature::XdpNative)) {
         return std::unexpected(XdpError::MissingNativeXdp);
     }
-    if (spec.required_features.test(cog::NicFeature::XdpOffload)
-        && !caps.features.test(cog::NicFeature::XdpOffload)) {
+    if (spec.required_features.test(cog::NicFeature::XdpOffload) && !caps.features.test(cog::NicFeature::XdpOffload)) {
         return std::unexpected(XdpError::MissingOffloadXdp);
     }
     return {};
@@ -243,13 +224,9 @@ template <BpfScalar Key>
 
 }  // namespace detail
 
-template <BpfKey Key,
-          BpfScalar Value,
-          std::uint32_t MaxEntries,
-          BpfMapKind Kind = BpfMapKind::Hash>
-    requires (MaxEntries > 0)
-class BpfMapImage
-    : public safety::Pinned<BpfMapImage<Key, Value, MaxEntries, Kind>> {
+template <BpfKey Key, BpfScalar Value, std::uint32_t MaxEntries, BpfMapKind Kind = BpfMapKind::Hash>
+    requires(MaxEntries > 0)
+class BpfMapImage : public safety::Pinned<BpfMapImage<Key, Value, MaxEntries, Kind>> {
     struct Slot {
         Key key{};
         Value value{};
@@ -267,8 +244,7 @@ class BpfMapImage
         }
     }
 
-    [[nodiscard]] constexpr std::optional<std::uint32_t>
-    find_slot(Key const& key) const noexcept {
+    [[nodiscard]] constexpr std::optional<std::uint32_t> find_slot(Key const& key) const noexcept {
         const std::uint32_t start = first_slot(key);
         for (std::uint32_t probe = 0; probe < MaxEntries; ++probe) {
             const std::uint32_t idx = (start + probe) % MaxEntries;
@@ -282,8 +258,7 @@ class BpfMapImage
         return std::nullopt;
     }
 
-    [[nodiscard]] constexpr std::optional<std::uint32_t>
-    first_free_slot(Key const& key) const noexcept {
+    [[nodiscard]] constexpr std::optional<std::uint32_t> first_free_slot(Key const& key) const noexcept {
         const std::uint32_t start = first_slot(key);
         for (std::uint32_t probe = 0; probe < MaxEntries; ++probe) {
             const std::uint32_t idx = (start + probe) % MaxEntries;
@@ -302,16 +277,12 @@ public:
 
     constexpr BpfMapImage() noexcept = default;
 
-    [[nodiscard]] constexpr std::uint32_t size() const noexcept {
-        return size_;
-    }
+    [[nodiscard]] constexpr std::uint32_t size() const noexcept { return size_; }
 
-    [[nodiscard]] constexpr bool full() const noexcept {
-        return size_ == MaxEntries;
-    }
+    [[nodiscard]] constexpr bool full() const noexcept { return size_ == MaxEntries; }
 
-    [[nodiscard]] constexpr std::expected<void, XdpError>
-    update(Key key, Value value, BpfMapUpdate mode = BpfMapUpdate::Any) noexcept {
+    [[nodiscard]] constexpr std::expected<void, XdpError> update(Key key, Value value,
+                                                                 BpfMapUpdate mode = BpfMapUpdate::Any) noexcept {
         auto existing = find_slot(key);
         if (existing.has_value()) {
             if (mode == BpfMapUpdate::NoExist) {
@@ -332,8 +303,7 @@ public:
         return {};
     }
 
-    [[nodiscard]] constexpr std::optional<Value>
-    lookup(Key const& key) const noexcept {
+    [[nodiscard]] constexpr std::optional<Value> lookup(Key const& key) const noexcept {
         auto idx = find_slot(key);
         if (!idx.has_value()) {
             return std::nullopt;
@@ -341,8 +311,7 @@ public:
         return slots_[*idx].value;
     }
 
-    [[nodiscard]] constexpr std::expected<void, XdpError>
-    erase(Key const& key) noexcept {
+    [[nodiscard]] constexpr std::expected<void, XdpError> erase(Key const& key) noexcept {
         auto idx = find_slot(key);
         if (!idx.has_value()) {
             return std::unexpected(XdpError::KeyNotFound);
@@ -359,8 +328,7 @@ public:
                 (void)update(slot.key, slot.value, BpfMapUpdate::Any);
             }
         }
-        return size_ == old_size ? std::expected<void, XdpError>{}
-                                 : std::unexpected(XdpError::MapFull);
+        return size_ == old_size ? std::expected<void, XdpError>{} : std::unexpected(XdpError::MapFull);
     }
 };
 

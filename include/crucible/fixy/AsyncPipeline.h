@@ -94,9 +94,7 @@ using MemoryScope = ::crucible::algebra::lattices::MemoryScope;
 // the STRUCT (the type) and the inline-constexpr VALUE (the NTTP).
 template <std::size_t N>
 struct EqualsSlotSize {
-    [[nodiscard]] constexpr bool operator()(std::uint64_t v) const noexcept {
-        return v == N;
-    }
+    [[nodiscard]] constexpr bool operator()(std::uint64_t v) const noexcept { return v == N; }
 };
 
 template <std::size_t N>
@@ -110,16 +108,16 @@ inline constexpr std::size_t kMaxPipelineStages = 7;
 
 // ── Plan lookups (constexpr → consteval-usable on a constexpr plan) ──
 
-[[nodiscard]] constexpr ::crucible::TensorSlot const*
-find_slot(::crucible::MemoryPlan const& plan, ::crucible::SlotId slot_id) noexcept {
+[[nodiscard]] constexpr ::crucible::TensorSlot const* find_slot(::crucible::MemoryPlan const& plan,
+                                                                ::crucible::SlotId slot_id) noexcept {
     for (std::uint32_t i = 0; i < plan.num_slots; ++i) {
         if (plan.slots[i].slot_id == slot_id) return &plan.slots[i];
     }
     return nullptr;
 }
 
-[[nodiscard]] constexpr std::uint64_t
-slot_nbytes(::crucible::MemoryPlan const& plan, ::crucible::SlotId slot_id) noexcept {
+[[nodiscard]] constexpr std::uint64_t slot_nbytes(::crucible::MemoryPlan const& plan,
+                                                  ::crucible::SlotId slot_id) noexcept {
     ::crucible::TensorSlot const* found = find_slot(plan, slot_id);
     return found != nullptr ? found->nbytes : std::uint64_t{0};
 }
@@ -130,9 +128,8 @@ slot_nbytes(::crucible::MemoryPlan const& plan, ::crucible::SlotId slot_id) noex
 // (MerkleDag.h:194-205) but returns the cardinality instead of the
 // disjointness verdict.  External slots are excluded (they keep their own
 // allocations and never enter the pool / the pipeline).
-[[nodiscard]] constexpr std::size_t
-live_set_width_at(std::span<const ::crucible::TensorSlot> slots,
-                  ::crucible::OpIndex op) noexcept {
+[[nodiscard]] constexpr std::size_t live_set_width_at(std::span<const ::crucible::TensorSlot> slots,
+                                                      ::crucible::OpIndex op) noexcept {
     std::size_t width = 0;
     const std::uint32_t t = op.raw();
     for (::crucible::TensorSlot const& slot : slots) {
@@ -143,10 +140,9 @@ live_set_width_at(std::span<const ::crucible::TensorSlot> slots,
 }
 
 // Max live-set width over the [birth, death] streaming window of a slot.
-[[nodiscard]] constexpr std::size_t
-max_live_width_over_window(std::span<const ::crucible::TensorSlot> slots,
-                           ::crucible::OpIndex birth,
-                           ::crucible::OpIndex death) noexcept {
+[[nodiscard]] constexpr std::size_t max_live_width_over_window(std::span<const ::crucible::TensorSlot> slots,
+                                                               ::crucible::OpIndex birth,
+                                                               ::crucible::OpIndex death) noexcept {
     if (!birth.is_valid() || !death.is_valid()) return 1;
     std::size_t widest = 0;
     for (std::uint32_t t = birth.raw(); t <= death.raw(); ++t) {
@@ -157,14 +153,13 @@ max_live_width_over_window(std::span<const ::crucible::TensorSlot> slots,
 }
 
 // ── Stages derivation: min(live_width, smem_per_sm/nbytes, 7) ∈ [1,7] ─
-[[nodiscard]] constexpr std::size_t
-derive_pipeline_stages(::crucible::MemoryPlan const& plan,
-                       ::crucible::SlotId slot_id,
-                       std::uint32_t smem_per_sm) noexcept {
+[[nodiscard]] constexpr std::size_t derive_pipeline_stages(::crucible::MemoryPlan const& plan,
+                                                           ::crucible::SlotId slot_id,
+                                                           std::uint32_t smem_per_sm) noexcept {
     ::crucible::TensorSlot const* found = find_slot(plan, slot_id);
     if (found == nullptr || found->nbytes == 0u) return 1;
-    const std::size_t live_width = max_live_width_over_window(
-        {plan.slots, plan.num_slots}, found->birth_op, found->death_op);
+    const std::size_t live_width =
+        max_live_width_over_window({plan.slots, plan.num_slots}, found->birth_op, found->death_op);
     const std::size_t smem_cap = static_cast<std::size_t>(smem_per_sm) / found->nbytes;
     std::size_t stages = live_width;
     if (smem_cap < stages) stages = smem_cap;
@@ -183,9 +178,8 @@ derive_pipeline_stages(::crucible::MemoryPlan const& plan,
 // mismatch a COMPILE error and a dynamic-shape mismatch a construction
 // abort.
 template <std::size_t Bytes>
-[[nodiscard]] constexpr ExpectTxBytes<Bytes>
-derive_expect_tx(::crucible::MemoryPlan const& plan,
-                 ::crucible::SlotId slot_id) noexcept {
+[[nodiscard]] constexpr ExpectTxBytes<Bytes> derive_expect_tx(::crucible::MemoryPlan const& plan,
+                                                              ::crucible::SlotId slot_id) noexcept {
     const std::uint64_t planned = slot_nbytes(plan, slot_id);
     CRUCIBLE_PRE(equals_slot_size<Bytes>(planned));
     return ::crucible::safety::mint_refined<equals_slot_size<Bytes>, std::uint64_t>(planned);
@@ -197,10 +191,8 @@ derive_expect_tx(::crucible::MemoryPlan const& plan,
 // already implies Handle::stages >= 1) and adds: the ctx is a real
 // ExecCtx, and the handle's pinned depth is a valid pipeline depth.
 template <std::size_t Bytes, typename Handle, typename Ctx>
-concept CtxFitsAsyncPipelineMint =
-    aps::CtxFitsAsyncPipeline<Bytes, Handle>
-    && ::crucible::effects::IsExecCtx<Ctx>
-    && (static_cast<std::size_t>(Handle::stages) <= kMaxPipelineStages);
+concept CtxFitsAsyncPipelineMint = aps::CtxFitsAsyncPipeline<Bytes, Handle> && ::crucible::effects::IsExecCtx<Ctx>
+                                && (static_cast<std::size_t>(Handle::stages) <= kMaxPipelineStages);
 
 // ── Result: the producer + consumer session pair ─────────────────────
 template <std::size_t Bytes, typename Handle, typename Ctx>
@@ -220,15 +212,11 @@ struct AsyncPipelinePair {
 // allocation — the plan is read through a borrowed pointer).
 template <std::size_t Bytes, typename Handle, ::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsAsyncPipelineMint<Bytes, Handle, Ctx>
-[[nodiscard]] constexpr auto
-mint_async_pipeline(Ctx const& ctx,
-                    ::crucible::MemoryPlan const* plan,
-                    ::crucible::SlotId slot_id,
-                    Handle& handle,
-                    ::crucible::safety::Permission<typename Handle::slot_tag>&& slot_perm,
-                    std::uint32_t smem_per_sm = 233472u) noexcept
-    -> AsyncPipelinePair<Bytes, Handle, Ctx>
-{
+[[nodiscard]] constexpr auto mint_async_pipeline(Ctx const& ctx, ::crucible::MemoryPlan const* plan,
+                                                 ::crucible::SlotId slot_id, Handle& handle,
+                                                 ::crucible::safety::Permission<typename Handle::slot_tag>&& slot_perm,
+                                                 std::uint32_t smem_per_sm = 233472u) noexcept
+    -> AsyncPipelinePair<Bytes, Handle, Ctx> {
     CRUCIBLE_PRE(plan != nullptr);
     // expect_tx binding: the planned slot size MUST equal the compile-time
     // Bytes.  A mismatch aborts at establishment (compile error on a
@@ -236,11 +224,9 @@ mint_async_pipeline(Ctx const& ctx,
     const ExpectTxBytes<Bytes> expect_tx = derive_expect_tx<Bytes>(*plan, slot_id);
     (void)expect_tx;
     // The handle's pinned depth must be the plan-derived deepest-pipeline.
-    CRUCIBLE_PRE(static_cast<std::size_t>(Handle::stages)
-                 == derive_pipeline_stages(*plan, slot_id, smem_per_sm));
+    CRUCIBLE_PRE(static_cast<std::size_t>(Handle::stages) == derive_pipeline_stages(*plan, slot_id, smem_per_sm));
     return AsyncPipelinePair<Bytes, Handle, Ctx>{
-        aps::mint_async_pipeline_producer_session<Bytes>(
-            ctx, handle, std::move(slot_perm)),
+        aps::mint_async_pipeline_producer_session<Bytes>(ctx, handle, std::move(slot_perm)),
         aps::mint_async_pipeline_consumer_session<Bytes>(ctx, handle)};
 }
 
@@ -263,12 +249,16 @@ struct ConstevalPlanFixture {
     std::array<::crucible::TensorSlot, 2> slots{};
     ::crucible::MemoryPlan plan{};
     constexpr ConstevalPlanFixture() noexcept {
-        slots[0] = ::crucible::TensorSlot{.offset_bytes = 0u, .nbytes = 256u,
-            .birth_op = ::crucible::OpIndex{0u}, .death_op = ::crucible::OpIndex{3u},
-            .slot_id = ::crucible::SlotId{0u}};
-        slots[1] = ::crucible::TensorSlot{.offset_bytes = 256u, .nbytes = 256u,
-            .birth_op = ::crucible::OpIndex{2u}, .death_op = ::crucible::OpIndex{5u},
-            .slot_id = ::crucible::SlotId{1u}};
+        slots[0] = ::crucible::TensorSlot{.offset_bytes = 0u,
+                                          .nbytes = 256u,
+                                          .birth_op = ::crucible::OpIndex{0u},
+                                          .death_op = ::crucible::OpIndex{3u},
+                                          .slot_id = ::crucible::SlotId{0u}};
+        slots[1] = ::crucible::TensorSlot{.offset_bytes = 256u,
+                                          .nbytes = 256u,
+                                          .birth_op = ::crucible::OpIndex{2u},
+                                          .death_op = ::crucible::OpIndex{5u},
+                                          .slot_id = ::crucible::SlotId{1u}};
         plan.slots = slots.data();
         plan.num_slots = 2u;
     }

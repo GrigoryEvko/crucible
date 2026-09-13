@@ -50,19 +50,19 @@ inline constexpr size_t kHugePageBytes = 2 * 1024 * 1024;
 }
 
 struct HotRegion {
-    void*       addr       = nullptr;
-    size_t      len        = 0;
+    void* addr = nullptr;
+    size_t len = 0;
     // True for large mostly-static mappings that benefit from 2 MB
     // hugepages (MemoryPlan pools, KernelCache). False for frequently-
     // resized buffers where THP collapse would stall.
-    bool        huge_hint  = false;
+    bool huge_hint = false;
     // Optional short label for deploy-health diagnostics. Caller owns
     // the storage; typically a string literal.
-    const char* label      = "";
+    const char* label = "";
 };
 
 class HotRegionRegistry {
- public:
+public:
     static constexpr size_t max_regions = 256;
 
     [[nodiscard]] static HotRegionRegistry& instance() noexcept {
@@ -79,10 +79,8 @@ class HotRegionRegistry {
             for (auto& slot : slots_) {
                 void* current = slot.addr.load(std::memory_order_acquire);
                 if (current != addr) continue;
-                if (slot.addr.compare_exchange_strong(
-                        current, claimed_addr(),
-                        std::memory_order_acq_rel,
-                        std::memory_order_acquire)) {
+                if (slot.addr.compare_exchange_strong(current, claimed_addr(), std::memory_order_acq_rel,
+                                                      std::memory_order_acquire)) {
                     slot.len.store(len, std::memory_order_relaxed);
                     slot.huge_hint.store(huge_hint, std::memory_order_relaxed);
                     slot.label.store(label, std::memory_order_relaxed);
@@ -93,10 +91,8 @@ class HotRegionRegistry {
 
             for (auto& slot : slots_) {
                 void* expected = nullptr;
-                if (slot.addr.compare_exchange_strong(
-                        expected, claimed_addr(),
-                        std::memory_order_acq_rel,
-                        std::memory_order_acquire)) {
+                if (slot.addr.compare_exchange_strong(expected, claimed_addr(), std::memory_order_acq_rel,
+                                                      std::memory_order_acquire)) {
                     slot.len.store(len, std::memory_order_relaxed);
                     slot.huge_hint.store(huge_hint, std::memory_order_relaxed);
                     slot.label.store(label, std::memory_order_relaxed);
@@ -115,10 +111,8 @@ class HotRegionRegistry {
         if (addr == nullptr) return;
         for (auto& slot : slots_) {
             void* expected = addr;
-            if (slot.addr.compare_exchange_strong(
-                    expected, nullptr,
-                    std::memory_order_acq_rel,
-                    std::memory_order_acquire)) {
+            if (slot.addr.compare_exchange_strong(expected, nullptr, std::memory_order_acq_rel,
+                                                  std::memory_order_acquire)) {
                 return;
             }
         }
@@ -157,12 +151,12 @@ class HotRegionRegistry {
         return count;
     }
 
-    HotRegionRegistry(const HotRegionRegistry&)            = delete("singleton — use instance()");
+    HotRegionRegistry(const HotRegionRegistry&) = delete("singleton — use instance()");
     HotRegionRegistry& operator=(const HotRegionRegistry&) = delete("singleton — use instance()");
-    HotRegionRegistry(HotRegionRegistry&&)                 = delete("singleton — use instance()");
-    HotRegionRegistry& operator=(HotRegionRegistry&&)      = delete("singleton — use instance()");
+    HotRegionRegistry(HotRegionRegistry&&) = delete("singleton — use instance()");
+    HotRegionRegistry& operator=(HotRegionRegistry&&) = delete("singleton — use instance()");
 
- private:
+private:
     HotRegionRegistry() = default;
     ~HotRegionRegistry() = default;
 
@@ -179,38 +173,28 @@ class HotRegionRegistry {
     // atomic ops on ISAs lacking the required intrinsic, which would turn
     // every read of the hot-region table into a mutex hop.  Refuse to build
     // instead of regressing silently.
-    static_assert(std::atomic<void*>::is_always_lock_free,
-                  "std::atomic<void*> must be lock-free on this target — "
-                  "fixy-A5-029");
-    static_assert(std::atomic<size_t>::is_always_lock_free,
-                  "std::atomic<size_t> must be lock-free on this target — "
-                  "fixy-A5-029");
-    static_assert(std::atomic<bool>::is_always_lock_free,
-                  "std::atomic<bool> must be lock-free on this target — "
-                  "fixy-A5-029");
+    static_assert(std::atomic<void*>::is_always_lock_free, "std::atomic<void*> must be lock-free on this target — "
+                                                           "fixy-A5-029");
+    static_assert(std::atomic<size_t>::is_always_lock_free, "std::atomic<size_t> must be lock-free on this target — "
+                                                            "fixy-A5-029");
+    static_assert(std::atomic<bool>::is_always_lock_free, "std::atomic<bool> must be lock-free on this target — "
+                                                          "fixy-A5-029");
     static_assert(std::atomic<const char*>::is_always_lock_free,
                   "std::atomic<const char*> must be lock-free on this target "
                   "— fixy-A5-029");
 
-    [[nodiscard]] static void* claimed_addr() noexcept {
-        return std::bit_cast<void*>(uintptr_t{1});
-    }
+    [[nodiscard]] static void* claimed_addr() noexcept { return std::bit_cast<void*>(uintptr_t{1}); }
 
     std::array<Slot, max_regions> slots_{};
 };
 
 // Convenience free functions. Prefer these at call sites — the class
 // name is verbose and rarely wanted directly.
-inline void register_hot_region(void*       addr,
-                                size_t      len,
-                                bool        huge_hint = false,
-                                const char* label     = "") noexcept {
+inline void register_hot_region(void* addr, size_t len, bool huge_hint = false, const char* label = "") noexcept {
     HotRegionRegistry::instance().register_region(addr, len, huge_hint, label);
 }
 
-inline void unregister_hot_region(void* addr) noexcept {
-    HotRegionRegistry::instance().unregister_region(addr);
-}
+inline void unregister_hot_region(void* addr) noexcept { HotRegionRegistry::instance().unregister_region(addr); }
 
 // ── §XXI Universal Mint Pattern — mint_hot_region_registry_handle ─────
 //
@@ -230,45 +214,33 @@ inline void unregister_hot_region(void* addr) noexcept {
 // uniformity, even though they're const — the handle's existence is the
 // proof, not its usage.
 
-class HotRegionRegistryHandle final
-    : public ::crucible::safety::Pinned<HotRegionRegistryHandle> {
- public:
+class HotRegionRegistryHandle final : public ::crucible::safety::Pinned<HotRegionRegistryHandle> {
+public:
     HotRegionRegistryHandle() noexcept = default;
 
-    void register_region(void*       addr,
-                         size_t      len,
-                         bool        huge_hint = false,
-                         const char* label     = "") const noexcept {
+    void register_region(void* addr, size_t len, bool huge_hint = false, const char* label = "") const noexcept {
         HotRegionRegistry::instance().register_region(addr, len, huge_hint, label);
     }
 
-    void unregister_region(void* addr) const noexcept {
-        HotRegionRegistry::instance().unregister_region(addr);
-    }
+    void unregister_region(void* addr) const noexcept { HotRegionRegistry::instance().unregister_region(addr); }
 
-    [[nodiscard]] std::inplace_vector<HotRegion, HotRegionRegistry::max_regions>
-    snapshot() const noexcept {
+    [[nodiscard]] std::inplace_vector<HotRegion, HotRegionRegistry::max_regions> snapshot() const noexcept {
         return HotRegionRegistry::instance().snapshot();
     }
 
-    [[nodiscard]] size_t size() const noexcept {
-        return HotRegionRegistry::instance().size();
-    }
+    [[nodiscard]] size_t size() const noexcept { return HotRegionRegistry::instance().size(); }
 };
 
-static_assert(sizeof(HotRegionRegistryHandle) == 1,
-    "HotRegionRegistryHandle must be the 1-byte authorization token; "
-    "the underlying registry state lives in the Pinned singleton.");
+static_assert(sizeof(HotRegionRegistryHandle) == 1, "HotRegionRegistryHandle must be the 1-byte authorization token; "
+                                                    "the underlying registry state lives in the Pinned singleton.");
 
 template <class Ctx>
 concept CtxFitsHotRegionRegistryMint =
-       effects::IsExecCtx<Ctx>
-    && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
+    effects::IsExecCtx<Ctx> && effects::CtxOwnsCapability<Ctx, effects::Effect::Init>;
 
 template <effects::IsExecCtx Ctx>
     requires CtxFitsHotRegionRegistryMint<Ctx>
-[[nodiscard]] constexpr HotRegionRegistryHandle
-mint_hot_region_registry_handle(Ctx const&) noexcept {
+[[nodiscard]] constexpr HotRegionRegistryHandle mint_hot_region_registry_handle(Ctx const&) noexcept {
     return HotRegionRegistryHandle{};
 }
 
@@ -276,4 +248,4 @@ static_assert(CtxFitsHotRegionRegistryMint<effects::ColdInitCtx>);
 static_assert(!CtxFitsHotRegionRegistryMint<effects::BgDrainCtx>);
 static_assert(!CtxFitsHotRegionRegistryMint<effects::HotFgCtx>);
 
-} // namespace crucible::warden
+}  // namespace crucible::warden

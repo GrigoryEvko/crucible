@@ -43,11 +43,11 @@
 // machine-verified contract once Clang joins the build matrix.
 
 #include <crucible/MerkleDag.h>
-#include <crucible/Platform.h>           // WRAP-RegionCache-6 #991: CRUCIBLE_NO_THREAD_SAFETY
-#include <crucible/safety/Cyclic.h>      // safety::Cyclic — ring write cursor (head_)
-#include <crucible/safety/Mutation.h>    // safety::BoundedMonotonic — saturating fill counter (count_)
-#include <crucible/safety/Tagged.h>      // WRAP-RegionCache-2 #987: source::RegionOps provenance
-#include <crucible/safety/WeakRef.h>     // safety::WeakRef — nullable non-owning cache slot
+#include <crucible/Platform.h>  // WRAP-RegionCache-6 #991: CRUCIBLE_NO_THREAD_SAFETY
+#include <crucible/safety/Cyclic.h>  // safety::Cyclic — ring write cursor (head_)
+#include <crucible/safety/Mutation.h>  // safety::BoundedMonotonic — saturating fill counter (count_)
+#include <crucible/safety/Tagged.h>  // WRAP-RegionCache-2 #987: source::RegionOps provenance
+#include <crucible/safety/WeakRef.h>  // safety::WeakRef — nullable non-owning cache slot
 
 #include <cassert>
 #include <cstdint>
@@ -74,10 +74,10 @@ struct RegionCache {
     //  owns the & (CAP-1) wrap-mask internally — see index()/index_back().)
 
     RegionCache() = default;
-    RegionCache(const RegionCache&)            = delete("embedded in Vigil; no reason to copy");
+    RegionCache(const RegionCache&) = delete("embedded in Vigil; no reason to copy");
     RegionCache& operator=(const RegionCache&) = delete("embedded in Vigil; no reason to copy");
-    RegionCache(RegionCache&&)                 = delete("embedded in Vigil; no reason to move");
-    RegionCache& operator=(RegionCache&&)      = delete("embedded in Vigil; no reason to move");
+    RegionCache(RegionCache&&) = delete("embedded in Vigil; no reason to move");
+    RegionCache& operator=(RegionCache&&) = delete("embedded in Vigil; no reason to move");
 
     // Insert a region.  No-op if already cached (same content_hash).
     // If full, evicts the oldest entry (FIFO).
@@ -93,23 +93,22 @@ struct RegionCache {
 
         // Dedup: scan inline content_hashes_ — zero pointer chasing.
         for (uint32_t i = 0; i < count_.get(); i++) {
-            if (content_hashes_[head_.index_back(i)] == hash)
-                return;
+            if (content_hashes_[head_.index_back(i)] == hash) return;
         }
 
         const uint32_t slot = head_.index();
         // WeakRef::from_raw is the populate-from-a-raw-pointer path; `region`
         // is asserted non-null above, but the slot type is deliberately
         // nullable so eviction/empty slots stay representable.
-        regions_[slot]        = safety::WeakRef<const RegionNode>::from_raw(region);
+        regions_[slot] = safety::WeakRef<const RegionNode>::from_raw(region);
         content_hashes_[slot] = hash;
         // WRAP-RegionCache-2 #987: explicit OpsPtr construction at the
         // cache-insertion boundary — raw `ops_[slot] = region->ops;` is
         // rejected by Tagged's explicit ctor (see HS14 BYPASS fixture).
-        ops_[slot]            = OpsPtr{region->ops};
+        ops_[slot] = OpsPtr{region->ops};
         // Plan-less regions get num_ops_=0: find_alternate's bounds check
         // (pos >= 0) rejects them without a separate plan check.
-        num_ops_[slot]        = region->plan ? region->num_ops : 0;
+        num_ops_[slot] = region->plan ? region->num_ops : 0;
         head_.advance();
         // count_ saturates at CAP: the guard is LOAD-BEARING, not defensive —
         // BoundedMonotonic::bump() carries CRUCIBLE_PRE(get() < Max) and does
@@ -142,12 +141,9 @@ struct RegionCache {
     //
     // Returns nullptr if no match found.
     // WRAP-RegionCache-6 #991: machine-readable "fg-only" contract.
-    [[nodiscard]] const RegionNode* find_alternate(
-        uint32_t pos,
-        SchemaHash schema, ShapeHash shape,
-        const RegionNode* exclude = nullptr) const
-        CRUCIBLE_LIFETIMEBOUND CRUCIBLE_NO_THREAD_SAFETY
-    {
+    [[nodiscard]] const RegionNode* find_alternate(uint32_t pos, SchemaHash schema, ShapeHash shape,
+                                                   const RegionNode* exclude = nullptr) const CRUCIBLE_LIFETIMEBOUND
+    CRUCIBLE_NO_THREAD_SAFETY {
         for (uint32_t i = 0; i < count_.get(); i++) {
             const uint32_t idx = head_.index_back(i);
 
@@ -161,9 +157,7 @@ struct RegionCache {
             // there's no runtime cost, and the local makes the [pos]
             // indexing read identical to the pre-migration codegen.
             const TraceEntry* ops_ptr = ops_[idx].value();
-            if (ops_ptr[pos].schema_hash == schema &&
-                ops_ptr[pos].shape_hash  == shape)
-                return regions_[idx].try_get();
+            if (ops_ptr[pos].schema_hash == schema && ops_ptr[pos].shape_hash == shape) return regions_[idx].try_get();
         }
         return nullptr;
     }
@@ -171,9 +165,7 @@ struct RegionCache {
     // Find by exact content hash.  Scans inline content_hashes_ —
     // zero pointer chasing into RegionNode.
     // WRAP-RegionCache-6 #991: machine-readable "fg-only" contract.
-    [[nodiscard]] const RegionNode* find(ContentHash hash) const
-        CRUCIBLE_LIFETIMEBOUND CRUCIBLE_NO_THREAD_SAFETY
-    {
+    [[nodiscard]] const RegionNode* find(ContentHash hash) const CRUCIBLE_LIFETIMEBOUND CRUCIBLE_NO_THREAD_SAFETY {
         for (uint32_t i = 0; i < count_.get(); i++) {
             const uint32_t idx = head_.index_back(i);
             if (content_hashes_[idx] == hash) return regions_[idx].try_get();
@@ -183,10 +175,10 @@ struct RegionCache {
 
     // ── Queries ──
 
-    [[nodiscard]] uint32_t size()  const { return count_.get(); }
-    [[nodiscard]] bool     empty() const { return count_.get() == 0; }
+    [[nodiscard]] uint32_t size() const { return count_.get(); }
+    [[nodiscard]] bool empty() const { return count_.get() == 0; }
 
- private:
+private:
     // SoA layout: each field in its own contiguous array.
     //
     // regions_:        8 * 8B = 64B = 1 cache line  (WeakRef slots: identity compare via try_get, return value)
@@ -205,23 +197,22 @@ struct RegionCache {
     // identity access through try_get() so a slot can never be mistaken for
     // an owning pointer (TypeSafe).  Zero-cost: collapses to one pointer.
     safety::WeakRef<const RegionNode> regions_[CAP]{};
-    ContentHash       content_hashes_[CAP]{}; // dedup + exact lookup (zero ptr chase)
+    ContentHash content_hashes_[CAP]{};  // dedup + exact lookup (zero ptr chase)
     // WRAP-RegionCache-2 #987: each ops_[i] is provenance-tagged as
     // Tagged<const TraceEntry*, source::RegionOps>.  source::RegionOps
     // encodes "this pointer was extracted from RegionNode.ops at cache-
     // insertion time".  Regime-1 EBO collapse preserves the 8B pointer
     // width — the CAP*8 = 64B array footprint is unchanged (the layout
     // sentinel at the bottom of the class pins sizeof(OpsPtr) == 8).
-    using OpsPtr = ::crucible::safety::Tagged<
-        const TraceEntry*, ::crucible::safety::source::RegionOps>;
-    OpsPtr            ops_[CAP]{};            // cached ops pointer (one fewer ptr chase)
-    uint32_t          num_ops_[CAP]{};        // cached op count (bounds check inline)
+    using OpsPtr = ::crucible::safety::Tagged<const TraceEntry*, ::crucible::safety::source::RegionOps>;
+    OpsPtr ops_[CAP]{};  // cached ops pointer (one fewer ptr chase)
+    uint32_t num_ops_[CAP]{};  // cached op count (bounds check inline)
 
     // Ring write cursor (WRAP-RegionCache-4, #989): a free-running counter read
     // as head_.index() (next-write slot) and head_.index_back(i) (i-th most
     // recent).  Cyclic carries the & (CAP-1) wrap-mask + advance discipline in
     // the type, so the open-coded masking that MASK used to express is gone.
-    safety::Cyclic<uint32_t, CAP>           head_{};
+    safety::Cyclic<uint32_t, CAP> head_{};
     // Saturating fill counter, 0..CAP (WRAP-RegionCache-4, #989):
     // BoundedMonotonic enforces BOTH non-decrease and the CAP ceiling; insert()
     // guards bump() with `get() < CAP` so the saturate-at-CAP semantics hold.
@@ -239,20 +230,16 @@ struct RegionCache {
 // 64B (the SoA accounting above assumes CAP*sizeof(ptr) per element
 // array) and the cache-line plan in the doc-block at the top of
 // the class becomes incorrect.
-static_assert(
-    sizeof(::crucible::safety::Tagged<const TraceEntry*,
-                                      ::crucible::safety::source::RegionOps>)
-        == sizeof(const TraceEntry*),
-    "WRAP-RegionCache-2 #987: Tagged<const TraceEntry*, source::RegionOps> "
-    "must preserve pointer size via regime-1 EBO collapse.");
-static_assert(
-    alignof(::crucible::safety::Tagged<const TraceEntry*,
-                                       ::crucible::safety::source::RegionOps>)
-        == alignof(const TraceEntry*),
-    "WRAP-RegionCache-2 #987: Tagged<const TraceEntry*, source::RegionOps> "
-    "must preserve pointer alignment via regime-1 EBO collapse.");
+static_assert(sizeof(::crucible::safety::Tagged<const TraceEntry*, ::crucible::safety::source::RegionOps>)
+                  == sizeof(const TraceEntry*),
+              "WRAP-RegionCache-2 #987: Tagged<const TraceEntry*, source::RegionOps> "
+              "must preserve pointer size via regime-1 EBO collapse.");
+static_assert(alignof(::crucible::safety::Tagged<const TraceEntry*, ::crucible::safety::source::RegionOps>)
+                  == alignof(const TraceEntry*),
+              "WRAP-RegionCache-2 #987: Tagged<const TraceEntry*, source::RegionOps> "
+              "must preserve pointer alignment via regime-1 EBO collapse.");
 static_assert(sizeof(safety::WeakRef<const RegionNode>[RegionCache::CAP])
-              == RegionCache::CAP * sizeof(const RegionNode*),
+                  == RegionCache::CAP * sizeof(const RegionNode*),
               "WeakRef cache-slot array must stay layout-identical to raw pointers");
 
 // Zero-cost ring state (WRAP-RegionCache-4, #989): head_ (Cyclic) and count_
@@ -264,4 +251,4 @@ static_assert(sizeof(safety::Cyclic<uint32_t, RegionCache::CAP>) == sizeof(uint3
 static_assert(sizeof(safety::BoundedMonotonic<uint32_t, RegionCache::CAP>) == sizeof(uint32_t),
               "BoundedMonotonic fill counter must stay layout-identical to a raw uint32_t");
 
-} // namespace crucible
+}  // namespace crucible

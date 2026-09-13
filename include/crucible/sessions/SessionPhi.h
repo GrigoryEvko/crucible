@@ -153,21 +153,18 @@ struct has_empty_branch<Offer<>> : std::true_type {};
 // choice, so the OR-fold checks all branches.
 template <typename B0, typename... Bs>
 struct has_empty_branch<Select<B0, Bs...>>
-    : std::bool_constant<(has_empty_branch<B0>::value ||
-                          (has_empty_branch<Bs>::value || ...))> {};
+    : std::bool_constant<(has_empty_branch<B0>::value || (has_empty_branch<Bs>::value || ...))> {};
 
 template <typename B0, typename... Bs>
 struct has_empty_branch<Offer<B0, Bs...>>
-    : std::bool_constant<(has_empty_branch<B0>::value ||
-                          (has_empty_branch<Bs>::value || ...))> {};
+    : std::bool_constant<(has_empty_branch<B0>::value || (has_empty_branch<Bs>::value || ...))> {};
 
 // Sender-annotated Offer: the Sender<Role> tag is a type-level
 // annotation, not a runnable branch.  Recurse only into the real
 // branches Bs...
 template <typename Role, typename B0, typename... Bs>
 struct has_empty_branch<Offer<Sender<Role>, B0, Bs...>>
-    : std::bool_constant<(has_empty_branch<B0>::value ||
-                          (has_empty_branch<Bs>::value || ...))> {};
+    : std::bool_constant<(has_empty_branch<B0>::value || (has_empty_branch<Bs>::value || ...))> {};
 
 // Sender-annotated Offer with zero real branches is the same
 // structural deadlock as bare Offer<>.
@@ -222,16 +219,14 @@ template <typename T, typename K>
 struct loop_body_terminates<Recv<T, K>> : loop_body_terminates<K> {};
 
 template <typename... Bs>
-struct loop_body_terminates<Select<Bs...>>
-    : std::bool_constant<(loop_body_terminates<Bs>::value || ...)> {};
+struct loop_body_terminates<Select<Bs...>> : std::bool_constant<(loop_body_terminates<Bs>::value || ...)> {};
 
 template <typename... Bs>
-struct loop_body_terminates<Offer<Bs...>>
-    : std::bool_constant<(loop_body_terminates<Bs>::value || ...)> {};
+struct loop_body_terminates<Offer<Bs...>> : std::bool_constant<(loop_body_terminates<Bs>::value || ...)> {};
 
 template <typename Role, typename... Bs>
-struct loop_body_terminates<Offer<Sender<Role>, Bs...>>
-    : std::bool_constant<(loop_body_terminates<Bs>::value || ...)> {};
+struct loop_body_terminates<Offer<Sender<Role>, Bs...>> : std::bool_constant<(loop_body_terminates<Bs>::value || ...)> {
+};
 
 // A nested Loop terminates iff ITS body terminates (transitive escape).
 template <typename B>
@@ -277,21 +272,17 @@ template <typename T, typename K>
 struct has_unbounded_loop<Recv<T, K>> : has_unbounded_loop<K> {};
 
 template <typename... Bs>
-struct has_unbounded_loop<Select<Bs...>>
-    : std::bool_constant<(has_unbounded_loop<Bs>::value || ...)> {};
+struct has_unbounded_loop<Select<Bs...>> : std::bool_constant<(has_unbounded_loop<Bs>::value || ...)> {};
 
 template <typename... Bs>
-struct has_unbounded_loop<Offer<Bs...>>
-    : std::bool_constant<(has_unbounded_loop<Bs>::value || ...)> {};
+struct has_unbounded_loop<Offer<Bs...>> : std::bool_constant<(has_unbounded_loop<Bs>::value || ...)> {};
 
 template <typename Role, typename... Bs>
-struct has_unbounded_loop<Offer<Sender<Role>, Bs...>>
-    : std::bool_constant<(has_unbounded_loop<Bs>::value || ...)> {};
+struct has_unbounded_loop<Offer<Sender<Role>, Bs...>> : std::bool_constant<(has_unbounded_loop<Bs>::value || ...)> {};
 
 template <typename B>
 struct has_unbounded_loop<Loop<B>>
-    : std::bool_constant<!loop_body_terminates<B>::value
-                         || has_unbounded_loop<B>::value> {};
+    : std::bool_constant<!loop_body_terminates<B>::value || has_unbounded_loop<B>::value> {};
 
 template <VendorBackend V, typename P>
 struct has_unbounded_loop<VendorPinned<V, P>> : has_unbounded_loop<P> {};
@@ -325,10 +316,14 @@ struct head_payload {
 };
 
 template <typename T, typename K>
-struct head_payload<Send<T, K>> { using type = T; };
+struct head_payload<Send<T, K>> {
+    using type = T;
+};
 
 template <typename T, typename K>
-struct head_payload<Recv<T, K>> { using type = T; };
+struct head_payload<Recv<T, K>> {
+    using type = T;
+};
 
 template <typename B>
 struct head_payload<Loop<B>> : head_payload<B> {};
@@ -346,8 +341,7 @@ using head_payload_t = typename head_payload<B>::type;
 // compile time.
 
 template <typename T, typename... Rest>
-struct distinct_from_all
-    : std::bool_constant<(!std::is_same_v<T, Rest> && ...)> {};
+struct distinct_from_all : std::bool_constant<(!std::is_same_v<T, Rest> && ...)> {};
 
 template <typename... Ts>
 struct all_pairwise_distinct;
@@ -360,12 +354,10 @@ struct all_pairwise_distinct<T> : std::true_type {};
 
 template <typename T0, typename... Rest>
 struct all_pairwise_distinct<T0, Rest...>
-    : std::bool_constant<distinct_from_all<T0, Rest...>::value
-                         && all_pairwise_distinct<Rest...>::value> {};
+    : std::bool_constant<distinct_from_all<T0, Rest...>::value && all_pairwise_distinct<Rest...>::value> {};
 
 template <typename... Bs>
-inline constexpr bool branches_have_distinct_heads_v =
-    all_pairwise_distinct<head_payload_t<Bs>...>::value;
+inline constexpr bool branches_have_distinct_heads_v = all_pairwise_distinct<head_payload_t<Bs>...>::value;
 
 }  // namespace detail_phi
 
@@ -382,42 +374,34 @@ template <>
 struct payloads_distinct_at_choices<Continue> : std::true_type {};
 
 template <typename T, typename K>
-struct payloads_distinct_at_choices<Send<T, K>>
-    : payloads_distinct_at_choices<K> {};
+struct payloads_distinct_at_choices<Send<T, K>> : payloads_distinct_at_choices<K> {};
 
 template <typename T, typename K>
-struct payloads_distinct_at_choices<Recv<T, K>>
-    : payloads_distinct_at_choices<K> {};
+struct payloads_distinct_at_choices<Recv<T, K>> : payloads_distinct_at_choices<K> {};
 
 template <typename... Bs>
 struct payloads_distinct_at_choices<Select<Bs...>>
-    : std::bool_constant<
-          detail_phi::branches_have_distinct_heads_v<Bs...>
-          && (payloads_distinct_at_choices<Bs>::value && ...)> {};
+    : std::bool_constant<detail_phi::branches_have_distinct_heads_v<Bs...>
+                         && (payloads_distinct_at_choices<Bs>::value && ...)> {};
 
 template <typename... Bs>
 struct payloads_distinct_at_choices<Offer<Bs...>>
-    : std::bool_constant<
-          detail_phi::branches_have_distinct_heads_v<Bs...>
-          && (payloads_distinct_at_choices<Bs>::value && ...)> {};
+    : std::bool_constant<detail_phi::branches_have_distinct_heads_v<Bs...>
+                         && (payloads_distinct_at_choices<Bs>::value && ...)> {};
 
 template <typename Role, typename... Bs>
 struct payloads_distinct_at_choices<Offer<Sender<Role>, Bs...>>
-    : std::bool_constant<
-          detail_phi::branches_have_distinct_heads_v<Bs...>
-          && (payloads_distinct_at_choices<Bs>::value && ...)> {};
+    : std::bool_constant<detail_phi::branches_have_distinct_heads_v<Bs...>
+                         && (payloads_distinct_at_choices<Bs>::value && ...)> {};
 
 template <typename B>
-struct payloads_distinct_at_choices<Loop<B>>
-    : payloads_distinct_at_choices<B> {};
+struct payloads_distinct_at_choices<Loop<B>> : payloads_distinct_at_choices<B> {};
 
 template <VendorBackend V, typename P>
-struct payloads_distinct_at_choices<VendorPinned<V, P>>
-    : payloads_distinct_at_choices<P> {};
+struct payloads_distinct_at_choices<VendorPinned<V, P>> : payloads_distinct_at_choices<P> {};
 
 template <typename P>
-inline constexpr bool payloads_distinct_at_choices_v =
-    payloads_distinct_at_choices<P>::value;
+inline constexpr bool payloads_distinct_at_choices_v = payloads_distinct_at_choices<P>::value;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Layer 2 — FX §11.18 φ predicates ───────────────────────────────
@@ -430,22 +414,19 @@ inline constexpr bool phi_safe_v = is_well_formed_v<P>;
 // phi_df<P> — deadlock-free.  Strengthens phi_safe by rejecting
 // structural deadlocks (empty Select / Offer).
 template <typename P>
-inline constexpr bool phi_df_v =
-    phi_safe_v<P> && !has_empty_branch_v<P>;
+inline constexpr bool phi_df_v = phi_safe_v<P> && !has_empty_branch_v<P>;
 
 // phi_term<P> — terminates.  Strengthens phi_df by rejecting protocols
 // with at least one unbounded loop.
 template <typename P>
-inline constexpr bool phi_term_v =
-    phi_df_v<P> && !has_unbounded_loop_v<P>;
+inline constexpr bool phi_term_v = phi_df_v<P> && !has_unbounded_loop_v<P>;
 
 // phi_nterm<P> — well-formed AND non-terminating.  Mutually exclusive
 // with phi_term.  Both phi_term_v<P> and phi_nterm_v<P> CANNOT both
 // be true (a protocol either terminates or it doesn't), but both can
 // be false (if phi_safe_v<P> is false, neither applies).
 template <typename P>
-inline constexpr bool phi_nterm_v =
-    phi_safe_v<P> && has_unbounded_loop_v<P>;
+inline constexpr bool phi_nterm_v = phi_safe_v<P> && has_unbounded_loop_v<P>;
 
 // phi_live<P> — no stuck state.  For binary session types this is
 // approximately phi_df (the empty-branch case is THE structural
@@ -458,16 +439,14 @@ inline constexpr bool phi_live_v = phi_df_v<P>;
 // Strengthens phi_live by requiring pairwise-distinct head-payload
 // types in every Select / Offer.
 template <typename P>
-inline constexpr bool phi_live_plus_v =
-    phi_live_v<P> && payloads_distinct_at_choices_v<P>;
+inline constexpr bool phi_live_plus_v = phi_live_v<P> && payloads_distinct_at_choices_v<P>;
 
 // phi_live_pp<P> — strictest.  Conservatively defined as
 // phi_live_plus ∧ phi_term: every choice is distinguishable AND the
 // protocol terminates, so every concrete message is delivered in
 // finitely many steps.
 template <typename P>
-inline constexpr bool phi_live_pp_v =
-    phi_live_plus_v<P> && phi_term_v<P>;
+inline constexpr bool phi_live_pp_v = phi_live_plus_v<P> && phi_term_v<P>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Classified assertion helpers ───────────────────────────────────
@@ -486,31 +465,28 @@ inline constexpr bool phi_live_pp_v =
 
 template <typename P>
 consteval void assert_phi_df() noexcept {
-    static_assert(phi_df_v<P>,
-        "[PhiDfViolation_HasEmptyBranch] protocol P fails phi_df: "
-        "it contains an empty Select<>/Offer<> branch (structural "
-        "deadlock — no choice to make, no expectation from peer).  "
-        "Either remove the empty branch or thread its place through "
-        "an explicit Send<unit, End> escape.");
+    static_assert(phi_df_v<P>, "[PhiDfViolation_HasEmptyBranch] protocol P fails phi_df: "
+                               "it contains an empty Select<>/Offer<> branch (structural "
+                               "deadlock — no choice to make, no expectation from peer).  "
+                               "Either remove the empty branch or thread its place through "
+                               "an explicit Send<unit, End> escape.");
 }
 
 template <typename P>
 consteval void assert_phi_term() noexcept {
-    static_assert(phi_term_v<P>,
-        "[PhiTermViolation_HasUnboundedLoop] protocol P fails phi_term: "
-        "it contains a Loop<B> whose body B has no path reaching End "
-        "or Stop — every branch returns to Continue, making the loop "
-        "inescapable.  Add at least one terminal-bearing branch to B.");
+    static_assert(phi_term_v<P>, "[PhiTermViolation_HasUnboundedLoop] protocol P fails phi_term: "
+                                 "it contains a Loop<B> whose body B has no path reaching End "
+                                 "or Stop — every branch returns to Continue, making the loop "
+                                 "inescapable.  Add at least one terminal-bearing branch to B.");
 }
 
 template <typename P>
 consteval void assert_phi_live_plus() noexcept {
-    static_assert(phi_live_plus_v<P>,
-        "[PhiLivePlusViolation_DuplicatePayloadHeads] protocol P fails "
-        "phi_live_plus: some Select<>/Offer<> branch shares its head-"
-        "payload type with a sibling branch, making the branches "
-        "indistinguishable to the peer.  Pick distinct head-payload "
-        "types per branch (introduce wrapper types if necessary).");
+    static_assert(phi_live_plus_v<P>, "[PhiLivePlusViolation_DuplicatePayloadHeads] protocol P fails "
+                                      "phi_live_plus: some Select<>/Offer<> branch shares its head-"
+                                      "payload type with a sibling branch, making the branches "
+                                      "indistinguishable to the peer.  Pick distinct head-payload "
+                                      "types per branch (introduce wrapper types if necessary).");
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -527,128 +503,112 @@ namespace v069_self_test {
 // has_empty_branch
 static_assert(!has_empty_branch_v<End>);
 static_assert(!has_empty_branch_v<Send<int, End>>);
-static_assert( has_empty_branch_v<Select<>>);
-static_assert( has_empty_branch_v<Offer<>>);
+static_assert(has_empty_branch_v<Select<>>);
+static_assert(has_empty_branch_v<Offer<>>);
 static_assert(!has_empty_branch_v<Select<Send<int, End>>>);
-static_assert( has_empty_branch_v<Select<Send<int, End>, Offer<>>>);
-static_assert( has_empty_branch_v<Loop<Select<Send<int, Continue>, Stop>>> == false,
-    "non-empty Loop body must not be flagged as empty-branch");
+static_assert(has_empty_branch_v<Select<Send<int, End>, Offer<>>>);
+static_assert(has_empty_branch_v<Loop<Select<Send<int, Continue>, Stop>>> == false,
+              "non-empty Loop body must not be flagged as empty-branch");
 static_assert(!has_empty_branch_v<Recv<int, Send<float, End>>>);
 
 // loop_body_terminates
-static_assert( loop_body_terminates_v<End>);
-static_assert( loop_body_terminates_v<Stop>);
+static_assert(loop_body_terminates_v<End>);
+static_assert(loop_body_terminates_v<Stop>);
 static_assert(!loop_body_terminates_v<Continue>);
-static_assert( loop_body_terminates_v<Send<int, End>>);
+static_assert(loop_body_terminates_v<Send<int, End>>);
 static_assert(!loop_body_terminates_v<Send<int, Continue>>);
-static_assert( loop_body_terminates_v<Select<Send<int, Continue>, Stop>>,
-    "select with one Continue branch and one Stop branch terminates "
-    "via the Stop branch");
-static_assert(!loop_body_terminates_v<Select<Send<int, Continue>,
-                                               Recv<float, Continue>>>,
-    "every branch goes back to Continue → loop is inescapable");
+static_assert(loop_body_terminates_v<Select<Send<int, Continue>, Stop>>,
+              "select with one Continue branch and one Stop branch terminates "
+              "via the Stop branch");
+static_assert(!loop_body_terminates_v<Select<Send<int, Continue>, Recv<float, Continue>>>,
+              "every branch goes back to Continue → loop is inescapable");
 
 // has_unbounded_loop
 static_assert(!has_unbounded_loop_v<End>);
 static_assert(!has_unbounded_loop_v<Send<int, End>>);
-static_assert( has_unbounded_loop_v<Loop<Send<int, Continue>>>,
-    "Loop body only sends and Continues — never escapes");
+static_assert(has_unbounded_loop_v<Loop<Send<int, Continue>>>, "Loop body only sends and Continues — never escapes");
 static_assert(!has_unbounded_loop_v<Loop<Select<Send<int, Continue>, Stop>>>,
-    "Loop body has Stop escape branch → bounded");
+              "Loop body has Stop escape branch → bounded");
 
 // payloads_distinct_at_choices
-static_assert( payloads_distinct_at_choices_v<End>);
-static_assert( payloads_distinct_at_choices_v<Send<int, End>>);
-static_assert( payloads_distinct_at_choices_v<
-    Select<Send<int, End>, Send<float, End>>>);
-static_assert(!payloads_distinct_at_choices_v<
-    Select<Send<int, End>, Send<int, End>>>,
-    "two branches with identical head payload int — peer cannot "
-    "distinguish which branch was chosen");
-static_assert(!payloads_distinct_at_choices_v<
-    Offer<Recv<int, End>, Recv<int, End>>>);
+static_assert(payloads_distinct_at_choices_v<End>);
+static_assert(payloads_distinct_at_choices_v<Send<int, End>>);
+static_assert(payloads_distinct_at_choices_v<Select<Send<int, End>, Send<float, End>>>);
+static_assert(!payloads_distinct_at_choices_v<Select<Send<int, End>, Send<int, End>>>,
+              "two branches with identical head payload int — peer cannot "
+              "distinguish which branch was chosen");
+static_assert(!payloads_distinct_at_choices_v<Offer<Recv<int, End>, Recv<int, End>>>);
 
 // ── B. φ-predicate sanity — phi_safe ──────────────────────────────
-static_assert( phi_safe_v<End>);
-static_assert( phi_safe_v<Send<int, End>>);
-static_assert(!phi_safe_v<Loop<End>>,
-    "Loop<End> is rejected by is_well_formed (terminal body) so "
-    "phi_safe rejects it too");
+static_assert(phi_safe_v<End>);
+static_assert(phi_safe_v<Send<int, End>>);
+static_assert(!phi_safe_v<Loop<End>>, "Loop<End> is rejected by is_well_formed (terminal body) so "
+                                      "phi_safe rejects it too");
 
 // ── C. φ-predicate sanity — phi_df ────────────────────────────────
 //
 // phi_df strengthens phi_safe by rejecting empty Select<>/Offer<>.
 // is_well_formed accepts these via vacuous AND-fold; phi_df catches
 // the gap.
-static_assert( phi_df_v<End>);
-static_assert( phi_df_v<Send<int, End>>);
-static_assert(!phi_df_v<Select<>>,
-    "phi_df must reject empty Select<> (structural deadlock witness) "
-    "even though phi_safe accepts it via vacuous AND-fold");
+static_assert(phi_df_v<End>);
+static_assert(phi_df_v<Send<int, End>>);
+static_assert(!phi_df_v<Select<>>, "phi_df must reject empty Select<> (structural deadlock witness) "
+                                   "even though phi_safe accepts it via vacuous AND-fold");
 static_assert(!phi_df_v<Offer<>>);
-static_assert( phi_df_v<Select<Send<int, End>>>);
-static_assert(!phi_df_v<Select<Send<int, Offer<>>>>,
-    "nested empty Offer<> still rejected — the witness is anywhere "
-    "in the reachable tree");
+static_assert(phi_df_v<Select<Send<int, End>>>);
+static_assert(!phi_df_v<Select<Send<int, Offer<>>>>, "nested empty Offer<> still rejected — the witness is anywhere "
+                                                     "in the reachable tree");
 
 // ── D. φ-predicate sanity — phi_term ──────────────────────────────
 //
 // phi_term refines phi_df by requiring termination.  A Loop with no
 // escape branch is non-terminating and phi_term rejects it.
-static_assert( phi_term_v<End>);
-static_assert( phi_term_v<Send<int, End>>);
-static_assert( phi_term_v<Loop<Select<Send<int, Continue>, Stop>>>,
-    "Loop with Stop escape branch terminates");
-static_assert(!phi_term_v<Loop<Send<int, Continue>>>,
-    "Loop with only Send→Continue body is non-terminating");
+static_assert(phi_term_v<End>);
+static_assert(phi_term_v<Send<int, End>>);
+static_assert(phi_term_v<Loop<Select<Send<int, Continue>, Stop>>>, "Loop with Stop escape branch terminates");
+static_assert(!phi_term_v<Loop<Send<int, Continue>>>, "Loop with only Send→Continue body is non-terminating");
 
 // ── E. φ-predicate sanity — phi_nterm ─────────────────────────────
 //
 // phi_nterm = phi_safe ∧ has_unbounded_loop.  Mutually exclusive
 // with phi_term (their conjunction is unsatisfiable).
-static_assert(!phi_nterm_v<End>,
-    "End is well-formed but trivially terminates — not phi_nterm");
-static_assert( phi_nterm_v<Loop<Send<int, Continue>>>,
-    "infinite productive loop is well-formed AND non-terminating");
+static_assert(!phi_nterm_v<End>, "End is well-formed but trivially terminates — not phi_nterm");
+static_assert(phi_nterm_v<Loop<Send<int, Continue>>>, "infinite productive loop is well-formed AND non-terminating");
 static_assert(!phi_nterm_v<Loop<Select<Send<int, Continue>, Stop>>>,
-    "Loop with Stop branch terminates → not phi_nterm");
+              "Loop with Stop branch terminates → not phi_nterm");
 
 // Mutual exclusion between phi_term and phi_nterm.
-static_assert(!(phi_term_v<Loop<Send<int, Continue>>>
-                && phi_nterm_v<Loop<Send<int, Continue>>>));
+static_assert(!(phi_term_v<Loop<Send<int, Continue>>> && phi_nterm_v<Loop<Send<int, Continue>>>));
 static_assert(!(phi_term_v<End> && phi_nterm_v<End>));
 
 // ── F. φ-predicate sanity — phi_live ──────────────────────────────
 //
 // For binary session types, phi_live ≈ phi_df.
-static_assert( phi_live_v<End>);
-static_assert( phi_live_v<Send<int, End>>);
+static_assert(phi_live_v<End>);
+static_assert(phi_live_v<Send<int, End>>);
 static_assert(!phi_live_v<Select<>>);
 
 // ── G. φ-predicate sanity — phi_live_plus ─────────────────────────
 //
 // phi_live_plus strengthens phi_live by requiring pairwise-distinct
 // head-payload types in every Choice.
-static_assert( phi_live_plus_v<End>);
-static_assert( phi_live_plus_v<Send<int, End>>);
-static_assert( phi_live_plus_v<
-    Select<Send<int, End>, Send<float, End>>>);
-static_assert(!phi_live_plus_v<
-    Select<Send<int, End>, Send<int, End>>>,
-    "two Send<int, _> branches indistinguishable → dead-branch witness");
+static_assert(phi_live_plus_v<End>);
+static_assert(phi_live_plus_v<Send<int, End>>);
+static_assert(phi_live_plus_v<Select<Send<int, End>, Send<float, End>>>);
+static_assert(!phi_live_plus_v<Select<Send<int, End>, Send<int, End>>>,
+              "two Send<int, _> branches indistinguishable → dead-branch witness");
 
 // ── H. φ-predicate sanity — phi_live_pp ───────────────────────────
 //
 // phi_live_pp is the strictest: phi_live_plus ∧ phi_term.  Productive
 // infinite loops are excluded (no termination guarantee).
-static_assert( phi_live_pp_v<End>);
-static_assert( phi_live_pp_v<Send<int, End>>);
-static_assert( phi_live_pp_v<Select<Send<int, End>, Send<float, End>>>);
+static_assert(phi_live_pp_v<End>);
+static_assert(phi_live_pp_v<Send<int, End>>);
+static_assert(phi_live_pp_v<Select<Send<int, End>, Send<float, End>>>);
 // Productive infinite loop with distinct payloads still rejected.
-static_assert(!phi_live_pp_v<Loop<Select<Send<int, Continue>,
-                                          Send<float, Continue>>>>,
-    "productive infinite loop fails phi_term and therefore phi_live_pp "
-    "even though branches are distinguishable");
+static_assert(!phi_live_pp_v<Loop<Select<Send<int, Continue>, Send<float, Continue>>>>,
+              "productive infinite loop fails phi_term and therefore phi_live_pp "
+              "even though branches are distinguishable");
 
 // ── I. Lattice ordering — strictly stronger left-to-right ─────────
 //
@@ -680,12 +640,10 @@ static_assert(live_pp_implies_term<Loop<Send<int, Continue>>>);  // !live_pp
 
 // W4: phi_live_pp ⇒ phi_live_plus ⇒ phi_live
 template <typename P>
-static constexpr bool live_pp_implies_live_plus =
-    !phi_live_pp_v<P> || phi_live_plus_v<P>;
+static constexpr bool live_pp_implies_live_plus = !phi_live_pp_v<P> || phi_live_plus_v<P>;
 
 template <typename P>
-static constexpr bool live_plus_implies_live =
-    !phi_live_plus_v<P> || phi_live_v<P>;
+static constexpr bool live_plus_implies_live = !phi_live_plus_v<P> || phi_live_v<P>;
 
 static_assert(live_pp_implies_live_plus<Select<Send<int, End>, Send<float, End>>>);
 static_assert(live_plus_implies_live<Select<Send<int, End>, Send<float, End>>>);
@@ -724,10 +682,9 @@ static_assert(exercise_phi_assertions());
 //                                                       ───
 //                                                       14
 constexpr int v069_surface_cardinality = 14;
-static_assert(v069_surface_cardinality == 14,
-    "sessions::proto:: V-069 surface cardinality drifted — update "
-    "SessionPhi.h helpers + predicates + assertions AND this "
-    "sentinel in lockstep.");
+static_assert(v069_surface_cardinality == 14, "sessions::proto:: V-069 surface cardinality drifted — update "
+                                              "SessionPhi.h helpers + predicates + assertions AND this "
+                                              "sentinel in lockstep.");
 
 }  // namespace v069_self_test
 
@@ -741,11 +698,11 @@ static_assert(v069_surface_cardinality == 14,
 
 inline void session_phi_runtime_smoke_test() noexcept {
     struct Probe {};
-    using P_finite        = Send<Probe, Recv<Probe, End>>;
-    using P_loop_unbounded= Loop<Send<Probe, Continue>>;
-    using P_loop_bounded  = Loop<Select<Send<Probe, Continue>, Stop>>;
-    using P_distinct      = Select<Send<int, End>, Send<float, End>>;
-    using P_duplicate     = Select<Send<int, End>, Send<int, End>>;
+    using P_finite = Send<Probe, Recv<Probe, End>>;
+    using P_loop_unbounded = Loop<Send<Probe, Continue>>;
+    using P_loop_bounded = Loop<Select<Send<Probe, Continue>, Stop>>;
+    using P_distinct = Select<Send<int, End>, Send<float, End>>;
+    using P_duplicate = Select<Send<int, End>, Send<int, End>>;
 
     [[maybe_unused]] constexpr bool s1 = phi_safe_v<P_finite>;
     [[maybe_unused]] constexpr bool s2 = phi_df_v<P_finite>;
@@ -759,8 +716,17 @@ inline void session_phi_runtime_smoke_test() noexcept {
     [[maybe_unused]] constexpr bool sA = has_unbounded_loop_v<P_loop_unbounded>;
     [[maybe_unused]] constexpr bool sB = payloads_distinct_at_choices_v<P_distinct>;
 
-    (void)s1; (void)s2; (void)s3; (void)s4; (void)s5; (void)s6;
-    (void)s7; (void)s8; (void)s9; (void)sA; (void)sB;
+    (void)s1;
+    (void)s2;
+    (void)s3;
+    (void)s4;
+    (void)s5;
+    (void)s6;
+    (void)s7;
+    (void)s8;
+    (void)s9;
+    (void)sA;
+    (void)sB;
     (void)static_cast<P_duplicate*>(nullptr);
 }
 

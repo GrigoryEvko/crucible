@@ -1,221 +1,80 @@
-# scripts/syscall-capability-allowlist.txt — grandfathered syscall sites (FIXY-U-100).
-#
-# Each entry: `path:line — <effects::* capability proof>`.
-#
-# Discipline (fixy-A5-016 + CLAUDE.md §1): every line below documents
-# WHICH effects::* capability the caller holds (Init / IO / Block / Bg).
-# A reviewer reading the allowlist confirms each grandfathered site's
-# capability admission is sound; new sites added to the production
-# code without a corresponding entry here fail the CI guard.
-#
-# Format:
-#   <path>:<line> — <prose explaining the capability admission>
-#   # comment lines start with `#`
-#   blank lines ignored
-#
-# When a syscall site is REMOVED or RELOCATED, prune / update the
-# corresponding entry.  The bench harness check-syscall-capability.sh
-# --self-test verifies the allowlist mechanism on every run.
+# syscall-capability allowlist — grandfathered bare-syscall sites (fixy-A5-016).
+# Key is path:line.  Regenerated after the tree-wide reformat; prose was
+# carried across by matching the syscall token within each file.
+# A site covered by an in-statement `// SYSCALL-CAP-OK:` marker is exempted
+# by that marker and is deliberately absent here.
 
-# ── warden/Hardening.h ────────────────────────────────────────────────
-# Init-row process hardening: sched_setattr, sched_setaffinity, mlock2,
-# munlock, madvise, prctl.  All sites are inside Hardening::apply() or
-# its detail helpers, reachable only from mint_hardening() (FIXY-U-084)
-# which gates on CtxFitsHardeningMint = IsExecCtx ∧ row_contains<Init>.
+include/crucible/Cipher.h:231  — effects::Init via Cipher::open (V-030 root_dirfd_ O_DIRECTORY|O_NOFOLLOW acquire)
+include/crucible/Cipher.h:253  — effects::IO via Cipher::open (read HEAD file content at startup)
+include/crucible/Platform.h:260  — effects::Init via parse_self_status (open /proc/self/status)
+include/crucible/Platform.h:263  — effects::Init via parse_self_status (read /proc/self/status)
+include/crucible/Platform.h:264  — effects::Init via parse_self_status (close /proc/self/status)
+include/crucible/fixy/Io.h:580  — effects::IO via IoUringRing::release_ (munmap SQEs, RAII, cap inherited)
+include/crucible/fixy/Io.h:586  — effects::IO via IoUringRing::release_ (munmap CQ ring, RAII, cap inherited)
+include/crucible/fixy/Io.h:591  — effects::IO via IoUringRing::release_ (munmap SQ ring, RAII, cap inherited)
+include/crucible/fixy/Io.h:596  — effects::IO via IoUringRing::release_ (close ring fd, RAII, cap inherited)
+include/crucible/fixy/Time.h:179  — effects::Bg via ClockReader<Source>::read (clock_gettime, ClockSource<Source>-tagged)
+include/crucible/handles/FileHandle.h:106  — effects::IO via FileHandle::~FileHandle (close on RAII drop)
+include/crucible/handles/FileHandle.h:117  — effects::IO via FileHandle::reset (close before reassign)
+include/crucible/handles/FileHandle.h:142  — effects::IO via FileHandle::release_close (explicit close)
+include/crucible/handles/FileHandle.h:164  — effects::IO via FileHandle::open_read (O_RDONLY)
+include/crucible/handles/FileHandle.h:173  — effects::IO via FileHandle::open_write (O_WRONLY|O_CREAT|O_TRUNC)
+include/crucible/handles/FileHandle.h:182  — effects::IO via FileHandle::open_append (O_WRONLY|O_CREAT|O_APPEND)
+include/crucible/handles/FileHandle.h:214  — effects::IO via FileHandle::read_all (read until EOF)
+include/crucible/handles/FileHandle.h:232  — effects::IO via FileHandle::write_all (write until done)
+include/crucible/handles/FileHandle.h:247  — effects::IO via FileHandle::stat_size (fstat)
+include/crucible/safety/OwnedMmap.h:244  — effects::IO via OwnedMmap::release_ (munmap on RAII drop / move-assign)
+include/crucible/warden/CpuTopology.h:203  — effects::Init via CpuTopology::isolated_cpus (access /sys/.../isolated)
+include/crucible/warden/DeadlineWatchdog.h:266  — effects::Bg via watchdog verdict path (clock_gettime CLOCK_BOOTTIME, ClockSource<Boot>-tagged)
 include/crucible/warden/Hardening.h:89  — effects::Init via Hardening::apply (mint_hardening ctx-bound)
 include/crucible/warden/Hardening.h:93  — effects::Init via Hardening::apply
-include/crucible/warden/Hardening.h:98  — effects::Init via Hardening::apply
-include/crucible/warden/Hardening.h:169 — effects::Init via AppliedPolicy::revert (RAII pair of apply)
-include/crucible/warden/Hardening.h:174 — effects::Init via AppliedPolicy::revert
-include/crucible/warden/Hardening.h:179 — effects::Init via AppliedPolicy::revert (prctl THP re-enable)
-include/crucible/warden/Hardening.h:244 — effects::Init via Hardening::apply (sched_getaffinity)
-include/crucible/warden/Hardening.h:251 — effects::Init via Hardening::apply (sched_setaffinity)
-include/crucible/warden/Hardening.h:345 — effects::Init via Hardening::apply (prctl THP disable)
-include/crucible/warden/Hardening.h:391 — effects::Init via Hardening::lock_region (mlock fallback)
-include/crucible/warden/Hardening.h:419 — effects::Init via Hardening::hint_hugepage (madvise MADV_HUGEPAGE)
-include/crucible/warden/Hardening.h:444 — effects::Init via Hardening::collapse_hugepage (madvise MADV_COLLAPSE)
-
-# ── perf/ — BPF program load + BPF-map mmap ───────────────────────────
-# Init-row BPF loaders and the per-hub BPF-map mmap.  All sites belong
-# to load_subset() / detail::load_* / per-hub attach() helpers reachable
-# only from Senses::load_subset(effects::Init), which gates the row at
-# the function signature (fixy-A5-026, FIXY-U-088).  Each mapping is
-# owned by safety::OwnedMmap (FIXY-V-236) — munmap is now RAII inside
-# OwnedMmap::release_ (see the safety/OwnedMmap.h block below), so no
-# detach-side munmap site remains in any hub.  V-179 will migrate these
-# allowlist entries to inline mint annotations.
-src/perf/LockContention.cpp:228 — effects::Init via LockContention::attach (mmap BPF ringbuf MAP_SHARED, OwnedMmap-owned)
-src/perf/SchedSwitch.cpp:286 — effects::Init via SchedSwitch::attach (mmap BPF ringbuf MAP_SHARED, OwnedMmap-owned)
-src/perf/SchedTpBtf.cpp:225 — effects::Init via SchedTpBtf::attach (mmap BPF ringbuf MAP_SHARED, OwnedMmap-owned)
-src/perf/SenseHub.cpp:292 — effects::Init via SenseHub::load_subset (mmap counters array MAP_SHARED, OwnedMmap-owned)
-src/perf/SyscallLatency.cpp:222 — effects::Init via SyscallLatency::attach (mmap BPF ringbuf MAP_SHARED, OwnedMmap-owned)
-src/perf/SyscallTpBtf.cpp:222 — effects::Init via SyscallTpBtf::attach (mmap BPF ringbuf MAP_SHARED, OwnedMmap-owned)
-
-# ── cntp/ — congestion telemetry + pacing ─────────────────────────────
-# IO-row socket option / netlink syscalls.  Bg-drain context paths
-# (Pacing.cpp netlink loop hardened in fixy-A5-004 + A5-036, FIXY-U-089).
-src/cntp/IncastControl.cpp:33 — effects::IO via IncastControl::apply (TCP_QUICKACK setsockopt)
-src/cntp/Pacing.cpp:138 — effects::IO via query_active_qdisc (socket AF_NETLINK SOCK_RAW NETLINK_ROUTE, LocalFd-owned)
-src/cntp/Pacing.cpp:153 — effects::IO via query_active_qdisc (bind nl_pid=0 kernel-assigned PID, fixy-A5-036)
-src/cntp/Pacing.cpp:167 — effects::IO via query_active_qdisc (setsockopt SO_RCVTIMEO bounded recv, fixy-A5-004)
-src/cntp/Pacing.cpp:182 — effects::IO via query_active_qdisc (NETLINK send RTM_GETQDISC dump)
-src/cntp/Pacing.cpp:190 — effects::IO+Block via query_active_qdisc (NETLINK recv, SO_RCVTIMEO-bounded fixy-A5-004)
-src/cntp/Pacing.cpp:271 — effects::IO via set_socket_pacing_rate (setsockopt SO_MAX_PACING_RATE)
-
-# ── topology/ — link telemetry + PTP ──────────────────────────────────
-# IO-row socket / device ioctl.  Per-link RTT + bandwidth telemetry
-# (CongestionTelemetry hardened in fixy-A5-041, FIXY-U-089).
-src/topology/CongestionTelemetry.cpp:230 — effects::IO via CongestionTelemetry::harvest_socket (TCP_INFO getsockopt)
-src/topology/CongestionTelemetry.cpp:254 — effects::IO via CongestionTelemetry::harvest_socket (TCP_CC_INFO getsockopt)
-
-# ── sessions/SessionEventLog.h — durable session event journal ────────
-# IO-row mmap/munmap for log file backing.  Reachable only from
-# Init-row Cipher.warm_tier setup; mmap site IS the durability proof.
-include/crucible/sessions/SessionEventLog.h:173 — effects::IO via SessionEventLog::open (mmap PROT_READ|PROT_WRITE)
-include/crucible/sessions/SessionEventLog.h:174 — effects::IO via SessionEventLog::open (mmap MAP_SHARED)
-include/crucible/sessions/SessionEventLog.h:179 — effects::IO via SessionEventLog::close (close fd)
-include/crucible/sessions/SessionEventLog.h:183 — effects::IO via SessionEventLog::close (munmap)
-include/crucible/sessions/SessionEventLog.h:191 — effects::IO via SessionEventLog::truncate (munmap on resize)
-
-# ── handles/FileHandle.h — RAII file descriptor wrapper ───────────────
-# IO-row file I/O wrapped in OwnedFd RAII.  open/close/read/write/fstat
-# all reach kernel; FileHandle is the §XXI capability surface — every
-# caller routes here, so each line below is the capability-discharge
-# bottom.  Future production migrations replace raw FILE*/fd uses with
-# FileHandle (CLAUDE.md feedback_runtime_smoke discipline applies).
-include/crucible/handles/FileHandle.h:110 — effects::IO via FileHandle::~FileHandle (close on RAII drop)
-include/crucible/handles/FileHandle.h:120 — effects::IO via FileHandle::reset (close before reassign)
-include/crucible/handles/FileHandle.h:145 — effects::IO via FileHandle::release_close (explicit close)
-include/crucible/handles/FileHandle.h:169 — effects::IO via FileHandle::open_read (O_RDONLY)
-include/crucible/handles/FileHandle.h:178 — effects::IO via FileHandle::open_write (O_WRONLY|O_CREAT|O_TRUNC)
-include/crucible/handles/FileHandle.h:187 — effects::IO via FileHandle::open_append (O_WRONLY|O_CREAT|O_APPEND)
-include/crucible/handles/FileHandle.h:220 — effects::IO via FileHandle::read_all (read until EOF)
-include/crucible/handles/FileHandle.h:242 — effects::IO via FileHandle::write_all (write until done)
-include/crucible/handles/FileHandle.h:262 — effects::IO via FileHandle::stat_size (fstat)
-
-# ── safety/OwnedMmap.h — RAII munmap of an owned mapping ──────────────
-# The single munmap site for every OwnedMmap region (FIXY-V-231/236).
-# release_() unmaps iff is_mapped(); it is called from ~OwnedMmap and
-# move-assign.  The capability is inherited from construction — the
-# caller held the IO/Init cap when it mmap'd the (addr, len) pair and
-# handed ownership to OwnedMmap, exactly as FileHandle inherits its
-# open-time cap for the RAII close above.  All seven perf hubs route
-# their ringbuf/counter unmaps through here (FIXY-V-236).
-include/crucible/safety/OwnedMmap.h:251 — effects::IO via OwnedMmap::release_ (munmap on RAII drop / move-assign)
-
-# ── Cipher.h — RAII fd lifecycle of warm-tier log ─────────────────────
-# IO + Init + Block row Cipher persistence.  All sites reachable only
-# from store(OpenView,...) / advance_head(OpenView,...) / persist_
-# session_events(OpenView,...), gated on the Open type-state proof
-# (mint_open_view requires is_open()).  V-026 (fdatasync barrier on
-# content-addressed objects), V-027 (atomic HEAD replace via write-
-# tmp + fdatasync + renameat + parent-dirfd fsync), V-028 (atomic
-# log append via O_APPEND + fdatasync + parent-dirfd fsync), V-029
-# (atomic session_event index append, same shape as V-028), and V-030
-# (O_NOFOLLOW + dirfd-rooted openat / renameat discipline) all route
-# through the same Ctx-bound entry surface — record_event() declares
-# effects::IO + effects::Block in the row (CONTRACT-107-POST + FOUND-
-# I09 row-typed event recording).  Cipher::open()'s root_dirfd_
-# acquisition is Init-row (one-shot at construction).
-include/crucible/Cipher.h:249 — effects::Init via Cipher::open (V-030 root_dirfd_ O_DIRECTORY|O_NOFOLLOW acquire)
-include/crucible/Cipher.h:273 — effects::IO via Cipher::open (read HEAD file content at startup)
-include/crucible/Cipher.h:1478 — effects::IO via fdatasync_at_::openat (V-026 + V-030 O_NOFOLLOW)
-include/crucible/Cipher.h:1484 — effects::Block via fdatasync_at_::fdatasync (V-026 durability barrier)
-include/crucible/Cipher.h:1547 — effects::IO via atomic_write_at_::openat (V-027 + V-030 tmp O_NOFOLLOW)
-include/crucible/Cipher.h:1563 — effects::IO via atomic_write_at_::write (V-027 HEAD tmp data)
-include/crucible/Cipher.h:1577 — effects::Block via atomic_write_at_::fdatasync (V-027 HEAD tmp sync)
-include/crucible/Cipher.h:1605 — effects::Block via atomic_write_at_::fsync (V-027 + V-030 parent-dirfd sync)
-include/crucible/Cipher.h:1652 — effects::IO via atomic_append_at_::openat (V-028/V-029 + V-030 O_NOFOLLOW)
-include/crucible/Cipher.h:1668 — effects::IO via atomic_append_at_::write (V-028/V-029 record bytes)
-include/crucible/Cipher.h:1681 — effects::Block via atomic_append_at_::fdatasync (V-028/V-029 durable)
-include/crucible/Cipher.h:1690 — effects::Block via atomic_append_at_::fsync (V-028/V-029 + V-030 parent-dirfd)
-include/crucible/Cipher.h:1716 — effects::IO via open_dir_at_::openat (V-030 session subdir O_DIRECTORY|O_NOFOLLOW)
-
-# ── Platform.h — process startup probes ───────────────────────────────
-# Init-row /proc reads at startup (CPU topology, isolated CPUs).
-include/crucible/Platform.h:276 — effects::Init via parse_self_status (open /proc/self/status)
-include/crucible/Platform.h:279 — effects::Init via parse_self_status (read /proc/self/status)
-include/crucible/Platform.h:280 — effects::Init via parse_self_status (close /proc/self/status)
-
-# canopy/Hlc.h — Hybrid Logical Clock wall-time read: now uses a
-# drift-proof co-located '// SYSCALL-CAP-OK:' marker on the clock_gettime
-# line itself (effects::Bg via Hlc::now), so no line-keyed entry here.
-
-# ── topology/Ptp.cpp — PTP hardware clock + socket timestamping ───────
-# IO-row /dev/ptp* clock ops (open/caps/read/close) plus NIC-socket
-# hardware-timestamping ops (SO_TIMESTAMPING setsockopt, SIOCSHWTSTAMP
-# ioctl, recvmsg cmsg).  Reachable only from Init-row topology probing.
-src/topology/Ptp.cpp:101 — effects::IO via PtpClock::close (close /dev/ptp* fd)
-src/topology/Ptp.cpp:183 — effects::IO via open_ptp_clock (open /dev/ptp<N> O_RDONLY|O_CLOEXEC, LocalFd→PtpClock)
-src/topology/Ptp.cpp:196 — effects::IO via query_ptp_clock_caps (PTP_CLOCK_GETCAPS2 ioctl)
-src/topology/Ptp.cpp:217 — effects::IO via ptp_now (clock_gettime PHC clockid_from_fd)
-src/topology/Ptp.cpp:252 — effects::IO via enable_socket_timestamping (setsockopt SO_TIMESTAMPING)
-src/topology/Ptp.cpp:289 — effects::IO via configure_hardware_timestamping (SIOCSHWTSTAMP ioctl, IFNAMSIZ bounded fixy-A5-027)
-src/topology/Ptp.cpp:319 — effects::IO via recv_with_hw_timestamp (recvmsg MSG_DONTWAIT + SCM_TIMESTAMPING)
-
-# ── cntp/CongestionControl.cpp — CC detection + per-socket TCP_CONGESTION ──
-# IO-row /proc read to detect kernel-supported CC algorithms (Init) plus
-# per-socket TCP_CONGESTION set/get.  All LocalFd-owned (no explicit close).
-src/cntp/CongestionControl.cpp:146 — effects::IO via read_available_congestion_control (open /proc tcp_available_congestion_control, LocalFd-owned)
-src/cntp/CongestionControl.cpp:152 — effects::IO via read_available_congestion_control (read /proc CC list)
-src/cntp/CongestionControl.cpp:172 — effects::IO via set_cc_for_socket (setsockopt TCP_CONGESTION)
-src/cntp/CongestionControl.cpp:198 — effects::IO via query_cc_selection_for_socket (getsockopt TCP_CONGESTION)
-
-# ── cntp/RoceConfig.cpp — NIC pause-frame counter sysfs probe ─────────
-# IO-row /sys/class/net/<iface>/statistics counter reads at Init/Bg time.
-src/cntp/RoceConfig.cpp:57 — effects::IO via read_counter_file (open /sys/class/net/<iface>/statistics counter, LocalFd-owned)
-src/cntp/RoceConfig.cpp:62 — effects::IO via read_counter_file (read sysfs pause-frame counter)
-
-# ── perf/PmuSample.cpp — Init-row perf_event_open + fd/mmap lifecycle ──
-# perf_event_open raw syscall, perf-fd closes (State dtor + attach-
-# failure rollbacks), and the pmu_sample_buf mmap (OwnedMmap-owned,
-# FIXY-V-236).  All reachable only from PmuSample::attach, gated on
-# Senses::load_subset(effects::Init).
-src/perf/PmuSample.cpp:139 — effects::Init via perf_event_open_syscall (raw SYS_perf_event_open)
-src/perf/PmuSample.cpp:262 — effects::Init via PmuSample::State::~State (close perf fds on RAII drop)
-src/perf/PmuSample.cpp:414 — effects::Init via PmuSample::attach (close perf fd on attach-failure rollback)
-src/perf/PmuSample.cpp:429 — effects::Init via PmuSample::attach (close perf fd on capacity-full rollback)
-src/perf/PmuSample.cpp:477 — effects::Init via PmuSample::attach (mmap pmu_sample_buf MAP_SHARED, OwnedMmap-owned)
-
-# ── perf/ProcGauges.cpp — /proc gauge sampler ─────────────────────────
-# Bg-row /proc reads (cpuload, meminfo, vmstat, schedstat).  Bg drain
-# context polls these; not on hot path.
-src/perf/ProcGauges.cpp:39  — effects::Bg via ProcGauges::~ProcGauges (RAII close)
-src/perf/ProcGauges.cpp:53  — effects::Bg via ProcGauges::open (open /proc gauge)
-src/perf/ProcGauges.cpp:65  — effects::Bg via ProcGauges::read_one (pread /proc gauge)
-src/perf/ProcGauges.cpp:425 — effects::Bg via ProcGauges::poll (pread /proc gauge)
-src/perf/ProcGauges.cpp:547 — effects::Bg via ProcGauges::loadavg (pread /proc/loadavg)
-src/perf/ProcGauges.cpp:565 — effects::Bg via ProcGauges::sample (pread /proc gauge)
-
-
-# ── warden/CpuTopology.h — /sys/devices/system/cpu/isolated probe ─────
-include/crucible/warden/CpuTopology.h:197 — effects::Init via CpuTopology::isolated_cpus (access /sys/.../isolated)
-
-# ── src/fixy/Fs.cpp — Dirfd open (the one un-ctx-gated Fs backend) ─────
-# IO-row O_DIRECTORY|O_NOFOLLOW open() for openat-sandboxing.  Reached
-# via the bare open_dirfd() helper, which (unlike mint_file / sync /
-# commit_atomic, all ctx-gated → inline SYSCALL-CAP-OK markers) takes no
-# Ctx parameter.  Grandfathered pending the fixy-A5-006 ctx-gating of
-# open_dirfd().  The other 5 Fs.cpp syscalls are inline-marked at site.
-src/fixy/Fs.cpp:86 — effects::IO via open_dirfd → do_open_dirfd_impl (O_DIRECTORY|O_NOFOLLOW dirfd open)
-
-# ── fixy/Time.h + warden/DeadlineWatchdog.h — Bg clock_gettime reads ──
-# effects::Bg vDSO clock reads — no fd, no privilege, no kernel-state
-# mutation.  Each wraps its result in a ClockSource<Source> provenance
-# witness (mint_clock_source).  Bare methods (ClockReader<Source>::read;
-# the watchdog verdict path), NOT ctx-gated — same Bg-row clock-read
-# rationale as canopy/Hlc.h's CLOCK_REALTIME read.
-include/crucible/fixy/Time.h:175 — effects::Bg via ClockReader<Source>::read (clock_gettime, ClockSource<Source>-tagged)
-include/crucible/warden/DeadlineWatchdog.h:269 — effects::Bg via watchdog verdict path (clock_gettime CLOCK_BOOTTIME, ClockSource<Boot>-tagged)
-
-# ── fixy/Io.h — IoUringRing::release_ RAII teardown ───────────────────
-# IO-row munmap/close of the io_uring SQ/CQ rings + SQEs + ring fd, on
-# MEMBER vars in the private release_() dtor/move-assign helper.  Cap
-# inherited from construction: the IoUringRing was minted via
-# mint_io_uring_ring (ctx-gated, CtxFitsIoUringMint — the setup syscalls
-# carry inline SYSCALL-CAP-OK markers), and release_ just frees what was
-# acquired under that cap.  Same RAII discipline as safety/OwnedMmap.h:251.
-include/crucible/fixy/Io.h:569 — effects::IO via IoUringRing::release_ (munmap SQEs, RAII, cap inherited)
-include/crucible/fixy/Io.h:575 — effects::IO via IoUringRing::release_ (munmap CQ ring, RAII, cap inherited)
-include/crucible/fixy/Io.h:580 — effects::IO via IoUringRing::release_ (munmap SQ ring, RAII, cap inherited)
-include/crucible/fixy/Io.h:585 — effects::IO via IoUringRing::release_ (close ring fd, RAII, cap inherited)
+include/crucible/warden/Hardening.h:97  — effects::Init via Hardening::apply
+include/crucible/warden/Hardening.h:177  — effects::Init via AppliedPolicy::revert (RAII pair of apply)
+include/crucible/warden/Hardening.h:182  — effects::Init via AppliedPolicy::revert
+include/crucible/warden/Hardening.h:187  — effects::Init via AppliedPolicy::revert (prctl THP re-enable)
+include/crucible/warden/Hardening.h:252  — effects::Init via Hardening::apply (sched_getaffinity)
+include/crucible/warden/Hardening.h:259  — effects::Init via Hardening::apply (sched_setaffinity)
+include/crucible/warden/Hardening.h:351  — effects::Init via Hardening::apply (prctl THP disable)
+include/crucible/warden/Hardening.h:398  — effects::Init via Hardening::lock_region (mlock fallback)
+include/crucible/warden/Hardening.h:427  — effects::Init via Hardening::hint_hugepage (madvise MADV_HUGEPAGE)
+include/crucible/warden/Hardening.h:452  — effects::Init via Hardening::collapse_hugepage (madvise MADV_COLLAPSE)
+src/cntp/CongestionControl.cpp:153  — effects::IO via read_available_congestion_control (open /proc tcp_available_congestion_control, LocalFd-owned)
+src/cntp/CongestionControl.cpp:159  — effects::IO via read_available_congestion_control (read /proc CC list)
+src/cntp/CongestionControl.cpp:178  — effects::IO via set_cc_for_socket (setsockopt TCP_CONGESTION)
+src/cntp/CongestionControl.cpp:197  — effects::IO via query_cc_selection_for_socket (getsockopt TCP_CONGESTION)
+src/cntp/IncastControl.cpp:45  — effects::IO via IncastControl::apply (TCP_QUICKACK setsockopt)
+src/cntp/Pacing.cpp:134  — effects::IO via query_active_qdisc (socket AF_NETLINK SOCK_RAW NETLINK_ROUTE, LocalFd-owned)
+src/cntp/Pacing.cpp:149  — effects::IO via query_active_qdisc (bind nl_pid=0 kernel-assigned PID, fixy-A5-036)
+src/cntp/Pacing.cpp:163  — effects::IO via query_active_qdisc (setsockopt SO_RCVTIMEO bounded recv, fixy-A5-004)
+src/cntp/Pacing.cpp:177  — effects::IO via query_active_qdisc (NETLINK send RTM_GETQDISC dump)
+src/cntp/Pacing.cpp:185  — effects::IO+Block via query_active_qdisc (NETLINK recv, SO_RCVTIMEO-bounded fixy-A5-004)
+src/cntp/Pacing.cpp:260  — effects::IO via set_socket_pacing_rate (setsockopt SO_MAX_PACING_RATE)
+src/cntp/RoceConfig.cpp:52  — effects::IO via read_counter_file (open /sys/class/net/<iface>/statistics counter, LocalFd-owned)
+src/cntp/RoceConfig.cpp:57  — effects::IO via read_counter_file (read sysfs pause-frame counter)
+src/fixy/Fs.cpp:86  — effects::IO via open_dirfd → do_open_dirfd_impl (O_DIRECTORY|O_NOFOLLOW dirfd open)
+src/perf/LockContention.cpp:218  — effects::Init via LockContention::attach (mmap BPF ringbuf MAP_SHARED, OwnedMmap-owned)
+src/perf/PmuSample.cpp:137  — effects::Init via perf_event_open_syscall (raw SYS_perf_event_open)
+src/perf/PmuSample.cpp:248  — effects::Init via PmuSample::State::~State (close perf fds on RAII drop)
+src/perf/PmuSample.cpp:391  — effects::Init via PmuSample::attach (close perf fd on attach-failure rollback)
+src/perf/PmuSample.cpp:404  — effects::Init via PmuSample::attach (close perf fd on capacity-full rollback)
+src/perf/PmuSample.cpp:448  — effects::Init via PmuSample::attach (mmap pmu_sample_buf MAP_SHARED, OwnedMmap-owned)
+src/perf/ProcGauges.cpp:40  — effects::Bg via ProcGauges::~ProcGauges (RAII close)
+src/perf/ProcGauges.cpp:55  — effects::Bg via ProcGauges::open (open /proc gauge)
+src/perf/ProcGauges.cpp:66  — effects::Bg via ProcGauges::read_one (pread /proc gauge)
+src/perf/ProcGauges.cpp:406  — effects::Bg via ProcGauges::poll (pread /proc gauge)
+src/perf/ProcGauges.cpp:517  — effects::Bg via ProcGauges::loadavg (pread /proc/loadavg)
+src/perf/ProcGauges.cpp:533  — effects::Bg via ProcGauges::sample (pread /proc gauge)
+src/perf/SchedSwitch.cpp:275  — effects::Init via SchedSwitch::attach (mmap BPF ringbuf MAP_SHARED, OwnedMmap-owned)
+src/perf/SchedTpBtf.cpp:214  — effects::Init via SchedTpBtf::attach (mmap BPF ringbuf MAP_SHARED, OwnedMmap-owned)
+src/perf/SenseHub.cpp:283  — effects::Init via SenseHub::load_subset (mmap counters array MAP_SHARED, OwnedMmap-owned)
+src/perf/SyscallLatency.cpp:212  — effects::Init via SyscallLatency::attach (mmap BPF ringbuf MAP_SHARED, OwnedMmap-owned)
+src/perf/SyscallTpBtf.cpp:212  — effects::Init via SyscallTpBtf::attach (mmap BPF ringbuf MAP_SHARED, OwnedMmap-owned)
+src/topology/CongestionTelemetry.cpp:243  — effects::IO via CongestionTelemetry::harvest_socket (TCP_INFO getsockopt)
+src/topology/CongestionTelemetry.cpp:266  — effects::IO via CongestionTelemetry::harvest_socket (TCP_CC_INFO getsockopt)
+src/topology/Ptp.cpp:89  — effects::IO via PtpClock::close (close /dev/ptp* fd)
+src/topology/Ptp.cpp:189  — effects::IO via open_ptp_clock (open /dev/ptp<N> O_RDONLY|O_CLOEXEC, LocalFd→PtpClock)
+src/topology/Ptp.cpp:200  — effects::IO via query_ptp_clock_caps (PTP_CLOCK_GETCAPS2 ioctl)
+src/topology/Ptp.cpp:220  — effects::IO via ptp_now (clock_gettime PHC clockid_from_fd)
+src/topology/Ptp.cpp:247  — effects::IO via enable_socket_timestamping (setsockopt SO_TIMESTAMPING)
+src/topology/Ptp.cpp:278  — effects::IO via configure_hardware_timestamping (SIOCSHWTSTAMP ioctl, IFNAMSIZ bounded fixy-A5-027)
+src/topology/Ptp.cpp:307  — effects::IO via recv_with_hw_timestamp (recvmsg MSG_DONTWAIT + SCM_TIMESTAMPING)

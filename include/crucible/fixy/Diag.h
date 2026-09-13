@@ -107,7 +107,7 @@ using ::crucible::safety::diag::LinearAliasViolation;
 using ::crucible::safety::diag::SharedPermissionPoolSaturated;
 using ::crucible::safety::diag::HugePageAllocationFailed;
 using ::crucible::safety::diag::PublishOnceDoublePublish;
-using ::crucible::safety::diag::BitsInvariantViolation;   // WRAP-Bits-Borrowed-Diagnostic #1092
+using ::crucible::safety::diag::BitsInvariantViolation;  // WRAP-Bits-Borrowed-Diagnostic #1092
 using ::crucible::safety::diag::BorrowedBoundsViolation;  // WRAP-Bits-Borrowed-Diagnostic #1092
 
 // Catalog tuple + cardinality.
@@ -116,28 +116,23 @@ using ::crucible::safety::diag::catalog_size;
 
 // is_diagnostic_class_v + accessors.
 template <typename T>
-inline constexpr bool is_diagnostic_class_v =
-    ::crucible::safety::diag::is_diagnostic_class_v<T>;
+inline constexpr bool is_diagnostic_class_v = ::crucible::safety::diag::is_diagnostic_class_v<T>;
 
 template <typename T>
-inline constexpr std::string_view diagnostic_name_v =
-    ::crucible::safety::diag::diagnostic_name_v<T>;
+inline constexpr std::string_view diagnostic_name_v = ::crucible::safety::diag::diagnostic_name_v<T>;
 
 template <typename T>
-inline constexpr std::string_view diagnostic_description_v =
-    ::crucible::safety::diag::diagnostic_description_v<T>;
+inline constexpr std::string_view diagnostic_description_v = ::crucible::safety::diag::diagnostic_description_v<T>;
 
 template <typename T>
-inline constexpr std::string_view diagnostic_remediation_v =
-    ::crucible::safety::diag::diagnostic_remediation_v<T>;
+inline constexpr std::string_view diagnostic_remediation_v = ::crucible::safety::diag::diagnostic_remediation_v<T>;
 
 // Diagnostic<DiagnosticClass, Ctx...> wrapper + shape trait.
 template <typename DiagnosticClass, typename... Context>
 using Diagnostic = ::crucible::safety::diag::Diagnostic<DiagnosticClass, Context...>;
 
 template <typename T>
-inline constexpr bool is_diagnostic_v =
-    ::crucible::safety::diag::is_diagnostic_v<T>;
+inline constexpr bool is_diagnostic_v = ::crucible::safety::diag::is_diagnostic_v<T>;
 
 // ═══════════════════════════════════════════════════════════════════
 // Category enum + bidirectional map (tag_of_t / category_of_v)
@@ -151,8 +146,7 @@ using tag_of_t = ::crucible::safety::diag::tag_of_t<C>;
 
 // Tag type → Category.
 template <typename Tag>
-inline constexpr Category category_of_v =
-    ::crucible::safety::diag::category_of_v<Tag>;
+inline constexpr Category category_of_v = ::crucible::safety::diag::category_of_v<Tag>;
 
 // constexpr array of every Category in catalog order.
 using ::crucible::safety::diag::categories_v;
@@ -162,26 +156,20 @@ using ::crucible::safety::diag::categories_v;
 // ═══════════════════════════════════════════════════════════════════
 
 template <typename T>
-inline constexpr std::string_view stable_name_of =
-    ::crucible::safety::diag::stable_name_of<T>;
+inline constexpr std::string_view stable_name_of = ::crucible::safety::diag::stable_name_of<T>;
 
 template <typename T>
-inline constexpr std::uint64_t stable_type_id =
-    ::crucible::safety::diag::stable_type_id<T>;
+inline constexpr std::uint64_t stable_type_id = ::crucible::safety::diag::stable_type_id<T>;
 
 template <auto FnPtr>
-inline constexpr std::uint64_t stable_function_id =
-    ::crucible::safety::diag::stable_function_id<FnPtr>;
+inline constexpr std::uint64_t stable_function_id = ::crucible::safety::diag::stable_function_id<FnPtr>;
 
 template <typename... Ts>
-using canonicalize_pack_t =
-    ::crucible::safety::diag::canonicalize_pack_t<Ts...>;
+using canonicalize_pack_t = ::crucible::safety::diag::canonicalize_pack_t<Ts...>;
 
 // FNV-1a constants (re-exported for fixy-side custom folds).
-inline constexpr std::uint64_t FNV1A_OFFSET_BASIS =
-    ::crucible::safety::diag::detail::FNV1A_OFFSET_BASIS;
-inline constexpr std::uint64_t FNV1A_PRIME =
-    ::crucible::safety::diag::detail::FNV1A_PRIME;
+inline constexpr std::uint64_t FNV1A_OFFSET_BASIS = ::crucible::safety::diag::detail::FNV1A_OFFSET_BASIS;
+inline constexpr std::uint64_t FNV1A_PRIME = ::crucible::safety::diag::detail::FNV1A_PRIME;
 
 // ═══════════════════════════════════════════════════════════════════
 // Insights — per-tag explanatory provider
@@ -191,23 +179,19 @@ template <typename Tag>
 using insight_provider = ::crucible::safety::diag::insight_provider<Tag>;
 
 template <typename Tag>
-using insights_quality_thresholds =
-    ::crucible::safety::diag::insights_quality_thresholds<Tag>;
+using insights_quality_thresholds = ::crucible::safety::diag::insights_quality_thresholds<Tag>;
 
 // ═══════════════════════════════════════════════════════════════════
 // RowHashFold — canonical wrapper-nesting hash fold (FOUND-I02)
 // ═══════════════════════════════════════════════════════════════════
 
 template <typename T>
-using row_hash_contribution =
-    ::crucible::safety::diag::row_hash_contribution<T>;
+using row_hash_contribution = ::crucible::safety::diag::row_hash_contribution<T>;
 
 template <typename T>
-inline constexpr std::uint64_t row_hash_contribution_v =
-    ::crucible::safety::diag::row_hash_contribution_v<T>;
+inline constexpr std::uint64_t row_hash_contribution_v = ::crucible::safety::diag::row_hash_contribution_v<T>;
 
-inline constexpr std::uint64_t EMPTY_ROW_HASH =
-    ::crucible::safety::diag::detail::EMPTY_ROW_HASH;
+inline constexpr std::uint64_t EMPTY_ROW_HASH = ::crucible::safety::diag::detail::EMPTY_ROW_HASH;
 
 // ═══════════════════════════════════════════════════════════════════
 // mint_diagnostic<Tag, Ctx...>(ctx...) — §XXI Universal Mint Pattern
@@ -233,10 +217,8 @@ using ::crucible::safety::diag::mint_diagnostic;
 namespace crucible::fixy::diag::self_test {
 
 // Category enum identity.
-static_assert(Category::EffectRowMismatch ==
-              ::crucible::safety::diag::Category::EffectRowMismatch);
-static_assert(Category::LinearAliasViolation ==
-              ::crucible::safety::diag::Category::LinearAliasViolation);
+static_assert(Category::EffectRowMismatch == ::crucible::safety::diag::Category::EffectRowMismatch);
+static_assert(Category::LinearAliasViolation == ::crucible::safety::diag::Category::LinearAliasViolation);
 
 // FIXY-U-127 / U-128 / U-129 / U-130 floor-vs-ceiling split: the
 // EXACT ceiling pin (`== 31`) lives in safety/Diagnostic.h:1562
@@ -244,27 +226,23 @@ static_assert(Category::LinearAliasViolation ==
 // only holds the FLOOR pin (`>= 31`).  Bumps to the substrate
 // catalog are append-only and now auto-track here — only removals
 // red-light this floor.
-static_assert(catalog_size >= 31,
-    "fixy::diag::catalog_size floor: regressed below 31 — a Catalog "
-    "entry was removed without updating both Diagnostic.h's "
-    "colocated ceiling pin AND this floor witness.");
+static_assert(catalog_size >= 31, "fixy::diag::catalog_size floor: regressed below 31 — a Catalog "
+                                  "entry was removed without updating both Diagnostic.h's "
+                                  "colocated ceiling pin AND this floor witness.");
 
 // Tag-class identity.
-static_assert(std::is_same_v<HotPathViolation,
-                             ::crucible::safety::diag::HotPathViolation>,
-    "fixy::diag::HotPathViolation must alias the substrate tag class");
+static_assert(std::is_same_v<HotPathViolation, ::crucible::safety::diag::HotPathViolation>,
+              "fixy::diag::HotPathViolation must alias the substrate tag class");
 
 // Diagnostic wrapper template identity.
-static_assert(std::is_same_v<
-    Diagnostic<HotPathViolation, int, float>,
-    ::crucible::safety::diag::Diagnostic<
-        ::crucible::safety::diag::HotPathViolation, int, float>>,
+static_assert(
+    std::is_same_v<Diagnostic<HotPathViolation, int, float>,
+                   ::crucible::safety::diag::Diagnostic<::crucible::safety::diag::HotPathViolation, int, float>>,
     "fixy::diag::Diagnostic must alias safety::diag::Diagnostic");
 
 // Bidirectional map round-trip.
 static_assert(category_of_v<HotPathViolation> == Category::HotPathViolation);
-static_assert(std::is_same_v<tag_of_t<Category::HotPathViolation>,
-                             HotPathViolation>);
+static_assert(std::is_same_v<tag_of_t<Category::HotPathViolation>, HotPathViolation>);
 
 // is_diagnostic_class_v witness.
 static_assert(is_diagnostic_class_v<HotPathViolation>);
@@ -276,8 +254,7 @@ struct DiagSentinelStableName_TypeA {};
 static_assert(!stable_name_of<DiagSentinelStableName_TypeA>.empty());
 
 // EMPTY_ROW_HASH passes through.
-static_assert(EMPTY_ROW_HASH ==
-              ::crucible::safety::diag::detail::EMPTY_ROW_HASH);
+static_assert(EMPTY_ROW_HASH == ::crucible::safety::diag::detail::EMPTY_ROW_HASH);
 
 // ── FIXY-U-064: full 31-tag coverage witness ───────────────────────
 //
@@ -285,43 +262,28 @@ static_assert(EMPTY_ROW_HASH ==
 // without surfacing through fixy::diag::.  The 3 new tags MUST resolve
 // to substrate identity AND round-trip through the bidirectional map.
 
-static_assert(std::is_same_v<SharedPermissionPoolSaturated,
-                             ::crucible::safety::diag::SharedPermissionPoolSaturated>,
-    "fixy::diag::SharedPermissionPoolSaturated must alias substrate tag");
-static_assert(std::is_same_v<HugePageAllocationFailed,
-                             ::crucible::safety::diag::HugePageAllocationFailed>,
-    "fixy::diag::HugePageAllocationFailed must alias substrate tag");
-static_assert(std::is_same_v<PublishOnceDoublePublish,
-                             ::crucible::safety::diag::PublishOnceDoublePublish>,
-    "fixy::diag::PublishOnceDoublePublish must alias substrate tag");
-static_assert(std::is_same_v<BitsInvariantViolation,
-                             ::crucible::safety::diag::BitsInvariantViolation>,
-    "fixy::diag::BitsInvariantViolation must alias substrate tag");
-static_assert(std::is_same_v<BorrowedBoundsViolation,
-                             ::crucible::safety::diag::BorrowedBoundsViolation>,
-    "fixy::diag::BorrowedBoundsViolation must alias substrate tag");
+static_assert(std::is_same_v<SharedPermissionPoolSaturated, ::crucible::safety::diag::SharedPermissionPoolSaturated>,
+              "fixy::diag::SharedPermissionPoolSaturated must alias substrate tag");
+static_assert(std::is_same_v<HugePageAllocationFailed, ::crucible::safety::diag::HugePageAllocationFailed>,
+              "fixy::diag::HugePageAllocationFailed must alias substrate tag");
+static_assert(std::is_same_v<PublishOnceDoublePublish, ::crucible::safety::diag::PublishOnceDoublePublish>,
+              "fixy::diag::PublishOnceDoublePublish must alias substrate tag");
+static_assert(std::is_same_v<BitsInvariantViolation, ::crucible::safety::diag::BitsInvariantViolation>,
+              "fixy::diag::BitsInvariantViolation must alias substrate tag");
+static_assert(std::is_same_v<BorrowedBoundsViolation, ::crucible::safety::diag::BorrowedBoundsViolation>,
+              "fixy::diag::BorrowedBoundsViolation must alias substrate tag");
 
 // Bidirectional map round-trips for the 5 new entries.
-static_assert(category_of_v<SharedPermissionPoolSaturated> ==
-              Category::SharedPermissionPoolSaturated);
-static_assert(category_of_v<HugePageAllocationFailed> ==
-              Category::HugePageAllocationFailed);
-static_assert(category_of_v<PublishOnceDoublePublish> ==
-              Category::PublishOnceDoublePublish);
-static_assert(category_of_v<BitsInvariantViolation> ==
-              Category::BitsInvariantViolation);
-static_assert(category_of_v<BorrowedBoundsViolation> ==
-              Category::BorrowedBoundsViolation);
-static_assert(std::is_same_v<tag_of_t<Category::SharedPermissionPoolSaturated>,
-                             SharedPermissionPoolSaturated>);
-static_assert(std::is_same_v<tag_of_t<Category::HugePageAllocationFailed>,
-                             HugePageAllocationFailed>);
-static_assert(std::is_same_v<tag_of_t<Category::PublishOnceDoublePublish>,
-                             PublishOnceDoublePublish>);
-static_assert(std::is_same_v<tag_of_t<Category::BitsInvariantViolation>,
-                             BitsInvariantViolation>);
-static_assert(std::is_same_v<tag_of_t<Category::BorrowedBoundsViolation>,
-                             BorrowedBoundsViolation>);
+static_assert(category_of_v<SharedPermissionPoolSaturated> == Category::SharedPermissionPoolSaturated);
+static_assert(category_of_v<HugePageAllocationFailed> == Category::HugePageAllocationFailed);
+static_assert(category_of_v<PublishOnceDoublePublish> == Category::PublishOnceDoublePublish);
+static_assert(category_of_v<BitsInvariantViolation> == Category::BitsInvariantViolation);
+static_assert(category_of_v<BorrowedBoundsViolation> == Category::BorrowedBoundsViolation);
+static_assert(std::is_same_v<tag_of_t<Category::SharedPermissionPoolSaturated>, SharedPermissionPoolSaturated>);
+static_assert(std::is_same_v<tag_of_t<Category::HugePageAllocationFailed>, HugePageAllocationFailed>);
+static_assert(std::is_same_v<tag_of_t<Category::PublishOnceDoublePublish>, PublishOnceDoublePublish>);
+static_assert(std::is_same_v<tag_of_t<Category::BitsInvariantViolation>, BitsInvariantViolation>);
+static_assert(std::is_same_v<tag_of_t<Category::BorrowedBoundsViolation>, BorrowedBoundsViolation>);
 
 // is_diagnostic_class_v witnesses.
 static_assert(is_diagnostic_class_v<SharedPermissionPoolSaturated>);
@@ -335,15 +297,15 @@ static_assert(is_diagnostic_class_v<BorrowedBoundsViolation>);
 // defaults would indicate the substrate-side insight_provider
 // specializations regressed.
 static_assert(!insight_provider<SharedPermissionPoolSaturated>::why_this_matters.empty(),
-    "SharedPermissionPoolSaturated insight_provider must be specialized");
+              "SharedPermissionPoolSaturated insight_provider must be specialized");
 static_assert(!insight_provider<HugePageAllocationFailed>::why_this_matters.empty(),
-    "HugePageAllocationFailed insight_provider must be specialized");
+              "HugePageAllocationFailed insight_provider must be specialized");
 static_assert(!insight_provider<PublishOnceDoublePublish>::why_this_matters.empty(),
-    "PublishOnceDoublePublish insight_provider must be specialized");
+              "PublishOnceDoublePublish insight_provider must be specialized");
 static_assert(!insight_provider<BitsInvariantViolation>::why_this_matters.empty(),
-    "BitsInvariantViolation insight_provider must be specialized");
+              "BitsInvariantViolation insight_provider must be specialized");
 static_assert(!insight_provider<BorrowedBoundsViolation>::why_this_matters.empty(),
-    "BorrowedBoundsViolation insight_provider must be specialized");
+              "BorrowedBoundsViolation insight_provider must be specialized");
 
 // ── FIXY-U-115: mint_diagnostic re-export reach proof ──────────────
 //
@@ -353,11 +315,9 @@ static_assert(!insight_provider<BorrowedBoundsViolation>::why_this_matters.empty
 // IS such a context, so calling the function and comparing the deduced
 // return type works cleanly.  Drift between the fixy:: re-export and
 // the substrate symbol fails here.
-static_assert(std::is_same_v<
-    decltype(::crucible::fixy::diag::mint_diagnostic<
-                ::crucible::fixy::diag::HotPathViolation>()),
-    decltype(::crucible::safety::diag::mint_diagnostic<
-                ::crucible::safety::diag::HotPathViolation>())>,
+static_assert(
+    std::is_same_v<decltype(::crucible::fixy::diag::mint_diagnostic<::crucible::fixy::diag::HotPathViolation>()),
+                   decltype(::crucible::safety::diag::mint_diagnostic<::crucible::safety::diag::HotPathViolation>())>,
     "FIXY-U-115: fixy::diag::mint_diagnostic must alias safety::diag::mint_diagnostic.");
 
 }  // namespace crucible::fixy::diag::self_test

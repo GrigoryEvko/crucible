@@ -156,7 +156,7 @@
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/lattices/ResidencyHeatLattice.h>
 
-#include <cstdlib>      // std::abort in the runtime smoke test
+#include <cstdlib>  // std::abort in the runtime smoke test
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -174,14 +174,10 @@ template <ResidencyHeatTag_v Tier, typename T>
 class [[nodiscard]] ResidencyHeat {
 public:
     // ── Public type aliases ─────────────────────────────────────────
-    using value_type   = T;
+    using value_type = T;
     using lattice_type = ResidencyHeatLattice::At<Tier>;
-    using graded_type  = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Absolute,
-        lattice_type,
-        T>;
-    static constexpr ::crucible::algebra::ModalityKind modality =
-        ::crucible::algebra::ModalityKind::Absolute;
+    using graded_type = ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
+    static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::Absolute;
 
     // The pinned tier — exposed as a static constexpr for callers
     // doing tier-aware dispatch without instantiating the wrapper.
@@ -191,7 +187,6 @@ private:
     graded_type impl_;
 
 public:
-
     // ── Construction ────────────────────────────────────────────────
     //
     // Default: T{} at the pinned tier.
@@ -208,40 +203,38 @@ public:
     // the default ctor exists for compatibility with
     // std::array<ResidencyHeat<Hot, T>, N> / struct-field
     // default-init contexts.
-    constexpr ResidencyHeat() noexcept(
-        std::is_nothrow_default_constructible_v<T>)
+    constexpr ResidencyHeat() noexcept(std::is_nothrow_default_constructible_v<T>)
         : impl_{T{}, typename lattice_type::element_type{}} {}
 
     // Explicit construction from a T value.  The most common
     // production pattern — a tier-anchored production site
     // constructs the wrapper at the appropriate tier.
-    constexpr explicit ResidencyHeat(T value) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    constexpr explicit ResidencyHeat(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(value), typename lattice_type::element_type{}} {}
 
     // In-place construction.
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr explicit ResidencyHeat(std::in_place_t, Args&&... args)
-        noexcept(std::is_nothrow_constructible_v<T, Args...>
-                 && std::is_nothrow_move_constructible_v<T>)
-        : impl_{T(std::forward<Args>(args)...),
-                typename lattice_type::element_type{}} {}
+    constexpr explicit ResidencyHeat(std::in_place_t,
+                                     Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
+                                                              && std::is_nothrow_move_constructible_v<T>)
+        : impl_{T(std::forward<Args>(args)...), typename lattice_type::element_type{}} {}
 
     // Defaulted copy/move/destroy — ResidencyHeat IS COPYABLE within
     // the same tier pin.
-    constexpr ResidencyHeat(const ResidencyHeat&)            = default;
-    constexpr ResidencyHeat(ResidencyHeat&&)                 = default;
+    constexpr ResidencyHeat(const ResidencyHeat&) = default;
+    constexpr ResidencyHeat(ResidencyHeat&&) = default;
     constexpr ResidencyHeat& operator=(const ResidencyHeat&) = default;
-    constexpr ResidencyHeat& operator=(ResidencyHeat&&)      = default;
-    ~ResidencyHeat()                                         = default;
+    constexpr ResidencyHeat& operator=(ResidencyHeat&&) = default;
+    ~ResidencyHeat() = default;
 
     // Equality: compares value bytes within the SAME tier pin.
     // Cross-tier comparison rejected at overload resolution.
-    [[nodiscard]] friend constexpr bool operator==(
-        ResidencyHeat const& a, ResidencyHeat const& b) noexcept(
-        noexcept(a.peek() == b.peek()))
-        requires requires(T const& x, T const& y) { { x == y } -> std::convertible_to<bool>; }
+    [[nodiscard]] friend constexpr bool operator==(ResidencyHeat const& a,
+                                                   ResidencyHeat const& b) noexcept(noexcept(a.peek() == b.peek()))
+        requires requires(T const& x, T const& y) {
+            { x == y } -> std::convertible_to<bool>;
+        }
     {
         return a.peek() == b.peek();
     }
@@ -250,35 +243,21 @@ public:
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return graded_type::lattice_name();
-    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 
     // ── Read-only access ────────────────────────────────────────────
-    [[nodiscard]] constexpr T const& peek() const& noexcept {
-        return impl_.peek();
-    }
+    [[nodiscard]] constexpr T const& peek() const& noexcept { return impl_.peek(); }
 
-    [[nodiscard]] constexpr T consume() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return std::move(impl_).consume();
     }
 
-    [[nodiscard]] constexpr T& peek_mut() & noexcept {
-        return impl_.peek_mut();
-    }
+    [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(); }
 
     // ── swap ────────────────────────────────────────────────────────
-    constexpr void swap(ResidencyHeat& other)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
-        impl_.swap(other.impl_);
-    }
+    constexpr void swap(ResidencyHeat& other) noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
 
-    friend constexpr void swap(ResidencyHeat& a, ResidencyHeat& b)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
+    friend constexpr void swap(ResidencyHeat& a, ResidencyHeat& b) noexcept(std::is_nothrow_swappable_v<T>) {
         a.swap(b);
     }
 
@@ -311,41 +290,44 @@ public:
     // Compile error when WeakerTier > Tier — would CLAIM more
     // cache-residency strength than the source provides.
     template <ResidencyHeatTag_v WeakerTier>
-        requires (ResidencyHeatLattice::leq(WeakerTier, Tier))
-    [[nodiscard]] constexpr ResidencyHeat<WeakerTier, T> relax() const&
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
+        requires(ResidencyHeatLattice::leq(WeakerTier, Tier))
+    [[nodiscard]] constexpr ResidencyHeat<WeakerTier, T>
+    relax() const& noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
     {
         return ResidencyHeat<WeakerTier, T>{this->peek()};
     }
 
     template <ResidencyHeatTag_v WeakerTier>
-        requires (ResidencyHeatLattice::leq(WeakerTier, Tier))
-    [[nodiscard]] constexpr ResidencyHeat<WeakerTier, T> relax() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
-        return ResidencyHeat<WeakerTier, T>{
-            std::move(impl_).consume()};
+        requires(ResidencyHeatLattice::leq(WeakerTier, Tier))
+    [[nodiscard]] constexpr ResidencyHeat<WeakerTier, T> relax() && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return ResidencyHeat<WeakerTier, T>{std::move(impl_).consume()};
     }
 };
 
 // ── Convenience aliases ─────────────────────────────────────────────
 namespace residency_heat {
-    template <typename T> using Hot  = ResidencyHeat<ResidencyHeatTag_v::Hot,  T>;
-    template <typename T> using Warm = ResidencyHeat<ResidencyHeatTag_v::Warm, T>;
-    template <typename T> using Cold = ResidencyHeat<ResidencyHeatTag_v::Cold, T>;
+template <typename T>
+using Hot = ResidencyHeat<ResidencyHeatTag_v::Hot, T>;
+template <typename T>
+using Warm = ResidencyHeat<ResidencyHeatTag_v::Warm, T>;
+template <typename T>
+using Cold = ResidencyHeat<ResidencyHeatTag_v::Cold, T>;
 }  // namespace residency_heat
 
 // ── Layout invariants ───────────────────────────────────────────────
 namespace detail::residency_heat_layout {
 
-template <typename T> using HotR  = ResidencyHeat<ResidencyHeatTag_v::Hot,  T>;
-template <typename T> using WarmR = ResidencyHeat<ResidencyHeatTag_v::Warm, T>;
-template <typename T> using ColdR = ResidencyHeat<ResidencyHeatTag_v::Cold, T>;
+template <typename T>
+using HotR = ResidencyHeat<ResidencyHeatTag_v::Hot, T>;
+template <typename T>
+using WarmR = ResidencyHeat<ResidencyHeatTag_v::Warm, T>;
+template <typename T>
+using ColdR = ResidencyHeat<ResidencyHeatTag_v::Cold, T>;
 
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(HotR,  char);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(HotR,  int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(HotR,  double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(HotR, char);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(HotR, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(HotR, double);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(WarmR, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(WarmR, double);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(ColdR, int);
@@ -353,17 +335,17 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(ColdR, double);
 
 }  // namespace detail::residency_heat_layout
 
-static_assert(sizeof(ResidencyHeat<ResidencyHeatTag_v::Hot,  int>)    == sizeof(int));
-static_assert(sizeof(ResidencyHeat<ResidencyHeatTag_v::Warm, int>)    == sizeof(int));
-static_assert(sizeof(ResidencyHeat<ResidencyHeatTag_v::Cold, int>)    == sizeof(int));
-static_assert(sizeof(ResidencyHeat<ResidencyHeatTag_v::Hot,  double>) == sizeof(double));
+static_assert(sizeof(ResidencyHeat<ResidencyHeatTag_v::Hot, int>) == sizeof(int));
+static_assert(sizeof(ResidencyHeat<ResidencyHeatTag_v::Warm, int>) == sizeof(int));
+static_assert(sizeof(ResidencyHeat<ResidencyHeatTag_v::Cold, int>) == sizeof(int));
+static_assert(sizeof(ResidencyHeat<ResidencyHeatTag_v::Hot, double>) == sizeof(double));
 static_assert(sizeof(ResidencyHeat<ResidencyHeatTag_v::Warm, double>) == sizeof(double));
 static_assert(sizeof(ResidencyHeat<ResidencyHeatTag_v::Cold, double>) == sizeof(double));
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::residency_heat_self_test {
 
-using HotInt  = ResidencyHeat<ResidencyHeatTag_v::Hot,  int>;
+using HotInt = ResidencyHeat<ResidencyHeatTag_v::Hot, int>;
 using WarmInt = ResidencyHeat<ResidencyHeatTag_v::Warm, int>;
 using ColdInt = ResidencyHeat<ResidencyHeatTag_v::Cold, int>;
 
@@ -379,7 +361,7 @@ inline constexpr HotInt h_in_place{std::in_place, 7};
 static_assert(h_in_place.peek() == 7);
 
 // ── Pinned tier accessor ──────────────────────────────────────────
-static_assert(HotInt::tier  == ResidencyHeatTag_v::Hot);
+static_assert(HotInt::tier == ResidencyHeatTag_v::Hot);
 static_assert(WarmInt::tier == ResidencyHeatTag_v::Warm);
 static_assert(ColdInt::tier == ResidencyHeatTag_v::Cold);
 
@@ -394,37 +376,33 @@ static_assert(HotInt::satisfies<ResidencyHeatTag_v::Warm>);
 static_assert(HotInt::satisfies<ResidencyHeatTag_v::Cold>);
 
 // Warm satisfies Warm and Cold; FAILS on Hot.
-static_assert( WarmInt::satisfies<ResidencyHeatTag_v::Warm>);    // self
-static_assert( WarmInt::satisfies<ResidencyHeatTag_v::Cold>);    // weaker
-static_assert(!WarmInt::satisfies<ResidencyHeatTag_v::Hot>,      // STRONGER fails ✓
-    "Warm MUST NOT satisfy Hot — this is the load-bearing rejection "
-    "that the KernelCache L1 admission gate depends on.  If this "
-    "fires, an L2-resident value could be passed where an L1-resident "
-    "value is required, leading to ~10× cache-miss latency in the "
-    "fast-path lookup.");
+static_assert(WarmInt::satisfies<ResidencyHeatTag_v::Warm>);  // self
+static_assert(WarmInt::satisfies<ResidencyHeatTag_v::Cold>);  // weaker
+static_assert(!WarmInt::satisfies<ResidencyHeatTag_v::Hot>,  // STRONGER fails ✓
+              "Warm MUST NOT satisfy Hot — this is the load-bearing rejection "
+              "that the KernelCache L1 admission gate depends on.  If this "
+              "fires, an L2-resident value could be passed where an L1-resident "
+              "value is required, leading to ~10× cache-miss latency in the "
+              "fast-path lookup.");
 
 // Cold satisfies only Cold.
-static_assert( ColdInt::satisfies<ResidencyHeatTag_v::Cold>);
+static_assert(ColdInt::satisfies<ResidencyHeatTag_v::Cold>);
 static_assert(!ColdInt::satisfies<ResidencyHeatTag_v::Warm>);
 static_assert(!ColdInt::satisfies<ResidencyHeatTag_v::Hot>);
 
 // ── relax<WeakerTier> — DOWN-the-lattice conversion ───────────────
-inline constexpr auto from_hot_to_warm =
-    HotInt{42}.relax<ResidencyHeatTag_v::Warm>();
+inline constexpr auto from_hot_to_warm = HotInt{42}.relax<ResidencyHeatTag_v::Warm>();
 static_assert(from_hot_to_warm.peek() == 42);
 static_assert(from_hot_to_warm.tier == ResidencyHeatTag_v::Warm);
 
-inline constexpr auto from_hot_to_cold =
-    HotInt{99}.relax<ResidencyHeatTag_v::Cold>();
+inline constexpr auto from_hot_to_cold = HotInt{99}.relax<ResidencyHeatTag_v::Cold>();
 static_assert(from_hot_to_cold.peek() == 99);
 static_assert(from_hot_to_cold.tier == ResidencyHeatTag_v::Cold);
 
-inline constexpr auto from_warm_to_cold =
-    WarmInt{7}.relax<ResidencyHeatTag_v::Cold>();
+inline constexpr auto from_warm_to_cold = WarmInt{7}.relax<ResidencyHeatTag_v::Cold>();
 static_assert(from_warm_to_cold.peek() == 7);
 
-inline constexpr auto from_warm_to_self =
-    WarmInt{8}.relax<ResidencyHeatTag_v::Warm>();   // identity
+inline constexpr auto from_warm_to_self = WarmInt{8}.relax<ResidencyHeatTag_v::Warm>();  // identity
 static_assert(from_warm_to_self.peek() == 8);
 
 // SFINAE-style detector — proves the requires-clause's correctness.
@@ -433,26 +411,26 @@ concept can_relax = requires(W w) {
     { std::move(w).template relax<T_target>() };
 };
 
-static_assert( can_relax<HotInt,  ResidencyHeatTag_v::Warm>);    // ✓ down
-static_assert( can_relax<HotInt,  ResidencyHeatTag_v::Cold>);    // ✓ down
-static_assert( can_relax<HotInt,  ResidencyHeatTag_v::Hot>);     // ✓ self
-static_assert( can_relax<WarmInt, ResidencyHeatTag_v::Cold>);    // ✓ down
-static_assert( can_relax<WarmInt, ResidencyHeatTag_v::Warm>);    // ✓ self
-static_assert(!can_relax<WarmInt, ResidencyHeatTag_v::Hot>,       // ✗ up
-    "relax<Hot> on a Warm-pinned wrapper MUST be rejected — "
-    "this is the load-bearing claim-stronger-than-source rejection. "
-    "If this fires, an L2-resident value could silently claim "
-    "L1-residency, defeating the working-set discipline (consumers "
-    "would assume ~ns access but actually pay ~tens of ns).");
-static_assert(!can_relax<ColdInt, ResidencyHeatTag_v::Warm>);    // ✗ up
-static_assert(!can_relax<ColdInt, ResidencyHeatTag_v::Hot>);     // ✗ up
+static_assert(can_relax<HotInt, ResidencyHeatTag_v::Warm>);  // ✓ down
+static_assert(can_relax<HotInt, ResidencyHeatTag_v::Cold>);  // ✓ down
+static_assert(can_relax<HotInt, ResidencyHeatTag_v::Hot>);  // ✓ self
+static_assert(can_relax<WarmInt, ResidencyHeatTag_v::Cold>);  // ✓ down
+static_assert(can_relax<WarmInt, ResidencyHeatTag_v::Warm>);  // ✓ self
+static_assert(!can_relax<WarmInt, ResidencyHeatTag_v::Hot>,  // ✗ up
+              "relax<Hot> on a Warm-pinned wrapper MUST be rejected — "
+              "this is the load-bearing claim-stronger-than-source rejection. "
+              "If this fires, an L2-resident value could silently claim "
+              "L1-residency, defeating the working-set discipline (consumers "
+              "would assume ~ns access but actually pay ~tens of ns).");
+static_assert(!can_relax<ColdInt, ResidencyHeatTag_v::Warm>);  // ✗ up
+static_assert(!can_relax<ColdInt, ResidencyHeatTag_v::Hot>);  // ✗ up
 // Cold reflexivity — the bottom of the chain still admits relax to
 // itself (leq is reflexive at every point including bottom).
-static_assert( can_relax<ColdInt, ResidencyHeatTag_v::Cold>);    // ✓ self at bottom
+static_assert(can_relax<ColdInt, ResidencyHeatTag_v::Cold>);  // ✓ self at bottom
 
 // ── Diagnostic forwarders ─────────────────────────────────────────
 static_assert(HotInt::value_type_name().ends_with("int"));
-static_assert(HotInt::lattice_name()  == "ResidencyHeatLattice::At<Hot>");
+static_assert(HotInt::lattice_name() == "ResidencyHeatLattice::At<Hot>");
 static_assert(WarmInt::lattice_name() == "ResidencyHeatLattice::At<Warm>");
 static_assert(ColdInt::lattice_name() == "ResidencyHeatLattice::At<Cold>");
 
@@ -507,16 +485,16 @@ concept can_equality_compare = requires(W const& a, W const& b) {
     { a == b } -> std::convertible_to<bool>;
 };
 
-static_assert( can_equality_compare<HotInt>);
+static_assert(can_equality_compare<HotInt>);
 static_assert(!can_equality_compare<ResidencyHeat<ResidencyHeatTag_v::Hot, NoEqualityT>>);
 
 // NoEqualityT has DELETED copy ctor — ResidencyHeat<Hot, NoEqualityT>
 // must inherit that deletion.  Pins the structural property that
 // T's move-only-ness propagates through the wrapper layer.
 static_assert(!std::is_copy_constructible_v<ResidencyHeat<ResidencyHeatTag_v::Hot, NoEqualityT>>,
-    "ResidencyHeat<Tier, T> must transitively inherit T's copy-deletion. "
-    "If this fires, NoEqualityT's deleted copy ctor is no longer "
-    "visible through the wrapper.");
+              "ResidencyHeat<Tier, T> must transitively inherit T's copy-deletion. "
+              "If this fires, NoEqualityT's deleted copy ctor is no longer "
+              "visible through the wrapper.");
 static_assert(std::is_move_constructible_v<ResidencyHeat<ResidencyHeatTag_v::Hot, NoEqualityT>>);
 
 // ── relax reflexivity ─────────────────────────────────────────────
@@ -553,12 +531,12 @@ concept can_relax_lvalue = requires(W const& w) {
 };
 
 using HotMoveOnly = ResidencyHeat<ResidencyHeatTag_v::Hot, MoveOnlyT>;
-static_assert( can_relax_rvalue<HotMoveOnly, ResidencyHeatTag_v::Warm>,
-    "relax<>() && MUST work for move-only T — the rvalue overload "
-    "moves through consume(), no copy required.");
+static_assert(can_relax_rvalue<HotMoveOnly, ResidencyHeatTag_v::Warm>,
+              "relax<>() && MUST work for move-only T — the rvalue overload "
+              "moves through consume(), no copy required.");
 static_assert(!can_relax_lvalue<HotMoveOnly, ResidencyHeatTag_v::Warm>,
-    "relax<>() const& on move-only T MUST be rejected — the const& "
-    "overload requires copy_constructible<T>.");
+              "relax<>() const& on move-only T MUST be rejected — the const& "
+              "overload requires copy_constructible<T>.");
 
 [[nodiscard]] consteval bool relax_move_only_works() noexcept {
     HotMoveOnly src{MoveOnlyT{77}};
@@ -573,12 +551,11 @@ static_assert(HotInt::lattice_name().size() > 0);
 static_assert(HotInt::lattice_name().starts_with("ResidencyHeatLattice::At<"));
 
 // ── Convenience aliases resolve correctly ────────────────────────
-static_assert(residency_heat::Hot<int>::tier  == ResidencyHeatTag_v::Hot);
+static_assert(residency_heat::Hot<int>::tier == ResidencyHeatTag_v::Hot);
 static_assert(residency_heat::Warm<int>::tier == ResidencyHeatTag_v::Warm);
 static_assert(residency_heat::Cold<int>::tier == ResidencyHeatTag_v::Cold);
 
-static_assert(std::is_same_v<residency_heat::Hot<double>,
-                             ResidencyHeat<ResidencyHeatTag_v::Hot, double>>);
+static_assert(std::is_same_v<residency_heat::Hot<double>, ResidencyHeat<ResidencyHeatTag_v::Hot, double>>);
 
 // ── L1 fast-path admission simulation — load-bearing scenario ────
 //
@@ -595,18 +572,14 @@ static_assert(std::is_same_v<residency_heat::Hot<double>,
 //   Cold-tier values are REJECTED (✓)
 
 template <typename W>
-concept is_l1_admissible =
-    W::template satisfies<ResidencyHeatTag_v::Hot>;
+concept is_l1_admissible = W::template satisfies<ResidencyHeatTag_v::Hot>;
 
-static_assert( is_l1_admissible<HotInt>,
-    "Hot-tier value MUST pass the KernelCache L1 admission gate.");
-static_assert(!is_l1_admissible<WarmInt>,
-    "Warm-tier value MUST be REJECTED at the L1 admission gate — "
-    "this is the LOAD-BEARING TEST.  Without this rejection, an "
-    "L2-resident slot could enter the L1 fast path and pay ~10× "
-    "the per-call latency the dispatcher's working-set budget assumes.");
-static_assert(!is_l1_admissible<ColdInt>,
-    "Cold-tier value MUST be REJECTED at the L1 admission gate.");
+static_assert(is_l1_admissible<HotInt>, "Hot-tier value MUST pass the KernelCache L1 admission gate.");
+static_assert(!is_l1_admissible<WarmInt>, "Warm-tier value MUST be REJECTED at the L1 admission gate — "
+                                          "this is the LOAD-BEARING TEST.  Without this rejection, an "
+                                          "L2-resident slot could enter the L1 fast path and pay ~10× "
+                                          "the per-call latency the dispatcher's working-set budget assumes.");
+static_assert(!is_l1_admissible<ColdInt>, "Cold-tier value MUST be REJECTED at the L1 admission gate.");
 
 // ── Warm-or-better cache lookup admission simulation ────────────
 //
@@ -616,20 +589,16 @@ static_assert(!is_l1_admissible<ColdInt>,
 // "hot working set + occasional L2 spill" pattern.
 
 template <typename W>
-concept is_warm_lookup_admissible =
-    W::template satisfies<ResidencyHeatTag_v::Warm>;
+concept is_warm_lookup_admissible = W::template satisfies<ResidencyHeatTag_v::Warm>;
 
-static_assert( is_warm_lookup_admissible<HotInt>,
-    "Hot-tier value MUST pass the KernelCache warm-lookup admission "
-    "gate (Hot subsumes Warm — eviction L1 → L2 is a valid downgrade).");
-static_assert( is_warm_lookup_admissible<WarmInt>,
-    "Warm-tier value MUST pass the KernelCache warm-lookup admission "
-    "gate (self-admission).");
-static_assert(!is_warm_lookup_admissible<ColdInt>,
-    "Cold-tier value MUST be REJECTED at the KernelCache warm-lookup "
-    "admission gate — Cold is BELOW Warm in the chain; allowing a "
-    "Cold-tier value into the warm path would defeat the working-set "
-    "discipline that the runtime observer's heat tracking depends on.");
+static_assert(is_warm_lookup_admissible<HotInt>, "Hot-tier value MUST pass the KernelCache warm-lookup admission "
+                                                 "gate (Hot subsumes Warm — eviction L1 → L2 is a valid downgrade).");
+static_assert(is_warm_lookup_admissible<WarmInt>, "Warm-tier value MUST pass the KernelCache warm-lookup admission "
+                                                  "gate (self-admission).");
+static_assert(!is_warm_lookup_admissible<ColdInt>, "Cold-tier value MUST be REJECTED at the KernelCache warm-lookup "
+                                                   "admission gate — Cold is BELOW Warm in the chain; allowing a "
+                                                   "Cold-tier value into the warm path would defeat the working-set "
+                                                   "discipline that the runtime observer's heat tracking depends on.");
 
 // ── Runtime smoke test ─────────────────────────────────────────────
 inline void runtime_smoke_test() {
@@ -680,7 +649,7 @@ inline void runtime_smoke_test() {
     if (extracted != 55) std::abort();
 
     // Convenience-alias instantiation.
-    residency_heat::Hot<int>  alias_hot{123};
+    residency_heat::Hot<int> alias_hot{123};
     residency_heat::Warm<int> alias_warm{456};
     residency_heat::Cold<int> alias_cold{789};
     [[maybe_unused]] auto av = alias_hot.peek();
@@ -688,7 +657,7 @@ inline void runtime_smoke_test() {
     [[maybe_unused]] auto cv = alias_cold.peek();
 
     // L1 + warm-lookup admission simulations at runtime.
-    [[maybe_unused]] bool can_l1   = is_l1_admissible<HotInt>;
+    [[maybe_unused]] bool can_l1 = is_l1_admissible<HotInt>;
     [[maybe_unused]] bool can_warm = is_warm_lookup_admissible<HotInt>;
 }
 

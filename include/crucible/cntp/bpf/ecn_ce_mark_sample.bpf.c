@@ -21,8 +21,7 @@ struct {
 } cntp_ecn_events SEC(".maps");
 
 SEC("xdp")
-int crucible_cntp_ecn_ce_mark_sample(struct xdp_md *ctx)
-{
+int crucible_cntp_ecn_ce_mark_sample(struct xdp_md* ctx) {
     (void)ctx;
     return XDP_PASS;
 }

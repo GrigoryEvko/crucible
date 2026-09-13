@@ -122,7 +122,7 @@
 #include <crucible/safety/Refined.h>
 
 #include <algorithm>
-#include <array>           // for is_same_v with std::array in self-test
+#include <array>  // for is_same_v with std::array in self-test
 #include <bit>
 #include <compare>
 #include <concepts>
@@ -142,24 +142,22 @@ namespace crucible::safety {
 // ═════════════════════════════════════════════════════════════════════
 
 template <typename T, std::size_t N>
-    requires (N > 0)
+    requires(N > 0)
 class [[nodiscard]] FixedArray {
 public:
-    using element_type    = T;
-    using value_type      = T;
-    using size_type       = std::size_t;
-    using reference       = T&;
+    using element_type = T;
+    using value_type = T;
+    using size_type = std::size_t;
+    using reference = T&;
     using const_reference = T const&;
-    using pointer         = T*;
-    using const_pointer   = T const*;
-    using iterator        = T*;
-    using const_iterator  = T const*;
+    using pointer = T*;
+    using const_pointer = T const*;
+    using iterator = T*;
+    using const_iterator = T const*;
 
     static constexpr size_type capacity = N;
 
-    static constexpr std::string_view wrapper_kind() noexcept {
-        return "structural::FixedArray";
-    }
+    static constexpr std::string_view wrapper_kind() noexcept { return "structural::FixedArray"; }
 
     // The Refined-typed index proof-token.  bounded_above<N-1> means
     // "x ≤ N-1", i.e., index ∈ [0, N-1] — exactly the valid range.
@@ -169,13 +167,12 @@ public:
     using index_type = Refined<bounded_above<N - 1>, size_type>;
 
 private:
-    T data_[N]{};   // ── NSDMI: every element = T{} (load-bearing) ──
+    T data_[N]{};  // ── NSDMI: every element = T{} (load-bearing) ──
 
 public:
     // ── Construction ────────────────────────────────────────────────
 
-    constexpr FixedArray() noexcept(
-        std::is_nothrow_default_constructible_v<T>) = default;
+    constexpr FixedArray() noexcept(std::is_nothrow_default_constructible_v<T>) = default;
 
     // In-place construction from EXACTLY N elements.  Compile error
     // (concept rejection) if sizeof...(Args) != N — partial-fill is
@@ -183,29 +180,27 @@ public:
     // from copy-init when N == 1 (FixedArray<int, 1>(42) would be
     // ambiguous without it).
     template <typename... Args>
-        requires (sizeof...(Args) == N) &&
-                 (std::convertible_to<Args, T> && ...)
-    constexpr explicit FixedArray(std::in_place_t, Args&&... args)
-        noexcept((std::is_nothrow_constructible_v<T, Args> && ...))
+        requires(sizeof...(Args) == N) && (std::convertible_to<Args, T> && ...)
+    constexpr explicit FixedArray(std::in_place_t,
+                                  Args&&... args) noexcept((std::is_nothrow_constructible_v<T, Args> && ...))
         : data_{static_cast<T>(std::forward<Args>(args))...} {}
 
     // Defaulted copy/move/dtor.
-    constexpr FixedArray(FixedArray const&)            = default;
-    constexpr FixedArray(FixedArray&&)                 = default;
+    constexpr FixedArray(FixedArray const&) = default;
+    constexpr FixedArray(FixedArray&&) = default;
     constexpr FixedArray& operator=(FixedArray const&) = default;
-    constexpr FixedArray& operator=(FixedArray&&)      = default;
-    ~FixedArray()                                      = default;
+    constexpr FixedArray& operator=(FixedArray&&) = default;
+    ~FixedArray() = default;
 
     // ── Static factories ────────────────────────────────────────────
 
     // Build a FixedArray with every element = v.  Cheaper to write
     // than repeating v N times in the in_place ctor when N is large
     // or T is expensive to construct individually.
-    [[nodiscard]] static constexpr FixedArray fill_with(T const& v)
-        noexcept(std::is_nothrow_copy_assignable_v<T>)
-    {
+    [[nodiscard]] static constexpr FixedArray fill_with(T const& v) noexcept(std::is_nothrow_copy_assignable_v<T>) {
         FixedArray result{};
-        for (auto& e : result.data_) e = v;
+        for (auto& e : result.data_)
+            e = v;
         return result;
     }
 
@@ -215,12 +210,8 @@ public:
     // blows up).  Bound documented; std::span's UB-on-out-of-range +
     // libstdc++ -D_GLIBCXX_DEBUG catch at runtime.  Callers wanting
     // compile-checked bounds use at(index_type) instead.
-    [[nodiscard]] constexpr reference operator[](size_type i) noexcept {
-        return data_[i];
-    }
-    [[nodiscard]] constexpr const_reference operator[](size_type i) const noexcept {
-        return data_[i];
-    }
+    [[nodiscard]] constexpr reference operator[](size_type i) noexcept { return data_[i]; }
+    [[nodiscard]] constexpr const_reference operator[](size_type i) const noexcept { return data_[i]; }
 
     // ── Refined-typed access ────────────────────────────────────────
     //
@@ -229,12 +220,8 @@ public:
     // enforce semantic) at the construction site.  Subsequent at(idx)
     // calls TRUST the proof and skip the redundant check.  Hot-path
     // pattern: pay the bounds check once, prove it via Refined, reuse.
-    [[nodiscard]] constexpr reference at(index_type i) noexcept {
-        return data_[i.value()];
-    }
-    [[nodiscard]] constexpr const_reference at(index_type i) const noexcept {
-        return data_[i.value()];
-    }
+    [[nodiscard]] constexpr reference at(index_type i) noexcept { return data_[i.value()]; }
+    [[nodiscard]] constexpr const_reference at(index_type i) const noexcept { return data_[i.value()]; }
 
     // ── Compile-time-bounded access (third tier) ───────────────────
     //
@@ -243,32 +230,32 @@ public:
     // no proof token needed.  Mirrors std::get<I>(arr) for std::array
     // but as a member template (clearer at the call site).
     template <size_type I>
-        requires (I < N)
+        requires(I < N)
     [[nodiscard]] constexpr reference at() noexcept {
         return data_[I];
     }
     template <size_type I>
-        requires (I < N)
+        requires(I < N)
     [[nodiscard]] constexpr const_reference at() const noexcept {
         return data_[I];
     }
 
     // ── Front / back (always valid since N > 0 enforced) ───────────
-    [[nodiscard]] constexpr reference       front() noexcept       { return data_[0]; }
+    [[nodiscard]] constexpr reference front() noexcept { return data_[0]; }
     [[nodiscard]] constexpr const_reference front() const noexcept { return data_[0]; }
-    [[nodiscard]] constexpr reference       back() noexcept        { return data_[N - 1]; }
-    [[nodiscard]] constexpr const_reference back() const noexcept  { return data_[N - 1]; }
+    [[nodiscard]] constexpr reference back() noexcept { return data_[N - 1]; }
+    [[nodiscard]] constexpr const_reference back() const noexcept { return data_[N - 1]; }
 
     // ── Iteration / data ───────────────────────────────────────────
-    [[nodiscard]] constexpr pointer       data() noexcept       { return data_; }
+    [[nodiscard]] constexpr pointer data() noexcept { return data_; }
     [[nodiscard]] constexpr const_pointer data() const noexcept { return data_; }
-    [[nodiscard]] constexpr iterator       begin() noexcept       { return data_; }
+    [[nodiscard]] constexpr iterator begin() noexcept { return data_; }
     [[nodiscard]] constexpr const_iterator begin() const noexcept { return data_; }
-    [[nodiscard]] constexpr iterator       end() noexcept         { return data_ + N; }
-    [[nodiscard]] constexpr const_iterator end() const noexcept   { return data_ + N; }
+    [[nodiscard]] constexpr iterator end() noexcept { return data_ + N; }
+    [[nodiscard]] constexpr const_iterator end() const noexcept { return data_ + N; }
 
-    [[nodiscard]] constexpr size_type size()  const noexcept { return N; }
-    [[nodiscard]] constexpr bool      empty() const noexcept { return false; }
+    [[nodiscard]] constexpr size_type size() const noexcept { return N; }
+    [[nodiscard]] constexpr bool empty() const noexcept { return false; }
 
     // ── Fixed-extent span escape ──────────────────────────────────
     //
@@ -276,42 +263,30 @@ public:
     // accepting std::span<T, N> get the bound checked at overload
     // resolution, not at runtime.  Distinct from dynamic-extent
     // std::span<T> which loses the size info.
-    [[nodiscard]] constexpr std::span<T, N> as_span() noexcept {
-        return std::span<T, N>{data_};
-    }
-    [[nodiscard]] constexpr std::span<const T, N> as_span() const noexcept {
-        return std::span<const T, N>{data_};
-    }
+    [[nodiscard]] constexpr std::span<T, N> as_span() noexcept { return std::span<T, N>{data_}; }
+    [[nodiscard]] constexpr std::span<const T, N> as_span() const noexcept { return std::span<const T, N>{data_}; }
 
     // ── Mutation ────────────────────────────────────────────────────
     // Mutator — assign v to every element.  Matches std::array::fill
     // naming convention (FixedArray and std::array are distinct types,
     // but the API surface intentionally matches where it makes sense).
-    constexpr void fill(T const& v) noexcept(
-        std::is_nothrow_copy_assignable_v<T>)
-    {
-        for (auto& e : data_) e = v;
+    constexpr void fill(T const& v) noexcept(std::is_nothrow_copy_assignable_v<T>) {
+        for (auto& e : data_)
+            e = v;
     }
 
-    constexpr void swap(FixedArray& other) noexcept(
-        std::is_nothrow_swappable_v<T>)
-    {
+    constexpr void swap(FixedArray& other) noexcept(std::is_nothrow_swappable_v<T>) {
         for (size_type i = 0; i < N; ++i) {
             using std::swap;
             swap(data_[i], other.data_[i]);
         }
     }
 
-    friend constexpr void swap(FixedArray& a, FixedArray& b) noexcept(
-        std::is_nothrow_swappable_v<T>)
-    {
-        a.swap(b);
-    }
+    friend constexpr void swap(FixedArray& a, FixedArray& b) noexcept(std::is_nothrow_swappable_v<T>) { a.swap(b); }
 
     // ── Equality (element-wise) ────────────────────────────────────
-    [[nodiscard]] friend constexpr bool operator==(
-        FixedArray const& a, FixedArray const& b) noexcept(
-        noexcept(a.data_[0] == b.data_[0]))
+    [[nodiscard]] friend constexpr bool operator==(FixedArray const& a,
+                                                   FixedArray const& b) noexcept(noexcept(a.data_[0] == b.data_[0]))
         requires std::equality_comparable<T>
     {
         for (size_type i = 0; i < N; ++i) {
@@ -325,9 +300,8 @@ public:
     // Only present when T is three-way comparable.  Useful for sorting
     // containers of FixedArray (e.g., std::set<FixedArray<...>>).
     // Element-wise lexicographic — first non-equal pair decides.
-    [[nodiscard]] friend constexpr auto operator<=>(
-        FixedArray const& a, FixedArray const& b) noexcept(
-        noexcept(a.data_[0] <=> b.data_[0]))
+    [[nodiscard]] friend constexpr auto operator<=>(FixedArray const& a,
+                                                    FixedArray const& b) noexcept(noexcept(a.data_[0] <=> b.data_[0]))
         requires std::three_way_comparable<T>
     {
         using ordering = std::compare_three_way_result_t<T>;
@@ -348,12 +322,12 @@ public:
 // ── Layout invariants ─────────────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 
-static_assert(sizeof(FixedArray<int,    1>)    == sizeof(int[1]));
-static_assert(sizeof(FixedArray<int,    8>)    == sizeof(int[8]));
-static_assert(sizeof(FixedArray<int,    64>)   == sizeof(int[64]));
-static_assert(sizeof(FixedArray<double, 8>)    == sizeof(double[8]));
-static_assert(sizeof(FixedArray<int64_t, 8>)   == sizeof(int64_t[8]));
-static_assert(sizeof(FixedArray<char,   16>)   == sizeof(char[16]));
+static_assert(sizeof(FixedArray<int, 1>) == sizeof(int[1]));
+static_assert(sizeof(FixedArray<int, 8>) == sizeof(int[8]));
+static_assert(sizeof(FixedArray<int, 64>) == sizeof(int[64]));
+static_assert(sizeof(FixedArray<double, 8>) == sizeof(double[8]));
+static_assert(sizeof(FixedArray<int64_t, 8>) == sizeof(int64_t[8]));
+static_assert(sizeof(FixedArray<char, 16>) == sizeof(char[16]));
 
 static_assert(std::is_trivially_copyable_v<FixedArray<int, 8>>);
 static_assert(std::is_trivially_destructible_v<FixedArray<int, 8>>);
@@ -362,9 +336,9 @@ static_assert(std::is_standard_layout_v<FixedArray<int, 8>>);
 // alignof preserved — `alignas(64) FixedArray<int64_t, 8>` aligns the
 // wrapping struct to 64, hence data_ to offset 0 of that struct = 64
 // (matches `alignas(64) int64_t[8]` discipline).
-static_assert(alignof(FixedArray<int, 8>)     == alignof(int[8]));
+static_assert(alignof(FixedArray<int, 8>) == alignof(int[8]));
 static_assert(alignof(FixedArray<int64_t, 8>) == alignof(int64_t[8]));
-static_assert(alignof(FixedArray<double, 8>)  == alignof(double[8]));
+static_assert(alignof(FixedArray<double, 8>) == alignof(double[8]));
 
 // Ranges-protocol conformance — FixedArray models contiguous_range
 // (begin/end return T*, which IS the canonical contiguous iterator).
@@ -374,10 +348,10 @@ static_assert(std::ranges::sized_range<FixedArray<int, 8>>);
 
 // Distinct type identity vs std::array (load-bearing).
 static_assert(!std::is_same_v<FixedArray<int, 8>, std::array<int, 8>>,
-    "FixedArray<T, N> and std::array<T, N> MUST be distinct types — "
-    "this is the load-bearing type-identity claim that prevents "
-    "accidental swap of bounded-and-init-safe FixedArray with "
-    "uninitialized-by-default std::array.");
+              "FixedArray<T, N> and std::array<T, N> MUST be distinct types — "
+              "this is the load-bearing type-identity claim that prevents "
+              "accidental swap of bounded-and-init-safe FixedArray with "
+              "uninitialized-by-default std::array.");
 
 // FixedArray<T, 0> is rejected at the (N > 0) concept gate.  We do
 // NOT static_assert this here because the rejection is so strong
@@ -437,7 +411,8 @@ static_assert(fill_mutates());
 [[nodiscard]] consteval bool iteration_works() noexcept {
     FA8 a{std::in_place, 1, 2, 3, 4, 5, 6, 7, 8};
     int sum = 0;
-    for (auto v : a) sum += v;
+    for (auto v : a)
+        sum += v;
     return sum == 36;
 }
 static_assert(iteration_works());
@@ -453,7 +428,7 @@ static_assert(front_back_works());
 [[nodiscard]] consteval bool equality_works() noexcept {
     FA8 a{std::in_place, 1, 2, 3, 4, 5, 6, 7, 8};
     FA8 b{std::in_place, 1, 2, 3, 4, 5, 6, 7, 8};
-    FA8 c{std::in_place, 1, 2, 3, 4, 5, 6, 7, 9};   // last differs
+    FA8 c{std::in_place, 1, 2, 3, 4, 5, 6, 7, 9};  // last differs
     return (a == b) && !(a == c);
 }
 static_assert(equality_works());
@@ -478,27 +453,25 @@ static_assert(compile_time_at_works());
 // at<I>() out-of-range REJECTED at compile time (load-bearing — the
 // requires (I < N) makes OOB ill-formed, not UB).
 template <class FA, std::size_t I>
-concept can_compile_at = requires(FA a) { { a.template at<I>() }; };
-static_assert( can_compile_at<FA8, 0>);
-static_assert( can_compile_at<FA8, 7>);
-static_assert(!can_compile_at<FA8, 8>,
-    "at<8>() on FA8 (N=8, valid indices 0..7) MUST be ill-formed.  "
-    "If this fires, the (I < N) requires-clause has regressed and "
-    "compile-time bounds-checked access can produce OOB.");
+concept can_compile_at = requires(FA a) {
+    { a.template at<I>() };
+};
+static_assert(can_compile_at<FA8, 0>);
+static_assert(can_compile_at<FA8, 7>);
+static_assert(!can_compile_at<FA8, 8>, "at<8>() on FA8 (N=8, valid indices 0..7) MUST be ill-formed.  "
+                                       "If this fires, the (I < N) requires-clause has regressed and "
+                                       "compile-time bounds-checked access can produce OOB.");
 static_assert(!can_compile_at<FA8, 99>);
 
 // Lexicographic ordering (operator<=>) — element-wise comparison.
 [[nodiscard]] consteval bool ordering_works() noexcept {
     FA8 a{std::in_place, 1, 2, 3, 4, 5, 6, 7, 8};
-    FA8 b{std::in_place, 1, 2, 3, 4, 5, 6, 7, 9};   // > a (last element)
-    FA8 c{std::in_place, 1, 2, 3, 4, 5, 6, 7, 8};   // == a
-    FA8 d{std::in_place, 0, 9, 9, 9, 9, 9, 9, 9};   // < a (first element)
+    FA8 b{std::in_place, 1, 2, 3, 4, 5, 6, 7, 9};  // > a (last element)
+    FA8 c{std::in_place, 1, 2, 3, 4, 5, 6, 7, 8};  // == a
+    FA8 d{std::in_place, 0, 9, 9, 9, 9, 9, 9, 9};  // < a (first element)
     // Use std::is_lt / is_eq / is_gt rather than `cmp < 0` / `cmp == 0`
     // to avoid the GCC -Werror=zero-as-null-pointer-constant trap.
-    return std::is_lt(a <=> b) &&
-           std::is_eq(a <=> c) &&
-           std::is_gt(a <=> d) &&
-           std::is_gt(b <=> a);
+    return std::is_lt(a <=> b) && std::is_eq(a <=> c) && std::is_gt(a <=> d) && std::is_gt(b <=> a);
 }
 static_assert(ordering_works());
 
@@ -506,12 +479,12 @@ static_assert(ordering_works());
 [[nodiscard]] consteval bool span_escape_fixed_extent() noexcept {
     FA8 a{std::in_place, 1, 1, 1, 1, 1, 1, 1, 1};
     auto s = a.as_span();
-    static_assert(decltype(s)::extent == 8,
-        "as_span() MUST return std::span<T, 8> with compile-time "
-        "extent.  If this fires, the static extent is lost and "
-        "consumers can no longer overload-resolve on bound size.");
+    static_assert(decltype(s)::extent == 8, "as_span() MUST return std::span<T, 8> with compile-time "
+                                            "extent.  If this fires, the static extent is lost and "
+                                            "consumers can no longer overload-resolve on bound size.");
     int sum = 0;
-    for (auto v : s) sum += v;
+    for (auto v : s)
+        sum += v;
     return sum == 8;
 }
 static_assert(span_escape_fixed_extent());
@@ -527,18 +500,15 @@ static_assert(swap_exchanges());
 
 // Type-system rejection: in_place ctor with WRONG arg count fails.
 template <class FA, class... Args>
-concept can_in_place_construct = requires {
-    FA{std::in_place, std::declval<Args>()...};
-};
+concept can_in_place_construct = requires { FA{std::in_place, std::declval<Args>()...}; };
 
-static_assert( can_in_place_construct<FA8, int, int, int, int, int, int, int, int>);
+static_assert(can_in_place_construct<FA8, int, int, int, int, int, int, int, int>);
 static_assert(!can_in_place_construct<FA8, int, int, int>,
-    "FixedArray<T, 8>(in_place, 3 args) MUST fail.  Without this "
-    "rejection, partially-filled FixedArrays slip through with "
-    "uninitialized tail (defeating the InitSafe NSDMI guarantee).");
-static_assert(!can_in_place_construct<FA8,
-    int, int, int, int, int, int, int, int, int>,
-    "FixedArray<T, 8>(in_place, 9 args) MUST fail — too many args.");
+              "FixedArray<T, 8>(in_place, 3 args) MUST fail.  Without this "
+              "rejection, partially-filled FixedArrays slip through with "
+              "uninitialized tail (defeating the InitSafe NSDMI guarantee).");
+static_assert(!can_in_place_construct<FA8, int, int, int, int, int, int, int, int, int>,
+              "FixedArray<T, 8>(in_place, 9 args) MUST fail — too many args.");
 
 // Wrapper-kind diagnostic.
 static_assert(FA8::wrapper_kind() == "structural::FixedArray");
@@ -554,11 +524,11 @@ static_assert(sizeof(FA1) == sizeof(int));
 static_assert(FA1::capacity == 1);
 
 [[nodiscard]] consteval bool n_one_boundary() noexcept {
-    FA1 a{};                                       // NSDMI zero-init
+    FA1 a{};  // NSDMI zero-init
     if (a[0] != 0) return false;
-    if (a.front() != a.back()) return false;       // both alias data_[0]
+    if (a.front() != a.back()) return false;  // both alias data_[0]
 
-    FA1 b{std::in_place, 42};                      // exactly-1-arg in_place
+    FA1 b{std::in_place, 42};  // exactly-1-arg in_place
     if (b[0] != 42) return false;
     if (b.front() != 42 || b.back() != 42) return false;
     if (b.size() != 1 || b.empty()) return false;
@@ -585,12 +555,13 @@ static_assert(n_one_boundary());
 
 // at<I>() compile-time rejection on N=1 — only at<0>() is valid.
 template <class FA, std::size_t I>
-concept can_compile_at_n1 = requires(FA a) { { a.template at<I>() }; };
-static_assert( can_compile_at_n1<FA1, 0>);
-static_assert(!can_compile_at_n1<FA1, 1>,
-    "at<1>() on FA1 (N=1, valid index 0 only) MUST be ill-formed.  "
-    "If this fires, the (I < N) requires-clause has regressed for "
-    "the boundary case N=1 — the smallest valid wrapper.");
+concept can_compile_at_n1 = requires(FA a) {
+    { a.template at<I>() };
+};
+static_assert(can_compile_at_n1<FA1, 0>);
+static_assert(!can_compile_at_n1<FA1, 1>, "at<1>() on FA1 (N=1, valid index 0 only) MUST be ill-formed.  "
+                                          "If this fires, the (I < N) requires-clause has regressed for "
+                                          "the boundary case N=1 — the smallest valid wrapper.");
 
 // FixedArray DEFAULT ctor is INVOKABLE without args (load-bearing —
 // NSDMI is the differentiator vs std::array's aggregate-init semantics).
@@ -609,7 +580,8 @@ inline void runtime_smoke_test() {
     // in_place + iteration.
     FA8 b{std::in_place, 1, 2, 3, 4, 5, 6, 7, 8};
     int sum = 0;
-    for (auto v : b) sum += v;
+    for (auto v : b)
+        sum += v;
     if (sum != 36) std::abort();
 
     // fill_with factory.
@@ -643,7 +615,8 @@ inline void runtime_smoke_test() {
     auto s = b.as_span();
     if (s.size() != 8) std::abort();
     int sspan = 0;
-    for (auto v : s) sspan += v;
+    for (auto v : s)
+        sspan += v;
     if (sspan != 36) std::abort();
 
     // Equality.

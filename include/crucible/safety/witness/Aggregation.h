@@ -105,8 +105,7 @@ inline constexpr bool claims_on_platform_v_impl<MultiplatformWitness<Ws...>, Pla
 }  // namespace detail
 
 template <typename W, typename Platform>
-inline constexpr bool claims_on_platform_v =
-    detail::claims_on_platform_v_impl<std::remove_cvref_t<W>, Platform>;
+inline constexpr bool claims_on_platform_v = detail::claims_on_platform_v_impl<std::remove_cvref_t<W>, Platform>;
 
 // ── MultiplatformWitness participates in IsWitness ─────────────────
 //
@@ -140,8 +139,7 @@ inline constexpr std::uint8_t multiplatform_tier_for_v<Platform, W, Rest...> =
 
 template <typename... Ws>
 inline constexpr std::uint8_t witness_tier_v_impl<MultiplatformWitness<Ws...>> = []() {
-    constexpr auto highest =
-        multiplatform_tier_for_v<arch::current_arch_tag, Ws...>;
+    constexpr auto highest = multiplatform_tier_for_v<arch::current_arch_tag, Ws...>;
     return (highest > 0) ? highest : std::uint8_t{1};  // floor to Asserted
 }();
 
@@ -179,8 +177,7 @@ struct multiplatform_collect<> {
 };
 
 template <typename... Ps1, typename... Ps2>
-constexpr auto pack_concat(PlatformPack<Ps1...>, PlatformPack<Ps2...>)
-    -> PlatformPack<Ps1..., Ps2...>;
+constexpr auto pack_concat(PlatformPack<Ps1...>, PlatformPack<Ps2...>) -> PlatformPack<Ps1..., Ps2...>;
 
 template <typename W, typename... Rest>
 struct multiplatform_collect<W, Rest...> {
@@ -197,8 +194,7 @@ struct platform_set_of_impl<MultiplatformWitness<Ws...>> {
 }  // namespace detail
 
 template <typename W>
-using platform_set_of = typename detail::platform_set_of_impl<
-    std::remove_cvref_t<W>>::type;
+using platform_set_of = typename detail::platform_set_of_impl<std::remove_cvref_t<W>>::type;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── intersect_witnesses_t / union_witnesses_t ─────────────────────
@@ -209,18 +205,18 @@ using platform_set_of = typename detail::platform_set_of_impl<
 namespace detail {
 
 template <typename Lhs, typename Rhs>
-using meet_witness_t =
-    std::conditional_t<witness_tier_v_impl<Lhs> <= witness_tier_v_impl<Rhs>, Lhs, Rhs>;
+using meet_witness_t = std::conditional_t<witness_tier_v_impl<Lhs> <= witness_tier_v_impl<Rhs>, Lhs, Rhs>;
 
 template <typename Lhs, typename Rhs>
-using join_witness_t =
-    std::conditional_t<witness_tier_v_impl<Lhs> >= witness_tier_v_impl<Rhs>, Lhs, Rhs>;
+using join_witness_t = std::conditional_t<witness_tier_v_impl<Lhs> >= witness_tier_v_impl<Rhs>, Lhs, Rhs>;
 
 template <typename... Ws>
 struct intersect_witnesses_impl;
 
 template <typename W>
-struct intersect_witnesses_impl<W> { using type = W; };
+struct intersect_witnesses_impl<W> {
+    using type = W;
+};
 
 template <typename W1, typename W2, typename... Rest>
 struct intersect_witnesses_impl<W1, W2, Rest...> {
@@ -232,7 +228,9 @@ template <typename... Ws>
 struct union_witnesses_impl;
 
 template <typename W>
-struct union_witnesses_impl<W> { using type = W; };
+struct union_witnesses_impl<W> {
+    using type = W;
+};
 
 template <typename W1, typename W2, typename... Rest>
 struct union_witnesses_impl<W1, W2, Rest...> {
@@ -243,12 +241,10 @@ struct union_witnesses_impl<W1, W2, Rest...> {
 }  // namespace detail
 
 template <typename... Ws>
-using intersect_witnesses_t =
-    typename detail::intersect_witnesses_impl<Ws...>::type;
+using intersect_witnesses_t = typename detail::intersect_witnesses_impl<Ws...>::type;
 
 template <typename... Ws>
-using union_witnesses_t =
-    typename detail::union_witnesses_impl<Ws...>::type;
+using union_witnesses_t = typename detail::union_witnesses_impl<Ws...>::type;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Self-tests ─────────────────────────────────────────────────────
@@ -266,9 +262,7 @@ static_assert(claims_on_platform_v<PlatformBounded<Tested<0>, arch::X86_64>, arc
 static_assert(!claims_on_platform_v<PlatformBounded<Tested<0>, arch::X86_64>, arch::AArch64>);
 
 // MultiplatformWitness claims on any platform any sub-witness claims.
-using MP = MultiplatformWitness<
-    PlatformBounded<Asserted<>, arch::X86_64>,
-    PlatformBounded<Tested<7>, arch::AArch64>>;
+using MP = MultiplatformWitness<PlatformBounded<Asserted<>, arch::X86_64>, PlatformBounded<Tested<7>, arch::AArch64>>;
 
 static_assert(IsWitness<MP>);
 static_assert(claims_on_platform_v<MP, arch::X86_64>);

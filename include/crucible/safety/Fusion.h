@@ -96,25 +96,18 @@ namespace detail {
 // same as `T`?  Folded into the can_fuse predicate to keep the
 // composability comparison local.
 template <auto Fn, std::size_t I, typename T>
-inline constexpr bool param_matches_v =
-    std::is_same_v<
-        std::remove_cvref_t<extract::param_type_t<Fn, I>>,
-        T>;
+inline constexpr bool param_matches_v = std::is_same_v<std::remove_cvref_t<extract::param_type_t<Fn, I>>, T>;
 
 // Helper: structural shape of Fn — `is_pure && is_noexcept` and
 // (for the consumer side) arity == 1.  Centralized so the public
 // predicate's expression stays readable.
 template <auto Fn>
 inline constexpr bool fusable_producer_shape_v =
-    extract::is_pure_function_v<Fn> &&
-    extract::is_noexcept_v<Fn> &&
-    !std::is_same_v<extract::return_type_t<Fn>, void>;
+    extract::is_pure_function_v<Fn> && extract::is_noexcept_v<Fn> && !std::is_same_v<extract::return_type_t<Fn>, void>;
 
 template <auto Fn>
 inline constexpr bool fusable_consumer_shape_v =
-    extract::is_pure_function_v<Fn> &&
-    extract::is_noexcept_v<Fn> &&
-    extract::arity_v<Fn> == 1;
+    extract::is_pure_function_v<Fn> && extract::is_noexcept_v<Fn> && extract::arity_v<Fn> == 1;
 
 }  // namespace detail
 
@@ -212,26 +205,22 @@ template <auto Fn1, auto Fn2>
     //
     // The lambda's call operator is implicitly noexcept because both
     // Fn1 and Fn2 are noexcept (gated by the F06 predicate).
-    return [](auto x) noexcept(noexcept(Fn2(Fn1(x))))
-        -> decltype(Fn2(Fn1(x)))
-    {
-        return Fn2(Fn1(x));
-    };
+    return [](auto x) noexcept(noexcept(Fn2(Fn1(x)))) -> decltype(Fn2(Fn1(x))) { return Fn2(Fn1(x)); };
 }
 
 // ── Self-test ─────────────────────────────────────────────────────
 
 namespace detail::fuse_self_test {
 
-inline int p_double(int x)    noexcept { return x * 2; }
-inline int p_inc   (int x)    noexcept { return x + 1; }
+inline int p_double(int x) noexcept { return x * 2; }
+inline int p_inc(int x) noexcept { return x + 1; }
 inline double p_to_double(int x) noexcept { return static_cast<double>(x); }
-inline int    p_to_int   (double x) noexcept { return static_cast<int>(x); }
+inline int p_to_int(double x) noexcept { return static_cast<int>(x); }
 
 // Identity-shape: int → int composed with int → int.
 constexpr auto fused_double_then_inc = fuse<&p_double, &p_inc>();
-static_assert(fused_double_then_inc(7)  == 15);  // (7*2)+1
-static_assert(fused_double_then_inc(0)  == 1);
+static_assert(fused_double_then_inc(7) == 15);  // (7*2)+1
+static_assert(fused_double_then_inc(0) == 1);
 static_assert(fused_double_then_inc(-3) == -5);  // (-3*2)+1 == -5
 
 // Type-changing: int → double → int.
@@ -269,7 +258,7 @@ static_assert(std::is_empty_v<decltype(fused_promote)>);
 // minimum non-static type size is therefore 1 byte).  Larger
 // would imply hidden capture state.
 static_assert(sizeof(decltype(fused_double_then_inc)) == 1);
-static_assert(sizeof(decltype(fused_promote))         == 1);
+static_assert(sizeof(decltype(fused_promote)) == 1);
 
 // Trivially copyable: callers can pass the fused closure by value
 // at zero cost — register-passed, no copy ctor side-effects.  This
@@ -291,17 +280,15 @@ static_assert(std::is_trivially_destructible_v<decltype(fused_promote)>);
 
 namespace detail::fusion_self_test {
 
-inline int   producer_int_to_int(int x) noexcept { return x * 2; }
-inline int   consumer_int_to_int(int x) noexcept { return x + 1; }
+inline int producer_int_to_int(int x) noexcept { return x * 2; }
+inline int consumer_int_to_int(int x) noexcept { return x + 1; }
 inline double producer_int_to_double(int x) noexcept { return static_cast<double>(x) * 1.5; }
-inline int   consumer_double_to_int(double x) noexcept {
-    return static_cast<int>(x);
-}
+inline int consumer_double_to_int(double x) noexcept { return static_cast<int>(x); }
 
 // Positive: matching chain.
-static_assert(can_fuse_v<&producer_int_to_int,    &consumer_int_to_int>);
+static_assert(can_fuse_v<&producer_int_to_int, &consumer_int_to_int>);
 static_assert(can_fuse_v<&producer_int_to_double, &consumer_double_to_int>);
-static_assert(IsFusable<&producer_int_to_int,    &consumer_int_to_int>);
+static_assert(IsFusable<&producer_int_to_int, &consumer_int_to_int>);
 
 // Negative: type mismatch (int → int chained with double-consumer).
 static_assert(!can_fuse_v<&producer_int_to_int, &consumer_double_to_int>);

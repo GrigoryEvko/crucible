@@ -26,24 +26,24 @@
 #include <crucible/perf/detail/BpfLoader.h>  // GAPS-004x shared loader helpers
 
 #include <crucible/safety/Mutation.h>
-#include <crucible/safety/OwnedMmap.h>   // FIXY-V-236 — RAII mmap region
+#include <crucible/safety/OwnedMmap.h>  // FIXY-V-236 — RAII mmap region
 #include <crucible/safety/Pinned.h>
 
 #include <sys/mman.h>
 
-#include <bit>          // std::bit_cast — §III-clean volatile-drop on uint8_t*
+#include <bit>  // std::bit_cast — §III-clean volatile-drop on uint8_t*
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
-#include <memory>       // std::start_lifetime_as / start_lifetime_as_array (P2590R2)
+#include <memory>  // std::start_lifetime_as / start_lifetime_as_array (P2590R2)
 #include <cstring>
 
 #include <inplace_vector>
-#include <optional>     // FIXY-V-236 — std::optional<OwnedMmap>
+#include <optional>  // FIXY-V-236 — std::optional<OwnedMmap>
 
 extern "C" {
 extern const unsigned char sched_tp_btf_bpf_bytecode[];
-extern const unsigned int  sched_tp_btf_bpf_bytecode_len;
+extern const unsigned int sched_tp_btf_bpf_bytecode_len;
 }
 
 namespace crucible::perf {
@@ -72,25 +72,25 @@ using ::crucible::perf::detail::verbose;
 // FIXY-V-236: per-hub phantom Tag + residency metadata for the mmap'd
 // ringbuf; distinct Tag forbids cross-hub mapping swaps at compile time.
 struct SchedTpBtfRingbufTag {};
-struct ReadOnlyProt        {};
-struct SharedShare         {};
+struct ReadOnlyProt {};
+struct SharedShare {};
 
 struct SchedTpBtf::State : crucible::safety::NonMovable<SchedTpBtf::State> {
-    struct bpf_object*                       obj = nullptr;
+    struct bpf_object* obj = nullptr;
     std::inplace_vector<struct bpf_link*, 8> links{};
 
     // FIXY-V-236: RAII OwnedMmap replaces {WriteOnceNonNull, WriteOnce}.
-    using TimelineMmap =
-        ::crucible::safety::OwnedMmap<SchedTpBtfRingbufTag, ReadOnlyProt, SharedShare>;
-    std::optional<TimelineMmap>                 timeline_mmap{};
+    using TimelineMmap = ::crucible::safety::OwnedMmap<SchedTpBtfRingbufTag, ReadOnlyProt, SharedShare>;
+    std::optional<TimelineMmap> timeline_mmap{};
 
-    Fd                                          cs_count_fd{-1};
-    safety::Monotonic<size_t>                   attach_fail_cnt{0};
+    Fd cs_count_fd{-1};
+    safety::Monotonic<size_t> attach_fail_cnt{0};
 
     State() = default;
 
     ~State() {
-        for (struct bpf_link* l : links) if (l != nullptr) bpf_link__destroy(l);
+        for (struct bpf_link* l : links)
+            if (l != nullptr) bpf_link__destroy(l);
         // FIXY-V-236: timeline_mmap dtor unmaps automatically.
         if (obj != nullptr) bpf_object__close(obj);
     }
@@ -107,12 +107,9 @@ std::optional<SchedTpBtf> SchedTpBtf::load(::crucible::effects::Init) noexcept {
     const auto report = [](const char* why, int err = 0) {
         if (quiet()) return;
         if (err != 0) {
-            std::fprintf(stderr,
-                "[crucible::perf] sched_tp_btf unavailable: %s (%s)\n",
-                why, std::strerror(err));
+            std::fprintf(stderr, "[crucible::perf] sched_tp_btf unavailable: %s (%s)\n", why, std::strerror(err));
         } else {
-            std::fprintf(stderr,
-                "[crucible::perf] sched_tp_btf unavailable: %s\n", why);
+            std::fprintf(stderr, "[crucible::perf] sched_tp_btf unavailable: %s\n", why);
         }
     };
 
@@ -120,12 +117,10 @@ std::optional<SchedTpBtf> SchedTpBtf::load(::crucible::effects::Init) noexcept {
 
     // ── 1. Parse the embedded ELF ──────────────────────────────────
     struct bpf_object_open_opts opts{};
-    opts.sz          = sizeof(opts);
+    opts.sz = sizeof(opts);
     opts.object_name = "crucible_sched_tp_btf";
-    struct bpf_object* obj = bpf_object__open_mem(
-        sched_tp_btf_bpf_bytecode,
-        static_cast<size_t>(sched_tp_btf_bpf_bytecode_len),
-        &opts);
+    struct bpf_object* obj =
+        bpf_object__open_mem(sched_tp_btf_bpf_bytecode, static_cast<size_t>(sched_tp_btf_bpf_bytecode_len), &opts);
     if (obj == nullptr || libbpf_get_error(obj) != 0) {
         const int e = libbpf_errno(obj, errno);
         state->obj = nullptr;
@@ -139,9 +134,8 @@ std::optional<SchedTpBtf> SchedTpBtf::load(::crucible::effects::Init) noexcept {
         size_t vsz = 0;
         const void* current = bpf_map__initial_value(rodata, &vsz);
         if (current != nullptr && vsz >= sizeof(uint32_t)) {
-            std::string rewritten(
-                static_cast<const char*>(current), vsz);
-            const Tgid     tgid     = current_tgid();
+            std::string rewritten(static_cast<const char*>(current), vsz);
+            const Tgid tgid = current_tgid();
             const uint32_t tgid_raw = tgid.value();
             std::memcpy(rewritten.data(), &tgid_raw, sizeof(tgid_raw));
             (void)bpf_map__set_initial_value(rodata, rewritten.data(), vsz);
@@ -154,17 +148,17 @@ std::optional<SchedTpBtf> SchedTpBtf::load(::crucible::effects::Init) noexcept {
     // ── 4. Verify, JIT, allocate maps ──────────────────────────────
     if (const int err = bpf_object__load(state->obj); err != 0) {
         report("bpf_object__load failed (apply CAP_BPF+CAP_PERFMON+CAP_DAC_READ_SEARCH; "
-               "kernel < 5.5, CONFIG_DEBUG_INFO_BTF=n, or verifier rejected)", -err);
+               "kernel < 5.5, CONFIG_DEBUG_INFO_BTF=n, or verifier rejected)",
+               -err);
         return std::nullopt;
     }
 
     // ── 5. Register our main TID in our_tids ───────────────────────
-    if (struct bpf_map* m = bpf_object__find_map_by_name(state->obj, "our_tids");
-        m != nullptr) {
-        const Fd      fd  = map_fd(m);
-        const Tid     tid = current_tid();
+    if (struct bpf_map* m = bpf_object__find_map_by_name(state->obj, "our_tids"); m != nullptr) {
+        const Fd fd = map_fd(m);
+        const Tid tid = current_tid();
         const uint8_t one = 1;
-        const int      fd_raw  = fd.value();
+        const int fd_raw = fd.value();
         const uint32_t tid_raw = tid.value();
         (void)bpf_map_update_elem(fd_raw, &tid_raw, &one, BPF_ANY);
     }
@@ -174,15 +168,13 @@ std::optional<SchedTpBtf> SchedTpBtf::load(::crucible::effects::Init) noexcept {
     bpf_object__for_each_program(prog, state->obj) {
         if (!bpf_program__autoload(prog)) continue;
         struct bpf_link* link = bpf_program__attach(prog);
-        const long       lerr = libbpf_get_error(link);
+        const long lerr = libbpf_get_error(link);
         if (link == nullptr || lerr != 0) {
             state->attach_fail_cnt.bump();
             if (verbose()) {
                 const char* sec = bpf_program__section_name(prog);
-                std::fprintf(stderr,
-                    "[crucible::perf] sched_tp_btf attach failed for %s (%s)\n",
-                    sec ? sec : "<anon>",
-                    std::strerror(lerr ? static_cast<int>(-lerr) : errno));
+                std::fprintf(stderr, "[crucible::perf] sched_tp_btf attach failed for %s (%s)\n", sec ? sec : "<anon>",
+                             std::strerror(lerr ? static_cast<int>(-lerr) : errno));
             }
             continue;
         }
@@ -190,9 +182,8 @@ std::optional<SchedTpBtf> SchedTpBtf::load(::crucible::effects::Init) noexcept {
             bpf_link__destroy(link);
             state->attach_fail_cnt.bump();
             if (verbose()) {
-                std::fprintf(stderr,
-                    "[crucible::perf] sched_tp_btf link capacity exhausted "
-                    "(bump inplace_vector size)\n");
+                std::fprintf(stderr, "[crucible::perf] sched_tp_btf link capacity exhausted "
+                                     "(bump inplace_vector size)\n");
             }
             continue;
         }
@@ -205,8 +196,7 @@ std::optional<SchedTpBtf> SchedTpBtf::load(::crucible::effects::Init) noexcept {
     }
 
     // ── 7. mmap the sched_timeline ring buffer ─────────────────────
-    struct bpf_map* timeline_map =
-        bpf_object__find_map_by_name(state->obj, "sched_timeline");
+    struct bpf_map* timeline_map = bpf_object__find_map_by_name(state->obj, "sched_timeline");
     if (timeline_map == nullptr) {
         report("sched_timeline map not found in object (bytecode/header out of sync — rebuild)");
         return std::nullopt;
@@ -219,35 +209,32 @@ std::optional<SchedTpBtf> SchedTpBtf::load(::crucible::effects::Init) noexcept {
         return std::nullopt;
     }
     const size_t page = static_cast<size_t>(page_l);
-    const size_t bytes          = sizeof(TimelineHeader) +
-                                  TIMELINE_CAPACITY * sizeof(TimelineSchedEvent);
+    const size_t bytes = sizeof(TimelineHeader) + TIMELINE_CAPACITY * sizeof(TimelineSchedEvent);
     const size_t mmap_len_bytes = (bytes + page - 1) & ~(page - 1);
-    void* mmap_address = ::mmap(nullptr, mmap_len_bytes, PROT_READ, MAP_SHARED,
-                                timeline_fd.value(), 0);
+    void* mmap_address = ::mmap(nullptr, mmap_len_bytes, PROT_READ, MAP_SHARED, timeline_fd.value(), 0);
     if (mmap_address == MAP_FAILED) {
         report("mmap of sched_timeline failed (apply CAP_BPF; "
-               "BPF_F_MMAPABLE requires CAP_BPF or kernel ≥ 5.5)", errno);
+               "BPF_F_MMAPABLE requires CAP_BPF or kernel ≥ 5.5)",
+               errno);
         return std::nullopt;
     }
     // FIXY-V-236: structural RAII closure via OwnedMmap.
     state->timeline_mmap.emplace(mmap_address, mmap_len_bytes);
 
-    if (struct bpf_map* cs = bpf_object__find_map_by_name(state->obj, "cs_count");
-        cs != nullptr) {
+    if (struct bpf_map* cs = bpf_object__find_map_by_name(state->obj, "cs_count"); cs != nullptr) {
         state->cs_count_fd = map_fd(cs);
     } else {
         if (verbose()) {
-            std::fprintf(stderr,
-                "[crucible::perf] sched_tp_btf cs_count map missing — "
-                "context_switches() will return 0\n");
+            std::fprintf(stderr, "[crucible::perf] sched_tp_btf cs_count map missing — "
+                                 "context_switches() will return 0\n");
         }
     }
 
     if (!quiet() && state->attach_fail_cnt.get() != 0) {
         std::fprintf(stderr,
-            "[crucible::perf] sched_tp_btf partial: %zu program(s) failed to attach "
-            "(set CRUCIBLE_PERF_VERBOSE=1 to see which)\n",
-            state->attach_fail_cnt.get());
+                     "[crucible::perf] sched_tp_btf partial: %zu program(s) failed to attach "
+                     "(set CRUCIBLE_PERF_VERBOSE=1 to see which)\n",
+                     state->attach_fail_cnt.get());
     }
 
     SchedTpBtf h;
@@ -258,15 +245,14 @@ std::optional<SchedTpBtf> SchedTpBtf::load(::crucible::effects::Init) noexcept {
 uint64_t SchedTpBtf::context_switches() const noexcept {
     if (state_ == nullptr || state_->cs_count_fd.value() < 0) return 0;
     const uint32_t key = 0;
-    uint64_t       value = 0;
+    uint64_t value = 0;
     if (bpf_map_lookup_elem(state_->cs_count_fd.value(), &key, &value) != 0) {
         return 0;
     }
     return value;
 }
 
-safety::Borrowed<const TimelineSchedEvent, SchedTpBtf>
-SchedTpBtf::timeline_view() const noexcept {
+safety::Borrowed<const TimelineSchedEvent, SchedTpBtf> SchedTpBtf::timeline_view() const noexcept {
     if (state_ == nullptr || !state_->timeline_mmap) {
         return safety::Borrowed<const TimelineSchedEvent, SchedTpBtf>{};
     }
@@ -280,10 +266,8 @@ SchedTpBtf::timeline_view() const noexcept {
     // const _Tp triggers libstdc++ 16's asm clobber "=m"(*__s) writing
     // through a const-qualified array location.
     auto* events = std::start_lifetime_as_array<TimelineSchedEvent>(
-        std::bit_cast<const uint8_t*>(base + sizeof(TimelineHeader)),
-        TIMELINE_CAPACITY);
-    return safety::Borrowed<const TimelineSchedEvent, SchedTpBtf>{
-        events, TIMELINE_CAPACITY};
+        std::bit_cast<const uint8_t*>(base + sizeof(TimelineHeader)), TIMELINE_CAPACITY);
+    return safety::Borrowed<const TimelineSchedEvent, SchedTpBtf>{events, TIMELINE_CAPACITY};
 }
 
 uint64_t SchedTpBtf::timeline_write_index() const noexcept {
@@ -296,22 +280,19 @@ uint64_t SchedTpBtf::timeline_write_index() const noexcept {
     return hdr->write_idx;
 }
 
-safety::Refined<safety::bounded_above<8>, std::size_t>
-SchedTpBtf::attached_programs() const noexcept {
+safety::Refined<safety::bounded_above<8>, std::size_t> SchedTpBtf::attached_programs() const noexcept {
     using R = safety::Refined<safety::bounded_above<8>, std::size_t>;
     return R{(state_ != nullptr) ? state_->links.size() : std::size_t{0}};
 }
 
-safety::Refined<safety::bounded_above<8>, std::size_t>
-SchedTpBtf::attach_failures() const noexcept {
+safety::Refined<safety::bounded_above<8>, std::size_t> SchedTpBtf::attach_failures() const noexcept {
     using R = safety::Refined<safety::bounded_above<8>, std::size_t>;
-    return R{(state_ != nullptr) ? state_->attach_fail_cnt.get()
-                                 : std::size_t{0}};
+    return R{(state_ != nullptr) ? state_->attach_fail_cnt.get() : std::size_t{0}};
 }
 
 SchedTpBtf::Snapshot SchedTpBtf::snapshot() const noexcept {
     return Snapshot{
-        .ctx_switches   = context_switches(),
+        .ctx_switches = context_switches(),
         .timeline_index = timeline_write_index(),
     };
 }

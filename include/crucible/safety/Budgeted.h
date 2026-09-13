@@ -130,16 +130,11 @@ template <typename T>
 class [[nodiscard]] Budgeted {
 public:
     // ── Public type aliases ─────────────────────────────────────────
-    using value_type   = T;
-    using lattice_type = ::crucible::algebra::lattices::ProductLattice<
-        BitsBudgetLattice, PeakBytesLattice>;
-    using budget_t     = typename lattice_type::element_type;
-    using graded_type  = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Absolute,
-        lattice_type,
-        T>;
-    static constexpr ::crucible::algebra::ModalityKind modality =
-        ::crucible::algebra::ModalityKind::Absolute;
+    using value_type = T;
+    using lattice_type = ::crucible::algebra::lattices::ProductLattice<BitsBudgetLattice, PeakBytesLattice>;
+    using budget_t = typename lattice_type::element_type;
+    using graded_type = ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
+    static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::Absolute;
 
 private:
     graded_type impl_;
@@ -154,114 +149,84 @@ public:
     //
     // Default: T{} at zero budget — the strongest possible claim
     // (no resources used).
-    constexpr Budgeted() noexcept(std::is_nothrow_default_constructible_v<T>)
-        : impl_{T{}, lattice_type::bottom()} {}
+    constexpr Budgeted() noexcept(std::is_nothrow_default_constructible_v<T>) : impl_{T{}, lattice_type::bottom()} {}
 
     // Explicit construction from value + both budget axes.  The
     // most common production pattern — a producer reports its
     // measured bits-transferred and peak-bytes-resident at the
     // construction site.
-    constexpr Budgeted(T value, BitsBudget bits, PeakBytes peak)
-        noexcept(std::is_nothrow_move_constructible_v<T>)
+    constexpr Budgeted(T value, BitsBudget bits, PeakBytes peak) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(value), pack(bits, peak)} {}
 
     // In-place T construction with explicit budget pair.  Mirrors
     // Stale's std::in_place_t pattern.
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr Budgeted(std::in_place_t, BitsBudget bits, PeakBytes peak, Args&&... args)
-        noexcept(std::is_nothrow_constructible_v<T, Args...>
-                 && std::is_nothrow_move_constructible_v<T>)
+    constexpr Budgeted(std::in_place_t, BitsBudget bits, PeakBytes peak,
+                       Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
+                                                && std::is_nothrow_move_constructible_v<T>)
         : impl_{T(std::forward<Args>(args)...), pack(bits, peak)} {}
 
     // Convenience factory: value at zero budget — the strongest claim
     // (producer used no resources).  Used when the budget is genuinely
     // zero (e.g. a constexpr arithmetic helper that lives entirely
     // in registers).
-    [[nodiscard]] static constexpr Budgeted free(T value)
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] static constexpr Budgeted free(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
         return Budgeted{std::move(value), BitsBudget{0}, PeakBytes{0}};
     }
 
     // Convenience factory: value at unbounded budget — the weakest
     // claim (saturated cap).  Used for values whose budget is
     // genuinely unknown / unbounded (e.g. opaque external producers).
-    [[nodiscard]] static constexpr Budgeted unbounded(T value)
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
-        return Budgeted{std::move(value), BitsBudgetLattice::top(),
-                        PeakBytesLattice::top()};
+    [[nodiscard]] static constexpr Budgeted unbounded(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return Budgeted{std::move(value), BitsBudgetLattice::top(), PeakBytesLattice::top()};
     }
 
     // Defaulted copy/move/destroy.
-    constexpr Budgeted(const Budgeted&)            = default;
-    constexpr Budgeted(Budgeted&&)                 = default;
+    constexpr Budgeted(const Budgeted&) = default;
+    constexpr Budgeted(Budgeted&&) = default;
     constexpr Budgeted& operator=(const Budgeted&) = default;
-    constexpr Budgeted& operator=(Budgeted&&)      = default;
-    ~Budgeted()                                    = default;
+    constexpr Budgeted& operator=(Budgeted&&) = default;
+    ~Budgeted() = default;
 
     // Equality: compares value bytes AND both budget axes within the
     // SAME (lattice, T) pair.  Both axes participate — two Budgeted
     // values with identical T but differing budgets are NOT equal.
-    [[nodiscard]] friend constexpr bool operator==(
-        Budgeted const& a, Budgeted const& b) noexcept(
-        noexcept(a.peek() == b.peek()))
-        requires requires(T const& x, T const& y) { { x == y } -> std::convertible_to<bool>; }
+    [[nodiscard]] friend constexpr bool operator==(Budgeted const& a,
+                                                   Budgeted const& b) noexcept(noexcept(a.peek() == b.peek()))
+        requires requires(T const& x, T const& y) {
+            { x == y } -> std::convertible_to<bool>;
+        }
     {
-        return a.peek() == b.peek()
-            && a.bits()       == b.bits()
-            && a.peak_bytes() == b.peak_bytes();
+        return a.peek() == b.peek() && a.bits() == b.bits() && a.peak_bytes() == b.peak_bytes();
     }
 
     // ── Diagnostic names (forwarded from Graded substrate) ─────────
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return graded_type::lattice_name();
-    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 
     // ── Read-only access ────────────────────────────────────────────
-    [[nodiscard]] constexpr T const& peek() const& noexcept {
-        return impl_.peek();
-    }
+    [[nodiscard]] constexpr T const& peek() const& noexcept { return impl_.peek(); }
 
-    [[nodiscard]] constexpr T consume() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return std::move(impl_).consume();
     }
 
-    [[nodiscard]] constexpr T& peek_mut() & noexcept {
-        return impl_.peek_mut();
-    }
+    [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(); }
 
     // ── Per-axis accessors ──────────────────────────────────────────
-    [[nodiscard]] constexpr BitsBudget bits() const noexcept {
-        return impl_.grade().first;
-    }
+    [[nodiscard]] constexpr BitsBudget bits() const noexcept { return impl_.grade().first; }
 
-    [[nodiscard]] constexpr PeakBytes peak_bytes() const noexcept {
-        return impl_.grade().second;
-    }
+    [[nodiscard]] constexpr PeakBytes peak_bytes() const noexcept { return impl_.grade().second; }
 
-    [[nodiscard]] constexpr budget_t budget() const noexcept {
-        return impl_.grade();
-    }
+    [[nodiscard]] constexpr budget_t budget() const noexcept { return impl_.grade(); }
 
     // ── swap ────────────────────────────────────────────────────────
-    constexpr void swap(Budgeted& other)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
-        impl_.swap(other.impl_);
-    }
+    constexpr void swap(Budgeted& other) noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
 
-    friend constexpr void swap(Budgeted& a, Budgeted& b)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
-        a.swap(b);
-    }
+    friend constexpr void swap(Budgeted& a, Budgeted& b) noexcept(std::is_nothrow_swappable_v<T>) { a.swap(b); }
 
     // ── combine_max — pointwise lattice JOIN (worst-case fold) ─────
     //
@@ -274,24 +239,18 @@ public:
     // the right-hand value, they should swap before calling, or
     // use combine_max_at(other, ...) — not provided here, callers
     // resort to manual construction.  Keeping the API minimal.
-    [[nodiscard]] constexpr Budgeted combine_max(Budgeted const& other) const&
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
+    [[nodiscard]] constexpr Budgeted
+    combine_max(Budgeted const& other) const& noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
     {
-        return Budgeted{
-            this->peek(),
-            BitsBudgetLattice::join(this->bits(),       other.bits()),
-            PeakBytesLattice::join(this->peak_bytes(), other.peak_bytes())
-        };
+        return Budgeted{this->peek(), BitsBudgetLattice::join(this->bits(), other.bits()),
+                        PeakBytesLattice::join(this->peak_bytes(), other.peak_bytes())};
     }
 
-    [[nodiscard]] constexpr Budgeted combine_max(Budgeted const& other) &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
-        BitsBudget joined_bits =
-            BitsBudgetLattice::join(this->bits(),       other.bits());
-        PeakBytes  joined_peak =
-            PeakBytesLattice::join(this->peak_bytes(), other.peak_bytes());
+    [[nodiscard]] constexpr Budgeted
+    combine_max(Budgeted const& other) && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        BitsBudget joined_bits = BitsBudgetLattice::join(this->bits(), other.bits());
+        PeakBytes joined_peak = PeakBytesLattice::join(this->peak_bytes(), other.peak_bytes());
         return Budgeted{std::move(impl_).consume(), joined_bits, joined_peak};
     }
 
@@ -313,22 +272,18 @@ public:
     // NOT a lattice operation — exposed as a separate method to
     // keep the lattice-vs-arithmetic distinction visible at the
     // call site (mirrors Stale's compose_add vs combine_max split).
-    [[nodiscard]] constexpr Budgeted accumulate(Budgeted const& other) const&
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
+    [[nodiscard]] constexpr Budgeted
+    accumulate(Budgeted const& other) const& noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
     {
-        return Budgeted{this->peek(),
-                        BitsBudget{detail::sat_add(this->bits().value,       other.bits().value)},
+        return Budgeted{this->peek(), BitsBudget{detail::sat_add(this->bits().value, other.bits().value)},
                         PeakBytes{detail::sat_add(this->peak_bytes().value, other.peak_bytes().value)}};
     }
 
-    [[nodiscard]] constexpr Budgeted accumulate(Budgeted const& other) &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
-        BitsBudget summed_bits{
-            detail::sat_add(this->bits().value, other.bits().value)};
-        PeakBytes  summed_peak{
-            detail::sat_add(this->peak_bytes().value, other.peak_bytes().value)};
+    [[nodiscard]] constexpr Budgeted
+    accumulate(Budgeted const& other) && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        BitsBudget summed_bits{detail::sat_add(this->bits().value, other.bits().value)};
+        PeakBytes summed_peak{detail::sat_add(this->peak_bytes().value, other.peak_bytes().value)};
         return Budgeted{std::move(impl_).consume(), summed_bits, summed_peak};
     }
 
@@ -342,11 +297,8 @@ public:
     //       return reject_oversize_value();
     //
     // The two axes are independent — admission requires BOTH to fit.
-    [[nodiscard]] constexpr bool satisfies(BitsBudget max_bits,
-                                           PeakBytes max_peak) const noexcept
-    {
-        return BitsBudgetLattice::leq(this->bits(),       max_bits)
-            && PeakBytesLattice::leq(this->peak_bytes(), max_peak);
+    [[nodiscard]] constexpr bool satisfies(BitsBudget max_bits, PeakBytes max_peak) const noexcept {
+        return BitsBudgetLattice::leq(this->bits(), max_bits) && PeakBytesLattice::leq(this->peak_bytes(), max_peak);
     }
 };
 
@@ -361,11 +313,10 @@ public:
 // would silently compare against the peak-bytes counter.  Lives
 // at the wrapper layer because that's where both component
 // newtypes are guaranteed in scope.
-static_assert(!std::is_same_v<BitsBudget, PeakBytes>,
-    "BitsBudget and PeakBytes must be structurally distinct C++ "
-    "types even though both wrap uint64_t.  If this fires, the "
-    "strong-newtype discipline that fences Budgeted axis-swap bugs "
-    "has been broken.");
+static_assert(!std::is_same_v<BitsBudget, PeakBytes>, "BitsBudget and PeakBytes must be structurally distinct C++ "
+                                                      "types even though both wrap uint64_t.  If this fires, the "
+                                                      "strong-newtype discipline that fences Budgeted axis-swap bugs "
+                                                      "has been broken.");
 
 // ── Layout invariants — regime-4 (non-EBO) ──────────────────────────
 //
@@ -381,83 +332,81 @@ static_assert(!std::is_same_v<BitsBudget, PeakBytes>,
 // wrapper, so its layout invariant is the regime-4 reference.
 namespace detail::budgeted_layout {
 
-static_assert(sizeof(Budgeted<int>)       >= sizeof(int)    + 16);
-static_assert(sizeof(Budgeted<double>)    >= sizeof(double) + 16);
-static_assert(sizeof(Budgeted<char>)      >= sizeof(char)   + 16);
+static_assert(sizeof(Budgeted<int>) >= sizeof(int) + 16);
+static_assert(sizeof(Budgeted<double>) >= sizeof(double) + 16);
+static_assert(sizeof(Budgeted<char>) >= sizeof(char) + 16);
 
 // Strict equality on T=uint64_t (alignment-friendly): exactly 24 bytes.
 static_assert(sizeof(Budgeted<std::uint64_t>) == 24,
-    "Budgeted<uint64_t>: expected 8(value) + 16(grade) = 24 bytes.  If "
-    "this fires, the ProductLattice element_type drifted from its "
-    "documented two-uint64_t layout — investigate before merging.");
+              "Budgeted<uint64_t>: expected 8(value) + 16(grade) = 24 bytes.  If "
+              "this fires, the ProductLattice element_type drifted from its "
+              "documented two-uint64_t layout — investigate before merging.");
 
 }  // namespace detail::budgeted_layout
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::budgeted_self_test {
 
-using BudgetedInt  = Budgeted<int>;
-using BudgetedDbl  = Budgeted<double>;
+using BudgetedInt = Budgeted<int>;
+using BudgetedDbl = Budgeted<double>;
 
 // ── Construction paths ─────────────────────────────────────────────
 inline constexpr BudgetedInt b_default{};
-static_assert(b_default.peek()       == 0);
-static_assert(b_default.bits()       == BitsBudget{0});
+static_assert(b_default.peek() == 0);
+static_assert(b_default.bits() == BitsBudget{0});
 static_assert(b_default.peak_bytes() == PeakBytes{0});
 
 inline constexpr BudgetedInt b_explicit{42, BitsBudget{1024}, PeakBytes{4096}};
-static_assert(b_explicit.peek()       == 42);
-static_assert(b_explicit.bits()       == BitsBudget{1024});
+static_assert(b_explicit.peek() == 42);
+static_assert(b_explicit.bits() == BitsBudget{1024});
 static_assert(b_explicit.peak_bytes() == PeakBytes{4096});
 
-inline constexpr BudgetedInt b_in_place{
-    std::in_place, BitsBudget{16}, PeakBytes{64}, 7};
-static_assert(b_in_place.peek()       == 7);
-static_assert(b_in_place.bits()       == BitsBudget{16});
+inline constexpr BudgetedInt b_in_place{std::in_place, BitsBudget{16}, PeakBytes{64}, 7};
+static_assert(b_in_place.peek() == 7);
+static_assert(b_in_place.bits() == BitsBudget{16});
 static_assert(b_in_place.peak_bytes() == PeakBytes{64});
 
 // ── Convenience factories ─────────────────────────────────────────
-inline constexpr BudgetedInt b_free        = BudgetedInt::free(99);
-static_assert(b_free.peek()                 == 99);
-static_assert(b_free.bits()                 == BitsBudget{0});
-static_assert(b_free.peak_bytes()           == PeakBytes{0});
+inline constexpr BudgetedInt b_free = BudgetedInt::free(99);
+static_assert(b_free.peek() == 99);
+static_assert(b_free.bits() == BitsBudget{0});
+static_assert(b_free.peak_bytes() == PeakBytes{0});
 
-inline constexpr BudgetedInt b_unbounded   = BudgetedInt::unbounded(11);
-static_assert(b_unbounded.peek()            == 11);
-static_assert(b_unbounded.bits()            == BitsBudgetLattice::top());
-static_assert(b_unbounded.peak_bytes()      == PeakBytesLattice::top());
+inline constexpr BudgetedInt b_unbounded = BudgetedInt::unbounded(11);
+static_assert(b_unbounded.peek() == 11);
+static_assert(b_unbounded.bits() == BitsBudgetLattice::top());
+static_assert(b_unbounded.peak_bytes() == PeakBytesLattice::top());
 
 // ── combine_max — lattice join semantics ──────────────────────────
 //
 // Worst-case-across-paths: the combined value's budget is the
 // pointwise MAX of the two inputs.
 [[nodiscard]] consteval bool combine_max_takes_pointwise_max() noexcept {
-    BudgetedInt a{42, BitsBudget{100},  PeakBytes{1024}};
-    BudgetedInt b{42, BitsBudget{200},  PeakBytes{512}};
-    auto        c = a.combine_max(b);
-    return c.bits()       == BitsBudget{200}      // max(100, 200)
-        && c.peak_bytes() == PeakBytes{1024}      // max(1024, 512)
-        && c.peek()       == 42;
+    BudgetedInt a{42, BitsBudget{100}, PeakBytes{1024}};
+    BudgetedInt b{42, BitsBudget{200}, PeakBytes{512}};
+    auto c = a.combine_max(b);
+    return c.bits() == BitsBudget{200}  // max(100, 200)
+        && c.peak_bytes() == PeakBytes{1024}  // max(1024, 512)
+        && c.peek() == 42;
 }
 static_assert(combine_max_takes_pointwise_max());
 
 // Reflexivity: combining with self is identity (idempotent join).
 [[nodiscard]] consteval bool combine_max_idempotent() noexcept {
-    BudgetedInt a{42, BitsBudget{100},  PeakBytes{1024}};
-    auto        c = a.combine_max(a);
-    return c.bits()       == BitsBudget{100}
-        && c.peak_bytes() == PeakBytes{1024};
+    BudgetedInt a{42, BitsBudget{100}, PeakBytes{1024}};
+    auto c = a.combine_max(a);
+    return c.bits() == BitsBudget{100} && c.peak_bytes() == PeakBytes{1024};
 }
 static_assert(combine_max_idempotent());
 
 // ── accumulate — saturating-add chain semantics ──────────────────
 [[nodiscard]] consteval bool accumulate_sums_pointwise() noexcept {
-    BudgetedInt a{42, BitsBudget{1024},  PeakBytes{1<<20}};
-    BudgetedInt b{42, BitsBudget{2048},  PeakBytes{4<<20}};
-    auto        c = a.accumulate(b);
-    return c.bits()       == BitsBudget{3072}                  // 1024 + 2048
-        && c.peak_bytes() == PeakBytes{5u<<20}                 // 1MB + 4MB
-        && c.peek()       == 42;
+    BudgetedInt a{42, BitsBudget{1024}, PeakBytes{1 << 20}};
+    BudgetedInt b{42, BitsBudget{2048}, PeakBytes{4 << 20}};
+    auto c = a.accumulate(b);
+    return c.bits() == BitsBudget{3072}  // 1024 + 2048
+        && c.peak_bytes() == PeakBytes{5u << 20}  // 1MB + 4MB
+        && c.peek() == 42;
 }
 static_assert(accumulate_sums_pointwise());
 
@@ -465,19 +414,18 @@ static_assert(accumulate_sums_pointwise());
 [[nodiscard]] consteval bool accumulate_saturates_at_max() noexcept {
     constexpr auto MAX = std::numeric_limits<std::uint64_t>::max();
     BudgetedInt a{0, BitsBudget{MAX - 10}, PeakBytes{0}};
-    BudgetedInt b{0, BitsBudget{100},      PeakBytes{0}};
-    auto        c = a.accumulate(b);
-    return c.bits() == BitsBudget{MAX};   // saturated, not wrapped
+    BudgetedInt b{0, BitsBudget{100}, PeakBytes{0}};
+    auto c = a.accumulate(b);
+    return c.bits() == BitsBudget{MAX};  // saturated, not wrapped
 }
 static_assert(accumulate_saturates_at_max());
 
 // ── satisfies — admission gate semantics ─────────────────────────
 [[nodiscard]] consteval bool satisfies_passes_within_threshold() noexcept {
     BudgetedInt a{42, BitsBudget{500}, PeakBytes{1024}};
-    return  a.satisfies(BitsBudget{1000}, PeakBytes{2048})
-        &&  a.satisfies(BitsBudget{500},  PeakBytes{1024})    // boundary
-        && !a.satisfies(BitsBudget{499},  PeakBytes{2048})    // bits over
-        && !a.satisfies(BitsBudget{1000}, PeakBytes{1023});   // peak over
+    return a.satisfies(BitsBudget{1000}, PeakBytes{2048}) && a.satisfies(BitsBudget{500}, PeakBytes{1024})  // boundary
+        && !a.satisfies(BitsBudget{499}, PeakBytes{2048})  // bits over
+        && !a.satisfies(BitsBudget{1000}, PeakBytes{1023});  // peak over
 }
 static_assert(satisfies_passes_within_threshold());
 
@@ -485,8 +433,7 @@ static_assert(satisfies_passes_within_threshold());
 static_assert(BudgetedInt::free(7).satisfies(BitsBudget{0}, PeakBytes{0}));
 
 // Unbounded budget fails any finite threshold.
-static_assert(!BudgetedInt::unbounded(7).satisfies(
-    BitsBudget{1000000}, PeakBytes{1u<<30}));
+static_assert(!BudgetedInt::unbounded(7).satisfies(BitsBudget{1000000}, PeakBytes{1u << 30}));
 
 // ── Diagnostic forwarders ─────────────────────────────────────────
 static_assert(BudgetedInt::value_type_name().ends_with("int"));
@@ -498,10 +445,7 @@ template <typename W>
     W a{x, BitsBudget{10}, PeakBytes{20}};
     W b{y, BitsBudget{30}, PeakBytes{40}};
     a.swap(b);
-    return a.peek()       == y
-        && b.peek()       == x
-        && a.bits()       == BitsBudget{30}
-        && b.peak_bytes() == PeakBytes{20};
+    return a.peek() == y && b.peek() == x && a.bits() == BitsBudget{30} && b.peak_bytes() == PeakBytes{20};
 }
 static_assert(swap_exchanges_within<BudgetedInt>(10, 20));
 
@@ -510,8 +454,7 @@ static_assert(swap_exchanges_within<BudgetedInt>(10, 20));
     BudgetedInt b{20, BitsBudget{3}, PeakBytes{4}};
     using std::swap;
     swap(a, b);
-    return a.peek() == 20 && b.peek() == 10
-        && a.bits() == BitsBudget{3} && b.peak_bytes() == PeakBytes{2};
+    return a.peek() == 20 && b.peek() == 10 && a.bits() == BitsBudget{3} && b.peak_bytes() == PeakBytes{2};
 }
 static_assert(free_swap_works());
 
@@ -531,13 +474,10 @@ static_assert(peek_mut_works());
 [[nodiscard]] consteval bool equality_compares_value_and_budget() noexcept {
     BudgetedInt a{42, BitsBudget{100}, PeakBytes{200}};
     BudgetedInt b{42, BitsBudget{100}, PeakBytes{200}};
-    BudgetedInt c{43, BitsBudget{100}, PeakBytes{200}};   // diff value
-    BudgetedInt d{42, BitsBudget{101}, PeakBytes{200}};   // diff bits
-    BudgetedInt e{42, BitsBudget{100}, PeakBytes{201}};   // diff peak
-    return  (a == b)
-        && !(a == c)
-        && !(a == d)
-        && !(a == e);
+    BudgetedInt c{43, BitsBudget{100}, PeakBytes{200}};  // diff value
+    BudgetedInt d{42, BitsBudget{101}, PeakBytes{200}};  // diff bits
+    BudgetedInt e{42, BitsBudget{100}, PeakBytes{201}};  // diff peak
+    return (a == b) && !(a == c) && !(a == d) && !(a == e);
 }
 static_assert(equality_compares_value_and_budget());
 
@@ -553,19 +493,18 @@ struct MoveOnlyT {
 };
 
 static_assert(!std::is_copy_constructible_v<Budgeted<MoveOnlyT>>,
-    "Budgeted<T> must transitively inherit T's copy-deletion. "
-    "If this fires, MoveOnlyT's deleted copy ctor is no longer "
-    "visible through the wrapper.");
+              "Budgeted<T> must transitively inherit T's copy-deletion. "
+              "If this fires, MoveOnlyT's deleted copy ctor is no longer "
+              "visible through the wrapper.");
 static_assert(std::is_move_constructible_v<Budgeted<MoveOnlyT>>);
 
 // combine_max && rvalue overload works on move-only T.
 [[nodiscard]] consteval bool combine_max_works_for_move_only() noexcept {
     Budgeted<MoveOnlyT> a{MoveOnlyT{42}, BitsBudget{100}, PeakBytes{200}};
     Budgeted<MoveOnlyT> b{MoveOnlyT{99}, BitsBudget{500}, PeakBytes{50}};
-    auto                c = std::move(a).combine_max(b);
-    return c.bits()       == BitsBudget{500}
-        && c.peak_bytes() == PeakBytes{200}
-        && c.peek().v     == 42;        // value from `a`, not `b`
+    auto c = std::move(a).combine_max(b);
+    return c.bits() == BitsBudget{500} && c.peak_bytes() == PeakBytes{200}
+        && c.peek().v == 42;  // value from `a`, not `b`
 }
 static_assert(combine_max_works_for_move_only());
 
@@ -580,10 +519,10 @@ static_assert(combine_max_works_for_move_only());
 [[nodiscard]] consteval bool accumulate_works_for_move_only() noexcept {
     Budgeted<MoveOnlyT> a{MoveOnlyT{42}, BitsBudget{100}, PeakBytes{200}};
     Budgeted<MoveOnlyT> b{MoveOnlyT{99}, BitsBudget{500}, PeakBytes{50}};
-    auto                c = std::move(a).accumulate(b);
-    return c.bits()       == BitsBudget{600}    // 100 + 500
-        && c.peak_bytes() == PeakBytes{250}     // 200 + 50
-        && c.peek().v     == 42;                // value from `a`, not `b`
+    auto c = std::move(a).accumulate(b);
+    return c.bits() == BitsBudget{600}  // 100 + 500
+        && c.peak_bytes() == PeakBytes{250}  // 200 + 50
+        && c.peek().v == 42;  // value from `a`, not `b`
 }
 static_assert(accumulate_works_for_move_only());
 
@@ -600,12 +539,11 @@ template <typename W>
 concept can_accumulate_rvalue = requires(W&& a, W const& b) {
     { std::move(a).accumulate(b) };
 };
-static_assert( can_accumulate_lvalue<BudgetedInt>);
-static_assert( can_accumulate_rvalue<BudgetedInt>);
-static_assert(!can_accumulate_lvalue<Budgeted<MoveOnlyT>>,
-    "accumulate const& on move-only T must be rejected — the "
-    "const& overload requires copy_constructible<T>.");
-static_assert( can_accumulate_rvalue<Budgeted<MoveOnlyT>>);
+static_assert(can_accumulate_lvalue<BudgetedInt>);
+static_assert(can_accumulate_rvalue<BudgetedInt>);
+static_assert(!can_accumulate_lvalue<Budgeted<MoveOnlyT>>, "accumulate const& on move-only T must be rejected — the "
+                                                           "const& overload requires copy_constructible<T>.");
+static_assert(can_accumulate_rvalue<Budgeted<MoveOnlyT>>);
 
 // Same SFINAE detectors for combine_max — completing the parity
 // between the two composition operations.
@@ -617,16 +555,15 @@ template <typename W>
 concept can_combine_max_rvalue = requires(W&& a, W const& b) {
     { std::move(a).combine_max(b) };
 };
-static_assert( can_combine_max_lvalue<BudgetedInt>);
-static_assert( can_combine_max_rvalue<BudgetedInt>);
-static_assert(!can_combine_max_lvalue<Budgeted<MoveOnlyT>>,
-    "combine_max const& on move-only T must be rejected — the "
-    "const& overload requires copy_constructible<T>.");
-static_assert( can_combine_max_rvalue<Budgeted<MoveOnlyT>>);
+static_assert(can_combine_max_lvalue<BudgetedInt>);
+static_assert(can_combine_max_rvalue<BudgetedInt>);
+static_assert(!can_combine_max_lvalue<Budgeted<MoveOnlyT>>, "combine_max const& on move-only T must be rejected — the "
+                                                            "const& overload requires copy_constructible<T>.");
+static_assert(can_combine_max_rvalue<Budgeted<MoveOnlyT>>);
 
 // ── Stable-name introspection (FOUND-E07/H06 surface) ────────────
 static_assert(BudgetedInt::value_type_name().size() > 0);
-static_assert(BudgetedInt::lattice_name().size()    > 0);
+static_assert(BudgetedInt::lattice_name().size() > 0);
 
 // ── Runtime smoke test ────────────────────────────────────────────
 inline void runtime_smoke_test() {
@@ -660,22 +597,22 @@ inline void runtime_smoke_test() {
     swap(sx, sy);
 
     // combine_max.
-    BudgetedInt left{42,  BitsBudget{100}, PeakBytes{1024}};
+    BudgetedInt left{42, BitsBudget{100}, PeakBytes{1024}};
     BudgetedInt right{42, BitsBudget{200}, PeakBytes{512}};
-    auto        joined = left.combine_max(right);
+    auto joined = left.combine_max(right);
     if (joined.bits() != BitsBudget{200}) std::abort();
     if (joined.peak_bytes() != PeakBytes{1024}) std::abort();
 
     // accumulate.
-    BudgetedInt step1{0, BitsBudget{1024}, PeakBytes{1u<<20}};
-    BudgetedInt step2{0, BitsBudget{2048}, PeakBytes{4u<<20}};
-    auto        chain = step1.accumulate(step2);
+    BudgetedInt step1{0, BitsBudget{1024}, PeakBytes{1u << 20}};
+    BudgetedInt step2{0, BitsBudget{2048}, PeakBytes{4u << 20}};
+    auto chain = step1.accumulate(step2);
     if (chain.bits() != BitsBudget{3072}) std::abort();
-    if (chain.peak_bytes() != PeakBytes{5u<<20}) std::abort();
+    if (chain.peak_bytes() != PeakBytes{5u << 20}) std::abort();
 
     // satisfies — admission gate.
-    if (!chain.satisfies(BitsBudget{4096}, PeakBytes{8u<<20})) std::abort();
-    if ( chain.satisfies(BitsBudget{1000}, PeakBytes{8u<<20})) std::abort();
+    if (!chain.satisfies(BitsBudget{4096}, PeakBytes{8u << 20})) std::abort();
+    if (chain.satisfies(BitsBudget{1000}, PeakBytes{8u << 20})) std::abort();
 
     // operator==.
     BudgetedInt eq_a{42, BitsBudget{1}, PeakBytes{2}};
@@ -684,8 +621,8 @@ inline void runtime_smoke_test() {
 
     // budget() returns ProductElement.
     [[maybe_unused]] auto budget_pair = b.budget();
-    if (budget_pair.first  != BitsBudget{1024}) std::abort();
-    if (budget_pair.second != PeakBytes{4096})  std::abort();
+    if (budget_pair.first != BitsBudget{1024}) std::abort();
+    if (budget_pair.second != PeakBytes{4096}) std::abort();
 
     // Move-construct from consumed inner.
     BudgetedInt orig{55, BitsBudget{1}, PeakBytes{2}};

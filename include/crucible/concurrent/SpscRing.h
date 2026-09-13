@@ -84,9 +84,7 @@ namespace crucible::concurrent {
 // guarded only by the producer/consumer sync on head/tail.
 
 template <typename T>
-concept SpscValue =
-    std::is_trivially_copyable_v<T> &&
-    std::is_trivially_destructible_v<T>;
+concept SpscValue = std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T>;
 
 // ── SpscRing<T, Capacity> ─────────────────────────────────────────
 
@@ -96,10 +94,8 @@ public:
     using value_type = T;
     static constexpr std::size_t channel_capacity = Capacity;
 
-    static_assert(std::has_single_bit(Capacity),
-                  "Capacity must be a power of two");
-    static_assert(Capacity > 0,
-                  "Capacity must be greater than zero");
+    static_assert(std::has_single_bit(Capacity), "Capacity must be a power of two");
+    static_assert(Capacity > 0, "Capacity must be greater than zero");
 
 private:
     static constexpr std::uint64_t MASK = std::uint64_t{Capacity - 1};
@@ -186,27 +182,25 @@ public:
     // SPSC contract preserved: producer is sole writer of head_ and
     // buffer_[tail .. head); the count atomic claim publishes all
     // writes via head_.advance's release-store.
-    [[nodiscard, gnu::hot]] std::size_t try_push_batch(
-        std::span<const T> items) noexcept {
-        if (items.empty()) [[unlikely]] return 0;
+    [[nodiscard, gnu::hot]] std::size_t try_push_batch(std::span<const T> items) noexcept {
+        if (items.empty()) [[unlikely]]
+            return 0;
         const std::uint64_t h = head_.peek_relaxed();
         const std::uint64_t t = tail_.get();
         const std::uint64_t free_slots = Capacity - (h - t);
-        if (free_slots == 0) [[unlikely]] return 0;
+        if (free_slots == 0) [[unlikely]]
+            return 0;
         const std::size_t count = std::min<std::size_t>(items.size(), free_slots);
 
         // Wrap split: at most two contiguous runs.
         const std::uint64_t start_pos = h & MASK;
-        const std::size_t first = std::min<std::size_t>(
-            count, Capacity - start_pos);
+        const std::size_t first = std::min<std::size_t>(count, Capacity - start_pos);
         const std::size_t second = count - first;
 
         // Bulk writes — compiler emits AVX-512/AVX2/SSE memcpy as available.
-        std::memcpy(buffer_.data() + start_pos, items.data(),
-                    first * sizeof(T));
+        std::memcpy(buffer_.data() + start_pos, items.data(), first * sizeof(T));
         if (second > 0) [[unlikely]] {
-            std::memcpy(buffer_.data(), items.data() + first,
-                        second * sizeof(T));
+            std::memcpy(buffer_.data(), items.data() + first, second * sizeof(T));
         }
 
         head_.advance(h + count);
@@ -218,25 +212,23 @@ public:
     // Pop up to `out.size()` items; returns the number actually popped.
     // Per-item amortized cost mirrors try_push_batch.  Caller's `out`
     // span must accommodate the return — partial fills allowed.
-    [[nodiscard, gnu::hot]] std::size_t try_pop_batch(
-        std::span<T> out) noexcept {
-        if (out.empty()) [[unlikely]] return 0;
+    [[nodiscard, gnu::hot]] std::size_t try_pop_batch(std::span<T> out) noexcept {
+        if (out.empty()) [[unlikely]]
+            return 0;
         const std::uint64_t t = tail_.peek_relaxed();
         const std::uint64_t h = head_.get();
         const std::uint64_t available = h - t;
-        if (available == 0) [[unlikely]] return 0;
+        if (available == 0) [[unlikely]]
+            return 0;
         const std::size_t count = std::min<std::size_t>(out.size(), available);
 
         const std::uint64_t start_pos = t & MASK;
-        const std::size_t first = std::min<std::size_t>(
-            count, Capacity - start_pos);
+        const std::size_t first = std::min<std::size_t>(count, Capacity - start_pos);
         const std::size_t second = count - first;
 
-        std::memcpy(out.data(), buffer_.data() + start_pos,
-                    first * sizeof(T));
+        std::memcpy(out.data(), buffer_.data() + start_pos, first * sizeof(T));
         if (second > 0) [[unlikely]] {
-            std::memcpy(out.data() + first, buffer_.data(),
-                        second * sizeof(T));
+            std::memcpy(out.data() + first, buffer_.data(), second * sizeof(T));
         }
 
         tail_.advance(t + count);
@@ -249,9 +241,7 @@ public:
     // Use for telemetry / "should we keep polling?" decisions only,
     // NEVER for correctness invariants.
 
-    [[nodiscard]] bool empty_approx() const noexcept {
-        return head_.get() == tail_.get();
-    }
+    [[nodiscard]] bool empty_approx() const noexcept { return head_.get() == tail_.get(); }
 
     [[nodiscard]] std::size_t size_approx() const noexcept {
         // size_t == uint64_t on our supported platforms (x86-64,
@@ -262,9 +252,7 @@ public:
         return h - t;
     }
 
-    [[nodiscard]] static constexpr std::size_t capacity() noexcept {
-        return Capacity;
-    }
+    [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
 private:
     // Cross-thread atomics on isolated cache lines — head and tail

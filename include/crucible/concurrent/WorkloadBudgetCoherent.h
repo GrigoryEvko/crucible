@@ -86,8 +86,8 @@
 //   • DetSafe:    identical inputs (Ctx, Pipeline types) → identical
 //                 admit/reject decision; pure type-level evaluation.
 
-#include <crucible/effects/ExecCtx.h>          // ctx_workload, ctx_alloc, ctx_numa
-#include <crucible/concurrent/WorkingSet.h>    // unknown_per_call_working_set (concept) — implicit via Pipeline
+#include <crucible/effects/ExecCtx.h>  // ctx_workload, ctx_alloc, ctx_numa
+#include <crucible/concurrent/WorkingSet.h>  // unknown_per_call_working_set (concept) — implicit via Pipeline
 
 #include <cstddef>
 #include <limits>
@@ -107,59 +107,44 @@ namespace crucible::concurrent {
 
 template <class WorkloadHint>
 struct workload_hint_byte_budget {
-    static constexpr std::size_t value =
-        std::numeric_limits<std::size_t>::max();
+    static constexpr std::size_t value = std::numeric_limits<std::size_t>::max();
 };
 
 template <>
-struct workload_hint_byte_budget<
-    ::crucible::effects::ctx_workload::Unspecified> {
-    static constexpr std::size_t value =
-        std::numeric_limits<std::size_t>::max();
+struct workload_hint_byte_budget<::crucible::effects::ctx_workload::Unspecified> {
+    static constexpr std::size_t value = std::numeric_limits<std::size_t>::max();
 };
 
 template <std::size_t N>
-struct workload_hint_byte_budget<
-    ::crucible::effects::ctx_workload::ByteBudget<N>> {
+struct workload_hint_byte_budget<::crucible::effects::ctx_workload::ByteBudget<N>> {
     static constexpr std::size_t value = N;
 };
 
 // ItemBudget — items are not bytes; without an item-size oracle we
 // cannot infer a byte budget.  Conservatively unconstrained.
 template <std::size_t N>
-struct workload_hint_byte_budget<
-    ::crucible::effects::ctx_workload::ItemBudget<N>> {
-    static constexpr std::size_t value =
-        std::numeric_limits<std::size_t>::max();
+struct workload_hint_byte_budget<::crucible::effects::ctx_workload::ItemBudget<N>> {
+    static constexpr std::size_t value = std::numeric_limits<std::size_t>::max();
 };
 
-template <std::size_t Bytes,
-          std::size_t Producers,
-          std::size_t Consumers,
-          bool LatestOnly>
+template <std::size_t Bytes, std::size_t Producers, std::size_t Consumers, bool LatestOnly>
 struct workload_hint_byte_budget<
-    ::crucible::effects::ctx_workload::ChannelBudget<
-        Bytes, Producers, Consumers, LatestOnly>> {
+    ::crucible::effects::ctx_workload::ChannelBudget<Bytes, Producers, Consumers, LatestOnly>> {
     static constexpr std::size_t value = Bytes;
 };
 
 template <std::size_t Bytes, std::size_t Producers, bool LatestOnly>
-struct workload_hint_byte_budget<
-    ::crucible::effects::ctx_workload::ProducerOnlyChannel<
-        Bytes, Producers, LatestOnly>> {
+struct workload_hint_byte_budget<::crucible::effects::ctx_workload::ProducerOnlyChannel<Bytes, Producers, LatestOnly>> {
     static constexpr std::size_t value = Bytes;
 };
 
 template <std::size_t Bytes, std::size_t Consumers>
-struct workload_hint_byte_budget<
-    ::crucible::effects::ctx_workload::ConsumerOnlyChannel<
-        Bytes, Consumers>> {
+struct workload_hint_byte_budget<::crucible::effects::ctx_workload::ConsumerOnlyChannel<Bytes, Consumers>> {
     static constexpr std::size_t value = Bytes;
 };
 
 template <class WorkloadHint>
-inline constexpr std::size_t workload_hint_byte_budget_v =
-    workload_hint_byte_budget<WorkloadHint>::value;
+inline constexpr std::size_t workload_hint_byte_budget_v = workload_hint_byte_budget<WorkloadHint>::value;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── alloc_class_max_working_set — per-alloc-class WS ceiling ────────
@@ -181,8 +166,7 @@ inline constexpr std::size_t stack_alloc_max_working_set_bytes =
 
 template <class AllocClass>
 struct alloc_class_max_working_set {
-    static constexpr std::size_t value =
-        std::numeric_limits<std::size_t>::max();
+    static constexpr std::size_t value = std::numeric_limits<std::size_t>::max();
 };
 
 template <>
@@ -191,8 +175,7 @@ struct alloc_class_max_working_set<::crucible::effects::ctx_alloc::Stack> {
 };
 
 template <class AllocClass>
-inline constexpr std::size_t alloc_class_max_working_set_v =
-    alloc_class_max_working_set<AllocClass>::value;
+inline constexpr std::size_t alloc_class_max_working_set_v = alloc_class_max_working_set<AllocClass>::value;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── numa_policy_min_working_set — NUMA-spread profitability floor ───
@@ -228,8 +211,7 @@ struct numa_policy_min_working_set<::crucible::effects::ctx_numa::Spread> {
 };
 
 template <class NumaPolicy>
-inline constexpr std::size_t numa_policy_min_working_set_v =
-    numa_policy_min_working_set<NumaPolicy>::value;
+inline constexpr std::size_t numa_policy_min_working_set_v = numa_policy_min_working_set<NumaPolicy>::value;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── WorkloadBudgetCoherent<Ctx, Pipeline> ───────────────────────────
@@ -242,18 +224,13 @@ template <class Ctx, class Pipeline>
 concept WorkloadBudgetCoherent =
     // No measured fact to compare against → admit.
     !Pipeline::aggregate_working_set_known
-    ||
-    (
+    || (
         // (1) Workload byte budget admits the pipeline's WS.
-        Pipeline::aggregate_per_call_working_set
-            <= workload_hint_byte_budget_v<typename Ctx::workload_hint>
+        Pipeline::aggregate_per_call_working_set <= workload_hint_byte_budget_v<typename Ctx::workload_hint>
         // (2) Alloc class admits the pipeline's WS.
-     && Pipeline::aggregate_per_call_working_set
-            <= alloc_class_max_working_set_v<typename Ctx::alloc_class>
+        && Pipeline::aggregate_per_call_working_set <= alloc_class_max_working_set_v<typename Ctx::alloc_class>
         // (3) NUMA policy admits the pipeline's WS (Spread floor).
-     && Pipeline::aggregate_per_call_working_set
-            >= numa_policy_min_working_set_v<typename Ctx::numa_policy>
-    );
+        && Pipeline::aggregate_per_call_working_set >= numa_policy_min_working_set_v<typename Ctx::numa_policy>);
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Smoke checks — type-level sanity for the extractor traits ────────
@@ -267,70 +244,51 @@ concept WorkloadBudgetCoherent =
 namespace workload_budget_coherent_self_test {
 
 // (a) workload_hint_byte_budget extractor — point spot checks.
-static_assert(workload_hint_byte_budget_v<
-    ::crucible::effects::ctx_workload::Unspecified>
-    == std::numeric_limits<std::size_t>::max());
+static_assert(workload_hint_byte_budget_v<::crucible::effects::ctx_workload::Unspecified>
+              == std::numeric_limits<std::size_t>::max());
 
-static_assert(workload_hint_byte_budget_v<
-    ::crucible::effects::ctx_workload::ByteBudget<4096>> == 4096);
+static_assert(workload_hint_byte_budget_v<::crucible::effects::ctx_workload::ByteBudget<4096>> == 4096);
 
-static_assert(workload_hint_byte_budget_v<
-    ::crucible::effects::ctx_workload::ChannelBudget<8192, 1, 1, false>>
-    == 8192);
+static_assert(workload_hint_byte_budget_v<::crucible::effects::ctx_workload::ChannelBudget<8192, 1, 1, false>> == 8192);
 
-static_assert(workload_hint_byte_budget_v<
-    ::crucible::effects::ctx_workload::ProducerOnlyChannel<2048, 4, true>>
-    == 2048);
+static_assert(workload_hint_byte_budget_v<::crucible::effects::ctx_workload::ProducerOnlyChannel<2048, 4, true>>
+              == 2048);
 
-static_assert(workload_hint_byte_budget_v<
-    ::crucible::effects::ctx_workload::ConsumerOnlyChannel<1024, 2>>
-    == 1024);
+static_assert(workload_hint_byte_budget_v<::crucible::effects::ctx_workload::ConsumerOnlyChannel<1024, 2>> == 1024);
 
 // ItemBudget is unconstrained (items, not bytes).
-static_assert(workload_hint_byte_budget_v<
-    ::crucible::effects::ctx_workload::ItemBudget<100>>
-    == std::numeric_limits<std::size_t>::max());
+static_assert(workload_hint_byte_budget_v<::crucible::effects::ctx_workload::ItemBudget<100>>
+              == std::numeric_limits<std::size_t>::max());
 
 // (b) alloc_class_max_working_set extractor — Stack has the only
 //     ceiling; other classes are unconstrained.
-static_assert(alloc_class_max_working_set_v<
-    ::crucible::effects::ctx_alloc::Stack>
-    == stack_alloc_max_working_set_bytes);
+static_assert(alloc_class_max_working_set_v<::crucible::effects::ctx_alloc::Stack>
+              == stack_alloc_max_working_set_bytes);
 
-static_assert(alloc_class_max_working_set_v<
-    ::crucible::effects::ctx_alloc::Arena>
-    == std::numeric_limits<std::size_t>::max());
+static_assert(alloc_class_max_working_set_v<::crucible::effects::ctx_alloc::Arena>
+              == std::numeric_limits<std::size_t>::max());
 
-static_assert(alloc_class_max_working_set_v<
-    ::crucible::effects::ctx_alloc::Pool>
-    == std::numeric_limits<std::size_t>::max());
+static_assert(alloc_class_max_working_set_v<::crucible::effects::ctx_alloc::Pool>
+              == std::numeric_limits<std::size_t>::max());
 
-static_assert(alloc_class_max_working_set_v<
-    ::crucible::effects::ctx_alloc::HugePage>
-    == std::numeric_limits<std::size_t>::max());
+static_assert(alloc_class_max_working_set_v<::crucible::effects::ctx_alloc::HugePage>
+              == std::numeric_limits<std::size_t>::max());
 
-static_assert(alloc_class_max_working_set_v<
-    ::crucible::effects::ctx_alloc::Heap>
-    == std::numeric_limits<std::size_t>::max());
+static_assert(alloc_class_max_working_set_v<::crucible::effects::ctx_alloc::Heap>
+              == std::numeric_limits<std::size_t>::max());
 
-static_assert(alloc_class_max_working_set_v<
-    ::crucible::effects::ctx_alloc::Unbound>
-    == std::numeric_limits<std::size_t>::max());
+static_assert(alloc_class_max_working_set_v<::crucible::effects::ctx_alloc::Unbound>
+              == std::numeric_limits<std::size_t>::max());
 
 // (c) numa_policy_min_working_set extractor — Spread has the only
 //     floor; other policies are unconstrained.
-static_assert(numa_policy_min_working_set_v<
-    ::crucible::effects::ctx_numa::Spread>
-    == conservative_l3_total_bytes);
+static_assert(numa_policy_min_working_set_v<::crucible::effects::ctx_numa::Spread> == conservative_l3_total_bytes);
 
-static_assert(numa_policy_min_working_set_v<
-    ::crucible::effects::ctx_numa::Any> == 0);
+static_assert(numa_policy_min_working_set_v<::crucible::effects::ctx_numa::Any> == 0);
 
-static_assert(numa_policy_min_working_set_v<
-    ::crucible::effects::ctx_numa::Local> == 0);
+static_assert(numa_policy_min_working_set_v<::crucible::effects::ctx_numa::Local> == 0);
 
-static_assert(numa_policy_min_working_set_v<
-    ::crucible::effects::ctx_numa::Pinned<3>> == 0);
+static_assert(numa_policy_min_working_set_v<::crucible::effects::ctx_numa::Pinned<3>> == 0);
 
 }  // namespace workload_budget_coherent_self_test
 

@@ -61,9 +61,8 @@ namespace crucible::safety::proto::federation {
 // includes IO can widen to add `Block` (Bg's permitted row is
 // `Row<Bg, Alloc, IO, Block>`) and mint without friction.
 
-using federation_required_row = ::crucible::effects::Row<
-    ::crucible::effects::Effect::IO,
-    ::crucible::effects::Effect::Block>;
+using federation_required_row =
+    ::crucible::effects::Row<::crucible::effects::Effect::IO, ::crucible::effects::Effect::Block>;
 
 // Diagnostic boundary symbol — passed as the `FnPtr` argument to
 // `CRUCIBLE_ROW_MISMATCH_ASSERT` so the user sees a grep-discoverable
@@ -72,9 +71,7 @@ using federation_required_row = ::crucible::effects::Row<
 
 template <typename Ctx>
 concept CtxFitsFederation =
-    ::crucible::effects::IsExecCtx<Ctx>
-    && ::crucible::effects::Subrow<federation_required_row,
-                                    typename Ctx::row_type>;
+    ::crucible::effects::IsExecCtx<Ctx> && ::crucible::effects::Subrow<federation_required_row, typename Ctx::row_type>;
 
 struct SenderRole {};
 struct ReceiverRole {};
@@ -101,19 +98,17 @@ struct FederationEntryPayload {
 };
 
 template <typename KeyTag = AnyFederationKey>
-using HeaderPayload =
-    ContentAddressed<::crucible::cipher::federation::FederationEntryHeader>;
+using HeaderPayload = ContentAddressed<::crucible::cipher::federation::FederationEntryHeader>;
 
 template <typename KeyTag = AnyFederationKey>
 using BodyPayload = ContentAddressed<FederationEntryPayload<KeyTag>>;
 
 template <typename KeyTag = AnyFederationKey>
-using FederationGlobal = Rec_G<
-    Transmission<SenderRole, CoordRole, HeaderPayload<KeyTag>,
-    Transmission<CoordRole, SenderRole, Ack<KeyTag>,
-    Transmission<CoordRole, ReceiverRole, PullRequest<KeyTag>,
-    Transmission<ReceiverRole, CoordRole, BodyPayload<KeyTag>,
-    Var_G>>>>>;
+using FederationGlobal =
+    Rec_G<Transmission<SenderRole, CoordRole, HeaderPayload<KeyTag>,
+                       Transmission<CoordRole, SenderRole, Ack<KeyTag>,
+                                    Transmission<CoordRole, ReceiverRole, PullRequest<KeyTag>,
+                                                 Transmission<ReceiverRole, CoordRole, BodyPayload<KeyTag>, Var_G>>>>>;
 
 using FederationProtocol = FederationGlobal<AnyFederationKey>;
 
@@ -130,37 +125,29 @@ template <typename KeyTag = AnyFederationKey>
 using CoordProto = project_t<FederationGlobal<KeyTag>, CoordRole>;
 
 template <typename KeyTag = AnyFederationKey>
-using ExpectedSenderProto = Loop<Send<HeaderPayload<KeyTag>,
-                                      Recv<Ack<KeyTag>, Continue>>>;
+using ExpectedSenderProto = Loop<Send<HeaderPayload<KeyTag>, Recv<Ack<KeyTag>, Continue>>>;
 
 template <typename KeyTag = AnyFederationKey>
-using ExpectedReceiverProto = Loop<Recv<PullRequest<KeyTag>,
-                                        Send<BodyPayload<KeyTag>, Continue>>>;
+using ExpectedReceiverProto = Loop<Recv<PullRequest<KeyTag>, Send<BodyPayload<KeyTag>, Continue>>>;
 
 template <typename KeyTag = AnyFederationKey>
-using ExpectedCoordProto = Loop<Recv<HeaderPayload<KeyTag>,
-                                    Send<Ack<KeyTag>,
-                                    Send<PullRequest<KeyTag>,
-                                    Recv<BodyPayload<KeyTag>, Continue>>>>>;
+using ExpectedCoordProto = Loop<
+    Recv<HeaderPayload<KeyTag>, Send<Ack<KeyTag>, Send<PullRequest<KeyTag>, Recv<BodyPayload<KeyTag>, Continue>>>>>;
 
 template <typename Role, typename Proto, typename KeyTag = AnyFederationKey>
 struct role_protocol_matches : std::false_type {};
 
 template <typename KeyTag>
-struct role_protocol_matches<SenderRole, SenderProto<KeyTag>, KeyTag>
-    : std::true_type {};
+struct role_protocol_matches<SenderRole, SenderProto<KeyTag>, KeyTag> : std::true_type {};
 
 template <typename KeyTag>
-struct role_protocol_matches<ReceiverRole, ReceiverProto<KeyTag>, KeyTag>
-    : std::true_type {};
+struct role_protocol_matches<ReceiverRole, ReceiverProto<KeyTag>, KeyTag> : std::true_type {};
 
 template <typename KeyTag>
-struct role_protocol_matches<CoordRole, CoordProto<KeyTag>, KeyTag>
-    : std::true_type {};
+struct role_protocol_matches<CoordRole, CoordProto<KeyTag>, KeyTag> : std::true_type {};
 
 template <typename Role, typename Proto, typename KeyTag = AnyFederationKey>
-inline constexpr bool role_protocol_matches_v =
-    role_protocol_matches<Role, Proto, KeyTag>::value;
+inline constexpr bool role_protocol_matches_v = role_protocol_matches<Role, Proto, KeyTag>::value;
 
 // ── fixy-A2-009: per-role admittance witness, fractional discipline ─
 //
@@ -207,100 +194,61 @@ inline constexpr bool role_protocol_matches_v =
 
 template <typename Org>
 [[nodiscard]] constexpr auto mint_federation_pool(
-    ::crucible::safety::Permission<
-        ::crucible::permissions::tag::FederatedPeer<Org>>&& admittance) noexcept {
-    return ::crucible::safety::SharedPermissionPool<
-        ::crucible::permissions::tag::FederatedPeer<Org>>{std::move(admittance)};
+    ::crucible::safety::Permission<::crucible::permissions::tag::FederatedPeer<Org>>&& admittance) noexcept {
+    return ::crucible::safety::SharedPermissionPool<::crucible::permissions::tag::FederatedPeer<Org>>{
+        std::move(admittance)};
 }
 
-template <typename Org,
-          typename KeyTag = AnyFederationKey,
-          typename Ctx,
-          typename SenderEndpoint>
+template <typename Org, typename KeyTag = AnyFederationKey, typename Ctx, typename SenderEndpoint>
     requires CtxFitsFederation<Ctx>
 [[nodiscard]] constexpr auto mint_sender(
-    Ctx const& ctx,
-    SenderEndpoint&& sender_endpoint,
-    ::crucible::safety::SharedPermission<
-        ::crucible::permissions::tag::FederatedPeer<Org>> /*admittance*/) noexcept {
+    Ctx const& ctx, SenderEndpoint&& sender_endpoint,
+    ::crucible::safety::SharedPermission<::crucible::permissions::tag::FederatedPeer<Org>> /*admittance*/) noexcept {
     using ctx_row = typename Ctx::row_type;
-    using offending =
-        ::crucible::effects::row_difference_t<federation_required_row, ctx_row>;
-    CRUCIBLE_ROW_MISMATCH_ASSERT(
-        (::crucible::decide::row_subset<federation_required_row, ctx_row>()),
-        EffectRowMismatch,
-        &federation_mint_boundary,
-        ctx_row,
-        federation_required_row,
-        offending);
+    using offending = ::crucible::effects::row_difference_t<federation_required_row, ctx_row>;
+    CRUCIBLE_ROW_MISMATCH_ASSERT((::crucible::decide::row_subset<federation_required_row, ctx_row>()),
+                                 EffectRowMismatch, &federation_mint_boundary, ctx_row, federation_required_row,
+                                 offending);
     return ::crucible::safety::proto::mint_permissioned_session<SenderProto<KeyTag>>(
         ctx, std::forward<SenderEndpoint>(sender_endpoint));
 }
 
-template <typename Org,
-          typename KeyTag = AnyFederationKey,
-          typename Ctx,
-          typename ReceiverEndpoint>
+template <typename Org, typename KeyTag = AnyFederationKey, typename Ctx, typename ReceiverEndpoint>
     requires CtxFitsFederation<Ctx>
 [[nodiscard]] constexpr auto mint_receiver(
-    Ctx const& ctx,
-    ReceiverEndpoint&& receiver_endpoint,
-    ::crucible::safety::SharedPermission<
-        ::crucible::permissions::tag::FederatedPeer<Org>> /*admittance*/) noexcept {
+    Ctx const& ctx, ReceiverEndpoint&& receiver_endpoint,
+    ::crucible::safety::SharedPermission<::crucible::permissions::tag::FederatedPeer<Org>> /*admittance*/) noexcept {
     using ctx_row = typename Ctx::row_type;
-    using offending =
-        ::crucible::effects::row_difference_t<federation_required_row, ctx_row>;
-    CRUCIBLE_ROW_MISMATCH_ASSERT(
-        (::crucible::decide::row_subset<federation_required_row, ctx_row>()),
-        EffectRowMismatch,
-        &federation_mint_boundary,
-        ctx_row,
-        federation_required_row,
-        offending);
+    using offending = ::crucible::effects::row_difference_t<federation_required_row, ctx_row>;
+    CRUCIBLE_ROW_MISMATCH_ASSERT((::crucible::decide::row_subset<federation_required_row, ctx_row>()),
+                                 EffectRowMismatch, &federation_mint_boundary, ctx_row, federation_required_row,
+                                 offending);
     return ::crucible::safety::proto::mint_permissioned_session<ReceiverProto<KeyTag>>(
         ctx, std::forward<ReceiverEndpoint>(receiver_endpoint));
 }
 
-template <typename Org,
-          typename KeyTag = AnyFederationKey,
-          typename Ctx,
-          typename SenderEndpoint,
+template <typename Org, typename KeyTag = AnyFederationKey, typename Ctx, typename SenderEndpoint,
           typename ReceiverEndpoint>
     requires CtxFitsFederation<Ctx>
 [[nodiscard]] constexpr auto mint_channel(
-    Ctx const& ctx,
-    SenderEndpoint&& sender_endpoint,
-    ReceiverEndpoint&& receiver_endpoint,
-    ::crucible::safety::SharedPermission<
-        ::crucible::permissions::tag::FederatedPeer<Org>> admittance) noexcept {
+    Ctx const& ctx, SenderEndpoint&& sender_endpoint, ReceiverEndpoint&& receiver_endpoint,
+    ::crucible::safety::SharedPermission<::crucible::permissions::tag::FederatedPeer<Org>> admittance) noexcept {
     return std::pair{
-        mint_sender<Org, KeyTag>(
-            ctx, std::forward<SenderEndpoint>(sender_endpoint), admittance),
-        mint_receiver<Org, KeyTag>(
-            ctx, std::forward<ReceiverEndpoint>(receiver_endpoint), admittance),
+        mint_sender<Org, KeyTag>(ctx, std::forward<SenderEndpoint>(sender_endpoint), admittance),
+        mint_receiver<Org, KeyTag>(ctx, std::forward<ReceiverEndpoint>(receiver_endpoint), admittance),
     };
 }
 
-template <typename Org,
-          typename KeyTag = AnyFederationKey,
-          typename Ctx,
-          typename CoordEndpoint>
+template <typename Org, typename KeyTag = AnyFederationKey, typename Ctx, typename CoordEndpoint>
     requires CtxFitsFederation<Ctx>
 [[nodiscard]] constexpr auto mint_coord(
-    Ctx const& ctx,
-    CoordEndpoint&& coord_endpoint,
-    ::crucible::safety::SharedPermission<
-        ::crucible::permissions::tag::FederatedPeer<Org>> /*admittance*/) noexcept {
+    Ctx const& ctx, CoordEndpoint&& coord_endpoint,
+    ::crucible::safety::SharedPermission<::crucible::permissions::tag::FederatedPeer<Org>> /*admittance*/) noexcept {
     using ctx_row = typename Ctx::row_type;
-    using offending =
-        ::crucible::effects::row_difference_t<federation_required_row, ctx_row>;
-    CRUCIBLE_ROW_MISMATCH_ASSERT(
-        (::crucible::decide::row_subset<federation_required_row, ctx_row>()),
-        EffectRowMismatch,
-        &federation_mint_boundary,
-        ctx_row,
-        federation_required_row,
-        offending);
+    using offending = ::crucible::effects::row_difference_t<federation_required_row, ctx_row>;
+    CRUCIBLE_ROW_MISMATCH_ASSERT((::crucible::decide::row_subset<federation_required_row, ctx_row>()),
+                                 EffectRowMismatch, &federation_mint_boundary, ctx_row, federation_required_row,
+                                 offending);
     return ::crucible::safety::proto::mint_permissioned_session<CoordProto<KeyTag>>(
         ctx, std::forward<CoordEndpoint>(coord_endpoint));
 }

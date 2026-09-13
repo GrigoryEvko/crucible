@@ -194,10 +194,7 @@ struct is_subtype_sync_structural<Continue, Continue> : std::true_type {};
 // is expected."  Covariant in continuation.
 template <typename P1, typename R1, typename P2, typename R2>
 struct is_subtype_sync_structural<Send<P1, R1>, Send<P2, R2>>
-    : std::bool_constant<
-          is_subsort_v<P1, P2> &&
-          is_subtype_sync_structural<R1, R2>::value
-      > {};
+    : std::bool_constant<is_subsort_v<P1, P2> && is_subtype_sync_structural<R1, R2>::value> {};
 
 // [sub-recv]  Recv<P₁, R₁> ⩽ Recv<P₂, R₂>  ⇔  P₂ ⩽ P₁ ∧ R₁ ⩽ R₂
 //
@@ -206,10 +203,7 @@ struct is_subtype_sync_structural<Send<P1, R1>, Send<P2, R2>>
 // Covariant in continuation.
 template <typename P1, typename R1, typename P2, typename R2>
 struct is_subtype_sync_structural<Recv<P1, R1>, Recv<P2, R2>>
-    : std::bool_constant<
-          is_subsort_v<P2, P1> &&
-          is_subtype_sync_structural<R1, R2>::value
-      > {};
+    : std::bool_constant<is_subsort_v<P2, P1> && is_subtype_sync_structural<R1, R2>::value> {};
 
 // [sub-loop]  Loop<B₁> ⩽ Loop<B₂>  ⇔  B₁ ⩽ B₂  (coinductive)
 //
@@ -219,8 +213,7 @@ struct is_subtype_sync_structural<Recv<P1, R1>, Recv<P2, R2>>
 // rule above.  No explicit fixed-point tracking needed: the framework
 // metafunction recursion IS the coinductive proof.
 template <typename B1, typename B2>
-struct is_subtype_sync_structural<Loop<B1>, Loop<B2>>
-    : is_subtype_sync_structural<B1, B2> {};
+struct is_subtype_sync_structural<Loop<B1>, Loop<B2>> : is_subtype_sync_structural<B1, B2> {};
 
 // [sub-vendor]  VendorPinned<V1, P1> ⩽ VendorPinned<V2, P2>
 // iff V1 satisfies V2 under VendorLattice and P1 ⩽ P2.  Direction
@@ -228,14 +221,9 @@ struct is_subtype_sync_structural<Loop<B1>, Loop<B2>>
 // can stand in for an NV-required one, but an NV-pinned protocol
 // cannot stand in for an AMD or Portable-required protocol.
 template <VendorBackend V1, typename P1, VendorBackend V2, typename P2>
-struct is_subtype_sync_structural<VendorPinned<V1, P1>,
-                                  VendorPinned<V2, P2>>
-    : std::bool_constant<
-          V1 != VendorBackend::None &&
-          V2 != VendorBackend::None &&
-          VendorLattice::leq(V2, V1) &&
-          is_subtype_sync_structural<P1, P2>::value
-      > {};
+struct is_subtype_sync_structural<VendorPinned<V1, P1>, VendorPinned<V2, P2>>
+    : std::bool_constant<V1 != VendorBackend::None && V2 != VendorBackend::None && VendorLattice::leq(V2, V1)
+                         && is_subtype_sync_structural<P1, P2>::value> {};
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Select / Offer: positional-prefix subtyping ────────────────────
@@ -246,27 +234,20 @@ namespace detail::subtype {
 // Check that each index's subtype relation holds between corresponding
 // positions of two branch tuples.  Fold over an index_sequence.
 template <typename BranchesA, typename BranchesB, std::size_t... Is>
-[[nodiscard]] constexpr bool prefix_subtypes(std::index_sequence<Is...>) noexcept
-{
-    return (is_subtype_sync_structural<
-                std::tuple_element_t<Is, BranchesA>,
-                std::tuple_element_t<Is, BranchesB>
-            >::value && ...);
+[[nodiscard]] constexpr bool prefix_subtypes(std::index_sequence<Is...>) noexcept {
+    return (is_subtype_sync_structural<std::tuple_element_t<Is, BranchesA>, std::tuple_element_t<Is, BranchesB>>::value
+            && ...);
 }
 
 // Two-tier check: size gate first (constexpr short-circuit safe), then
 // prefix-subtypes (only when size gate passes — avoids instantiating
 // std::tuple_element_t with an out-of-range index).
-template <bool SizeOK, std::size_t PrefixLen,
-          typename BranchesA, typename BranchesB>
+template <bool SizeOK, std::size_t PrefixLen, typename BranchesA, typename BranchesB>
 struct gated_prefix_check : std::false_type {};
 
 template <std::size_t PrefixLen, typename BranchesA, typename BranchesB>
 struct gated_prefix_check<true, PrefixLen, BranchesA, BranchesB>
-    : std::bool_constant<
-          prefix_subtypes<BranchesA, BranchesB>(
-              std::make_index_sequence<PrefixLen>{})
-      > {};
+    : std::bool_constant<prefix_subtypes<BranchesA, BranchesB>(std::make_index_sequence<PrefixLen>{})> {};
 
 }  // namespace detail::subtype
 
@@ -280,12 +261,8 @@ struct gated_prefix_check<true, PrefixLen, BranchesA, BranchesB>
 // that doesn't exist in the supertype (the n ≤ m bound).
 template <typename... B1s, typename... B2s>
 struct is_subtype_sync_structural<Select<B1s...>, Select<B2s...>>
-    : detail::subtype::gated_prefix_check<
-          (sizeof...(B1s) <= sizeof...(B2s)),
-          sizeof...(B1s),
-          std::tuple<B1s...>,
-          std::tuple<B2s...>
-      > {};
+    : detail::subtype::gated_prefix_check<(sizeof...(B1s) <= sizeof...(B2s)), sizeof...(B1s), std::tuple<B1s...>,
+                                          std::tuple<B2s...>> {};
 
 // [sub-offer]  Offer<B₁,…,Bₙ> ⩽ Offer<C₁,…,Cₘ>
 //                ⇔ n ≥ m ∧ ∀ i ∈ [0, m): Bᵢ ⩽ Cᵢ
@@ -298,20 +275,15 @@ struct is_subtype_sync_structural<Select<B1s...>, Select<B2s...>>
 // and are therefore safe.
 template <typename... B1s, typename... B2s>
 struct is_subtype_sync_structural<Offer<B1s...>, Offer<B2s...>>
-    : detail::subtype::gated_prefix_check<
-          (sizeof...(B1s) >= sizeof...(B2s)),
-          sizeof...(B2s),
-          std::tuple<B1s...>,
-          std::tuple<B2s...>
-      > {};
+    : detail::subtype::gated_prefix_check<(sizeof...(B1s) >= sizeof...(B2s)), sizeof...(B2s), std::tuple<B1s...>,
+                                          std::tuple<B2s...>> {};
 
 namespace detail::subtype {
 
 template <typename ProvidedPayload, typename RequiredPayload>
 inline constexpr bool payload_grade_satisfies_v =
-    ::crucible::safety::proto::detail::session_grade::satisfies_v<
-        payload_grade_t<ProvidedPayload>,
-        payload_grade_t<RequiredPayload>>;
+    ::crucible::safety::proto::detail::session_grade::satisfies_v<payload_grade_t<ProvidedPayload>,
+                                                                  payload_grade_t<RequiredPayload>>;
 
 template <typename T, typename U>
 struct protocol_grade_satisfies : std::false_type {};
@@ -324,87 +296,55 @@ struct protocol_grade_satisfies<Continue, Continue> : std::true_type {};
 
 template <typename P1, typename R1, typename P2, typename R2>
 struct protocol_grade_satisfies<Send<P1, R1>, Send<P2, R2>>
-    : std::bool_constant<
-          payload_grade_satisfies_v<P1, P2> &&
-          protocol_grade_satisfies<R1, R2>::value
-      > {};
+    : std::bool_constant<payload_grade_satisfies_v<P1, P2> && protocol_grade_satisfies<R1, R2>::value> {};
 
 template <typename P1, typename R1, typename P2, typename R2>
 struct protocol_grade_satisfies<Recv<P1, R1>, Recv<P2, R2>>
-    : std::bool_constant<
-          payload_grade_satisfies_v<P2, P1> &&
-          protocol_grade_satisfies<R1, R2>::value
-      > {};
+    : std::bool_constant<payload_grade_satisfies_v<P2, P1> && protocol_grade_satisfies<R1, R2>::value> {};
 
 template <typename B1, typename B2>
-struct protocol_grade_satisfies<Loop<B1>, Loop<B2>>
-    : protocol_grade_satisfies<B1, B2> {};
+struct protocol_grade_satisfies<Loop<B1>, Loop<B2>> : protocol_grade_satisfies<B1, B2> {};
 
 template <VendorBackend V1, typename P1, VendorBackend V2, typename P2>
 struct protocol_grade_satisfies<VendorPinned<V1, P1>, VendorPinned<V2, P2>>
-    : std::bool_constant<
-          VendorLattice::leq(V2, V1) &&
-          protocol_grade_satisfies<P1, P2>::value
-      > {};
+    : std::bool_constant<VendorLattice::leq(V2, V1) && protocol_grade_satisfies<P1, P2>::value> {};
 
 template <typename BranchesA, typename BranchesB, std::size_t... Is>
-[[nodiscard]] constexpr bool prefix_grade_satisfies(
-    std::index_sequence<Is...>) noexcept
-{
-    return (protocol_grade_satisfies<
-                std::tuple_element_t<Is, BranchesA>,
-                std::tuple_element_t<Is, BranchesB>
-            >::value && ...);
+[[nodiscard]] constexpr bool prefix_grade_satisfies(std::index_sequence<Is...>) noexcept {
+    return (protocol_grade_satisfies<std::tuple_element_t<Is, BranchesA>, std::tuple_element_t<Is, BranchesB>>::value
+            && ...);
 }
 
-template <bool SizeOK, std::size_t PrefixLen,
-          typename BranchesA, typename BranchesB>
+template <bool SizeOK, std::size_t PrefixLen, typename BranchesA, typename BranchesB>
 struct gated_grade_prefix_check : std::false_type {};
 
 template <std::size_t PrefixLen, typename BranchesA, typename BranchesB>
 struct gated_grade_prefix_check<true, PrefixLen, BranchesA, BranchesB>
-    : std::bool_constant<
-          prefix_grade_satisfies<BranchesA, BranchesB>(
-              std::make_index_sequence<PrefixLen>{})
-      > {};
+    : std::bool_constant<prefix_grade_satisfies<BranchesA, BranchesB>(std::make_index_sequence<PrefixLen>{})> {};
 
 template <typename... B1s, typename... B2s>
 struct protocol_grade_satisfies<Select<B1s...>, Select<B2s...>>
-    : gated_grade_prefix_check<
-          (sizeof...(B1s) <= sizeof...(B2s)),
-          sizeof...(B1s),
-          std::tuple<B1s...>,
-          std::tuple<B2s...>
-      > {};
+    : gated_grade_prefix_check<(sizeof...(B1s) <= sizeof...(B2s)), sizeof...(B1s), std::tuple<B1s...>,
+                               std::tuple<B2s...>> {};
 
 template <typename... B1s, typename... B2s>
 struct protocol_grade_satisfies<Offer<B1s...>, Offer<B2s...>>
-    : gated_grade_prefix_check<
-          (sizeof...(B1s) >= sizeof...(B2s)),
-          sizeof...(B2s),
-          std::tuple<B1s...>,
-          std::tuple<B2s...>
-      > {};
+    : gated_grade_prefix_check<(sizeof...(B1s) >= sizeof...(B2s)), sizeof...(B2s), std::tuple<B1s...>,
+                               std::tuple<B2s...>> {};
 
 template <bool StructuralOK, typename T, typename U>
 struct grade_filtered_subtype : std::false_type {};
 
 template <typename T, typename U>
-struct grade_filtered_subtype<true, T, U>
-    : protocol_grade_satisfies<T, U> {};
+struct grade_filtered_subtype<true, T, U> : protocol_grade_satisfies<T, U> {};
 
 }  // namespace detail::subtype
 
 template <typename T, typename U>
-struct is_subtype_sync
-    : detail::subtype::grade_filtered_subtype<
-          is_subtype_sync_structural<T, U>::value,
-          T,
-          U> {};
+struct is_subtype_sync : detail::subtype::grade_filtered_subtype<is_subtype_sync_structural<T, U>::value, T, U> {};
 
 template <typename Provided, typename Required>
-inline constexpr bool protocol_grade_satisfies_v =
-    detail::subtype::protocol_grade_satisfies<Provided, Required>::value;
+inline constexpr bool protocol_grade_satisfies_v = detail::subtype::protocol_grade_satisfies<Provided, Required>::value;
 
 // Public alias
 template <typename T, typename U>
@@ -436,34 +376,32 @@ concept SubtypeSync = is_subtype_sync_v<T, U>;
 // diagnostic names T and U via the template-instantiation context.
 template <typename T, typename U>
 consteval void assert_subtype_sync() noexcept {
-    static_assert(is_subtype_sync_v<T, U>,
-        "crucible::session::diagnostic [SubtypeMismatch]: "
-        "assert_subtype_sync: T is not a synchronous subtype of U.  "
-        "The six Gay-Hole rules are documented at the top of "
-        "SessionSubtype.h.  Common causes: shape mismatch "
-        "(Send vs Recv, Select vs Offer); too many/too few branches "
-        "(subtype has more Select branches than supertype, or fewer "
-        "Offer branches); payload types not related via is_subsort "
-        "specialisation; [ProtocolGradeMismatch] the structural "
-        "payload relation was admitted but the ProductLattice grade "
-        "filter rejected at least one Vendor, NumericalTier, "
-        "CipherTier, CrashClass, EpochVersioned, or NumaPlacement "
-        "axis.  Check the template-instantiation context for the "
-        "failing T and U.");
+    static_assert(is_subtype_sync_v<T, U>, "crucible::session::diagnostic [SubtypeMismatch]: "
+                                           "assert_subtype_sync: T is not a synchronous subtype of U.  "
+                                           "The six Gay-Hole rules are documented at the top of "
+                                           "SessionSubtype.h.  Common causes: shape mismatch "
+                                           "(Send vs Recv, Select vs Offer); too many/too few branches "
+                                           "(subtype has more Select branches than supertype, or fewer "
+                                           "Offer branches); payload types not related via is_subsort "
+                                           "specialisation; [ProtocolGradeMismatch] the structural "
+                                           "payload relation was admitted but the ProductLattice grade "
+                                           "filter rejected at least one Vendor, NumericalTier, "
+                                           "CipherTier, CrashClass, EpochVersioned, or NumaPlacement "
+                                           "axis.  Check the template-instantiation context for the "
+                                           "failing T and U.");
 }
 
 template <typename T, typename U>
 consteval void assert_vendor_subtype_sync() noexcept {
-    static_assert(is_subtype_sync_v<T, U>,
-        "crucible::session::diagnostic [VendorCtx_Mismatch]: "
-        "assert_vendor_subtype_sync: T is not a vendor-compatible "
-        "synchronous subtype of U.  VendorPinned<V1, P1> may stand "
-        "where VendorPinned<V2, P2> is expected only when "
-        "VendorLattice::leq(V2, V1) holds and P1 is a synchronous "
-        "subtype of P2.  Distinct vendor-specific protocols such as "
-        "NV and AMD are intentionally incomparable; use "
-        "VendorPinned<Portable, P> only for genuinely cross-vendor "
-        "protocols.");
+    static_assert(is_subtype_sync_v<T, U>, "crucible::session::diagnostic [VendorCtx_Mismatch]: "
+                                           "assert_vendor_subtype_sync: T is not a vendor-compatible "
+                                           "synchronous subtype of U.  VendorPinned<V1, P1> may stand "
+                                           "where VendorPinned<V2, P2> is expected only when "
+                                           "VendorLattice::leq(V2, V1) holds and P1 is a synchronous "
+                                           "subtype of P2.  Distinct vendor-specific protocols such as "
+                                           "NV and AMD are intentionally incomparable; use "
+                                           "VendorPinned<Portable, P> only for genuinely cross-vendor "
+                                           "protocols.");
 }
 
 // ─── Protocol equivalence ──────────────────────────────────────────
@@ -479,8 +417,7 @@ consteval void assert_vendor_subtype_sync() noexcept {
 //   * proving two independently-derived protocol definitions coincide
 
 template <typename T, typename U>
-inline constexpr bool equivalent_sync_v =
-    is_subtype_sync_v<T, U> && is_subtype_sync_v<U, T>;
+inline constexpr bool equivalent_sync_v = is_subtype_sync_v<T, U> && is_subtype_sync_v<U, T>;
 
 template <typename T, typename U>
 concept EquivalentSync = equivalent_sync_v<T, U>;
@@ -505,8 +442,7 @@ concept EquivalentSync = equivalent_sync_v<T, U>;
 // EquivalentSync concept when equivalence is an acceptable outcome.
 
 template <typename T, typename U>
-inline constexpr bool is_strict_subtype_sync_v =
-    is_subtype_sync_v<T, U> && !is_subtype_sync_v<U, T>;
+inline constexpr bool is_strict_subtype_sync_v = is_subtype_sync_v<T, U> && !is_subtype_sync_v<U, T>;
 
 template <typename T, typename U>
 concept StrictSubtypeSync = is_strict_subtype_sync_v<T, U>;
@@ -526,16 +462,12 @@ struct subtype_chain_impl : std::true_type {};
 
 template <typename A, typename B, typename... Rest>
 struct subtype_chain_impl<A, B, Rest...>
-    : std::bool_constant<
-          is_subtype_sync_v<A, B> &&
-          subtype_chain_impl<B, Rest...>::value
-      > {};
+    : std::bool_constant<is_subtype_sync_v<A, B> && subtype_chain_impl<B, Rest...>::value> {};
 
 }  // namespace detail::subtype
 
 template <typename... Ts>
-inline constexpr bool subtype_chain_v =
-    detail::subtype::subtype_chain_impl<Ts...>::value;
+inline constexpr bool subtype_chain_v = detail::subtype::subtype_chain_impl<Ts...>::value;
 
 // ─── Client / server compatibility ──────────────────────────────────
 //
@@ -546,12 +478,10 @@ inline constexpr bool subtype_chain_v =
 // to be a safe substitute.)
 
 template <typename ClientProto, typename ServerProto>
-concept CompatibleClient =
-    is_subtype_sync_v<ClientProto, dual_of_t<ServerProto>>;
+concept CompatibleClient = is_subtype_sync_v<ClientProto, dual_of_t<ServerProto>>;
 
 template <typename ServerProto, typename ClientProto>
-concept CompatibleServer =
-    is_subtype_sync_v<ServerProto, dual_of_t<ClientProto>>;
+concept CompatibleServer = is_subtype_sync_v<ServerProto, dual_of_t<ClientProto>>;
 
 // ─── Protocol-evolution helper ──────────────────────────────────────
 //
@@ -566,16 +496,15 @@ concept CompatibleServer =
 
 template <typename OldProto, typename NewProto>
 consteval void check_protocol_evolution() noexcept {
-    static_assert(is_subtype_sync_v<NewProto, OldProto>,
-        "crucible::session::diagnostic [SubtypeMismatch]: "
-        "check_protocol_evolution: NewProto is not a safe refinement "
-        "of OldProto.  A valid refinement may: narrow a Select (pick "
-        "fewer branches), widen an Offer (handle more branches), or "
-        "restrict a payload type via is_subsort specialisation.  It "
-        "may NOT: add a Select branch, remove an Offer branch, change "
-        "Send<->Recv, swap Select<->Offer, or trigger "
-        "[ProtocolGradeMismatch] by weakening any ProductLattice "
-        "grade axis.");
+    static_assert(is_subtype_sync_v<NewProto, OldProto>, "crucible::session::diagnostic [SubtypeMismatch]: "
+                                                         "check_protocol_evolution: NewProto is not a safe refinement "
+                                                         "of OldProto.  A valid refinement may: narrow a Select (pick "
+                                                         "fewer branches), widen an Offer (handle more branches), or "
+                                                         "restrict a payload type via is_subsort specialisation.  It "
+                                                         "may NOT: add a Select branch, remove an Offer branch, change "
+                                                         "Send<->Recv, swap Select<->Offer, or trigger "
+                                                         "[ProtocolGradeMismatch] by weakening any ProductLattice "
+                                                         "grade axis.");
 }
 
 // ─── Equivalence + compatibility assertion helpers ────────────────
@@ -587,42 +516,41 @@ consteval void check_protocol_evolution() noexcept {
 
 template <typename T, typename U>
 consteval void assert_equivalent_sync() noexcept {
-    static_assert(equivalent_sync_v<T, U>,
-        "crucible::session::diagnostic [SubtypeMismatch]: "
-        "assert_equivalent_sync: T and U are not synchronously "
-        "equivalent (not bidirectional subtypes).  Both "
-        "is_subtype_sync_v<T, U> and is_subtype_sync_v<U, T> must hold. "
-        "Common causes: asymmetric Select/Offer branch counts; "
-        "differing payload types; mismatched Loop structure.  See the "
-        "six Gay-Hole rules at the top of SessionSubtype.h for the "
-        "positive direction of each.");
+    static_assert(equivalent_sync_v<T, U>, "crucible::session::diagnostic [SubtypeMismatch]: "
+                                           "assert_equivalent_sync: T and U are not synchronously "
+                                           "equivalent (not bidirectional subtypes).  Both "
+                                           "is_subtype_sync_v<T, U> and is_subtype_sync_v<U, T> must hold. "
+                                           "Common causes: asymmetric Select/Offer branch counts; "
+                                           "differing payload types; mismatched Loop structure.  See the "
+                                           "six Gay-Hole rules at the top of SessionSubtype.h for the "
+                                           "positive direction of each.");
 }
 
 template <typename ClientProto, typename ServerProto>
 consteval void assert_compatible_client() noexcept {
     static_assert(CompatibleClient<ClientProto, ServerProto>,
-        "crucible::session::diagnostic [SubtypeMismatch]: "
-        "assert_compatible_client: ClientProto is not a synchronous "
-        "subtype of dual(ServerProto).  A client may safely talk to a "
-        "server only when the client's protocol is a subtype of the "
-        "server's DUAL (the server offers dual(ServerProto); the "
-        "client must be a sub-protocol of that).  Common causes: "
-        "forgot to dualise; both written from the same perspective "
-        "(e.g., both send-first); mismatched payload types; client's "
-        "Select picks branches the server's Offer does not provide.");
+                  "crucible::session::diagnostic [SubtypeMismatch]: "
+                  "assert_compatible_client: ClientProto is not a synchronous "
+                  "subtype of dual(ServerProto).  A client may safely talk to a "
+                  "server only when the client's protocol is a subtype of the "
+                  "server's DUAL (the server offers dual(ServerProto); the "
+                  "client must be a sub-protocol of that).  Common causes: "
+                  "forgot to dualise; both written from the same perspective "
+                  "(e.g., both send-first); mismatched payload types; client's "
+                  "Select picks branches the server's Offer does not provide.");
 }
 
 template <typename ServerProto, typename ClientProto>
 consteval void assert_compatible_server() noexcept {
     static_assert(CompatibleServer<ServerProto, ClientProto>,
-        "crucible::session::diagnostic [SubtypeMismatch]: "
-        "assert_compatible_server: ServerProto is not a synchronous "
-        "subtype of dual(ClientProto).  Symmetric to "
-        "assert_compatible_client — see its diagnostic for the "
-        "structural rule.  Typically ServerProto = dual(ClientProto) "
-        "holds and this assertion is trivially true; when it fails, "
-        "one side has been refactored in a way that breaks the "
-        "symmetric sub-protocol relation.");
+                  "crucible::session::diagnostic [SubtypeMismatch]: "
+                  "assert_compatible_server: ServerProto is not a synchronous "
+                  "subtype of dual(ClientProto).  Symmetric to "
+                  "assert_compatible_client — see its diagnostic for the "
+                  "structural rule.  Typically ServerProto = dual(ClientProto) "
+                  "holds and this assertion is trivially true; when it fails, "
+                  "one side has been refactored in a way that breaks the "
+                  "symmetric sub-protocol relation.");
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -643,23 +571,17 @@ static_assert(is_subtype_sync_v<End, End>);
 static_assert(is_subtype_sync_v<Continue, Continue>);
 static_assert(is_subtype_sync_v<Send<int, End>, Send<int, End>>);
 static_assert(is_subtype_sync_v<Recv<int, End>, Recv<int, End>>);
-static_assert(is_subtype_sync_v<Loop<Send<int, Continue>>,
-                                 Loop<Send<int, Continue>>>);
+static_assert(is_subtype_sync_v<Loop<Send<int, Continue>>, Loop<Send<int, Continue>>>);
 using NvSendInt = VendorPinned<VendorBackend::NV, Send<int, End>>;
 using AmdSendInt = VendorPinned<VendorBackend::AMD, Send<int, End>>;
-using PortableSendInt =
-    VendorPinned<VendorBackend::Portable, Send<int, End>>;
+using PortableSendInt = VendorPinned<VendorBackend::Portable, Send<int, End>>;
 static_assert(is_subtype_sync_v<NvSendInt, NvSendInt>);
 static_assert(is_subtype_sync_v<PortableSendInt, NvSendInt>);
 static_assert(!is_subtype_sync_v<NvSendInt, AmdSendInt>);
 static_assert(!is_subtype_sync_v<AmdSendInt, NvSendInt>);
 static_assert(!is_subtype_sync_v<NvSendInt, PortableSendInt>);
-static_assert(is_subtype_sync_v<
-    Select<Send<int, End>, Recv<bool, End>>,
-    Select<Send<int, End>, Recv<bool, End>>>);
-static_assert(is_subtype_sync_v<
-    Offer<Recv<int, End>, Send<bool, End>>,
-    Offer<Recv<int, End>, Send<bool, End>>>);
+static_assert(is_subtype_sync_v<Select<Send<int, End>, Recv<bool, End>>, Select<Send<int, End>, Recv<bool, End>>>);
+static_assert(is_subtype_sync_v<Offer<Recv<int, End>, Send<bool, End>>, Offer<Recv<int, End>, Send<bool, End>>>);
 
 // ─── Shape mismatches: always false ────────────────────────────────
 
@@ -675,12 +597,11 @@ static_assert(!is_subtype_sync_v<Continue, End>);
 // ─── Send: covariant in continuation ───────────────────────────────
 
 // Same payload, subtype continuation (via Select narrowing below).
-struct PingReq  {};
-struct StopReq  {};
+struct PingReq {};
+struct StopReq {};
 
-static_assert(is_subtype_sync_v<
-    Send<int, Select<Send<PingReq, End>>>,
-    Send<int, Select<Send<PingReq, End>, Send<StopReq, End>>>>);
+static_assert(is_subtype_sync_v<Send<int, Select<Send<PingReq, End>>>,
+                                Send<int, Select<Send<PingReq, End>, Send<StopReq, End>>>>);
 
 // ─── Recv: contravariant in payload (at value-type level) ──────────
 
@@ -688,16 +609,13 @@ static_assert(is_subtype_sync_v<
 // is identity.  Cov / contra is therefore equivalent to "same payload"
 // — we test by demonstrating shape-level recursion passes even when
 // the continuation narrows.
-static_assert(is_subtype_sync_v<
-    Recv<int, Select<Send<PingReq, End>>>,
-    Recv<int, Select<Send<PingReq, End>, Send<StopReq, End>>>>);
+static_assert(is_subtype_sync_v<Recv<int, Select<Send<PingReq, End>>>,
+                                Recv<int, Select<Send<PingReq, End>, Send<StopReq, End>>>>);
 
 // ─── Select narrowing (the subtype commits to fewer options) ──────
 
 // Subtype has 1 branch, supertype has 2 — the subtype picks a subset.
-static_assert(is_subtype_sync_v<
-    Select<Send<PingReq, End>>,
-    Select<Send<PingReq, End>, Send<StopReq, End>>>);
+static_assert(is_subtype_sync_v<Select<Send<PingReq, End>>, Select<Send<PingReq, End>, Send<StopReq, End>>>);
 
 // Subtype with 0 branches is a (vacuous) subtype of any Select.
 // (Empty Select is syntactically legal but rare; we handle it
@@ -707,23 +625,18 @@ static_assert(is_subtype_sync_v<Select<>, Select<Send<PingReq, End>>>);
 
 // Subtype with MORE branches is NOT a subtype (would pick a branch
 // unknown to the supertype).
-static_assert(!is_subtype_sync_v<
-    Select<Send<PingReq, End>, Send<StopReq, End>>,
-    Select<Send<PingReq, End>>>);
+static_assert(!is_subtype_sync_v<Select<Send<PingReq, End>, Send<StopReq, End>>, Select<Send<PingReq, End>>>);
 
 // ─── Offer widening (the subtype handles more options) ─────────────
 
 // Subtype has 3 branches, supertype has 2 — subtype accepts any peer
 // choice of the first 2 plus a third unreachable one.
-static_assert(is_subtype_sync_v<
-    Offer<Recv<PingReq, End>, Recv<StopReq, End>, End>,
-    Offer<Recv<PingReq, End>, Recv<StopReq, End>>>);
+static_assert(is_subtype_sync_v<Offer<Recv<PingReq, End>, Recv<StopReq, End>, End>,
+                                Offer<Recv<PingReq, End>, Recv<StopReq, End>>>);
 
 // Subtype with FEWER branches is NOT a subtype (peer might pick a
 // branch the subtype doesn't handle).
-static_assert(!is_subtype_sync_v<
-    Offer<Recv<PingReq, End>>,
-    Offer<Recv<PingReq, End>, Recv<StopReq, End>>>);
+static_assert(!is_subtype_sync_v<Offer<Recv<PingReq, End>>, Offer<Recv<PingReq, End>, Recv<StopReq, End>>>);
 
 // Subtype with 0 branches is NOT a subtype of any non-empty Offer.
 static_assert(!is_subtype_sync_v<Offer<>, Offer<Recv<PingReq, End>>>);
@@ -734,14 +647,11 @@ static_assert(is_subtype_sync_v<Offer<>, Offer<>>);
 // ─── Loop coinduction ──────────────────────────────────────────────
 
 // Same body: reflexive.
-static_assert(is_subtype_sync_v<
-    Loop<Send<int, Continue>>,
-    Loop<Send<int, Continue>>>);
+static_assert(is_subtype_sync_v<Loop<Send<int, Continue>>, Loop<Send<int, Continue>>>);
 
 // Narrowing inside Loop: the body's Select narrows.
-static_assert(is_subtype_sync_v<
-    Loop<Select<Send<PingReq, Continue>>>,
-    Loop<Select<Send<PingReq, Continue>, Send<StopReq, End>>>>);
+static_assert(is_subtype_sync_v<Loop<Select<Send<PingReq, Continue>>>,
+                                Loop<Select<Send<PingReq, Continue>, Send<StopReq, End>>>>);
 
 // Continue alone is a subtype of Continue (coinductive hypothesis).
 static_assert(is_subtype_sync_v<Continue, Continue>);
@@ -751,59 +661,46 @@ static_assert(is_subtype_sync_v<Continue, Continue>);
 // Nested loops are well-typed; the inner Continue refers to the
 // innermost Loop.  Subtype relation holds if every corresponding
 // combinator pair is related.
-static_assert(is_subtype_sync_v<
-    Loop<Loop<Send<int, Continue>>>,
-    Loop<Loop<Send<int, Continue>>>>);
+static_assert(is_subtype_sync_v<Loop<Loop<Send<int, Continue>>>, Loop<Loop<Send<int, Continue>>>>);
 
 // ─── Protocol evolution (v2 is subtype of v1) ──────────────────────
 
 namespace proto_evolution_example {
-    struct Req  {};
-    struct Resp {};
-    struct CloseCmd {};
+struct Req {};
+struct Resp {};
+struct CloseCmd {};
 
-    // v1 — server offers three request types
-    using ServerV1 = Loop<Offer<
-        Recv<Req,      Send<Resp, Continue>>,
-        Recv<CloseCmd, End>,
-        Recv<PingReq,  Send<PingReq, Continue>>  // echo
-    >>;
+// v1 — server offers three request types
+using ServerV1 =
+    Loop<Offer<Recv<Req, Send<Resp, Continue>>, Recv<CloseCmd, End>, Recv<PingReq, Send<PingReq, Continue>>  // echo
+               >>;
 
-    // v2 — server offers an additional fourth request type (StopReq
-    // returning Resp then looping).  v2 HANDLES STRICTLY MORE — it
-    // is a subtype of v1 (per Offer widening).
-    using ServerV2 = Loop<Offer<
-        Recv<Req,      Send<Resp, Continue>>,
-        Recv<CloseCmd, End>,
-        Recv<PingReq,  Send<PingReq, Continue>>,
-        Recv<StopReq,  Send<Resp, End>>
-    >>;
+// v2 — server offers an additional fourth request type (StopReq
+// returning Resp then looping).  v2 HANDLES STRICTLY MORE — it
+// is a subtype of v1 (per Offer widening).
+using ServerV2 = Loop<Offer<Recv<Req, Send<Resp, Continue>>, Recv<CloseCmd, End>,
+                            Recv<PingReq, Send<PingReq, Continue>>, Recv<StopReq, Send<Resp, End>>>>;
 
-    static_assert(is_subtype_sync_v<ServerV2, ServerV1>);
+static_assert(is_subtype_sync_v<ServerV2, ServerV1>);
 
-    // The reverse is NOT a subtype: v1 doesn't handle StopReq.
-    static_assert(!is_subtype_sync_v<ServerV1, ServerV2>);
-}
+// The reverse is NOT a subtype: v1 doesn't handle StopReq.
+static_assert(!is_subtype_sync_v<ServerV1, ServerV2>);
+}  // namespace proto_evolution_example
 
 // ─── MPMC protocol shape + subtype for producer narrowing ──────────
 
 namespace mpmc_subtype_example {
-    struct Job {};
+struct Job {};
 
-    using ProducerFull = Loop<Select<
-        Send<Job,    Continue>,
-        Send<Job,    Continue>,    // redundant branch (for test purposes)
-        End
-    >>;
+using ProducerFull = Loop<Select<Send<Job, Continue>, Send<Job, Continue>,  // redundant branch (for test purposes)
+                                 End>>;
 
-    using ProducerNarrow = Loop<Select<
-        Send<Job,    Continue>
-    >>;
+using ProducerNarrow = Loop<Select<Send<Job, Continue>>>;
 
-    // Narrow producer is a subtype of full (picks from fewer branches).
-    static_assert(is_subtype_sync_v<ProducerNarrow, ProducerFull>);
-    static_assert(!is_subtype_sync_v<ProducerFull, ProducerNarrow>);
-}
+// Narrow producer is a subtype of full (picks from fewer branches).
+static_assert(is_subtype_sync_v<ProducerNarrow, ProducerFull>);
+static_assert(!is_subtype_sync_v<ProducerFull, ProducerNarrow>);
+}  // namespace mpmc_subtype_example
 
 // ─── Subsort specialisation smoke test ─────────────────────────────
 
@@ -824,9 +721,7 @@ struct DerivedInt {};  // hypothetically a subtype of BaseInt
 // test fixture; real users specialise at the point of use.
 namespace crucible::safety::proto {
 template <>
-struct is_subsort<detail::subtype_self_test::DerivedInt,
-                  detail::subtype_self_test::BaseInt>
-    : std::true_type {};
+struct is_subsort<detail::subtype_self_test::DerivedInt, detail::subtype_self_test::BaseInt> : std::true_type {};
 }  // namespace crucible::safety::proto
 
 namespace crucible::safety::proto::detail::subtype_self_test {
@@ -867,13 +762,11 @@ static_assert(is_subtype_sync_v<dual_of_t<DO2>, dual_of_t<DO1>>);
 
 // Send-payload covariance dualizes to Recv-payload contravariance.
 static_assert(is_subtype_sync_v<Send<DerivedInt, End>, Send<BaseInt, End>>);
-static_assert(is_subtype_sync_v<dual_of_t<Send<BaseInt, End>>,
-                                 dual_of_t<Send<DerivedInt, End>>>);
+static_assert(is_subtype_sync_v<dual_of_t<Send<BaseInt, End>>, dual_of_t<Send<DerivedInt, End>>>);
 
 // Loop preserves dualization contravariance (recursive witness).
 using DLoopS1 = Loop<Send<int, Select<Send<PingReq, Continue>>>>;
-using DLoopS2 = Loop<Send<int, Select<Send<PingReq, Continue>,
-                                       Send<StopReq, End>>>>;
+using DLoopS2 = Loop<Send<int, Select<Send<PingReq, Continue>, Send<StopReq, End>>>>;
 static_assert(is_subtype_sync_v<DLoopS1, DLoopS2>);
 static_assert(is_subtype_sync_v<dual_of_t<DLoopS2>, dual_of_t<DLoopS1>>);
 
@@ -885,15 +778,13 @@ static_assert(is_subtype_sync_v<dual_of_t<DLoopS2>, dual_of_t<DLoopS1>>);
 // Three-level Select narrowing chain
 using TSelectT = Select<Send<PingReq, End>>;
 using TSelectU = Select<Send<PingReq, End>, Send<StopReq, End>>;
-using TSelectV = Select<Send<PingReq, End>, Send<StopReq, End>,
-                         Recv<PingReq, End>>;
+using TSelectV = Select<Send<PingReq, End>, Send<StopReq, End>, Recv<PingReq, End>>;
 static_assert(is_subtype_sync_v<TSelectT, TSelectU>);
 static_assert(is_subtype_sync_v<TSelectU, TSelectV>);
 static_assert(is_subtype_sync_v<TSelectT, TSelectV>);  // transitivity
 
 // Three-level Offer widening chain (reverse direction, more branches wins)
-using TOfferW = Offer<Recv<PingReq, End>, Recv<StopReq, End>,
-                       Send<PingReq, End>>;
+using TOfferW = Offer<Recv<PingReq, End>, Recv<StopReq, End>, Send<PingReq, End>>;
 using TOfferX = Offer<Recv<PingReq, End>, Recv<StopReq, End>>;
 using TOfferY = Offer<Recv<PingReq, End>>;
 static_assert(is_subtype_sync_v<TOfferW, TOfferX>);
@@ -927,7 +818,9 @@ static_assert(check_assert_subtype_sync());
 
 template <typename T, typename U>
     requires SubtypeSync<T, U>
-consteval bool requires_subtype() { return true; }
+consteval bool requires_subtype() {
+    return true;
+}
 
 static_assert(requires_subtype<DS1, DS2>());
 
@@ -939,11 +832,11 @@ static_assert(!is_strict_subtype_sync_v<Send<int, End>, Send<int, End>>);
 static_assert(!is_strict_subtype_sync_v<DS1, DS1>);
 
 // Narrower Select is a STRICT subtype of a wider Select.
-static_assert( is_strict_subtype_sync_v<DS1, DS2>);
+static_assert(is_strict_subtype_sync_v<DS1, DS2>);
 static_assert(!is_strict_subtype_sync_v<DS2, DS1>);  // wider is not a subtype
 
 // Wider Offer is a STRICT subtype of a narrower Offer.
-static_assert( is_strict_subtype_sync_v<DO1, DO2>);
+static_assert(is_strict_subtype_sync_v<DO1, DO2>);
 static_assert(!is_strict_subtype_sync_v<DO2, DO1>);
 
 // Shape-mismatched pairs are never subtypes in either direction.
@@ -953,7 +846,9 @@ static_assert(!is_strict_subtype_sync_v<Recv<int, End>, Send<int, End>>);
 // Concept form compiles at namespace scope.
 template <typename T, typename U>
     requires StrictSubtypeSync<T, U>
-consteval bool requires_strict_subtype() { return true; }
+consteval bool requires_strict_subtype() {
+    return true;
+}
 
 static_assert(requires_strict_subtype<DS1, DS2>());
 
@@ -969,10 +864,10 @@ static_assert(!equivalent_sync_v<DO1, DO2>);
 
 // ─── Subtype chain ────────────────────────────────────────────────
 
-static_assert( subtype_chain_v<TSelectT, TSelectU, TSelectV>);
-static_assert( subtype_chain_v<TOfferW,  TOfferX,  TOfferY>);
-static_assert( subtype_chain_v<End>);        // single element trivially chained
-static_assert( subtype_chain_v<End, End>);   // reflexive 2-chain
+static_assert(subtype_chain_v<TSelectT, TSelectU, TSelectV>);
+static_assert(subtype_chain_v<TOfferW, TOfferX, TOfferY>);
+static_assert(subtype_chain_v<End>);  // single element trivially chained
+static_assert(subtype_chain_v<End, End>);  // reflexive 2-chain
 
 // Wrong direction breaks the chain.
 static_assert(!subtype_chain_v<TSelectU, TSelectT, TSelectV>);
@@ -980,34 +875,32 @@ static_assert(!subtype_chain_v<TSelectU, TSelectT, TSelectV>);
 // ─── Client / server compatibility ────────────────────────────────
 
 namespace client_server_test {
-    struct Query {};
-    struct Reply {};
-    using ReqRespClient = Loop<Send<Query, Recv<Reply, Continue>>>;
-    using ReqRespServer = Loop<Recv<Query, Send<Reply, Continue>>>;
+struct Query {};
+struct Reply {};
+using ReqRespClient = Loop<Send<Query, Recv<Reply, Continue>>>;
+using ReqRespServer = Loop<Recv<Query, Send<Reply, Continue>>>;
 
-    // Server's dual is exactly the client's protocol (duality involution).
-    static_assert(std::is_same_v<dual_of_t<ReqRespServer>, ReqRespClient>);
+// Server's dual is exactly the client's protocol (duality involution).
+static_assert(std::is_same_v<dual_of_t<ReqRespServer>, ReqRespClient>);
 
-    // Standard compatibility: client is a subtype of server's dual.
-    static_assert( CompatibleClient<ReqRespClient, ReqRespServer>);
-    // And symmetrically for the server side.
-    static_assert( CompatibleServer<ReqRespServer, ReqRespClient>);
+// Standard compatibility: client is a subtype of server's dual.
+static_assert(CompatibleClient<ReqRespClient, ReqRespServer>);
+// And symmetrically for the server side.
+static_assert(CompatibleServer<ReqRespServer, ReqRespClient>);
 
-    // Using the server's protocol where the client is expected is a
-    // shape mismatch (Recv<Query, ...> at the head instead of
-    // Send<Query, ...>) — rejected at the concept level.
-    static_assert(!CompatibleClient<ReqRespServer, ReqRespServer>);
-    static_assert(!CompatibleServer<ReqRespClient, ReqRespClient>);
-}
+// Using the server's protocol where the client is expected is a
+// shape mismatch (Recv<Query, ...> at the head instead of
+// Send<Query, ...>) — rejected at the concept level.
+static_assert(!CompatibleClient<ReqRespServer, ReqRespServer>);
+static_assert(!CompatibleServer<ReqRespClient, ReqRespClient>);
+}  // namespace client_server_test
 
 // ─── Additional assertion-helper compile-tests ────────────────────
 
 consteval bool check_additional_asserts() {
     assert_equivalent_sync<DS1, DS1>();
-    assert_compatible_client<client_server_test::ReqRespClient,
-                              client_server_test::ReqRespServer>();
-    assert_compatible_server<client_server_test::ReqRespServer,
-                              client_server_test::ReqRespClient>();
+    assert_compatible_client<client_server_test::ReqRespClient, client_server_test::ReqRespServer>();
+    assert_compatible_server<client_server_test::ReqRespServer, client_server_test::ReqRespClient>();
     return true;
 }
 static_assert(check_additional_asserts());

@@ -177,7 +177,7 @@ using ::crucible::safety::proto::session_view_branch_count_v;
 namespace crucible::fixy::sess::view::v063_self_test {
 
 namespace proto = ::crucible::safety::proto;
-namespace saf   = ::crucible::safety;
+namespace saf = ::crucible::safety;
 
 // Fixture types — minimal session protocol shapes.
 struct FakeResource {};
@@ -185,25 +185,25 @@ struct Msg {};
 
 using SendProto = proto::Send<Msg, proto::End>;
 using RecvProto = proto::Recv<Msg, proto::End>;
-using EndProto  = proto::End;
+using EndProto = proto::End;
 
 using SendHandle = proto::SessionHandle<SendProto, FakeResource, void>;
 using RecvHandle = proto::SessionHandle<RecvProto, FakeResource, void>;
-using EndHandle  = proto::SessionHandle<EndProto,  FakeResource, void>;
+using EndHandle = proto::SessionHandle<EndProto, FakeResource, void>;
 
 // ── A. Position-tag identity reach ─────────────────────────────────
 // Every tag MUST alias the substrate tag exactly.  Empty marker-
 // struct identity is enforced via is_same_v.
-static_assert(std::is_same_v<AtSend,         proto::AtSend>);
-static_assert(std::is_same_v<AtRecv,         proto::AtRecv>);
-static_assert(std::is_same_v<AtSelect,       proto::AtSelect>);
-static_assert(std::is_same_v<AtOffer,        proto::AtOffer>);
-static_assert(std::is_same_v<AtEnd,          proto::AtEnd>);
-static_assert(std::is_same_v<AtStop,         proto::AtStop>);
-static_assert(std::is_same_v<AtTerminal,     proto::AtTerminal>);
+static_assert(std::is_same_v<AtSend, proto::AtSend>);
+static_assert(std::is_same_v<AtRecv, proto::AtRecv>);
+static_assert(std::is_same_v<AtSelect, proto::AtSelect>);
+static_assert(std::is_same_v<AtOffer, proto::AtOffer>);
+static_assert(std::is_same_v<AtEnd, proto::AtEnd>);
+static_assert(std::is_same_v<AtStop, proto::AtStop>);
+static_assert(std::is_same_v<AtTerminal, proto::AtTerminal>);
 static_assert(std::is_same_v<AtCheckpointed, proto::AtCheckpointed>);
-static_assert(std::is_same_v<AtDelegate,     proto::AtDelegate>);
-static_assert(std::is_same_v<AtAccept,       proto::AtAccept>);
+static_assert(std::is_same_v<AtDelegate, proto::AtDelegate>);
+static_assert(std::is_same_v<AtAccept, proto::AtAccept>);
 
 // ── B. handle_is_at trait reach ────────────────────────────────────
 // Positive: SendHandle IS at AtSend.
@@ -214,17 +214,15 @@ static_assert(!handle_is_at_v<SendHandle, AtRecv>);
 static_assert(handle_is_at_v<EndHandle, AtEnd>);
 static_assert(handle_is_at_v<EndHandle, AtTerminal>);
 // Substrate identity through fixy.
-static_assert(
-    handle_is_at_v<SendHandle, AtSend>
-    == proto::handle_is_at_v<SendHandle, proto::AtSend>,
-    "handle_is_at_v must reach identically through fixy::");
+static_assert(handle_is_at_v<SendHandle, AtSend> == proto::handle_is_at_v<SendHandle, proto::AtSend>,
+              "handle_is_at_v must reach identically through fixy::");
 
 // ── C. HandleIsAt concept reach ────────────────────────────────────
 // Concept admits matching handle/tag pairs and rejects mismatches.
 static_assert(HandleIsAt<SendHandle, AtSend>);
 static_assert(HandleIsAt<RecvHandle, AtRecv>);
 static_assert(!HandleIsAt<SendHandle, AtRecv>);
-static_assert(!HandleIsAt<EndHandle,  AtSend>);
+static_assert(!HandleIsAt<EndHandle, AtSend>);
 static_assert(HandleIsAt<EndHandle, AtTerminal>);
 
 // ── D. view_ok signature reach (type-level) ────────────────────────
@@ -233,48 +231,40 @@ static_assert(HandleIsAt<EndHandle, AtTerminal>);
 // non-terminal handle destructor would fire abandonment-checks at
 // scope exit per substrate doc-block).  The runtime evaluation
 // itself is covered by test/test_session_view.cpp.
-static_assert(std::is_same_v<
-    decltype(view_ok(std::declval<SendHandle const&>(),
-                     std::type_identity<AtSend>{})),
-    bool>,
-    "view_ok(handle, type_identity<Tag>) must be a bool-returning "
-    "predicate at the fixy:: re-export boundary.");
+static_assert(std::is_same_v<decltype(view_ok(std::declval<SendHandle const&>(), std::type_identity<AtSend>{})), bool>,
+              "view_ok(handle, type_identity<Tag>) must be a bool-returning "
+              "predicate at the fixy:: re-export boundary.");
 
 // ── E. mint_session_view return-type reach (type-level) ────────────
 // `decltype` witnesses that minting at the matching tag produces
 // `ScopedView<Handle, Tag>` without actually invoking the factory
 // (avoiding the Send-state abandonment-check destructor at scope
 // exit).  Substrate identity preserved through fixy.
-using MintedView = decltype(mint_session_view<AtSend>(
-    std::declval<SendHandle const&>()));
-static_assert(std::is_same_v<MintedView,
-    saf::ScopedView<SendHandle, AtSend>>,
-    "mint_session_view<AtSend>(send_handle&) must produce "
-    "ScopedView<SendHandle, AtSend>.");
-static_assert(std::is_same_v<MintedView,
-    decltype(proto::mint_session_view<proto::AtSend>(
-        std::declval<SendHandle const&>()))>,
+using MintedView = decltype(mint_session_view<AtSend>(std::declval<SendHandle const&>()));
+static_assert(std::is_same_v<MintedView, saf::ScopedView<SendHandle, AtSend>>,
+              "mint_session_view<AtSend>(send_handle&) must produce "
+              "ScopedView<SendHandle, AtSend>.");
+static_assert(
+    std::is_same_v<MintedView, decltype(proto::mint_session_view<proto::AtSend>(std::declval<SendHandle const&>()))>,
     "mint_session_view must reach identically through fixy::");
 
 // ── F. Message-type metafn reach (AtSend / AtRecv only) ────────────
 using SendView = saf::ScopedView<SendHandle, AtSend>;
 using RecvView = saf::ScopedView<RecvHandle, AtRecv>;
 static_assert(std::is_same_v<session_view_message_type_t<SendView>, Msg>,
-    "session_view_message_type_t<AtSend view> = Msg.");
+              "session_view_message_type_t<AtSend view> = Msg.");
 static_assert(std::is_same_v<session_view_message_type_t<RecvView>, Msg>,
-    "session_view_message_type_t<AtRecv view> = Msg.");
+              "session_view_message_type_t<AtRecv view> = Msg.");
 // Class-template form reach.
-static_assert(std::is_same_v<
-    typename session_view_message_type<SendView>::type, Msg>);
+static_assert(std::is_same_v<typename session_view_message_type<SendView>::type, Msg>);
 
 // ── G. Branch-count metafn reach (AtSelect / AtOffer only) ─────────
 using SelectProto = proto::Select<SendProto, RecvProto, EndProto>;
 using SelectHandle = proto::SessionHandle<SelectProto, FakeResource, void>;
 using SelectView = saf::ScopedView<SelectHandle, AtSelect>;
 static_assert(session_view_branch_count_v<SelectView> == 3,
-    "session_view_branch_count_v counts sizeof...(Bs) of Select.");
-static_assert(session_view_branch_count<SelectView>::value == 3,
-    "Class-template form returns the same count.");
+              "session_view_branch_count_v counts sizeof...(Bs) of Select.");
+static_assert(session_view_branch_count<SelectView>::value == 3, "Class-template form returns the same count.");
 
 // ── H. Cardinality witness ─────────────────────────────────────────
 //
@@ -289,9 +279,8 @@ static_assert(session_view_branch_count<SelectView>::value == 3,
 // + branch-count metafn (2) session_view_branch_count, _v
 //                                              ──── 20
 constexpr int v063_surface_cardinality = 20;
-static_assert(v063_surface_cardinality == 20,
-    "fixy::sess::view:: V-063 surface cardinality drifted — update "
-    "SessView.h using-decls AND this sentinel in lockstep.");
+static_assert(v063_surface_cardinality == 20, "fixy::sess::view:: V-063 surface cardinality drifted — update "
+                                              "SessView.h using-decls AND this sentinel in lockstep.");
 
 }  // namespace crucible::fixy::sess::view::v063_self_test
 
@@ -303,12 +292,12 @@ namespace crucible::fixy::sess::view {
 
 inline void runtime_smoke_test() noexcept {
     namespace proto = ::crucible::safety::proto;
-    namespace saf   = ::crucible::safety;
+    namespace saf = ::crucible::safety;
 
     struct FakeResource {};
     struct Msg {};
 
-    using SendProto  = proto::Send<Msg, proto::End>;
+    using SendProto = proto::Send<Msg, proto::End>;
     using SendHandle = proto::SessionHandle<SendProto, FakeResource, void>;
 
     // Pure type-level smoke: substrate's Send-state handle has an
@@ -318,20 +307,17 @@ inline void runtime_smoke_test() noexcept {
     // by test/test_session_view.cpp through stack-local handles
     // consumed before scope exit.
 
-    [[maybe_unused]] constexpr bool admits_send =
-        HandleIsAt<SendHandle, AtSend>;
-    [[maybe_unused]] constexpr bool rejects_recv =
-        !HandleIsAt<SendHandle, AtRecv>;
+    [[maybe_unused]] constexpr bool admits_send = HandleIsAt<SendHandle, AtSend>;
+    [[maybe_unused]] constexpr bool rejects_recv = !HandleIsAt<SendHandle, AtRecv>;
 
-    using ViewType = decltype(mint_session_view<AtSend>(
-        std::declval<SendHandle const&>()));
-    [[maybe_unused]] constexpr bool msg_ok = std::is_same_v<
-        session_view_message_type_t<ViewType>, Msg>;
-    [[maybe_unused]] constexpr bool view_shape_ok = std::is_same_v<
-        ViewType, saf::ScopedView<SendHandle, AtSend>>;
+    using ViewType = decltype(mint_session_view<AtSend>(std::declval<SendHandle const&>()));
+    [[maybe_unused]] constexpr bool msg_ok = std::is_same_v<session_view_message_type_t<ViewType>, Msg>;
+    [[maybe_unused]] constexpr bool view_shape_ok = std::is_same_v<ViewType, saf::ScopedView<SendHandle, AtSend>>;
 
-    (void) admits_send; (void) rejects_recv;
-    (void) msg_ok; (void) view_shape_ok;
+    (void)admits_send;
+    (void)rejects_recv;
+    (void)msg_ok;
+    (void)view_shape_ok;
 }
 
 }  // namespace crucible::fixy::sess::view

@@ -122,62 +122,59 @@ namespace crucible::algebra::lattices {
 // type is DISTINCT (different scoped enum class) — see lattice
 // docblock for the orthogonal-axis rationale.
 enum class CipherTierTag : std::uint8_t {
-    Cold = 0,    // bottom: S3/GCS durable storage (~minutes recovery)
-    Warm = 1,    // local NVMe per Relay (~seconds recovery)
-    Hot  = 2,    // top: another Relay's RAM (~μs recovery)
+    Cold = 0,  // bottom: S3/GCS durable storage (~minutes recovery)
+    Warm = 1,  // local NVMe per Relay (~seconds recovery)
+    Hot = 2,  // top: another Relay's RAM (~μs recovery)
 };
 
-inline constexpr std::size_t cipher_tier_tag_count =
-    std::meta::enumerators_of(^^CipherTierTag).size();
+inline constexpr std::size_t cipher_tier_tag_count = std::meta::enumerators_of(^^CipherTierTag).size();
 
 [[nodiscard]] consteval std::string_view cipher_tier_tag_name(CipherTierTag t) noexcept {
     switch (t) {
-        case CipherTierTag::Cold: return "Cold";
-        case CipherTierTag::Warm: return "Warm";
-        case CipherTierTag::Hot:  return "Hot";
-        default:                  return std::string_view{"<unknown CipherTierTag>"};
+        case CipherTierTag::Cold:
+            return "Cold";
+        case CipherTierTag::Warm:
+            return "Warm";
+        case CipherTierTag::Hot:
+            return "Hot";
+        default:
+            return std::string_view{"<unknown CipherTierTag>"};
     }
 }
 
 // ── Full CipherTierLattice (chain order) ────────────────────────────
 struct CipherTierLattice : ChainLatticeOps<CipherTierTag> {
-    [[nodiscard]] static constexpr element_type bottom() noexcept {
-        return CipherTierTag::Cold;
-    }
-    [[nodiscard]] static constexpr element_type top() noexcept {
-        return CipherTierTag::Hot;
-    }
+    [[nodiscard]] static constexpr element_type bottom() noexcept { return CipherTierTag::Cold; }
+    [[nodiscard]] static constexpr element_type top() noexcept { return CipherTierTag::Hot; }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return "CipherTierLattice";
-    }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "CipherTierLattice"; }
 
     template <CipherTierTag T>
     struct At {
         struct element_type {
             using cipher_tier_tag_value_type = CipherTierTag;
-            [[nodiscard]] constexpr operator cipher_tier_tag_value_type() const noexcept {
-                return T;
-            }
-            [[nodiscard]] constexpr bool operator==(element_type) const noexcept {
-                return true;
-            }
+            [[nodiscard]] constexpr operator cipher_tier_tag_value_type() const noexcept { return T; }
+            [[nodiscard]] constexpr bool operator==(element_type) const noexcept { return true; }
         };
 
         static constexpr CipherTierTag tier = T;
 
         [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-        [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
         [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
 
         [[nodiscard]] static consteval std::string_view name() noexcept {
             switch (T) {
-                case CipherTierTag::Cold: return "CipherTierLattice::At<Cold>";
-                case CipherTierTag::Warm: return "CipherTierLattice::At<Warm>";
-                case CipherTierTag::Hot:  return "CipherTierLattice::At<Hot>";
-                default:                  return "CipherTierLattice::At<?>";
+                case CipherTierTag::Cold:
+                    return "CipherTierLattice::At<Cold>";
+                case CipherTierTag::Warm:
+                    return "CipherTierLattice::At<Warm>";
+                case CipherTierTag::Hot:
+                    return "CipherTierLattice::At<Hot>";
+                default:
+                    return "CipherTierLattice::At<?>";
             }
         }
     };
@@ -185,35 +182,31 @@ struct CipherTierLattice : ChainLatticeOps<CipherTierTag> {
 
 // ── Convenience aliases ─────────────────────────────────────────────
 namespace cipher_tier_tag {
-    using ColdTier = CipherTierLattice::At<CipherTierTag::Cold>;
-    using WarmTier = CipherTierLattice::At<CipherTierTag::Warm>;
-    using HotTier  = CipherTierLattice::At<CipherTierTag::Hot>;
+using ColdTier = CipherTierLattice::At<CipherTierTag::Cold>;
+using WarmTier = CipherTierLattice::At<CipherTierTag::Warm>;
+using HotTier = CipherTierLattice::At<CipherTierTag::Hot>;
 }  // namespace cipher_tier_tag
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::cipher_tier_lattice_self_test {
 
-static_assert(cipher_tier_tag_count == 3,
-    "CipherTierTag catalog diverged from {Cold, Warm, Hot}; confirm "
-    "intent and update the dispatcher's persistence-tier admission "
-    "gates + runtime drift-attribution plumbing.");
+static_assert(cipher_tier_tag_count == 3, "CipherTierTag catalog diverged from {Cold, Warm, Hot}; confirm "
+                                          "intent and update the dispatcher's persistence-tier admission "
+                                          "gates + runtime drift-attribution plumbing.");
 
 [[nodiscard]] consteval bool every_cipher_tier_tag_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^CipherTierTag));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^CipherTierTag));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
-        if (cipher_tier_tag_name([:en:]) ==
-            std::string_view{"<unknown CipherTierTag>"}) {
+        if (cipher_tier_tag_name([:en:]) == std::string_view{"<unknown CipherTierTag>"}) {
             return false;
         }
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_cipher_tier_tag_has_name(),
-    "cipher_tier_tag_name() switch missing arm for at least one tier.");
+static_assert(every_cipher_tier_tag_has_name(), "cipher_tier_tag_name() switch missing arm for at least one tier.");
 
 static_assert(Lattice<CipherTierLattice>);
 static_assert(BoundedLattice<CipherTierLattice>);
@@ -231,61 +224,58 @@ static_assert(std::is_empty_v<cipher_tier_tag::HotTier::element_type>);
 
 // EXHAUSTIVE coverage — (CipherTierTag)³ = 27 triples.
 static_assert(verify_chain_lattice_exhaustive<CipherTierLattice>(),
-    "CipherTierLattice's chain-order axioms must hold at every "
-    "(CipherTierTag)³ triple.");
+              "CipherTierLattice's chain-order axioms must hold at every "
+              "(CipherTierTag)³ triple.");
 static_assert(verify_chain_lattice_distributive_exhaustive<CipherTierLattice>(),
-    "CipherTierLattice's chain order must satisfy distributivity at "
-    "every (CipherTierTag)³ triple.");
+              "CipherTierLattice's chain order must satisfy distributivity at "
+              "every (CipherTierTag)³ triple.");
 
 // Direct order witnesses.
-static_assert( CipherTierLattice::leq(CipherTierTag::Cold, CipherTierTag::Warm));
-static_assert( CipherTierLattice::leq(CipherTierTag::Warm, CipherTierTag::Hot));
-static_assert( CipherTierLattice::leq(CipherTierTag::Cold, CipherTierTag::Hot)); // transitive
-static_assert(!CipherTierLattice::leq(CipherTierTag::Hot,  CipherTierTag::Cold));
-static_assert(!CipherTierLattice::leq(CipherTierTag::Hot,  CipherTierTag::Warm));
+static_assert(CipherTierLattice::leq(CipherTierTag::Cold, CipherTierTag::Warm));
+static_assert(CipherTierLattice::leq(CipherTierTag::Warm, CipherTierTag::Hot));
+static_assert(CipherTierLattice::leq(CipherTierTag::Cold, CipherTierTag::Hot));  // transitive
+static_assert(!CipherTierLattice::leq(CipherTierTag::Hot, CipherTierTag::Cold));
+static_assert(!CipherTierLattice::leq(CipherTierTag::Hot, CipherTierTag::Warm));
 static_assert(!CipherTierLattice::leq(CipherTierTag::Warm, CipherTierTag::Cold));
 
 static_assert(CipherTierLattice::bottom() == CipherTierTag::Cold);
-static_assert(CipherTierLattice::top()    == CipherTierTag::Hot);
+static_assert(CipherTierLattice::top() == CipherTierTag::Hot);
 
-static_assert(CipherTierLattice::join(CipherTierTag::Cold, CipherTierTag::Hot)
-              == CipherTierTag::Hot);
-static_assert(CipherTierLattice::join(CipherTierTag::Warm, CipherTierTag::Cold)
-              == CipherTierTag::Warm);
-static_assert(CipherTierLattice::meet(CipherTierTag::Cold, CipherTierTag::Hot)
-              == CipherTierTag::Cold);
-static_assert(CipherTierLattice::meet(CipherTierTag::Warm, CipherTierTag::Hot)
-              == CipherTierTag::Warm);
+static_assert(CipherTierLattice::join(CipherTierTag::Cold, CipherTierTag::Hot) == CipherTierTag::Hot);
+static_assert(CipherTierLattice::join(CipherTierTag::Warm, CipherTierTag::Cold) == CipherTierTag::Warm);
+static_assert(CipherTierLattice::meet(CipherTierTag::Cold, CipherTierTag::Hot) == CipherTierTag::Cold);
+static_assert(CipherTierLattice::meet(CipherTierTag::Warm, CipherTierTag::Hot) == CipherTierTag::Warm);
 
 static_assert(CipherTierLattice::name() == "CipherTierLattice");
 static_assert(cipher_tier_tag::ColdTier::name() == "CipherTierLattice::At<Cold>");
 static_assert(cipher_tier_tag::WarmTier::name() == "CipherTierLattice::At<Warm>");
-static_assert(cipher_tier_tag::HotTier::name()  == "CipherTierLattice::At<Hot>");
+static_assert(cipher_tier_tag::HotTier::name() == "CipherTierLattice::At<Hot>");
 
 [[nodiscard]] consteval bool every_at_cipher_tier_tag_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^CipherTierTag));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^CipherTierTag));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
-        if (CipherTierLattice::At<([:en:])>::name() ==
-            std::string_view{"CipherTierLattice::At<?>"}) {
+        if (CipherTierLattice::At<([:en:])>::name() == std::string_view{"CipherTierLattice::At<?>"}) {
             return false;
         }
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_at_cipher_tier_tag_has_name(),
-    "CipherTierLattice::At<T>::name() switch missing an arm.");
+static_assert(every_at_cipher_tier_tag_has_name(), "CipherTierLattice::At<T>::name() switch missing an arm.");
 
 static_assert(cipher_tier_tag::ColdTier::tier == CipherTierTag::Cold);
 static_assert(cipher_tier_tag::WarmTier::tier == CipherTierTag::Warm);
-static_assert(cipher_tier_tag::HotTier::tier  == CipherTierTag::Hot);
+static_assert(cipher_tier_tag::HotTier::tier == CipherTierTag::Hot);
 
 // ── Layout invariants ───────────────────────────────────────────────
-struct OneByteValue   { char c{0}; };
-struct EightByteValue { unsigned long long v{0}; };
+struct OneByteValue {
+    char c{0};
+};
+struct EightByteValue {
+    unsigned long long v{0};
+};
 
 template <typename T_>
 using HotGraded = Graded<ModalityKind::Absolute, cipher_tier_tag::HotTier, T_>;
@@ -305,23 +295,23 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(ColdGraded, EightByteValue);
 inline void runtime_smoke_test() {
     CipherTierTag a = CipherTierTag::Cold;
     CipherTierTag b = CipherTierTag::Hot;
-    [[maybe_unused]] bool          l1   = CipherTierLattice::leq(a, b);
-    [[maybe_unused]] CipherTierTag j1   = CipherTierLattice::join(a, b);
-    [[maybe_unused]] CipherTierTag m1   = CipherTierLattice::meet(a, b);
-    [[maybe_unused]] CipherTierTag bot  = CipherTierLattice::bottom();
+    [[maybe_unused]] bool l1 = CipherTierLattice::leq(a, b);
+    [[maybe_unused]] CipherTierTag j1 = CipherTierLattice::join(a, b);
+    [[maybe_unused]] CipherTierTag m1 = CipherTierLattice::meet(a, b);
+    [[maybe_unused]] CipherTierTag bot = CipherTierLattice::bottom();
     [[maybe_unused]] CipherTierTag topv = CipherTierLattice::top();
 
     CipherTierTag warm = CipherTierTag::Warm;
-    [[maybe_unused]] CipherTierTag j2 = CipherTierLattice::join(warm, a);   // Warm
-    [[maybe_unused]] CipherTierTag m2 = CipherTierLattice::meet(warm, b);   // Warm
+    [[maybe_unused]] CipherTierTag j2 = CipherTierLattice::join(warm, a);  // Warm
+    [[maybe_unused]] CipherTierTag m2 = CipherTierLattice::meet(warm, b);  // Warm
 
     OneByteValue v{42};
     HotGraded<OneByteValue> initial{v, cipher_tier_tag::HotTier::bottom()};
-    auto widened   = initial.weaken(cipher_tier_tag::HotTier::top());
-    auto composed  = initial.compose(widened);
-    auto rv_widen  = std::move(widened).weaken(cipher_tier_tag::HotTier::top());
+    auto widened = initial.weaken(cipher_tier_tag::HotTier::top());
+    auto composed = initial.compose(widened);
+    auto rv_widen = std::move(widened).weaken(cipher_tier_tag::HotTier::top());
 
-    [[maybe_unused]] auto g  = rv_widen.grade();
+    [[maybe_unused]] auto g = rv_widen.grade();
     [[maybe_unused]] auto vc = composed.peek().c;
 
     cipher_tier_tag::HotTier::element_type e{};

@@ -123,16 +123,16 @@
 //   mint_msr_grant       : missing Permission<root> + wrong-tag Permission
 //   mint_scoped_fence    : Scope==Thread (⊥ no-fence) + cross-trunk scope×arch
 
-#include <crucible/fixy/Grant.h>                          // grant_base, which_dim, IsGrantTag
-#include <crucible/fixy/Dim.h>                            // dim::DimensionAxis
-#include <crucible/fixy/grant/Ctrl.h>                     // ctrl::rationale (fixed-string NTTP)
+#include <crucible/fixy/Grant.h>  // grant_base, which_dim, IsGrantTag
+#include <crucible/fixy/Dim.h>  // dim::DimensionAxis
+#include <crucible/fixy/grant/Ctrl.h>  // ctrl::rationale (fixed-string NTTP)
 
 #include <crucible/algebra/lattices/BarrierStrengthLattice.h>  // BarrierStrength
-#include <crucible/algebra/lattices/MemoryScopeLattice.h>      // MemoryScope (V-265)
-#include <crucible/safety/Vendor.h>                       // VendorBackend_v
-#include <crucible/permissions/Permission.h>              // safety::Permission
+#include <crucible/algebra/lattices/MemoryScopeLattice.h>  // MemoryScope (V-265)
+#include <crucible/safety/Vendor.h>  // VendorBackend_v
+#include <crucible/permissions/Permission.h>  // safety::Permission
 
-#include <crucible/effects/ExecCtx.h>                     // effects::IsExecCtx
+#include <crucible/effects/ExecCtx.h>  // effects::IsExecCtx
 
 #include <cstdint>
 #include <type_traits>
@@ -148,21 +148,21 @@ namespace crucible::fixy::hw {
 // cache-control instruction; Locality 0-3 is the temporal hint for
 // prefetch (0 = no temporal locality / streaming, 3 = high reuse).
 enum class CacheOp : std::uint8_t {
-    Flush,       // clflush     — flush + invalidate a line
-    FlushOpt,    // clflushopt  — weakly-ordered flush (faster)
-    Writeback,   // clwb        — write-back, keep line valid
+    Flush,  // clflush     — flush + invalidate a line
+    FlushOpt,  // clflushopt  — weakly-ordered flush (faster)
+    Writeback,  // clwb        — write-back, keep line valid
     Invalidate,  // clinvalidate-class
-    Prefetch,    // prefetcht0..nta — speculative fetch
+    Prefetch,  // prefetcht0..nta — speculative fetch
 };
 
 // Barrier-instruction arch family.  The fence KIND is a BarrierStrength
 // tier (V-252); the arch picks which concrete instruction realizes it.
 enum class BarrierArch : std::uint8_t {
-    X86,       // lfence / sfence / mfence
-    Arm,       // dmb ish / dmb osh / dmb sy / dmb ld / dmb st
+    X86,  // lfence / sfence / mfence
+    Arm,  // dmb ish / dmb osh / dmb sy / dmb ld / dmb st
     Compiler,  // asm volatile("":::"memory") + std::atomic ordering
-    Gpu,       // PTX fence.{cta,cluster,gpu,sys} / membar — the accel fence
-               // dialect realizing V-265 accel-trunk MemoryScope (V-269).
+    Gpu,  // PTX fence.{cta,cluster,gpu,sys} / membar — the accel fence
+    // dialect realizing V-265 accel-trunk MemoryScope (V-269).
 };
 
 // TSC-read posture.  NotAllowed is the strict default; SerializedPinned
@@ -171,9 +171,9 @@ enum class BarrierArch : std::uint8_t {
 // a DIFFERENT QUANTITY (monotonic wall-ns, not cycles) and so is a
 // distinct stance, not a drop-in substitute.
 enum class TscMode : std::uint8_t {
-    NotAllowed,           // strict default — no TSC read at all
-    SerializedPinned,     // rdtscp + lfence, requires CpuPinProof
-    Raw,                  // rdtsc, bench-only, non-serialized
+    NotAllowed,  // strict default — no TSC read at all
+    SerializedPinned,  // rdtscp + lfence, requires CpuPinProof
+    Raw,  // rdtsc, bench-only, non-serialized
     SteadyClockFallback,  // chrono::steady_clock — different quantity
 };
 
@@ -181,11 +181,11 @@ enum class TscMode : std::uint8_t {
 // the safe deterministic counter-based RNG (the only DetSafe-clean
 // source); the OS / hardware sources are non-deterministic entropy reads.
 enum class RngSource : std::uint8_t {
-    NotAllowed,     // strict default — no randomness source
+    NotAllowed,  // strict default — no randomness source
     PhiloxCounter,  // Philox4x32 counter-based (deterministic, DetSafe)
-    OsGetrandom,    // ::getrandom(2) — OS CSPRNG
-    RdRand,         // rdrand — on-die DRBG
-    RdSeed,         // rdseed — on-die entropy source
+    OsGetrandom,  // ::getrandom(2) — OS CSPRNG
+    RdRand,  // rdrand — on-die DRBG
+    RdSeed,  // rdseed — on-die entropy source
 };
 
 // Re-export of the V-252 BarrierStrength tier into the hw namespace so a
@@ -203,26 +203,24 @@ using VendorBackend = ::crucible::safety::VendorBackend_v;
 
 // SIMD width must be one of {scalar, 128, 256, 512}-bit register classes.
 template <std::uint16_t WidthBits>
-inline constexpr bool valid_simd_width_v =
-    (WidthBits == 0 || WidthBits == 128 || WidthBits == 256 || WidthBits == 512);
+inline constexpr bool valid_simd_width_v = (WidthBits == 0 || WidthBits == 128 || WidthBits == 256 || WidthBits == 512);
 
 // cpuid leaf allow-list — the sanctioned, side-effect-free leaves used
 // for capability detection.  An unsanctioned leaf (e.g. a vendor-specific
 // debug leaf) rejects at the grant template-id.
 template <std::uint32_t Leaf>
-inline constexpr bool is_sanctioned_cpuid_leaf_v =
-       Leaf == 0x00000000u  // max basic leaf + vendor string
-    || Leaf == 0x00000001u  // feature flags (SSE/AVX/...)
-    || Leaf == 0x00000007u  // extended features (AVX2/AVX512/...)
-    || Leaf == 0x0000000Bu  // x2APIC topology
-    || Leaf == 0x0000000Du  // XSAVE / extended state
-    || Leaf == 0x00000016u  // CPU frequency
-    || Leaf == 0x80000000u  // max extended leaf
-    || Leaf == 0x80000001u  // extended feature flags
-    || Leaf == 0x80000002u  // brand string part 1
-    || Leaf == 0x80000003u  // brand string part 2
-    || Leaf == 0x80000004u  // brand string part 3
-    || Leaf == 0x80000008u; // address sizes
+inline constexpr bool is_sanctioned_cpuid_leaf_v = Leaf == 0x00000000u  // max basic leaf + vendor string
+                                                || Leaf == 0x00000001u  // feature flags (SSE/AVX/...)
+                                                || Leaf == 0x00000007u  // extended features (AVX2/AVX512/...)
+                                                || Leaf == 0x0000000Bu  // x2APIC topology
+                                                || Leaf == 0x0000000Du  // XSAVE / extended state
+                                                || Leaf == 0x00000016u  // CPU frequency
+                                                || Leaf == 0x80000000u  // max extended leaf
+                                                || Leaf == 0x80000001u  // extended feature flags
+                                                || Leaf == 0x80000002u  // brand string part 1
+                                                || Leaf == 0x80000003u  // brand string part 2
+                                                || Leaf == 0x80000004u  // brand string part 3
+                                                || Leaf == 0x80000008u;  // address sizes
 
 // A rationale carries audit identity iff it holds at least one real
 // character (N includes the trailing NUL, so empty `""` has size 1).
@@ -284,7 +282,7 @@ namespace fh = ::crucible::fixy::hw;
 
 // (1) cache<Op, Locality> — cache-control instruction (HwInstruction).
 template <fh::CacheOp Op, int Locality = 0>
-    requires (Locality >= 0 && Locality <= 3)
+    requires(Locality >= 0 && Locality <= 3)
 struct cache final : grant_base {};
 
 // (2) barrier<Arch, Kind> — fence instruction (BarrierStrength).
@@ -351,52 +349,42 @@ struct which_dim<hw::barrier<Arch, Kind>>
     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::BarrierStrength> {};
 
 template <fh::TscMode Mode>
-struct which_dim<hw::tsc<Mode>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::HwInstruction> {};
+struct which_dim<hw::tsc<Mode>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::HwInstruction> {};
 
 template <fh::RngSource Source>
-struct which_dim<hw::rng<Source>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::HwInstruction> {};
+struct which_dim<hw::rng<Source>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::HwInstruction> {};
 
 template <std::uint32_t Leaf>
     requires fh::is_sanctioned_cpuid_leaf_v<Leaf>
-struct which_dim<hw::cpuid<Leaf>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::HwInstruction> {};
+struct which_dim<hw::cpuid<Leaf>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::HwInstruction> {};
 
 template <std::uint32_t MsrId>
-struct which_dim<hw::msr<MsrId>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::HwInstruction> {};
+struct which_dim<hw::msr<MsrId>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::HwInstruction> {};
 
 template <std::uint16_t Port>
-struct which_dim<hw::port_io<Port>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::HwInstruction> {};
+struct which_dim<hw::port_io<Port>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::HwInstruction> {};
 
 template <ctrl::rationale Reason>
-struct which_dim<hw::asm_<Reason>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::HwInstruction> {};
+struct which_dim<hw::asm_<Reason>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::HwInstruction> {};
 
 template <std::uint16_t WidthBits>
     requires fh::valid_simd_width_v<WidthBits>
-struct which_dim<hw::simd_width<WidthBits>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::SimdIsa> {};
+struct which_dim<hw::simd_width<WidthBits>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::SimdIsa> {
+};
 
 template <fh::VendorBackend Backend, ctrl::rationale Id>
 struct which_dim<hw::vendor_intrinsic<Backend, Id>>
     : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Representation> {};
 
 template <fh::MemoryScope Scope, fh::BarrierArch Arch>
-struct which_dim<hw::scope<Scope, Arch>>
-    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::MemoryScope> {};
+struct which_dim<hw::scope<Scope, Arch>> : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::MemoryScope> {
+};
 
 // ── Engagement markers for the three hw axes ──────────────────────────
-using accept_default_strict_for_HwInstruction =
-    accept_default_strict_for<dim::DimensionAxis::HwInstruction>;
-using accept_default_strict_for_BarrierStrength =
-    accept_default_strict_for<dim::DimensionAxis::BarrierStrength>;
-using accept_default_strict_for_SimdIsa =
-    accept_default_strict_for<dim::DimensionAxis::SimdIsa>;
-using accept_default_strict_for_MemoryScope =
-    accept_default_strict_for<dim::DimensionAxis::MemoryScope>;
+using accept_default_strict_for_HwInstruction = accept_default_strict_for<dim::DimensionAxis::HwInstruction>;
+using accept_default_strict_for_BarrierStrength = accept_default_strict_for<dim::DimensionAxis::BarrierStrength>;
+using accept_default_strict_for_SimdIsa = accept_default_strict_for<dim::DimensionAxis::SimdIsa>;
+using accept_default_strict_for_MemoryScope = accept_default_strict_for<dim::DimensionAxis::MemoryScope>;
 
 }  // namespace crucible::fixy::grant
 
@@ -410,32 +398,32 @@ namespace ghw = ::crucible::fixy::grant::hw;
 
 // ── Cache aliases (the common hot-path cache-control ops) ─────────────
 using cache_prefetch_rw_t0 = ghw::cache<CacheOp::Prefetch, 0>;  // streaming prefetch
-using cache_clflushopt     = ghw::cache<CacheOp::FlushOpt, 0>;  // weakly-ordered flush
-using cache_clwb           = ghw::cache<CacheOp::Writeback, 0>; // write-back, keep valid
+using cache_clflushopt = ghw::cache<CacheOp::FlushOpt, 0>;  // weakly-ordered flush
+using cache_clwb = ghw::cache<CacheOp::Writeback, 0>;  // write-back, keep valid
 
 // ── Barrier aliases (per-arch fence kinds) ────────────────────────────
-using barrier_x86_lfence        = ghw::barrier<BarrierArch::X86, BarrierStrength::AcquireLoad>;
-using barrier_x86_sfence        = ghw::barrier<BarrierArch::X86, BarrierStrength::ReleaseStore>;
-using barrier_x86_mfence        = ghw::barrier<BarrierArch::X86, BarrierStrength::FullFence>;
-using barrier_arm_dmb_ish       = ghw::barrier<BarrierArch::Arm, BarrierStrength::FullFence>;
-using barrier_arm_dmb_ld        = ghw::barrier<BarrierArch::Arm, BarrierStrength::AcquireLoad>;
-using barrier_arm_dmb_st        = ghw::barrier<BarrierArch::Arm, BarrierStrength::ReleaseStore>;
+using barrier_x86_lfence = ghw::barrier<BarrierArch::X86, BarrierStrength::AcquireLoad>;
+using barrier_x86_sfence = ghw::barrier<BarrierArch::X86, BarrierStrength::ReleaseStore>;
+using barrier_x86_mfence = ghw::barrier<BarrierArch::X86, BarrierStrength::FullFence>;
+using barrier_arm_dmb_ish = ghw::barrier<BarrierArch::Arm, BarrierStrength::FullFence>;
+using barrier_arm_dmb_ld = ghw::barrier<BarrierArch::Arm, BarrierStrength::AcquireLoad>;
+using barrier_arm_dmb_st = ghw::barrier<BarrierArch::Arm, BarrierStrength::ReleaseStore>;
 using barrier_compiler_portable = ghw::barrier<BarrierArch::Compiler, BarrierStrength::CompilerBarrier>;
-using barrier_compiler_acquire  = ghw::barrier<BarrierArch::Compiler, BarrierStrength::AcquireLoad>;
-using barrier_compiler_release  = ghw::barrier<BarrierArch::Compiler, BarrierStrength::ReleaseStore>;
-using barrier_compiler_seqcst   = ghw::barrier<BarrierArch::Compiler, BarrierStrength::SeqCst>;
+using barrier_compiler_acquire = ghw::barrier<BarrierArch::Compiler, BarrierStrength::AcquireLoad>;
+using barrier_compiler_release = ghw::barrier<BarrierArch::Compiler, BarrierStrength::ReleaseStore>;
+using barrier_compiler_seqcst = ghw::barrier<BarrierArch::Compiler, BarrierStrength::SeqCst>;
 
 // ── Scope aliases (V-269) — the OSH/SY/GPU cells barrier_arm_dmb_ish lost ─
 // ARM shareability trunk: DMB ISH (inner), DMB OSH (outer), DMB SY (system).
-using scope_arm_ish     = ghw::scope<MemoryScope::Inner,  BarrierArch::Arm>;       // DMB ISH
-using scope_arm_osh     = ghw::scope<MemoryScope::Outer,  BarrierArch::Arm>;       // DMB OSH
-using scope_arm_sy      = ghw::scope<MemoryScope::System, BarrierArch::Arm>;       // DMB SY
+using scope_arm_ish = ghw::scope<MemoryScope::Inner, BarrierArch::Arm>;  // DMB ISH
+using scope_arm_osh = ghw::scope<MemoryScope::Outer, BarrierArch::Arm>;  // DMB OSH
+using scope_arm_sy = ghw::scope<MemoryScope::System, BarrierArch::Arm>;  // DMB SY
 // Accel trunk: PTX `.cta` (thread-block), `.cluster` (Hopper), `.gpu` (device).
-using scope_gpu_cta     = ghw::scope<MemoryScope::Cta,     BarrierArch::Gpu>;      // fence.{*}.cta
-using scope_gpu_cluster = ghw::scope<MemoryScope::Cluster, BarrierArch::Gpu>;      // fence.{*}.cluster
-using scope_gpu_device  = ghw::scope<MemoryScope::Gpu,     BarrierArch::Gpu>;      // fence.{*}.gpu
+using scope_gpu_cta = ghw::scope<MemoryScope::Cta, BarrierArch::Gpu>;  // fence.{*}.cta
+using scope_gpu_cluster = ghw::scope<MemoryScope::Cluster, BarrierArch::Gpu>;  // fence.{*}.cluster
+using scope_gpu_device = ghw::scope<MemoryScope::Gpu, BarrierArch::Gpu>;  // fence.{*}.gpu
 // Arch-agnostic full-system (⊤) — std::atomic seq_cst / compiler-portable.
-using scope_system      = ghw::scope<MemoryScope::System, BarrierArch::Compiler>;
+using scope_system = ghw::scope<MemoryScope::System, BarrierArch::Compiler>;
 
 // ── §XXI ctx-fit concepts — ONE concept per mint ─────────────────────
 
@@ -446,24 +434,20 @@ concept CtxFitsHwGrant = ::crucible::effects::IsExecCtx<Ctx>;
 // asm_ requires a non-empty rationale (every greenfield asm site MUST
 // document WHY it drops to inline assembly).
 template <typename Ctx, ::crucible::fixy::grant::ctrl::rationale Reason>
-concept CtxFitsAsmMint =
-    CtxFitsHwGrant<Ctx> && rationale_nonempty_v<Reason>;
+concept CtxFitsAsmMint = CtxFitsHwGrant<Ctx> && rationale_nonempty_v<Reason>;
 
 // simd_width requires a recognized register-width class.
 template <typename Ctx, std::uint16_t WidthBits>
-concept CtxFitsSimdWidthMint =
-    CtxFitsHwGrant<Ctx> && valid_simd_width_v<WidthBits>;
+concept CtxFitsSimdWidthMint = CtxFitsHwGrant<Ctx> && valid_simd_width_v<WidthBits>;
 
 // vendor_intrinsic requires a non-empty intrinsic mnemonic.
 template <typename Ctx, ::crucible::fixy::grant::ctrl::rationale Id>
-concept CtxFitsVendorIntrinsicMint =
-    CtxFitsHwGrant<Ctx> && rationale_nonempty_v<Id>;
+concept CtxFitsVendorIntrinsicMint = CtxFitsHwGrant<Ctx> && rationale_nonempty_v<Id>;
 
 // tsc requires a non-strict-default posture (you do NOT mint a grant for
 // "no TSC read").  The CpuPinProof argument carries the affinity witness.
 template <typename Ctx, TscMode Mode>
-concept CtxFitsTscMint =
-    CtxFitsHwGrant<Ctx> && (Mode != TscMode::NotAllowed);
+concept CtxFitsTscMint = CtxFitsHwGrant<Ctx> && (Mode != TscMode::NotAllowed);
 
 // msr is privileged: ctx fit + the consumed Permission<root> (the
 // rvalue-ref parameter is the load-bearing authority gate).
@@ -479,13 +463,10 @@ concept CtxFitsMsrMint = CtxFitsHwGrant<Ctx>;
 // already excluded by gate 2).
 template <typename Ctx, MemoryScope Scope, BarrierArch Arch>
 concept CtxFitsScopedFenceMint =
-    CtxFitsHwGrant<Ctx>
-    && (Scope != MemoryScope::Thread)
-    && scope_arch_trunk_consistent(Scope, Arch);
+    CtxFitsHwGrant<Ctx> && (Scope != MemoryScope::Thread) && scope_arch_trunk_consistent(Scope, Arch);
 
 // ── mint_asm_grant<Reason>(ctx) → grant::hw::asm_<Reason> ─────────────
-template <::crucible::fixy::grant::ctrl::rationale Reason,
-          ::crucible::effects::IsExecCtx Ctx>
+template <::crucible::fixy::grant::ctrl::rationale Reason, ::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsAsmMint<Ctx, Reason>
 [[nodiscard]] constexpr ghw::asm_<Reason> mint_asm_grant(Ctx const&) noexcept {
     return {};
@@ -503,12 +484,9 @@ template <std::uint16_t WidthBits, ::crucible::effects::IsExecCtx Ctx>
 // Param order matches the §3.8 spec `<I, V, Ctx>` (Intrinsic id first,
 // Vendor backend second); the grant tag stores them Backend-first
 // because the backend identifies the Representation-axis position.
-template <::crucible::fixy::grant::ctrl::rationale Id,
-          VendorBackend Backend,
-          ::crucible::effects::IsExecCtx Ctx>
+template <::crucible::fixy::grant::ctrl::rationale Id, VendorBackend Backend, ::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsVendorIntrinsicMint<Ctx, Id>
-[[nodiscard]] constexpr ghw::vendor_intrinsic<Backend, Id>
-mint_vendor_intrinsic(Ctx const&) noexcept {
+[[nodiscard]] constexpr ghw::vendor_intrinsic<Backend, Id> mint_vendor_intrinsic(Ctx const&) noexcept {
     return {};
 }
 
@@ -525,8 +503,7 @@ template <TscMode Mode, ::crucible::effects::IsExecCtx Ctx>
 // the privileged authority (linearity — the token cannot be re-used).
 template <std::uint32_t MsrId, ::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsMsrMint<Ctx>
-[[nodiscard]] constexpr ghw::msr<MsrId>
-mint_msr_grant(Ctx const&, ::crucible::safety::Permission<root>&&) noexcept {
+[[nodiscard]] constexpr ghw::msr<MsrId> mint_msr_grant(Ctx const&, ::crucible::safety::Permission<root>&&) noexcept {
     return {};
 }
 
@@ -569,31 +546,31 @@ static_assert(IsGrantTag<ghw::vendor_intrinsic<VendorBackend::NV, "wgmma">>);
 static_assert(IsGrantTag<ghw::scope<MemoryScope::Gpu, BarrierArch::Gpu>>);
 
 // ── Layer 2: sizeof — EBO-collapsible (1 byte standalone) ─────────────
-static_assert(sizeof(ghw::cache<CacheOp::Prefetch, 3>)                       == 1);
+static_assert(sizeof(ghw::cache<CacheOp::Prefetch, 3>) == 1);
 static_assert(sizeof(ghw::barrier<BarrierArch::Arm, BarrierStrength::AcqRel>) == 1);
-static_assert(sizeof(ghw::tsc<TscMode::Raw>)                                 == 1);
-static_assert(sizeof(ghw::rng<RngSource::RdRand>)                            == 1);
-static_assert(sizeof(ghw::cpuid<0x1u>)                                       == 1);
-static_assert(sizeof(ghw::msr<0xC0000080u>)                                  == 1);
-static_assert(sizeof(ghw::port_io<0xCF8u>)                                   == 1);
-static_assert(sizeof(ghw::asm_<"x">)                                         == 1);
-static_assert(sizeof(ghw::simd_width<512>)                                   == 1);
-static_assert(sizeof(ghw::vendor_intrinsic<VendorBackend::AMD, "v_mfma">)    == 1);
-static_assert(sizeof(ghw::scope<MemoryScope::Inner, BarrierArch::Arm>)       == 1);
+static_assert(sizeof(ghw::tsc<TscMode::Raw>) == 1);
+static_assert(sizeof(ghw::rng<RngSource::RdRand>) == 1);
+static_assert(sizeof(ghw::cpuid<0x1u>) == 1);
+static_assert(sizeof(ghw::msr<0xC0000080u>) == 1);
+static_assert(sizeof(ghw::port_io<0xCF8u>) == 1);
+static_assert(sizeof(ghw::asm_<"x">) == 1);
+static_assert(sizeof(ghw::simd_width<512>) == 1);
+static_assert(sizeof(ghw::vendor_intrinsic<VendorBackend::AMD, "v_mfma">) == 1);
+static_assert(sizeof(ghw::scope<MemoryScope::Inner, BarrierArch::Arm>) == 1);
 
 // ── Layer 3: which_dim routing — each family to its axis ──────────────
-static_assert(which_dim_v<ghw::cache<CacheOp::Flush>>                        == D::HwInstruction);
+static_assert(which_dim_v<ghw::cache<CacheOp::Flush>> == D::HwInstruction);
 static_assert(which_dim_v<ghw::barrier<BarrierArch::X86, BarrierStrength::FullFence>> == D::BarrierStrength);
-static_assert(which_dim_v<ghw::tsc<TscMode::SerializedPinned>>               == D::HwInstruction);
-static_assert(which_dim_v<ghw::rng<RngSource::PhiloxCounter>>                == D::HwInstruction);
-static_assert(which_dim_v<ghw::cpuid<0x00000007u>>                           == D::HwInstruction);
-static_assert(which_dim_v<ghw::msr<0x10u>>                                   == D::HwInstruction);
-static_assert(which_dim_v<ghw::port_io<0x80u>>                               == D::HwInstruction);
-static_assert(which_dim_v<ghw::asm_<"reason">>                               == D::HwInstruction);
-static_assert(which_dim_v<ghw::simd_width<256>>                              == D::SimdIsa);
+static_assert(which_dim_v<ghw::tsc<TscMode::SerializedPinned>> == D::HwInstruction);
+static_assert(which_dim_v<ghw::rng<RngSource::PhiloxCounter>> == D::HwInstruction);
+static_assert(which_dim_v<ghw::cpuid<0x00000007u>> == D::HwInstruction);
+static_assert(which_dim_v<ghw::msr<0x10u>> == D::HwInstruction);
+static_assert(which_dim_v<ghw::port_io<0x80u>> == D::HwInstruction);
+static_assert(which_dim_v<ghw::asm_<"reason">> == D::HwInstruction);
+static_assert(which_dim_v<ghw::simd_width<256>> == D::SimdIsa);
 static_assert(which_dim_v<ghw::vendor_intrinsic<VendorBackend::NV, "wgmma">> == D::Representation);
-static_assert(which_dim_v<ghw::scope<MemoryScope::Cta, BarrierArch::Gpu>>    == D::MemoryScope);
-static_assert(which_dim_v<scope_arm_osh>                                     == D::MemoryScope);
+static_assert(which_dim_v<ghw::scope<MemoryScope::Cta, BarrierArch::Gpu>> == D::MemoryScope);
+static_assert(which_dim_v<scope_arm_osh> == D::MemoryScope);
 
 // ── Layer 4: NTTP / type distinctness ─────────────────────────────────
 static_assert(!std::is_same_v<ghw::cache<CacheOp::Flush>, ghw::cache<CacheOp::Writeback>>);
@@ -602,10 +579,10 @@ static_assert(!std::is_same_v<ghw::tsc<TscMode::Raw>, ghw::tsc<TscMode::Serializ
 static_assert(!std::is_same_v<ghw::rng<RngSource::RdRand>, ghw::rng<RngSource::RdSeed>>);
 static_assert(!std::is_same_v<ghw::msr<0x10u>, ghw::msr<0x11u>>);
 static_assert(!std::is_same_v<ghw::asm_<"a">, ghw::asm_<"b">>);
-static_assert( std::is_same_v<ghw::asm_<"same">, ghw::asm_<"same">>);
+static_assert(std::is_same_v<ghw::asm_<"same">, ghw::asm_<"same">>);
 static_assert(!std::is_same_v<ghw::simd_width<256>, ghw::simd_width<512>>);
-static_assert(!std::is_same_v<ghw::vendor_intrinsic<VendorBackend::NV, "i">,
-                              ghw::vendor_intrinsic<VendorBackend::AMD, "i">>);
+static_assert(
+    !std::is_same_v<ghw::vendor_intrinsic<VendorBackend::NV, "i">, ghw::vendor_intrinsic<VendorBackend::AMD, "i">>);
 // barrier aliases land on distinct (arch, strength) cells.
 static_assert(!std::is_same_v<barrier_x86_mfence, barrier_arm_dmb_ish>);
 static_assert(!std::is_same_v<barrier_compiler_acquire, barrier_compiler_release>);
@@ -613,8 +590,8 @@ static_assert(!std::is_same_v<barrier_compiler_acquire, barrier_compiler_release
 // cells — the OSH/SY/GPU distinctions barrier_arm_dmb_ish could NOT express.
 static_assert(!std::is_same_v<ghw::scope<MemoryScope::Inner, BarrierArch::Arm>,
                               ghw::scope<MemoryScope::Outer, BarrierArch::Arm>>);
-static_assert(!std::is_same_v<ghw::scope<MemoryScope::Gpu, BarrierArch::Gpu>,
-                              ghw::scope<MemoryScope::Gpu, BarrierArch::Arm>>);
+static_assert(
+    !std::is_same_v<ghw::scope<MemoryScope::Gpu, BarrierArch::Gpu>, ghw::scope<MemoryScope::Gpu, BarrierArch::Arm>>);
 static_assert(!std::is_same_v<scope_arm_ish, scope_arm_osh>);
 static_assert(!std::is_same_v<scope_arm_osh, scope_arm_sy>);
 static_assert(!std::is_same_v<scope_gpu_cta, scope_gpu_cluster>);
@@ -622,108 +599,90 @@ static_assert(!std::is_same_v<scope_gpu_cluster, scope_gpu_device>);
 static_assert(!std::is_same_v<scope_arm_sy, scope_system>);  // SY (Arm) ≠ system (Compiler)
 
 // ── Layer 5: validity predicates gate the parametric families ─────────
-static_assert( valid_simd_width_v<0>   && valid_simd_width_v<512>);
+static_assert(valid_simd_width_v<0> && valid_simd_width_v<512>);
 static_assert(!valid_simd_width_v<100> && !valid_simd_width_v<64>);
-static_assert( is_sanctioned_cpuid_leaf_v<0x00000007u>);
+static_assert(is_sanctioned_cpuid_leaf_v<0x00000007u>);
 static_assert(!is_sanctioned_cpuid_leaf_v<0xDEADBEEFu>);
-static_assert( rationale_nonempty_v<"x">);
+static_assert(rationale_nonempty_v<"x">);
 static_assert(!rationale_nonempty_v<"">);
 // scope_arch_trunk_consistent truth table (V-269):
 //   shared sentinels (Thread/System) — realizable on any arch
-static_assert( scope_arch_trunk_consistent(MemoryScope::System, BarrierArch::Arm));
-static_assert( scope_arch_trunk_consistent(MemoryScope::System, BarrierArch::Compiler));
-static_assert( scope_arch_trunk_consistent(MemoryScope::Thread, BarrierArch::X86));
+static_assert(scope_arch_trunk_consistent(MemoryScope::System, BarrierArch::Arm));
+static_assert(scope_arch_trunk_consistent(MemoryScope::System, BarrierArch::Compiler));
+static_assert(scope_arch_trunk_consistent(MemoryScope::Thread, BarrierArch::X86));
 //   accel trunk — needs the GPU fence dialect, rejects ARM/x86/Compiler
-static_assert( scope_arch_trunk_consistent(MemoryScope::Gpu, BarrierArch::Gpu));
-static_assert( scope_arch_trunk_consistent(MemoryScope::Cta, BarrierArch::Gpu));
+static_assert(scope_arch_trunk_consistent(MemoryScope::Gpu, BarrierArch::Gpu));
+static_assert(scope_arch_trunk_consistent(MemoryScope::Cta, BarrierArch::Gpu));
 static_assert(!scope_arch_trunk_consistent(MemoryScope::Gpu, BarrierArch::Arm));
 static_assert(!scope_arch_trunk_consistent(MemoryScope::Cta, BarrierArch::X86));
 //   ARM trunk — needs the ARM DMB dialect, rejects GPU/x86/Compiler
-static_assert( scope_arch_trunk_consistent(MemoryScope::Inner, BarrierArch::Arm));
-static_assert( scope_arch_trunk_consistent(MemoryScope::Outer, BarrierArch::Arm));
+static_assert(scope_arch_trunk_consistent(MemoryScope::Inner, BarrierArch::Arm));
+static_assert(scope_arch_trunk_consistent(MemoryScope::Outer, BarrierArch::Arm));
 static_assert(!scope_arch_trunk_consistent(MemoryScope::Inner, BarrierArch::Gpu));
 static_assert(!scope_arch_trunk_consistent(MemoryScope::Outer, BarrierArch::Compiler));
 
 // ── Layer 6: the five §XXI mints synthesize the right grant types ─────
 constexpr eff::TestRunnerCtx ctx{};
 
-static_assert(std::is_same_v<
-    decltype(mint_asm_grant<"vpshufb hot probe">(ctx)),
-    ghw::asm_<"vpshufb hot probe">>);
-static_assert(std::is_same_v<
-    decltype(mint_simd_width<256>(ctx)),
-    ghw::simd_width<256>>);
-static_assert(std::is_same_v<
-    decltype(mint_vendor_intrinsic<"wgmma", VendorBackend::NV>(ctx)),
-    ghw::vendor_intrinsic<VendorBackend::NV, "wgmma">>);
-static_assert(std::is_same_v<
-    decltype(mint_tsc_grant<TscMode::SerializedPinned>(ctx, CpuPinProof{})),
-    ghw::tsc<TscMode::SerializedPinned>>);
-static_assert(std::is_same_v<
-    decltype(mint_msr_grant<0xC0000080u>(
-        ctx, ::crucible::safety::mint_permission_root<root>())),
-    ghw::msr<0xC0000080u>>);
-static_assert(std::is_same_v<
-    decltype(mint_scoped_fence<MemoryScope::Gpu, BarrierArch::Gpu>(ctx)),
-    ghw::scope<MemoryScope::Gpu, BarrierArch::Gpu>>);
-static_assert(std::is_same_v<
-    decltype(mint_scoped_fence<MemoryScope::Outer, BarrierArch::Arm>(ctx)),
-    ghw::scope<MemoryScope::Outer, BarrierArch::Arm>>);
+static_assert(std::is_same_v<decltype(mint_asm_grant<"vpshufb hot probe">(ctx)), ghw::asm_<"vpshufb hot probe">>);
+static_assert(std::is_same_v<decltype(mint_simd_width<256>(ctx)), ghw::simd_width<256>>);
+static_assert(std::is_same_v<decltype(mint_vendor_intrinsic<"wgmma", VendorBackend::NV>(ctx)),
+                             ghw::vendor_intrinsic<VendorBackend::NV, "wgmma">>);
+static_assert(std::is_same_v<decltype(mint_tsc_grant<TscMode::SerializedPinned>(ctx, CpuPinProof{})),
+                             ghw::tsc<TscMode::SerializedPinned>>);
+static_assert(
+    std::is_same_v<decltype(mint_msr_grant<0xC0000080u>(ctx, ::crucible::safety::mint_permission_root<root>())),
+                   ghw::msr<0xC0000080u>>);
+static_assert(std::is_same_v<decltype(mint_scoped_fence<MemoryScope::Gpu, BarrierArch::Gpu>(ctx)),
+                             ghw::scope<MemoryScope::Gpu, BarrierArch::Gpu>>);
+static_assert(std::is_same_v<decltype(mint_scoped_fence<MemoryScope::Outer, BarrierArch::Arm>(ctx)),
+                             ghw::scope<MemoryScope::Outer, BarrierArch::Arm>>);
 
 // ── Layer 7: mint concept gates reject the mismatch classes (positive
 //    side — the HS14 fixtures witness the negative side at compile-fail) ─
-static_assert( CtxFitsAsmMint<eff::TestRunnerCtx, "x">);
+static_assert(CtxFitsAsmMint<eff::TestRunnerCtx, "x">);
 static_assert(!CtxFitsAsmMint<eff::TestRunnerCtx, "">);
 static_assert(!CtxFitsAsmMint<int, "x">);
-static_assert( CtxFitsSimdWidthMint<eff::TestRunnerCtx, 256>);
+static_assert(CtxFitsSimdWidthMint<eff::TestRunnerCtx, 256>);
 static_assert(!CtxFitsSimdWidthMint<eff::TestRunnerCtx, 100>);
-static_assert( CtxFitsTscMint<eff::TestRunnerCtx, TscMode::SerializedPinned>);
+static_assert(CtxFitsTscMint<eff::TestRunnerCtx, TscMode::SerializedPinned>);
 static_assert(!CtxFitsTscMint<eff::TestRunnerCtx, TscMode::NotAllowed>);
-static_assert( CtxFitsVendorIntrinsicMint<eff::TestRunnerCtx, "wgmma">);
+static_assert(CtxFitsVendorIntrinsicMint<eff::TestRunnerCtx, "wgmma">);
 static_assert(!CtxFitsVendorIntrinsicMint<eff::TestRunnerCtx, "">);
-static_assert( CtxFitsScopedFenceMint<eff::TestRunnerCtx, MemoryScope::Gpu, BarrierArch::Gpu>);
-static_assert( CtxFitsScopedFenceMint<eff::TestRunnerCtx, MemoryScope::Inner, BarrierArch::Arm>);
-static_assert( CtxFitsScopedFenceMint<eff::TestRunnerCtx, MemoryScope::System, BarrierArch::Compiler>);
-static_assert(!CtxFitsScopedFenceMint<eff::TestRunnerCtx, MemoryScope::Thread, BarrierArch::Arm>);   // ⊥ no-fence
-static_assert(!CtxFitsScopedFenceMint<eff::TestRunnerCtx, MemoryScope::Gpu, BarrierArch::Arm>);       // cross-trunk
-static_assert(!CtxFitsScopedFenceMint<int, MemoryScope::Gpu, BarrierArch::Gpu>);                      // non-ctx
+static_assert(CtxFitsScopedFenceMint<eff::TestRunnerCtx, MemoryScope::Gpu, BarrierArch::Gpu>);
+static_assert(CtxFitsScopedFenceMint<eff::TestRunnerCtx, MemoryScope::Inner, BarrierArch::Arm>);
+static_assert(CtxFitsScopedFenceMint<eff::TestRunnerCtx, MemoryScope::System, BarrierArch::Compiler>);
+static_assert(!CtxFitsScopedFenceMint<eff::TestRunnerCtx, MemoryScope::Thread, BarrierArch::Arm>);  // ⊥ no-fence
+static_assert(!CtxFitsScopedFenceMint<eff::TestRunnerCtx, MemoryScope::Gpu, BarrierArch::Arm>);  // cross-trunk
+static_assert(!CtxFitsScopedFenceMint<int, MemoryScope::Gpu, BarrierArch::Gpu>);  // non-ctx
 
 // ── Layer 8: engagement markers route to the three hw axes ────────────
-static_assert(which_dim_v<::crucible::fixy::grant::accept_default_strict_for_HwInstruction>
-              == D::HwInstruction);
-static_assert(which_dim_v<::crucible::fixy::grant::accept_default_strict_for_BarrierStrength>
-              == D::BarrierStrength);
-static_assert(which_dim_v<::crucible::fixy::grant::accept_default_strict_for_SimdIsa>
-              == D::SimdIsa);
-static_assert(which_dim_v<::crucible::fixy::grant::accept_default_strict_for_MemoryScope>
-              == D::MemoryScope);
+static_assert(which_dim_v<::crucible::fixy::grant::accept_default_strict_for_HwInstruction> == D::HwInstruction);
+static_assert(which_dim_v<::crucible::fixy::grant::accept_default_strict_for_BarrierStrength> == D::BarrierStrength);
+static_assert(which_dim_v<::crucible::fixy::grant::accept_default_strict_for_SimdIsa> == D::SimdIsa);
+static_assert(which_dim_v<::crucible::fixy::grant::accept_default_strict_for_MemoryScope> == D::MemoryScope);
 
 // ── Runtime smoke test — non-constant args defeat consteval folding,
 //    catching SFINAE / inline-body bugs the static_asserts can mask. ───
 inline void runtime_smoke_test() {
     eff::TestRunnerCtx live_ctx{};
 
-    [[maybe_unused]] auto asm_grant   = mint_asm_grant<"runtime smoke asm">(live_ctx);
+    [[maybe_unused]] auto asm_grant = mint_asm_grant<"runtime smoke asm">(live_ctx);
     [[maybe_unused]] auto width_grant = mint_simd_width<512>(live_ctx);
-    [[maybe_unused]] auto vend_grant  =
-        mint_vendor_intrinsic<"runtime smoke intrinsic", VendorBackend::AMD>(live_ctx);
-    [[maybe_unused]] auto tsc_grant   =
-        mint_tsc_grant<TscMode::SerializedPinned>(live_ctx, CpuPinProof{});
-    [[maybe_unused]] auto msr_grant   =
-        mint_msr_grant<0x10u>(live_ctx, ::crucible::safety::mint_permission_root<root>());
-    [[maybe_unused]] auto scope_gpu   =
-        mint_scoped_fence<MemoryScope::Gpu, BarrierArch::Gpu>(live_ctx);
-    [[maybe_unused]] auto scope_osh   =
-        mint_scoped_fence<MemoryScope::Outer, BarrierArch::Arm>(live_ctx);
+    [[maybe_unused]] auto vend_grant = mint_vendor_intrinsic<"runtime smoke intrinsic", VendorBackend::AMD>(live_ctx);
+    [[maybe_unused]] auto tsc_grant = mint_tsc_grant<TscMode::SerializedPinned>(live_ctx, CpuPinProof{});
+    [[maybe_unused]] auto msr_grant = mint_msr_grant<0x10u>(live_ctx, ::crucible::safety::mint_permission_root<root>());
+    [[maybe_unused]] auto scope_gpu = mint_scoped_fence<MemoryScope::Gpu, BarrierArch::Gpu>(live_ctx);
+    [[maybe_unused]] auto scope_osh = mint_scoped_fence<MemoryScope::Outer, BarrierArch::Arm>(live_ctx);
 
     // Direct grant construction (the non-mint families) round-trips too.
     [[maybe_unused]] ghw::cache<CacheOp::Prefetch, 2> prefetch{};
-    [[maybe_unused]] barrier_x86_mfence              fence{};
+    [[maybe_unused]] barrier_x86_mfence fence{};
     [[maybe_unused]] ghw::rng<RngSource::PhiloxCounter> rng_tag{};
-    [[maybe_unused]] ghw::cpuid<0x00000001u>            cpuid_tag{};
-    [[maybe_unused]] ghw::port_io<0xCF8u>               port_tag{};
-    [[maybe_unused]] scope_arm_sy                       sy_tag{};
-    [[maybe_unused]] scope_gpu_cta                      cta_tag{};
+    [[maybe_unused]] ghw::cpuid<0x00000001u> cpuid_tag{};
+    [[maybe_unused]] ghw::port_io<0xCF8u> port_tag{};
+    [[maybe_unused]] scope_arm_sy sy_tag{};
+    [[maybe_unused]] scope_gpu_cta cta_tag{};
 }
 
 }  // namespace crucible::fixy::hw::detail::v257_self_test

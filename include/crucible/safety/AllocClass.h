@@ -127,14 +127,10 @@ using AllocClassTag_v = ::crucible::algebra::lattices::AllocClassTag;
 template <AllocClassTag_v Tag, typename T>
 class [[nodiscard]] AllocClass {
 public:
-    using value_type   = T;
+    using value_type = T;
     using lattice_type = AllocClassLattice::At<Tag>;
-    using graded_type  = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Absolute,
-        lattice_type,
-        T>;
-    static constexpr ::crucible::algebra::ModalityKind modality =
-        ::crucible::algebra::ModalityKind::Absolute;
+    using graded_type = ::crucible::algebra::Graded<::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
+    static constexpr ::crucible::algebra::ModalityKind modality = ::crucible::algebra::ModalityKind::Absolute;
 
     static constexpr AllocClassTag_v tag = Tag;
 
@@ -142,33 +138,29 @@ private:
     graded_type impl_;
 
 public:
-
-    constexpr AllocClass() noexcept(
-        std::is_nothrow_default_constructible_v<T>)
+    constexpr AllocClass() noexcept(std::is_nothrow_default_constructible_v<T>)
         : impl_{T{}, typename lattice_type::element_type{}} {}
 
-    constexpr explicit AllocClass(T value) noexcept(
-        std::is_nothrow_move_constructible_v<T>)
+    constexpr explicit AllocClass(T value) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(value), typename lattice_type::element_type{}} {}
 
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr explicit AllocClass(std::in_place_t, Args&&... args)
-        noexcept(std::is_nothrow_constructible_v<T, Args...>
-                 && std::is_nothrow_move_constructible_v<T>)
-        : impl_{T(std::forward<Args>(args)...),
-                typename lattice_type::element_type{}} {}
+    constexpr explicit AllocClass(std::in_place_t, Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>
+                                                                            && std::is_nothrow_move_constructible_v<T>)
+        : impl_{T(std::forward<Args>(args)...), typename lattice_type::element_type{}} {}
 
-    constexpr AllocClass(const AllocClass&)            = default;
-    constexpr AllocClass(AllocClass&&)                 = default;
+    constexpr AllocClass(const AllocClass&) = default;
+    constexpr AllocClass(AllocClass&&) = default;
     constexpr AllocClass& operator=(const AllocClass&) = default;
-    constexpr AllocClass& operator=(AllocClass&&)      = default;
-    ~AllocClass()                                      = default;
+    constexpr AllocClass& operator=(AllocClass&&) = default;
+    ~AllocClass() = default;
 
-    [[nodiscard]] friend constexpr bool operator==(
-        AllocClass const& a, AllocClass const& b) noexcept(
-        noexcept(a.peek() == b.peek()))
-        requires requires(T const& x, T const& y) { { x == y } -> std::convertible_to<bool>; }
+    [[nodiscard]] friend constexpr bool operator==(AllocClass const& a,
+                                                   AllocClass const& b) noexcept(noexcept(a.peek() == b.peek()))
+        requires requires(T const& x, T const& y) {
+            { x == y } -> std::convertible_to<bool>;
+        }
     {
         return a.peek() == b.peek();
     }
@@ -176,101 +168,90 @@ public:
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
     }
-    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
-        return graded_type::lattice_name();
-    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept { return graded_type::lattice_name(); }
 
-    [[nodiscard]] constexpr T const& peek() const& noexcept {
-        return impl_.peek();
-    }
+    [[nodiscard]] constexpr T const& peek() const& noexcept { return impl_.peek(); }
 
-    [[nodiscard]] constexpr T consume() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
+    [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
         return std::move(impl_).consume();
     }
 
-    [[nodiscard]] constexpr T& peek_mut() & noexcept {
-        return impl_.peek_mut();
-    }
+    [[nodiscard]] constexpr T& peek_mut() & noexcept { return impl_.peek_mut(); }
 
-    constexpr void swap(AllocClass& other)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
-        impl_.swap(other.impl_);
-    }
+    constexpr void swap(AllocClass& other) noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
 
-    friend constexpr void swap(AllocClass& a, AllocClass& b)
-        noexcept(std::is_nothrow_swappable_v<T>)
-    {
-        a.swap(b);
-    }
+    friend constexpr void swap(AllocClass& a, AllocClass& b) noexcept(std::is_nothrow_swappable_v<T>) { a.swap(b); }
 
     template <AllocClassTag_v RequiredTag>
     static constexpr bool satisfies = AllocClassLattice::leq(RequiredTag, Tag);
 
     template <AllocClassTag_v WeakerTag>
-        requires (AllocClassLattice::leq(WeakerTag, Tag))
-    [[nodiscard]] constexpr AllocClass<WeakerTag, T> relax() const&
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
+        requires(AllocClassLattice::leq(WeakerTag, Tag))
+    [[nodiscard]] constexpr AllocClass<WeakerTag, T> relax() const& noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
     {
         return AllocClass<WeakerTag, T>{this->peek()};
     }
 
     template <AllocClassTag_v WeakerTag>
-        requires (AllocClassLattice::leq(WeakerTag, Tag))
-    [[nodiscard]] constexpr AllocClass<WeakerTag, T> relax() &&
-        noexcept(std::is_nothrow_move_constructible_v<T>)
-    {
-        return AllocClass<WeakerTag, T>{
-            std::move(impl_).consume()};
+        requires(AllocClassLattice::leq(WeakerTag, Tag))
+    [[nodiscard]] constexpr AllocClass<WeakerTag, T> relax() && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return AllocClass<WeakerTag, T>{std::move(impl_).consume()};
     }
 };
 
 // ── Convenience aliases ─────────────────────────────────────────────
 namespace alloc_class {
-    template <typename T> using Stack    = AllocClass<AllocClassTag_v::Stack,    T>;
-    template <typename T> using Pool     = AllocClass<AllocClassTag_v::Pool,     T>;
-    template <typename T> using Arena    = AllocClass<AllocClassTag_v::Arena,    T>;
-    template <typename T> using Heap     = AllocClass<AllocClassTag_v::Heap,     T>;
-    template <typename T> using Mmap     = AllocClass<AllocClassTag_v::Mmap,     T>;
-    template <typename T> using HugePage = AllocClass<AllocClassTag_v::HugePage, T>;
+template <typename T>
+using Stack = AllocClass<AllocClassTag_v::Stack, T>;
+template <typename T>
+using Pool = AllocClass<AllocClassTag_v::Pool, T>;
+template <typename T>
+using Arena = AllocClass<AllocClassTag_v::Arena, T>;
+template <typename T>
+using Heap = AllocClass<AllocClassTag_v::Heap, T>;
+template <typename T>
+using Mmap = AllocClass<AllocClassTag_v::Mmap, T>;
+template <typename T>
+using HugePage = AllocClass<AllocClassTag_v::HugePage, T>;
 }  // namespace alloc_class
 
 // ── Layout invariants ───────────────────────────────────────────────
 namespace detail::alloc_class_layout {
 
-template <typename T> using StackA = AllocClass<AllocClassTag_v::Stack, T>;
-template <typename T> using ArenaA = AllocClass<AllocClassTag_v::Arena, T>;
-template <typename T> using HeapA  = AllocClass<AllocClassTag_v::Heap,  T>;
+template <typename T>
+using StackA = AllocClass<AllocClassTag_v::Stack, T>;
+template <typename T>
+using ArenaA = AllocClass<AllocClassTag_v::Arena, T>;
+template <typename T>
+using HeapA = AllocClass<AllocClassTag_v::Heap, T>;
 
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(StackA, char);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(StackA, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(StackA, double);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(ArenaA, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(ArenaA, double);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(HeapA,  int);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(HeapA,  double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(HeapA, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(HeapA, double);
 
 }  // namespace detail::alloc_class_layout
 
-static_assert(sizeof(AllocClass<AllocClassTag_v::Stack,    int>)    == sizeof(int));
-static_assert(sizeof(AllocClass<AllocClassTag_v::Pool,     int>)    == sizeof(int));
-static_assert(sizeof(AllocClass<AllocClassTag_v::Arena,    int>)    == sizeof(int));
-static_assert(sizeof(AllocClass<AllocClassTag_v::Heap,     int>)    == sizeof(int));
-static_assert(sizeof(AllocClass<AllocClassTag_v::Mmap,     int>)    == sizeof(int));
-static_assert(sizeof(AllocClass<AllocClassTag_v::HugePage, int>)    == sizeof(int));
-static_assert(sizeof(AllocClass<AllocClassTag_v::Stack,    double>) == sizeof(double));
+static_assert(sizeof(AllocClass<AllocClassTag_v::Stack, int>) == sizeof(int));
+static_assert(sizeof(AllocClass<AllocClassTag_v::Pool, int>) == sizeof(int));
+static_assert(sizeof(AllocClass<AllocClassTag_v::Arena, int>) == sizeof(int));
+static_assert(sizeof(AllocClass<AllocClassTag_v::Heap, int>) == sizeof(int));
+static_assert(sizeof(AllocClass<AllocClassTag_v::Mmap, int>) == sizeof(int));
+static_assert(sizeof(AllocClass<AllocClassTag_v::HugePage, int>) == sizeof(int));
+static_assert(sizeof(AllocClass<AllocClassTag_v::Stack, double>) == sizeof(double));
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::alloc_class_self_test {
 
-using StackInt    = AllocClass<AllocClassTag_v::Stack,    int>;
-using PoolInt     = AllocClass<AllocClassTag_v::Pool,     int>;
-using ArenaInt    = AllocClass<AllocClassTag_v::Arena,    int>;
-using HeapInt     = AllocClass<AllocClassTag_v::Heap,     int>;
-using MmapInt     = AllocClass<AllocClassTag_v::Mmap,     int>;
+using StackInt = AllocClass<AllocClassTag_v::Stack, int>;
+using PoolInt = AllocClass<AllocClassTag_v::Pool, int>;
+using ArenaInt = AllocClass<AllocClassTag_v::Arena, int>;
+using HeapInt = AllocClass<AllocClassTag_v::Heap, int>;
+using MmapInt = AllocClass<AllocClassTag_v::Mmap, int>;
 using HugePageInt = AllocClass<AllocClassTag_v::HugePage, int>;
 
 inline constexpr StackInt a_default{};
@@ -283,11 +264,11 @@ static_assert(a_explicit.peek() == 42);
 inline constexpr StackInt a_in_place{std::in_place, 7};
 static_assert(a_in_place.peek() == 7);
 
-static_assert(StackInt::tag    == AllocClassTag_v::Stack);
-static_assert(PoolInt::tag     == AllocClassTag_v::Pool);
-static_assert(ArenaInt::tag    == AllocClassTag_v::Arena);
-static_assert(HeapInt::tag     == AllocClassTag_v::Heap);
-static_assert(MmapInt::tag     == AllocClassTag_v::Mmap);
+static_assert(StackInt::tag == AllocClassTag_v::Stack);
+static_assert(PoolInt::tag == AllocClassTag_v::Pool);
+static_assert(ArenaInt::tag == AllocClassTag_v::Arena);
+static_assert(HeapInt::tag == AllocClassTag_v::Heap);
+static_assert(MmapInt::tag == AllocClassTag_v::Mmap);
 static_assert(HugePageInt::tag == AllocClassTag_v::HugePage);
 
 // Chain reminder (per AllocClassLattice):
@@ -305,54 +286,52 @@ static_assert(StackInt::satisfies<AllocClassTag_v::Mmap>);
 static_assert(StackInt::satisfies<AllocClassTag_v::HugePage>);
 
 // Pool satisfies Pool + Arena + Heap + Mmap + HugePage; FAILS on Stack.
-static_assert( PoolInt::satisfies<AllocClassTag_v::Pool>);
-static_assert( PoolInt::satisfies<AllocClassTag_v::Arena>);
-static_assert( PoolInt::satisfies<AllocClassTag_v::Heap>);
-static_assert( PoolInt::satisfies<AllocClassTag_v::Mmap>);
-static_assert( PoolInt::satisfies<AllocClassTag_v::HugePage>);
-static_assert(!PoolInt::satisfies<AllocClassTag_v::Stack>,
-    "Pool MUST NOT satisfy Stack — Stack is the strongest no-"
-    "allocation claim, Pool still calls into a freelist.");
+static_assert(PoolInt::satisfies<AllocClassTag_v::Pool>);
+static_assert(PoolInt::satisfies<AllocClassTag_v::Arena>);
+static_assert(PoolInt::satisfies<AllocClassTag_v::Heap>);
+static_assert(PoolInt::satisfies<AllocClassTag_v::Mmap>);
+static_assert(PoolInt::satisfies<AllocClassTag_v::HugePage>);
+static_assert(!PoolInt::satisfies<AllocClassTag_v::Stack>, "Pool MUST NOT satisfy Stack — Stack is the strongest no-"
+                                                           "allocation claim, Pool still calls into a freelist.");
 
 // Arena satisfies Arena + Heap + Mmap + HugePage; FAILS on Pool, Stack.
-static_assert( ArenaInt::satisfies<AllocClassTag_v::Arena>);
-static_assert( ArenaInt::satisfies<AllocClassTag_v::Heap>);
-static_assert( ArenaInt::satisfies<AllocClassTag_v::Mmap>);
-static_assert( ArenaInt::satisfies<AllocClassTag_v::HugePage>);
-static_assert(!ArenaInt::satisfies<AllocClassTag_v::Pool>,
-    "Arena MUST NOT satisfy Pool — Pool is structurally bounded "
-    "(preallocated freelist), Arena's bump can occasionally hit "
-    "the cold-path new-chunk acquisition.");
+static_assert(ArenaInt::satisfies<AllocClassTag_v::Arena>);
+static_assert(ArenaInt::satisfies<AllocClassTag_v::Heap>);
+static_assert(ArenaInt::satisfies<AllocClassTag_v::Mmap>);
+static_assert(ArenaInt::satisfies<AllocClassTag_v::HugePage>);
+static_assert(!ArenaInt::satisfies<AllocClassTag_v::Pool>, "Arena MUST NOT satisfy Pool — Pool is structurally bounded "
+                                                           "(preallocated freelist), Arena's bump can occasionally hit "
+                                                           "the cold-path new-chunk acquisition.");
 static_assert(!ArenaInt::satisfies<AllocClassTag_v::Stack>);
 
 // Heap satisfies Heap + Mmap + HugePage; FAILS on Arena, Pool, Stack —
 // THIS IS THE LOAD-BEARING REJECTION for hot-path admission gates
 // per CLAUDE.md §VIII (no malloc on hot path).
-static_assert( HeapInt::satisfies<AllocClassTag_v::Heap>);
-static_assert( HeapInt::satisfies<AllocClassTag_v::Mmap>);
-static_assert( HeapInt::satisfies<AllocClassTag_v::HugePage>);
+static_assert(HeapInt::satisfies<AllocClassTag_v::Heap>);
+static_assert(HeapInt::satisfies<AllocClassTag_v::Mmap>);
+static_assert(HeapInt::satisfies<AllocClassTag_v::HugePage>);
 static_assert(!HeapInt::satisfies<AllocClassTag_v::Arena>,
-    "Heap MUST NOT satisfy Arena — this is the load-bearing "
-    "rejection that hot-path admission gates depend on (CLAUDE.md "
-    "§VIII no-malloc-on-hot-path discipline).  If this fires, "
-    "jemalloc calls can silently flow into hot-path TraceRing / "
-    "MetaLog / Vigil call sites, breaking the per-call shape "
-    "budget (jemalloc ~50-200ns vs Arena bump ~2-3ns).");
+              "Heap MUST NOT satisfy Arena — this is the load-bearing "
+              "rejection that hot-path admission gates depend on (CLAUDE.md "
+              "§VIII no-malloc-on-hot-path discipline).  If this fires, "
+              "jemalloc calls can silently flow into hot-path TraceRing / "
+              "MetaLog / Vigil call sites, breaking the per-call shape "
+              "budget (jemalloc ~50-200ns vs Arena bump ~2-3ns).");
 static_assert(!HeapInt::satisfies<AllocClassTag_v::Pool>);
 static_assert(!HeapInt::satisfies<AllocClassTag_v::Stack>);
 
 // Mmap (chain index 1) satisfies Mmap (self) + HugePage (below);
 // FAILS on Heap/Arena/Pool/Stack (above).  Audit-pass row covering
 // the previously-untested mid-tier cell.
-static_assert( MmapInt::satisfies<AllocClassTag_v::Mmap>);     // self
-static_assert( MmapInt::satisfies<AllocClassTag_v::HugePage>); // below
-static_assert(!MmapInt::satisfies<AllocClassTag_v::Heap>);     // above ✗
+static_assert(MmapInt::satisfies<AllocClassTag_v::Mmap>);  // self
+static_assert(MmapInt::satisfies<AllocClassTag_v::HugePage>);  // below
+static_assert(!MmapInt::satisfies<AllocClassTag_v::Heap>);  // above ✗
 static_assert(!MmapInt::satisfies<AllocClassTag_v::Arena>);
 static_assert(!MmapInt::satisfies<AllocClassTag_v::Pool>);
 static_assert(!MmapInt::satisfies<AllocClassTag_v::Stack>);
 
 // HugePage (chain bottom) satisfies only HugePage.
-static_assert( HugePageInt::satisfies<AllocClassTag_v::HugePage>);
+static_assert(HugePageInt::satisfies<AllocClassTag_v::HugePage>);
 static_assert(!HugePageInt::satisfies<AllocClassTag_v::Mmap>);
 static_assert(!HugePageInt::satisfies<AllocClassTag_v::Heap>);
 static_assert(!HugePageInt::satisfies<AllocClassTag_v::Arena>);
@@ -360,22 +339,18 @@ static_assert(!HugePageInt::satisfies<AllocClassTag_v::Pool>);
 static_assert(!HugePageInt::satisfies<AllocClassTag_v::Stack>);
 
 // ── relax<WeakerTag> — DOWN-the-lattice conversion ───────────────
-inline constexpr auto from_stack_to_pool =
-    StackInt{42}.relax<AllocClassTag_v::Pool>();
+inline constexpr auto from_stack_to_pool = StackInt{42}.relax<AllocClassTag_v::Pool>();
 static_assert(from_stack_to_pool.peek() == 42);
 static_assert(from_stack_to_pool.tag == AllocClassTag_v::Pool);
 
-inline constexpr auto from_stack_to_hugepage =
-    StackInt{99}.relax<AllocClassTag_v::HugePage>();
+inline constexpr auto from_stack_to_hugepage = StackInt{99}.relax<AllocClassTag_v::HugePage>();
 static_assert(from_stack_to_hugepage.peek() == 99);
 static_assert(from_stack_to_hugepage.tag == AllocClassTag_v::HugePage);
 
-inline constexpr auto from_arena_to_heap =
-    ArenaInt{7}.relax<AllocClassTag_v::Heap>();
+inline constexpr auto from_arena_to_heap = ArenaInt{7}.relax<AllocClassTag_v::Heap>();
 static_assert(from_arena_to_heap.peek() == 7);
 
-inline constexpr auto from_pool_to_self =
-    PoolInt{8}.relax<AllocClassTag_v::Pool>();
+inline constexpr auto from_pool_to_self = PoolInt{8}.relax<AllocClassTag_v::Pool>();
 static_assert(from_pool_to_self.peek() == 8);
 
 template <typename W, AllocClassTag_v T_target>
@@ -383,31 +358,31 @@ concept can_relax = requires(W w) {
     { std::move(w).template relax<T_target>() };
 };
 
-static_assert( can_relax<StackInt,    AllocClassTag_v::Pool>);     // ✓ down
-static_assert( can_relax<StackInt,    AllocClassTag_v::HugePage>); // ✓ down (full chain)
-static_assert( can_relax<StackInt,    AllocClassTag_v::Stack>);    // ✓ self
-static_assert( can_relax<ArenaInt,    AllocClassTag_v::Heap>);     // ✓ down
-static_assert( can_relax<ArenaInt,    AllocClassTag_v::Arena>);    // ✓ self
-static_assert(!can_relax<ArenaInt,    AllocClassTag_v::Pool>,        // ✗ up
-    "relax<Pool> on an Arena-pinned wrapper MUST be rejected — "
-    "Pool is structurally bounded; Arena's bump can fail cold-path.");
-static_assert(!can_relax<ArenaInt,    AllocClassTag_v::Stack>);    // ✗ up
-static_assert(!can_relax<HeapInt,     AllocClassTag_v::Arena>,     // ✗ up
-    "relax<Arena> on a Heap-pinned wrapper MUST be rejected — "
-    "THIS IS THE LOAD-BEARING REJECTION for the no-malloc-on-hot-"
-    "path discipline.");
-static_assert(!can_relax<HeapInt,     AllocClassTag_v::Stack>);
-static_assert(!can_relax<HugePageInt, AllocClassTag_v::Mmap>);     // ✗ up
+static_assert(can_relax<StackInt, AllocClassTag_v::Pool>);  // ✓ down
+static_assert(can_relax<StackInt, AllocClassTag_v::HugePage>);  // ✓ down (full chain)
+static_assert(can_relax<StackInt, AllocClassTag_v::Stack>);  // ✓ self
+static_assert(can_relax<ArenaInt, AllocClassTag_v::Heap>);  // ✓ down
+static_assert(can_relax<ArenaInt, AllocClassTag_v::Arena>);  // ✓ self
+static_assert(!can_relax<ArenaInt, AllocClassTag_v::Pool>,  // ✗ up
+              "relax<Pool> on an Arena-pinned wrapper MUST be rejected — "
+              "Pool is structurally bounded; Arena's bump can fail cold-path.");
+static_assert(!can_relax<ArenaInt, AllocClassTag_v::Stack>);  // ✗ up
+static_assert(!can_relax<HeapInt, AllocClassTag_v::Arena>,  // ✗ up
+              "relax<Arena> on a Heap-pinned wrapper MUST be rejected — "
+              "THIS IS THE LOAD-BEARING REJECTION for the no-malloc-on-hot-"
+              "path discipline.");
+static_assert(!can_relax<HeapInt, AllocClassTag_v::Stack>);
+static_assert(!can_relax<HugePageInt, AllocClassTag_v::Mmap>);  // ✗ up
 // HugePage reflexivity at the bottom.
-static_assert( can_relax<HugePageInt, AllocClassTag_v::HugePage>); // ✓ self at bottom
+static_assert(can_relax<HugePageInt, AllocClassTag_v::HugePage>);  // ✓ self at bottom
 
 // ── Diagnostic forwarders ─────────────────────────────────────────
 static_assert(StackInt::value_type_name().ends_with("int"));
-static_assert(StackInt::lattice_name()    == "AllocClassLattice::At<Stack>");
-static_assert(PoolInt::lattice_name()     == "AllocClassLattice::At<Pool>");
-static_assert(ArenaInt::lattice_name()    == "AllocClassLattice::At<Arena>");
-static_assert(HeapInt::lattice_name()     == "AllocClassLattice::At<Heap>");
-static_assert(MmapInt::lattice_name()     == "AllocClassLattice::At<Mmap>");
+static_assert(StackInt::lattice_name() == "AllocClassLattice::At<Stack>");
+static_assert(PoolInt::lattice_name() == "AllocClassLattice::At<Pool>");
+static_assert(ArenaInt::lattice_name() == "AllocClassLattice::At<Arena>");
+static_assert(HeapInt::lattice_name() == "AllocClassLattice::At<Heap>");
+static_assert(MmapInt::lattice_name() == "AllocClassLattice::At<Mmap>");
 static_assert(HugePageInt::lattice_name() == "AllocClassLattice::At<HugePage>");
 
 // ── swap, peek_mut, equality ─────────────────────────────────────
@@ -458,11 +433,11 @@ concept can_equality_compare = requires(W const& a, W const& b) {
     { a == b } -> std::convertible_to<bool>;
 };
 
-static_assert( can_equality_compare<StackInt>);
+static_assert(can_equality_compare<StackInt>);
 static_assert(!can_equality_compare<AllocClass<AllocClassTag_v::Stack, NoEqualityT>>);
 
 static_assert(!std::is_copy_constructible_v<AllocClass<AllocClassTag_v::Stack, NoEqualityT>>,
-    "AllocClass<Tag, T> must transitively inherit T's copy-deletion.");
+              "AllocClass<Tag, T> must transitively inherit T's copy-deletion.");
 static_assert(std::is_move_constructible_v<AllocClass<AllocClassTag_v::Stack, NoEqualityT>>);
 
 // ── relax reflexivity + move-only ────────────────────────────────
@@ -493,10 +468,9 @@ concept can_relax_lvalue = requires(W const& w) {
 };
 
 using StackMoveOnly = AllocClass<AllocClassTag_v::Stack, MoveOnlyT>;
-static_assert( can_relax_rvalue<StackMoveOnly, AllocClassTag_v::Pool>,
-    "relax<>() && MUST work for move-only T.");
+static_assert(can_relax_rvalue<StackMoveOnly, AllocClassTag_v::Pool>, "relax<>() && MUST work for move-only T.");
 static_assert(!can_relax_lvalue<StackMoveOnly, AllocClassTag_v::Pool>,
-    "relax<>() const& on move-only T MUST be rejected.");
+              "relax<>() const& on move-only T MUST be rejected.");
 
 [[nodiscard]] consteval bool relax_move_only_works() noexcept {
     StackMoveOnly src{MoveOnlyT{77}};
@@ -509,15 +483,14 @@ static_assert(relax_move_only_works());
 static_assert(StackInt::value_type_name().size() > 0);
 static_assert(StackInt::lattice_name().starts_with("AllocClassLattice::At<"));
 
-static_assert(alloc_class::Stack<int>::tag    == AllocClassTag_v::Stack);
-static_assert(alloc_class::Pool<int>::tag     == AllocClassTag_v::Pool);
-static_assert(alloc_class::Arena<int>::tag    == AllocClassTag_v::Arena);
-static_assert(alloc_class::Heap<int>::tag     == AllocClassTag_v::Heap);
-static_assert(alloc_class::Mmap<int>::tag     == AllocClassTag_v::Mmap);
+static_assert(alloc_class::Stack<int>::tag == AllocClassTag_v::Stack);
+static_assert(alloc_class::Pool<int>::tag == AllocClassTag_v::Pool);
+static_assert(alloc_class::Arena<int>::tag == AllocClassTag_v::Arena);
+static_assert(alloc_class::Heap<int>::tag == AllocClassTag_v::Heap);
+static_assert(alloc_class::Mmap<int>::tag == AllocClassTag_v::Mmap);
 static_assert(alloc_class::HugePage<int>::tag == AllocClassTag_v::HugePage);
 
-static_assert(std::is_same_v<alloc_class::Stack<double>,
-                             AllocClass<AllocClassTag_v::Stack, double>>);
+static_assert(std::is_same_v<alloc_class::Stack<double>, AllocClass<AllocClassTag_v::Stack, double>>);
 
 // ── TWO admission-gate simulations — LOAD-BEARING ────────────────
 //
@@ -526,30 +499,25 @@ static_assert(std::is_same_v<alloc_class::Stack<double>,
 //     Stack/Pool/Arena (the per-call-shape-respecting tiers);
 //     rejects Heap/Mmap/HugePage.
 template <typename W>
-concept is_hot_path_alloc_admissible =
-    W::template satisfies<AllocClassTag_v::Arena>;
+concept is_hot_path_alloc_admissible = W::template satisfies<AllocClassTag_v::Arena>;
 
-static_assert( is_hot_path_alloc_admissible<StackInt>);
-static_assert( is_hot_path_alloc_admissible<PoolInt>);
-static_assert( is_hot_path_alloc_admissible<ArenaInt>,
-    "Arena-tier value MUST pass the hot-path alloc gate (Arena is "
-    "the boundary).");
-static_assert(!is_hot_path_alloc_admissible<HeapInt>,
-    "Heap-tier value MUST be REJECTED at the hot-path alloc gate "
-    "— THIS IS THE LOAD-BEARING TEST for CLAUDE.md §VIII no-"
-    "malloc-on-hot-path discipline.");
+static_assert(is_hot_path_alloc_admissible<StackInt>);
+static_assert(is_hot_path_alloc_admissible<PoolInt>);
+static_assert(is_hot_path_alloc_admissible<ArenaInt>, "Arena-tier value MUST pass the hot-path alloc gate (Arena is "
+                                                      "the boundary).");
+static_assert(!is_hot_path_alloc_admissible<HeapInt>, "Heap-tier value MUST be REJECTED at the hot-path alloc gate "
+                                                      "— THIS IS THE LOAD-BEARING TEST for CLAUDE.md §VIII no-"
+                                                      "malloc-on-hot-path discipline.");
 static_assert(!is_hot_path_alloc_admissible<MmapInt>);
 static_assert(!is_hot_path_alloc_admissible<HugePageInt>);
 
 // (2) Stack-only gate (strictest — for inlinable hot-loop bodies).
 template <typename W>
-concept is_stack_only_admissible =
-    W::template satisfies<AllocClassTag_v::Stack>;
+concept is_stack_only_admissible = W::template satisfies<AllocClassTag_v::Stack>;
 
-static_assert( is_stack_only_admissible<StackInt>);
-static_assert(!is_stack_only_admissible<PoolInt>,
-    "Pool MUST be REJECTED at the strict stack-only gate — Pool "
-    "still calls into a freelist (~2-5ns), not free.");
+static_assert(is_stack_only_admissible<StackInt>);
+static_assert(!is_stack_only_admissible<PoolInt>, "Pool MUST be REJECTED at the strict stack-only gate — Pool "
+                                                  "still calls into a freelist (~2-5ns), not free.");
 static_assert(!is_stack_only_admissible<ArenaInt>);
 static_assert(!is_stack_only_admissible<HeapInt>);
 
@@ -593,16 +561,16 @@ inline void runtime_smoke_test() {
     int extracted = std::move(orig).consume();
     if (extracted != 55) std::abort();
 
-    alloc_class::Stack<int>    alias_stack{123};
-    alloc_class::Arena<int>    alias_arena{456};
+    alloc_class::Stack<int> alias_stack{123};
+    alloc_class::Arena<int> alias_arena{456};
     alloc_class::HugePage<int> alias_huge{789};
     [[maybe_unused]] auto sv = alias_stack.peek();
     [[maybe_unused]] auto av = alias_arena.peek();
     [[maybe_unused]] auto hv = alias_huge.peek();
 
     [[maybe_unused]] bool can_stack_pass = is_hot_path_alloc_admissible<StackInt>;
-    [[maybe_unused]] bool can_heap_pass  = is_hot_path_alloc_admissible<HeapInt>;
-    [[maybe_unused]] bool can_strict     = is_stack_only_admissible<StackInt>;
+    [[maybe_unused]] bool can_heap_pass = is_hot_path_alloc_admissible<HeapInt>;
+    [[maybe_unused]] bool can_strict = is_stack_only_admissible<StackInt>;
 }
 
 }  // namespace detail::alloc_class_self_test

@@ -36,8 +36,7 @@ struct ElementBytes {
     // construction.  Default-init to 0 (matches ScalarType::Undefined
     // semantics; bounded_above<16>(0) = true so the NSDMI does not
     // trip the construction predicate).
-    fixy::wrap::Refined<fixy::wrap::bounded_above<uint8_t{16}>, uint8_t>
-        value_{uint8_t{0}};
+    fixy::wrap::Refined<fixy::wrap::bounded_above<uint8_t{16}>, uint8_t> value_{uint8_t{0}};
 
     constexpr ElementBytes() noexcept = default;
     // Construction routes through Refined's checked ctor, which fires
@@ -45,8 +44,8 @@ struct ElementBytes {
     // construction.  Existing call sites pass {0,1,2,4,8,16} only.
     explicit constexpr ElementBytes(uint8_t v) noexcept : value_{v} {}
 
-    [[nodiscard]] constexpr uint8_t raw()     const noexcept { return value_.value(); }
-    [[nodiscard]] constexpr bool    is_zero() const noexcept { return value_.value() == 0; }
+    [[nodiscard]] constexpr uint8_t raw() const noexcept { return value_.value(); }
+    [[nodiscard]] constexpr bool is_zero() const noexcept { return value_.value() == 0; }
 
     // Comparison is defined between ElementBytes values only — raw
     // integer literals DON'T implicitly convert (the ctor is
@@ -62,35 +61,33 @@ struct ElementBytes {
     // NOT checked here — callers needing safety wrap via Checked.h's
     // `safe_mul<std::size_t, ...>` or the `safe_array_bytes<T, N>`
     // helper family (#134).
-    [[nodiscard]] constexpr std::size_t times(std::size_t n) const noexcept {
-        return std::size_t{value_.value()} * n;
-    }
+    [[nodiscard]] constexpr std::size_t times(std::size_t n) const noexcept { return std::size_t{value_.value()} * n; }
 };
 static_assert(sizeof(ElementBytes) == sizeof(uint8_t),
-    "ElementBytes must be layout-identical to uint8_t (#129/#1067) — "
-    "Refined<bounded_above<16>, uint8_t> must EBO-collapse to sizeof(uint8_t).");
+              "ElementBytes must be layout-identical to uint8_t (#129/#1067) — "
+              "Refined<bounded_above<16>, uint8_t> must EBO-collapse to sizeof(uint8_t).");
 
 // Mirror c10::ScalarType ordinals exactly so int8_t casts are compatible
 // between the standalone library and the PyTorch Vessel adapter.
 enum class ScalarType : int8_t {
-  Byte = 0,
-  Char = 1,
-  Short = 2,
-  Int = 3,
-  Long = 4,
-  Half = 5,
-  Float = 6,
-  Double = 7,
-  ComplexHalf = 8,
-  ComplexFloat = 9,
-  ComplexDouble = 10,
-  Bool = 11,
-  BFloat16 = 15,
-  Float8_e5m2 = 23,
-  Float8_e4m3fn = 24,
-  Float8_e5m2fnuz = 25,
-  Float8_e4m3fnuz = 26,
-  Undefined = -1,
+    Byte = 0,
+    Char = 1,
+    Short = 2,
+    Int = 3,
+    Long = 4,
+    Half = 5,
+    Float = 6,
+    Double = 7,
+    ComplexHalf = 8,
+    ComplexFloat = 9,
+    ComplexDouble = 10,
+    Bool = 11,
+    BFloat16 = 15,
+    Float8_e5m2 = 23,
+    Float8_e4m3fn = 24,
+    Float8_e5m2fnuz = 25,
+    Float8_e4m3fnuz = 26,
+    Undefined = -1,
 };
 
 // Byte size per dtype.  gnu::const: takes one value, no memory access.
@@ -107,58 +104,57 @@ enum class ScalarType : int8_t {
 // chains.  Callers that intend to accept Undefined must handle the
 // `.is_zero()` case explicitly.
 CRUCIBLE_CONST constexpr ElementBytes element_size(ScalarType const t) noexcept
-    post (r: t == ScalarType::Undefined || !r.is_zero())
-{
-  switch (t) {
-    case ScalarType::Bool:
-    case ScalarType::Byte:
-    case ScalarType::Char:
-    case ScalarType::Float8_e5m2:
-    case ScalarType::Float8_e4m3fn:
-    case ScalarType::Float8_e5m2fnuz:
-    case ScalarType::Float8_e4m3fnuz:
-      return ElementBytes{1};
-    case ScalarType::Short:
-    case ScalarType::Half:
-    case ScalarType::BFloat16:
-      return ElementBytes{2};
-    case ScalarType::Int:
-    case ScalarType::Float:
-    case ScalarType::ComplexHalf:
-      return ElementBytes{4};
-    case ScalarType::Long:
-    case ScalarType::Double:
-    case ScalarType::ComplexFloat:
-      return ElementBytes{8};
-    case ScalarType::ComplexDouble:
-      return ElementBytes{16};
-    case ScalarType::Undefined:
-      return ElementBytes{0};
-    default:
-      std::unreachable();
-  }
+    post(r : t == ScalarType::Undefined || !r.is_zero()) {
+    switch (t) {
+        case ScalarType::Bool:
+        case ScalarType::Byte:
+        case ScalarType::Char:
+        case ScalarType::Float8_e5m2:
+        case ScalarType::Float8_e4m3fn:
+        case ScalarType::Float8_e5m2fnuz:
+        case ScalarType::Float8_e4m3fnuz:
+            return ElementBytes{1};
+        case ScalarType::Short:
+        case ScalarType::Half:
+        case ScalarType::BFloat16:
+            return ElementBytes{2};
+        case ScalarType::Int:
+        case ScalarType::Float:
+        case ScalarType::ComplexHalf:
+            return ElementBytes{4};
+        case ScalarType::Long:
+        case ScalarType::Double:
+        case ScalarType::ComplexFloat:
+            return ElementBytes{8};
+        case ScalarType::ComplexDouble:
+            return ElementBytes{16};
+        case ScalarType::Undefined:
+            return ElementBytes{0};
+        default:
+            std::unreachable();
+    }
 }
 
 // Mirror c10::DeviceType ordinals exactly (c10/core/DeviceType.h).
 enum class DeviceType : int8_t {
-  CPU = 0,
-  CUDA = 1,
-  MKLDNN = 2,
-  HIP = 6,      // AMD HIP — was incorrectly 20 (PrivateUse1's ordinal)
-  XLA = 9,
-  MPS = 13,
-  Meta = 14,
-  PrivateUse1 = 20,
+    CPU = 0,
+    CUDA = 1,
+    MKLDNN = 2,
+    HIP = 6,  // AMD HIP — was incorrectly 20 (PrivateUse1's ordinal)
+    XLA = 9,
+    MPS = 13,
+    Meta = 14,
+    PrivateUse1 = 20,
 };
 
 // Mirror c10::Layout ordinals.
 enum class Layout : int8_t {
-  Strided = 0,
-  Sparse = 1,
-  SparseCsr = 2,
-  SparseCsc = 3,
-  SparseBsr = 4,
-  SparseBsc = 5,
+    Strided = 0,
+    Sparse = 1,
+    SparseCsr = 2,
+    SparseCsc = 3,
+    SparseBsr = 4,
+    SparseBsc = 5,
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -176,44 +172,37 @@ enum class Layout : int8_t {
 //   - No arithmetic: must unwrap, compute, rewrap (intentional)
 // ═══════════════════════════════════════════════════════════════════
 
-#define CRUCIBLE_STRONG_ID(Name)                                           \
-  struct Name {                                                            \
-  private:                                                                 \
-    /* #133: v is private.  External read goes through .raw(); external */\
-    /* construction goes through the explicit ctor OR from_raw().  This */\
-    /* closes the direct-field-access hole where `id.v = 999` could */    \
-    /* bypass the explicit-ctor discipline and mutate a strong-ID in */   \
-    /* place. */                                                           \
-    uint32_t v;                                                            \
-  public:                                                                  \
-    constexpr Name() noexcept : v(UINT32_MAX) {}                           \
-    constexpr explicit Name(uint32_t val) noexcept : v(val) {}             \
-    /* #133: named factory for cross-kind bridges.  When converting */    \
-    /* from ANOTHER strong-ID's raw (the silent-bug pattern), prefer */   \
-    /* `Name::from_raw(other.raw())` — the explicit factory is */         \
-    /* greppable for code review.  Audit: `grep "::from_raw"` finds */    \
-    /* every bridge site mechanically. */                                 \
-    [[nodiscard]] static constexpr Name from_raw(uint32_t val) noexcept {  \
-      return Name{val};                                                    \
-    }                                                                      \
-    [[nodiscard]] static constexpr Name none() noexcept {                  \
-      return Name{UINT32_MAX};                                             \
-    }                                                                      \
-    [[nodiscard]] constexpr bool is_valid() const noexcept {               \
-      return v != UINT32_MAX;                                              \
-    }                                                                      \
-    [[nodiscard]] constexpr explicit operator bool() const noexcept {      \
-      return is_valid();                                                   \
-    }                                                                      \
-    [[nodiscard]] constexpr uint32_t raw() const noexcept { return v; }    \
-    constexpr auto operator<=>(const Name&) const noexcept = default;      \
-  };                                                                       \
-  static_assert(sizeof(Name) == sizeof(uint32_t))
+#define CRUCIBLE_STRONG_ID(Name)                                                                  \
+    struct Name {                                                                                 \
+    private:                                                                                      \
+        /* #133: v is private.  External read goes through .raw(); external */                    \
+        /* construction goes through the explicit ctor OR from_raw().  This */                    \
+        /* closes the direct-field-access hole where `id.v = 999` could */                        \
+        /* bypass the explicit-ctor discipline and mutate a strong-ID in */                       \
+        /* place. */                                                                              \
+        uint32_t v;                                                                               \
+                                                                                                  \
+    public:                                                                                       \
+        constexpr Name() noexcept : v(UINT32_MAX) {}                                              \
+        constexpr explicit Name(uint32_t val) noexcept : v(val) {}                                \
+        /* #133: named factory for cross-kind bridges.  When converting */                        \
+        /* from ANOTHER strong-ID's raw (the silent-bug pattern), prefer */                       \
+        /* `Name::from_raw(other.raw())` — the explicit factory is */                             \
+        /* greppable for code review.  Audit: `grep "::from_raw"` finds */                        \
+        /* every bridge site mechanically. */                                                     \
+        [[nodiscard]] static constexpr Name from_raw(uint32_t val) noexcept { return Name{val}; } \
+        [[nodiscard]] static constexpr Name none() noexcept { return Name{UINT32_MAX}; }          \
+        [[nodiscard]] constexpr bool is_valid() const noexcept { return v != UINT32_MAX; }        \
+        [[nodiscard]] constexpr explicit operator bool() const noexcept { return is_valid(); }    \
+        [[nodiscard]] constexpr uint32_t raw() const noexcept { return v; }                       \
+        constexpr auto operator<=>(const Name&) const noexcept = default;                         \
+    };                                                                                            \
+    static_assert(sizeof(Name) == sizeof(uint32_t))
 
-CRUCIBLE_STRONG_ID(OpIndex);    // index into TraceEntry[] ops array
-CRUCIBLE_STRONG_ID(SlotId);     // index into TensorSlot[] slots array
-CRUCIBLE_STRONG_ID(NodeId);     // index into Graph node array
-CRUCIBLE_STRONG_ID(SymbolId);   // index into SymbolTable entries
+CRUCIBLE_STRONG_ID(OpIndex);  // index into TraceEntry[] ops array
+CRUCIBLE_STRONG_ID(SlotId);  // index into TensorSlot[] slots array
+CRUCIBLE_STRONG_ID(NodeId);  // index into Graph node array
+CRUCIBLE_STRONG_ID(SymbolId);  // index into SymbolTable entries
 CRUCIBLE_STRONG_ID(MetaIndex);  // index into MetaLog buffer
 
 #undef CRUCIBLE_STRONG_ID
@@ -233,55 +222,48 @@ CRUCIBLE_STRONG_ID(MetaIndex);  // index into MetaLog buffer
 //   - No arithmetic: must unwrap, compute, rewrap (intentional)
 // ═══════════════════════════════════════════════════════════════════
 
-#define CRUCIBLE_STRONG_HASH(Name)                                         \
-  struct Name {                                                            \
-  private:                                                                 \
-    /* #133: v is private; external access is via .raw() only. */         \
-    uint64_t v;                                                            \
-  public:                                                                  \
-    constexpr Name() noexcept : v(0) {}                                    \
-    constexpr explicit Name(uint64_t val) noexcept : v(val) {}             \
-    /* #133: named factory for cross-kind bridges — `grep "::from_raw"` */\
-    /* locates every cross-kind-hash conversion site. */                  \
-    [[nodiscard]] static constexpr Name from_raw(uint64_t val) noexcept {  \
-      return Name{val};                                                    \
-    }                                                                      \
-    [[nodiscard]] constexpr uint64_t raw() const noexcept { return v; }    \
-    [[nodiscard]] constexpr explicit operator bool() const noexcept {      \
-      return v != 0;                                                       \
-    }                                                                      \
-    /* Sentinel: impossible value used as end-of-region marker.            \
+#define CRUCIBLE_STRONG_HASH(Name)                                                                \
+    struct Name {                                                                                 \
+    private:                                                                                      \
+        /* #133: v is private; external access is via .raw() only. */                             \
+        uint64_t v;                                                                               \
+                                                                                                  \
+    public:                                                                                       \
+        constexpr Name() noexcept : v(0) {}                                                       \
+        constexpr explicit Name(uint64_t val) noexcept : v(val) {}                                \
+        /* #133: named factory for cross-kind bridges — `grep "::from_raw"` */                    \
+        /* locates every cross-kind-hash conversion site. */                                      \
+        [[nodiscard]] static constexpr Name from_raw(uint64_t val) noexcept { return Name{val}; } \
+        [[nodiscard]] constexpr uint64_t raw() const noexcept { return v; }                       \
+        [[nodiscard]] constexpr explicit operator bool() const noexcept { return v != 0; }        \
+        /* Sentinel: impossible value used as end-of-region marker.            \
      * No real hash can be UINT64_MAX — hash functions produce             \
-     * uniformly distributed values, and we reserve this one. */           \
-    [[nodiscard]] static constexpr Name sentinel() noexcept {              \
-      return Name{UINT64_MAX};                                             \
-    }                                                                      \
-    [[nodiscard]] constexpr bool is_sentinel() const noexcept {            \
-      return v == UINT64_MAX;                                              \
-    }                                                                      \
-    constexpr auto operator<=>(const Name&) const noexcept = default;      \
-  };                                                                       \
-  static_assert(sizeof(Name) == sizeof(uint64_t))
+     * uniformly distributed values, and we reserve this one. */                  \
+        [[nodiscard]] static constexpr Name sentinel() noexcept { return Name{UINT64_MAX}; }      \
+        [[nodiscard]] constexpr bool is_sentinel() const noexcept { return v == UINT64_MAX; }     \
+        constexpr auto operator<=>(const Name&) const noexcept = default;                         \
+    };                                                                                            \
+    static_assert(sizeof(Name) == sizeof(uint64_t))
 
-CRUCIBLE_STRONG_HASH(SchemaHash);    // op identity (OperatorHandle schema)
-CRUCIBLE_STRONG_HASH(ShapeHash);     // quick hash of input tensor shapes
-CRUCIBLE_STRONG_HASH(ScopeHash);     // module hierarchy path hash
+CRUCIBLE_STRONG_HASH(SchemaHash);  // op identity (OperatorHandle schema)
+CRUCIBLE_STRONG_HASH(ShapeHash);  // quick hash of input tensor shapes
+CRUCIBLE_STRONG_HASH(ScopeHash);  // module hierarchy path hash
 CRUCIBLE_STRONG_HASH(CallsiteHash);  // Python source location identity
-CRUCIBLE_STRONG_HASH(ContentHash);   // region content identity (kernel cache key)
-CRUCIBLE_STRONG_HASH(MerkleHash);    // subtree identity (includes all descendants)
-CRUCIBLE_STRONG_HASH(RecipeHash);    // NumericalRecipe identity (FORGE.md §19, §20)
-CRUCIBLE_STRONG_HASH(RowHash);       // effect-row content identity — fmix64 fold
-                                     // over the wrapper-nesting order, see
-                                     // FOUND-I02 (#761) for the canonical
-                                     // algorithm and FOUND-I05/06/07 for the
-                                     // L1/L2/L3 KernelCache lookup wiring.
+CRUCIBLE_STRONG_HASH(ContentHash);  // region content identity (kernel cache key)
+CRUCIBLE_STRONG_HASH(MerkleHash);  // subtree identity (includes all descendants)
+CRUCIBLE_STRONG_HASH(RecipeHash);  // NumericalRecipe identity (FORGE.md §19, §20)
+CRUCIBLE_STRONG_HASH(RowHash);  // effect-row content identity — fmix64 fold
+// over the wrapper-nesting order, see
+// FOUND-I02 (#761) for the canonical
+// algorithm and FOUND-I05/06/07 for the
+// L1/L2/L3 KernelCache lookup wiring.
 
 #undef CRUCIBLE_STRONG_HASH
 
 namespace hash_family {
 struct FamilyA {};
 struct FamilyB {};
-} // namespace hash_family
+}  // namespace hash_family
 
 // ─── WRAP-Types-3 #1069: hash-family discrimination at definition site ──
 //
@@ -301,20 +283,45 @@ struct FamilyB {};
 // Cost: zero.  All resolution happens at compile time; the macro-
 // generated strong-ID struct (CRUCIBLE_STRONG_HASH) carries no extra
 // field, the family tag lives in the type system alone.
-template <class HashT> struct hash_family_of;  // primary undefined
+template <class HashT>
+struct hash_family_of;  // primary undefined
 
 // Family-A specializations — every persistent (byte-stable) strong
 // hash declared via CRUCIBLE_STRONG_HASH above belongs here.  Order
 // matches the declaration order in Types.h:266-273 so a future
 // strong-hash addition has an obvious slot to fill.
-template <> struct hash_family_of<SchemaHash>   { using family = hash_family::FamilyA; };
-template <> struct hash_family_of<ShapeHash>    { using family = hash_family::FamilyA; };
-template <> struct hash_family_of<ScopeHash>    { using family = hash_family::FamilyA; };
-template <> struct hash_family_of<CallsiteHash> { using family = hash_family::FamilyA; };
-template <> struct hash_family_of<ContentHash>  { using family = hash_family::FamilyA; };
-template <> struct hash_family_of<MerkleHash>   { using family = hash_family::FamilyA; };
-template <> struct hash_family_of<RecipeHash>   { using family = hash_family::FamilyA; };
-template <> struct hash_family_of<RowHash>      { using family = hash_family::FamilyA; };
+template <>
+struct hash_family_of<SchemaHash> {
+    using family = hash_family::FamilyA;
+};
+template <>
+struct hash_family_of<ShapeHash> {
+    using family = hash_family::FamilyA;
+};
+template <>
+struct hash_family_of<ScopeHash> {
+    using family = hash_family::FamilyA;
+};
+template <>
+struct hash_family_of<CallsiteHash> {
+    using family = hash_family::FamilyA;
+};
+template <>
+struct hash_family_of<ContentHash> {
+    using family = hash_family::FamilyA;
+};
+template <>
+struct hash_family_of<MerkleHash> {
+    using family = hash_family::FamilyA;
+};
+template <>
+struct hash_family_of<RecipeHash> {
+    using family = hash_family::FamilyA;
+};
+template <>
+struct hash_family_of<RowHash> {
+    using family = hash_family::FamilyA;
+};
 
 template <class HashT>
 using hash_family_of_t = typename hash_family_of<HashT>::family;
@@ -332,39 +339,30 @@ concept IsFamilyB = std::is_same_v<hash_family_of_t<HashT>, hash_family::FamilyB
 // for an unspecialized X fails template instantiation.  A regression
 // that re-labels an existing hash (e.g., accidentally moving
 // ContentHash to FamilyB) fails the sentinel below.
-static_assert(IsFamilyA<SchemaHash>,
-    "WRAP-Types-3 #1069: SchemaHash must be Family-A — op identity is "
-    "byte-stable across processes for KernelCache lookup.");
-static_assert(IsFamilyA<ShapeHash>,
-    "WRAP-Types-3 #1069: ShapeHash must be Family-A — tensor geometry "
-    "must compare bit-stably across replay.");
-static_assert(IsFamilyA<ScopeHash>,
-    "WRAP-Types-3 #1069: ScopeHash must be Family-A — module path "
-    "identity feeds Cipher entries.");
-static_assert(IsFamilyA<CallsiteHash>,
-    "WRAP-Types-3 #1069: CallsiteHash must be Family-A — Python source "
-    "location identity is golden-stable.");
-static_assert(IsFamilyA<ContentHash>,
-    "WRAP-Types-3 #1069: ContentHash must be Family-A — RegionNode "
-    "structural identity feeds Cipher object store + KernelCache.");
-static_assert(IsFamilyA<MerkleHash>,
-    "WRAP-Types-3 #1069: MerkleHash must be Family-A — subtree identity "
-    "feeds Cipher + cross-vendor replay.");
-static_assert(IsFamilyA<RecipeHash>,
-    "WRAP-Types-3 #1069: RecipeHash must be Family-A — NumericalRecipe "
-    "identity is federation-shareable (FORGE.md §19, §20).");
-static_assert(IsFamilyA<RowHash>,
-    "WRAP-Types-3 #1069: RowHash must be Family-A — effect-row content "
-    "identity drives KernelCache L1/L2/L3 lookups (FOUND-I02).");
+static_assert(IsFamilyA<SchemaHash>, "WRAP-Types-3 #1069: SchemaHash must be Family-A — op identity is "
+                                     "byte-stable across processes for KernelCache lookup.");
+static_assert(IsFamilyA<ShapeHash>, "WRAP-Types-3 #1069: ShapeHash must be Family-A — tensor geometry "
+                                    "must compare bit-stably across replay.");
+static_assert(IsFamilyA<ScopeHash>, "WRAP-Types-3 #1069: ScopeHash must be Family-A — module path "
+                                    "identity feeds Cipher entries.");
+static_assert(IsFamilyA<CallsiteHash>, "WRAP-Types-3 #1069: CallsiteHash must be Family-A — Python source "
+                                       "location identity is golden-stable.");
+static_assert(IsFamilyA<ContentHash>, "WRAP-Types-3 #1069: ContentHash must be Family-A — RegionNode "
+                                      "structural identity feeds Cipher object store + KernelCache.");
+static_assert(IsFamilyA<MerkleHash>, "WRAP-Types-3 #1069: MerkleHash must be Family-A — subtree identity "
+                                     "feeds Cipher + cross-vendor replay.");
+static_assert(IsFamilyA<RecipeHash>, "WRAP-Types-3 #1069: RecipeHash must be Family-A — NumericalRecipe "
+                                     "identity is federation-shareable (FORGE.md §19, §20).");
+static_assert(IsFamilyA<RowHash>, "WRAP-Types-3 #1069: RowHash must be Family-A — effect-row content "
+                                  "identity drives KernelCache L1/L2/L3 lookups (FOUND-I02).");
 
 // Cross-family separation: no Family-A hash satisfies IsFamilyB and
 // vice versa.  Spot-check one Family-A and (when the first Family-B
 // strong hash lands per the #364 deferred doc-block above) one
 // Family-B; for now the gate just pins that IsFamilyA AND IsFamilyB
 // are not BOTH true for any Family-A hash.
-static_assert(!IsFamilyB<ContentHash>,
-    "WRAP-Types-3 #1069: IsFamilyB must reject Family-A hashes — "
-    "lane separation is the load-bearing invariant.");
+static_assert(!IsFamilyB<ContentHash>, "WRAP-Types-3 #1069: IsFamilyB must reject Family-A hashes — "
+                                       "lane separation is the load-bearing invariant.");
 
 // ═══════════════════════════════════════════════════════════════════
 // Hash taxonomy — TWO DISJOINT FAMILIES with different persistence
@@ -504,8 +502,8 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(RowHash);
 // 07 — the right fold strategy depends on which cache level (L1
 // IR002 / L2 IR003* / L3 compiled bytes) is doing the lookup.
 struct KernelCacheKey {
-    ContentHash content_hash{};   // NSDMI: zero — Family-A persistent
-    RowHash     row_hash{};       // NSDMI: zero — Family-A persistent
+    ContentHash content_hash{};  // NSDMI: zero — Family-A persistent
+    RowHash row_hash{};  // NSDMI: zero — Family-A persistent
 
     // Default ctor is constexpr-implicit via NSDMI.  Defaulted <=>
     // forms a strict weak order on (content_hash, row_hash) — content
@@ -518,9 +516,7 @@ struct KernelCacheKey {
     // unlikely to collide with zero by accident (FNV/fmix64 avalanche
     // properties), but the sentinel() / is_sentinel() pair below is
     // the *guaranteed* unused value for end-of-region markers.
-    [[nodiscard]] constexpr bool is_zero() const noexcept {
-        return !content_hash && !row_hash;
-    }
+    [[nodiscard]] constexpr bool is_zero() const noexcept { return !content_hash && !row_hash; }
 
     // sentinel(): both axes at UINT64_MAX — guaranteed never produced
     // by any real hash function.  Used as the EMPTY-slot marker in
@@ -538,13 +534,11 @@ struct KernelCacheKey {
 // Layout invariant — the key is exactly two 64-bit hashes, no
 // padding.  KernelCache slot probes assume this for AoS / SoA
 // flexibility (FOUND-I05/06/07 will choose per cache level).
-static_assert(sizeof(KernelCacheKey) == 16,
-              "KernelCacheKey must be exactly 16 bytes "
-              "(ContentHash + RowHash, no padding).");
-static_assert(alignof(KernelCacheKey) == 8,
-              "KernelCacheKey must be 8-byte aligned for atomic-pair "
-              "compatibility on x86-64 / aarch64.");
+static_assert(sizeof(KernelCacheKey) == 16, "KernelCacheKey must be exactly 16 bytes "
+                                            "(ContentHash + RowHash, no padding).");
+static_assert(alignof(KernelCacheKey) == 8, "KernelCacheKey must be 8-byte aligned for atomic-pair "
+                                            "compatibility on x86-64 / aarch64.");
 
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(KernelCacheKey);
 
-} // namespace crucible
+}  // namespace crucible

@@ -130,9 +130,7 @@ template <typename T, typename = void>
 struct has_try_pop : std::false_type {};
 
 template <typename T>
-struct has_try_pop<T, std::void_t<decltype(&T::try_pop)>>
-    : std::true_type
-{};
+struct has_try_pop<T, std::void_t<decltype(&T::try_pop)>> : std::true_type {};
 
 }  // namespace detail
 
@@ -142,16 +140,14 @@ struct has_try_pop<T, std::void_t<decltype(&T::try_pop)>>
 
 template <typename T>
 inline constexpr bool is_producer_handle_v =
-    detail::try_push_shape<std::remove_cvref_t<T>>::matches
- && !detail::has_try_pop<std::remove_cvref_t<T>>::value;
+    detail::try_push_shape<std::remove_cvref_t<T>>::matches && !detail::has_try_pop<std::remove_cvref_t<T>>::value;
 
 template <typename T>
 concept IsProducerHandle = is_producer_handle_v<T>;
 
 template <typename T>
     requires is_producer_handle_v<T>
-using producer_handle_value_t =
-    typename detail::try_push_shape<std::remove_cvref_t<T>>::payload;
+using producer_handle_value_t = typename detail::try_push_shape<std::remove_cvref_t<T>>::payload;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Self-test block ────────────────────────────────────────────────
@@ -194,7 +190,7 @@ struct synthetic_void_push {
 // rejects.  The canonical Permissioned* producer endpoint declares
 // ONE try_push method; overload sets are not part of the shape.
 struct synthetic_overloaded_push {
-    [[nodiscard]] bool try_push(int const&)   noexcept { return true; }
+    [[nodiscard]] bool try_push(int const&) noexcept { return true; }
     [[nodiscard]] bool try_push(float const&) noexcept { return true; }
 };
 
@@ -242,16 +238,12 @@ static_assert(!is_producer_handle_v<synthetic_producer*>);
 
 // ── Payload extraction ────────────────────────────────────────────
 
-static_assert(std::is_same_v<
-    producer_handle_value_t<synthetic_producer>, int>);
-static_assert(std::is_same_v<
-    producer_handle_value_t<synthetic_double_producer>, double>);
+static_assert(std::is_same_v<producer_handle_value_t<synthetic_producer>, int>);
+static_assert(std::is_same_v<producer_handle_value_t<synthetic_double_producer>, double>);
 
 // Cv-ref stripping on the alias.
-static_assert(std::is_same_v<
-    producer_handle_value_t<synthetic_producer&>, int>);
-static_assert(std::is_same_v<
-    producer_handle_value_t<synthetic_producer const&>, int>);
+static_assert(std::is_same_v<producer_handle_value_t<synthetic_producer&>, int>);
+static_assert(std::is_same_v<producer_handle_value_t<synthetic_producer const&>, int>);
 
 }  // namespace detail::is_producer_handle_self_test
 

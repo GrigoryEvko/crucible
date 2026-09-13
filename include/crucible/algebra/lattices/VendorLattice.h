@@ -195,32 +195,38 @@ namespace crucible::algebra::lattices {
 // convention (allowing fast "is_specific_vendor" check via
 // `static_cast<uint8_t>(b) != 255`).
 enum class VendorBackend : std::uint8_t {
-    None     = 0,    // ⊥: synthetic, no kernel — admits nothing
-    CPU      = 1,    // x86_64 / aarch64 host
-    NV       = 2,    // NVIDIA GPU sm_8x/9x/10x
-    AMD      = 3,    // AMD GPU gfx9xx/10xx/11xx
-    TPU      = 4,    // Google TPU MXU
-    TRN      = 5,    // AWS Trainium NEFF
-    CER      = 6,    // Cerebras WSE
+    None = 0,  // ⊥: synthetic, no kernel — admits nothing
+    CPU = 1,  // x86_64 / aarch64 host
+    NV = 2,  // NVIDIA GPU sm_8x/9x/10x
+    AMD = 3,  // AMD GPU gfx9xx/10xx/11xx
+    TPU = 4,  // Google TPU MXU
+    TRN = 5,  // AWS Trainium NEFF
+    CER = 6,  // Cerebras WSE
     Portable = 255,  // ⊤: vendor-agnostic, runs everywhere
 };
 
-inline constexpr std::size_t vendor_backend_count =
-    std::meta::enumerators_of(^^VendorBackend).size();
+inline constexpr std::size_t vendor_backend_count = std::meta::enumerators_of(^^VendorBackend).size();
 
-[[nodiscard]] consteval std::string_view vendor_backend_name(
-    VendorBackend b) noexcept {
+[[nodiscard]] consteval std::string_view vendor_backend_name(VendorBackend b) noexcept {
     switch (b) {
-        case VendorBackend::None:     return "None";
-        case VendorBackend::CPU:      return "CPU";
-        case VendorBackend::NV:       return "NV";
-        case VendorBackend::AMD:      return "AMD";
-        case VendorBackend::TPU:      return "TPU";
-        case VendorBackend::TRN:      return "TRN";
-        case VendorBackend::CER:      return "CER";
-        case VendorBackend::Portable: return "Portable";
-        default:                      return std::string_view{
-            "<unknown VendorBackend>"};
+        case VendorBackend::None:
+            return "None";
+        case VendorBackend::CPU:
+            return "CPU";
+        case VendorBackend::NV:
+            return "NV";
+        case VendorBackend::AMD:
+            return "AMD";
+        case VendorBackend::TPU:
+            return "TPU";
+        case VendorBackend::TRN:
+            return "TRN";
+        case VendorBackend::CER:
+            return "CER";
+        case VendorBackend::Portable:
+            return "Portable";
+        default:
+            return std::string_view{"<unknown VendorBackend>"};
     }
 }
 
@@ -228,12 +234,8 @@ inline constexpr std::size_t vendor_backend_count =
 struct VendorLattice {
     using element_type = VendorBackend;
 
-    [[nodiscard]] static constexpr element_type bottom() noexcept {
-        return VendorBackend::None;
-    }
-    [[nodiscard]] static constexpr element_type top() noexcept {
-        return VendorBackend::Portable;
-    }
+    [[nodiscard]] static constexpr element_type bottom() noexcept { return VendorBackend::None; }
+    [[nodiscard]] static constexpr element_type top() noexcept { return VendorBackend::Portable; }
 
     // leq(a, b) — partial-order check.  The hand-written core of the
     // VendorLattice; replaces ChainLatticeOps's std::to_underlying
@@ -276,9 +278,7 @@ struct VendorLattice {
         return VendorBackend::None;
     }
 
-    [[nodiscard]] static consteval std::string_view name() noexcept {
-        return "VendorLattice";
-    }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "VendorLattice"; }
 
     // ── At<B> — per-backend singleton sub-lattice ─────────────────
     //
@@ -290,33 +290,38 @@ struct VendorLattice {
     struct At {
         struct element_type {
             using vendor_backend_value_type = VendorBackend;
-            [[nodiscard]] constexpr operator vendor_backend_value_type() const noexcept {
-                return B;
-            }
-            [[nodiscard]] constexpr bool operator==(element_type) const noexcept {
-                return true;
-            }
+            [[nodiscard]] constexpr operator vendor_backend_value_type() const noexcept { return B; }
+            [[nodiscard]] constexpr bool operator==(element_type) const noexcept { return true; }
         };
 
         static constexpr VendorBackend backend = B;
 
         [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
-        [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
-        [[nodiscard]] static constexpr bool         leq(element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type top() noexcept { return {}; }
+        [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
         [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
         [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
 
         [[nodiscard]] static consteval std::string_view name() noexcept {
             switch (B) {
-                case VendorBackend::None:     return "VendorLattice::At<None>";
-                case VendorBackend::CPU:      return "VendorLattice::At<CPU>";
-                case VendorBackend::NV:       return "VendorLattice::At<NV>";
-                case VendorBackend::AMD:      return "VendorLattice::At<AMD>";
-                case VendorBackend::TPU:      return "VendorLattice::At<TPU>";
-                case VendorBackend::TRN:      return "VendorLattice::At<TRN>";
-                case VendorBackend::CER:      return "VendorLattice::At<CER>";
-                case VendorBackend::Portable: return "VendorLattice::At<Portable>";
-                default:                      return "VendorLattice::At<?>";
+                case VendorBackend::None:
+                    return "VendorLattice::At<None>";
+                case VendorBackend::CPU:
+                    return "VendorLattice::At<CPU>";
+                case VendorBackend::NV:
+                    return "VendorLattice::At<NV>";
+                case VendorBackend::AMD:
+                    return "VendorLattice::At<AMD>";
+                case VendorBackend::TPU:
+                    return "VendorLattice::At<TPU>";
+                case VendorBackend::TRN:
+                    return "VendorLattice::At<TRN>";
+                case VendorBackend::CER:
+                    return "VendorLattice::At<CER>";
+                case VendorBackend::Portable:
+                    return "VendorLattice::At<Portable>";
+                default:
+                    return "VendorLattice::At<?>";
             }
         }
     };
@@ -324,41 +329,37 @@ struct VendorLattice {
 
 // ── Convenience aliases ─────────────────────────────────────────────
 namespace vendor_backend {
-    using NoneVendor     = VendorLattice::At<VendorBackend::None>;
-    using CpuVendor      = VendorLattice::At<VendorBackend::CPU>;
-    using NvVendor       = VendorLattice::At<VendorBackend::NV>;
-    using AmdVendor      = VendorLattice::At<VendorBackend::AMD>;
-    using TpuVendor      = VendorLattice::At<VendorBackend::TPU>;
-    using TrnVendor      = VendorLattice::At<VendorBackend::TRN>;
-    using CerVendor      = VendorLattice::At<VendorBackend::CER>;
-    using PortableVendor = VendorLattice::At<VendorBackend::Portable>;
+using NoneVendor = VendorLattice::At<VendorBackend::None>;
+using CpuVendor = VendorLattice::At<VendorBackend::CPU>;
+using NvVendor = VendorLattice::At<VendorBackend::NV>;
+using AmdVendor = VendorLattice::At<VendorBackend::AMD>;
+using TpuVendor = VendorLattice::At<VendorBackend::TPU>;
+using TrnVendor = VendorLattice::At<VendorBackend::TRN>;
+using CerVendor = VendorLattice::At<VendorBackend::CER>;
+using PortableVendor = VendorLattice::At<VendorBackend::Portable>;
 }  // namespace vendor_backend
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::vendor_lattice_self_test {
 
-static_assert(vendor_backend_count == 8,
-    "VendorBackend catalog diverged from {None, CPU, NV, AMD, TPU, "
-    "TRN, CER, Portable}; confirm intent and update both the lattice "
-    "leq/join/meet (which special-case None and Portable) AND the "
-    "Mimic per-vendor backend dispatcher's admission gates.");
+static_assert(vendor_backend_count == 8, "VendorBackend catalog diverged from {None, CPU, NV, AMD, TPU, "
+                                         "TRN, CER, Portable}; confirm intent and update both the lattice "
+                                         "leq/join/meet (which special-case None and Portable) AND the "
+                                         "Mimic per-vendor backend dispatcher's admission gates.");
 
 [[nodiscard]] consteval bool every_vendor_backend_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^VendorBackend));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^VendorBackend));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
-        if (vendor_backend_name([:en:]) ==
-            std::string_view{"<unknown VendorBackend>"}) {
+        if (vendor_backend_name([:en:]) == std::string_view{"<unknown VendorBackend>"}) {
             return false;
         }
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_vendor_backend_has_name(),
-    "vendor_backend_name() switch missing arm for at least one backend.");
+static_assert(every_vendor_backend_has_name(), "vendor_backend_name() switch missing arm for at least one backend.");
 
 static_assert(Lattice<VendorLattice>);
 static_assert(BoundedLattice<VendorLattice>);
@@ -378,7 +379,7 @@ static_assert(std::is_empty_v<vendor_backend::PortableVendor::element_type>);
 
 // ── Bottom + top witnesses ────────────────────────────────────────
 static_assert(VendorLattice::bottom() == VendorBackend::None);
-static_assert(VendorLattice::top()    == VendorBackend::Portable);
+static_assert(VendorLattice::top() == VendorBackend::Portable);
 
 // ── Direct order witnesses — every meaningful pair ────────────────
 //
@@ -386,13 +387,13 @@ static_assert(VendorLattice::top()    == VendorBackend::Portable);
 // Every cell here is a production safety guarantee.
 
 // Reflexivity at every backend.
-static_assert(VendorLattice::leq(VendorBackend::None,     VendorBackend::None));
-static_assert(VendorLattice::leq(VendorBackend::CPU,      VendorBackend::CPU));
-static_assert(VendorLattice::leq(VendorBackend::NV,       VendorBackend::NV));
-static_assert(VendorLattice::leq(VendorBackend::AMD,      VendorBackend::AMD));
-static_assert(VendorLattice::leq(VendorBackend::TPU,      VendorBackend::TPU));
-static_assert(VendorLattice::leq(VendorBackend::TRN,      VendorBackend::TRN));
-static_assert(VendorLattice::leq(VendorBackend::CER,      VendorBackend::CER));
+static_assert(VendorLattice::leq(VendorBackend::None, VendorBackend::None));
+static_assert(VendorLattice::leq(VendorBackend::CPU, VendorBackend::CPU));
+static_assert(VendorLattice::leq(VendorBackend::NV, VendorBackend::NV));
+static_assert(VendorLattice::leq(VendorBackend::AMD, VendorBackend::AMD));
+static_assert(VendorLattice::leq(VendorBackend::TPU, VendorBackend::TPU));
+static_assert(VendorLattice::leq(VendorBackend::TRN, VendorBackend::TRN));
+static_assert(VendorLattice::leq(VendorBackend::CER, VendorBackend::CER));
 static_assert(VendorLattice::leq(VendorBackend::Portable, VendorBackend::Portable));
 
 // None ⊑ everything.
@@ -406,7 +407,7 @@ static_assert(VendorLattice::leq(VendorBackend::None, VendorBackend::Portable));
 
 // everything ⊑ Portable.
 static_assert(VendorLattice::leq(VendorBackend::CPU, VendorBackend::Portable));
-static_assert(VendorLattice::leq(VendorBackend::NV,  VendorBackend::Portable));
+static_assert(VendorLattice::leq(VendorBackend::NV, VendorBackend::Portable));
 static_assert(VendorLattice::leq(VendorBackend::AMD, VendorBackend::Portable));
 static_assert(VendorLattice::leq(VendorBackend::TPU, VendorBackend::Portable));
 static_assert(VendorLattice::leq(VendorBackend::TRN, VendorBackend::Portable));
@@ -415,12 +416,12 @@ static_assert(VendorLattice::leq(VendorBackend::CER, VendorBackend::Portable));
 // Distinct vendors INCOMPARABLE — neither direction holds.
 // THE LOAD-BEARING NEGATIVE: this is what the chain interpretation
 // would silently break.  Every pair below MUST be rejected.
-static_assert(!VendorLattice::leq(VendorBackend::NV,  VendorBackend::AMD));
+static_assert(!VendorLattice::leq(VendorBackend::NV, VendorBackend::AMD));
 static_assert(!VendorLattice::leq(VendorBackend::AMD, VendorBackend::NV));
-static_assert(!VendorLattice::leq(VendorBackend::NV,  VendorBackend::TPU));
+static_assert(!VendorLattice::leq(VendorBackend::NV, VendorBackend::TPU));
 static_assert(!VendorLattice::leq(VendorBackend::TPU, VendorBackend::NV));
 static_assert(!VendorLattice::leq(VendorBackend::CPU, VendorBackend::NV));
-static_assert(!VendorLattice::leq(VendorBackend::NV,  VendorBackend::CPU));
+static_assert(!VendorLattice::leq(VendorBackend::NV, VendorBackend::CPU));
 static_assert(!VendorLattice::leq(VendorBackend::TRN, VendorBackend::CER));
 static_assert(!VendorLattice::leq(VendorBackend::CER, VendorBackend::TRN));
 static_assert(!VendorLattice::leq(VendorBackend::AMD, VendorBackend::TPU));
@@ -433,16 +434,16 @@ static_assert(!VendorLattice::leq(VendorBackend::Portable, VendorBackend::AMD));
 static_assert(!VendorLattice::leq(VendorBackend::Portable, VendorBackend::None));
 
 // Reverse rules — X ⊑ None is FALSE for X ≠ None.
-static_assert(!VendorLattice::leq(VendorBackend::CPU,      VendorBackend::None));
-static_assert(!VendorLattice::leq(VendorBackend::NV,       VendorBackend::None));
-static_assert(!VendorLattice::leq(VendorBackend::AMD,      VendorBackend::None));
+static_assert(!VendorLattice::leq(VendorBackend::CPU, VendorBackend::None));
+static_assert(!VendorLattice::leq(VendorBackend::NV, VendorBackend::None));
+static_assert(!VendorLattice::leq(VendorBackend::AMD, VendorBackend::None));
 static_assert(!VendorLattice::leq(VendorBackend::Portable, VendorBackend::None));
 
 // ── Join / meet witnesses ─────────────────────────────────────────
 
 // Distinct vendors → join = Portable, meet = None.
-static_assert(VendorLattice::join(VendorBackend::NV,  VendorBackend::AMD) == VendorBackend::Portable);
-static_assert(VendorLattice::meet(VendorBackend::NV,  VendorBackend::AMD) == VendorBackend::None);
+static_assert(VendorLattice::join(VendorBackend::NV, VendorBackend::AMD) == VendorBackend::Portable);
+static_assert(VendorLattice::meet(VendorBackend::NV, VendorBackend::AMD) == VendorBackend::None);
 static_assert(VendorLattice::join(VendorBackend::TPU, VendorBackend::TRN) == VendorBackend::Portable);
 static_assert(VendorLattice::meet(VendorBackend::TPU, VendorBackend::TRN) == VendorBackend::None);
 static_assert(VendorLattice::join(VendorBackend::CPU, VendorBackend::CER) == VendorBackend::Portable);
@@ -450,17 +451,17 @@ static_assert(VendorLattice::meet(VendorBackend::CPU, VendorBackend::CER) == Ven
 
 // None as identity for join.
 static_assert(VendorLattice::join(VendorBackend::None, VendorBackend::CPU) == VendorBackend::CPU);
-static_assert(VendorLattice::join(VendorBackend::None, VendorBackend::NV)  == VendorBackend::NV);
+static_assert(VendorLattice::join(VendorBackend::None, VendorBackend::NV) == VendorBackend::NV);
 static_assert(VendorLattice::join(VendorBackend::None, VendorBackend::Portable) == VendorBackend::Portable);
 
 // Portable as identity for meet.
 static_assert(VendorLattice::meet(VendorBackend::Portable, VendorBackend::CPU) == VendorBackend::CPU);
-static_assert(VendorLattice::meet(VendorBackend::Portable, VendorBackend::NV)  == VendorBackend::NV);
+static_assert(VendorLattice::meet(VendorBackend::Portable, VendorBackend::NV) == VendorBackend::NV);
 static_assert(VendorLattice::meet(VendorBackend::Portable, VendorBackend::None) == VendorBackend::None);
 
 // None absorbs in meet.
 static_assert(VendorLattice::meet(VendorBackend::None, VendorBackend::CPU) == VendorBackend::None);
-static_assert(VendorLattice::meet(VendorBackend::None, VendorBackend::NV)  == VendorBackend::None);
+static_assert(VendorLattice::meet(VendorBackend::None, VendorBackend::NV) == VendorBackend::None);
 static_assert(VendorLattice::meet(VendorBackend::None, VendorBackend::Portable) == VendorBackend::None);
 
 // Portable absorbs in join.
@@ -468,10 +469,10 @@ static_assert(VendorLattice::join(VendorBackend::Portable, VendorBackend::CPU) =
 static_assert(VendorLattice::join(VendorBackend::Portable, VendorBackend::None) == VendorBackend::Portable);
 
 // Idempotence at every backend.
-static_assert(VendorLattice::join(VendorBackend::NV,       VendorBackend::NV)       == VendorBackend::NV);
-static_assert(VendorLattice::meet(VendorBackend::NV,       VendorBackend::NV)       == VendorBackend::NV);
+static_assert(VendorLattice::join(VendorBackend::NV, VendorBackend::NV) == VendorBackend::NV);
+static_assert(VendorLattice::meet(VendorBackend::NV, VendorBackend::NV) == VendorBackend::NV);
 static_assert(VendorLattice::join(VendorBackend::Portable, VendorBackend::Portable) == VendorBackend::Portable);
-static_assert(VendorLattice::meet(VendorBackend::None,     VendorBackend::None)     == VendorBackend::None);
+static_assert(VendorLattice::meet(VendorBackend::None, VendorBackend::None) == VendorBackend::None);
 
 // ── Exhaustive lattice-axiom verification — (8 backends)³ = 512 ───
 //
@@ -482,14 +483,8 @@ static_assert(VendorLattice::meet(VendorBackend::None,     VendorBackend::None) 
 // meet+join across every (a, b, c) triple.
 
 inline constexpr VendorBackend kAll[] = {
-    VendorBackend::None,
-    VendorBackend::CPU,
-    VendorBackend::NV,
-    VendorBackend::AMD,
-    VendorBackend::TPU,
-    VendorBackend::TRN,
-    VendorBackend::CER,
-    VendorBackend::Portable,
+    VendorBackend::None, VendorBackend::CPU, VendorBackend::NV,  VendorBackend::AMD,
+    VendorBackend::TPU,  VendorBackend::TRN, VendorBackend::CER, VendorBackend::Portable,
 };
 
 [[nodiscard]] consteval bool verify_partial_order_exhaustive() noexcept {
@@ -511,7 +506,7 @@ inline constexpr VendorBackend kAll[] = {
             if (L::meet(a, L::join(a, b)) != a) return false;
             // Bounds.
             if (!L::leq(L::bottom(), a)) return false;
-            if (!L::leq(a, L::top()))    return false;
+            if (!L::leq(a, L::top())) return false;
             for (auto c : kAll) {
                 // Transitivity: a ⊑ b ∧ b ⊑ c ⇒ a ⊑ c.
                 if (L::leq(a, b) && L::leq(b, c) && !L::leq(a, c)) return false;
@@ -522,7 +517,7 @@ inline constexpr VendorBackend kAll[] = {
                 //   a ⊑ b iff a ∧ b = a iff a ∨ b = b.
                 bool by_meet = (L::meet(a, b) == a);
                 bool by_join = (L::join(a, b) == b);
-                bool by_leq  = L::leq(a, b);
+                bool by_leq = L::leq(a, b);
                 if (by_leq != by_meet) return false;
                 if (by_leq != by_join) return false;
             }
@@ -530,13 +525,12 @@ inline constexpr VendorBackend kAll[] = {
     }
     return true;
 }
-static_assert(verify_partial_order_exhaustive(),
-    "VendorLattice's partial-order axioms must hold at every "
-    "(VendorBackend)³ triple over the eight elements (None / CPU / "
-    "NV / AMD / TPU / TRN / CER / Portable).  This is the exhaustive "
-    "lattice-soundness witness — if it fires, one of leq / join / "
-    "meet has a bug for some pair OR the special-case routing for "
-    "None / Portable / cross-vendor distinct middle is wrong.");
+static_assert(verify_partial_order_exhaustive(), "VendorLattice's partial-order axioms must hold at every "
+                                                 "(VendorBackend)³ triple over the eight elements (None / CPU / "
+                                                 "NV / AMD / TPU / TRN / CER / Portable).  This is the exhaustive "
+                                                 "lattice-soundness witness — if it fires, one of leq / join / "
+                                                 "meet has a bug for some pair OR the special-case routing for "
+                                                 "None / Portable / cross-vendor distinct middle is wrong.");
 
 // ── Non-distributivity witness ────────────────────────────────────
 //
@@ -551,105 +545,98 @@ static_assert(verify_partial_order_exhaustive(),
     // (NV ∨ AMD) ∧ TPU = Portable ∧ TPU = TPU
     // (NV ∧ TPU) ∨ (AMD ∧ TPU) = None ∨ None = None
     // TPU ≠ None — hence non-distributive.
-    auto lhs = L::meet(L::join(VendorBackend::NV, VendorBackend::AMD),
-                       VendorBackend::TPU);
-    auto rhs = L::join(L::meet(VendorBackend::NV, VendorBackend::TPU),
-                       L::meet(VendorBackend::AMD, VendorBackend::TPU));
-    return lhs == VendorBackend::TPU && rhs == VendorBackend::None
-        && lhs != rhs;
+    auto lhs = L::meet(L::join(VendorBackend::NV, VendorBackend::AMD), VendorBackend::TPU);
+    auto rhs = L::join(L::meet(VendorBackend::NV, VendorBackend::TPU), L::meet(VendorBackend::AMD, VendorBackend::TPU));
+    return lhs == VendorBackend::TPU && rhs == VendorBackend::None && lhs != rhs;
 }
-static_assert(non_distributive_witness(),
-    "VendorLattice MUST be non-distributive (see docblock).  If "
-    "this fires, either (a) the lattice was 'simplified' into a "
-    "chain — DEFEATING the cross-vendor incomparability that the "
-    "Vendor wrapper's safety guarantee depends on — or (b) someone "
-    "added a synthetic intermediate element that closed the "
-    "distributivity gap.  Either way, audit before resolving.");
+static_assert(non_distributive_witness(), "VendorLattice MUST be non-distributive (see docblock).  If "
+                                          "this fires, either (a) the lattice was 'simplified' into a "
+                                          "chain — DEFEATING the cross-vendor incomparability that the "
+                                          "Vendor wrapper's safety guarantee depends on — or (b) someone "
+                                          "added a synthetic intermediate element that closed the "
+                                          "distributivity gap.  Either way, audit before resolving.");
 
 // ── Names ────────────────────────────────────────────────────────
 static_assert(VendorLattice::name() == "VendorLattice");
-static_assert(vendor_backend::NoneVendor::name()     == "VendorLattice::At<None>");
-static_assert(vendor_backend::CpuVendor::name()      == "VendorLattice::At<CPU>");
-static_assert(vendor_backend::NvVendor::name()       == "VendorLattice::At<NV>");
-static_assert(vendor_backend::AmdVendor::name()      == "VendorLattice::At<AMD>");
-static_assert(vendor_backend::TpuVendor::name()      == "VendorLattice::At<TPU>");
-static_assert(vendor_backend::TrnVendor::name()      == "VendorLattice::At<TRN>");
-static_assert(vendor_backend::CerVendor::name()      == "VendorLattice::At<CER>");
+static_assert(vendor_backend::NoneVendor::name() == "VendorLattice::At<None>");
+static_assert(vendor_backend::CpuVendor::name() == "VendorLattice::At<CPU>");
+static_assert(vendor_backend::NvVendor::name() == "VendorLattice::At<NV>");
+static_assert(vendor_backend::AmdVendor::name() == "VendorLattice::At<AMD>");
+static_assert(vendor_backend::TpuVendor::name() == "VendorLattice::At<TPU>");
+static_assert(vendor_backend::TrnVendor::name() == "VendorLattice::At<TRN>");
+static_assert(vendor_backend::CerVendor::name() == "VendorLattice::At<CER>");
 static_assert(vendor_backend::PortableVendor::name() == "VendorLattice::At<Portable>");
 
 [[nodiscard]] consteval bool every_at_vendor_backend_has_name() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^VendorBackend));
+    static constexpr auto enumerators = std::define_static_array(std::meta::enumerators_of(^^VendorBackend));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
-        if (VendorLattice::At<([:en:])>::name() ==
-            std::string_view{"VendorLattice::At<?>"}) {
+        if (VendorLattice::At<([:en:])>::name() == std::string_view{"VendorLattice::At<?>"}) {
             return false;
         }
     }
 #pragma GCC diagnostic pop
     return true;
 }
-static_assert(every_at_vendor_backend_has_name(),
-    "VendorLattice::At<B>::name() switch missing an arm.");
+static_assert(every_at_vendor_backend_has_name(), "VendorLattice::At<B>::name() switch missing an arm.");
 
-static_assert(vendor_backend::NoneVendor::backend     == VendorBackend::None);
-static_assert(vendor_backend::CpuVendor::backend      == VendorBackend::CPU);
-static_assert(vendor_backend::NvVendor::backend       == VendorBackend::NV);
-static_assert(vendor_backend::AmdVendor::backend      == VendorBackend::AMD);
-static_assert(vendor_backend::TpuVendor::backend      == VendorBackend::TPU);
-static_assert(vendor_backend::TrnVendor::backend      == VendorBackend::TRN);
-static_assert(vendor_backend::CerVendor::backend      == VendorBackend::CER);
+static_assert(vendor_backend::NoneVendor::backend == VendorBackend::None);
+static_assert(vendor_backend::CpuVendor::backend == VendorBackend::CPU);
+static_assert(vendor_backend::NvVendor::backend == VendorBackend::NV);
+static_assert(vendor_backend::AmdVendor::backend == VendorBackend::AMD);
+static_assert(vendor_backend::TpuVendor::backend == VendorBackend::TPU);
+static_assert(vendor_backend::TrnVendor::backend == VendorBackend::TRN);
+static_assert(vendor_backend::CerVendor::backend == VendorBackend::CER);
 static_assert(vendor_backend::PortableVendor::backend == VendorBackend::Portable);
 
 // ── Layout invariants ───────────────────────────────────────────────
-struct OneByteValue   { char c{0}; };
-struct EightByteValue { unsigned long long v{0}; };
+struct OneByteValue {
+    char c{0};
+};
+struct EightByteValue {
+    unsigned long long v{0};
+};
 
 template <typename T_>
-using PortableGraded = Graded<ModalityKind::Absolute,
-                              vendor_backend::PortableVendor, T_>;
+using PortableGraded = Graded<ModalityKind::Absolute, vendor_backend::PortableVendor, T_>;
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(PortableGraded, OneByteValue);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(PortableGraded, EightByteValue);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(PortableGraded, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(PortableGraded, double);
 
 template <typename T_>
-using NvGraded = Graded<ModalityKind::Absolute,
-                        vendor_backend::NvVendor, T_>;
+using NvGraded = Graded<ModalityKind::Absolute, vendor_backend::NvVendor, T_>;
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(NvGraded, EightByteValue);
 
 template <typename T_>
-using AmdGraded = Graded<ModalityKind::Absolute,
-                         vendor_backend::AmdVendor, T_>;
+using AmdGraded = Graded<ModalityKind::Absolute, vendor_backend::AmdVendor, T_>;
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(AmdGraded, EightByteValue);
 
 template <typename T_>
-using NoneGraded = Graded<ModalityKind::Absolute,
-                          vendor_backend::NoneVendor, T_>;
+using NoneGraded = Graded<ModalityKind::Absolute, vendor_backend::NoneVendor, T_>;
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoneGraded, EightByteValue);
 
 inline void runtime_smoke_test() {
     VendorBackend a = VendorBackend::NV;
     VendorBackend b = VendorBackend::AMD;
-    [[maybe_unused]] bool          l1   = VendorLattice::leq(a, b);
-    [[maybe_unused]] VendorBackend j1   = VendorLattice::join(a, b);
-    [[maybe_unused]] VendorBackend m1   = VendorLattice::meet(a, b);
-    [[maybe_unused]] VendorBackend bot  = VendorLattice::bottom();
+    [[maybe_unused]] bool l1 = VendorLattice::leq(a, b);
+    [[maybe_unused]] VendorBackend j1 = VendorLattice::join(a, b);
+    [[maybe_unused]] VendorBackend m1 = VendorLattice::meet(a, b);
+    [[maybe_unused]] VendorBackend bot = VendorLattice::bottom();
     [[maybe_unused]] VendorBackend topv = VendorLattice::top();
 
     VendorBackend portable = VendorBackend::Portable;
-    [[maybe_unused]] VendorBackend j2 = VendorLattice::join(portable, a);   // Portable
-    [[maybe_unused]] VendorBackend m2 = VendorLattice::meet(portable, b);   // AMD
+    [[maybe_unused]] VendorBackend j2 = VendorLattice::join(portable, a);  // Portable
+    [[maybe_unused]] VendorBackend m2 = VendorLattice::meet(portable, b);  // AMD
 
     OneByteValue v{42};
     PortableGraded<OneByteValue> initial{v, vendor_backend::PortableVendor::bottom()};
-    auto widened   = initial.weaken(vendor_backend::PortableVendor::top());
-    auto composed  = initial.compose(widened);
-    auto rv_widen  = std::move(widened).weaken(vendor_backend::PortableVendor::top());
+    auto widened = initial.weaken(vendor_backend::PortableVendor::top());
+    auto composed = initial.compose(widened);
+    auto rv_widen = std::move(widened).weaken(vendor_backend::PortableVendor::top());
 
-    [[maybe_unused]] auto g  = rv_widen.grade();
+    [[maybe_unused]] auto g = rv_widen.grade();
     [[maybe_unused]] auto vc = composed.peek().c;
 
     vendor_backend::PortableVendor::element_type e{};

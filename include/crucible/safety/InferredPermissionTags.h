@@ -132,17 +132,12 @@ namespace detail {
 template <typename P, typename Acc>
 [[nodiscard]] consteval auto accumulate_param_tag() noexcept {
     if constexpr (extract::is_owned_region_v<P>) {
-        return std::type_identity<
-            ::crucible::safety::proto::perm_set_insert_t<
-                Acc, extract::owned_region_tag_t<P>>>{};
+        return std::type_identity<::crucible::safety::proto::perm_set_insert_t<Acc, extract::owned_region_tag_t<P>>>{};
     } else if constexpr (extract::is_permission_v<P>) {
-        return std::type_identity<
-            ::crucible::safety::proto::perm_set_insert_t<
-                Acc, extract::permission_tag_t<P>>>{};
+        return std::type_identity<::crucible::safety::proto::perm_set_insert_t<Acc, extract::permission_tag_t<P>>>{};
     } else if constexpr (extract::is_shared_permission_v<P>) {
         return std::type_identity<
-            ::crucible::safety::proto::perm_set_insert_t<
-                Acc, extract::shared_permission_tag_t<P>>>{};
+            ::crucible::safety::proto::perm_set_insert_t<Acc, extract::shared_permission_tag_t<P>>>{};
     } else {
         // Parameter does not carry a region tag — Acc unchanged.
         return std::type_identity<Acc>{};
@@ -150,8 +145,7 @@ template <typename P, typename Acc>
 }
 
 template <typename P, typename Acc>
-using accumulate_param_tag_t =
-    typename decltype(accumulate_param_tag<P, Acc>())::type;
+using accumulate_param_tag_t = typename decltype(accumulate_param_tag<P, Acc>())::type;
 
 // Recursive fold over parameter indices 0..arity-1.  The AtEnd
 // parameter is computed externally from arity_v<FnPtr> because
@@ -173,17 +167,12 @@ struct infer_perm_tags_step<FnPtr, I, Acc, /*AtEnd=*/false> {
     using P_I = extract::param_type_t<FnPtr, I>;
     using NextAcc = accumulate_param_tag_t<P_I, Acc>;
     static constexpr std::size_t Next = I + 1;
-    using type = typename infer_perm_tags_step<
-        FnPtr, Next, NextAcc,
-        (Next >= extract::arity_v<FnPtr>)>::type;
+    using type = typename infer_perm_tags_step<FnPtr, Next, NextAcc, (Next >= extract::arity_v<FnPtr>)>::type;
 };
 
 template <auto FnPtr>
-using infer_perm_tags_raw =
-    typename infer_perm_tags_step<
-        FnPtr, 0,
-        ::crucible::safety::proto::EmptyPermSet,
-        (0 >= extract::arity_v<FnPtr>)>::type;
+using infer_perm_tags_raw = typename infer_perm_tags_step<FnPtr, 0, ::crucible::safety::proto::EmptyPermSet,
+                                                          (0 >= extract::arity_v<FnPtr>)>::type;
 
 }  // namespace detail
 
@@ -196,8 +185,7 @@ using infer_perm_tags_raw =
 // canonically sorted; the dispatcher consumes this when emitting
 // splits_into_pack in caller-visible order.
 template <auto FnPtr>
-using inferred_permission_tags_raw_t =
-    detail::infer_perm_tags_raw<FnPtr>;
+using inferred_permission_tags_raw_t = detail::infer_perm_tags_raw<FnPtr>;
 
 // Inferred permission tags, CANONICALIZED (sorted unique form) so
 // callers can compare two signatures' tag sets without caring about
@@ -205,8 +193,7 @@ using inferred_permission_tags_raw_t =
 // the row hash (FOUND-I02) keys on the canonical form.
 template <auto FnPtr>
 using inferred_permission_tags_t =
-    ::crucible::safety::proto::perm_set_canonicalize_t<
-        inferred_permission_tags_raw_t<FnPtr>>;
+    ::crucible::safety::proto::perm_set_canonicalize_t<inferred_permission_tags_raw_t<FnPtr>>;
 
 // Point-query: does FnPtr's parameter list carry a tag-bearing
 // wrapper for THIS specific Tag?  Folds over the canonical form;
@@ -214,21 +201,18 @@ using inferred_permission_tags_t =
 // in FOUND-D12+ that ask "does this function operate on region X?"
 template <auto FnPtr, typename Tag>
 inline constexpr bool function_has_tag_v =
-    ::crucible::safety::proto::perm_set_contains_v<
-        inferred_permission_tags_t<FnPtr>, Tag>;
+    ::crucible::safety::proto::perm_set_contains_v<inferred_permission_tags_t<FnPtr>, Tag>;
 
 // Count of distinct tags in the inferred set.  Used by the
 // cache-tier rule (concurrent/CostModel.h) to set parallelism
 // factor when the dispatcher recognizes a multi-region transform —
 // each tag corresponds to one parallelizable axis.
 template <auto FnPtr>
-inline constexpr std::size_t inferred_permission_tags_count_v =
-    inferred_permission_tags_t<FnPtr>::size;
+inline constexpr std::size_t inferred_permission_tags_count_v = inferred_permission_tags_t<FnPtr>::size;
 
 // True iff the function takes no tag-bearing parameters.
 template <auto FnPtr>
-inline constexpr bool is_tag_free_function_v =
-    inferred_permission_tags_count_v<FnPtr> == 0;
+inline constexpr bool is_tag_free_function_v = inferred_permission_tags_count_v<FnPtr> == 0;
 
 template <auto FnPtr>
 concept IsTagFreeFunction = is_tag_free_function_v<FnPtr>;
@@ -248,9 +232,8 @@ namespace detail::infer_perm_tags_self_test {
 // Function with no tag-bearing parameters — inferred set is empty.
 inline void f_no_tags(int, double, char*) noexcept {}
 
-static_assert(::crucible::safety::proto::perm_set_equal_v<
-    inferred_permission_tags_t<&f_no_tags>,
-    ::crucible::safety::proto::EmptyPermSet>);
+static_assert(::crucible::safety::proto::perm_set_equal_v<inferred_permission_tags_t<&f_no_tags>,
+                                                          ::crucible::safety::proto::EmptyPermSet>);
 
 static_assert(is_tag_free_function_v<&f_no_tags>);
 static_assert(IsTagFreeFunction<&f_no_tags>);
@@ -262,9 +245,8 @@ static_assert(is_tag_free_function_v<&f_nullary>);
 static_assert(inferred_permission_tags_count_v<&f_nullary> == 0);
 
 // Raw form on tag-free function is also empty.
-static_assert(::crucible::safety::proto::perm_set_equal_v<
-    inferred_permission_tags_raw_t<&f_no_tags>,
-    ::crucible::safety::proto::EmptyPermSet>);
+static_assert(::crucible::safety::proto::perm_set_equal_v<inferred_permission_tags_raw_t<&f_no_tags>,
+                                                          ::crucible::safety::proto::EmptyPermSet>);
 
 }  // namespace detail::infer_perm_tags_self_test
 

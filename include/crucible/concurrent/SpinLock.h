@@ -70,25 +70,19 @@ public:
     // with std::unique_lock and std::lock_guard alongside the Crucible
     // SpinGuard.  Acquire-on-success matches lock(); failure is relaxed
     // because no observation is published on a non-acquisition.
-    [[nodiscard]] bool try_lock() noexcept {
-        return !flag_.test_and_set(std::memory_order_acquire);
-    }
+    [[nodiscard]] bool try_lock() noexcept { return !flag_.test_and_set(std::memory_order_acquire); }
 
-    void unlock() noexcept {
-        flag_.clear(std::memory_order_release);
-    }
+    void unlock() noexcept { flag_.clear(std::memory_order_release); }
 
 private:
     std::atomic_flag flag_ = ATOMIC_FLAG_INIT;
 };
 
-static_assert(alignof(SpinLock) >= 64,
-              "SpinLock must be cache-line-aligned to prevent false sharing "
-              "across embedded array slots and adjacent struct members");
-static_assert(sizeof(SpinLock) >= 64,
-              "SpinLock occupies a full cache line; trailing padding is "
-              "intentional — adjacent SpinLocks in an array must land on "
-              "distinct lines");
+static_assert(alignof(SpinLock) >= 64, "SpinLock must be cache-line-aligned to prevent false sharing "
+                                       "across embedded array slots and adjacent struct members");
+static_assert(sizeof(SpinLock) >= 64, "SpinLock occupies a full cache line; trailing padding is "
+                                      "intentional — adjacent SpinLocks in an array must land on "
+                                      "distinct lines");
 // fixy-A5-029 + FIXY-U-086 discipline note: std::atomic_flag is the ONE
 // atomic type the standard ([atomics.flag]) guarantees is lock-free on every
 // conforming implementation — unlike std::atomic<T> for arbitrary T, no
@@ -101,19 +95,14 @@ static_assert(sizeof(SpinLock) >= 64,
 
 class SpinGuard {
 public:
-    explicit SpinGuard(SpinLock& lock) noexcept
-        : lock_{lock} {
-        lock_.lock();
-    }
+    explicit SpinGuard(SpinLock& lock) noexcept : lock_{lock} { lock_.lock(); }
 
     SpinGuard(const SpinGuard&) = delete;
     SpinGuard& operator=(const SpinGuard&) = delete;
     SpinGuard(SpinGuard&&) = delete;
     SpinGuard& operator=(SpinGuard&&) = delete;
 
-    ~SpinGuard() noexcept {
-        lock_.unlock();
-    }
+    ~SpinGuard() noexcept { lock_.unlock(); }
 
 private:
     SpinLock& lock_;

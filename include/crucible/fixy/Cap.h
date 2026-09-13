@@ -110,10 +110,8 @@ using ::crucible::effects::Capability;
 // surface consistent.
 
 template <class Ctx, ::crucible::effects::Effect Cap>
-concept CtxAdmitsCap =
-    ::crucible::effects::IsExecCtx<Ctx>
-    && ::crucible::effects::row_contains_v<
-           ::crucible::effects::row_type_of_t<Ctx>, Cap>;
+concept CtxAdmitsCap = ::crucible::effects::IsExecCtx<Ctx>
+                    && ::crucible::effects::row_contains_v<::crucible::effects::row_type_of_t<Ctx>, Cap>;
 
 // ── Strict variant: row + NSDMI dual check (FIXY-V-217) ────────────
 //
@@ -161,46 +159,38 @@ inline constexpr bool ctx_cap_source_has_nsdmi_v = false;
 // Value-effect tags — NSDMI is a per-effect field on the cap source.
 
 template <class CapSource>
-inline constexpr bool ctx_cap_source_has_nsdmi_v<
-    CapSource, ::crucible::effects::Effect::Alloc>
-    = requires(CapSource const& src) { src.alloc; };
+inline constexpr bool ctx_cap_source_has_nsdmi_v<CapSource, ::crucible::effects::Effect::Alloc> =
+    requires(CapSource const& src) { src.alloc; };
 
 template <class CapSource>
-inline constexpr bool ctx_cap_source_has_nsdmi_v<
-    CapSource, ::crucible::effects::Effect::IO>
-    = requires(CapSource const& src) { src.io; };
+inline constexpr bool ctx_cap_source_has_nsdmi_v<CapSource, ::crucible::effects::Effect::IO> =
+    requires(CapSource const& src) { src.io; };
 
 template <class CapSource>
-inline constexpr bool ctx_cap_source_has_nsdmi_v<
-    CapSource, ::crucible::effects::Effect::Block>
-    = requires(CapSource const& src) { src.block; };
+inline constexpr bool ctx_cap_source_has_nsdmi_v<CapSource, ::crucible::effects::Effect::Block> =
+    requires(CapSource const& src) { src.block; };
 
 // Thread-effect tags — "NSDMI" is type identity (Bg-cap carries Bg
 // authority by being a Bg; Init-cap carries Init authority by being
 // an Init; Test-cap carries Test authority by being a Test).
 
 template <class CapSource>
-inline constexpr bool ctx_cap_source_has_nsdmi_v<
-    CapSource, ::crucible::effects::Effect::Bg>
-    = std::is_same_v<CapSource, ::crucible::effects::Bg>;
+inline constexpr bool ctx_cap_source_has_nsdmi_v<CapSource, ::crucible::effects::Effect::Bg> =
+    std::is_same_v<CapSource, ::crucible::effects::Bg>;
 
 template <class CapSource>
-inline constexpr bool ctx_cap_source_has_nsdmi_v<
-    CapSource, ::crucible::effects::Effect::Init>
-    = std::is_same_v<CapSource, ::crucible::effects::Init>;
+inline constexpr bool ctx_cap_source_has_nsdmi_v<CapSource, ::crucible::effects::Effect::Init> =
+    std::is_same_v<CapSource, ::crucible::effects::Init>;
 
 template <class CapSource>
-inline constexpr bool ctx_cap_source_has_nsdmi_v<
-    CapSource, ::crucible::effects::Effect::Test>
-    = std::is_same_v<CapSource, ::crucible::effects::Test>;
+inline constexpr bool ctx_cap_source_has_nsdmi_v<CapSource, ::crucible::effects::Effect::Test> =
+    std::is_same_v<CapSource, ::crucible::effects::Test>;
 
 }  // namespace detail
 
 template <class Ctx, ::crucible::effects::Effect Cap>
 concept CtxAdmitsCapStrict =
-    CtxAdmitsCap<Ctx, Cap>
-    && detail::ctx_cap_source_has_nsdmi_v<
-           ::crucible::effects::cap_type_of_t<Ctx>, Cap>;
+    CtxAdmitsCap<Ctx, Cap> && detail::ctx_cap_source_has_nsdmi_v<::crucible::effects::cap_type_of_t<Ctx>, Cap>;
 
 // ── Cap-context mints — passkey-gated Bg/Init/Test factories ───────
 //
@@ -286,40 +276,31 @@ using ::crucible::cntp::LinkClass;
 namespace crucible::fixy::cap::self_test {
 
 template <::crucible::effects::Effect E, class Source>
-inline constexpr bool same_mint_cap_v =
-    std::is_same_v<
-        decltype(&::crucible::fixy::cap::mint_cap<E, Source>),
-        decltype(&::crucible::effects::mint_cap<E, Source>)>;
+inline constexpr bool same_mint_cap_v = std::is_same_v<decltype(&::crucible::fixy::cap::mint_cap<E, Source>),
+                                                       decltype(&::crucible::effects::mint_cap<E, Source>)>;
 
 template <::crucible::effects::Effect E, class Ctx>
-inline constexpr bool same_mint_from_ctx_v =
-    std::is_same_v<
-        decltype(&::crucible::fixy::cap::mint_from_ctx<E, Ctx>),
-        decltype(&::crucible::effects::mint_from_ctx<E, Ctx>)>;
+inline constexpr bool same_mint_from_ctx_v = std::is_same_v<decltype(&::crucible::fixy::cap::mint_from_ctx<E, Ctx>),
+                                                            decltype(&::crucible::effects::mint_from_ctx<E, Ctx>)>;
 
 // (1) mint_cap identity — Bg is a cap_type whose permitted_row
 //     contains Alloc and IO, so CanMintCap is satisfied for both.
-static_assert(same_mint_cap_v<::crucible::effects::Effect::Alloc,
-                              ::crucible::effects::Bg>,
-    "fixy::cap::mint_cap must alias the substrate function — the "
-    "using-decl did not introduce a new overload (Alloc row).");
-static_assert(same_mint_cap_v<::crucible::effects::Effect::IO,
-                              ::crucible::effects::Bg>,
-    "fixy::cap::mint_cap must alias the substrate function (IO row).");
+static_assert(same_mint_cap_v<::crucible::effects::Effect::Alloc, ::crucible::effects::Bg>,
+              "fixy::cap::mint_cap must alias the substrate function — the "
+              "using-decl did not introduce a new overload (Alloc row).");
+static_assert(same_mint_cap_v<::crucible::effects::Effect::IO, ::crucible::effects::Bg>,
+              "fixy::cap::mint_cap must alias the substrate function (IO row).");
 
 // (2) mint_from_ctx identity — BgDrainCtx's cap_type is Bg, whose
 //     permitted_row contains Alloc, so CtxCanMint is satisfied.
-static_assert(same_mint_from_ctx_v<::crucible::effects::Effect::Alloc,
-                                   ::crucible::effects::BgDrainCtx>,
-    "fixy::cap::mint_from_ctx must alias the substrate function.");
+static_assert(same_mint_from_ctx_v<::crucible::effects::Effect::Alloc, ::crucible::effects::BgDrainCtx>,
+              "fixy::cap::mint_from_ctx must alias the substrate function.");
 
 // (3) Capability type-carrier identity — alias preserves template
 //     identity (same instantiation, not just convertible).
-static_assert(std::is_same_v<
-    ::crucible::fixy::cap::Capability<
-        ::crucible::effects::Effect::Alloc, ::crucible::effects::Bg>,
-    ::crucible::effects::Capability<
-        ::crucible::effects::Effect::Alloc, ::crucible::effects::Bg>>,
+static_assert(
+    std::is_same_v<::crucible::fixy::cap::Capability<::crucible::effects::Effect::Alloc, ::crucible::effects::Bg>,
+                   ::crucible::effects::Capability<::crucible::effects::Effect::Alloc, ::crucible::effects::Bg>>,
     "fixy::cap::Capability must alias effects::Capability.");
 
 // (4) FIXY-U-116: cap-context mints — non-template free functions, so
@@ -331,108 +312,84 @@ static_assert(std::is_same_v<
 // FIXY-V-017: mint_bg_context is a function template gated on
 // CanMintBgContext<Key> (§XXI single-concept rule).  Pointer identity
 // is taken on the concrete instantiation with the only valid Key.
-static_assert(std::is_same_v<
-    decltype(&::crucible::fixy::cap::mint_bg_context<
-                 ::crucible::effects::detail::ctx_mint::bg_key>),
-    decltype(&::crucible::effects::mint_bg_context<
-                 ::crucible::effects::detail::ctx_mint::bg_key>)>,
+static_assert(
+    std::is_same_v<decltype(&::crucible::fixy::cap::mint_bg_context<::crucible::effects::detail::ctx_mint::bg_key>),
+                   decltype(&::crucible::effects::mint_bg_context<::crucible::effects::detail::ctx_mint::bg_key>)>,
     "FIXY-V-017: fixy::cap::mint_bg_context must alias effects::mint_bg_context.");
 // FIXY-V-018: mint_init_context is a function template gated on
 // CanMintInitContext<Key>.  Identity taken on the concrete instantiation.
-static_assert(std::is_same_v<
-    decltype(&::crucible::fixy::cap::mint_init_context<
-                 ::crucible::effects::detail::ctx_mint::init_key>),
-    decltype(&::crucible::effects::mint_init_context<
-                 ::crucible::effects::detail::ctx_mint::init_key>)>,
+static_assert(
+    std::is_same_v<decltype(&::crucible::fixy::cap::mint_init_context<::crucible::effects::detail::ctx_mint::init_key>),
+                   decltype(&::crucible::effects::mint_init_context<::crucible::effects::detail::ctx_mint::init_key>)>,
     "FIXY-V-018: fixy::cap::mint_init_context must alias effects::mint_init_context.");
 // FIXY-V-019: mint_test_context is a function template gated on
 // CanMintTestContext<Key>.  Identity taken on the concrete instantiation.
-static_assert(std::is_same_v<
-    decltype(&::crucible::fixy::cap::mint_test_context<
-                 ::crucible::effects::detail::ctx_mint::test_key>),
-    decltype(&::crucible::effects::mint_test_context<
-                 ::crucible::effects::detail::ctx_mint::test_key>)>,
+static_assert(
+    std::is_same_v<decltype(&::crucible::fixy::cap::mint_test_context<::crucible::effects::detail::ctx_mint::test_key>),
+                   decltype(&::crucible::effects::mint_test_context<::crucible::effects::detail::ctx_mint::test_key>)>,
     "FIXY-U-116: fixy::cap::mint_test_context must alias effects::mint_test_context.");
 
 // (5) FIXY-V-212: cntp::mint_cc_choice — template gated on
 //     CcCompatible<Algorithm, Link>.  Identity at a concrete
 //     (Cubic, CrossDatacenter) instantiation that satisfies the gate.
-static_assert(std::is_same_v<
-    decltype(&::crucible::fixy::cap::cntp::mint_cc_choice<
-                 ::crucible::cntp::CcAlgorithm::Cubic,
-                 ::crucible::cntp::LinkClass::CrossDatacenter>),
-    decltype(&::crucible::cntp::mint_cc_choice<
-                 ::crucible::cntp::CcAlgorithm::Cubic,
-                 ::crucible::cntp::LinkClass::CrossDatacenter>)>,
+static_assert(
+    std::is_same_v<decltype(&::crucible::fixy::cap::cntp::mint_cc_choice<::crucible::cntp::CcAlgorithm::Cubic,
+                                                                         ::crucible::cntp::LinkClass::CrossDatacenter>),
+                   decltype(&::crucible::cntp::mint_cc_choice<::crucible::cntp::CcAlgorithm::Cubic,
+                                                              ::crucible::cntp::LinkClass::CrossDatacenter>)>,
     "FIXY-V-212: fixy::cap::cntp::mint_cc_choice must alias cntp::mint_cc_choice.");
 
 // (6) FIXY-V-212: DeclaredCcChoice type-carrier identity — alias
 //     preserves the safety::Tagged<CcSelection, source::CcAlgorithm>
 //     instantiation, not just a convertible-to substitute.
-static_assert(std::is_same_v<
-    ::crucible::fixy::cap::cntp::DeclaredCcChoice,
-    ::crucible::cntp::DeclaredCcChoice>,
-    "FIXY-V-212: fixy::cap::cntp::DeclaredCcChoice must alias cntp::DeclaredCcChoice.");
+static_assert(std::is_same_v<::crucible::fixy::cap::cntp::DeclaredCcChoice, ::crucible::cntp::DeclaredCcChoice>,
+              "FIXY-V-212: fixy::cap::cntp::DeclaredCcChoice must alias cntp::DeclaredCcChoice.");
 
 // (7) FIXY-V-217: CtxAdmitsCap positive cases — BgDrainCtx claims
 //     {Bg, Alloc} in its row, so the concept evaluates true for
 //     both effects and false for any effect NOT in the row
 //     (e.g. IO, which Bg PERMITS but BgDrainCtx does not CLAIM —
 //     the deliberate distinction from CtxCanMint).
-static_assert(::crucible::fixy::cap::CtxAdmitsCap<
-                  ::crucible::effects::BgDrainCtx,
-                  ::crucible::effects::Effect::Bg>,
-    "FIXY-V-217: BgDrainCtx::row = Row<Bg, Alloc> — CtxAdmitsCap must "
-    "accept Effect::Bg (atom present in the claimed row).");
-static_assert(::crucible::fixy::cap::CtxAdmitsCap<
-                  ::crucible::effects::BgDrainCtx,
-                  ::crucible::effects::Effect::Alloc>,
-    "FIXY-V-217: BgDrainCtx::row = Row<Bg, Alloc> — CtxAdmitsCap must "
-    "accept Effect::Alloc (atom present in the claimed row).");
-static_assert(!::crucible::fixy::cap::CtxAdmitsCap<
-                  ::crucible::effects::BgDrainCtx,
-                  ::crucible::effects::Effect::IO>,
-    "FIXY-V-217: BgDrainCtx::row = Row<Bg, Alloc> — CtxAdmitsCap must "
-    "REJECT Effect::IO (not claimed in row, even though Bg permits it; "
-    "this is the row-axis check, not the permitted-row-axis check).");
-static_assert(!::crucible::fixy::cap::CtxAdmitsCap<
-                  ::crucible::effects::HotFgCtx,
-                  ::crucible::effects::Effect::Alloc>,
-    "FIXY-V-217: HotFgCtx::row = Row<> (empty) — CtxAdmitsCap must "
-    "REJECT every Effect (no row claim ⇒ no row-axis authority).");
-static_assert(!::crucible::fixy::cap::CtxAdmitsCap<
-                  int, ::crucible::effects::Effect::Alloc>,
-    "FIXY-V-217: int is not an ExecCtx — IsExecCtx<int> = false short-"
-    "circuits the row-axis clause; the concept evaluates to false "
-    "without hard-erroring on row_type_of_t<int>.");
+static_assert(::crucible::fixy::cap::CtxAdmitsCap<::crucible::effects::BgDrainCtx, ::crucible::effects::Effect::Bg>,
+              "FIXY-V-217: BgDrainCtx::row = Row<Bg, Alloc> — CtxAdmitsCap must "
+              "accept Effect::Bg (atom present in the claimed row).");
+static_assert(::crucible::fixy::cap::CtxAdmitsCap<::crucible::effects::BgDrainCtx, ::crucible::effects::Effect::Alloc>,
+              "FIXY-V-217: BgDrainCtx::row = Row<Bg, Alloc> — CtxAdmitsCap must "
+              "accept Effect::Alloc (atom present in the claimed row).");
+static_assert(!::crucible::fixy::cap::CtxAdmitsCap<::crucible::effects::BgDrainCtx, ::crucible::effects::Effect::IO>,
+              "FIXY-V-217: BgDrainCtx::row = Row<Bg, Alloc> — CtxAdmitsCap must "
+              "REJECT Effect::IO (not claimed in row, even though Bg permits it; "
+              "this is the row-axis check, not the permitted-row-axis check).");
+static_assert(!::crucible::fixy::cap::CtxAdmitsCap<::crucible::effects::HotFgCtx, ::crucible::effects::Effect::Alloc>,
+              "FIXY-V-217: HotFgCtx::row = Row<> (empty) — CtxAdmitsCap must "
+              "REJECT every Effect (no row claim ⇒ no row-axis authority).");
+static_assert(!::crucible::fixy::cap::CtxAdmitsCap<int, ::crucible::effects::Effect::Alloc>,
+              "FIXY-V-217: int is not an ExecCtx — IsExecCtx<int> = false short-"
+              "circuits the row-axis clause; the concept evaluates to false "
+              "without hard-erroring on row_type_of_t<int>.");
 
 // (8) FIXY-V-217: CtxAdmitsCapStrict — within well-formed ExecCtx
 //     (Row ⊆ cap_permitted_row<Cap>) the strict concept is
 //     equivalent to the non-strict.  Pinned here as compile-time
 //     documentation of the row↔NSDMI invariant.
-static_assert(::crucible::fixy::cap::CtxAdmitsCapStrict<
-                  ::crucible::effects::BgDrainCtx,
-                  ::crucible::effects::Effect::Alloc>,
+static_assert(
+    ::crucible::fixy::cap::CtxAdmitsCapStrict<::crucible::effects::BgDrainCtx, ::crucible::effects::Effect::Alloc>,
     "FIXY-V-217: BgDrainCtx claims Alloc in row AND Bg cap source has "
     "alloc NSDMI ⇒ CtxAdmitsCapStrict accepts.");
-static_assert(::crucible::fixy::cap::CtxAdmitsCapStrict<
-                  ::crucible::effects::BgCompileCtx,
-                  ::crucible::effects::Effect::IO>,
+static_assert(
+    ::crucible::fixy::cap::CtxAdmitsCapStrict<::crucible::effects::BgCompileCtx, ::crucible::effects::Effect::IO>,
     "FIXY-V-217: BgCompileCtx claims IO in row AND Bg cap source has "
     "io NSDMI ⇒ CtxAdmitsCapStrict accepts.");
-static_assert(::crucible::fixy::cap::CtxAdmitsCapStrict<
-                  ::crucible::effects::BgDrainCtx,
-                  ::crucible::effects::Effect::Bg>,
+static_assert(
+    ::crucible::fixy::cap::CtxAdmitsCapStrict<::crucible::effects::BgDrainCtx, ::crucible::effects::Effect::Bg>,
     "FIXY-V-217: BgDrainCtx claims Bg in row AND cap source IS Bg ⇒ "
     "CtxAdmitsCapStrict accepts (thread-effect tag path).");
-static_assert(!::crucible::fixy::cap::CtxAdmitsCapStrict<
-                  ::crucible::effects::HotFgCtx,
-                  ::crucible::effects::Effect::Alloc>,
+static_assert(
+    !::crucible::fixy::cap::CtxAdmitsCapStrict<::crucible::effects::HotFgCtx, ::crucible::effects::Effect::Alloc>,
     "FIXY-V-217: HotFgCtx::row = Row<> ⇒ CtxAdmitsCap fails ⇒ strict "
     "variant fails by conjunction (no row claim).");
-static_assert(!::crucible::fixy::cap::CtxAdmitsCapStrict<
-                  ::crucible::effects::BgDrainCtx,
-                  ::crucible::effects::Effect::Init>,
+static_assert(
+    !::crucible::fixy::cap::CtxAdmitsCapStrict<::crucible::effects::BgDrainCtx, ::crucible::effects::Effect::Init>,
     "FIXY-V-217: BgDrainCtx cap source is Bg, not Init — even if a "
     "synthetic row claimed Init the cap-source-NSDMI leg would still "
     "fail (defense-in-depth against thread-effect tag confusion).");
@@ -441,32 +398,26 @@ static_assert(!::crucible::fixy::cap::CtxAdmitsCapStrict<
 //     source — pinned so a future change to cap_permitted_row that
 //     adds/removes a value-effect must also touch the NSDMI layout
 //     of Bg/Init/Test, OR these assertions catch the drift.
-static_assert(::crucible::fixy::cap::detail::ctx_cap_source_has_nsdmi_v<
-                  ::crucible::effects::Bg,
-                  ::crucible::effects::Effect::Alloc>,
-    "FIXY-V-217: Bg cap source must expose `alloc` NSDMI field.");
-static_assert(::crucible::fixy::cap::detail::ctx_cap_source_has_nsdmi_v<
-                  ::crucible::effects::Bg,
-                  ::crucible::effects::Effect::IO>,
+static_assert(::crucible::fixy::cap::detail::ctx_cap_source_has_nsdmi_v<::crucible::effects::Bg,
+                                                                        ::crucible::effects::Effect::Alloc>,
+              "FIXY-V-217: Bg cap source must expose `alloc` NSDMI field.");
+static_assert(
+    ::crucible::fixy::cap::detail::ctx_cap_source_has_nsdmi_v<::crucible::effects::Bg, ::crucible::effects::Effect::IO>,
     "FIXY-V-217: Bg cap source must expose `io` NSDMI field.");
-static_assert(::crucible::fixy::cap::detail::ctx_cap_source_has_nsdmi_v<
-                  ::crucible::effects::Bg,
-                  ::crucible::effects::Effect::Block>,
-    "FIXY-V-217: Bg cap source must expose `block` NSDMI field.");
-static_assert(::crucible::fixy::cap::detail::ctx_cap_source_has_nsdmi_v<
-                  ::crucible::effects::Init,
-                  ::crucible::effects::Effect::Alloc>,
-    "FIXY-V-217: Init cap source must expose `alloc` NSDMI field.");
-static_assert(::crucible::fixy::cap::detail::ctx_cap_source_has_nsdmi_v<
-                  ::crucible::effects::Init,
-                  ::crucible::effects::Effect::IO>,
-    "FIXY-V-217: Init cap source must expose `io` NSDMI field.");
-static_assert(!::crucible::fixy::cap::detail::ctx_cap_source_has_nsdmi_v<
-                  ::crucible::effects::Init,
-                  ::crucible::effects::Effect::Block>,
-    "FIXY-V-217: Init cap source MUST NOT expose `block` NSDMI field — "
-    "Init's permitted_row is {Init, Alloc, IO}, no Block; this pin "
-    "catches NSDMI drift if Init ever gains a block field without a "
-    "permitted_row update.");
+static_assert(::crucible::fixy::cap::detail::ctx_cap_source_has_nsdmi_v<::crucible::effects::Bg,
+                                                                        ::crucible::effects::Effect::Block>,
+              "FIXY-V-217: Bg cap source must expose `block` NSDMI field.");
+static_assert(::crucible::fixy::cap::detail::ctx_cap_source_has_nsdmi_v<::crucible::effects::Init,
+                                                                        ::crucible::effects::Effect::Alloc>,
+              "FIXY-V-217: Init cap source must expose `alloc` NSDMI field.");
+static_assert(::crucible::fixy::cap::detail::ctx_cap_source_has_nsdmi_v<::crucible::effects::Init,
+                                                                        ::crucible::effects::Effect::IO>,
+              "FIXY-V-217: Init cap source must expose `io` NSDMI field.");
+static_assert(!::crucible::fixy::cap::detail::ctx_cap_source_has_nsdmi_v<::crucible::effects::Init,
+                                                                         ::crucible::effects::Effect::Block>,
+              "FIXY-V-217: Init cap source MUST NOT expose `block` NSDMI field — "
+              "Init's permitted_row is {Init, Alloc, IO}, no Block; this pin "
+              "catches NSDMI drift if Init ever gains a block field without a "
+              "permitted_row update.");
 
 }  // namespace crucible::fixy::cap::self_test

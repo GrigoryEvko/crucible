@@ -17,8 +17,7 @@ struct {
 } cntp_wip_loss_recovery_events SEC(".maps");
 
 SEC("tracepoint/tcp/tcp_retransmit_skb")
-int crucible_cntp_wip_loss_recovery_sample(void *ctx)
-{
+int crucible_cntp_wip_loss_recovery_sample(void* ctx) {
     (void)ctx;
     return 0;
 }

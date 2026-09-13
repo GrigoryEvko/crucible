@@ -117,15 +117,15 @@
 //                   same SenseHub reading) → identical decision.
 
 #include <crucible/effects/Capabilities.h>
-#include <crucible/effects/EffectRow.h>     // FIXY-U-083: row_contains_v
-#include <crucible/effects/ExecCtx.h>       // FIXY-U-083: IsExecCtx, row_type_of_t
+#include <crucible/effects/EffectRow.h>  // FIXY-U-083: row_contains_v
+#include <crucible/effects/ExecCtx.h>  // FIXY-U-083: IsExecCtx, row_type_of_t
 #include <crucible/concurrent/ParallelismRule.h>
 #include <crucible/perf/Senses.h>
 #include <crucible/perf/SenseHub.h>
-#include <crucible/safety/Tagged.h>         // FIXY-V-074: Tagged + source::WorkloadProfiler
+#include <crucible/safety/Tagged.h>  // FIXY-V-074: Tagged + source::WorkloadProfiler
 
 #include <cstdint>
-#include <utility>                          // FIXY-V-074: std::forward for dispatch bodies
+#include <utility>  // FIXY-V-074: std::forward for dispatch bodies
 
 namespace crucible::perf {
 
@@ -148,9 +148,8 @@ namespace crucible::perf {
 // of the canonical stack — provenance is "close to the value".  No
 // other wrapper layered here; the value's federation cache slot is
 // `row_hash({source::WorkloadProfiler}, ParallelismDecision-hash)`.
-using TaggedParallelismDecision =
-    ::crucible::safety::Tagged<::crucible::concurrent::ParallelismDecision,
-                               ::crucible::safety::source::WorkloadProfiler>;
+using TaggedParallelismDecision = ::crucible::safety::Tagged<::crucible::concurrent::ParallelismDecision,
+                                                             ::crucible::safety::source::WorkloadProfiler>;
 
 class WorkloadProfiler {
 public:
@@ -165,8 +164,8 @@ public:
     // costs the no-regression promise.  Tune higher (more permissive)
     // for clean-room systems, lower for noisy multi-tenant hosts.
     struct Config {
-        uint64_t futex_wait_demote_threshold   = 100;
-        uint64_t ctx_vol_demote_threshold      = 500;
+        uint64_t futex_wait_demote_threshold = 100;
+        uint64_t ctx_vol_demote_threshold = 500;
     };
 
     // Construction.
@@ -184,15 +183,10 @@ public:
     // can't be evaluated before the enclosing class WorkloadProfiler is
     // complete.  Delegating constructor sidesteps it: mem-init lists
     // are parsed after the class definition.
-    explicit WorkloadProfiler(
-        const Senses* senses,
-        ::crucible::effects::Init init) noexcept
+    explicit WorkloadProfiler(const Senses* senses, ::crucible::effects::Init init) noexcept
         : WorkloadProfiler(senses, init, Config{}) {}
 
-    explicit WorkloadProfiler(
-        const Senses* senses,
-        ::crucible::effects::Init,
-        Config cfg) noexcept
+    explicit WorkloadProfiler(const Senses* senses, ::crucible::effects::Init, Config cfg) noexcept
         : senses_{senses}, cfg_{cfg} {}
 
     // Structurally-correct + telemetry-aware parallelism decision.
@@ -214,8 +208,7 @@ public:
     // making it a compile error to route a hand-crafted
     // `ParallelismDecision` through the parallel-dispatch path without
     // explicit re-mint.  Zero runtime cost — Tagged is EBO-collapsed.
-    [[nodiscard]] TaggedParallelismDecision
-    recommend(concurrent::WorkBudget budget) noexcept {
+    [[nodiscard]] TaggedParallelismDecision recommend(concurrent::WorkBudget budget) noexcept {
         return TaggedParallelismDecision{recommend_raw_(budget)};
     }
 
@@ -228,8 +221,7 @@ public:
     // Production code that ACTS on the decision MUST use recommend() +
     // dispatch_workload_decision — the Tagged form is the only one
     // that the dispatch gate accepts.
-    [[nodiscard]] concurrent::ParallelismDecision
-    recommend_bare(concurrent::WorkBudget budget) noexcept {
+    [[nodiscard]] concurrent::ParallelismDecision recommend_bare(concurrent::WorkBudget budget) noexcept {
         return recommend_raw_(budget);
     }
 
@@ -243,19 +235,13 @@ public:
     // demotion (rather than because the structural rule already said
     // Sequential).  False on the first call, false when senses is null,
     // false when SenseHub is unattached.
-    [[nodiscard]] bool last_was_demoted() const noexcept {
-        return was_demoted_;
-    }
+    [[nodiscard]] bool last_was_demoted() const noexcept { return was_demoted_; }
 
     // The per-call delta values that drove the most recent decision.
     // Both zero before the second call (no delta available) and on
     // calls where senses/sense_hub were unavailable.
-    [[nodiscard]] uint64_t last_futex_wait_delta() const noexcept {
-        return futex_delta_;
-    }
-    [[nodiscard]] uint64_t last_ctx_vol_delta() const noexcept {
-        return ctx_vol_delta_;
-    }
+    [[nodiscard]] uint64_t last_futex_wait_delta() const noexcept { return futex_delta_; }
+    [[nodiscard]] uint64_t last_ctx_vol_delta() const noexcept { return ctx_vol_delta_; }
 
     // Inspect the configured thresholds (read-only after construction).
     [[nodiscard]] Config config() const noexcept { return cfg_; }
@@ -266,9 +252,9 @@ public:
     // starts) and continuity of telemetry across the boundary would
     // produce misleading deltas.
     void reset() noexcept {
-        first_call_    = true;
-        was_demoted_   = false;
-        futex_delta_   = 0;
+        first_call_ = true;
+        was_demoted_ = false;
+        futex_delta_ = 0;
         ctx_vol_delta_ = 0;
         // Don't zero last_ — preserve memory layout.  first_call_ flag
         // is the discriminator.
@@ -280,12 +266,10 @@ public:
     // is a benign race in principle, but the per-instance last_
     // snapshot would diverge unhelpfully).  Move keeps the borrow
     // single-rooted.
-    WorkloadProfiler(const WorkloadProfiler&) =
-        delete("WorkloadProfiler holds a borrowed Senses*; copying would "
-               "produce two profilers with diverging last_ snapshots that "
-               "race on the same underlying SenseHub state");
-    WorkloadProfiler& operator=(const WorkloadProfiler&) = delete(
-        "see copy ctor rationale");
+    WorkloadProfiler(const WorkloadProfiler&) = delete("WorkloadProfiler holds a borrowed Senses*; copying would "
+                                                       "produce two profilers with diverging last_ snapshots that "
+                                                       "race on the same underlying SenseHub state");
+    WorkloadProfiler& operator=(const WorkloadProfiler&) = delete("see copy ctor rationale");
     WorkloadProfiler(WorkloadProfiler&&) noexcept = default;
     WorkloadProfiler& operator=(WorkloadProfiler&&) noexcept = default;
     ~WorkloadProfiler() = default;
@@ -297,8 +281,7 @@ private:
     // recommend() (Tagged form for dispatch) and recommend_bare()
     // (inspection form) forward here.  Refactored from the prior
     // inline body to eliminate the 6 return-statement wrap sites.
-    [[nodiscard]] concurrent::ParallelismDecision
-    recommend_raw_(concurrent::WorkBudget budget) noexcept {
+    [[nodiscard]] concurrent::ParallelismDecision recommend_raw_(concurrent::WorkBudget budget) noexcept {
         // Always start from the structural rule.
         auto decision = concurrent::ParallelismRule::recommend(budget);
 
@@ -306,16 +289,16 @@ private:
         // skipping the snapshot read on cache-resident workloads
         // saves ~115 ns per call.
         if (decision.kind == concurrent::ParallelismDecision::Kind::Sequential) {
-            was_demoted_   = false;
-            futex_delta_   = 0;
+            was_demoted_ = false;
+            futex_delta_ = 0;
             ctx_vol_delta_ = 0;
             return decision;
         }
 
         // No telemetry source → cannot demote, return structural.
         if (senses_ == nullptr) {
-            was_demoted_   = false;
-            futex_delta_   = 0;
+            was_demoted_ = false;
+            futex_delta_ = 0;
             ctx_vol_delta_ = 0;
             return decision;
         }
@@ -325,8 +308,8 @@ private:
         // load failure for this subprogram.
         const auto* hub = senses_->sense_hub();
         if (hub == nullptr) {
-            was_demoted_   = false;
-            futex_delta_   = 0;
+            was_demoted_ = false;
+            futex_delta_ = 0;
             ctx_vol_delta_ = 0;
             return decision;
         }
@@ -336,10 +319,10 @@ private:
         // First call: capture baseline, return structural decision
         // unchanged.  No delta to gate against yet.
         if (first_call_) {
-            last_         = current;
-            first_call_   = false;
-            was_demoted_  = false;
-            futex_delta_  = 0;
+            last_ = current;
+            first_call_ = false;
+            was_demoted_ = false;
+            futex_delta_ = 0;
             ctx_vol_delta_ = 0;
             return decision;
         }
@@ -347,18 +330,18 @@ private:
         const auto delta = current - last_;
         last_ = current;
 
-        futex_delta_   = delta[Idx::FUTEX_WAIT_COUNT];
+        futex_delta_ = delta[Idx::FUTEX_WAIT_COUNT];
         ctx_vol_delta_ = delta[Idx::SCHED_CTX_VOL];
 
         // ── Demote on contention ──────────────────────────────────
-        if (futex_delta_ > cfg_.futex_wait_demote_threshold ||
-            ctx_vol_delta_ > cfg_.ctx_vol_demote_threshold) [[unlikely]] {
+        if (futex_delta_ > cfg_.futex_wait_demote_threshold || ctx_vol_delta_ > cfg_.ctx_vol_demote_threshold)
+            [[unlikely]] {
             was_demoted_ = true;
             return concurrent::ParallelismDecision{
-                .kind   = concurrent::ParallelismDecision::Kind::Sequential,
+                .kind = concurrent::ParallelismDecision::Kind::Sequential,
                 .factor = 1,
-                .numa   = concurrent::NumaPolicy::NumaIgnore,
-                .tier   = decision.tier,  // preserve diagnostic tier
+                .numa = concurrent::NumaPolicy::NumaIgnore,
+                .tier = decision.tier,  // preserve diagnostic tier
             };
         }
 
@@ -366,13 +349,13 @@ private:
         return decision;
     }
 
-    const Senses*  senses_     = nullptr;
-    Config         cfg_{};
-    Snapshot       last_{};
-    bool           first_call_  = true;
-    bool           was_demoted_ = false;
-    uint64_t       futex_delta_   = 0;
-    uint64_t       ctx_vol_delta_ = 0;
+    const Senses* senses_ = nullptr;
+    Config cfg_{};
+    Snapshot last_{};
+    bool first_call_ = true;
+    bool was_demoted_ = false;
+    uint64_t futex_delta_ = 0;
+    uint64_t ctx_vol_delta_ = 0;
 };
 
 // ── §XXI Universal Mint Pattern — mint_workload_profiler (FIXY-U-083) ─
@@ -388,9 +371,8 @@ private:
 // Two overloads mirror the ctor pair: default Config and explicit
 // Config.  Both ride the same concept gate.
 template <class Ctx>
-concept CtxFitsWorkloadProfilerMint =
-       ::crucible::effects::IsExecCtx<Ctx>
-    && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Init>;
+concept CtxFitsWorkloadProfilerMint = ::crucible::effects::IsExecCtx<Ctx>
+                                   && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Init>;
 
 template <::crucible::effects::IsExecCtx Ctx>
     requires CtxFitsWorkloadProfilerMint<Ctx>
@@ -401,10 +383,8 @@ template <::crucible::effects::IsExecCtx Ctx>
 // §XXI: compile-time evaluation would lie about the runtime cost —
 // the transitive Senses dependency forces the carve-out even
 // though this ctor itself looks pure.
-[[nodiscard]] inline WorkloadProfiler
-mint_workload_profiler(Ctx const&,
-                       const Senses* senses,
-                       ::crucible::effects::Init init) noexcept {
+[[nodiscard]] inline WorkloadProfiler mint_workload_profiler(Ctx const&, const Senses* senses,
+                                                             ::crucible::effects::Init init) noexcept {
     return WorkloadProfiler{senses, init};
 }
 
@@ -413,11 +393,9 @@ template <::crucible::effects::IsExecCtx Ctx>
 // §XXI carve-out: cx=alloc — see default-Config overload above.
 // Same transitive Senses dependency + per-class histogram
 // allocation rationale applies.
-[[nodiscard]] inline WorkloadProfiler
-mint_workload_profiler(Ctx const&,
-                       const Senses* senses,
-                       ::crucible::effects::Init init,
-                       WorkloadProfiler::Config cfg) noexcept {
+[[nodiscard]] inline WorkloadProfiler mint_workload_profiler(Ctx const&, const Senses* senses,
+                                                             ::crucible::effects::Init init,
+                                                             WorkloadProfiler::Config cfg) noexcept {
     return WorkloadProfiler{senses, init, cfg};
 }
 
@@ -477,20 +455,15 @@ static_assert(!CtxFitsWorkloadProfilerMint<::crucible::effects::HotFgCtx>);
 //   dispatch_workload_decision(bg_ctx, tagged, seq_body, par_body);
 template <class Ctx>
 concept CtxFitsWorkloadDecisionDispatch =
-       ::crucible::effects::IsExecCtx<Ctx>
-    && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Bg>;
+    ::crucible::effects::IsExecCtx<Ctx> && ::crucible::effects::CtxOwnsCapability<Ctx, ::crucible::effects::Effect::Bg>;
 
 template <::crucible::effects::IsExecCtx Ctx, class SeqBody, class ParBody>
-    requires CtxFitsWorkloadDecisionDispatch<Ctx>
-          && ::std::invocable<SeqBody&&, concurrent::ParallelismDecision>
+    requires CtxFitsWorkloadDecisionDispatch<Ctx> && ::std::invocable<SeqBody&&, concurrent::ParallelismDecision>
           && ::std::invocable<ParBody&&, concurrent::ParallelismDecision>
-constexpr auto
-dispatch_workload_decision(Ctx const&,
-                           TaggedParallelismDecision decision,
-                           SeqBody&& seq_body,
-                           ParBody&& par_body)
-    noexcept(::std::is_nothrow_invocable_v<SeqBody&&, concurrent::ParallelismDecision>
-          && ::std::is_nothrow_invocable_v<ParBody&&, concurrent::ParallelismDecision>) {
+constexpr auto dispatch_workload_decision(
+    Ctx const&, TaggedParallelismDecision decision, SeqBody&& seq_body,
+    ParBody&& par_body) noexcept(::std::is_nothrow_invocable_v<SeqBody&&, concurrent::ParallelismDecision>
+                                 && ::std::is_nothrow_invocable_v<ParBody&&, concurrent::ParallelismDecision>) {
     const auto& dec = decision.value();
     if (dec.is_parallel()) {
         return ::std::forward<ParBody>(par_body)(dec);

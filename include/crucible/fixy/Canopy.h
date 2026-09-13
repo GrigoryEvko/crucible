@@ -71,40 +71,30 @@ using ::crucible::canopy::try_pop_hlc_timestamp;
 namespace crucible::fixy::canopy::self_test {
 
 // (1) mint_hlc pointer identity — non-template free function, direct.
-static_assert(std::is_same_v<
-    decltype(&::crucible::fixy::canopy::mint_hlc),
-    decltype(&::crucible::canopy::mint_hlc)>,
-    "FIXY-V-213: fixy::canopy::mint_hlc must alias canopy::mint_hlc — "
-    "the using-decl did not introduce a new overload.");
+static_assert(std::is_same_v<decltype(&::crucible::fixy::canopy::mint_hlc), decltype(&::crucible::canopy::mint_hlc)>,
+              "FIXY-V-213: fixy::canopy::mint_hlc must alias canopy::mint_hlc — "
+              "the using-decl did not introduce a new overload.");
 
 // (2) Hlc type-carrier identity.
-static_assert(std::is_same_v<
-    ::crucible::fixy::canopy::Hlc,
-    ::crucible::canopy::Hlc>,
-    "FIXY-V-213: fixy::canopy::Hlc must alias canopy::Hlc.");
+static_assert(std::is_same_v<::crucible::fixy::canopy::Hlc, ::crucible::canopy::Hlc>,
+              "FIXY-V-213: fixy::canopy::Hlc must alias canopy::Hlc.");
 
 // (3) HlcTimestamp wire-shape identity.
-static_assert(std::is_same_v<
-    ::crucible::fixy::canopy::HlcTimestamp,
-    ::crucible::canopy::HlcTimestamp>,
-    "FIXY-V-213: fixy::canopy::HlcTimestamp must alias canopy::HlcTimestamp.");
+static_assert(std::is_same_v<::crucible::fixy::canopy::HlcTimestamp, ::crucible::canopy::HlcTimestamp>,
+              "FIXY-V-213: fixy::canopy::HlcTimestamp must alias canopy::HlcTimestamp.");
 
 // (4) HlcClockTimestamp Tagged<source::Hlc> identity.
-static_assert(std::is_same_v<
-    ::crucible::fixy::canopy::HlcClockTimestamp,
-    ::crucible::canopy::HlcClockTimestamp>,
-    "FIXY-V-213: fixy::canopy::HlcClockTimestamp must alias "
-    "canopy::HlcClockTimestamp (Tagged<HlcTimestamp, source::Hlc>).");
+static_assert(std::is_same_v<::crucible::fixy::canopy::HlcClockTimestamp, ::crucible::canopy::HlcClockTimestamp>,
+              "FIXY-V-213: fixy::canopy::HlcClockTimestamp must alias "
+              "canopy::HlcClockTimestamp (Tagged<HlcTimestamp, source::Hlc>).");
 
 // (5) Pinned discipline survives the re-export — re-exported Hlc
 //     IS the substrate's Pinned Hlc; the static_assert fires here
 //     for the fixy:: spelling so reviewers see the witness at the
 //     re-export point.
-static_assert(!std::is_copy_constructible_v<
-                  ::crucible::fixy::canopy::Hlc>,
-    "FIXY-V-213: fixy::canopy::Hlc must be non-copyable (Pinned CRTP).");
-static_assert(!std::is_move_constructible_v<
-                  ::crucible::fixy::canopy::Hlc>,
-    "FIXY-V-213: fixy::canopy::Hlc must be non-moveable (Pinned CRTP).");
+static_assert(!std::is_copy_constructible_v<::crucible::fixy::canopy::Hlc>,
+              "FIXY-V-213: fixy::canopy::Hlc must be non-copyable (Pinned CRTP).");
+static_assert(!std::is_move_constructible_v<::crucible::fixy::canopy::Hlc>,
+              "FIXY-V-213: fixy::canopy::Hlc must be non-moveable (Pinned CRTP).");
 
 }  // namespace crucible::fixy::canopy::self_test

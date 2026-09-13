@@ -18,9 +18,9 @@
 // (single source of truth); light consumers include THIS header directly.
 
 #include <crucible/safety/Refined.h>
-#include <crucible/safety/RefinedAlgebra.h>   // all_of predicate combinator
+#include <crucible/safety/RefinedAlgebra.h>  // all_of predicate combinator
 
-#include <type_traits>                        // FIXY-U-115 self-test sentinel
+#include <type_traits>  // FIXY-U-115 self-test sentinel
 
 namespace crucible::fixy::wrap {
 
@@ -107,9 +107,8 @@ using ::crucible::safety::mint_refined;
 // symbol; pattern matches fixy/Wrap.h dual-export sentinels.
 namespace crucible::fixy::wrap::self_test {
 
-static_assert(std::is_same_v<
-    decltype(&::crucible::safety::mint_refined<::crucible::safety::positive, int>),
-    decltype(&::crucible::fixy::wrap::mint_refined<::crucible::safety::positive, int>)>,
-    "FIXY-U-115: fixy::wrap::mint_refined must alias safety::mint_refined.");
+static_assert(std::is_same_v<decltype(&::crucible::safety::mint_refined<::crucible::safety::positive, int>),
+                             decltype(&::crucible::fixy::wrap::mint_refined<::crucible::safety::positive, int>)>,
+              "FIXY-U-115: fixy::wrap::mint_refined must alias safety::mint_refined.");
 
 }  // namespace crucible::fixy::wrap::self_test

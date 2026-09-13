@@ -118,7 +118,7 @@
 #include <crucible/safety/Mutation.h>
 
 #include <cstddef>
-#include <cstdlib>       // std::abort (runtime_smoke_test)
+#include <cstdlib>  // std::abort (runtime_smoke_test)
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -130,25 +130,23 @@ namespace crucible::safety {
 // ═════════════════════════════════════════════════════════════════════
 
 template <typename T, std::size_t N>
-    requires (N > 0 && (N & (N - 1)) == 0)
+    requires(N > 0 && (N & (N - 1)) == 0)
 class [[nodiscard]] CyclicBuffer {
 public:
-    using value_type      = T;
-    using size_type       = std::size_t;
-    using reference       = T&;
+    using value_type = T;
+    using size_type = std::size_t;
+    using reference = T&;
     using const_reference = T const&;
 
     static constexpr size_type capacity = N;
 
-    static constexpr std::string_view wrapper_kind() noexcept {
-        return "structural::CyclicBuffer";
-    }
+    static constexpr std::string_view wrapper_kind() noexcept { return "structural::CyclicBuffer"; }
 
 private:
     // ── Composed members, each NSDMI-initialized ──
-    FixedArray<T, N>                  storage_{};                  // ring slots
-    Cyclic<std::size_t, N>            cursor_{};                   // write head
-    BoundedMonotonic<std::size_t, N>  count_{std::size_t{0}};      // fill 0..N
+    FixedArray<T, N> storage_{};  // ring slots
+    Cyclic<std::size_t, N> cursor_{};  // write head
+    BoundedMonotonic<std::size_t, N> count_{std::size_t{0}};  // fill 0..N
 
 public:
     // ── Construction ────────────────────────────────────────────────
@@ -156,17 +154,17 @@ public:
     constexpr CyclicBuffer() = default;
 
     // Defaulted copy/move/dtor — trivially copyable when T is.
-    constexpr CyclicBuffer(CyclicBuffer const&)            = default;
-    constexpr CyclicBuffer(CyclicBuffer&&)                 = default;
+    constexpr CyclicBuffer(CyclicBuffer const&) = default;
+    constexpr CyclicBuffer(CyclicBuffer&&) = default;
     constexpr CyclicBuffer& operator=(CyclicBuffer const&) = default;
-    constexpr CyclicBuffer& operator=(CyclicBuffer&&)      = default;
-    ~CyclicBuffer()                                        = default;
+    constexpr CyclicBuffer& operator=(CyclicBuffer&&) = default;
+    ~CyclicBuffer() = default;
 
     // ── Queries ─────────────────────────────────────────────────────
 
-    [[nodiscard]] constexpr size_type size()  const noexcept { return count_.get(); }
-    [[nodiscard]] constexpr bool      empty() const noexcept { return count_.get() == 0; }
-    [[nodiscard]] constexpr bool      full()  const noexcept { return count_.get() == N; }
+    [[nodiscard]] constexpr size_type size() const noexcept { return count_.get(); }
+    [[nodiscard]] constexpr bool empty() const noexcept { return count_.get() == 0; }
+    [[nodiscard]] constexpr bool full() const noexcept { return count_.get() == N; }
 
     // ── Mutation ────────────────────────────────────────────────────
 
@@ -198,8 +196,7 @@ public:
 
     // Push by copy — claim a slot and copy-assign.  Gated on
     // copy-assignability so non-assignable T still gets claim().
-    constexpr reference push(T const& value)
-        noexcept(std::is_nothrow_copy_assignable_v<T>)
+    constexpr reference push(T const& value) noexcept(std::is_nothrow_copy_assignable_v<T>)
         requires std::is_copy_assignable_v<T>
     {
         reference slot = claim();
@@ -208,8 +205,7 @@ public:
     }
 
     // Push by move — claim a slot and move-assign.
-    constexpr reference push(T&& value)
-        noexcept(std::is_nothrow_move_assignable_v<T>)
+    constexpr reference push(T&& value) noexcept(std::is_nothrow_move_assignable_v<T>)
         requires std::is_move_assignable_v<T>
     {
         reference slot = claim();
@@ -228,9 +224,7 @@ public:
     // the mask makes every result a valid slot, so this is a logic
     // bound, not a safety bound (same discipline as Cyclic::index_back
     // and FixedArray::operator[]).
-    [[nodiscard]] constexpr reference recent(size_type i) noexcept {
-        return storage_[cursor_.index_back(i)];
-    }
+    [[nodiscard]] constexpr reference recent(size_type i) noexcept { return storage_[cursor_.index_back(i)]; }
     [[nodiscard]] constexpr const_reference recent(size_type i) const noexcept {
         return storage_[cursor_.index_back(i)];
     }
@@ -239,9 +233,7 @@ public:
 
     // The underlying write cursor (const) — for callers that need the
     // raw modular index or the absolute push count.
-    [[nodiscard]] constexpr Cyclic<std::size_t, N> const& cursor() const noexcept {
-        return cursor_;
-    }
+    [[nodiscard]] constexpr Cyclic<std::size_t, N> const& cursor() const noexcept { return cursor_; }
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -252,18 +244,16 @@ public:
 // whose alignment ≤ size_t's and whose N*sizeof(T) is size_t-aligned,
 // sizeof is exactly the sum (no interior padding before the cursor).
 static_assert(sizeof(CyclicBuffer<std::uint32_t, 8>)
-    == sizeof(FixedArray<std::uint32_t, 8>)
-     + sizeof(Cyclic<std::size_t, 8>)
-     + sizeof(BoundedMonotonic<std::size_t, 8>));
+              == sizeof(FixedArray<std::uint32_t, 8>) + sizeof(Cyclic<std::size_t, 8>)
+                     + sizeof(BoundedMonotonic<std::size_t, 8>));
 static_assert(sizeof(CyclicBuffer<std::uint64_t, 16>)
-    == sizeof(FixedArray<std::uint64_t, 16>)
-     + sizeof(Cyclic<std::size_t, 16>)
-     + sizeof(BoundedMonotonic<std::size_t, 16>));
+              == sizeof(FixedArray<std::uint64_t, 16>) + sizeof(Cyclic<std::size_t, 16>)
+                     + sizeof(BoundedMonotonic<std::size_t, 16>));
 
 // Concrete byte counts for the production-relevant shapes:
 //   uint32_t × 8 = 32 storage + 8 cursor + 8 count = 48.
 //   uint64_t × 16 = 128 storage + 8 cursor + 8 count = 144.
-static_assert(sizeof(CyclicBuffer<std::uint32_t, 8>)  == 48);
+static_assert(sizeof(CyclicBuffer<std::uint32_t, 8>) == 48);
 static_assert(sizeof(CyclicBuffer<std::uint64_t, 16>) == 144);
 
 // alignof matches the widest member (size_t cursor/count) when T's
@@ -298,10 +288,8 @@ static_assert(default_is_empty());
     b.push(10);
     b.push(20);
     b.push(30);
-    return b.size() == 3
-        && b.recent(0) == 30     // last pushed
-        && b.recent(1) == 20
-        && b.recent(2) == 10;    // oldest of the three
+    return b.size() == 3 && b.recent(0) == 30  // last pushed
+        && b.recent(1) == 20 && b.recent(2) == 10;  // oldest of the three
 }
 static_assert(push_grows_and_recent_tracks());
 
@@ -317,7 +305,8 @@ static_assert(claim_then_mutate());
 // Fill saturates at N: push N+ items, size stays N, oldest evicted.
 [[nodiscard]] consteval bool saturates_and_evicts() noexcept {
     CB8 b{};
-    for (int v = 0; v < 12; ++v) b.push(v);   // push 12 into a ring of 8
+    for (int v = 0; v < 12; ++v)
+        b.push(v);  // push 12 into a ring of 8
     if (b.size() != 8 || !b.full()) return false;
     // Most recent is 11; the 8 retained are 11,10,...,4 (0..3 evicted).
     return b.recent(0) == 11 && b.recent(7) == 4;
@@ -328,7 +317,8 @@ static_assert(saturates_and_evicts());
 [[nodiscard]] consteval bool full_empty_transitions() noexcept {
     CB8 b{};
     if (!b.empty()) return false;
-    for (int v = 0; v < 8; ++v) b.push(v);
+    for (int v = 0; v < 8; ++v)
+        b.push(v);
     return b.full() && b.size() == 8;
 }
 static_assert(full_empty_transitions());
@@ -336,7 +326,8 @@ static_assert(full_empty_transitions());
 // cursor() escape exposes the absolute push count.
 [[nodiscard]] consteval bool cursor_tracks_absolute_count() noexcept {
     CB8 b{};
-    for (int v = 0; v < 5; ++v) b.push(v);
+    for (int v = 0; v < 5; ++v)
+        b.push(v);
     return b.cursor().raw() == 5 && b.cursor().index() == 5;
 }
 static_assert(cursor_tracks_absolute_count());
@@ -355,7 +346,8 @@ inline void runtime_smoke_test() {
 
     // Non-constant pushes.
     volatile int seed = 100;
-    for (int k = 0; k < 3; ++k) b.push(static_cast<int>(seed) + k);
+    for (int k = 0; k < 3; ++k)
+        b.push(static_cast<int>(seed) + k);
     if (b.size() != 3) std::abort();
     if (b.recent(0) != 102 || b.recent(2) != 100) std::abort();
 
@@ -366,14 +358,15 @@ inline void runtime_smoke_test() {
 
     // Saturation + eviction past N with non-constant input.
     CB8 r{};
-    for (int v = 0; v < 20; ++v) r.push(static_cast<int>(seed) + v);
+    for (int v = 0; v < 20; ++v)
+        r.push(static_cast<int>(seed) + v);
     if (r.size() != 8 || !r.full()) std::abort();
-    if (r.recent(0) != 119) std::abort();   // 100 + 19
-    if (r.recent(7) != 112) std::abort();    // 100 + 12 (oldest retained)
+    if (r.recent(0) != 119) std::abort();  // 100 + 19
+    if (r.recent(7) != 112) std::abort();  // 100 + 12 (oldest retained)
 
     // cursor escape.
     if (r.cursor().raw() != 20) std::abort();
-    if (r.cursor().index() != (20u & 7u)) std::abort();   // 20 & 7 = 4
+    if (r.cursor().index() != (20u & 7u)) std::abort();  // 20 & 7 = 4
 }
 
 }  // namespace detail::cyclic_buffer_self_test

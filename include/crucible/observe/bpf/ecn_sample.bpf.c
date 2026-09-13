@@ -17,8 +17,7 @@ struct {
 } observe_ecn_events SEC(".maps");
 
 SEC("tracepoint/tcp/tcp_probe")
-int crucible_observe_ecn_sample(void *ctx)
-{
+int crucible_observe_ecn_sample(void* ctx) {
     (void)ctx;
     return 0;
 }

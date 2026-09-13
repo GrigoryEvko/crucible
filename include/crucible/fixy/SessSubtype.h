@@ -77,7 +77,7 @@
 //
 // Zero.  Every entry is a using-decl (pure name-lookup directive).
 
-#include <crucible/safety/NumericalTier.h>       // V-067: payload axiom NumericalTier
+#include <crucible/safety/NumericalTier.h>  // V-067: payload axiom NumericalTier
 #include <crucible/sessions/SessionPayloadSubsort.h>  // V-067: is_subsort<...> specialisations
 #include <crucible/sessions/SessionSubtype.h>
 #include <crucible/sessions/SessionSubtypeReason.h>
@@ -148,7 +148,7 @@ namespace proto = ::crucible::safety::proto;
 
 // Representative protocol shapes (combinators come transitively from
 // SessionSubtype.h's include of Session.h).
-using End  = proto::End;
+using End = proto::End;
 using SInt = proto::Send<int, proto::End>;
 using RInt = proto::Recv<int, proto::End>;
 
@@ -157,29 +157,24 @@ using RInt = proto::Recv<int, proto::End>;
 // Instantiated-struct identity proves the using-decl resolves to the
 // substrate template, not a same-named shadow.
 static_assert(std::is_same_v<is_subsort<int, int>, proto::is_subsort<int, int>>);
-static_assert(std::is_same_v<is_subtype_sync_structural<End, End>,
-                             proto::is_subtype_sync_structural<End, End>>);
-static_assert(std::is_same_v<is_subtype_sync<End, End>,
-                             proto::is_subtype_sync<End, End>>);
+static_assert(std::is_same_v<is_subtype_sync_structural<End, End>, proto::is_subtype_sync_structural<End, End>>);
+static_assert(std::is_same_v<is_subtype_sync<End, End>, proto::is_subtype_sync<End, End>>);
 static_assert(std::is_same_v<RejectionReason<proto::diagnostic::SubtypeMismatch, int, int>,
                              proto::RejectionReason<proto::diagnostic::SubtypeMismatch, int, int>>);
 
 // ── B. Subsort primitive behaviour (reflexive, invariant default) ──
-static_assert(is_subsort_v<int, int>,        "subsort is reflexive");
-static_assert(!is_subsort_v<int, double>,    "default subsort is invariant (is_same)");
+static_assert(is_subsort_v<int, int>, "subsort is reflexive");
+static_assert(!is_subsort_v<int, double>, "default subsort is invariant (is_same)");
 
 // ── C. Core subtype relation — positive + negative ─────────────────
-static_assert(is_subtype_sync_v<End, End>,   "End is a subtype of itself");
-static_assert(!is_subtype_sync_v<SInt, RInt>,
-    "Send and Recv are incomparable shapes — the canonical "
-    "send/recv-confusion bug must be rejected.");
-static_assert(protocol_grade_satisfies_v<End, End>,
-    "End trivially satisfies End's (empty) product-lattice grade.");
+static_assert(is_subtype_sync_v<End, End>, "End is a subtype of itself");
+static_assert(!is_subtype_sync_v<SInt, RInt>, "Send and Recv are incomparable shapes — the canonical "
+                                              "send/recv-confusion bug must be rejected.");
+static_assert(protocol_grade_satisfies_v<End, End>, "End trivially satisfies End's (empty) product-lattice grade.");
 
 // ── D. Equivalence / strictness / chain ────────────────────────────
-static_assert(equivalent_sync_v<End, End>,   "End ≡ End (bidirectional)");
-static_assert(!is_strict_subtype_sync_v<End, End>,
-    "reflexive pair is NOT a strict subtype (strict is irreflexive)");
+static_assert(equivalent_sync_v<End, End>, "End ≡ End (bidirectional)");
+static_assert(!is_strict_subtype_sync_v<End, End>, "reflexive pair is NOT a strict subtype (strict is irreflexive)");
 static_assert(subtype_chain_v<End, End, End>, "End ⩽ End ⩽ End");
 
 // ── E. Concepts hold on representative args ────────────────────────
@@ -192,24 +187,20 @@ static_assert(CompatibleServer<RInt, SInt>);
 
 // ── F. Reason path: success sentinel + failure record + agreement ──
 static_assert(std::is_same_v<subtype_rejection_reason_t<End, End>, SubtypeOk>,
-    "End ⩽ End yields the SubtypeOk success sentinel.");
-static_assert(is_subtype_sync_diag_v<End, End>,
-    "diag path agrees with the bool path on the positive case.");
-static_assert(subtype_diag_agrees_v<End, End>,
-    "is_subtype_sync_diag_v and is_subtype_sync_v must agree.");
+              "End ⩽ End yields the SubtypeOk success sentinel.");
+static_assert(is_subtype_sync_diag_v<End, End>, "diag path agrees with the bool path on the positive case.");
+static_assert(subtype_diag_agrees_v<End, End>, "is_subtype_sync_diag_v and is_subtype_sync_v must agree.");
 static_assert(is_rejection_reason_v<subtype_rejection_reason_t<SInt, RInt>>,
-    "a shape mismatch produces a RejectionReason record, not SubtypeOk.");
-static_assert(!is_rejection_reason_v<SubtypeOk>,
-    "the success sentinel is NOT a rejection record.");
+              "a shape mismatch produces a RejectionReason record, not SubtypeOk.");
+static_assert(!is_rejection_reason_v<SubtypeOk>, "the success sentinel is NOT a rejection record.");
 
 // ── G. Distinct strong relations do not collapse ───────────────────
 //
 // is_subtype_sync (grade-filtered, public) and is_subtype_sync_structural
 // (pre-grade) are distinct templates — a future edit that aliased one to
 // the other would erase the ProductLattice grade filter silently.
-static_assert(!std::is_same_v<is_subtype_sync<End, End>,
-                              is_subtype_sync_structural<End, End>>,
-    "grade-filtered and structural relations are distinct templates.");
+static_assert(!std::is_same_v<is_subtype_sync<End, End>, is_subtype_sync_structural<End, End>>,
+              "grade-filtered and structural relations are distinct templates.");
 
 // ── H. Cardinality witness — count of items U-052e surfaces ────────
 //
@@ -218,9 +209,8 @@ static_assert(!std::is_same_v<is_subtype_sync<End, End>,
 //   reason predicates (3) + reason metafns (2) + reason helpers (2)
 //                                                          ──── 29
 constexpr int u052e_surface_cardinality = 29;
-static_assert(u052e_surface_cardinality == 29,
-    "fixy::sess::subtype:: U-052e surface cardinality drifted — "
-    "update SessSubtype.h using-decls AND this sentinel in lockstep.");
+static_assert(u052e_surface_cardinality == 29, "fixy::sess::subtype:: U-052e surface cardinality drifted — "
+                                               "update SessSubtype.h using-decls AND this sentinel in lockstep.");
 
 }  // namespace crucible::fixy::sess::subtype::u052e_self_test
 
@@ -257,26 +247,26 @@ static_assert(u052e_surface_cardinality == 29,
 
 namespace crucible::fixy::sess::subtype::v067_payload_axiom_test {
 
-namespace saf  = ::crucible::safety;
+namespace saf = ::crucible::safety;
 namespace prot = ::crucible::safety::proto;
 namespace fsub = ::crucible::fixy::sess::subtype;
 
-struct Payload { int v; };
+struct Payload {
+    int v;
+};
 
 // ── A. Refined<P, T> ⩽ T (narrowing) + reverse rejected ────────────
 static_assert(fsub::is_subsort_v<saf::Refined<saf::positive, int>, int>);
 static_assert(fsub::is_subsort_v<saf::Refined<saf::non_negative, int>, int>);
 static_assert(fsub::is_subsort_v<saf::Refined<saf::non_zero, int>, int>);
 static_assert(!fsub::is_subsort_v<int, saf::Refined<saf::positive, int>>,
-    "a bare T has no proof — reverse narrowing must be rejected.");
+              "a bare T has no proof — reverse narrowing must be rejected.");
 
 // ── B. Refined strengthening: P ⇒ Q  ⟹  Refined<P> ⩽ Refined<Q> ───
-static_assert(fsub::is_subsort_v<saf::Refined<saf::positive, int>,
-                                 saf::Refined<saf::non_negative, int>>,
-    "positive ⇒ non_negative, so the stronger refinement flows.");
-static_assert(!fsub::is_subsort_v<saf::Refined<saf::non_negative, int>,
-                                  saf::Refined<saf::positive, int>>,
-    "the weaker refinement does NOT flow to the stronger position.");
+static_assert(fsub::is_subsort_v<saf::Refined<saf::positive, int>, saf::Refined<saf::non_negative, int>>,
+              "positive ⇒ non_negative, so the stronger refinement flows.");
+static_assert(!fsub::is_subsort_v<saf::Refined<saf::non_negative, int>, saf::Refined<saf::positive, int>>,
+              "the weaker refinement does NOT flow to the stronger position.");
 
 // ── C. Safe-to-erase provenance tags ⩽ bare T ──────────────────────
 static_assert(fsub::is_subsort_v<saf::Tagged<Payload, saf::source::Sanitized>, Payload>);
@@ -289,7 +279,7 @@ static_assert(fsub::is_subsort_v<saf::Tagged<Payload, saf::vessel_trust::Validat
 
 // ── D. Trust-boundary discipline: unsafe tags must NOT flow ────────
 static_assert(!fsub::is_subsort_v<saf::Tagged<Payload, saf::source::External>, Payload>,
-    "External provenance must be validated before flowing to bare T.");
+              "External provenance must be validated before flowing to bare T.");
 static_assert(!fsub::is_subsort_v<saf::Tagged<Payload, saf::source::FromUser>, Payload>);
 static_assert(!fsub::is_subsort_v<saf::Tagged<Payload, saf::vessel_trust::FromPytorch>, Payload>);
 
@@ -303,32 +293,27 @@ static_assert(!fsub::is_subsort_v<saf::Tagged<int, saf::version::V<1>>, int>);
 static_assert(!fsub::is_subsort_v<int, saf::Tagged<int, saf::source::Sanitized>>);
 
 // ── F. Stacked Refined<P, Tagged<T, V>> ⩽ Tagged<T, V> ─────────────
-static_assert(fsub::is_subsort_v<
-    saf::Refined<saf::positive, saf::Tagged<int, saf::source::Sanitized>>,
-    saf::Tagged<int, saf::source::Sanitized>>);
+static_assert(fsub::is_subsort_v<saf::Refined<saf::positive, saf::Tagged<int, saf::source::Sanitized>>,
+                                 saf::Tagged<int, saf::source::Sanitized>>);
 
 // ── G. NumericalTier tolerance: tighter producer ⩽ looser consumer ─
 using BitexactT = saf::NumericalTier<saf::Tolerance::BITEXACT, Payload>;
-using RelaxedT  = saf::NumericalTier<saf::Tolerance::RELAXED, Payload>;
-static_assert(fsub::is_subsort_v<BitexactT, RelaxedT>,
-    "a bit-exact producer guarantee satisfies a relaxed consumer.");
+using RelaxedT = saf::NumericalTier<saf::Tolerance::RELAXED, Payload>;
+static_assert(fsub::is_subsort_v<BitexactT, RelaxedT>, "a bit-exact producer guarantee satisfies a relaxed consumer.");
 static_assert(!fsub::is_subsort_v<RelaxedT, BitexactT>);
 
 // ── H. Protocol composition: payload axiom flows through Send/Recv ─
 //
 // The payload subsort is consumed by SessionSubtype's Send/Recv
 // covariance/contravariance — witness it reaches there through fixy too.
-static_assert(fsub::is_subtype_sync_v<
-    prot::Send<saf::Refined<saf::positive, int>, prot::End>,
-    prot::Send<int, prot::End>>,
+static_assert(
+    fsub::is_subtype_sync_v<prot::Send<saf::Refined<saf::positive, int>, prot::End>, prot::Send<int, prot::End>>,
     "Send is payload-covariant: refined payload flows to bare-T position.");
-static_assert(!fsub::is_subtype_sync_v<
-    prot::Send<int, prot::End>,
-    prot::Send<saf::Refined<saf::positive, int>, prot::End>>,
+static_assert(
+    !fsub::is_subtype_sync_v<prot::Send<int, prot::End>, prot::Send<saf::Refined<saf::positive, int>, prot::End>>,
     "the reverse (bare T into a refined Send position) is rejected.");
-static_assert(fsub::is_subtype_sync_v<
-    prot::Recv<int, prot::End>,
-    prot::Recv<saf::Refined<saf::positive, int>, prot::End>>,
+static_assert(
+    fsub::is_subtype_sync_v<prot::Recv<int, prot::End>, prot::Recv<saf::Refined<saf::positive, int>, prot::End>>,
     "Recv is payload-contravariant — the directions flip.");
 
 // ── I. Axiom-family-count witness ──────────────────────────────────
@@ -343,8 +328,8 @@ static_assert(fsub::is_subtype_sync_v<
 //   6 NumericalTier-tolerance                              ──── 6 families
 constexpr int v067_positive_axiom_families = 6;
 static_assert(v067_positive_axiom_families == 6,
-    "fixy::sess::subtype:: V-067 positive-axiom-family count drifted — "
-    "update SessionPayloadSubsort.h witnesses AND this sentinel in lockstep.");
+              "fixy::sess::subtype:: V-067 positive-axiom-family count drifted — "
+              "update SessionPayloadSubsort.h witnesses AND this sentinel in lockstep.");
 
 }  // namespace crucible::fixy::sess::subtype::v067_payload_axiom_test
 
@@ -366,7 +351,7 @@ namespace crucible::fixy::sess::subtype {
 
 inline void runtime_smoke_test() noexcept {
     namespace proto = ::crucible::safety::proto;
-    using End  = proto::End;
+    using End = proto::End;
     using SInt = proto::Send<int, proto::End>;
     using RInt = proto::Recv<int, proto::End>;
 
@@ -380,21 +365,28 @@ inline void runtime_smoke_test() noexcept {
     assert_subtype_sync_diag<End, End>();
 
     // Metafunctions evaluate against non-trivial (failing) shapes too.
-    [[maybe_unused]] constexpr bool sub      = is_subtype_sync_v<End, End>;
-    [[maybe_unused]] constexpr bool not_sub  = is_subtype_sync_v<SInt, RInt>;
-    [[maybe_unused]] constexpr bool equiv    = equivalent_sync_v<End, End>;
-    [[maybe_unused]] constexpr bool strict   = is_strict_subtype_sync_v<End, End>;
-    [[maybe_unused]] constexpr bool chain    = subtype_chain_v<End, End, End>;
-    [[maybe_unused]] constexpr bool diag     = is_subtype_sync_diag_v<End, End>;
-    [[maybe_unused]] constexpr bool agrees   = subtype_diag_agrees_v<End, End>;
+    [[maybe_unused]] constexpr bool sub = is_subtype_sync_v<End, End>;
+    [[maybe_unused]] constexpr bool not_sub = is_subtype_sync_v<SInt, RInt>;
+    [[maybe_unused]] constexpr bool equiv = equivalent_sync_v<End, End>;
+    [[maybe_unused]] constexpr bool strict = is_strict_subtype_sync_v<End, End>;
+    [[maybe_unused]] constexpr bool chain = subtype_chain_v<End, End, End>;
+    [[maybe_unused]] constexpr bool diag = is_subtype_sync_diag_v<End, End>;
+    [[maybe_unused]] constexpr bool agrees = subtype_diag_agrees_v<End, End>;
 
-    using OkReason   = subtype_rejection_reason_t<End, End>;
+    using OkReason = subtype_rejection_reason_t<End, End>;
     using FailReason = subtype_rejection_reason_t<SInt, RInt>;
-    [[maybe_unused]] constexpr bool ok_is_ok   = std::is_same_v<OkReason, SubtypeOk>;
+    [[maybe_unused]] constexpr bool ok_is_ok = std::is_same_v<OkReason, SubtypeOk>;
     [[maybe_unused]] constexpr bool fail_is_rej = is_rejection_reason_v<FailReason>;
 
-    (void) sub; (void) not_sub; (void) equiv; (void) strict; (void) chain;
-    (void) diag; (void) agrees; (void) ok_is_ok; (void) fail_is_rej;
+    (void)sub;
+    (void)not_sub;
+    (void)equiv;
+    (void)strict;
+    (void)chain;
+    (void)diag;
+    (void)agrees;
+    (void)ok_is_ok;
+    (void)fail_is_rej;
 
     // ── V-067: payload-subsort axiom instantiations ────────────────
     //
@@ -405,23 +397,19 @@ inline void runtime_smoke_test() noexcept {
     // latent SFINAE/inline-body regression in the specialisations fire
     // immediately at every consumer's include time.
     namespace saf = ::crucible::safety;
-    [[maybe_unused]] constexpr bool refined_narrows =
-        is_subsort_v<saf::Refined<saf::positive, int>, int>;
+    [[maybe_unused]] constexpr bool refined_narrows = is_subsort_v<saf::Refined<saf::positive, int>, int>;
     [[maybe_unused]] constexpr bool refined_strengthens =
-        is_subsort_v<saf::Refined<saf::positive, int>,
-                     saf::Refined<saf::non_negative, int>>;
-    [[maybe_unused]] constexpr bool tag_safe_erases =
-        is_subsort_v<saf::Tagged<int, saf::source::Sanitized>, int>;
-    [[maybe_unused]] constexpr bool tag_unsafe_blocked =
-        !is_subsort_v<saf::Tagged<int, saf::source::External>, int>;
+        is_subsort_v<saf::Refined<saf::positive, int>, saf::Refined<saf::non_negative, int>>;
+    [[maybe_unused]] constexpr bool tag_safe_erases = is_subsort_v<saf::Tagged<int, saf::source::Sanitized>, int>;
+    [[maybe_unused]] constexpr bool tag_unsafe_blocked = !is_subsort_v<saf::Tagged<int, saf::source::External>, int>;
     [[maybe_unused]] constexpr bool send_payload_covariant =
-        is_subtype_sync_v<
-            proto::Send<saf::Refined<saf::positive, int>, proto::End>,
-            proto::Send<int, proto::End>>;
+        is_subtype_sync_v<proto::Send<saf::Refined<saf::positive, int>, proto::End>, proto::Send<int, proto::End>>;
 
-    (void) refined_narrows;       (void) refined_strengthens;
-    (void) tag_safe_erases;       (void) tag_unsafe_blocked;
-    (void) send_payload_covariant;
+    (void)refined_narrows;
+    (void)refined_strengthens;
+    (void)tag_safe_erases;
+    (void)tag_unsafe_blocked;
+    (void)send_payload_covariant;
 }
 
 }  // namespace crucible::fixy::sess::subtype

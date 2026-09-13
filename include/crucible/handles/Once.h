@@ -65,10 +65,10 @@ public:
     constexpr SetOnce() noexcept = default;
     ~SetOnce() = default;
 
-    SetOnce(const SetOnce&)            = default;
-    SetOnce(SetOnce&&)                 = default;
+    SetOnce(const SetOnce&) = default;
+    SetOnce(SetOnce&&) = default;
     SetOnce& operator=(const SetOnce&) = default;
-    SetOnce& operator=(SetOnce&&)      = default;
+    SetOnce& operator=(SetOnce&&) = default;
 
     // Set exactly once.  Contract fires on double-set and on null
     // input (null is reserved as the unset sentinel; publishing null
@@ -76,8 +76,7 @@ public:
     //
     // constexpr-eligible so HS14 negative-compile fixtures can witness
     // CRUCIBLE_PRE consteval-fire under static_assert (fixy-A1-007).
-    CRUCIBLE_INLINE constexpr void set(T* p) noexcept
-    {
+    CRUCIBLE_INLINE constexpr void set(T* p) noexcept {
         // fixy-A1-007: pre clauses migrated from P2900 form to body-
         // CRUCIBLE_PRE.  The first clause references the parameter `p`;
         // the second references the class member `ptr_` through
@@ -131,8 +130,7 @@ public:
     // slot — which masks a missed initialization — trips.
     //
     // constexpr-eligible per the same fixy-A1-007 rationale as set().
-    constexpr void reset() noexcept
-    {
+    constexpr void reset() noexcept {
         // fixy-A1-007: pre clause migrated to body-CRUCIBLE_PRE.
         // `has_value()` is a member function accessing `ptr_` through
         // implicit `this->`, the canonical consteval-bypass shape on
@@ -152,7 +150,7 @@ public:
     }
 };
 
-static_assert(sizeof(SetOnce<int>)  == sizeof(int*));
+static_assert(sizeof(SetOnce<int>) == sizeof(int*));
 static_assert(sizeof(SetOnce<void>) == sizeof(void*));
 
 // ── Once<F> ────────────────────────────────────────────────────────
@@ -195,10 +193,7 @@ public:
         requires std::is_invocable_v<F>
     {
         uint8_t expected = 0;
-        if (state_.compare_exchange_strong(
-                expected, 1,
-                std::memory_order_acq_rel,
-                std::memory_order_acquire)) {
+        if (state_.compare_exchange_strong(expected, 1, std::memory_order_acq_rel, std::memory_order_acquire)) {
             // We won the race — run f().
             std::forward<F>(f)();
             state_.store(2, std::memory_order_release);
@@ -220,9 +215,7 @@ public:
         // instantiate exactly once per pointer-type, well-bounded.
     }
 
-    [[nodiscard]] bool done() const noexcept {
-        return state_.load(std::memory_order_acquire) == 2;
-    }
+    [[nodiscard]] bool done() const noexcept { return state_.load(std::memory_order_acquire) == 2; }
 };
 
 // ── Lazy<T> ────────────────────────────────────────────────────────
@@ -275,13 +268,9 @@ class Lazy : Pinned<Lazy<T>> {
     // wrong and the destructor's `->~T()` racing a fresh implicit T.
     // The distinction is documented at the cite site for future
     // refactor-safety.
-    [[nodiscard]] T* storage_ptr_() noexcept {
-        return std::launder(
-            static_cast<T*>(static_cast<void*>(&storage_)));
-    }
+    [[nodiscard]] T* storage_ptr_() noexcept { return std::launder(static_cast<T*>(static_cast<void*>(&storage_))); }
     [[nodiscard]] const T* storage_ptr_() const noexcept {
-        return std::launder(
-            static_cast<const T*>(static_cast<const void*>(&storage_)));
+        return std::launder(static_cast<const T*>(static_cast<const void*>(&storage_)));
     }
 
 public:
@@ -311,9 +300,7 @@ public:
         // noexcept, while GCC's body analyzer sees the bodies have
         // no throw paths and warns (surfaced by fixy-A1-017's smoke
         // — a latent bug pure static_assert tests miss).
-        once_.call([&]() noexcept {
-            ::new (&storage_) T(std::forward<F>(f)());
-        });
+        once_.call([&]() noexcept { ::new(&storage_) T(std::forward<F>(f)()); });
         return *storage_ptr_();
     }
 
@@ -330,9 +317,7 @@ public:
         return *storage_ptr_();
     }
 
-    [[nodiscard]] bool initialized() const noexcept {
-        return once_.done();
-    }
+    [[nodiscard]] bool initialized() const noexcept { return once_.done(); }
 };
 
 // ── runtime_smoke_test ──────────────────────────────────────────────
@@ -390,4 +375,4 @@ inline void runtime_smoke_test() {
 
 }  // namespace detail::lazy_self_test
 
-} // namespace crucible::safety
+}  // namespace crucible::safety

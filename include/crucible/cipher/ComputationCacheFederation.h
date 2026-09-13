@@ -78,13 +78,13 @@
 //                runtime work and moves NO existing hash value — bare
 //                payloads and flat rows are vacuously canonical.
 
-#include <crucible/Types.h>                          // KernelCacheKey, ContentHash, RowHash
-#include <crucible/cipher/ComputationCache.h>        // computation_cache_key_in_row, IsCacheableFunction, IsEffectRow
-#include <crucible/cipher/FederationProtocol.h>      // FederationEntryHeader, codec, FederationError
+#include <crucible/Types.h>  // KernelCacheKey, ContentHash, RowHash
+#include <crucible/cipher/ComputationCache.h>  // computation_cache_key_in_row, IsCacheableFunction, IsEffectRow
+#include <crucible/cipher/FederationProtocol.h>  // FederationEntryHeader, codec, FederationError
 #include <crucible/permissions/FederationPermission.h>
-#include <crucible/safety/diag/CanonicalOrder.h>     // CanonicallyOrdered — §XVI publish-boundary gate
-#include <crucible/safety/diag/RowHashFold.h>        // row_hash_contribution_v
-#include <crucible/sessions/FederationProtocol.h>    // typed Sender/Receiver/Coord MPST facade
+#include <crucible/safety/diag/CanonicalOrder.h>  // CanonicallyOrdered — §XVI publish-boundary gate
+#include <crucible/safety/diag/RowHashFold.h>  // row_hash_contribution_v
+#include <crucible/sessions/FederationProtocol.h>  // typed Sender/Receiver/Coord MPST facade
 
 #include <cstdint>
 #include <expected>
@@ -102,62 +102,49 @@ struct ComputationCacheFederationKeyTag {
 template <auto FnPtr, typename Row, typename... Args>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
 using ComputationCacheFederationSenderProto =
-    ::crucible::safety::proto::federation::SenderProto<
-        ComputationCacheFederationKeyTag<FnPtr, Row, Args...>>;
+    ::crucible::safety::proto::federation::SenderProto<ComputationCacheFederationKeyTag<FnPtr, Row, Args...>>;
 
 template <auto FnPtr, typename Row, typename... Args>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
 using ComputationCacheFederationReceiverProto =
-    ::crucible::safety::proto::federation::ReceiverProto<
-        ComputationCacheFederationKeyTag<FnPtr, Row, Args...>>;
+    ::crucible::safety::proto::federation::ReceiverProto<ComputationCacheFederationKeyTag<FnPtr, Row, Args...>>;
 
 template <auto FnPtr, typename Row, typename... Args>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
 using ComputationCacheFederationCoordProto =
-    ::crucible::safety::proto::federation::CoordProto<
-        ComputationCacheFederationKeyTag<FnPtr, Row, Args...>>;
+    ::crucible::safety::proto::federation::CoordProto<ComputationCacheFederationKeyTag<FnPtr, Row, Args...>>;
 
 template <typename Payload>
 class [[nodiscard]] ContentAddressedFederationPayload {
- public:
+public:
     using value_type = Payload;
-    using payload_type =
-        ::crucible::safety::proto::ContentAddressed<Payload>;
+    using payload_type = ::crucible::safety::proto::ContentAddressed<Payload>;
 
     constexpr ContentAddressedFederationPayload() noexcept = default;
-    constexpr explicit ContentAddressedFederationPayload(
-        std::span<const std::uint8_t> bytes) noexcept
+    constexpr explicit ContentAddressedFederationPayload(std::span<const std::uint8_t> bytes) noexcept
         : bytes_(bytes) {}
 
-    [[nodiscard]] static constexpr ContentAddressedFederationPayload
-    hash_only() noexcept {
+    [[nodiscard]] static constexpr ContentAddressedFederationPayload hash_only() noexcept {
         return ContentAddressedFederationPayload{};
     }
 
-    [[nodiscard]] constexpr std::span<const std::uint8_t>
-    bytes() const noexcept {
-        return bytes_;
-    }
+    [[nodiscard]] constexpr std::span<const std::uint8_t> bytes() const noexcept { return bytes_; }
 
-    [[nodiscard]] constexpr bool elides_wire_bytes() const noexcept {
-        return bytes_.empty();
-    }
+    [[nodiscard]] constexpr bool elides_wire_bytes() const noexcept { return bytes_.empty(); }
 
- private:
+private:
     std::span<const std::uint8_t> bytes_{};
 };
 
 template <auto FnPtr, typename Row, typename... Args>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
-using ComputationCacheFederationPayload =
-    ::crucible::safety::proto::federation::FederationEntryPayload<
-        ComputationCacheFederationKeyTag<FnPtr, Row, Args...>>;
+using ComputationCacheFederationPayload = ::crucible::safety::proto::federation::FederationEntryPayload<
+    ComputationCacheFederationKeyTag<FnPtr, Row, Args...>>;
 
 template <auto FnPtr, typename Row, typename... Args>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
 using ComputationCacheFederationContentAddressedPayload =
-    ContentAddressedFederationPayload<
-        ComputationCacheFederationPayload<FnPtr, Row, Args...>>;
+    ContentAddressedFederationPayload<ComputationCacheFederationPayload<FnPtr, Row, Args...>>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── §XVI canonical-order publish-boundary gate (fix-08) ─────────────
@@ -195,9 +182,7 @@ using ComputationCacheFederationContentAddressedPayload =
 // offending Arg, rather than silently fragmenting the cache downstream.
 
 template <typename... Args>
-concept ArgsCanonicallyOrdered =
-    (::crucible::safety::diag::canonical_order::CanonicallyOrdered<Args>
-     && ...);
+concept ArgsCanonicallyOrdered = (::crucible::safety::diag::canonical_order::CanonicallyOrdered<Args> && ...);
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Per-axis projections ────────────────────────────────────────────
@@ -211,12 +196,9 @@ concept ArgsCanonicallyOrdered =
 //   * non-zero by construction (hash_name seed is non-zero)
 //   * distinct from row-blind cache key (slot isolation invariant)
 template <auto FnPtr, typename Row, typename... Args>
-    requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
-          && ArgsCanonicallyOrdered<Args...>
-[[nodiscard]] inline constexpr ContentHash
-federation_content_hash() noexcept {
-    return ContentHash{
-        computation_cache_key_in_row<FnPtr, Row, Args...>};
+    requires IsCacheableFunction<FnPtr> && IsEffectRow<Row> && ArgsCanonicallyOrdered<Args...>
+[[nodiscard]] inline constexpr ContentHash federation_content_hash() noexcept {
+    return ContentHash{computation_cache_key_in_row<FnPtr, Row, Args...>};
 }
 
 // Row axis — I02's row hash contribution lifted into RowHash.
@@ -226,19 +208,15 @@ federation_content_hash() noexcept {
 //   * monotone in row content (adding atoms changes the hash)
 template <typename Row>
     requires IsEffectRow<Row>
-[[nodiscard]] inline constexpr RowHash
-federation_row_hash() noexcept {
-    return RowHash{
-        ::crucible::safety::diag::row_hash_contribution_v<Row>};
+[[nodiscard]] inline constexpr RowHash federation_row_hash() noexcept {
+    return RowHash{::crucible::safety::diag::row_hash_contribution_v<Row>};
 }
 
 // Composite federation key.  This is the pair the I08 wire format
 // uses as the (content, row) header field.
 template <auto FnPtr, typename Row, typename... Args>
-    requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
-          && ArgsCanonicallyOrdered<Args...>
-[[nodiscard]] inline constexpr KernelCacheKey
-federation_key() noexcept {
+    requires IsCacheableFunction<FnPtr> && IsEffectRow<Row> && ArgsCanonicallyOrdered<Args...>
+[[nodiscard]] inline constexpr KernelCacheKey federation_key() noexcept {
     return KernelCacheKey{
         federation_content_hash<FnPtr, Row, Args...>(),
         federation_row_hash<Row>(),
@@ -254,35 +232,24 @@ federation_key() noexcept {
 // is opaque to its content.
 
 template <auto FnPtr, typename Row, typename... Args>
-    requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
-          && ArgsCanonicallyOrdered<Args...>
-[[nodiscard]] inline std::expected<std::size_t, FederationError>
-serialize_computation_cache_federation_entry(
-    const ::crucible::permissions::LocalCipherPermission& local_permission,
-    std::span<std::uint8_t> out_buf,
-    ComputationCacheFederationContentAddressedPayload<
-        FnPtr, Row, Args...> dispatcher_payload) noexcept {
+    requires IsCacheableFunction<FnPtr> && IsEffectRow<Row> && ArgsCanonicallyOrdered<Args...>
+[[nodiscard]] inline std::expected<std::size_t, FederationError> serialize_computation_cache_federation_entry(
+    const ::crucible::permissions::LocalCipherPermission& local_permission, std::span<std::uint8_t> out_buf,
+    ComputationCacheFederationContentAddressedPayload<FnPtr, Row, Args...> dispatcher_payload) noexcept {
     (void)local_permission;
 
-    return serialize_federation_entry(
-        out_buf,
-        federation_key<FnPtr, Row, Args...>(),
-        dispatcher_payload.bytes());
+    return serialize_federation_entry(out_buf, federation_key<FnPtr, Row, Args...>(), dispatcher_payload.bytes());
 }
 
 template <auto FnPtr, typename Row, typename... Args>
-    requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
-          && ArgsCanonicallyOrdered<Args...>
+    requires IsCacheableFunction<FnPtr> && IsEffectRow<Row> && ArgsCanonicallyOrdered<Args...>
 [[nodiscard]] inline std::expected<std::size_t, FederationError>
-serialize_computation_cache_federation_entry(
-    const ::crucible::permissions::LocalCipherPermission& local_permission,
-    std::span<std::uint8_t> out_buf,
-    std::span<const std::uint8_t> dispatcher_payload) noexcept {
+serialize_computation_cache_federation_entry(const ::crucible::permissions::LocalCipherPermission& local_permission,
+                                             std::span<std::uint8_t> out_buf,
+                                             std::span<const std::uint8_t> dispatcher_payload) noexcept {
     return serialize_computation_cache_federation_entry<FnPtr, Row, Args...>(
-        local_permission,
-        out_buf,
-        ComputationCacheFederationContentAddressedPayload<
-            FnPtr, Row, Args...>{dispatcher_payload});
+        local_permission, out_buf,
+        ComputationCacheFederationContentAddressedPayload<FnPtr, Row, Args...>{dispatcher_payload});
 }
 
 // Deserialize is delegated to the I08 codec — the (FnPtr, Row,
@@ -319,80 +286,66 @@ inline void f12_p_binary(int, double) noexcept {}
 inline void f12_p_void() noexcept {}
 
 namespace eff_local = ::crucible::effects;
-using EmptyR  = eff_local::Row<>;
-using BgR     = eff_local::Row<eff_local::Effect::Bg>;
-using IOR     = eff_local::Row<eff_local::Effect::IO>;
-using BgIOR   = eff_local::Row<eff_local::Effect::Bg, eff_local::Effect::IO>;
+using EmptyR = eff_local::Row<>;
+using BgR = eff_local::Row<eff_local::Effect::Bg>;
+using IOR = eff_local::Row<eff_local::Effect::IO>;
+using BgIOR = eff_local::Row<eff_local::Effect::Bg, eff_local::Effect::IO>;
 
 // ── Federation key non-zero ───────────────────────────────────────
 
 static_assert(federation_content_hash<&f12_p_unary, EmptyR, int>().raw() != 0,
-    "F12: federation content hash must be non-zero (inherits F11's "
-    "non-zero-by-construction invariant from hash_name seed).");
-static_assert(federation_row_hash<EmptyR>().raw() != 0,
-    "F12: federation row hash for EmptyRow must be non-zero (I02's "
-    "cardinality-seeded fold ensures Row<> ≠ 0).");
+              "F12: federation content hash must be non-zero (inherits F11's "
+              "non-zero-by-construction invariant from hash_name seed).");
+static_assert(federation_row_hash<EmptyR>().raw() != 0, "F12: federation row hash for EmptyRow must be non-zero (I02's "
+                                                        "cardinality-seeded fold ensures Row<> ≠ 0).");
 static_assert(!federation_key<&f12_p_unary, EmptyR, int>().is_zero(),
-    "F12: composite federation key must not be the zero-key sentinel.");
+              "F12: composite federation key must not be the zero-key sentinel.");
 static_assert(!federation_key<&f12_p_unary, EmptyR, int>().is_sentinel(),
-    "F12: composite federation key must not be the UINT64_MAX-pair "
-    "sentinel reserved for cache empty-slot probing.");
-static_assert(::crucible::safety::proto::is_well_formed_v<
-    ComputationCacheFederationSenderProto<&f12_p_unary, EmptyR, int>>);
-static_assert(::crucible::safety::proto::is_well_formed_v<
-    ComputationCacheFederationReceiverProto<&f12_p_unary, EmptyR, int>>);
-static_assert(::crucible::safety::proto::is_well_formed_v<
-    ComputationCacheFederationCoordProto<&f12_p_unary, EmptyR, int>>);
+              "F12: composite federation key must not be the UINT64_MAX-pair "
+              "sentinel reserved for cache empty-slot probing.");
+static_assert(
+    ::crucible::safety::proto::is_well_formed_v<ComputationCacheFederationSenderProto<&f12_p_unary, EmptyR, int>>);
+static_assert(
+    ::crucible::safety::proto::is_well_formed_v<ComputationCacheFederationReceiverProto<&f12_p_unary, EmptyR, int>>);
+static_assert(
+    ::crucible::safety::proto::is_well_formed_v<ComputationCacheFederationCoordProto<&f12_p_unary, EmptyR, int>>);
 static_assert(::crucible::safety::proto::federation::role_protocol_matches_v<
-    ::crucible::safety::proto::federation::SenderRole,
-    ComputationCacheFederationSenderProto<&f12_p_unary, EmptyR, int>,
-    ComputationCacheFederationKeyTag<&f12_p_unary, EmptyR, int>>);
+              ::crucible::safety::proto::federation::SenderRole,
+              ComputationCacheFederationSenderProto<&f12_p_unary, EmptyR, int>,
+              ComputationCacheFederationKeyTag<&f12_p_unary, EmptyR, int>>);
 static_assert(::crucible::safety::proto::is_content_addressed_v<
-    typename ComputationCacheFederationContentAddressedPayload<
-        &f12_p_unary, EmptyR, int>::payload_type>);
-static_assert(sizeof(ComputationCacheFederationContentAddressedPayload<
-                  &f12_p_unary, EmptyR, int>)
+              typename ComputationCacheFederationContentAddressedPayload<&f12_p_unary, EmptyR, int>::payload_type>);
+static_assert(sizeof(ComputationCacheFederationContentAddressedPayload<&f12_p_unary, EmptyR, int>)
               == sizeof(std::span<const std::uint8_t>));
 
 // ── Same (FnPtr, Row, Args...) → same key (deterministic) ─────────
 
-static_assert(
-    federation_key<&f12_p_unary, EmptyR, int>()
-    == federation_key<&f12_p_unary, EmptyR, int>(),
-    "F12: federation key MUST be deterministic for same inputs.");
+static_assert(federation_key<&f12_p_unary, EmptyR, int>() == federation_key<&f12_p_unary, EmptyR, int>(),
+              "F12: federation key MUST be deterministic for same inputs.");
 
 // ── Different Row → different key (row-axis distinguishes) ────────
 
-static_assert(
-    federation_key<&f12_p_unary, EmptyR, int>()
-    != federation_key<&f12_p_unary, BgR, int>(),
-    "F12: federation key MUST differ across rows (the load-bearing "
-    "row-axis-distinguishability invariant).");
+static_assert(federation_key<&f12_p_unary, EmptyR, int>() != federation_key<&f12_p_unary, BgR, int>(),
+              "F12: federation key MUST differ across rows (the load-bearing "
+              "row-axis-distinguishability invariant).");
 
 // Different rows → different ROW axis specifically.
-static_assert(
-    federation_row_hash<EmptyR>() != federation_row_hash<BgR>(),
-    "F12: row hash distinguishes EmptyRow from Row<Bg>.");
-static_assert(
-    federation_row_hash<BgR>() != federation_row_hash<IOR>(),
-    "F12: row hash distinguishes Row<Bg> from Row<IO>.");
-static_assert(
-    federation_row_hash<BgR>() != federation_row_hash<BgIOR>(),
-    "F12: row hash distinguishes Row<Bg> from Row<Bg, IO>.");
+static_assert(federation_row_hash<EmptyR>() != federation_row_hash<BgR>(),
+              "F12: row hash distinguishes EmptyRow from Row<Bg>.");
+static_assert(federation_row_hash<BgR>() != federation_row_hash<IOR>(),
+              "F12: row hash distinguishes Row<Bg> from Row<IO>.");
+static_assert(federation_row_hash<BgR>() != federation_row_hash<BgIOR>(),
+              "F12: row hash distinguishes Row<Bg> from Row<Bg, IO>.");
 
 // ── Different FnPtr → different key (function-axis distinguishes) ─
 
-static_assert(
-    federation_key<&f12_p_unary,  EmptyR, int>()
-    != federation_key<&f12_p_void, EmptyR>(),
-    "F12: federation key distinguishes different functions.");
+static_assert(federation_key<&f12_p_unary, EmptyR, int>() != federation_key<&f12_p_void, EmptyR>(),
+              "F12: federation key distinguishes different functions.");
 
 // ── Different Args → different key (args-axis distinguishes) ──────
 
-static_assert(
-    federation_key<&f12_p_unary, EmptyR, int>()
-    != federation_key<&f12_p_binary, EmptyR, int, double>(),
-    "F12: federation key distinguishes different argument packs.");
+static_assert(federation_key<&f12_p_unary, EmptyR, int>() != federation_key<&f12_p_binary, EmptyR, int, double>(),
+              "F12: federation key distinguishes different argument packs.");
 
 // ── Permutation invariance in Row's effect pack ───────────────────
 //
@@ -404,14 +357,11 @@ static_assert(
 
 using BgIO_perm1 = eff_local::Row<eff_local::Effect::Bg, eff_local::Effect::IO>;
 using BgIO_perm2 = eff_local::Row<eff_local::Effect::IO, eff_local::Effect::Bg>;
-static_assert(
-    federation_row_hash<BgIO_perm1>() == federation_row_hash<BgIO_perm2>(),
-    "F12: row hash is permutation-invariant in the effect pack.");
-static_assert(
-    federation_key<&f12_p_unary, BgIO_perm1, int>()
-    == federation_key<&f12_p_unary, BgIO_perm2, int>(),
-    "F12: composite federation key inherits row-permutation "
-    "invariance from F11 + I02.");
+static_assert(federation_row_hash<BgIO_perm1>() == federation_row_hash<BgIO_perm2>(),
+              "F12: row hash is permutation-invariant in the effect pack.");
+static_assert(federation_key<&f12_p_unary, BgIO_perm1, int>() == federation_key<&f12_p_unary, BgIO_perm2, int>(),
+              "F12: composite federation key inherits row-permutation "
+              "invariance from F11 + I02.");
 
 // ── Concept-fence witnesses ───────────────────────────────────────
 //
@@ -432,35 +382,30 @@ static_assert(IsEffectRow<BgIOR>);
 // canonical wrapper stacks, and rejects inverted wrapper stacks at
 // the federation publish boundary.
 
-static_assert(ArgsCanonicallyOrdered<>,
-    "fix-08: zero-arg pack is vacuously canonical.");
-static_assert(ArgsCanonicallyOrdered<int>,
-    "fix-08: a bare payload type is vacuously canonical.");
-static_assert(ArgsCanonicallyOrdered<int, double>,
-    "fix-08: a pack of bare payload types is vacuously canonical.");
+static_assert(ArgsCanonicallyOrdered<>, "fix-08: zero-arg pack is vacuously canonical.");
+static_assert(ArgsCanonicallyOrdered<int>, "fix-08: a bare payload type is vacuously canonical.");
+static_assert(ArgsCanonicallyOrdered<int, double>, "fix-08: a pack of bare payload types is vacuously canonical.");
 
 // Canonical wrapper stack: Stale(10) ⊃ Tagged(11) — strictly
 // increasing §XVI layer indices — is accepted as an Arg.
 static_assert(ArgsCanonicallyOrdered<
-    ::crucible::safety::Stale<
-        ::crucible::safety::Tagged<int, ::crucible::safety::source::FromUser>>>,
-    "fix-08: Stale ⊃ Tagged is §XVI-canonical and must be accepted.");
+                  ::crucible::safety::Stale<::crucible::safety::Tagged<int, ::crucible::safety::source::FromUser>>>,
+              "fix-08: Stale ⊃ Tagged is §XVI-canonical and must be accepted.");
 
 // Inverted wrapper stack: Tagged(11) ⊃ Stale(10) — strictly
 // DECREASING — is rejected.  This is the load-bearing assertion: the
 // previously-dead CanonicallyOrdered predicate now gates the boundary.
 static_assert(!ArgsCanonicallyOrdered<
-    ::crucible::safety::Tagged<
-        ::crucible::safety::Stale<int>, ::crucible::safety::source::FromUser>>,
-    "fix-08: Tagged ⊃ Stale is §XVI-INVERTED and must be rejected at "
-    "the federation publish boundary.");
+                  ::crucible::safety::Tagged<::crucible::safety::Stale<int>, ::crucible::safety::source::FromUser>>,
+              "fix-08: Tagged ⊃ Stale is §XVI-INVERTED and must be rejected at "
+              "the federation publish boundary.");
 
 // A canonical stack passes the WHOLE federation key projection (not
 // just the gate concept): federation_key instantiates for it.
-static_assert(!federation_key<&f12_p_unary, EmptyR,
-        ::crucible::safety::Stale<
-            ::crucible::safety::Tagged<int,
-                ::crucible::safety::source::FromUser>>>().is_zero(),
+static_assert(
+    !federation_key<&f12_p_unary, EmptyR,
+                    ::crucible::safety::Stale<::crucible::safety::Tagged<int, ::crucible::safety::source::FromUser>>>()
+         .is_zero(),
     "fix-08: canonical wrapper-stack Arg projects to a well-formed "
     "federation key.");
 
@@ -479,30 +424,27 @@ inline bool computation_cache_federation_smoke_test() noexcept {
     using namespace detail::computation_cache_federation_self_test;
 
     bool ok = true;
-    auto local_permission =
-        ::crucible::safety::mint_permission_root<
-            ::crucible::permissions::tag::LocalCipherTag>();
+    auto local_permission = ::crucible::safety::mint_permission_root<::crucible::permissions::tag::LocalCipherTag>();
 
     // Encode an entry with EmptyRow and verify round-trip.
     {
         std::array<std::uint8_t, 64> buf{};
         const std::array<std::uint8_t, 4> body = {0x01, 0x02, 0x03, 0x04};
 
-        auto written = serialize_computation_cache_federation_entry<
-            &f12_p_unary, EmptyR, int>(local_permission, buf, body);
+        auto written =
+            serialize_computation_cache_federation_entry<&f12_p_unary, EmptyR, int>(local_permission, buf, body);
         ok = ok && written.has_value();
         if (!written.has_value()) return false;
 
         auto view = deserialize_untrusted_federation_entry(
             std::span<const std::uint8_t>(buf.data(), *written),
-            static_cast<std::uint16_t>(
-                ::crucible::effects::OsUniverse::cardinality));
+            static_cast<std::uint16_t>(::crucible::effects::OsUniverse::cardinality));
         ok = ok && view.has_value();
         if (!view.has_value()) return false;
 
         const auto expected_key = federation_key<&f12_p_unary, EmptyR, int>();
         ok = ok && (view->header.content_hash == expected_key.content_hash);
-        ok = ok && (view->header.row_hash     == expected_key.row_hash);
+        ok = ok && (view->header.row_hash == expected_key.row_hash);
         ok = ok && (view->payload.size() == body.size());
         for (std::size_t i = 0; i < body.size(); ++i) {
             ok = ok && (view->payload[i] == body[i]);
@@ -513,19 +455,20 @@ inline bool computation_cache_federation_smoke_test() noexcept {
     {
         std::array<std::uint8_t, 32> buf_empty{};
         std::array<std::uint8_t, 32> buf_bg{};
-        auto wa = serialize_computation_cache_federation_entry<
-            &f12_p_unary, EmptyR, int>(local_permission, buf_empty,
-                                        std::span<const std::uint8_t>{});
-        auto wb = serialize_computation_cache_federation_entry<
-            &f12_p_unary, BgR, int>(local_permission, buf_bg,
-                                     std::span<const std::uint8_t>{});
+        auto wa = serialize_computation_cache_federation_entry<&f12_p_unary, EmptyR, int>(
+            local_permission, buf_empty, std::span<const std::uint8_t>{});
+        auto wb = serialize_computation_cache_federation_entry<&f12_p_unary, BgR, int>(local_permission, buf_bg,
+                                                                                       std::span<const std::uint8_t>{});
         ok = ok && wa.has_value() && wb.has_value();
         if (!wa.has_value() || !wb.has_value()) return false;
         ok = ok && (*wa == *wb);  // same total bytes (header-only)
         // Byte content differs in the row_hash slot (offset 16..23).
         bool any_diff = false;
         for (std::size_t i = 0; i < *wa; ++i) {
-            if (buf_empty[i] != buf_bg[i]) { any_diff = true; break; }
+            if (buf_empty[i] != buf_bg[i]) {
+                any_diff = true;
+                break;
+            }
         }
         ok = ok && any_diff;
     }
@@ -534,11 +477,9 @@ inline bool computation_cache_federation_smoke_test() noexcept {
     // entry is exactly the 32-byte header and carries zero payload bytes.
     {
         std::array<std::uint8_t, 32> buf{};
-        using Payload = ComputationCacheFederationContentAddressedPayload<
-            &f12_p_unary, EmptyR, int>;
-        auto written = serialize_computation_cache_federation_entry<
-            &f12_p_unary, EmptyR, int>(
-                local_permission, buf, Payload::hash_only());
+        using Payload = ComputationCacheFederationContentAddressedPayload<&f12_p_unary, EmptyR, int>;
+        auto written = serialize_computation_cache_federation_entry<&f12_p_unary, EmptyR, int>(local_permission, buf,
+                                                                                               Payload::hash_only());
         ok = ok && written.has_value();
         if (!written.has_value()) return false;
         ok = ok && (*written == FEDERATION_HEADER_BYTES);
