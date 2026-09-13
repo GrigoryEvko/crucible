@@ -4,10 +4,11 @@ CMakeUserPresets.json
 .prof/
 Testing/
 
-# Editor backup files
+# Editor files
 *~
 *.swp
 *.swo
+.vscode/
 
 # Tool caches
 .cache/
