@@ -1,0 +1,12 @@
+// Obsidian per-device UI state. Rewritten on every pane move, so syncing it
+// produces constant churn and sync-conflict files. Plugins, themes, hotkeys
+// and graph settings live elsewhere under .obsidian/ and DO sync.
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.obsidian/cache
+
+// Syncthing's own delete archive. Never sync the archive itself.
+.stversions
+
+// Obsidian's per-vault trash.
+.trash
