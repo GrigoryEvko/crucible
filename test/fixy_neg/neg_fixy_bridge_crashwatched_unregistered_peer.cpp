@@ -50,8 +50,8 @@
 #include <utility>
 
 namespace fbridge = ::crucible::fixy::bridge;
-namespace proto   = ::crucible::safety::proto;
-namespace eff     = ::crucible::effects;
+namespace proto = ::crucible::safety::proto;
+namespace eff = ::crucible::effects;
 using ::crucible::safety::OneShotFlag;
 
 // PeerTag deliberately UNREGISTERED — no survivor_registry<UnregisteredPeer>
@@ -76,9 +76,7 @@ int main() {
     // PeerTag = UnregisteredPeer has no survivor_registry — the body
     // `require_crash_survivors_declared_<PeerTag>()` static_assert
     // fires.
-    [[maybe_unused]] auto bad =
-        fbridge::mint_crash_watched_session<UnregisteredPeer>(
-            std::move(psh), flag);
+    [[maybe_unused]] auto bad = fbridge::mint_crash_watched_session<UnregisteredPeer>(std::move(psh), flag);
 
     return 0;
 }

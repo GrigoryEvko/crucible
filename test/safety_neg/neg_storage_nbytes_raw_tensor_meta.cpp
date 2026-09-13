@@ -18,15 +18,15 @@
 #include <crucible/MerkleDag.h>
 
 int main() {
-  crucible::TensorMeta meta{};
-  meta.ndim = 1;
-  meta.sizes[0] = ::crucible::tensor_dim(8);
-  meta.strides[0] = ::crucible::tensor_dim(1);
-  meta.dtype = crucible::ScalarType::Float;
+    crucible::TensorMeta meta{};
+    meta.ndim = 1;
+    meta.sizes[0] = ::crucible::tensor_dim(8);
+    meta.strides[0] = ::crucible::tensor_dim(1);
+    meta.dtype = crucible::ScalarType::Float;
 
-  // MUST fail: compute_storage_nbytes requires ExternalTensorMeta,
-  // not a raw TensorMeta reference.
-  auto bytes = crucible::compute_storage_nbytes(meta);
-  (void)bytes;
-  return 0;
+    // MUST fail: compute_storage_nbytes requires ExternalTensorMeta,
+    // not a raw TensorMeta reference.
+    auto bytes = crucible::compute_storage_nbytes(meta);
+    (void)bytes;
+    return 0;
 }

@@ -22,8 +22,7 @@ int main() {
     auto init = ::crucible::effects::testing::init();
 
     // 23 visible chars + NUL = 24 > 16 → ThreadNameLiteral static_assert fires.
-    auto witness = ::crucible::safety::mint_thread_name<
-        "this-thread-name-is-far-too-long">(init);
+    auto witness = ::crucible::safety::mint_thread_name<"this-thread-name-is-far-too-long">(init);
 
     return static_cast<int>(witness.visible_length());
 }

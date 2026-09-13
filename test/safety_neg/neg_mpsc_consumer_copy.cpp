@@ -18,8 +18,7 @@ struct BadChan {};
 
 void exercise_consumer_copy() {
     crucible::concurrent::PermissionedMpscChannel<int, 64, BadChan> ch;
-    auto cons_perm = crucible::safety::mint_permission_root<
-        crucible::concurrent::mpsc_tag::Consumer<BadChan>>();
+    auto cons_perm = crucible::safety::mint_permission_root<crucible::concurrent::mpsc_tag::Consumer<BadChan>>();
     auto consumer = ch.consumer(std::move(cons_perm));
 
     // Attempt to copy — deleted with reason.
@@ -29,4 +28,7 @@ void exercise_consumer_copy() {
 
 }  // namespace
 
-int main() { exercise_consumer_copy(); return 0; }
+int main() {
+    exercise_consumer_copy();
+    return 0;
+}

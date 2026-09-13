@@ -30,15 +30,12 @@ struct A {};
 namespace crucible::safety {
 
 template <>
-struct splits_into<neg_permission_split_same_tag::Whole,
-                   neg_permission_split_same_tag::A,
+struct splits_into<neg_permission_split_same_tag::Whole, neg_permission_split_same_tag::A,
                    neg_permission_split_same_tag::A> : std::true_type {};
 
 template <>
-struct splits_into_authoring_witness<neg_permission_split_same_tag::Whole,
-                                     neg_permission_split_same_tag::A,
-                                     neg_permission_split_same_tag::A>
-    : std::true_type {};
+struct splits_into_authoring_witness<neg_permission_split_same_tag::Whole, neg_permission_split_same_tag::A,
+                                     neg_permission_split_same_tag::A> : std::true_type {};
 
 }  // namespace crucible::safety
 
@@ -50,8 +47,7 @@ int main() {
 
     // Should FAIL: L == R == tags::A.  all_distinct_tags_v<A, A> is
     // false; the fix-07 static_assert fires.
-    auto [a1, a2] = safe::mint_permission_split<tags::A, tags::A>(
-        std::move(whole));
+    auto [a1, a2] = safe::mint_permission_split<tags::A, tags::A>(std::move(whole));
     safe::permission_drop(std::move(a1));
     safe::permission_drop(std::move(a2));
 

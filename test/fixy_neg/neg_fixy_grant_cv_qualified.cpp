@@ -20,8 +20,8 @@
 #include <crucible/fixy/Fn.h>
 
 namespace fixy = crucible::fixy;
-namespace gr   = crucible::fixy::grant;
-using D        = crucible::fixy::dim::DimensionAxis;
+namespace gr = crucible::fixy::grant;
+using D = crucible::fixy::dim::DimensionAxis;
 
 template <D Axis>
 using strict = gr::accept_default_strict_for<Axis>;
@@ -31,15 +31,12 @@ int main() {
     // AllGrantsWellFormed.  All 20 other axes engage with their
     // strict acceptance markers so the rejection is uniquely
     // attributable to the cv-qualified grant.
-    auto bad = fixy::mint_fn<int,
-        strict<D::Refinement>, const gr::affine /* cv-qualified */,
-        strict<D::Effect>, strict<D::Security>, strict<D::Protocol>,
-        strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
-        strict<D::Representation>, strict<D::Observability>,
-        strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
-        strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
-        strict<D::Size>, strict<D::Version>, strict<D::Staleness>,
-        strict<D::Synchronization>, strict<D::Regime>>(42);
+    auto bad = fixy::mint_fn<int, strict<D::Refinement>, const gr::affine /* cv-qualified */, strict<D::Effect>,
+                             strict<D::Security>, strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>,
+                             strict<D::Trust>, strict<D::Representation>, strict<D::Observability>,
+                             strict<D::Complexity>, strict<D::Precision>, strict<D::Space>, strict<D::Overflow>,
+                             strict<D::Mutation>, strict<D::Reentrancy>, strict<D::Size>, strict<D::Version>,
+                             strict<D::Staleness>, strict<D::Synchronization>, strict<D::Regime>>(42);
     (void)bad;
     return 0;
 }

@@ -26,8 +26,8 @@ static warden::QuarantineConfig test_config() {
     config.suspect_at_or_below = topology::HealthScore{900};
     config.quarantine_at_or_below = topology::HealthScore{500};
     config.recovery_probe_count = warden::PositiveRecoveryProbeCount{std::uint16_t{3}};
-    config.permanent_after_ns = warden::PositiveNanoseconds{std::uint64_t{1'000}};
-    config.canary_load_ppm = 20'000;
+    config.permanent_after_ns = warden::PositiveNanoseconds{std::uint64_t{1000}};
+    config.canary_load_ppm = 20000;
     return config;
 }
 
@@ -59,7 +59,7 @@ static void test_health_hysteresis() {
 
     assert(policy.on_health_event(effects::BgDrainCtx{}, target, health(850, topology::HealthState::Suspect, 1), 100));
     assert(policy.state(target) == warden::QuarantineState::Suspect);
-    assert(policy.current(target).admitted_load_ppm == 300'000);
+    assert(policy.current(target).admitted_load_ppm == 300000);
 
     assert(
         policy.on_health_event(effects::BgDrainCtx{}, target, health(400, topology::HealthState::Quarantined, 2), 200));
@@ -105,7 +105,7 @@ static void test_recovery_canary() {
     auto snapshot = policy.current(target);
     assert(snapshot.state == warden::QuarantineState::Recovered);
     assert(snapshot.consecutive_recovery_probes == 3);
-    assert(snapshot.admitted_load_ppm == 20'000);
+    assert(snapshot.admitted_load_ppm == 20000);
     assert(snapshot.signals.test(warden::QuarantineSignal::RecoveryThresholdMet));
 
     assert(policy.on_health_event(effects::BgDrainCtx{}, target, health(1000, topology::HealthState::Healthy, 5), 500));
@@ -120,14 +120,14 @@ static void test_permanent_requires_operator_permission() {
 
     assert(
         policy.on_health_event(effects::BgDrainCtx{}, target, health(100, topology::HealthState::Quarantined, 1), 100));
-    assert(policy.check_permanent_deadline(effects::BgDrainCtx{}, target, 1'200, 2));
+    assert(policy.check_permanent_deadline(effects::BgDrainCtx{}, target, 1200, 2));
     auto blocked = policy.current(target);
     assert(blocked.state == warden::QuarantineState::Quarantined);
     assert(blocked.signals.test(warden::QuarantineSignal::PermanentRequiresOperator));
 
     auto authority = saf::mint_permission_root<warden::quarantine_tag::OperatorOverride>();
     authority = policy.operator_override(effects::ColdInitCtx{}, std::move(authority), target,
-                                         warden::QuarantineState::Permanent, 1'300, 3);
+                                         warden::QuarantineState::Permanent, 1300, 3);
     assert(policy.state(target) == warden::QuarantineState::Permanent);
     assert(policy.current(target).signals.test(warden::QuarantineSignal::OperatorOverride));
     saf::permission_drop(std::move(authority));

@@ -30,23 +30,20 @@ int main() {
 
     Arena arena;
     constexpr std::size_t N = 8;
-    auto region_a = safety::OwnedRegion<std::uint64_t, DataNegA>::adopt(
-        effects::testing::test().alloc, arena, N,
-        safety::mint_permission_root<DataNegA>());
-    auto region_b = safety::OwnedRegion<std::uint64_t, DataNegB>::adopt(
-        effects::testing::test().alloc, arena, N,
-        safety::mint_permission_root<DataNegB>());
+    auto region_a = safety::OwnedRegion<std::uint64_t, DataNegA>::adopt(effects::testing::test().alloc, arena, N,
+                                                                        safety::mint_permission_root<DataNegA>());
+    auto region_b = safety::OwnedRegion<std::uint64_t, DataNegB>::adopt(effects::testing::test().alloc, arena, N,
+                                                                        safety::mint_permission_root<DataNegB>());
 
     // Should FAIL: body is NOT noexcept (no `noexcept` qualifier on
     // the lambda).  parallel_apply_pair requires a noexcept-invocable
     // body because workers run inside jthread bodies that cannot
     // propagate exceptions across the thread boundary.
-    auto recombined = safety::parallel_apply_pair<2>(
-        std::move(region_a), std::move(region_b),
-        [](auto sub_a, auto sub_b) /* NOT noexcept */ {
-            (void)sub_a; (void)sub_b;
-        }
-    );
+    auto recombined = safety::parallel_apply_pair<2>(std::move(region_a), std::move(region_b),
+                                                     [](auto sub_a, auto sub_b) /* NOT noexcept */ {
+                                                         (void)sub_a;
+                                                         (void)sub_b;
+                                                     });
     (void)recombined;
 
     return 0;

@@ -50,8 +50,7 @@ namespace neg_fixy_v_095_box_muller_polynomial_det_wrong_tier_consume {
 // Used by Forge phases / op_key derivation paths that compose
 // algebraically without any FP transcendentals.
 template <typename W>
-concept requires_pure_tier =
-    W::template satisfies<cwrap::DetSafeTier_v::Pure>;
+concept requires_pure_tier = W::template satisfies<cwrap::DetSafeTier_v::Pure>;
 
 template <typename W>
     requires requires_pure_tier<W>
@@ -62,8 +61,7 @@ template <typename W>
 }  // namespace neg_fixy_v_095_box_muller_polynomial_det_wrong_tier_consume
 
 int main() {
-    namespace fixt =
-        neg_fixy_v_095_box_muller_polynomial_det_wrong_tier_consume;
+    namespace fixt = neg_fixy_v_095_box_muller_polynomial_det_wrong_tier_consume;
 
     // box_muller_polynomial_det returns DetSafe<PhiloxRng, pair<float,float>>.
     // PhiloxRng does NOT subsume Pure (PhiloxRng < Pure in the lattice),

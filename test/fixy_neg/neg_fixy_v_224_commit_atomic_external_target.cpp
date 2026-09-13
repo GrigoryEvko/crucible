@@ -18,24 +18,21 @@
 //   "conversion from".
 
 #include <crucible/effects/ExecCtx.h>
-#include <crucible/fixy/Source.h>           // fixy::tags::source::*
+#include <crucible/fixy/Source.h>  // fixy::tags::source::*
 #include <crucible/fixy/Wrap.h>
 
 int main() {
     namespace fwfs = ::crucible::fixy::wrap::fs;
-    namespace at_  = fwfs::atomicity;
+    namespace at_ = fwfs::atomicity;
 
     ::crucible::effects::TestRunnerCtx ctx{};
 
-    fwfs::Path<::crucible::fixy::tags::source::Sanitized> tmp_path{
-        "/tmp/crucible_neg_v224_tmp"};
+    fwfs::Path<::crucible::fixy::tags::source::Sanitized> tmp_path{"/tmp/crucible_neg_v224_tmp"};
     // Target is External — operator-supplied, NOT sanitized.
-    fwfs::Path<::crucible::fixy::tags::source::External> external_target{
-        "/tmp/crucible_neg_v224_target"};
+    fwfs::Path<::crucible::fixy::tags::source::External> external_target{"/tmp/crucible_neg_v224_target"};
 
     // Should FAIL: commit_atomic's target parameter is
     // Path<Sanitized>; passing Path<External> is tag-mismatch.
-    [[maybe_unused]] auto r = fwfs::commit_atomic<at_::Rename>(
-        ctx, std::move(tmp_path), std::move(external_target));
+    [[maybe_unused]] auto r = fwfs::commit_atomic<at_::Rename>(ctx, std::move(tmp_path), std::move(external_target));
     return 0;
 }

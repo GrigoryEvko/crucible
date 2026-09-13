@@ -11,12 +11,8 @@ int main() {
     auto streams = cntp::admit_quic_stream_limit(2).value();
     auto datagram = cntp::admit_quic_datagram_bytes(1200).value();
     auto config = cntp::mint_quic_config(
-        streams,
-        datagram,
-        cntp::mint_cc_choice<cntp::CcAlgorithm::Bbr3,
-                             cntp::LinkClass::CrossDatacenter>());
-    auto connection = cntp::mint_quic_connection(
-        crucible::effects::ColdInitCtx{}, fd, peer, config);
+        streams, datagram, cntp::mint_cc_choice<cntp::CcAlgorithm::Bbr3, cntp::LinkClass::CrossDatacenter>());
+    auto connection = cntp::mint_quic_connection(crucible::effects::ColdInitCtx{}, fd, peer, config);
     auto stream = connection.open_stream(crucible::effects::HotFgCtx{});
     (void)stream;
     return 0;

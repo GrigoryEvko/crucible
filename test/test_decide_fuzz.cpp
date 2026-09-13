@@ -51,7 +51,7 @@ namespace dc = crucible::decide;
 namespace dco = crucible::decide::oracle;
 
 // Raising this is free.  Lowering it weakens the statistical claim.
-constexpr int kIterations = 10'000;
+constexpr int kIterations = 10000;
 
 // Short enough that the all-pairs oracles stay cheap, long enough to
 // flush an off-by-one in a loop.
@@ -61,17 +61,17 @@ constexpr std::size_t kMaxSpanLen = 16;
 // differ, so that the streams are independent and a failure points at
 // one predicate.
 
-constexpr std::uint64_t kKeyMul = 0xC001'C0DE'0001'0001ULL;
-constexpr std::uint64_t kKeySum = 0xC001'C0DE'0002'0002ULL;
-constexpr std::uint64_t kKeyAllInRange = 0xC001'C0DE'0003'0003ULL;
-constexpr std::uint64_t kKeyStrictInc = 0xC001'C0DE'0004'0004ULL;
-constexpr std::uint64_t kKeyWeakInc = 0xC001'C0DE'0005'0005ULL;
-constexpr std::uint64_t kKeyPow2Le = 0xC001'C0DE'0006'0006ULL;
-constexpr std::uint64_t kKeyFactorEq = 0xC001'C0DE'0007'0007ULL;
-constexpr std::uint64_t kKeyCoprime = 0xC001'C0DE'0008'0008ULL;
-constexpr std::uint64_t kKeyConjunction = 0xC001'C0DE'0009'0009ULL;
-constexpr std::uint64_t kKeyDisjunction = 0xC001'C0DE'000A'000AULL;
-constexpr std::uint64_t kKeyAlignInRange = 0xC001'C0DE'000B'000BULL;
+constexpr std::uint64_t kKeyMul = 0xC001C0DE00010001ULL;
+constexpr std::uint64_t kKeySum = 0xC001C0DE00020002ULL;
+constexpr std::uint64_t kKeyAllInRange = 0xC001C0DE00030003ULL;
+constexpr std::uint64_t kKeyStrictInc = 0xC001C0DE00040004ULL;
+constexpr std::uint64_t kKeyWeakInc = 0xC001C0DE00050005ULL;
+constexpr std::uint64_t kKeyPow2Le = 0xC001C0DE00060006ULL;
+constexpr std::uint64_t kKeyFactorEq = 0xC001C0DE00070007ULL;
+constexpr std::uint64_t kKeyCoprime = 0xC001C0DE00080008ULL;
+constexpr std::uint64_t kKeyConjunction = 0xC001C0DE00090009ULL;
+constexpr std::uint64_t kKeyDisjunction = 0xC001C0DE000A000AULL;
+constexpr std::uint64_t kKeyAlignInRange = 0xC001C0DE000B000BULL;
 
 // Both calls are pure functions of pure inputs and the comparison
 // feeds nothing, so without a volatile sink the optimizer is entitled
@@ -183,7 +183,7 @@ void fuzz_strictly_increasing() {
         // rounds build an ordered sequence on purpose.  Otherwise the
         // accepting branch would hardly ever run.
         bool const make_monotone = (ctr[0] & 1u) == 1u;
-        std::int16_t prev = -8'000;
+        std::int16_t prev = -8000;
         for (std::size_t k = 0; k < len; ++k) {
             auto const sub = crucible::Philox::generate(static_cast<std::uint64_t>(i) * 64 + k, kKeyStrictInc);
             if (make_monotone) {
@@ -211,7 +211,7 @@ void fuzz_weakly_increasing() {
         std::size_t const len = ctr[0] % (kMaxSpanLen + 1);
         std::int16_t buf[kMaxSpanLen]{};
         bool const make_monotone = (ctr[0] & 1u) == 1u;
-        std::int16_t prev = -8'000;
+        std::int16_t prev = -8000;
         for (std::size_t k = 0; k < len; ++k) {
             auto const sub = crucible::Philox::generate(static_cast<std::uint64_t>(i) * 64 + k, kKeyWeakInc);
             if (make_monotone) {
@@ -302,7 +302,7 @@ void fuzz_factorization_eq() {
             if (honest > std::numeric_limits<std::uint32_t>::max()) {
                 fast_overflowed = true;
             }
-            fast_product = static_cast<std::uint32_t>(honest & 0xFFFF'FFFFu);
+            fast_product = static_cast<std::uint32_t>(honest & 0xFFFFFFFFu);
         }
         std::uint32_t total = fast_product;
         if ((ctr[1] & 1u) == 1u) {

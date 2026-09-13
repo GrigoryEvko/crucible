@@ -6,9 +6,8 @@
 int main() {
     using namespace crucible::cntp;
     KtlsCryptoMaterial material{};
-    auto crypto = mint_ktls_crypto_info<
-        TlsVersion::V13,
-        MtlsCipherSuite::TlsChacha20Poly1305Sha256>(std::move(material));
+    auto crypto =
+        mint_ktls_crypto_info<TlsVersion::V13, MtlsCipherSuite::TlsChacha20Poly1305Sha256>(std::move(material));
     (void)crypto;
     return 0;
 }

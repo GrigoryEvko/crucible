@@ -68,8 +68,7 @@ using crucible::fuzz::prop::Rng;
 // uniformly, then a uniform value within it.  This hits every HDR
 // magnitude bucket densely rather than concentrating mass at the top
 // few bits the way a flat next64()%(max+1) would.
-[[nodiscard]] std::uint64_t log_uniform_below_or_eq(Rng& rng,
-                                                    std::uint64_t max_value) noexcept {
+[[nodiscard]] std::uint64_t log_uniform_below_or_eq(Rng& rng, std::uint64_t max_value) noexcept {
     const std::uint32_t kind = rng.next_below(8u);
     if (kind == 0u) return 0u;
     if (kind == 1u) return 1u;
@@ -81,16 +80,13 @@ using crucible::fuzz::prop::Rng;
 
 // Run A — pure layout-arithmetic invariants for one HdrHistogram shape.
 template <typename Hist>
-[[nodiscard]] int run_layout(const char* name,
-                             crucible::fuzz::prop::Config cfg) {
+[[nodiscard]] int run_layout(const char* name, crucible::fuzz::prop::Config cfg) {
     using Layout = typename Hist::layout_type;
     constexpr std::uint64_t kMax = Hist::max_trackable_value;
     constexpr std::size_t kSlots = Hist::bucket_slots;
 
-    return crucible::fuzz::prop::run(name, cfg,
-        [](Rng& rng) noexcept -> std::uint64_t {
-            return log_uniform_below_or_eq(rng, kMax);
-        },
+    return crucible::fuzz::prop::run(
+        name, cfg, [](Rng& rng) noexcept -> std::uint64_t { return log_uniform_below_or_eq(rng, kMax); },
         [](const std::uint64_t& value) noexcept -> bool {
             const std::size_t idx = Layout::counts_index(value);
             // MemSafe: record() does counts_[idx].fetch_add with no guard.
@@ -127,29 +123,29 @@ int main(int argc, char** argv) {
     namespace obs = crucible::observe;
 
     Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 2'000'000) cfg.iterations = 2'000'000;
+    if (cfg.iterations > 2000000) cfg.iterations = 2000000;
 
     // ── Run A: layout arithmetic across four distinct shapes ──
     // Distinct (Significant, MaxValue) pairs exercise different
     // sub_bucket_count / magnitude / bucket_count so the bucketing math
     // is validated beyond the single <2, 1'000'000> the test uses.
     int rc = 0;
-    rc |= run_layout<obs::HdrHistogram<1, 1'000>>("hdr_layout_s1_1e3", cfg);
-    rc |= run_layout<obs::HdrHistogram<2, 1'000'000>>("hdr_layout_s2_1e6", cfg);
-    rc |= run_layout<obs::HdrHistogram<3, 3'600'000'000'000ull>>(
-        "hdr_layout_s3_3p6e12", cfg);
-    rc |= run_layout<obs::HdrHistogram<5, 100'000>>("hdr_layout_s5_1e5", cfg);
+    rc |= run_layout<obs::HdrHistogram<1, 1000>>("hdr_layout_s1_1e3", cfg);
+    rc |= run_layout<obs::HdrHistogram<2, 1000000>>("hdr_layout_s2_1e6", cfg);
+    rc |= run_layout<obs::HdrHistogram<3, 3600000000000ull>>("hdr_layout_s3_3p6e12", cfg);
+    rc |= run_layout<obs::HdrHistogram<5, 100000>>("hdr_layout_s5_1e5", cfg);
 
     // ── Run B: percentile monotonicity + exact p100 on one layout ──
-    using Hist = obs::HdrHistogram<2, 1'000'000>;
+    using Hist = obs::HdrHistogram<2, 1000000>;
     using Layout = Hist::layout_type;
     constexpr std::uint64_t kMax = Hist::max_trackable_value;
 
     // Keep histogram-construction-per-iteration affordable on deep runs.
     Config batch_cfg = cfg;
-    if (batch_cfg.iterations > 100'000) batch_cfg.iterations = 100'000;
+    if (batch_cfg.iterations > 100000) batch_cfg.iterations = 100000;
 
-    rc |= run("hdr_percentile_monotonic", batch_cfg,
+    rc |= run(
+        "hdr_percentile_monotonic", batch_cfg,
         [](Rng& rng) noexcept -> BatchSpec {
             BatchSpec spec{};
             spec.count = 1u + rng.next_below(static_cast<std::uint32_t>(kMaxBatch - 1));
@@ -168,8 +164,7 @@ int main(int argc, char** argv) {
             if (hist.total_count() != spec.count) return false;
 
             // Percentile must be non-decreasing as pct climbs.
-            constexpr std::array<double, 10> points{
-                0.5, 1.0, 5.0, 25.0, 50.0, 75.0, 90.0, 99.0, 99.9, 100.0};
+            constexpr std::array<double, 10> points{0.5, 1.0, 5.0, 25.0, 50.0, 75.0, 90.0, 99.0, 99.9, 100.0};
             std::uint64_t previous = 0;
             for (const double pct : points) {
                 const std::uint64_t quantile = hist.percentile(pct);
@@ -179,8 +174,7 @@ int main(int argc, char** argv) {
 
             // p100 lands in the top non-empty bucket — exactly the
             // bucket-low of the largest recorded sample.
-            const std::uint64_t expected_p100 =
-                Layout::value_from_index(Layout::counts_index(max_recorded));
+            const std::uint64_t expected_p100 = Layout::value_from_index(Layout::counts_index(max_recorded));
             if (hist.percentile(100.0) != expected_p100) return false;
             if (hist.percentile(100.0) > kMax) return false;
             return true;

@@ -29,14 +29,12 @@ namespace fmpsc = ::crucible::fixy::substr::mpsc;
 
 namespace neg_fixy_mpsc_consumer_non_channel {
 struct StrayTag {};
-}
+}  // namespace neg_fixy_mpsc_consumer_non_channel
 
 int main() {
     int not_a_channel = 0;
-    auto perm = ::crucible::safety::mint_permission_root<
-        neg_fixy_mpsc_consumer_non_channel::StrayTag>();
-    auto bad = fmpsc::mint_mpsc_consumer_endpoint(
-        not_a_channel, std::move(perm));
+    auto perm = ::crucible::safety::mint_permission_root<neg_fixy_mpsc_consumer_non_channel::StrayTag>();
+    auto bad = fmpsc::mint_mpsc_consumer_endpoint(not_a_channel, std::move(perm));
     (void)bad;
     return 0;
 }

@@ -45,11 +45,15 @@ namespace fa = crucible::fixy::algebra;
 // non-commutative on {A, C} alone, so the canonical bottom()/top()
 // witnesses (A and C) suffice to fail the law check.
 struct LatticeNeg_NonAssociativeJoin {
-    enum class Sym : std::uint8_t { A = 0, B = 1, C = 2 };
+    enum class Sym : std::uint8_t {
+        A = 0,
+        B = 1,
+        C = 2
+    };
     using element_type = Sym;
 
     [[nodiscard]] static constexpr element_type bottom() noexcept { return Sym::A; }
-    [[nodiscard]] static constexpr element_type top()    noexcept { return Sym::C; }
+    [[nodiscard]] static constexpr element_type top() noexcept { return Sym::C; }
     [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept {
         return static_cast<std::uint8_t>(a) <= static_cast<std::uint8_t>(b);
     }
@@ -58,9 +62,9 @@ struct LatticeNeg_NonAssociativeJoin {
     // but join(C,A)=A, so the {bottom=A, top=C} canonical witness sweep
     // detects the break: raw_axioms_at(A, C, ...) finds comm_join false.
     [[nodiscard]] static constexpr element_type join(element_type a, element_type b) noexcept {
-        if (a == b) return a;                 // idempotent on the diagonal
+        if (a == b) return a;  // idempotent on the diagonal
         if (a == Sym::A && b == Sym::C) return Sym::C;
-        if (a == Sym::C && b == Sym::A) return Sym::A;   // ← asymmetric
+        if (a == Sym::C && b == Sym::A) return Sym::A;  // ← asymmetric
         return static_cast<std::uint8_t>(a) >= static_cast<std::uint8_t>(b) ? a : b;
     }
     [[nodiscard]] static constexpr element_type meet(element_type a, element_type b) noexcept {
@@ -73,8 +77,8 @@ int main() {
     // non-associative at the canonical witnesses, so the law witness
     // rejects the lattice.
     static_assert(fa::Lattice<LatticeNeg_NonAssociativeJoin>,
-        "fa::Lattice<NonAssociativeJoin> must reject — join is "
-        "non-commutative/non-associative at the canonical bottom()/top() "
-        "witnesses; the fix-09 law witness catches it.");
+                  "fa::Lattice<NonAssociativeJoin> must reject — join is "
+                  "non-commutative/non-associative at the canonical bottom()/top() "
+                  "witnesses; the fix-09 law witness catches it.");
     return 0;
 }

@@ -19,17 +19,14 @@
 #include <crucible/fixy/Wrap.h>
 
 int main() {
-    namespace fwio  = ::crucible::fixy::wrap::io;
+    namespace fwio = ::crucible::fixy::wrap::io;
     namespace engine = fwio::engine;
-    namespace grant  = fwio::grant;
+    namespace grant = fwio::grant;
 
     ::crucible::effects::TestRunnerCtx ctx{};
 
     // Should FAIL: engine<Synchronous> engages the engine axis but with
     // the wrong enumerator; engine_is_io_uring_v<> is false.
-    [[maybe_unused]] auto r = fwio::mint_io_uring_ring<
-        grant::engine<engine::Synchronous>,
-        grant::sq_entries<128>
-    >(ctx);
+    [[maybe_unused]] auto r = fwio::mint_io_uring_ring<grant::engine<engine::Synchronous>, grant::sq_entries<128>>(ctx);
     return 0;
 }

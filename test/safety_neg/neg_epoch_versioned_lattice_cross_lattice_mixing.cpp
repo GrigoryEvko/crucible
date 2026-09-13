@@ -17,7 +17,7 @@
 using namespace crucible::algebra::lattices;
 
 int main() {
-    Epoch      ep{1024};
+    Epoch ep{1024};
     Generation gen{4096};
 
     // Should FAIL: EpochLattice::leq's signature requires two

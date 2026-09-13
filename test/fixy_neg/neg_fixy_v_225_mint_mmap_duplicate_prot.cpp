@@ -25,18 +25,15 @@ struct DupProtRegion {};
 
 int main() {
     namespace fwmm = ::crucible::fixy::wrap::mmap;
-    namespace prot  = fwmm::prot;
+    namespace prot = fwmm::prot;
     namespace share = fwmm::share;
     namespace grant = fwmm::grant;
 
     ::crucible::effects::TestRunnerCtx ctx{};
 
     // Should FAIL: two with_prot<X> grants.
-    [[maybe_unused]] auto r = fwmm::mint_mmap<
-        DupProtRegion,
-        grant::with_prot<prot::ReadOnly>,
-        grant::with_prot<prot::ReadWrite>,
-        grant::with_share<share::Private>
-    >(ctx, /*fd=*/-1, /*length=*/4096);
+    [[maybe_unused]] auto r =
+        fwmm::mint_mmap<DupProtRegion, grant::with_prot<prot::ReadOnly>, grant::with_prot<prot::ReadWrite>,
+                        grant::with_share<share::Private>>(ctx, /*fd=*/-1, /*length=*/4096);
     return 0;
 }

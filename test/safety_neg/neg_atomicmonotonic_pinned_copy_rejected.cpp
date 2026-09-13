@@ -41,25 +41,21 @@
 #include <crucible/safety/Mutation.h>
 
 namespace {
-    using CounterT = ::crucible::safety::AtomicMonotonic<std::uint64_t>;
-}
+using CounterT = ::crucible::safety::AtomicMonotonic<std::uint64_t>;
+}  // namespace
 
 // Anchor: in-place construction of an AtomicMonotonic is allowed —
 // the only path to OBTAIN one is direct ctor (Pinned protects copy /
 // move, not construction).  This call compiles.
-[[maybe_unused]] static CounterT anchor_make_atomic_monotonic() {
-    return CounterT{0};
-}
+[[maybe_unused]] static CounterT anchor_make_atomic_monotonic() { return CounterT{0}; }
 
 // VIOLATION: AtomicMonotonic inherits a deleted copy ctor from
 // Pinned<AtomicMonotonic<uint64_t>>.  Attempting to copy-construct
 // triggers the deletion with the load-bearing reason.  GCC emits
 // "use of deleted function" with the Pinned "stable address" reason
 // string in the diagnostic chain.
-[[maybe_unused]] static CounterT offending_atomic_monotonic_copy(
-    const CounterT& source)
-{
-    return CounterT{source};   // ERROR: copy ctor deleted by Pinned
+[[maybe_unused]] static CounterT offending_atomic_monotonic_copy(const CounterT& source) {
+    return CounterT{source};  // ERROR: copy ctor deleted by Pinned
 }
 
 int main() { return 0; }

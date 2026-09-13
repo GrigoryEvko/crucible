@@ -12,8 +12,7 @@ namespace stance = crucible::fixy::stance;
 
 using BadSyncBlockingVoid = stance::SyncBlocking<void>;
 
-static_assert(sizeof(BadSyncBlockingVoid) > 0,
-    "instantiate stance::SyncBlocking<void> to force the Type-axis "
-    "rejection (void is not an object type).");
+static_assert(sizeof(BadSyncBlockingVoid) > 0, "instantiate stance::SyncBlocking<void> to force the Type-axis "
+                                               "rejection (void is not an object type).");
 
 int main() { return 0; }

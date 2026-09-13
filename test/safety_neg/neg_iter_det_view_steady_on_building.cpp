@@ -41,8 +41,7 @@ constexpr bool mint_steady_on_fresh_detector() {
     // which is false at this point.  mint_view's
     //     pre(view_ok(detector, std::type_identity<Steady>{}))
     // fires; under consteval the result is non-constant.
-    auto sv = crucible::safety::mint_view<
-        crucible::iter_det_state::Steady>(detector);
+    auto sv = crucible::safety::mint_view<crucible::iter_det_state::Steady>(detector);
     (void)sv;
     return true;
 }

@@ -26,6 +26,4 @@ using BadStack = fw::AppendOnly<fw::WriteOnce<int>>;
 [[maybe_unused]] BadStack obj{};
 }  // namespace
 
-int main() {
-    return 0;
-}
+int main() { return 0; }

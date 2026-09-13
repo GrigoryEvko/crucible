@@ -28,20 +28,18 @@
 #include <crucible/sessions/SessionDelegate.h>
 
 namespace proto = ::crucible::safety::proto;
-namespace eff   = ::crucible::effects;
+namespace eff = ::crucible::effects;
 
 namespace neg_a2_010_bg {
 struct Channel {};
-}
+}  // namespace neg_a2_010_bg
 
 int main() {
     // Inner protocol: a single Send of a Block-rowed payload (i.e.,
     // running it would block on IO/lock acquisition under the
     // delegate's Ctx).  Block is in the canonical Effect universe but
     // is NOT a member of BgCompileCtx::row_type = Row<Bg, Alloc, IO>.
-    using InnerProto =
-        proto::Send<eff::Computation<eff::Row<eff::Effect::Block>, int>,
-                    proto::End>;
+    using InnerProto = proto::Send<eff::Computation<eff::Row<eff::Effect::Block>, int>, proto::End>;
     using IPS_empty = proto::EmptyPermSet;
 
     // Outer protocol sends the DelegatedSession payload.  Without the
@@ -49,13 +47,10 @@ int main() {
     // — silent admission under any Ctx, including BgCompileCtx.  With
     // the fix, it's protocol_effect_row<InnerProto> = Row<Block>,
     // which is not a subrow of Row<Bg, Alloc, IO>.
-    using OuterProto =
-        proto::Send<proto::DelegatedSession<InnerProto, IPS_empty>,
-                    proto::End>;
+    using OuterProto = proto::Send<proto::DelegatedSession<InnerProto, IPS_empty>, proto::End>;
 
     eff::BgCompileCtx ctx{};
-    auto bad = proto::mint_permissioned_session<OuterProto>(
-        ctx, neg_a2_010_bg::Channel{});
+    auto bad = proto::mint_permissioned_session<OuterProto>(ctx, neg_a2_010_bg::Channel{});
     (void)bad;
     return 0;
 }

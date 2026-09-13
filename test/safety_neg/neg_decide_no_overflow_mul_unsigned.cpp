@@ -36,8 +36,7 @@ namespace {
 // __builtin_mul_overflow flag fires, no_overflow_mul returns false,
 // CRUCIBLE_PRE's __builtin_trap() is invoked at consteval, and the
 // surrounding static_assert reports "non-constant condition".
-constexpr auto witness =
-    mul_u64(std::numeric_limits<uint64_t>::max(), uint64_t{2});
+constexpr auto witness = mul_u64(std::numeric_limits<uint64_t>::max(), uint64_t{2});
 
 }  // namespace
 

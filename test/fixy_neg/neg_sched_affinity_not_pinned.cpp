@@ -20,8 +20,7 @@ int main() {
     ::crucible::effects::BgDrainCtx bg{};
 
     // Should FAIL: a NotPinned posture is not a pin proof.
-    auto pin = ::crucible::fixy::sched::mint_affinity<
-        ::crucible::algebra::lattices::AffinityMask::single(0),
-        ::crucible::safety::PinningPosture::NotPinned>(bg);
+    auto pin = ::crucible::fixy::sched::mint_affinity<::crucible::algebra::lattices::AffinityMask::single(0),
+                                                      ::crucible::safety::PinningPosture::NotPinned>(bg);
     return pin.has_value() ? 0 : 1;
 }

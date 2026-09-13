@@ -24,9 +24,8 @@ int main() {
     // Should FAIL: `int` is not a class type → FederationOrgTag<int>
     // is false → mint_self_signed_handshake<int> requires-clause
     // rejects the substitution.
-    auto handshake = perm::mint_self_signed_handshake<int>(
-        perm::PeerKeyFingerprint{0xDEADBEEFULL},
-        perm::Nonce{0xC0FFEEULL});
+    auto handshake =
+        perm::mint_self_signed_handshake<int>(perm::PeerKeyFingerprint{0xDEADBEEFULL}, perm::Nonce{0xC0FFEEULL});
     (void)handshake;
     return 0;
 }

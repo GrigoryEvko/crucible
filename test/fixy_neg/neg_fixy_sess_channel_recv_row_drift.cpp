@@ -14,7 +14,7 @@
 #include <crucible/effects/Computation.h>
 #include <crucible/fixy/Sess.h>
 
-namespace eff   = crucible::effects;
+namespace eff = crucible::effects;
 namespace fsess = crucible::fixy::sess;
 
 namespace neg_fixy_sess_channel_recv_row_drift {
@@ -24,14 +24,12 @@ struct Resource {};
 
 int main() {
     namespace test_ns = neg_fixy_sess_channel_recv_row_drift;
-    using IoPayload =
-        eff::Computation<eff::Row<eff::Effect::IO>, test_ns::Payload>;
+    using IoPayload = eff::Computation<eff::Row<eff::Effect::IO>, test_ns::Payload>;
     using Proto = fsess::Send<int, fsess::Recv<IoPayload, fsess::End>>;
 
     eff::HotFgCtx endpoint_a;
     eff::BgCompileCtx endpoint_b;
     [[maybe_unused]] auto channel =
-        fsess::mint_channel<Proto>(endpoint_a, endpoint_b,
-                                   test_ns::Resource{}, test_ns::Resource{});
+        fsess::mint_channel<Proto>(endpoint_a, endpoint_b, test_ns::Resource{}, test_ns::Resource{});
     return 0;
 }

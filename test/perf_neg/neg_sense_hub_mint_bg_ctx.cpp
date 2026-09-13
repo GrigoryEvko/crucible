@@ -11,9 +11,7 @@
 #include <crucible/perf/SenseHub.h>
 
 int main() {
-    auto hub = crucible::perf::mint_sense_hub(
-        crucible::effects::BgDrainCtx{},
-        crucible::effects::testing::init());
+    auto hub = crucible::perf::mint_sense_hub(crucible::effects::BgDrainCtx{}, crucible::effects::testing::init());
     (void)hub;
     return 0;
 }

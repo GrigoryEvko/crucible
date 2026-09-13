@@ -26,12 +26,11 @@ struct ServerPeer {};
 
 int main() {
     OneShotFlag flag;
-    int         not_a_handle = 42;
+    int not_a_handle = 42;
 
     // The mint requires its first argument to be a SessionHandle
     // specialisation; an int can never bind to that parameter slot.
-    auto bad = proto::mint_crash_watched_session<ServerPeer>(
-        not_a_handle, flag);
+    auto bad = proto::mint_crash_watched_session<ServerPeer>(not_a_handle, flag);
     (void)bad;
     return 0;
 }

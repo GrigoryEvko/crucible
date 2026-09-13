@@ -23,8 +23,7 @@ constexpr std::size_t KiB = 1024;
 constexpr std::size_t MiB = 1024 * KiB;
 constexpr std::size_t kLargeStageBytes = 20 * MiB;
 constexpr std::size_t kLargeStages = 5;
-constexpr std::size_t kLargeWords = (kLargeStageBytes * kLargeStages)
-                                  / sizeof(std::uint64_t);
+constexpr std::size_t kLargeWords = (kLargeStageBytes * kLargeStages) / sizeof(std::uint64_t);
 
 template <std::size_t Ws>
 struct Consumer {
@@ -64,8 +63,7 @@ static void touch_words(std::span<const std::uint64_t> words) noexcept {
     bench::do_not_optimize(small_sink);
 }
 
-[[nodiscard]] static std::uint64_t
-touch_words_compute(std::span<const std::uint64_t> words) noexcept {
+[[nodiscard]] static std::uint64_t touch_words_compute(std::span<const std::uint64_t> words) noexcept {
     std::uint64_t acc = 0x243F6A8885A308D3ULL;
     for (std::uint64_t v : words) {
         std::uint64_t x = v ^ acc;
@@ -80,9 +78,8 @@ touch_words_compute(std::span<const std::uint64_t> words) noexcept {
 static void touch_large_stage(std::size_t stage) noexcept {
     const std::size_t words_per_stage = kLargeStageBytes / sizeof(std::uint64_t);
     const std::size_t begin = stage * words_per_stage;
-    const std::uint64_t acc = touch_words_compute(std::span<const std::uint64_t>{
-        large_data.data() + begin,
-        words_per_stage});
+    const std::uint64_t acc =
+        touch_words_compute(std::span<const std::uint64_t>{large_data.data() + begin, words_per_stage});
     large_sinks[stage].value ^= acc;
     bench::do_not_optimize(large_sinks[stage].value);
 }
@@ -99,21 +96,11 @@ static void small_c(Consumer<1536>&&, Producer<1536>&&) noexcept {
     touch_words(std::span<const std::uint64_t>{small_data.data() + 640, 384});
 }
 
-static void large_0(Consumer<10 * MiB>&&, Producer<10 * MiB>&&) noexcept {
-    touch_large_stage(0);
-}
-static void large_1(Consumer<10 * MiB>&&, Producer<10 * MiB>&&) noexcept {
-    touch_large_stage(1);
-}
-static void large_2(Consumer<10 * MiB>&&, Producer<10 * MiB>&&) noexcept {
-    touch_large_stage(2);
-}
-static void large_3(Consumer<10 * MiB>&&, Producer<10 * MiB>&&) noexcept {
-    touch_large_stage(3);
-}
-static void large_4(Consumer<10 * MiB>&&, Producer<10 * MiB>&&) noexcept {
-    touch_large_stage(4);
-}
+static void large_0(Consumer<10 * MiB>&&, Producer<10 * MiB>&&) noexcept { touch_large_stage(0); }
+static void large_1(Consumer<10 * MiB>&&, Producer<10 * MiB>&&) noexcept { touch_large_stage(1); }
+static void large_2(Consumer<10 * MiB>&&, Producer<10 * MiB>&&) noexcept { touch_large_stage(2); }
+static void large_3(Consumer<10 * MiB>&&, Producer<10 * MiB>&&) noexcept { touch_large_stage(3); }
+static void large_4(Consumer<10 * MiB>&&, Producer<10 * MiB>&&) noexcept { touch_large_stage(4); }
 
 using SmallA = cc::Stage<&small_a, eff::HotFgCtx>;
 using SmallB = cc::Stage<&small_b, eff::HotFgCtx>;
@@ -156,14 +143,22 @@ static void fill_inputs() {
 
 namespace crucible::concurrent {
 
-template <> struct stage_inline_safe<::pipeline_dispatch_bench::SmallA> : std::true_type {};
-template <> struct stage_inline_safe<::pipeline_dispatch_bench::SmallB> : std::true_type {};
-template <> struct stage_inline_safe<::pipeline_dispatch_bench::SmallC> : std::true_type {};
-template <> struct stage_inline_safe<::pipeline_dispatch_bench::Large0> : std::true_type {};
-template <> struct stage_inline_safe<::pipeline_dispatch_bench::Large1> : std::true_type {};
-template <> struct stage_inline_safe<::pipeline_dispatch_bench::Large2> : std::true_type {};
-template <> struct stage_inline_safe<::pipeline_dispatch_bench::Large3> : std::true_type {};
-template <> struct stage_inline_safe<::pipeline_dispatch_bench::Large4> : std::true_type {};
+template <>
+struct stage_inline_safe<::pipeline_dispatch_bench::SmallA> : std::true_type {};
+template <>
+struct stage_inline_safe<::pipeline_dispatch_bench::SmallB> : std::true_type {};
+template <>
+struct stage_inline_safe<::pipeline_dispatch_bench::SmallC> : std::true_type {};
+template <>
+struct stage_inline_safe<::pipeline_dispatch_bench::Large0> : std::true_type {};
+template <>
+struct stage_inline_safe<::pipeline_dispatch_bench::Large1> : std::true_type {};
+template <>
+struct stage_inline_safe<::pipeline_dispatch_bench::Large2> : std::true_type {};
+template <>
+struct stage_inline_safe<::pipeline_dispatch_bench::Large3> : std::true_type {};
+template <>
+struct stage_inline_safe<::pipeline_dispatch_bench::Large4> : std::true_type {};
 
 }  // namespace crucible::concurrent
 
@@ -193,13 +188,7 @@ static void run_large_pipeline() noexcept {
     auto s2 = cc::mint_stage<&large_2>(ctx, Consumer<10 * MiB>{}, Producer<10 * MiB>{});
     auto s3 = cc::mint_stage<&large_3>(ctx, Consumer<10 * MiB>{}, Producer<10 * MiB>{});
     auto s4 = cc::mint_stage<&large_4>(ctx, Consumer<10 * MiB>{}, Producer<10 * MiB>{});
-    auto p = cc::mint_pipeline(
-        ctx,
-        std::move(s0),
-        std::move(s1),
-        std::move(s2),
-        std::move(s3),
-        std::move(s4));
+    auto p = cc::mint_pipeline(ctx, std::move(s0), std::move(s1), std::move(s2), std::move(s3), std::move(s4));
     std::move(p).run();
 }
 
@@ -212,36 +201,20 @@ int main() {
     bench::print_system_info();
 
     std::printf("pipeline dispatch facts: small=%zuB inline=%d large=%zuB inline=%d cpus=%zu\n",
-                SmallPipeline::aggregate_per_call_working_set,
-                SmallPipeline::will_run_inline() ? 1 : 0,
-                LargePipeline::aggregate_per_call_working_set,
-                LargePipeline::will_run_inline() ? 1 : 0,
+                SmallPipeline::aggregate_per_call_working_set, SmallPipeline::will_run_inline() ? 1 : 0,
+                LargePipeline::aggregate_per_call_working_set, LargePipeline::will_run_inline() ? 1 : 0,
                 cc::Topology::instance().process_cpu_count());
 
-    auto small_direct = bench::Run{"pipeline.small.direct"}
-        .samples(2'000)
-        .warmup(200)
-        .no_pin()
-        .max_wall_ms(1'000)
-        .measure(run_small_direct);
-    auto small_pipeline = bench::Run{"pipeline.small.router"}
-        .samples(2'000)
-        .warmup(200)
-        .no_pin()
-        .max_wall_ms(1'000)
-        .measure(run_small_pipeline);
-    auto large_direct = bench::Run{"pipeline.large.direct"}
-        .samples(12)
-        .warmup(1)
-        .no_pin()
-        .max_wall_ms(3'000)
-        .measure(run_large_direct);
-    auto large_pipeline = bench::Run{"pipeline.large.router"}
-        .samples(12)
-        .warmup(1)
-        .no_pin()
-        .max_wall_ms(3'000)
-        .measure(run_large_pipeline);
+    auto small_direct =
+        bench::Run{"pipeline.small.direct"}.samples(2000).warmup(200).no_pin().max_wall_ms(1000).measure(
+            run_small_direct);
+    auto small_pipeline =
+        bench::Run{"pipeline.small.router"}.samples(2000).warmup(200).no_pin().max_wall_ms(1000).measure(
+            run_small_pipeline);
+    auto large_direct =
+        bench::Run{"pipeline.large.direct"}.samples(12).warmup(1).no_pin().max_wall_ms(3000).measure(run_large_direct);
+    auto large_pipeline = bench::Run{"pipeline.large.router"}.samples(12).warmup(1).no_pin().max_wall_ms(3000).measure(
+        run_large_pipeline);
 
     std::array reports{
         std::move(small_direct),
@@ -253,8 +226,6 @@ int main() {
 
     const double small_ratio = reports[1].pct.p50 / reports[0].pct.p50;
     const double large_speedup = reports[2].pct.p50 / reports[3].pct.p50;
-    std::printf("\nchecks: small_router/direct=%.3fx large_direct/router=%.3fx\n",
-                small_ratio,
-                large_speedup);
+    std::printf("\nchecks: small_router/direct=%.3fx large_direct/router=%.3fx\n", small_ratio, large_speedup);
     return 0;
 }

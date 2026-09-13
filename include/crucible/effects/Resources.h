@@ -396,15 +396,15 @@ static_assert(std::is_nothrow_default_constructible_v<resource::SmBudget<32>>);
 
 static_assert(std::is_same_v<SmBudget<32>, resource::SmBudget<32>>);
 static_assert(std::is_same_v<NicQp<4>, resource::NicQp<4>>);
-static_assert(std::is_same_v<HbmBytes<80'000'000'000ULL>, resource::HbmBytes<80'000'000'000ULL>>);
+static_assert(std::is_same_v<HbmBytes<80000000000ULL>, resource::HbmBytes<80000000000ULL>>);
 
 static_assert(resource::SmBudget<32>::kind == ResourceKind::Sm);
 static_assert(resource::SmBudget<32>::value == 32);
 static_assert(resource::SmBudget<32>::name == std::string_view{"SmBudget"});
 
-static_assert(resource::HbmBytes<80'000'000'000ULL>::kind == ResourceKind::HbmBytes);
-static_assert(resource::HbmBytes<80'000'000'000ULL>::value == 80'000'000'000ULL);
-static_assert(resource::HbmBytes<80'000'000'000ULL>::name == std::string_view{"HbmBytes"});
+static_assert(resource::HbmBytes<80000000000ULL>::kind == ResourceKind::HbmBytes);
+static_assert(resource::HbmBytes<80000000000ULL>::value == 80000000000ULL);
+static_assert(resource::HbmBytes<80000000000ULL>::name == std::string_view{"HbmBytes"});
 
 static_assert(resource::NicQp<4>::kind == ResourceKind::NicQp);
 static_assert(resource::NicQp<4>::value == 4);
@@ -412,7 +412,7 @@ static_assert(resource::NicQp<4>::name == std::string_view{"NicQp"});
 
 // One literal past the reach of uint32_t, so that a narrowing of the
 // budget parameter cannot pass unnoticed.
-static_assert(resource::HbmBandwidth<8'000'000'000'000ULL>::value == 8'000'000'000'000ULL,
+static_assert(resource::HbmBandwidth<8000000000000ULL>::value == 8000000000000ULL,
               "A budget value was silently truncated.  The parameter must stay uint64_t.");
 
 static_assert(ResourceTag<resource::SmBudget<32>>);
@@ -420,16 +420,16 @@ static_assert(ResourceTag<resource::WarpSchedulerSlots<8>>);
 static_assert(ResourceTag<resource::RegistersPerWarp<256>>);
 static_assert(ResourceTag<resource::SmemBytes<48 * 1024>>);
 static_assert(ResourceTag<resource::L2Bytes<128 * 1024 * 1024>>);
-static_assert(ResourceTag<resource::HbmBytes<80'000'000'000ULL>>);
-static_assert(ResourceTag<resource::HbmBandwidth<3'350'000'000'000ULL>>);
-static_assert(ResourceTag<resource::NvlinkBandwidth<900'000'000'000ULL>>);
-static_assert(ResourceTag<resource::PcieBandwidth<32'000'000'000ULL>>);
+static_assert(ResourceTag<resource::HbmBytes<80000000000ULL>>);
+static_assert(ResourceTag<resource::HbmBandwidth<3350000000000ULL>>);
+static_assert(ResourceTag<resource::NvlinkBandwidth<900000000000ULL>>);
+static_assert(ResourceTag<resource::PcieBandwidth<32000000000ULL>>);
 static_assert(ResourceTag<resource::NicQueueBudget<256>>);
 static_assert(ResourceTag<resource::NicRingDepth<4096>>);
 static_assert(ResourceTag<resource::NicQp<4>>);
 static_assert(ResourceTag<resource::NicCq<4>>);
 static_assert(ResourceTag<resource::NicMr<8>>);
-static_assert(ResourceTag<resource::SwitchEgressBw<400'000'000'000ULL>>);
+static_assert(ResourceTag<resource::SwitchEgressBw<400000000000ULL>>);
 static_assert(ResourceTag<resource::SwitchBufferCells<32 * 1024>>);
 static_assert(ResourceTag<resource::TcamEntries<8 * 1024>>);
 static_assert(ResourceTag<resource::CpuCoreBudget<128>>);
@@ -451,8 +451,8 @@ static_assert(tag_descriptor<resource::SmBudget<32>>().kind == ResourceKind::Sm)
 static_assert(tag_descriptor<resource::SmBudget<32>>().value == 32);
 static_assert(tag_descriptor<resource::SmBudget<32>>().name == std::string_view{"SmBudget"});
 
-static_assert(tag_descriptor<resource::HbmBytes<80'000'000'000ULL>>().kind == ResourceKind::HbmBytes);
-static_assert(tag_descriptor<resource::HbmBytes<80'000'000'000ULL>>().value == 80'000'000'000ULL);
+static_assert(tag_descriptor<resource::HbmBytes<80000000000ULL>>().kind == ResourceKind::HbmBytes);
+static_assert(tag_descriptor<resource::HbmBytes<80000000000ULL>>().value == 80000000000ULL);
 
 static_assert(tag_descriptor<resource::CarbonGramsPerKwh<400>>().kind == ResourceKind::CarbonGramsPerKwh);
 static_assert(tag_descriptor<resource::CarbonGramsPerKwh<400>>().value == 400);

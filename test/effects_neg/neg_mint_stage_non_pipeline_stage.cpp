@@ -19,7 +19,7 @@
 #include <utility>
 
 namespace conc = crucible::concurrent;
-namespace eff  = crucible::effects;
+namespace eff = crucible::effects;
 
 template <typename T>
 struct FakeConsumer {
@@ -39,8 +39,8 @@ int main() {
     FakeConsumer<int> in;
     FakeProducer<int> out;
 
-    auto bad = conc::mint_stage<&wrong_arity_stage>(
-        ctx, std::move(in), std::move(out));  // CtxFitsStage / PipelineStage fails
+    auto bad =
+        conc::mint_stage<&wrong_arity_stage>(ctx, std::move(in), std::move(out));  // CtxFitsStage / PipelineStage fails
     (void)bad;
     return 0;
 }

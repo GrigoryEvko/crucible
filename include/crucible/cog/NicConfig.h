@@ -142,8 +142,8 @@ using PositiveQdiscParam = safety::Positive<std::uint32_t>;
 using SysctlBytes =
     safety::Refined<safety::all_of<safety::positive, safety::bounded_above<std::uint64_t{1ull << 40u}>>, std::uint64_t>;
 using SysctlPackets = safety::Positive<std::uint32_t>;
-using BusyPollUs = safety::Bounded<std::uint32_t{0}, std::uint32_t{1'000'000}, std::uint32_t>;
-using TcpRtoMinUs = safety::Bounded<std::uint32_t{1}, std::uint32_t{60'000'000}, std::uint32_t>;
+using BusyPollUs = safety::Bounded<std::uint32_t{0}, std::uint32_t{1000000}, std::uint32_t>;
+using TcpRtoMinUs = safety::Bounded<std::uint32_t{1}, std::uint32_t{60000000}, std::uint32_t>;
 
 struct RssConfig {
     RssHashFunction hash = RssHashFunction::Toeplitz;
@@ -158,7 +158,7 @@ struct PauseConfig {
 };
 
 struct LinkConfig {
-    LinkSpeedMbps speed_mbps{std::uint32_t{100'000}};
+    LinkSpeedMbps speed_mbps{std::uint32_t{100000}};
     DuplexMode duplex = DuplexMode::Full;
     bool autoneg = true;
 };
@@ -193,16 +193,16 @@ struct TcpMemoryTriple {
 };
 
 struct SysctlConfig {
-    SysctlBytes rmem_max{std::uint64_t{134'217'728}};
-    SysctlBytes wmem_max{std::uint64_t{134'217'728}};
-    SysctlBytes rmem_default{std::uint64_t{262'144}};
-    SysctlBytes wmem_default{std::uint64_t{262'144}};
-    SysctlPackets netdev_max_backlog{std::uint32_t{250'000}};
+    SysctlBytes rmem_max{std::uint64_t{134217728}};
+    SysctlBytes wmem_max{std::uint64_t{134217728}};
+    SysctlBytes rmem_default{std::uint64_t{262144}};
+    SysctlBytes wmem_default{std::uint64_t{262144}};
+    SysctlPackets netdev_max_backlog{std::uint32_t{250000}};
     SysctlPackets netdev_budget{std::uint32_t{600}};
     BusyPollUs busy_poll_us{std::uint32_t{0}};
     BusyPollUs busy_read_us{std::uint32_t{0}};
     cntp::KernelCcName tcp_congestion{cntp::KernelCcName::from("bbr").value()};
-    TcpRtoMinUs tcp_rto_min_us{std::uint32_t{10'000}};
+    TcpRtoMinUs tcp_rto_min_us{std::uint32_t{10000}};
     TcpMemoryTriple tcp_rmem{};
     TcpMemoryTriple tcp_wmem{};
     bool tcp_sack = true;
@@ -255,14 +255,14 @@ concept CtxFitsNicConfigMint = effects::IsExecCtx<Ctx> && effects::CtxAdmits<Ctx
 }
 
 [[nodiscard]] constexpr std::expected<BusyPollUs, NicConfigError> admit_busy_poll_us(std::uint32_t us) noexcept {
-    if (us > 1'000'000u) {
+    if (us > 1000000u) {
         return std::unexpected(NicConfigError::InvalidBusyPollUs);
     }
     return BusyPollUs{us, typename BusyPollUs::Trusted{}};
 }
 
 [[nodiscard]] constexpr std::expected<TcpRtoMinUs, NicConfigError> admit_tcp_rto_min_us(std::uint32_t us) noexcept {
-    if (us == 0u || us > 60'000'000u) {
+    if (us == 0u || us > 60000000u) {
         return std::unexpected(NicConfigError::InvalidTcpRtoMinUs);
     }
     return TcpRtoMinUs{us, typename TcpRtoMinUs::Trusted{}};

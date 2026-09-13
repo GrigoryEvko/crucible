@@ -15,29 +15,21 @@
 #include <crucible/fixy/Contract.h>
 
 // FIXY-V-031: Cipher::open() now takes Path<source::External>.
-using CipherRoot = crucible::fixy::wrap::Path<
-    crucible::fixy::tags::source::External>;
+using CipherRoot = crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>;
 
 namespace fcipher = ::crucible::fixy::contract::cipher;
-namespace proto   = ::crucible::safety::proto;
-namespace eff     = ::crucible::effects;
+namespace proto = ::crucible::safety::proto;
+namespace eff = ::crucible::effects;
 
 struct Resource {};
 
 int main() {
-    auto cipher = ::crucible::Cipher::open(
-        CipherRoot{"/tmp/crucible_neg_fixy_persist_no_openview"});
+    auto cipher = ::crucible::Cipher::open(CipherRoot{"/tmp/crucible_neg_fixy_persist_no_openview"});
     eff::BgCompileCtx ctx{};
 
     // Should FAIL: deleted overload — Ctx present, Cipher present,
     // but no OpenView passed.
-    [[maybe_unused]] auto h = fcipher::mint_persisted_session<
-        proto::Send<int, proto::End>>(
-            ctx,
-            cipher,
-            Resource{},
-            proto::SessionTagId{1},
-            proto::RoleTagId{1},
-            proto::RoleTagId{2});
+    [[maybe_unused]] auto h = fcipher::mint_persisted_session<proto::Send<int, proto::End>>(
+        ctx, cipher, Resource{}, proto::SessionTagId{1}, proto::RoleTagId{1}, proto::RoleTagId{2});
     return 0;
 }

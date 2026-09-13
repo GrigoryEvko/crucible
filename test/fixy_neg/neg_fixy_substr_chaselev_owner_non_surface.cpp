@@ -26,7 +26,7 @@
 #include <crucible/permissions/Permission.h>
 
 namespace fchase = ::crucible::fixy::substr::chaselev;
-namespace saf    = ::crucible::safety;
+namespace saf = ::crucible::safety;
 
 struct owner_tag_placeholder {};
 

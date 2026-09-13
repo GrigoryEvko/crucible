@@ -35,8 +35,8 @@ using namespace crucible::algebra::lattices;
 
 int main() {
     using L = QttSemiring::At<QttGrade::One>;
-    using P2 = ProductLattice<L, L>;          // binary specialization
-    using P3 = ProductLattice<L, L, L>;       // N-ary primary
+    using P2 = ProductLattice<L, L>;  // binary specialization
+    using P3 = ProductLattice<L, L, L>;  // N-ary primary
 
     P2::element_type pair_elt{};
     P3::element_type triple_elt{};

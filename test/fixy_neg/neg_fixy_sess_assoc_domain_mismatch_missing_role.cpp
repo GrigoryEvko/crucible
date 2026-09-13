@@ -34,22 +34,20 @@
 #include <crucible/sessions/SessionGlobal.h>
 
 namespace fsassoc = ::crucible::fixy::sess::assoc;
-namespace proto   = ::crucible::safety::proto;
+namespace proto = ::crucible::safety::proto;
 
 namespace {
-struct My2PC    {};
-struct Coord    {};
+struct My2PC {};
+struct Coord {};
 struct Follower {};
-struct Prepare  {};
-struct Vote     {};
+struct Prepare {};
+struct Vote {};
 
-using G = proto::Transmission<Coord, Follower, Prepare,
-          proto::Transmission<Follower, Coord, Vote, proto::End_G>>;
+using G = proto::Transmission<Coord, Follower, Prepare, proto::Transmission<Follower, Coord, Vote, proto::End_G>>;
 
 // G has roles {Coord, Follower}.  Γ has ONLY Coord — Follower
 // missing.  Domain mismatch: condition (1) fails.
-using IncompleteGamma = proto::Context<
-    proto::Entry<My2PC, Coord, proto::project_t<G, Coord>>>;
+using IncompleteGamma = proto::Context<proto::Entry<My2PC, Coord, proto::project_t<G, Coord>>>;
 }  // namespace
 
 int main() {

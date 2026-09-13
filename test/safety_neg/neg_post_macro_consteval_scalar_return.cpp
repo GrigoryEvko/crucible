@@ -49,7 +49,7 @@ namespace {
 // violated → CRUCIBLE_POST must fire at consteval.
 [[nodiscard]] constexpr int decrement_must_stay_positive(int const x) noexcept {
     int const r = x - 1;
-    CRUCIBLE_POST(r, r > 0);   // the contract that MUST fire at consteval
+    CRUCIBLE_POST(r, r > 0);  // the contract that MUST fire at consteval
     return r;
 }
 
@@ -62,13 +62,13 @@ namespace {
 // evaluator fails with "non-constant condition for static assertion" —
 // exactly what we want a neg-compile fixture to surface.
 static_assert(decrement_must_stay_positive(1) == 0,
-    "CRUCIBLE_POST on a scalar return MUST fire at consteval when the "
-    "post-condition is violated.  If this static_assert ever evaluates "
-    "successfully, the Post.h consteval-enforcement is broken and every "
-    "neg-compile fixture that depends on a contract-firing-at-consteval "
-    "post-clause is silently green when it should be red — exactly the "
-    "soundness gap that motivated shipping CRUCIBLE_POST in the first "
-    "place.");
+              "CRUCIBLE_POST on a scalar return MUST fire at consteval when the "
+              "post-condition is violated.  If this static_assert ever evaluates "
+              "successfully, the Post.h consteval-enforcement is broken and every "
+              "neg-compile fixture that depends on a contract-firing-at-consteval "
+              "post-clause is silently green when it should be red — exactly the "
+              "soundness gap that motivated shipping CRUCIBLE_POST in the first "
+              "place.");
 
 }  // namespace
 

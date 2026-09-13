@@ -41,14 +41,11 @@ int main() {
     // A FederatedPeerPermission<OrgA> is NOT a LocalCipherPermission.
     // mint_federation_admittance demands the LocalCipherTag-typed
     // proof token; the wrong-tag permission must fail type matching.
-    auto wrong = cs::mint_permission_root<
-        ff::FederatedPeer<NegFederationWrongOrg_OrgA>>();
+    auto wrong = cs::mint_permission_root<ff::FederatedPeer<NegFederationWrongOrg_OrgA>>();
 
-    auto handshake = ff::make_self_signed_handshake<
-        NegFederationWrongOrg_OrgA>();
+    auto handshake = ff::make_self_signed_handshake<NegFederationWrongOrg_OrgA>();
 
     // This call must NOT compile — `wrong` is the wrong Permission tag.
-    (void)ff::mint_federation_admittance<NegFederationWrongOrg_OrgA>(
-        wrong, handshake);
+    (void)ff::mint_federation_admittance<NegFederationWrongOrg_OrgA>(wrong, handshake);
     return 0;
 }

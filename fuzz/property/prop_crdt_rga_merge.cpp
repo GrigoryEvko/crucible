@@ -46,7 +46,7 @@ namespace {
 namespace cc = crucible::canopy;
 using crucible::fuzz::prop::Rng;
 
-inline constexpr std::uint32_t kIds = 6;       // ids 1..6
+inline constexpr std::uint32_t kIds = 6;  // ids 1..6
 inline constexpr std::size_t kSlots = kIds + 1;  // index by id; slot 0 unused
 
 using Rga = cc::RgaList<std::uint32_t, std::uint32_t, 16>;
@@ -130,9 +130,7 @@ struct Spec {
         const Node& na = a[id];
         const Node& nb = b[id];
         if (na.present && nb.present) {
-            const bool b_smaller =
-                nb.after < na.after ||
-                (nb.after == na.after && nb.value < na.value);
+            const bool b_smaller = nb.after < na.after || (nb.after == na.after && nb.value < na.value);
             m[id] = Node{
                 b_smaller ? nb.after : na.after,
                 b_smaller ? nb.value : na.value,
@@ -165,9 +163,10 @@ int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
 
     Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 2'000'000) cfg.iterations = 2'000'000;
+    if (cfg.iterations > 2000000) cfg.iterations = 2000000;
 
-    return run("crdt_rga_merge", cfg,
+    return run(
+        "crdt_rga_merge", cfg,
         [](Rng& rng) noexcept -> Spec {
             Spec spec{};
             for (std::uint32_t i = 0; i < 3u * kIds; ++i) {

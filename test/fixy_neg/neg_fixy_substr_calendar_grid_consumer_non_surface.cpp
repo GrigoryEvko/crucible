@@ -23,7 +23,7 @@
 #include <crucible/permissions/Permission.h>
 
 namespace fcal = ::crucible::fixy::substr::calendar_grid;
-namespace saf  = ::crucible::safety;
+namespace saf = ::crucible::safety;
 
 struct consumer_tag_placeholder {};
 

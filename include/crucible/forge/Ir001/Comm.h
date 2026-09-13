@@ -118,7 +118,7 @@ inline constexpr std::uint16_t kIr001MaxParticipants = 4096;
 using Ir001PortCount = safety::Bounded<std::uint8_t{0}, kIr001MaxPorts, std::uint8_t>;
 using Ir001ParticipantCount = safety::Bounded<std::uint16_t{1}, kIr001MaxParticipants, std::uint16_t>;
 using Ir001QuorumCount = safety::Bounded<std::uint16_t{1}, kIr001MaxParticipants, std::uint16_t>;
-using Ir001TimeoutMs = safety::Bounded<std::uint32_t{0}, std::uint32_t{600'000}, std::uint32_t>;
+using Ir001TimeoutMs = safety::Bounded<std::uint32_t{0}, std::uint32_t{600000}, std::uint32_t>;
 
 struct Ir001OpInfo {
     Ir001OpKind kind = Ir001OpKind::Gemm;

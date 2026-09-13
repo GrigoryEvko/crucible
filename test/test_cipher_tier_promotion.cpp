@@ -59,14 +59,14 @@ static_assert(proto::AcceptsFrom<HotPromoteAccept<ContentHash>, HotPromote<Conte
 static_assert(std::is_same_v<proto::dual_of_t<HotPromoteDelegate<ContentHash>>, HotPromoteAccept<ContentHash>>);
 
 void test_promote_and_demote_preserve_value() {
-    constexpr ContentHash cold_hash{0xA001'0000'0000'0001ULL};
+    constexpr ContentHash cold_hash{0xA001000000000001ULL};
     tier::Cold<MoveOnlyHash> cold{MoveOnlyHash{cold_hash}};
     auto hot = mint_promote<CipherTierTag_v::Cold, CipherTierTag_v::Hot>(std::move(cold));
     static_assert(std::is_same_v<decltype(hot), tier::Hot<MoveOnlyHash>>);
     MoveOnlyHash moved_hot = std::move(hot).consume();
     assert(moved_hot.hash == cold_hash);
 
-    constexpr ContentHash hot_hash{0xB002'0000'0000'0002ULL};
+    constexpr ContentHash hot_hash{0xB002000000000002ULL};
     tier::Hot<MoveOnlyHash> hot_source{MoveOnlyHash{hot_hash}};
     auto cold_again = mint_demote<CipherTierTag_v::Hot, CipherTierTag_v::Cold>(std::move(hot_source));
     static_assert(std::is_same_v<decltype(cold_again), tier::Cold<MoveOnlyHash>>);
@@ -75,7 +75,7 @@ void test_promote_and_demote_preserve_value() {
 }
 
 void test_restore_returns_expected_warm_handle() {
-    constexpr ContentHash hash{0xC003'0000'0000'0003ULL};
+    constexpr ContentHash hash{0xC003000000000003ULL};
     auto restored = mint_restore<ContentHash>(tier::Cold<ContentHash>{hash}, hash);
     assert(restored.has_value());
     static_assert(std::is_same_v<decltype(restored), std::expected<tier::Warm<ContentHash>, RestoreError>>);
@@ -84,7 +84,7 @@ void test_restore_returns_expected_warm_handle() {
 }
 
 void test_restore_error_surface() {
-    constexpr ContentHash hash{0xD004'0000'0000'0004ULL};
+    constexpr ContentHash hash{0xD004000000000004ULL};
     auto empty_key = mint_restore<ContentHash>(tier::Cold<ContentHash>{hash}, ContentHash{});
     assert(!empty_key.has_value());
     assert(empty_key.error() == RestoreError::EmptyContentHash);
@@ -113,15 +113,15 @@ void transport_delegate_hot(CarrierWire& carrier, HotWire&& endpoint) noexcept {
     carrier.transferred_marker = endpoint.marker;
 }
 
-HotWire transport_accept_hot(CarrierWire&) noexcept { return HotWire{.marker = ContentHash{0xABCD'0000'0000'0001ULL}}; }
+HotWire transport_accept_hot(CarrierWire&) noexcept { return HotWire{.marker = ContentHash{0xABCD000000000001ULL}}; }
 
 void send_hot_payload(HotWire& wire, tier::Hot<ContentHash>&& payload) noexcept {
     wire.sent = std::move(payload).consume();
 }
 
 void test_hot_promote_delegate_protocol() {
-    constexpr ContentHash marker{0xABCD'0000'0000'0001ULL};
-    constexpr ContentHash payload{0xABCD'0000'0000'0002ULL};
+    constexpr ContentHash marker{0xABCD000000000001ULL};
+    constexpr ContentHash payload{0xABCD000000000002ULL};
 
     auto delegator = proto::mint_session_handle<HotPromoteDelegate<ContentHash>>(CarrierWire{});
     auto delegated_endpoint = proto::mint_session_handle<HotPromote<ContentHash>>(HotWire{.marker = marker});

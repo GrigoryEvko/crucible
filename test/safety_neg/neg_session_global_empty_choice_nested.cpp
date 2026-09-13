@@ -29,9 +29,9 @@
 
 namespace neg_a2_011_empty_choice_nested {
 struct Alice {};
-struct Bob   {};
+struct Bob {};
 struct Carol {};
-struct Ping  {};
+struct Ping {};
 }  // namespace neg_a2_011_empty_choice_nested
 
 namespace proto = ::crucible::safety::proto;
@@ -43,9 +43,7 @@ int main() {
     // inner Choice<Bob, Carol> with no branches is the violation
     // (buried two levels deep — Rec_G ▷ Transmission ▷ Choice).
     using IllFormedG =
-        proto::Rec_G<
-            proto::Transmission<ns::Alice, ns::Bob, ns::Ping,
-                proto::Choice<ns::Bob, ns::Carol>>>;
+        proto::Rec_G<proto::Transmission<ns::Alice, ns::Bob, ns::Ping, proto::Choice<ns::Bob, ns::Carol>>>;
 
     // Fires the framework-controlled [Choice_Empty_Branches] tag
     // prefix; the routed-diagnostic helper recurses into Rec_G body,

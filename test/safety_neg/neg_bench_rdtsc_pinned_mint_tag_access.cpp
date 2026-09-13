@@ -23,8 +23,7 @@
 int main() {
     // Should FAIL: mint_tag is a private nested struct; only the
     // friend (BenchHarness) can name it.
-    bench::RdtscPinned witness{bench::CpuId{0},
-                               bench::RdtscPinned::mint_tag{}};
+    bench::RdtscPinned witness{bench::CpuId{0}, bench::RdtscPinned::mint_tag{}};
     (void)witness;
     return 0;
 }

@@ -12,12 +12,13 @@
 
 template <typename R>
     requires ::crucible::effects::IsST<R>
-constexpr bool only_st() noexcept { return true; }
+constexpr bool only_st() noexcept {
+    return true;
+}
 
 int main() {
     // Bg is in AllRow but NOT in STRow.
-    using BadRow = ::crucible::effects::Row<
-        ::crucible::effects::Effect::Bg>;
+    using BadRow = ::crucible::effects::Row<::crucible::effects::Effect::Bg>;
     (void)only_st<BadRow>();
     return 0;
 }

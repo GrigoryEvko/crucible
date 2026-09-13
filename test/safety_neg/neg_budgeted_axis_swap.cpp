@@ -26,7 +26,7 @@ using namespace crucible::safety;
 
 int main() {
     BitsBudget bits{1024};
-    PeakBytes  peak{4096};
+    PeakBytes peak{4096};
 
     // Should FAIL: Budgeted<int>(int, BitsBudget, PeakBytes) cannot
     // accept (int, PeakBytes, BitsBudget) — axes are flipped.

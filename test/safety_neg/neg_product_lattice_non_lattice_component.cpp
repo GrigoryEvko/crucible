@@ -42,8 +42,6 @@ int main() {
     // The primary template's static_assert fires on instantiation.
     // 3-way arity (not 2) so the variadic primary is selected over
     // the binary specialization (which has its own concept gate).
-    using P = ProductLattice<QttSemiring::At<QttGrade::One>,
-                             NotALattice,
-                             QttSemiring::At<QttGrade::One>>;
+    using P = ProductLattice<QttSemiring::At<QttGrade::One>, NotALattice, QttSemiring::At<QttGrade::One>>;
     return sizeof(P::element_type);
 }

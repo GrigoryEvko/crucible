@@ -30,7 +30,7 @@
 using namespace crucible::safety::proto;
 
 struct AlphaPerm {};
-struct BetaPerm  {};
+struct BetaPerm {};
 
 // Two PermSets that share AlphaPerm.  In a real bug this would
 // happen when two seemingly-independent code paths each mint

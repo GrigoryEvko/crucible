@@ -19,11 +19,10 @@
 using namespace crucible::algebra::lattices;
 
 int main() {
-    CipherTierLattice::At<CipherTierTag::Hot>::element_type  hot_elt{};
+    CipherTierLattice::At<CipherTierTag::Hot>::element_type hot_elt{};
     CipherTierLattice::At<CipherTierTag::Cold>::element_type cold_elt{};
 
     // Should FAIL: At<Hot>::leq expects two At<Hot>::element_type
     // arguments; cold_elt is At<Cold>::element_type.
-    return static_cast<int>(
-        CipherTierLattice::At<CipherTierTag::Hot>::leq(hot_elt, cold_elt));
+    return static_cast<int>(CipherTierLattice::At<CipherTierTag::Hot>::leq(hot_elt, cold_elt));
 }

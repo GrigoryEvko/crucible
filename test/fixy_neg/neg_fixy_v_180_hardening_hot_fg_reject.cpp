@@ -27,11 +27,8 @@ namespace eff = ::crucible::effects;
 // ~5 ns/op TraceRing push budget — blocking syscalls don't belong on
 // the hot path.
 [[maybe_unused]] constexpr auto bad_dispatch =
-    ::crucible::warden::mint_hardening(eff::HotFgCtx{},
-                                       ::crucible::warden::Policy{});
+    ::crucible::warden::mint_hardening(eff::HotFgCtx{}, ::crucible::warden::Policy{});
 
 }  // namespace neg_fixy_v_180_hardening_hot_fg
 
-int main() {
-    return 0;
-}
+int main() { return 0; }

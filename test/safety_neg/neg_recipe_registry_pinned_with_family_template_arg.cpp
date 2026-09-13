@@ -51,8 +51,8 @@ int main() {
     Arena arena{};
     auto test_ctx = effects::testing::test();
     auto init_ctx = effects::testing::init();
-    RecipePool     pool{RecipePool::ArenaBorrow{arena}, init_ctx};
-    RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool},  test_ctx.alloc};
+    RecipePool pool{RecipePool::ArenaBorrow{arena}, init_ctx};
+    RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, test_ctx.alloc};
 
     // Should FAIL: by_name_pinned is `template <safety::Tolerance T>`;
     // a RecipeFamily enumerator is the wrong template kind.  The
@@ -60,8 +60,7 @@ int main() {
     // pinned API — is captured at the substitution boundary.  Use
     // `reg.by_name_spec(name)` + `.admits(req_tier, req_family)`
     // for two-axis admission instead.
-    auto wrong = reg.by_name_pinned<safety::RecipeFamily::Kahan>(
-        recipe_names::kF32Strict);
-    (void) wrong;
+    auto wrong = reg.by_name_pinned<safety::RecipeFamily::Kahan>(recipe_names::kF32Strict);
+    (void)wrong;
     return 0;
 }

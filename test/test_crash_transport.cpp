@@ -253,7 +253,7 @@ int run_cross_thread_crash() {
 
     // The spin is bounded so that a bug which never delivers the signal
     // fails the test instead of hanging it.
-    for (int i = 0; i < 10'000'000; ++i) {
+    for (int i = 0; i < 10000000; ++i) {
         auto r = std::move(watched).template select_local<0>();
         if (!r) {
             if (r.error().resource.session_id != 99) return 1;

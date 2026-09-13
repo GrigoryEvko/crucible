@@ -24,19 +24,19 @@ using DeadlinePolicy = cs::Deadline<PriorityKey,
                                     /*NumProducers=*/4,
                                     /*NumBuckets=*/64,
                                     /*BucketCap=*/16,
-                                    /*Quantum=*/1'000'000ULL>;
+                                    /*Quantum=*/1000000ULL>;
 
 using CfsPolicy = cs::Cfs<PriorityKey,
                           /*NumProducers=*/4,
                           /*NumBuckets=*/64,
                           /*BucketCap=*/16,
-                          /*Quantum=*/100'000ULL>;
+                          /*Quantum=*/100000ULL>;
 
 using EevdfPolicy = cs::Eevdf<PriorityKey,
                               /*NumProducers=*/4,
                               /*NumBuckets=*/64,
                               /*BucketCap=*/16,
-                              /*Quantum=*/100'000ULL>;
+                              /*Quantum=*/100000ULL>;
 
 // A per-shard variant gives each shard its own calendar grid, so a
 // producer push reads nothing another thread wrote.  It trades global
@@ -45,19 +45,19 @@ using DeadlinePerShardPolicy = cs::DeadlinePerShard<PriorityKey,
                                                     /*NumShards=*/4,
                                                     /*NumBuckets=*/64,
                                                     /*BucketCap=*/16,
-                                                    /*QuantumNs=*/1'000'000ULL>;
+                                                    /*QuantumNs=*/1000000ULL>;
 
 using CfsPerShardPolicy = cs::CfsPerShard<PriorityKey,
                                           /*NumShards=*/4,
                                           /*NumBuckets=*/64,
                                           /*BucketCap=*/16,
-                                          /*Quantum=*/100'000ULL>;
+                                          /*Quantum=*/100000ULL>;
 
 using EevdfPerShardPolicy = cs::EevdfPerShard<PriorityKey,
                                               /*NumShards=*/4,
                                               /*NumBuckets=*/64,
                                               /*BucketCap=*/16,
-                                              /*Quantum=*/100'000ULL>;
+                                              /*Quantum=*/100000ULL>;
 
 static_assert(cs::SchedulerPolicy<cs::Fifo, Job>);
 static_assert(cs::SchedulerPolicy<cs::Lifo, Job>);

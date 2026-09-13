@@ -8,9 +8,7 @@
 int main() {
     crucible::cog::CogIdentity local{};
     local.uuid = crucible::cog::Uuid{1, 2};
-    auto lifeguard = crucible::canopy::mint_lifeguard_swim<4>(
-        crucible::effects::testing::init(),
-        local);
+    auto lifeguard = crucible::canopy::mint_lifeguard_swim<4>(crucible::effects::testing::init(), local);
     (void)lifeguard;
     return 0;
 }

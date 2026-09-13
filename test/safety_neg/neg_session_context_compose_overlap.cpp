@@ -10,13 +10,11 @@
 
 using namespace crucible::safety::proto;
 
-struct SessA  {};
-struct RoleA  {};
-struct RoleB  {};
+struct SessA {};
+struct RoleA {};
+struct RoleB {};
 
-using GammaLeft = Context<
-    Entry<SessA, RoleA, End>,
-    Entry<SessA, RoleB, End>>;
+using GammaLeft = Context<Entry<SessA, RoleA, End>, Entry<SessA, RoleB, End>>;
 
 // Composing Γ with itself — entries collide.
 using GammaRight = Context<Entry<SessA, RoleA, Send<int, End>>>;

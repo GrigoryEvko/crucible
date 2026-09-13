@@ -13,8 +13,7 @@ namespace stance = crucible::fixy::stance;
 
 using BadPureCopyRef = stance::PureCopy<int&>;
 
-static_assert(sizeof(BadPureCopyRef) > 0,
-    "instantiate stance::PureCopy<int&> to force its class-body "
-    "static_assert (references are not object types).");
+static_assert(sizeof(BadPureCopyRef) > 0, "instantiate stance::PureCopy<int&> to force its class-body "
+                                          "static_assert (references are not object types).");
 
 int main() { return 0; }

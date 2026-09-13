@@ -30,8 +30,7 @@
 // The point is not the CKernelTable role — it's that this is a
 // DIFFERENT ScopedView<Carrier, Tag> instantiation, so the conversion
 // from CompiledView must fail.
-static void requires_ckernel_mutable_view(
-    crucible::CKernelTable::MutableView const&) noexcept {}
+static void requires_ckernel_mutable_view(crucible::CKernelTable::MutableView const&) noexcept {}
 
 int main() {
     crucible::CrucibleContext ctx;

@@ -23,8 +23,8 @@ struct AlgebraNegFixture1_BadLattice {};
 int main() {
     // Routing through fixy::algebra::Lattice must reject BadLattice.
     static_assert(fa::Lattice<AlgebraNegFixture1_BadLattice>,
-        "fa::Lattice<BadLattice> must reject — BadLattice has no "
-        "element_type / leq / join / meet.  The fixy alias preserves "
-        "the substrate's concept gate.");
+                  "fa::Lattice<BadLattice> must reject — BadLattice has no "
+                  "element_type / leq / join / meet.  The fixy alias preserves "
+                  "the substrate's concept gate.");
     return 0;
 }

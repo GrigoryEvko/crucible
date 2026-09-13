@@ -49,7 +49,7 @@ namespace detail::is_sched_class_self_test {
 
 using F_int = ::crucible::safety::SchedClass<SchedulerPolicy_v::Fifo, int>;
 using O_int = ::crucible::safety::SchedClass<SchedulerPolicy_v::Other, int>;
-using DL_int = ::crucible::safety::SchedClass<SchedulerPolicy_v::Deadline, int, 5'000, 10'000, 20'000>;
+using DL_int = ::crucible::safety::SchedClass<SchedulerPolicy_v::Deadline, int, 5000, 10000, 20000>;
 using F_dbl = ::crucible::safety::SchedClass<SchedulerPolicy_v::Fifo, double>;
 
 static_assert(is_sched_class_v<F_int>);
@@ -79,7 +79,7 @@ static_assert(sched_class_policy_v<O_int> == SchedulerPolicy_v::Other);
 static_assert(sched_class_policy_v<DL_int> == SchedulerPolicy_v::Deadline);
 static_assert(sched_class_policy_v<F_int> != sched_class_policy_v<O_int>);
 
-static_assert(detail::is_sched_class_impl<DL_int>::deadline_ns == 10'000);
+static_assert(detail::is_sched_class_impl<DL_int>::deadline_ns == 10000);
 static_assert(detail::is_sched_class_impl<F_int>::runtime_ns == 0);
 
 }  // namespace detail::is_sched_class_self_test

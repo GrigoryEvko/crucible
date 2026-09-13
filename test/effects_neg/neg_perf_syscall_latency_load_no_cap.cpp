@@ -17,8 +17,7 @@
 
 int main() {
     // <-- this line must NOT compile (missing Init argument)
-    std::optional<crucible::perf::SyscallLatency> hub =
-        crucible::perf::SyscallLatency::load();
+    std::optional<crucible::perf::SyscallLatency> hub = crucible::perf::SyscallLatency::load();
 
     (void)hub;
     return 0;

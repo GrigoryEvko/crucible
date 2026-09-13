@@ -17,16 +17,14 @@ namespace ses = crucible::safety::proto::chaselev_session;
 namespace {
 struct Tag {};
 using Deque = concur::PermissionedChaseLevDeque<int, 64, Tag>;
-}
+}  // namespace
 
 int main() {
     Deque deque;
     auto owner_perm = safety::mint_permission_root<Deque::owner_tag>();
     auto owner = ses::mint_chaselev_owner<Deque>(deque, std::move(owner_perm));
-    auto psh = ses::mint_owner_session<Deque>(
-        ::crucible::effects::HotFgCtx{}, owner);
+    auto psh = ses::mint_owner_session<Deque>(::crucible::effects::HotFgCtx{}, owner);
     auto owner_pop = std::move(psh).select_local<ses::owner_pop_branch>();
-    [[maybe_unused]] auto bad =
-        std::move(owner_pop).recv(ses::blocking_steal_borrowed);
+    [[maybe_unused]] auto bad = std::move(owner_pop).recv(ses::blocking_steal_borrowed);
     return 0;
 }

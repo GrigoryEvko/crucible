@@ -78,24 +78,20 @@ namespace {
 // row) + Fn1 returns non-void + Fn2 takes the exact return type.
 
 inline int p_double(int x) noexcept { return x * 2; }
-inline int p_inc(int x)    noexcept { return x + 1; }
+inline int p_inc(int x) noexcept { return x + 1; }
 
 // Manual chain: caller writes the chain by hand.
-inline int chain_double_inc(int x) noexcept {
-    return p_inc(p_double(x));
-}
+inline int chain_double_inc(int x) noexcept { return p_inc(p_double(x)); }
 
 // Fused: F07-generated lambda (compile-time substitution).
 constexpr auto fused_double_inc = fuse<&p_double, &p_inc>();
 
 // ── Pair 1: int → double → int (type-changing) ────────────────────
 
-inline double p_to_double(int x)    noexcept { return static_cast<double>(x) * 1.5; }
-inline int    p_to_int   (double x) noexcept { return static_cast<int>(x); }
+inline double p_to_double(int x) noexcept { return static_cast<double>(x) * 1.5; }
+inline int p_to_int(double x) noexcept { return static_cast<int>(x); }
 
-inline int chain_promote(int x) noexcept {
-    return p_to_int(p_to_double(x));
-}
+inline int chain_promote(int x) noexcept { return p_to_int(p_to_double(x)); }
 
 constexpr auto fused_promote = fuse<&p_to_double, &p_to_int>();
 
@@ -105,16 +101,10 @@ constexpr auto fused_promote = fuse<&p_to_double, &p_to_int>();
 // computation, not the call-frame overhead.  If fusion really
 // inlines through, both pair members hit the same hot loop.
 
-inline std::uint64_t p_mix1(std::uint64_t x) noexcept {
-    return (x ^ 0xDEADBEEFCAFEBABEULL) * 0x9E3779B97F4A7C15ULL;
-}
-inline std::uint64_t p_mix2(std::uint64_t x) noexcept {
-    return (x >> 17) ^ (x << 31) ^ 0x123456789ABCDEF0ULL;
-}
+inline std::uint64_t p_mix1(std::uint64_t x) noexcept { return (x ^ 0xDEADBEEFCAFEBABEULL) * 0x9E3779B97F4A7C15ULL; }
+inline std::uint64_t p_mix2(std::uint64_t x) noexcept { return (x >> 17) ^ (x << 31) ^ 0x123456789ABCDEF0ULL; }
 
-inline std::uint64_t chain_mix(std::uint64_t x) noexcept {
-    return p_mix2(p_mix1(x));
-}
+inline std::uint64_t chain_mix(std::uint64_t x) noexcept { return p_mix2(p_mix1(x)); }
 
 constexpr auto fused_mix = fuse<&p_mix1, &p_mix2>();
 
@@ -128,7 +118,7 @@ int main() {
 
     // Volatile seeds in outer scope — the optimizer can't propagate
     // through these, so each bench iteration genuinely re-evaluates.
-    volatile int           seed_int = 7;
+    volatile int seed_int = 7;
     volatile std::uint64_t seed_u64 = 0xC0FFEE5A5A5A5A5AULL;
 
     std::printf("=== fusion zero-cost ===\n\n");
@@ -136,34 +126,40 @@ int main() {
     // Pairs of (manual chain, fused) at indices (0,1), (2,3), (4,5).
     bench::Report reports[] = {
         // Pair 0: int → int identity-shape chain.
-        bench::run("manual chain int->int (p_inc(p_double(x)))", [&]{
-            int r = chain_double_inc(seed_int);
-            bench::do_not_optimize(r);
-        }),
-        bench::run("fused int->int (fuse<&p_double,&p_inc>)", [&]{
-            int r = fused_double_inc(seed_int);
-            bench::do_not_optimize(r);
-        }),
+        bench::run("manual chain int->int (p_inc(p_double(x)))",
+                   [&] {
+                       int r = chain_double_inc(seed_int);
+                       bench::do_not_optimize(r);
+                   }),
+        bench::run("fused int->int (fuse<&p_double,&p_inc>)",
+                   [&] {
+                       int r = fused_double_inc(seed_int);
+                       bench::do_not_optimize(r);
+                   }),
 
         // Pair 1: int → double → int type-changing chain.
-        bench::run("manual chain int->double->int", [&]{
-            int r = chain_promote(seed_int);
-            bench::do_not_optimize(r);
-        }),
-        bench::run("fused int->double->int", [&]{
-            int r = fused_promote(seed_int);
-            bench::do_not_optimize(r);
-        }),
+        bench::run("manual chain int->double->int",
+                   [&] {
+                       int r = chain_promote(seed_int);
+                       bench::do_not_optimize(r);
+                   }),
+        bench::run("fused int->double->int",
+                   [&] {
+                       int r = fused_promote(seed_int);
+                       bench::do_not_optimize(r);
+                   }),
 
         // Pair 2: heavier u64 mix chain.
-        bench::run("manual chain u64 mix", [&]{
-            auto r = chain_mix(seed_u64);
-            bench::do_not_optimize(r);
-        }),
-        bench::run("fused u64 mix", [&]{
-            auto r = fused_mix(seed_u64);
-            bench::do_not_optimize(r);
-        }),
+        bench::run("manual chain u64 mix",
+                   [&] {
+                       auto r = chain_mix(seed_u64);
+                       bench::do_not_optimize(r);
+                   }),
+        bench::run("fused u64 mix",
+                   [&] {
+                       auto r = fused_mix(seed_u64);
+                       bench::do_not_optimize(r);
+                   }),
     };
 
     bench::emit_reports_text(reports);

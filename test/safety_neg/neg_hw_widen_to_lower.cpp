@@ -21,7 +21,7 @@
 #include <crucible/safety/Hw.h>
 
 namespace sf = ::crucible::safety;
-using Hw_t   = sf::HwInstruction_v;
+using Hw_t = sf::HwInstruction_v;
 
 int main() {
     sf::Hw<Hw_t::Vectorizable, int> simd_kernel{42};

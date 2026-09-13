@@ -21,7 +21,7 @@
 #include <utility>
 
 namespace conc = crucible::concurrent;
-namespace eff  = crucible::effects;
+namespace eff = crucible::effects;
 
 template <typename T>
 struct FakeConsumer {
@@ -42,10 +42,12 @@ inline void float_to_double(FakeConsumer<float>&&, FakeProducer<double>&&) noexc
 int main() {
     eff::HotFgCtx ctx;
 
-    FakeConsumer<int> in0;   FakeProducer<int>    out0;
+    FakeConsumer<int> in0;
+    FakeProducer<int> out0;
     auto stage0 = conc::mint_stage<&int_pass>(ctx, std::move(in0), std::move(out0));
 
-    FakeConsumer<float> in1; FakeProducer<double> out1;
+    FakeConsumer<float> in1;
+    FakeProducer<double> out1;
     auto stage1 = conc::mint_stage<&float_to_double>(ctx, std::move(in1), std::move(out1));
 
     auto bad = conc::mint_pipeline(ctx, std::move(stage0), std::move(stage1));

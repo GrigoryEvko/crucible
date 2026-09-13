@@ -74,7 +74,7 @@ static void test_spsc_ring_wrap() {
 
 static void test_spsc_ring_threaded() {
     SpscRing<uint64_t, 1024> r;
-    constexpr uint64_t N = 200'000;
+    constexpr uint64_t N = 200000;
     std::atomic<bool> producer_done{false};
     std::atomic<uint64_t> received{0};
     std::vector<uint64_t> mirror;
@@ -236,7 +236,7 @@ static void test_grid_hash_key_ordering() {
 static void test_grid_4x4_stress() {
     constexpr std::size_t M = 4;
     constexpr std::size_t N_consumers = 4;
-    constexpr std::size_t N_PER_PRODUCER = 50'000;
+    constexpr std::size_t N_PER_PRODUCER = 50000;
     constexpr std::size_t CAPACITY = 256;
 
     std::printf("  test_grid_4x4_stress: %zu producers × %zu items, "

@@ -59,12 +59,12 @@
 
 #include <utility>
 
-namespace eff     = ::crucible::effects;
-namespace conc    = ::crucible::concurrent;
+namespace eff = ::crucible::effects;
+namespace conc = ::crucible::concurrent;
 namespace fbridge = ::crucible::fixy::bridge;
-namespace fpipe   = ::crucible::fixy::pipe;
-namespace proto   = ::crucible::safety::proto;
-namespace saf     = ::crucible::safety;
+namespace fpipe = ::crucible::fixy::pipe;
+namespace proto = ::crucible::safety::proto;
+namespace saf = ::crucible::safety;
 
 struct EndpointTag {};
 
@@ -79,26 +79,22 @@ int main() {
     // (template-deduction + IsBridgeableDirection) passes; the
     // failure is on the second parameter.
     auto whole = saf::mint_permission_root<typename Channel::whole_tag>();
-    auto [prod_perm, cons_perm] = saf::mint_permission_split<
-        typename Channel::producer_tag,
-        typename Channel::consumer_tag>(std::move(whole));
+    auto [prod_perm, cons_perm] =
+        saf::mint_permission_split<typename Channel::producer_tag, typename Channel::consumer_tag>(std::move(whole));
     (void)prod_perm;
 
     auto cons = ch.consumer(std::move(cons_perm));
-    auto ep   = fpipe::mint_endpoint<Channel, fpipe::Direction::Consumer>(
-        ctx, cons);
+    auto ep = fpipe::mint_endpoint<Channel, fpipe::Direction::Consumer>(ctx, cons);
 
-    int                not_a_log = 0;     // wrong type — not SessionEventLog&
-    proto::RoleTagId   self{1};
-    proto::RoleTagId   peer{2};
+    int not_a_log = 0;  // wrong type — not SessionEventLog&
+    proto::RoleTagId self{1};
+    proto::RoleTagId peer{2};
 
     // Second argument must be `SessionEventLog&`; passing `int`
     // fails reference binding.  fixy::bridge:: re-export must reject
     // identically — the using-decl preserves the exact parameter
     // shape.
-    [[maybe_unused]] auto bad =
-        fbridge::mint_recording_endpoint(
-            std::move(ep), not_a_log, self, peer);
+    [[maybe_unused]] auto bad = fbridge::mint_recording_endpoint(std::move(ep), not_a_log, self, peer);
 
     return 0;
 }

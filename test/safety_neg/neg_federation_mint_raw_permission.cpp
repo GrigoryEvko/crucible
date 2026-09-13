@@ -29,44 +29,40 @@
 
 #include <utility>
 
-namespace fp   = ::crucible::safety::proto::federation;
+namespace fp = ::crucible::safety::proto::federation;
 namespace perm = ::crucible::permissions;
-namespace saf  = ::crucible::safety;
-namespace eff  = ::crucible::effects;
+namespace saf = ::crucible::safety;
+namespace eff = ::crucible::effects;
 
 namespace neg_fed_raw_perm {
 struct PeerOrg {};
 struct TraceKey {};
 struct Endpoint {};
-}
+}  // namespace neg_fed_raw_perm
 
 // fixy-CR-13: federation mints require Row<IO, Block> in ctx::row_type.
-using FederationFitCtx = decltype(
-    eff::BgCompileCtx{}.in_row<eff::Row<
-        eff::Effect::Bg, eff::Effect::Alloc,
-        eff::Effect::IO, eff::Effect::Block>>());
+using FederationFitCtx =
+    decltype(eff::BgCompileCtx{}
+                 .in_row<eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>());
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 int main() {
     auto local = saf::mint_permission_root<perm::tag::LocalCipherTag>();
-    auto handshake =
-        perm::make_self_signed_handshake<neg_fed_raw_perm::PeerOrg>(
-            /*peer_key_fp=*/perm::PeerKeyFingerprint{0xFEDCDEULL},
-            /*nonce=*/perm::Nonce{0xC0FFEEULL});
-    auto admitted = perm::mint_federation_admittance<
-        neg_fed_raw_perm::PeerOrg,
-        perm::policy::admit_orgs<neg_fed_raw_perm::PeerOrg>>(
-            local, handshake);
+    auto handshake = perm::make_self_signed_handshake<neg_fed_raw_perm::PeerOrg>(
+        /*peer_key_fp=*/perm::PeerKeyFingerprint{0xFEDCDEULL},
+        /*nonce=*/perm::Nonce{0xC0FFEEULL});
+    auto admitted =
+        perm::mint_federation_admittance<neg_fed_raw_perm::PeerOrg,
+                                         perm::policy::admit_orgs<neg_fed_raw_perm::PeerOrg>>(local, handshake);
 
     // *admitted is the raw `Permission<FederatedPeer<PeerOrg>>` — the
     // exclusive authority token.  The mint signature now expects
     // `SharedPermission<FederatedPeer<PeerOrg>>` (the empty proof
     // token from a pool guard).  No implicit conversion exists.
     FederationFitCtx ctx{};
-    auto sender = fp::mint_sender<
-        neg_fed_raw_perm::PeerOrg, neg_fed_raw_perm::TraceKey>(
+    auto sender = fp::mint_sender<neg_fed_raw_perm::PeerOrg, neg_fed_raw_perm::TraceKey>(
         ctx, neg_fed_raw_perm::Endpoint{}, *admitted);
     (void)sender;
     return 0;

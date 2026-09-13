@@ -18,13 +18,13 @@
 #include <utility>
 
 namespace cipher = ::crucible::cipher;
-namespace tier   = ::crucible::safety::cipher_tier;
+namespace tier = ::crucible::safety::cipher_tier;
 
 // Movable production-shape payload — passes std::move_constructible
 // but does NOT specialize content_hash_projection.  After CR-10 this
 // must red at the RestorableHashed gate.
 struct ProductionPayload {
-    int  data    = 0;
+    int data = 0;
     long version = 0;
 
     constexpr ProductionPayload() noexcept = default;
@@ -34,8 +34,7 @@ struct ProductionPayload {
     ProductionPayload& operator=(const ProductionPayload&) = delete;
 };
 
-using BadMint = decltype(cipher::mint_restore<ProductionPayload>(
-    std::declval<tier::Cold<ProductionPayload>>(),
-    std::declval<::crucible::ContentHash>()));
+using BadMint = decltype(cipher::mint_restore<ProductionPayload>(std::declval<tier::Cold<ProductionPayload>>(),
+                                                                 std::declval<::crucible::ContentHash>()));
 
 int main() { return sizeof(BadMint); }

@@ -27,10 +27,8 @@ struct lhs_neg_tag {};
 struct rhs_neg_tag {};
 }  // namespace
 
-inline int neg_witness_int_return(
-    crucible::safety::OwnedRegion<int, ::lhs_neg_tag>&&,
-    crucible::safety::OwnedRegion<int, ::rhs_neg_tag>&&) noexcept
-{
+inline int neg_witness_int_return(crucible::safety::OwnedRegion<int, ::lhs_neg_tag>&&,
+                                  crucible::safety::OwnedRegion<int, ::rhs_neg_tag>&&) noexcept {
     return 0;
 }
 
@@ -39,8 +37,7 @@ int main() {
     // → fails BinaryTransform's `return_type is void or OwnedRegion`
     // clause.  The output_tag_t extractor must reject this at its
     // requires clause.
-    using Tag = crucible::safety::extract::binary_transform_output_tag_t<
-        &::neg_witness_int_return>;
+    using Tag = crucible::safety::extract::binary_transform_output_tag_t<&::neg_witness_int_return>;
     Tag const t{};
     (void)t;
     return 0;

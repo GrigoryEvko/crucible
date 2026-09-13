@@ -36,12 +36,11 @@ namespace c = crucible;
 // reddens the assertion at compile time.
 using non_noexcept_fn = void (*)(void*, c::RegionNode*);
 
-static_assert(std::is_same_v<c::BackgroundThread::RegionReadyCallback::Fn,
-                              non_noexcept_fn>,
-    "FIXY-V-086 HS14 fixture #2: RegionReadyCallback::Fn MUST be the "
-    "noexcept-qualified function-pointer type; if this static_assert "
-    "passes, the noexcept tightening has regressed and a throwing "
-    "callback would silently wire into the BG-thread region-ready "
-    "path.");
+static_assert(std::is_same_v<c::BackgroundThread::RegionReadyCallback::Fn, non_noexcept_fn>,
+              "FIXY-V-086 HS14 fixture #2: RegionReadyCallback::Fn MUST be the "
+              "noexcept-qualified function-pointer type; if this static_assert "
+              "passes, the noexcept tightening has regressed and a throwing "
+              "callback would silently wire into the BG-thread region-ready "
+              "path.");
 
 int main() { return 0; }

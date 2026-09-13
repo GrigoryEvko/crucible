@@ -41,28 +41,27 @@ namespace neg_collision_r001 {
 // Refinement is left pred::True; H002 would fire on hot-path × trivial
 // refinement, so to isolate R001 the binding stays NON-hot-path until
 // the file-scope marker specialization below.
-using Bad = fn::Fn<
-    int,                                       // 1  Type
-    fn::pred::True,                            // 2  Refinement
-    fn::UsageMode::Linear,                     // 3  Usage (NOT Borrow → R002 silent)
-    fx::Row<>,                                 // 4  EffectRow — empty (R003 silent)
-    fn::SecLevel::Public,                      // 5  Security
-    fn::proto::None,                           // 6  Protocol
-    fn::lifetime::Static,                      // 7  Lifetime
-    fn::source::FromInternal,                  // 8  Source
-    fn::trust::Verified,                       // 9  Trust
-    fn::ReprKind::Opaque,                      // 10 Repr
-    fn::cost::Constant,                        // 11 Cost (bounded — H001 won't fire)
-    fn::precision::Exact,                      // 12 Precision
-    fn::space::Bounded<sizeof(int)>,           // 13 Space
-    fn::OverflowMode::Trap,                    // 14 Overflow
-    fn::MutationMode::Immutable,               // 15 Mutation
-    fn::ReentrancyMode::Coroutine,             // 16 Reentrancy — COROUTINE (R001 trigger
-                                                //                 once marks_hot_path is on)
-    fn::size_pol::Sized<sizeof(int)>,          // 17 Size
-    /*Version=*/1,                             // 18 Version
-    fn::stale::Fresh                           // 19 Staleness
->;
+using Bad = fn::Fn<int,  // 1  Type
+                   fn::pred::True,  // 2  Refinement
+                   fn::UsageMode::Linear,  // 3  Usage (NOT Borrow → R002 silent)
+                   fx::Row<>,  // 4  EffectRow — empty (R003 silent)
+                   fn::SecLevel::Public,  // 5  Security
+                   fn::proto::None,  // 6  Protocol
+                   fn::lifetime::Static,  // 7  Lifetime
+                   fn::source::FromInternal,  // 8  Source
+                   fn::trust::Verified,  // 9  Trust
+                   fn::ReprKind::Opaque,  // 10 Repr
+                   fn::cost::Constant,  // 11 Cost (bounded — H001 won't fire)
+                   fn::precision::Exact,  // 12 Precision
+                   fn::space::Bounded<sizeof(int)>,  // 13 Space
+                   fn::OverflowMode::Trap,  // 14 Overflow
+                   fn::MutationMode::Immutable,  // 15 Mutation
+                   fn::ReentrancyMode::Coroutine,  // 16 Reentrancy — COROUTINE (R001 trigger
+                   //                 once marks_hot_path is on)
+                   fn::size_pol::Sized<sizeof(int)>,  // 17 Size
+                   /*Version=*/1,  // 18 Version
+                   fn::stale::Fresh  // 19 Staleness
+                   >;
 
 }  // namespace neg_collision_r001
 
@@ -74,8 +73,8 @@ using Bad = fn::Fn<
 // asserts so R001 appears in the diagnostic regardless of
 // first_failure ordering.
 namespace crucible::safety::fn::collision {
-    template <> struct marks_hot_path<::neg_collision_r001::Bad>
-        : std::true_type {};
+template <>
+struct marks_hot_path<::neg_collision_r001::Bad> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 [[maybe_unused]] neg_collision_r001::Bad the_fixture{};

@@ -9,9 +9,7 @@
 #include <crucible/perf/SyscallTpBtf.h>
 
 int main() {
-    auto hub = crucible::perf::mint_syscall_tp_btf(
-        crucible::effects::BgDrainCtx{},
-        crucible::effects::testing::init());
+    auto hub = crucible::perf::mint_syscall_tp_btf(crucible::effects::BgDrainCtx{}, crucible::effects::testing::init());
     (void)hub;
     return 0;
 }

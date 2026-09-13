@@ -21,7 +21,7 @@ constexpr void fork_child(Parent const&, Child const&) noexcept {}
 
 int main() {
     eff::BgDrainCtx parent;
-    eff::HotFgCtx   child;       // Cap=Fg vs parent Cap=Bg
-    fork_child(parent, child);   // IsSubCtx<HotFgCtx, BgDrainCtx> = false
+    eff::HotFgCtx child;  // Cap=Fg vs parent Cap=Bg
+    fork_child(parent, child);  // IsSubCtx<HotFgCtx, BgDrainCtx> = false
     return 0;
 }

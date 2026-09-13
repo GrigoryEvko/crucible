@@ -71,10 +71,9 @@ struct RoleA {};
 // involution MUST fail post-fixy-A2-003 — the new CheckpointedSession
 // specialization fires, projects to false_type via the inner
 // Offer<Sender<...>, ...> non-involution from fixy-CR-11.
-static_assert(proto::is_dual_involutive_v<
-    proto::CheckpointedSession<
-        proto::Offer<proto::Sender<RoleA>, proto::Recv<int, proto::End>>,
-        proto::End>>,
+static_assert(
+    proto::is_dual_involutive_v<
+        proto::CheckpointedSession<proto::Offer<proto::Sender<RoleA>, proto::Recv<int, proto::End>>, proto::End>>,
     "fixy-A2-003 regression: CheckpointedSession wraps Sender-annotated "
     "Offer in its base branch; involution must propagate inner non-"
     "involution through both branches, but the primary template "

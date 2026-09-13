@@ -13,10 +13,9 @@
 
 #include <crucible/fixy/grant/Stack.h>
 
-namespace gr  = crucible::fixy::grant;
+namespace gr = crucible::fixy::grant;
 namespace stk = crucible::fixy::grant::stack;
 
-static_assert(gr::IsGrantTag<const stk::vla_ok>,
-              "cv-qualified stack grant tag must be rejected by IsGrantTag");
+static_assert(gr::IsGrantTag<const stk::vla_ok>, "cv-qualified stack grant tag must be rejected by IsGrantTag");
 
 int main() { return 0; }

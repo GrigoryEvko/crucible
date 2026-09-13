@@ -23,7 +23,7 @@
 // byte-stable identity); IsFamilyB<ContentHash> is false; the static
 // assertion below trips.
 static_assert(::crucible::IsFamilyB<::crucible::ContentHash>,
-    "WRAP-Types-3 #1069 cross-lane fixture: this static_assert MUST "
-    "fail at compile time because ContentHash belongs to Family-A.");
+              "WRAP-Types-3 #1069 cross-lane fixture: this static_assert MUST "
+              "fail at compile time because ContentHash belongs to Family-A.");
 
 int main() { return 0; }

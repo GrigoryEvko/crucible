@@ -43,8 +43,7 @@ int main() {
     // (`bounded_above<TERMINAL>(v)`) to be exercised at compile time.
     // v == UINT8_MAX → TERMINAL < UINT8_MAX → predicate(v) == false
     // → contract violation → not a constant expression → ill-formed.
-    constexpr crucible::ValidTraceNodeKindRaw bad{
-        uint8_t{UINT8_MAX}};
+    constexpr crucible::ValidTraceNodeKindRaw bad{uint8_t{UINT8_MAX}};
     (void)bad;
     return 0;
 }

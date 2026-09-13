@@ -13,6 +13,6 @@
 int main() {
     auto a = crucible::safety::SwissTableBuffer<void*>::allocate(64);
     auto b = crucible::safety::SwissTableBuffer<void*>::allocate(64);
-    a = b;   // deleted copy-assignment → compile error
+    a = b;  // deleted copy-assignment → compile error
     return 0;
 }

@@ -54,7 +54,7 @@ enum class WireguardError : std::uint8_t {
 
 [[nodiscard]] std::string_view wireguard_error_name(WireguardError error) noexcept;
 
-using WireguardPort = safety::Bounded<std::uint16_t{1}, std::uint16_t{65'535}, std::uint16_t>;
+using WireguardPort = safety::Bounded<std::uint16_t{1}, std::uint16_t{65535}, std::uint16_t>;
 using WireguardCidrPrefix = safety::Bounded<std::uint8_t{0}, std::uint8_t{32}, std::uint8_t>;
 
 struct WireguardKeyB64 {

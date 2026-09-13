@@ -40,8 +40,8 @@ enum class AdmissionDecisionKind : std::uint8_t {
 
 using PositiveBackpressureBytes = safety::Positive<std::uint32_t>;
 using PositiveConnectionLimit = safety::Positive<std::uint16_t>;
-using ResourcePressurePpm = safety::Bounded<std::uint32_t{0}, std::uint32_t{1'000'000}, std::uint32_t>;
-using ResourceLimitPpm = safety::Bounded<std::uint32_t{1}, std::uint32_t{1'000'000}, std::uint32_t>;
+using ResourcePressurePpm = safety::Bounded<std::uint32_t{0}, std::uint32_t{1000000}, std::uint32_t>;
+using ResourceLimitPpm = safety::Bounded<std::uint32_t{1}, std::uint32_t{1000000}, std::uint32_t>;
 
 struct ConnectionRequest {
     SocketFd socket;
@@ -55,7 +55,7 @@ struct ResourcePressure {
 
 struct ResourceLimit {
     effects::ResourceKind kind = effects::ResourceKind::NicQ;
-    ResourceLimitPpm reject_at_or_above_ppm{std::uint32_t{950'000}};
+    ResourceLimitPpm reject_at_or_above_ppm{std::uint32_t{950000}};
 };
 
 struct AdmissionDecision {
@@ -63,7 +63,7 @@ struct AdmissionDecision {
     SocketFd socket;
     effects::ResourceKind limiting_resource = effects::ResourceKind::NicQ;
     ResourcePressurePpm observed_ppm{std::uint32_t{0}};
-    ResourceLimitPpm threshold_ppm{std::uint32_t{1'000'000}};
+    ResourceLimitPpm threshold_ppm{std::uint32_t{1000000}};
     std::uint32_t retry_after_ms = 0;
     std::uint64_t sequence = 0;
 };
@@ -88,7 +88,7 @@ admit_connection_limit(std::uint16_t limit) noexcept {
 
 [[nodiscard]] constexpr std::expected<ResourcePressurePpm, BackpressureError>
 admit_resource_pressure_ppm(std::uint32_t ppm) noexcept {
-    if (ppm > 1'000'000u) {
+    if (ppm > 1000000u) {
         return std::unexpected(BackpressureError::InvalidResourcePressure);
     }
     return ResourcePressurePpm{ppm, typename ResourcePressurePpm::Trusted{}};
@@ -96,7 +96,7 @@ admit_resource_pressure_ppm(std::uint32_t ppm) noexcept {
 
 [[nodiscard]] constexpr std::expected<ResourceLimitPpm, BackpressureError>
 admit_resource_limit_ppm(std::uint32_t ppm) noexcept {
-    if (ppm == 0 || ppm > 1'000'000u) {
+    if (ppm == 0 || ppm > 1000000u) {
         return std::unexpected(BackpressureError::InvalidResourceLimit);
     }
     return ResourceLimitPpm{ppm, typename ResourceLimitPpm::Trusted{}};

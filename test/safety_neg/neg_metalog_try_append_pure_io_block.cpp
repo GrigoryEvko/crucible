@@ -25,7 +25,6 @@ namespace eff = ::crucible::effects;
 int main() {
     crucible::MetaLog log;
     crucible::TensorMeta m{};
-    (void)log.try_append_pure<
-        eff::Row<eff::Effect::IO, eff::Effect::Block>>(&m, 1);
+    (void)log.try_append_pure<eff::Row<eff::Effect::IO, eff::Effect::Block>>(&m, 1);
     return 0;
 }

@@ -21,10 +21,8 @@ struct Right {};
 namespace crucible::safety {
 
 template <>
-struct splits_into_pack<
-    neg_permission_fork_no_ctx::Whole,
-    neg_permission_fork_no_ctx::Left,
-    neg_permission_fork_no_ctx::Right> : std::true_type {};
+struct splits_into_pack<neg_permission_fork_no_ctx::Whole, neg_permission_fork_no_ctx::Left,
+                        neg_permission_fork_no_ctx::Right> : std::true_type {};
 
 }  // namespace crucible::safety
 
@@ -35,10 +33,8 @@ int main() {
 
     auto whole = safe::mint_permission_root<tags::Whole>();
     auto rebuilt = safe::mint_permission_fork<tags::Left, tags::Right>(
-        std::move(whole),
-        [](safe::Permission<tags::Left>, eff::BgDrainCtx const&) noexcept {},
-        [](safe::Permission<tags::Right>, eff::BgDrainCtx const&) noexcept {}
-    );
+        std::move(whole), [](safe::Permission<tags::Left>, eff::BgDrainCtx const&) noexcept {},
+        [](safe::Permission<tags::Right>, eff::BgDrainCtx const&) noexcept {});
     safe::permission_drop(std::move(rebuilt));
     return 0;
 }

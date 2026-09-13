@@ -32,10 +32,10 @@ struct Right {};
 }  // namespace neg_fixy_spawn_mint_spawn_no_splits
 
 int main() {
-    namespace tags   = neg_fixy_spawn_mint_spawn_no_splits;
-    namespace eff    = ::crucible::effects;
+    namespace tags = neg_fixy_spawn_mint_spawn_no_splits;
+    namespace eff = ::crucible::effects;
     namespace fspawn = ::crucible::fixy::spawn;
-    namespace safe   = ::crucible::safety;
+    namespace safe = ::crucible::safety;
 
     // BgDrainCtx::row contains Effect::Bg, so the Bg-admission
     // predicate inside CtxFitsSpawn passes.  The remaining gate —
@@ -43,11 +43,8 @@ int main() {
     // specialization exists.
     auto whole = safe::mint_permission_root<tags::Whole>();
     auto rebuilt = fspawn::mint_spawn<tags::Left, tags::Right>(
-        eff::BgDrainCtx{},
-        std::move(whole),
-        [](safe::Permission<tags::Left>, eff::BgDrainCtx const&) noexcept {},
-        [](safe::Permission<tags::Right>, eff::BgDrainCtx const&) noexcept {}
-    );
+        eff::BgDrainCtx{}, std::move(whole), [](safe::Permission<tags::Left>, eff::BgDrainCtx const&) noexcept {},
+        [](safe::Permission<tags::Right>, eff::BgDrainCtx const&) noexcept {});
     safe::permission_drop(std::move(rebuilt));
     return 0;
 }

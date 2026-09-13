@@ -27,9 +27,7 @@ inline void neg_witness_nullary() noexcept {}
 
 int main() {
     // arity 0 → fails BinaryTransform's `arity_v == 2` clause.
-    constexpr bool same =
-        crucible::safety::extract::binary_transform_has_same_tag_v<
-            &::neg_witness_nullary>;
+    constexpr bool same = crucible::safety::extract::binary_transform_has_same_tag_v<&::neg_witness_nullary>;
     (void)same;
     return 0;
 }

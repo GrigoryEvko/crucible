@@ -9,17 +9,14 @@
 
 namespace {
 struct Tag {};
-using Edge = ::crucible::concurrent::PermissionedChainEdge<
-    ::crucible::concurrent::VendorBackend::CPU, Tag>;
-}
+using Edge = ::crucible::concurrent::PermissionedChainEdge<::crucible::concurrent::VendorBackend::CPU, Tag>;
+}  // namespace
 
 int main() {
-    Edge edge{::crucible::concurrent::PlanId{1},
-              ::crucible::concurrent::PlanId{2},
+    Edge edge{::crucible::concurrent::PlanId{1}, ::crucible::concurrent::PlanId{2},
               ::crucible::concurrent::ChainEdgeId{3}};
     auto whole = ::crucible::safety::mint_permission_root<Edge::whole_tag>();
-    auto [sp, wp] = ::crucible::safety::mint_permission_split<
-        Edge::signaler_tag, Edge::waiter_tag>(std::move(whole));
+    auto [sp, wp] = ::crucible::safety::mint_permission_split<Edge::signaler_tag, Edge::waiter_tag>(std::move(whole));
     (void)wp;
     auto signaler = edge.signaler(std::move(sp));
     [[maybe_unused]] bool ok = signaler.try_wait(signaler.expected_signal());

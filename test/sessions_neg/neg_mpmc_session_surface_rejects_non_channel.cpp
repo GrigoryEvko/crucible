@@ -39,7 +39,7 @@ struct AlmostChannel {
     // No value_type, user_tag, producer_tag, consumer_tag.
     // No producer() / consumer() factory methods.
 };
-}
+}  // namespace
 
 int main() {
     AlmostChannel ch;
@@ -48,8 +48,7 @@ int main() {
     // is not satisfied because AlmostChannel lacks value_type, user_tag,
     // producer_tag, consumer_tag, ch.producer(), ch.consumer(),
     // try_push, try_pop.
-    [[maybe_unused]] auto bad = ses::mint_mpmc_producer_session<AlmostChannel>(
-        ::crucible::effects::HotFgCtx{}, handle);
+    [[maybe_unused]] auto bad = ses::mint_mpmc_producer_session<AlmostChannel>(::crucible::effects::HotFgCtx{}, handle);
     (void)ch;
     return 0;
 }

@@ -30,13 +30,13 @@
 #include <crucible/safety/OwnedMmap.h>
 
 namespace {
-    // Distinct empty struct tag — per-call-site identity discipline.
-    struct ProbeRegion {};
+// Distinct empty struct tag — per-call-site identity discipline.
+struct ProbeRegion {};
 
-    // Phantom Prot / Share — safety::OwnedMmap never interprets them;
-    // the test only needs distinct types to satisfy the template.
-    struct ProbeProt  {};
-    struct ProbeShare {};
+// Phantom Prot / Share — safety::OwnedMmap never interprets them;
+// the test only needs distinct types to satisfy the template.
+struct ProbeProt {};
+struct ProbeShare {};
 }  // namespace
 
 int main() {
@@ -46,7 +46,6 @@ int main() {
     ::crucible::safety::OwnedMmap<ProbeRegion, ProbeProt, ProbeShare> original{};
 
     // Should FAIL: copy ctor is deleted; OwnedMmap is exclusive.
-    [[maybe_unused]] ::crucible::safety::OwnedMmap<ProbeRegion, ProbeProt, ProbeShare>
-        alias{original};
+    [[maybe_unused]] ::crucible::safety::OwnedMmap<ProbeRegion, ProbeProt, ProbeShare> alias{original};
     return 0;
 }

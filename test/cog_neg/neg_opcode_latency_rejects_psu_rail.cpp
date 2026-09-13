@@ -65,7 +65,9 @@ namespace cog = crucible::cog;
 // catalog fails the concept gate at substitution time.
 template <cog::CogKind K>
     requires cog::HasOpcodeTable<K>
-constexpr int lookup_opcodes() noexcept { return 1; }
+constexpr int lookup_opcodes() noexcept {
+    return 1;
+}
 
 // CogKind::PsuRail is a power-supply rail atom — no schedulable
 // workload, no opcode catalog, no OpcodeLatencyTable specialisation.
@@ -74,11 +76,11 @@ constexpr int lookup_opcodes() noexcept { return 1; }
 // clause refuses the substitution and the build fails here at the
 // call site.
 static_assert(lookup_opcodes<cog::CogKind::PsuRail>() == 1,
-    "GAPS-187: cog::HasOpcodeTable concept MUST refuse non-substrate "
-    "CogKind values.  If this static_assert ever evaluates, a future "
-    "mint_cog_mimic factory would accept PsuRail as a target and "
-    "produce a Mimic stub bound to a Cog with no compute substrate AND "
-    "no opcode catalog — Cog-substrate-binding partition defense "
-    "compromised at the per-opcode latency layer.");
+              "GAPS-187: cog::HasOpcodeTable concept MUST refuse non-substrate "
+              "CogKind values.  If this static_assert ever evaluates, a future "
+              "mint_cog_mimic factory would accept PsuRail as a target and "
+              "produce a Mimic stub bound to a Cog with no compute substrate AND "
+              "no opcode catalog — Cog-substrate-binding partition defense "
+              "compromised at the per-opcode latency layer.");
 
 int main() { return 0; }

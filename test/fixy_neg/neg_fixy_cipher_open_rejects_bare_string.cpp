@@ -23,7 +23,6 @@
 int main() {
     // Should FAIL: bare const-char* literal cannot implicitly convert
     // to Path<External>; the explicit Tagged ctor refuses the bridge.
-    [[maybe_unused]] auto cipher =
-        ::crucible::Cipher::open("/tmp/crucible_neg_v031_bare_string");
+    [[maybe_unused]] auto cipher = ::crucible::Cipher::open("/tmp/crucible_neg_v031_bare_string");
     return 0;
 }

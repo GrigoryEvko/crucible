@@ -15,7 +15,7 @@
 using namespace crucible::safety;
 
 int main() {
-    CipherTier<CipherTierTag_v::Hot,  int> hot_value{42};
+    CipherTier<CipherTierTag_v::Hot, int> hot_value{42};
     CipherTier<CipherTierTag_v::Cold, int> cold_value{7};
 
     // Should FAIL: CipherTier<Hot, int>::swap takes

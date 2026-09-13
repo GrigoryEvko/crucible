@@ -48,28 +48,26 @@
 #include <atomic>
 
 namespace {
-    // Production-shape Pinned consumer: a cache-line-aligned ring with
-    // a cross-thread atomic head.  The address IS the identity —
-    // moving it would leave the consumer thread reading from the wrong
-    // memory.  CRUCIBLE_HOT TraceRing.h:* uses exactly this shape.
-    struct PinnedRing : ::crucible::safety::Pinned<PinnedRing> {
-        alignas(64) std::atomic<unsigned long> head_{0};
-        alignas(64) std::atomic<unsigned long> tail_{0};
-    };
-}
+// Production-shape Pinned consumer: a cache-line-aligned ring with
+// a cross-thread atomic head.  The address IS the identity —
+// moving it would leave the consumer thread reading from the wrong
+// memory.  CRUCIBLE_HOT TraceRing.h:* uses exactly this shape.
+struct PinnedRing : ::crucible::safety::Pinned<PinnedRing> {
+    alignas(64) std::atomic<unsigned long> head_{0};
+    alignas(64) std::atomic<unsigned long> tail_{0};
+};
+}  // namespace
 
 // Anchor: default-constructing in place is allowed — that's the only
 // path to OBTAIN a Pinned object.  This call compiles.
-[[maybe_unused]] static PinnedRing anchor_make_pinned() {
-    return PinnedRing{};
-}
+[[maybe_unused]] static PinnedRing anchor_make_pinned() { return PinnedRing{}; }
 
 // VIOLATION: PinnedRing inherits a deleted copy ctor from
 // Pinned<PinnedRing>.  Attempting to copy-construct triggers the
 // deletion with its load-bearing reason.  GCC emits "use of deleted
 // function" + the "stable address" reason string.
 [[maybe_unused]] static PinnedRing offending_pinned_copy(const PinnedRing& source) {
-    return PinnedRing{source};       // ERROR: copy ctor deleted
+    return PinnedRing{source};  // ERROR: copy ctor deleted
 }
 
 int main() { return 0; }

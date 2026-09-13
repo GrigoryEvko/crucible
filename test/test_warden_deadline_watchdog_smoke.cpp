@@ -175,7 +175,7 @@ int main() {
                          policy.deadline_miss_budget);
             ++failures;
         }
-        const uint64_t expected_window_ns = static_cast<uint64_t>(policy.watchdog_window_sec) * 1'000'000'000ull;
+        const uint64_t expected_window_ns = static_cast<uint64_t>(policy.watchdog_window_sec) * 1000000000ull;
         if (watchdog.window_ns() != expected_window_ns) {
             std::fprintf(stderr, "window_ns() = %llu; expected %llu\n",
                          static_cast<unsigned long long>(watchdog.window_ns()),

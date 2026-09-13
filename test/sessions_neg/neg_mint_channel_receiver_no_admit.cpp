@@ -8,7 +8,7 @@
 #include <crucible/effects/Computation.h>
 #include <crucible/sessions/SessionMint.h>
 
-namespace eff   = crucible::effects;
+namespace eff = crucible::effects;
 namespace proto = crucible::safety::proto;
 
 struct Payload {};
@@ -20,7 +20,6 @@ int main() {
 
     eff::BgCompileCtx sender;
     eff::HotFgCtx receiver;
-    [[maybe_unused]] auto channel =
-        proto::mint_channel<Proto>(sender, receiver, Resource{}, Resource{});
+    [[maybe_unused]] auto channel = proto::mint_channel<Proto>(sender, receiver, Resource{}, Resource{});
     return 0;
 }

@@ -40,7 +40,8 @@ int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
     const Config cfg = parse_args(argc, argv);
 
-    return run("compute_storage_nbytes saturation under stress", cfg,
+    return run(
+        "compute_storage_nbytes saturation under stress", cfg,
         [](Rng& rng) {
             // Mix of normal-scale and overflow-inducing TensorMetas.
             // 50% normal: small sizes (1..1024), small strides
@@ -55,18 +56,18 @@ int main(int argc, char** argv) {
             const uint32_t bucket = rng.next_below(100);
             for (uint8_t d = 0; d < m.ndim; ++d) {
                 if (bucket < 50) {
-                    m.sizes[d]   = tensor_dim(static_cast<int64_t>(rng.next_below(1024) + 1));
+                    m.sizes[d] = tensor_dim(static_cast<int64_t>(rng.next_below(1024) + 1));
                     m.strides[d] = tensor_dim(static_cast<int64_t>(rng.next_below(1024) + 1));
                 } else if (bucket < 80) {
-                    m.sizes[d]   = tensor_dim(static_cast<int64_t>(rng.next32()));
+                    m.sizes[d] = tensor_dim(static_cast<int64_t>(rng.next32()));
                     m.strides[d] = tensor_dim(static_cast<int64_t>(rng.next32()));
                 } else {
                     // Pathological: dims at the top of the valid range.
-                    const int64_t ceil_dim = static_cast<int64_t>(
-                        rng.next64() % (static_cast<uint64_t>(kMaxTensorDimExtent) + 1));
-                    m.sizes[d]   = tensor_dim(ceil_dim);
-                    m.strides[d] = tensor_dim(static_cast<int64_t>(
-                        rng.next64() % (static_cast<uint64_t>(kMaxTensorDimExtent) + 1)));
+                    const int64_t ceil_dim =
+                        static_cast<int64_t>(rng.next64() % (static_cast<uint64_t>(kMaxTensorDimExtent) + 1));
+                    m.sizes[d] = tensor_dim(ceil_dim);
+                    m.strides[d] = tensor_dim(
+                        static_cast<int64_t>(rng.next64() % (static_cast<uint64_t>(kMaxTensorDimExtent) + 1)));
                 }
             }
             m.dtype = random_scalar_type(rng);

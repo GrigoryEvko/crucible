@@ -37,8 +37,8 @@ using Bad = fn::Fn<sf::StdioPinned<SIO::BufferedWrite, int>>;  // Stdio tier >= 
 // Mark Bad as hot-path — required to fire S001 (the rule guards
 // marks_hot_path AND a Stdio tier >= BufferedWrite).
 namespace crucible::safety::fn::collision {
-    template <> struct marks_hot_path<::neg_collision_s001::Bad>
-        : std::true_type {};
+template <>
+struct marks_hot_path<::neg_collision_s001::Bad> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 [[maybe_unused]] neg_collision_s001::Bad the_fixture{};

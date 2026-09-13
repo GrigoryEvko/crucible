@@ -36,16 +36,14 @@ struct DomainSecurityTag final : ::crucible::fixy::grant::grant_base {};
 namespace crucible::fixy::grant {
 template <>
 struct which_dim<::DomainSecurityTag> {
-    static constexpr ::crucible::fixy::dim::DimensionAxis value =
-        ::crucible::fixy::dim::DimensionAxis::Security;
+    static constexpr ::crucible::fixy::dim::DimensionAxis value = ::crucible::fixy::dim::DimensionAxis::Security;
 };
 }  // namespace crucible::fixy::grant
 
 // Probe the FOUND-026 diagnostic surface — Security-axis specs would
 // supply `::value` + `::value_type`; with no specialization the
 // primary template fires its structured static_assert naming the tag.
-inline constexpr auto kProbeFailure =
-    ::crucible::fixy::detail::resolve::project<DomainSecurityTag>::value;
+inline constexpr auto kProbeFailure = ::crucible::fixy::detail::resolve::project<DomainSecurityTag>::value;
 
 int main() {
     static_cast<void>(kProbeFailure);

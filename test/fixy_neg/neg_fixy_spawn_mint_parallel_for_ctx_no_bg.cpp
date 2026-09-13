@@ -38,22 +38,18 @@ static int storage_[8];
 }  // namespace neg_fixy_spawn_mint_parallel_for_ctx_no_bg
 
 int main() {
-    namespace tags   = neg_fixy_spawn_mint_parallel_for_ctx_no_bg;
-    namespace eff    = ::crucible::effects;
+    namespace tags = neg_fixy_spawn_mint_parallel_for_ctx_no_bg;
+    namespace eff = ::crucible::effects;
     namespace fspawn = ::crucible::fixy::spawn;
-    namespace safe   = ::crucible::safety;
+    namespace safe = ::crucible::safety;
 
     auto whole = safe::mint_permission_root<tags::Whole>();
-    auto region = safe::OwnedRegion<int, tags::Whole>::wrap(
-        tags::storage_, 8, std::move(whole));
+    auto region = safe::OwnedRegion<int, tags::Whole>::wrap(tags::storage_, 8, std::move(whole));
 
     // HotFgCtx::row = Row<> — no Bg.  CtxFitsParallelFor folds
     // CtxOwnsCapability<HotFgCtx, Effect::Bg> → fail.
-    auto rebuilt = fspawn::mint_parallel_for<2>(
-        eff::HotFgCtx{},
-        std::move(region),
-        [](safe::OwnedRegion<int, safe::Slice<tags::Whole, 0>>&&) noexcept {}
-    );
+    auto rebuilt = fspawn::mint_parallel_for<2>(eff::HotFgCtx{}, std::move(region),
+                                                [](safe::OwnedRegion<int, safe::Slice<tags::Whole, 0>>&&) noexcept {});
     (void)rebuilt;
     return 0;
 }

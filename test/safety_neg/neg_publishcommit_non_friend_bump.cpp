@@ -51,13 +51,13 @@
 namespace {
 
 struct PipelineTag {};
-struct StageFourPublisher {};   // The ONLY authorized writer.
+struct StageFourPublisher {};  // The ONLY authorized writer.
 
 using Cell = ::crucible::safety::PublishCommitCell<PipelineTag, StageFourPublisher>;
 
 // Anchor: reads are public, callable from anywhere.
 [[maybe_unused]] static uint64_t anchor_load(const Cell& cell) noexcept {
-    return cell.load_acquire();   // legal: load_acquire is public
+    return cell.load_acquire();  // legal: load_acquire is public
 }
 
 // A non-WriteAuth type pretending to bump.  Stage-3 (build) is the

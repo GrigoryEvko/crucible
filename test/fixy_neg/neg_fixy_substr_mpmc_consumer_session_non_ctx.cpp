@@ -16,7 +16,7 @@
 #include <crucible/fixy/Substr.h>
 
 namespace fsubstr = crucible::fixy::substr;
-namespace conc    = crucible::concurrent;
+namespace conc = crucible::concurrent;
 
 namespace neg_fixy_substr_mpmc_consumer_session_non_ctx {
 struct UserTag {};
@@ -24,14 +24,11 @@ struct NotAnExecCtx {};
 }  // namespace neg_fixy_substr_mpmc_consumer_session_non_ctx
 
 int main() {
-    conc::PermissionedMpmcChannel<int, 16,
-        neg_fixy_substr_mpmc_consumer_session_non_ctx::UserTag> ch;
+    conc::PermissionedMpmcChannel<int, 16, neg_fixy_substr_mpmc_consumer_session_non_ctx::UserTag> ch;
 
     auto consumer_opt = ch.consumer();
 
-    [[maybe_unused]] auto bad =
-        fsubstr::mpmc::mint_mpmc_consumer_session<decltype(ch)>(
-            neg_fixy_substr_mpmc_consumer_session_non_ctx::NotAnExecCtx{},
-            *consumer_opt);
+    [[maybe_unused]] auto bad = fsubstr::mpmc::mint_mpmc_consumer_session<decltype(ch)>(
+        neg_fixy_substr_mpmc_consumer_session_non_ctx::NotAnExecCtx{}, *consumer_opt);
     return 0;
 }

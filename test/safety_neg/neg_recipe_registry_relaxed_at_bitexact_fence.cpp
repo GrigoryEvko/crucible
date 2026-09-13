@@ -55,9 +55,9 @@ using namespace crucible::safety;
 // the CPU-oracle / deterministic-replay / cross-vendor numerics CI
 // pattern that FOUND-G04 production sites flow into.
 template <typename W>
-    requires (W::template satisfies<Tolerance::BITEXACT>)
+    requires(W::template satisfies<Tolerance::BITEXACT>)
 static int bitexact_fence_consumer(W wrapped) noexcept {
-    (void) std::move(wrapped).consume();
+    (void)std::move(wrapped).consume();
     return 0;
 }
 

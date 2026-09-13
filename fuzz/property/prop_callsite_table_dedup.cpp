@@ -97,11 +97,7 @@ namespace {
 constexpr char kAlphabet[] = "abcdefghijklmnopqrstuvwxyz0123456789";
 constexpr uint32_t kAlphabetLen = sizeof(kAlphabet) - 1;  // exclude NUL
 
-[[nodiscard]] std::string random_ident(
-    crucible::fuzz::prop::Rng& rng,
-    uint32_t min_len,
-    uint32_t max_len) noexcept
-{
+[[nodiscard]] std::string random_ident(crucible::fuzz::prop::Rng& rng, uint32_t min_len, uint32_t max_len) noexcept {
     const uint32_t len = min_len + rng.next_below(max_len - min_len + 1);
     std::string s(len, '\0');
     for (uint32_t i = 0; i < len; ++i) {
@@ -119,23 +115,24 @@ int main(int argc, char** argv) {
     // Each iteration does O(N) inserts + O(N²) append-order scan at
     // N=48; cap at 5k iters to keep the sanitizer-instrumented runtime
     // reasonable under ctest's budget.
-    if (cfg.iterations > 5'000) cfg.iterations = 5'000;
+    if (cfg.iterations > 5000) cfg.iterations = 5000;
 
-    return run("CallSiteTable dedup + round-trip", cfg,
+    return run(
+        "CallSiteTable dedup + round-trip", cfg,
         [](Rng& rng) {
             // 48 tuples; dedup the hashes within the batch up front so
             // the size invariant in the checker is exact rather than
             // "≤ count, adjusted for collisions".
             constexpr unsigned N = 48;
             struct Record {
-                uint64_t    hash_raw;
+                uint64_t hash_raw;
                 std::string filename;
                 std::string funcname;
-                int32_t     lineno;
+                int32_t lineno;
             };
             struct Batch {
                 std::array<Record, N> recs;
-                unsigned              count;
+                unsigned count;
             };
             Batch b{};
             b.count = 0;
@@ -152,7 +149,10 @@ int main(int argc, char** argv) {
                 // Intra-batch dedup — linear scan since N is tiny.
                 bool duplicate = false;
                 for (unsigned j = 0; j < b.count; ++j) {
-                    if (b.recs[j].hash_raw == h) { duplicate = true; break; }
+                    if (b.recs[j].hash_raw == h) {
+                        duplicate = true;
+                        break;
+                    }
                 }
                 if (duplicate) continue;
 
@@ -160,7 +160,7 @@ int main(int argc, char** argv) {
                     .hash_raw = h,
                     .filename = random_ident(rng, 4, 24),
                     .funcname = random_ident(rng, 4, 16),
-                    .lineno   = static_cast<int32_t>(rng.next_below(100'000)),
+                    .lineno = static_cast<int32_t>(rng.next_below(100000)),
                 };
                 ++b.count;
             }
@@ -191,8 +191,7 @@ int main(int argc, char** argv) {
                 CallSiteTable::NonZeroHash nz{h};
                 CallSiteTable::ExternalName fn{b.recs[i].filename};
                 CallSiteTable::ExternalName gn{b.recs[i].funcname};
-                t.insert(std::move(nz), std::move(fn), std::move(gn),
-                         b.recs[i].lineno);
+                t.insert(std::move(nz), std::move(fn), std::move(gn), b.recs[i].lineno);
             }
 
             // Property (size == distinct count): the generator
@@ -208,10 +207,10 @@ int main(int argc, char** argv) {
                 if (!t.has(h)) return false;
 
                 const auto& e = t.entries[i];
-                if (e.hash != h)                                 return false;
-                if (e.filename.value() != b.recs[i].filename)    return false;
-                if (e.funcname.value() != b.recs[i].funcname)    return false;
-                if (e.lineno.value()   != b.recs[i].lineno)      return false;
+                if (e.hash != h) return false;
+                if (e.filename.value() != b.recs[i].filename) return false;
+                if (e.funcname.value() != b.recs[i].funcname) return false;
+                if (e.lineno.value() != b.recs[i].lineno) return false;
             }
 
             // ── Dedup phase: re-insert every record with DIFFERENT
@@ -224,15 +223,14 @@ int main(int argc, char** argv) {
                 CallSiteTable::NonZeroHash nz{h};
                 CallSiteTable::ExternalName fn{std::string{"OVERWRITTEN"}};
                 CallSiteTable::ExternalName gn{std::string{"ATTEMPT"}};
-                t.insert(std::move(nz), std::move(fn), std::move(gn),
-                         b.recs[i].lineno + 777);
+                t.insert(std::move(nz), std::move(fn), std::move(gn), b.recs[i].lineno + 777);
             }
             if (t.size() != b.count) return false;
             for (unsigned i = 0; i < b.count; ++i) {
                 const auto& e = t.entries[i];
                 if (e.filename.value() != b.recs[i].filename) return false;
                 if (e.funcname.value() != b.recs[i].funcname) return false;
-                if (e.lineno.value()   != b.recs[i].lineno)   return false;
+                if (e.lineno.value() != b.recs[i].lineno) return false;
             }
 
             // Property (sentinel rejection): has(CallsiteHash{}) is
@@ -247,7 +245,7 @@ int main(int argc, char** argv) {
             // and after the dedup phase: the table never "remembers"
             // the empty-slot marker, and size() is unchanged.
             if (t.has(CallsiteHash{})) return false;
-            if (t.size() != b.count)   return false;
+            if (t.size() != b.count) return false;
 
             return true;
         });

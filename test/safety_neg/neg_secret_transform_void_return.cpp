@@ -24,10 +24,7 @@ int main() {
     // silent declassification sink (the data has already flowed
     // to stderr before the compiler notices).
     auto sink = std::move(s).transform(
-        [](std::uint64_t v) -> void {
-            std::fprintf(stderr, "%llu\n",
-                         static_cast<unsigned long long>(v));
-        });
+        [](std::uint64_t v) -> void { std::fprintf(stderr, "%llu\n", static_cast<unsigned long long>(v)); });
 
     (void)sink;
     return 0;

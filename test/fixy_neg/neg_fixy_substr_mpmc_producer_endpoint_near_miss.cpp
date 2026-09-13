@@ -41,10 +41,10 @@ struct FakeConsumerHandle {
 // Satisfies every MpmcChannelSessionSurface clause EXCEPT producer()'s
 // return type: producer() returns ProducerHandle, not optional<ProducerHandle>.
 struct NearMissChannel {
-    using value_type    = int;
-    using user_tag      = UTag;
-    using producer_tag  = PTag;
-    using consumer_tag  = CTag;
+    using value_type = int;
+    using user_tag = UTag;
+    using producer_tag = PTag;
+    using consumer_tag = CTag;
     using ProducerHandle = FakeProducerHandle;
     using ConsumerHandle = FakeConsumerHandle;
 
@@ -57,7 +57,6 @@ struct NearMissChannel {
 int main() {
     neg_fixy_substr_mpmc_producer_endpoint_near_miss::NearMissChannel ch{};
 
-    [[maybe_unused]] auto bad =
-        fsubstr::mpmc::mint_mpmc_producer_endpoint(ch);
+    [[maybe_unused]] auto bad = fsubstr::mpmc::mint_mpmc_producer_endpoint(ch);
     return 0;
 }

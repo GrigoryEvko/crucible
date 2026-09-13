@@ -45,12 +45,11 @@ namespace {
 // before reaching the foldable body), under_test() would return 0
 // and this static_assert would pass — silent false-green for the
 // lifecycle-reset variant of the bug.
-static_assert(under_test() == 0,
-    "CRUCIBLE_PRE on has_value() lifecycle-reset check MUST fire at "
-    "consteval when SetOnce::reset() is called on an unset slot.  If "
-    "this static_assert evaluates successfully, the body-CRUCIBLE_PRE "
-    "migration of fixy-A1-007 failed to close the GCC 16.1.1 consteval "
-    "bypass for member-function predicates on lifecycle-reset paths.");
+static_assert(under_test() == 0, "CRUCIBLE_PRE on has_value() lifecycle-reset check MUST fire at "
+                                 "consteval when SetOnce::reset() is called on an unset slot.  If "
+                                 "this static_assert evaluates successfully, the body-CRUCIBLE_PRE "
+                                 "migration of fixy-A1-007 failed to close the GCC 16.1.1 consteval "
+                                 "bypass for member-function predicates on lifecycle-reset paths.");
 
 }  // namespace
 

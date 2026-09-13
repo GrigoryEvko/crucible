@@ -12,15 +12,15 @@ struct HistStreamTag {};
 }  // namespace
 
 int main() {
-    using Hist = crucible::observe::HdrHistogram<2, 1'000'000>;
+    using Hist = crucible::observe::HdrHistogram<2, 1000000>;
     static_assert(crucible::observe::HdrCompatible<Hist>);
     static_assert(Hist::bucket_slots > 0);
 
     Hist h;
     h.record(Hist::checked_value(10));
     h.record(Hist::checked_value(20));
-    h.record(Hist::checked_value(1'000));
-    h.record(Hist::checked_value(1'000'000));
+    h.record(Hist::checked_value(1000));
+    h.record(Hist::checked_value(1000000));
 
     assert(h.total_count() == 4);
 
@@ -142,7 +142,7 @@ int main() {
         assert(publish_h.percentile(50.0) >= 500);
     }
 
-    using Concurrent = crucible::observe::ConcurrentHdrHistogram<2, 1'000'000, 2>;
+    using Concurrent = crucible::observe::ConcurrentHdrHistogram<2, 1000000, 2>;
     static_assert(crucible::observe::HdrCompatible<Concurrent>);
 
     Concurrent c;
@@ -185,8 +185,8 @@ int main() {
         struct LatencyHistogramTag {};
         struct DrainHistogramTag {};
 
-        using LatencyHist = crucible::observe::ConcurrentHdrHistogram<2, 1'000'000, 4, LatencyHistogramTag>;
-        using DrainHist = crucible::observe::ConcurrentHdrHistogram<2, 1'000'000, 4, DrainHistogramTag>;
+        using LatencyHist = crucible::observe::ConcurrentHdrHistogram<2, 1000000, 4, LatencyHistogramTag>;
+        using DrainHist = crucible::observe::ConcurrentHdrHistogram<2, 1000000, 4, DrainHistogramTag>;
 
         // The tag also makes the two histograms different types, so a
         // call site cannot pass one where the other belongs.
@@ -224,7 +224,7 @@ int main() {
     // is confidence rather than proof.  The guard is still worth having
     // because it fails on a target where the distinction is real.
     {
-        crucible::observe::HdrHistogram<2, 1'000'000> shared;
+        crucible::observe::HdrHistogram<2, 1000000> shared;
         std::atomic<bool> ready_flag{false};
         std::atomic<bool> stop_flag{false};
         std::atomic<std::uint64_t> torn_observations{0};
@@ -284,7 +284,7 @@ int main() {
         assert(torn_observations.load(std::memory_order_relaxed) == 0);
     }
 
-    using Channel = crucible::observe::HdrRecordChannel<2, 1'000'000, 8, HistStreamTag>;
+    using Channel = crucible::observe::HdrRecordChannel<2, 1000000, 8, HistStreamTag>;
     Channel channel;
     auto whole = crucible::safety::mint_permission_root<typename Channel::whole_tag>();
     auto [producer_perm, consumer_perm] =

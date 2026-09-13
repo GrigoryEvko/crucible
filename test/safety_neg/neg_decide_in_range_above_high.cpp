@@ -128,8 +128,7 @@ template <typename T>
 // bug classes that would silently admit out-of-range indices at
 // every cite (SymbolTable::entry_at, TraceGraph::fwd_begin/end,
 // PoolAllocator::slot_ptr, ReplayEngine cursor advance).
-constexpr auto witness =
-    gate(std::uint32_t{11}, std::uint32_t{0}, std::uint32_t{10});
+constexpr auto witness = gate(std::uint32_t{11}, std::uint32_t{0}, std::uint32_t{10});
 
 }  // namespace
 

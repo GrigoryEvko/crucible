@@ -72,6 +72,4 @@ using BadEvent = proto::CrashEvent<DeadPeer, ThrowingMoveResource, SurvivorA>;
 
 }  // namespace
 
-int main() {
-    return 0;
-}
+int main() { return 0; }

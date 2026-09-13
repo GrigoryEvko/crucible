@@ -17,7 +17,7 @@
 #include <crucible/fixy/Substr.h>
 
 namespace fsubstr = crucible::fixy::substr;
-namespace conc    = crucible::concurrent;
+namespace conc = crucible::concurrent;
 
 namespace neg_fixy_substr_swmr_reader_runtime_session_non_ctx {
 struct UserTag {};
@@ -25,15 +25,12 @@ struct NotAnExecCtx {};
 }  // namespace neg_fixy_substr_swmr_reader_runtime_session_non_ctx
 
 int main() {
-    using Snap = conc::PermissionedSnapshot<int,
-        neg_fixy_substr_swmr_reader_runtime_session_non_ctx::UserTag>;
+    using Snap = conc::PermissionedSnapshot<int, neg_fixy_substr_swmr_reader_runtime_session_non_ctx::UserTag>;
 
     Snap snap{};
     auto reader = snap.reader();
 
-    [[maybe_unused]] auto bad =
-        fsubstr::swmr::mint_reader_runtime_session<Snap>(
-            neg_fixy_substr_swmr_reader_runtime_session_non_ctx::NotAnExecCtx{},
-            reader);
+    [[maybe_unused]] auto bad = fsubstr::swmr::mint_reader_runtime_session<Snap>(
+        neg_fixy_substr_swmr_reader_runtime_session_non_ctx::NotAnExecCtx{}, reader);
     return 0;
 }

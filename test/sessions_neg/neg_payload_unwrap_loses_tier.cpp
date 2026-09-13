@@ -7,14 +7,15 @@
 #include <crucible/sessions/SessionPayloadSubsort.h>
 
 namespace proto = crucible::safety::proto;
-namespace safe  = crucible::safety;
+namespace safe = crucible::safety;
 
 namespace {
-struct Tile { float value[4]; };
+struct Tile {
+    float value[4];
+};
 using StrictTile = safe::NumericalTier<safe::Tolerance::BITEXACT, Tile>;
 }  // namespace
 
-static_assert(proto::is_subsort_v<Tile, StrictTile>,
-    "NumericalTier_BarePayload_CannotGainTier");
+static_assert(proto::is_subsort_v<Tile, StrictTile>, "NumericalTier_BarePayload_CannotGainTier");
 
 int main() { return 0; }

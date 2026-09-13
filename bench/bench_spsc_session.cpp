@@ -119,99 +119,83 @@ inline void drain_ring(Channel::ConsumerHandle& cons) noexcept {
 // is the wallclock for one push followed by one pop on the same item.
 // Per-side overhead is recovered from pair-compare deltas (see main).
 
-bench::Report bench_bare_push_bare_pop(Channel::ProducerHandle& prod,
-                                        Channel::ConsumerHandle& cons)
-{
+bench::Report bench_bare_push_bare_pop(Channel::ProducerHandle& prod, Channel::ConsumerHandle& cons) {
     drain_ring(cons);
     Item i = 0;
-    auto report = bench::run("round-trip: bare push + bare pop",
-        [&]{
-            prod.try_push(++i);
-            // Extract from optional so do_not_optimize sees Item (8B),
-            // matching the typed PSH.recv path which returns Item by
-            // value via blocking_pop's optional::operator* deref.
-            // Without this equalisation the bare path's barrier
-            // operates on optional<Item> (16B) and measures more
-            // work than the typed path — a bench-design artifact
-            // that creates a spurious "typed is faster" signal.
-            auto v = cons.try_pop().value_or(Item{0});
-            bench::do_not_optimize(v);
-        });
+    auto report = bench::run("round-trip: bare push + bare pop", [&] {
+        prod.try_push(++i);
+        // Extract from optional so do_not_optimize sees Item (8B),
+        // matching the typed PSH.recv path which returns Item by
+        // value via blocking_pop's optional::operator* deref.
+        // Without this equalisation the bare path's barrier
+        // operates on optional<Item> (16B) and measures more
+        // work than the typed path — a bench-design artifact
+        // that creates a spurious "typed is faster" signal.
+        auto v = cons.try_pop().value_or(Item{0});
+        bench::do_not_optimize(v);
+    });
     drain_ring(cons);
     return report;
 }
 
-bench::Report bench_typed_send_bare_pop(Channel::ProducerHandle& prod,
-                                         Channel::ConsumerHandle& cons)
-{
+bench::Report bench_typed_send_bare_pop(Channel::ProducerHandle& prod, Channel::ConsumerHandle& cons) {
     using namespace ::crucible::safety::proto;
     namespace ses = ::crucible::safety::proto::spsc_session;
 
     drain_ring(cons);
-    auto psh = ses::mint_producer_session<Channel>(
-        ::crucible::effects::HotFgCtx{}, prod);
+    auto psh = ses::mint_producer_session<Channel>(::crucible::effects::HotFgCtx{}, prod);
     Item i = 0;
-    auto report = bench::run("round-trip: typed PSH.send + bare pop",
-        [&]{
-            auto h2 = std::move(psh).send(++i, ses::blocking_push);
-            psh = std::move(h2);
-            // Extract from optional so do_not_optimize sees Item (8B),
-            // matching the typed PSH.recv path which returns Item by
-            // value via blocking_pop's optional::operator* deref.
-            // Without this equalisation the bare path's barrier
-            // operates on optional<Item> (16B) and measures more
-            // work than the typed path — a bench-design artifact
-            // that creates a spurious "typed is faster" signal.
-            auto v = cons.try_pop().value_or(Item{0});
-            bench::do_not_optimize(v);
-        });
+    auto report = bench::run("round-trip: typed PSH.send + bare pop", [&] {
+        auto h2 = std::move(psh).send(++i, ses::blocking_push);
+        psh = std::move(h2);
+        // Extract from optional so do_not_optimize sees Item (8B),
+        // matching the typed PSH.recv path which returns Item by
+        // value via blocking_pop's optional::operator* deref.
+        // Without this equalisation the bare path's barrier
+        // operates on optional<Item> (16B) and measures more
+        // work than the typed path — a bench-design artifact
+        // that creates a spurious "typed is faster" signal.
+        auto v = cons.try_pop().value_or(Item{0});
+        bench::do_not_optimize(v);
+    });
     std::move(psh).detach(detach_reason::TestInstrumentation{});
     drain_ring(cons);
     return report;
 }
 
-bench::Report bench_bare_push_typed_recv(Channel::ProducerHandle& prod,
-                                          Channel::ConsumerHandle& cons)
-{
+bench::Report bench_bare_push_typed_recv(Channel::ProducerHandle& prod, Channel::ConsumerHandle& cons) {
     using namespace ::crucible::safety::proto;
     namespace ses = ::crucible::safety::proto::spsc_session;
 
     drain_ring(cons);
-    auto psh = ses::mint_consumer_session<Channel>(
-        ::crucible::effects::HotFgCtx{}, cons);
+    auto psh = ses::mint_consumer_session<Channel>(::crucible::effects::HotFgCtx{}, cons);
     Item i = 0;
-    auto report = bench::run("round-trip: bare push + typed PSH.recv",
-        [&]{
-            prod.try_push(++i);
-            auto [v, h2] = std::move(psh).recv(ses::blocking_pop);
-            bench::do_not_optimize(v);
-            psh = std::move(h2);
-        });
+    auto report = bench::run("round-trip: bare push + typed PSH.recv", [&] {
+        prod.try_push(++i);
+        auto [v, h2] = std::move(psh).recv(ses::blocking_pop);
+        bench::do_not_optimize(v);
+        psh = std::move(h2);
+    });
     std::move(psh).detach(detach_reason::TestInstrumentation{});
     drain_ring(cons);
     return report;
 }
 
-bench::Report bench_typed_send_typed_recv(Channel::ProducerHandle& prod,
-                                           Channel::ConsumerHandle& cons)
-{
+bench::Report bench_typed_send_typed_recv(Channel::ProducerHandle& prod, Channel::ConsumerHandle& cons) {
     using namespace ::crucible::safety::proto;
     namespace ses = ::crucible::safety::proto::spsc_session;
 
     drain_ring(cons);
-    auto prod_psh = ses::mint_producer_session<Channel>(
-        ::crucible::effects::HotFgCtx{}, prod);
-    auto cons_psh = ses::mint_consumer_session<Channel>(
-        ::crucible::effects::HotFgCtx{}, cons);
+    auto prod_psh = ses::mint_producer_session<Channel>(::crucible::effects::HotFgCtx{}, prod);
+    auto cons_psh = ses::mint_consumer_session<Channel>(::crucible::effects::HotFgCtx{}, cons);
     Item i = 0;
-    auto report = bench::run("round-trip: typed PSH.send + typed PSH.recv",
-        [&]{
-            auto p2 = std::move(prod_psh).send(++i, ses::blocking_push);
-            prod_psh = std::move(p2);
-            auto [v, c2] = std::move(cons_psh).recv(ses::blocking_pop);
-            bench::do_not_optimize(v);
-            cons_psh = std::move(c2);
-        });
+    auto report = bench::run("round-trip: typed PSH.send + typed PSH.recv", [&] {
+        auto p2 = std::move(prod_psh).send(++i, ses::blocking_push);
+        prod_psh = std::move(p2);
+        auto [v, c2] = std::move(cons_psh).recv(ses::blocking_pop);
+        bench::do_not_optimize(v);
+        cons_psh = std::move(c2);
+    });
     std::move(prod_psh).detach(detach_reason::TestInstrumentation{});
     std::move(cons_psh).detach(detach_reason::TestInstrumentation{});
     drain_ring(cons);
@@ -229,16 +213,14 @@ int main(int argc, char** argv) {
     // ── Compile-time witnesses (re-asserted under THIS TU's bench
     //     build flags; mirrors the bench_permissioned_session_handle
     //     pattern at lines 202-210) ─────────────────────────────────
-    static_assert(sizeof(PermissionedSessionHandle<End, EmptyPermSet,
-                                                    Channel::ProducerHandle*>)
-                  == sizeof(SessionHandle<End, Channel::ProducerHandle*>),
+    static_assert(sizeof(PermissionedSessionHandle<End, EmptyPermSet, Channel::ProducerHandle*>)
+                      == sizeof(SessionHandle<End, Channel::ProducerHandle*>),
                   "PSH<End, EmptyPermSet, ProducerHandle*> must equal bare "
                   "SessionHandle<End, ProducerHandle*> — sizeof regression "
                   "would mean EmptyPermSet EBO collapse broke or tracker "
                   "grew asymmetrically.");
-    static_assert(sizeof(PermissionedSessionHandle<End, EmptyPermSet,
-                                                    Channel::ConsumerHandle*>)
-                  == sizeof(SessionHandle<End, Channel::ConsumerHandle*>),
+    static_assert(sizeof(PermissionedSessionHandle<End, EmptyPermSet, Channel::ConsumerHandle*>)
+                      == sizeof(SessionHandle<End, Channel::ConsumerHandle*>),
                   "PSH<End, EmptyPermSet, ConsumerHandle*> must equal bare "
                   "SessionHandle<End, ConsumerHandle*>.");
 
@@ -255,18 +237,18 @@ int main(int argc, char** argv) {
     Channel& ch = *ch_owner;
 
     auto whole = ::crucible::safety::mint_permission_root<Channel::whole_tag>();
-    auto [pp, cp] = ::crucible::safety::mint_permission_split<
-        Channel::producer_tag, Channel::consumer_tag>(std::move(whole));
+    auto [pp, cp] =
+        ::crucible::safety::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(std::move(whole));
     auto prod = ch.producer(std::move(pp));
     auto cons = ch.consumer(std::move(cp));
 
     // 2×2 matrix: bare/typed × producer/consumer.  Each measures
     // round-trip wallclock; per-side overhead via pair-compare deltas.
     bench::Report reports[] = {
-        bench_bare_push_bare_pop  (prod, cons),  // [0] baseline
-        bench_typed_send_bare_pop (prod, cons),  // [1] typed producer
+        bench_bare_push_bare_pop(prod, cons),  // [0] baseline
+        bench_typed_send_bare_pop(prod, cons),  // [1] typed producer
         bench_bare_push_typed_recv(prod, cons),  // [2] typed consumer
-        bench_typed_send_typed_recv(prod, cons), // [3] both typed
+        bench_typed_send_typed_recv(prod, cons),  // [3] both typed
     };
 
     bench::emit_reports_text(reports);
@@ -278,7 +260,8 @@ int main(int argc, char** argv) {
         bench::compare(reports[0], reports[2]),  // PSH.recv overhead
         bench::compare(reports[0], reports[3]),  // combined overhead
     };
-    for (const auto& c : cmps) c.print_text(stdout);
+    for (const auto& c : cmps)
+        c.print_text(stdout);
 
     std::printf("\n=== verdict (TIER A — load-bearing) ===\n");
     std::printf("  Compile-time sizeof equality (asserted at file scope below)\n");

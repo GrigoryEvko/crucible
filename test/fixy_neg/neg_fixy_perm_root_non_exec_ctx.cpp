@@ -34,16 +34,15 @@ struct PureTag {};
 }  // namespace neg_fixy_perm_root_non_exec_ctx
 
 int main() {
-    namespace tags  = neg_fixy_perm_root_non_exec_ctx;
+    namespace tags = neg_fixy_perm_root_non_exec_ctx;
     namespace fperm = ::crucible::fixy::perm;
-    namespace saf   = ::crucible::safety;
+    namespace saf = ::crucible::safety;
 
     // `mint_permission_root<Tag>(ctx)` requires
     // `::crucible::effects::IsExecCtx Ctx`.  Passing a non-ExecCtx
     // type as `ctx` makes the template constrained-parameter fail
     // to match, BEFORE the body's CtxAdmitsPermission row check.
-    auto bad = fperm::mint_permission_root<tags::PureTag>(
-        tags::NotAnExecCtx{});
+    auto bad = fperm::mint_permission_root<tags::PureTag>(tags::NotAnExecCtx{});
     saf::permission_drop(std::move(bad));
     return 0;
 }

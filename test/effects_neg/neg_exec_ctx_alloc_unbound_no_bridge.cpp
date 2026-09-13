@@ -17,5 +17,4 @@
 
 namespace eff = crucible::effects;
 
-constexpr auto bad =
-    eff::to_alloc_class_tag_v<eff::ctx_alloc::Unbound>;
+constexpr auto bad = eff::to_alloc_class_tag_v<eff::ctx_alloc::Unbound>;

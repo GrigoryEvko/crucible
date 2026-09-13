@@ -23,14 +23,13 @@ using namespace crucible::safety;
 
 // A deadline watchdog admits only a clock that survives suspend.
 template <typename Witness>
-    requires (Witness::template satisfies<SuspendBehavior_v::KeepsTicking>)
+    requires(Witness::template satisfies<SuspendBehavior_v::KeepsTicking>)
 [[nodiscard]] unsigned long long arm_watchdog(Witness w) {
     return w.peek();
 }
 
 int main() {
-    auto monotonic = mint_suspend_behavior<SuspendBehavior_v::PausesOnSuspend,
-                                           unsigned long long>(1000);
+    auto monotonic = mint_suspend_behavior<SuspendBehavior_v::PausesOnSuspend, unsigned long long>(1000);
 
     // Should FAIL: PausesOnSuspend does not satisfy<KeepsTicking>; the
     // watchdog rejects it at the call site.

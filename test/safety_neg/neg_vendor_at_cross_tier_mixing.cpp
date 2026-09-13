@@ -19,11 +19,10 @@
 using namespace crucible::algebra::lattices;
 
 int main() {
-    VendorLattice::At<VendorBackend::NV>::element_type  nv_elt{};
+    VendorLattice::At<VendorBackend::NV>::element_type nv_elt{};
     VendorLattice::At<VendorBackend::AMD>::element_type amd_elt{};
 
     // Should FAIL: At<NV>::leq expects two At<NV>::element_type
     // arguments; amd_elt is At<AMD>::element_type.
-    return static_cast<int>(
-        VendorLattice::At<VendorBackend::NV>::leq(nv_elt, amd_elt));
+    return static_cast<int>(VendorLattice::At<VendorBackend::NV>::leq(nv_elt, amd_elt));
 }

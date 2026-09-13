@@ -32,8 +32,8 @@
 #include <crucible/safety/ScopedFence.h>
 #include <crucible/safety/source/Arch.h>
 
-namespace fn  = crucible::safety::fn;
-namespace sf  = crucible::safety;
+namespace fn = crucible::safety::fn;
+namespace sf = crucible::safety;
 namespace src = crucible::safety::source;
 using MS = crucible::algebra::lattices::MemoryScope;
 using BS = crucible::algebra::lattices::BarrierStrength;
@@ -43,15 +43,9 @@ namespace neg_collision_v402 {
 // pinned to an ARM CPU host — V401 is satisfied, V402 fires on the
 // cross-trunk scope×arch contradiction.  All Fn params but Source take the
 // Fn<Type> defaults (Refinement..Lifetime); only Source = ArmPinned.
-using Bad = fn::Fn<
-    sf::BarrierGuarded<BS::AcqRel, sf::ScopedFence<MS::Gpu, int>>,
-    fn::pred::True,
-    fn::UsageMode::Linear,
-    crucible::effects::Row<>,
-    fn::SecLevel::Classified,
-    fn::proto::None,
-    fn::lifetime::Static,
-    src::ArmPinned>;
+using Bad =
+    fn::Fn<sf::BarrierGuarded<BS::AcqRel, sf::ScopedFence<MS::Gpu, int>>, fn::pred::True, fn::UsageMode::Linear,
+           crucible::effects::Row<>, fn::SecLevel::Classified, fn::proto::None, fn::lifetime::Static, src::ArmPinned>;
 }  // namespace neg_collision_v402
 
 [[maybe_unused]] neg_collision_v402::Bad the_fixture{};

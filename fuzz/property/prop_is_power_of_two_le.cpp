@@ -54,17 +54,17 @@ namespace {
 using crucible::fuzz::prop::Rng;
 
 enum class Mode : uint8_t {
-    PowerInBound  = 0,
+    PowerInBound = 0,
     PowerOverBound = 1,
-    NonPower      = 2,
-    Random        = 3,
+    NonPower = 2,
+    Random = 3,
 };
 
 template <typename T>
 struct PowSpec {
-    T       x     = 0;
-    T       bound = 0;
-    Mode    mode  = Mode::Random;
+    T x = 0;
+    T bound = 0;
+    Mode mode = Mode::Random;
     uint8_t pad[3]{};
 };
 
@@ -80,18 +80,18 @@ template <typename T>
 }
 
 template <typename T>
-[[nodiscard]] int run_pow(const crucible::fuzz::prop::Config& cfg,
-                          const char* name) {
+[[nodiscard]] int run_pow(const crucible::fuzz::prop::Config& cfg, const char* name) {
     using crucible::fuzz::prop::run;
     using crucible::decide::is_power_of_two_le;
     using U = std::make_unsigned_t<T>;
     // For unsigned T the top bit (k == width-1) is a valid positive
     // power of two; for signed T it is the sign bit, so cap at width-2
     // to keep generated powers positive.
-    constexpr uint32_t width   = sizeof(T) * 8u;
+    constexpr uint32_t width = sizeof(T) * 8u;
     constexpr uint32_t max_pow = std::is_signed_v<T> ? (width - 2u) : (width - 1u);
 
-    return run(name, cfg,
+    return run(
+        name, cfg,
         // ── Generator ──
         [](Rng& rng) noexcept -> PowSpec<T> {
             PowSpec<T> spec{};
@@ -99,13 +99,13 @@ template <typename T>
             switch (spec.mode) {
                 case Mode::PowerInBound: {
                     const uint32_t k = rng.next_below(max_pow + 1u);  // [0, max_pow]
-                    spec.x     = static_cast<T>(static_cast<U>(1) << k);
+                    spec.x = static_cast<T>(static_cast<U>(1) << k);
                     spec.bound = std::numeric_limits<T>::max();  // x <= bound always
                     break;
                 }
                 case Mode::PowerOverBound: {
                     const uint32_t k = rng.next_below(max_pow + 1u);
-                    spec.x     = static_cast<T>(static_cast<U>(1) << k);
+                    spec.x = static_cast<T>(static_cast<U>(1) << k);
                     // bound in [0, x) → strictly below x → x > bound.
                     spec.bound = static_cast<T>(rng.next_below(static_cast<uint32_t>(spec.x)));
                     break;
@@ -113,22 +113,23 @@ template <typename T>
                 case Mode::NonPower: {
                     // Bias toward non-powers: OR two random values so
                     // multiple bits are usually set; oracle is truth.
-                    spec.x     = static_cast<T>(rng.next32() | rng.next32());
+                    spec.x = static_cast<T>(rng.next32() | rng.next32());
                     spec.bound = std::numeric_limits<T>::max();
                     break;
                 }
                 case Mode::Random: {
-                    spec.x     = static_cast<T>(rng.next32());  // full range incl 0 / negatives
+                    spec.x = static_cast<T>(rng.next32());  // full range incl 0 / negatives
                     spec.bound = static_cast<T>(rng.next32());
                     break;
                 }
-                default: std::unreachable();  // mode ∈ {0..3} by next_below(4)
+                default:
+                    std::unreachable();  // mode ∈ {0..3} by next_below(4)
             }
             return spec;
         },
         // ── Property: differential + construction-direction ──
         [](const PowSpec<T>& spec) noexcept -> bool {
-            const bool cut   = is_power_of_two_le<T>(spec.x, spec.bound);
+            const bool cut = is_power_of_two_le<T>(spec.x, spec.bound);
             const bool truth = pow_oracle<T>(spec.x, spec.bound);
             if (cut != truth) return false;  // universal differential
 
@@ -137,12 +138,13 @@ template <typename T>
                     if (!cut) return false;  // positive power of two within bound
                     break;
                 case Mode::PowerOverBound:
-                    if (cut) return false;   // x > bound → must reject
+                    if (cut) return false;  // x > bound → must reject
                     break;
                 case Mode::NonPower:
                 case Mode::Random:
-                    break;                   // oracle is ground truth
-                default: std::unreachable();
+                    break;  // oracle is ground truth
+                default:
+                    std::unreachable();
             }
             return true;
         });
@@ -153,7 +155,7 @@ template <typename T>
 int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
     Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 2'000'000) cfg.iterations = 2'000'000;
+    if (cfg.iterations > 2000000) cfg.iterations = 2000000;
 
     // Both instantiations run the full iteration budget; the signed
     // one exercises the x<=0 guard and negative-bound branch.

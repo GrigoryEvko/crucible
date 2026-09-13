@@ -28,47 +28,42 @@
 
 #include <utility>
 
-namespace fp   = ::crucible::safety::proto::federation;
+namespace fp = ::crucible::safety::proto::federation;
 namespace perm = ::crucible::permissions;
-namespace saf  = ::crucible::safety;
-namespace eff  = ::crucible::effects;
+namespace saf = ::crucible::safety;
+namespace eff = ::crucible::effects;
 
 namespace neg_fed_wrong_org {
 struct OrgA {};
 struct OrgB {};
 struct TraceKey {};
 struct Endpoint {};
-}
+}  // namespace neg_fed_wrong_org
 
 // fixy-CR-13: federation mints require Row<IO, Block> in ctx::row_type.
-using FederationFitCtx = decltype(
-    eff::BgCompileCtx{}.in_row<eff::Row<
-        eff::Effect::Bg, eff::Effect::Alloc,
-        eff::Effect::IO, eff::Effect::Block>>());
+using FederationFitCtx =
+    decltype(eff::BgCompileCtx{}
+                 .in_row<eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>());
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 int main() {
     auto local = saf::mint_permission_root<perm::tag::LocalCipherTag>();
-    auto handshake_a =
-        perm::make_self_signed_handshake<neg_fed_wrong_org::OrgA>(
-            /*peer_key_fp=*/perm::PeerKeyFingerprint{0xFEDCDEULL},
-            /*nonce=*/perm::Nonce{0xC0FFEEULL});
-    auto admitted_a = perm::mint_federation_admittance<
-        neg_fed_wrong_org::OrgA,
-        perm::policy::admit_orgs<neg_fed_wrong_org::OrgA>>(
+    auto handshake_a = perm::make_self_signed_handshake<neg_fed_wrong_org::OrgA>(
+        /*peer_key_fp=*/perm::PeerKeyFingerprint{0xFEDCDEULL},
+        /*nonce=*/perm::Nonce{0xC0FFEEULL});
+    auto admitted_a =
+        perm::mint_federation_admittance<neg_fed_wrong_org::OrgA, perm::policy::admit_orgs<neg_fed_wrong_org::OrgA>>(
             local, handshake_a);
-    auto pool_a = fp::mint_federation_pool<neg_fed_wrong_org::OrgA>(
-        std::move(*admitted_a));
+    auto pool_a = fp::mint_federation_pool<neg_fed_wrong_org::OrgA>(std::move(*admitted_a));
     auto guard_a = pool_a.lend();
 
     // guard_a->token() is SharedPermission<FederatedPeer<OrgA>>.
     // mint_sender<OrgB, ...> expects SharedPermission<FederatedPeer<OrgB>>.
     // The tag mismatch is structural and cannot be silently coerced.
     FederationFitCtx ctx{};
-    auto sender = fp::mint_sender<
-        neg_fed_wrong_org::OrgB, neg_fed_wrong_org::TraceKey>(
+    auto sender = fp::mint_sender<neg_fed_wrong_org::OrgB, neg_fed_wrong_org::TraceKey>(
         ctx, neg_fed_wrong_org::Endpoint{}, guard_a->token());
     (void)sender;
     return 0;

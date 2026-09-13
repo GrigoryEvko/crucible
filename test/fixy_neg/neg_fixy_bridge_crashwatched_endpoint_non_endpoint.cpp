@@ -57,7 +57,7 @@ using ::crucible::safety::OneShotFlag;
 struct DeadPeer {};
 
 int main() {
-    int         not_an_endpoint = 42;
+    int not_an_endpoint = 42;
     OneShotFlag flag;
 
     // First argument is `int` — fails Endpoint<Substr, Dir, Ctx>
@@ -65,8 +65,7 @@ int main() {
     // identically — the using-decl preserves the template
     // signature.
     [[maybe_unused]] auto bad =
-        fbridge::mint_crash_watched_endpoint<DeadPeer>(
-            static_cast<int&&>(not_an_endpoint), flag);
+        fbridge::mint_crash_watched_endpoint<DeadPeer>(static_cast<int&&>(not_an_endpoint), flag);
 
     return 0;
 }

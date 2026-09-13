@@ -29,25 +29,23 @@
 #include <crucible/sessions/SessionGlobal.h>
 
 namespace fsassoc = ::crucible::fixy::sess::assoc;
-namespace proto   = ::crucible::safety::proto;
+namespace proto = ::crucible::safety::proto;
 
 namespace {
-struct MySession    {};
+struct MySession {};
 struct OtherSession {};
-struct Coord    {};
+struct Coord {};
 struct Follower {};
-struct Prepare  {};
-struct Vote     {};
+struct Prepare {};
+struct Vote {};
 
-using G = proto::Transmission<Coord, Follower, Prepare,
-          proto::Transmission<Follower, Coord, Vote, proto::End_G>>;
+using G = proto::Transmission<Coord, Follower, Prepare, proto::Transmission<Follower, Coord, Vote, proto::End_G>>;
 
 // Γ has Coord + Follower entries (matches G's roles) but ALL tagged
 // with OtherSession.  An assertion against MySession will find an
 // EMPTY domain for that tag in Γ.
-using WrongTagGamma = proto::Context<
-    proto::Entry<OtherSession, Coord,    proto::project_t<G, Coord>>,
-    proto::Entry<OtherSession, Follower, proto::project_t<G, Follower>>>;
+using WrongTagGamma = proto::Context<proto::Entry<OtherSession, Coord, proto::project_t<G, Coord>>,
+                                     proto::Entry<OtherSession, Follower, proto::project_t<G, Follower>>>;
 }  // namespace
 
 int main() {

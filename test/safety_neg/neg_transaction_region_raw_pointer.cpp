@@ -10,9 +10,9 @@
 #include <crucible/Transaction.h>
 
 int main() {
-  crucible::TransactionLog<16> log{};
-  auto* tx = log.begin_tx(1);
-  crucible::RegionNode* region = nullptr;
-  (void)log.commit(tx, region, crucible::ContentHash{}, crucible::MerkleHash{1});
-  return 0;
+    crucible::TransactionLog<16> log{};
+    auto* tx = log.begin_tx(1);
+    crucible::RegionNode* region = nullptr;
+    (void)log.commit(tx, region, crucible::ContentHash{}, crucible::MerkleHash{1});
+    return 0;
 }

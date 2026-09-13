@@ -101,9 +101,7 @@ namespace {
 // than literal-bool plug-in.  is_power_of_two_le(8, 64) returns
 // true (8 is 2³, less than or equal to 64); consequent is false.
 // `implies(true, false) = false`; CRUCIBLE_PRE traps at consteval.
-constexpr auto witness = gate(
-    crucible::decide::is_power_of_two_le<std::uint64_t>(8, 64),
-    false);
+constexpr auto witness = gate(crucible::decide::is_power_of_two_le<std::uint64_t>(8, 64), false);
 
 }  // namespace
 

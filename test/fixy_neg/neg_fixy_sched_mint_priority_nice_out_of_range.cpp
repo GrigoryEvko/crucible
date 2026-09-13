@@ -21,8 +21,7 @@
 int main() {
     // Should FAIL: -21 < -20; CtxFitsPriorityMint's
     // `(Nice >= -20 && Nice <= 19)` conjunct rejects.
-    auto p = ::crucible::fixy::sched::mint_priority<-21>(
-        ::crucible::effects::ColdInitCtx{});
+    auto p = ::crucible::fixy::sched::mint_priority<-21>(::crucible::effects::ColdInitCtx{});
     (void)p;
     return 0;
 }

@@ -22,8 +22,8 @@ int main() {
     // The bare carrier IS NOT a Graded<...> specialization; the
     // concept must reject.
     static_assert(fa::IsGraded<AlgebraNegFixture2_BareCarrier>,
-        "fa::IsGraded<BareCarrier> must reject — BareCarrier is not "
-        "a Graded<M, L, T> specialization.  fixy::algebra alias "
-        "preserves IsGraded concept gate identically.");
+                  "fa::IsGraded<BareCarrier> must reject — BareCarrier is not "
+                  "a Graded<M, L, T> specialization.  fixy::algebra alias "
+                  "preserves IsGraded concept gate identically.");
     return 0;
 }

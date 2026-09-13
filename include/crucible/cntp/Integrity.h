@@ -110,11 +110,11 @@ concept ByteContiguousPayload = HasContiguousPayloadData<Payload> && std::is_poi
 
 namespace detail {
 
-inline constexpr std::uint64_t xxh_prime64_1 = 11'400'714'785'074'694'791ULL;
-inline constexpr std::uint64_t xxh_prime64_2 = 14'029'467'366'897'019'727ULL;
-inline constexpr std::uint64_t xxh_prime64_3 = 1'609'587'929'392'839'161ULL;
-inline constexpr std::uint64_t xxh_prime64_4 = 9'650'029'242'287'828'579ULL;
-inline constexpr std::uint64_t xxh_prime64_5 = 2'870'177'450'012'600'261ULL;
+inline constexpr std::uint64_t xxh_prime64_1 = 11400714785074694791ULL;
+inline constexpr std::uint64_t xxh_prime64_2 = 14029467366897019727ULL;
+inline constexpr std::uint64_t xxh_prime64_3 = 1609587929392839161ULL;
+inline constexpr std::uint64_t xxh_prime64_4 = 9650029242287828579ULL;
+inline constexpr std::uint64_t xxh_prime64_5 = 2870177450012600261ULL;
 inline constexpr std::size_t xxh_stripe_bytes = 32;
 
 [[nodiscard, gnu::pure]] inline std::uint64_t load_le64(std::byte const* ptr) noexcept {

@@ -24,10 +24,8 @@ struct NotAnExecCtx {};
 }  // namespace test_fixy_warden_quarantine_policy_not_exec_ctx
 
 int main() {
-    using NotAnExecCtx =
-        test_fixy_warden_quarantine_policy_not_exec_ctx::NotAnExecCtx;
-    auto policy = crucible::fixy::warden::mint_quarantine_policy<
-        NotAnExecCtx, 2>(NotAnExecCtx{});
+    using NotAnExecCtx = test_fixy_warden_quarantine_policy_not_exec_ctx::NotAnExecCtx;
+    auto policy = crucible::fixy::warden::mint_quarantine_policy<NotAnExecCtx, 2>(NotAnExecCtx{});
     (void)policy;
     return 0;
 }

@@ -25,8 +25,7 @@ namespace eff = ::crucible::effects;
 
 int main() {
     ::crucible::BackgroundThread bt;
-    bt.run_in_row<eff::Row<
-        eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block,
-        eff::Effect::Init,  eff::Effect::Test>>();
+    bt.run_in_row<
+        eff::Row<eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block, eff::Effect::Init, eff::Effect::Test>>();
     return 0;
 }

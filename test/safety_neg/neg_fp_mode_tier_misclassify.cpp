@@ -36,14 +36,13 @@ namespace neg_fp_mode_tier_misclassify {
 // compiles, FpMode was silently reclassified onto Foundational
 // (regression) and Forge phase E.RecipeSelect's par/seq composition
 // law no longer applies to FpMode-tagged kernel selection.
-static_assert(::crucible::safety::tier_of_axis(
-                  ::crucible::safety::DimensionAxis::FpMode)
-              == ::crucible::safety::TierKind::Foundational,
-    "FIXY-V-088 TIER-MISCLASSIFY neg-compile: this assertion MUST "
-    "fail post-V-088.  FpMode is Tier-S (Semiring), NOT Tier-F "
-    "(Foundational).  If it passes, FpMode was silently demoted off "
-    "Semiring and Forge phase E.RecipeSelect's par/seq composition "
-    "no longer applies.");
+static_assert(::crucible::safety::tier_of_axis(::crucible::safety::DimensionAxis::FpMode)
+                  == ::crucible::safety::TierKind::Foundational,
+              "FIXY-V-088 TIER-MISCLASSIFY neg-compile: this assertion MUST "
+              "fail post-V-088.  FpMode is Tier-S (Semiring), NOT Tier-F "
+              "(Foundational).  If it passes, FpMode was silently demoted off "
+              "Semiring and Forge phase E.RecipeSelect's par/seq composition "
+              "no longer applies.");
 
 }  // namespace neg_fp_mode_tier_misclassify
 

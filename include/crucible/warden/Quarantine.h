@@ -76,8 +76,8 @@ struct QuarantineConfig {
     topology::HealthScore suspect_at_or_below{900};
     topology::HealthScore quarantine_at_or_below{500};
     PositiveRecoveryProbeCount recovery_probe_count{std::uint16_t{100}};
-    PositiveNanoseconds permanent_after_ns{std::uint64_t{3'600'000'000'000ull}};
-    std::uint32_t canary_load_ppm = 10'000;
+    PositiveNanoseconds permanent_after_ns{std::uint64_t{3600000000000ull}};
+    std::uint32_t canary_load_ppm = 10000;
 };
 
 struct QuarantineSnapshot {
@@ -86,7 +86,7 @@ struct QuarantineSnapshot {
     topology::HealthScore health_score{};
     safety::Bits<QuarantineSignal> signals{};
     std::uint16_t consecutive_recovery_probes = 0;
-    std::uint32_t admitted_load_ppm = 1'000'000;
+    std::uint32_t admitted_load_ppm = 1000000;
     std::uint64_t quarantine_since_ns = 0;
     std::uint64_t sequence = 0;
 };
@@ -98,7 +98,7 @@ struct QuarantineEvent {
     topology::HealthScore health_score{};
     safety::Bits<QuarantineSignal> signals{};
     std::uint16_t consecutive_recovery_probes = 0;
-    std::uint32_t admitted_load_ppm = 1'000'000;
+    std::uint32_t admitted_load_ppm = 1000000;
     std::uint64_t sequence = 0;
 };
 
@@ -121,9 +121,9 @@ namespace detail {
 [[nodiscard]] constexpr std::uint32_t load_for(QuarantineState state, QuarantineConfig const& config) noexcept {
     switch (state) {
         case QuarantineState::Healthy:
-            return 1'000'000;
+            return 1000000;
         case QuarantineState::Suspect:
-            return 300'000;
+            return 300000;
         case QuarantineState::Quarantined:
             return 0;
         case QuarantineState::Recovered:

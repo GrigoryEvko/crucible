@@ -13,8 +13,7 @@ namespace stance = crucible::fixy::stance;
 
 using BadRealtimeHotRef = stance::RealtimeHot<int&>;
 
-static_assert(sizeof(BadRealtimeHotRef) > 0,
-    "instantiate stance::RealtimeHot<int&> to force the Type-axis "
-    "rejection (reference is not value-semantic).");
+static_assert(sizeof(BadRealtimeHotRef) > 0, "instantiate stance::RealtimeHot<int&> to force the Type-axis "
+                                             "rejection (reference is not value-semantic).");
 
 int main() { return 0; }

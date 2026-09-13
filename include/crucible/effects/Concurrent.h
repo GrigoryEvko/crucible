@@ -529,8 +529,8 @@ static_assert(std::is_same_v<concurrent_row_sum_t<ConcurrentRow<resource::SmBudg
 
 static_assert(ConcurrentlySchedulable<ConcurrentRow<resource::SmBudget<32>>, ConcurrentRow<resource::SmBudget<64>>>);
 
-static_assert(ConcurrentlySchedulable<ConcurrentRow<resource::HbmBytes<40'000'000'000ULL>>,
-                                      ConcurrentRow<resource::HbmBytes<40'000'000'000ULL>>>);
+static_assert(ConcurrentlySchedulable<ConcurrentRow<resource::HbmBytes<40000000000ULL>>,
+                                      ConcurrentRow<resource::HbmBytes<40000000000ULL>>>);
 
 static_assert(ConcurrentlySchedulable<ConcurrentRow<>, ConcurrentRow<>>);
 

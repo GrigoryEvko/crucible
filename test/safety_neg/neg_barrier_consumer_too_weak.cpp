@@ -23,11 +23,11 @@
 #include <crucible/safety/BarrierGuarded.h>
 
 namespace sf = ::crucible::safety;
-using Bs_t   = sf::BarrierStrength_v;
+using Bs_t = sf::BarrierStrength_v;
 
 // A consumer requiring at least an AcqRel publication floor.
 template <typename W>
-    requires (W::template satisfies<Bs_t::AcqRel>)
+    requires(W::template satisfies<Bs_t::AcqRel>)
 [[nodiscard]] constexpr int require_acqrel_floor(W const& w) noexcept {
     return w.peek();
 }

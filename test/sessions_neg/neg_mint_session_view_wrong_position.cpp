@@ -34,8 +34,10 @@ namespace neg_mint_session_view_wrong_position {
 namespace proto = ::crucible::safety::proto;
 namespace safety = ::crucible::safety;
 
-struct FakeRes { int sentinel = 7; };
-struct Msg     {};
+struct FakeRes {
+    int sentinel = 7;
+};
+struct Msg {};
 
 }  // namespace neg_mint_session_view_wrong_position
 
@@ -44,8 +46,7 @@ int main() {
 
     // Handle is at Send<Msg, End> — handle_is_at_v<Send-handle, AtSend>
     // is true, but handle_is_at_v<Send-handle, AtRecv> is FALSE.
-    auto h = proto::mint_session_handle<proto::Send<Msg, proto::End>>(
-        FakeRes{99});
+    auto h = proto::mint_session_handle<proto::Send<Msg, proto::End>>(FakeRes{99});
 
     // The forbidden call: handle is at Send but caller requests AtRecv.
     // mint_session_view's `requires HandleIsAt<Handle, AtRecv>` excludes

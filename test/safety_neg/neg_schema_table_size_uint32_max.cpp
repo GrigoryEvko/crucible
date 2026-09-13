@@ -40,8 +40,7 @@ int main() {
     // initial == UINT32_MAX → CAP < UINT32_MAX → predicate(initial)
     // false → contract violation → not a constant expression →
     // ill-formed.
-    constexpr crucible::SchemaTable::SizeCounter bad{
-        uint32_t{UINT32_MAX}};
+    constexpr crucible::SchemaTable::SizeCounter bad{uint32_t{UINT32_MAX}};
     (void)bad;
     return 0;
 }

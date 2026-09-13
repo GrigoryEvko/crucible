@@ -22,6 +22,4 @@ using BadEvent = fw::TimeOrdered<int, 0>;
 [[maybe_unused]] BadEvent obj{};
 }  // namespace
 
-int main() {
-    return 0;
-}
+int main() { return 0; }

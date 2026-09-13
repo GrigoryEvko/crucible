@@ -42,7 +42,7 @@ int main() {
     // Should FAIL: cross-mode assignment requires inter-class conversion
     // between two distinct instantiations of FpModePinned.
     FpRoundingPinned<FpRounding::RoundToNearestEven, int> src{7};
-    FpRoundingPinned<FpRounding::RoundToZero,         int> dst{0};
+    FpRoundingPinned<FpRounding::RoundToZero, int> dst{0};
     dst = src;
     (void)dst;
     return 0;

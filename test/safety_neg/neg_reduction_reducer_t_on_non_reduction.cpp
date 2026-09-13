@@ -16,8 +16,7 @@ inline int neg_witness_returns_int(int) noexcept { return 0; }
 
 int main() {
     // arity 1, non-void return → not a Reduction.
-    using Op = crucible::safety::extract::reduction_reducer_t<
-        &::neg_witness_returns_int>;
+    using Op = crucible::safety::extract::reduction_reducer_t<&::neg_witness_returns_int>;
     Op const op{};
     (void)op;
     return 0;

@@ -67,11 +67,16 @@ struct Spec {
 
 [[nodiscard]] std::uint32_t gen_mask(Rng& rng) noexcept {
     switch (rng.next_below(5u)) {
-        case 0: return 0u;
-        case 1: return kKeyMask;
-        case 2: return (1u << rng.next_below(kKeys)) & kKeyMask;  // single key
-        case 3: return rng.next32() & rng.next32() & kKeyMask;    // sparse
-        default: return rng.next32() & kKeyMask;
+        case 0:
+            return 0u;
+        case 1:
+            return kKeyMask;
+        case 2:
+            return (1u << rng.next_below(kKeys)) & kKeyMask;  // single key
+        case 3:
+            return rng.next32() & rng.next32() & kKeyMask;  // sparse
+        default:
+            return rng.next32() & kKeyMask;
     }
 }
 
@@ -92,8 +97,7 @@ struct Spec {
 }
 
 // Look up a (value,tag) key in a state → its removed flag, or nullopt if absent.
-[[nodiscard]] std::optional<bool>
-lookup(State const& s, std::uint32_t value, std::uint32_t tag) noexcept {
+[[nodiscard]] std::optional<bool> lookup(State const& s, std::uint32_t value, std::uint32_t tag) noexcept {
     for (std::uint16_t i = 0; i < s.count; ++i) {
         if (s.entries[i].value == value && s.entries[i].tag == tag) {
             return s.entries[i].removed;
@@ -126,12 +130,12 @@ int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
 
     Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 2'000'000) cfg.iterations = 2'000'000;
+    if (cfg.iterations > 2000000) cfg.iterations = 2000000;
 
-    return run("crdt_orset", cfg,
+    return run(
+        "crdt_orset", cfg,
         [](Rng& rng) noexcept -> Spec {
-            return Spec{gen_mask(rng), gen_mask(rng), gen_mask(rng),
-                        gen_mask(rng), gen_mask(rng), gen_mask(rng)};
+            return Spec{gen_mask(rng), gen_mask(rng), gen_mask(rng), gen_mask(rng), gen_mask(rng), gen_mask(rng)};
         },
         [](const Spec& spec) noexcept -> bool {
             const State a = build(spec.pa, spec.ra);
@@ -145,8 +149,7 @@ int main(int argc, char** argv) {
             for (std::uint32_t k = 0; k < kKeys; ++k) {
                 const bool want_present = ((mp >> k) & 1u) != 0u;
                 const bool want_removed =
-                    (((spec.pa >> k) & (spec.ra >> k) & 1u) != 0u) ||
-                    (((spec.pb >> k) & (spec.rb >> k) & 1u) != 0u);
+                    (((spec.pa >> k) & (spec.ra >> k) & 1u) != 0u) || (((spec.pb >> k) & (spec.rb >> k) & 1u) != 0u);
                 const auto got = lookup(ab, key_value(k), key_tag(k));
                 if (want_present) {
                     if (!got || *got != want_removed) return false;
@@ -161,20 +164,19 @@ int main(int argc, char** argv) {
                 for (std::uint32_t t = 0; t < 4u; ++t) {
                     const std::uint32_t k = (v << 2) | t;
                     const bool present = ((mp >> k) & 1u) != 0u;
-                    const bool removed =
-                        (((spec.pa >> k) & (spec.ra >> k) & 1u) != 0u) ||
-                        (((spec.pb >> k) & (spec.rb >> k) & 1u) != 0u);
+                    const bool removed = (((spec.pa >> k) & (spec.ra >> k) & 1u) != 0u)
+                                      || (((spec.pb >> k) & (spec.rb >> k) & 1u) != 0u);
                     if (present && !removed) want_visible = true;
                 }
                 if (visible(ab, v) != want_visible) return false;
             }
 
             // ── semilattice laws (set-equivalence) ──
-            if (!equiv(ab, OS::merge(b, a))) return false;            // commutativity
-            if (!equiv(OS::merge(a, a), a)) return false;             // idempotence
+            if (!equiv(ab, OS::merge(b, a))) return false;  // commutativity
+            if (!equiv(OS::merge(a, a), a)) return false;  // idempotence
             const State left = OS::merge(OS::merge(a, b), c);
             const State right = OS::merge(a, OS::merge(b, c));
-            if (!equiv(left, right)) return false;                    // associativity
+            if (!equiv(left, right)) return false;  // associativity
 
             return true;
         });

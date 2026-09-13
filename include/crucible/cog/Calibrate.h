@@ -61,12 +61,12 @@ enum class CalibrationBackend : std::uint8_t {
     SwitchProbe = 3,
 };
 
-using CalibrationIterations = safety::Bounded<std::uint32_t{1}, std::uint32_t{65'535}, std::uint32_t>;
-using WarmupIterations = safety::Bounded<std::uint32_t{0}, std::uint32_t{65'535}, std::uint32_t>;
-using TrimBasisPoints = safety::Bounded<std::uint16_t{0}, std::uint16_t{1'000}, std::uint16_t>;
-using RuntimeBudgetMs = safety::Bounded<std::uint32_t{1}, std::uint32_t{86'400'000}, std::uint32_t>;
-using CalibrationSampleCount = safety::Bounded<std::uint16_t{1}, std::uint16_t{65'535}, std::uint16_t>;
-using DriftBasisPoints = safety::Bounded<std::uint16_t{1}, std::uint16_t{10'000}, std::uint16_t>;
+using CalibrationIterations = safety::Bounded<std::uint32_t{1}, std::uint32_t{65535}, std::uint32_t>;
+using WarmupIterations = safety::Bounded<std::uint32_t{0}, std::uint32_t{65535}, std::uint32_t>;
+using TrimBasisPoints = safety::Bounded<std::uint16_t{0}, std::uint16_t{1000}, std::uint16_t>;
+using RuntimeBudgetMs = safety::Bounded<std::uint32_t{1}, std::uint32_t{86400000}, std::uint32_t>;
+using CalibrationSampleCount = safety::Bounded<std::uint16_t{1}, std::uint16_t{65535}, std::uint16_t>;
+using DriftBasisPoints = safety::Bounded<std::uint16_t{1}, std::uint16_t{10000}, std::uint16_t>;
 
 inline constexpr auto calibration_quantiles_valid = [](LatencyQuantiles q) constexpr noexcept {
     return q.p50_ns > 0u && q.p50_ns <= q.p99_ns && q.p99_ns <= q.p999_ns;
@@ -84,7 +84,7 @@ struct CalibrationPlan {
     CalibrationIterations iterations{std::uint32_t{1000}};
     WarmupIterations warmup_iterations{std::uint32_t{100}};
     TrimBasisPoints trim_basis_points{std::uint16_t{100}};
-    RuntimeBudgetMs runtime_budget_ms{std::uint32_t{60'000}};
+    RuntimeBudgetMs runtime_budget_ms{std::uint32_t{60000}};
     CalibrationTrigger trigger = CalibrationTrigger::Startup;
     CalibrationBackend backend = CalibrationBackend::VendorMimic;
     bool require_thermal_stability = true;
@@ -135,7 +135,7 @@ struct CalibrationResult {
 
 [[nodiscard]] constexpr std::expected<CalibrationIterations, CalibrationError>
 admit_calibration_iterations(std::uint32_t iterations) noexcept {
-    if (iterations == 0u || iterations > 65'535u) {
+    if (iterations == 0u || iterations > 65535u) {
         return std::unexpected(CalibrationError::InvalidIterations);
     }
     return CalibrationIterations{iterations, typename CalibrationIterations::Trusted{}};
@@ -143,7 +143,7 @@ admit_calibration_iterations(std::uint32_t iterations) noexcept {
 
 [[nodiscard]] constexpr std::expected<WarmupIterations, CalibrationError>
 admit_warmup_iterations(std::uint32_t iterations) noexcept {
-    if (iterations > 65'535u) {
+    if (iterations > 65535u) {
         return std::unexpected(CalibrationError::InvalidWarmupIterations);
     }
     return WarmupIterations{iterations, typename WarmupIterations::Trusted{}};
@@ -151,7 +151,7 @@ admit_warmup_iterations(std::uint32_t iterations) noexcept {
 
 [[nodiscard]] constexpr std::expected<TrimBasisPoints, CalibrationError>
 admit_trim_basis_points(std::uint16_t basis_points) noexcept {
-    if (basis_points > 1'000u) {
+    if (basis_points > 1000u) {
         return std::unexpected(CalibrationError::InvalidTrimBasisPoints);
     }
     return TrimBasisPoints{basis_points, typename TrimBasisPoints::Trusted{}};
@@ -159,7 +159,7 @@ admit_trim_basis_points(std::uint16_t basis_points) noexcept {
 
 [[nodiscard]] constexpr std::expected<RuntimeBudgetMs, CalibrationError>
 admit_runtime_budget_ms(std::uint32_t runtime_ms) noexcept {
-    if (runtime_ms == 0u || runtime_ms > 86'400'000u) {
+    if (runtime_ms == 0u || runtime_ms > 86400000u) {
         return std::unexpected(CalibrationError::InvalidRuntimeBudgetMs);
     }
     return RuntimeBudgetMs{runtime_ms, typename RuntimeBudgetMs::Trusted{}};
@@ -167,7 +167,7 @@ admit_runtime_budget_ms(std::uint32_t runtime_ms) noexcept {
 
 [[nodiscard]] constexpr std::expected<CalibrationSampleCount, CalibrationError>
 admit_sample_count(std::uint32_t samples) noexcept {
-    if (samples == 0u || samples > 65'535u) {
+    if (samples == 0u || samples > 65535u) {
         return std::unexpected(CalibrationError::InvalidSampleCount);
     }
     return CalibrationSampleCount{static_cast<std::uint16_t>(samples), typename CalibrationSampleCount::Trusted{}};
@@ -191,7 +191,7 @@ admit_throughput_per_sec(double throughput) noexcept {
 
 [[nodiscard]] constexpr std::expected<DriftBasisPoints, CalibrationError>
 admit_drift_basis_points(std::uint16_t basis_points) noexcept {
-    if (basis_points == 0u || basis_points > 10'000u) {
+    if (basis_points == 0u || basis_points > 10000u) {
         return std::unexpected(CalibrationError::InvalidDriftBasisPoints);
     }
     return DriftBasisPoints{basis_points, typename DriftBasisPoints::Trusted{}};
@@ -261,7 +261,7 @@ build_calibration_result(CogIdentity identity, caps_for_t<K> caps, std::span<con
     if (entries.empty()) {
         return std::unexpected(CalibrationError::EmptyEntrySet);
     }
-    if (entries.size() > 65'535u) {
+    if (entries.size() > 65535u) {
         return std::unexpected(CalibrationError::InvalidSampleCount);
     }
     for (const OpcodeLatencyEntry<K>& entry : entries) {

@@ -14,15 +14,19 @@
 
 using namespace crucible::safety::proto;
 
-struct R          { int sentinel = 1; };
-struct DelegatedR { int sentinel = 2; };
+struct R {
+    int sentinel = 1;
+};
+struct DelegatedR {
+    int sentinel = 2;
+};
 
 using DelegatedProto = Send<int, End>;
 
 void compile_time_reject() {
     // Carrier: Delegate<DelegatedProto, End> — Alice sends the
     // delegated endpoint to Bob, then advances to End.
-    auto carrier  = mint_session_handle<Delegate<DelegatedProto, End>>(R{});
+    auto carrier = mint_session_handle<Delegate<DelegatedProto, End>>(R{});
     auto delegated = mint_session_handle<DelegatedProto>(DelegatedR{});
 
     // Bare `.delegate(delegated_handle)` — pre-#369 silently dropped

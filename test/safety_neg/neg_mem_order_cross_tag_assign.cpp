@@ -20,7 +20,7 @@ using namespace crucible::safety;
 
 int main() {
     MemOrder<MemOrderTag_v::Relaxed, int> relax_value{42};
-    MemOrder<MemOrderTag_v::SeqCst,  int> seqcst_value{7};
+    MemOrder<MemOrderTag_v::SeqCst, int> seqcst_value{7};
 
     // Should FAIL: relax_value and seqcst_value are DIFFERENT types.
     relax_value = seqcst_value;

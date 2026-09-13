@@ -7,10 +7,8 @@
 // requires-clause as the bare substrate call.
 
 int main() {
-    auto choice =
-        crucible::fixy::cap::cntp::mint_cc_choice<
-            crucible::cntp::CcAlgorithm::Dctcp,
-            crucible::cntp::LinkClass::CrossDatacenter>();
+    auto choice = crucible::fixy::cap::cntp::mint_cc_choice<crucible::cntp::CcAlgorithm::Dctcp,
+                                                            crucible::cntp::LinkClass::CrossDatacenter>();
     (void)choice;
     return 0;
 }

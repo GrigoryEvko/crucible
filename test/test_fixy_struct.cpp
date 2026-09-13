@@ -69,7 +69,7 @@ static_assert(fstr::ct::select<std::uint32_t>(1u, 0xAAu, 0xBBu) == 0xAAu,
               "fixy::struct_::ct::select must select on bit 1.");
 static_assert(fstr::ct::select<std::uint32_t>(0u, 0xAAu, 0xBBu) == 0xBBu,
               "fixy::struct_::ct::select must select on bit 0.");
-static_assert(fstr::ct::mask_from_bit<std::uint32_t>(1u) == 0xFFFF'FFFFu,
+static_assert(fstr::ct::mask_from_bit<std::uint32_t>(1u) == 0xFFFFFFFFu,
               "fixy::struct_::ct::mask_from_bit must broadcast bit 1.");
 static_assert(fstr::ct::is_zero<std::uint32_t>(0u) == 1u, "fixy::struct_::ct::is_zero must return 1 on zero.");
 static_assert(fstr::ct::less<std::uint32_t>(3u, 5u) == 1u, "fixy::struct_::ct::less must return 1 on a < b.");

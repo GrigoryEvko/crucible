@@ -15,8 +15,7 @@ struct BadDeque {};
 
 void exercise_owner_copy() {
     crucible::concurrent::PermissionedChaseLevDeque<int, 64, BadDeque> deque;
-    auto perm = crucible::safety::mint_permission_root<
-        crucible::concurrent::deque_tag::Owner<BadDeque>>();
+    auto perm = crucible::safety::mint_permission_root<crucible::concurrent::deque_tag::Owner<BadDeque>>();
     auto owner = deque.owner(std::move(perm));
 
     // Copy attempt — deleted with reason.
@@ -26,4 +25,7 @@ void exercise_owner_copy() {
 
 }  // namespace
 
-int main() { exercise_owner_copy(); return 0; }
+int main() {
+    exercise_owner_copy();
+    return 0;
+}

@@ -27,8 +27,8 @@ struct Probe {};
 }  // namespace neg_collision_v002
 
 namespace crucible::safety::fn::collision {
-    template <> struct marks_vendor_cross_arch<::neg_collision_v002::Probe>
-        : std::true_type {};
+template <>
+struct marks_vendor_cross_arch<::neg_collision_v002::Probe> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 static_assert(csc::V002_OK<::neg_collision_v002::Probe>,

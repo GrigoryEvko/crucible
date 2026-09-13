@@ -48,8 +48,9 @@ struct AlmostMpscChannel {
     // MpscChannelSessionSurface concept passes the six typedef checks and
     // rejects ONLY on the missing producer() method — the substrate
     // spelling IS the shape under test, not production code.
-    ConsumerHandle consumer(
-        ::crucible::safety::Permission<ConsumerTag>&&) {  // FIXY-DISCIPLINE-OK: neg-fixture mirrors real channel consumer() signature
+    ConsumerHandle
+    consumer(::crucible::safety::Permission<
+             ConsumerTag>&&) {  // FIXY-DISCIPLINE-OK: neg-fixture mirrors real channel consumer() signature
         return ConsumerHandle{};
     }
 };

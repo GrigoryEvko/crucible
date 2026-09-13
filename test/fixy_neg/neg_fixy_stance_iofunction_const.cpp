@@ -15,8 +15,7 @@ namespace stance = crucible::fixy::stance;
 
 using BadIoConst = stance::IoFunction<const int>;
 
-static_assert(sizeof(BadIoConst) > 0,
-    "instantiate stance::IoFunction<const int> to force the Type-"
-    "axis rejection (top-level const is not assignable).");
+static_assert(sizeof(BadIoConst) > 0, "instantiate stance::IoFunction<const int> to force the Type-"
+                                      "axis rejection (top-level const is not assignable).");
 
 int main() { return 0; }

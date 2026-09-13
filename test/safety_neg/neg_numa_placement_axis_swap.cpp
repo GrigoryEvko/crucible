@@ -20,7 +20,7 @@
 using namespace crucible::safety;
 
 int main() {
-    NumaNodeId   node{2};
+    NumaNodeId node{2};
     AffinityMask aff{0b11};
 
     // Should FAIL: NumaPlacement<int>(int, NumaNodeId, AffinityMask)

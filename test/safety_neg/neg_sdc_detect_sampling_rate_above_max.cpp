@@ -7,7 +7,7 @@
 
 namespace observe = crucible::observe;
 
-constexpr observe::SdcSamplingRatePpm bad_rate{1'000'001};
+constexpr observe::SdcSamplingRatePpm bad_rate{1000001};
 
 int main() {
     (void)bad_rate;

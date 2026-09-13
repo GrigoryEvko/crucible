@@ -65,16 +65,11 @@ int main() {
 
     using namespace crucible::simd;
     std::printf("=== simd architecture ===\n");
-    std::printf("  compile-time: avx512=%s avx2=%s sse42=%s neon=%s\n",
-        kAvx512Available ? "yes" : "no",
-        kAvx2Available   ? "yes" : "no",
-        kSse42Available  ? "yes" : "no",
-        kNeonAvailable   ? "yes" : "no");
+    std::printf("  compile-time: avx512=%s avx2=%s sse42=%s neon=%s\n", kAvx512Available ? "yes" : "no",
+                kAvx2Available ? "yes" : "no", kSse42Available ? "yes" : "no", kNeonAvailable ? "yes" : "no");
 #if defined(__x86_64__) || defined(__i386__)
-    std::printf("  runtime CPU:  avx512=%s avx2=%s sse42=%s\n",
-        runtime_supports_avx512() ? "yes" : "no",
-        runtime_supports_avx2()   ? "yes" : "no",
-        runtime_supports_sse42()  ? "yes" : "no");
+    std::printf("  runtime CPU:  avx512=%s avx2=%s sse42=%s\n", runtime_supports_avx512() ? "yes" : "no",
+                runtime_supports_avx2() ? "yes" : "no", runtime_supports_sse42() ? "yes" : "no");
 #endif
     std::printf("\n");
 
@@ -93,68 +88,74 @@ int main() {
     // Input vectors for std::simd primitives (volatile-loaded to
     // prevent constant-folding the entire reduction).
     alignas(64) static uint64_t v_in[8] = {
-        0x0123456789ABCDEFULL, 0xFEDCBA9876543210ULL,
-        0xCAFEBABEDEADBEEFULL, 0x1111222233334444ULL,
-        0x5555666677778888ULL, 0x9999AAAABBBBCCCCULL,
-        0xDDDDEEEEFFFF1234ULL, 0x6666777788889999ULL,
+        0x0123456789ABCDEFULL, 0xFEDCBA9876543210ULL, 0xCAFEBABEDEADBEEFULL, 0x1111222233334444ULL,
+        0x5555666677778888ULL, 0x9999AAAABBBBCCCCULL, 0xDDDDEEEEFFFF1234ULL, 0x6666777788889999ULL,
     };
-    auto load_u64x8 = []() {
-        return crucible::simd::load_aligned<u64x8>(v_in);
-    };
+    auto load_u64x8 = []() { return crucible::simd::load_aligned<u64x8>(v_in); };
 
     std::printf("=== simd ===\n\n");
 
     bench::Report reports[] = {
         // ─── Facade primitives ──────────────────────────────────────
-        bench::run("iota_v<i64x8>()                    [const constructor]", [&]{
-            auto v = crucible::simd::iota_v<i64x8>();
-            bench::do_not_optimize(v);
-        }),
-        bench::run("iota_v<u64x8>()", [&]{
-            auto v = crucible::simd::iota_v<u64x8>();
-            bench::do_not_optimize(v);
-        }),
+        bench::run("iota_v<i64x8>()                    [const constructor]",
+                   [&] {
+                       auto v = crucible::simd::iota_v<i64x8>();
+                       bench::do_not_optimize(v);
+                   }),
+        bench::run("iota_v<u64x8>()",
+                   [&] {
+                       auto v = crucible::simd::iota_v<u64x8>();
+                       bench::do_not_optimize(v);
+                   }),
 
-        bench::run("prefix_mask<u64x8>(0)              [empty mask]", [&]{
-            auto m = crucible::simd::prefix_mask<u64x8>(v_count_0);
-            bench::do_not_optimize(m);
-        }),
-        bench::run("prefix_mask<u64x8>(4)              [half mask]", [&]{
-            auto m = crucible::simd::prefix_mask<u64x8>(v_count_4);
-            bench::do_not_optimize(m);
-        }),
-        bench::run("prefix_mask<u64x8>(8)              [full mask]", [&]{
-            auto m = crucible::simd::prefix_mask<u64x8>(v_count_8);
-            bench::do_not_optimize(m);
-        }),
+        bench::run("prefix_mask<u64x8>(0)              [empty mask]",
+                   [&] {
+                       auto m = crucible::simd::prefix_mask<u64x8>(v_count_0);
+                       bench::do_not_optimize(m);
+                   }),
+        bench::run("prefix_mask<u64x8>(4)              [half mask]",
+                   [&] {
+                       auto m = crucible::simd::prefix_mask<u64x8>(v_count_4);
+                       bench::do_not_optimize(m);
+                   }),
+        bench::run("prefix_mask<u64x8>(8)              [full mask]",
+                   [&] {
+                       auto m = crucible::simd::prefix_mask<u64x8>(v_count_8);
+                       bench::do_not_optimize(m);
+                   }),
 
         // ─── facade reductions ───────────────────────────────────────
-        bench::run("simd::reduce_xor(u64x8)            [unmasked]", [&]{
-            auto v = load_u64x8();
-            uint64_t r = crucible::simd::reduce_xor(v);
-            bench::do_not_optimize(r);
-        }),
-        bench::run("simd::reduce_add(u64x8)            [unmasked]", [&]{
-            auto v = load_u64x8();
-            uint64_t r = crucible::simd::reduce_add(v);
-            bench::do_not_optimize(r);
-        }),
-        bench::run("simd::reduce_max(u64x8)", [&]{
-            auto v = load_u64x8();
-            uint64_t r = crucible::simd::reduce_max(v);
-            bench::do_not_optimize(r);
-        }),
-        bench::run("simd::reduce_min(u64x8)", [&]{
-            auto v = load_u64x8();
-            uint64_t r = crucible::simd::reduce_min(v);
-            bench::do_not_optimize(r);
-        }),
-        bench::run("simd::reduce_xor(u64x8, mask)      [masked half]", [&]{
-            auto v = load_u64x8();
-            auto m = crucible::simd::prefix_mask<u64x8>(v_count_4);
-            uint64_t r = crucible::simd::reduce_xor(v, m);
-            bench::do_not_optimize(r);
-        }),
+        bench::run("simd::reduce_xor(u64x8)            [unmasked]",
+                   [&] {
+                       auto v = load_u64x8();
+                       uint64_t r = crucible::simd::reduce_xor(v);
+                       bench::do_not_optimize(r);
+                   }),
+        bench::run("simd::reduce_add(u64x8)            [unmasked]",
+                   [&] {
+                       auto v = load_u64x8();
+                       uint64_t r = crucible::simd::reduce_add(v);
+                       bench::do_not_optimize(r);
+                   }),
+        bench::run("simd::reduce_max(u64x8)",
+                   [&] {
+                       auto v = load_u64x8();
+                       uint64_t r = crucible::simd::reduce_max(v);
+                       bench::do_not_optimize(r);
+                   }),
+        bench::run("simd::reduce_min(u64x8)",
+                   [&] {
+                       auto v = load_u64x8();
+                       uint64_t r = crucible::simd::reduce_min(v);
+                       bench::do_not_optimize(r);
+                   }),
+        bench::run("simd::reduce_xor(u64x8, mask)      [masked half]",
+                   [&] {
+                       auto v = load_u64x8();
+                       auto m = crucible::simd::prefix_mask<u64x8>(v_count_4);
+                       uint64_t r = crucible::simd::reduce_xor(v, m);
+                       bench::do_not_optimize(r);
+                   }),
 
         // ─── dim_hash: scalar vs SIMD across ndim ───────────────────
         //
@@ -162,70 +163,82 @@ int main() {
         // SIMD's load/mask overhead → scalar should win.
         // At ndim=4-8, SIMD's parallel multiply + masked reduce wins
         // by ~3-4×.
-        bench::run("dim_hash_scalar(ndim=1)            [scalar baseline]", [&]{
-            uint64_t h = dim_hash_scalar(m1);
-            bench::do_not_optimize(h);
-        }),
-        bench::run("dim_hash_simd  (ndim=1)            [SIMD]", [&]{
-            uint64_t h = dim_hash_simd(m1);
-            bench::do_not_optimize(h);
-        }),
-        bench::run("dim_hash_scalar(ndim=4)            [scalar baseline]", [&]{
-            uint64_t h = dim_hash_scalar(m4);
-            bench::do_not_optimize(h);
-        }),
-        bench::run("dim_hash_simd  (ndim=4)            [SIMD]", [&]{
-            uint64_t h = dim_hash_simd(m4);
-            bench::do_not_optimize(h);
-        }),
-        bench::run("dim_hash_scalar(ndim=8)            [scalar baseline]", [&]{
-            uint64_t h = dim_hash_scalar(m8);
-            bench::do_not_optimize(h);
-        }),
-        bench::run("dim_hash_simd  (ndim=8)            [SIMD]", [&]{
-            uint64_t h = dim_hash_simd(m8);
-            bench::do_not_optimize(h);
-        }),
+        bench::run("dim_hash_scalar(ndim=1)            [scalar baseline]",
+                   [&] {
+                       uint64_t h = dim_hash_scalar(m1);
+                       bench::do_not_optimize(h);
+                   }),
+        bench::run("dim_hash_simd  (ndim=1)            [SIMD]",
+                   [&] {
+                       uint64_t h = dim_hash_simd(m1);
+                       bench::do_not_optimize(h);
+                   }),
+        bench::run("dim_hash_scalar(ndim=4)            [scalar baseline]",
+                   [&] {
+                       uint64_t h = dim_hash_scalar(m4);
+                       bench::do_not_optimize(h);
+                   }),
+        bench::run("dim_hash_simd  (ndim=4)            [SIMD]",
+                   [&] {
+                       uint64_t h = dim_hash_simd(m4);
+                       bench::do_not_optimize(h);
+                   }),
+        bench::run("dim_hash_scalar(ndim=8)            [scalar baseline]",
+                   [&] {
+                       uint64_t h = dim_hash_scalar(m8);
+                       bench::do_not_optimize(h);
+                   }),
+        bench::run("dim_hash_simd  (ndim=8)            [SIMD]",
+                   [&] {
+                       uint64_t h = dim_hash_simd(m8);
+                       bench::do_not_optimize(h);
+                   }),
 
         // ─── compute_storage_nbytes: scalar vs SIMD ─────────────────
         //
         // SIMD path includes pre-screen overhead.  At ndim=1 the
         // scalar path is faster (single mul, no load).  At ndim=8
         // the SIMD wins on the dim multiply + masked accumulation.
-        bench::run("compute_storage_nbytes_scalar (ndim=1)", [&]{
-            auto b = compute_storage_nbytes_scalar(external_tensor_meta(m1));
-            bench::do_not_optimize(b);
-        }),
-        bench::run("compute_storage_nbytes_simd   (ndim=1)", [&]{
-            auto b = compute_storage_nbytes_simd(external_tensor_meta(m1));
-            bench::do_not_optimize(b);
-        }),
-        bench::run("compute_storage_nbytes_scalar (ndim=4)", [&]{
-            auto b = compute_storage_nbytes_scalar(external_tensor_meta(m4));
-            bench::do_not_optimize(b);
-        }),
-        bench::run("compute_storage_nbytes_simd   (ndim=4)", [&]{
-            auto b = compute_storage_nbytes_simd(external_tensor_meta(m4));
-            bench::do_not_optimize(b);
-        }),
-        bench::run("compute_storage_nbytes_scalar (ndim=8)", [&]{
-            auto b = compute_storage_nbytes_scalar(external_tensor_meta(m8));
-            bench::do_not_optimize(b);
-        }),
-        bench::run("compute_storage_nbytes_simd   (ndim=8)", [&]{
-            auto b = compute_storage_nbytes_simd(external_tensor_meta(m8));
-            bench::do_not_optimize(b);
-        }),
+        bench::run("compute_storage_nbytes_scalar (ndim=1)",
+                   [&] {
+                       auto b = compute_storage_nbytes_scalar(external_tensor_meta(m1));
+                       bench::do_not_optimize(b);
+                   }),
+        bench::run("compute_storage_nbytes_simd   (ndim=1)",
+                   [&] {
+                       auto b = compute_storage_nbytes_simd(external_tensor_meta(m1));
+                       bench::do_not_optimize(b);
+                   }),
+        bench::run("compute_storage_nbytes_scalar (ndim=4)",
+                   [&] {
+                       auto b = compute_storage_nbytes_scalar(external_tensor_meta(m4));
+                       bench::do_not_optimize(b);
+                   }),
+        bench::run("compute_storage_nbytes_simd   (ndim=4)",
+                   [&] {
+                       auto b = compute_storage_nbytes_simd(external_tensor_meta(m4));
+                       bench::do_not_optimize(b);
+                   }),
+        bench::run("compute_storage_nbytes_scalar (ndim=8)",
+                   [&] {
+                       auto b = compute_storage_nbytes_scalar(external_tensor_meta(m8));
+                       bench::do_not_optimize(b);
+                   }),
+        bench::run("compute_storage_nbytes_simd   (ndim=8)",
+                   [&] {
+                       auto b = compute_storage_nbytes_simd(external_tensor_meta(m8));
+                       bench::do_not_optimize(b);
+                   }),
 
         // ─── Variable-ndim sweep on the SIMD path ───────────────────
         //
         // Use volatile ndim so the compiler can't specialize per-ndim
         // — measures the realistic cost when ndim isn't known at
         // compile time.
-        [&]{
+        [&] {
             crucible::TensorMeta mvar{};
             mvar.dtype = crucible::ScalarType::Float;
-            return bench::run("dim_hash_simd  (variable ndim, runtime branch)", [&]{
+            return bench::run("dim_hash_simd  (variable ndim, runtime branch)", [&] {
                 mvar.ndim = static_cast<uint8_t>(v_ndim_8);
                 int64_t stride = 1;
                 for (int d = mvar.ndim - 1; d >= 0; --d) {

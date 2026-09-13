@@ -10,10 +10,8 @@
 
 int main() {
     using Payload = std::array<std::byte, 1>;
-    crucible::cntp::IntegrityWrappedMessage<
-        crucible::cntp::IntegrityOwnedPayload<Payload>> message{
-        .payload = crucible::cntp::IntegrityOwnedPayload<Payload>{
-            Payload{std::byte{0x42}}},
+    crucible::cntp::IntegrityWrappedMessage<crucible::cntp::IntegrityOwnedPayload<Payload>> message{
+        .payload = crucible::cntp::IntegrityOwnedPayload<Payload>{Payload{std::byte{0x42}}},
         .hash = 1,
     };
     (void)message;

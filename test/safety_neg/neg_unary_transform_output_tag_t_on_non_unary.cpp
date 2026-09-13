@@ -23,16 +23,16 @@
 #include <crucible/safety/UnaryTransform.h>
 #include <crucible/safety/OwnedRegion.h>
 
-namespace { struct out_tag_neg_test {}; }
+namespace {
+struct out_tag_neg_test {};
+}  // namespace
 
-inline void neg_witness_lvalue_ref(
-    crucible::safety::OwnedRegion<int, ::out_tag_neg_test>&) noexcept {}
+inline void neg_witness_lvalue_ref(crucible::safety::OwnedRegion<int, ::out_tag_neg_test>&) noexcept {}
 
 int main() {
     // Lvalue reference to OwnedRegion — fails UnaryTransform's
     // is_rvalue_reference_v clause.
-    using Tag = crucible::safety::extract::unary_transform_output_tag_t<
-        &::neg_witness_lvalue_ref>;
+    using Tag = crucible::safety::extract::unary_transform_output_tag_t<&::neg_witness_lvalue_ref>;
     Tag const t{};
     (void)t;
     return 0;

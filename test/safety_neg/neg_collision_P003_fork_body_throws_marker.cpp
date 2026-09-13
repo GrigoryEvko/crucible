@@ -58,10 +58,10 @@ using Bad = fn::Fn<int>;
 //
 // Combined: P003 must fire via the marker-OR arm.
 namespace crucible::safety::fn::collision {
-    template <> struct marks_fork_worker<::neg_collision_p003_marker::Bad>
-        : std::true_type {};
-    template <> struct marks_throws<::neg_collision_p003_marker::Bad>
-        : std::true_type {};
+template <>
+struct marks_fork_worker<::neg_collision_p003_marker::Bad> : std::true_type {};
+template <>
+struct marks_throws<::neg_collision_p003_marker::Bad> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 [[maybe_unused]] neg_collision_p003_marker::Bad the_fixture{};

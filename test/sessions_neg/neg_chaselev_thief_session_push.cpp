@@ -15,14 +15,12 @@ namespace ses = crucible::safety::proto::chaselev_session;
 namespace {
 struct Tag {};
 using Deque = concur::PermissionedChaseLevDeque<int, 64, Tag>;
-}
+}  // namespace
 
 int main() {
     Deque deque;
     auto thief = ses::mint_chaselev_thief<Deque>(deque);
-    auto psh = ses::mint_thief_session<Deque>(
-        ::crucible::effects::HotFgCtx{}, *thief);
-    [[maybe_unused]] auto next =
-        std::move(psh).send(1, ses::blocking_owner_push);
+    auto psh = ses::mint_thief_session<Deque>(::crucible::effects::HotFgCtx{}, *thief);
+    [[maybe_unused]] auto next = std::move(psh).send(1, ses::blocking_owner_push);
     return 0;
 }

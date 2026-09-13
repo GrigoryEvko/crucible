@@ -14,4 +14,3 @@ cog::NicOffloadAuditPolicy policy{
 };
 
 int main() { return static_cast<int>(policy.required_offloads.raw()); }
-

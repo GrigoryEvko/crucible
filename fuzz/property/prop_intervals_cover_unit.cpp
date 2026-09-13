@@ -61,24 +61,24 @@ namespace {
 // ASan; up to 64 pieces exercises dense many-piece partitions while
 // leaving 2 array slots for the duplicate/insert mutations.
 inline constexpr uint32_t kMaxTotal = 256;
-inline constexpr uint32_t kMaxIvs   = 64;
+inline constexpr uint32_t kMaxIvs = 64;
 
 using Iv = crucible::decide::Interval<uint64_t>;
 
 enum class Mode : uint8_t {
     ExactPartition = 0,
-    WithGap        = 1,
-    WithOverlap    = 2,
-    WithEmpty      = 3,
-    Random         = 4,
+    WithGap = 1,
+    WithOverlap = 2,
+    WithEmpty = 3,
+    Random = 4,
 };
 
 struct CoverSpec {
     std::array<Iv, kMaxIvs + 2> ivs{};
     uint64_t total = 0;
     uint32_t count = 0;
-    Mode     mode  = Mode::Random;
-    uint8_t  pad[3]{};
+    Mode mode = Mode::Random;
+    uint8_t pad[3]{};
 };
 
 using crucible::fuzz::prop::Rng;
@@ -93,25 +93,23 @@ using crucible::fuzz::prop::Rng;
     std::array<bool, kMaxTotal> covered{};
     for (uint32_t e = 0; e < spec.count; ++e) {
         const Iv iv = spec.ivs[e];
-        if (iv.lo > iv.hi)   return false;  // malformed
-        if (iv.lo == iv.hi)  return false;  // empty (note 2 rejects)
+        if (iv.lo > iv.hi) return false;  // malformed
+        if (iv.lo == iv.hi) return false;  // empty (note 2 rejects)
         if (iv.hi > spec.total) return false;  // out of bounds above
         for (uint64_t k = iv.lo; k < iv.hi; ++k) {
-            if (covered[k]) return false;   // double-cover == overlap
+            if (covered[k]) return false;  // double-cover == overlap
             covered[k] = true;
         }
     }
     for (uint64_t k = 0; k < spec.total; ++k) {
-        if (!covered[k]) return false;      // unmarked integer == gap
+        if (!covered[k]) return false;  // unmarked integer == gap
     }
     return true;
 }
 
 // Build a guaranteed-valid partition of [0, total) into consecutive
 // non-empty pieces.  Returns the piece count (≥ 1 for total ≥ 1).
-[[nodiscard]] uint32_t build_partition(
-    Rng& rng, uint64_t total, std::array<Iv, kMaxIvs + 2>& out) noexcept
-{
+[[nodiscard]] uint32_t build_partition(Rng& rng, uint64_t total, std::array<Iv, kMaxIvs + 2>& out) noexcept {
     uint32_t num_pieces = 0;
     uint64_t pos = 0;
     while (pos < total && num_pieces < kMaxIvs - 1) {
@@ -137,13 +135,14 @@ int main(int argc, char** argv) {
     using crucible::decide::intervals_cover_unit;
 
     Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 2'000'000) cfg.iterations = 2'000'000;  // O(total) per iter
+    if (cfg.iterations > 2000000) cfg.iterations = 2000000;  // O(total) per iter
 
-    return run("intervals_cover_unit", cfg,
+    return run(
+        "intervals_cover_unit", cfg,
         // ── Generator: one of five partition shapes ──
         [](Rng& rng) noexcept -> CoverSpec {
             CoverSpec spec{};
-            spec.mode  = static_cast<Mode>(rng.next_below(5));
+            spec.mode = static_cast<Mode>(rng.next_below(5));
             spec.total = 1u + rng.next_below(kMaxTotal);  // [1, kMaxTotal]
             switch (spec.mode) {
                 case Mode::ExactPartition: {
@@ -177,8 +176,7 @@ int main(int argc, char** argv) {
                 }
                 case Mode::WithEmpty: {
                     spec.count = build_partition(rng, spec.total, spec.ivs);
-                    const uint64_t k =
-                        rng.next_below(static_cast<uint32_t>(spec.total) + 1u);  // [0, total]
+                    const uint64_t k = rng.next_below(static_cast<uint32_t>(spec.total) + 1u);  // [0, total]
                     spec.ivs[spec.count].lo = k;
                     spec.ivs[spec.count].hi = k;  // empty [k, k)
                     ++spec.count;
@@ -187,22 +185,21 @@ int main(int argc, char** argv) {
                 case Mode::Random: {
                     spec.count = rng.next_below(kMaxIvs + 1u);  // [0, kMaxIvs]
                     for (uint32_t e = 0; e < spec.count; ++e) {
-                        spec.ivs[e].lo =
-                            rng.next_below(static_cast<uint32_t>(spec.total) + 1u);
-                        spec.ivs[e].hi =
-                            rng.next_below(static_cast<uint32_t>(spec.total) + 1u);
+                        spec.ivs[e].lo = rng.next_below(static_cast<uint32_t>(spec.total) + 1u);
+                        spec.ivs[e].hi = rng.next_below(static_cast<uint32_t>(spec.total) + 1u);
                     }
                     break;
                 }
-                default: std::unreachable();  // mode ∈ {0..4} by next_below(5)
+                default:
+                    std::unreachable();  // mode ∈ {0..4} by next_below(5)
             }
             return spec;
         },
         // ── Property: differential + construction-direction ──
         [](const CoverSpec& spec) noexcept -> bool {
             const std::span<const Iv> view{spec.ivs.data(), spec.count};
-            const bool cut    = intervals_cover_unit(view, spec.total);
-            const bool truth  = oracle(spec);
+            const bool cut = intervals_cover_unit(view, spec.total);
+            const bool truth = oracle(spec);
 
             // Universal: the code-under-test agrees with the
             // independent bitmap oracle on EVERY input.
@@ -218,11 +215,12 @@ int main(int argc, char** argv) {
                 case Mode::WithGap:
                 case Mode::WithOverlap:
                 case Mode::WithEmpty:
-                    if (cut) return false;   // a built defect MUST NOT cover
+                    if (cut) return false;  // a built defect MUST NOT cover
                     break;
                 case Mode::Random:
-                    break;                   // oracle is ground truth
-                default: std::unreachable();
+                    break;  // oracle is ground truth
+                default:
+                    std::unreachable();
             }
             return true;
         });

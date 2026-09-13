@@ -10,7 +10,11 @@
 
 #include <crucible/safety/StackUse.h>
 
-namespace { struct NeedsTwo { NeedsTwo(int, int) {} }; }
+namespace {
+struct NeedsTwo {
+    NeedsTwo(int, int) {}
+};
+}  // namespace
 
 int main() {
     using namespace crucible::safety;

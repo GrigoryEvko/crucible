@@ -48,7 +48,6 @@ int main() {
 
     using IllFormedProto = CheckpointedSession<GoodBase, BadRollback>;
 
-    assert_every_offer_has_crash_branch_for<IllFormedProto,
-                                            ns::UnreliablePeer>();
+    assert_every_offer_has_crash_branch_for<IllFormedProto, ns::UnreliablePeer>();
     return 0;
 }

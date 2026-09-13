@@ -37,10 +37,10 @@ namespace fixy_sync_prim = crucible::fixy::sync::sync_prim;
 // SyncPrim.h surface MUST reject this static_assert at compile time.
 
 static_assert(!fixy_sync_prim::IsBannedSyncPrim<fixy_sync_prim::permit_mutex const&>,
-    "FIXY-V-085 HS14 fixture #1: cv/ref propagation is the load-bearing "
-    "discipline.  If this static_assert passes, IsBannedSyncPrim has "
-    "lost the std::remove_cvref_t pierce and hot-path callers can "
-    "evade the ban by spelling `permit_mutex const&` instead of "
-    "`permit_mutex`.");
+              "FIXY-V-085 HS14 fixture #1: cv/ref propagation is the load-bearing "
+              "discipline.  If this static_assert passes, IsBannedSyncPrim has "
+              "lost the std::remove_cvref_t pierce and hot-path callers can "
+              "evade the ban by spelling `permit_mutex const&` instead of "
+              "`permit_mutex`.");
 
 int main() { return 0; }

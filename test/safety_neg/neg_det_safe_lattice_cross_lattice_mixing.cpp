@@ -37,7 +37,7 @@
 using namespace crucible::algebra::lattices;
 
 int main() {
-    DetSafeTier det_safe_val   = DetSafeTier::Pure;
+    DetSafeTier det_safe_val = DetSafeTier::Pure;
     Consistency consistency_val = Consistency::STRONG;
 
     // Should FAIL: ConsistencyLattice::leq's signature requires two
@@ -45,6 +45,5 @@ int main() {
     // argument is a type-mismatch (DetSafeTier is NOT convertible to
     // Consistency — both are `enum class : uint8_t` so no implicit
     // narrowing applies).
-    return static_cast<int>(
-        ConsistencyLattice::leq(consistency_val, det_safe_val));
+    return static_cast<int>(ConsistencyLattice::leq(consistency_val, det_safe_val));
 }

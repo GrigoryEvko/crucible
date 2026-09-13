@@ -16,7 +16,7 @@
 #include <utility>
 
 namespace fstr = crucible::fixy::struct_;
-namespace saf  = crucible::safety;
+namespace saf = crucible::safety;
 
 namespace neg_fixy_struct_workload_zero_shards {
 
@@ -35,7 +35,6 @@ int main() {
     auto body = [](auto&&) noexcept {};
 
     // Should FAIL: N==0 violates `parallel_for_views<N> requires N > 0`.
-    [[maybe_unused]] auto rebuilt =
-        fstr::parallel_for_views<0>(std::move(r), body);
+    [[maybe_unused]] auto rebuilt = fstr::parallel_for_views<0>(std::move(r), body);
     return 0;
 }

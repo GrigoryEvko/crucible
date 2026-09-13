@@ -18,11 +18,9 @@
 #include <cstdint>
 
 int main() {
-  using ExternalVersion = crucible::safety::Tagged<
-      std::uint32_t,
-      crucible::safety::source::External>;
+    using ExternalVersion = crucible::safety::Tagged<std::uint32_t, crucible::safety::source::External>;
 
-  // MUST fail: source::FormatVersion is not source::External.
-  ExternalVersion disk = crucible::CDAG_VERSION;
-  return static_cast<int>(disk.value());
+    // MUST fail: source::FormatVersion is not source::External.
+    ExternalVersion disk = crucible::CDAG_VERSION;
+    return static_cast<int>(disk.value());
 }

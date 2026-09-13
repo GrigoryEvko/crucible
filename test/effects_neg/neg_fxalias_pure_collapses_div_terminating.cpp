@@ -32,25 +32,21 @@
 namespace eff = ::crucible::effects;
 namespace saf = ::crucible::safety;
 
-using DivLikePureShape = saf::Progress<
-    saf::ProgressClass_v::MayDiverge,
-    saf::DetSafe<
-        saf::DetSafeTier_v::Pure,
-        eff::Computation<eff::PureRow, int>>>;
+using DivLikePureShape = saf::Progress<saf::ProgressClass_v::MayDiverge,
+                                       saf::DetSafe<saf::DetSafeTier_v::Pure, eff::Computation<eff::PureRow, int>>>;
 
 // fixy-A3-019: Pure<int> pins Terminating; DivLikePureShape pins
 // MayDiverge.  Same payload, same row, same DetSafe tier — but
 // the Progress-class pin differs.  The alias substitution MUST
 // preserve the discrimination.  Asserting same_v here fires the
 // negative compile.
-static_assert(
-    std::is_same_v<eff::Pure<int>, DivLikePureShape>,
-    "fixy-A3-019: value-carrying F* aliases must remain structurally "
-    "distinct under ProgressClass discrimination — Pure<T> ≡ "
-    "Progress<Terminating, ...> and MUST NOT silently collapse with "
-    "Progress<MayDiverge, ...>.  Without this discipline a Div-pinned "
-    "value could flow into a Pure-typed sink at a call site (per the "
-    "Cipher::record_event DetSafe fence from 28_04_2026_effects.md "
-    "§3.4) without the type system catching the substitution drift.");
+static_assert(std::is_same_v<eff::Pure<int>, DivLikePureShape>,
+              "fixy-A3-019: value-carrying F* aliases must remain structurally "
+              "distinct under ProgressClass discrimination — Pure<T> ≡ "
+              "Progress<Terminating, ...> and MUST NOT silently collapse with "
+              "Progress<MayDiverge, ...>.  Without this discipline a Div-pinned "
+              "value could flow into a Pure-typed sink at a call site (per the "
+              "Cipher::record_event DetSafe fence from 28_04_2026_effects.md "
+              "§3.4) without the type system catching the substitution drift.");
 
 int main() { return 0; }

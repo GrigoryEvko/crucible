@@ -138,11 +138,11 @@ static void test_fusion_benefit() {
     // Two kernels of 5 µs each fuse into one of 6 µs once the round trip
     // through memory between them is gone: 4 µs saved, 10/6 speedup.
     auto fb = compute_fusion_benefit(
-        /*unfused_ns=*/10'000.0,
-        /*fused_ns=*/6'000.0,
-        /*saved_bytes=*/1'024'000,
+        /*unfused_ns=*/10000.0,
+        /*fused_ns=*/6000.0,
+        /*saved_bytes=*/1024000,
         /*saved_launches=*/1);
-    assert(approx(static_cast<float>(fb.saved_ns), 4'000.0f));
+    assert(approx(static_cast<float>(fb.saved_ns), 4000.0f));
     assert(approx(fb.speedup, 10.0f / 6.0f));
     assert(fb.saved_launches == 1);
     std::printf("  test_fusion_benefit:            PASSED\n");
@@ -157,9 +157,9 @@ static void test_pure_row_fences() {
     KernelConfig cfg{};
     (void)wave_efficiency<eff::Row<>>(0, hw);
     (void)sm_occupancy<eff::Row<>>(cfg.regs_per_thread, cfg.smem_bytes, cfg.warps_per_block, hw);
-    (void)evaluate_cost<eff::Row<>>(1'024, 2'048, 4'096, ScalarType::Float, cfg, hw);
-    (void)evaluate_cost<eff::Row<>>(1'024, 2'048, 4'096, ScalarType::Float, hw);
-    (void)compute_fusion_benefit<eff::Row<>>(10'000.0, 6'000.0, 1'024'000, 1);
+    (void)evaluate_cost<eff::Row<>>(1024, 2048, 4096, ScalarType::Float, cfg, hw);
+    (void)evaluate_cost<eff::Row<>>(1024, 2048, 4096, ScalarType::Float, hw);
+    (void)compute_fusion_benefit<eff::Row<>>(10000.0, 6000.0, 1024000, 1);
 
     std::printf("  test_pure_row_fences:           PASSED\n");
 }

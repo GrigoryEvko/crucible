@@ -23,7 +23,7 @@
 #include <crucible/sessions/SessionCrash.h>
 #include <crucible/effects/Computation.h>
 
-namespace eff   = crucible::effects;
+namespace eff = crucible::effects;
 namespace proto = crucible::safety::proto;
 
 struct DummyResource {
@@ -37,7 +37,7 @@ int main() {
 
     eff::HotFgCtx fg;
     DummyResource res;
-    auto bad = proto::mint_permissioned_session<BgSendStop>(fg, res); // CtxFitsProtocol fails on Send's payload row
+    auto bad = proto::mint_permissioned_session<BgSendStop>(fg, res);  // CtxFitsProtocol fails on Send's payload row
     (void)bad;
     return 0;
 }

@@ -23,8 +23,7 @@
 using namespace crucible::safety;
 
 int main() {
-    auto monotonic = mint_suspend_behavior<SuspendBehavior_v::PausesOnSuspend,
-                                           unsigned long long>(1000);
+    auto monotonic = mint_suspend_behavior<SuspendBehavior_v::PausesOnSuspend, unsigned long long>(1000);
 
     // Should FAIL: a KeepsTicking witness cannot be initialized from a
     // PausesOnSuspend one — distinct behavior wrappers, no conversion.

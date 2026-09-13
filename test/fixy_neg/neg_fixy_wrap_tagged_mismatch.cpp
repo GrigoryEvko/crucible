@@ -13,7 +13,7 @@
 
 #include <crucible/fixy/Wrap.h>
 
-namespace fw  = crucible::fixy::wrap;
+namespace fw = crucible::fixy::wrap;
 namespace saf = crucible::safety;
 
 struct TypeFixyWrapTaggedMismatch {};

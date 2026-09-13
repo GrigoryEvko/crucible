@@ -47,15 +47,14 @@ namespace fn = crucible::safety::fn;
 namespace proto = crucible::safety::proto;
 
 namespace neg_collision_i004_secret {
-using Bad = fn::Fn<int, fn::pred::True, fn::UsageMode::Linear,
-                   crucible::effects::Row<>, fn::SecLevel::Secret,
+using Bad = fn::Fn<int, fn::pred::True, fn::UsageMode::Linear, crucible::effects::Row<>, fn::SecLevel::Secret,
                    proto::Send<int, proto::End>>;
-}
+}  // namespace neg_collision_i004_secret
 
 namespace crucible::safety::fn::collision {
 template <>
 struct marks_async<::neg_collision_i004_secret::Bad> : std::true_type {};
-}
+}  // namespace crucible::safety::fn::collision
 
 [[maybe_unused]] neg_collision_i004_secret::Bad bad{};
 

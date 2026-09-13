@@ -31,7 +31,9 @@ struct TypeNoEngagement {
 
 template <typename Type, typename... Grants>
     requires fixy::IsAcceptedActive<Type, Grants...>
-[[nodiscard]] constexpr int gate(Type const&) noexcept { return 1; }
+[[nodiscard]] constexpr int gate(Type const&) noexcept {
+    return 1;
+}
 
 }  // namespace neg_fixy_profile_active_strict_rejects
 
@@ -39,8 +41,7 @@ int main() {
     namespace tags = neg_fixy_profile_active_strict_rejects;
 
     // Witness: assert the toggle is strict in this TU (preset default).
-    static_assert(fixy::fixy_is_strict,
-        "Default preset must compile with CRUCIBLE_FIXY_STRICT=1.");
+    static_assert(fixy::fixy_is_strict, "Default preset must compile with CRUCIBLE_FIXY_STRICT=1.");
 
     // Should FAIL under STRICT: empty grants pack engages no dim, so
     // IsAccepted rejects → IsAcceptedActive rejects.

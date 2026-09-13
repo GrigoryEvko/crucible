@@ -11,9 +11,8 @@ namespace cc = crucible::concurrent;
 namespace {
 struct Tag {};
 using Grid = cc::PermissionedShardedGrid<int, 2, 2, 32, Tag>;
-using BadHandle = cc::handle_for_t<Grid, cc::Direction::Producer,
-                                   cc::ShardId<5>>;
-}
+using BadHandle = cc::handle_for_t<Grid, cc::Direction::Producer, cc::ShardId<5>>;
+}  // namespace
 
 int main() {
     [[maybe_unused]] BadHandle* impossible = nullptr;

@@ -19,19 +19,16 @@
 #include <crucible/fixy/Wrap.h>
 
 int main() {
-    namespace fwio  = ::crucible::fixy::wrap::io;
+    namespace fwio = ::crucible::fixy::wrap::io;
     namespace engine = fwio::engine;
-    namespace grant  = fwio::grant;
+    namespace grant = fwio::grant;
 
     ::crucible::effects::TestRunnerCtx ctx{};
 
     // Should FAIL: two engine<IoUring> grants in the pack triggers
     // has_duplicate_engine_v<>; even though both name the SAME
     // enumerator, the type system refuses the redundant engagement.
-    [[maybe_unused]] auto r = fwio::mint_io_uring_ring<
-        grant::engine<engine::IoUring>,
-        grant::engine<engine::IoUring>,
-        grant::sq_entries<128>
-    >(ctx);
+    [[maybe_unused]] auto r = fwio::mint_io_uring_ring<grant::engine<engine::IoUring>, grant::engine<engine::IoUring>,
+                                                       grant::sq_entries<128>>(ctx);
     return 0;
 }

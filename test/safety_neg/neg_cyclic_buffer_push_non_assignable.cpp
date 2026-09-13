@@ -30,12 +30,12 @@ namespace saf = crucible::safety;
 // instantiates; only push's assignability requires-clause fails.
 struct NonAssignable {
     int value = 0;
-    NonAssignable()                                = default;
-    NonAssignable(NonAssignable const&)            = default;
-    NonAssignable(NonAssignable&&)                 = default;
+    NonAssignable() = default;
+    NonAssignable(NonAssignable const&) = default;
+    NonAssignable(NonAssignable&&) = default;
     NonAssignable& operator=(NonAssignable const&) = delete;
-    NonAssignable& operator=(NonAssignable&&)      = delete;
-    ~NonAssignable()                               = default;
+    NonAssignable& operator=(NonAssignable&&) = delete;
+    ~NonAssignable() = default;
 };
 
 int main() {

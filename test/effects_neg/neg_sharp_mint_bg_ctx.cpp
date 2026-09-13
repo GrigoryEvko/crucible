@@ -16,8 +16,6 @@ int main() {
     cog::NvSwitchTargetCaps caps{};
     caps.features.set(cog::SwitchFeature::Sharp);
 
-    auto result = shp::mint_sharp_fabric_plan(
-        eff::BgDrainCtx{}, sw, caps,
-        *shp::admit_sharp_participant_count(8));
+    auto result = shp::mint_sharp_fabric_plan(eff::BgDrainCtx{}, sw, caps, *shp::admit_sharp_participant_count(8));
     return result.has_value() ? 0 : 1;
 }

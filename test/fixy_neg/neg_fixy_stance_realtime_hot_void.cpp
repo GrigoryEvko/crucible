@@ -12,8 +12,7 @@ namespace stance = crucible::fixy::stance;
 
 using BadRealtimeHotVoid = stance::RealtimeHot<void>;
 
-static_assert(sizeof(BadRealtimeHotVoid) > 0,
-    "instantiate stance::RealtimeHot<void> to force the Type-axis "
-    "rejection (void is not an object type).");
+static_assert(sizeof(BadRealtimeHotVoid) > 0, "instantiate stance::RealtimeHot<void> to force the Type-axis "
+                                              "rejection (void is not an object type).");
 
 int main() { return 0; }

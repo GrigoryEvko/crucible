@@ -31,7 +31,7 @@
 #include <crucible/sessions/Session.h>
 
 namespace fsdelegate = ::crucible::fixy::sess::delegate;
-namespace proto      = ::crucible::safety::proto;
+namespace proto = ::crucible::safety::proto;
 
 namespace {
 struct Req {};
@@ -55,7 +55,6 @@ int main() {
     // carrier must add a Crash<RecipientTag> recovery branch to K
     // (or T must be a Recv-only chain) before this assertion can
     // pass.
-    fsdelegate::assert_delegated_crash_propagates<
-        T_delegated, RecipientTag, K_continue>();
+    fsdelegate::assert_delegated_crash_propagates<T_delegated, RecipientTag, K_continue>();
     return 0;
 }

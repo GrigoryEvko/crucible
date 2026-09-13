@@ -40,7 +40,6 @@ namespace neg = crucible::safety::fn;
 // — sizeof, member access, value declaration — do.  sizeof is the
 // minimal trigger that doesn't require the type to be
 // constructible.)
-static_assert(sizeof(neg::Fn<int&>) > 0,
-              "the_fixture forces instantiation");
+static_assert(sizeof(neg::Fn<int&>) > 0, "the_fixture forces instantiation");
 
 int main() { return 0; }

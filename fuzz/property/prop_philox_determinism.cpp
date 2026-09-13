@@ -35,7 +35,8 @@ int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
     const Config cfg = parse_args(argc, argv);
 
-    return run("Philox determinism + decorrelation", cfg,
+    return run(
+        "Philox determinism + decorrelation", cfg,
         [](Rng& rng) {
             struct Pair {
                 uint64_t offset_a;
@@ -45,9 +46,9 @@ int main(int argc, char** argv) {
             };
             Pair p{};
             p.offset_a = rng.next64();
-            p.key_a    = rng.next64();
+            p.key_a = rng.next64();
             p.offset_b = rng.next64();
-            p.key_b    = rng.next64();
+            p.key_b = rng.next64();
             return p;
         },
         [](const auto& p) {
@@ -57,8 +58,7 @@ int main(int argc, char** argv) {
             const auto first = Philox::generate(p.offset_a, p.key_a);
             for (int k = 0; k < 8; ++k) {
                 const auto again = Philox::generate(p.offset_a, p.key_a);
-                if (again[0] != first[0] || again[1] != first[1] ||
-                    again[2] != first[2] || again[3] != first[3])
+                if (again[0] != first[0] || again[1] != first[1] || again[2] != first[2] || again[3] != first[3])
                     return false;
             }
 
@@ -66,21 +66,15 @@ int main(int argc, char** argv) {
             // pairs MUST produce different 4-u32 outputs (probability
             // of collision: ~2^-128, negligible).  Skip the check if
             // we happen to generate the same inputs.
-            if (p.offset_a == p.offset_b && p.key_a == p.key_b)
-                return true;
+            if (p.offset_a == p.offset_b && p.key_a == p.key_b) return true;
             const auto other = Philox::generate(p.offset_b, p.key_b);
-            if (other[0] == first[0] && other[1] == first[1] &&
-                other[2] == first[2] && other[3] == first[3])
+            if (other[0] == first[0] && other[1] == first[1] && other[2] == first[2] && other[3] == first[3])
                 return false;
 
             // Property 3: op_key determinism.  Pure function; same
             // inputs → same output.
-            const auto k1 = Philox::op_key_det(
-                p.offset_a, static_cast<uint32_t>(p.key_a),
-                ContentHash{p.offset_b});
-            const auto k2 = Philox::op_key_det(
-                p.offset_a, static_cast<uint32_t>(p.key_a),
-                ContentHash{p.offset_b});
+            const auto k1 = Philox::op_key_det(p.offset_a, static_cast<uint32_t>(p.key_a), ContentHash{p.offset_b});
+            const auto k2 = Philox::op_key_det(p.offset_a, static_cast<uint32_t>(p.key_a), ContentHash{p.offset_b});
             if (k1 != k2) return false;
 
             return true;

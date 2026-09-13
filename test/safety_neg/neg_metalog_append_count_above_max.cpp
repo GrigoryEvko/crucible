@@ -37,8 +37,7 @@ int main() {
     // (`bounded_above<MetaLog::CAPACITY>(v)`) to be exercised at
     // compile time.  v == CAPACITY + 1 → predicate(v) == false →
     // contract violation → not a constant expression → ill-formed.
-    constexpr crucible::ValidMetaAppendCount bad{
-        uint32_t{crucible::MetaLog::CAPACITY} + 1u};
+    constexpr crucible::ValidMetaAppendCount bad{uint32_t{crucible::MetaLog::CAPACITY} + 1u};
     (void)bad;
     return 0;
 }

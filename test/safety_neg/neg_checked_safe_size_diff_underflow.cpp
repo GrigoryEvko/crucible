@@ -17,6 +17,4 @@ using namespace crucible::safety;
 // returned by checked_sub<std::size_t>(10, 100).
 inline constexpr std::size_t kUnderflow = safe_size_diff<10u, 100u>;
 
-int main() {
-    return static_cast<int>(kUnderflow & 1u);
-}
+int main() { return static_cast<int>(kUnderflow & 1u); }

@@ -55,16 +55,20 @@ inline constexpr std::uint64_t kIncMax = std::numeric_limits<std::uint64_t>::max
 // the private Swim::state_rank_.
 [[nodiscard]] std::uint8_t rank_of(cc::SwimState s) noexcept {
     switch (s) {
-        case cc::SwimState::Alive:   return 0;
-        case cc::SwimState::Suspect: return 1;
-        case cc::SwimState::Dead:    return 2;
-        default:                     return 2;
+        case cc::SwimState::Alive:
+            return 0;
+        case cc::SwimState::Suspect:
+            return 1;
+        case cc::SwimState::Dead:
+            return 2;
+        default:
+            return 2;
     }
 }
 
 struct EventSpec {
-    std::uint8_t peer_idx = 0;     // [0, kPeers)
-    std::uint8_t state = 0;        // 0=Alive 1=Suspect 2=Dead
+    std::uint8_t peer_idx = 0;  // [0, kPeers)
+    std::uint8_t state = 0;  // 0=Alive 1=Suspect 2=Dead
     std::uint64_t incarnation = 0;
     std::uint32_t consecutive_misses = 0;
 };
@@ -76,28 +80,35 @@ struct Spec {
 
 [[nodiscard]] std::uint64_t gen_inc(Rng& rng) noexcept {
     switch (rng.next_below(6u)) {
-        case 0: return 0u;
-        case 1: return 1u;
-        case 2: return kIncMax;
-        case 3: return kIncMax - 1u;
+        case 0:
+            return 0u;
+        case 1:
+            return 1u;
+        case 2:
+            return kIncMax;
+        case 3:
+            return kIncMax - 1u;
         // Small cluster — drives equal-incarnation state competition.
-        default: return rng.next_below(4u);
+        default:
+            return rng.next_below(4u);
     }
 }
 
 [[nodiscard]] cc::SwimState state_of(std::uint8_t raw) noexcept {
     switch (raw % 3u) {
-        case 0: return cc::SwimState::Alive;
-        case 1: return cc::SwimState::Suspect;
-        default: return cc::SwimState::Dead;
+        case 0:
+            return cc::SwimState::Alive;
+        case 1:
+            return cc::SwimState::Suspect;
+        default:
+            return cc::SwimState::Dead;
     }
 }
 
 [[nodiscard]] crucible::cog::CogIdentity identity_of(std::uint8_t idx) noexcept {
     crucible::cog::CogIdentity id{};
     // Non-zero UUID (apply_gossip rejects zero); distinct per peer index.
-    id.uuid = crucible::cog::Uuid{static_cast<std::uint64_t>(idx) + 1u,
-                                  static_cast<std::uint64_t>(idx) + 101u};
+    id.uuid = crucible::cog::Uuid{static_cast<std::uint64_t>(idx) + 1u, static_cast<std::uint64_t>(idx) + 101u};
     return id;
 }
 
@@ -113,9 +124,10 @@ int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
 
     Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 2'000'000) cfg.iterations = 2'000'000;
+    if (cfg.iterations > 2000000) cfg.iterations = 2000000;
 
-    return run("swim_membership", cfg,
+    return run(
+        "swim_membership", cfg,
         [](Rng& rng) noexcept -> Spec {
             Spec spec{};
             spec.count = 1u + rng.next_below(kMaxEvents - 1u);
@@ -148,14 +160,12 @@ int main(int argc, char** argv) {
                 };
                 // Peer UUID is non-zero and the table (8) never fills with
                 // only 4 peers, so the apply must always succeed.
-                if (!membership.apply_gossip(
-                        cc::GossipedSwimEvent{se},
-                        static_cast<std::uint64_t>(i) * 1000u).has_value()) {
+                if (!membership.apply_gossip(cc::GossipedSwimEvent{se}, static_cast<std::uint64_t>(i) * 1000u)
+                         .has_value()) {
                     return false;
                 }
 
-                const cc::PeerHealth ph =
-                    membership.health(id.uuid).peek();
+                const cc::PeerHealth ph = membership.health(id.uuid).peek();
                 const std::uint8_t cur_rank = rank_of(ph.state);
                 PeerRef& ref = refs[e.peer_idx];
 
@@ -171,8 +181,7 @@ int main(int argc, char** argv) {
 
                     // Override iff the incoming is strictly newer (lex).
                     const bool incoming_newer =
-                        (e.incarnation > ref.inc) ||
-                        (e.incarnation == ref.inc && in_rank > ref.rank);
+                        (e.incarnation > ref.inc) || (e.incarnation == ref.inc && in_rank > ref.rank);
                     if (incoming_newer) {
                         if (ph.incarnation != e.incarnation || ph.state != in_state) {
                             return false;

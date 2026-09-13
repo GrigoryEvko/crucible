@@ -14,8 +14,8 @@ namespace crucible::topology {
 
 namespace {
 
-using RttHistogram = observe::HdrHistogram<2, 3'600'000'000'000ull>;
-using BandwidthHistogram = observe::HdrHistogram<2, 1'000'000'000'000ull>;
+using RttHistogram = observe::HdrHistogram<2, 3600000000000ull>;
+using BandwidthHistogram = observe::HdrHistogram<2, 1000000000000ull>;
 
 [[nodiscard]] constexpr std::uint64_t positive_or_one_u64(std::uint64_t v) noexcept {
     return v == 0 ? std::uint64_t{1} : v;
@@ -106,8 +106,8 @@ using BandwidthHistogram = observe::HdrHistogram<2, 1'000'000'000'000ull>;
 [[nodiscard]] constexpr DctcpFields decode_dctcp(tcp_dctcp_info const& info) noexcept {
     std::uint32_t ppm = 0;
     if (info.dctcp_ab_tot != 0) {
-        const std::uint64_t scaled = (static_cast<std::uint64_t>(info.dctcp_ab_ecn) * 1'000'000ull) / info.dctcp_ab_tot;
-        ppm = static_cast<std::uint32_t>(std::min<std::uint64_t>(scaled, 1'000'000));
+        const std::uint64_t scaled = (static_cast<std::uint64_t>(info.dctcp_ab_ecn) * 1000000ull) / info.dctcp_ab_tot;
+        ppm = static_cast<std::uint32_t>(std::min<std::uint64_t>(scaled, 1000000));
     }
     return DctcpFields{
         .alpha_q10 = info.dctcp_alpha,
@@ -145,8 +145,8 @@ using BandwidthHistogram = observe::HdrHistogram<2, 1'000'000'000'000ull>;
     };
 
     if (state.delivered != 0) {
-        const std::uint64_t scaled = (static_cast<std::uint64_t>(state.delivered_ce) * 1'000'000ull) / state.delivered;
-        state.dctcp.ecn_mark_ppm = static_cast<std::uint32_t>(std::min<std::uint64_t>(scaled, 1'000'000));
+        const std::uint64_t scaled = (static_cast<std::uint64_t>(state.delivered_ce) * 1000000ull) / state.delivered;
+        state.dctcp.ecn_mark_ppm = static_cast<std::uint32_t>(std::min<std::uint64_t>(scaled, 1000000));
     }
     return state;
 }

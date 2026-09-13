@@ -21,7 +21,7 @@ static constexpr size_t kGroupWidth = crucible::detail::group_width();
 static void test_h2_tag_range() {
     // Top 7 bits = 0..127, always non-negative as int8_t.
     // Bit 7 cleared to leave 0x80 distinct as the empty marker.
-    for (uint64_t h : {0ULL, 1ULL, 0xFFULL, 0xFE00'0000'0000'0000ULL, ~0ULL, 0x7F80'0000'0000'0000ULL}) {
+    for (uint64_t h : {0ULL, 1ULL, 0xFFULL, 0xFE00000000000000ULL, ~0ULL, 0x7F80000000000000ULL}) {
         int8_t tag = h2_tag(h);
         assert(tag >= 0);
         assert(tag != kEmpty);

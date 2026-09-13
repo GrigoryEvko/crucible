@@ -11,9 +11,10 @@ namespace observe = crucible::observe;
 
 template <eff::IsExecCtx Ctx>
     requires observe::CtxFitsSyntheticProbeRecord<Ctx>
-constexpr int record_gate() noexcept { return 1; }
+constexpr int record_gate() noexcept {
+    return 1;
+}
 
-static_assert(record_gate<eff::HotFgCtx>() == 1,
-    "GAPS-141: foreground context must not record synthetic probes.");
+static_assert(record_gate<eff::HotFgCtx>() == 1, "GAPS-141: foreground context must not record synthetic probes.");
 
 int main() { return 0; }

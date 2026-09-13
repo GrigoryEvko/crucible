@@ -31,14 +31,14 @@
 #include <crucible/safety/Tagged.h>
 
 namespace crucible {
-struct FakeRegionNode { int dummy; };
-}
+struct FakeRegionNode {
+    int dummy;
+};
+}  // namespace crucible
 
 int main() {
-    using VigilRegion = ::crucible::safety::Tagged<
-        const crucible::FakeRegionNode*, ::crucible::safety::source::Vigil>;
-    using ArenaRegion = ::crucible::safety::Tagged<
-        const crucible::FakeRegionNode*, ::crucible::safety::source::Arena>;
+    using VigilRegion = ::crucible::safety::Tagged<const crucible::FakeRegionNode*, ::crucible::safety::source::Vigil>;
+    using ArenaRegion = ::crucible::safety::Tagged<const crucible::FakeRegionNode*, ::crucible::safety::source::Arena>;
 
     crucible::FakeRegionNode region{};
     ArenaRegion arena_tagged{&region};

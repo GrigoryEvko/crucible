@@ -59,8 +59,8 @@ using Wide = std::conditional_t<std::signed_integral<T>, w_s, w_u>;
 
 template <typename T>
 [[nodiscard]] constexpr bool fits(Wide<T> x) noexcept {
-    return x >= static_cast<Wide<T>>(std::numeric_limits<T>::min()) &&
-           x <= static_cast<Wide<T>>(std::numeric_limits<T>::max());
+    return x >= static_cast<Wide<T>>(std::numeric_limits<T>::min())
+        && x <= static_cast<Wide<T>>(std::numeric_limits<T>::max());
 }
 
 template <typename T>
@@ -74,26 +74,32 @@ struct Spec {
 template <typename T>
 [[nodiscard]] T gen_value(Rng& rng) noexcept {
     switch (rng.next_below(8u)) {
-        case 0: return T{0};
-        case 1: return T{1};
-        case 2: return std::numeric_limits<T>::max();
-        case 3: return std::numeric_limits<T>::min();
-        case 4: return static_cast<T>(~T{0});  // -1 signed / max unsigned
-        default: return static_cast<T>(rng.next64());
+        case 0:
+            return T{0};
+        case 1:
+            return T{1};
+        case 2:
+            return std::numeric_limits<T>::max();
+        case 3:
+            return std::numeric_limits<T>::min();
+        case 4:
+            return static_cast<T>(~T{0});  // -1 signed / max unsigned
+        default:
+            return static_cast<T>(rng.next64());
     }
 }
 
 template <typename T>
 [[nodiscard]] int run_checked(const char* name, crucible::fuzz::prop::Config cfg) {
     constexpr int bits = static_cast<int>(sizeof(T) * 8);
-    return crucible::fuzz::prop::run(name, cfg,
+    return crucible::fuzz::prop::run(
+        name, cfg,
         [](Rng& rng) noexcept -> Spec<T> {
             Spec<T> spec{};
             spec.a = gen_value<T>(rng);
             spec.b = gen_value<T>(rng);
             // shift ∈ [-2, bits+1] — covers negative, valid, and >= bits.
-            spec.shift = static_cast<int>(
-                rng.next_below(static_cast<std::uint32_t>(bits) + 4u)) - 2;
+            spec.shift = static_cast<int>(rng.next_below(static_cast<std::uint32_t>(bits) + 4u)) - 2;
             return spec;
         },
         [](const Spec<T>& spec) noexcept -> bool {
@@ -105,24 +111,21 @@ template <typename T>
             // ── checked add / sub / mul vs wide-fits oracle ──
             {
                 const Wide<T> s = wa + wb;
-                const std::optional<T> want =
-                    fits<T>(s) ? std::optional<T>{static_cast<T>(s)} : std::nullopt;
+                const std::optional<T> want = fits<T>(s) ? std::optional<T>{static_cast<T>(s)} : std::nullopt;
                 if (ck::checked_add<T>(a, b) != want) return false;
                 if (want.has_value() && ck::trapping_add<T>(a, b) != *want) return false;
                 if (ck::wrapping_add<T>(a, b) != static_cast<T>(s)) return false;
             }
             {
                 const Wide<T> d = wa - wb;
-                const std::optional<T> want =
-                    fits<T>(d) ? std::optional<T>{static_cast<T>(d)} : std::nullopt;
+                const std::optional<T> want = fits<T>(d) ? std::optional<T>{static_cast<T>(d)} : std::nullopt;
                 if (ck::checked_sub<T>(a, b) != want) return false;
                 if (want.has_value() && ck::trapping_sub<T>(a, b) != *want) return false;
                 if (ck::wrapping_sub<T>(a, b) != static_cast<T>(d)) return false;
             }
             {
                 const Wide<T> p = wa * wb;
-                const std::optional<T> want =
-                    fits<T>(p) ? std::optional<T>{static_cast<T>(p)} : std::nullopt;
+                const std::optional<T> want = fits<T>(p) ? std::optional<T>{static_cast<T>(p)} : std::nullopt;
                 if (ck::checked_mul<T>(a, b) != want) return false;
                 if (want.has_value() && ck::trapping_mul<T>(a, b) != *want) return false;
                 if (ck::wrapping_mul<T>(a, b) != static_cast<T>(p)) return false;
@@ -132,8 +135,7 @@ template <typename T>
             {
                 bool is_min_over_neg1 = false;
                 if constexpr (std::signed_integral<T>) {
-                    is_min_over_neg1 = (a == std::numeric_limits<T>::min() &&
-                                        b == static_cast<T>(-1));
+                    is_min_over_neg1 = (a == std::numeric_limits<T>::min() && b == static_cast<T>(-1));
                 }
                 std::optional<T> want_div;
                 std::optional<T> want_mod;
@@ -141,7 +143,7 @@ template <typename T>
                     want_div = std::nullopt;
                     want_mod = std::nullopt;
                 } else if (is_min_over_neg1) {
-                    want_div = std::nullopt;            // overflow
+                    want_div = std::nullopt;  // overflow
                     want_mod = std::optional<T>{T{0}};  // defined as 0
                 } else {
                     want_div = std::optional<T>{static_cast<T>(wa / wb)};
@@ -154,14 +156,11 @@ template <typename T>
             // ── checked neg / abs (signed only) ──
             if constexpr (std::signed_integral<T>) {
                 const std::optional<T> want_neg =
-                    a == std::numeric_limits<T>::min()
-                        ? std::nullopt
-                        : std::optional<T>{static_cast<T>(-wa)};
+                    a == std::numeric_limits<T>::min() ? std::nullopt : std::optional<T>{static_cast<T>(-wa)};
                 if (ck::checked_neg<T>(a) != want_neg) return false;
-                const std::optional<T> want_abs =
-                    a == std::numeric_limits<T>::min()
-                        ? std::nullopt
-                        : std::optional<T>{static_cast<T>(wa < 0 ? -wa : wa)};
+                const std::optional<T> want_abs = a == std::numeric_limits<T>::min()
+                                                    ? std::nullopt
+                                                    : std::optional<T>{static_cast<T>(wa < 0 ? -wa : wa)};
                 if (ck::checked_abs<T>(a) != want_abs) return false;
             }
 
@@ -174,14 +173,12 @@ template <typename T>
                 if constexpr (std::signed_integral<T>) {
                     if (a < T{0}) reject_shl = true;
                 }
-                const std::optional<T> want_shl = reject_shl
-                    ? std::nullopt
-                    : std::optional<T>{static_cast<T>(static_cast<w_u>(wa) << shift)};
+                const std::optional<T> want_shl =
+                    reject_shl ? std::nullopt : std::optional<T>{static_cast<T>(static_cast<w_u>(wa) << shift)};
                 if (ck::checked_shl<T>(a, shift) != want_shl) return false;
 
                 const std::optional<T> want_shr =
-                    shift_ok ? std::optional<T>{static_cast<T>(wa >> shift)}
-                             : std::nullopt;
+                    shift_ok ? std::optional<T>{static_cast<T>(wa >> shift)} : std::nullopt;
                 if (ck::checked_shr<T>(a, shift) != want_shr) return false;
             }
 
@@ -231,7 +228,7 @@ int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
 
     Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 2'000'000) cfg.iterations = 2'000'000;
+    if (cfg.iterations > 2000000) cfg.iterations = 2000000;
 
     int rc = 0;
     rc |= run_checked<std::int8_t>("checked_i8", cfg);

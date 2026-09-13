@@ -92,7 +92,7 @@ static void test_wrap_around() {
 
 static void test_stress_m_producers_one_consumer() {
     constexpr std::size_t N_PRODUCERS = 4;
-    constexpr std::size_t N_PER_PRODUCER = 50'000;
+    constexpr std::size_t N_PER_PRODUCER = 50000;
     constexpr std::size_t CAPACITY = 1024;
 
     std::printf("  test_stress_m_producers_one_consumer: %zu producers × %zu items, capacity %zu...\n", N_PRODUCERS,
@@ -202,7 +202,7 @@ static void test_stress_m_producers_one_consumer() {
 
 static void test_stress_high_contention() {
     constexpr std::size_t N_PRODUCERS = 8;
-    constexpr std::size_t N_PER_PRODUCER = 10'000;
+    constexpr std::size_t N_PER_PRODUCER = 10000;
     constexpr std::size_t CAPACITY = 16;
 
     std::printf("  test_stress_high_contention: %zu producers × %zu items, capacity %zu...\n", N_PRODUCERS,

@@ -35,16 +35,12 @@ namespace alg = crucible::algebra;
 struct UnnamedTestLattice {
     using element_type = bool;
     [[nodiscard]] static constexpr element_type bottom() noexcept { return false; }
-    [[nodiscard]] static constexpr element_type top()    noexcept { return true;  }
+    [[nodiscard]] static constexpr element_type top() noexcept { return true; }
     [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept {
         return (!a) || b;  // false ⊑ true
     }
-    [[nodiscard]] static constexpr element_type join(element_type a, element_type b) noexcept {
-        return a || b;
-    }
-    [[nodiscard]] static constexpr element_type meet(element_type a, element_type b) noexcept {
-        return a && b;
-    }
+    [[nodiscard]] static constexpr element_type join(element_type a, element_type b) noexcept { return a || b; }
+    [[nodiscard]] static constexpr element_type meet(element_type a, element_type b) noexcept { return a && b; }
     // NO `name()` — this is the test discipline.
 };
 
@@ -54,10 +50,9 @@ static_assert(alg::Lattice<UnnamedTestLattice>);
 // `lattice_name<UnnamedTestLattice>()` returns the sentinel.  Confirm
 // the sentinel fallback path is real (this is part of A3-017's
 // motivation — silent sentinel admission must be caught at fold time).
-static_assert(alg::lattice_name<UnnamedTestLattice>() ==
-              std::string_view{"<unnamed lattice>"},
-    "Sentinel fallback path must remain — A3-017 fires WHEN this is "
-    "true AND HasLatticeName<L> is false.");
+static_assert(alg::lattice_name<UnnamedTestLattice>() == std::string_view{"<unnamed lattice>"},
+              "Sentinel fallback path must remain — A3-017 fires WHEN this is "
+              "true AND HasLatticeName<L> is false.");
 
 // Local fold mirroring the umbrella's assertion shape.  Including
 // UnnamedTestLattice in the pack MUST fail — `HasLatticeName` is false
@@ -69,10 +64,10 @@ template <typename... Ls>
 
 int main() {
     static_assert(every_lattice_has_name_local<UnnamedTestLattice>(),
-        "fixy-A3-017: [Lattice_Missing_Name] UnnamedTestLattice lacks "
-        "`name()` — the umbrella's name-coverage fold MUST reject this. "
-        "If this assertion ever silently passes, the production fold-"
-        "static_assert in AllLattices.h has regressed to a vacuous "
-        "fold and lattices without name() can be added unnoticed.");
+                  "fixy-A3-017: [Lattice_Missing_Name] UnnamedTestLattice lacks "
+                  "`name()` — the umbrella's name-coverage fold MUST reject this. "
+                  "If this assertion ever silently passes, the production fold-"
+                  "static_assert in AllLattices.h has regressed to a vacuous "
+                  "fold and lattices without name() can be added unnoticed.");
     return 0;
 }

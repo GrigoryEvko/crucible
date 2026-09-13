@@ -22,7 +22,9 @@ struct TypeIsHotPathRejectsPlain {
 
 template <typename T>
     requires fis::IsHotPath<T>
-[[nodiscard]] constexpr int gate(T const&) noexcept { return 1; }
+[[nodiscard]] constexpr int gate(T const&) noexcept {
+    return 1;
+}
 
 }  // namespace neg_fixy_is_hotpath_rejects_plain
 

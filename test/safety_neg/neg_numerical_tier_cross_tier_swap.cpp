@@ -27,8 +27,8 @@
 using namespace crucible::safety;
 
 int main() {
-    NumericalTier<Tolerance::BITEXACT, int>  bx{42};
-    NumericalTier<Tolerance::ULP_FP16, int>  fp16{7};
+    NumericalTier<Tolerance::BITEXACT, int> bx{42};
+    NumericalTier<Tolerance::ULP_FP16, int> fp16{7};
 
     // Should FAIL: NumericalTier<BITEXACT, int>::swap takes
     // NumericalTier<BITEXACT, int>&; fp16 is a different type

@@ -40,7 +40,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
     m.layout = crucible::Layout::Strided;
     m.data_ptr = crucible::external_data_ptr(
         std::bit_cast<void*>(static_cast<std::uintptr_t>(0xDEADBEEF)));  // must become null on reload
-    m.grad_fn_hash = crucible::grad_fn_hash(0xA11C'E000'BADD'F00DULL);
+    m.grad_fn_hash = crucible::grad_fn_hash(0xA11CE000BADDF00DULL);
     return m;
 }
 
@@ -231,7 +231,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         std::memcpy(adv.data() + 4, &version, 4);
         adv[8] = kind;
         // merkle_hash + content_hash stay zero.
-        const uint32_t bogus_num_ops = 0xFFFF'FFFFu;
+        const uint32_t bogus_num_ops = 0xFFFFFFFFu;
         std::memcpy(adv.data() + 32, &bogus_num_ops, 4);
 
         crucible::Arena arena4(1 << 16);

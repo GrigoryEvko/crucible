@@ -13,8 +13,7 @@ namespace stance = crucible::fixy::stance;
 
 using BadSyncBlockingArray = stance::SyncBlocking<int[7]>;
 
-static_assert(sizeof(BadSyncBlockingArray) > 0,
-    "instantiate stance::SyncBlocking<int[7]> to force the Type-axis "
-    "rejection (array decay).");
+static_assert(sizeof(BadSyncBlockingArray) > 0, "instantiate stance::SyncBlocking<int[7]> to force the Type-axis "
+                                                "rejection (array decay).");
 
 int main() { return 0; }

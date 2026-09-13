@@ -15,8 +15,7 @@
 
 int main() {
     // <-- this line must NOT compile (missing Init argument)
-    std::optional<crucible::perf::SchedTpBtf> hub =
-        crucible::perf::SchedTpBtf::load();
+    std::optional<crucible::perf::SchedTpBtf> hub = crucible::perf::SchedTpBtf::load();
 
     (void)hub;
     return 0;

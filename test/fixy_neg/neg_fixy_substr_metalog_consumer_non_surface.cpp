@@ -21,7 +21,7 @@
 #include <crucible/permissions/Permission.h>
 
 namespace fmeta = ::crucible::fixy::substr::metalog;
-namespace saf   = ::crucible::safety;
+namespace saf = ::crucible::safety;
 
 struct consumer_tag_placeholder {};
 

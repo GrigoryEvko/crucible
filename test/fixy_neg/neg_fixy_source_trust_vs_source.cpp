@@ -22,9 +22,9 @@ struct SourceNegFixture2_Marker {};
 
 int main() {
     static_assert(std::is_same_v<ft::source::FromUser, ft::trust::Verified>,
-        "source::FromUser and trust::Verified must be the SAME type — "
-        "fixy::tags alias must collapse cross-axis tag identities.  "
-        "(Orthogonal axes must remain distinct.)");
+                  "source::FromUser and trust::Verified must be the SAME type — "
+                  "fixy::tags alias must collapse cross-axis tag identities.  "
+                  "(Orthogonal axes must remain distinct.)");
     (void)sizeof(SourceNegFixture2_Marker);
     return 0;
 }

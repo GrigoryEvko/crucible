@@ -99,7 +99,7 @@ template <typename Payload, typename Ctx>
 }
 
 using Payload_alloc_io = fx::Row<fx::Effect::Alloc, fx::Effect::IO>;
-using Ctx_alloc_only   = fx::Row<fx::Effect::Alloc>;
+using Ctx_alloc_only = fx::Row<fx::Effect::Alloc>;
 
 // `Payload = {Alloc, IO}`, `Ctx = {Alloc}` — payload has an extra
 // IO atom not declared in Ctx.  row_subset rejects; CRUCIBLE_PRE's

@@ -10,7 +10,7 @@
 #include <crucible/ExprPool.h>
 
 int main() {
-  crucible::ExprPool::InternCount count{std::size_t{0}};
-  count = std::size_t{1};
-  return 0;
+    crucible::ExprPool::InternCount count{std::size_t{0}};
+    count = std::size_t{1};
+    return 0;
 }

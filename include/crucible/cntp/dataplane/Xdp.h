@@ -210,10 +210,10 @@ namespace detail {
 template <BpfScalar Key>
 [[nodiscard]] constexpr std::uint32_t key_hash(Key const& key) noexcept {
     auto bytes = std::as_bytes(std::span{&key, std::size_t{1}});
-    std::uint32_t h = 2'166'136'261u;
+    std::uint32_t h = 2166136261u;
     for (std::byte b : bytes) {
         h ^= static_cast<std::uint8_t>(b);
-        h *= 16'777'619u;
+        h *= 16777619u;
     }
     return h;
 }

@@ -28,16 +28,13 @@ namespace proto = ::crucible::safety::proto;
 struct DaveRole {};
 struct Tick {};
 
-using LoopOverSenderOffer = proto::Loop<
-    proto::Offer<proto::Sender<DaveRole>,
-                 proto::Recv<Tick, proto::Continue>>>;
+using LoopOverSenderOffer = proto::Loop<proto::Offer<proto::Sender<DaveRole>, proto::Recv<Tick, proto::Continue>>>;
 
-static_assert(
-    proto::refines_self_and_double_dual_v<LoopOverSenderOffer>,
-    "fixy-A2-023: a Loop containing a Sender-annotated Offer is "
-    "structurally non-involutive (the inner specialization at "
-    "Session.h:707 reports false, which propagates).  The trait must "
-    "reject it; reaching this static_assert means the gate at "
-    "SessionPatterns.h:944+ was bypassed.");
+static_assert(proto::refines_self_and_double_dual_v<LoopOverSenderOffer>,
+              "fixy-A2-023: a Loop containing a Sender-annotated Offer is "
+              "structurally non-involutive (the inner specialization at "
+              "Session.h:707 reports false, which propagates).  The trait must "
+              "reject it; reaching this static_assert means the gate at "
+              "SessionPatterns.h:944+ was bypassed.");
 
 int main() { return 0; }

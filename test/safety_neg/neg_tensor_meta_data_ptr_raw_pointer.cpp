@@ -15,10 +15,10 @@
 #include <crucible/TensorMeta.h>
 
 int main() {
-  crucible::TensorMeta meta{};
-  void* raw = nullptr;
+    crucible::TensorMeta meta{};
+    void* raw = nullptr;
 
-  // MUST fail: data_ptr is ExternalDataPtr, not a raw void*.
-  meta.data_ptr = raw;
-  return 0;
+    // MUST fail: data_ptr is ExternalDataPtr, not a raw void*.
+    meta.data_ptr = raw;
+    return 0;
 }

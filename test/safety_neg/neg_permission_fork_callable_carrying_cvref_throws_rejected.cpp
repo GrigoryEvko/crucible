@@ -49,17 +49,15 @@ struct CvRefThrowingCallable {
 namespace crucible::safety {
 
 template <>
-struct splits_into_pack<
-    neg_permission_fork_callable_carrying_cvref_throws_rejected::Whole,
-    neg_permission_fork_callable_carrying_cvref_throws_rejected::Left,
-    neg_permission_fork_callable_carrying_cvref_throws_rejected::Right>
-    : std::true_type {};
+struct splits_into_pack<neg_permission_fork_callable_carrying_cvref_throws_rejected::Whole,
+                        neg_permission_fork_callable_carrying_cvref_throws_rejected::Left,
+                        neg_permission_fork_callable_carrying_cvref_throws_rejected::Right> : std::true_type {};
 
 }  // namespace crucible::safety
 
 int main() {
     namespace tags = neg_permission_fork_callable_carrying_cvref_throws_rejected;
-    namespace eff  = ::crucible::effects;
+    namespace eff = ::crucible::effects;
     namespace safe = ::crucible::safety;
     namespace ctrl = ::crucible::fixy::ctrl;
 
@@ -74,11 +72,8 @@ int main() {
     // and `ctrl::throws` can be laundered past the reject by adding a
     // const-ref qualifier.
     auto rebuilt = safe::mint_permission_fork<tags::Left, tags::Right>(
-        safe::PermissionForkSpawnCtx{},
-        std::move(whole),
-        tags::CvRefThrowingCallable<ctrl::throws const&>{},
-        tags::CvRefThrowingCallable<ctrl::throws const&>{}
-    );
+        safe::PermissionForkSpawnCtx{}, std::move(whole), tags::CvRefThrowingCallable<ctrl::throws const&>{},
+        tags::CvRefThrowingCallable<ctrl::throws const&>{});
     safe::permission_drop(std::move(rebuilt));
     return 0;
 }

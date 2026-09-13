@@ -29,12 +29,10 @@ using Channel = fmpsc::PermissionedMpscChannel<int, 64, UserTag>;
 
 int main() {
     int not_a_ctx = 0;
-    neg_fixy_mpsc_consumer_session_non_ctx::Channel::ConsumerHandle*
-        consumer_handle = nullptr;
+    neg_fixy_mpsc_consumer_session_non_ctx::Channel::ConsumerHandle* consumer_handle = nullptr;
 
-    auto bad = fmpsc::mint_mpsc_consumer_session<
-        neg_fixy_mpsc_consumer_session_non_ctx::Channel>(
-            not_a_ctx, *consumer_handle);
+    auto bad =
+        fmpsc::mint_mpsc_consumer_session<neg_fixy_mpsc_consumer_session_non_ctx::Channel>(not_a_ctx, *consumer_handle);
     (void)bad;
     return 0;
 }

@@ -18,7 +18,7 @@
 //   "CtxFitsFileMint" / "has_mode".
 
 #include <crucible/effects/ExecCtx.h>
-#include <crucible/fixy/Source.h>           // fixy::tags::source::*
+#include <crucible/fixy/Source.h>  // fixy::tags::source::*
 #include <crucible/fixy/Wrap.h>
 
 int main() {
@@ -26,8 +26,7 @@ int main() {
 
     ::crucible::effects::TestRunnerCtx ctx{};
 
-    fwfs::Path<::crucible::fixy::tags::source::Sanitized> path{
-        "/tmp/crucible_neg_v224_empty_grants"};
+    fwfs::Path<::crucible::fixy::tags::source::Sanitized> path{"/tmp/crucible_neg_v224_empty_grants"};
 
     // Should FAIL: mint_file<> — empty Grants pack does NOT engage
     // any mode<X>, so CtxFitsFileMint's has_mode_v predicate is

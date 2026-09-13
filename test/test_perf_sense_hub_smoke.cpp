@@ -90,8 +90,8 @@ int main() {
     crucible::perf::Snapshot run_post;
     run_pre.counters[crucible::perf::SCHED_CTX_INVOL] = 1000;
     run_post.counters[crucible::perf::SCHED_CTX_INVOL] = 1042;
-    run_pre.counters[crucible::perf::NET_TX_BYTES] = 8'000'000;
-    run_post.counters[crucible::perf::NET_TX_BYTES] = 8'000'064;
+    run_pre.counters[crucible::perf::NET_TX_BYTES] = 8000000;
+    run_post.counters[crucible::perf::NET_TX_BYTES] = 8000064;
     auto run_delta = run_post - run_pre;
     if (run_delta.counters[crucible::perf::SCHED_CTX_INVOL] != 42u
         || run_delta.counters[crucible::perf::NET_TX_BYTES] != 64u) {

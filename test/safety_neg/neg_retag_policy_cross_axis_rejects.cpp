@@ -31,8 +31,7 @@ struct retag_witness {
 
 int main() {
     // Sentinel pair — guaranteed unspecialized forever per V-022.
-    retag_witness<ns::detail::retag_policy_test::NeverFrom,
-                   ns::detail::retag_policy_test::NeverTo> w{};
+    retag_witness<ns::detail::retag_policy_test::NeverFrom, ns::detail::retag_policy_test::NeverTo> w{};
     (void)w;
     return 0;
 }

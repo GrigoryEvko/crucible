@@ -53,8 +53,8 @@ namespace {
 // compiled_status()'s migrated precondition (action == COMPILED) is
 // violated.  CRUCIBLE_PRE's __builtin_trap fires at consteval.
 constexpr crucible::ReplayStatus witness = [] {
-    crucible::DispatchResult result{};   // action == RECORD
-    return result.compiled_status();     // pre(action == COMPILED) VIOLATED
+    crucible::DispatchResult result{};  // action == RECORD
+    return result.compiled_status();  // pre(action == COMPILED) VIOLATED
 }();
 
 }  // namespace

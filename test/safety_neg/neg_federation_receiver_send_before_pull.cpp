@@ -3,14 +3,13 @@
 
 #include <utility>
 
-namespace fp  = crucible::safety::proto::federation;
+namespace fp = crucible::safety::proto::federation;
 namespace eff = crucible::effects;
 
 // fixy-CR-13: federation mints require Row<IO, Block> in ctx::row_type.
-using FederationFitCtx = decltype(
-    eff::BgCompileCtx{}.in_row<eff::Row<
-        eff::Effect::Bg, eff::Effect::Alloc,
-        eff::Effect::IO, eff::Effect::Block>>());
+using FederationFitCtx =
+    decltype(eff::BgCompileCtx{}
+                 .in_row<eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>());
 
 struct Key {};
 struct PeerOrg {};
@@ -22,22 +21,16 @@ struct Endpoint {};
 // guard's `token()`).  This fixture is a concept probe over the derived
 // handle type — we use `std::declval` for the admittance slot since the
 // expression lives entirely inside `decltype` (compile-time only).
-using Admittance =
-    crucible::safety::SharedPermission<
-        crucible::permissions::tag::FederatedPeer<PeerOrg>>;
+using Admittance = crucible::safety::SharedPermission<crucible::permissions::tag::FederatedPeer<PeerOrg>>;
 
 template <typename Handle>
 concept CanSendBeforePull = requires(Handle h) {
-    std::move(h).send(fp::BodyPayload<Key>{},
-                      [](Endpoint&, fp::BodyPayload<Key>&&) noexcept {});
+    std::move(h).send(fp::BodyPayload<Key>{}, [](Endpoint&, fp::BodyPayload<Key>&&) noexcept {});
 };
 
-using ReceiverHandle = decltype(fp::mint_receiver<PeerOrg, Key>(
-    std::declval<FederationFitCtx const&>(),
-    Endpoint{},
-    std::declval<Admittance>()));
+using ReceiverHandle = decltype(fp::mint_receiver<PeerOrg, Key>(std::declval<FederationFitCtx const&>(), Endpoint{},
+                                                                std::declval<Admittance>()));
 
-static_assert(CanSendBeforePull<ReceiverHandle>,
-    "FederationReceiver_SendBeforePull_Rejected");
+static_assert(CanSendBeforePull<ReceiverHandle>, "FederationReceiver_SendBeforePull_Rejected");
 
 int main() { return 0; }

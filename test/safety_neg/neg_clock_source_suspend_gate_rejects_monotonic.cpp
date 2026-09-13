@@ -26,7 +26,7 @@ using namespace crucible::safety;
 // A deadline watchdog admits only clocks that keep ticking through
 // suspend (subsume a Boot requirement).
 template <typename Clock>
-    requires (Clock::template satisfies<ClockSource_v::Boot>)
+    requires(Clock::template satisfies<ClockSource_v::Boot>)
 [[nodiscard]] unsigned long long arm_deadline(Clock clock) {
     return clock.peek();
 }

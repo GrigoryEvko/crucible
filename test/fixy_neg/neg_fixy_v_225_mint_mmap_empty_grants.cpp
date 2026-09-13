@@ -17,7 +17,7 @@
 #include <crucible/effects/ExecCtx.h>
 #include <crucible/fixy/Wrap.h>
 
-struct TestRegion {};   // dummy Tag
+struct TestRegion {};  // dummy Tag
 
 int main() {
     namespace fwmm = ::crucible::fixy::wrap::mmap;
@@ -26,7 +26,6 @@ int main() {
 
     // Should FAIL: empty Grants pack fails has_prot_grant_v +
     // has_primary_share_grant_v predicates in CtxFitsMmapMint.
-    [[maybe_unused]] auto r = fwmm::mint_mmap<TestRegion>(
-        ctx, /*fd=*/-1, /*length=*/4096);
+    [[maybe_unused]] auto r = fwmm::mint_mmap<TestRegion>(ctx, /*fd=*/-1, /*length=*/4096);
     return 0;
 }

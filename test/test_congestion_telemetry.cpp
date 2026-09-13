@@ -70,10 +70,10 @@ topology::CongestionState state(std::uint64_t bw, std::uint64_t rtt, topology::C
     s.btl_bw_bps = topology::PositiveBandwidthBps{bw, typename topology::PositiveBandwidthBps::Trusted{}};
     s.rt_prop_us = topology::PositiveMicroseconds{rtt, typename topology::PositiveMicroseconds::Trusted{}};
     s.cwnd_bytes =
-        topology::PositiveWindowBytes{std::uint32_t{65'536}, typename topology::PositiveWindowBytes::Trusted{}};
+        topology::PositiveWindowBytes{std::uint32_t{65536}, typename topology::PositiveWindowBytes::Trusted{}};
     s.ssthresh_bytes =
-        topology::PositiveWindowBytes{std::uint32_t{131'072}, typename topology::PositiveWindowBytes::Trusted{}};
-    s.in_flight_bytes = 32'768;
+        topology::PositiveWindowBytes{std::uint32_t{131072}, typename topology::PositiveWindowBytes::Trusted{}};
+    s.in_flight_bytes = 32768;
     s.mode = mode;
     s.has_bbr = true;
     s.bbr.btl_bw_bps = s.btl_bw_bps;
@@ -94,36 +94,36 @@ void test_names_and_admission() {
     auto zero = topology::admit_sample_period_ns(0);
     assert(!zero.has_value());
     assert(zero.error() == topology::TelemetryError::DeadlineOverflow);
-    auto period = topology::admit_sample_period_ns(1'000);
+    auto period = topology::admit_sample_period_ns(1000);
     assert(period.has_value());
     std::printf("  test_names_and_admission: PASSED\n");
 }
 
 void test_aggregate_and_drift() {
     std::array samples{
-        sample(1'000'000'000, 100, topology::CongestionMode::Open),
-        sample(800'000'000, 120, topology::CongestionMode::BbrProbeBw),
-        sample(600'000'000, 150, topology::CongestionMode::Recovery),
-        sample(500'000'000, 180, topology::CongestionMode::Loss),
+        sample(1000000000, 100, topology::CongestionMode::Open),
+        sample(800000000, 120, topology::CongestionMode::BbrProbeBw),
+        sample(600000000, 150, topology::CongestionMode::Recovery),
+        sample(500000000, 180, topology::CongestionMode::Loss),
     };
 
     auto aggregate = topology::aggregate_congestion(nic(1), std::span{samples});
     assert(aggregate.nic_uuid == nic(1).uuid);
     assert(aggregate.sample_count == samples.size());
     assert(aggregate.p95_rtt_us >= 150);
-    assert(aggregate.p95_btl_bw_bps >= 800'000'000);
-    assert(aggregate.mean_btl_bw_bps == 725'000'000);
+    assert(aggregate.p95_btl_bw_bps >= 800000000);
+    assert(aggregate.mean_btl_bw_bps == 725000000);
     assert(aggregate.worst_mode == topology::CongestionMode::Loss);
 
-    auto baseline = topology::PositiveBandwidthBps{std::uint64_t{1'200'000'000},
-                                                   typename topology::PositiveBandwidthBps::Trusted{}};
+    auto baseline =
+        topology::PositiveBandwidthBps{std::uint64_t{1200000000}, typename topology::PositiveBandwidthBps::Trusted{}};
     auto drift = topology::detect_congestion_drift(aggregate, baseline,
                                                    topology::CongestionDriftPolicy{
-                                                       .bandwidth_drop_ppm = 100'000,
+                                                       .bandwidth_drop_ppm = 100000,
                                                        .min_samples = 4,
                                                    });
     assert(drift.degraded);
-    assert(drift.bandwidth_drop_ppm >= 100'000);
+    assert(drift.bandwidth_drop_ppm >= 100000);
     std::printf("  test_aggregate_and_drift: PASSED\n");
 }
 
@@ -137,8 +137,8 @@ void test_worker_recording() {
     assert(start.has_value());
 
     std::array samples{
-        sample(900'000'000, 90, topology::CongestionMode::Open),
-        sample(700'000'000, 110, topology::CongestionMode::Cwr),
+        sample(900000000, 90, topology::CongestionMode::Open),
+        sample(700000000, 110, topology::CongestionMode::Cwr),
     };
     auto recorded = worker.record_link(bg, nics[0], std::span{samples}, 1);
     assert(recorded.has_value());
@@ -204,13 +204,13 @@ void test_aggregate_finalize_guard() {
     assert(empty.nic_uuid == nic(101).uuid);
 
     std::array samples{
-        sample(100'000'000ull, 1'500ull, topology::CongestionMode::BbrProbeBw),
-        sample(200'000'000ull, 2'500ull, topology::CongestionMode::BbrProbeBw),
-        sample(300'000'000ull, 3'500ull, topology::CongestionMode::BbrProbeBw),
+        sample(100000000ull, 1500ull, topology::CongestionMode::BbrProbeBw),
+        sample(200000000ull, 2500ull, topology::CongestionMode::BbrProbeBw),
+        sample(300000000ull, 3500ull, topology::CongestionMode::BbrProbeBw),
     };
     auto agg = topology::aggregate_congestion(nic(102), std::span<const topology::TcpInfoSnapshot>{samples});
     assert(agg.sample_count == 3);
-    assert(agg.mean_btl_bw_bps == 200'000'000ull);
+    assert(agg.mean_btl_bw_bps == 200000000ull);
     assert(agg.nic_uuid == nic(102).uuid);
 
     std::printf("  test_aggregate_finalize_guard: PASSED\n");

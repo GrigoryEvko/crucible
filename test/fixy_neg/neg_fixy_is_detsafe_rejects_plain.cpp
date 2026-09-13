@@ -22,7 +22,9 @@ struct TypeIsDetSafeRejectsPlain {
 
 template <typename T>
     requires fis::IsDetSafe<T>
-[[nodiscard]] constexpr int gate(T const&) noexcept { return 1; }
+[[nodiscard]] constexpr int gate(T const&) noexcept {
+    return 1;
+}
 
 }  // namespace neg_fixy_is_detsafe_rejects_plain
 

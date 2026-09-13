@@ -10,12 +10,9 @@ namespace effects = crucible::effects;
 namespace observe = crucible::observe;
 
 int main() {
-    auto detector = observe::mint_sdc_detector<effects::ColdInitCtx, 2, 4>(
-        effects::ColdInitCtx{});
-    auto result = detector.run_with_redundancy(
-        effects::HotFgCtx{}, [](cog::CogIdentity const&) noexcept {
-            return 1u;
-        });
+    auto detector = observe::mint_sdc_detector<effects::ColdInitCtx, 2, 4>(effects::ColdInitCtx{});
+    auto result =
+        detector.run_with_redundancy(effects::HotFgCtx{}, [](cog::CogIdentity const&) noexcept { return 1u; });
     (void)result;
     return 0;
 }

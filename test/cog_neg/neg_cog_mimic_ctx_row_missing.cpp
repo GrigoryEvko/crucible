@@ -53,8 +53,8 @@
 #include <crucible/effects/ExecCtx.h>
 #include <crucible/mimic/CogMimic.h>
 
-namespace cog     = crucible::cog;
-namespace mimic   = crucible::mimic;
+namespace cog = crucible::cog;
+namespace mimic = crucible::mimic;
 namespace effects = crucible::effects;
 
 // Mock of an unintended call from a Test-context worker that tries to
@@ -63,31 +63,28 @@ namespace effects = crucible::effects;
 // surfaces specifically at the row-membership conjunct.
 template <effects::IsExecCtx Ctx, cog::CogKind K>
     requires mimic::CtxFitsCogMimic<Ctx, K>
-constexpr int prepare_cog_mimic_for_test() noexcept { return 1; }
+constexpr int prepare_cog_mimic_for_test() noexcept {
+    return 1;
+}
 
 // TestCtx — Effect::Test row.  Neither Init nor Bg appears.  The
 // disjunctive row_subset predicate in CtxFitsCogMimic refuses
 // substitution.
-using TestCtx = effects::ExecCtx<
-    effects::Test,
-    effects::ctx_numa::Any,
-    effects::ctx_alloc::Stack,
-    effects::ctx_heat::Cold,
-    effects::ctx_resid::DRAM,
-    effects::Row<effects::Effect::Test>,
-    effects::ctx_workload::Unspecified>;
+using TestCtx =
+    effects::ExecCtx<effects::Test, effects::ctx_numa::Any, effects::ctx_alloc::Stack, effects::ctx_heat::Cold,
+                     effects::ctx_resid::DRAM, effects::Row<effects::Effect::Test>, effects::ctx_workload::Unspecified>;
 
 static_assert(prepare_cog_mimic_for_test<TestCtx, cog::CogKind::Gpu>() == 1,
-    "GAPS-188: mimic::CtxFitsCogMimic concept MUST refuse contexts "
-    "whose effect row carries neither Effect::Init nor Effect::Bg.  "
-    "If this static_assert ever evaluates, a Test-context worker (or "
-    "a foreground hot-path call site that accidentally reached the "
-    "minting API) would bind a CogMimic instance to a transient "
-    "test/foreground arena.  When the arena unwinds, downstream code "
-    "holding the CogMimic::identity pointer would dereference dangling "
-    "memory.  The row-membership gate refuses the misuse at template "
-    "substitution time — calibration-time (Init) or background-"
-    "recalibration (Bg) are the only contexts in which a CogMimic "
-    "instance is structurally legitimate.");
+              "GAPS-188: mimic::CtxFitsCogMimic concept MUST refuse contexts "
+              "whose effect row carries neither Effect::Init nor Effect::Bg.  "
+              "If this static_assert ever evaluates, a Test-context worker (or "
+              "a foreground hot-path call site that accidentally reached the "
+              "minting API) would bind a CogMimic instance to a transient "
+              "test/foreground arena.  When the arena unwinds, downstream code "
+              "holding the CogMimic::identity pointer would dereference dangling "
+              "memory.  The row-membership gate refuses the misuse at template "
+              "substitution time — calibration-time (Init) or background-"
+              "recalibration (Bg) are the only contexts in which a CogMimic "
+              "instance is structurally legitimate.");
 
 int main() { return 0; }

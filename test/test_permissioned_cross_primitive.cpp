@@ -120,7 +120,7 @@ void test_unified_typedefs_present() {
     using Snap = PermissionedSnapshot<int, SnapshotUserTag>;
     using Calendar = PermissionedCalendarGrid<CrossKeyJob, /*M*/ 2, /*Buckets*/ 8,
                                               /*Cap*/ 16, CrossKeyExtract,
-                                              /*QuantumNs*/ 1'000'000ULL, CalendarUserTag>;
+                                              /*QuantumNs*/ 1000000ULL, CalendarUserTag>;
 
     static_assert(HasUnifiedTypedefs<Spsc>, "PermissionedSpscChannel: missing unified typedef");
     static_assert(HasUnifiedTypedefs<Mpsc>, "PermissionedMpscChannel: missing unified typedef");
@@ -145,7 +145,7 @@ void test_unified_is_exclusive_active() {
     using Mpmc = PermissionedMpmcChannel<int, 64, MpmcUserTag>;
     using Deque = PermissionedChaseLevDeque<int, 64, DequeUserTag>;
     using Snap = PermissionedSnapshot<int, SnapshotUserTag>;
-    using Calendar = PermissionedCalendarGrid<CrossKeyJob, 2, 8, 16, CrossKeyExtract, 1'000'000ULL, CalendarUserTag>;
+    using Calendar = PermissionedCalendarGrid<CrossKeyJob, 2, 8, 16, CrossKeyExtract, 1000000ULL, CalendarUserTag>;
 
     static_assert(HasIsExclusiveActive<Spsc>, "PermissionedSpscChannel: missing is_exclusive_active");
     static_assert(HasIsExclusiveActive<Mpsc>, "PermissionedMpscChannel: missing is_exclusive_active");
@@ -214,7 +214,7 @@ void test_unified_handle_diagnostics() {
     using Mpmc = PermissionedMpmcChannel<int, 64, MpmcUserTag>;
     using Grid = PermissionedShardedGrid<int, 2, 2, 64, GridUserTag>;
     using Deque = PermissionedChaseLevDeque<int, 64, DequeUserTag>;
-    using Calendar = PermissionedCalendarGrid<CrossKeyJob, 2, 8, 16, CrossKeyExtract, 1'000'000ULL, CalendarUserTag>;
+    using Calendar = PermissionedCalendarGrid<CrossKeyJob, 2, 8, 16, CrossKeyExtract, 1000000ULL, CalendarUserTag>;
 
     static_assert(HasFifoHandleDiagnostics<typename Spsc::ProducerHandle>,
                   "PermissionedSpscChannel::ProducerHandle: diagnostic trio missing");
@@ -287,7 +287,7 @@ void test_spsc_with_recombined_access() {
 // rather than the drained one.
 
 void test_calendar_with_recombined_access() {
-    using Calendar = PermissionedCalendarGrid<CrossKeyJob, 2, 8, 16, CrossKeyExtract, 1'000'000ULL, CalendarUserTag>;
+    using Calendar = PermissionedCalendarGrid<CrossKeyJob, 2, 8, 16, CrossKeyExtract, 1000000ULL, CalendarUserTag>;
     static_assert(HasLinearRecombinedAccess<Calendar>, "PermissionedCalendarGrid: missing with_recombined_access");
 
     Calendar cal;
@@ -322,7 +322,7 @@ void test_formal_concepts_satisfied() {
     using Grid = PermissionedShardedGrid<int, 2, 2, 64, GridUserTag>;
     using Deque = PermissionedChaseLevDeque<int, 64, DequeUserTag>;
     using Snap = PermissionedSnapshot<int, SnapshotUserTag>;
-    using Calendar = PermissionedCalendarGrid<CrossKeyJob, 2, 8, 16, CrossKeyExtract, 1'000'000ULL, CalendarUserTag>;
+    using Calendar = PermissionedCalendarGrid<CrossKeyJob, 2, 8, 16, CrossKeyExtract, 1000000ULL, CalendarUserTag>;
 
     static_assert(PermissionedChannel<Spsc>);
     static_assert(PermissionedChannel<Mpsc>);

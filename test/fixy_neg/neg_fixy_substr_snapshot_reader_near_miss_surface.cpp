@@ -28,7 +28,7 @@
 #include <crucible/fixy/Substr.h>
 
 namespace fsubstr = crucible::fixy::substr;
-namespace fsafe   = crucible::safety;
+namespace fsafe = crucible::safety;
 
 namespace neg_fixy_substr_snapshot_reader_near_miss_surface {
 struct WTag {};
@@ -45,9 +45,9 @@ struct FakeReaderHandle {
 // Satisfies every SnapshotSessionSurface clause EXCEPT reader()'s return
 // type: reader() returns ReaderHandle, not optional<ReaderHandle>.
 struct NearMissSnap {
-    using value_type   = int;
-    using writer_tag   = WTag;
-    using reader_tag   = RTag;
+    using value_type = int;
+    using writer_tag = WTag;
+    using reader_tag = RTag;
     using WriterHandle = FakeWriterHandle;
     using ReaderHandle = FakeReaderHandle;
 

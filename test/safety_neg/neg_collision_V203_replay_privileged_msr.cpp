@@ -40,8 +40,8 @@ using Bad = fn::Fn<sf::Hw<HW::PrivilegedMsr, int>>;
 
 // Mark Bad as replay-required (NOT hot-path) — fires V203, not V201.
 namespace crucible::safety::fn::collision {
-    template <> struct marks_replay_required<::neg_collision_v203_msr::Bad>
-        : std::true_type {};
+template <>
+struct marks_replay_required<::neg_collision_v203_msr::Bad> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 [[maybe_unused]] neg_collision_v203_msr::Bad the_fixture{};

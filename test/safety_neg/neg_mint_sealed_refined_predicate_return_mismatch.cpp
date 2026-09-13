@@ -18,8 +18,7 @@ namespace {
 // Captureless stateless lambda returning void — fails the
 // convertible_to<bool> half of PredicateInvocableOn.  Structural
 // closure type, usable as an auto NTTP.
-inline constexpr auto returns_void_pred =
-    [](auto) constexpr noexcept -> void {};
+inline constexpr auto returns_void_pred = [](auto) constexpr noexcept -> void {};
 }  // namespace
 
 int main() {

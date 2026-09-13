@@ -19,13 +19,13 @@
 #include <crucible/safety/Machine.h>
 
 namespace {
-    struct ConnState { int attempt = 0; };
-}
+struct ConnState {
+    int attempt = 0;
+};
+}  // namespace
 
 // Mint a Machine — the legitimate entry point.  This call compiles.
-[[maybe_unused]] static auto anchor_machine_mint() {
-    return ::crucible::safety::mint_machine<ConnState>(0);
-}
+[[maybe_unused]] static auto anchor_machine_mint() { return ::crucible::safety::mint_machine<ConnState>(0); }
 
 // VIOLATION: copy-construct a Machine.  Machine(const Machine&) is
 // declared `delete("Machine is move-only; transitions consume it")`,

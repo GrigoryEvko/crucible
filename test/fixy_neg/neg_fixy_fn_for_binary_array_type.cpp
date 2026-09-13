@@ -28,8 +28,7 @@ int main() {
     int arr[4]{};
     // Explicit Type=int[4] via the binary overload's template arg list.
     // TypeIsStanceCompatible<int[4]> = false → StanceForBinary fails.
-    auto bad = fixy::mint_fn_for<fixy::stance::PublicEmit,
-                                 test_policy::EmitPolicy, int[4]>(arr);
+    auto bad = fixy::mint_fn_for<fixy::stance::PublicEmit, test_policy::EmitPolicy, int[4]>(arr);
     (void)bad;
     return 0;
 }

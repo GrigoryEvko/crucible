@@ -22,7 +22,9 @@ struct TypeIsRefinedRejectsPlain {
 
 template <typename T>
     requires fis::IsRefined<T>
-[[nodiscard]] constexpr int gate(T const&) noexcept { return 1; }
+[[nodiscard]] constexpr int gate(T const&) noexcept {
+    return 1;
+}
 
 }  // namespace neg_fixy_is_refined_rejects_plain
 

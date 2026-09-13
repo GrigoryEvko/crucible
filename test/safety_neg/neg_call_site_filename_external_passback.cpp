@@ -38,19 +38,14 @@
 // Sanitized-only API surface.  Demands an External-tagged input;
 // post-validation Sanitized values are NOT acceptable here (the
 // ExternalName lane is reserved for raw FFI / network arrivals).
-using ExternalName = crucible::safety::Tagged<
-    std::string, crucible::safety::source::External>;
+using ExternalName = crucible::safety::Tagged<std::string, crucible::safety::source::External>;
 
 void wants_external_only(ExternalName const&);
 
 int main() {
     crucible::CallSiteTable t;
-    t.insert(
-        crucible::CallSiteTable::NonZeroHash{
-            crucible::CallsiteHash{uint64_t{0xC0FFEE}}},
-        std::string{"file.py"},
-        std::string{"f"},
-        int32_t{42});
+    t.insert(crucible::CallSiteTable::NonZeroHash{crucible::CallsiteHash{uint64_t{0xC0FFEE}}}, std::string{"file.py"},
+             std::string{"f"}, int32_t{42});
 
     // Reading the stored filename yields
     // `Tagged<std::string, source::Sanitized> const&`.  Passing it

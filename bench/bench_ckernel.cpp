@@ -30,8 +30,7 @@ int main() {
     for (uint32_t i = 0; i < N; i++) {
         const uint64_t h = 0x9E3779B97F4A7C15ULL * (i + 1);
         hit_hashes[i] = SchemaHash{h};
-        const auto id = static_cast<CKernelId>(
-            1 + (i % (static_cast<uint32_t>(CKernelId::NUM_KERNELS) - 1)));
+        const auto id = static_cast<CKernelId>(1 + (i % (static_cast<uint32_t>(CKernelId::NUM_KERNELS) - 1)));
         table.register_op(mutable_view, hit_hashes[i], id);
     }
 
@@ -42,9 +41,9 @@ int main() {
         // Rotating hit — indices march forward, pointer-chasing into the
         // table alternates between cache lines the same way build_trace
         // would as it walks op by op.
-        [&]{
+        [&] {
             uint32_t idx = 0;
-            return bench::run("classify hit  (200-entry table)", [&]{
+            return bench::run("classify hit  (200-entry table)", [&] {
                 const auto h = hit_hashes[idx];
                 idx = (idx + 1) % N;
                 const auto id = table.classify(h);
@@ -55,11 +54,10 @@ int main() {
         // Miss — rolling LCG-generated hashes unlikely to collide with
         // any registered entry; exercises the full binary-search depth
         // before fallback to OPAQUE.
-        [&]{
+        [&] {
             uint64_t miss_key = 0xDEADBEEFCAFEBABEULL;
-            return bench::run("classify miss (OPAQUE fallback)", [&]{
-                miss_key = miss_key * 6364136223846793005ULL
-                         + 1442695040888963407ULL;
+            return bench::run("classify miss (OPAQUE fallback)", [&] {
+                miss_key = miss_key * 6364136223846793005ULL + 1442695040888963407ULL;
                 const auto id = table.classify(SchemaHash{miss_key});
                 bench::do_not_optimize(id);
             });
@@ -67,9 +65,9 @@ int main() {
 
         // Branch-predictor-friendly: same hash every time. Lower bound on
         // classify's cost when the call site is on a hot path.
-        [&]{
+        [&] {
             const auto hot = hit_hashes[N / 2];
-            return bench::run("classify hot  (same hash repeated)", [&]{
+            return bench::run("classify hot  (same hash repeated)", [&] {
                 const auto id = table.classify(hot);
                 bench::do_not_optimize(id);
             });

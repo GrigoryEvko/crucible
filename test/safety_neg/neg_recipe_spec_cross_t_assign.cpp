@@ -9,7 +9,7 @@
 using namespace crucible::safety;
 
 int main() {
-    RecipeSpec<int>    int_value{42, Tolerance::ULP_FP16, RecipeFamily::Kahan};
+    RecipeSpec<int> int_value{42, Tolerance::ULP_FP16, RecipeFamily::Kahan};
     RecipeSpec<double> dbl_value{3.14, Tolerance::ULP_FP16, RecipeFamily::Kahan};
 
     int_value = dbl_value;

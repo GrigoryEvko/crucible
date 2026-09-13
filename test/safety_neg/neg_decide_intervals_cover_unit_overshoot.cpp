@@ -71,10 +71,7 @@
 
 namespace {
 
-[[nodiscard]] constexpr bool gate(
-    std::span<const crucible::decide::Interval<uint64_t>> ivs,
-    uint64_t total
-) noexcept {
+[[nodiscard]] constexpr bool gate(std::span<const crucible::decide::Interval<uint64_t>> ivs, uint64_t total) noexcept {
     CRUCIBLE_PRE(crucible::decide::intervals_cover_unit(ivs, total));
     return true;
 }

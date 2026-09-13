@@ -29,7 +29,7 @@
 #include <crucible/fixy/sync/SyncPrim.h>
 
 namespace fixy_sync_prim = crucible::fixy::sync::sync_prim;
-namespace safety_alias   = crucible::safety;
+namespace safety_alias = crucible::safety;
 
 // Concept-constrained function template: a Hot-tier callable whose
 // `Permits...` pack admits no banned sync primitive.  This models
@@ -38,8 +38,7 @@ namespace safety_alias   = crucible::safety;
 // empty, or restricted to non-banned tags), and the concept on the
 // signature rejects any caller passing a permit_*.
 template <typename... Permits>
-    requires fixy_sync_prim::HotPathSyncPrimSafe<
-        safety_alias::HotPathTier_v::Hot, Permits...>
+    requires fixy_sync_prim::HotPathSyncPrimSafe<safety_alias::HotPathTier_v::Hot, Permits...>
 void hot_path_callable() {
     // Body intentionally empty — the concept is the gate.
 }

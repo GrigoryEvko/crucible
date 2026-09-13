@@ -34,8 +34,10 @@ namespace neg_mint_session_view_invalid_tag {
 
 namespace proto = ::crucible::safety::proto;
 
-struct FakeRes { int sentinel = 7; };
-struct Msg     {};
+struct FakeRes {
+    int sentinel = 7;
+};
+struct Msg {};
 
 // Bogus position tag — not one of AtSend / AtRecv / AtSelect / AtOffer
 // / AtEnd / AtStop / AtTerminal.  The handle_is_at primary template
@@ -50,14 +52,12 @@ int main() {
     // Handle is at Send<Msg, End> — a valid protocol position.  But
     // the requested Tag (BogusPositionTag) is not a member of the
     // SessionView position-tag taxonomy.
-    auto h = proto::mint_session_handle<proto::Send<Msg, proto::End>>(
-        FakeRes{11});
+    auto h = proto::mint_session_handle<proto::Send<Msg, proto::End>>(FakeRes{11});
 
     // The forbidden call: handle is at a valid position, but the Tag
     // is unrecognized.  HandleIsAt<Handle, BogusPositionTag> resolves
     // through the primary template (false_type), so the requires-
     // clause excludes the factory.
-    [[maybe_unused]] auto view =
-        proto::mint_session_view<BogusPositionTag>(h);
+    [[maybe_unused]] auto view = proto::mint_session_view<BogusPositionTag>(h);
     return 0;
 }

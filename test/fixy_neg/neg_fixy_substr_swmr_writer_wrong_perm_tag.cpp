@@ -18,8 +18,8 @@
 #include <crucible/fixy/Substr.h>
 
 namespace fsubstr = crucible::fixy::substr;
-namespace conc    = crucible::concurrent;
-namespace fsafe   = crucible::safety;
+namespace conc = crucible::concurrent;
+namespace fsafe = crucible::safety;
 
 namespace neg_fixy_substr_swmr_writer_wrong_perm_tag {
 struct UserTag {};
@@ -27,18 +27,14 @@ struct WrongTag {};
 }  // namespace neg_fixy_substr_swmr_writer_wrong_perm_tag
 
 int main() {
-    using Snap = conc::PermissionedSnapshot<int,
-        neg_fixy_substr_swmr_writer_wrong_perm_tag::UserTag>;
+    using Snap = conc::PermissionedSnapshot<int, neg_fixy_substr_swmr_writer_wrong_perm_tag::UserTag>;
 
     Snap snap{};
 
     // mint_swmr_writer wants Permission<typename Snap::writer_tag>&& as
     // its second argument; an exclusive root token for WrongTag is a
     // distinct, non-convertible Permission instantiation.
-    [[maybe_unused]] auto bad =
-        fsubstr::swmr::mint_swmr_writer(
-            snap,
-            fsafe::mint_permission_root<
-                neg_fixy_substr_swmr_writer_wrong_perm_tag::WrongTag>());
+    [[maybe_unused]] auto bad = fsubstr::swmr::mint_swmr_writer(
+        snap, fsafe::mint_permission_root<neg_fixy_substr_swmr_writer_wrong_perm_tag::WrongTag>());
     return 0;
 }

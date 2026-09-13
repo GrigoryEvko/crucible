@@ -25,8 +25,7 @@
 
 int main() {
     // int is not a reduce_into → alias is ill-formed.
-    using A =
-        crucible::safety::extract::reduce_into_accumulator_t<int>;
+    using A = crucible::safety::extract::reduce_into_accumulator_t<int>;
     A const a{};
     (void)a;
     return 0;

@@ -54,38 +54,29 @@ constexpr auto A = BG_CTX.alloc;
 
 struct PhaseTiming {
     const char* name;
-    double      total_ns;  // sum across all iterations
-    uint64_t    count;     // number of iterations
+    double total_ns;  // sum across all iterations
+    uint64_t count;  // number of iterations
 };
 
-void print_phase_table(PhaseTiming* phases, uint32_t n,
-                       double total_ns, uint64_t iters) {
-    std::printf("\n  %-22s  %8s  %8s  %5s\n",
-                "Phase", "ns/op", "total ms", "  %");
-    std::printf("  %-22s  %8s  %8s  %5s\n",
-                "──────────────────────", "────────", "────────", "─────");
+void print_phase_table(PhaseTiming* phases, uint32_t n, double total_ns, uint64_t iters) {
+    std::printf("\n  %-22s  %8s  %8s  %5s\n", "Phase", "ns/op", "total ms", "  %");
+    std::printf("  %-22s  %8s  %8s  %5s\n", "──────────────────────", "────────", "────────", "─────");
 
     for (uint32_t i = 0; i < n; i++) {
-        const double ns_per = phases[i].total_ns
-                            / static_cast<double>(iters);
+        const double ns_per = phases[i].total_ns / static_cast<double>(iters);
         const double pct = 100.0 * phases[i].total_ns / total_ns;
-        std::printf("  %-22s  %8.1f  %8.2f  %5.1f%%\n",
-                    phases[i].name, ns_per,
-                    phases[i].total_ns / 1e6, pct);
+        std::printf("  %-22s  %8.1f  %8.2f  %5.1f%%\n", phases[i].name, ns_per, phases[i].total_ns / 1e6, pct);
     }
 
     double sum_ns = 0;
-    for (uint32_t i = 0; i < n; i++) sum_ns += phases[i].total_ns;
-    const double ns_per  = total_ns / static_cast<double>(iters);
-    const double sum_per = sum_ns   / static_cast<double>(iters);
+    for (uint32_t i = 0; i < n; i++)
+        sum_ns += phases[i].total_ns;
+    const double ns_per = total_ns / static_cast<double>(iters);
+    const double sum_per = sum_ns / static_cast<double>(iters);
 
-    std::printf("  %-22s  %8s  %8s  %5s\n",
-                "──────────────────────", "────────", "────────", "─────");
-    std::printf("  %-22s  %8.1f  %8.2f  %5.1f%%\n",
-                "SUM(phases)", sum_per, sum_ns / 1e6,
-                100.0 * sum_ns / total_ns);
-    std::printf("  %-22s  %8.1f  %8.2f  100.0%%\n",
-                "TOTAL (measured)", ns_per, total_ns / 1e6);
+    std::printf("  %-22s  %8s  %8s  %5s\n", "──────────────────────", "────────", "────────", "─────");
+    std::printf("  %-22s  %8.1f  %8.2f  %5.1f%%\n", "SUM(phases)", sum_per, sum_ns / 1e6, 100.0 * sum_ns / total_ns);
+    std::printf("  %-22s  %8.1f  %8.2f  100.0%%\n", "TOTAL (measured)", ns_per, total_ns / 1e6);
 }
 
 // ── Top-level Report via bench::run ──────────────────────────────────
@@ -95,17 +86,14 @@ void print_phase_table(PhaseTiming* phases, uint32_t n,
 // build_trace. Scope / callsite / meta cursors are restored to their
 // recorded values each sample so every sample is independent and
 // measures the same work.
-bench::Report run_fullpipeline(BackgroundThread& bg, MetaLog& meta_log,
-                               const LoadedTrace& trace) {
-    const size_t arena_bytes = std::max(size_t{1} << 20,
-        static_cast<size_t>(trace.num_ops) * 256);
+bench::Report run_fullpipeline(BackgroundThread& bg, MetaLog& meta_log, const LoadedTrace& trace) {
+    const size_t arena_bytes = std::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
 
     auto repopulate = [&]() {
         meta_log.reset();
         uint32_t cursor = 0;
         for (uint32_t i = 0; i < trace.num_ops; i++) {
-            const uint16_t n = trace.entries[i].num_inputs
-                             + trace.entries[i].num_outputs;
+            const uint16_t n = trace.entries[i].num_inputs + trace.entries[i].num_outputs;
             if (n > 0 && cursor + n <= trace.num_metas) {
                 (void)meta_log.try_append(&trace.metas[cursor], n);
                 cursor += n;
@@ -114,22 +102,17 @@ bench::Report run_fullpipeline(BackgroundThread& bg, MetaLog& meta_log,
     };
 
     char label[64];
-    std::snprintf(label, sizeof(label),
-                  "build_trace (full pipeline, %u ops)", trace.num_ops);
+    std::snprintf(label, sizeof(label), "build_trace (full pipeline, %u ops)", trace.num_ops);
 
     bench::Run r{label};
     if (const int c = bench::env_core(); c >= 0) (void)r.core(c);
-    return r.samples(500).warmup(10).batch(1).measure([&]{
-        bg.current_trace.assign(trace.entries.begin(),
-                                trace.entries.end());
-        bg.current_meta_starts.assign(trace.meta_starts.begin(),
-                                      trace.meta_starts.end());
-        bg.current_scope_hashes.assign(trace.scope_hashes.begin(),
-                                       trace.scope_hashes.end());
-        bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(),
-                                          trace.callsite_hashes.end());
+    return r.samples(500).warmup(10).batch(1).measure([&] {
+        bg.current_trace.assign(trace.entries.begin(), trace.entries.end());
+        bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
+        bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
+        bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
         bg.arena.~Arena();
-        new (&bg.arena) Arena{arena_bytes};
+        new(&bg.arena) Arena{arena_bytes};
         repopulate();
         auto* graph = bg.build_trace(A, trace.num_ops);
         bench::do_not_optimize(graph);
@@ -143,25 +126,17 @@ bench::Report run_fullpipeline(BackgroundThread& bg, MetaLog& meta_log,
 // Each phase's rdtsc_start/end pair reads the TSC with LFENCE bracketing
 // (Intel "How to Benchmark..." 2010 §3.2.1, via bench::rdtsc_start/end).
 
-void bench_phases_toplevel(
-    BackgroundThread& bg,
-    MetaLog&          meta_log,
-    const LoadedTrace& trace,
-    uint32_t          iters)
-{
-    std::printf("\n=== Top-level phase breakdown (%u ops, %u iters) ===\n",
-                trace.num_ops, iters);
+void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const LoadedTrace& trace, uint32_t iters) {
+    std::printf("\n=== Top-level phase breakdown (%u ops, %u iters) ===\n", trace.num_ops, iters);
 
-    const size_t arena_bytes = std::max(size_t{1} << 20,
-        static_cast<size_t>(trace.num_ops) * 256);
+    const size_t arena_bytes = std::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
     const double nspc = bench::Timer::ns_per_cycle();
 
     auto repopulate = [&]() {
         meta_log.reset();
         uint32_t cursor = 0;
         for (uint32_t i = 0; i < trace.num_ops; i++) {
-            const uint16_t n = trace.entries[i].num_inputs
-                             + trace.entries[i].num_outputs;
+            const uint16_t n = trace.entries[i].num_inputs + trace.entries[i].num_outputs;
             if (n > 0 && cursor + n <= trace.num_metas) {
                 (void)meta_log.try_append(&trace.metas[cursor], n);
                 cursor += n;
@@ -171,36 +146,28 @@ void bench_phases_toplevel(
 
     // Warmup: 5 full pipeline runs to hit the cache.
     for (uint32_t w = 0; w < 5; w++) {
-        bg.current_trace.assign(trace.entries.begin(),
-                                trace.entries.end());
-        bg.current_meta_starts.assign(trace.meta_starts.begin(),
-                                      trace.meta_starts.end());
-        bg.current_scope_hashes.assign(trace.scope_hashes.begin(),
-                                       trace.scope_hashes.end());
-        bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(),
-                                          trace.callsite_hashes.end());
+        bg.current_trace.assign(trace.entries.begin(), trace.entries.end());
+        bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
+        bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
+        bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
         bg.arena.~Arena();
-        new (&bg.arena) Arena{arena_bytes};
+        new(&bg.arena) Arena{arena_bytes};
         repopulate();
         auto* g = bg.build_trace(A, trace.num_ops);
         bench::do_not_optimize(g);
     }
 
     // Measurement: run build_trace N times, accumulate.
-    double              total_ns = 0;
+    double total_ns = 0;
     std::vector<double> samples(iters);
 
     for (uint32_t iter = 0; iter < iters; iter++) {
-        bg.current_trace.assign(trace.entries.begin(),
-                                trace.entries.end());
-        bg.current_meta_starts.assign(trace.meta_starts.begin(),
-                                      trace.meta_starts.end());
-        bg.current_scope_hashes.assign(trace.scope_hashes.begin(),
-                                       trace.scope_hashes.end());
-        bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(),
-                                          trace.callsite_hashes.end());
+        bg.current_trace.assign(trace.entries.begin(), trace.entries.end());
+        bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
+        bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
+        bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
         bg.arena.~Arena();
-        new (&bg.arena) Arena{arena_bytes};
+        new(&bg.arena) Arena{arena_bytes};
         repopulate();
 
         const uint64_t t0 = bench::rdtsc_start();
@@ -214,9 +181,7 @@ void bench_phases_toplevel(
     }
 
     std::sort(samples.begin(), samples.end());
-    std::printf("  full pipeline: min=%.1f  med=%.1f  max=%.1f ns/op\n",
-                samples.front(),
-                samples[samples.size() / 2],
+    std::printf("  full pipeline: min=%.1f  med=%.1f  max=%.1f ns/op\n", samples.front(), samples[samples.size() / 2],
                 samples.back());
 
     // Isolated build_csr + compute_memory_plan.
@@ -224,43 +189,36 @@ void bench_phases_toplevel(
     double ns_memplan = 0;
     {
         // One full build_trace to get realistic edge data.
-        bg.current_trace.assign(trace.entries.begin(),
-                                trace.entries.end());
-        bg.current_meta_starts.assign(trace.meta_starts.begin(),
-                                      trace.meta_starts.end());
-        bg.current_scope_hashes.assign(trace.scope_hashes.begin(),
-                                       trace.scope_hashes.end());
-        bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(),
-                                          trace.callsite_hashes.end());
+        bg.current_trace.assign(trace.entries.begin(), trace.entries.end());
+        bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
+        bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
+        bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
         bg.arena.~Arena();
-        new (&bg.arena) Arena{arena_bytes};
+        new(&bg.arena) Arena{arena_bytes};
         repopulate();
         auto* ref = bg.build_trace(A, trace.num_ops);
 
-        const uint32_t num_ops   = ref->num_ops.get_assuming_set();
+        const uint32_t num_ops = ref->num_ops.get_assuming_set();
         const uint32_t num_slots = ref->num_slots.get_assuming_set();
         const uint32_t num_edges = ref->fwd_offsets[num_ops];
 
         std::vector<Edge> saved_edges(num_edges);
         for (uint32_t i = 0; i < num_ops; i++) {
-            for (uint32_t e = ref->fwd_offsets[i];
-                 e < ref->fwd_offsets[i + 1]; e++) {
+            for (uint32_t e = ref->fwd_offsets[i]; e < ref->fwd_offsets[i + 1]; e++) {
                 saved_edges[e] = ref->fwd_edges[e];
             }
         }
 
-        std::vector<TensorSlot> saved_slots(ref->slots,
-                                             ref->slots + num_slots);
+        std::vector<TensorSlot> saved_slots(ref->slots, ref->slots + num_slots);
 
         // build_csr
         for (uint32_t iter = 0; iter < iters; iter++) {
             Arena csr_arena{1 << 18};
             auto* graph2 = alloc_trace_graph(A, csr_arena);
-            graph2->ops     = nullptr;
+            graph2->ops = nullptr;
 
             const uint64_t t0 = bench::rdtsc_start();
-            build_csr(A, csr_arena, graph2, saved_edges.data(),
-                      static_cast<uint32_t>(saved_edges.size()), num_ops);
+            build_csr(A, csr_arena, graph2, saved_edges.data(), static_cast<uint32_t>(saved_edges.size()), num_ops);
             const uint64_t t1 = bench::rdtsc_end();
 
             bench::do_not_optimize(graph2);
@@ -270,10 +228,9 @@ void bench_phases_toplevel(
         // compute_memory_plan
         for (uint32_t iter = 0; iter < iters; iter++) {
             bg.arena.~Arena();
-            new (&bg.arena) Arena{arena_bytes};
+            new(&bg.arena) Arena{arena_bytes};
             auto* s = bg.arena.alloc_array<TensorSlot>(A, num_slots);
-            std::memcpy(s, saved_slots.data(),
-                        num_slots * sizeof(TensorSlot));
+            std::memcpy(s, saved_slots.data(), num_slots * sizeof(TensorSlot));
 
             const uint64_t t0 = bench::rdtsc_start();
             auto* plan = bg.compute_memory_plan(A, s, num_slots);
@@ -286,31 +243,24 @@ void bench_phases_toplevel(
         const double ns_other = total_ns - ns_csr - ns_memplan;
 
         PhaseTiming phases[] = {
-            {"Main loop (P0-P3)", ns_other,   iters},
-            {"build_csr (P4)",    ns_csr,     iters},
-            {"memory_plan (P5)",  ns_memplan, iters},
+            {"Main loop (P0-P3)", ns_other, iters},
+            {"build_csr (P4)", ns_csr, iters},
+            {"memory_plan (P5)", ns_memplan, iters},
         };
         print_phase_table(phases, 3, total_ns, iters);
     }
 }
 
-void bench_phase2_subparts(
-    BackgroundThread& bg,
-    MetaLog&          meta_log,
-    const LoadedTrace& trace,
-    uint32_t          iters)
-{
-    std::printf("\n=== Phase 2 sub-part breakdown (%u ops, %u iters) ===\n",
-                trace.num_ops, iters);
+void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const LoadedTrace& trace, uint32_t iters) {
+    std::printf("\n=== Phase 2 sub-part breakdown (%u ops, %u iters) ===\n", trace.num_ops, iters);
 
-    const size_t arena_bytes = std::max(size_t{1} << 20,
-        static_cast<size_t>(trace.num_ops) * 256);
+    const size_t arena_bytes = std::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
     const uint32_t count = trace.num_ops;
     const double nspc = bench::Timer::ns_per_cycle();
 
     uint32_t trace_total_inputs = 0, trace_total_outputs = 0;
     for (uint32_t i = 0; i < count; i++) {
-        trace_total_inputs  += trace.entries[i].num_inputs;
+        trace_total_inputs += trace.entries[i].num_inputs;
         trace_total_outputs += trace.entries[i].num_outputs;
     }
     (void)trace_total_inputs;
@@ -320,8 +270,7 @@ void bench_phase2_subparts(
         meta_log.reset();
         uint32_t cursor = 0;
         for (uint32_t i = 0; i < trace.num_ops; i++) {
-            const uint16_t n = trace.entries[i].num_inputs
-                             + trace.entries[i].num_outputs;
+            const uint16_t n = trace.entries[i].num_inputs + trace.entries[i].num_outputs;
             if (n > 0 && cursor + n <= trace.num_metas) {
                 (void)meta_log.try_append(&trace.metas[cursor], n);
                 cursor += n;
@@ -331,14 +280,11 @@ void bench_phase2_subparts(
 
     // One build_trace to prime scratch buffers and reference ops.
     bg.current_trace.assign(trace.entries.begin(), trace.entries.end());
-    bg.current_meta_starts.assign(trace.meta_starts.begin(),
-                                  trace.meta_starts.end());
-    bg.current_scope_hashes.assign(trace.scope_hashes.begin(),
-                                   trace.scope_hashes.end());
-    bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(),
-                                      trace.callsite_hashes.end());
+    bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
+    bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
+    bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
     bg.arena.~Arena();
-    new (&bg.arena) Arena{arena_bytes};
+    new(&bg.arena) Arena{arena_bytes};
     repopulate();
     auto* ref = bg.build_trace(A, count);
     (void)ref;
@@ -346,13 +292,11 @@ void bench_phase2_subparts(
     // ── P0: Pre-scan ──────────────────────────────────────────────
     double ns_p0 = 0;
     for (uint32_t iter = 0; iter < iters; iter++) {
-        bg.current_trace.assign(trace.entries.begin(),
-                                trace.entries.end());
-        bg.current_meta_starts.assign(trace.meta_starts.begin(),
-                                      trace.meta_starts.end());
+        bg.current_trace.assign(trace.entries.begin(), trace.entries.end());
+        bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
 
         const TraceRing::Entry* trace_data = bg.current_trace.data();
-        const MetaIndex*        meta_data  = bg.current_meta_starts.data();
+        const MetaIndex* meta_data = bg.current_meta_starts.data();
 
         const uint64_t t0 = bench::rdtsc_start();
 
@@ -360,13 +304,13 @@ void bench_phase2_subparts(
         uint32_t total_inputs = 0, total_outputs = 0, total_scalars = 0;
         for (uint32_t i = 0; i < count; i++) {
             const MetaIndex ms = meta_data[i];
-            const auto&     re = trace_data[i];
+            const auto& re = trace_data[i];
             if (ms.is_valid()) {
                 if (first_meta == UINT32_MAX) first_meta = ms.raw();
                 const uint32_t end = ms.raw() + re.num_inputs + re.num_outputs;
                 if (end > max_meta_end) max_meta_end = end;
             }
-            total_inputs  += re.num_inputs;
+            total_inputs += re.num_inputs;
             total_outputs += re.num_outputs;
             total_scalars += std::min(re.num_scalar_args, uint16_t(5));
         }
@@ -384,35 +328,29 @@ void bench_phase2_subparts(
     double ns_p1 = 0;
     for (uint32_t iter = 0; iter < iters; iter++) {
         bg.arena.~Arena();
-        new (&bg.arena) Arena{arena_bytes};
+        new(&bg.arena) Arena{arena_bytes};
 
         uint32_t total_inputs = 0, total_outputs = 0, total_scalars = 0;
         for (uint32_t i = 0; i < count; i++) {
-            total_inputs  += trace.entries[i].num_inputs;
+            total_inputs += trace.entries[i].num_inputs;
             total_outputs += trace.entries[i].num_outputs;
-            total_scalars += std::min(trace.entries[i].num_scalar_args,
-                                      uint16_t(5));
+            total_scalars += std::min(trace.entries[i].num_scalar_args, uint16_t(5));
         }
 
         const uint64_t t0 = bench::rdtsc_start();
 
         auto* ops = bg.arena.alloc_array<TraceEntry>(A, count);
         const size_t aux_bytes =
-              static_cast<size_t>(total_scalars) * sizeof(int64_t)
-            + static_cast<size_t>(total_inputs)  * sizeof(OpIndex)
-            + static_cast<size_t>(total_inputs)  * sizeof(SlotId)
-            + static_cast<size_t>(total_outputs) * sizeof(SlotId);
+            static_cast<size_t>(total_scalars) * sizeof(int64_t) + static_cast<size_t>(total_inputs) * sizeof(OpIndex)
+            + static_cast<size_t>(total_inputs) * sizeof(SlotId) + static_cast<size_t>(total_outputs) * sizeof(SlotId);
         char* aux = (aux_bytes > 0)
-            ? static_cast<char*>(
-                  bg.arena.alloc(A,
-                      crucible::safety::Positive<size_t>{aux_bytes},
-                      crucible::safety::PowerOfTwo<size_t>{alignof(int64_t)}))
-            : nullptr;
+                      ? static_cast<char*>(bg.arena.alloc(A, crucible::safety::Positive<size_t>{aux_bytes},
+                                                          crucible::safety::PowerOfTwo<size_t>{alignof(int64_t)}))
+                      : nullptr;
         bg.ensure_scratch_buffers(total_inputs, total_outputs);
-        const uint32_t slot_cap = std::min(bg.slot_cap_max_.get(),
-            std::max(uint32_t{256}, total_inputs + total_outputs));
-        std::fill_n(bg.scratch_slots_.data(), slot_cap,
-                    BackgroundThread::SlotInfo{});
+        const uint32_t slot_cap =
+            std::min(bg.slot_cap_max_.get(), std::max(uint32_t{256}, total_inputs + total_outputs));
+        std::fill_n(bg.scratch_slots_.data(), slot_cap, BackgroundThread::SlotInfo{});
 
         const uint64_t t1 = bench::rdtsc_end();
 
@@ -424,109 +362,90 @@ void bench_phase2_subparts(
     // ── P2a: Copy fields (no hash, no PtrMap) ─────────────────────
     double ns_p2a = 0;
     for (uint32_t iter = 0; iter < iters; iter++) {
-        bg.current_trace.assign(trace.entries.begin(),
-                                trace.entries.end());
-        bg.current_meta_starts.assign(trace.meta_starts.begin(),
-                                      trace.meta_starts.end());
-        bg.current_scope_hashes.assign(trace.scope_hashes.begin(),
-                                       trace.scope_hashes.end());
-        bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(),
-                                          trace.callsite_hashes.end());
+        bg.current_trace.assign(trace.entries.begin(), trace.entries.end());
+        bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
+        bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
+        bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
         bg.arena.~Arena();
-        new (&bg.arena) Arena{arena_bytes};
+        new(&bg.arena) Arena{arena_bytes};
         repopulate();
 
-        const TraceRing::Entry* trace_data    = bg.current_trace.data();
-        const MetaIndex*        meta_data     = bg.current_meta_starts.data();
-        const ScopeHash*        scope_data    = bg.current_scope_hashes.data();
-        const CallsiteHash*     callsite_data = bg.current_callsite_hashes.data();
+        const TraceRing::Entry* trace_data = bg.current_trace.data();
+        const MetaIndex* meta_data = bg.current_meta_starts.data();
+        const ScopeHash* scope_data = bg.current_scope_hashes.data();
+        const CallsiteHash* callsite_data = bg.current_callsite_hashes.data();
 
         uint32_t max_meta_end = 0, first_meta = UINT32_MAX;
         uint32_t total_inputs = 0, total_outputs = 0, total_scalars = 0;
         for (uint32_t i = 0; i < count; i++) {
             const MetaIndex ms = meta_data[i];
-            const auto&     re = trace_data[i];
+            const auto& re = trace_data[i];
             if (ms.is_valid()) {
                 if (first_meta == UINT32_MAX) first_meta = ms.raw();
                 const uint32_t end = ms.raw() + re.num_inputs + re.num_outputs;
                 if (end > max_meta_end) max_meta_end = end;
             }
-            total_inputs  += re.num_inputs;
+            total_inputs += re.num_inputs;
             total_outputs += re.num_outputs;
             total_scalars += std::min(re.num_scalar_args, uint16_t(5));
         }
 
         auto* ops = bg.arena.alloc_array<TraceEntry>(A, count);
-        const uint32_t total_metas = (first_meta != UINT32_MAX)
-            ? max_meta_end - first_meta : 0;
-        TensorMeta* meta_base = (total_metas > 0)
-            ? meta_log.try_contiguous(first_meta, total_metas) : nullptr;
+        const uint32_t total_metas = (first_meta != UINT32_MAX) ? max_meta_end - first_meta : 0;
+        TensorMeta* meta_base = (total_metas > 0) ? meta_log.try_contiguous(first_meta, total_metas) : nullptr;
         if (!meta_base && total_metas > 0) {
             meta_base = bg.arena.alloc_array<TensorMeta>(A, total_metas);
             for (uint32_t m = 0; m < total_metas; m++)
                 meta_base[m] = meta_log.at(first_meta + m);
         }
         const size_t aux_bytes =
-              static_cast<size_t>(total_scalars) * sizeof(int64_t)
-            + static_cast<size_t>(total_inputs)  * sizeof(OpIndex)
-            + static_cast<size_t>(total_inputs)  * sizeof(SlotId)
-            + static_cast<size_t>(total_outputs) * sizeof(SlotId);
-        char* aux_cursor = (aux_bytes > 0)
-            ? static_cast<char*>(
-                  bg.arena.alloc(A,
-                      crucible::safety::Positive<size_t>{aux_bytes},
-                      crucible::safety::PowerOfTwo<size_t>{alignof(int64_t)}))
-            : nullptr;
+            static_cast<size_t>(total_scalars) * sizeof(int64_t) + static_cast<size_t>(total_inputs) * sizeof(OpIndex)
+            + static_cast<size_t>(total_inputs) * sizeof(SlotId) + static_cast<size_t>(total_outputs) * sizeof(SlotId);
+        char* aux_cursor =
+            (aux_bytes > 0) ? static_cast<char*>(bg.arena.alloc(A, crucible::safety::Positive<size_t>{aux_bytes},
+                                                                crucible::safety::PowerOfTwo<size_t>{alignof(int64_t)}))
+                            : nullptr;
 
         const uint64_t t0 = bench::rdtsc_start();
 
         for (uint32_t i = 0; i < count; i++) {
-            const auto&     re = trace_data[i];
+            const auto& re = trace_data[i];
             const MetaIndex ms = meta_data[i];
-            auto&           te = ops[i];
+            auto& te = ops[i];
 
-            te.schema_hash   = re.schema_hash;
-            te.shape_hash    = re.shape_hash;
-            te.scope_hash    = scope_data[i];
+            te.schema_hash = re.schema_hash;
+            te.shape_hash = re.shape_hash;
+            te.scope_hash = scope_data[i];
             te.callsite_hash = callsite_data[i];
-            te.num_inputs    = re.num_inputs;
-            te.num_outputs   = re.num_outputs;
-            te.grad_enabled  = (re.op_flags & op_flag::GRAD_ENABLED) != 0;
+            te.num_inputs = re.num_inputs;
+            te.num_outputs = re.num_outputs;
+            te.grad_enabled = (re.op_flags & op_flag::GRAD_ENABLED) != 0;
 
             const uint8_t flags = re.op_flags;
             te.inference_mode = (flags & op_flag::INFERENCE_MODE) != 0;
-            te.is_mutable     = (flags & op_flag::IS_MUTABLE)     != 0;
-            te.training_phase = static_cast<TrainingPhase>(
-                (flags & op_flag::PHASE_MASK) >> op_flag::PHASE_SHIFT);
+            te.is_mutable = (flags & op_flag::IS_MUTABLE) != 0;
+            te.training_phase = static_cast<TrainingPhase>((flags & op_flag::PHASE_MASK) >> op_flag::PHASE_SHIFT);
             te.torch_function = (flags & op_flag::TORCH_FUNCTION) != 0;
             te.kernel_id = CKernelId::OPAQUE;
-            const uint16_t n_scalars =
-                std::min(re.num_scalar_args, uint16_t(5));
+            const uint16_t n_scalars = std::min(re.num_scalar_args, uint16_t(5));
             te.num_scalar_args = n_scalars;
 
             if (ms.is_valid()) {
-                const uint16_t n_in        = re.num_inputs;
-                const uint16_t n_out       = re.num_outputs;
+                const uint16_t n_in = re.num_inputs;
+                const uint16_t n_out = re.num_outputs;
                 const uint32_t meta_offset = ms.raw() - first_meta;
-                te.input_metas  = meta_base + meta_offset;
+                te.input_metas = meta_base + meta_offset;
                 te.output_metas = meta_base + meta_offset + n_in;
-                te.scalar_args  = (n_scalars > 0)
-                    ? std::start_lifetime_as_array<int64_t>(
-                          aux_cursor, n_scalars)
-                    : nullptr;
+                te.scalar_args =
+                    (n_scalars > 0) ? std::start_lifetime_as_array<int64_t>(aux_cursor, n_scalars) : nullptr;
                 aux_cursor += n_scalars * sizeof(int64_t);
-                te.input_trace_indices =
-                    std::start_lifetime_as_array<OpIndex>(aux_cursor, n_in);
+                te.input_trace_indices = std::start_lifetime_as_array<OpIndex>(aux_cursor, n_in);
                 aux_cursor += n_in * sizeof(OpIndex);
-                te.input_slot_ids =
-                    std::start_lifetime_as_array<SlotId>(aux_cursor, n_in);
+                te.input_slot_ids = std::start_lifetime_as_array<SlotId>(aux_cursor, n_in);
                 aux_cursor += n_in * sizeof(SlotId);
-                te.output_slot_ids =
-                    std::start_lifetime_as_array<SlotId>(aux_cursor, n_out);
+                te.output_slot_ids = std::start_lifetime_as_array<SlotId>(aux_cursor, n_out);
                 aux_cursor += n_out * sizeof(SlotId);
-                if (n_scalars > 0)
-                    std::memcpy(te.scalar_args, re.scalar_values.data(),
-                                n_scalars * sizeof(int64_t));
+                if (n_scalars > 0) std::memcpy(te.scalar_args, re.scalar_values.data(), n_scalars * sizeof(int64_t));
             }
         }
 
@@ -538,19 +457,15 @@ void bench_phase2_subparts(
     // ── P2b: Content hash only ────────────────────────────────────
     double ns_p2b = 0;
     {
-        bg.current_trace.assign(trace.entries.begin(),
-                                trace.entries.end());
-        bg.current_meta_starts.assign(trace.meta_starts.begin(),
-                                      trace.meta_starts.end());
-        bg.current_scope_hashes.assign(trace.scope_hashes.begin(),
-                                       trace.scope_hashes.end());
-        bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(),
-                                          trace.callsite_hashes.end());
+        bg.current_trace.assign(trace.entries.begin(), trace.entries.end());
+        bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
+        bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
+        bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
         bg.arena.~Arena();
-        new (&bg.arena) Arena{arena_bytes};
+        new(&bg.arena) Arena{arena_bytes};
         repopulate();
-        auto*       ref_graph = bg.build_trace(A, count);
-        TraceEntry* ref_ops   = ref_graph->ops;
+        auto* ref_graph = bg.build_trace(A, count);
+        TraceEntry* ref_ops = ref_graph->ops;
 
         for (uint32_t iter = 0; iter < iters; iter++) {
             const uint64_t t0 = bench::rdtsc_start();
@@ -558,32 +473,23 @@ void bench_phase2_subparts(
             uint64_t content_h = 0x9E3779B97F4A7C15ULL;
             for (uint32_t i = 0; i < count; i++) {
                 const auto& te = ref_ops[i];
-                content_h = detail::wymix(content_h,
-                                          te.schema_hash.raw());
+                content_h = detail::wymix(content_h, te.schema_hash.raw());
                 for (uint16_t j = 0; j < te.num_inputs; j++) {
                     const TensorMeta& m = te.input_metas[j];
                     uint64_t dim_h = 0;
                     for (uint8_t d = 0; d < m.ndim; d++) {
-                        dim_h ^= static_cast<uint64_t>(raw_tensor_dim(m.sizes[d]))
-                               * detail::kDimMix[d];
-                        dim_h ^= static_cast<uint64_t>(raw_tensor_dim(m.strides[d]))
-                               * detail::kDimMix[d + 8];
+                        dim_h ^= static_cast<uint64_t>(raw_tensor_dim(m.sizes[d])) * detail::kDimMix[d];
+                        dim_h ^= static_cast<uint64_t>(raw_tensor_dim(m.strides[d])) * detail::kDimMix[d + 8];
                     }
-                    const uint64_t meta_packed =
-                          static_cast<uint64_t>(std::to_underlying(m.dtype))
-                        | (static_cast<uint64_t>(
-                             std::to_underlying(m.device_type)) << 8)
-                        | (static_cast<uint64_t>(
-                             static_cast<uint8_t>(m.device_idx)) << 16);
-                    content_h = detail::wymix(content_h ^ dim_h,
-                                              meta_packed);
+                    const uint64_t meta_packed = static_cast<uint64_t>(std::to_underlying(m.dtype))
+                                               | (static_cast<uint64_t>(std::to_underlying(m.device_type)) << 8)
+                                               | (static_cast<uint64_t>(static_cast<uint8_t>(m.device_idx)) << 16);
+                    content_h = detail::wymix(content_h ^ dim_h, meta_packed);
                 }
                 if (te.num_scalar_args > 0) {
-                    const uint16_t n =
-                        std::min(te.num_scalar_args, uint16_t{5});
+                    const uint16_t n = std::min(te.num_scalar_args, uint16_t{5});
                     for (uint16_t s = 0; s < n; s++) {
-                        content_h ^= static_cast<uint64_t>(
-                            te.scalar_args[s]);
+                        content_h ^= static_cast<uint64_t>(te.scalar_args[s]);
                         content_h *= 0x100000001b3ULL;
                     }
                 }
@@ -598,29 +504,24 @@ void bench_phase2_subparts(
     // ── P2c: PtrMap lookup ────────────────────────────────────────
     double ns_p2c = 0;
     {
-        bg.current_trace.assign(trace.entries.begin(),
-                                trace.entries.end());
-        bg.current_meta_starts.assign(trace.meta_starts.begin(),
-                                      trace.meta_starts.end());
-        bg.current_scope_hashes.assign(trace.scope_hashes.begin(),
-                                       trace.scope_hashes.end());
-        bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(),
-                                          trace.callsite_hashes.end());
+        bg.current_trace.assign(trace.entries.begin(), trace.entries.end());
+        bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
+        bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
+        bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
         bg.arena.~Arena();
-        new (&bg.arena) Arena{arena_bytes};
+        new(&bg.arena) Arena{arena_bytes};
         repopulate();
-        auto*       ref_graph = bg.build_trace(A, count);
-        TraceEntry* ref_ops   = ref_graph->ops;
+        auto* ref_graph = bg.build_trace(A, count);
+        TraceEntry* ref_ops = ref_graph->ops;
 
         for (uint32_t iter = 0; iter < iters; iter++) {
             bg.map_gen_++;
             if (bg.map_gen_ == 0) {
-                std::fill_n(bg.scratch_map_.data(), bg.map_cap_.get(),
-                            BackgroundThread::PtrSlot{});
+                std::fill_n(bg.scratch_map_.data(), bg.map_cap_.get(), BackgroundThread::PtrSlot{});
                 bg.map_gen_ = 1;
             }
-            auto*          local_map  = bg.scratch_map_.data();
-            const uint8_t  local_gen  = bg.map_gen_;
+            auto* local_map = bg.scratch_map_.data();
+            const uint8_t local_gen = bg.map_gen_;
             const uint32_t local_mask = bg.ptr_mask_;
 
             for (uint32_t i = 0; i < count; i++) {
@@ -628,10 +529,8 @@ void bench_phase2_subparts(
                 for (uint16_t j = 0; j < te.num_outputs; j++) {
                     void* ptr = raw_data_ptr(te.output_metas[j]);
                     if (ptr)
-                        (void)BackgroundThread::ptr_map_insert(
-                            local_map, local_gen, local_mask, ptr,
-                            OpIndex{i},
-                            static_cast<uint8_t>(j), SlotId{0});
+                        (void)BackgroundThread::ptr_map_insert(local_map, local_gen, local_mask, ptr, OpIndex{i},
+                                                               static_cast<uint8_t>(j), SlotId{0});
                 }
             }
 
@@ -642,8 +541,7 @@ void bench_phase2_subparts(
                 const auto& te = ref_ops[i];
                 for (uint16_t j = 0; j < te.num_inputs; j++) {
                     void* ptr = raw_data_ptr(te.input_metas[j]);
-                    auto  lookup = BackgroundThread::ptr_map_lookup(
-                        local_map, local_gen, local_mask, ptr);
+                    auto lookup = BackgroundThread::ptr_map_lookup(local_map, local_gen, local_mask, ptr);
                     if (lookup.op_index.is_valid()) dummy_edges++;
                 }
             }
@@ -657,29 +555,24 @@ void bench_phase2_subparts(
     // ── P2d: PtrMap insert ────────────────────────────────────────
     double ns_p2d = 0;
     {
-        bg.current_trace.assign(trace.entries.begin(),
-                                trace.entries.end());
-        bg.current_meta_starts.assign(trace.meta_starts.begin(),
-                                      trace.meta_starts.end());
-        bg.current_scope_hashes.assign(trace.scope_hashes.begin(),
-                                       trace.scope_hashes.end());
-        bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(),
-                                          trace.callsite_hashes.end());
+        bg.current_trace.assign(trace.entries.begin(), trace.entries.end());
+        bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
+        bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
+        bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
         bg.arena.~Arena();
-        new (&bg.arena) Arena{arena_bytes};
+        new(&bg.arena) Arena{arena_bytes};
         repopulate();
-        auto*       ref_graph = bg.build_trace(A, count);
-        TraceEntry* ref_ops   = ref_graph->ops;
+        auto* ref_graph = bg.build_trace(A, count);
+        TraceEntry* ref_ops = ref_graph->ops;
 
         for (uint32_t iter = 0; iter < iters; iter++) {
             bg.map_gen_++;
             if (bg.map_gen_ == 0) {
-                std::fill_n(bg.scratch_map_.data(), bg.map_cap_.get(),
-                            BackgroundThread::PtrSlot{});
+                std::fill_n(bg.scratch_map_.data(), bg.map_cap_.get(), BackgroundThread::PtrSlot{});
                 bg.map_gen_ = 1;
             }
-            auto*          local_map  = bg.scratch_map_.data();
-            const uint8_t  local_gen  = bg.map_gen_;
+            auto* local_map = bg.scratch_map_.data();
+            const uint8_t local_gen = bg.map_gen_;
             const uint32_t local_mask = bg.ptr_mask_;
 
             const uint64_t t0 = bench::rdtsc_start();
@@ -690,9 +583,8 @@ void bench_phase2_subparts(
                 for (uint16_t j = 0; j < te.num_outputs; j++) {
                     void* ptr = raw_data_ptr(te.output_metas[j]);
                     if (!ptr) continue;
-                    auto result = BackgroundThread::ptr_map_insert(
-                        local_map, local_gen, local_mask, ptr,
-                        OpIndex{i}, static_cast<uint8_t>(j), SlotId{0});
+                    auto result = BackgroundThread::ptr_map_insert(local_map, local_gen, local_mask, ptr, OpIndex{i},
+                                                                   static_cast<uint8_t>(j), SlotId{0});
                     if (result.was_alias) aliases++;
                 }
             }
@@ -706,36 +598,30 @@ void bench_phase2_subparts(
     // ── P3: Slot copy ─────────────────────────────────────────────
     double ns_p3 = 0;
     {
-        bg.current_trace.assign(trace.entries.begin(),
-                                trace.entries.end());
-        bg.current_meta_starts.assign(trace.meta_starts.begin(),
-                                      trace.meta_starts.end());
-        bg.current_scope_hashes.assign(trace.scope_hashes.begin(),
-                                       trace.scope_hashes.end());
-        bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(),
-                                          trace.callsite_hashes.end());
+        bg.current_trace.assign(trace.entries.begin(), trace.entries.end());
+        bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());
+        bg.current_scope_hashes.assign(trace.scope_hashes.begin(), trace.scope_hashes.end());
+        bg.current_callsite_hashes.assign(trace.callsite_hashes.begin(), trace.callsite_hashes.end());
         bg.arena.~Arena();
-        new (&bg.arena) Arena{arena_bytes};
+        new(&bg.arena) Arena{arena_bytes};
         repopulate();
-        auto*          ref_graph = bg.build_trace(A, count);
+        auto* ref_graph = bg.build_trace(A, count);
         const uint32_t num_slots = ref_graph->num_slots.get_assuming_set();
 
-        std::vector<BackgroundThread::SlotInfo> saved_slots(
-            bg.scratch_slots_.data(), bg.scratch_slots_.data() + num_slots);
+        std::vector<BackgroundThread::SlotInfo> saved_slots(bg.scratch_slots_.data(),
+                                                            bg.scratch_slots_.data() + num_slots);
 
         for (uint32_t iter = 0; iter < iters; iter++) {
-            std::memcpy(bg.scratch_slots_.data(), saved_slots.data(),
-                        num_slots * sizeof(BackgroundThread::SlotInfo));
+            std::memcpy(bg.scratch_slots_.data(), saved_slots.data(), num_slots * sizeof(BackgroundThread::SlotInfo));
             bg.arena.~Arena();
-            new (&bg.arena) Arena{arena_bytes};
+            new(&bg.arena) Arena{arena_bytes};
 
             const uint64_t t0 = bench::rdtsc_start();
 
             auto* slots = bg.arena.alloc_array<TensorSlot>(A, num_slots);
             for (uint32_t s = 0; s < num_slots; s++) {
                 slots[s].offset_bytes = 0;
-                std::memcpy(&slots[s].nbytes, &bg.scratch_slots_[s],
-                            sizeof(BackgroundThread::SlotInfo));
+                std::memcpy(&slots[s].nbytes, &bg.scratch_slots_[s], sizeof(BackgroundThread::SlotInfo));
                 slots[s].slot_id = SlotId{s};
                 std::memset(slots[s].pad2, 0, sizeof(slots[s].pad2));
             }
@@ -747,17 +633,14 @@ void bench_phase2_subparts(
     }
 
     PhaseTiming phases[] = {
-        {"P0  pre-scan",       ns_p0,  iters},
-        {"P1  alloc+memset",   ns_p1,  iters},
-        {"P2a copy fields",    ns_p2a, iters},
-        {"P2b content hash",   ns_p2b, iters},
-        {"P2c PtrMap lookup",  ns_p2c, iters},
-        {"P2d PtrMap insert",  ns_p2d, iters},
-        {"P3  slot copy",      ns_p3,  iters},
+        {"P0  pre-scan", ns_p0, iters},      {"P1  alloc+memset", ns_p1, iters},   {"P2a copy fields", ns_p2a, iters},
+        {"P2b content hash", ns_p2b, iters}, {"P2c PtrMap lookup", ns_p2c, iters}, {"P2d PtrMap insert", ns_p2d, iters},
+        {"P3  slot copy", ns_p3, iters},
     };
 
     double sum = 0;
-    for (auto& p : phases) sum += p.total_ns;
+    for (auto& p : phases)
+        sum += p.total_ns;
     print_phase_table(phases, 7, sum, iters);
 }
 
@@ -781,15 +664,15 @@ constexpr const char* kDefaultTrace = nullptr;
 // Override explicitly: `./bench_phases <trace> <iters>`.
 constexpr uint32_t kDefaultIters = 1200;
 
-} // namespace
+}  // namespace
 
 int main(int argc, char* argv[]) {
     const char* trace_path = (argc >= 2) ? argv[1] : kDefaultTrace;
     if (!trace_path) {
         std::fprintf(stderr,
-            "usage: %s <file.crtrace> [iters]\n"
-            "error: no default trace baked in at configure time\n",
-            argv[0]);
+                     "usage: %s <file.crtrace> [iters]\n"
+                     "error: no default trace baked in at configure time\n",
+                     argv[0]);
         return 1;
     }
 
@@ -802,15 +685,12 @@ int main(int argc, char* argv[]) {
     auto trace = load_trace(trace_path);
     if (!trace) {
         std::fprintf(stderr, "error: could not load %s\n", trace_path);
-        std::fprintf(stderr,
-            "usage: %s [file.crtrace] [iters]\n", argv[0]);
+        std::fprintf(stderr, "usage: %s [file.crtrace] [iters]\n", argv[0]);
         return 1;
     }
-    std::printf("Loaded %s: %u ops, %u metas\n",
-                trace_path, trace->num_ops, trace->num_metas);
+    std::printf("Loaded %s: %u ops, %u metas\n", trace_path, trace->num_ops, trace->num_metas);
 
-    const uint32_t iters = (argc >= 3)
-        ? static_cast<uint32_t>(std::atoi(argv[2])) : kDefaultIters;
+    const uint32_t iters = (argc >= 3) ? static_cast<uint32_t>(std::atoi(argv[2])) : kDefaultIters;
 
     MetaLog meta_log;
     meta_log.reset();

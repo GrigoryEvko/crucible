@@ -8,9 +8,6 @@
 
 namespace cog = crucible::cog;
 
-constexpr cog::CalibrationLatencyQuantiles bad_latency{
-    cog::LatencyQuantiles{0u, 1u, 2u}};
+constexpr cog::CalibrationLatencyQuantiles bad_latency{cog::LatencyQuantiles{0u, 1u, 2u}};
 
-int main() {
-    return static_cast<int>(bad_latency.value().p50_ns);
-}
+int main() { return static_cast<int>(bad_latency.value().p50_ns); }

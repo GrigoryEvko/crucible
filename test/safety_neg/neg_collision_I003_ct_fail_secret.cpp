@@ -9,9 +9,8 @@
 namespace fn = crucible::safety::fn;
 
 namespace neg_collision_i003 {
-using Bad = fn::Fn<int, fn::pred::True, fn::UsageMode::Linear,
-                   crucible::effects::Row<>, fn::SecLevel::Public>;
-}
+using Bad = fn::Fn<int, fn::pred::True, fn::UsageMode::Linear, crucible::effects::Row<>, fn::SecLevel::Public>;
+}  // namespace neg_collision_i003
 
 namespace crucible::safety::fn::collision {
 template <>
@@ -20,7 +19,7 @@ template <>
 struct marks_fail<::neg_collision_i003::Bad> : std::true_type {};
 template <>
 struct marks_fail_on_secret<::neg_collision_i003::Bad> : std::true_type {};
-}
+}  // namespace crucible::safety::fn::collision
 
 [[maybe_unused]] neg_collision_i003::Bad bad{};
 

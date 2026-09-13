@@ -39,8 +39,8 @@
 // Anchor a legitimate call so the file is self-contained — empty-
 // struct tag satisfies std::is_class_v.  This call compiles.
 namespace {
-    struct ValidPhantomTag {};
-}
+struct ValidPhantomTag {};
+}  // namespace
 
 [[maybe_unused]] static auto anchor_mint_with_class_tag() {
     return ::crucible::safety::mint_tagged<ValidPhantomTag, int>(42);

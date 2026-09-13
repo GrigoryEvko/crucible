@@ -31,9 +31,7 @@ using namespace crucible::algebra::lattices;
 
 int main() {
     // Coeffect modality (NOT RelativeMonad).
-    using G = Graded<ModalityKind::Coeffect,
-                     QttSemiring::At<QttGrade::One>,
-                     int>;
+    using G = Graded<ModalityKind::Coeffect, QttSemiring::At<QttGrade::One>, int>;
 
     // Should FAIL: inject() requires RelativeMonadModality<M>, M is Coeffect.
     auto g = G::inject(42, {});

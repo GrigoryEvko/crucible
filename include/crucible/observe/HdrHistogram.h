@@ -83,7 +83,7 @@ struct HdrLayout {
 
 }  // namespace detail
 
-template <std::uint8_t Significant = 3, std::uint64_t MaxValue = 3'600'000'000'000ull>
+template <std::uint8_t Significant = 3, std::uint64_t MaxValue = 3600000000000ull>
 class HdrHistogram {
 public:
     using layout_type = detail::HdrLayout<Significant, MaxValue>;
@@ -326,7 +326,7 @@ static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
 // two instances sharing a tag also share one cell per thread and draw shards
 // from one interleaved stream. Each call site declares its own tag type.
 
-template <std::uint8_t Significant = 3, std::uint64_t MaxValue = 3'600'000'000'000ull, std::size_t ShardCount = 4,
+template <std::uint8_t Significant = 3, std::uint64_t MaxValue = 3600000000000ull, std::size_t ShardCount = 4,
           typename UniqueTag = struct DefaultConcurrentHdrTag>
 class ConcurrentHdrHistogram {
     static_assert(ShardCount > 0, "ConcurrentHdrHistogram needs at least one shard");

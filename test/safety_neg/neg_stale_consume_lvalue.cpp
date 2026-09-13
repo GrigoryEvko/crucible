@@ -44,18 +44,16 @@
 #include <crucible/safety/Stale.h>
 
 namespace {
-    // Production-shape Stale consumer.  Real call sites (Cipher /
-    // §8 ASGD admission gate) typically hold a Stale<GradientShard>
-    // as a local variable, then either peek for diagnostics or
-    // consume to extract the inner value after admission.
-    using GradientShardStub = int;
-}
+// Production-shape Stale consumer.  Real call sites (Cipher /
+// §8 ASGD admission gate) typically hold a Stale<GradientShard>
+// as a local variable, then either peek for diagnostics or
+// consume to extract the inner value after admission.
+using GradientShardStub = int;
+}  // namespace
 
 // Anchor: rvalue consume — moving from a fresh Stale OR an
 // explicit std::move(lvalue) IS permitted.  This compiles.
-[[maybe_unused]] static GradientShardStub anchor_consume_rvalue(
-    ::crucible::safety::Stale<GradientShardStub> event)
-{
+[[maybe_unused]] static GradientShardStub anchor_consume_rvalue(::crucible::safety::Stale<GradientShardStub> event) {
     return std::move(event).consume();
 }
 
@@ -64,10 +62,9 @@ namespace {
 // the rvalue ref-qualifier.  GCC emits "passing 'Stale<int>' as
 // 'this' argument discards qualifiers" or "cannot bind rvalue
 // reference of type ... to lvalue".
-[[maybe_unused]] static GradientShardStub offending_consume_lvalue(
-    ::crucible::safety::Stale<GradientShardStub>& event)
-{
-    return event.consume();   // ERROR: consume() is rvalue-only
+[[maybe_unused]] static GradientShardStub
+offending_consume_lvalue(::crucible::safety::Stale<GradientShardStub>& event) {
+    return event.consume();  // ERROR: consume() is rvalue-only
 }
 
 int main() { return 0; }

@@ -15,9 +15,6 @@ using namespace crucible::safety;
 // SIZE_MAX * 2 unambiguously overflows std::size_t on every supported
 // platform (64-bit unsigned).  The variable-template instantiation
 // fires safe_mul_impl::_opt's static_assert.
-inline constexpr std::size_t kBoom =
-    safe_capacity<static_cast<std::size_t>(-1), 2u>;
+inline constexpr std::size_t kBoom = safe_capacity<static_cast<std::size_t>(-1), 2u>;
 
-int main() {
-    return static_cast<int>(kBoom & 1u);
-}
+int main() { return static_cast<int>(kBoom & 1u); }

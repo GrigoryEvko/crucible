@@ -15,8 +15,7 @@ struct BadDeque {};
 
 void exercise_owner_try_steal() {
     crucible::concurrent::PermissionedChaseLevDeque<int, 64, BadDeque> deque;
-    auto perm = crucible::safety::mint_permission_root<
-        crucible::concurrent::deque_tag::Owner<BadDeque>>();
+    auto perm = crucible::safety::mint_permission_root<crucible::concurrent::deque_tag::Owner<BadDeque>>();
     auto owner = deque.owner(std::move(perm));
 
     auto v = owner.try_steal();
@@ -25,4 +24,7 @@ void exercise_owner_try_steal() {
 
 }  // namespace
 
-int main() { exercise_owner_try_steal(); return 0; }
+int main() {
+    exercise_owner_try_steal();
+    return 0;
+}

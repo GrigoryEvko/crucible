@@ -12,16 +12,15 @@
 #include <crucible/bridges/EndpointMint.h>
 
 namespace bridges = ::crucible::bridges;
-namespace proto   = ::crucible::safety::proto;
+namespace proto = ::crucible::safety::proto;
 
 int main() {
     proto::SessionEventLog log{};
-    int                    not_an_endpoint = 42;
-    proto::RoleTagId       self{1};
-    proto::RoleTagId       peer{2};
+    int not_an_endpoint = 42;
+    proto::RoleTagId self{1};
+    proto::RoleTagId peer{2};
 
-    auto bad = bridges::mint_recording_endpoint(
-        std::move(not_an_endpoint), log, self, peer);
+    auto bad = bridges::mint_recording_endpoint(std::move(not_an_endpoint), log, self, peer);
     (void)bad;
     return 0;
 }

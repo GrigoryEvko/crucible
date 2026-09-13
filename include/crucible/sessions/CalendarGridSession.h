@@ -113,7 +113,7 @@ struct Key {
     static std::uint64_t key(Job const& job) noexcept { return job.deadline_ns; }
 };
 
-using Grid = ::crucible::concurrent::PermissionedCalendarGrid<Job, 2, 8, 16, Key, 1'000'000ULL, Tag>;
+using Grid = ::crucible::concurrent::PermissionedCalendarGrid<Job, 2, 8, 16, Key, 1000000ULL, Tag>;
 using Producer0 = Grid::ProducerHandle<0>;
 using Consumer = Grid::ConsumerHandle;
 using ProducerSession0 = ProducerSessionHandle<Grid, 0>;

@@ -56,21 +56,21 @@
 namespace {
 
 inline constexpr uint32_t kMaxFactors = 12;
-inline constexpr uint64_t kU32Max     = 0xFFFF'FFFFull;
+inline constexpr uint64_t kU32Max = 0xFFFFFFFFull;
 
 enum class Mode : uint8_t {
     ExactFactorization = 0,
-    OffByFactor        = 1,
-    Overflow           = 2,
-    Random             = 3,
+    OffByFactor = 1,
+    Overflow = 2,
+    Random = 3,
 };
 
 struct FactorSpec {
     std::array<uint32_t, kMaxFactors> factors{};
     uint32_t total = 0;
     uint32_t count = 0;
-    Mode     mode  = Mode::Random;
-    uint8_t  pad[3]{};
+    Mode mode = Mode::Random;
+    uint8_t pad[3]{};
 };
 
 using crucible::fuzz::prop::Rng;
@@ -96,9 +96,7 @@ using crucible::fuzz::prop::Rng;
 // Build factors incrementally so the running product stays in
 // [1, UINT32_MAX]; returns the product.  Each factor is in
 // [1, min(headroom, 256)] so products grow gently and many factors fit.
-[[nodiscard]] uint64_t build_in_range(
-    Rng& rng, std::array<uint32_t, kMaxFactors>& out, uint32_t& count) noexcept
-{
+[[nodiscard]] uint64_t build_in_range(Rng& rng, std::array<uint32_t, kMaxFactors>& out, uint32_t& count) noexcept {
     uint64_t running = 1;
     const uint32_t target = rng.next_below(kMaxFactors + 1u);  // [0, kMaxFactors]
     count = 0;
@@ -120,9 +118,10 @@ int main(int argc, char** argv) {
     using crucible::decide::factorization_eq;
 
     Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 2'000'000) cfg.iterations = 2'000'000;
+    if (cfg.iterations > 2000000) cfg.iterations = 2000000;
 
-    return run("factorization_eq", cfg,
+    return run(
+        "factorization_eq", cfg,
         // ── Generator: one of four factor-list shapes ──
         [](Rng& rng) noexcept -> FactorSpec {
             FactorSpec spec{};
@@ -158,14 +157,15 @@ int main(int argc, char** argv) {
                     spec.total = rng.next32();
                     break;
                 }
-                default: std::unreachable();  // mode ∈ {0..3} by next_below(4)
+                default:
+                    std::unreachable();  // mode ∈ {0..3} by next_below(4)
             }
             return spec;
         },
         // ── Property: differential + construction-direction ──
         [](const FactorSpec& spec) noexcept -> bool {
             const std::span<const uint32_t> view{spec.factors.data(), spec.count};
-            const bool cut   = factorization_eq<uint32_t>(view, spec.total);
+            const bool cut = factorization_eq<uint32_t>(view, spec.total);
             const bool truth = oracle(spec);
 
             // Universal: code-under-test agrees with the independent
@@ -178,11 +178,12 @@ int main(int argc, char** argv) {
                     break;
                 case Mode::OffByFactor:
                 case Mode::Overflow:
-                    if (cut) return false;   // perturbed/overflowing → must reject
+                    if (cut) return false;  // perturbed/overflowing → must reject
                     break;
                 case Mode::Random:
-                    break;                   // oracle is ground truth
-                default: std::unreachable();
+                    break;  // oracle is ground truth
+                default:
+                    std::unreachable();
             }
             return true;
         });

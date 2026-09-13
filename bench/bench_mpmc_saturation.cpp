@@ -73,7 +73,7 @@ using SpscLarge = SpscRing<Item, (1U << 20)>;
 bench::Report mpmc_single_push() {
     auto ring = std::make_unique<MpmcLarge>();
     Item i = 0;
-    return bench::run("mpmc_ring.try_push (single-call, uncontended)", [&]{
+    return bench::run("mpmc_ring.try_push (single-call, uncontended)", [&] {
         const bool ok = ring->try_push(++i);
         bench::do_not_optimize(ok);
     });
@@ -83,10 +83,10 @@ bench::Report mpmc_single_pop() {
     auto ring = std::make_unique<MpmcLarge>();
     // Pre-fill enough items to drain through the bench iterations
     // without ever hitting empty.
-    for (Item i = 0; i < 4'000'000; ++i) {
+    for (Item i = 0; i < 4000000; ++i) {
         if (!ring->try_push(i)) break;
     }
-    return bench::run("mpmc_ring.try_pop (single-call, prefilled)", [&]{
+    return bench::run("mpmc_ring.try_pop (single-call, prefilled)", [&] {
         auto v = ring->try_pop();
         bench::do_not_optimize(v);
     });
@@ -95,7 +95,7 @@ bench::Report mpmc_single_pop() {
 bench::Report mpmc_round_trip() {
     auto ring = std::make_unique<MpmcLarge>();
     Item i = 0;
-    return bench::run("mpmc_ring round-trip (push+pop, single thread)", [&]{
+    return bench::run("mpmc_ring round-trip (push+pop, single thread)", [&] {
         const bool ok = ring->try_push(++i);
         auto v = ring->try_pop();
         bench::do_not_optimize(ok);
@@ -116,9 +116,8 @@ bench::Report mpmc_push_inner_loop() {
     auto ring = std::make_unique<MpmcLarge>();
     Item i = 0;
     char name[128];
-    std::snprintf(name, sizeof(name),
-                  "mpmc_ring.try_push × %zu (inner loop, single thread)", N);
-    return bench::run(name, [&]{
+    std::snprintf(name, sizeof(name), "mpmc_ring.try_push × %zu (inner loop, single thread)", N);
+    return bench::run(name, [&] {
         for (std::size_t k = 0; k < N; ++k) {
             const bool ok = ring->try_push(++i);
             bench::do_not_optimize(ok);
@@ -131,9 +130,8 @@ bench::Report mpmc_round_trip_inner_loop() {
     auto ring = std::make_unique<MpmcLarge>();
     Item i = 0;
     char name[128];
-    std::snprintf(name, sizeof(name),
-                  "mpmc_ring round-trip × %zu (inner loop)", N);
-    return bench::run(name, [&]{
+    std::snprintf(name, sizeof(name), "mpmc_ring round-trip × %zu (inner loop)", N);
+    return bench::run(name, [&] {
         for (std::size_t k = 0; k < N; ++k) {
             const bool ok = ring->try_push(++i);
             auto v = ring->try_pop();
@@ -155,11 +153,11 @@ bench::Report mpsc_batched_push_pop() {
     auto ring = std::make_unique<MpscLarge>();
     alignas(64) static std::array<Item, N> tx{};
     alignas(64) static std::array<Item, N> rx{};
-    for (std::size_t k = 0; k < N; ++k) tx[k] = k;
+    for (std::size_t k = 0; k < N; ++k)
+        tx[k] = k;
     char name[128];
-    std::snprintf(name, sizeof(name),
-                  "mpsc_ring batch<%zu> round-trip (push+pop)", N);
-    return bench::run(name, [&]{
+    std::snprintf(name, sizeof(name), "mpsc_ring batch<%zu> round-trip (push+pop)", N);
+    return bench::run(name, [&] {
         const std::size_t np = ring->try_push_batch(std::span<const Item>(tx));
         const std::size_t nc = ring->try_pop_batch(std::span<Item>(rx));
         bench::do_not_optimize(np);
@@ -172,7 +170,7 @@ bench::Report mpsc_batched_push_pop() {
 bench::Report mpsc_single_push_ref() {
     auto ring = std::make_unique<MpscLarge>();
     Item i = 0;
-    return bench::run("mpsc_ring.try_push (single-call, REFERENCE)", [&]{
+    return bench::run("mpsc_ring.try_push (single-call, REFERENCE)", [&] {
         const bool ok = ring->try_push(++i);
         bench::do_not_optimize(ok);
     });
@@ -190,7 +188,7 @@ bench::Report mpsc_single_push_ref() {
 bench::Report spsc_single_push() {
     auto ring = std::make_unique<SpscLarge>();
     Item i = 0;
-    return bench::run("spsc_ring.try_push (single-call, REFERENCE)", [&]{
+    return bench::run("spsc_ring.try_push (single-call, REFERENCE)", [&] {
         const bool ok = ring->try_push(++i);
         bench::do_not_optimize(ok);
     });
@@ -201,11 +199,11 @@ bench::Report spsc_batched_push_pop() {
     auto ring = std::make_unique<SpscLarge>();
     alignas(64) static std::array<Item, N> tx{};
     alignas(64) static std::array<Item, N> rx{};
-    for (std::size_t k = 0; k < N; ++k) tx[k] = k;
+    for (std::size_t k = 0; k < N; ++k)
+        tx[k] = k;
     char name[128];
-    std::snprintf(name, sizeof(name),
-                  "spsc_ring batch<%zu> round-trip (REFERENCE)", N);
-    return bench::run(name, [&]{
+    std::snprintf(name, sizeof(name), "spsc_ring batch<%zu> round-trip (REFERENCE)", N);
+    return bench::run(name, [&] {
         const std::size_t np = ring->try_push_batch(std::span{tx});
         const std::size_t nc = ring->try_pop_batch(std::span{rx});
         bench::do_not_optimize(np);
@@ -215,12 +213,9 @@ bench::Report spsc_batched_push_pop() {
     });
 }
 
-inline double per_item_ns(double whole_p50_ns, std::size_t N) noexcept {
-    return whole_p50_ns / static_cast<double>(N);
-}
+inline double per_item_ns(double whole_p50_ns, std::size_t N) noexcept { return whole_p50_ns / static_cast<double>(N); }
 
-inline double per_item_round_trip_ns(double whole_p50_ns,
-                                      std::size_t N) noexcept {
+inline double per_item_round_trip_ns(double whole_p50_ns, std::size_t N) noexcept {
     // Round-trip moves each item TWICE (push once, pop once).
     return whole_p50_ns / (2.0 * static_cast<double>(N));
 }
@@ -265,16 +260,16 @@ int main() {
 
         // ── MPSC batched API — the load-bearing test of "batched
         //    MPMC can approach SPSC throughput" ────────────────────────
-        mpsc_single_push_ref(),                  // [15] ← was spsc_single_push
-        mpsc_batched_push_pop<64>(),             // [16]
-        mpsc_batched_push_pop<256>(),            // [17]
-        mpsc_batched_push_pop<1024>(),           // [18]
+        mpsc_single_push_ref(),  // [15] ← was spsc_single_push
+        mpsc_batched_push_pop<64>(),  // [16]
+        mpsc_batched_push_pop<256>(),  // [17]
+        mpsc_batched_push_pop<1024>(),  // [18]
 
         // ── SPSC reference points ─────────────────────────────────────
-        spsc_single_push(),                      // [19]
-        spsc_batched_push_pop<64>(),             // [20]
-        spsc_batched_push_pop<256>(),            // [21]
-        spsc_batched_push_pop<1024>(),           // [22]
+        spsc_single_push(),  // [19]
+        spsc_batched_push_pop<64>(),  // [20]
+        spsc_batched_push_pop<256>(),  // [21]
+        spsc_batched_push_pop<1024>(),  // [22]
     };
 
     bench::emit_reports_text(reports);
@@ -282,9 +277,7 @@ int main() {
     // ── Headline tables ───────────────────────────────────────────────
     std::printf("\n=== MPMC per-call cost ===\n");
     std::printf("\n  %-58s  %12s\n", "Bench", "ns/item");
-    std::printf("  %-58s  %12s\n",
-                std::string(58, '-').c_str(),
-                std::string(12, '-').c_str());
+    std::printf("  %-58s  %12s\n", std::string(58, '-').c_str(), std::string(12, '-').c_str());
 
     auto print_one = [](const bench::Report& r, double per_item) {
         std::printf("  %-58s  %10.3f ns\n", r.name.c_str(), per_item);
@@ -307,19 +300,15 @@ int main() {
 
     std::printf("\n=== MPSC batched API — the headline test ===\n");
     std::printf("\n  %-58s  %12s\n", "Bench", "ns/item");
-    std::printf("  %-58s  %12s\n",
-                std::string(58, '-').c_str(),
-                std::string(12, '-').c_str());
-    print_one(reports[15], reports[15].pct.p50);                    // mpsc single
+    std::printf("  %-58s  %12s\n", std::string(58, '-').c_str(), std::string(12, '-').c_str());
+    print_one(reports[15], reports[15].pct.p50);  // mpsc single
     print_one(reports[16], per_item_round_trip_ns(reports[16].pct.p50, 64));
     print_one(reports[17], per_item_round_trip_ns(reports[17].pct.p50, 256));
     print_one(reports[18], per_item_round_trip_ns(reports[18].pct.p50, 1024));
 
     std::printf("\n=== SPSC reference (the L1d-port floor) ===\n");
     std::printf("\n  %-58s  %12s\n", "Bench", "ns/item");
-    std::printf("  %-58s  %12s\n",
-                std::string(58, '-').c_str(),
-                std::string(12, '-').c_str());
+    std::printf("  %-58s  %12s\n", std::string(58, '-').c_str(), std::string(12, '-').c_str());
     print_one(reports[19], reports[19].pct.p50);
     print_one(reports[20], per_item_round_trip_ns(reports[20].pct.p50, 64));
     print_one(reports[21], per_item_round_trip_ns(reports[21].pct.p50, 256));
@@ -328,36 +317,31 @@ int main() {
     // ── Headline: MPSC single → MPSC batched → SPSC batched ──────────
     std::printf("\n=== headline: batched MPSC vs single-call MPSC vs SPSC ===\n");
     {
-        const double mpmc_push       = reports[0].pct.p50;
+        const double mpmc_push = reports[0].pct.p50;
         const double mpmc_inner_1024 = per_item_ns(reports[8].pct.p50, 1024);
-        const double mpsc_single     = reports[15].pct.p50;
-        const double mpsc_b64        = per_item_round_trip_ns(reports[16].pct.p50, 64);
-        const double mpsc_b256       = per_item_round_trip_ns(reports[17].pct.p50, 256);
-        const double mpsc_b1024      = per_item_round_trip_ns(reports[18].pct.p50, 1024);
-        const double spsc_single     = reports[19].pct.p50;
-        const double spsc_b1024      = per_item_round_trip_ns(reports[22].pct.p50, 1024);
+        const double mpsc_single = reports[15].pct.p50;
+        const double mpsc_b64 = per_item_round_trip_ns(reports[16].pct.p50, 64);
+        const double mpsc_b256 = per_item_round_trip_ns(reports[17].pct.p50, 256);
+        const double mpsc_b1024 = per_item_round_trip_ns(reports[18].pct.p50, 1024);
+        const double spsc_single = reports[19].pct.p50;
+        const double spsc_b1024 = per_item_round_trip_ns(reports[22].pct.p50, 1024);
 
         std::printf("  Single MpmcRing.try_push:        %.3f ns/op\n", mpmc_push);
         std::printf("  Single MpscRing.try_push:        %.3f ns/op\n", mpsc_single);
         std::printf("  Single SpscRing.try_push:        %.3f ns/op\n", spsc_single);
         std::printf("\n");
-        std::printf("  MpmcRing inner-loop ×1024:       %.3f ns/item (no batched API)\n",
-                    mpmc_inner_1024);
-        std::printf("  MpscRing batched<64>:            %.3f ns/item (speedup vs single: %.1f×)\n",
-                    mpsc_b64, mpsc_single / mpsc_b64);
-        std::printf("  MpscRing batched<256>:           %.3f ns/item (speedup: %.1f×)\n",
-                    mpsc_b256, mpsc_single / mpsc_b256);
-        std::printf("  MpscRing batched<1024>:          %.3f ns/item (speedup: %.1f×)\n",
-                    mpsc_b1024, mpsc_single / mpsc_b1024);
-        std::printf("  SpscRing batched<1024>:          %.3f ns/item (the floor)\n",
-                    spsc_b1024);
+        std::printf("  MpmcRing inner-loop ×1024:       %.3f ns/item (no batched API)\n", mpmc_inner_1024);
+        std::printf("  MpscRing batched<64>:            %.3f ns/item (speedup vs single: %.1f×)\n", mpsc_b64,
+                    mpsc_single / mpsc_b64);
+        std::printf("  MpscRing batched<256>:           %.3f ns/item (speedup: %.1f×)\n", mpsc_b256,
+                    mpsc_single / mpsc_b256);
+        std::printf("  MpscRing batched<1024>:          %.3f ns/item (speedup: %.1f×)\n", mpsc_b1024,
+                    mpsc_single / mpsc_b1024);
+        std::printf("  SpscRing batched<1024>:          %.3f ns/item (the floor)\n", spsc_b1024);
         std::printf("\n  ── interpretation (post-Vyukov bitmap MpscRing) ──\n");
-        std::printf("  Single-thread MPSC batched<1024> reaches %.3f ns/item.\n",
-                    mpsc_b1024);
-        std::printf("  vs single-call MPSC %.2f ns: %.1f× speedup.\n",
-                    mpsc_single, mpsc_single / mpsc_b1024);
-        std::printf("  vs SPSC batched<1024> %.3f ns: %.1f× SLOWER.\n",
-                    spsc_b1024, mpsc_b1024 / spsc_b1024);
+        std::printf("  Single-thread MPSC batched<1024> reaches %.3f ns/item.\n", mpsc_b1024);
+        std::printf("  vs single-call MPSC %.2f ns: %.1f× speedup.\n", mpsc_single, mpsc_single / mpsc_b1024);
+        std::printf("  vs SPSC batched<1024> %.3f ns: %.1f× SLOWER.\n", spsc_b1024, mpsc_b1024 / spsc_b1024);
         std::printf("\n  MpscRing now uses out-of-band bitmap metadata:\n");
         std::printf("  • Cells: pure T (8B for u64) — same density as SPSC.\n");
         std::printf("  • Bitmap: 1 bit per cell, OOB.\n");

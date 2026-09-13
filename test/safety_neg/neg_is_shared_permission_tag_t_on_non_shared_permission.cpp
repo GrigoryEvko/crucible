@@ -22,7 +22,9 @@
 
 #include <crucible/safety/IsPermission.h>
 
-namespace { struct neg_test_tag {}; }
+namespace {
+struct neg_test_tag {};
+}  // namespace
 
 int main() {
     // Permission<Tag> is NOT a SharedPermission<Tag> — the linear

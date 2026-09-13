@@ -21,10 +21,10 @@
 #include <optional>
 #include <utility>
 
-namespace eff   = crucible::effects;
+namespace eff = crucible::effects;
 namespace fpipe = crucible::fixy::pipe;
-namespace conc  = crucible::concurrent;
-namespace saf   = crucible::safety;
+namespace conc = crucible::concurrent;
+namespace saf = crucible::safety;
 
 template <typename T>
 struct FakeConsumer {
@@ -35,8 +35,7 @@ struct FakeConsumer {
 struct SnapTag {};
 using Snapshot = conc::PermissionedSnapshot<int, SnapTag>;
 
-inline void swmr_publish_body(FakeConsumer<int>&&,
-                              Snapshot::WriterHandle&&) noexcept {}
+inline void swmr_publish_body(FakeConsumer<int>&&, Snapshot::WriterHandle&&) noexcept {}
 
 int main() {
     eff::HotFgCtx ctx;
@@ -47,8 +46,7 @@ int main() {
 
     int not_an_endpoint = 0;
 
-    auto bad = fpipe::mint_swmr_stage<&swmr_publish_body>(
-        ctx, not_an_endpoint, std::move(writer));
+    auto bad = fpipe::mint_swmr_stage<&swmr_publish_body>(ctx, not_an_endpoint, std::move(writer));
     (void)bad;
     return 0;
 }

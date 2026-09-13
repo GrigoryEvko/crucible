@@ -63,8 +63,8 @@ using PositiveIdleTimeoutNs = safety::Positive<std::uint64_t>;
 using PositiveConnectionId = safety::Positive<std::uint64_t>;
 
 struct PoolConfig {
-    PositivePoolSize max_per_remote{std::uint16_t{65'535}};
-    PositiveIdleTimeoutNs max_idle_ns{std::uint64_t{30'000'000'000ull}};
+    PositivePoolSize max_per_remote{std::uint16_t{65535}};
+    PositiveIdleTimeoutNs max_idle_ns{std::uint64_t{30000000000ull}};
     bool probe_health = true;
 };
 

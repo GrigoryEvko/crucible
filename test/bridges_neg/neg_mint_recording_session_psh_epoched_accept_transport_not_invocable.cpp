@@ -36,19 +36,19 @@
 #include <crucible/effects/ExecCtx.h>
 
 namespace proto = ::crucible::safety::proto;
-namespace eff   = ::crucible::effects;
+namespace eff = ::crucible::effects;
 
 namespace neg_mint_recording_session_psh_epoched_accept_transport_not_invocable {
 
-struct CarrierChannel { int unused = 0; };
+struct CarrierChannel {
+    int unused = 0;
+};
 
 using InnerProto = proto::Send<int, proto::End>;
 
-using CarrierProto = proto::EpochedAccept<
-    proto::DelegatedSession<InnerProto, proto::EmptyPermSet>,
-    proto::End,
-    /*MinEpoch=*/7,
-    /*MinGeneration=*/2>;
+using CarrierProto = proto::EpochedAccept<proto::DelegatedSession<InnerProto, proto::EmptyPermSet>, proto::End,
+                                          /*MinEpoch=*/7,
+                                          /*MinGeneration=*/2>;
 
 // Recipient ctx whose LoopCtx satisfies the carrier's epoch floor.
 // EpochedAccept's gate is satisfies-relation (>=), so equal works.
@@ -57,23 +57,20 @@ using EpochCtxType = proto::EpochExecCtx<7, 2, eff::HotFgCtx>;
 }  // namespace neg_mint_recording_session_psh_epoched_accept_transport_not_invocable
 
 int main() {
-    using namespace
-        neg_mint_recording_session_psh_epoched_accept_transport_not_invocable;
+    using namespace neg_mint_recording_session_psh_epoched_accept_transport_not_invocable;
 
     EpochCtxType ctx{};
     proto::SessionEventLog log{};
-    proto::RoleTagId       self{1};
-    proto::RoleTagId       peer{2};
+    proto::RoleTagId self{1};
+    proto::RoleTagId peer{2};
 
     // Build the carrier PSH at the EpochedAccept state.  Epoch gate
     // passes because ctx is EpochExecCtx<7, 2, ...> >= floor 7,2.
-    auto carrier = proto::mint_permissioned_session<CarrierProto>(
-        ctx, CarrierChannel{});
+    auto carrier = proto::mint_permissioned_session<CarrierProto>(ctx, CarrierChannel{});
 
     // Mint the recording wrapper.  Construction is gate-free; the
     // requires-clause body fires on .accept().
-    auto recording =
-        proto::mint_recording_session(std::move(carrier), log, self, peer);
+    auto recording = proto::mint_recording_session(std::move(carrier), log, self, peer);
 
     // The forbidden call: Transport = int is NOT invocable with
     // (CarrierChannel&).  Requires-clause rejects.

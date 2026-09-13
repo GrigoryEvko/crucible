@@ -27,7 +27,7 @@
 #include <crucible/permissions/Permission.h>
 
 namespace fsubstr = ::crucible::fixy::substr;
-namespace saf     = ::crucible::safety;
+namespace saf = ::crucible::safety;
 
 namespace neg_fixy_substr_spsc_consumer_endpoint_non_surface {
 // No nested types, no producer()/consumer() — SpscChannelSessionSurface
@@ -45,10 +45,9 @@ struct consumer_tag_placeholder {};
 
 int main() {
     neg_fixy_substr_spsc_consumer_endpoint_non_surface::FakeChannel fake{};
-    auto perm = saf::mint_permission_root<
-        neg_fixy_substr_spsc_consumer_endpoint_non_surface::consumer_tag_placeholder>();
+    auto perm =
+        saf::mint_permission_root<neg_fixy_substr_spsc_consumer_endpoint_non_surface::consumer_tag_placeholder>();
 
-    [[maybe_unused]] auto bad =
-        fsubstr::spsc::mint_spsc_consumer_endpoint(fake, std::move(perm));
+    [[maybe_unused]] auto bad = fsubstr::spsc::mint_spsc_consumer_endpoint(fake, std::move(perm));
     return 0;
 }

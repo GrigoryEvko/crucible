@@ -31,8 +31,8 @@ using Bad = fn::Fn<CallbackMarker>;
 }  // namespace neg_collision_d001
 
 namespace crucible::safety::fn::collision {
-    template <> struct marks_indirect_call_not_noexcept<::neg_collision_d001::Bad>
-        : std::true_type {};
+template <>
+struct marks_indirect_call_not_noexcept<::neg_collision_d001::Bad> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 [[maybe_unused]] neg_collision_d001::Bad the_fixture{};

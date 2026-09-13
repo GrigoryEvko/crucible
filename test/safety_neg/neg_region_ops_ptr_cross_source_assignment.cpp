@@ -26,14 +26,15 @@
 #include <crucible/safety/Tagged.h>
 
 namespace crucible {
-struct FakeTraceEntry { int dummy; };
-}
+struct FakeTraceEntry {
+    int dummy;
+};
+}  // namespace crucible
 
 int main() {
-    using RegionOpsPtr = ::crucible::safety::Tagged<
-        const crucible::FakeTraceEntry*, ::crucible::safety::source::RegionOps>;
-    using ArenaOpsPtr  = ::crucible::safety::Tagged<
-        const crucible::FakeTraceEntry*, ::crucible::safety::source::Arena>;
+    using RegionOpsPtr =
+        ::crucible::safety::Tagged<const crucible::FakeTraceEntry*, ::crucible::safety::source::RegionOps>;
+    using ArenaOpsPtr = ::crucible::safety::Tagged<const crucible::FakeTraceEntry*, ::crucible::safety::source::Arena>;
 
     crucible::FakeTraceEntry entry{};
     ArenaOpsPtr arena_tagged{&entry};

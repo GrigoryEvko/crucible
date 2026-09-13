@@ -21,7 +21,7 @@
 namespace {
 struct TagA {};
 struct TagB {};
-}
+}  // namespace
 
 int main() {
     auto perm_a = crucible::safety::mint_permission_root<TagA>();

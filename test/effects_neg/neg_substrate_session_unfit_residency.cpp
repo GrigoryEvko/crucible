@@ -16,9 +16,9 @@
 
 #include <crucible/concurrent/SubstrateSessionBridge.h>
 
-namespace eff  = crucible::effects;
+namespace eff = crucible::effects;
 namespace conc = crucible::concurrent;
-namespace saf  = crucible::safety;
+namespace saf = crucible::safety;
 
 struct UserTag {};
 
@@ -33,9 +33,8 @@ int main() {
 
     BigCellSpsc ch;
     auto whole = saf::mint_permission_root<conc::spsc_tag::Whole<UserTag>>();
-    auto [pp, cp] = saf::mint_permission_split<
-        conc::spsc_tag::Producer<UserTag>,
-        conc::spsc_tag::Consumer<UserTag>>(std::move(whole));
+    auto [pp, cp] = saf::mint_permission_split<conc::spsc_tag::Producer<UserTag>, conc::spsc_tag::Consumer<UserTag>>(
+        std::move(whole));
     auto handle = ch.producer(std::move(pp));
 
     eff::HotFgCtx fg;

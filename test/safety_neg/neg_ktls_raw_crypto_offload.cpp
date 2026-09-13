@@ -14,8 +14,7 @@ int main() {
         .shape = KtlsCryptoShape{},
         .material = KtlsSecretMaterial{KtlsCryptoMaterial{}},
     };
-    auto request = mint_ktls_offload_for_socket(
-        init, fd, iface, std::move(raw), TlsOffloadDirection::Tx);
+    auto request = mint_ktls_offload_for_socket(init, fd, iface, std::move(raw), TlsOffloadDirection::Tx);
     (void)request;
     return 0;
 }

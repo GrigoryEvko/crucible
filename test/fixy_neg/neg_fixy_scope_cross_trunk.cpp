@@ -19,7 +19,7 @@
 #include <crucible/fixy/Hw.h>
 #include <crucible/effects/ExecCtx.h>
 
-namespace hw  = crucible::fixy::hw;
+namespace hw = crucible::fixy::hw;
 namespace eff = crucible::effects;
 
 int main() {

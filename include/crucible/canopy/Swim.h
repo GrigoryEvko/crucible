@@ -49,9 +49,9 @@ enum class SwimError : std::uint8_t {
 };
 
 struct SwimConfig {
-    SwimDurationNs period_ns{1'000'000'000ULL};
-    SwimDurationNs ack_timeout_ns{500'000'000ULL};
-    SwimDurationNs indirect_timeout_ns{500'000'000ULL};
+    SwimDurationNs period_ns{1000000000ULL};
+    SwimDurationNs ack_timeout_ns{500000000ULL};
+    SwimDurationNs indirect_timeout_ns{500000000ULL};
     SwimPositiveCount indirect_checks{3};
     SwimPositiveCount suspicion_misses{2};
 };

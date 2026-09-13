@@ -30,8 +30,7 @@
 #include <cstdint>
 
 int main() {
-    using DeviceCapability = ::crucible::safety::Tagged<
-        std::uint64_t, ::crucible::safety::source::Meridian>;
+    using DeviceCapability = ::crucible::safety::Tagged<std::uint64_t, ::crucible::safety::source::Meridian>;
 
     std::uint64_t raw_cap = 90;  // sm_90 encoded
 

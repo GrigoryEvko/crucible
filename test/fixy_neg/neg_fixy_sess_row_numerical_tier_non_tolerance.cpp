@@ -28,13 +28,13 @@
 #include <crucible/effects/EffectRow.h>
 
 namespace fsrow = ::crucible::fixy::sess::row;
-namespace eff   = ::crucible::effects;
+namespace eff = ::crucible::effects;
 
 int main() {
     // Should FAIL: `99` is an int literal that cannot convert to
     // `safety::Tolerance` (an enum class : uint8_t).  GCC fires
     // "could not convert template argument '99' to ...Tolerance".
     using BadTier = fsrow::NumericalPayloadRow<99, eff::Row<>>;
-    (void) sizeof(BadTier);  // force instantiation
+    (void)sizeof(BadTier);  // force instantiation
     return 0;
 }

@@ -22,14 +22,14 @@
 
 #include <crucible/safety/source/Arch.h>
 
-namespace ss  = crucible::safety;
+namespace ss = crucible::safety;
 namespace src = crucible::safety::source;
 
 // The gate must reject x86 × ARM.  This static_assert is written to
 // SUCCEED only if the (unsound) composition were admitted — so the
 // build correctly FAILS here, printing the V-261 message.
 static_assert(ss::ArchComposable<src::X86Pinned, src::ArmPinned>,
-    "V-261: x86 × ARM composition must be rejected by the cross-arch "
-    "gate — this fixture proves the rejection fires.");
+              "V-261: x86 × ARM composition must be rejected by the cross-arch "
+              "gate — this fixture proves the rejection fires.");
 
 int main() { return 0; }

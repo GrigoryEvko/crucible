@@ -41,31 +41,30 @@ namespace neg_collision_h010 {
 // A Fn with cost::Constant, no Alloc/IO/Block atoms, but Row<Bg> AND
 // marks_hot_path set.  H001 / H003 do not fire (cost is bounded, no
 // Alloc/IO).  H010 alone catches the context contradiction.
-using Bad = fn::Fn<
-    int,                                       // 1  Type
-    fn::pred::True,                            // 2  Refinement (trivial — H002 would
-                                                //                catch on hot-path; we
-                                                //                disable hot-path below
-                                                //                to isolate H010, then
-                                                //                re-enable via marker)
-    fn::UsageMode::Linear,                     // 3  Usage
-    fx::Row<fx::Effect::Bg>,                   // 4  EffectRow — Bg in row
-    fn::SecLevel::Public,                      // 5  Security
-    fn::proto::None,                           // 6  Protocol
-    fn::lifetime::Static,                      // 7  Lifetime
-    fn::source::FromInternal,                  // 8  Source
-    fn::trust::Verified,                       // 9  Trust
-    fn::ReprKind::Opaque,                      // 10 Repr
-    fn::cost::Constant,                        // 11 Cost (bounded — H001 won't fire)
-    fn::precision::Exact,                      // 12 Precision
-    fn::space::Bounded<sizeof(int)>,           // 13 Space
-    fn::OverflowMode::Trap,                    // 14 Overflow
-    fn::MutationMode::Immutable,               // 15 Mutation
-    fn::ReentrancyMode::NonReentrant,          // 16 Reentrancy
-    fn::size_pol::Sized<sizeof(int)>,          // 17 Size
-    /*Version=*/1,                             // 18 Version
-    fn::stale::Fresh                           // 19 Staleness
->;
+using Bad = fn::Fn<int,  // 1  Type
+                   fn::pred::True,  // 2  Refinement (trivial — H002 would
+                   //                catch on hot-path; we
+                   //                disable hot-path below
+                   //                to isolate H010, then
+                   //                re-enable via marker)
+                   fn::UsageMode::Linear,  // 3  Usage
+                   fx::Row<fx::Effect::Bg>,  // 4  EffectRow — Bg in row
+                   fn::SecLevel::Public,  // 5  Security
+                   fn::proto::None,  // 6  Protocol
+                   fn::lifetime::Static,  // 7  Lifetime
+                   fn::source::FromInternal,  // 8  Source
+                   fn::trust::Verified,  // 9  Trust
+                   fn::ReprKind::Opaque,  // 10 Repr
+                   fn::cost::Constant,  // 11 Cost (bounded — H001 won't fire)
+                   fn::precision::Exact,  // 12 Precision
+                   fn::space::Bounded<sizeof(int)>,  // 13 Space
+                   fn::OverflowMode::Trap,  // 14 Overflow
+                   fn::MutationMode::Immutable,  // 15 Mutation
+                   fn::ReentrancyMode::NonReentrant,  // 16 Reentrancy
+                   fn::size_pol::Sized<sizeof(int)>,  // 17 Size
+                   /*Version=*/1,  // 18 Version
+                   fn::stale::Fresh  // 19 Staleness
+                   >;
 
 }  // namespace neg_collision_h010
 
@@ -76,8 +75,8 @@ using Bad = fn::Fn<
 // H003 won't fire (no Alloc/IO in row).  H010 is the rule that
 // catches the structural contradiction here.
 namespace crucible::safety::fn::collision {
-    template <> struct marks_hot_path<::neg_collision_h010::Bad>
-        : std::true_type {};
+template <>
+struct marks_hot_path<::neg_collision_h010::Bad> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 // Note: marking Bad hot-path with pred::True trips H002 first under

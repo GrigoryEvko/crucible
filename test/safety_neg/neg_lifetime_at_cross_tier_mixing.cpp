@@ -30,11 +30,10 @@ using namespace crucible::algebra::lattices;
 
 int main() {
     LifetimeLattice::At<Lifetime::PER_REQUEST>::element_type req_elt{};
-    LifetimeLattice::At<Lifetime::PER_FLEET>::element_type   fleet_elt{};
+    LifetimeLattice::At<Lifetime::PER_FLEET>::element_type fleet_elt{};
 
     // Should FAIL: At<PER_REQUEST>::leq expects two At<PER_REQUEST>::
     // element_type arguments; fleet_elt is a different type
     // (At<PER_FLEET>::element_type), no implicit conversion.
-    return static_cast<int>(
-        LifetimeLattice::At<Lifetime::PER_REQUEST>::leq(req_elt, fleet_elt));
+    return static_cast<int>(LifetimeLattice::At<Lifetime::PER_REQUEST>::leq(req_elt, fleet_elt));
 }

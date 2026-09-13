@@ -27,7 +27,7 @@ struct Lookalike {
     // concept's graded_type / lattice_type / modality clauses.
     using value_type = int;
 };
-}
+}  // namespace
 
 int main() {
     using L = crucible::safety::extract::lattice_of_t<Lookalike>;

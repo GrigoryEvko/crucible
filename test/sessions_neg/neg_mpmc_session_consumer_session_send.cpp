@@ -14,21 +14,19 @@
 #include <utility>
 
 namespace conc = ::crucible::concurrent;
-namespace ses  = ::crucible::safety::proto::mpmc_channel_session;
+namespace ses = ::crucible::safety::proto::mpmc_channel_session;
 
 namespace {
 struct Tag {};
 using Channel = conc::PermissionedMpmcChannel<int, 64, Tag>;
-}
+}  // namespace
 
 int main() {
     Channel ch;
     auto c_opt = ch.consumer();
     if (!c_opt) return 1;
     auto cons_handle = std::move(*c_opt);
-    auto psh = ses::mint_mpmc_consumer_session<Channel>(
-        ::crucible::effects::HotFgCtx{}, cons_handle);
-    [[maybe_unused]] auto bad =
-        std::move(psh).send(42, ses::blocking_push);
+    auto psh = ses::mint_mpmc_consumer_session<Channel>(::crucible::effects::HotFgCtx{}, cons_handle);
+    [[maybe_unused]] auto bad = std::move(psh).send(42, ses::blocking_push);
     return 0;
 }

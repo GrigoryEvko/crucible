@@ -35,8 +35,8 @@ using Bad = fn::Fn<sf::Hw<HW::NonDeterministicTsc, int>>;  // Hw tier >= NonDetT
 
 // Mark Bad as replay-required (NOT hot-path) — fires V203, not V201.
 namespace crucible::safety::fn::collision {
-    template <> struct marks_replay_required<::neg_collision_v203::Bad>
-        : std::true_type {};
+template <>
+struct marks_replay_required<::neg_collision_v203::Bad> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 [[maybe_unused]] neg_collision_v203::Bad the_fixture{};

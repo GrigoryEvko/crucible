@@ -6,8 +6,7 @@
 #include <crucible/cntp/Fountain.h>
 
 int main() {
-    auto encoder = crucible::cntp::mint_fountain_encoder<4, 16>(
-        crucible::effects::testing::test());
+    auto encoder = crucible::cntp::mint_fountain_encoder<4, 16>(crucible::effects::testing::test());
     (void)encoder;
     return 0;
 }

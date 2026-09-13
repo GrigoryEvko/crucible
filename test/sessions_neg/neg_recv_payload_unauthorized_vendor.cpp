@@ -6,20 +6,17 @@
 
 #include <utility>
 
-namespace eff   = ::crucible::effects;
+namespace eff = ::crucible::effects;
 namespace proto = ::crucible::safety::proto;
-namespace safe  = ::crucible::safety;
+namespace safe = ::crucible::safety;
 
 struct Wire {};
 struct Tile {};
 
 using AmdTile = safe::Vendor<proto::VendorBackend::AMD, Tile>;
-using NvSession = proto::VendorPinned<
-    proto::VendorBackend::NV,
-    proto::Recv<AmdTile, proto::End>>;
+using NvSession = proto::VendorPinned<proto::VendorBackend::NV, proto::Recv<AmdTile, proto::End>>;
 
-using BadMint = decltype(proto::mint_permissioned_session<NvSession>(
-    std::declval<eff::HotFgCtx const&>(),
-    std::declval<Wire>()));
+using BadMint =
+    decltype(proto::mint_permissioned_session<NvSession>(std::declval<eff::HotFgCtx const&>(), std::declval<Wire>()));
 
 int main() { return sizeof(BadMint); }

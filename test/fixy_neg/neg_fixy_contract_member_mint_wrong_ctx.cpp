@@ -56,10 +56,9 @@ int main() {
     // `IsExecCtx<Ctx>` clause that always returns true), this fixture
     // would silently compile and a FG dispatch site could install a
     // Cipher write from the hot path.
-    static_assert(::crucible::fixy::contract::MemberMintCtxRequired<
-                      ::crucible::Cipher,
-                      ::crucible::fixy::contract::mint_name::open_view,
-                      ::crucible::effects::HotFgCtx>,
+    static_assert(
+        ::crucible::fixy::contract::MemberMintCtxRequired<
+            ::crucible::Cipher, ::crucible::fixy::contract::mint_name::open_view, ::crucible::effects::HotFgCtx>,
         "FIXY-V-220 fixture #1: Cipher::mint_open_view requires IsBgCtx — "
         "MemberMintCtxRequired must reject HotFgCtx via admits<Ctx> = false.");
     return 0;

@@ -56,17 +56,19 @@ namespace cog = crucible::cog;
 // substitution time.
 template <cog::CogKind K>
     requires cog::HasCaps<K>
-constexpr int lookup_caps() noexcept { return 1; }
+constexpr int lookup_caps() noexcept {
+    return 1;
+}
 
 // CogKind::PsuRail is a power-supply rail atom — no schedulable
 // workload, no TargetCaps specialisation.  HasCaps<PsuRail> is false,
 // so the requires-clause refuses the substitution and the build fails
 // here at the call site.
 static_assert(lookup_caps<cog::CogKind::PsuRail>() == 1,
-    "GAPS-186: cog::HasCaps concept MUST refuse non-substrate CogKind "
-    "values.  If this static_assert ever evaluates, a future "
-    "mint_cog_mimic factory would accept PsuRail as a target and "
-    "produce a Mimic stub bound to a Cog with no compute substrate — "
-    "Cog-substrate-binding partition defense compromised.");
+              "GAPS-186: cog::HasCaps concept MUST refuse non-substrate CogKind "
+              "values.  If this static_assert ever evaluates, a future "
+              "mint_cog_mimic factory would accept PsuRail as a target and "
+              "produce a Mimic stub bound to a Cog with no compute substrate — "
+              "Cog-substrate-binding partition defense compromised.");
 
 int main() { return 0; }

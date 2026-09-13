@@ -23,9 +23,9 @@
 using namespace crucible::effects;
 
 int main() {
-    using L3 = Computation<Row<Effect::Bg>, int>;   // engaged leaf
-    using L2 = Computation<Row<>, L3>;              // pure wrapper
-    using OuterValue = L2;                          // callback returns Comp<R2, L2>
+    using L3 = Computation<Row<Effect::Bg>, int>;  // engaged leaf
+    using L2 = Computation<Row<>, L3>;  // pure wrapper
+    using OuterValue = L2;  // callback returns Comp<R2, L2>
 
     auto pure = Computation<Row<>, int>::mk(7);
 
@@ -34,9 +34,8 @@ int main() {
     // descends L2 → L3 → reject.
     auto chained = pure.then([](int) {
         auto leaf = Computation<Row<>, int>::lift<Effect::Bg>(42);
-        auto mid  = L2::mk(static_cast<L3&&>(leaf));
-        return Computation<Row<>, OuterValue>::mk(
-            static_cast<OuterValue&&>(mid));
+        auto mid = L2::mk(static_cast<L3&&>(leaf));
+        return Computation<Row<>, OuterValue>::mk(static_cast<OuterValue&&>(mid));
     });
     return chained.extract().extract().extract();
 }

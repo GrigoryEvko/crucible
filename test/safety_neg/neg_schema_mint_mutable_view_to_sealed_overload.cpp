@@ -24,8 +24,7 @@
 // A fixture-local helper that consumes a SealedView.  No production
 // API has this exact shape; the helper exists so the type system can
 // be asked to convert MutableView → SealedView, which it must refuse.
-static void requires_sealed_view(
-    crucible::SchemaTable::SealedView const&) noexcept {}
+static void requires_sealed_view(crucible::SchemaTable::SealedView const&) noexcept {}
 
 int main() {
     crucible::SchemaTable t;

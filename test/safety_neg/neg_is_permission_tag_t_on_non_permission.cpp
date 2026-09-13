@@ -25,7 +25,9 @@
 
 #include <crucible/safety/IsPermission.h>
 
-namespace { struct neg_test_tag {}; }
+namespace {
+struct neg_test_tag {};
+}  // namespace
 
 int main() {
     // SharedPermission<Tag> is NOT a Permission<Tag> — different CSL

@@ -44,12 +44,11 @@ constexpr S ZERO{};
 // Non-null but predicate violates the second conjunct: this is the
 // load-bearing distinction from "null pointer" — proves the macro
 // fires on the FULL predicate, not just on the non-null short-circuit.
-static_assert(pre_cptr(&ZERO) == 0,
-    "CRUCIBLE_PRE on a struct const-pointer with conjunctive predicate "
-    "MUST fire at consteval when the SECOND conjunct (the data check) "
-    "is violated, not just when the first (non-null) is.  If this "
-    "static_assert ever evaluates successfully, Pre.h's consteval "
-    "enforcement is broken for compound-predicate shapes.");
+static_assert(pre_cptr(&ZERO) == 0, "CRUCIBLE_PRE on a struct const-pointer with conjunctive predicate "
+                                    "MUST fire at consteval when the SECOND conjunct (the data check) "
+                                    "is violated, not just when the first (non-null) is.  If this "
+                                    "static_assert ever evaluates successfully, Pre.h's consteval "
+                                    "enforcement is broken for compound-predicate shapes.");
 
 }  // namespace
 

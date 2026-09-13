@@ -70,7 +70,9 @@ namespace effects = crucible::effects;
 // never specialised.
 template <typename Row, cog::CogKind K>
     requires cog::FitsCog<Row, K>
-constexpr int schedule_kernel() noexcept { return 1; }
+constexpr int schedule_kernel() noexcept {
+    return 1;
+}
 
 // A trivially-fitting row.  Even an EMPTY row fails to satisfy
 // FitsCog<R, PsuRail> because the HasCogCapacity gate fires before
@@ -81,15 +83,15 @@ constexpr int schedule_kernel() noexcept { return 1; }
 using TrivialRow = effects::ConcurrentRow<>;
 
 static_assert(schedule_kernel<TrivialRow, cog::CogKind::PsuRail>() == 1,
-    "GAPS-191: cog::FitsCog concept MUST refuse non-substrate CogKind "
-    "atoms (PsuRail / BmcSensor / OpticalTransceiver / aggregates) at "
-    "template substitution.  If this static_assert ever evaluates, a "
-    "future mint_cog_mimic factory or partition optimiser would silently "
-    "accept PsuRail as a Mimic target and produce either (a) a no-op "
-    "stub that drops scheduled work, or (b) a stub that vacuously "
-    "passes FitsCog because every empty-axis demand is trivially <= 0. "
-    "The HasCogCapacity gate refuses substitution structurally — the "
-    "misuse becomes a compile error at the kernel author's call site, "
-    "not a silent runtime corruption.");
+              "GAPS-191: cog::FitsCog concept MUST refuse non-substrate CogKind "
+              "atoms (PsuRail / BmcSensor / OpticalTransceiver / aggregates) at "
+              "template substitution.  If this static_assert ever evaluates, a "
+              "future mint_cog_mimic factory or partition optimiser would silently "
+              "accept PsuRail as a Mimic target and produce either (a) a no-op "
+              "stub that drops scheduled work, or (b) a stub that vacuously "
+              "passes FitsCog because every empty-axis demand is trivially <= 0. "
+              "The HasCogCapacity gate refuses substitution structurally — the "
+              "misuse becomes a compile error at the kernel author's call site, "
+              "not a silent runtime corruption.");
 
 int main() { return 0; }

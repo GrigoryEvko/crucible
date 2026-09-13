@@ -7,8 +7,7 @@
 
 int main() {
     std::byte b{0};
-    auto packet = crucible::topology::timestamp_packet_view(
-        std::span<const std::byte>{&b, 1}, 42u, 1);
+    auto packet = crucible::topology::timestamp_packet_view(std::span<const std::byte>{&b, 1}, 42u, 1);
     (void)packet;
     return 0;
 }

@@ -15,7 +15,7 @@
 using namespace crucible::safety;
 
 int main() {
-    CipherTier<CipherTierTag_v::Hot,  int> hot_value{42};
+    CipherTier<CipherTierTag_v::Hot, int> hot_value{42};
     CipherTier<CipherTierTag_v::Cold, int> cold_value{42};
 
     // Should FAIL: operator== for CipherTier<Hot, int> takes two

@@ -56,16 +56,14 @@
 
 #include <type_traits>
 
-namespace eff   = crucible::effects;
+namespace eff = crucible::effects;
 namespace proto = crucible::safety::proto;
 
 namespace {
 
-using InnerBgRecv =
-    proto::Recv<eff::Computation<eff::Row<eff::Effect::Bg>, int>, proto::End>;
+using InnerBgRecv = proto::Recv<eff::Computation<eff::Row<eff::Effect::Bg>, int>, proto::End>;
 
-using DelegateStopWithBg =
-    proto::Delegate<proto::Stop_g<proto::CrashClass::Abort>, InnerBgRecv>;
+using DelegateStopWithBg = proto::Delegate<proto::Stop_g<proto::CrashClass::Abort>, InnerBgRecv>;
 
 // Pre-fix witness: the general `protocol_effect_row<Delegate<T, K>>`
 // rule fires for T = Stop_g<Abort> and the trait inherits K's row.
@@ -73,11 +71,9 @@ using DelegateStopWithBg =
 // the new bottom-preservation specialization fires and the trait
 // reports `Row<>`.  This fixture's failure-to-compile post-fix IS
 // the witness that the row-narrowing hole is closed.
-static_assert(std::is_same_v<
-    proto::protocol_effect_row_t<DelegateStopWithBg>,
-    eff::Row<eff::Effect::Bg>>,
-    "fixy-A2-028 regression: Delegate<Stop_g<C>, K> protocol_effect_row "
-    "did not collapse to Row<> under bottom-preservation");
+static_assert(std::is_same_v<proto::protocol_effect_row_t<DelegateStopWithBg>, eff::Row<eff::Effect::Bg>>,
+              "fixy-A2-028 regression: Delegate<Stop_g<C>, K> protocol_effect_row "
+              "did not collapse to Row<> under bottom-preservation");
 
 }  // namespace
 

@@ -32,7 +32,6 @@ int main() {
     namespace ns = neg_fixy_safety_mint_linear_view_no_view_ok;
     ns::FakeCarrier carrier{};
 
-    [[maybe_unused]] auto bad =
-        fsy::mint_linear_view<ns::SomeState>(carrier);
+    [[maybe_unused]] auto bad = fsy::mint_linear_view<ns::SomeState>(carrier);
     return 0;
 }

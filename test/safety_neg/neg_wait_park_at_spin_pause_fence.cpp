@@ -41,7 +41,7 @@ using namespace crucible::safety;
 // SpinPause tier.  Models the AtomicSnapshot::load_pinned ⇄
 // hot-consumer pattern.
 template <typename W>
-    requires (W::template satisfies<WaitStrategy_v::SpinPause>)
+    requires(W::template satisfies<WaitStrategy_v::SpinPause>)
 static int spin_pause_hot_consumer(W wrapped) noexcept {
     return std::move(wrapped).consume();
 }

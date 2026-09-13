@@ -9,9 +9,9 @@
 #include <crucible/ReplayEngine.h>
 
 int main() {
-  crucible::ReplayEngine engine{};
-  const crucible::RegionNode* region = nullptr;
-  const crucible::PoolAllocator* pool = nullptr;
-  engine.init(region, pool);
-  return 0;
+    crucible::ReplayEngine engine{};
+    const crucible::RegionNode* region = nullptr;
+    const crucible::PoolAllocator* pool = nullptr;
+    engine.init(region, pool);
+    return 0;
 }

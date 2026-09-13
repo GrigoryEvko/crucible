@@ -15,13 +15,12 @@
 #include <crucible/safety/Tagged.h>
 
 int main() {
-  using FamilyAHash = crucible::safety::Tagged<
-      uint64_t, crucible::hash_family::FamilyA>;
+    using FamilyAHash = crucible::safety::Tagged<uint64_t, crucible::hash_family::FamilyA>;
 
-  crucible::TensorMeta meta{};
-  FamilyAHash persistent{0x1234ULL};
+    crucible::TensorMeta meta{};
+    FamilyAHash persistent{0x1234ULL};
 
-  // MUST fail: Family-A persistent hash cannot occupy a Family-B slot.
-  meta.grad_fn_hash = persistent;
-  return 0;
+    // MUST fail: Family-A persistent hash cannot occupy a Family-B slot.
+    meta.grad_fn_hash = persistent;
+    return 0;
 }

@@ -54,8 +54,8 @@ int main() {
     Arena arena{};
     auto test_ctx = effects::testing::test();
     auto init_ctx = effects::testing::init();
-    RecipePool     pool{RecipePool::ArenaBorrow{arena}, init_ctx};
-    RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool},  test_ctx.alloc};
+    RecipePool pool{RecipePool::ArenaBorrow{arena}, init_ctx};
+    RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, test_ctx.alloc};
 
     // Should FAIL: by_name_spec returns
     //   std::expected<safety::RecipeSpec<const NumericalRecipe*>, RecipeError>
@@ -67,10 +67,8 @@ int main() {
     // exists between them; the compiler rejects the
     // std::expected<T, E> template argument deduction with a
     // structured diagnostic naming both result types.
-    std::expected<
-        safety::NumericalTier<safety::Tolerance::BITEXACT,
-                              const NumericalRecipe*>,
-        RecipeError> wrong_slot = reg.by_name_spec(recipe_names::kF32Strict);
-    (void) wrong_slot;
+    std::expected<safety::NumericalTier<safety::Tolerance::BITEXACT, const NumericalRecipe*>, RecipeError> wrong_slot =
+        reg.by_name_spec(recipe_names::kF32Strict);
+    (void)wrong_slot;
     return 0;
 }

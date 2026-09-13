@@ -28,8 +28,7 @@ struct Closed {};
 
 struct FakeCarrier {
     // view_ok wired ONLY for state_tag::Open.
-    [[nodiscard]] friend constexpr bool
-    view_ok(FakeCarrier const&, std::type_identity<state_tag::Open>) noexcept {
+    [[nodiscard]] friend constexpr bool view_ok(FakeCarrier const&, std::type_identity<state_tag::Open>) noexcept {
         return true;
     }
 };
@@ -40,7 +39,6 @@ int main() {
     ns::FakeCarrier carrier{};
 
     // Closed has no view_ok overload — the pre-clause predicate is ill-formed.
-    [[maybe_unused]] auto bad =
-        fsy::mint_linear_view<ns::state_tag::Closed>(carrier);
+    [[maybe_unused]] auto bad = fsy::mint_linear_view<ns::state_tag::Closed>(carrier);
     return 0;
 }

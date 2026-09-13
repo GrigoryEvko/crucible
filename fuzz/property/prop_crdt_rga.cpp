@@ -57,12 +57,12 @@ using LocalInsert = Rga::local_insert_type;
 using LocalErase = Rga::local_erase_type;
 
 struct NodeSpec {
-    std::uint32_t after = 0;   // 0 = root, else a prior node's id
-    std::uint32_t value = 0;   // [0,5)
+    std::uint32_t after = 0;  // 0 = root, else a prior node's id
+    std::uint32_t value = 0;  // [0,5)
     std::uint8_t tombstone = 0;
 };
 struct Spec {
-    std::uint32_t count = 0;   // [1, kMaxNodes]
+    std::uint32_t count = 0;  // [1, kMaxNodes]
     std::array<NodeSpec, kMaxNodes> nodes{};
 };
 
@@ -94,10 +94,10 @@ struct OracleResult {
             ++len;
             const std::uint32_t after = spec.nodes[cur].after;
             if (after == 0u) break;
-            cur = after - 1u;    // parent index (after is a prior id ≥ 1)
+            cur = after - 1u;  // parent index (after is a prior id ≥ 1)
         }
         for (std::size_t j = 0; j < len; ++j) {
-            path[i][j] = up[len - 1u - j];   // reverse → root→node
+            path[i][j] = up[len - 1u - j];  // reverse → root→node
         }
         plen[i] = len;
     }
@@ -115,7 +115,8 @@ struct OracleResult {
 
     // Insertion sort of node indices by path key.
     std::array<std::uint32_t, kMaxNodes> order{};
-    for (std::uint32_t i = 0; i < n; ++i) order[i] = i;
+    for (std::uint32_t i = 0; i < n; ++i)
+        order[i] = i;
     for (std::uint32_t i = 1; i < n; ++i) {
         const std::uint32_t key = order[i];
         std::uint32_t j = i;
@@ -143,22 +144,20 @@ int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
 
     Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 2'000'000) cfg.iterations = 2'000'000;
+    if (cfg.iterations > 2000000) cfg.iterations = 2000000;
 
-    return run("crdt_rga", cfg,
+    return run(
+        "crdt_rga", cfg,
         [](Rng& rng) noexcept -> Spec {
             Spec spec{};
             spec.count = 1u + rng.next_below(kMaxNodes);  // 1..8
             for (std::uint32_t i = 0; i < spec.count; ++i) {
                 const std::uint32_t after =
-                    (i == 0u || rng.next_below(3u) == 0u)
-                        ? 0u
-                        : 1u + rng.next_below(i);   // a prior id in [1, i]
+                    (i == 0u || rng.next_below(3u) == 0u) ? 0u : 1u + rng.next_below(i);  // a prior id in [1, i]
                 spec.nodes[i] = NodeSpec{
                     .after = after,
                     .value = rng.next_below(5u),
-                    .tombstone = static_cast<std::uint8_t>(
-                        rng.next_below(4u) == 0u ? 1u : 0u),
+                    .tombstone = static_cast<std::uint8_t>(rng.next_below(4u) == 0u ? 1u : 0u),
                 };
             }
             return spec;

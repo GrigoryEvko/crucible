@@ -21,7 +21,9 @@ struct TypeIsPermissionRejectsPlain {
 
 template <typename T>
     requires fis::IsPermission<T>
-[[nodiscard]] constexpr int gate(T const&) noexcept { return 1; }
+[[nodiscard]] constexpr int gate(T const&) noexcept {
+    return 1;
+}
 
 }  // namespace neg_fixy_is_permission_rejects_plain
 

@@ -42,9 +42,11 @@
 # per line; lines beginning with '#' are comments).
 #
 # Suppression for deliberate one-off references (e.g. doc
-# fixtures that DEMONSTRATE the round-trip): annotate the line
-# with `// FIXY-DISCIPLINE-OK: <reason>`.  Comment-only mentions
-# (//, ///, /* */ lines) are skipped automatically.
+# fixtures that DEMONSTRATE the round-trip): annotate the statement
+# with `// FIXY-DISCIPLINE-OK: <reason>`.  The marker is matched
+# anywhere between the flagged line and the statement's terminator,
+# so it survives a formatter wrapping the declaration.  Comment-only
+# mentions (//, ///, /* */ lines) are skipped automatically.
 #
 # Exit status:
 #   0  — clean (no raw substrate spellings, no stale allowlist entries)
@@ -74,7 +76,7 @@ Usage:
   check-fixy-discipline.sh -h | --help  # usage
 
 Suppression:
-  // FIXY-DISCIPLINE-OK: <reason>   on the same line skips that line.
+  // FIXY-DISCIPLINE-OK: <reason>   anywhere in the same statement skips it.
   scripts/fixy-discipline-allowlist.txt — one repo-relative path per line.
 USAGE
 }
@@ -332,7 +334,61 @@ PLANTED
         rm -f "$result_file"
         printf 'check-fixy-discipline: self-test phase 4 passed — Tier-1 substrate alternation fires on all 8 primitives.\n' >&2
 
-        printf 'check-fixy-discipline: self-test passed — all 4 phases green.\n' >&2
+        # ── Phase 5: statement-scoped suppression marker ─────────────
+        # A formatter wraps a long declaration and its trailing marker
+        # lands on the continuation line.  Plant three statements:
+        #   (a) wrapped, marker on the continuation line — suppressed;
+        #   (b) wrapped, NO marker — must still fire;
+        #   (c) single-line, marked, placed directly AFTER (b) — its
+        #       marker must NOT leak backwards and suppress (b).
+        # Expect exactly one violation naming (b)'s spelling only.
+        rm -rf "$tmp_root/examples/fn"
+        mkdir -p "$tmp_root/examples/fn"
+        cat >"$tmp_root/examples/fn/planted_wrapped.cpp" <<'PLANTED'
+namespace crucible::planted {
+using WrappedMarked = ::crucible::safety::Tagged<
+    int, int>;  // FIXY-DISCIPLINE-OK: marker on the continuation line
+using WrappedBare = ::crucible::safety::Linear<
+    int>;
+using NextMarked = ::crucible::safety::Secret<int>;  // FIXY-DISCIPLINE-OK: must not leak backwards
+}  // namespace crucible::planted
+PLANTED
+        : >"$tmp_root/scripts/fixy-discipline-allowlist.txt"
+        result_file="$(mktemp)"
+        if CRUCIBLE_FIXY_DISCIPLINE_TEST_ROOT="$tmp_root" \
+           bash "${BASH_SOURCE[0]}" 2>"$result_file"; then
+            printf 'check-fixy-discipline: SELF-TEST FAILED — bare wrapped violation was not caught.\n' >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$result_file")" >&2
+            rm -f "$result_file"
+            exit 2
+        fi
+        wrapped_hits="$(grep -c '^FIXY-DISCIPLINE violation:' "$result_file" || true)"
+        if [[ "$wrapped_hits" -ne 1 ]]; then
+            printf 'check-fixy-discipline: SELF-TEST FAILED — expected exactly 1 violation, got %s.\n' "$wrapped_hits" >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$result_file")" >&2
+            rm -f "$result_file"
+            exit 2
+        fi
+        if ! grep -Fq 'safety::Linear<' "$result_file"; then
+            printf 'check-fixy-discipline: SELF-TEST FAILED — the bare wrapped Linear< site was not the one diagnosed.\n' >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$result_file")" >&2
+            rm -f "$result_file"
+            exit 2
+        fi
+        if grep -Fq 'safety::Tagged<' "$result_file"; then
+            printf 'check-fixy-discipline: SELF-TEST FAILED — marker on the continuation line did not suppress.\n' >&2
+            printf '── scanner stderr ───\n%s\n────────────────────\n' \
+                "$(cat "$result_file")" >&2
+            rm -f "$result_file"
+            exit 2
+        fi
+        rm -f "$result_file"
+        printf 'check-fixy-discipline: self-test phase 5 passed — marker is statement-scoped and does not leak past a terminator.\n' >&2
+
+        printf 'check-fixy-discipline: self-test passed — all 5 phases green.\n' >&2
         exit 0
         ;;
     "") ;;
@@ -402,8 +458,30 @@ while IFS= read -r match; do
         '//'*|'///'*|'*'*|'/*'*) continue ;;
     esac
 
-    # Inline suppression marker.
-    if [[ "$text" == *'FIXY-DISCIPLINE-OK'* ]]; then
+    # Inline suppression marker, scoped to the STATEMENT rather than the
+    # flagged line.  A formatter wraps a long declaration and the trailing
+    # marker lands on a continuation line while the banned spelling stays
+    # on the first, so a same-line match strands the marker.  Scan forward
+    # to the first line bearing ';' or ending in '}', that line included.
+    # Stop there: scanning past the terminator lets a LATER declaration's
+    # marker leak backwards and suppress a real violation.
+    suppressed=0
+    probe=$line
+    probe_limit=$((line + 12))
+    while (( probe <= probe_limit )); do
+        probe_text="$(sed -n "${probe}p" "$file" 2>/dev/null)"
+        case "$probe_text" in
+            *'FIXY-DISCIPLINE-OK'*) suppressed=1; break ;;
+        esac
+        case "$probe_text" in
+            *';'*) break ;;
+        esac
+        case "${probe_text%"${probe_text##*[![:space:]]}"}" in
+            *'}') break ;;
+        esac
+        probe=$((probe + 1))
+    done
+    if (( suppressed )); then
         continue
     fi
 

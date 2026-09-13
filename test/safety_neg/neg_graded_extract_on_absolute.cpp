@@ -23,9 +23,7 @@ using namespace crucible::algebra::lattices;
 
 int main() {
     // Absolute modality (NOT Comonad).
-    using G = Graded<ModalityKind::Absolute,
-                     QttSemiring::At<QttGrade::One>,
-                     int>;
+    using G = Graded<ModalityKind::Absolute, QttSemiring::At<QttGrade::One>, int>;
     G g{};
 
     // Should FAIL: extract() requires ComonadModality<M>, M is Absolute.

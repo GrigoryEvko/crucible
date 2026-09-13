@@ -21,8 +21,8 @@ int main() {
     // be a SessionHandle / CrashWatchedHandle / PSH; SessionEventLog is
     // none of those.
     proto::SessionEventLog log{};
-    proto::RoleTagId       self{1};
-    proto::RoleTagId       peer{2};
+    proto::RoleTagId self{1};
+    proto::RoleTagId peer{2};
 
     auto bad = proto::mint_recording_session(log, log, self, peer);
     (void)bad;

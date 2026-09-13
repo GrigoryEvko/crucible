@@ -34,9 +34,7 @@
 
 namespace {
 
-[[nodiscard]] constexpr bool gate(std::span<const int32_t> ids,
-                                  int32_t lo,
-                                  int32_t hi) noexcept {
+[[nodiscard]] constexpr bool gate(std::span<const int32_t> ids, int32_t lo, int32_t hi) noexcept {
     CRUCIBLE_PRE(crucible::decide::all_in_range(ids, lo, hi));
     return true;
 }

@@ -9,8 +9,7 @@
 
 int main() {
     int not_a_channel = 0;
-    auto reader = crucible::fixy::observe::mint_canopy_metrics_reader(
-        not_a_channel);
+    auto reader = crucible::fixy::observe::mint_canopy_metrics_reader(not_a_channel);
     (void)reader;
     return 0;
 }

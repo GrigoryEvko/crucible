@@ -25,18 +25,15 @@ struct DupShareRegion {};
 
 int main() {
     namespace fwmm = ::crucible::fixy::wrap::mmap;
-    namespace prot  = fwmm::prot;
+    namespace prot = fwmm::prot;
     namespace share = fwmm::share;
     namespace grant = fwmm::grant;
 
     ::crucible::effects::TestRunnerCtx ctx{};
 
     // Should FAIL: Private + Shared in one pack (both primary).
-    [[maybe_unused]] auto r = fwmm::mint_mmap<
-        DupShareRegion,
-        grant::with_prot<prot::ReadOnly>,
-        grant::with_share<share::Private>,
-        grant::with_share<share::Shared>
-    >(ctx, /*fd=*/-1, /*length=*/4096);
+    [[maybe_unused]] auto r =
+        fwmm::mint_mmap<DupShareRegion, grant::with_prot<prot::ReadOnly>, grant::with_share<share::Private>,
+                        grant::with_share<share::Shared>>(ctx, /*fd=*/-1, /*length=*/4096);
     return 0;
 }

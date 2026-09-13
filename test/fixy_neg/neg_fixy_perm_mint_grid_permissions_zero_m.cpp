@@ -26,14 +26,13 @@ struct Whole {};
 }  // namespace neg_fixy_perm_grid_zero_m
 
 int main() {
-    namespace tags  = neg_fixy_perm_grid_zero_m;
+    namespace tags = neg_fixy_perm_grid_zero_m;
     namespace fperm = ::crucible::fixy::perm;
 
     auto whole = fperm::mint_permission_root<tags::Whole>();
     // M=0 violates the can_split_grid_v fold; the requires-clause
     // rejects this overload at the fixy:: call site.
-    auto grid = fperm::mint_grid_permissions<tags::Whole, 0, 3>(
-        std::move(whole));
+    auto grid = fperm::mint_grid_permissions<tags::Whole, 0, 3>(std::move(whole));
     (void)grid;
     return 0;
 }

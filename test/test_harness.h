@@ -49,7 +49,7 @@ static_assert(
 inline void wait_mode_compiled(Vigil& vigil) {
     uint64_t spins = 0;
     while (!vigil.is_compiled()) {
-        assert(++spins < 100'000'000 && "Vigil did not reach COMPILED mode");
+        assert(++spins < 100000000 && "Vigil did not reach COMPILED mode");
         CRUCIBLE_SPIN_PAUSE;
     }
 }

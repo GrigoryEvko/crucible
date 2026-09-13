@@ -56,28 +56,27 @@ namespace neg_collision_f105 {
 // in the same neg-compile harness sweep; using different inner Ts
 // keeps the trait specializations and Fn instantiations strictly
 // disjoint across fixture TUs.
-using Bad = fn::Fn<
-    sf::FpFtzPinned<sf::FpFtz::PreserveSubnormals, double>,
-                                               // 1  Type — triggers F105
-    fn::pred::True,                            // 2  Refinement
-    fn::UsageMode::Linear,                     // 3  Usage
-    fx::Row<>,                                 // 4  EffectRow
-    fn::SecLevel::Public,                      // 5  Security
-    fn::proto::None,                           // 6  Protocol
-    fn::lifetime::Static,                      // 7  Lifetime
-    fn::source::FromInternal,                  // 8  Source
-    fn::trust::Verified,                       // 9  Trust
-    fn::ReprKind::Opaque,                      // 10 Repr
-    fn::cost::Constant,                        // 11 Cost
-    fn::precision::Exact,                      // 12 Precision
-    fn::space::Bounded<sizeof(double)>,        // 13 Space
-    fn::OverflowMode::Trap,                    // 14 Overflow
-    fn::MutationMode::Immutable,               // 15 Mutation
-    fn::ReentrancyMode::NonReentrant,          // 16 Reentrancy
-    fn::size_pol::Sized<sizeof(double)>,       // 17 Size
-    /*Version=*/1,                             // 18 Version
-    fn::stale::Fresh                           // 19 Staleness
->;
+using Bad = fn::Fn<sf::FpFtzPinned<sf::FpFtz::PreserveSubnormals, double>,
+                   // 1  Type — triggers F105
+                   fn::pred::True,  // 2  Refinement
+                   fn::UsageMode::Linear,  // 3  Usage
+                   fx::Row<>,  // 4  EffectRow
+                   fn::SecLevel::Public,  // 5  Security
+                   fn::proto::None,  // 6  Protocol
+                   fn::lifetime::Static,  // 7  Lifetime
+                   fn::source::FromInternal,  // 8  Source
+                   fn::trust::Verified,  // 9  Trust
+                   fn::ReprKind::Opaque,  // 10 Repr
+                   fn::cost::Constant,  // 11 Cost
+                   fn::precision::Exact,  // 12 Precision
+                   fn::space::Bounded<sizeof(double)>,  // 13 Space
+                   fn::OverflowMode::Trap,  // 14 Overflow
+                   fn::MutationMode::Immutable,  // 15 Mutation
+                   fn::ReentrancyMode::NonReentrant,  // 16 Reentrancy
+                   fn::size_pol::Sized<sizeof(double)>,  // 17 Size
+                   /*Version=*/1,  // 18 Version
+                   fn::stale::Fresh  // 19 Staleness
+                   >;
 
 }  // namespace neg_collision_f105
 
@@ -85,8 +84,8 @@ using Bad = fn::Fn<
 // AND FpFtz<PreserveSubnormals>).  Specialization at file scope,
 // paralleling F101/F102/F103/F104 fixtures.
 namespace crucible::safety::fn::collision {
-    template <> struct marks_ct<::neg_collision_f105::Bad>
-        : std::true_type {};
+template <>
+struct marks_ct<::neg_collision_f105::Bad> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 // Instantiating Bad forces CollisionRules::validate() to fire F105.

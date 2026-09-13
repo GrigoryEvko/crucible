@@ -14,10 +14,7 @@ int main() {
     namespace cs = crucible::concurrent::scheduler;
 
     cc::Pool<cs::Fifo> pool{cc::CoreCount{1}};
-    std::array<std::uint64_t,
-               cc::adaptive_detail::InlineTask<>::capacity()> payload{};
-    cc::dispatch(pool, [payload] noexcept {
-        (void)payload[0];
-    });
+    std::array<std::uint64_t, cc::adaptive_detail::InlineTask<>::capacity()> payload{};
+    cc::dispatch(pool, [payload] noexcept { (void)payload[0]; });
     return 0;
 }

@@ -29,7 +29,6 @@ struct FakeCarrier {};
 int main() {
     neg_fixy_safety_mint_view_no_view_ok::FakeCarrier carrier{};
 
-    [[maybe_unused]] auto bad =
-        fsy::mint_view<neg_fixy_safety_mint_view_no_view_ok::SomeState>(carrier);
+    [[maybe_unused]] auto bad = fsy::mint_view<neg_fixy_safety_mint_view_no_view_ok::SomeState>(carrier);
     return 0;
 }

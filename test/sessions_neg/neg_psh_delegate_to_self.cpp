@@ -11,12 +11,11 @@ struct CarrierRole {};
 struct WorkItem {};
 
 using InnerProto = Send<int, End>;
-using Payload    = DelegatedSession<InnerProto, PermSet<WorkItem>>;
+using Payload = DelegatedSession<InnerProto, PermSet<WorkItem>>;
 
 // Self-transmission of a DelegatedSession payload.  MPST projection
 // cannot assign this to distinct Delegate/Accept endpoints.
-using SelfDelegatingGlobal =
-    Transmission<CarrierRole, CarrierRole, Payload, End_G>;
+using SelfDelegatingGlobal = Transmission<CarrierRole, CarrierRole, Payload, End_G>;
 
 int main() {
     assert_no_self_loop<SelfDelegatingGlobal>();

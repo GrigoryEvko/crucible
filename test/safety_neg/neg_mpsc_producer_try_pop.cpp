@@ -35,4 +35,7 @@ void exercise_producer_try_pop() {
 
 }  // namespace
 
-int main() { exercise_producer_try_pop(); return 0; }
+int main() {
+    exercise_producer_try_pop();
+    return 0;
+}

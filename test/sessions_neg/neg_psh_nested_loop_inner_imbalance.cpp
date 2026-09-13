@@ -43,26 +43,24 @@ using ::crucible::safety::mint_permission_root;
 
 namespace {
 struct WorkItem {};
-struct FakeChannel { int last_int = 0; };
+struct FakeChannel {
+    int last_int = 0;
+};
 
 Transferable<int, WorkItem> wire_recv(FakeChannel& ch) noexcept {
-    return Transferable<int, WorkItem>{ch.last_int,
-                                        mint_permission_root<WorkItem>()};
+    return Transferable<int, WorkItem>{ch.last_int, mint_permission_root<WorkItem>()};
 }
 
-void wire_send(FakeChannel& ch, Transferable<int, WorkItem>&& t) noexcept {
-    ch.last_int = t.value;
-}
+void wire_send(FakeChannel& ch, Transferable<int, WorkItem>&& t) noexcept { ch.last_int = t.value; }
 
-using InnerBody  = Send<Transferable<int, WorkItem>, Continue>;
-using InnerLoop  = Loop<InnerBody>;
-using OuterBody  = Recv<Transferable<int, WorkItem>, InnerLoop>;
-using OuterLoop  = Loop<OuterBody>;
-}
+using InnerBody = Send<Transferable<int, WorkItem>, Continue>;
+using InnerLoop = Loop<InnerBody>;
+using OuterBody = Recv<Transferable<int, WorkItem>, InnerLoop>;
+using OuterLoop = Loop<OuterBody>;
+}  // namespace
 
 int main() {
-    auto h = detail::permissioned_session_with_loc_<
-        OuterLoop, EmptyPermSet, FakeChannel>(
+    auto h = detail::permissioned_session_with_loc_<OuterLoop, EmptyPermSet, FakeChannel>(
         FakeChannel{}, std::source_location::current());
 
     // Outer recv: PS becomes {WorkItem}.  Returned handle enters the
@@ -73,7 +71,6 @@ int main() {
     // returned handle steps to Continue, which checks against
     // INNER entry PS = {WorkItem} → fires balance assert.
     Transferable<int, WorkItem> payload{val.value, std::move(val.perm)};
-    [[maybe_unused]] auto h_after = std::move(h_inner).send(std::move(payload),
-                                                              wire_send);
+    [[maybe_unused]] auto h_after = std::move(h_inner).send(std::move(payload), wire_send);
     return 0;
 }

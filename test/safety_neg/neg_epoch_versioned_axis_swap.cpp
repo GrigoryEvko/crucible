@@ -25,7 +25,7 @@
 using namespace crucible::safety;
 
 int main() {
-    Epoch      ep{5};
+    Epoch ep{5};
     Generation gen{2};
 
     // Should FAIL: EpochVersioned<int>(int, Epoch, Generation) cannot

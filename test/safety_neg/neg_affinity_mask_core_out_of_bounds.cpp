@@ -27,9 +27,6 @@ using namespace crucible::algebra::lattices;
 // constexpr — the contract pre-clause MUST fire because core=256
 // exceeds kMaxCore=255.  GCC 16 reports the contract violation as
 // a compile error referencing the failing pre-clause.
-static constexpr AffinityMask bad =
-    AffinityMask::single(static_cast<std::uint16_t>(AffinityMask::kMaxCore + 1));
+static constexpr AffinityMask bad = AffinityMask::single(static_cast<std::uint16_t>(AffinityMask::kMaxCore + 1));
 
-int main() {
-    return static_cast<int>(bad.popcount());
-}
+int main() { return static_cast<int>(bad.popcount()); }

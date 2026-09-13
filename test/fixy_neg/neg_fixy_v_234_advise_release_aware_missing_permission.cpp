@@ -42,8 +42,8 @@ struct DontNeedRegion {};
 int main() {
     namespace fwmm = ::crucible::fixy::wrap::mmap;
     namespace advice = fwmm::advice;
-    namespace prot   = fwmm::prot;
-    namespace share  = fwmm::share;
+    namespace prot = fwmm::prot;
+    namespace share = fwmm::share;
 
     ::crucible::effects::TestRunnerCtx ctx{};
 
@@ -60,7 +60,6 @@ int main() {
     // (Ctx, OwnedMmap&, Permission<RegionTag> const&) — 3.  Callers
     // who haven't upgraded their SharedPermissionPool to V-234 see
     // THIS error at every release-aware call site.
-    [[maybe_unused]] auto r = fwmm::advise_release_aware<advice::DontNeed,
-                                                        DontNeedRegion>(ctx, region);
+    [[maybe_unused]] auto r = fwmm::advise_release_aware<advice::DontNeed, DontNeedRegion>(ctx, region);
     return 0;
 }

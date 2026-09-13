@@ -9,12 +9,11 @@
 #include <span>
 
 int main() {
-  using Raw = std::span<const crucible::RecipeRegistry::Entry>;
-  using ExternalEntries =
-      crucible::safety::Tagged<Raw, crucible::safety::source::External>;
+    using Raw = std::span<const crucible::RecipeRegistry::Entry>;
+    using ExternalEntries = crucible::safety::Tagged<Raw, crucible::safety::source::External>;
 
-  ExternalEntries external{Raw{}};
-  crucible::RecipeRegistry::Entries registry_entries = external;
-  (void)registry_entries;
-  return 0;
+    ExternalEntries external{Raw{}};
+    crucible::RecipeRegistry::Entries registry_entries = external;
+    (void)registry_entries;
+    return 0;
 }

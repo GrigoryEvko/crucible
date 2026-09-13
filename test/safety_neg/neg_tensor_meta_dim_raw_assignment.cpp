@@ -10,7 +10,7 @@
 #include <crucible/TensorMeta.h>
 
 int main() {
-  crucible::TensorMeta meta{};
-  meta.sizes[0] = 8;
-  return 0;
+    crucible::TensorMeta meta{};
+    meta.sizes[0] = 8;
+    return 0;
 }

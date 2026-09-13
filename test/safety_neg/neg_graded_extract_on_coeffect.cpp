@@ -29,9 +29,7 @@ using namespace crucible::algebra::lattices;
 
 int main() {
     // Coeffect modality (NOT Comonad).
-    using G = Graded<ModalityKind::Coeffect,
-                     QttSemiring::At<QttGrade::One>,
-                     int>;
+    using G = Graded<ModalityKind::Coeffect, QttSemiring::At<QttGrade::One>, int>;
     G g{};
 
     // Should FAIL: extract() requires ComonadModality<M>, M is Coeffect.

@@ -17,12 +17,12 @@ struct Payload {
 };
 
 using Bad = fn::Fn<Payload>;  // default security is Classified.
-}
+}  // namespace neg_collision_i002
 
 namespace crucible::safety::fn::collision {
 template <>
 struct marks_fail<::neg_collision_i002::Bad> : std::true_type {};
-}
+}  // namespace crucible::safety::fn::collision
 
 [[maybe_unused]] neg_collision_i002::Bad bad{};
 

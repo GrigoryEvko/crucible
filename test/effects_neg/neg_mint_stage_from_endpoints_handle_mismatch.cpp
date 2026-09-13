@@ -23,18 +23,17 @@
 #include <utility>
 
 namespace conc = crucible::concurrent;
-namespace eff  = crucible::effects;
-namespace saf  = crucible::safety;
+namespace eff = crucible::effects;
+namespace saf = crucible::safety;
 
-struct UTagInt   {};
+struct UTagInt {};
 struct UTagFloat {};
 
-using ChInt   = conc::PermissionedSpscChannel<int,   64, UTagInt>;
+using ChInt = conc::PermissionedSpscChannel<int, 64, UTagInt>;
 using ChFloat = conc::PermissionedSpscChannel<float, 64, UTagFloat>;
 
 // Stage body expects a Channel<int>::ConsumerHandle on slot 0.
-inline void int_input_stage(typename ChInt::ConsumerHandle&&,
-                            typename ChInt::ProducerHandle&&) noexcept {}
+inline void int_input_stage(typename ChInt::ConsumerHandle&&, typename ChInt::ProducerHandle&&) noexcept {}
 
 int main() {
     eff::HotFgCtx ctx;
@@ -43,25 +42,23 @@ int main() {
     // for FnPtr's slot-0 expectation.
     ChFloat ch_float;
     auto wf = saf::mint_permission_root<conc::spsc_tag::Whole<UTagFloat>>();
-    auto [ppf, cpf] = saf::mint_permission_split<
-        conc::spsc_tag::Producer<UTagFloat>,
-        conc::spsc_tag::Consumer<UTagFloat>>(std::move(wf));
+    auto [ppf, cpf] =
+        saf::mint_permission_split<conc::spsc_tag::Producer<UTagFloat>, conc::spsc_tag::Consumer<UTagFloat>>(
+            std::move(wf));
     auto cons_float = ch_float.consumer(std::move(cpf));
     auto in_ep_wrong = conc::mint_endpoint<ChFloat, conc::Direction::Consumer>(ctx, cons_float);
 
     // Producer side correct (Channel<int>::ProducerHandle).
     ChInt ch_int;
     auto wi = saf::mint_permission_root<conc::spsc_tag::Whole<UTagInt>>();
-    auto [ppi, cpi] = saf::mint_permission_split<
-        conc::spsc_tag::Producer<UTagInt>,
-        conc::spsc_tag::Consumer<UTagInt>>(std::move(wi));
+    auto [ppi, cpi] =
+        saf::mint_permission_split<conc::spsc_tag::Producer<UTagInt>, conc::spsc_tag::Consumer<UTagInt>>(std::move(wi));
     auto prod_int = ch_int.producer(std::move(ppi));
-    auto out_ep   = conc::mint_endpoint<ChInt, conc::Direction::Producer>(ctx, prod_int);
+    auto out_ep = conc::mint_endpoint<ChInt, conc::Direction::Producer>(ctx, prod_int);
 
     // Bridge fires: ConsumerEp's handle_type is Channel<float>::ConsumerHandle,
     // but FnPtr's slot 0 declares Channel<int>::ConsumerHandle.
-    auto bad = conc::mint_stage_from_endpoints<&int_input_stage>(
-        ctx, std::move(in_ep_wrong), std::move(out_ep));
+    auto bad = conc::mint_stage_from_endpoints<&int_input_stage>(ctx, std::move(in_ep_wrong), std::move(out_ep));
     (void)bad;
     (void)ppf;
     (void)cpi;

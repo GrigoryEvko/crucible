@@ -13,8 +13,7 @@
 
 int main() {
     // <-- this line must NOT compile (missing Init argument)
-    std::optional<crucible::perf::SyscallTpBtf> hub =
-        crucible::perf::SyscallTpBtf::load();
+    std::optional<crucible::perf::SyscallTpBtf> hub = crucible::perf::SyscallTpBtf::load();
 
     (void)hub;
     return 0;

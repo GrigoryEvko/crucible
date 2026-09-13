@@ -23,7 +23,7 @@
 using namespace crucible::safety;
 
 int main() {
-    OpaqueLifetime<Lifetime_v::PER_FLEET,   int> fleet_value{42};
+    OpaqueLifetime<Lifetime_v::PER_FLEET, int> fleet_value{42};
     OpaqueLifetime<Lifetime_v::PER_REQUEST, int> request_value{7};
 
     // Should FAIL: different template instantiations of

@@ -17,7 +17,6 @@ namespace eff = ::crucible::effects;
 int main() {
     auto hw = ::crucible::blackwell_b200();
     ::crucible::KernelConfig cfg{};
-    (void)::crucible::evaluate_cost<eff::Row<eff::Effect::Bg>>(
-        1u, 1u, 1u, ::crucible::ScalarType::Float, cfg, hw);
+    (void)::crucible::evaluate_cost<eff::Row<eff::Effect::Bg>>(1u, 1u, 1u, ::crucible::ScalarType::Float, cfg, hw);
     return 0;
 }

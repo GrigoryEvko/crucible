@@ -38,8 +38,7 @@ int main() {
     FakeConsumer<int> in;
     FakeProducer<int> out;
 
-    auto bad = conc::mint_stage<&valid_stage>(
-        not_a_ctx, std::move(in), std::move(out));  // IsExecCtx fails
+    auto bad = conc::mint_stage<&valid_stage>(not_a_ctx, std::move(in), std::move(out));  // IsExecCtx fails
     (void)bad;
     return 0;
 }

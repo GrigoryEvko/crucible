@@ -37,8 +37,8 @@ using Bad = fn::Fn<AbortMarker>;  // type_t carries no ControlFlow witness
 // Mark Bad as abort-declaring — fires C001 because the type_t does not
 // witness the escape (no ControlFlowPinned tier >= AbortOnly).
 namespace crucible::safety::fn::collision {
-    template <> struct marks_aborts<::neg_collision_c001::Bad>
-        : std::true_type {};
+template <>
+struct marks_aborts<::neg_collision_c001::Bad> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 [[maybe_unused]] neg_collision_c001::Bad the_fixture{};

@@ -19,7 +19,7 @@ struct Ack {};
 struct NeedsPermission {};
 
 using RecoveryProto = Recv<NeedsPermission, Recv<Ack, End>>;
-using BadCarrier    = Delegate<Stop, RecoveryProto>;
+using BadCarrier = Delegate<Stop, RecoveryProto>;
 
 void transport(Wire&, Wire&&) noexcept {}
 

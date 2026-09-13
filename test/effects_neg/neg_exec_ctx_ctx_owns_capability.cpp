@@ -20,7 +20,7 @@ template <eff::IsExecCtx Ctx>
 constexpr void perform_io(Ctx const&) noexcept {}
 
 int main() {
-    eff::BgDrainCtx bg;          // row = {Bg, Alloc} — no IO
+    eff::BgDrainCtx bg;  // row = {Bg, Alloc} — no IO
     perform_io(bg);
     return 0;
 }

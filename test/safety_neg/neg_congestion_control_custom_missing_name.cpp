@@ -6,10 +6,7 @@
 struct MissingName {};
 
 int main() {
-    auto choice =
-        crucible::cntp::mint_custom_cc_choice<
-            MissingName,
-            crucible::cntp::LinkClass::PublicInternet>();
+    auto choice = crucible::cntp::mint_custom_cc_choice<MissingName, crucible::cntp::LinkClass::PublicInternet>();
     (void)choice;
     return 0;
 }

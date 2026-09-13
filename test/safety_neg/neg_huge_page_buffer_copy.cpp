@@ -18,7 +18,7 @@
 
 int main() {
     auto buf = crucible::safety::HugePageBuffer<int>::allocate(1024);
-    auto copy{buf};   // deleted-copy-ctor compile error
+    auto copy{buf};  // deleted-copy-ctor compile error
     (void)copy;
     return 0;
 }

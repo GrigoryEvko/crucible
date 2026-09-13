@@ -6,8 +6,7 @@
 #include <crucible/canopy/Lifeguard.h>
 
 int main() {
-    crucible::canopy::LifeguardSwim<0, 8, 4, 8> lifeguard{
-        crucible::canopy::admit_swim_peer({})};
+    crucible::canopy::LifeguardSwim<0, 8, 4, 8> lifeguard{crucible::canopy::admit_swim_peer({})};
     (void)lifeguard;
     return 0;
 }

@@ -13,7 +13,7 @@ static void test_empty_table_has_nothing() {
     CallSiteTable t;
     assert(t.size() == 0);
     assert(!t.has(H(1)));
-    assert(!t.has(H(0x1234'5678'ABCD'EF00ULL)));
+    assert(!t.has(H(0x12345678ABCDEF00ULL)));
     std::printf("  test_empty:                     PASSED\n");
 }
 

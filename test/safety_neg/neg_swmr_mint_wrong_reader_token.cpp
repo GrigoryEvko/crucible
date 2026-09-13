@@ -16,8 +16,7 @@ using Swmr = ses::SwmrSession<int, WriterTag, ReaderTag>;
 
 int main() {
     Swmr swmr{};
-    auto wrong = safety::mint_permission_share(
-        safety::mint_permission_root<WrongReaderTag>());
+    auto wrong = safety::mint_permission_share(safety::mint_permission_root<WrongReaderTag>());
     auto reader = ses::mint_swmr_reader<Swmr>(swmr, wrong);
     return reader.has_value() ? reader->load() : 1;
 }

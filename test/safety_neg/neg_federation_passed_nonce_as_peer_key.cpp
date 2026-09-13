@@ -33,8 +33,8 @@ namespace perm = ::crucible::permissions;
 struct NegPassedNonce_Org {};
 
 int main() {
-    constexpr perm::Nonce              nonce{0xDEADBEEFULL};
-    constexpr perm::PeerKeyFingerprint key  {0xCAFEBABEULL};
+    constexpr perm::Nonce nonce{0xDEADBEEFULL};
+    constexpr perm::PeerKeyFingerprint key{0xCAFEBABEULL};
 
     // VIOLATION: Nonce in PeerKeyFingerprint position, PeerKeyFingerprint
     // in Nonce position.  The first parameter expects
@@ -43,7 +43,7 @@ int main() {
     // the static type-system gate.
     auto hs = perm::make_self_signed_handshake<NegPassedNonce_Org>(
         /*peer_key_fp=*/nonce,
-        /*nonce=*/      key);
+        /*nonce=*/key);
     (void)hs;
     return 0;
 }

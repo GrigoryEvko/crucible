@@ -17,9 +17,9 @@
 #include <crucible/fixy/Perm.h>
 
 namespace fperm = ::crucible::fixy::perm;
-namespace ptag  = ::crucible::permissions::tag;
-namespace eff   = ::crucible::effects;
-namespace safe  = ::crucible::safety;
+namespace ptag = ::crucible::permissions::tag;
+namespace eff = ::crucible::effects;
+namespace safe = ::crucible::safety;
 
 int main() {
     // Mint a GpuMemory token via the ctx-bound root (the bare form is
@@ -29,7 +29,6 @@ int main() {
 
     // Should FAIL: bare share is only valid for permission_row<Tag>
     // == Row<>, but GpuMemoryTag has Row<Effect::Alloc>.
-    [[maybe_unused]] auto shared = fperm::mint_permission_share(
-        std::move(exc));
+    [[maybe_unused]] auto shared = fperm::mint_permission_share(std::move(exc));
     return 0;
 }

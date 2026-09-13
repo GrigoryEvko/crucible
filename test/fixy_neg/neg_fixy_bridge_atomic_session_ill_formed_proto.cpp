@@ -44,7 +44,7 @@
 #include <atomic>
 
 namespace fbridge = ::crucible::fixy::bridge;
-namespace proto   = ::crucible::safety::proto;
+namespace proto = ::crucible::safety::proto;
 
 namespace test_fixy_bridge_atomic_ill_formed_proto {
 
@@ -71,9 +71,7 @@ int main() {
     // error → substitution fails → overload removed.  fixy::bridge::
     // re-export must reject identically — the using-decl preserves
     // the substrate trait gate.
-    [[maybe_unused]] auto bad =
-        fbridge::mint_atomic_session<
-            test_fixy_bridge_atomic_ill_formed_proto::NotAProto>(cell);
+    [[maybe_unused]] auto bad = fbridge::mint_atomic_session<test_fixy_bridge_atomic_ill_formed_proto::NotAProto>(cell);
 
     return 0;
 }

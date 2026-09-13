@@ -33,8 +33,8 @@ int main() {
     using L1 = Computation<Row<>, L2>;
 
     auto leaf = Computation<Row<>, int>::lift<Effect::Bg>(42);
-    auto mid  = L2::mk(static_cast<L3&&>(leaf));
-    auto top  = L1::mk(static_cast<L2&&>(mid));
+    auto mid = L2::mk(static_cast<L3&&>(leaf));
+    auto top = L1::mk(static_cast<L2&&>(mid));
 
     // Should FAIL: outer two rows are empty but deepest payload is
     // Row<Bg>-engaged.  Recursive gate descends, rejects at L3.

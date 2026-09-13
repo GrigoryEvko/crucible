@@ -25,16 +25,15 @@
 #include <crucible/permissions/Permission.h>
 
 namespace fchain = ::crucible::fixy::substr::chainedge;
-namespace conc   = ::crucible::concurrent;
+namespace conc = ::crucible::concurrent;
 
 namespace neg_fixy_chainedge_signaler_wrong_perm {
 struct UserTag {};
 using Edge = conc::PermissionedChainEdge<conc::VendorBackend::CPU, UserTag>;
-}
+}  // namespace neg_fixy_chainedge_signaler_wrong_perm
 
 int main() {
-    neg_fixy_chainedge_signaler_wrong_perm::Edge edge{
-        conc::PlanId{1}, conc::PlanId{2}, conc::ChainEdgeId{0}};
+    neg_fixy_chainedge_signaler_wrong_perm::Edge edge{conc::PlanId{1}, conc::PlanId{2}, conc::ChainEdgeId{0}};
     int not_a_perm = 0;
 
     auto bad = fchain::mint_chainedge_signaler(edge, not_a_perm);

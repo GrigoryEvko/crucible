@@ -37,36 +37,36 @@
 #include <utility>
 
 namespace proto = ::crucible::safety::proto;
-namespace eff   = ::crucible::effects;
+namespace eff = ::crucible::effects;
 
 namespace neg_recording_psh_offer_ctor_public_bypass {
 
-struct Channel { int unused = 0; };
+struct Channel {
+    int unused = 0;
+};
 
 // An external-choice (Offer) head with two branches — structurally
 // distinct from fixture #1's linear Send head.
-using CarrierProto =
-    proto::Offer<proto::Recv<int, proto::End>, proto::End>;
+using CarrierProto = proto::Offer<proto::Recv<int, proto::End>, proto::End>;
 
 }  // namespace neg_recording_psh_offer_ctor_public_bypass
 
 int main() {
     using namespace neg_recording_psh_offer_ctor_public_bypass;
 
-    eff::HotFgCtx          ctx{};
+    eff::HotFgCtx ctx{};
     proto::SessionEventLog log{};
-    proto::RoleTagId       self{3};
-    proto::RoleTagId       peer{4};
+    proto::RoleTagId self{3};
+    proto::RoleTagId peer{4};
 
     // Build a REAL inner PSH at the Offer<...> state via the legitimate
     // carrier mint.  Well-formed; only the OUTER construction is wrong.
-    auto inner = proto::mint_permissioned_session<CarrierProto>(
-        ctx, Channel{});
+    auto inner = proto::mint_permissioned_session<CarrierProto>(ctx, Channel{});
 
     using InnerType = decltype(inner);
-    using PS        = typename InnerType::perm_set;
-    using Resource  = typename InnerType::resource_type;
-    using LoopCtx   = typename InnerType::loop_ctx;
+    using PS = typename InnerType::perm_set;
+    using Resource = typename InnerType::resource_type;
+    using LoopCtx = typename InnerType::loop_ctx;
 
     // ── The §XXI bypass attempt ────────────────────────────────────
     //
@@ -74,9 +74,8 @@ int main() {
     // WITHOUT the passkey.  After fix-15 the public ctor's first
     // parameter is detail::recording_session_construct_key, whose
     // default ctor is private — unnameable here → ill-formed.
-    proto::RecordingPermissionedSessionHandle<
-        CarrierProto, PS, Resource, LoopCtx> bad{
-            std::move(inner), log, self, peer};
+    proto::RecordingPermissionedSessionHandle<CarrierProto, PS, Resource, LoopCtx> bad{std::move(inner), log, self,
+                                                                                       peer};
     (void)bad;
 
     return 0;

@@ -64,8 +64,7 @@ namespace {
 namespace cc = crucible::canopy;
 using crucible::fuzz::prop::Rng;
 
-inline constexpr std::uint64_t kU64Max =
-    std::numeric_limits<std::uint64_t>::max();
+inline constexpr std::uint64_t kU64Max = std::numeric_limits<std::uint64_t>::max();
 inline constexpr std::size_t kReplicas = 4;
 
 // 128-bit accumulators for the independent saturation oracles.  GCC's
@@ -78,32 +77,48 @@ __extension__ using w_u = unsigned __int128;
 
 [[nodiscard]] std::uint64_t gen_clock(Rng& rng) noexcept {
     switch (rng.next_below(6u)) {
-        case 0: return 0u;
-        case 1: return 1u;
-        case 2: return rng.next_below(4u);  // tiny cluster → equal-clock ties
-        case 3: return kU64Max;
-        case 4: return kU64Max - 1u;
-        default: return rng.next64();
+        case 0:
+            return 0u;
+        case 1:
+            return 1u;
+        case 2:
+            return rng.next_below(4u);  // tiny cluster → equal-clock ties
+        case 3:
+            return kU64Max;
+        case 4:
+            return kU64Max - 1u;
+        default:
+            return rng.next64();
     }
 }
 
 [[nodiscard]] std::uint32_t gen_value(Rng& rng) noexcept {
     switch (rng.next_below(4u)) {
-        case 0: return 0u;
-        case 1: return rng.next_below(4u);  // tiny → equal-value tie-break path
-        case 2: return rng.next32() & 0xFFu;
-        default: return rng.next32();
+        case 0:
+            return 0u;
+        case 1:
+            return rng.next_below(4u);  // tiny → equal-value tie-break path
+        case 2:
+            return rng.next32() & 0xFFu;
+        default:
+            return rng.next32();
     }
 }
 
 [[nodiscard]] std::uint64_t gen_count(Rng& rng) noexcept {
     switch (rng.next_below(6u)) {
-        case 0: return 0u;
-        case 1: return 1u;
-        case 2: return rng.next_below(1000u);          // small
-        case 3: return kU64Max;                        // saturate
-        case 4: return kU64Max - rng.next_below(8u);   // near-max
-        default: return rng.next64();                  // full random
+        case 0:
+            return 0u;
+        case 1:
+            return 1u;
+        case 2:
+            return rng.next_below(1000u);  // small
+        case 3:
+            return kU64Max;  // saturate
+        case 4:
+            return kU64Max - rng.next_below(8u);  // near-max
+        default:
+            return rng.next64();  // full random
     }
 }
 
@@ -129,9 +144,7 @@ struct LwwSpec {
     if (rng.next_below(5u) == 0u) {
         return LwwOne{.has_value = false, .clock = 0u, .value = 0u};
     }
-    return LwwOne{.has_value = true,
-                  .clock = gen_clock(rng),
-                  .value = gen_value(rng)};
+    return LwwOne{.has_value = true, .clock = gen_clock(rng), .value = gen_value(rng)};
 }
 
 [[nodiscard]] LwwState lww_state(const LwwOne& o) noexcept {
@@ -221,8 +234,7 @@ struct PCSpec {
 }
 
 [[nodiscard]] PCState pc_oracle(const PCState& a, const PCState& b) noexcept {
-    return PCState{.positive = gc_oracle(a.positive, b.positive),
-                   .negative = gc_oracle(a.negative, b.negative)};
+    return PCState{.positive = gc_oracle(a.positive, b.positive), .negative = gc_oracle(a.negative, b.negative)};
 }
 
 // Independent value() oracle: signed 128-bit difference of the two
@@ -244,15 +256,14 @@ int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
 
     Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 2'000'000) cfg.iterations = 2'000'000;
+    if (cfg.iterations > 2000000) cfg.iterations = 2000000;
 
     int rc = 0;
 
     // ── LwwRegister: total-order max semilattice ──
-    rc |= run("crdt_lww", cfg,
-        [](Rng& rng) noexcept -> LwwSpec {
-            return LwwSpec{gen_lww_one(rng), gen_lww_one(rng), gen_lww_one(rng)};
-        },
+    rc |= run(
+        "crdt_lww", cfg,
+        [](Rng& rng) noexcept -> LwwSpec { return LwwSpec{gen_lww_one(rng), gen_lww_one(rng), gen_lww_one(rng)}; },
         [](const LwwSpec& spec) noexcept -> bool {
             const LwwState a = lww_state(spec.a);
             const LwwState b = lww_state(spec.b);
@@ -260,25 +271,23 @@ int main(int argc, char** argv) {
 
             const LwwState ab = Lww::merge(a, b);
 
-            if (!(ab == lww_oracle(a, b))) return false;          // exact oracle
-            if (!(ab == Lww::merge(b, a))) return false;          // commutativity
-            if (!(Lww::merge(a, a) == a)) return false;           // idempotence
-            if (!(Lww::merge(Lww::merge(a, b), c) ==
-                  Lww::merge(a, Lww::merge(b, c)))) return false;  // associativity
-            if (!(ab == a || ab == b)) return false;              // picks an operand
+            if (!(ab == lww_oracle(a, b))) return false;  // exact oracle
+            if (!(ab == Lww::merge(b, a))) return false;  // commutativity
+            if (!(Lww::merge(a, a) == a)) return false;  // idempotence
+            if (!(Lww::merge(Lww::merge(a, b), c) == Lww::merge(a, Lww::merge(b, c)))) return false;  // associativity
+            if (!(ab == a || ab == b)) return false;  // picks an operand
 
             const LwwKey ka = lww_key(a);
             const LwwKey kb = lww_key(b);
             const LwwKey kab = lww_key(ab);
-            if (kab < ka || kab < kb) return false;               // LUB dominance
+            if (kab < ka || kab < kb) return false;  // LUB dominance
             return true;
         });
 
     // ── GCounter: per-replica max semilattice + saturating value() ──
-    rc |= run("crdt_gcounter", cfg,
-        [](Rng& rng) noexcept -> GCSpec {
-            return GCSpec{gen_counts(rng), gen_counts(rng), gen_counts(rng)};
-        },
+    rc |= run(
+        "crdt_gcounter", cfg,
+        [](Rng& rng) noexcept -> GCSpec { return GCSpec{gen_counts(rng), gen_counts(rng), gen_counts(rng)}; },
         [](const GCSpec& spec) noexcept -> bool {
             const GCState a = gc_build(spec.a);
             const GCState b = gc_build(spec.b);
@@ -286,13 +295,12 @@ int main(int argc, char** argv) {
 
             const GCState ab = GC::merge(a, b);
 
-            if (!(ab == gc_oracle(a, b))) return false;           // exact oracle
-            if (!(ab == GC::merge(b, a))) return false;           // commutativity
-            if (!(GC::merge(a, a) == a)) return false;            // idempotence
-            if (!(GC::merge(GC::merge(a, b), c) ==
-                  GC::merge(a, GC::merge(b, c)))) return false;    // associativity
+            if (!(ab == gc_oracle(a, b))) return false;  // exact oracle
+            if (!(ab == GC::merge(b, a))) return false;  // commutativity
+            if (!(GC::merge(a, a) == a)) return false;  // idempotence
+            if (!(GC::merge(GC::merge(a, b), c) == GC::merge(a, GC::merge(b, c)))) return false;  // associativity
             for (std::size_t i = 0; i < kReplicas; ++i) {
-                if (ab.counts[i] < a.counts[i]) return false;     // dominance
+                if (ab.counts[i] < a.counts[i]) return false;  // dominance
                 if (ab.counts[i] < b.counts[i]) return false;
             }
 
@@ -305,11 +313,11 @@ int main(int argc, char** argv) {
         });
 
     // ── PNCounter: paired GCounter merges + clamped signed value() ──
-    rc |= run("crdt_pncounter", cfg,
+    rc |= run(
+        "crdt_pncounter", cfg,
         [](Rng& rng) noexcept -> PCSpec {
-            return PCSpec{gen_counts(rng), gen_counts(rng),
-                          gen_counts(rng), gen_counts(rng),
-                          gen_counts(rng), gen_counts(rng)};
+            return PCSpec{gen_counts(rng), gen_counts(rng), gen_counts(rng),
+                          gen_counts(rng), gen_counts(rng), gen_counts(rng)};
         },
         [](const PCSpec& spec) noexcept -> bool {
             const PCState a = pc_build(spec.ap, spec.an);
@@ -318,11 +326,10 @@ int main(int argc, char** argv) {
 
             const PCState ab = PC::merge(a, b);
 
-            if (!(ab == pc_oracle(a, b))) return false;           // exact oracle
-            if (!(ab == PC::merge(b, a))) return false;           // commutativity
-            if (!(PC::merge(a, a) == a)) return false;            // idempotence
-            if (!(PC::merge(PC::merge(a, b), c) ==
-                  PC::merge(a, PC::merge(b, c)))) return false;    // associativity
+            if (!(ab == pc_oracle(a, b))) return false;  // exact oracle
+            if (!(ab == PC::merge(b, a))) return false;  // commutativity
+            if (!(PC::merge(a, a) == a)) return false;  // idempotence
+            if (!(PC::merge(PC::merge(a, b), c) == PC::merge(a, PC::merge(b, c)))) return false;  // associativity
 
             PC counter;
             (void)counter.merge(PCGossip{a});

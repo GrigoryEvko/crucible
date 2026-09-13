@@ -33,21 +33,21 @@ using ::crucible::safety::mint_permission_root;
 
 namespace {
 struct WorkItem {};
-struct FakeChannel { int last_int = 0; };
+struct FakeChannel {
+    int last_int = 0;
+};
 
 Transferable<int, WorkItem> wire_recv(FakeChannel& ch) noexcept {
-    return Transferable<int, WorkItem>{ch.last_int,
-                                        mint_permission_root<WorkItem>()};
+    return Transferable<int, WorkItem>{ch.last_int, mint_permission_root<WorkItem>()};
 }
 
 using BodyProto = Recv<Transferable<int, WorkItem>, Continue>;
 using LoopProto = Loop<BodyProto>;
-}
+}  // namespace
 
 int main() {
     // Establish with empty PS (entry is empty).
-    auto h = detail::permissioned_session_with_loc_<
-        LoopProto, EmptyPermSet, FakeChannel>(
+    auto h = detail::permissioned_session_with_loc_<LoopProto, EmptyPermSet, FakeChannel>(
         FakeChannel{}, std::source_location::current());
 
     // recv adds WorkItem to PS; the resulting next-handle on

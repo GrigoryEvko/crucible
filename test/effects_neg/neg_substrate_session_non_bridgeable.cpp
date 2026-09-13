@@ -9,7 +9,7 @@
 
 #include <crucible/concurrent/SubstrateSessionBridge.h>
 
-namespace eff  = crucible::effects;
+namespace eff = crucible::effects;
 namespace conc = crucible::concurrent;
 
 struct UserTag {};
@@ -21,8 +21,7 @@ int main() {
 
     eff::HotFgCtx fg;
     // SPSC + SwmrWriter → IsBridgeableDirection fails.
-    auto bad = conc::mint_substrate_session<Channel, conc::Direction::SwmrWriter>(
-        fg, *fake_handle);
+    auto bad = conc::mint_substrate_session<Channel, conc::Direction::SwmrWriter>(fg, *fake_handle);
     (void)bad;
     return 0;
 }

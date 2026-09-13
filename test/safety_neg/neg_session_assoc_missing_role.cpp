@@ -11,19 +11,17 @@
 
 using namespace crucible::safety::proto;
 
-struct My2PC    {};
-struct Coord    {};
+struct My2PC {};
+struct Coord {};
 struct Follower {};
-struct Prepare  {};
-struct Vote     {};
+struct Prepare {};
+struct Vote {};
 
-using G = Transmission<Coord, Follower, Prepare,
-          Transmission<Follower, Coord, Vote, End_G>>;
+using G = Transmission<Coord, Follower, Prepare, Transmission<Follower, Coord, Vote, End_G>>;
 
 // Γ is missing the Follower entry — G's roles = {Coord, Follower},
 // Γ's roles = {Coord} only.  Domain mismatch.
-using IncompleteΓ = Context<
-    Entry<My2PC, Coord, project_t<G, Coord>>>;
+using IncompleteΓ = Context<Entry<My2PC, Coord, project_t<G, Coord>>>;
 
 int main() {
     // assert_associated fires the condition-(1) static_assert.

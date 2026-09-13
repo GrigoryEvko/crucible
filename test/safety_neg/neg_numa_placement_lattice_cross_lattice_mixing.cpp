@@ -15,7 +15,7 @@
 using namespace crucible::algebra::lattices;
 
 int main() {
-    NumaNodeId   node{2};
+    NumaNodeId node{2};
     AffinityMask aff = AffinityMask::single(0);
 
     // Should FAIL: NumaNodeLattice::leq requires two NumaNodeId

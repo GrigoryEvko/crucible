@@ -23,11 +23,11 @@
 #include <crucible/safety/ScopedFence.h>
 
 namespace sf = ::crucible::safety;
-using Ms_t   = sf::MemoryScope_v;
+using Ms_t = sf::MemoryScope_v;
 
 // A consumer requiring at least a device-wide (Gpu) publish scope.
 template <typename W>
-    requires (W::template satisfies<Ms_t::Gpu>)
+    requires(W::template satisfies<Ms_t::Gpu>)
 [[nodiscard]] constexpr int require_gpu_fence(W const& w) noexcept {
     return w.peek();
 }

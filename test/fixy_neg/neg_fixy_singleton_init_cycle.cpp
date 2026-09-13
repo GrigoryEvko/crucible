@@ -12,7 +12,7 @@
 //
 // Expected diagnostic: the static_assert message (cycle / fiasco / S004).
 
-#include <crucible/safety/CollisionCatalog.h>   // pack::singleton_init_acyclic
+#include <crucible/safety/CollisionCatalog.h>  // pack::singleton_init_acyclic
 
 #include <array>
 #include <cstddef>
@@ -23,9 +23,7 @@ namespace pak = crucible::safety::fn::collision::pack;
 // Two mutually-init-dependent singletons: 0 -> 1 and 1 -> 0.  A cycle.
 inline constexpr std::array<std::pair<std::size_t, std::size_t>, 2> kCyclicGraph{{{0, 1}, {1, 0}}};
 
-static_assert(
-    pak::singleton_init_acyclic<2>(kCyclicGraph),
-    "S004: Meyers-singleton lazy-init graph has a cycle — "
-    "static-initialization-order fiasco.");
+static_assert(pak::singleton_init_acyclic<2>(kCyclicGraph), "S004: Meyers-singleton lazy-init graph has a cycle — "
+                                                            "static-initialization-order fiasco.");
 
 int main() { return 0; }

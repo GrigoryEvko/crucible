@@ -15,7 +15,7 @@
 using namespace crucible::safety;
 
 int main() {
-    Progress<ProgressClass_v::Bounded,    int> bounded_value{42};
+    Progress<ProgressClass_v::Bounded, int> bounded_value{42};
     Progress<ProgressClass_v::MayDiverge, int> diverge_value{42};
 
     // Should FAIL: operator== for Progress<Bounded, int> takes two

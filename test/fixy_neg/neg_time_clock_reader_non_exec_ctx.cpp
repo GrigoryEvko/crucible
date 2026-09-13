@@ -17,8 +17,7 @@
 
 int main() {
     // Should FAIL: 42 (int) is not an effects::IsExecCtx.
-    auto reader = ::crucible::fixy::time::mint_clock_reader<
-        ::crucible::fixy::time::ClockSource_v::Monotonic>(42);
+    auto reader = ::crucible::fixy::time::mint_clock_reader<::crucible::fixy::time::ClockSource_v::Monotonic>(42);
 
     return static_cast<int>(reader.read().peek());
 }

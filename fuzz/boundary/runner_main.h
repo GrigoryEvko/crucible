@@ -44,28 +44,22 @@
 
 namespace crucible::fuzz::boundary {
 
-[[nodiscard]] inline std::vector<uint8_t>
-read_file_bytes(const std::filesystem::path& p) {
+[[nodiscard]] inline std::vector<uint8_t> read_file_bytes(const std::filesystem::path& p) {
     std::ifstream f(p, std::ios::binary);
-    return std::vector<uint8_t>{
-        std::istreambuf_iterator<char>(f),
-        std::istreambuf_iterator<char>()
-    };
+    return std::vector<uint8_t>{std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>()};
 }
 
 inline int run_corpus_or_file(const char* arg) {
     std::filesystem::path p{arg};
     if (!std::filesystem::exists(p)) {
-        std::fprintf(stderr,
-            "fuzz: '%s' does not exist\n", arg);
+        std::fprintf(stderr, "fuzz: '%s' does not exist\n", arg);
         return 1;
     }
 
     // Single-file mode (AFL++ persistent mode passes one file via @@).
     if (std::filesystem::is_regular_file(p)) {
         const auto buf = read_file_bytes(p);
-        std::fprintf(stderr, "fuzz: %s (%zu bytes)\n",
-            arg, buf.size());
+        std::fprintf(stderr, "fuzz: %s (%zu bytes)\n", arg, buf.size());
         (void)LLVMFuzzerTestOneInput(buf.data(), buf.size());
         return 0;
     }
@@ -76,8 +70,7 @@ inline int run_corpus_or_file(const char* arg) {
         for (const auto& entry : std::filesystem::directory_iterator(p)) {
             if (!entry.is_regular_file()) continue;
             const auto buf = read_file_bytes(entry.path());
-            std::fprintf(stderr, "fuzz: %s (%zu bytes)\n",
-                entry.path().string().c_str(), buf.size());
+            std::fprintf(stderr, "fuzz: %s (%zu bytes)\n", entry.path().string().c_str(), buf.size());
             (void)LLVMFuzzerTestOneInput(buf.data(), buf.size());
             ++n;
         }
@@ -85,8 +78,7 @@ inline int run_corpus_or_file(const char* arg) {
         return 0;
     }
 
-    std::fprintf(stderr,
-        "fuzz: '%s' is neither a regular file nor a directory\n", arg);
+    std::fprintf(stderr, "fuzz: '%s' is neither a regular file nor a directory\n", arg);
     return 1;
 }
 
@@ -95,10 +87,10 @@ inline int run_corpus_or_file(const char* arg) {
 int main(int argc, char** argv) {
     if (argc < 2) {
         std::fprintf(stderr,
-            "Usage: %s <file_or_corpus_dir>\n"
-            "  Single file → feeds bytes through LLVMFuzzerTestOneInput once.\n"
-            "  Directory   → feeds every regular file through it once.\n",
-            argv[0]);
+                     "Usage: %s <file_or_corpus_dir>\n"
+                     "  Single file → feeds bytes through LLVMFuzzerTestOneInput once.\n"
+                     "  Directory   → feeds every regular file through it once.\n",
+                     argv[0]);
         return 1;
     }
     return crucible::fuzz::boundary::run_corpus_or_file(argv[1]);

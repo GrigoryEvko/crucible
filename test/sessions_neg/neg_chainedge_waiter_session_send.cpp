@@ -14,18 +14,15 @@ namespace ses = ::crucible::safety::proto::chainedge_session;
 namespace {
 struct Tag {};
 using Edge = conc::PermissionedChainEdge<conc::VendorBackend::CPU, Tag>;
-}
+}  // namespace
 
 int main() {
     Edge edge{conc::PlanId{1}, conc::PlanId{2}, conc::ChainEdgeId{3}};
     auto whole = ::crucible::safety::mint_permission_root<Edge::whole_tag>();
-    auto [sp, wp] = ::crucible::safety::mint_permission_split<
-        Edge::signaler_tag, Edge::waiter_tag>(std::move(whole));
+    auto [sp, wp] = ::crucible::safety::mint_permission_split<Edge::signaler_tag, Edge::waiter_tag>(std::move(whole));
     (void)sp;
     auto waiter = edge.waiter(std::move(wp));
-    auto psh = ses::mint_chainedge_waiter_session<Edge>(
-        ::crucible::effects::HotFgCtx{}, waiter);
-    [[maybe_unused]] auto bad =
-        std::move(psh).send(waiter.expected_signal(), ses::signal_transport);
+    auto psh = ses::mint_chainedge_waiter_session<Edge>(::crucible::effects::HotFgCtx{}, waiter);
+    [[maybe_unused]] auto bad = std::move(psh).send(waiter.expected_signal(), ses::signal_transport);
     return 0;
 }

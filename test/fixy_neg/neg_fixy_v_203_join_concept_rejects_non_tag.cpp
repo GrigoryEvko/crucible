@@ -43,6 +43,4 @@ constexpr auto bad_dispatch = mechanism_value<int>();
 
 }  // namespace neg_fixy_v_203_concept_rejects_non_tag
 
-int main() {
-    return 0;
-}
+int main() { return 0; }

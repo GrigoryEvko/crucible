@@ -8,8 +8,7 @@
 #include <crucible/bridges/SessionPersistence.h>
 
 // FIXY-V-031: Cipher::open() now takes Path<source::External>.
-using CipherRoot = crucible::fixy::wrap::Path<
-    crucible::fixy::tags::source::External>;
+using CipherRoot = crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>;
 
 namespace proto = crucible::safety::proto;
 
@@ -20,14 +19,7 @@ int main() {
     auto view = cipher.mint_open_view();
     crucible::effects::HotFgCtx ctx{};
 
-    [[maybe_unused]] auto h = proto::mint_persisted_session<
-        proto::Send<int, proto::End>>(
-            ctx,
-            cipher,
-            view,
-            Resource{},
-            proto::SessionTagId{1},
-            proto::RoleTagId{1},
-            proto::RoleTagId{2});
+    [[maybe_unused]] auto h = proto::mint_persisted_session<proto::Send<int, proto::End>>(
+        ctx, cipher, view, Resource{}, proto::SessionTagId{1}, proto::RoleTagId{1}, proto::RoleTagId{2});
     return 0;
 }

@@ -47,9 +47,9 @@ struct OffendingPoolContainer {
 // OffendingPoolContainer as the violator and ScopedView as the
 // offending wrapper.
 static_assert(::crucible::fixy::wrap::no_scoped_view_field_check<OffendingPoolContainer>(),
-    "the audit must reject containers that store a PoolAllocator::"
-    "InitializedView as a field; this fixture exists so a future "
-    "regression in contains_scoped_view's recursive walk for the "
-    "PoolAllocator carrier is caught at compile time.");
+              "the audit must reject containers that store a PoolAllocator::"
+              "InitializedView as a field; this fixture exists so a future "
+              "regression in contains_scoped_view's recursive walk for the "
+              "PoolAllocator carrier is caught at compile time.");
 
 int main() { return 0; }

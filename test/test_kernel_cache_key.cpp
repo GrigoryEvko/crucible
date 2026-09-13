@@ -60,10 +60,10 @@ static void test_sentinel_state() {
 // structurally, yet they must not share a cache slot.  Sharing hands
 // the reader a pure result when only an IO result was computed.
 static void test_per_axis_distinctness() {
-    constexpr ContentHash content_a{0xC0FFEEBA'1234'5678ULL};
-    constexpr ContentHash content_b{0xDEAD'BEEF'CAFE'BABEULL};
-    constexpr RowHash row_pure{0x1111'1111'1111'1111ULL};
-    constexpr RowHash row_io{0x2222'2222'2222'2222ULL};
+    constexpr ContentHash content_a{0xC0FFEEBA12345678ULL};
+    constexpr ContentHash content_b{0xDEADBEEFCAFEBABEULL};
+    constexpr RowHash row_pure{0x1111111111111111ULL};
+    constexpr RowHash row_io{0x2222222222222222ULL};
 
     constexpr KernelCacheKey k_a_pure{content_a, row_pure};
     constexpr KernelCacheKey k_a_io{content_a, row_io};
@@ -87,10 +87,10 @@ static void test_per_axis_distinctness() {
 }
 
 static void test_lexicographic_ordering() {
-    constexpr ContentHash content_lo{0x0000'0000'0000'0001ULL};
-    constexpr ContentHash content_hi{0x0000'0000'0000'0002ULL};
-    constexpr RowHash row_lo{0x0000'0000'0000'0001ULL};
-    constexpr RowHash row_hi{0x0000'0000'0000'0002ULL};
+    constexpr ContentHash content_lo{0x0000000000000001ULL};
+    constexpr ContentHash content_hi{0x0000000000000002ULL};
+    constexpr RowHash row_lo{0x0000000000000001ULL};
+    constexpr RowHash row_hi{0x0000000000000002ULL};
 
     constexpr KernelCacheKey k_lolo{content_lo, row_lo};
     constexpr KernelCacheKey k_lohi{content_lo, row_hi};
@@ -216,10 +216,10 @@ static void test_designated_init_forms() {
 // miscompiles.  The volatile seeds stop the compiler folding these
 // comparisons to true.
 static void test_runtime_peer() {
-    volatile uint64_t content_a_v = 0xC0FFEEBA'1234'5678ULL;
-    volatile uint64_t content_b_v = 0xDEAD'BEEF'CAFE'BABEULL;
-    volatile uint64_t row_pure_v = 0x1111'1111'1111'1111ULL;
-    volatile uint64_t row_io_v = 0x2222'2222'2222'2222ULL;
+    volatile uint64_t content_a_v = 0xC0FFEEBA12345678ULL;
+    volatile uint64_t content_b_v = 0xDEADBEEFCAFEBABEULL;
+    volatile uint64_t row_pure_v = 0x1111111111111111ULL;
+    volatile uint64_t row_io_v = 0x2222222222222222ULL;
 
     KernelCacheKey k_a_pure{ContentHash{content_a_v}, RowHash{row_pure_v}};
     KernelCacheKey k_a_io{ContentHash{content_a_v}, RowHash{row_io_v}};
@@ -273,13 +273,13 @@ static void test_partial_sentinel_not_full_sentinel() {
 // what lets a federation cache key cross process boundaries.
 static void test_bit_cast_round_trip() {
     constexpr KernelCacheKey k_in{
-        ContentHash{0xC0FFEEBA'1234'5678ULL},
-        RowHash{0xDEAD'BEEF'5678'9ABCULL},
+        ContentHash{0xC0FFEEBA12345678ULL},
+        RowHash{0xDEADBEEF56789ABCULL},
     };
 
     constexpr auto raw = std::bit_cast<std::array<uint64_t, 2>>(k_in);
-    static_assert(raw[0] == 0xC0FFEEBA'1234'5678ULL);
-    static_assert(raw[1] == 0xDEAD'BEEF'5678'9ABCULL);
+    static_assert(raw[0] == 0xC0FFEEBA12345678ULL);
+    static_assert(raw[1] == 0xDEADBEEF56789ABCULL);
 
     constexpr auto back = std::bit_cast<KernelCacheKey>(raw);
     static_assert(back == k_in);

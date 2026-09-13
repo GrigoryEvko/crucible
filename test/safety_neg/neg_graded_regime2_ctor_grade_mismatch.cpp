@@ -29,8 +29,7 @@ using ::crucible::algebra::lattices::MonotoneLattice;
 
 // Regime-2: T == element_type (int).  MonotoneLattice<int>'s leq is a
 // true partial order, so 5 and 10 are NOT lattice-equivalent.
-using GMonotoneInt =
-    Graded<ModalityKind::Absolute, MonotoneLattice<int>, int>;
+using GMonotoneInt = Graded<ModalityKind::Absolute, MonotoneLattice<int>, int>;
 
 // consteval forces the guard to evaluate at compile time; the false
 // equivalence makes the call non-constant.
@@ -41,8 +40,7 @@ consteval int forge_mismatched_grade() {
 
 // The static_assert pulls forge_mismatched_grade() into a constant-
 // expression context; the non-constant contract_assert poisons it.
-static_assert(forge_mismatched_grade() == 5,
-              "fixture must fail to compile: regime-2 two-arg ctor "
-              "grade-mismatch guard did not fire at consteval");
+static_assert(forge_mismatched_grade() == 5, "fixture must fail to compile: regime-2 two-arg ctor "
+                                             "grade-mismatch guard did not fire at consteval");
 
 }  // namespace

@@ -24,7 +24,7 @@ namespace {
 
 cog::CogIdentity nic_identity() {
     cog::CogIdentity id{};
-    id.uuid = cog::Uuid{0x147, 0x51'10};
+    id.uuid = cog::Uuid{0x147, 0x5110};
     id.level = cog::CogLevel::L0_Atomic;
     id.kind = cog::CogKind::NicPort;
     return id;
@@ -78,7 +78,7 @@ void test_mint_and_handles() {
     sriov::VfConfig config{};
     config.mac = *sriov::admit_mac(sriov::MacAddress::locally_administered(9));
     config.vlan = *sriov::admit_vlan(42);
-    config.rate_limit_mbps = *sriov::admit_rate_limit_mbps(100'000);
+    config.rate_limit_mbps = *sriov::admit_rate_limit_mbps(100000);
     config.max_qps = *sriov::admit_resource_limit(1024);
     config.max_mrs = *sriov::admit_resource_limit(2048);
 

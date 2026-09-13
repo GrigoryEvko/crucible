@@ -35,8 +35,8 @@
 #include <crucible/fixy/Fn.h>
 
 namespace fixy = crucible::fixy;
-namespace gr   = crucible::fixy::grant;
-using D        = crucible::fixy::dim::DimensionAxis;
+namespace gr = crucible::fixy::grant;
+using D = crucible::fixy::dim::DimensionAxis;
 
 // User-defined empty struct that does NOT inherit `grant_base` and is
 // therefore not a Grant tag per `IsGrantTag_v`.  Distinct from the
@@ -57,16 +57,12 @@ int main() {
     // AllGrantsWellFormed → IsAcceptedGrants → IsAccepted → the
     // class-body static_assert in fixy::fn.
     using NG = neg_count_engagements_non_grant::NotAGrant;
-    auto bad = fixy::mint_fn<double,
-        strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>,
-        strict<D::Security>, strict<D::Protocol>, strict<D::Lifetime>,
-        strict<D::Provenance>, strict<D::Trust>,
-        strict<D::Representation>, strict<D::Observability>,
-        strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
-        strict<D::Overflow>, strict<D::Mutation>,
-        strict<D::Reentrancy>, strict<D::Size>, strict<D::Version>,
-        strict<D::Staleness>,
-        NG>(2.71);
+    auto bad =
+        fixy::mint_fn<double, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
+                      strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
+                      strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>,
+                      strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
+                      strict<D::Size>, strict<D::Version>, strict<D::Staleness>, NG>(2.71);
     (void)bad;
     return 0;
 }

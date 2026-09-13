@@ -26,7 +26,7 @@
 #include <utility>
 
 namespace conc = crucible::concurrent;
-namespace eff  = crucible::effects;
+namespace eff = crucible::effects;
 
 template <typename T>
 struct FakeConsumer {
@@ -40,9 +40,7 @@ struct FakeProducer {
 
 // Two-input, one-output stage body — the simplest MpmcStage shape
 // that exercises the variadic input / output handle packs.
-inline void fan_in_two(FakeConsumer<int>&&,
-                       FakeConsumer<int>&&,
-                       FakeProducer<int>&&) noexcept {}
+inline void fan_in_two(FakeConsumer<int>&&, FakeConsumer<int>&&, FakeProducer<int>&&) noexcept {}
 
 int main() {
     eff::HotFgCtx ctx;
@@ -55,9 +53,7 @@ int main() {
     // mint_mpmc_stage_from_endpoints and therefore bypasses the
     // variadic row admission check.  With the V-011 fix, the ctor
     // is private and this line is ill-formed.
-    conc::MpmcStage<&fan_in_two,
-                    eff::HotFgCtx,
-                    std::tuple<FakeConsumer<int>, FakeConsumer<int>>,
+    conc::MpmcStage<&fan_in_two, eff::HotFgCtx, std::tuple<FakeConsumer<int>, FakeConsumer<int>>,
                     std::tuple<FakeProducer<int>>>
         stage{ctx, std::move(inputs), std::move(outputs)};
 

@@ -23,8 +23,7 @@
 
 int main() {
     // <-- this line must NOT compile (missing Init argument)
-    std::optional<crucible::perf::SenseHub> hub =
-        crucible::perf::SenseHub::load();
+    std::optional<crucible::perf::SenseHub> hub = crucible::perf::SenseHub::load();
 
     (void)hub;
     return 0;

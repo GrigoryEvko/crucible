@@ -57,12 +57,12 @@ inline constexpr std::uint64_t UnnamedTestId = 0;
 
 namespace id {
 
-inline constexpr std::uint64_t fixy_custom_optimizer = 0xC051'0F71'C012'E901ULL;
-inline constexpr std::uint64_t fixy_forge_phase = 0xF067'E0CA'F034'AAE5ULL;
-inline constexpr std::uint64_t fixy_mimic_backend_hook = 0xA17C'01EE'CBA0'C8F1ULL;
-inline constexpr std::uint64_t fixy_cipher_writer = 0xC1AE'5FC0'1D5E'AB78ULL;
+inline constexpr std::uint64_t fixy_custom_optimizer = 0xC0510F71C012E901ULL;
+inline constexpr std::uint64_t fixy_forge_phase = 0xF067E0CAF034AAE5ULL;
+inline constexpr std::uint64_t fixy_mimic_backend_hook = 0xA17C01EECBA0C8F1ULL;
+inline constexpr std::uint64_t fixy_cipher_writer = 0xC1AE5FC01D5EAB78ULL;
 
-inline constexpr std::uint64_t fixy_revoked_demo = 0xBAD0'BAD0'BAD0'BAD0ULL;
+inline constexpr std::uint64_t fixy_revoked_demo = 0xBAD0BAD0BAD0BAD0ULL;
 
 }  // namespace id
 

@@ -16,7 +16,7 @@
 using namespace crucible::algebra::lattices;
 
 int main() {
-    Tolerance    tier{Tolerance::ULP_FP16};
+    Tolerance tier{Tolerance::ULP_FP16};
     RecipeFamily fam{RecipeFamily::Kahan};
 
     // Should FAIL: ToleranceLattice::leq requires two Tolerance

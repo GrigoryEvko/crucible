@@ -22,7 +22,9 @@
 
 namespace {
 
-struct R { int v = 0; };
+struct R {
+    int v = 0;
+};
 
 [[nodiscard]] constexpr R compute_must_be_positive_field(int const x) noexcept {
     R r{x - 1};
@@ -33,12 +35,12 @@ struct R { int v = 0; };
 // x = 1 → r.v = 0 → predicate (r.v > 0) is false → CRUCIBLE_POST
 // must fire at consteval.
 static_assert(compute_must_be_positive_field(1).v == 0,
-    "CRUCIBLE_POST on a struct return with field-projecting predicate "
-    "MUST fire at consteval when the predicate is violated.  If this "
-    "static_assert ever evaluates successfully, Post.h's consteval "
-    "enforcement is broken for struct-return shapes (Probe Shape #7) — "
-    "the dominant pattern for invariant assertions on PoD aggregates "
-    "(TensorMeta, ContentHash, MerkleDag::compute_storage_nbytes, etc.).");
+              "CRUCIBLE_POST on a struct return with field-projecting predicate "
+              "MUST fire at consteval when the predicate is violated.  If this "
+              "static_assert ever evaluates successfully, Post.h's consteval "
+              "enforcement is broken for struct-return shapes (Probe Shape #7) — "
+              "the dominant pattern for invariant assertions on PoD aggregates "
+              "(TensorMeta, ContentHash, MerkleDag::compute_storage_nbytes, etc.).");
 
 }  // namespace
 

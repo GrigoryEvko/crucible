@@ -25,14 +25,13 @@ struct Whole {};
 }  // namespace neg_fixy_perm_grid_zero_n
 
 int main() {
-    namespace tags  = neg_fixy_perm_grid_zero_n;
+    namespace tags = neg_fixy_perm_grid_zero_n;
     namespace fperm = ::crucible::fixy::perm;
 
     auto whole = fperm::mint_permission_root<tags::Whole>();
     // N=0 violates the can_split_grid_v fold; rejected through the
     // fixy::perm:: call site identically to the substrate symbol.
-    auto grid = fperm::mint_grid_permissions<tags::Whole, 2, 0>(
-        std::move(whole));
+    auto grid = fperm::mint_grid_permissions<tags::Whole, 2, 0>(std::move(whole));
     (void)grid;
     return 0;
 }

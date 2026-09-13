@@ -47,10 +47,10 @@ struct PermTag {};
 }  // namespace neg_fixy_pipe_pool_submit_permission_capture
 
 int main() {
-    namespace tags  = neg_fixy_pipe_pool_submit_permission_capture;
-    namespace eff   = ::crucible::effects;
+    namespace tags = neg_fixy_pipe_pool_submit_permission_capture;
+    namespace eff = ::crucible::effects;
     namespace fpipe = ::crucible::fixy::pipe;
-    namespace safe  = ::crucible::safety;
+    namespace safe = ::crucible::safety;
 
     eff::BgDrainCtx bg{};
     fpipe::Pool<> pool{fpipe::CoreCount{1}};
@@ -65,9 +65,7 @@ int main() {
     // PermissionFreeJob<decltype(bypass)> == false →
     // CtxFitsPoolSubmit<BgDrainCtx, decltype(bypass)> == false →
     // pool_submit's requires-clause rejects.
-    auto bypass = [captured = std::move(perm)]() mutable noexcept {
-        (void)captured;
-    };
+    auto bypass = [captured = std::move(perm)]() mutable noexcept { (void)captured; };
 
     // This call MUST fail to compile.  If it ever succeeds, the §IX
     // permission-bypass closure has slipped through the fixy:: gate

@@ -34,7 +34,6 @@ struct StatefulOrg {
 
 int main() {
     [[maybe_unused]] auto handshake =
-        fsrc::mint_self_signed_handshake<
-            neg_fixy_source_mint_self_signed_non_empty_org::StatefulOrg>();
+        fsrc::mint_self_signed_handshake<neg_fixy_source_mint_self_signed_non_empty_org::StatefulOrg>();
     return 0;
 }

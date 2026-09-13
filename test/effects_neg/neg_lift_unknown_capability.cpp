@@ -18,8 +18,7 @@ namespace eff = crucible::effects;
 
 int main() {
     // Compile error: `42` is not an Effect atom.
-    auto bad = eff::Computation<eff::Row<eff::Effect::Bg>, int>::
-        template lift<static_cast<eff::Effect>(99)>(7);
+    auto bad = eff::Computation<eff::Row<eff::Effect::Bg>, int>::template lift<static_cast<eff::Effect>(99)>(7);
     (void)bad;
     return 0;
 }

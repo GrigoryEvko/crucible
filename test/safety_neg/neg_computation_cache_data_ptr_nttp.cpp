@@ -24,7 +24,6 @@ int main() {
     // &data_global is `int*` — IsCacheableFunction must reject:
     // is_function_v<int> is false.
     crucible::cipher::insert_computation_cache<&data_global>(
-        std::bit_cast<crucible::cipher::CompiledBody*>(
-            static_cast<std::uintptr_t>(0x1)));
+        std::bit_cast<crucible::cipher::CompiledBody*>(static_cast<std::uintptr_t>(0x1)));
     return 0;
 }

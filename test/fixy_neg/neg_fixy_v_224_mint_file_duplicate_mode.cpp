@@ -19,25 +19,22 @@
 //   "CtxFitsFileMint" / "has_duplicate_mode".
 
 #include <crucible/effects/ExecCtx.h>
-#include <crucible/fixy/Source.h>           // fixy::tags::source::*
+#include <crucible/fixy/Source.h>  // fixy::tags::source::*
 #include <crucible/fixy/Wrap.h>
 
 int main() {
     namespace fwfs = ::crucible::fixy::wrap::fs;
-    namespace om   = fwfs::open_mode;
+    namespace om = fwfs::open_mode;
 
     ::crucible::effects::TestRunnerCtx ctx{};
 
-    fwfs::Path<::crucible::fixy::tags::source::Sanitized> path{
-        "/tmp/crucible_neg_v224_duplicate_mode"};
+    fwfs::Path<::crucible::fixy::tags::source::Sanitized> path{"/tmp/crucible_neg_v224_duplicate_mode"};
 
     // Should FAIL: two mode<> grants in the same pack —
     // has_duplicate_mode_v is true, so CtxFitsFileMint's
     // `!has_duplicate_mode_v<Grants...>` clause is false; the
     // requires-clause refuses the instantiation.
-    [[maybe_unused]] auto r = fwfs::mint_file<
-        fwfs::grant::mode<om::ReadOnly>,
-        fwfs::grant::mode<om::WriteTruncate>
-    >(ctx, std::move(path));
+    [[maybe_unused]] auto r =
+        fwfs::mint_file<fwfs::grant::mode<om::ReadOnly>, fwfs::grant::mode<om::WriteTruncate>>(ctx, std::move(path));
     return 0;
 }

@@ -27,10 +27,10 @@ inline constexpr std::uint64_t UnnamedCiRunId = 0;
 
 namespace ci_id {
 
-inline constexpr std::uint64_t fixy_cross_vendor_smoke = 0xCFE0'55AA'5750'C001ULL;
-inline constexpr std::uint64_t fixy_aarch64_x86_pairwise = 0xA4'1A'AC'EA'5750'A887ULL;
+inline constexpr std::uint64_t fixy_cross_vendor_smoke = 0xCFE055AA5750C001ULL;
+inline constexpr std::uint64_t fixy_aarch64_x86_pairwise = 0xA41AACEA5750A887ULL;
 
-inline constexpr std::uint64_t fixy_revoked_ci_demo = 0xBAD0'C1BAD0'C1BADULL;
+inline constexpr std::uint64_t fixy_revoked_ci_demo = 0xBAD0C1BAD0C1BADULL;
 
 }  // namespace ci_id
 

@@ -23,7 +23,9 @@
 
 using namespace crucible::safety::proto;
 
-struct R { int sentinel = 3; };
+struct R {
+    int sentinel = 3;
+};
 
 void compile_time_reject() {
     using EmptyDelegated = Delegate<Select<>, End>;

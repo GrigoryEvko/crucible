@@ -35,7 +35,7 @@ using namespace crucible::safety;
 
 struct Job {
     std::uint64_t deadline_ns = 0;
-    std::uint64_t payload     = 0;
+    std::uint64_t payload = 0;
 };
 
 struct DeadlineKey {
@@ -48,17 +48,11 @@ struct BenchTag {};
 // Single-producer means we benchmark the SPSC inner loop directly
 // without any cross-producer contention.
 constexpr std::size_t kNumBuckets = 64;
-constexpr std::size_t kBucketCap  = 1024;
-constexpr std::uint64_t kQuantumNs = 1'000'000;  // 1ms
+constexpr std::size_t kBucketCap = 1024;
+constexpr std::uint64_t kQuantumNs = 1000000;  // 1ms
 
-using Grid = PermissionedCalendarGrid<
-    Job,
-    /*NumProducers=*/1,
-    kNumBuckets,
-    kBucketCap,
-    DeadlineKey,
-    kQuantumNs,
-    BenchTag>;
+using Grid = PermissionedCalendarGrid<Job,
+                                      /*NumProducers=*/1, kNumBuckets, kBucketCap, DeadlineKey, kQuantumNs, BenchTag>;
 
 // SPSC reference (bare).  Same total capacity-per-bucket so per-batch
 // behavior is comparable to one CalendarGrid bucket.
@@ -74,7 +68,7 @@ bench::Report calendar_single_push() {
     auto p0 = grid.template producer<0>(std::move(std::get<0>(perms.producers)));
 
     Job j{.deadline_ns = 0, .payload = 0};
-    return bench::run("CalendarGrid try_push (single, bucket 0)", [&]{
+    return bench::run("CalendarGrid try_push (single, bucket 0)", [&] {
         const bool ok = p0.try_push(j);
         bench::do_not_optimize(ok);
         ++j.payload;
@@ -93,7 +87,7 @@ bench::Report calendar_single_pop() {
     for (std::uint64_t i = 0; i < kBucketCap / 2; ++i) {
         (void)p0.try_push(Job{.deadline_ns = 0, .payload = i});
     }
-    return bench::run("CalendarGrid try_pop (single, bucket 0)", [&]{
+    return bench::run("CalendarGrid try_pop (single, bucket 0)", [&] {
         auto v = cons.try_pop();
         bench::do_not_optimize(v);
         // Re-fill if drained — keep the bucket warm.
@@ -123,10 +117,8 @@ bench::Report calendar_batched_push() {
     alignas(64) std::array<Job, BatchN> sink{};
 
     char name[96];
-    std::snprintf(name, sizeof(name),
-                  "CalendarGrid try_push_batch<%zu> round-trip (push+pop)",
-                  BatchN);
-    return bench::run(name, [&]{
+    std::snprintf(name, sizeof(name), "CalendarGrid try_push_batch<%zu> round-trip (push+pop)", BatchN);
+    return bench::run(name, [&] {
         const std::size_t pushed = p0.try_push_batch(std::span<const Job>(batch));
         bench::do_not_optimize(pushed);
         const std::size_t popped = cons.try_pop_batch(std::span<Job>(sink));
@@ -148,10 +140,8 @@ bench::Report spsc_batched_push_pop() {
     alignas(64) std::array<Job, BatchN> sink{};
 
     char name[96];
-    std::snprintf(name, sizeof(name),
-                  "SpscRing try_push_batch<%zu> round-trip (push+pop) [reference]",
-                  BatchN);
-    return bench::run(name, [&]{
+    std::snprintf(name, sizeof(name), "SpscRing try_push_batch<%zu> round-trip (push+pop) [reference]", BatchN);
+    return bench::run(name, [&] {
         const std::size_t pushed = ring->try_push_batch(std::span<const Job>(batch));
         bench::do_not_optimize(pushed);
         const std::size_t popped = ring->try_pop_batch(std::span<Job>(sink));
@@ -181,12 +171,11 @@ bench::Report calendar_cross_bucket_push() {
     for (std::size_t i = 0; i < kBatch; ++i) {
         batch[i] = Job{
             .deadline_ns = i * kQuantumNs,
-            .payload     = i,
+            .payload = i,
         };
     }
 
-    return bench::run("CalendarGrid try_push_batch<64> cross-bucket (1 item/bucket)",
-                      [&]{
+    return bench::run("CalendarGrid try_push_batch<64> cross-bucket (1 item/bucket)", [&] {
         const std::size_t pushed = p0.try_push_batch(std::span<const Job>(batch));
         bench::do_not_optimize(pushed);
     });
@@ -205,27 +194,26 @@ int main(int argc, char** argv) {
     std::printf("  Producers:         1\n");
     std::printf("  NumBuckets:        %zu\n", kNumBuckets);
     std::printf("  BucketCap:         %zu\n", kBucketCap);
-    std::printf("  QuantumNs:         %lu\n",
-                static_cast<unsigned long>(kQuantumNs));
+    std::printf("  QuantumNs:         %lu\n", static_cast<unsigned long>(kQuantumNs));
     std::printf("\n");
 
     std::vector<bench::Report> reports;
     reports.reserve(12);
 
-    reports.push_back(calendar_single_push());           // [0]
-    reports.push_back(calendar_single_pop());            // [1]
+    reports.push_back(calendar_single_push());  // [0]
+    reports.push_back(calendar_single_pop());  // [1]
 
-    reports.push_back(calendar_batched_push<16>());      // [2]
-    reports.push_back(calendar_batched_push<64>());      // [3]
-    reports.push_back(calendar_batched_push<256>());     // [4]
-    reports.push_back(calendar_batched_push<1024>());    // [5]
+    reports.push_back(calendar_batched_push<16>());  // [2]
+    reports.push_back(calendar_batched_push<64>());  // [3]
+    reports.push_back(calendar_batched_push<256>());  // [4]
+    reports.push_back(calendar_batched_push<1024>());  // [5]
 
-    reports.push_back(spsc_batched_push_pop<16>());      // [6]
-    reports.push_back(spsc_batched_push_pop<64>());      // [7]
-    reports.push_back(spsc_batched_push_pop<256>());     // [8]
-    reports.push_back(spsc_batched_push_pop<1024>());    // [9]
+    reports.push_back(spsc_batched_push_pop<16>());  // [6]
+    reports.push_back(spsc_batched_push_pop<64>());  // [7]
+    reports.push_back(spsc_batched_push_pop<256>());  // [8]
+    reports.push_back(spsc_batched_push_pop<1024>());  // [9]
 
-    reports.push_back(calendar_cross_bucket_push());     // [10]
+    reports.push_back(calendar_cross_bucket_push());  // [10]
 
     bench::emit_reports_text(reports);
 
@@ -236,19 +224,14 @@ int main(int argc, char** argv) {
     };
 
     std::printf("\n=== per-item cost (CalendarGrid vs SpscRing reference) ===\n");
-    std::printf("  %-12s  %16s  %16s  %s\n",
-                "batch", "Calendar (ns)", "SpscRing (ns)", "overhead");
-    std::printf("  %-12s  %16s  %16s  %s\n",
-                "------------",
-                std::string(16, '-').c_str(),
-                std::string(16, '-').c_str(),
+    std::printf("  %-12s  %16s  %16s  %s\n", "batch", "Calendar (ns)", "SpscRing (ns)", "overhead");
+    std::printf("  %-12s  %16s  %16s  %s\n", "------------", std::string(16, '-').c_str(), std::string(16, '-').c_str(),
                 "--------");
     constexpr std::size_t batches[] = {16, 64, 256, 1024};
     for (std::size_t i = 0; i < 4; ++i) {
         const double c = per_item(reports[2 + i].pct.p50, batches[i]);
         const double s = per_item(reports[6 + i].pct.p50, batches[i]);
-        std::printf("  batch<%-5zu>  %14.3f    %14.3f    %+.2f%%\n",
-                    batches[i], c, s, (c - s) / s * 100.0);
+        std::printf("  batch<%-5zu>  %14.3f    %14.3f    %+.2f%%\n", batches[i], c, s, (c - s) / s * 100.0);
     }
 
     std::printf("\n  Single-call costs:\n");
@@ -257,8 +240,7 @@ int main(int argc, char** argv) {
     std::printf("  CalendarGrid cross-bucket batch<64>: %.2f ns "
                 "(~%.2f ns/item with 1 item per bucket — measures the "
                 "per-bucket grouping overhead)\n",
-                reports[10].pct.p50,
-                reports[10].pct.p50 / 64.0);
+                reports[10].pct.p50, reports[10].pct.p50 / 64.0);
 
     std::printf("\n  Interpretation:\n");
     std::printf("  • CalendarGrid batched matches SpscRing batched within\n");

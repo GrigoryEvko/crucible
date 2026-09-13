@@ -18,7 +18,7 @@
 
 #include <crucible/concurrent/SubstrateCtxFit.h>
 
-namespace eff  = crucible::effects;
+namespace eff = crucible::effects;
 namespace conc = crucible::concurrent;
 
 struct UserTag {};
@@ -34,10 +34,9 @@ template <conc::IsSubstrate S, eff::IsExecCtx Ctx>
 constexpr void requires_fit(S const&, Ctx const&) noexcept {}
 
 int main() {
-    using BigBigCellSpsc = conc::Substrate_t<conc::ChannelTopology::OneToOne,
-                                              BigBig, 2, UserTag>;
+    using BigBigCellSpsc = conc::Substrate_t<conc::ChannelTopology::OneToOne, BigBig, 2, UserTag>;
     BigBigCellSpsc* huge = nullptr;
-    eff::BgDrainCtx bg;     // L2Resident — too tight for 1-MB cell
+    eff::BgDrainCtx bg;  // L2Resident — too tight for 1-MB cell
     requires_fit(*huge, bg);
     return 0;
 }

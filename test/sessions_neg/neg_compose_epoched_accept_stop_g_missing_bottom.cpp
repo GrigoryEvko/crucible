@@ -71,18 +71,16 @@ struct Ack {};
 // the new bottom-preservation specialization fires, the
 // MinEpoch/MinGen NTTPs are correctly dropped, and the type collapses
 // to `Stop_g<Throw>`.
-static_assert(std::is_same_v<
-    proto::compose_t<
+static_assert(
+    std::is_same_v<
+        proto::compose_t<proto::EpochedAccept<proto::Stop_g<proto::CrashClass::Throw>, proto::Send<int, proto::End>,
+                                              /*MinEpoch=*/5u,
+                                              /*MinGeneration=*/3u>,
+                         proto::Recv<Ack, proto::End>>,
         proto::EpochedAccept<proto::Stop_g<proto::CrashClass::Throw>,
-                             proto::Send<int, proto::End>,
+                             proto::compose_t<proto::Send<int, proto::End>, proto::Recv<Ack, proto::End>>,
                              /*MinEpoch=*/5u,
-                             /*MinGeneration=*/3u>,
-        proto::Recv<Ack, proto::End>>,
-    proto::EpochedAccept<proto::Stop_g<proto::CrashClass::Throw>,
-                         proto::compose_t<proto::Send<int, proto::End>,
-                                          proto::Recv<Ack, proto::End>>,
-                         /*MinEpoch=*/5u,
-                         /*MinGeneration=*/3u>>,
+                             /*MinGeneration=*/3u>>,
     "fixy-A2-002 regression: EpochedAccept<Stop_g<C>, K, E, G> compose "
     "did not collapse to Stop_g<C>");
 

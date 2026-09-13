@@ -11,7 +11,9 @@
 
 using namespace crucible::safety::proto;
 
-struct R { int sentinel = 1; };
+struct R {
+    int sentinel = 1;
+};
 
 void compile_time_reject() {
     auto h = mint_session_handle<Select<Send<int, End>, Send<int, End>>>(R{});

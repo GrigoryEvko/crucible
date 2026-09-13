@@ -19,7 +19,7 @@
 using namespace crucible::safety;
 
 int main() {
-    ResidencyHeat<ResidencyHeatTag_v::Hot,  int> hot_value{42};
+    ResidencyHeat<ResidencyHeatTag_v::Hot, int> hot_value{42};
     ResidencyHeat<ResidencyHeatTag_v::Cold, int> cold_value{7};
 
     // Should FAIL: hot_value and cold_value are DIFFERENT types.

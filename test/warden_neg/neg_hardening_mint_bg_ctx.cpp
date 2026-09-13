@@ -10,8 +10,7 @@
 
 int main() {
     crucible::warden::Policy p{};
-    auto applied = crucible::warden::mint_hardening(
-        crucible::effects::BgDrainCtx{}, p);
+    auto applied = crucible::warden::mint_hardening(crucible::effects::BgDrainCtx{}, p);
     (void)applied;
     return 0;
 }

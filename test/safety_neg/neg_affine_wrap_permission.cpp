@@ -50,8 +50,7 @@ int main() {
     // static_assert at class-body instantiation.  FIXY-FOUND-090 #2245:
     // route through mint_affine so the §XXI inventory scanner counts
     // this fixture toward HS14 — same Permission-rejection class.
-    auto bad = mint_affine<Permission<MyAffineTestTag>>(
-        crucible::safety::mint_permission_root<MyAffineTestTag>());
+    auto bad = mint_affine<Permission<MyAffineTestTag>>(crucible::safety::mint_permission_root<MyAffineTestTag>());
     (void)bad;
     return 0;
 }

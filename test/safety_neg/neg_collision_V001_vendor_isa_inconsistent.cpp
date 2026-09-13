@@ -28,8 +28,8 @@ struct Probe {};
 }  // namespace neg_collision_v001
 
 namespace crucible::safety::fn::collision {
-    template <> struct marks_vendor_isa_inconsistent<::neg_collision_v001::Probe>
-        : std::true_type {};
+template <>
+struct marks_vendor_isa_inconsistent<::neg_collision_v001::Probe> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 static_assert(csc::V001_OK<::neg_collision_v001::Probe>,

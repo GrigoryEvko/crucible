@@ -33,16 +33,10 @@ namespace alg = crucible::algebra;
 struct UnnamedTestLattice {
     using element_type = bool;
     [[nodiscard]] static constexpr element_type bottom() noexcept { return false; }
-    [[nodiscard]] static constexpr element_type top()    noexcept { return true;  }
-    [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept {
-        return (!a) || b;
-    }
-    [[nodiscard]] static constexpr element_type join(element_type a, element_type b) noexcept {
-        return a || b;
-    }
-    [[nodiscard]] static constexpr element_type meet(element_type a, element_type b) noexcept {
-        return a && b;
-    }
+    [[nodiscard]] static constexpr element_type top() noexcept { return true; }
+    [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept { return (!a) || b; }
+    [[nodiscard]] static constexpr element_type join(element_type a, element_type b) noexcept { return a || b; }
+    [[nodiscard]] static constexpr element_type meet(element_type a, element_type b) noexcept { return a && b; }
 };
 
 int main() {
@@ -51,8 +45,7 @@ int main() {
 
     // `lattice_name<L>()` returns the sentinel — confirms the
     // fallback path activates.
-    static_assert(alg::lattice_name<UnnamedTestLattice>() ==
-                  std::string_view{"<unnamed lattice>"});
+    static_assert(alg::lattice_name<UnnamedTestLattice>() == std::string_view{"<unnamed lattice>"});
 
     // The load-bearing assertion: HasLatticeName MUST be false even
     // though lattice_name() returned a non-empty string.  Asserting
@@ -61,9 +54,9 @@ int main() {
     // sentinel-only lattices, the A3-017 fold-assertion in
     // AllLattices.h becomes vacuously true — silent regression.
     static_assert(alg::HasLatticeName<UnnamedTestLattice>,
-        "fixy-A3-017: HasLatticeName MUST be false when the lattice "
-        "ships no `name()` member, regardless of what lattice_name() "
-        "returns from its sentinel fallback.  If this admits, the "
-        "name-coverage fold loses its load-bearing rejection power.");
+                  "fixy-A3-017: HasLatticeName MUST be false when the lattice "
+                  "ships no `name()` member, regardless of what lattice_name() "
+                  "returns from its sentinel fallback.  If this admits, the "
+                  "name-coverage fold loses its load-bearing rejection power.");
     return 0;
 }

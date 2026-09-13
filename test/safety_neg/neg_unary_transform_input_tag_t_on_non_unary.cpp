@@ -29,8 +29,7 @@ inline void neg_witness_int(int) noexcept {}
 int main() {
     // arity 1, but parameter is `int` (not OwnedRegion).
     // UnaryTransform<&neg_witness_int> is false.
-    using Tag = crucible::safety::extract::unary_transform_input_tag_t<
-        &::neg_witness_int>;
+    using Tag = crucible::safety::extract::unary_transform_input_tag_t<&::neg_witness_int>;
     Tag const t{};
     (void)t;
     return 0;

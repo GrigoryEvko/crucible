@@ -28,7 +28,7 @@ int main() {
     // SimdIsa — the fence grant is on a different axis than the V-262/263
     // simd::width grants.
     static_assert(fg::which_dim_v<fh::barrier_compiler_seqcst> == D::SimdIsa,
-        "FIXY-V-264 neg: a barrier grant must NOT route to SimdIsa — it is "
-        "BarrierStrength.  This assertion is deliberately wrong.");
+                  "FIXY-V-264 neg: a barrier grant must NOT route to SimdIsa — it is "
+                  "BarrierStrength.  This assertion is deliberately wrong.");
     return 0;
 }

@@ -7,8 +7,7 @@
 #include <crucible/Philox.h>
 
 int main() {
-    auto key = crucible::Philox::op_key(
-        1u, 2u, crucible::ContentHash{3u});
+    auto key = crucible::Philox::op_key(1u, 2u, crucible::ContentHash{3u});
     (void)key;
     return 0;
 }

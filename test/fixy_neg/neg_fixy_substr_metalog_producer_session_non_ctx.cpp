@@ -27,15 +27,13 @@ namespace fmeta = ::crucible::fixy::substr::metalog;
 namespace neg_fixy_meta_producer_session_non_ctx {
 struct UserTag {};
 using Log = ::crucible::concurrent::PermissionedMetaLog<UserTag>;
-}
+}  // namespace neg_fixy_meta_producer_session_non_ctx
 
 int main() {
     int not_a_ctx = 0;
-    neg_fixy_meta_producer_session_non_ctx::Log::ProducerHandle* handle =
-        nullptr;
+    neg_fixy_meta_producer_session_non_ctx::Log::ProducerHandle* handle = nullptr;
 
-    auto bad = fmeta::mint_metalog_producer_session<
-        neg_fixy_meta_producer_session_non_ctx::Log>(not_a_ctx, *handle);
+    auto bad = fmeta::mint_metalog_producer_session<neg_fixy_meta_producer_session_non_ctx::Log>(not_a_ctx, *handle);
     (void)bad;
     return 0;
 }

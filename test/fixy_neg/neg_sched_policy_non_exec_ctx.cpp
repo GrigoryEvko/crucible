@@ -16,7 +16,6 @@
 
 int main() {
     // Should FAIL: 7 (int) is not an effects::IsExecCtx.
-    auto policy = ::crucible::fixy::sched::mint_scheduler_policy<
-        ::crucible::fixy::sched::SchedulerPolicy_v::Other>(7);
+    auto policy = ::crucible::fixy::sched::mint_scheduler_policy<::crucible::fixy::sched::SchedulerPolicy_v::Other>(7);
     return policy.has_value() ? 0 : 1;
 }

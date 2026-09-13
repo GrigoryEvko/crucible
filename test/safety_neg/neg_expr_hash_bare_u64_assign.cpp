@@ -29,8 +29,7 @@
 #include <cstdint>
 
 int main() {
-    using FamilyBHash = ::crucible::safety::Tagged<
-        std::uint64_t, ::crucible::hash_family::FamilyB>;
+    using FamilyBHash = ::crucible::safety::Tagged<std::uint64_t, ::crucible::hash_family::FamilyB>;
 
     FamilyBHash slot{std::uint64_t{0xdeadbeefULL}};
 

@@ -15,11 +15,10 @@
 namespace co = crucible::safety::diag::canonical_order;
 namespace cs = crucible::safety;
 
-using DuplicateStack = cs::HotPath<cs::HotPathTier_v::Hot,
-                          cs::HotPath<cs::HotPathTier_v::Cold, int>>;
+using DuplicateStack = cs::HotPath<cs::HotPathTier_v::Hot, cs::HotPath<cs::HotPathTier_v::Cold, int>>;
 
 static_assert(co::CanonicallyOrdered<DuplicateStack>,
-    "FIXY-FOUND-048: same canonical layer twice (HotPath ⊃ HotPath) "
-    "violates §XVI strict-increase discipline.  This static_assert "
-    "MUST fire — if it does not, the canonical-order gate accepts "
-    "duplicate layers and the federation cache loses slot uniqueness.");
+              "FIXY-FOUND-048: same canonical layer twice (HotPath ⊃ HotPath) "
+              "violates §XVI strict-increase discipline.  This static_assert "
+              "MUST fire — if it does not, the canonical-order gate accepts "
+              "duplicate layers and the federation cache loses slot uniqueness.");

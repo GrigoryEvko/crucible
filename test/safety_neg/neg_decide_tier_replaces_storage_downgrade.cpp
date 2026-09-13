@@ -85,10 +85,7 @@ namespace {
 
 namespace cl = crucible::algebra::lattices;
 
-[[nodiscard]] constexpr bool gate(
-    cl::CipherTierTag candidate,
-    cl::CipherTierTag required
-) noexcept {
+[[nodiscard]] constexpr bool gate(cl::CipherTierTag candidate, cl::CipherTierTag required) noexcept {
     CRUCIBLE_PRE(crucible::decide::tier_replaces(candidate, required));
     return true;
 }
@@ -97,8 +94,7 @@ namespace cl = crucible::algebra::lattices;
 // strictly-stronger requirement.  Per chain order Cold (0) is below
 // Hot (2); tier_replaces rejects; CRUCIBLE_PRE's __builtin_trap
 // fires at consteval.
-constexpr auto witness = gate(cl::CipherTierTag::Cold,
-                              cl::CipherTierTag::Hot);
+constexpr auto witness = gate(cl::CipherTierTag::Cold, cl::CipherTierTag::Hot);
 
 }  // namespace
 

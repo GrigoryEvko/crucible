@@ -26,7 +26,6 @@ int main() {
 
     // Should FAIL: sanitize_path takes Path<External>&&, not
     // Path<FromUser>; the type system refuses the cross-tag call.
-    [[maybe_unused]] auto sanitized_e =
-        crucible::fixy::wrap::sanitize_path(std::move(from_user_path));
+    [[maybe_unused]] auto sanitized_e = crucible::fixy::wrap::sanitize_path(std::move(from_user_path));
     return 0;
 }

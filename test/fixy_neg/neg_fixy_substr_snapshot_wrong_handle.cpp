@@ -24,22 +24,19 @@
 #include <utility>
 
 namespace fsubstr = crucible::fixy::substr;
-namespace conc    = crucible::concurrent;
-namespace eff     = crucible::effects;
-namespace fsafe   = crucible::safety;
+namespace conc = crucible::concurrent;
+namespace eff = crucible::effects;
+namespace fsafe = crucible::safety;
 
 namespace neg_fixy_substr_snapshot_wrong_handle {
 struct UserTag {};
 }  // namespace neg_fixy_substr_snapshot_wrong_handle
 
 int main() {
-    using Snap =
-        conc::PermissionedSnapshot<int,
-            neg_fixy_substr_snapshot_wrong_handle::UserTag>;
+    using Snap = conc::PermissionedSnapshot<int, neg_fixy_substr_snapshot_wrong_handle::UserTag>;
 
     Snap snap{};
-    auto writer = snap.writer(
-        fsafe::mint_permission_root<typename Snap::writer_tag>());
+    auto writer = snap.writer(fsafe::mint_permission_root<typename Snap::writer_tag>());
     auto reader_opt = snap.reader();
     (void)writer;
 
@@ -47,7 +44,6 @@ int main() {
     // Pass the (optional unwrapped) ReaderHandle to the WRITER session
     // mint — fails because mint_snapshot_writer_session expects
     // `Snap::WriterHandle&`.
-    [[maybe_unused]] auto bad =
-        fsubstr::snapshot::mint_snapshot_writer_session<Snap>(ctx, *reader_opt);
+    [[maybe_unused]] auto bad = fsubstr::snapshot::mint_snapshot_writer_session<Snap>(ctx, *reader_opt);
     return 0;
 }

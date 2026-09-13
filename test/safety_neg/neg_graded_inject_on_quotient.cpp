@@ -27,9 +27,7 @@ using namespace crucible::algebra::lattices;
 
 int main() {
     // Quotient modality (NOT RelativeMonad).
-    using G = Graded<ModalityKind::Quotient,
-                     QttSemiring::At<QttGrade::One>,
-                     int>;
+    using G = Graded<ModalityKind::Quotient, QttSemiring::At<QttGrade::One>, int>;
 
     // Should FAIL: inject() requires RelativeMonadModality<M>, M is Quotient.
     auto g = G::inject(42, {});

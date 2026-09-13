@@ -33,11 +33,7 @@ int main() {
     OneShotFlag flag;
     auto psh = proto::mint_permissioned_session<P>(ctx, Channel{});
 
-    proto::CrashWatchedHandle<
-        P,
-        Channel,
-        DeadPeer,
-        proto::CrashClass::NoThrow> bad{std::move(psh), flag};
+    proto::CrashWatchedHandle<P, Channel, DeadPeer, proto::CrashClass::NoThrow> bad{std::move(psh), flag};
     (void)bad;
     return 0;
 }

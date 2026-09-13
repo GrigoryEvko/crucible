@@ -18,24 +18,21 @@
 #include <crucible/fixy/Substr.h>
 
 namespace fsubstr = crucible::fixy::substr;
-namespace conc    = crucible::concurrent;
-namespace eff     = crucible::effects;
+namespace conc = crucible::concurrent;
+namespace eff = crucible::effects;
 
 namespace neg_fixy_substr_mpmc_consumer_session_wrong_handle {
 struct UserTag {};
 }  // namespace neg_fixy_substr_mpmc_consumer_session_wrong_handle
 
 int main() {
-    conc::PermissionedMpmcChannel<int, 16,
-        neg_fixy_substr_mpmc_consumer_session_wrong_handle::UserTag> ch;
+    conc::PermissionedMpmcChannel<int, 16, neg_fixy_substr_mpmc_consumer_session_wrong_handle::UserTag> ch;
 
     auto producer_opt = ch.producer();
 
     eff::BgCompileCtx ctx{};
     // Pass the ProducerHandle to the consumer-session mint — expects
     // Channel::ConsumerHandle&.
-    [[maybe_unused]] auto bad =
-        fsubstr::mpmc::mint_mpmc_consumer_session<decltype(ch)>(
-            ctx, *producer_opt);
+    [[maybe_unused]] auto bad = fsubstr::mpmc::mint_mpmc_consumer_session<decltype(ch)>(ctx, *producer_opt);
     return 0;
 }

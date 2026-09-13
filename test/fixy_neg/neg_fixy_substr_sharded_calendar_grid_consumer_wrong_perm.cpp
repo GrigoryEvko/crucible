@@ -28,7 +28,7 @@
 #include <crucible/permissions/Permission.h>
 
 namespace fscal = ::crucible::fixy::substr::sharded_calendar_grid;
-namespace conc  = ::crucible::concurrent;
+namespace conc = ::crucible::concurrent;
 
 namespace neg_fixy_scal_consumer_wrong_perm {
 struct UserTag {};
@@ -36,20 +36,16 @@ struct Job {
     std::uint64_t deadline_ns = 0;
 };
 struct Key {
-    static std::uint64_t key(Job const& job) noexcept {
-        return job.deadline_ns;
-    }
+    static std::uint64_t key(Job const& job) noexcept { return job.deadline_ns; }
 };
-using Grid = conc::PermissionedShardedCalendarGrid<
-    Job, 2, 8, 16, Key, 1'000'000ULL, UserTag>;
-}
+using Grid = conc::PermissionedShardedCalendarGrid<Job, 2, 8, 16, Key, 1000000ULL, UserTag>;
+}  // namespace neg_fixy_scal_consumer_wrong_perm
 
 int main() {
     neg_fixy_scal_consumer_wrong_perm::Grid grid{};
     int not_a_perm = 0;
 
-    auto bad = fscal::mint_sharded_calendar_grid_consumer<
-        neg_fixy_scal_consumer_wrong_perm::Grid, 0>(grid, not_a_perm);
+    auto bad = fscal::mint_sharded_calendar_grid_consumer<neg_fixy_scal_consumer_wrong_perm::Grid, 0>(grid, not_a_perm);
     (void)bad;
     return 0;
 }

@@ -28,8 +28,7 @@ int main() {
     constexpr eff::ExecCtx<> ctx{};
     // Step 1: advance to Hot (legal — default Progress=Terminating
     // satisfies Heat × Progress).
-    auto hot = ctx.template with_residency<eff::ctx_resid::L1>()
-                  .template with_heat<eff::ctx_heat::Hot>();
+    auto hot = ctx.template with_residency<eff::ctx_resid::L1>().template with_heat<eff::ctx_heat::Hot>();
     // Step 2: demote Progress to MayDiverge — fires the class-body
     // static_assert on the returned ExecCtx<..., Hot, ..., MayDiverge>.
     auto bad = hot.template with_progress<eff::ctx_progress::MayDiverge>();

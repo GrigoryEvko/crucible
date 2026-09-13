@@ -41,17 +41,14 @@ namespace {
 // the binding shape — the per-axis grades describe the FUNCTION's
 // behavior, not the implementation quality.
 
-using GemmFp32Ptr = void(*)(const float* a,    // M × K, row-major
-                            const float* b,    // K × N, row-major
-                            float*       c,    // M × N, row-major (output)
-                            int          m,
-                            int          n,
-                            int          k);
+using GemmFp32Ptr = void (*)(const float* a,  // M × K, row-major
+                             const float* b,  // K × N, row-major
+                             float* c,  // M × N, row-major (output)
+                             int m, int n, int k);
 
 // Scalar reference — the implementation is irrelevant to the example;
 // what matters is the SIGNATURE the kernel binding describes.
-void scalar_gemm_ref(const float* a, const float* b, float* c,
-                     int m, int n, int k) noexcept {
+void scalar_gemm_ref(const float* a, const float* b, float* c, int m, int n, int k) noexcept {
     for (int row = 0; row < m; ++row) {
         for (int col = 0; col < n; ++col) {
             float acc = 0.f;
@@ -93,27 +90,26 @@ void scalar_gemm_ref(const float* a, const float* b, float* c,
 //
 //   static_assert(sizeof(BoundGemm) == sizeof(GemmFp32Ptr));
 
-using BoundGemm = fn::Fn<
-    GemmFp32Ptr,                                // 1 Type
-    fn::pred::True,                             // 2 Refinement
-    fn::UsageMode::Copy,                        // 3 Usage
-    fx::Row<fx::Effect::Bg>,                    // 4 EffectRow
-    fn::SecLevel::Internal,                     // 5 Security
-    fn::proto::None,                            // 6 Protocol
-    fn::lifetime::Static,                       // 7 Lifetime
-    fn::source::FromUser,                       // 8 Source
-    fn::trust::Tested,                          // 9 Trust
-    fn::ReprKind::Opaque,                       // 10 Repr
-    fn::cost::Unstated,                         // 11 Cost
-    fn::precision::F32,                         // 12 Precision
-    fn::space::Zero,                            // 13 Space
-    fn::OverflowMode::Trap,                     // 14 Overflow
-    fn::MutationMode::Mutable,                  // 15 Mutation
-    fn::ReentrancyMode::Reentrant,              // 16 Reentrancy
-    fn::size_pol::Unstated,                     // 17 Size
-    /*Version=*/1,                              // 18 Version
-    fn::stale::Fresh                            // 19 Staleness
->;
+using BoundGemm = fn::Fn<GemmFp32Ptr,  // 1 Type
+                         fn::pred::True,  // 2 Refinement
+                         fn::UsageMode::Copy,  // 3 Usage
+                         fx::Row<fx::Effect::Bg>,  // 4 EffectRow
+                         fn::SecLevel::Internal,  // 5 Security
+                         fn::proto::None,  // 6 Protocol
+                         fn::lifetime::Static,  // 7 Lifetime
+                         fn::source::FromUser,  // 8 Source
+                         fn::trust::Tested,  // 9 Trust
+                         fn::ReprKind::Opaque,  // 10 Repr
+                         fn::cost::Unstated,  // 11 Cost
+                         fn::precision::F32,  // 12 Precision
+                         fn::space::Zero,  // 13 Space
+                         fn::OverflowMode::Trap,  // 14 Overflow
+                         fn::MutationMode::Mutable,  // 15 Mutation
+                         fn::ReentrancyMode::Reentrant,  // 16 Reentrancy
+                         fn::size_pol::Unstated,  // 17 Size
+                         /*Version=*/1,  // 18 Version
+                         fn::stale::Fresh  // 19 Staleness
+                         >;
 
 // ── Compile-time invariants ────────────────────────────────────────
 //
@@ -121,22 +117,21 @@ using BoundGemm = fn::Fn<
 // must NOT add a single byte beyond the function pointer itself.
 
 static_assert(sizeof(BoundGemm) == sizeof(GemmFp32Ptr),
-    "EBO collapse failed — Fn must remain byte-equivalent to its Type "
-    "regardless of axis customization.  If this fires, an axis was "
-    "implemented as a runtime member instead of a type-level grade.");
+              "EBO collapse failed — Fn must remain byte-equivalent to its Type "
+              "regardless of axis customization.  If this fires, an axis was "
+              "implemented as a runtime member instead of a type-level grade.");
 
 // Per-axis introspection — accessors compile to immediate values.
-static_assert(BoundGemm::usage_v        == fn::UsageMode::Copy);
-static_assert(BoundGemm::security_v     == fn::SecLevel::Internal);
-static_assert(BoundGemm::overflow_v     == fn::OverflowMode::Trap);
-static_assert(BoundGemm::mutation_v     == fn::MutationMode::Mutable);
-static_assert(BoundGemm::reentrancy_v   == fn::ReentrancyMode::Reentrant);
-static_assert(BoundGemm::version_v      == 1);
-static_assert(std::is_same_v<BoundGemm::source_t,    fn::source::FromUser>);
-static_assert(std::is_same_v<BoundGemm::trust_t,     fn::trust::Tested>);
+static_assert(BoundGemm::usage_v == fn::UsageMode::Copy);
+static_assert(BoundGemm::security_v == fn::SecLevel::Internal);
+static_assert(BoundGemm::overflow_v == fn::OverflowMode::Trap);
+static_assert(BoundGemm::mutation_v == fn::MutationMode::Mutable);
+static_assert(BoundGemm::reentrancy_v == fn::ReentrancyMode::Reentrant);
+static_assert(BoundGemm::version_v == 1);
+static_assert(std::is_same_v<BoundGemm::source_t, fn::source::FromUser>);
+static_assert(std::is_same_v<BoundGemm::trust_t, fn::trust::Tested>);
 static_assert(std::is_same_v<BoundGemm::precision_t, fn::precision::F32>);
-static_assert(std::is_same_v<BoundGemm::effect_row_t,
-                             fx::Row<fx::Effect::Bg>>);
+static_assert(std::is_same_v<BoundGemm::effect_row_t, fx::Row<fx::Effect::Bg>>);
 
 }  // namespace
 
@@ -152,10 +147,8 @@ int main() {
     // of every per-axis grade above without paying a single byte
     // of runtime overhead.
     constexpr int M = 2, N = 2, K = 2;
-    const float a[M * K] = { 1.f, 2.f,
-                             3.f, 4.f };
-    const float b[K * N] = { 5.f, 6.f,
-                             7.f, 8.f };
+    const float a[M * K] = {1.f, 2.f, 3.f, 4.f};
+    const float b[K * N] = {5.f, 6.f, 7.f, 8.f};
     float c[M * N] = {};
 
     bound.value()(a, b, c, M, N, K);
@@ -164,14 +157,11 @@ int main() {
     //           = [[19, 22], [43, 50]]
     std::printf("custom_kernel result: [[%g, %g], [%g, %g]] "
                 "(expected [[19, 22], [43, 50]])\n",
-                static_cast<double>(c[0]),
-                static_cast<double>(c[1]),
-                static_cast<double>(c[2]),
+                static_cast<double>(c[0]), static_cast<double>(c[1]), static_cast<double>(c[2]),
                 static_cast<double>(c[3]));
 
     // Echo the per-axis grades to stderr so a reviewer sees the
     // type-level metadata WITHOUT cracking open the source.
-    std::printf("BoundGemm sizeof = %zu (== sizeof(GemmFp32Ptr) %zu)\n",
-                sizeof(BoundGemm), sizeof(GemmFp32Ptr));
+    std::printf("BoundGemm sizeof = %zu (== sizeof(GemmFp32Ptr) %zu)\n", sizeof(BoundGemm), sizeof(GemmFp32Ptr));
     return 0;
 }

@@ -6,23 +6,18 @@
 
 #include <crucible/sessions/SessionMint.h>
 
-namespace eff   = ::crucible::effects;
+namespace eff = ::crucible::effects;
 namespace proto = ::crucible::safety::proto;
 
 namespace {
 struct FakeChannel {};
-}
+}  // namespace
 
 int main() {
     using StaleRecipientCtx = proto::EpochExecCtx<4, 3, eff::HotFgCtx>;
-    using Proto = proto::EpochedAccept<
-        proto::DelegatedSession<proto::End, proto::EmptyPermSet>,
-        proto::End,
-        5,
-        3>;
+    using Proto = proto::EpochedAccept<proto::DelegatedSession<proto::End, proto::EmptyPermSet>, proto::End, 5, 3>;
 
     StaleRecipientCtx ctx{};
-    [[maybe_unused]] auto h =
-        proto::mint_permissioned_session<Proto>(ctx, FakeChannel{});
+    [[maybe_unused]] auto h = proto::mint_permissioned_session<Proto>(ctx, FakeChannel{});
     return 0;
 }

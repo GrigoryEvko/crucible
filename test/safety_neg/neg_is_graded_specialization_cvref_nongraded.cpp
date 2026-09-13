@@ -32,8 +32,8 @@ int main() {
     // static_assert fires, proving the rejection path is reachable
     // through the cv-ref-stripped lookup.
     static_assert(alg::is_graded_specialization_v<int const&>,
-        "fixy-A3-014: int const& is not a Graded<...> specialization "
-        "after cv-ref strip; the symmetry rule must reject it, NOT "
-        "admit it for being qualified.");
+                  "fixy-A3-014: int const& is not a Graded<...> specialization "
+                  "after cv-ref strip; the symmetry rule must reject it, NOT "
+                  "admit it for being qualified.");
     return 0;
 }

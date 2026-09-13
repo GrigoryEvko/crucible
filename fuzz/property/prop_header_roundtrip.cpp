@@ -36,12 +36,13 @@ int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
     const Config cfg = parse_args(argc, argv);
 
-    return run("Serialize header write/read round-trip", cfg,
+    return run(
+        "Serialize header write/read round-trip", cfg,
         [](Rng& rng) {
             struct Triple {
                 TraceNodeKind kind;
-                MerkleHash    mh;
-                ContentHash   ch;
+                MerkleHash mh;
+                ContentHash ch;
             };
             Triple t{};
             // Pick from real TraceNodeKind values (REGION, BRANCH,
@@ -70,11 +71,11 @@ int main(int argc, char** argv) {
             const Header h = read_header(r);
 
             // Round-trip equality on each field.
-            if (h.magic        != CDAG_MAGIC)         return false;
-            if (!cdag_version_matches(h.version))     return false;
-            if (h.kind         != t.kind)       return false;
-            if (h.merkle_hash  != t.mh)         return false;
-            if (h.content_hash != t.ch)         return false;
+            if (h.magic != CDAG_MAGIC) return false;
+            if (!cdag_version_matches(h.version)) return false;
+            if (h.kind != t.kind) return false;
+            if (h.merkle_hash != t.mh) return false;
+            if (h.content_hash != t.ch) return false;
 
             // Reader cursor must be exactly at the header's end
             // (no underconsumed or overconsumed bytes).

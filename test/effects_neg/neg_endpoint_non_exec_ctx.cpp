@@ -14,7 +14,7 @@
 #include <crucible/concurrent/Endpoint.h>
 
 namespace conc = crucible::concurrent;
-namespace saf  = crucible::safety;
+namespace saf = crucible::safety;
 
 struct UserTag {};
 
@@ -23,13 +23,11 @@ int main() {
 
     Channel ch;
     auto whole = saf::mint_permission_root<conc::spsc_tag::Whole<UserTag>>();
-    auto [pp, cp] = saf::mint_permission_split<
-        conc::spsc_tag::Producer<UserTag>,
-        conc::spsc_tag::Consumer<UserTag>>(std::move(whole));
+    auto [pp, cp] = saf::mint_permission_split<conc::spsc_tag::Producer<UserTag>, conc::spsc_tag::Consumer<UserTag>>(
+        std::move(whole));
     auto handle = ch.producer(std::move(pp));
 
-    auto bad = conc::mint_endpoint<Channel, conc::Direction::Producer>(
-        int{42}, handle);  // IsExecCtx fails
+    auto bad = conc::mint_endpoint<Channel, conc::Direction::Producer>(int{42}, handle);  // IsExecCtx fails
     (void)bad;
     (void)cp;
     return 0;

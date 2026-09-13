@@ -16,10 +16,8 @@ void compile_time_reject() {
     // A struct with THREE 8-byte fields = 24 bytes raw sum.
     // Budget: single cache line = 64 bytes.  24 fits.
     // But push to 9 fields = 72 bytes → exceeds 64-byte cache line.
-    ensure_bytes_fit<64,
-        safe_struct_bytes<std::uint64_t, std::uint64_t, std::uint64_t,
-                          std::uint64_t, std::uint64_t, std::uint64_t,
-                          std::uint64_t, std::uint64_t, std::uint64_t>>();
+    ensure_bytes_fit<64, safe_struct_bytes<std::uint64_t, std::uint64_t, std::uint64_t, std::uint64_t, std::uint64_t,
+                                           std::uint64_t, std::uint64_t, std::uint64_t, std::uint64_t>>();
 }
 
 int main() { return 0; }

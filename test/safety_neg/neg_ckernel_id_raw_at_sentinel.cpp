@@ -40,8 +40,7 @@ int main() {
     // compile time.  v == NUM_KERNELS → predicate(v) == false →
     // contract violation → the expression is not a constant
     // expression → ill-formed initialization of constexpr local.
-    constexpr crucible::ValidCKernelIdRaw bad{
-        static_cast<uint8_t>(crucible::CKernelId::NUM_KERNELS)};
+    constexpr crucible::ValidCKernelIdRaw bad{static_cast<uint8_t>(crucible::CKernelId::NUM_KERNELS)};
     (void)bad;
     return 0;
 }

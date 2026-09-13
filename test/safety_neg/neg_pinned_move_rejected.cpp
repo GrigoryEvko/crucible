@@ -53,22 +53,20 @@
 #include <utility>
 
 namespace {
-    // Production-shape Pinned consumer: a cache-line-aligned ring
-    // whose atomic head_/tail_ are READ by other threads holding
-    // pointer-into-this-storage references.  Moving the ring would
-    // invalidate those interior references — the precise scenario
-    // the move-deletion reason cites.
-    struct PinnedRing : ::crucible::safety::Pinned<PinnedRing> {
-        unsigned long head_ = 0;
-        unsigned long tail_ = 0;
-    };
+// Production-shape Pinned consumer: a cache-line-aligned ring
+// whose atomic head_/tail_ are READ by other threads holding
+// pointer-into-this-storage references.  Moving the ring would
+// invalidate those interior references — the precise scenario
+// the move-deletion reason cites.
+struct PinnedRing : ::crucible::safety::Pinned<PinnedRing> {
+    unsigned long head_ = 0;
+    unsigned long tail_ = 0;
+};
 }  // namespace
 
 // Anchor: default construction in place is the only path to OBTAIN
 // a Pinned object.  This compiles cleanly.
-[[maybe_unused]] static PinnedRing anchor_make_pinned() {
-    return PinnedRing{};
-}
+[[maybe_unused]] static PinnedRing anchor_make_pinned() { return PinnedRing{}; }
 
 // VIOLATION: PinnedRing inherits a deleted move ctor from
 // Pinned<PinnedRing>.  Attempting move-construction (canonical
@@ -77,7 +75,7 @@ namespace {
 // would invalidate references held by another thread or by self".
 // GCC emits "use of deleted function" + this reason verbatim.
 [[maybe_unused]] static PinnedRing offending_pinned_move(PinnedRing&& source) {
-    return PinnedRing{std::move(source)};   // ERROR: move ctor deleted
+    return PinnedRing{std::move(source)};  // ERROR: move ctor deleted
 }
 
 int main() { return 0; }

@@ -33,11 +33,10 @@ int main() {
     Budgeted<int> result{42, BitsBudget{1024}, PeakBytes{4096}};
 
     BitsBudget bits_threshold{8192};
-    PeakBytes  peak_threshold{1u << 20};
+    PeakBytes peak_threshold{1u << 20};
 
     // Should FAIL: satisfies(BitsBudget, PeakBytes) requires axes
     // in declared order; passing (PeakBytes, BitsBudget) is a
     // type mismatch on both arguments.
-    return static_cast<int>(
-        result.satisfies(peak_threshold, bits_threshold));
+    return static_cast<int>(result.satisfies(peak_threshold, bits_threshold));
 }

@@ -32,14 +32,15 @@ int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
     const Config cfg = parse_args(argc, argv);
 
-    return run("compute_content_hash determinism", cfg,
+    return run(
+        "compute_content_hash determinism", cfg,
         [](Rng& rng) {
             // Generate 1..16 TraceEntries with random schema_hash.
             // input_metas/output_metas left null (num_inputs=0).
             constexpr unsigned MAX = 16;
             struct OpsBatch {
                 std::array<TraceEntry, MAX> ops;
-                uint8_t                     count;
+                uint8_t count;
             };
             OpsBatch b{};
             b.count = static_cast<uint8_t>(rng.next_below(MAX) + 1);
@@ -53,8 +54,7 @@ int main(int argc, char** argv) {
             return b;
         },
         [](const auto& batch) {
-            const std::span<const TraceEntry> span{batch.ops.data(),
-                                                    batch.count};
+            const std::span<const TraceEntry> span{batch.ops.data(), batch.count};
             const auto h0 = compute_content_hash(span);
             for (int k = 0; k < 8; ++k) {
                 if (compute_content_hash(span) != h0) return false;

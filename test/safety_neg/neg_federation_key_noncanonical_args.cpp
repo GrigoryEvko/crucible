@@ -26,7 +26,7 @@
 #include <crucible/safety/Tagged.h>
 
 namespace fed = crucible::cipher::federation;
-namespace sf  = crucible::safety;
+namespace sf = crucible::safety;
 namespace eff = crucible::effects;
 
 inline void target(int) noexcept {}
@@ -37,7 +37,6 @@ using InvertedStack = sf::Tagged<sf::Stale<int>, sf::source::FromUser>;
 // Force instantiation of the constrained projection at TU scope.  The
 // ArgsCanonicallyOrdered<InvertedStack> requires-clause is unsatisfied,
 // so this call is ill-formed — the fixture passes by failing to compile.
-constexpr auto bad_key =
-    fed::federation_key<&target, eff::Row<>, InvertedStack>();
+constexpr auto bad_key = fed::federation_key<&target, eff::Row<>, InvertedStack>();
 
 static_assert(!bad_key.is_zero());

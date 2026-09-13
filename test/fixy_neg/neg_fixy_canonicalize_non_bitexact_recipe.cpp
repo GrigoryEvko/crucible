@@ -49,8 +49,8 @@ namespace fp = crucible::fixy::fp;
 // static_assert fires; orthogonality demonstration, not accidental
 // co-coverage with the rounding-mode fixture.
 constexpr fp::CanonicalizeRecipeSpec kOrderedSpec{
-    crucible::RoundingMode::RN,                       // RN is fine
-    crucible::ReductionDeterminism::ORDERED,          // NOT bitexact
+    crucible::RoundingMode::RN,  // RN is fine
+    crucible::ReductionDeterminism::ORDERED,  // NOT bitexact
 };
 
 int main() {

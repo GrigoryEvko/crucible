@@ -27,9 +27,9 @@
 // (Function POINTERS would satisfy std::is_pointer_v and pass.)
 using FuncType = int(int, double);
 static_assert(::crucible::detail_reflect::IsReflectFieldSupported<FuncType>,
-    "WRAP-Reflect-4 #985 fixture: this static_assert MUST fail "
-    "at compile time because function types are excluded from "
-    "the IsReflectFieldSupported allow-list (only function "
-    "POINTERS are admitted via std::is_pointer_v).");
+              "WRAP-Reflect-4 #985 fixture: this static_assert MUST fail "
+              "at compile time because function types are excluded from "
+              "the IsReflectFieldSupported allow-list (only function "
+              "POINTERS are admitted via std::is_pointer_v).");
 
 int main() { return 0; }

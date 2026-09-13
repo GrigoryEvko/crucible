@@ -144,7 +144,7 @@ static_assert(sizeof(CookieSnapshot) == 40);
 
 void test_atomic_snapshot_cookie_fuzzer() {
     constexpr int NUM_READERS = 8;
-    constexpr int NUM_PUBLISHES = 50'000;
+    constexpr int NUM_PUBLISHES = 50000;
     // Each reader does this many loads before it consults writer_done.
     // The snapshot protocol guarantees correctness but not reader
     // liveness, so without a floor an aggressive scheduler can run the
@@ -276,7 +276,7 @@ void test_owned_region_disjoint_split_n16() { test_owned_region_disjoint_split_i
 void test_owned_region_disjoint_split_uneven() {
     Arena arena{1ULL << 20};
     auto perm = mint_permission_root<DisjointWhole>();
-    constexpr std::size_t TOTAL_BYTES = 100'003;  // prime, not divisible by 7
+    constexpr std::size_t TOTAL_BYTES = 100003;  // prime, not divisible by 7
     auto region =
         OwnedRegion<std::uint8_t, DisjointWhole>::adopt(test_alloc_token_(), arena, TOTAL_BYTES, std::move(perm));
 
@@ -326,7 +326,7 @@ static_assert(std::is_trivially_copyable_v<MpscMsg>);
 
 void test_mpsc_ring_exactly_once() {
     constexpr std::uint32_t NUM_PRODUCERS = 8;
-    constexpr std::uint32_t MSGS_PER_PRODUCER = 5'000;
+    constexpr std::uint32_t MSGS_PER_PRODUCER = 5000;
     constexpr std::size_t QUEUE_CAP = 1024;
 
     MpscRing<MpscMsg, QUEUE_CAP> q;
@@ -441,7 +441,7 @@ void test_chaselev_deque_no_duplicate_steal() {
     owner.join();
 
     // Give thieves a bounded spin window to drain without parking.
-    for (uint32_t spin = 0; spin < 1'000'000; ++spin) {
+    for (uint32_t spin = 0; spin < 1000000; ++spin) {
         CRUCIBLE_SPIN_PAUSE;
     }
     stop_thieves.store(true, std::memory_order_release);
@@ -481,7 +481,7 @@ static_assert(std::is_trivially_copyable_v<SpscMsg>);
 [[nodiscard]] bool verify_spsc_msg_(SpscMsg const& m) noexcept { return m.cookie == fnv1a64_(&m.seq, sizeof(m.seq)); }
 
 void test_spsc_ring_exactly_once() {
-    constexpr std::uint32_t NUM_MSGS = 100'000;
+    constexpr std::uint32_t NUM_MSGS = 100000;
     constexpr std::size_t CAPACITY = 256;
     SpscRing<SpscMsg, CAPACITY> q;
 
@@ -633,7 +633,7 @@ struct RefCountTest {};
 
 void test_pool_refcount_conservation() {
     constexpr int NUM_THREADS = 8;
-    constexpr int OPS_PER_THREAD = 10'000;
+    constexpr int OPS_PER_THREAD = 10000;
 
     PermissionedSnapshot<std::uint64_t, RefCountTest> snap{0};
 
@@ -668,7 +668,7 @@ struct NestedTest {};
 void test_parallel_for_nested_integrity() {
     Arena arena{1ULL << 22};
     auto perm = mint_permission_root<NestedTest>();
-    constexpr std::size_t N = 16'384;
+    constexpr std::size_t N = 16384;
     auto region = OwnedRegion<std::uint64_t, NestedTest>::adopt(test_alloc_token_(), arena, N, std::move(perm));
 
     for (std::size_t i = 0; i < N; ++i)
@@ -751,7 +751,7 @@ struct PriorityKey {
 void test_raw_mpmc_ring_cookie_fuzzer() {
     constexpr std::uint32_t NUM_PRODUCERS = 4;
     constexpr std::uint32_t NUM_CONSUMERS = 4;
-    constexpr std::uint32_t MSGS_PER_PRODUCER = 3'000;
+    constexpr std::uint32_t MSGS_PER_PRODUCER = 3000;
     constexpr std::size_t QUEUE_CAP = 256;
 
     MpmcRing<MpscMsg, QUEUE_CAP> q;
@@ -848,7 +848,7 @@ void test_raw_sharded_grid_cookie_fuzzer() {
     constexpr std::size_t M = 4;  // producers
     constexpr std::size_t N = 4;  // consumers
     constexpr std::size_t PER_CELL_CAP = 128;
-    constexpr std::uint32_t MSGS_PER_PROD = 2'000;
+    constexpr std::uint32_t MSGS_PER_PROD = 2000;
 
     ShardedSpscGrid<MpscMsg, M, N, PER_CELL_CAP> grid;
     std::atomic<bool> producers_done{false};
@@ -944,7 +944,7 @@ void drive_pmpmc_cookie_(Channel& ch) {
 
     constexpr std::uint32_t NUM_PRODUCERS = 4;
     constexpr std::uint32_t NUM_CONSUMERS = 4;
-    constexpr std::uint32_t MSGS_PER_PRODUCER = 1'500;
+    constexpr std::uint32_t MSGS_PER_PRODUCER = 1500;
     constexpr std::uint64_t EXPECTED_TOTAL = static_cast<std::uint64_t>(NUM_PRODUCERS) * MSGS_PER_PRODUCER;
 
     std::atomic<bool> producers_done{false};
@@ -1043,7 +1043,7 @@ void drive_pmpsc_cookie_(Channel& ch) {
     static_assert(std::is_same_v<Msg, MpscMsg>);
 
     constexpr std::uint32_t NUM_PRODUCERS = 4;
-    constexpr std::uint32_t MSGS_PER_PRODUCER = 1'500;
+    constexpr std::uint32_t MSGS_PER_PRODUCER = 1500;
     constexpr std::uint64_t EXPECTED_TOTAL = static_cast<std::uint64_t>(NUM_PRODUCERS) * MSGS_PER_PRODUCER;
 
     auto cons_perm = mint_permission_root<typename Channel::consumer_tag>();
@@ -1175,7 +1175,7 @@ void drive_pchase_lev_cookie_(Channel& deq) {
     });
     owner_t.join();
 
-    for (uint32_t spin = 0; spin < 1'000'000; ++spin) {
+    for (uint32_t spin = 0; spin < 1000000; ++spin) {
         CRUCIBLE_SPIN_PAUSE;
     }
     stop_thieves.store(true, std::memory_order_release);
@@ -1213,7 +1213,7 @@ void drive_psharded_grid_cookie_(Channel& grid) {
     constexpr std::size_t N = Channel::num_consumers;
     static_assert(M == 4 && N == 4, "drive_psharded_grid_cookie_ hardcodes M=N=4");
 
-    constexpr std::uint32_t MSGS_PER_PROD = 1'500;
+    constexpr std::uint32_t MSGS_PER_PROD = 1500;
     constexpr std::uint64_t EXPECTED_TOTAL = static_cast<std::uint64_t>(M) * MSGS_PER_PROD;
 
     using WT = typename Channel::whole_tag;
@@ -1404,7 +1404,7 @@ void drive_pspsc_cookie_(Channel& ch) {
     using Msg = typename Channel::value_type;
     static_assert(std::is_same_v<Msg, MpscMsg>);
 
-    constexpr std::uint32_t NUM_MSGS = 5'000;
+    constexpr std::uint32_t NUM_MSGS = 5000;
 
     auto whole = mint_permission_root<typename Channel::whole_tag>();
     auto [pp, cp] =

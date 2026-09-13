@@ -20,14 +20,8 @@ using InnerBadOffer = Offer<Recv<Msg, End>>;
 // branch's continuation hides the bad inner Offer.  A one-Offer
 // `has_crash_branch_for_peer_v` check on the outer would PASS;
 // only the walker catches the deep lack.
-using OuterHidingBad = Offer<
-    Recv<Msg, InnerBadOffer>,
-    Recv<Crash<UnreliablePeer>, End>>;
+using OuterHidingBad = Offer<Recv<Msg, InnerBadOffer>, Recv<Crash<UnreliablePeer>, End>>;
 
-void compile_time_reject() {
-    assert_every_offer_has_crash_branch_for<OuterHidingBad, UnreliablePeer>();
-}
+void compile_time_reject() { assert_every_offer_has_crash_branch_for<OuterHidingBad, UnreliablePeer>(); }
 
-int main() {
-    return 0;
-}
+int main() { return 0; }

@@ -32,9 +32,9 @@
 #include <utility>
 
 namespace {
-    struct ProbeRegion {};
-    struct ProbeProt   {};
-    struct ProbeShare  {};
+struct ProbeRegion {};
+struct ProbeProt {};
+struct ProbeShare {};
 }  // namespace
 
 int main() {

@@ -138,7 +138,7 @@ static void test_try_contiguous_wrap_returns_null() {
 // of small sentinel values, so the consumer can check order, loss and
 // duplication from the payload alone.
 static void test_spsc_concurrent_integrity() {
-    constexpr uint32_t N = 100'000;
+    constexpr uint32_t N = 100000;
     MetaLog log;
 
     std::atomic<bool> producer_done{false};
@@ -267,7 +267,7 @@ static void test_try_append_pure_FOUND_I17() {
 // row-typed entry point; the consumer side is unchanged.
 
 static void test_try_append_pure_concurrent_FOUND_I17_AUDIT() {
-    constexpr uint32_t N = 50'000;
+    constexpr uint32_t N = 50000;
     MetaLog log;
 
     std::atomic<bool> producer_done{false};

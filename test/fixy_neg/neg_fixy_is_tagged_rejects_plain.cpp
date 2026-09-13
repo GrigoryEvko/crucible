@@ -22,7 +22,9 @@ struct TypeIsTaggedRejectsPlain {
 
 template <typename T>
     requires fis::IsTagged<T>
-[[nodiscard]] constexpr int gate(T const&) noexcept { return 1; }
+[[nodiscard]] constexpr int gate(T const&) noexcept {
+    return 1;
+}
 
 }  // namespace neg_fixy_is_tagged_rejects_plain
 

@@ -36,17 +36,16 @@ enum class WidenedAtom : std::uint16_t {
 struct WidenedUniverse {
     using atom_t = WidenedAtom;
     static constexpr std::size_t cardinality = 2;  // fits cardinality
-                                                    // pin, but trips
-                                                    // the underlying-
-                                                    // type pin.
+    // pin, but trips
+    // the underlying-
+    // type pin.
 
-    static_assert(
-        std::is_same_v<std::underlying_type_t<atom_t>, std::uint8_t>,
-        "[OsUniverse_Underlying] fixy-A3-018: synthetic test Universe "
-        "atom_t underlying type widened beyond uint8_t — bit_position "
-        "would expand the encodable bit range past the uint64_t "
-        "carrier without bumping cardinality.  Production OsUniverse "
-        "ships the same assertion to foreclose silent ABI drift.");
+    static_assert(std::is_same_v<std::underlying_type_t<atom_t>, std::uint8_t>,
+                  "[OsUniverse_Underlying] fixy-A3-018: synthetic test Universe "
+                  "atom_t underlying type widened beyond uint8_t — bit_position "
+                  "would expand the encodable bit range past the uint64_t "
+                  "carrier without bumping cardinality.  Production OsUniverse "
+                  "ships the same assertion to foreclose silent ABI drift.");
 };
 
 int main() { return 0; }

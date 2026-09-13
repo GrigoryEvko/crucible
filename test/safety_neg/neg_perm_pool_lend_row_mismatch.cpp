@@ -17,10 +17,8 @@ int main() {
     namespace perm = ::crucible::permissions;
     namespace saf = ::crucible::safety;
 
-    auto p = saf::mint_permission_root<perm::tag::HugePageTag>(
-        eff::BgCompileCtx{});
+    auto p = saf::mint_permission_root<perm::tag::HugePageTag>(eff::BgCompileCtx{});
     saf::SharedPermissionPool<perm::tag::HugePageTag> pool{std::move(p)};
     auto guard = pool.lend(eff::HotFgCtx{});
     return guard.has_value() ? 0 : 1;
 }
-

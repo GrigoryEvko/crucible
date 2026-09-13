@@ -6,9 +6,7 @@
 #include <crucible/canopy/VectorClock.h>
 
 int main() {
-    auto clock = crucible::canopy::mint_vector_clock<0>(
-        crucible::effects::testing::init(),
-        0);
+    auto clock = crucible::canopy::mint_vector_clock<0>(crucible::effects::testing::init(), 0);
     (void)clock;
     return 0;
 }

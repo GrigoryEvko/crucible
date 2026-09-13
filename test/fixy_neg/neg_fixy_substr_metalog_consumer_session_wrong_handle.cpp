@@ -24,19 +24,19 @@
 #include <crucible/fixy/Substr.h>
 
 namespace fmeta = ::crucible::fixy::substr::metalog;
-namespace eff   = ::crucible::effects;
+namespace eff = ::crucible::effects;
 
 namespace neg_fixy_meta_consumer_session_wrong_handle {
 struct UserTag {};
 using Log = ::crucible::concurrent::PermissionedMetaLog<UserTag>;
-}
+}  // namespace neg_fixy_meta_consumer_session_wrong_handle
 
 int main() {
     eff::HotFgCtx ctx{};
     int not_a_handle = 0;
 
-    auto bad = fmeta::mint_metalog_consumer_session<
-        neg_fixy_meta_consumer_session_wrong_handle::Log>(ctx, not_a_handle);
+    auto bad =
+        fmeta::mint_metalog_consumer_session<neg_fixy_meta_consumer_session_wrong_handle::Log>(ctx, not_a_handle);
     (void)bad;
     return 0;
 }

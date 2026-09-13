@@ -42,7 +42,6 @@ int main() {
     // forwarded with a `const char*` arg cannot construct
     // OnlyIntCtor — the requires-clause `std::is_constructible_v<T,
     // Args...>` is FALSE.
-    auto bad = mint_witness<Witness_v::FORMALLY_VERIFIED, OnlyIntCtor>(
-        "not_an_integer");
+    auto bad = mint_witness<Witness_v::FORMALLY_VERIFIED, OnlyIntCtor>("not_an_integer");
     return bad.peek().value;
 }

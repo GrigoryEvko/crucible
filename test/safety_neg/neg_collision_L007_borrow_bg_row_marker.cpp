@@ -59,28 +59,27 @@ namespace neg_collision_l007_marker {
 // FALSE) with bare int payload (NOT borrowed-carrier → carrier arm is
 // FALSE) and Row<Bg>.  The L007 trigger fires ONLY via the marker arm,
 // engaged by the specialization at file scope below.
-using Bad = fn::Fn<
-    int,                                       // 1  Type — bare int (no Borrowed carrier)
-    fn::pred::True,                            // 2  Refinement (trivial)
-    fn::UsageMode::Linear,                     // 3  Usage — Linear (NOT Borrow → usage arm
-                                                //                of has_borrow_capture_v FALSE)
-    fx::Row<fx::Effect::Bg>,                   // 4  EffectRow — Bg atom (L007 secondary trigger)
-    fn::SecLevel::Public,                      // 5  Security
-    fn::proto::None,                           // 6  Protocol
-    fn::lifetime::Static,                      // 7  Lifetime
-    fn::source::FromInternal,                  // 8  Source
-    fn::trust::Verified,                       // 9  Trust
-    fn::ReprKind::Opaque,                      // 10 Repr
-    fn::cost::Constant,                        // 11 Cost (bounded — H001/B001 silent)
-    fn::precision::Exact,                      // 12 Precision
-    fn::space::Bounded<sizeof(int)>,           // 13 Space
-    fn::OverflowMode::Trap,                    // 14 Overflow
-    fn::MutationMode::Immutable,               // 15 Mutation
-    fn::ReentrancyMode::NonReentrant,          // 16 Reentrancy — non-Coroutine (R003 silent)
-    fn::size_pol::Sized<sizeof(int)>,          // 17 Size
-    /*Version=*/1,                             // 18 Version
-    fn::stale::Fresh                           // 19 Staleness
->;
+using Bad = fn::Fn<int,  // 1  Type — bare int (no Borrowed carrier)
+                   fn::pred::True,  // 2  Refinement (trivial)
+                   fn::UsageMode::Linear,  // 3  Usage — Linear (NOT Borrow → usage arm
+                   //                of has_borrow_capture_v FALSE)
+                   fx::Row<fx::Effect::Bg>,  // 4  EffectRow — Bg atom (L007 secondary trigger)
+                   fn::SecLevel::Public,  // 5  Security
+                   fn::proto::None,  // 6  Protocol
+                   fn::lifetime::Static,  // 7  Lifetime
+                   fn::source::FromInternal,  // 8  Source
+                   fn::trust::Verified,  // 9  Trust
+                   fn::ReprKind::Opaque,  // 10 Repr
+                   fn::cost::Constant,  // 11 Cost (bounded — H001/B001 silent)
+                   fn::precision::Exact,  // 12 Precision
+                   fn::space::Bounded<sizeof(int)>,  // 13 Space
+                   fn::OverflowMode::Trap,  // 14 Overflow
+                   fn::MutationMode::Immutable,  // 15 Mutation
+                   fn::ReentrancyMode::NonReentrant,  // 16 Reentrancy — non-Coroutine (R003 silent)
+                   fn::size_pol::Sized<sizeof(int)>,  // 17 Size
+                   /*Version=*/1,  // 18 Version
+                   fn::stale::Fresh  // 19 Staleness
+                   >;
 
 }  // namespace neg_collision_l007_marker
 
@@ -89,8 +88,8 @@ using Bad = fn::Fn<
 // alone supplies the borrow-capture signal.  Combined with Row<Bg>,
 // L007 fires.
 namespace crucible::safety::fn::collision {
-    template <> struct marks_borrow_capture<::neg_collision_l007_marker::Bad>
-        : std::true_type {};
+template <>
+struct marks_borrow_capture<::neg_collision_l007_marker::Bad> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 [[maybe_unused]] neg_collision_l007_marker::Bad the_fixture{};

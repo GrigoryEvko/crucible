@@ -10,12 +10,13 @@
 
 template <typename R>
     requires ::crucible::effects::IsPure<R>
-constexpr bool only_pure() noexcept { return true; }
+constexpr bool only_pure() noexcept {
+    return true;
+}
 
 int main() {
     // Row<Alloc> is not a Subrow of Row<>; substitution failure.
-    using BadRow = ::crucible::effects::Row<
-        ::crucible::effects::Effect::Alloc>;
+    using BadRow = ::crucible::effects::Row<::crucible::effects::Effect::Alloc>;
     (void)only_pure<BadRow>();
     return 0;
 }

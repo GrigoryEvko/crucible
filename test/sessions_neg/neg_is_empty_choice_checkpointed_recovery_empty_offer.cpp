@@ -55,12 +55,11 @@ namespace {
 // holds pre-fix and MUST fail post-fixy-A2-004 — the new
 // CheckpointedSession specialization fires, projects to true_type via
 // disjunction with the recovery branch's empty Offer<>.
-static_assert(!proto::is_empty_choice_v<
-    proto::CheckpointedSession<proto::End, proto::Offer<>>>,
-    "fixy-A2-004 regression: CheckpointedSession wraps an empty Offer<> "
-    "in its recovery branch; is_empty_choice must propagate the inner "
-    "defect disjunctively, but the primary template silently returned "
-    "false.");
+static_assert(!proto::is_empty_choice_v<proto::CheckpointedSession<proto::End, proto::Offer<>>>,
+              "fixy-A2-004 regression: CheckpointedSession wraps an empty Offer<> "
+              "in its recovery branch; is_empty_choice must propagate the inner "
+              "defect disjunctively, but the primary template silently returned "
+              "false.");
 
 }  // namespace
 

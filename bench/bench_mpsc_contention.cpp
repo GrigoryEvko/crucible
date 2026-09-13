@@ -47,18 +47,18 @@ namespace {
 using crucible::concurrent::MpscRing;
 using Item = std::uint64_t;
 
-constexpr std::size_t kCap            = 1U << 14;   // 16K cells; headroom
-constexpr std::size_t kPerProducer    = 5'000;      // items per producer / iter
-constexpr std::size_t kSamples        = 32;     // ≥30 for Mann-Whitney
-constexpr std::size_t kWarmup         = 3;
-constexpr std::size_t kMaxWallMs      = 60'000;
+constexpr std::size_t kCap = 1U << 14;  // 16K cells; headroom
+constexpr std::size_t kPerProducer = 5000;  // items per producer / iter
+constexpr std::size_t kSamples = 32;  // ≥30 for Mann-Whitney
+constexpr std::size_t kWarmup = 3;
+constexpr std::size_t kMaxWallMs = 60000;
 
 // Producer-side single-call write loop.  Each producer pushes K items
 // via individual try_push calls.  Spin-yield if full.
 struct SinglePushWorker {
     MpscRing<Item, kCap>& ring;
-    std::atomic<bool>&    start;
-    Item                  base;
+    std::atomic<bool>& start;
+    Item base;
 
     void operator()(std::stop_token) noexcept {
         while (!start.load(std::memory_order_acquire)) {
@@ -78,8 +78,8 @@ struct SinglePushWorker {
 template <std::size_t BATCH>
 struct BatchedPushWorker {
     MpscRing<Item, kCap>& ring;
-    std::atomic<bool>&    start;
-    Item                  base;
+    std::atomic<bool>& start;
+    Item base;
 
     void operator()(std::stop_token) noexcept {
         while (!start.load(std::memory_order_acquire)) {
@@ -95,8 +95,7 @@ struct BatchedPushWorker {
             }
             std::size_t in_batch = 0;
             while (in_batch < n) {
-                const std::size_t r = ring.try_push_batch(
-                    std::span<const Item>(buf.data() + in_batch, n - in_batch));
+                const std::size_t r = ring.try_push_batch(std::span<const Item>(buf.data() + in_batch, n - in_batch));
                 if (r > 0) {
                     in_batch += r;
                 } else {
@@ -128,8 +127,7 @@ void run_cycle(std::size_t producer_count) {
     }
 
     // Spawn consumer.  Drains until total items observed.
-    std::jthread consumer([&ring, &consumed, &start, total](
-            std::stop_token) noexcept {
+    std::jthread consumer([&ring, &consumed, &start, total](std::stop_token) noexcept {
         while (!start.load(std::memory_order_acquire)) {
             CRUCIBLE_SPIN_PAUSE;
         }
@@ -152,13 +150,12 @@ void run_cycle(std::size_t producer_count) {
     // Release the start gate — measured wall begins at the FIRST
     // producer's first push and ends at the consumer's join.
     start.store(true, std::memory_order_release);
-    producers.clear();   // join all producers
+    producers.clear();  // join all producers
     consumer.join();
 }
 
 template <typename Worker>
-[[nodiscard]] bench::Report run_one(const char* label,
-                                    std::size_t producer_count) {
+[[nodiscard]] bench::Report run_one(const char* label, std::size_t producer_count) {
     char name[96];
     std::snprintf(name, sizeof(name), "%s P=%zu", label, producer_count);
     return bench::Run{name}
@@ -167,7 +164,7 @@ template <typename Worker>
         .batch(1)
         .no_pin()
         .max_wall_ms(kMaxWallMs)
-        .measure([producer_count]{ run_cycle<Worker>(producer_count); });
+        .measure([producer_count] { run_cycle<Worker>(producer_count); });
 }
 
 }  // namespace
@@ -190,9 +187,8 @@ int main(int argc, char** argv) {
     reports.reserve(12);
 
     // 4 producer counts × 3 API kinds = 12 cells.
-    for (std::size_t P : {std::size_t{1}, std::size_t{2},
-                          std::size_t{4}, std::size_t{8}}) {
-        reports.push_back(run_one<SinglePushWorker>     ("single",      P));
+    for (std::size_t P : {std::size_t{1}, std::size_t{2}, std::size_t{4}, std::size_t{8}}) {
+        reports.push_back(run_one<SinglePushWorker>("single", P));
         reports.push_back(run_one<BatchedPushWorker<16>>("batched<16>", P));
         reports.push_back(run_one<BatchedPushWorker<64>>("batched<64>", P));
     }
@@ -209,15 +205,14 @@ int main(int argc, char** argv) {
     std::printf("  P    single (Mitems/s)    batched<64> (Mitems/s)   speedup\n");
     std::printf("  --   ------------------  ------------------------  -------\n");
     for (std::size_t pi = 0; pi < 4; ++pi) {
-        const std::size_t P = std::size_t{1} << pi;     // 1, 2, 4, 8
-        const auto& s   = reports[pi * 3 + 0];          // single
-        const auto& b64 = reports[pi * 3 + 2];          // batched<64>
-        const double items     = static_cast<double>(P * kPerProducer);
-        const double s_rate    = items / (s.pct.p50   * 1e-9);
-        const double b_rate    = items / (b64.pct.p50 * 1e-9);
-        const double ratio     = b_rate / s_rate;
-        std::printf("  %2zu      %14.2f      %18.2f       %5.2f×\n",
-                    P, s_rate / 1e6, b_rate / 1e6, ratio);
+        const std::size_t P = std::size_t{1} << pi;  // 1, 2, 4, 8
+        const auto& s = reports[pi * 3 + 0];  // single
+        const auto& b64 = reports[pi * 3 + 2];  // batched<64>
+        const double items = static_cast<double>(P * kPerProducer);
+        const double s_rate = items / (s.pct.p50 * 1e-9);
+        const double b_rate = items / (b64.pct.p50 * 1e-9);
+        const double ratio = b_rate / s_rate;
+        std::printf("  %2zu      %14.2f      %18.2f       %5.2f×\n", P, s_rate / 1e6, b_rate / 1e6, ratio);
     }
 
     // ── Statistical significance: Mann-Whitney U sweep across P ─────
@@ -227,7 +222,7 @@ int main(int argc, char** argv) {
     // batched<64> to IMPROVE over single at every contention level.
     std::printf("\n=== significance (single vs batched<64>) ===\n");
     for (std::size_t pi = 0; pi < 4; ++pi) {
-        const auto& s   = reports[pi * 3 + 0];
+        const auto& s = reports[pi * 3 + 0];
         const auto& b64 = reports[pi * 3 + 2];
         bench::compare(s, b64).print_text();
     }

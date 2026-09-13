@@ -20,8 +20,7 @@
 #include <crucible/sessions/SessionMint.h>
 
 // FIXY-V-031: Cipher::open() now takes Path<source::External>.
-using CipherRoot = crucible::fixy::wrap::Path<
-    crucible::fixy::tags::source::External>;
+using CipherRoot = crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>;
 
 namespace proto = crucible::safety::proto;
 namespace eff = crucible::effects;
@@ -35,18 +34,11 @@ int main() {
 
     // First mint a valid PSH (this uses the same HotFgCtx but PSH
     // construction itself doesn't gate on Cipher row).
-    auto psh = proto::mint_permissioned_session<
-        proto::Send<int, proto::End>>(ctx, Resource{});
+    auto psh = proto::mint_permissioned_session<proto::Send<int, proto::End>>(ctx, Resource{});
 
     // PSH overload of mint_persisted_session must reject HotFgCtx
     // because Cipher persistence requires Row<IO, Block>.
-    [[maybe_unused]] auto h = proto::mint_persisted_session(
-        ctx,
-        std::move(psh),
-        cipher,
-        view,
-        proto::SessionTagId{1},
-        proto::RoleTagId{1},
-        proto::RoleTagId{2});
+    [[maybe_unused]] auto h = proto::mint_persisted_session(ctx, std::move(psh), cipher, view, proto::SessionTagId{1},
+                                                            proto::RoleTagId{1}, proto::RoleTagId{2});
     return 0;
 }

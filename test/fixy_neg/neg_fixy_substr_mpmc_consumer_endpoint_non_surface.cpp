@@ -28,7 +28,6 @@ struct FakeChannel {};
 int main() {
     neg_fixy_substr_mpmc_consumer_endpoint_non_surface::FakeChannel fake{};
 
-    [[maybe_unused]] auto bad =
-        fsubstr::mpmc::mint_mpmc_consumer_endpoint(fake);
+    [[maybe_unused]] auto bad = fsubstr::mpmc::mint_mpmc_consumer_endpoint(fake);
     return 0;
 }

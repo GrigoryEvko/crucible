@@ -62,25 +62,19 @@
 #include <vector>
 
 namespace {
-    using LogT = ::crucible::safety::AppendOnly<std::uint64_t>;
-}
+using LogT = ::crucible::safety::AppendOnly<std::uint64_t>;
+}  // namespace
 
 // Anchor: rvalue drain compiles cleanly — moving from a freshly
 // constructed AppendOnly is the canonical exit pattern.
-[[maybe_unused]] static std::vector<std::uint64_t> anchor_drain_rvalue(
-    LogT log)
-{
-    return std::move(log).drain();
-}
+[[maybe_unused]] static std::vector<std::uint64_t> anchor_drain_rvalue(LogT log) { return std::move(log).drain(); }
 
 // VIOLATION: drain() is `&&`-qualified.  Invoking on a non-moved
 // lvalue triggers an overload-resolution failure.  GCC emits
 // "passing 'AppendOnly<...>' as 'this' argument discards
 // qualifiers" or "cannot bind rvalue reference".
-[[maybe_unused]] static std::vector<std::uint64_t> offending_drain_lvalue(
-    LogT& log)
-{
-    return log.drain();   // ERROR: drain() is rvalue-only
+[[maybe_unused]] static std::vector<std::uint64_t> offending_drain_lvalue(LogT& log) {
+    return log.drain();  // ERROR: drain() is rvalue-only
 }
 
 int main() { return 0; }

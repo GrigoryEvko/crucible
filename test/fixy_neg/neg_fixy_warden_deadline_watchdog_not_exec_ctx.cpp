@@ -23,9 +23,9 @@ struct NotAnExecCtx {};
 
 int main() {
     crucible::fixy::warden::Policy p{};
-    auto watchdog = crucible::fixy::warden::mint_deadline_watchdog(
-        test_fixy_warden_deadline_watchdog_not_exec_ctx::NotAnExecCtx{},
-        /*senses=*/nullptr, p);
+    auto watchdog =
+        crucible::fixy::warden::mint_deadline_watchdog(test_fixy_warden_deadline_watchdog_not_exec_ctx::NotAnExecCtx{},
+                                                       /*senses=*/nullptr, p);
     (void)watchdog;
     return 0;
 }

@@ -51,7 +51,7 @@
 
 namespace neg_fixy_pipe_hot_path_inline_not_inline_safe {
 
-namespace cc  = ::crucible::concurrent;
+namespace cc = ::crucible::concurrent;
 namespace eff = ::crucible::effects;
 
 // Tiny stage handle — per-call working set fits in even 4 KiB of L1.
@@ -90,9 +90,8 @@ using TinyStage = cc::Stage<&tiny, eff::HotFgCtx>;
 using TinyPipeline = cc::Pipeline<TinyStage, TinyStage, TinyStage>;
 
 // Sanity — pin the substrate facts the rejection depends on.
-static_assert(!TinyPipeline::inline_safe,
-    "fixture precondition: TinyPipeline must NOT be inline_safe — "
-    "the stage_inline_safe specialisation is deliberately absent.");
+static_assert(!TinyPipeline::inline_safe, "fixture precondition: TinyPipeline must NOT be inline_safe — "
+                                          "the stage_inline_safe specialisation is deliberately absent.");
 
 }  // namespace neg_fixy_pipe_hot_path_inline_not_inline_safe
 
@@ -105,12 +104,10 @@ int main() {
     // true), a stage that needs jthread dispatch could falsely claim
     // inline fitness.  V-218's stance catches that at compile time
     // before the runtime dispatcher would have to.
-    static_assert(
-        ::crucible::fixy::pipe::stance::HotPathInline<
-            ns::TinyPipeline>,
-        "FIXY-V-218 fixture #2: pipeline of NON-inline-safe stages "
-        "MUST FAIL stance::HotPathInline regardless of working-set "
-        "size — !inline_safe is the early-out the substrate witness "
-        "fires on.");
+    static_assert(::crucible::fixy::pipe::stance::HotPathInline<ns::TinyPipeline>,
+                  "FIXY-V-218 fixture #2: pipeline of NON-inline-safe stages "
+                  "MUST FAIL stance::HotPathInline regardless of working-set "
+                  "size — !inline_safe is the early-out the substrate witness "
+                  "fires on.");
     return 0;
 }

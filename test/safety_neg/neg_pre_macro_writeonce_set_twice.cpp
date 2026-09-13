@@ -25,12 +25,11 @@ namespace {
     return 0;
 }
 
-static_assert(under_test() == 0,
-    "CRUCIBLE_PRE on WriteOnce::set's !value_.has_value() check MUST "
-    "fire at consteval when set() is called twice.  If this static_"
-    "assert evaluates successfully, the body-CRUCIBLE_PRE migration of "
-    "fixy-A1-007 Phase 2 failed to close the consteval bypass for the "
-    "optional-has_value() member-on-member predicate shape.");
+static_assert(under_test() == 0, "CRUCIBLE_PRE on WriteOnce::set's !value_.has_value() check MUST "
+                                 "fire at consteval when set() is called twice.  If this static_"
+                                 "assert evaluates successfully, the body-CRUCIBLE_PRE migration of "
+                                 "fixy-A1-007 Phase 2 failed to close the consteval bypass for the "
+                                 "optional-has_value() member-on-member predicate shape.");
 
 }  // namespace
 

@@ -30,28 +30,25 @@
 #include <crucible/fixy/SessCrash.h>
 
 namespace fscrash = ::crucible::fixy::sess::crash;
-namespace proto   = ::crucible::safety::proto;
+namespace proto = ::crucible::safety::proto;
 
 namespace v064_neg_gamma {
 struct Alice {};
-struct Msg   {};
-struct Ack   {};
+struct Msg {};
+struct Ack {};
 
 // An Offer<> with NO Crash<Alice> branch.  Distinct from fixture 1's
 // CrashOblivClient (which wraps NormalOffer in Send<Msg, ...>) —
 // this fixture targets the BARE-OFFER consteval-assertion path that
 // individual call sites use when demanding a per-Offer contract.
-using NormalOffer = proto::Offer<
-    proto::Recv<Msg, proto::End>,
-    proto::Recv<Ack, proto::End>>;
+using NormalOffer = proto::Offer<proto::Recv<Msg, proto::End>, proto::Recv<Ack, proto::End>>;
 }  // namespace v064_neg_gamma
 
 // Sanity: the per-Offer predicate returns false (sanity check
 // distinct from the consteval assertion's diagnostic).
-static_assert(!fscrash::has_crash_branch_for_peer_v<
-    v064_neg_gamma::NormalOffer, v064_neg_gamma::Alice>,
-    "Sanity: NormalOffer lacks Recv<Crash<Alice>, _>; the predicate "
-    "returns false (consteval assertion must fire below).");
+static_assert(!fscrash::has_crash_branch_for_peer_v<v064_neg_gamma::NormalOffer, v064_neg_gamma::Alice>,
+              "Sanity: NormalOffer lacks Recv<Crash<Alice>, _>; the predicate "
+              "returns false (consteval assertion must fire below).");
 
 // Force consteval evaluation of the assertion helper at a non-
 // consteval call site.  The substrate's `assert_has_crash_branch
@@ -63,13 +60,11 @@ constexpr bool force_consteval_eval = [] consteval {
     // static_assert inside assert_has_crash_branch_for's body fires
     // with the diagnostic naming `CrashBranch_Missing` per
     // SessionCrash.h:506.
-    fscrash::assert_has_crash_branch_for<
-        v064_neg_gamma::NormalOffer,
-        v064_neg_gamma::Alice>();
+    fscrash::assert_has_crash_branch_for<v064_neg_gamma::NormalOffer, v064_neg_gamma::Alice>();
     return true;
 }();
 
 int main() {
-    (void) force_consteval_eval;
+    (void)force_consteval_eval;
     return 0;
 }

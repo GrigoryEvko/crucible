@@ -16,7 +16,7 @@ enum class HealthMetricSlot : std::uint32_t {
     WearUsedPpm = 3,
 };
 
-inline constexpr std::uint32_t kTopologyHealthMetricBase = 0x4845'0000u;
+inline constexpr std::uint32_t kTopologyHealthMetricBase = 0x48450000u;
 inline constexpr std::size_t kTopologyHealthObservationCount = 4;
 
 using TopologyHealthObservationSet = std::array<ObservationSnapshot, kTopologyHealthObservationCount>;

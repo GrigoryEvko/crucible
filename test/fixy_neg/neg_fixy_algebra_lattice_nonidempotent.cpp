@@ -24,18 +24,19 @@ namespace fa = crucible::fixy::algebra;
 // returns Hi, so join(Hi, Hi) == Hi but join(Lo, Lo) == Hi != Lo —
 // idempotence is violated.  All SIGNATURES are present and correct.
 struct LatticeNeg_NonIdempotentJoin {
-    enum class Tier : std::uint8_t { Lo = 0, Hi = 1 };
+    enum class Tier : std::uint8_t {
+        Lo = 0,
+        Hi = 1
+    };
     using element_type = Tier;
 
     [[nodiscard]] static constexpr element_type bottom() noexcept { return Tier::Lo; }
-    [[nodiscard]] static constexpr element_type top()    noexcept { return Tier::Hi; }
+    [[nodiscard]] static constexpr element_type top() noexcept { return Tier::Hi; }
     [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept {
         return static_cast<std::uint8_t>(a) <= static_cast<std::uint8_t>(b);
     }
     // BROKEN: not idempotent — join(Lo, Lo) yields Hi, not Lo.
-    [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept {
-        return Tier::Hi;
-    }
+    [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return Tier::Hi; }
     [[nodiscard]] static constexpr element_type meet(element_type a, element_type b) noexcept {
         return leq(a, b) ? a : b;
     }
@@ -45,8 +46,8 @@ int main() {
     // Must FAIL: signatures present, but the join is non-idempotent at
     // the canonical witnesses, so the law witness rejects the lattice.
     static_assert(fa::Lattice<LatticeNeg_NonIdempotentJoin>,
-        "fa::Lattice<NonIdempotentJoin> must reject — join(Lo, Lo) == Hi "
-        "violates idempotence; the fix-09 law witness catches it at the "
-        "canonical bottom()/top() witnesses.");
+                  "fa::Lattice<NonIdempotentJoin> must reject — join(Lo, Lo) == Hi "
+                  "violates idempotence; the fix-09 law witness catches it at the "
+                  "canonical bottom()/top() witnesses.");
     return 0;
 }

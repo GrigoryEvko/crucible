@@ -26,20 +26,19 @@
 #include <crucible/fixy/Substr.h>
 #include <crucible/permissions/Permission.h>
 
-namespace fsg  = ::crucible::fixy::substr::sharded_grid;
+namespace fsg = ::crucible::fixy::substr::sharded_grid;
 namespace conc = ::crucible::concurrent;
 
 namespace neg_fixy_sg_consumer_wrong_perm {
 struct UserTag {};
 using Grid = conc::PermissionedShardedGrid<int, 2, 3, 8, UserTag>;
-}
+}  // namespace neg_fixy_sg_consumer_wrong_perm
 
 int main() {
     neg_fixy_sg_consumer_wrong_perm::Grid grid{};
     int not_a_perm = 0;
 
-    auto bad = fsg::mint_sharded_grid_consumer<
-        neg_fixy_sg_consumer_wrong_perm::Grid, 0>(grid, not_a_perm);
+    auto bad = fsg::mint_sharded_grid_consumer<neg_fixy_sg_consumer_wrong_perm::Grid, 0>(grid, not_a_perm);
     (void)bad;
     return 0;
 }

@@ -9,16 +9,14 @@
 #include <cstdint>
 
 int main() {
-  using Raw = crucible::safety::Saturated<std::uint64_t>;
-  using ClockReadBytes = crucible::safety::DetSafe<
-      crucible::safety::DetSafeTier_v::MonotonicClockRead, Raw>;
+    using Raw = crucible::safety::Saturated<std::uint64_t>;
+    using ClockReadBytes = crucible::safety::DetSafe<crucible::safety::DetSafeTier_v::MonotonicClockRead, Raw>;
 
-  crucible::TensorMeta meta{};
-  meta.ndim = 0;
-  meta.dtype = crucible::ScalarType::Float;
+    crucible::TensorMeta meta{};
+    meta.ndim = 0;
+    meta.dtype = crucible::ScalarType::Float;
 
-  ClockReadBytes bytes = crucible::compute_storage_nbytes_det(
-      crucible::external_tensor_meta(meta));
-  (void)bytes;
-  return 0;
+    ClockReadBytes bytes = crucible::compute_storage_nbytes_det(crucible::external_tensor_meta(meta));
+    (void)bytes;
+    return 0;
 }

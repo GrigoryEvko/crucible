@@ -88,7 +88,7 @@ static void test_binary_search_across_many() {
         assert(got != nullptr);
         assert(std::strcmp(got, names[i]) == 0);
     }
-    assert(missing(t.lookup(H(0xCAFE'BABE'DEAD'BEEFULL))));
+    assert(missing(t.lookup(H(0xCAFEBABEDEADBEEFULL))));
     std::printf("  test_binary_search:             PASSED\n");
 }
 

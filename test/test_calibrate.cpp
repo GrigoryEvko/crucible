@@ -46,25 +46,19 @@ void test_admission() {
 
     auto too_much_trim = cog::admit_trim_basis_points(1001);
     assert(!too_much_trim.has_value());
-    assert(too_much_trim.error()
-           == cog::CalibrationError::InvalidTrimBasisPoints);
+    assert(too_much_trim.error() == cog::CalibrationError::InvalidTrimBasisPoints);
 
-    auto latency =
-        cog::admit_latency_quantiles(cog::LatencyQuantiles{100u, 500u, 900u});
+    auto latency = cog::admit_latency_quantiles(cog::LatencyQuantiles{100u, 500u, 900u});
     assert(latency.has_value());
     assert(latency->value().p99_ns == 500u);
 
-    auto zero_latency =
-        cog::admit_latency_quantiles(cog::LatencyQuantiles{0u, 1u, 2u});
+    auto zero_latency = cog::admit_latency_quantiles(cog::LatencyQuantiles{0u, 1u, 2u});
     assert(!zero_latency.has_value());
-    assert(zero_latency.error()
-           == cog::CalibrationError::InvalidLatencyQuantiles);
+    assert(zero_latency.error() == cog::CalibrationError::InvalidLatencyQuantiles);
 
-    auto inverted_latency =
-        cog::admit_latency_quantiles(cog::LatencyQuantiles{20u, 10u, 30u});
+    auto inverted_latency = cog::admit_latency_quantiles(cog::LatencyQuantiles{20u, 10u, 30u});
     assert(!inverted_latency.has_value());
-    assert(inverted_latency.error()
-           == cog::CalibrationError::InvalidLatencyQuantiles);
+    assert(inverted_latency.error() == cog::CalibrationError::InvalidLatencyQuantiles);
 
     auto throughput = cog::admit_throughput_per_sec(989.0e12);
     assert(throughput.has_value());
@@ -72,20 +66,17 @@ void test_admission() {
 
     auto bad_throughput = cog::admit_throughput_per_sec(-1.0);
     assert(!bad_throughput.has_value());
-    assert(bad_throughput.error()
-           == cog::CalibrationError::InvalidThroughput);
+    assert(bad_throughput.error() == cog::CalibrationError::InvalidThroughput);
 
     auto bad_drift = cog::admit_drift_basis_points(0);
     assert(!bad_drift.has_value());
-    assert(bad_drift.error()
-           == cog::CalibrationError::InvalidDriftBasisPoints);
+    assert(bad_drift.error() == cog::CalibrationError::InvalidDriftBasisPoints);
 
     std::printf("  test_admission: PASSED\n");
 }
 
 void test_latency_entry_and_result() {
-    auto latency =
-        cog::admit_latency_quantiles(cog::LatencyQuantiles{100u, 500u, 900u});
+    auto latency = cog::admit_latency_quantiles(cog::LatencyQuantiles{100u, 500u, 900u});
     auto throughput = cog::admit_throughput_per_sec(989.0e12);
     auto samples = cog::admit_sample_count(1024);
     assert(latency.has_value());
@@ -98,7 +89,7 @@ void test_latency_entry_and_result() {
         .dtype_bucket = cog::DtypeBucket::Bf16,
         .transpose_mode = cog::TransposeMode::Nn,
         .message_size_bucket = cog::MessageSizeBucket::None,
-        .latency_cycles = 320'000u,
+        .latency_cycles = 320000u,
         .latency = *latency,
         .throughput_per_sec = *throughput,
         .sample_count = *samples,
@@ -116,18 +107,17 @@ void test_latency_entry_and_result() {
     caps.features.set(cog::GpuFeature::Fp8);
 
     std::array<cog::OpcodeLatencyEntry<cog::CogKind::Gpu>, 1> rows{entry};
-    auto result = cog::build_calibration_result<cog::CogKind::Gpu>(
-        gpu_identity(), caps, std::span<const decltype(entry)>{rows});
+    auto result =
+        cog::build_calibration_result<cog::CogKind::Gpu>(gpu_identity(), caps, std::span<const decltype(entry)>{rows});
     assert(result.has_value());
     assert(result->identity.kind == cog::CogKind::Gpu);
     assert(result->entry_count.value() == 1u);
     assert(result->opcode_table.size() == 1u);
-    assert(result->opcode_table.lookup_by_opcode(cog::GpuOpcode::GemmPlain)
-               .has_value());
+    assert(result->opcode_table.lookup_by_opcode(cog::GpuOpcode::GemmPlain).has_value());
     assert(result->opcode_table.calibration_age_seconds.is_fresh());
 
-    auto mismatched = cog::build_calibration_result<cog::CogKind::Gpu>(
-        nic_identity(), caps, std::span<const decltype(entry)>{rows});
+    auto mismatched =
+        cog::build_calibration_result<cog::CogKind::Gpu>(nic_identity(), caps, std::span<const decltype(entry)>{rows});
     assert(!mismatched.has_value());
     assert(mismatched.error() == cog::CalibrationError::KindMismatch);
 
@@ -135,8 +125,7 @@ void test_latency_entry_and_result() {
 }
 
 void test_nic_result() {
-    auto latency =
-        cog::admit_latency_quantiles(cog::LatencyQuantiles{1500u, 2500u, 5500u});
+    auto latency = cog::admit_latency_quantiles(cog::LatencyQuantiles{1500u, 2500u, 5500u});
     auto throughput = cog::admit_throughput_per_sec(6.25e9);
     auto samples = cog::admit_sample_count(4096);
     assert(latency.has_value());
@@ -155,19 +144,15 @@ void test_nic_result() {
     std::array<cog::OpcodeLatencyEntry<cog::CogKind::NicPort>, 1> rows{entry};
 
     cog::NicPortTargetCaps caps{};
-    caps.effective_bandwidth_bytes_per_sec =
-        saf::Tagged<std::uint64_t, saf::source::Calibrated>{6'250'000'000ull};
+    caps.effective_bandwidth_bytes_per_sec = saf::Tagged<std::uint64_t, saf::source::Calibrated>{6250000000ull};
     caps.features.set(cog::NicFeature::Roce);
 
-    auto result = cog::build_calibration_result<cog::CogKind::NicPort>(
-        nic_identity(), caps, std::span<const decltype(entry)>{rows});
+    auto result = cog::build_calibration_result<cog::CogKind::NicPort>(nic_identity(), caps,
+                                                                       std::span<const decltype(entry)>{rows});
     assert(result.has_value());
-    auto found = result->opcode_table.latency_for_size_bucket(
-        cog::NicOpcode::RdmaWrite,
-        cog::SizeBucket::None,
-        cog::DtypeBucket::None,
-        cog::TransposeMode::Nn,
-        cog::MessageSizeBucket::M64B);
+    auto found = result->opcode_table.latency_for_size_bucket(cog::NicOpcode::RdmaWrite, cog::SizeBucket::None,
+                                                              cog::DtypeBucket::None, cog::TransposeMode::Nn,
+                                                              cog::MessageSizeBucket::M64B);
     assert(found.has_value());
     assert(found->latency.value().p99_ns == 2500u);
 
@@ -175,29 +160,26 @@ void test_nic_result() {
 }
 
 void test_backend_boundaries() {
-    auto init = cog::calibrate_cog<cog::CogKind::Gpu>(
-        eff::ColdInitCtx{}, gpu_identity());
+    auto init = cog::calibrate_cog<cog::CogKind::Gpu>(eff::ColdInitCtx{}, gpu_identity());
     assert(!init.has_value());
     assert(init.error() == cog::CalibrationError::BackendUnavailable);
 
-    auto bg = cog::calibrate_cog<cog::CogKind::Gpu>(
-        eff::BgDrainCtx{}, gpu_identity());
+    auto bg = cog::calibrate_cog<cog::CogKind::Gpu>(eff::BgDrainCtx{}, gpu_identity());
     assert(!bg.has_value());
     assert(bg.error() == cog::CalibrationError::BackendUnavailable);
 
-    auto wrong_kind = cog::calibrate_cog<cog::CogKind::Gpu>(
-        eff::ColdInitCtx{}, nic_identity());
+    auto wrong_kind = cog::calibrate_cog<cog::CogKind::Gpu>(eff::ColdInitCtx{}, nic_identity());
     assert(!wrong_kind.has_value());
     assert(wrong_kind.error() == cog::CalibrationError::KindMismatch);
 
     std::array<cog::GpuOpcode, 1> opcodes{cog::GpuOpcode::GemmPlain};
-    auto specific = cog::calibrate_specific_opcodes<cog::CogKind::Gpu>(
-        eff::ColdInitCtx{}, gpu_identity(), std::span<const cog::GpuOpcode>{opcodes});
+    auto specific = cog::calibrate_specific_opcodes<cog::CogKind::Gpu>(eff::ColdInitCtx{}, gpu_identity(),
+                                                                       std::span<const cog::GpuOpcode>{opcodes});
     assert(!specific.has_value());
     assert(specific.error() == cog::CalibrationError::BackendUnavailable);
 
-    auto empty_specific = cog::calibrate_specific_opcodes<cog::CogKind::Gpu>(
-        eff::ColdInitCtx{}, gpu_identity(), std::span<const cog::GpuOpcode>{});
+    auto empty_specific = cog::calibrate_specific_opcodes<cog::CogKind::Gpu>(eff::ColdInitCtx{}, gpu_identity(),
+                                                                             std::span<const cog::GpuOpcode>{});
     assert(!empty_specific.has_value());
     assert(empty_specific.error() == cog::CalibrationError::EmptyOpcodeSet);
 
@@ -210,8 +192,7 @@ void test_drift_gate() {
         .threshold_bps = *cog::admit_drift_basis_points(1000),
     };
     assert(!cog::should_recalibrate(below));
-    auto below_result = cog::recalibrate_drifted<cog::CogKind::Gpu>(
-        eff::BgDrainCtx{}, gpu_identity(), below);
+    auto below_result = cog::recalibrate_drifted<cog::CogKind::Gpu>(eff::BgDrainCtx{}, gpu_identity(), below);
     assert(!below_result.has_value());
     assert(below_result.error() == cog::CalibrationError::DriftBelowThreshold);
 
@@ -220,8 +201,7 @@ void test_drift_gate() {
         .threshold_bps = *cog::admit_drift_basis_points(1000),
     };
     assert(cog::should_recalibrate(above));
-    auto above_result = cog::recalibrate_drifted<cog::CogKind::Gpu>(
-        eff::BgDrainCtx{}, gpu_identity(), above);
+    auto above_result = cog::recalibrate_drifted<cog::CogKind::Gpu>(eff::BgDrainCtx{}, gpu_identity(), above);
     assert(!above_result.has_value());
     assert(above_result.error() == cog::CalibrationError::BackendUnavailable);
 
@@ -231,8 +211,7 @@ void test_drift_gate() {
 }  // namespace
 
 int main() {
-    static_assert(sizeof(cog::CalibrationLatencyQuantiles)
-                  == sizeof(cog::LatencyQuantiles));
+    static_assert(sizeof(cog::CalibrationLatencyQuantiles) == sizeof(cog::LatencyQuantiles));
     static_assert(sizeof(cog::CalibratedThroughput) == sizeof(double));
     static_assert(cog::CalibratableCogKind<cog::CogKind::Gpu>);
     static_assert(cog::CalibratableCogKind<cog::CogKind::NicPort>);
@@ -241,8 +220,7 @@ int main() {
     static_assert(cog::CtxFitsCalibration<eff::BgDrainCtx>);
     static_assert(!cog::CtxFitsCalibration<eff::HotFgCtx>);
     static_assert(std::is_trivially_copyable_v<cog::CalibrationPlan>);
-    assert(cog::calibration_error_name(
-               cog::CalibrationError::BackendUnavailable)
+    assert(cog::calibration_error_name(cog::CalibrationError::BackendUnavailable)
            == std::string_view{"BackendUnavailable"});
 
     std::printf("test_calibrate:\n");

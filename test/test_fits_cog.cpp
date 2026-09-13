@@ -84,7 +84,7 @@ static void test_nic_ceilings_runtime() {
 }
 
 static void test_fits_cog_h100_compute_row() {
-    using H100Row = effects::ConcurrentRow<effects::SmBudget<132>, effects::HbmBytes<80'000'000'000ULL>>;
+    using H100Row = effects::ConcurrentRow<effects::SmBudget<132>, effects::HbmBytes<80000000000ULL>>;
     static_assert(cog::FitsCog<H100Row, cog::CogKind::Gpu>);
     static_assert(!cog::FitsCog<H100Row, cog::CogKind::NicPort>);
     static_assert(!cog::FitsCog<H100Row, cog::CogKind::NvSwitch>);
@@ -97,7 +97,7 @@ static void test_fits_cog_oversubscription_rejection() {
     static_assert(!cog::FitsCog<GpuOver, cog::CogKind::Gpu>);
 
     // NIC: 100M QPs > 16M ceiling
-    using NicOver = effects::ConcurrentRow<effects::NicQp<100'000'000>>;
+    using NicOver = effects::ConcurrentRow<effects::NicQp<100000000>>;
     static_assert(!cog::FitsCog<NicOver, cog::CogKind::NicPort>);
 
     // NvSwitch: 100 TB/s > 32 TB/s ceiling
@@ -193,13 +193,13 @@ static void test_fits_cog_caps_runtime_h100() {
     h100.l2_bytes = safety::Tagged<std::uint64_t, safety::source::Vendor>{50ULL * 1024 * 1024};
     h100.hbm_bytes = safety::Tagged<std::uint64_t, safety::source::Vendor>{80ULL * 1024 * 1024 * 1024};
     h100.hbm_bandwidth_bytes_per_sec =
-        safety::Tagged<std::uint64_t, safety::source::Vendor>{3'350ULL * 1024 * 1024 * 1024};
+        safety::Tagged<std::uint64_t, safety::source::Vendor>{3350ULL * 1024 * 1024 * 1024};
     h100.nvlink_bandwidth_bytes_per_sec =
         safety::Tagged<std::uint64_t, safety::source::Vendor>{900ULL * 1024 * 1024 * 1024};
     h100.tdp_watts = safety::Tagged<std::uint16_t, safety::source::Vendor>{std::uint16_t{700}};
     h100.thermal_throttle_celsius = safety::Tagged<std::uint16_t, safety::source::Vendor>{std::uint16_t{85}};
 
-    using Fits = effects::ConcurrentRow<effects::SmBudget<128>, effects::HbmBytes<70'000'000'000ULL>>;
+    using Fits = effects::ConcurrentRow<effects::SmBudget<128>, effects::HbmBytes<70000000000ULL>>;
     volatile bool fits = cog::fits_cog_caps_runtime<Fits, cog::CogKind::Gpu>(h100);
     assert(fits);
 
@@ -251,17 +251,17 @@ static void test_has_cog_capacity_caps_lockstep() {
 
 // A row fits only if every axis fits.
 static void test_fits_cog_multi_axis_all_must_fit() {
-    using AllFit = effects::ConcurrentRow<effects::SmBudget<128>, effects::HbmBytes<80'000'000'000ULL>,
-                                          effects::HbmBandwidth<3'000'000'000'000ULL>>;
+    using AllFit = effects::ConcurrentRow<effects::SmBudget<128>, effects::HbmBytes<80000000000ULL>,
+                                          effects::HbmBandwidth<3000000000000ULL>>;
     static_assert(cog::FitsCog<AllFit, cog::CogKind::Gpu>);
 
     // Sm fits, HBM fits, but bandwidth is way over (10 TB/s > 9 TB/s).
-    using OneAxisOver = effects::ConcurrentRow<effects::SmBudget<128>, effects::HbmBytes<80'000'000'000ULL>,
+    using OneAxisOver = effects::ConcurrentRow<effects::SmBudget<128>, effects::HbmBytes<80000000000ULL>,
                                                effects::HbmBandwidth<10ULL * 1024 * 1024 * 1024 * 1024>>;
     static_assert(!cog::FitsCog<OneAxisOver, cog::CogKind::Gpu>);
 
     using HbmOver = effects::ConcurrentRow<effects::SmBudget<128>, effects::HbmBytes<512ULL * 1024 * 1024 * 1024>,
-                                           effects::HbmBandwidth<3'000'000'000'000ULL>>;
+                                           effects::HbmBandwidth<3000000000000ULL>>;
     static_assert(!cog::FitsCog<HbmOver, cog::CogKind::Gpu>);
 }
 

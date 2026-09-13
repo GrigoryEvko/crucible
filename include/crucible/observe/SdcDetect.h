@@ -28,7 +28,7 @@
 namespace crucible::observe {
 
 using PositiveSdcReplicaCount = safety::Positive<std::uint8_t>;
-using SdcSamplingRatePpm = safety::Refined<safety::in_range<1u, 1'000'000u>, std::uint32_t>;
+using SdcSamplingRatePpm = safety::Refined<safety::in_range<1u, 1000000u>, std::uint32_t>;
 using PositiveSdcMismatchThreshold = safety::Positive<std::uint16_t>;
 
 template <typename T>
@@ -78,11 +78,11 @@ struct SdcMismatch : safety::diag::tag_base {
 
 struct SdcConfig {
     PositiveSdcReplicaCount redundancy_factor{std::uint8_t{2}};
-    SdcSamplingRatePpm sampling_rate_ppm{std::uint32_t{10'000}};
+    SdcSamplingRatePpm sampling_rate_ppm{std::uint32_t{10000}};
     PositiveSdcMismatchThreshold suspect_after_mismatches{std::uint16_t{3}};
     SdcComparisonStrategy strategy = SdcComparisonStrategy::BitwiseEqual;
     std::uint64_t tolerance_units = 0;
-    std::uint32_t metric_id_base = 0x5344'0000u;
+    std::uint32_t metric_id_base = 0x53440000u;
 };
 
 struct SdcEvent {
@@ -111,9 +111,9 @@ namespace detail {
 
 [[nodiscard]] constexpr std::uint64_t mix_sequence(std::uint64_t value) noexcept {
     value ^= value >> 30u;
-    value *= 0xbf58'476d'1ce4'e5b9ull;
+    value *= 0xbf58476d1ce4e5b9ull;
     value ^= value >> 27u;
-    value *= 0x94d0'49bb'1331'11ebull;
+    value *= 0x94d049bb133111ebull;
     value ^= value >> 31u;
     return value;
 }
@@ -220,7 +220,7 @@ public:
     [[nodiscard]] std::size_t active_cog_count() const noexcept { return active_cogs_; }
 
     [[nodiscard]] constexpr bool should_sample(std::uint64_t sequence) const noexcept {
-        std::uint64_t const bucket = detail::mix_sequence(sequence) % 1'000'000ull;
+        std::uint64_t const bucket = detail::mix_sequence(sequence) % 1000000ull;
         return bucket < config_.sampling_rate_ppm.value();
     }
 

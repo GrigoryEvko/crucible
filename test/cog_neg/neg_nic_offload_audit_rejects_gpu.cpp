@@ -11,10 +11,10 @@ namespace cog = crucible::cog;
 
 template <cog::CogKind K>
     requires cog::NicOffloadAuditableCog<K>
-constexpr int audit_gate() noexcept { return 1; }
+constexpr int audit_gate() noexcept {
+    return 1;
+}
 
-static_assert(audit_gate<cog::CogKind::Gpu>() == 1,
-    "GAPS-140: NicOffloadAuditableCog must reject non-NicPort Cogs.");
+static_assert(audit_gate<cog::CogKind::Gpu>() == 1, "GAPS-140: NicOffloadAuditableCog must reject non-NicPort Cogs.");
 
 int main() { return 0; }
-

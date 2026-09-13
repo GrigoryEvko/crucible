@@ -19,7 +19,7 @@
 #include <crucible/effects/ExecCtx.h>
 
 namespace proto = ::crucible::safety::proto;
-namespace eff   = ::crucible::effects;
+namespace eff = ::crucible::effects;
 
 struct PinnedResource : ::crucible::safety::Pinned<PinnedResource> {
     int sentinel = 1;
@@ -28,8 +28,7 @@ struct PinnedResource : ::crucible::safety::Pinned<PinnedResource> {
 void compile_time_reject() {
     eff::HotFgCtx ctx{};
     PinnedResource ra, rb;
-    auto channel = proto::mint_channel<proto::Select<>>(
-        ctx, ctx, ra, rb);
+    auto channel = proto::mint_channel<proto::Select<>>(ctx, ctx, ra, rb);
     (void)channel;
 }
 

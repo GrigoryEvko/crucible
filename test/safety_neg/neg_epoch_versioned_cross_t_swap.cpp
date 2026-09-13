@@ -12,7 +12,7 @@
 using namespace crucible::safety;
 
 int main() {
-    EpochVersioned<int>    int_value{42, Epoch{1}, Generation{1}};
+    EpochVersioned<int> int_value{42, Epoch{1}, Generation{1}};
     EpochVersioned<double> dbl_value{3.14, Epoch{2}, Generation{2}};
 
     int_value.swap(dbl_value);

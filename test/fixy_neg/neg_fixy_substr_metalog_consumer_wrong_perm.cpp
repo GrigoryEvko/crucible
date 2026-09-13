@@ -27,7 +27,7 @@ namespace fmeta = ::crucible::fixy::substr::metalog;
 namespace neg_fixy_meta_consumer_wrong_perm {
 struct UserTag {};
 using Log = ::crucible::concurrent::PermissionedMetaLog<UserTag>;
-}
+}  // namespace neg_fixy_meta_consumer_wrong_perm
 
 int main() {
     ::crucible::MetaLog underlying{};

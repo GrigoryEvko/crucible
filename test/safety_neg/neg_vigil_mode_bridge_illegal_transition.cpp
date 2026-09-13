@@ -6,9 +6,8 @@
 
 #include <crucible/Vigil.h>
 
-using BadTransition = crucible::Vigil::ModeTransition<
-    crucible::Vigil::Mode::RECORDING,
-    crucible::Vigil::Mode::DIVERGED>;
+using BadTransition =
+    crucible::Vigil::ModeTransition<crucible::Vigil::Mode::RECORDING, crucible::Vigil::Mode::DIVERGED>;
 
 int main() {
     [[maybe_unused]] BadTransition transition{};

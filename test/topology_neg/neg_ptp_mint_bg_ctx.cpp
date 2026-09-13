@@ -10,8 +10,7 @@ int main() {
     nic.uuid = crucible::cog::Uuid{0x129, 1};
     nic.kind = crucible::cog::CogKind::NicPort;
     auto fd = crucible::topology::admit_ptp_clock_fd(4).value();
-    auto handle = crucible::topology::mint_ptp_handle(
-        crucible::effects::BgDrainCtx{}, nic, fd);
+    auto handle = crucible::topology::mint_ptp_handle(crucible::effects::BgDrainCtx{}, nic, fd);
     (void)handle;
     return 0;
 }

@@ -95,12 +95,9 @@
 
 namespace {
 
-[[nodiscard]] constexpr bool gate(std::uint64_t value,
-                                  std::uint64_t low,
-                                  std::uint64_t high,
+[[nodiscard]] constexpr bool gate(std::uint64_t value, std::uint64_t low, std::uint64_t high,
                                   std::uint64_t alignment) noexcept {
-    CRUCIBLE_PRE(crucible::decide::aligned_in_range(
-        value, low, high, alignment));
+    CRUCIBLE_PRE(crucible::decide::aligned_in_range(value, low, high, alignment));
     return true;
 }
 

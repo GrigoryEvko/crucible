@@ -110,7 +110,7 @@ template <typename Payload, typename Ctx>
 }
 
 using Payload_block_only = fx::Row<fx::Effect::Block>;
-using Ctx_alloc_only     = fx::Row<fx::Effect::Alloc>;
+using Ctx_alloc_only = fx::Row<fx::Effect::Alloc>;
 
 // `Payload = {Block}`, `Ctx = {Alloc}` — equal cardinality (1 each)
 // but the atoms are disjoint.  row_subset rejects because Block

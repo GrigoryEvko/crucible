@@ -20,9 +20,8 @@ struct NotAnExecCtx {};  // No row_type, no Effect aggregation API.
 }  // namespace test_fixy_perf_syscall_tp_btf_not_exec_ctx
 
 int main() {
-    auto hub = crucible::fixy::perf::mint_syscall_tp_btf(
-        test_fixy_perf_syscall_tp_btf_not_exec_ctx::NotAnExecCtx{},
-        crucible::effects::testing::init());
+    auto hub = crucible::fixy::perf::mint_syscall_tp_btf(test_fixy_perf_syscall_tp_btf_not_exec_ctx::NotAnExecCtx{},
+                                                         crucible::effects::testing::init());
     (void)hub;
     return 0;
 }

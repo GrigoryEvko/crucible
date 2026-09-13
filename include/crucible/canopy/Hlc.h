@@ -56,7 +56,7 @@ __extension__ using uint128_t = unsigned __int128;
 [[nodiscard]] constexpr HlcTimestamp unpack_hlc_timestamp(uint128_t packed) noexcept {
     return HlcTimestamp{
         .physical_ns = static_cast<std::uint64_t>(packed >> 64),
-        .counter = static_cast<std::uint32_t>((packed >> 32) & 0xffff'ffffu),
+        .counter = static_cast<std::uint32_t>((packed >> 32) & 0xffffffffu),
     };
 }
 
@@ -257,7 +257,7 @@ private:
             return nsec == 0 ? std::uint64_t{1} : nsec;
         }
 
-        constexpr std::uint64_t kNanosPerSecond = 1'000'000'000ULL;
+        constexpr std::uint64_t kNanosPerSecond = 1000000000ULL;
         const std::uint64_t sec = static_cast<std::uint64_t>(ts.tv_sec);
         if (sec > (std::numeric_limits<std::uint64_t>::max() - nsec) / kNanosPerSecond) [[unlikely]] {
             return std::numeric_limits<std::uint64_t>::max();

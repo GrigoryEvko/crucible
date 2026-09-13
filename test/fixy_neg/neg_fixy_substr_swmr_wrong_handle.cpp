@@ -18,23 +18,21 @@
 #include <utility>
 
 namespace fsubstr = crucible::fixy::substr;
-namespace conc    = crucible::concurrent;
-namespace eff     = crucible::effects;
+namespace conc = crucible::concurrent;
+namespace eff = crucible::effects;
 
 namespace neg_fixy_substr_swmr_wrong_handle {
 struct UserTag {};
-}
+}  // namespace neg_fixy_substr_swmr_wrong_handle
 
 int main() {
-    using Snap =
-        conc::PermissionedSnapshot<int, neg_fixy_substr_swmr_wrong_handle::UserTag>;
+    using Snap = conc::PermissionedSnapshot<int, neg_fixy_substr_swmr_wrong_handle::UserTag>;
 
     Snap snap{};
     auto reader = snap.reader();
 
     eff::BgCompileCtx ctx{};
     // Pass the ReaderHandle to mint_writer_session — fails.
-    [[maybe_unused]] auto bad =
-        fsubstr::swmr::mint_writer_session<Snap>(ctx, reader);
+    [[maybe_unused]] auto bad = fsubstr::swmr::mint_writer_session<Snap>(ctx, reader);
     return 0;
 }

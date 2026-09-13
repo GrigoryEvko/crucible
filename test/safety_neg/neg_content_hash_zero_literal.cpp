@@ -53,8 +53,7 @@ int main() {
     // (`non_zero(v)`) to be exercised at compile time.
     // ContentHash{uint64_t{0}}.raw() == 0 → non_zero(v) == false →
     // contract violation → not a constant expression → ill-formed.
-    constexpr crucible::ValidContentHash bad{
-        crucible::ContentHash{uint64_t{0}}};
+    constexpr crucible::ValidContentHash bad{crucible::ContentHash{uint64_t{0}}};
     (void)bad;
     return 0;
 }

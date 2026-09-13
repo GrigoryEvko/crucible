@@ -26,25 +26,23 @@
 #include <crucible/sessions/SessionGlobal.h>
 
 namespace fsassoc = ::crucible::fixy::sess::assoc;
-namespace proto   = ::crucible::safety::proto;
+namespace proto = ::crucible::safety::proto;
 
 namespace {
-struct My2PC    {};
-struct Coord    {};
+struct My2PC {};
+struct Coord {};
 struct Follower {};
-struct Stranger {};   // NOT in G's role set — the bug
-struct Prepare  {};
-struct Vote     {};
+struct Stranger {};  // NOT in G's role set — the bug
+struct Prepare {};
+struct Vote {};
 
-using G = proto::Transmission<Coord, Follower, Prepare,
-          proto::Transmission<Follower, Coord, Vote, proto::End_G>>;
+using G = proto::Transmission<Coord, Follower, Prepare, proto::Transmission<Follower, Coord, Vote, proto::End_G>>;
 
 // |Γ's domain for My2PC| = 2 (matches G's |roles| = 2) but the
 // IDENTITIES differ: Stranger ∉ roles(G).  Cardinality is right;
 // role-list coverage isn't.  Condition (1) fails.
-using TypoGamma = proto::Context<
-    proto::Entry<My2PC, Coord,    proto::project_t<G, Coord>>,
-    proto::Entry<My2PC, Stranger, proto::End>>;   // Stranger ∉ G
+using TypoGamma = proto::Context<proto::Entry<My2PC, Coord, proto::project_t<G, Coord>>,
+                                 proto::Entry<My2PC, Stranger, proto::End>>;  // Stranger ∉ G
 }  // namespace
 
 int main() {

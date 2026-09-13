@@ -57,16 +57,18 @@ struct Range {
 
 [[nodiscard]] constexpr const char* strategy_name(Strategy s) noexcept {
     switch (s) {
-    case Strategy::Sequential:     return "sequential";
-    case Strategy::Adaptive:       return "adaptive";
-    case Strategy::ForcedParallel: return "forced_parallel";
-    default:                       return "?";
+        case Strategy::Sequential:
+            return "sequential";
+        case Strategy::Adaptive:
+            return "adaptive";
+        case Strategy::ForcedParallel:
+            return "forced_parallel";
+        default:
+            return "?";
     }
 }
 
-[[nodiscard]] constexpr Range split_range(std::size_t total,
-                                          std::size_t index,
-                                          std::size_t count) noexcept {
+[[nodiscard]] constexpr Range split_range(std::size_t total, std::size_t index, std::size_t count) noexcept {
     const std::size_t safe_count = std::max<std::size_t>(1, count);
     const std::size_t chunk = (total + safe_count - 1) / safe_count;
     const std::size_t begin = std::min(total, index * chunk);
@@ -74,14 +76,12 @@ struct Range {
     return Range{begin, end};
 }
 
-[[nodiscard]] std::size_t env_usize(const char* name,
-                                    std::size_t fallback) noexcept {
+[[nodiscard]] std::size_t env_usize(const char* name, std::size_t fallback) noexcept {
     const char* raw = std::getenv(name);
     if (raw == nullptr || *raw == '\0') return fallback;
     std::size_t value = 0;
     const std::string_view text{raw};
-    const auto [ptr, ec] = std::from_chars(
-        text.data(), text.data() + text.size(), value);
+    const auto [ptr, ec] = std::from_chars(text.data(), text.data() + text.size(), value);
     if (ec != std::errc{} || ptr != text.data() + text.size()) {
         return fallback;
     }
@@ -105,20 +105,20 @@ struct Workload {
 
     void run_range(Range range, std::atomic<std::uint64_t>& sink) noexcept {
         switch (kind) {
-        case WorkloadKind::L1ArraySum:
-            run_l1_sum(range, sink);
-            break;
-        case WorkloadKind::L2MatrixMultiply:
-            run_l2_matmul(range, sink);
-            break;
-        case WorkloadKind::L3GraphTraversal:
-            run_l3_graph(range, sink);
-            break;
-        case WorkloadKind::DramStreamFold:
-            run_dram_stream(range, sink);
-            break;
-        default:
-            break;
+            case WorkloadKind::L1ArraySum:
+                run_l1_sum(range, sink);
+                break;
+            case WorkloadKind::L2MatrixMultiply:
+                run_l2_matmul(range, sink);
+                break;
+            case WorkloadKind::L3GraphTraversal:
+                run_l3_graph(range, sink);
+                break;
+            case WorkloadKind::DramStreamFold:
+                run_dram_stream(range, sink);
+                break;
+            default:
+                break;
         }
     }
 
@@ -150,8 +150,7 @@ private:
     }
 
     void run_l3_graph(Range starts, std::atomic<std::uint64_t>& sink) noexcept {
-        const std::uint32_t mask =
-            static_cast<std::uint32_t>(graph_next.size() - 1);
+        const std::uint32_t mask = static_cast<std::uint32_t>(graph_next.size() - 1);
         std::uint64_t acc = 0;
         for (std::size_t pass = 0; pass < kL3GraphPasses; ++pass) {
             for (std::size_t i = starts.begin; i < starts.end; ++i) {
@@ -186,7 +185,7 @@ private:
     w.forced_workers = forced_workers;
     w.l1.resize(w.units);
     for (std::size_t i = 0; i < w.l1.size(); ++i) {
-        w.l1[i] = i ^ 0x9E37'79B9ULL;
+        w.l1[i] = i ^ 0x9E3779B9ULL;
     }
     return w;
 }
@@ -250,28 +249,19 @@ private:
     w.forced_workers = forced_workers;
     w.dram.resize(elems);
     for (std::size_t i = 0; i < w.dram.size(); i += 8) {
-        w.dram[i] = (i * 0x9E37'79B9'7F4A'7C15ULL) ^ (i >> 7);
+        w.dram[i] = (i * 0x9E3779B97F4A7C15ULL) ^ (i >> 7);
     }
     return w;
 }
 
-void run_sequential(Workload& w, std::atomic<std::uint64_t>& sink) noexcept {
-    w.run_range(Range{0, w.units}, sink);
-}
+void run_sequential(Workload& w, std::atomic<std::uint64_t>& sink) noexcept { w.run_range(Range{0, w.units}, sink); }
 
-void run_adaptive(cc::Pool<cs::LocalityAware>& pool,
-                  Workload& w,
-                  std::atomic<std::uint64_t>& sink) {
-    const cc::WorkloadProfile profile = cc::WorkloadProfile::from_budget(
-        w.budget,
-        pool.worker_count());
-    const auto result = cc::dispatch_with_workload(
-        pool,
-        profile,
-        [&](cc::WorkShard shard) {
-            const Range r = split_range(w.units, shard.index, shard.count);
-            w.run_range(r, sink);
-        });
+void run_adaptive(cc::Pool<cs::LocalityAware>& pool, Workload& w, std::atomic<std::uint64_t>& sink) {
+    const cc::WorkloadProfile profile = cc::WorkloadProfile::from_budget(w.budget, pool.worker_count());
+    const auto result = cc::dispatch_with_workload(pool, profile, [&](cc::WorkShard shard) {
+        const Range r = split_range(w.units, shard.index, shard.count);
+        w.run_range(r, sink);
+    });
     if (result.queued) pool.wait_idle();
 }
 
@@ -286,23 +276,16 @@ void run_forced_parallel(Workload& w, std::atomic<std::uint64_t>& sink) {
     }
 }
 
-[[nodiscard]] bench::Report measure_once(std::string name,
-                                         Strategy strategy,
-                                         Workload& w,
-                                         cc::Pool<cs::LocalityAware>& pool,
-                                         std::size_t samples) {
+[[nodiscard]] bench::Report measure_once(std::string name, Strategy strategy, Workload& w,
+                                         cc::Pool<cs::LocalityAware>& pool, std::size_t samples) {
     std::atomic<std::uint64_t> sink{0};
     bench::Run run{std::move(name)};
     if (const int core = bench::env_core(); core >= 0) {
         (void)run.core(core);
     }
-    return run.samples(samples)
-        .warmup(std::max<std::size_t>(2, samples / 6))
-        .batch(1)
-        .max_wall_ms(8'000)
-        .measure([&] {
-            sink.store(0, std::memory_order_relaxed);
-            switch (strategy) {
+    return run.samples(samples).warmup(std::max<std::size_t>(2, samples / 6)).batch(1).max_wall_ms(8000).measure([&] {
+        sink.store(0, std::memory_order_relaxed);
+        switch (strategy) {
             case Strategy::Sequential:
                 run_sequential(w, sink);
                 break;
@@ -314,16 +297,13 @@ void run_forced_parallel(Workload& w, std::atomic<std::uint64_t>& sink) {
                 break;
             default:
                 break;
-            }
-            bench::do_not_optimize(sink.load(std::memory_order_relaxed));
-        });
+        }
+        bench::do_not_optimize(sink.load(std::memory_order_relaxed));
+    });
 }
 
-[[nodiscard]] bench::Report measure_stable(std::string name,
-                                           Strategy strategy,
-                                           Workload& w,
-                                           cc::Pool<cs::LocalityAware>& pool,
-                                           std::size_t samples) {
+[[nodiscard]] bench::Report measure_stable(std::string name, Strategy strategy, Workload& w,
+                                           cc::Pool<cs::LocalityAware>& pool, std::size_t samples) {
     bench::Report best;
     double best_cv = std::numeric_limits<double>::infinity();
     for (int attempt = 0; attempt < 3; ++attempt) {
@@ -343,9 +323,7 @@ struct Trio {
     bench::Report forced;
 };
 
-[[nodiscard]] Trio run_workload(Workload& w,
-                                cc::Pool<cs::LocalityAware>& pool,
-                                std::size_t samples) {
+[[nodiscard]] Trio run_workload(Workload& w, cc::Pool<cs::LocalityAware>& pool, std::size_t samples) {
     auto make_name = [&](Strategy s) {
         std::string name{"no_regression."};
         name += w.name;
@@ -354,18 +332,13 @@ struct Trio {
         return name;
     };
     return Trio{
-        .sequential = measure_stable(make_name(Strategy::Sequential),
-                                     Strategy::Sequential, w, pool, samples),
-        .adaptive = measure_stable(make_name(Strategy::Adaptive),
-                                   Strategy::Adaptive, w, pool, samples),
-        .forced = measure_stable(make_name(Strategy::ForcedParallel),
-                                 Strategy::ForcedParallel, w, pool, samples),
+        .sequential = measure_stable(make_name(Strategy::Sequential), Strategy::Sequential, w, pool, samples),
+        .adaptive = measure_stable(make_name(Strategy::Adaptive), Strategy::Adaptive, w, pool, samples),
+        .forced = measure_stable(make_name(Strategy::ForcedParallel), Strategy::ForcedParallel, w, pool, samples),
     };
 }
 
-[[nodiscard]] double ratio(double lhs, double rhs) noexcept {
-    return rhs > 0.0 ? lhs / rhs : 0.0;
-}
+[[nodiscard]] double ratio(double lhs, double rhs) noexcept { return rhs > 0.0 ? lhs / rhs : 0.0; }
 
 }  // namespace
 
@@ -374,19 +347,14 @@ int main() {
     bench::elevate_priority();
 
     const auto& topo = cc::Topology::instance();
-    const std::size_t default_forced_workers = std::max<std::size_t>(
-        2, std::min<std::size_t>(1024, topo.process_cpu_count() * 32));
-    const std::size_t forced_workers =
-        env_usize("CRUCIBLE_NO_REGRESSION_FORCED_WORKERS",
-                  default_forced_workers);
-    const std::size_t pool_workers = std::max<std::size_t>(
-        2, std::min<std::size_t>(16, topo.process_cpu_count()));
-    const std::size_t samples = std::max<std::size_t>(
-        10, env_usize("CRUCIBLE_NO_REGRESSION_SAMPLES", 12));
+    const std::size_t default_forced_workers =
+        std::max<std::size_t>(2, std::min<std::size_t>(1024, topo.process_cpu_count() * 32));
+    const std::size_t forced_workers = env_usize("CRUCIBLE_NO_REGRESSION_FORCED_WORKERS", default_forced_workers);
+    const std::size_t pool_workers = std::max<std::size_t>(2, std::min<std::size_t>(16, topo.process_cpu_count()));
+    const std::size_t samples = std::max<std::size_t>(10, env_usize("CRUCIBLE_NO_REGRESSION_SAMPLES", 12));
 
     std::printf("=== adaptive_scheduler no-regression ===\n");
-    std::printf("  samples=%zu forced_workers=%zu pool_workers=%zu\n",
-                samples, forced_workers, pool_workers);
+    std::printf("  samples=%zu forced_workers=%zu pool_workers=%zu\n", samples, forced_workers, pool_workers);
     std::printf("  gates: small tiers forced>=sequential/1.05, "
                 "adaptive<=forced*1.05, and inline overhead<=5%% or %.0fns\n",
                 kInlineAbsoluteToleranceNs);
@@ -429,41 +397,31 @@ int main() {
         const auto dec = cc::ParallelismRule::recommend(w.budget);
         std::printf("  %-26s tier=%u rule=%s factor=%zu "
                     "adaptive/seq=%.3fx adaptive/forced=%.3fx\n",
-                    w.name,
-                    static_cast<unsigned>(dec.tier),
-                    dec.is_parallel() ? "parallel" : "sequential",
-                    dec.factor,
-                    ratio(adp_p50, seq_p50),
-                    ratio(adp_p50, frc_p50));
+                    w.name, static_cast<unsigned>(dec.tier), dec.is_parallel() ? "parallel" : "sequential", dec.factor,
+                    ratio(adp_p50, seq_p50), ratio(adp_p50, frc_p50));
 
-        const bool small = w.kind == WorkloadKind::L1ArraySum ||
-                           w.kind == WorkloadKind::L2MatrixMultiply;
+        const bool small = w.kind == WorkloadKind::L1ArraySum || w.kind == WorkloadKind::L2MatrixMultiply;
         if (small && dec.is_parallel()) {
-            std::printf("  FAIL %-26s expected sequential decision for small tier\n",
-                        w.name);
+            std::printf("  FAIL %-26s expected sequential decision for small tier\n", w.name);
             ++failures;
         }
         if (!small && !dec.is_parallel()) {
-            std::printf("  FAIL %-26s expected parallel decision for large tier\n",
-                        w.name);
+            std::printf("  FAIL %-26s expected parallel decision for large tier\n", w.name);
             ++failures;
         }
 
         const bool noisy = seq.noisy(0.05) || adp.noisy(0.05) || frc.noisy(0.05);
         if (noisy) {
             if (seq.noisy(0.05)) {
-                std::printf("  INVALID %-26s sequential cv=%.1f%% > 5%%\n",
-                            w.name, seq.pct.cv * 100.0);
+                std::printf("  INVALID %-26s sequential cv=%.1f%% > 5%%\n", w.name, seq.pct.cv * 100.0);
                 ++failures;
             }
             if (adp.noisy(0.05)) {
-                std::printf("  INVALID %-26s adaptive cv=%.1f%% > 5%%\n",
-                            w.name, adp.pct.cv * 100.0);
+                std::printf("  INVALID %-26s adaptive cv=%.1f%% > 5%%\n", w.name, adp.pct.cv * 100.0);
                 ++failures;
             }
             if (frc.noisy(0.05)) {
-                std::printf("  INVALID %-26s forced cv=%.1f%% > 5%%\n",
-                            w.name, frc.pct.cv * 100.0);
+                std::printf("  INVALID %-26s forced cv=%.1f%% > 5%%\n", w.name, frc.pct.cv * 100.0);
                 ++failures;
             }
             continue;
@@ -471,38 +429,35 @@ int main() {
 
         if (small) {
             if (frc_p50 * kGateTolerance < seq_p50) {
-                std::printf("  FAIL %-26s forced parallel beat sequential by >5%%: %.3fx\n",
-                            w.name, ratio(frc_p50, seq_p50));
+                std::printf("  FAIL %-26s forced parallel beat sequential by >5%%: %.3fx\n", w.name,
+                            ratio(frc_p50, seq_p50));
                 ++failures;
             }
             if (adp_p50 > frc_p50 * kGateTolerance) {
-                std::printf("  FAIL %-26s adaptive slower than forced by >5%%: %.3fx\n",
-                            w.name, ratio(adp_p50, frc_p50));
+                std::printf("  FAIL %-26s adaptive slower than forced by >5%%: %.3fx\n", w.name,
+                            ratio(adp_p50, frc_p50));
                 ++failures;
             }
-            if (adp_p50 > seq_p50 * kGateTolerance &&
-                (adp_p50 - seq_p50) > kInlineAbsoluteToleranceNs) {
-                std::printf("  FAIL %-26s adaptive inline overhead exceeded budget: %.3fx\n",
-                            w.name, ratio(adp_p50, seq_p50));
+            if (adp_p50 > seq_p50 * kGateTolerance && (adp_p50 - seq_p50) > kInlineAbsoluteToleranceNs) {
+                std::printf("  FAIL %-26s adaptive inline overhead exceeded budget: %.3fx\n", w.name,
+                            ratio(adp_p50, seq_p50));
                 ++failures;
             }
         } else {
             if (adp_p50 > seq_p50 * kGateTolerance) {
-                std::printf("  FAIL %-26s adaptive regressed vs sequential: %.3fx\n",
-                            w.name, ratio(adp_p50, seq_p50));
+                std::printf("  FAIL %-26s adaptive regressed vs sequential: %.3fx\n", w.name, ratio(adp_p50, seq_p50));
                 ++failures;
             }
             if (adp_p50 > frc_p50 * 0.50) {
-                std::printf("  FAIL %-26s adaptive did not beat forced by 2x: %.3fx\n",
-                            w.name, ratio(adp_p50, frc_p50));
+                std::printf("  FAIL %-26s adaptive did not beat forced by 2x: %.3fx\n", w.name,
+                            ratio(adp_p50, frc_p50));
                 ++failures;
             }
         }
     }
 
     if (pool.failed() != 0) {
-        std::printf("  FAIL pool recorded failed jobs=%llu\n",
-                    static_cast<unsigned long long>(pool.failed()));
+        std::printf("  FAIL pool recorded failed jobs=%llu\n", static_cast<unsigned long long>(pool.failed()));
         ++failures;
     }
 

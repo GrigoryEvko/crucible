@@ -10,31 +10,24 @@ using namespace fixy_neg_rule_detail;
 struct TypeS010 {};
 
 namespace probe {
-    using F = sfn::Fn<TypeS010,
-        sfn::pred::True, sfn::UsageMode::Linear,
-        eff::Row<>, sfn::SecLevel::Classified,
-        sfn::proto::None, sfn::lifetime::Static,
-        crucible::safety::source::FromInternal,
-        crucible::safety::trust::Unverified,    // Fn<> default (FOUND-034: Biba-safe bottom)
-        sfn::ReprKind::Opaque,
-        sfn::cost::Unstated, sfn::precision::Exact,
-        sfn::space::Zero, sfn::OverflowMode::Trap,
-        sfn::MutationMode::Immutable, sfn::ReentrancyMode::NonReentrant,
-        sfn::size_pol::Unstated, 1u,
-        sfn::stale::Stale<10>>;
-}
+using F = sfn::Fn<TypeS010, sfn::pred::True, sfn::UsageMode::Linear, eff::Row<>, sfn::SecLevel::Classified,
+                  sfn::proto::None, sfn::lifetime::Static, crucible::safety::source::FromInternal,
+                  crucible::safety::trust::Unverified,  // Fn<> default (FOUND-034: Biba-safe bottom)
+                  sfn::ReprKind::Opaque, sfn::cost::Unstated, sfn::precision::Exact, sfn::space::Zero,
+                  sfn::OverflowMode::Trap, sfn::MutationMode::Immutable, sfn::ReentrancyMode::NonReentrant,
+                  sfn::size_pol::Unstated, 1u, sfn::stale::Stale<10>>;
+}  // namespace probe
 
 namespace crucible::safety::fn::collision {
-template <> struct marks_ct<probe::F> : std::true_type {};
+template <>
+struct marks_ct<probe::F> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
-using Witness = fixy::fn<TypeS010,
-    strict<D::Refinement>, strict<D::Usage>,    strict<D::Effect>,
-    strict<D::Security>,   strict<D::Protocol>, strict<D::Lifetime>,
-    strict<D::Provenance>, strict<D::Trust>,    strict<D::Representation>,
-    strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>,
-    strict<D::Space>,      strict<D::Overflow>, strict<D::Mutation>,
-    strict<D::Reentrancy>, strict<D::Size>,     strict<D::Version>,
-    gr::stale_to<10>>;                          // Staleness ≠ Fresh
+using Witness = fixy::fn<TypeS010, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
+                         strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
+                         strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>,
+                         strict<D::Precision>, strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>,
+                         strict<D::Reentrancy>, strict<D::Size>, strict<D::Version>,
+                         gr::stale_to<10>>;  // Staleness ≠ Fresh
 
 int main() { return static_cast<int>(sizeof(Witness)); }

@@ -30,7 +30,6 @@ int main() {
     // Continue cannot stand alone — it must appear inside a Loop<Body>.
     // The static_assert(is_well_formed_v<Proto>) inside
     // mint_session_handle fires immediately.
-    (void)cp::mint_session_handle<cp::Continue>(
-        NegSessionHandleMalformed_Channel{});
+    (void)cp::mint_session_handle<cp::Continue>(NegSessionHandleMalformed_Channel{});
     return 0;
 }

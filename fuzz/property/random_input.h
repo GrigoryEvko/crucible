@@ -32,10 +32,8 @@ namespace crucible::fuzz::prop {
 // toward Float / Half / BFloat16 since those dominate real workloads.
 [[nodiscard]] inline ScalarType random_scalar_type(Rng& rng) noexcept {
     static constexpr ScalarType kPool[] = {
-        ScalarType::Float, ScalarType::Half, ScalarType::BFloat16,
-        ScalarType::Float8_e4m3fn, ScalarType::Float8_e5m2,
-        ScalarType::Double, ScalarType::Int, ScalarType::Long,
-        ScalarType::Bool, ScalarType::Byte,
+        ScalarType::Float,  ScalarType::Half, ScalarType::BFloat16, ScalarType::Float8_e4m3fn, ScalarType::Float8_e5m2,
+        ScalarType::Double, ScalarType::Int,  ScalarType::Long,     ScalarType::Bool,          ScalarType::Byte,
     };
     return kPool[rng.next_below(sizeof(kPool) / sizeof(kPool[0]))];
 }
@@ -50,15 +48,14 @@ namespace crucible::fuzz::prop {
 // or collision.  This is the point of stress testing.
 [[nodiscard]] inline NumericalRecipe random_recipe(Rng& rng) noexcept {
     NumericalRecipe r{};
-    r.accum_dtype  = random_scalar_type(rng);
-    r.out_dtype    = random_scalar_type(rng);
+    r.accum_dtype = random_scalar_type(rng);
+    r.out_dtype = random_scalar_type(rng);
     r.reduction_algo = static_cast<ReductionAlgo>(rng.next_below(4));
-    r.rounding     = static_cast<RoundingMode>(rng.next_below(4));
+    r.rounding = static_cast<RoundingMode>(rng.next_below(4));
     r.scale_policy = static_cast<ScalePolicy>(rng.next_below(6));
-    r.softmax      = static_cast<SoftmaxRecurrence>(rng.next_below(4));
-    r.determinism  = static_cast<ReductionDeterminism>(rng.next_below(4));
-    r.flags        = fixy::wrap::Bits<RecipeFlags>::from_raw(
-                         static_cast<uint8_t>(rng.next32() & 0xFF));
+    r.softmax = static_cast<SoftmaxRecurrence>(rng.next_below(4));
+    r.determinism = static_cast<ReductionDeterminism>(rng.next_below(4));
+    r.flags = fixy::wrap::Bits<RecipeFlags>::from_raw(static_cast<uint8_t>(rng.next32() & 0xFF));
     // hash field intentionally left default-zero — caller invokes
     // hashed() or compute_recipe_hash to populate.
     return r;
@@ -71,7 +68,7 @@ namespace crucible::fuzz::prop {
 [[nodiscard]] inline FeedbackEdge random_feedback_edge(Rng& rng) noexcept {
     FeedbackEdge e{};
     e.output_idx = static_cast<uint16_t>(rng.next_below(64));
-    e.input_idx  = static_cast<uint16_t>(rng.next_below(64));
+    e.input_idx = static_cast<uint16_t>(rng.next_below(64));
     return e;
 }
 
@@ -95,17 +92,20 @@ namespace crucible::fuzz::prop {
         // TensorDim contract admits them (an out-of-range dim is not a
         // representable tensor, so generating one would test impossible
         // input).
-        m.sizes[d]   = tensor_dim(static_cast<int64_t>(rng.next_below(1024) + 1));
-        m.strides[d] = tensor_dim(static_cast<int64_t>(
-            rng.next64() % (static_cast<uint64_t>(kMaxTensorDimExtent) + 1)));
+        m.sizes[d] = tensor_dim(static_cast<int64_t>(rng.next_below(1024) + 1));
+        m.strides[d] =
+            tensor_dim(static_cast<int64_t>(rng.next64() % (static_cast<uint64_t>(kMaxTensorDimExtent) + 1)));
     }
-    m.dtype       = random_scalar_type(rng);
+    m.dtype = random_scalar_type(rng);
     // device_type values map to c10 ordinals; restrict to common set.
     static constexpr DeviceType kDevices[] = {
-        DeviceType::CPU, DeviceType::CUDA, DeviceType::MPS, DeviceType::Meta,
+        DeviceType::CPU,
+        DeviceType::CUDA,
+        DeviceType::MPS,
+        DeviceType::Meta,
     };
     m.device_type = kDevices[rng.next_below(4)];
-    m.device_idx  = static_cast<int8_t>(rng.next_below(8));
+    m.device_idx = static_cast<int8_t>(rng.next_below(8));
     return m;
 }
 

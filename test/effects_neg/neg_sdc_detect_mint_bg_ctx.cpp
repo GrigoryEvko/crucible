@@ -9,8 +9,7 @@ namespace effects = crucible::effects;
 namespace observe = crucible::observe;
 
 int main() {
-    auto detector = observe::mint_sdc_detector<effects::BgDrainCtx, 2, 4>(
-        effects::BgDrainCtx{});
+    auto detector = observe::mint_sdc_detector<effects::BgDrainCtx, 2, 4>(effects::BgDrainCtx{});
     (void)detector;
     return 0;
 }

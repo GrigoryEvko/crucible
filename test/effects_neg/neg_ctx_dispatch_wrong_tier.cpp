@@ -12,7 +12,7 @@
 
 #include <crucible/concurrent/ExecCtxBridge.h>
 
-namespace eff  = crucible::effects;
+namespace eff = crucible::effects;
 namespace conc = crucible::concurrent;
 
 template <eff::IsExecCtx Ctx>
@@ -20,7 +20,7 @@ template <eff::IsExecCtx Ctx>
 constexpr void requires_l1(Ctx const&) noexcept {}
 
 int main() {
-    eff::BgDrainCtx bg;     // Residency = L2, not L1
+    eff::BgDrainCtx bg;  // Residency = L2, not L1
     requires_l1(bg);
     return 0;
 }

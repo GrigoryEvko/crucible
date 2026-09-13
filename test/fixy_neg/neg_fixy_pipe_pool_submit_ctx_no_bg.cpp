@@ -26,7 +26,7 @@
 #include <utility>
 
 int main() {
-    namespace eff   = ::crucible::effects;
+    namespace eff = ::crucible::effects;
     namespace fpipe = ::crucible::fixy::pipe;
 
     // HotFgCtx::row = Row<> — no Effect::Bg.  This is the canonical
@@ -37,7 +37,7 @@ int main() {
     // The JOB shape is fine — capture-free, copy-constructible — so
     // PermissionFreeJob would have passed.  The rejection rides on
     // CtxOwnsCapability<HotFgCtx, Effect::Bg> instead.
-    auto safe_job = [](){};
+    auto safe_job = []() {};
 
     // This call MUST fail to compile.  If it ever succeeds, work could
     // route onto Bg workers while the caller's ctx claims foreground-

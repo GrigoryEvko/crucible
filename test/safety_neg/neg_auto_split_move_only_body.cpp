@@ -21,10 +21,7 @@ struct MoveOnlyBody {
 };
 
 void misuse(cc::Pool<cc::scheduler::Fifo>& pool) {
-    (void)cc::dispatch_auto_split(
-        pool,
-        cc::AutoSplitRequest{.item_count = 16, .bytes_per_item = 64},
-        MoveOnlyBody{});
+    (void)cc::dispatch_auto_split(pool, cc::AutoSplitRequest{.item_count = 16, .bytes_per_item = 64}, MoveOnlyBody{});
 }
 
 }  // namespace

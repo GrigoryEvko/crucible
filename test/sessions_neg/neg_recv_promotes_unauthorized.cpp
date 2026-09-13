@@ -7,19 +7,20 @@
 #include <crucible/sessions/SessionPayloadSubsort.h>
 
 namespace proto = crucible::safety::proto;
-namespace safe  = crucible::safety;
+namespace safe = crucible::safety;
 
 namespace {
-struct Tile { float value[4]; };
+struct Tile {
+    float value[4];
+};
 
 using RelaxedTile = safe::NumericalTier<safe::Tolerance::RELAXED, Tile>;
-using StrictTile  = safe::NumericalTier<safe::Tolerance::BITEXACT, Tile>;
+using StrictTile = safe::NumericalTier<safe::Tolerance::BITEXACT, Tile>;
 
-using ActualRecv     = proto::Recv<RelaxedTile, proto::End>;
-using PromotedRecv   = proto::Recv<StrictTile, proto::End>;
+using ActualRecv = proto::Recv<RelaxedTile, proto::End>;
+using PromotedRecv = proto::Recv<StrictTile, proto::End>;
 }  // namespace
 
-static_assert(proto::is_subtype_sync_v<PromotedRecv, ActualRecv>,
-    "NumericalTier_RecvPromotion_RequiresTightening");
+static_assert(proto::is_subtype_sync_v<PromotedRecv, ActualRecv>, "NumericalTier_RecvPromotion_RequiresTightening");
 
 int main() { return 0; }

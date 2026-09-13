@@ -34,8 +34,7 @@ int main() {
     // mint_computation_in_ctx<Bg>(fg, ...) requires Ctx::row_type to
     // contain Bg.  Empty row does not contain Bg → requires-clause
     // fails, alias function template is constraint-rejected.
-    auto bad = eff::Computation<eff::Row<>, int>::
-                   mint_computation_in_ctx<eff::Effect::Bg>(fg, 42);
+    auto bad = eff::Computation<eff::Row<>, int>::mint_computation_in_ctx<eff::Effect::Bg>(fg, 42);
     (void)bad;
     return 0;
 }

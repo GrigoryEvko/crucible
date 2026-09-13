@@ -21,8 +21,7 @@ namespace cs = crucible::safety;
 using BadStack = cs::Linear<cs::HotPath<cs::HotPathTier_v::Hot, int>>;
 
 // Force concept evaluation at TU scope.
-static_assert(co::CanonicallyOrdered<BadStack>,
-    "FIXY-FOUND-048: Linear OUTSIDE HotPath inverts §XVI canonical "
-    "wrapper-nesting order (Linear position 14 > HotPath position 0). "
-    "This static_assert MUST fire — if it does not, the canonical-"
-    "order gate has regressed.");
+static_assert(co::CanonicallyOrdered<BadStack>, "FIXY-FOUND-048: Linear OUTSIDE HotPath inverts §XVI canonical "
+                                                "wrapper-nesting order (Linear position 14 > HotPath position 0). "
+                                                "This static_assert MUST fire — if it does not, the canonical-"
+                                                "order gate has regressed.");

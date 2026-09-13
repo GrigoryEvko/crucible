@@ -10,10 +10,9 @@ namespace proto = ::crucible::safety::proto;
 
 namespace {
 struct FakeChannel {};
-}
+}  // namespace
 
 int main() {
-    [[maybe_unused]] auto h =
-        proto::mint_permissioned_session<proto::End>(FakeChannel{});
+    [[maybe_unused]] auto h = proto::mint_permissioned_session<proto::End>(FakeChannel{});
     return 0;
 }

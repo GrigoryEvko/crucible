@@ -35,17 +35,16 @@
 #include <utility>
 
 namespace conc = crucible::concurrent;
-namespace eff  = crucible::effects;
-namespace saf  = crucible::safety;
+namespace eff = crucible::effects;
+namespace saf = crucible::safety;
 
 struct InTag {};
 struct SnapTag {};
 
 using InChannel = conc::PermissionedSpscChannel<int, 64, InTag>;
-using Snapshot  = conc::PermissionedSnapshot<int, SnapTag>;
+using Snapshot = conc::PermissionedSnapshot<int, SnapTag>;
 
-inline void swmr_publish_body(InChannel::ConsumerHandle&&,
-                              Snapshot::WriterHandle&&) noexcept {}
+inline void swmr_publish_body(InChannel::ConsumerHandle&&, Snapshot::WriterHandle&&) noexcept {}
 
 int main() {
     eff::HotFgCtx ctx;
@@ -53,9 +52,9 @@ int main() {
     // Real consumer handle (the SwmrStage's input handle type).
     InChannel in;
     auto in_whole = saf::mint_permission_root<typename InChannel::whole_tag>();
-    auto [prod_perm, cons_perm] = saf::mint_permission_split<
-        typename InChannel::producer_tag,
-        typename InChannel::consumer_tag>(std::move(in_whole));
+    auto [prod_perm, cons_perm] =
+        saf::mint_permission_split<typename InChannel::producer_tag, typename InChannel::consumer_tag>(
+            std::move(in_whole));
     (void)prod_perm;
     auto cons = in.consumer(std::move(cons_perm));
 
@@ -70,8 +69,7 @@ int main() {
     // bypasses mint_swmr_stage and therefore bypasses its row admission.
     // With the fix-03 fix, the ctor is private and this line is
     // ill-formed.  Before fix-03 this would have compiled silently.
-    conc::SwmrStage<&swmr_publish_body, eff::HotFgCtx> stage{
-        ctx, std::move(cons), std::move(writer)};
+    conc::SwmrStage<&swmr_publish_body, eff::HotFgCtx> stage{ctx, std::move(cons), std::move(writer)};
     (void)stage;
 
     return 0;

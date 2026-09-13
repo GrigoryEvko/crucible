@@ -18,8 +18,7 @@ namespace stance = crucible::fixy::stance;
 
 using BadBgRvalueRef = stance::BgWorker<int&&>;
 
-static_assert(sizeof(BadBgRvalueRef) > 0,
-    "instantiate stance::BgWorker<int&&> to force the Type-axis "
-    "rejection (rvalue references are not object types).");
+static_assert(sizeof(BadBgRvalueRef) > 0, "instantiate stance::BgWorker<int&&> to force the Type-axis "
+                                          "rejection (rvalue references are not object types).");
 
 int main() { return 0; }

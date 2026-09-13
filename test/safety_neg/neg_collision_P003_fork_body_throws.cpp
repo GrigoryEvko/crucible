@@ -38,8 +38,8 @@ using Bad = fn::Fn<sf::ControlFlowPinned<CF::ThrowOnly, int>>;  // CF tier >= Th
 // Mark Bad as a permission_fork worker body — required to fire P003
 // (the rule guards marks_fork_worker AND a throwing ControlFlow tier).
 namespace crucible::safety::fn::collision {
-    template <> struct marks_fork_worker<::neg_collision_p003::Bad>
-        : std::true_type {};
+template <>
+struct marks_fork_worker<::neg_collision_p003::Bad> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 [[maybe_unused]] neg_collision_p003::Bad the_fixture{};

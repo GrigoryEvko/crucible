@@ -17,19 +17,20 @@
 
 namespace proto = ::crucible::safety::proto;
 
-struct ProbeResource { int value = 0; };
+struct ProbeResource {
+    int value = 0;
+};
 
 int main() {
     using P = proto::Send<int, proto::End>;
     ProbeResource res{};
     auto bare = proto::mint_session_handle<P>(std::move(res));
 
-    int                not_a_log = 0;
-    proto::RoleTagId   self{1};
-    proto::RoleTagId   peer{2};
+    int not_a_log = 0;
+    proto::RoleTagId self{1};
+    proto::RoleTagId peer{2};
 
-    auto bad = proto::mint_recording_session(
-        std::move(bare), not_a_log, self, peer);
+    auto bad = proto::mint_recording_session(std::move(bare), not_a_log, self, peer);
     (void)bad;
     return 0;
 }

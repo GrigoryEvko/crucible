@@ -10,8 +10,7 @@ int main() {
     crucible::cog::CogIdentity nic{};
     nic.kind = crucible::cog::CogKind::NicPort;
     std::array samples{crucible::topology::CongestionState{}};
-    auto aggregate = crucible::topology::aggregate_congestion(
-        nic, std::span{samples});
+    auto aggregate = crucible::topology::aggregate_congestion(nic, std::span{samples});
     (void)aggregate;
     return 0;
 }

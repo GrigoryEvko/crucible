@@ -43,12 +43,11 @@ namespace {
 // NOT a constant expression, so the consteval evaluator fails the
 // surrounding static_assert.  Exactly what HS14 demands of a
 // soundness-gate witness.
-static_assert(under_test() == 0,
-    "CRUCIBLE_PRE on parameter-side null check MUST fire at consteval "
-    "when SetOnce::set is called with nullptr.  If this static_assert "
-    "evaluates successfully, the Pre.h consteval-enforcement is broken "
-    "for parameter predicates and the fixy-A1-007 migration is "
-    "structurally unsound.");
+static_assert(under_test() == 0, "CRUCIBLE_PRE on parameter-side null check MUST fire at consteval "
+                                 "when SetOnce::set is called with nullptr.  If this static_assert "
+                                 "evaluates successfully, the Pre.h consteval-enforcement is broken "
+                                 "for parameter predicates and the fixy-A1-007 migration is "
+                                 "structurally unsound.");
 
 }  // namespace
 

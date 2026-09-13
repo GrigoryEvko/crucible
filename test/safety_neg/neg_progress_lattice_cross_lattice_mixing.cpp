@@ -24,12 +24,11 @@
 using namespace crucible::algebra::lattices;
 
 int main() {
-    ProgressClass progress_val   = ProgressClass::Bounded;
-    MemOrderTag   mem_order_val  = MemOrderTag::AcqRel;
+    ProgressClass progress_val = ProgressClass::Bounded;
+    MemOrderTag mem_order_val = MemOrderTag::AcqRel;
 
     // Should FAIL: MemOrderLattice::leq's signature requires two
     // MemOrderTag values; passing a ProgressClass as the second
     // argument is a type-mismatch.
-    return static_cast<int>(
-        MemOrderLattice::leq(mem_order_val, progress_val));
+    return static_cast<int>(MemOrderLattice::leq(mem_order_val, progress_val));
 }

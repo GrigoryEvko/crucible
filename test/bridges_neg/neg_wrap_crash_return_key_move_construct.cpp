@@ -45,14 +45,11 @@ namespace {
 // Taking the key by `&&` compiles (parameter type only).  The
 // body's `auto bad = std::move(k);` is the move that fires
 // the deleted ctor.
-[[maybe_unused]] void move_construction_must_fail(
-    ::crucible::safety::proto::WrapCrashReturnKey&& k) {
+[[maybe_unused]] void move_construction_must_fail(::crucible::safety::proto::WrapCrashReturnKey&& k) {
     auto bad = std::move(k);
     (void)bad;
 }
 
 }  // namespace
 
-int main() {
-    return 0;
-}
+int main() { return 0; }

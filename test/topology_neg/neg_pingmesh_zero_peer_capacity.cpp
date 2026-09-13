@@ -7,8 +7,7 @@
 #include <crucible/topology/Pingmesh.h>
 
 int main() {
-    auto mesh = crucible::topology::mint_pingmesh<
-        crucible::effects::ColdInitCtx, 1>(crucible::effects::ColdInitCtx{});
+    auto mesh = crucible::topology::mint_pingmesh<crucible::effects::ColdInitCtx, 1>(crucible::effects::ColdInitCtx{});
     (void)mesh;
     return 0;
 }

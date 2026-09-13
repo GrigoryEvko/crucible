@@ -63,9 +63,9 @@ enum class PlumtreeError : std::uint8_t {
 [[nodiscard]] std::string_view plumtree_error_name(PlumtreeError error) noexcept;
 
 struct PlumtreeConfig {
-    PlumtreeDurationNs ihave_timeout_ns{100'000'000ULL};
-    PlumtreeDurationNs repair_timeout_ns{200'000'000ULL};
-    PlumtreeDurationNs lazy_push_period_ns{100'000'000ULL};
+    PlumtreeDurationNs ihave_timeout_ns{100000000ULL};
+    PlumtreeDurationNs repair_timeout_ns{200000000ULL};
+    PlumtreeDurationNs lazy_push_period_ns{100000000ULL};
     PlumtreePositiveCount max_eager_fanout{5};
 };
 

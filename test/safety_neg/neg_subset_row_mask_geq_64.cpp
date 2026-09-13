@@ -34,12 +34,10 @@ namespace eff = ::crucible::effects;
 
 template <unsigned Mask, unsigned Bit, eff::Effect... Atoms>
 struct subset_row_helper {
-    using type = std::conditional_t<
-        (Mask & (1u << Bit)) != 0u,
-        typename subset_row_helper<Mask, Bit + 1u, Atoms...,
-            static_cast<eff::Effect>(Bit)>::type,
-        typename subset_row_helper<Mask, Bit + 1u, Atoms...>::type
-    >;
+    using type =
+        std::conditional_t<(Mask & (1u << Bit)) != 0u,
+                           typename subset_row_helper<Mask, Bit + 1u, Atoms..., static_cast<eff::Effect>(Bit)>::type,
+                           typename subset_row_helper<Mask, Bit + 1u, Atoms...>::type>;
 };
 
 template <unsigned Mask, eff::Effect... Atoms>
@@ -49,7 +47,7 @@ struct subset_row_helper<Mask, 6u, Atoms...> {
 
 // Same constrained alias as in the F13 invalidation TU.
 template <unsigned Mask>
-    requires (Mask < 64u)
+    requires(Mask < 64u)
 using subset_row = typename subset_row_helper<Mask, 0u>::type;
 
 }  // namespace

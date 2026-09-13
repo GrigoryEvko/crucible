@@ -36,25 +36,20 @@
 #include <crucible/sessions/SessionDelegate.h>
 
 namespace proto = ::crucible::safety::proto;
-namespace eff   = ::crucible::effects;
+namespace eff = ::crucible::effects;
 
 namespace neg_a2_010_fg {
 struct Channel {};
-}
+}  // namespace neg_a2_010_fg
 
 int main() {
-    using InnerProto =
-        proto::Send<eff::Computation<eff::Row<eff::Effect::IO>, int>,
-                    proto::End>;
+    using InnerProto = proto::Send<eff::Computation<eff::Row<eff::Effect::IO>, int>, proto::End>;
     using IPS_empty = proto::EmptyPermSet;
 
-    using OuterProto =
-        proto::Send<proto::DelegatedSession<InnerProto, IPS_empty>,
-                    proto::End>;
+    using OuterProto = proto::Send<proto::DelegatedSession<InnerProto, IPS_empty>, proto::End>;
 
     eff::HotFgCtx ctx{};
-    auto bad = proto::mint_permissioned_session<OuterProto>(
-        ctx, neg_a2_010_fg::Channel{});
+    auto bad = proto::mint_permissioned_session<OuterProto>(ctx, neg_a2_010_fg::Channel{});
     (void)bad;
     return 0;
 }

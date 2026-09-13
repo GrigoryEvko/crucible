@@ -13,8 +13,7 @@ namespace stance = crucible::fixy::stance;
 
 using BadIoVolatile = stance::IoFunction<volatile int>;
 
-static_assert(sizeof(BadIoVolatile) > 0,
-    "instantiate stance::IoFunction<volatile int> to force the "
-    "Type-axis rejection (top-level volatile is not movable).");
+static_assert(sizeof(BadIoVolatile) > 0, "instantiate stance::IoFunction<volatile int> to force the "
+                                         "Type-axis rejection (top-level volatile is not movable).");
 
 int main() { return 0; }

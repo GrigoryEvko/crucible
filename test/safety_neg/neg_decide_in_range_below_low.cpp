@@ -122,8 +122,7 @@ template <typename T>
 // values at every cite (PoolAllocator::slot_ptr below
 // ELEMENT_BASE_OFFSET, MemoryPlan slot prologue overlap, Cipher
 // header overwrite).
-constexpr auto witness =
-    gate(std::uint32_t{0}, std::uint32_t{1}, std::uint32_t{10});
+constexpr auto witness = gate(std::uint32_t{0}, std::uint32_t{1}, std::uint32_t{10});
 
 }  // namespace
 

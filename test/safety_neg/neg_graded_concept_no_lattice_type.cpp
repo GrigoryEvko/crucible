@@ -17,15 +17,13 @@
 #include <string_view>
 
 struct MissingLatticeType {
-    using value_type  = int;
+    using value_type = int;
     // No `using lattice_type = ...;` — DELIBERATELY ABSENT.
     using graded_type = ::crucible::algebra::Graded<
         ::crucible::algebra::ModalityKind::Absolute,
-        ::crucible::algebra::lattices::QttSemiring::At<
-            ::crucible::algebra::lattices::QttGrade::One>,
-        int>;
+        ::crucible::algebra::lattices::QttSemiring::At<::crucible::algebra::lattices::QttGrade::One>, int>;
     static consteval std::string_view value_type_name() noexcept { return "x"; }
-    static consteval std::string_view lattice_name()    noexcept { return "y"; }
+    static consteval std::string_view lattice_name() noexcept { return "y"; }
 };
 
 int main() {

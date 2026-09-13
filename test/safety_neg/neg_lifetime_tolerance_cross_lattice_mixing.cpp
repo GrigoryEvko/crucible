@@ -25,12 +25,11 @@
 using namespace crucible::algebra::lattices;
 
 int main() {
-    Lifetime  lifetime_val  = Lifetime::PER_FLEET;
+    Lifetime lifetime_val = Lifetime::PER_FLEET;
     Tolerance tolerance_val = Tolerance::BITEXACT;
 
     // Should FAIL: LifetimeLattice::leq's signature requires two
     // Lifetime values; Tolerance is a structurally different
     // `enum class : uint8_t` and not implicitly convertible.
-    return static_cast<int>(
-        LifetimeLattice::leq(lifetime_val, tolerance_val));
+    return static_cast<int>(LifetimeLattice::leq(lifetime_val, tolerance_val));
 }

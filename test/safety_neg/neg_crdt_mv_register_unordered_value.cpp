@@ -9,9 +9,7 @@
 struct EqualityOnlyPayload {
     int value = 0;
 
-    [[nodiscard]] friend constexpr bool operator==(
-        EqualityOnlyPayload const&,
-        EqualityOnlyPayload const&) = default;
+    [[nodiscard]] friend constexpr bool operator==(EqualityOnlyPayload const&, EqualityOnlyPayload const&) = default;
 };
 
 int main() {

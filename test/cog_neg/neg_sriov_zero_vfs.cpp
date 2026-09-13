@@ -9,6 +9,4 @@ namespace sriov = crucible::cog::sriov;
 
 constexpr sriov::VfCount bad_count{std::uint16_t{0}};
 
-int main() {
-    return static_cast<int>(bad_count.value());
-}
+int main() { return static_cast<int>(bad_count.value()); }

@@ -18,7 +18,7 @@ using namespace crucible::safety;
 
 int main() {
     AllocClass<AllocClassTag_v::Stack, int> stack_value{42};
-    AllocClass<AllocClassTag_v::Heap,  int> heap_value{7};
+    AllocClass<AllocClassTag_v::Heap, int> heap_value{7};
 
     // Should FAIL: stack_value and heap_value are DIFFERENT types.
     stack_value = heap_value;

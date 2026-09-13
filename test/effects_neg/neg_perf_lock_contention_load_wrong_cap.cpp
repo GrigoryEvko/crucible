@@ -23,8 +23,7 @@ int main() {
     auto bg_cap = crucible::effects::testing::bg();
 
     // <-- this line must NOT compile
-    std::optional<crucible::perf::LockContention> hub =
-        crucible::perf::LockContention::load(bg_cap);
+    std::optional<crucible::perf::LockContention> hub = crucible::perf::LockContention::load(bg_cap);
 
     (void)hub;
     return 0;

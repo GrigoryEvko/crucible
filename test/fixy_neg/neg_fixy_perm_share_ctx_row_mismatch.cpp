@@ -16,9 +16,9 @@
 #include <crucible/fixy/Perm.h>
 
 namespace fperm = ::crucible::fixy::perm;
-namespace ptag  = ::crucible::permissions::tag;
-namespace eff   = ::crucible::effects;
-namespace safe  = ::crucible::safety;
+namespace ptag = ::crucible::permissions::tag;
+namespace eff = ::crucible::effects;
+namespace safe = ::crucible::safety;
 
 int main() {
     // NetworkBufferTag has Row<Effect::IO>.  Use the ctx-bound mint
@@ -33,7 +33,6 @@ int main() {
     auto exc = fperm::mint_permission_root<ptag::NetworkBufferTag>(good_ctx);
 
     // Should FAIL: HotFgCtx does NOT admit Row<Effect::IO>.
-    [[maybe_unused]] auto shared = fperm::mint_permission_share<
-        ptag::NetworkBufferTag>(ctx, std::move(exc));
+    [[maybe_unused]] auto shared = fperm::mint_permission_share<ptag::NetworkBufferTag>(ctx, std::move(exc));
     return 0;
 }

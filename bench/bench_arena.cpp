@@ -24,8 +24,8 @@ int main() {
     // batching would hide the per-call block allocation cost (one block =
     // one call), so sample explicitly. Each 8KB alloc triggers brk/mmap;
     // 20k samples × ~1µs ≈ 20ms wall time.
-    constexpr size_t kSlowPathSamples = 20'000;
-    constexpr size_t kSlowPathWarmup  = 100;
+    constexpr size_t kSlowPathSamples = 20000;
+    constexpr size_t kSlowPathWarmup = 100;
 
     std::printf("=== arena ===\n");
 
@@ -34,78 +34,73 @@ int main() {
     // move ctor is `= default` — the IIFE-lambda pattern works via NRVO +
     // move-construction into the aggregate-init slot).
     bench::Report reports[] = {
-        [&]{
+        [&] {
             crucible::Arena arena(1u << 24);
             auto test = crucible::effects::testing::test();
-            return bench::run("arena.alloc(8)", [&]{
-                auto* p = arena.alloc(test.alloc,
-                    crucible::safety::Positive<size_t>{8});
+            return bench::run("arena.alloc(8)", [&] {
+                auto* p = arena.alloc(test.alloc, crucible::safety::Positive<size_t>{8});
                 bench::do_not_optimize(p);
             });
         }(),
-        [&]{
+        [&] {
             crucible::Arena arena(1u << 24);
             auto test = crucible::effects::testing::test();
-            return bench::run("arena.alloc(64)", [&]{
-                auto* p = arena.alloc(test.alloc,
-                    crucible::safety::Positive<size_t>{64});
+            return bench::run("arena.alloc(64)", [&] {
+                auto* p = arena.alloc(test.alloc, crucible::safety::Positive<size_t>{64});
                 bench::do_not_optimize(p);
             });
         }(),
-        [&]{
+        [&] {
             crucible::Arena arena(1u << 24);
             auto test = crucible::effects::testing::test();
-            return bench::run("arena.alloc(64, align=64)", [&]{
-                auto* p = arena.alloc(test.alloc,
-                    crucible::safety::Positive<size_t>{64},
-                    crucible::safety::PowerOfTwo<size_t>{64});
+            return bench::run("arena.alloc(64, align=64)", [&] {
+                auto* p = arena.alloc(test.alloc, crucible::safety::Positive<size_t>{64},
+                                      crucible::safety::PowerOfTwo<size_t>{64});
                 bench::do_not_optimize(p);
             });
         }(),
-        [&]{
+        [&] {
             crucible::Arena arena(1u << 24);
             auto test = crucible::effects::testing::test();
-            return bench::run("arena.alloc_obj<uint64_t>", [&]{
+            return bench::run("arena.alloc_obj<uint64_t>", [&] {
                 auto* p = arena.alloc_obj<uint64_t>(test.alloc);
                 bench::do_not_optimize(p);
             });
         }(),
-        [&]{
+        [&] {
             crucible::Arena arena(1u << 24);
             auto test = crucible::effects::testing::test();
-            return bench::run("arena.alloc_array<uint64_t>(100)", [&]{
+            return bench::run("arena.alloc_array<uint64_t>(100)", [&] {
                 auto* p = arena.alloc_array<uint64_t>(test.alloc, 100);
                 bench::do_not_optimize(p);
             });
         }(),
-        [&]{
+        [&] {
             crucible::Arena arena(1u << 24);
             auto test = crucible::effects::testing::test();
-            return bench::run("arena.alloc_array<uint64_t>(0) nullptr", [&]{
+            return bench::run("arena.alloc_array<uint64_t>(0) nullptr", [&] {
                 auto* p = arena.alloc_array<uint64_t>(test.alloc, 0);
                 bench::do_not_optimize(p);
             });
         }(),
-        [&]{
+        [&] {
             // Oversized-request slow path: each alloc triggers a new block.
             // Explicit sample/warmup counts — see kSlowPathSamples above.
             // Fluent-builder form because we override samples/warmup; the
             // one-shot bench::run(name, body) helper has no override hook.
             crucible::Arena arena(4096);
             auto test = crucible::effects::testing::test();
-            auto r = bench::Run("arena.alloc(8192) slow-path")
-                         .samples(kSlowPathSamples).warmup(kSlowPathWarmup);
+            auto r = bench::Run("arena.alloc(8192) slow-path").samples(kSlowPathSamples).warmup(kSlowPathWarmup);
             if (const int c = bench::env_core(); c >= 0) (void)r.core(c);
-            return r.measure([&]{
-                auto* p = arena.alloc(test.alloc,
-                    crucible::safety::Positive<size_t>{8192});
+            return r.measure([&] {
+                auto* p = arena.alloc(test.alloc, crucible::safety::Positive<size_t>{8192});
                 bench::do_not_optimize(p);
             });
         }(),
-        [&]{
+        [&] {
             crucible::Arena arena(1u << 24);
             auto test = crucible::effects::testing::test();
-            return bench::run("arena.copy_string(\"relu\")", [&]{
+            return bench::run("arena.copy_string(\"relu\")", [&] {
                 auto* p = arena.copy_string(test.alloc, "relu");
                 bench::do_not_optimize(p);
             });

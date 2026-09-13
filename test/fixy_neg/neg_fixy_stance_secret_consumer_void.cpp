@@ -15,8 +15,7 @@ namespace policy = crucible::safety::secret_policy;
 
 using BadSecretVoid = stance::SecretConsumer<void, policy::WireSerialize>;
 
-static_assert(sizeof(BadSecretVoid) > 0,
-    "instantiate stance::SecretConsumer<void, WireSerialize> to "
-    "force the Type-axis rejection (void is not an object).");
+static_assert(sizeof(BadSecretVoid) > 0, "instantiate stance::SecretConsumer<void, WireSerialize> to "
+                                         "force the Type-axis rejection (void is not an object).");
 
 int main() { return 0; }

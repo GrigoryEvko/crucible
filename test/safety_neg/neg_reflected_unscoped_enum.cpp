@@ -47,8 +47,7 @@ int main() {
     // therefore never gets a well-formed first parameter, and its
     // own template parameter constraint also fails.
     char buf[64] = {};
-    auto n = ref::bits_to_string<FlagsLegacy>(
-        crucible::safety::Bits<FlagsLegacy>{}, buf, sizeof(buf));
+    auto n = ref::bits_to_string<FlagsLegacy>(crucible::safety::Bits<FlagsLegacy>{}, buf, sizeof(buf));
     std::printf("%zu\n", n);
     return 0;
 }

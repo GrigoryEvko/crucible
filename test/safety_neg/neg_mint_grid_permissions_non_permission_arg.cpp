@@ -29,4 +29,7 @@ void exercise_non_permission_arg() {
 }
 }  // namespace
 
-int main() { exercise_non_permission_arg(); return 0; }
+int main() {
+    exercise_non_permission_arg();
+    return 0;
+}

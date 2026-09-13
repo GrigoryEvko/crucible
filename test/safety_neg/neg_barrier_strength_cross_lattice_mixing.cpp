@@ -24,11 +24,10 @@ using namespace crucible::algebra::lattices;
 
 int main() {
     BarrierStrength barrier_val = BarrierStrength::SeqCst;
-    HwInstruction   hw_val      = HwInstruction::Scalar;
+    HwInstruction hw_val = HwInstruction::Scalar;
 
     // Should FAIL: BarrierStrengthLattice::leq requires two BarrierStrength
     // values; passing a HwInstruction as the second argument is a type
     // mismatch (no cross-enum implicit conversion).
-    return static_cast<int>(
-        BarrierStrengthLattice::leq(barrier_val, hw_val));
+    return static_cast<int>(BarrierStrengthLattice::leq(barrier_val, hw_val));
 }

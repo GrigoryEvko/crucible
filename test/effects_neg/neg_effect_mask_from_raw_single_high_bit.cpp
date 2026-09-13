@@ -61,4 +61,7 @@ constexpr auto witness = eff::EffectMask::from_raw(std::uint8_t{0x80});
 
 }  // namespace
 
-int main() { (void)witness; return 0; }
+int main() {
+    (void)witness;
+    return 0;
+}

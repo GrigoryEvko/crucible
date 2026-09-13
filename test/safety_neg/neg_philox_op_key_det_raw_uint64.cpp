@@ -9,8 +9,7 @@
 #include <cstdint>
 
 int main() {
-    std::uint64_t key = crucible::Philox::op_key_det(
-        1u, 2u, crucible::ContentHash{3u});
+    std::uint64_t key = crucible::Philox::op_key_det(1u, 2u, crucible::ContentHash{3u});
     (void)key;
     return 0;
 }

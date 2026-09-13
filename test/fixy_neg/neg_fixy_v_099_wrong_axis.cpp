@@ -47,8 +47,7 @@ namespace fxgi = crucible::fixy::grant::syscall::ioctl;
 // `ioctl::vendor<...>` — the parametric grant's template-parameter
 // type is `safety::syscall::IoctlVendor`, NOT `IoctlSubsystem`.
 // Template-id formation rejects.
-using Bad =
-    fxgi::vendor<fxgs::IoctlSubsystem::drm /* wrong enum type */>;
+using Bad = fxgi::vendor<fxgs::IoctlSubsystem::drm /* wrong enum type */>;
 
 int main() {
     [[maybe_unused]] Bad b{};

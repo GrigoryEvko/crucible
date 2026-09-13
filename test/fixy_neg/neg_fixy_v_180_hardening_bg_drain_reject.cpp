@@ -27,11 +27,8 @@ namespace eff = ::crucible::effects;
 // mint_hardening from a bg-drain thread would be a clear category
 // error — the privileged syscall set belongs to Init.
 [[maybe_unused]] constexpr auto bad_dispatch =
-    ::crucible::warden::mint_hardening(eff::BgDrainCtx{},
-                                       ::crucible::warden::Policy{});
+    ::crucible::warden::mint_hardening(eff::BgDrainCtx{}, ::crucible::warden::Policy{});
 
 }  // namespace neg_fixy_v_180_hardening_bg_drain
 
-int main() {
-    return 0;
-}
+int main() { return 0; }

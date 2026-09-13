@@ -55,7 +55,7 @@ struct OverlayMulticastConfig {
     OverlayStripeCount stripe_count{std::uint8_t{8}, typename OverlayStripeCount::Trusted{}};
     OverlayRecoveryThreshold recovery_threshold{std::uint8_t{5}, typename OverlayRecoveryThreshold::Trusted{}};
     OverlayFanout fanout{std::uint8_t{2}, typename OverlayFanout::Trusted{}};
-    OverlayPayloadBytes max_payload_bytes{65'507U};
+    OverlayPayloadBytes max_payload_bytes{65507U};
     bool use_fec_per_stripe = true;
 };
 
@@ -132,15 +132,15 @@ namespace overlay_detail {
 
 [[nodiscard]] constexpr std::uint64_t mix64(std::uint64_t x) noexcept {
     x ^= x >> 30U;
-    x *= 0xbf58'476d'1ce4'e5b9ULL;
+    x *= 0xbf58476d1ce4e5b9ULL;
     x ^= x >> 27U;
-    x *= 0x94d0'49bb'1331'11ebULL;
+    x *= 0x94d049bb133111ebULL;
     x ^= x >> 31U;
     return x;
 }
 
 [[nodiscard]] constexpr std::uint64_t stripe_hash(OverlayPeerRef peer, std::uint8_t stripe) noexcept {
-    return mix64(peer.uuid.hi ^ mix64(peer.uuid.lo) ^ (std::uint64_t{stripe} * 0x9e37'79b9'7f4a'7c15ULL));
+    return mix64(peer.uuid.hi ^ mix64(peer.uuid.lo) ^ (std::uint64_t{stripe} * 0x9e3779b97f4a7c15ULL));
 }
 
 }  // namespace overlay_detail

@@ -22,15 +22,14 @@
 #include <crucible/safety/IsReduceInto.h>
 
 struct NotReduceInto {
-    int    accumulator;
-    int   (*reducer)(int, int);
+    int accumulator;
+    int (*reducer)(int, int);
 };
 
 int main() {
     // NotReduceInto has the same field-by-name shape as reduce_into
     // but is not a specialization → alias is ill-formed.
-    using R =
-        crucible::safety::extract::reduce_into_reducer_t<NotReduceInto>;
+    using R = crucible::safety::extract::reduce_into_reducer_t<NotReduceInto>;
     R const r{};
     (void)r;
     return 0;

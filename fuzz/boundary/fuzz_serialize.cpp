@@ -31,10 +31,7 @@ int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
 
     crucible::Arena arena;
     auto test = crucible::effects::testing::test();
-    auto loaded_region = crucible::deserialize_region(
-        test.alloc,
-        std::span<const uint8_t>{data, size},
-        arena);
+    auto loaded_region = crucible::deserialize_region(test.alloc, std::span<const uint8_t>{data, size}, arena);
     crucible::RegionNode* region = loaded_region.value();
     // Either valid (non-null) or invalid (nullptr); both are
     // acceptable outcomes — the harness tests the NO-CRASH property

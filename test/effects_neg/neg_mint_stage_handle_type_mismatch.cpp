@@ -30,7 +30,7 @@
 #include <utility>
 
 namespace conc = crucible::concurrent;
-namespace eff  = crucible::effects;
+namespace eff = crucible::effects;
 
 template <typename T>
 struct FakeConsumer {
@@ -47,13 +47,13 @@ inline void int_to_int_stage(FakeConsumer<int>&&, FakeProducer<int>&&) noexcept 
 
 int main() {
     eff::HotFgCtx ctx;
-    FakeConsumer<float> wrong_type_consumer;     // <-- float, not int
-    FakeProducer<int>   producer;
+    FakeConsumer<float> wrong_type_consumer;  // <-- float, not int
+    FakeProducer<int> producer;
 
-    auto bad = conc::mint_stage<&int_to_int_stage>(
-        ctx,
-        std::move(wrong_type_consumer),  // type mismatch vs FakeConsumer<int>
-        std::move(producer));
+    auto bad =
+        conc::mint_stage<&int_to_int_stage>(ctx,
+                                            std::move(wrong_type_consumer),  // type mismatch vs FakeConsumer<int>
+                                            std::move(producer));
     (void)bad;
     return 0;
 }

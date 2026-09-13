@@ -21,16 +21,16 @@
 
 #include <utility>
 
-namespace fp   = ::crucible::safety::proto::federation;
+namespace fp = ::crucible::safety::proto::federation;
 namespace perm = ::crucible::permissions;
-namespace saf  = ::crucible::safety;
-namespace eff  = ::crucible::effects;
+namespace saf = ::crucible::safety;
+namespace eff = ::crucible::effects;
 
 namespace neg_fed_row_fg {
 struct PeerOrg {};
 struct TraceKey {};
 struct Endpoint {};
-}
+}  // namespace neg_fed_row_fg
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
@@ -41,25 +41,18 @@ int main() {
     // fixy-A2-009 federation mints now take a SharedPermission witness;
     // park the exclusive Permission in a pool and lend a token.
     auto local = saf::mint_permission_root<perm::tag::LocalCipherTag>();
-    auto handshake =
-        perm::make_self_signed_handshake<neg_fed_row_fg::PeerOrg>(
-            /*peer_key_fp=*/perm::PeerKeyFingerprint{0xFEDCDEULL},
-            /*nonce=*/perm::Nonce{0xC0FFEEULL});
-    auto admitted = perm::mint_federation_admittance<
-        neg_fed_row_fg::PeerOrg,
-        perm::policy::admit_orgs<neg_fed_row_fg::PeerOrg>>(
+    auto handshake = perm::make_self_signed_handshake<neg_fed_row_fg::PeerOrg>(
+        /*peer_key_fp=*/perm::PeerKeyFingerprint{0xFEDCDEULL},
+        /*nonce=*/perm::Nonce{0xC0FFEEULL});
+    auto admitted =
+        perm::mint_federation_admittance<neg_fed_row_fg::PeerOrg, perm::policy::admit_orgs<neg_fed_row_fg::PeerOrg>>(
             local, handshake);
-    auto pool = fp::mint_federation_pool<neg_fed_row_fg::PeerOrg>(
-        std::move(*admitted));
+    auto pool = fp::mint_federation_pool<neg_fed_row_fg::PeerOrg>(std::move(*admitted));
     auto guard = pool.lend();
 
     eff::HotFgCtx fg{};
-    auto channel = fp::mint_channel<
-        neg_fed_row_fg::PeerOrg, neg_fed_row_fg::TraceKey>(
-        fg,
-        neg_fed_row_fg::Endpoint{},
-        neg_fed_row_fg::Endpoint{},
-        guard->token());
+    auto channel = fp::mint_channel<neg_fed_row_fg::PeerOrg, neg_fed_row_fg::TraceKey>(
+        fg, neg_fed_row_fg::Endpoint{}, neg_fed_row_fg::Endpoint{}, guard->token());
     (void)channel;
     return 0;
 }

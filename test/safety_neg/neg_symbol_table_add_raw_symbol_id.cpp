@@ -18,9 +18,8 @@
 #include <crucible/Ops.h>
 
 int main() {
-  crucible::SymbolTable table;
-  crucible::SymbolId id =
-      table.add(crucible::SymKind::SIZE, crucible::ExprFlags::IS_INTEGER);
-  (void)id;
-  return 0;
+    crucible::SymbolTable table;
+    crucible::SymbolId id = table.add(crucible::SymKind::SIZE, crucible::ExprFlags::IS_INTEGER);
+    (void)id;
+    return 0;
 }

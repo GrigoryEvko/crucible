@@ -14,7 +14,9 @@ using crucible::safety::WriteOnce;
 
 // Intent: an "immutable event log".  The naive reach for WriteOnce is
 // the redundant pattern we want to forbid.
-struct Event { int payload; };
+struct Event {
+    int payload;
+};
 
 using RedundantLog = AppendOnly<WriteOnce<Event>>;
 

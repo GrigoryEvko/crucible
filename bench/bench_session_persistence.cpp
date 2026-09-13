@@ -12,8 +12,7 @@
 #include <unistd.h>
 
 // FIXY-V-031: Cipher::open() now takes Path<source::External>.
-using CipherRoot = crucible::fixy::wrap::Path<
-    crucible::fixy::tags::source::External>;
+using CipherRoot = crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>;
 
 namespace proto = crucible::safety::proto;
 namespace eff = crucible::effects;
@@ -27,14 +26,9 @@ struct CounterResource {
     int last = 0;
 };
 
-using PersistProto = proto::Loop<
-    proto::Select<
-        proto::Send<int, proto::Continue>,
-        proto::End>>;
+using PersistProto = proto::Loop<proto::Select<proto::Send<int, proto::Continue>, proto::End>>;
 
-static void send_value(CounterResource& r, int value) noexcept {
-    r.last = value;
-}
+static void send_value(CounterResource& r, int value) noexcept { r.last = value; }
 
 template <typename Handle>
 [[nodiscard]] CounterResource drive_events(Handle handle, int sends) {
@@ -47,8 +41,8 @@ template <typename Handle>
 }
 
 [[nodiscard]] auto tmp_dir() {
-    const auto path = std::filesystem::temp_directory_path() /
-        ("crucible_bench_session_persistence_" + std::to_string(::getpid()));
+    const auto path =
+        std::filesystem::temp_directory_path() / ("crucible_bench_session_persistence_" + std::to_string(::getpid()));
     std::filesystem::remove_all(path);
     std::filesystem::create_directories(path);
     return path;
@@ -61,8 +55,7 @@ int main() {
     bench::elevate_priority();
 
     const auto dir = tmp_dir();
-    std::printf("=== session persistence ===\n  tmpdir: %s\n\n",
-                dir.c_str());
+    std::printf("=== session persistence ===\n  tmpdir: %s\n\n", dir.c_str());
 
     auto cipher = crucible::Cipher::open(CipherRoot{dir.string()});
     auto view = cipher.mint_open_view();
@@ -87,35 +80,19 @@ int main() {
     });
 
     std::uint64_t session_counter = 1000;
-    auto persisted_final_flush = bench::run(
-        "PersistedSessionHandle 5000 events final flush", [&] {
-            auto h = proto::mint_persisted_session<PersistProto>(
-                ctx,
-                cipher,
-                view,
-                CounterResource{},
-                proto::SessionTagId{++session_counter},
-                kA,
-                kB,
-                no_midrun_flush);
-            auto resource = drive_events(std::move(h), 2499);
-            bench::do_not_optimize(resource.last);
-        });
+    auto persisted_final_flush = bench::run("PersistedSessionHandle 5000 events final flush", [&] {
+        auto h = proto::mint_persisted_session<PersistProto>(
+            ctx, cipher, view, CounterResource{}, proto::SessionTagId{++session_counter}, kA, kB, no_midrun_flush);
+        auto resource = drive_events(std::move(h), 2499);
+        bench::do_not_optimize(resource.last);
+    });
 
-    auto persisted_batched = bench::run(
-        "PersistedSessionHandle 5000 events flush/1000", [&] {
-            auto h = proto::mint_persisted_session<PersistProto>(
-                ctx,
-                cipher,
-                view,
-                CounterResource{},
-                proto::SessionTagId{++session_counter},
-                kA,
-                kB,
-                flush_every_1000);
-            auto resource = drive_events(std::move(h), 2499);
-            bench::do_not_optimize(resource.last);
-        });
+    auto persisted_batched = bench::run("PersistedSessionHandle 5000 events flush/1000", [&] {
+        auto h = proto::mint_persisted_session<PersistProto>(
+            ctx, cipher, view, CounterResource{}, proto::SessionTagId{++session_counter}, kA, kB, flush_every_1000);
+        auto resource = drive_events(std::move(h), 2499);
+        bench::do_not_optimize(resource.last);
+    });
 
     std::vector<bench::Report> reports;
     reports.reserve(3);

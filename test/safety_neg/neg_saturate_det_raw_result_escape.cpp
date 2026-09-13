@@ -8,7 +8,6 @@
 #include <crucible/Saturate.h>
 
 int main() {
-  crucible::safety::Saturated<unsigned> escaped =
-      crucible::sat::add_sat_det<unsigned>(1u, 2u);
-  return static_cast<int>(escaped.value());
+    crucible::safety::Saturated<unsigned> escaped = crucible::sat::add_sat_det<unsigned>(1u, 2u);
+    return static_cast<int>(escaped.value());
 }

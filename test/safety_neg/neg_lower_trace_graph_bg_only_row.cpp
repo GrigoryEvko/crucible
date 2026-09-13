@@ -15,14 +15,13 @@
 namespace eff = ::crucible::effects;
 
 int main() {
-  auto test = eff::testing::test();
-  crucible::ExprPool pool{test.alloc};
-  crucible::Graph graph{test.alloc, &pool};
-  crucible::TraceGraph trace{};
-  using RecordedTraceGraph =
-      crucible::LowerTraceGraph<crucible::safety::source::Recorded>;
+    auto test = eff::testing::test();
+    crucible::ExprPool pool{test.alloc};
+    crucible::Graph graph{test.alloc, &pool};
+    crucible::TraceGraph trace{};
+    using RecordedTraceGraph = crucible::LowerTraceGraph<crucible::safety::source::Recorded>;
 
-  (void)crucible::lower_trace_to_graph<eff::Row<eff::Effect::Bg>>(
-      test.alloc, RecordedTraceGraph{&trace}, pool, graph);
-  return 0;
+    (void)crucible::lower_trace_to_graph<eff::Row<eff::Effect::Bg>>(test.alloc, RecordedTraceGraph{&trace}, pool,
+                                                                    graph);
+    return 0;
 }

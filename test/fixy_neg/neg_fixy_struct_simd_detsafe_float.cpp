@@ -22,7 +22,9 @@ struct TypeStructSimdDetSafeFloat {};
 
 template <typename V>
     requires fstr::simd::DetSafeSimd<V>
-[[nodiscard]] constexpr int gate() noexcept { return 1; }
+[[nodiscard]] constexpr int gate() noexcept {
+    return 1;
+}
 
 }  // namespace neg_fixy_struct_simd_detsafe_float
 

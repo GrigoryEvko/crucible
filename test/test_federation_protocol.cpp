@@ -115,8 +115,8 @@ static void test_magic_byte_order() {
 
 static void test_round_trip_basic() {
     const KernelCacheKey key{
-        ContentHash{0xC0FFEE'BA'12345678ULL},
-        RowHash{0xDEAD'BEEF'5678'9ABCULL},
+        ContentHash{0xC0FFEEBA12345678ULL},
+        RowHash{0xDEADBEEF56789ABCULL},
     };
     const std::array<std::uint8_t, 8> payload = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
 
@@ -152,8 +152,8 @@ static void test_round_trip_basic() {
 
 static void test_round_trip_empty_payload() {
     const KernelCacheKey key{
-        ContentHash{0x1111'2222'3333'4444ULL},
-        RowHash{0xAAAA'BBBB'CCCC'DDDDULL},
+        ContentHash{0x1111222233334444ULL},
+        RowHash{0xAAAABBBBCCCCDDDDULL},
     };
 
     std::array<std::uint8_t, 32> buf{};
@@ -241,7 +241,7 @@ static void test_deserialize_rejects_truncated_header() {
 static void test_deserialize_rejects_bad_magic() {
     std::array<std::uint8_t, 32> buf{};
     fed::FederationEntryHeader hdr{};
-    hdr.magic = 0xDEAD'BEEFu;  // not FEDERATION_MAGIC
+    hdr.magic = 0xDEADBEEFu;  // not FEDERATION_MAGIC
     hdr.protocol_version = fed::FEDERATION_PROTOCOL_V1;
     hdr.universe_cardinality = 6u;
     hdr.content_hash = ContentHash{0x42};
@@ -293,7 +293,7 @@ static void test_deserialize_rejects_reserved_nonzero() {
     hdr.content_hash = ContentHash{0x42};
     hdr.row_hash = RowHash{0x43};
     hdr.payload_size = 0u;
-    hdr.reserved = 0xDEAD'BEEFu;
+    hdr.reserved = 0xDEADBEEFu;
     std::memcpy(buf.data(), &hdr, sizeof(hdr));
 
     auto view = fed::deserialize_untrusted_federation_entry(buf, 6);
@@ -439,8 +439,8 @@ static void test_deserialize_rejects_truncated_payload() {
 
 static void test_serialize_is_deterministic() {
     const KernelCacheKey key{
-        ContentHash{0xC0FFEE'BA'12345678ULL},
-        RowHash{0xDEAD'BEEF'5678'9ABCULL},
+        ContentHash{0xC0FFEEBA12345678ULL},
+        RowHash{0xDEADBEEF56789ABCULL},
     };
     const std::array<std::uint8_t, 4> payload = {0xAA, 0xBB, 0xCC, 0xDD};
 
@@ -467,7 +467,7 @@ static void test_header_overload_agreement() {
     {
         std::array<std::uint8_t, 32> buf{};
         fed::FederationEntryHeader hdr{};
-        hdr.magic = 0xDEAD'BEEFu;
+        hdr.magic = 0xDEADBEEFu;
         hdr.protocol_version = fed::FEDERATION_PROTOCOL_V1;
         hdr.universe_cardinality = 6u;
         hdr.content_hash = ContentHash{0x42};
@@ -528,8 +528,8 @@ static void test_error_name_coverage() {
 
 static void test_round_trip_full_byte_range() {
     const KernelCacheKey key{
-        ContentHash{0x1234'5678'9ABC'DEF0ULL},
-        RowHash{0xFEDC'BA98'7654'3210ULL},
+        ContentHash{0x123456789ABCDEF0ULL},
+        RowHash{0xFEDCBA9876543210ULL},
     };
     std::array<std::uint8_t, 256> payload{};
     for (std::size_t i = 0; i < payload.size(); ++i) {
@@ -580,12 +580,12 @@ static void test_view_payload_aliases_input() {
 
 static void test_axis_swap_distinct_on_wire() {
     const KernelCacheKey k_normal{
-        ContentHash{0x1111'1111'1111'1111ULL},
-        RowHash{0x2222'2222'2222'2222ULL},
+        ContentHash{0x1111111111111111ULL},
+        RowHash{0x2222222222222222ULL},
     };
     const KernelCacheKey k_swapped{
-        ContentHash{0x2222'2222'2222'2222ULL},  // same values, other axis
-        RowHash{0x1111'1111'1111'1111ULL},
+        ContentHash{0x2222222222222222ULL},  // same values, other axis
+        RowHash{0x1111111111111111ULL},
     };
 
     std::array<std::uint8_t, 32> buf_n{};
@@ -686,8 +686,8 @@ static void test_audit_a_cardinality_boundary_uint16_max() {
 
 static void test_audit_b_buffer_exactly_fits() {
     const KernelCacheKey key{
-        ContentHash{0x1111'2222'3333'4444ULL},
-        RowHash{0x5555'6666'7777'8888ULL},
+        ContentHash{0x1111222233334444ULL},
+        RowHash{0x5555666677778888ULL},
     };
     const std::array<std::uint8_t, 16> payload = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
 
@@ -755,7 +755,7 @@ static void test_audit_d_partial_sentinel_accepted() {
     {
         const KernelCacheKey key{
             ContentHash{MAX},
-            RowHash{0xAAAA'BBBB'CCCC'DDDDULL},
+            RowHash{0xAAAABBBBCCCCDDDDULL},
         };
         assert(!key.is_sentinel());
         assert(!key.is_zero());
@@ -772,7 +772,7 @@ static void test_audit_d_partial_sentinel_accepted() {
 
     {
         const KernelCacheKey key{
-            ContentHash{0x1234'5678'9ABC'DEF0ULL},
+            ContentHash{0x123456789ABCDEF0ULL},
             RowHash{MAX},
         };
         assert(!key.is_sentinel());
@@ -791,7 +791,7 @@ static void test_audit_d_partial_sentinel_accepted() {
     {
         const KernelCacheKey key{
             ContentHash{0u},
-            RowHash{0xDEAD'BEEFULL},
+            RowHash{0xDEADBEEFULL},
         };
         assert(!key.is_zero());
         assert(!key.is_sentinel());
@@ -808,7 +808,7 @@ static void test_audit_d_partial_sentinel_accepted() {
 // codec must not treat that as an error or collapse the two fields.
 
 static void test_audit_e_same_bit_pattern_axes() {
-    constexpr std::uint64_t SHARED_BITS = 0xDEAD'BEEF'CAFE'BABEULL;
+    constexpr std::uint64_t SHARED_BITS = 0xDEADBEEFCAFEBABEULL;
     const KernelCacheKey key{
         ContentHash{SHARED_BITS},
         RowHash{SHARED_BITS},
@@ -910,8 +910,8 @@ static void test_audit_h_field_width_pins() {
 
 static void test_audit_i_vector_buffer_roundtrip() {
     const KernelCacheKey key{
-        ContentHash{0x0F0F'0F0F'0F0F'0F0FULL},
-        RowHash{0xF0F0'F0F0'F0F0'F0F0ULL},
+        ContentHash{0x0F0F0F0F0F0F0F0FULL},
+        RowHash{0xF0F0F0F0F0F0F0F0ULL},
     };
 
     std::vector<std::uint8_t> payload(1024);

@@ -25,8 +25,8 @@
 #include <crucible/fixy/Substr.h>
 
 namespace fscal = ::crucible::fixy::substr::sharded_calendar_grid;
-namespace conc  = ::crucible::concurrent;
-namespace eff   = ::crucible::effects;
+namespace conc = ::crucible::concurrent;
+namespace eff = ::crucible::effects;
 
 namespace neg_fixy_scal_producer_session_wrong_handle {
 struct UserTag {};
@@ -34,21 +34,16 @@ struct Job {
     std::uint64_t deadline_ns = 0;
 };
 struct Key {
-    static std::uint64_t key(Job const& job) noexcept {
-        return job.deadline_ns;
-    }
+    static std::uint64_t key(Job const& job) noexcept { return job.deadline_ns; }
 };
-using Grid = conc::PermissionedShardedCalendarGrid<
-    Job, 2, 8, 16, Key, 1'000'000ULL, UserTag>;
-}
+using Grid = conc::PermissionedShardedCalendarGrid<Job, 2, 8, 16, Key, 1000000ULL, UserTag>;
+}  // namespace neg_fixy_scal_producer_session_wrong_handle
 
 int main() {
     eff::HotFgCtx ctx{};
     int not_a_handle = 0;
 
-    auto bad = fscal::mint_producer_session<
-        neg_fixy_scal_producer_session_wrong_handle::Grid, 0>(
-            ctx, not_a_handle);
+    auto bad = fscal::mint_producer_session<neg_fixy_scal_producer_session_wrong_handle::Grid, 0>(ctx, not_a_handle);
     (void)bad;
     return 0;
 }

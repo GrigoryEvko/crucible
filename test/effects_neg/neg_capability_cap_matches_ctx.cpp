@@ -21,7 +21,7 @@ constexpr void use_cap_in_ctx(Cap&&, Ctx const&) noexcept {}
 int main() {
     auto bg = eff::testing::bg();
     auto io_cap = eff::mint_cap<eff::Effect::IO>(bg);
-    eff::BgDrainCtx drain_ctx;          // row = {Bg, Alloc} — no IO
+    eff::BgDrainCtx drain_ctx;  // row = {Bg, Alloc} — no IO
     use_cap_in_ctx(std::move(io_cap), drain_ctx);  // CapMatchesCtx fails
     return 0;
 }

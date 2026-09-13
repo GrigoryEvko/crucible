@@ -14,11 +14,10 @@
 #include <crucible/fixy/Bridge.h>
 
 // FIXY-V-031: Cipher::open() now takes Path<source::External>.
-using CipherRoot = crucible::fixy::wrap::Path<
-    crucible::fixy::tags::source::External>;
+using CipherRoot = crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>;
 
 namespace fbridge = crucible::fixy::bridge;
-namespace proto   = crucible::safety::proto;
+namespace proto = crucible::safety::proto;
 
 struct Resource {};
 
@@ -27,14 +26,7 @@ int main() {
     auto view = cipher.mint_open_view();
     crucible::effects::HotFgCtx ctx{};
 
-    [[maybe_unused]] auto h = fbridge::mint_persisted_session<
-        proto::Send<int, proto::End>>(
-            ctx,
-            cipher,
-            view,
-            Resource{},
-            proto::SessionTagId{1},
-            proto::RoleTagId{1},
-            proto::RoleTagId{2});
+    [[maybe_unused]] auto h = fbridge::mint_persisted_session<proto::Send<int, proto::End>>(
+        ctx, cipher, view, Resource{}, proto::SessionTagId{1}, proto::RoleTagId{1}, proto::RoleTagId{2});
     return 0;
 }

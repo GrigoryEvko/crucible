@@ -43,13 +43,12 @@ int main() {
     // Substrate tag — MUST NOT register as a fixy diagnostic.  The
     // disjointness fold in Reject.h proves this for the catalog at
     // large; here we witness the discriminator from the user side.
-    static_assert(::crucible::fixy::is_fixy_diag_v<
-                      ::crucible::safety::diag::HotPathViolation>,
-        "fixy-A4-030 HS14 fixture #1: HotPathViolation is a substrate "
-        "Catalog entry, not a FixyCatalog entry; the discriminator "
-        "MUST reject it.  If you see this message during a compile "
-        "audit, the FixyCatalog vs safety::diag::Catalog disjointness "
-        "invariant has been broken.");
+    static_assert(::crucible::fixy::is_fixy_diag_v<::crucible::safety::diag::HotPathViolation>,
+                  "fixy-A4-030 HS14 fixture #1: HotPathViolation is a substrate "
+                  "Catalog entry, not a FixyCatalog entry; the discriminator "
+                  "MUST reject it.  If you see this message during a compile "
+                  "audit, the FixyCatalog vs safety::diag::Catalog disjointness "
+                  "invariant has been broken.");
 
     return 0;
 }

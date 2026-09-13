@@ -15,19 +15,16 @@ struct Decimal64 {
     int exponent = 0;
 };
 
-using Bad = fn::Fn<Decimal64, fn::pred::True, fn::UsageMode::Linear,
-                   crucible::effects::Row<>, fn::SecLevel::Public,
-                   fn::proto::None, fn::lifetime::Static,
-                   fn::source::FromInternal, fn::trust::Verified,
-                   fn::ReprKind::Opaque, fn::cost::Unstated,
-                   fn::precision::Exact, fn::space::Zero,
-                   fn::OverflowMode::Wrap>;
-}
+using Bad =
+    fn::Fn<Decimal64, fn::pred::True, fn::UsageMode::Linear, crucible::effects::Row<>, fn::SecLevel::Public,
+           fn::proto::None, fn::lifetime::Static, fn::source::FromInternal, fn::trust::Verified, fn::ReprKind::Opaque,
+           fn::cost::Unstated, fn::precision::Exact, fn::space::Zero, fn::OverflowMode::Wrap>;
+}  // namespace neg_collision_n002
 
 namespace crucible::safety::fn::collision {
 template <>
 struct is_exact_decimal<::neg_collision_n002::Decimal64> : std::true_type {};
-}
+}  // namespace crucible::safety::fn::collision
 
 [[maybe_unused]] neg_collision_n002::Bad bad{};
 

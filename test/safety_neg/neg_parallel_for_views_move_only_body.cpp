@@ -38,8 +38,8 @@ int main() {
     Arena arena;
     auto perm = safety::mint_permission_root<DataNeg>();
     constexpr std::size_t N = 8;
-    auto region = safety::OwnedRegion<std::uint64_t, DataNeg>::adopt(
-        effects::testing::test().alloc, arena, N, std::move(perm));
+    auto region =
+        safety::OwnedRegion<std::uint64_t, DataNeg>::adopt(effects::testing::test().alloc, arena, N, std::move(perm));
 
     // A move-only state captured by the body.  std::unique_ptr is the
     // canonical example; capturing it by value into the lambda makes
@@ -51,12 +51,11 @@ int main() {
     // by-value capture (`[..., body]`) requires Body to be
     // CopyConstructible.  The API-boundary static_assert names the
     // contract directly.
-    auto recombined = safety::parallel_for_views<2>(
-        std::move(region),
-        [state = std::move(move_only_state)](auto sub) noexcept {
-            for (auto& x : sub.span()) x = static_cast<std::uint64_t>(*state);
-        }
-    );
+    auto recombined =
+        safety::parallel_for_views<2>(std::move(region), [state = std::move(move_only_state)](auto sub) noexcept {
+            for (auto& x : sub.span())
+                x = static_cast<std::uint64_t>(*state);
+        });
     (void)recombined;
 
     return 0;

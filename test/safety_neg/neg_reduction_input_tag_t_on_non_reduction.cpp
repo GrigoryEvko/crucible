@@ -30,8 +30,7 @@ inline void neg_witness_int(int) noexcept {}
 
 int main() {
     // arity 1, parameter is `int` — not a Reduction.
-    using Tag = crucible::safety::extract::reduction_input_tag_t<
-        &::neg_witness_int>;
+    using Tag = crucible::safety::extract::reduction_input_tag_t<&::neg_witness_int>;
     Tag const t{};
     (void)t;
     return 0;

@@ -38,10 +38,8 @@ int main() {
     // composing them — the cross-T fold has no canonical semantics
     // (which T does the resulting value carry?), so the substrate
     // refuses to compile the call below.
-    fb::EpochVersioned<int>    int_value{
-        42, fb::Epoch{5}, fb::Generation{2}};
-    fb::EpochVersioned<double> dbl_value{
-        3.14, fb::Epoch{7}, fb::Generation{3}};
+    fb::EpochVersioned<int> int_value{42, fb::Epoch{5}, fb::Generation{2}};
+    fb::EpochVersioned<double> dbl_value{3.14, fb::Epoch{7}, fb::Generation{3}};
 
     // THE BYPASS: combine_max requires same-T on both sides.  If this
     // ever compiled through the fixy::bridge:: alias, a Cipher cold-

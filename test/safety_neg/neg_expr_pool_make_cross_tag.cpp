@@ -10,14 +10,12 @@
 
 namespace saf = crucible::safety;
 
-using ExternalExpr = saf::det_safe::Pure<
-    saf::Tagged<const crucible::Expr*, saf::source::External>>;
+using ExternalExpr = saf::det_safe::Pure<saf::Tagged<const crucible::Expr*, saf::source::External>>;
 
 static void consume(crucible::ExprPool::PureInternedExpr) {}
 
 int main() {
-  ExternalExpr external{
-      saf::Tagged<const crucible::Expr*, saf::source::External>{nullptr}};
-  consume(external);
-  return 0;
+    ExternalExpr external{saf::Tagged<const crucible::Expr*, saf::source::External>{nullptr}};
+    consume(external);
+    return 0;
 }

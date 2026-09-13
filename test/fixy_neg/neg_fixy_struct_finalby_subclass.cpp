@@ -21,8 +21,7 @@ namespace neg_fixy_struct_finalby_subclass {
 
 // FinalBy-protected base — only this exact class may construct
 // FinalBy<TypeStructFinalBySubclassBase>.
-class TypeStructFinalBySubclassBase
-    : public virtual fstr::FinalBy<TypeStructFinalBySubclassBase> {
+class TypeStructFinalBySubclassBase : public virtual fstr::FinalBy<TypeStructFinalBySubclassBase> {
 public:
     TypeStructFinalBySubclassBase() = default;
 };

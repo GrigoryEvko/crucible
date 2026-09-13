@@ -29,19 +29,16 @@
 int main() {
     namespace fwcd = ::crucible::fixy::wrap::cipher::durable;
     namespace fwfs = ::crucible::fixy::wrap::fs;
-    namespace so   = fwfs::sync_op;
+    namespace so = fwfs::sync_op;
 
     // TestRunnerCtx — Row<Test, Alloc, IO, Block> — admits IO+Block.
     ::crucible::effects::TestRunnerCtx ctx{};
 
-    fwfs::Path<::crucible::fixy::tags::source::Sanitized> path{
-        "/tmp/crucible_neg_v228_cold_extras_engage_durable"};
+    fwfs::Path<::crucible::fixy::tags::source::Sanitized> path{"/tmp/crucible_neg_v228_cold_extras_engage_durable"};
 
     // Should FAIL: extras engages grant_fs::durable<Fdatasync>, but
     // cold_writer_stance PINS sync-op to Fsync; the §XXI mint's
     // `!detail::extras_engage_durable_v<Extras...>` clause is false.
-    [[maybe_unused]] auto r = fwcd::mint_cold_writer<
-        fwfs::grant::durable<so::Fdatasync>
-    >(ctx, std::move(path));
+    [[maybe_unused]] auto r = fwcd::mint_cold_writer<fwfs::grant::durable<so::Fdatasync>>(ctx, std::move(path));
     return 0;
 }

@@ -57,9 +57,8 @@ int main() {
     // axis), this fixture would still red on HotFgCtx because
     // cap_permitted_row<ctx_cap::Fg> is ALSO Row<> — defense-in-
     // depth across both axes.
-    static_assert(::crucible::fixy::cap::CtxAdmitsCap<
-                      ::crucible::effects::HotFgCtx,
-                      ::crucible::effects::Effect::Alloc>,
+    static_assert(
+        ::crucible::fixy::cap::CtxAdmitsCap<::crucible::effects::HotFgCtx, ::crucible::effects::Effect::Alloc>,
         "FIXY-V-217 fixture #2: HotFgCtx::row = Row<> (empty) — "
         "CtxAdmitsCap must reject every Effect via row_contains_v.");
     return 0;

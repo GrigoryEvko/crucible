@@ -14,13 +14,12 @@
 #include <crucible/fixy/Perm.h>
 
 int main() {
-    namespace eff   = ::crucible::effects;
+    namespace eff = ::crucible::effects;
     namespace permt = ::crucible::permissions;
     namespace fperm = ::crucible::fixy::perm;
-    namespace saf   = ::crucible::safety;
+    namespace saf = ::crucible::safety;
 
-    auto p = fperm::mint_permission_root<permt::tag::DiskSpilledRegionTag>(
-        eff::HotFgCtx{});
+    auto p = fperm::mint_permission_root<permt::tag::DiskSpilledRegionTag>(eff::HotFgCtx{});
     saf::permission_drop(std::move(p));
     return 0;
 }

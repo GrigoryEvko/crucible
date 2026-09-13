@@ -21,7 +21,7 @@
 #include <crucible/permissions/FederationPermission.h>
 
 namespace perm = crucible::permissions;
-namespace saf  = crucible::safety;
+namespace saf = crucible::safety;
 
 struct NegRootMint_OrgA {};
 
@@ -30,8 +30,7 @@ int main() {
     // `mint_permission_root<Tag>()` template because
     // `is_federated_peer_tag_v<tag::FederatedPeer<OrgA>>` is true.
     // Must NOT compile.
-    auto bad = saf::mint_permission_root<
-        perm::tag::FederatedPeer<NegRootMint_OrgA>>();
+    auto bad = saf::mint_permission_root<perm::tag::FederatedPeer<NegRootMint_OrgA>>();
     (void)bad;
     return 0;
 }

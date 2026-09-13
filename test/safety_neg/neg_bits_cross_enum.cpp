@@ -35,12 +35,12 @@ enum class NodeFlags : unsigned char {
 };
 
 enum class RecipeFlags : unsigned char {
-    BitExact     = 0x01,
+    BitExact = 0x01,
     Reproducible = 0x02,
 };
 
 int main() {
-    saf::Bits<NodeFlags>   nf{NodeFlags::Constant};
+    saf::Bits<NodeFlags> nf{NodeFlags::Constant};
     saf::Bits<RecipeFlags> rf{RecipeFlags::BitExact};
 
     // Bridge fires: operator| on two different Bits<E> instantiations

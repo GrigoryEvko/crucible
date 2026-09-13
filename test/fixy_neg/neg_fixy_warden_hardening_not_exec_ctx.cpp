@@ -29,8 +29,7 @@ struct NotAnExecCtx {};  // No row_type, no Effect aggregation API.
 
 int main() {
     crucible::fixy::warden::Policy p{};
-    auto applied = crucible::fixy::warden::mint_hardening(
-        test_fixy_warden_hardening_not_exec_ctx::NotAnExecCtx{}, p);
+    auto applied = crucible::fixy::warden::mint_hardening(test_fixy_warden_hardening_not_exec_ctx::NotAnExecCtx{}, p);
     (void)applied;
     return 0;
 }

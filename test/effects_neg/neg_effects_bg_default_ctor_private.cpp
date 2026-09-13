@@ -18,7 +18,7 @@
 namespace eff = crucible::effects;
 
 int main() {
-    eff::Bg bg{};               // <-- this MUST fail (private ctor)
+    eff::Bg bg{};  // <-- this MUST fail (private ctor)
     (void)bg;
     return 0;
 }

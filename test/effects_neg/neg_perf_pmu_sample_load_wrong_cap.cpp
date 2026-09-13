@@ -11,8 +11,7 @@
 
 int main() {
     auto bg_cap = crucible::effects::testing::bg();
-    std::optional<crucible::perf::PmuSample> hub =
-        crucible::perf::PmuSample::load(bg_cap);  // <-- must NOT compile
+    std::optional<crucible::perf::PmuSample> hub = crucible::perf::PmuSample::load(bg_cap);  // <-- must NOT compile
     (void)hub;
     return 0;
 }

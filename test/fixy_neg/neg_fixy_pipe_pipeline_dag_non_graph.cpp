@@ -21,7 +21,7 @@
 #include <optional>
 #include <utility>
 
-namespace eff   = crucible::effects;
+namespace eff = crucible::effects;
 namespace fpipe = crucible::fixy::pipe;
 
 template <typename T>
@@ -39,13 +39,11 @@ inline void pass_through(FakeConsumer<int>&&, FakeProducer<int>&&) noexcept {}
 int main() {
     eff::HotFgCtx ctx;
 
-    auto stage = fpipe::mint_stage<&pass_through>(
-        ctx, FakeConsumer<int>{}, FakeProducer<int>{});
+    auto stage = fpipe::mint_stage<&pass_through>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
 
     int not_a_graph = 0;  // ← must be a StageGraph<StagePack<...>, EdgePack<...>>
 
-    auto bad = fpipe::mint_pipeline_dag(
-        ctx, not_a_graph, std::move(stage));
+    auto bad = fpipe::mint_pipeline_dag(ctx, not_a_graph, std::move(stage));
     (void)bad;
     return 0;
 }

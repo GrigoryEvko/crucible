@@ -22,7 +22,6 @@ namespace wrap = crucible::fixy::wrap;
 
 // int is not a GradedWrapper → value_type_of_t<int> constraint fails.
 using Bad = wrap::value_type_of_t<int>;
-static_assert(sizeof(Bad) > 0,
-              "unreachable — value_type_of_t<int> has no definition");
+static_assert(sizeof(Bad) > 0, "unreachable — value_type_of_t<int> has no definition");
 
 int main() { return 0; }

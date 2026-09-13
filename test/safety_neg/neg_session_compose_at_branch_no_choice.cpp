@@ -15,8 +15,7 @@ struct Followup {};
 using LinearProtocol = Send<Req, Recv<int, End>>;
 
 void compile_time_reject() {
-    using Bad = compose_at_branch_t<LinearProtocol, /*branch=*/0,
-                                    Recv<Followup, End>>;
+    using Bad = compose_at_branch_t<LinearProtocol, /*branch=*/0, Recv<Followup, End>>;
     (void)sizeof(Bad);
 }
 

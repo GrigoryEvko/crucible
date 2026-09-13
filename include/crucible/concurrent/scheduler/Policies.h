@@ -89,7 +89,7 @@ struct policy_defaults {
     static constexpr std::size_t num_shards = 4;
     static constexpr std::size_t num_consumers = 4;
     static constexpr std::size_t num_buckets = 1024;
-    static constexpr std::uint64_t quantum = 100'000;  // nanoseconds, or virtual-runtime ticks
+    static constexpr std::uint64_t quantum = 100000;  // nanoseconds, or virtual-runtime ticks
 };
 
 // The one shared index becomes a cache cliff as the worker count
@@ -224,7 +224,7 @@ struct per_shard_defaults {
     static constexpr std::size_t num_shards = 4;
     static constexpr std::size_t num_buckets = 64;
     static constexpr std::size_t bucket_cap = 16;
-    static constexpr std::uint64_t quantum = 100'000;
+    static constexpr std::uint64_t quantum = 100000;
 };
 
 template <typename KeyExtractor, std::size_t NumShards = per_shard_defaults<tag::DeadlinePerShard>::num_shards,

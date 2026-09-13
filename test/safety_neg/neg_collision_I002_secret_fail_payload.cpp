@@ -60,27 +60,26 @@ namespace neg_collision_i002_secret {
 // false → !fail_error_secret_v is true).  No CT, no async, no session →
 // I003 / I004 stay silent.  I002 alone catches the secret-leak-via-error
 // shape.
-using Bad = fn::Fn<
-    int,                                       // 1  Type
-    fn::pred::True,                            // 2  Refinement (trivial)
-    fn::UsageMode::Linear,                     // 3  Usage
-    fx::Row<>,                                 // 4  EffectRow — empty
-    fn::SecLevel::Secret,                      // 5  Security — SECRET (I002 Secret arm)
-    fn::proto::None,                           // 6  Protocol
-    fn::lifetime::Static,                      // 7  Lifetime
-    fn::source::FromInternal,                  // 8  Source
-    fn::trust::Verified,                       // 9  Trust
-    fn::ReprKind::Opaque,                      // 10 Repr
-    fn::cost::Constant,                        // 11 Cost (bounded)
-    fn::precision::Exact,                      // 12 Precision
-    fn::space::Bounded<sizeof(int)>,           // 13 Space
-    fn::OverflowMode::Trap,                    // 14 Overflow
-    fn::MutationMode::Immutable,               // 15 Mutation
-    fn::ReentrancyMode::NonReentrant,          // 16 Reentrancy
-    fn::size_pol::Sized<sizeof(int)>,          // 17 Size
-    /*Version=*/1,                             // 18 Version
-    fn::stale::Fresh                           // 19 Staleness
->;
+using Bad = fn::Fn<int,  // 1  Type
+                   fn::pred::True,  // 2  Refinement (trivial)
+                   fn::UsageMode::Linear,  // 3  Usage
+                   fx::Row<>,  // 4  EffectRow — empty
+                   fn::SecLevel::Secret,  // 5  Security — SECRET (I002 Secret arm)
+                   fn::proto::None,  // 6  Protocol
+                   fn::lifetime::Static,  // 7  Lifetime
+                   fn::source::FromInternal,  // 8  Source
+                   fn::trust::Verified,  // 9  Trust
+                   fn::ReprKind::Opaque,  // 10 Repr
+                   fn::cost::Constant,  // 11 Cost (bounded)
+                   fn::precision::Exact,  // 12 Precision
+                   fn::space::Bounded<sizeof(int)>,  // 13 Space
+                   fn::OverflowMode::Trap,  // 14 Overflow
+                   fn::MutationMode::Immutable,  // 15 Mutation
+                   fn::ReentrancyMode::NonReentrant,  // 16 Reentrancy
+                   fn::size_pol::Sized<sizeof(int)>,  // 17 Size
+                   /*Version=*/1,  // 18 Version
+                   fn::stale::Fresh  // 19 Staleness
+                   >;
 
 }  // namespace neg_collision_i002_secret
 
@@ -88,8 +87,8 @@ using Bad = fn::Fn<
 // supplies has_fail_v; marks_fail_error_secret is left default-false so
 // !fail_error_secret_v holds.  Combined with SecLevel::Secret, I002 fires.
 namespace crucible::safety::fn::collision {
-    template <> struct marks_fail<::neg_collision_i002_secret::Bad>
-        : std::true_type {};
+template <>
+struct marks_fail<::neg_collision_i002_secret::Bad> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 [[maybe_unused]] neg_collision_i002_secret::Bad the_fixture{};

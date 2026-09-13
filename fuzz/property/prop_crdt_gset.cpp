@@ -46,7 +46,7 @@ namespace {
 namespace cc = crucible::canopy;
 using crucible::fuzz::prop::Rng;
 
-using GS = cc::GSet<std::uint32_t>;       // Capacity defaults to 64
+using GS = cc::GSet<std::uint32_t>;  // Capacity defaults to 64
 using State = GS::state_type;
 inline constexpr std::uint32_t kUniverse = 32;  // < 64, so merge never overflows
 
@@ -58,11 +58,16 @@ struct Spec {
 
 [[nodiscard]] std::uint32_t gen_mask(Rng& rng) noexcept {
     switch (rng.next_below(5u)) {
-        case 0: return 0u;
-        case 1: return 0xFFFF'FFFFu;
-        case 2: return std::uint32_t{1} << rng.next_below(kUniverse);  // single element
-        case 3: return rng.next32() & rng.next32();                    // sparse
-        default: return rng.next32();
+        case 0:
+            return 0u;
+        case 1:
+            return 0xFFFFFFFFu;
+        case 2:
+            return std::uint32_t{1} << rng.next_below(kUniverse);  // single element
+        case 3:
+            return rng.next32() & rng.next32();  // sparse
+        default:
+            return rng.next32();
     }
 }
 
@@ -82,12 +87,10 @@ int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
 
     Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 2'000'000) cfg.iterations = 2'000'000;
+    if (cfg.iterations > 2000000) cfg.iterations = 2000000;
 
-    return run("crdt_gset", cfg,
-        [](Rng& rng) noexcept -> Spec {
-            return Spec{gen_mask(rng), gen_mask(rng), gen_mask(rng)};
-        },
+    return run(
+        "crdt_gset", cfg, [](Rng& rng) noexcept -> Spec { return Spec{gen_mask(rng), gen_mask(rng), gen_mask(rng)}; },
         [](const Spec& spec) noexcept -> bool {
             const State a = from_mask(spec.a);
             const State b = from_mask(spec.b);

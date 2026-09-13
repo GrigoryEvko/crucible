@@ -24,7 +24,7 @@
 using namespace crucible::safety;
 
 int main() {
-    DetSafe<DetSafeTier_v::Pure,               int> pure_value{42};
+    DetSafe<DetSafeTier_v::Pure, int> pure_value{42};
     DetSafe<DetSafeTier_v::MonotonicClockRead, int> mono_value{7};
 
     // Should FAIL: DetSafe<Pure, int>::swap takes

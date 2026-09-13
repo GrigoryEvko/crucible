@@ -34,8 +34,7 @@ int main() {
     // half of the uint32_t range.  Catches any predicate that only
     // filters specific magic values rather than the whole upper-bound
     // half-line.
-    constexpr crucible::IterationDetector::SignatureLen bad{
-        uint32_t{UINT32_MAX}};
+    constexpr crucible::IterationDetector::SignatureLen bad{uint32_t{UINT32_MAX}};
     (void)bad;
     return 0;
 }

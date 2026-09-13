@@ -11,7 +11,9 @@
 
 using namespace crucible::safety::proto;
 
-struct R { int sentinel = 1; };
+struct R {
+    int sentinel = 1;
+};
 
 void compile_time_reject() {
     // Empty Select<> at the handle boundary — mint_session_handle's
@@ -20,6 +22,4 @@ void compile_time_reject() {
     (void)h;
 }
 
-int main() {
-    return 0;
-}
+int main() { return 0; }

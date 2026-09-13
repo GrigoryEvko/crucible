@@ -50,7 +50,11 @@ namespace {
 inline constexpr uint32_t kK = crucible::IterationDetector::K;  // 5
 inline constexpr uint32_t kMaxLen = 512;
 
-enum class Mode : uint8_t { Distinct = 0, Periodic = 1, Random = 2 };
+enum class Mode : uint8_t {
+    Distinct = 0,
+    Periodic = 1,
+    Random = 2
+};
 
 struct StreamSpec {
     std::array<uint64_t, kMaxLen> hashes{};
@@ -74,7 +78,8 @@ int main(int argc, char** argv) {
 
     Config cfg = parse_args(argc, argv);
 
-    return run("iteration_detector", cfg,
+    return run(
+        "iteration_detector", cfg,
         // ── Generator: one of three stream shapes ──
         [](Rng& rng) noexcept -> StreamSpec {
             StreamSpec spec{};
@@ -93,20 +98,21 @@ int main(int argc, char** argv) {
                     // Period P in [K, K+8], distinct WITHIN a period so the
                     // signature (first K) recurs only at period starts.
                     const uint32_t period = kK + rng.next_below(9u);
-                    const uint32_t reps = 4u + rng.next_below(4u);   // [4,7]
+                    const uint32_t reps = 4u + rng.next_below(4u);  // [4,7]
                     const uint64_t base = 1u + rng.next_below(1000u);
-                    spec.len = period * reps;                        // <= 13*7=91
+                    spec.len = period * reps;  // <= 13*7=91
                     for (uint32_t i = 0; i < spec.len; ++i)
                         spec.hashes[i] = base + (i % period);
                     break;
                 }
                 case Mode::Random: {
-                    spec.len = rng.next_below(kMaxLen + 1u);          // [0, kMaxLen]
+                    spec.len = rng.next_below(kMaxLen + 1u);  // [0, kMaxLen]
                     for (uint32_t i = 0; i < spec.len; ++i)
                         spec.hashes[i] = rng.next64();
                     break;
                 }
-                default: std::unreachable();  // mode ∈ {0,1,2} by next_below(3)
+                default:
+                    std::unreachable();  // mode ∈ {0,1,2} by next_below(3)
             }
             return spec;
         },
@@ -148,7 +154,8 @@ int main(int argc, char** argv) {
             } else if (spec.mode == Mode::Periodic) {
                 // (P3) A clean repeating period must fire at least once.
                 bool any = false;
-                for (uint32_t i = 0; i < spec.len; ++i) any = any || r1[i];
+                for (uint32_t i = 0; i < spec.len; ++i)
+                    any = any || r1[i];
                 if (!any) return false;
             }
             return true;

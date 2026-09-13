@@ -55,8 +55,8 @@ enum class SrIovError : std::uint8_t {
 using VfCount = safety::Bounded<std::uint16_t{1}, std::uint16_t{4096}, std::uint16_t>;
 using VfIndex = safety::Bounded<std::uint16_t{0}, std::uint16_t{4095}, std::uint16_t>;
 using VfVlanId = safety::Bounded<std::uint16_t{0}, std::uint16_t{4094}, std::uint16_t>;
-using VfRateLimitMbps = safety::Bounded<std::uint64_t{0}, std::uint64_t{1'000'000'000ull}, std::uint64_t>;
-using VfResourceLimit = safety::Bounded<std::uint32_t{0}, std::uint32_t{1'000'000}, std::uint32_t>;
+using VfRateLimitMbps = safety::Bounded<std::uint64_t{0}, std::uint64_t{1000000000ull}, std::uint64_t>;
+using VfResourceLimit = safety::Bounded<std::uint32_t{0}, std::uint32_t{1000000}, std::uint32_t>;
 
 struct MacAddress {
     std::array<std::uint8_t, 6> bytes{};
@@ -134,14 +134,14 @@ concept CtxFitsSrIovMint = effects::IsExecCtx<Ctx> && effects::CtxAdmits<Ctx, ef
 }
 
 [[nodiscard]] constexpr std::expected<VfRateLimitMbps, SrIovError> admit_rate_limit_mbps(std::uint64_t rate) noexcept {
-    if (rate > 1'000'000'000ull) {
+    if (rate > 1000000000ull) {
         return std::unexpected(SrIovError::InvalidRateLimit);
     }
     return VfRateLimitMbps{rate, typename VfRateLimitMbps::Trusted{}};
 }
 
 [[nodiscard]] constexpr std::expected<VfResourceLimit, SrIovError> admit_resource_limit(std::uint32_t limit) noexcept {
-    if (limit > 1'000'000u) {
+    if (limit > 1000000u) {
         return std::unexpected(SrIovError::InvalidResourceLimit);
     }
     return VfResourceLimit{limit, typename VfResourceLimit::Trusted{}};

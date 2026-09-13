@@ -62,7 +62,7 @@ int main() {
         std::is_same_v<Encoder::concurrent_budget, crucible::effects::ConcurrentRow<crucible::effects::SmBudget<1>>>);
     static_assert(sizeof(ci::LinearFountainBuffer<std::array<std::byte, 16>>) == sizeof(std::array<std::byte, 16>));
 
-    auto key = crucible::Philox::op_key_det(0x1234'5678ULL, 19U, crucible::ContentHash{0xCAFE'BEEFULL});
+    auto key = crucible::Philox::op_key_det(0x12345678ULL, 19U, crucible::ContentHash{0xCAFEBEEFULL});
 
     auto encoder = ci::mint_fountain_encoder<8, 4>(crucible::effects::testing::init());
     auto decoder = ci::mint_fountain_decoder<8, 4>(crucible::effects::testing::init());

@@ -60,17 +60,13 @@ struct Ping {};
 // sends Ping to Alice — so Alice's projection is `Recv<Ping, ...>`.
 // Bob crashes AFTER the send; Alice did interact with Bob so the
 // crash propagates into Alice's terminal.)
-using G_throw =
-    proto::Transmission<Bob, Alice, Ping,
-                        proto::StopG<Bob, proto::CrashClass::Throw>>;
+using G_throw = proto::Transmission<Bob, Alice, Ping, proto::StopG<Bob, proto::CrashClass::Throw>>;
 
 // fixy-A2-001 regression witness — fires when the non-Peer
 // interacting projection drops the CrashClass NTTP and collapses to
 // Stop_g<Abort>.
-static_assert(std::is_same_v<
-    proto::project_t<G_throw, Alice>,
-    proto::Recv<Ping, proto::Stop>>,
-    "fixy-A2-001 regression: CrashClass dropped in interacting-role projection");
+static_assert(std::is_same_v<proto::project_t<G_throw, Alice>, proto::Recv<Ping, proto::Stop>>,
+              "fixy-A2-001 regression: CrashClass dropped in interacting-role projection");
 
 }  // namespace
 

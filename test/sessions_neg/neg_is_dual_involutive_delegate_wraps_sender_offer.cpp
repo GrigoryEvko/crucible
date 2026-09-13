@@ -58,12 +58,10 @@ struct RoleA {};
 // projects to false_type via the inner Offer<Sender<...>, ...>
 // non-involution from fixy-CR-11.
 static_assert(proto::is_dual_involutive_v<
-    proto::Delegate<
-        proto::Offer<proto::Sender<RoleA>, proto::Recv<int, proto::End>>,
-        proto::End>>,
-    "fixy-A2-003 regression: Delegate wraps Sender-annotated Offer; "
-    "involution must propagate inner non-involution, but the primary "
-    "template silently returned true.");
+                  proto::Delegate<proto::Offer<proto::Sender<RoleA>, proto::Recv<int, proto::End>>, proto::End>>,
+              "fixy-A2-003 regression: Delegate wraps Sender-annotated Offer; "
+              "involution must propagate inner non-involution, but the primary "
+              "template silently returned true.");
 
 }  // namespace
 

@@ -100,7 +100,7 @@ static void test_target_caps_class_hash_sm_version_discrimination() {
 
 static void test_cog_kernel_cache_key_firmware_rotation() {
     cog::CogIdentity id_v1{};
-    id_v1.uuid = cog::Uuid{0xAA00'0001ULL, 0xBB00'0002ULL};
+    id_v1.uuid = cog::Uuid{0xAA000001ULL, 0xBB000002ULL};
     id_v1.kind = cog::CogKind::Gpu;
     id_v1.firmware_revision = safety::Tagged<std::uint64_t, safety::source::Vendor>{1};
     id_v1.bios_revision = safety::Tagged<std::uint64_t, safety::source::Vendor>{42};
@@ -146,7 +146,7 @@ static void test_cog_kernel_cache_key_firmware_rotation() {
 
 static void test_mint_cog_mimic_round_trip() {
     cog::CogIdentity id{};
-    id.uuid = cog::Uuid{0xCAFE'BABEULL, 0xDEAD'BEEFULL};
+    id.uuid = cog::Uuid{0xCAFEBABEULL, 0xDEADBEEFULL};
     id.kind = cog::CogKind::Gpu;
     id.firmware_revision = safety::Tagged<std::uint64_t, safety::source::Vendor>{0xABCDULL};
     id.bios_revision = safety::Tagged<std::uint64_t, safety::source::Vendor>{0x1234ULL};
@@ -212,7 +212,7 @@ static void test_mint_cpu_paths() {
     cpu_id.firmware_revision = safety::Tagged<std::uint64_t, safety::source::Vendor>{0xC0DEULL};
 
     cog::CpuCoreTargetCaps cpu_caps{};
-    cpu_caps.base_clock_mhz = safety::Tagged<std::uint32_t, safety::source::Vendor>{2'500U};
+    cpu_caps.base_clock_mhz = safety::Tagged<std::uint32_t, safety::source::Vendor>{2500U};
     cpu_caps.l2_bytes = safety::Tagged<std::uint32_t, safety::source::Vendor>{1U * 1024 * 1024};
 
     using InitCtx = effects::ExecCtx<effects::Init, effects::ctx_numa::Any, effects::ctx_alloc::Unbound,

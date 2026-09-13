@@ -60,15 +60,15 @@
 
 #include <utility>
 
-namespace eff     = ::crucible::effects;
-namespace conc    = ::crucible::concurrent;
+namespace eff = ::crucible::effects;
+namespace conc = ::crucible::concurrent;
 namespace fbridge = ::crucible::fixy::bridge;
-namespace fpipe   = ::crucible::fixy::pipe;
-namespace saf     = ::crucible::safety;
+namespace fpipe = ::crucible::fixy::pipe;
+namespace saf = ::crucible::safety;
 
 struct EndpointTag {};
-struct DeadPeer    {};
-struct Survivor    {};
+struct DeadPeer {};
+struct Survivor {};
 
 using Channel = conc::PermissionedSpscChannel<int, 64, EndpointTag>;
 
@@ -93,24 +93,20 @@ int main() {
     // (template-deduction + IsBridgeableDirection) passes; the
     // failure is on the second parameter.
     auto whole = saf::mint_permission_root<typename Channel::whole_tag>();
-    auto [prod_perm, cons_perm] = saf::mint_permission_split<
-        typename Channel::producer_tag,
-        typename Channel::consumer_tag>(std::move(whole));
+    auto [prod_perm, cons_perm] =
+        saf::mint_permission_split<typename Channel::producer_tag, typename Channel::consumer_tag>(std::move(whole));
     (void)prod_perm;
 
     auto cons = ch.consumer(std::move(cons_perm));
-    auto ep   = fpipe::mint_endpoint<Channel, fpipe::Direction::Consumer>(
-        ctx, cons);
+    auto ep = fpipe::mint_endpoint<Channel, fpipe::Direction::Consumer>(ctx, cons);
 
-    int not_a_flag = 0;     // wrong type — not OneShotFlag&
+    int not_a_flag = 0;  // wrong type — not OneShotFlag&
 
     // Second argument must be `OneShotFlag&`; passing `int` fails
     // reference binding.  fixy::bridge:: re-export must reject
     // identically — the using-decl preserves the exact parameter
     // shape.
-    [[maybe_unused]] auto bad =
-        fbridge::mint_crash_watched_endpoint<DeadPeer>(
-            std::move(ep), not_a_flag);
+    [[maybe_unused]] auto bad = fbridge::mint_crash_watched_endpoint<DeadPeer>(std::move(ep), not_a_flag);
 
     return 0;
 }

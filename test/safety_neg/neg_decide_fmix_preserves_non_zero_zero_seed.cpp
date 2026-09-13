@@ -77,8 +77,7 @@
 
 namespace {
 
-[[nodiscard]] constexpr bool gate(std::uint64_t seed,
-                                  std::uint64_t mix_output) noexcept {
+[[nodiscard]] constexpr bool gate(std::uint64_t seed, std::uint64_t mix_output) noexcept {
     CRUCIBLE_PRE(crucible::decide::fmix_preserves_non_zero(seed, mix_output));
     return true;
 }

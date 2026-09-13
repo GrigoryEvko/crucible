@@ -9,7 +9,7 @@
 static void needs_singleton(crucible::CKernelTableSingleton) {}
 
 int main() {
-  crucible::CKernelTable table{};
-  needs_singleton(&table);
-  return 0;
+    crucible::CKernelTable table{};
+    needs_singleton(&table);
+    return 0;
 }

@@ -61,30 +61,29 @@ namespace neg_collision_b001_unstated {
 // B001 catches the Bg-observable-Unstated back-pressure shape
 // (unmeasured cost is conservatively treated as unbounded for the
 // purpose of B001's back-pressure analysis).
-using Bad = fn::Fn<
-    int,                                       // 1  Type
-    fn::pred::True,                            // 2  Refinement
-    fn::UsageMode::Linear,                     // 3  Usage
-    fx::Row<fx::Effect::Bg>,                   // 4  EffectRow — Bg engaged (B001 trigger)
-    fn::SecLevel::Public,                      // 5  Security
-    fn::proto::None,                           // 6  Protocol
-    fn::lifetime::Static,                      // 7  Lifetime
-    fn::source::FromInternal,                  // 8  Source
-    fn::trust::Verified,                       // 9  Trust
-    fn::ReprKind::Opaque,                      // 10 Repr
-    fn::cost::Unstated,                        // 11 Cost — UNSTATED (B001 trigger paired
-                                                //                with Bg + externally_observable;
-                                                //                distinct arm of is_unbounded_cost
-                                                //                from the shipped Unbounded fixture)
-    fn::precision::Exact,                      // 12 Precision
-    fn::space::Bounded<sizeof(int)>,           // 13 Space
-    fn::OverflowMode::Trap,                    // 14 Overflow
-    fn::MutationMode::Immutable,               // 15 Mutation
-    fn::ReentrancyMode::NonReentrant,          // 16 Reentrancy
-    fn::size_pol::Sized<sizeof(int)>,          // 17 Size
-    /*Version=*/1,                             // 18 Version
-    fn::stale::Fresh                           // 19 Staleness
->;
+using Bad = fn::Fn<int,  // 1  Type
+                   fn::pred::True,  // 2  Refinement
+                   fn::UsageMode::Linear,  // 3  Usage
+                   fx::Row<fx::Effect::Bg>,  // 4  EffectRow — Bg engaged (B001 trigger)
+                   fn::SecLevel::Public,  // 5  Security
+                   fn::proto::None,  // 6  Protocol
+                   fn::lifetime::Static,  // 7  Lifetime
+                   fn::source::FromInternal,  // 8  Source
+                   fn::trust::Verified,  // 9  Trust
+                   fn::ReprKind::Opaque,  // 10 Repr
+                   fn::cost::Unstated,  // 11 Cost — UNSTATED (B001 trigger paired
+                   //                with Bg + externally_observable;
+                   //                distinct arm of is_unbounded_cost
+                   //                from the shipped Unbounded fixture)
+                   fn::precision::Exact,  // 12 Precision
+                   fn::space::Bounded<sizeof(int)>,  // 13 Space
+                   fn::OverflowMode::Trap,  // 14 Overflow
+                   fn::MutationMode::Immutable,  // 15 Mutation
+                   fn::ReentrancyMode::NonReentrant,  // 16 Reentrancy
+                   fn::size_pol::Sized<sizeof(int)>,  // 17 Size
+                   /*Version=*/1,  // 18 Version
+                   fn::stale::Fresh  // 19 Staleness
+                   >;
 
 }  // namespace neg_collision_b001_unstated
 
@@ -92,9 +91,8 @@ using Bad = fn::Fn<
 // Row<Bg> + cost::Unstated already in the type.  Three-conjunct
 // composition fires B001 via the Unstated arm of is_unbounded_cost.
 namespace crucible::safety::fn::collision {
-    template <> struct marks_externally_observable<
-        ::neg_collision_b001_unstated::Bad
-    > : std::true_type {};
+template <>
+struct marks_externally_observable<::neg_collision_b001_unstated::Bad> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 [[maybe_unused]] neg_collision_b001_unstated::Bad the_fixture{};

@@ -29,9 +29,8 @@ struct SlotTag {};
 struct Handle {
     using slot_tag = SlotTag;
     static constexpr std::size_t slot_bytes = 256;
-    static constexpr std::size_t stages     = 2;
-    static constexpr crucible::algebra::lattices::MemoryScope scope =
-        crucible::algebra::lattices::MemoryScope::Cta;
+    static constexpr std::size_t stages = 2;
+    static constexpr crucible::algebra::lattices::MemoryScope scope = crucible::algebra::lattices::MemoryScope::Cta;
     void arrive_expect_tx(std::size_t) noexcept {}
     [[nodiscard]] bool try_wait(std::uint32_t) noexcept { return true; }
 };
@@ -40,19 +39,19 @@ struct Handle {
 int main() {
     eff::HotFgCtx ctx;
     Handle handle{};
-    auto p0 = aps::mint_async_pipeline_producer_session<256>(
-        ctx, handle, crucible::safety::mint_permission_root<SlotTag>());
+    auto p0 =
+        aps::mint_async_pipeline_producer_session<256>(ctx, handle, crucible::safety::mint_permission_root<SlotTag>());
 
     // First fill — hands the slot to the consumer; head becomes Recv<Returned>.
     auto p1 = std::move(p0).send(
-        aps::Transferable<aps::SmemFill<256>, SlotTag>{
-            aps::SmemFill<256>{}, crucible::safety::mint_permission_root<SlotTag>()},
+        aps::Transferable<aps::SmemFill<256>, SlotTag>{aps::SmemFill<256>{},
+                                                       crucible::safety::mint_permission_root<SlotTag>()},
         aps::fill_send_transport);
 
     // Second fill BEFORE draining — the Recv-headed handle has no .send().
     auto p2 = std::move(p1).send(
-        aps::Transferable<aps::SmemFill<256>, SlotTag>{
-            aps::SmemFill<256>{}, crucible::safety::mint_permission_root<SlotTag>()},
+        aps::Transferable<aps::SmemFill<256>, SlotTag>{aps::SmemFill<256>{},
+                                                       crucible::safety::mint_permission_root<SlotTag>()},
         aps::fill_send_transport);
     (void)p2;
     return 0;

@@ -33,9 +33,7 @@ int main() {
     int endpoint = 0;
 
     // Missing the 3rd (admittance) argument — must fail arity check.
-    auto bad = fsess::mint_sender<NegFedNoAdmit_PeerOrg,
-                                  NegFedNoAdmit_KeyTag>(
-        ctx, endpoint);
+    auto bad = fsess::mint_sender<NegFedNoAdmit_PeerOrg, NegFedNoAdmit_KeyTag>(ctx, endpoint);
     (void)bad;
     return 0;
 }

@@ -46,8 +46,7 @@
 // is a valid arg for the `positive` predicate (templated
 // `auto x`, requires `> 0`).  This call compiles.
 [[maybe_unused]] static auto anchor_mint_with_invocable_pair() {
-    return ::crucible::safety::mint_sealed_refined<
-        ::crucible::safety::positive, int>(7);
+    return ::crucible::safety::mint_sealed_refined<::crucible::safety::positive, int>(7);
 }
 
 // VIOLATION: non_null's signature is `auto* p` — requires p to
@@ -58,8 +57,8 @@
 // GCC rejects with "constraints not satisfied" naming the
 // PredicateInvocableOn concept.
 [[maybe_unused]] static auto offending_mint_non_null_on_int() {
-    return ::crucible::safety::mint_sealed_refined<
-        ::crucible::safety::non_null, int>(42);  // ERROR: non_null wants pointer
+    return ::crucible::safety::mint_sealed_refined<::crucible::safety::non_null, int>(
+        42);  // ERROR: non_null wants pointer
 }
 
 int main() { return 0; }

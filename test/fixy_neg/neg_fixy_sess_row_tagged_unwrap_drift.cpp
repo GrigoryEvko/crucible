@@ -44,11 +44,11 @@
 #include <type_traits>
 
 namespace fsrow = ::crucible::fixy::sess::row;
-namespace eff   = ::crucible::effects;
-namespace saf   = ::crucible::safety;
+namespace eff = ::crucible::effects;
+namespace saf = ::crucible::safety;
 
 namespace v062_neg_gamma {
-using IoComp  = eff::Computation<eff::Row<eff::Effect::IO>, int>;
+using IoComp = eff::Computation<eff::Row<eff::Effect::IO>, int>;
 struct ProvTag {};
 using Wrapped = saf::Tagged<IoComp, ProvTag>;
 }  // namespace v062_neg_gamma
@@ -61,9 +61,7 @@ using Wrapped = saf::Tagged<IoComp, ProvTag>;
 // pass, and this fixture would compile successfully (neg-compile
 // driver flags that as the regression).
 static_assert(
-    !std::is_same_v<
-        fsrow::payload_row_t<v062_neg_gamma::Wrapped>,
-        fsrow::payload_row_t<v062_neg_gamma::IoComp>>,
+    !std::is_same_v<fsrow::payload_row_t<v062_neg_gamma::Wrapped>, fsrow::payload_row_t<v062_neg_gamma::IoComp>>,
     "Tagged should NOT be transparent for payload_row "
     "(intentionally-wrong claim — fires as long as substrate keeps "
     "the transparent-unwrap specialisation that says it IS).");

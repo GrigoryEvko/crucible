@@ -13,6 +13,6 @@
 int main() {
     auto a = crucible::safety::HugePageBuffer<int>::allocate(1024);
     auto b = crucible::safety::HugePageBuffer<int>::allocate(1024);
-    a = b;   // deleted copy-assignment → compile error
+    a = b;  // deleted copy-assignment → compile error
     return 0;
 }

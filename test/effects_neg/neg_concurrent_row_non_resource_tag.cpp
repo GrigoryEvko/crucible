@@ -55,9 +55,8 @@ namespace eff = crucible::effects;
 // which is always-evaluated.
 using R_bad = eff::ConcurrentRow<int>;
 
-static_assert(R_bad::size == 1,
-    "ConcurrentRow<int> instantiation should have failed at the "
-    "ResourceTag concept gate before reaching this assertion — "
-    "GAPS-190 carrier-shape defense compromised.");
+static_assert(R_bad::size == 1, "ConcurrentRow<int> instantiation should have failed at the "
+                                "ResourceTag concept gate before reaching this assertion — "
+                                "GAPS-190 carrier-shape defense compromised.");
 
 int main() { return 0; }

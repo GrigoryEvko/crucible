@@ -50,8 +50,8 @@ namespace fp = crucible::fixy::fp;
 // cause here — proves the rounding-mode gate fires ORTHOGONALLY to
 // the determinism-tier gate.
 constexpr fp::CanonicalizeRecipeSpec kRzStrictSpec{
-    crucible::RoundingMode::RZ,                              // NOT RN
-    crucible::ReductionDeterminism::BITEXACT_STRICT,         // OK
+    crucible::RoundingMode::RZ,  // NOT RN
+    crucible::ReductionDeterminism::BITEXACT_STRICT,  // OK
 };
 
 int main() {

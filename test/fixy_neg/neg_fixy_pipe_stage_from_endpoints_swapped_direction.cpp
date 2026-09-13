@@ -26,9 +26,9 @@
 
 #include <utility>
 
-namespace conc  = crucible::concurrent;
-namespace eff   = crucible::effects;
-namespace saf   = crucible::safety;
+namespace conc = crucible::concurrent;
+namespace eff = crucible::effects;
+namespace saf = crucible::safety;
 namespace fpipe = crucible::fixy::pipe;
 
 namespace neg_fixy_pipe_stage_from_endpoints_swapped_direction {
@@ -38,8 +38,7 @@ struct UTag2 {};
 using Ch1 = conc::PermissionedSpscChannel<int, 64, UTag1>;
 using Ch2 = conc::PermissionedSpscChannel<int, 64, UTag2>;
 
-inline void body(typename Ch1::ConsumerHandle&&,
-                 typename Ch2::ProducerHandle&&) noexcept {}
+inline void body(typename Ch1::ConsumerHandle&&, typename Ch2::ProducerHandle&&) noexcept {}
 }  // namespace neg_fixy_pipe_stage_from_endpoints_swapped_direction
 
 int main() {
@@ -50,13 +49,13 @@ int main() {
     ns::Ch2 ch2;
 
     auto w1 = saf::mint_permission_root<conc::spsc_tag::Whole<ns::UTag1>>();
-    auto [pp1, cp1] = saf::mint_permission_split<
-        conc::spsc_tag::Producer<ns::UTag1>,
-        conc::spsc_tag::Consumer<ns::UTag1>>(std::move(w1));
+    auto [pp1, cp1] =
+        saf::mint_permission_split<conc::spsc_tag::Producer<ns::UTag1>, conc::spsc_tag::Consumer<ns::UTag1>>(
+            std::move(w1));
     auto w2 = saf::mint_permission_root<conc::spsc_tag::Whole<ns::UTag2>>();
-    auto [pp2, cp2] = saf::mint_permission_split<
-        conc::spsc_tag::Producer<ns::UTag2>,
-        conc::spsc_tag::Consumer<ns::UTag2>>(std::move(w2));
+    auto [pp2, cp2] =
+        saf::mint_permission_split<conc::spsc_tag::Producer<ns::UTag2>, conc::spsc_tag::Consumer<ns::UTag2>>(
+            std::move(w2));
 
     auto cons1 = ch1.consumer(std::move(cp1));
     auto prod2 = ch2.producer(std::move(pp2));
@@ -66,8 +65,7 @@ int main() {
 
     // Swapped: producer endpoint in the consumer slot, consumer endpoint in
     // the producer slot.  IsConsumerEndpoint / IsProducerEndpoint fire.
-    auto bad = fpipe::mint_stage_from_endpoints<&ns::body>(
-        ctx, std::move(prod_ep), std::move(cons_ep));
+    auto bad = fpipe::mint_stage_from_endpoints<&ns::body>(ctx, std::move(prod_ep), std::move(cons_ep));
     (void)bad;
     (void)pp1;
     (void)cp2;

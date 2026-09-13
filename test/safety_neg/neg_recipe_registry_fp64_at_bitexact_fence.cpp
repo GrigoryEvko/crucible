@@ -33,9 +33,9 @@
 using namespace crucible::safety;
 
 template <typename W>
-    requires (W::template satisfies<Tolerance::BITEXACT>)
+    requires(W::template satisfies<Tolerance::BITEXACT>)
 static int bitexact_fence_consumer(W wrapped) noexcept {
-    (void) std::move(wrapped).consume();
+    (void)std::move(wrapped).consume();
     return 0;
 }
 

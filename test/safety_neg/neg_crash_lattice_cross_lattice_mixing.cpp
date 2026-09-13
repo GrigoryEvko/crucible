@@ -26,12 +26,11 @@
 using namespace crucible::algebra::lattices;
 
 int main() {
-    CrashClass    crash_val    = CrashClass::NoThrow;
+    CrashClass crash_val = CrashClass::NoThrow;
     ProgressClass progress_val = ProgressClass::Bounded;
 
     // Should FAIL: ProgressLattice::leq's signature requires two
     // ProgressClass values; passing a CrashClass as the second
     // argument is a type-mismatch.
-    return static_cast<int>(
-        ProgressLattice::leq(progress_val, crash_val));
+    return static_cast<int>(ProgressLattice::leq(progress_val, crash_val));
 }

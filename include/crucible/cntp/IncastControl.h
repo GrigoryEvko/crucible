@@ -41,7 +41,7 @@ using PositiveSenderCount = safety::Positive<std::uint16_t>;
 struct IncastConfig {
     bool enable_dctcp = true;
     bool enable_ecn = true;
-    PositiveRtoMinUsec rto_min_usec{std::uint32_t{10'000}};
+    PositiveRtoMinUsec rto_min_usec{std::uint32_t{10000}};
     bool enable_credit_pacing = false;
     PositiveCreditBytes initial_credit_bytes{std::uint32_t{64 * 1024}};
     PositiveSenderCount expected_senders{std::uint16_t{1}};
@@ -81,7 +81,7 @@ template <LinkClass Link>
     requires(Link == LinkClass::LosslessDatacenterFabric)
 [[nodiscard]] constexpr DeclaredIncastConfig
 mint_dctcp_incast_config(PositiveCreditBytes initial_credit = PositiveCreditBytes{std::uint32_t{64 * 1024}},
-                         PositiveRtoMinUsec rto_min = PositiveRtoMinUsec{std::uint32_t{10'000}},
+                         PositiveRtoMinUsec rto_min = PositiveRtoMinUsec{std::uint32_t{10000}},
                          PositiveSenderCount senders = PositiveSenderCount{std::uint16_t{1}}) noexcept {
     return DeclaredIncastConfig{IncastConfig{
         .enable_dctcp = true,

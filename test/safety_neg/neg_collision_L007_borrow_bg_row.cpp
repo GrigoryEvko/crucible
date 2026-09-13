@@ -45,28 +45,27 @@ namespace neg_collision_l007 {
 // trip H002 (HotPath × pred::True), but this Fn is NOT marked hot-path,
 // so H002 doesn't fire.  H010 (HotPath × Bg) also doesn't fire (no
 // hot-path marker).  L007 alone catches the borrow × Bg shape.
-using Bad = fn::Fn<
-    int,                                       // 1  Type
-    fn::pred::True,                            // 2  Refinement (trivial)
-    fn::UsageMode::Borrow,                     // 3  Usage — Borrow (triggers
-                                                //                has_borrow_capture_v)
-    fx::Row<fx::Effect::Bg>,                   // 4  EffectRow — Bg atom (Bg-row)
-    fn::SecLevel::Public,                      // 5  Security
-    fn::proto::None,                           // 6  Protocol
-    fn::lifetime::Static,                      // 7  Lifetime
-    fn::source::FromInternal,                  // 8  Source
-    fn::trust::Verified,                       // 9  Trust
-    fn::ReprKind::Opaque,                      // 10 Repr
-    fn::cost::Constant,                        // 11 Cost (bounded — H001 won't fire)
-    fn::precision::Exact,                      // 12 Precision
-    fn::space::Bounded<sizeof(int)>,           // 13 Space
-    fn::OverflowMode::Trap,                    // 14 Overflow
-    fn::MutationMode::Immutable,               // 15 Mutation
-    fn::ReentrancyMode::NonReentrant,          // 16 Reentrancy
-    fn::size_pol::Sized<sizeof(int)>,          // 17 Size
-    /*Version=*/1,                             // 18 Version
-    fn::stale::Fresh                           // 19 Staleness
->;
+using Bad = fn::Fn<int,  // 1  Type
+                   fn::pred::True,  // 2  Refinement (trivial)
+                   fn::UsageMode::Borrow,  // 3  Usage — Borrow (triggers
+                   //                has_borrow_capture_v)
+                   fx::Row<fx::Effect::Bg>,  // 4  EffectRow — Bg atom (Bg-row)
+                   fn::SecLevel::Public,  // 5  Security
+                   fn::proto::None,  // 6  Protocol
+                   fn::lifetime::Static,  // 7  Lifetime
+                   fn::source::FromInternal,  // 8  Source
+                   fn::trust::Verified,  // 9  Trust
+                   fn::ReprKind::Opaque,  // 10 Repr
+                   fn::cost::Constant,  // 11 Cost (bounded — H001 won't fire)
+                   fn::precision::Exact,  // 12 Precision
+                   fn::space::Bounded<sizeof(int)>,  // 13 Space
+                   fn::OverflowMode::Trap,  // 14 Overflow
+                   fn::MutationMode::Immutable,  // 15 Mutation
+                   fn::ReentrancyMode::NonReentrant,  // 16 Reentrancy
+                   fn::size_pol::Sized<sizeof(int)>,  // 17 Size
+                   /*Version=*/1,  // 18 Version
+                   fn::stale::Fresh  // 19 Staleness
+                   >;
 
 }  // namespace neg_collision_l007
 

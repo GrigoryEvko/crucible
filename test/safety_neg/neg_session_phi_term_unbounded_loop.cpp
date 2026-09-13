@@ -18,14 +18,13 @@
 using namespace crucible::safety::proto;
 
 struct Heartbeat {};
-struct Ack       {};
+struct Ack {};
 
 // Protocol: Loop sending Heartbeat, receiving Ack, Continue.  Every
 // path returns to Continue — there is no End/Stop branch — so the
 // loop body cannot escape.  phi_safe accepts it (well-formed) but
 // phi_term refuses it.
-using NeverEndingHeartbeat =
-    Loop<Send<Heartbeat, Recv<Ack, Continue>>>;
+using NeverEndingHeartbeat = Loop<Send<Heartbeat, Recv<Ack, Continue>>>;
 
 int main() {
     // Fires [PhiTermViolation_HasUnboundedLoop] classified static_assert.

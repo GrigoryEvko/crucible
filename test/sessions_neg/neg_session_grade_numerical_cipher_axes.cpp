@@ -8,20 +8,12 @@ namespace saf = crucible::safety;
 
 struct Snapshot {};
 
-using Provided = saf::CipherTier<
-    alg::CipherTierTag::Cold,
-    saf::NumericalTier<alg::Tolerance::RELAXED, Snapshot>>;
-using Required = saf::CipherTier<
-    alg::CipherTierTag::Hot,
-    saf::NumericalTier<alg::Tolerance::BITEXACT, Snapshot>>;
+using Provided = saf::CipherTier<alg::CipherTierTag::Cold, saf::NumericalTier<alg::Tolerance::RELAXED, Snapshot>>;
+using Required = saf::CipherTier<alg::CipherTierTag::Hot, saf::NumericalTier<alg::Tolerance::BITEXACT, Snapshot>>;
 
 namespace crucible::safety::proto {
 template <>
 struct is_subsort<::Provided, ::Required> : std::true_type {};
 }  // namespace crucible::safety::proto
 
-int main() {
-    proto::assert_subtype_sync<
-        proto::Send<Provided, proto::End>,
-        proto::Send<Required, proto::End>>();
-}
+int main() { proto::assert_subtype_sync<proto::Send<Provided, proto::End>, proto::Send<Required, proto::End>>(); }

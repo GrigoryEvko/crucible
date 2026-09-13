@@ -23,8 +23,6 @@ namespace oracle = crucible::fixy::decide::oracle;
 
 // double is not std::integral → no_overflow_mul_oracle has no viable
 // candidate.
-bool probe() {
-    return oracle::no_overflow_mul_oracle(1.0, 2.0);
-}
+bool probe() { return oracle::no_overflow_mul_oracle(1.0, 2.0); }
 
 int main() { return 0; }

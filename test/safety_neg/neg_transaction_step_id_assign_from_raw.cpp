@@ -34,7 +34,7 @@ int main() {
     // assignments are the defaulted copy/move from another Monotonic.
     // A future refactor that re-introduces a converting assignment
     // would silently re-admit retrograde writes.
-    tx.step_id = uint64_t{42};   // ← MUST fail: no viable operator=
+    tx.step_id = uint64_t{42};  // ← MUST fail: no viable operator=
     (void)tx;
     return 0;
 }

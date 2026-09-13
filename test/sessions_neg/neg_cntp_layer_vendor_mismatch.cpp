@@ -5,18 +5,15 @@
 
 #include <utility>
 
-namespace eff   = ::crucible::effects;
+namespace eff = ::crucible::effects;
 namespace proto = ::crucible::safety::proto;
 
 struct Wire {};
 
 using AmdUpperLayer = proto::VendorPinned<proto::VendorBackend::AMD, proto::End>;
-using NvCntpCarrier = proto::VendorPinned<
-    proto::VendorBackend::NV,
-    proto::Delegate_seq<AmdUpperLayer, proto::End>>;
+using NvCntpCarrier = proto::VendorPinned<proto::VendorBackend::NV, proto::Delegate_seq<AmdUpperLayer, proto::End>>;
 
-using BadMint = decltype(proto::mint_permissioned_session<NvCntpCarrier>(
-    std::declval<eff::HotFgCtx const&>(),
-    std::declval<Wire>()));
+using BadMint = decltype(proto::mint_permissioned_session<NvCntpCarrier>(std::declval<eff::HotFgCtx const&>(),
+                                                                         std::declval<Wire>()));
 
 int main() { return sizeof(BadMint); }

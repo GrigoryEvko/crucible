@@ -87,7 +87,7 @@ public:
                                             ::crucible::effects::Init) noexcept
         : senses_{senses},
           miss_budget_{policy.deadline_miss_budget},
-          window_ns_{static_cast<uint64_t>(policy.watchdog_window_sec) * 1'000'000'000ull} {
+          window_ns_{static_cast<uint64_t>(policy.watchdog_window_sec) * 1000000000ull} {
         // The body is empty on purpose. The telemetry source may still
         // be loading when the watchdog is built, so the first observe()
         // captures the baseline. All-zero state is that pending
@@ -129,7 +129,7 @@ public:
             return WatchdogVerdict::InsufficientData;
         }
         auto now_bytes = ::crucible::safety::mint_clock_source<::crucible::safety::ClockSource_v::Boot, std::uint64_t>(
-            static_cast<std::uint64_t>(ts.tv_sec) * 1'000'000'000ull + static_cast<std::uint64_t>(ts.tv_nsec));
+            static_cast<std::uint64_t>(ts.tv_sec) * 1000000000ull + static_cast<std::uint64_t>(ts.tv_nsec));
         const uint64_t now_ns = std::move(now_bytes).consume();
         const uint64_t count = sched->context_switches();
 

@@ -9,6 +9,4 @@ namespace shp = crucible::cntp::_wip::sharp;
 
 constexpr shp::SharpParticipantCount bad_count{std::uint16_t{0}};
 
-int main() {
-    return static_cast<int>(bad_count.value());
-}
+int main() { return static_cast<int>(bad_count.value()); }

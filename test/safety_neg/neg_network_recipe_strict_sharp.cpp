@@ -5,8 +5,7 @@
 namespace net = crucible::forge::recipes;
 
 struct StrictRecipe {
-    static constexpr crucible::ReductionDeterminism determinism =
-        crucible::ReductionDeterminism::BITEXACT_STRICT;
+    static constexpr crucible::ReductionDeterminism determinism = crucible::ReductionDeterminism::BITEXACT_STRICT;
     static constexpr bool associative = true;
     static constexpr bool commutative = true;
     static constexpr bool participant_count_power_of_two = true;

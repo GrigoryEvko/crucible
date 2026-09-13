@@ -12,8 +12,7 @@ int main() {
     crucible::warden::Policy p{};
     p.deadline_miss_budget = 100;
     p.watchdog_window_sec = 1;
-    auto watchdog = crucible::warden::mint_deadline_watchdog(
-        crucible::effects::BgDrainCtx{}, /*senses=*/nullptr, p);
+    auto watchdog = crucible::warden::mint_deadline_watchdog(crucible::effects::BgDrainCtx{}, /*senses=*/nullptr, p);
     (void)watchdog;
     return 0;
 }

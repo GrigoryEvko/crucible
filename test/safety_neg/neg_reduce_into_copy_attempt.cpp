@@ -30,9 +30,7 @@
 #include <crucible/safety/reduce_into.h>
 
 struct PlusOp {
-    constexpr int operator()(int const& a, int const& b) const noexcept {
-        return a + b;
-    }
+    constexpr int operator()(int const& a, int const& b) const noexcept { return a + b; }
 };
 
 int main() {

@@ -42,8 +42,7 @@ int main() {
     // ContentHash{}.raw() == 0 via the strong-id NSDMI default →
     // non_zero(v) == false → contract violation → not a constant
     // expression → ill-formed.
-    constexpr crucible::ValidContentHash bad{
-        crucible::ContentHash{}};
+    constexpr crucible::ValidContentHash bad{crucible::ContentHash{}};
     (void)bad;
     return 0;
 }

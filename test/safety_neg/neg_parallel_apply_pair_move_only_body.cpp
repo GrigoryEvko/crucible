@@ -38,12 +38,10 @@ int main() {
 
     Arena arena;
     constexpr std::size_t N = 8;
-    auto region_a = safety::OwnedRegion<std::uint64_t, DataNegA>::adopt(
-        effects::testing::test().alloc, arena, N,
-        safety::mint_permission_root<DataNegA>());
-    auto region_b = safety::OwnedRegion<std::uint64_t, DataNegB>::adopt(
-        effects::testing::test().alloc, arena, N,
-        safety::mint_permission_root<DataNegB>());
+    auto region_a = safety::OwnedRegion<std::uint64_t, DataNegA>::adopt(effects::testing::test().alloc, arena, N,
+                                                                        safety::mint_permission_root<DataNegA>());
+    auto region_b = safety::OwnedRegion<std::uint64_t, DataNegB>::adopt(effects::testing::test().alloc, arena, N,
+                                                                        safety::mint_permission_root<DataNegB>());
 
     // Move-only state captured by the body (canonical move-only:
     // std::unique_ptr).
@@ -53,12 +51,13 @@ int main() {
     // body-by-value capture in spawn_workers_pair_ requires
     // CopyConstructible.  The API-boundary static_assert names the
     // contract directly.
-    auto recombined = safety::parallel_apply_pair<2>(
-        std::move(region_a), std::move(region_b),
-        [state = std::move(move_only_state)](auto sub_a, auto sub_b) noexcept {
-            (void)sub_a; (void)sub_b; (void)*state;
-        }
-    );
+    auto recombined =
+        safety::parallel_apply_pair<2>(std::move(region_a), std::move(region_b),
+                                       [state = std::move(move_only_state)](auto sub_a, auto sub_b) noexcept {
+                                           (void)sub_a;
+                                           (void)sub_b;
+                                           (void)*state;
+                                       });
     (void)recombined;
 
     return 0;

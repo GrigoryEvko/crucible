@@ -37,8 +37,8 @@ using Bad = fn::Fn<sf::SimdWidthPinned<SI::Avx2, int>>;  // specific vector ISA
 
 // Mark Bad as replay-required — required to fire V101.
 namespace crucible::safety::fn::collision {
-    template <> struct marks_replay_required<::neg_collision_v101::Bad>
-        : std::true_type {};
+template <>
+struct marks_replay_required<::neg_collision_v101::Bad> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 [[maybe_unused]] neg_collision_v101::Bad the_fixture{};

@@ -7,6 +7,6 @@
 #include <crucible/SwissTable.h>
 
 int main() {
-  constexpr crucible::detail::GroupWidth bad{std::size_t{0}};
-  (void)bad;
+    constexpr crucible::detail::GroupWidth bad{std::size_t{0}};
+    (void)bad;
 }

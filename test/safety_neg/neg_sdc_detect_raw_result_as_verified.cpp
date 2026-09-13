@@ -7,10 +7,6 @@
 
 namespace observe = crucible::observe;
 
-int consume_verified(observe::SdcVerified<std::uint64_t>) noexcept {
-    return 0;
-}
+int consume_verified(observe::SdcVerified<std::uint64_t>) noexcept { return 0; }
 
-int main() {
-    return consume_verified(std::uint64_t{42});
-}
+int main() { return consume_verified(std::uint64_t{42}); }

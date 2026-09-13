@@ -31,9 +31,8 @@ namespace {
 }
 
 void test_admission() {
-    assert(cntp::overlay_multicast_error_name(
-               cntp::OverlayMulticastError::FanoutExceeded) ==
-           std::string_view{"FanoutExceeded"});
+    assert(cntp::overlay_multicast_error_name(cntp::OverlayMulticastError::FanoutExceeded)
+           == std::string_view{"FanoutExceeded"});
     assert(cntp::admit_overlay_stripe_count(8).has_value());
     assert(!cntp::admit_overlay_stripe_count(0).has_value());
     assert(!cntp::admit_overlay_stripe_count(65).has_value());
@@ -49,9 +48,7 @@ void test_admission() {
 
     cog::CogIdentity zero{};
     assert(!cntp::admit_overlay_peer(zero).has_value());
-    static_assert(std::same_as<
-                  cntp::DeclaredOverlayPeer::tag_type,
-                  saf::source::OverlayMulticast>);
+    static_assert(std::same_as<cntp::DeclaredOverlayPeer::tag_type, saf::source::OverlayMulticast>);
 
     std::printf("  test_admission: PASSED\n");
 }
@@ -74,8 +71,8 @@ void test_routes_and_message_plan() {
         .max_payload_bytes = cntp::OverlayPayloadBytes{64U},
         .use_fec_per_stripe = true,
     };
-    auto plan = cntp::mint_overlay_multicast<4, 8, 4>(
-        init, local, std::span<const cntp::DeclaredOverlayPeer>{peers}, cfg);
+    auto plan =
+        cntp::mint_overlay_multicast<4, 8, 4>(init, local, std::span<const cntp::DeclaredOverlayPeer>{peers}, cfg);
     static_assert(!std::copy_constructible<decltype(plan)>);
     assert(plan.peer_count() == 4);
     assert(plan.local_peer() == local.value());
@@ -131,8 +128,8 @@ void test_peer_mutation_errors() {
         .max_payload_bytes = cntp::OverlayPayloadBytes{64U},
         .use_fec_per_stripe = true,
     };
-    auto plan = cntp::mint_overlay_multicast<1, 4, 1>(
-        init, local, std::span<const cntp::DeclaredOverlayPeer>{peers}, cfg);
+    auto plan =
+        cntp::mint_overlay_multicast<1, 4, 1>(init, local, std::span<const cntp::DeclaredOverlayPeer>{peers}, cfg);
 
     auto duplicate = plan.add_peer(other);
     assert(!duplicate.has_value());
@@ -149,8 +146,7 @@ void test_peer_mutation_errors() {
 
 int main() {
     static_assert(sizeof(cntp::OverlayStripeCount) == sizeof(std::uint8_t));
-    static_assert(sizeof(cntp::DeclaredOverlayPeer) ==
-                  sizeof(cntp::OverlayPeerRef));
+    static_assert(sizeof(cntp::DeclaredOverlayPeer) == sizeof(cntp::OverlayPeerRef));
     static_assert(cntp::OverlayMulticastShape<4, 8, 2>);
     static_assert(!cntp::OverlayMulticastShape<0, 8, 2>);
     static_assert(cntp::CtxFitsOverlayMulticastMint<effects::ColdInitCtx>);

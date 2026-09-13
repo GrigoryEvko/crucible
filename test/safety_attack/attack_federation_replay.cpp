@@ -71,27 +71,24 @@
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 namespace perm = crucible::permissions;
-namespace saf  = crucible::safety;
+namespace saf = crucible::safety;
 
 namespace {
 
-struct VictimOrgSelf {};   // the deployment we are attacking
-struct VictimOrgPeer {};   // a legitimate peer of the deployment
-struct OrgInterleave {};   // unrelated org whose handshake is
-                           // minted in between victim's replays
+struct VictimOrgSelf {};  // the deployment we are attacking
+struct VictimOrgPeer {};  // a legitimate peer of the deployment
+struct OrgInterleave {};  // unrelated org whose handshake is
+// minted in between victim's replays
 
 // The deployment admits both Self and Peer in its production policy.
-using AllowSelfAndPeer =
-    perm::policy::admit_orgs<VictimOrgSelf, VictimOrgPeer>;
+using AllowSelfAndPeer = perm::policy::admit_orgs<VictimOrgSelf, VictimOrgPeer>;
 // Also admit OrgInterleave so the interleave-minting step below
 // itself succeeds — we are testing whether interleaving FRESH
 // admittances clears the seen-state for the replayed handshake.
-using AllowAllThree = perm::policy::admit_orgs<
-    VictimOrgSelf, VictimOrgPeer, OrgInterleave>;
+using AllowAllThree = perm::policy::admit_orgs<VictimOrgSelf, VictimOrgPeer, OrgInterleave>;
 
 const perm::LocalCipherPermission& local_cipher_permission() {
-    static const auto permission =
-        saf::mint_permission_root<perm::tag::LocalCipherTag>();
+    static const auto permission = saf::mint_permission_root<perm::tag::LocalCipherTag>();
     return permission;
 }
 
@@ -101,21 +98,21 @@ const perm::LocalCipherPermission& local_cipher_permission() {
 // the same bytes are reused without re-deriving from the
 // constructor.
 struct CapturedHandshake {
-    perm::OrgId               org_id;
-    perm::PeerKeyFingerprint  peer_key_fingerprint;
-    perm::Nonce               nonce;
+    perm::OrgId org_id;
+    perm::PeerKeyFingerprint peer_key_fingerprint;
+    perm::Nonce nonce;
     perm::SignatureFingerprint self_signature_fingerprint;
 };
 
 static_assert(sizeof(CapturedHandshake) == sizeof(perm::FederationHandshake),
-    "CapturedHandshake must layout-match FederationHandshake — the "
-    "attack copies bytes verbatim, not just structurally.");
+              "CapturedHandshake must layout-match FederationHandshake — the "
+              "attack copies bytes verbatim, not just structurally.");
 
 CapturedHandshake sniff_handshake(perm::FederationHandshake hs) noexcept {
     return CapturedHandshake{
-        .org_id                     = hs.org_id,
-        .peer_key_fingerprint       = hs.peer_key_fingerprint,
-        .nonce                      = hs.nonce,
+        .org_id = hs.org_id,
+        .peer_key_fingerprint = hs.peer_key_fingerprint,
+        .nonce = hs.nonce,
         .self_signature_fingerprint = hs.self_signature_fingerprint,
     };
 }
@@ -123,42 +120,38 @@ CapturedHandshake sniff_handshake(perm::FederationHandshake hs) noexcept {
 perm::FederationHandshake rehydrate(CapturedHandshake captured) noexcept {
     // Verbatim replay — same nonce, same signature, same peer key.
     return perm::FederationHandshake{
-        .org_id                     = captured.org_id,
-        .peer_key_fingerprint       = captured.peer_key_fingerprint,
-        .nonce                      = captured.nonce,
+        .org_id = captured.org_id,
+        .peer_key_fingerprint = captured.peer_key_fingerprint,
+        .nonce = captured.nonce,
         .self_signature_fingerprint = captured.self_signature_fingerprint,
     };
 }
 
 int test_replay_succeeds_indefinitely() {
     // ── Step 1: legitimate peer mints a fresh handshake ───────────
-    const auto fresh_hs =
-        perm::make_self_signed_handshake<VictimOrgPeer>(
-            /*peer_key_fingerprint=*/perm::PeerKeyFingerprint{0xC0FFEE'B0BADD'BEEFULL},
-            /*nonce=*/                perm::Nonce{0xDEAD'BEEF'CAFE'F00DULL});
+    const auto fresh_hs = perm::make_self_signed_handshake<VictimOrgPeer>(
+        /*peer_key_fingerprint=*/perm::PeerKeyFingerprint{0xC0FFEEB0BADDBEEFULL},
+        /*nonce=*/perm::Nonce{0xDEADBEEFCAFEF00DULL});
 
     // Attacker captures the handshake bytes off the wire.
     const auto captured = sniff_handshake(fresh_hs);
 
     // ── Step 2: legitimate admittance (first call) ────────────────
-    auto admittance_1 = perm::mint_federation_admittance<
-        VictimOrgPeer, AllowSelfAndPeer>(
-            local_cipher_permission(), rehydrate(captured));
+    auto admittance_1 = perm::mint_federation_admittance<VictimOrgPeer, AllowSelfAndPeer>(local_cipher_permission(),
+                                                                                          rehydrate(captured));
     assert(admittance_1.has_value());
 
     // ── Step 3: VERBATIM replay (the vulnerability) ───────────────
     // Same bytes, same nonce.  In a production-safe substrate this
     // MUST return AdmittanceError::ReplayDetected (or similar).
     // Today, it succeeds — locking the V1 insecurity into CI.
-    auto admittance_2 = perm::mint_federation_admittance<
-        VictimOrgPeer, AllowSelfAndPeer>(
-            local_cipher_permission(), rehydrate(captured));
+    auto admittance_2 = perm::mint_federation_admittance<VictimOrgPeer, AllowSelfAndPeer>(local_cipher_permission(),
+                                                                                          rehydrate(captured));
     assert(admittance_2.has_value());
 
     // ── Step 4: replay again — once more for the audit trail ─────
-    auto admittance_3 = perm::mint_federation_admittance<
-        VictimOrgPeer, AllowSelfAndPeer>(
-            local_cipher_permission(), rehydrate(captured));
+    auto admittance_3 = perm::mint_federation_admittance<VictimOrgPeer, AllowSelfAndPeer>(local_cipher_permission(),
+                                                                                          rehydrate(captured));
     assert(admittance_3.has_value());
 
     // ── Step 5: interleave a different org's fresh handshake ─────
@@ -168,20 +161,17 @@ int test_replay_succeeds_indefinitely() {
     // it shouldn't even matter because no seen-state exists.  We
     // mint an unrelated org's handshake, admit it, then replay the
     // ORIGINAL captured handshake — still succeeds.
-    const auto interleave_hs =
-        perm::make_self_signed_handshake<OrgInterleave>(
-            /*peer_key_fingerprint=*/perm::PeerKeyFingerprint{0x1234'5678'9ABC'DEF0ULL},
-            /*nonce=*/                perm::Nonce{0xFEED'FACE'BABE'B00BULL});
-    auto interleave_admit = perm::mint_federation_admittance<
-        OrgInterleave, AllowAllThree>(
-            local_cipher_permission(), interleave_hs);
+    const auto interleave_hs = perm::make_self_signed_handshake<OrgInterleave>(
+        /*peer_key_fingerprint=*/perm::PeerKeyFingerprint{0x123456789ABCDEF0ULL},
+        /*nonce=*/perm::Nonce{0xFEEDFACEBABEB00BULL});
+    auto interleave_admit =
+        perm::mint_federation_admittance<OrgInterleave, AllowAllThree>(local_cipher_permission(), interleave_hs);
     assert(interleave_admit.has_value());
 
     // Replay the ORIGINAL handshake AFTER an interleaved
     // admittance — still succeeds (no state, no protection).
-    auto admittance_after_interleave = perm::mint_federation_admittance<
-        VictimOrgPeer, AllowAllThree>(
-            local_cipher_permission(), rehydrate(captured));
+    auto admittance_after_interleave =
+        perm::mint_federation_admittance<VictimOrgPeer, AllowAllThree>(local_cipher_permission(), rehydrate(captured));
     assert(admittance_after_interleave.has_value());
 
     return 0;
@@ -199,16 +189,13 @@ int test_fresh_handshakes_still_admit() {
         /*peer_key_fp=*/perm::PeerKeyFingerprint{0xAAAA},
         /*nonce=*/perm::Nonce{0x2222});  // different nonce
     assert(fresh_a.nonce != fresh_b.nonce);
-    assert(fresh_a.self_signature_fingerprint
-           != fresh_b.self_signature_fingerprint);  // signature is
-                                                    // nonce-bound
+    assert(fresh_a.self_signature_fingerprint != fresh_b.self_signature_fingerprint);  // signature is
+    // nonce-bound
 
-    auto admit_a = perm::mint_federation_admittance<
-        VictimOrgPeer, AllowSelfAndPeer>(
-            local_cipher_permission(), fresh_a);
-    auto admit_b = perm::mint_federation_admittance<
-        VictimOrgPeer, AllowSelfAndPeer>(
-            local_cipher_permission(), fresh_b);
+    auto admit_a =
+        perm::mint_federation_admittance<VictimOrgPeer, AllowSelfAndPeer>(local_cipher_permission(), fresh_a);
+    auto admit_b =
+        perm::mint_federation_admittance<VictimOrgPeer, AllowSelfAndPeer>(local_cipher_permission(), fresh_b);
     assert(admit_a.has_value());
     assert(admit_b.has_value());
     return 0;
@@ -227,9 +214,8 @@ int test_replay_with_zeroed_nonce_still_rejected() {
 
     auto zeroed_key = fresh;
     zeroed_key.peer_key_fingerprint = perm::PeerKeyFingerprint{};
-    auto admit_zeroed = perm::mint_federation_admittance<
-        VictimOrgPeer, AllowSelfAndPeer>(
-            local_cipher_permission(), zeroed_key);
+    auto admit_zeroed =
+        perm::mint_federation_admittance<VictimOrgPeer, AllowSelfAndPeer>(local_cipher_permission(), zeroed_key);
     assert(!admit_zeroed.has_value());
     assert(admit_zeroed.error() == perm::AdmittanceError::MissingPeerKey);
 
@@ -240,27 +226,22 @@ int test_replay_with_zeroed_nonce_still_rejected() {
 
 int main() {
     if (int rc = test_replay_succeeds_indefinitely(); rc != 0) {
-        std::fprintf(stderr,
-            "test_replay_succeeds_indefinitely failed (rc=%d)\n", rc);
+        std::fprintf(stderr, "test_replay_succeeds_indefinitely failed (rc=%d)\n", rc);
         return 1;
     }
     if (int rc = test_fresh_handshakes_still_admit(); rc != 0) {
-        std::fprintf(stderr,
-            "test_fresh_handshakes_still_admit failed (rc=%d)\n", rc);
+        std::fprintf(stderr, "test_fresh_handshakes_still_admit failed (rc=%d)\n", rc);
         return 2;
     }
     if (int rc = test_replay_with_zeroed_nonce_still_rejected(); rc != 0) {
-        std::fprintf(stderr,
-            "test_replay_with_zeroed_nonce_still_rejected failed (rc=%d)\n",
-            rc);
+        std::fprintf(stderr, "test_replay_with_zeroed_nonce_still_rejected failed (rc=%d)\n", rc);
         return 3;
     }
 
-    std::puts(
-        "attack_federation_replay: V1 handshakes are replayable as "
-        "documented (fixy-CR-03).  When this test REDDENS, replay "
-        "protection has landed — see the doc-block at the top of "
-        "this file for the remediation checklist.");
+    std::puts("attack_federation_replay: V1 handshakes are replayable as "
+              "documented (fixy-CR-03).  When this test REDDENS, replay "
+              "protection has landed — see the doc-block at the top of "
+              "this file for the remediation checklist.");
     return 0;
 }
 

@@ -19,12 +19,11 @@
 
 int main() {
     namespace fcc = ::crucible::fixy::contract::cipher;
-    using Tier    = ::crucible::safety::CipherTierTag_v;
+    using Tier = ::crucible::safety::CipherTierTag_v;
 
     // Start with a Hot tier handle and attempt to "promote" to Cold —
     // wrong direction.  can_promote_tier_v<Hot, Cold> == false.
     fcc::CipherTier<Tier::Hot, int> hot{42};
-    [[maybe_unused]] auto bad =
-        fcc::mint_promote<Tier::Hot, Tier::Cold>(std::move(hot));
+    [[maybe_unused]] auto bad = fcc::mint_promote<Tier::Hot, Tier::Cold>(std::move(hot));
     return 0;
 }

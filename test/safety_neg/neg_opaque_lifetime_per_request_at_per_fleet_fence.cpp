@@ -64,8 +64,8 @@ using crucible::safety::OpaqueLifetime;
 using crucible::safety::Lifetime_v;
 
 int main() {
-    Cipher c;     // Closed Cipher — commit_per_fleet's requires-clause
-                  // rejects before the OpenView precondition could run.
+    Cipher c;  // Closed Cipher — commit_per_fleet's requires-clause
+    // rejects before the OpenView precondition could run.
     auto view = c.mint_open_view();
     Arena arena;
     MetaLog log;
@@ -76,8 +76,7 @@ int main() {
     // semantically scoped to a single inference request (e.g., an
     // inferlet PdaState, a per-query KV-cache slice, a request-local
     // grammar constraint).
-    OpaqueLifetime<Lifetime_v::PER_REQUEST, const RegionNode*>
-        request_scoped{region};
+    OpaqueLifetime<Lifetime_v::PER_REQUEST, const RegionNode*> request_scoped{region};
 
     // Should FAIL: commit_per_fleet requires
     //   is_opaque_lifetime_v<W>

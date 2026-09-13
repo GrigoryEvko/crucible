@@ -34,8 +34,7 @@ int main() {
     // Re-tighten External → FromUserPath: claim the bytes came
     // specifically from CLI input.  V-232 does NOT admit this
     // transition; the requires-clause on Tagged::retag fires.
-    auto narrowed =
-        std::move(external).retag<ns::source::FromUserPath>();
+    auto narrowed = std::move(external).retag<ns::source::FromUserPath>();
     (void)narrowed;
     return 0;
 }

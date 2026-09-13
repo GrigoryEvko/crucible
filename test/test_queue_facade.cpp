@@ -222,7 +222,7 @@ void test_work_stealing_single_thread() {
 
 void test_spsc_multi_thread() {
     Queue<std::uint64_t, kind::spsc<1024>> q;
-    constexpr std::uint64_t N = 50'000;
+    constexpr std::uint64_t N = 50000;
 
     std::atomic<bool> producer_done{false};
     std::atomic<std::uint64_t> received_sum{0};
@@ -268,7 +268,7 @@ void test_spsc_multi_thread() {
 void test_mpsc_multi_thread() {
     Queue<std::uint64_t, kind::mpsc<2048>> q;
     constexpr int NUM_PRODUCERS = 4;
-    constexpr std::uint64_t PER_PRODUCER = 25'000;
+    constexpr std::uint64_t PER_PRODUCER = 25000;
     constexpr std::uint64_t TOTAL = NUM_PRODUCERS * PER_PRODUCER;
 
     std::atomic<int> producers_done{0};
@@ -329,7 +329,7 @@ void test_sharded_multi_thread() {
     constexpr std::size_t N = 4;
     Queue<std::uint64_t, kind::sharded<M, N, 256>> q;
 
-    constexpr std::uint64_t PER_PRODUCER = 10'000;
+    constexpr std::uint64_t PER_PRODUCER = 10000;
     constexpr std::uint64_t TOTAL = M * PER_PRODUCER;
 
     std::atomic<int> producers_done{0};
@@ -398,7 +398,7 @@ void test_sharded_multi_thread() {
 
 void test_work_stealing_multi_thread() {
     Queue<std::uint64_t, kind::work_stealing<1024>> q;
-    constexpr std::uint64_t N = 20'000;
+    constexpr std::uint64_t N = 20000;
 
     std::atomic<bool> owner_done{false};
     std::atomic<std::uint64_t> taken_count{0};
@@ -552,7 +552,7 @@ void test_spsc_mint_permission_fork() {
     using namespace crucible::concurrent::queue_tag;
 
     Queue<std::uint64_t, kind::spsc<1024>> q;
-    constexpr std::uint64_t N = 50'000;
+    constexpr std::uint64_t N = 50000;
 
     // These slots are plain, not atomic.  The fork joins both threads
     // before it returns, and that join is what orders the consumer's

@@ -26,8 +26,8 @@ using Bad = fn::Fn<TlsAtomicMarker>;
 }  // namespace neg_collision_g002
 
 namespace crucible::safety::fn::collision {
-    template <> struct marks_thread_local_atomic<::neg_collision_g002::Bad>
-        : std::true_type {};
+template <>
+struct marks_thread_local_atomic<::neg_collision_g002::Bad> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 [[maybe_unused]] neg_collision_g002::Bad the_fixture{};

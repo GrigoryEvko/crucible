@@ -18,7 +18,7 @@
 #include <crucible/effects/ExecCtx.h>
 
 namespace proto = ::crucible::safety::proto;
-namespace eff   = ::crucible::effects;
+namespace eff = ::crucible::effects;
 
 struct PinnedResource : ::crucible::safety::Pinned<PinnedResource> {
     int sentinel = 3;
@@ -30,8 +30,7 @@ void compile_time_reject() {
     eff::HotFgCtx ctx{};
     PinnedResource ra, rb;
     using EmptyAnnotated = proto::Offer<proto::Sender<AliceRole>>;
-    auto channel = proto::mint_channel<EmptyAnnotated>(
-        ctx, ctx, ra, rb);
+    auto channel = proto::mint_channel<EmptyAnnotated>(ctx, ctx, ra, rb);
     (void)channel;
 }
 

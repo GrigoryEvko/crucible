@@ -30,9 +30,10 @@ int main(int argc, char** argv) {
     using namespace crucible;
     using namespace crucible::fuzz::prop;
     Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 5'000) cfg.iterations = 5'000;  // O(N) per iter
+    if (cfg.iterations > 5000) cfg.iterations = 5000;  // O(N) per iter
 
-    return run("KernelCache insert + lookup round-trip", cfg,
+    return run(
+        "KernelCache insert + lookup round-trip", cfg,
         [](Rng& rng) {
             // 64 distinct (hash, fake_kernel*) pairs per iteration.
             // KERNEL_CACHE_CAP is typically 1024+; 64 is well under
@@ -40,7 +41,7 @@ int main(int argc, char** argv) {
             constexpr unsigned N = 64;
             struct Batch {
                 std::array<ContentHash, N> hashes;
-                std::array<uintptr_t, N>   tags;
+                std::array<uintptr_t, N> tags;
             };
             Batch b{};
             for (unsigned i = 0; i < N; ++i) {
@@ -48,7 +49,7 @@ int main(int argc, char** argv) {
                 // as a slot-empty sentinel).  Add 1 to guarantee
                 // non-zero.
                 b.hashes[i] = ContentHash{rng.next64() | 1ULL};
-                b.tags[i]   = rng.next64();
+                b.tags[i] = rng.next64();
             }
             return b;
         },
@@ -73,8 +74,7 @@ int main(int argc, char** argv) {
 
             // Lookup each — must return the SAME pointer.
             for (unsigned i = 0; i < N; ++i) {
-                auto* expected =
-                    reinterpret_cast<CompiledKernel*>(b.tags[i]);
+                auto* expected = reinterpret_cast<CompiledKernel*>(b.tags[i]);
                 auto* actual = cache.lookup(b.hashes[i], RowHash{});
                 // Two paths the lookup can return a "wrong" pointer:
                 //   1. Returned someone else's kernel (probe bug)

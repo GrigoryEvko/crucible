@@ -18,10 +18,7 @@ struct CustomDelegatedEndpoint {};
 using CarrierK = Offer<Recv<Crash<Recipient>, End>>;
 
 consteval bool probe() {
-    assert_delegated_crash_propagates<
-        CustomDelegatedEndpoint,
-        Recipient,
-        CarrierK>();
+    assert_delegated_crash_propagates<CustomDelegatedEndpoint, Recipient, CarrierK>();
     return true;
 }
 

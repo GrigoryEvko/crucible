@@ -65,18 +65,17 @@ namespace cog = crucible::cog;
 // violation makes the call not a constant expression, so the
 // static_assert is ill-formed — the build fails here.
 constexpr cog::OrderedLatencyQuantiles BAD_QUANTILES_FIXTURE{
-    cog::LatencyQuantiles{
-        std::uint32_t{99},   // p50
-        std::uint32_t{50},   // p99  — violates p50 ≤ p99
-        std::uint32_t{30}}}; // p999 — violates p99 ≤ p999
+    cog::LatencyQuantiles{std::uint32_t{99},  // p50
+                          std::uint32_t{50},  // p99  — violates p50 ≤ p99
+                          std::uint32_t{30}}};  // p999 — violates p99 ≤ p999
 
 static_assert(BAD_QUANTILES_FIXTURE.peek().p50_ns == 99,
-    "GAPS-187: cog::OrderedLatencyQuantiles MUST refuse non-monotone "
-    "quantile triples at the Refined precondition contract.  If this "
-    "static_assert ever evaluates successfully, a hostile preset "
-    "writer / disk-corrupted snapshot / federation-imported triple "
-    "with reversed-percentile convention would slip through field "
-    "construction and corrupt every downstream scheduling decision "
-    "that compares throughput envelopes across Cogs.");
+              "GAPS-187: cog::OrderedLatencyQuantiles MUST refuse non-monotone "
+              "quantile triples at the Refined precondition contract.  If this "
+              "static_assert ever evaluates successfully, a hostile preset "
+              "writer / disk-corrupted snapshot / federation-imported triple "
+              "with reversed-percentile convention would slip through field "
+              "construction and corrupt every downstream scheduling decision "
+              "that compares throughput envelopes across Cogs.");
 
 int main() { return 0; }

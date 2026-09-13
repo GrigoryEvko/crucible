@@ -54,8 +54,7 @@
 
 namespace {
 
-[[nodiscard]] constexpr uint32_t
-gate(std::span<const uint32_t> dims, uint32_t world) noexcept {
+[[nodiscard]] constexpr uint32_t gate(std::span<const uint32_t> dims, uint32_t world) noexcept {
     CRUCIBLE_PRE(crucible::decide::factorization_eq(dims, world));
     return world;
 }

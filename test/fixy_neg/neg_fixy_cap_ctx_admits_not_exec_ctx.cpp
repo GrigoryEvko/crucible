@@ -40,9 +40,8 @@ int main() {
     // T::row_type; }` weakening), this fixture would silently
     // compile and a band-3 site could pass a stray int through
     // a cap-admission gate.
-    static_assert(::crucible::fixy::cap::CtxAdmitsCap<
-                      int, ::crucible::effects::Effect::Alloc>,
-        "FIXY-V-217 fixture #1: int is not an ExecCtx — "
-        "CtxAdmitsCap must reject via IsExecCtx structural check.");
+    static_assert(::crucible::fixy::cap::CtxAdmitsCap<int, ::crucible::effects::Effect::Alloc>,
+                  "FIXY-V-217 fixture #1: int is not an ExecCtx — "
+                  "CtxAdmitsCap must reject via IsExecCtx structural check.");
     return 0;
 }

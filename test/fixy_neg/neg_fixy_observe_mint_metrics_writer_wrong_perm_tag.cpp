@@ -12,12 +12,10 @@ int main() {
     using crucible::fixy::observe::RuntimeMetricsReaderTag;
 
     RuntimeMetricsChannel channel;
-    auto reader_perm = crucible::safety::mint_permission_root<
-        RuntimeMetricsReaderTag>();
+    auto reader_perm = crucible::safety::mint_permission_root<RuntimeMetricsReaderTag>();
 
     // Wrong Permission tag — writer mint takes Permission<WriterTag>.
-    auto writer = crucible::fixy::observe::mint_metrics_writer(
-        channel, std::move(reader_perm));
+    auto writer = crucible::fixy::observe::mint_metrics_writer(channel, std::move(reader_perm));
     (void)writer;
     return 0;
 }

@@ -66,8 +66,8 @@
 #include <crucible/effects/ExecCtx.h>
 #include <crucible/mimic/CogMimic.h>
 
-namespace cog     = crucible::cog;
-namespace mimic   = crucible::mimic;
+namespace cog = crucible::cog;
+namespace mimic = crucible::mimic;
 namespace effects = crucible::effects;
 
 // Mock of the future GAPS-196 calibrate-pass / GAPS-810 partition-
@@ -78,38 +78,35 @@ namespace effects = crucible::effects;
 // families admitted by IsMimicSubstrate.
 template <cog::CogKind K, effects::IsExecCtx Ctx>
     requires mimic::CtxFitsCogMimic<Ctx, K>
-constexpr int allocate_cog_mimic_slot() noexcept { return 1; }
+constexpr int allocate_cog_mimic_slot() noexcept {
+    return 1;
+}
 
 // InitCtx — a fitting calibration-time minting context for any
 // substrate Cog.  Used here as the Ctx argument so the rejection
 // surfaces specifically at the CogKind conjunct (not at the ctx-row
 // conjunct, which is what fixture #2 exercises).
-using InitCtx = effects::ExecCtx<
-    effects::Init,
-    effects::ctx_numa::Any,
-    effects::ctx_alloc::Unbound,
-    effects::ctx_heat::Cold,
-    effects::ctx_resid::DRAM,
-    effects::Row<effects::Effect::Init>,
-    effects::ctx_workload::Unspecified>;
+using InitCtx =
+    effects::ExecCtx<effects::Init, effects::ctx_numa::Any, effects::ctx_alloc::Unbound, effects::ctx_heat::Cold,
+                     effects::ctx_resid::DRAM, effects::Row<effects::Effect::Init>, effects::ctx_workload::Unspecified>;
 
 // CogKind::PsuRail is family=Power.  IsMimicSubstrate<PsuRail> is
 // false → CogMimic<PsuRail>'s requires-clause refuses substitution.
 // Build fails here at the static_assert call site, naming the broken
 // concept conjunct.
 static_assert(allocate_cog_mimic_slot<cog::CogKind::PsuRail, InitCtx>() == 1,
-    "GAPS-188: mimic::CogMimic concept MUST refuse non-substrate "
-    "CogKind atoms (Power / Sensor / Container families) at template "
-    "substitution.  If this static_assert ever evaluates, a future "
-    "GAPS-196 calibrate pass or GAPS-810 partition optimiser would "
-    "silently accept PsuRail as a Mimic-instance target and produce "
-    "either (a) a deep substitution failure inside Tagged<caps_for_t<"
-    "PsuRail>, source::Calibrated> (because caps_for<PsuRail> is not "
-    "specialised), or (b) — if a future caps_for<PsuRail> ships "
-    "accidentally — a Mimic stub bound to a power-distribution Cog "
-    "that has no compute / network / memory operations to emit code "
-    "for.  The IsMimicSubstrate gate refuses the structural misuse "
-    "at the call site, regardless of whether caps_for has been "
-    "shipped — defense in depth via family-level intent gating.");
+              "GAPS-188: mimic::CogMimic concept MUST refuse non-substrate "
+              "CogKind atoms (Power / Sensor / Container families) at template "
+              "substitution.  If this static_assert ever evaluates, a future "
+              "GAPS-196 calibrate pass or GAPS-810 partition optimiser would "
+              "silently accept PsuRail as a Mimic-instance target and produce "
+              "either (a) a deep substitution failure inside Tagged<caps_for_t<"
+              "PsuRail>, source::Calibrated> (because caps_for<PsuRail> is not "
+              "specialised), or (b) — if a future caps_for<PsuRail> ships "
+              "accidentally — a Mimic stub bound to a power-distribution Cog "
+              "that has no compute / network / memory operations to emit code "
+              "for.  The IsMimicSubstrate gate refuses the structural misuse "
+              "at the call site, regardless of whether caps_for has been "
+              "shipped — defense in depth via family-level intent gating.");
 
 int main() { return 0; }

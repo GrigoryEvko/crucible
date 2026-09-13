@@ -54,8 +54,7 @@ struct ExternalPeerTag {};
 struct ExternalResource {};
 
 [[maybe_unused]] void probe() {
-    using Event = ::crucible::safety::proto::CrashEvent<
-        ExternalPeerTag, ExternalResource>;
+    using Event = ::crucible::safety::proto::CrashEvent<ExternalPeerTag, ExternalResource>;
 
     // The §XXI bypass attempt the V-013 fix closes:
     //
@@ -64,8 +63,7 @@ struct ExternalResource {};
     //   is the documented mint point for the passkey.  Pre-V-013 a
     //   hostile caller (or an honest refactor that drifted away from
     //   `wrap_crash_return`) could obtain a key this way.
-    auto key = ::crucible::safety::proto::detail::
-        WrapCrashReturnAuthorizer::mint();
+    auto key = ::crucible::safety::proto::detail::WrapCrashReturnAuthorizer::mint();
 
     //   Step 2: feed the well-formed key to CrashEvent's ctor directly,
     //   bypassing `wrap_crash_return`'s `inner.detach(reason_tag)`

@@ -67,30 +67,29 @@ namespace neg_collision_l003_marker {
 // NonReentrant (L002 Coroutine-arm silent).  has_borrow_capture_v
 // fires ONLY via the marker arm; marks_unscoped_spawn supplies the
 // spawn signal.  Both markers engaged at file scope below.
-using Bad = fn::Fn<
-    int,                                       // 1  Type — bare int (no Borrowed carrier)
-    fn::pred::True,                            // 2  Refinement
-    fn::UsageMode::Linear,                     // 3  Usage — Linear (NOT Borrow → usage arm
-                                                //                of has_borrow_capture_v FALSE)
-    fx::Row<>,                                 // 4  EffectRow — empty (L007 silent; L002 Bg-arm
-                                                //                silent; B001 silent)
-    fn::SecLevel::Public,                      // 5  Security
-    fn::proto::None,                           // 6  Protocol
-    fn::lifetime::Static,                      // 7  Lifetime
-    fn::source::FromInternal,                  // 8  Source
-    fn::trust::Verified,                       // 9  Trust
-    fn::ReprKind::Opaque,                      // 10 Repr
-    fn::cost::Constant,                        // 11 Cost (bounded — H001/B001 silent)
-    fn::precision::Exact,                      // 12 Precision
-    fn::space::Bounded<sizeof(int)>,           // 13 Space
-    fn::OverflowMode::Trap,                    // 14 Overflow
-    fn::MutationMode::Immutable,               // 15 Mutation
-    fn::ReentrancyMode::NonReentrant,          // 16 Reentrancy — NOT Coroutine (L002 Coroutine
-                                                //                arm silent; R-family silent)
-    fn::size_pol::Sized<sizeof(int)>,          // 17 Size
-    /*Version=*/1,                             // 18 Version
-    fn::stale::Fresh                           // 19 Staleness
->;
+using Bad = fn::Fn<int,  // 1  Type — bare int (no Borrowed carrier)
+                   fn::pred::True,  // 2  Refinement
+                   fn::UsageMode::Linear,  // 3  Usage — Linear (NOT Borrow → usage arm
+                   //                of has_borrow_capture_v FALSE)
+                   fx::Row<>,  // 4  EffectRow — empty (L007 silent; L002 Bg-arm
+                   //                silent; B001 silent)
+                   fn::SecLevel::Public,  // 5  Security
+                   fn::proto::None,  // 6  Protocol
+                   fn::lifetime::Static,  // 7  Lifetime
+                   fn::source::FromInternal,  // 8  Source
+                   fn::trust::Verified,  // 9  Trust
+                   fn::ReprKind::Opaque,  // 10 Repr
+                   fn::cost::Constant,  // 11 Cost (bounded — H001/B001 silent)
+                   fn::precision::Exact,  // 12 Precision
+                   fn::space::Bounded<sizeof(int)>,  // 13 Space
+                   fn::OverflowMode::Trap,  // 14 Overflow
+                   fn::MutationMode::Immutable,  // 15 Mutation
+                   fn::ReentrancyMode::NonReentrant,  // 16 Reentrancy — NOT Coroutine (L002 Coroutine
+                   //                arm silent; R-family silent)
+                   fn::size_pol::Sized<sizeof(int)>,  // 17 Size
+                   /*Version=*/1,  // 18 Version
+                   fn::stale::Fresh  // 19 Staleness
+                   >;
 
 }  // namespace neg_collision_l003_marker
 
@@ -98,10 +97,10 @@ using Bad = fn::Fn<
 // and the spawn signal via marks_unscoped_spawn.  L003 fires on the
 // conjunction.  L002 silent (no marks_async, no Bg row, no Coroutine).
 namespace crucible::safety::fn::collision {
-    template <> struct marks_borrow_capture<::neg_collision_l003_marker::Bad>
-        : std::true_type {};
-    template <> struct marks_unscoped_spawn<::neg_collision_l003_marker::Bad>
-        : std::true_type {};
+template <>
+struct marks_borrow_capture<::neg_collision_l003_marker::Bad> : std::true_type {};
+template <>
+struct marks_unscoped_spawn<::neg_collision_l003_marker::Bad> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 [[maybe_unused]] neg_collision_l003_marker::Bad the_fixture{};

@@ -33,12 +33,10 @@ int main() {
     // ColdInitCtx — Row<Init, Alloc, IO> — admits IO but NOT Block.
     ::crucible::effects::ColdInitCtx ctx{};
 
-    fwfs::Path<::crucible::fixy::tags::source::Sanitized> path{
-        "/tmp/crucible_neg_v228_cold_ctx_lacks_block"};
+    fwfs::Path<::crucible::fixy::tags::source::Sanitized> path{"/tmp/crucible_neg_v228_cold_ctx_lacks_block"};
 
     // Should FAIL: mint_cold_writer's CtxFitsColdWriterMint folds in
     // CtxAdmitsIoBlock<Ctx>; ColdInitCtx's row lacks Effect::Block.
-    [[maybe_unused]] auto r = fwcd::mint_cold_writer<>(
-        ctx, std::move(path));
+    [[maybe_unused]] auto r = fwcd::mint_cold_writer<>(ctx, std::move(path));
     return 0;
 }

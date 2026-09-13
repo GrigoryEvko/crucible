@@ -3,7 +3,7 @@
 #include <cstdint>
 
 int main() {
-    using Hist = crucible::observe::HdrHistogram<2, 1'000'000>;
+    using Hist = crucible::observe::HdrHistogram<2, 1000000>;
     Hist h;
     std::uint64_t raw = 10;
 

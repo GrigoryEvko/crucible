@@ -11,7 +11,7 @@ using namespace crucible::safety::proto;
 
 namespace {
 struct FakeChannel {};
-}
+}  // namespace
 
 int main() {
     [[maybe_unused]] auto h = mint_session<End>(FakeChannel{});

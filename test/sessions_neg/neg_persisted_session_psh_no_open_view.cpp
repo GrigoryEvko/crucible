@@ -15,8 +15,7 @@
 #include <crucible/sessions/SessionMint.h>
 
 // FIXY-V-031: Cipher::open() now takes Path<source::External>.
-using CipherRoot = crucible::fixy::wrap::Path<
-    crucible::fixy::tags::source::External>;
+using CipherRoot = crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>;
 
 namespace proto = crucible::safety::proto;
 namespace eff = crucible::effects;
@@ -24,21 +23,14 @@ namespace eff = crucible::effects;
 struct Resource {};
 
 int main() {
-    auto cipher = crucible::Cipher::open(
-        CipherRoot{"/tmp/crucible_neg_persist_psh_no_view"});
+    auto cipher = crucible::Cipher::open(CipherRoot{"/tmp/crucible_neg_persist_psh_no_view"});
     eff::TestRunnerCtx ctx{};
 
-    auto psh = proto::mint_permissioned_session<
-        proto::Send<int, proto::End>>(ctx, Resource{});
+    auto psh = proto::mint_permissioned_session<proto::Send<int, proto::End>>(ctx, Resource{});
 
     // PSH overload deleted companion fires: no Cipher::OpenView at the
     // mint boundary; pass cipher.mint_open_view() explicitly.
-    [[maybe_unused]] auto h = proto::mint_persisted_session(
-        ctx,
-        std::move(psh),
-        cipher,
-        proto::SessionTagId{1},
-        proto::RoleTagId{1},
-        proto::RoleTagId{2});
+    [[maybe_unused]] auto h = proto::mint_persisted_session(ctx, std::move(psh), cipher, proto::SessionTagId{1},
+                                                            proto::RoleTagId{1}, proto::RoleTagId{2});
     return 0;
 }

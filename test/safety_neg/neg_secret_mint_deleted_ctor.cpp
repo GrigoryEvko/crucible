@@ -32,14 +32,13 @@ namespace neg_secret_deleted {
 struct Deleted {
     Deleted() = delete;
 };
-}
+}  // namespace neg_secret_deleted
 
 int main() {
     // Should FAIL: Deleted has no callable default ctor →
     // std::is_constructible_v<Deleted> is false →
     // mint_secret<Deleted>() requires-clause rejects.
-    auto s = ::crucible::safety::mint_secret<
-        neg_secret_deleted::Deleted>();
+    auto s = ::crucible::safety::mint_secret<neg_secret_deleted::Deleted>();
     (void)s;
     return 0;
 }

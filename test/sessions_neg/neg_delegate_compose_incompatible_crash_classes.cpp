@@ -12,9 +12,7 @@ namespace {
 
 struct Ack {};
 
-using BadComposition = compose_t<
-    Delegate<Stop_g<CrashClass::Abort>, Recv<Ack, End>>,
-    Stop_g<CrashClass::NoThrow>>;
+using BadComposition = compose_t<Delegate<Stop_g<CrashClass::Abort>, Recv<Ack, End>>, Stop_g<CrashClass::NoThrow>>;
 
 [[maybe_unused]] BadComposition* should_not_compile = nullptr;
 

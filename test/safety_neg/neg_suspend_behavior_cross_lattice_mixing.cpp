@@ -25,11 +25,10 @@ using namespace crucible::algebra::lattices;
 
 int main() {
     SuspendBehavior suspend_val = SuspendBehavior::KeepsTicking;
-    DetSafeTier     det_val     = DetSafeTier::Pure;
+    DetSafeTier det_val = DetSafeTier::Pure;
 
     // Should FAIL: SuspendBehaviorLattice::leq requires two SuspendBehavior
     // values; passing a DetSafeTier as the second argument is a type
     // mismatch (no cross-enum implicit conversion).
-    return static_cast<int>(
-        SuspendBehaviorLattice::leq(suspend_val, det_val));
+    return static_cast<int>(SuspendBehaviorLattice::leq(suspend_val, det_val));
 }

@@ -26,8 +26,7 @@ int main() {
     // arity 2 BUT param 0 is int (not a producer handle) and
     // param 1 is int (not an OwnedRegion).
     // ProducerEndpoint<&neg_witness_two_ints> is false.
-    using V = crucible::safety::extract::producer_endpoint_handle_value_t<
-        &::neg_witness_two_ints>;
+    using V = crucible::safety::extract::producer_endpoint_handle_value_t<&::neg_witness_two_ints>;
     V const v{};
     (void)v;
     return 0;

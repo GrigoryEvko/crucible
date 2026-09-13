@@ -27,15 +27,14 @@ using AffinityMask = ::crucible::algebra::lattices::AffinityMask;
 
 // A TSC reader gate that requires a single-core pin.
 template <typename Proof>
-    requires (Proof::is_singleton_pin)
+    requires(Proof::is_singleton_pin)
 [[nodiscard]] int require_singleton_pin(Proof const& proof) {
     return proof.peek();
 }
 
 int main() {
     // A real, constructible proof — but its mask covers cores {0, 1}.
-    auto two_core = mint_cpu_pinned<AffinityMask::range(0, 1),
-                                    PinningPosture::PinnedExplicit, int>(42);
+    auto two_core = mint_cpu_pinned<AffinityMask::range(0, 1), PinningPosture::PinnedExplicit, int>(42);
 
     // Should FAIL: a 2-core mask is not a singleton; the gate rejects it.
     return require_singleton_pin(two_core);

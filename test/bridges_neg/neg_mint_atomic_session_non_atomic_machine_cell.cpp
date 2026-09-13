@@ -13,7 +13,7 @@
 #include <crucible/sessions/Session.h>
 
 namespace safety = ::crucible::safety;
-namespace proto  = ::crucible::safety::proto;
+namespace proto = ::crucible::safety::proto;
 
 using DummyProto = proto::End;
 

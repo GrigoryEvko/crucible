@@ -27,14 +27,14 @@
 #include <crucible/safety/Tagged.h>
 
 namespace crucible {
-struct FakeTransaction { int dummy; };
-}
+struct FakeTransaction {
+    int dummy;
+};
+}  // namespace crucible
 
 int main() {
-    using RingTx = ::crucible::safety::Tagged<
-        crucible::FakeTransaction*, ::crucible::safety::source::Ring>;
-    using ArenaTx = ::crucible::safety::Tagged<
-        crucible::FakeTransaction*, ::crucible::safety::source::Arena>;
+    using RingTx = ::crucible::safety::Tagged<crucible::FakeTransaction*, ::crucible::safety::source::Ring>;
+    using ArenaTx = ::crucible::safety::Tagged<crucible::FakeTransaction*, ::crucible::safety::source::Arena>;
 
     crucible::FakeTransaction tx{};
     ArenaTx arena_tagged{&tx};

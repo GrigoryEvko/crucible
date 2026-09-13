@@ -19,9 +19,9 @@ namespace {
 void test_admission_and_names() {
     assert(cntp::roce_error_name(cntp::RoceError::InvalidDscp) == std::string_view{"InvalidDscp"});
 
-    auto pfc = cntp::admit_pfc_priorities(0b0000'1000);
+    auto pfc = cntp::admit_pfc_priorities(0b00001000);
     assert(pfc.has_value());
-    assert(pfc->value() == 0b0000'1000);
+    assert(pfc->value() == 0b00001000);
 
     auto zero_pfc = cntp::admit_pfc_priorities(0);
     assert(!zero_pfc.has_value());
@@ -35,9 +35,9 @@ void test_admission_and_names() {
     assert(!invalid_dscp.has_value());
     assert(invalid_dscp.error() == cntp::RoceError::InvalidDscp);
 
-    auto alpha = cntp::admit_dcqcn_alpha_ppm(500'000);
+    auto alpha = cntp::admit_dcqcn_alpha_ppm(500000);
     assert(alpha.has_value());
-    assert(alpha->value() == 500'000);
+    assert(alpha->value() == 500000);
 
     auto alpha_zero = cntp::admit_dcqcn_alpha_ppm(0);
     assert(!alpha_zero.has_value());
@@ -62,16 +62,16 @@ void test_config_minting_and_validation() {
     auto iface = cntp::NicInterfaceName::from("eth0");
     assert(iface.has_value());
 
-    auto config = cntp::mint_roce_config<0b0000'1000, 26>(*iface);
+    auto config = cntp::mint_roce_config<0b00001000, 26>(*iface);
     static_assert(std::same_as<decltype(config), cntp::DeclaredRoceConfig>);
     assert(config.value().interface.view() == "eth0");
     assert(config.value().enable_pfc);
-    assert(config.value().pfc_priorities.value() == 0b0000'1000);
+    assert(config.value().pfc_priorities.value() == 0b00001000);
     assert(config.value().trust_dscp);
     assert(config.value().enable_ecn);
     assert(config.value().enable_dcqcn);
     assert(config.value().roce_dscp.value() == 26);
-    assert(config.value().dcqcn.alpha_ppm.value() == 500'000);
+    assert(config.value().dcqcn.alpha_ppm.value() == 500000);
     assert(config.value().dcqcn.target_packets.value() == 5);
 
     auto valid = cntp::validate_roce_config(config);
@@ -81,7 +81,7 @@ void test_config_minting_and_validation() {
     assert(!apply.has_value());
     assert(apply.error() == cntp::RoceError::PrivilegedApplyDeferred);
 
-    auto privileged = cntp::mint_roce_config<0b0000'1000, 26>(*iface, cntp::DcqcnParams{}, true);
+    auto privileged = cntp::mint_roce_config<0b00001000, 26>(*iface, cntp::DcqcnParams{}, true);
     auto privileged_apply = cntp::apply_roce_config(privileged);
     assert(!privileged_apply.has_value());
     assert(privileged_apply.error() == cntp::RoceError::VendorBackendUnavailable);
@@ -149,12 +149,12 @@ void test_apply_paths_are_stubbed() {
     auto iface = cntp::NicInterfaceName::from("eth0");
     assert(iface.has_value());
 
-    auto deferred = cntp::mint_roce_config<0b0000'1000, 26>(*iface);
+    auto deferred = cntp::mint_roce_config<0b00001000, 26>(*iface);
     auto deferred_apply = cntp::apply_roce_config(deferred);
     assert(!deferred_apply.has_value());
     assert(deferred_apply.error() == cntp::RoceError::PrivilegedApplyDeferred);
 
-    auto requested = cntp::mint_roce_config<0b0000'1000, 26>(*iface, cntp::DcqcnParams{}, true);
+    auto requested = cntp::mint_roce_config<0b00001000, 26>(*iface, cntp::DcqcnParams{}, true);
     auto requested_apply = cntp::apply_roce_config(requested);
     assert(!requested_apply.has_value());
     assert(requested_apply.error() == cntp::RoceError::VendorBackendUnavailable);
@@ -175,7 +175,7 @@ int main() {
     static_assert(sizeof(cntp::PfcPriorityMask) == sizeof(std::uint8_t));
     static_assert(sizeof(cntp::RoceDscp) == sizeof(std::uint8_t));
     static_assert(sizeof(cntp::DeclaredRoceConfig) == sizeof(cntp::RoceConfig));
-    static_assert(cntp::ValidPfcPriorityMask<0b0000'1000>);
+    static_assert(cntp::ValidPfcPriorityMask<0b00001000>);
     static_assert(!cntp::ValidPfcPriorityMask<0>);
     static_assert(cntp::ValidRoceDscp<26>);
     static_assert(!cntp::ValidRoceDscp<64>);

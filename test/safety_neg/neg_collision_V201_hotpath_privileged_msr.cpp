@@ -46,8 +46,8 @@ using Bad = fn::Fn<sf::Hw<HW::PrivilegedMsr, int>>;
 
 // Mark Bad as hot-path — required to fire V201.
 namespace crucible::safety::fn::collision {
-    template <> struct marks_hot_path<::neg_collision_v201_msr::Bad>
-        : std::true_type {};
+template <>
+struct marks_hot_path<::neg_collision_v201_msr::Bad> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 [[maybe_unused]] neg_collision_v201_msr::Bad the_fixture{};

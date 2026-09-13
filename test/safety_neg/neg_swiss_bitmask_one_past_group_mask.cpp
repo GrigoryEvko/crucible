@@ -8,7 +8,6 @@
 #include <crucible/SwissTable.h>
 
 int main() {
-  constexpr crucible::detail::BitMask bad{
-      crucible::detail::kGroupMaskCeiling + uint64_t{1}};
-  (void)bad;
+    constexpr crucible::detail::BitMask bad{crucible::detail::kGroupMaskCeiling + uint64_t{1}};
+    (void)bad;
 }

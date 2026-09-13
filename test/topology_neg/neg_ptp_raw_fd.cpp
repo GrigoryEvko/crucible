@@ -9,8 +9,7 @@ int main() {
     crucible::cog::CogIdentity nic{};
     nic.uuid = crucible::cog::Uuid{0x129, 3};
     nic.kind = crucible::cog::CogKind::NicPort;
-    auto handle = crucible::topology::mint_ptp_handle(
-        crucible::effects::ColdInitCtx{}, nic, 3);
+    auto handle = crucible::topology::mint_ptp_handle(crucible::effects::ColdInitCtx{}, nic, 3);
     (void)handle;
     return 0;
 }

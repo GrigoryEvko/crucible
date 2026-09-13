@@ -62,8 +62,8 @@ using R_plus_one = eff::ConcurrentRow<eff::resource::HbmBytes<1>>;
 // ConcurrentlySchedulable<R_at_max, R_plus_one> must NOT be
 // satisfied — the pairwise sum overflows.  The static_assert fires.
 static_assert(eff::ConcurrentlySchedulable<R_at_max, R_plus_one>,
-    "ConcurrentlySchedulable concept must reject schedules whose "
-    "pairwise sum overflows uint64_t on any ResourceKind — "
-    "GAPS-190 overflow defense compromised.");
+              "ConcurrentlySchedulable concept must reject schedules whose "
+              "pairwise sum overflows uint64_t on any ResourceKind — "
+              "GAPS-190 overflow defense compromised.");
 
 int main() { return 0; }

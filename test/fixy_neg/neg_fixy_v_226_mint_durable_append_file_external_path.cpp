@@ -17,7 +17,7 @@
 //   "conversion from".
 
 #include <crucible/effects/ExecCtx.h>
-#include <crucible/fixy/Source.h>           // fixy::tags::source::*
+#include <crucible/fixy/Source.h>  // fixy::tags::source::*
 #include <crucible/fixy/Wrap.h>
 
 int main() {
@@ -30,7 +30,6 @@ int main() {
 
     // Should FAIL: same path-tag mismatch as fixture #1, but at
     // mint_durable_append_file's signature.
-    [[maybe_unused]] auto r =
-        fwfs::mint_durable_append_file(ctx, std::move(external_path));
+    [[maybe_unused]] auto r = fwfs::mint_durable_append_file(ctx, std::move(external_path));
     return 0;
 }

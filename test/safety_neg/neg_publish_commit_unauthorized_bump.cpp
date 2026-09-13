@@ -18,7 +18,7 @@ namespace {
 struct PipelineTag {};
 struct PublishStage {};
 struct OtherStage {};
-} // namespace
+}  // namespace
 
 int main() {
     // Cell befriends PublishStage as the SOLE legal bumper.

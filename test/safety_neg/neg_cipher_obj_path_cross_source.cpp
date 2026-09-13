@@ -32,10 +32,8 @@
 #include <string>
 
 int main() {
-    using UserPathString   = ::crucible::safety::Tagged<
-        std::string, ::crucible::safety::source::FromUserPath>;
-    using CipherPathString = ::crucible::safety::Tagged<
-        std::string, ::crucible::safety::source::CipherPath>;
+    using UserPathString = ::crucible::safety::Tagged<std::string, ::crucible::safety::source::FromUserPath>;
+    using CipherPathString = ::crucible::safety::Tagged<std::string, ::crucible::safety::source::CipherPath>;
 
     UserPathString user_path{std::string{"/etc/passwd"}};
     CipherPathString cipher_slot{std::string{"/cipher/objects/00/zero"}};

@@ -44,22 +44,25 @@ void fill_ctrl(int8_t* ctrl, size_t capacity, double occupied_pct, uint64_t seed
 
 // Minimal Swiss-table simulator for full-probe benches. Triangular probing.
 struct MiniSwissTable {
-    int8_t*   ctrl   = nullptr;
+    int8_t* ctrl = nullptr;
     uint64_t* hashes = nullptr;
-    size_t    capacity = 0;
-    size_t    count    = 0;
+    size_t capacity = 0;
+    size_t count = 0;
 
     explicit MiniSwissTable(size_t cap) : capacity{cap} {
-        ctrl   = static_cast<int8_t*>(std::malloc(cap));
+        ctrl = static_cast<int8_t*>(std::malloc(cap));
         hashes = static_cast<uint64_t*>(std::calloc(cap, sizeof(uint64_t)));
         if (!ctrl || !hashes) std::abort();
         std::memset(ctrl, 0x80, cap);  // all empty
     }
-    ~MiniSwissTable() { std::free(ctrl); std::free(hashes); }
-    MiniSwissTable(const MiniSwissTable&)            = delete;
+    ~MiniSwissTable() {
+        std::free(ctrl);
+        std::free(hashes);
+    }
+    MiniSwissTable(const MiniSwissTable&) = delete;
     MiniSwissTable& operator=(const MiniSwissTable&) = delete;
-    MiniSwissTable(MiniSwissTable&&)                 = delete;
-    MiniSwissTable& operator=(MiniSwissTable&&)      = delete;
+    MiniSwissTable(MiniSwissTable&&) = delete;
+    MiniSwissTable& operator=(MiniSwissTable&&) = delete;
 
     size_t insert(uint64_t h) {
         const int8_t tag = h2_tag(h);
@@ -104,7 +107,7 @@ struct MiniSwissTable {
     }
 };
 
-} // namespace
+}  // namespace
 
 int main() {
     bench::print_system_info();
@@ -131,93 +134,94 @@ int main() {
     // ── h2_tag ───────────────────────────────────────────────────────
     {
         volatile uint64_t hash = 0x123456789ABCDEF0ULL;
-        reports.push_back(bench::run("h2_tag(hash)", [&]{
+        reports.push_back(bench::run("h2_tag(hash)", [&] {
             auto tag = h2_tag(hash);
             bench::do_not_optimize(tag);
         }));
     }
 
     // ── load() aligned vs unaligned ──────────────────────────────────
-    reports.push_back([&]{
+    reports.push_back([&] {
         alignas(64) int8_t ctrl[kGroupWidth * 4];
         fill_ctrl(ctrl, kGroupWidth * 4, 0.5, 99);
-        return bench::run("load() aligned", [&]{
+        return bench::run("load() aligned", [&] {
             auto g = CtrlGroup::load(ctrl);
             bench::do_not_optimize(g);
         });
     }());
-    reports.push_back([&]{
+    reports.push_back([&] {
         alignas(64) int8_t ctrl[kGroupWidth * 4];
         fill_ctrl(ctrl, kGroupWidth * 4, 0.5, 99);
         const int8_t* unaligned = ctrl + 3;
-        return bench::run("load() unaligned (+3)", [&]{
+        return bench::run("load() unaligned (+3)", [&] {
             auto g = CtrlGroup::load(unaligned);
             bench::do_not_optimize(g);
         });
     }());
 
     // ── match(h2) ─────────────────────────────────────────────────────
-    reports.push_back([&]{
+    reports.push_back([&] {
         alignas(64) int8_t ctrl[kGroupWidth];
         fill_ctrl(ctrl, kGroupWidth, 0.75, 42);
         const int8_t target = 0x37;
         ctrl[5] = target;
         auto group = CtrlGroup::load(ctrl);
-        return bench::run("match(h2) — 1 match", [&]{
+        return bench::run("match(h2) — 1 match", [&] {
             auto m = group.match(target);
             bench::do_not_optimize(m);
         });
     }());
 
-    reports.push_back([&]{
+    reports.push_back([&] {
         alignas(64) int8_t ctrl[kGroupWidth];
         fill_ctrl(ctrl, kGroupWidth, 0.75, 42);
         const int8_t miss = 0x7F;
         for (size_t i = 0; i < kGroupWidth; ++i)
             if (ctrl[i] == miss) ctrl[i] = 0x01;
         auto group = CtrlGroup::load(ctrl);
-        return bench::run("match(h2) — 0 matches (miss)", [&]{
+        return bench::run("match(h2) — 0 matches (miss)", [&] {
             auto m = group.match(miss);
             bench::do_not_optimize(m);
         });
     }());
 
-    reports.push_back([&]{
+    reports.push_back([&] {
         alignas(64) int8_t ctrl[kGroupWidth];
         fill_ctrl(ctrl, kGroupWidth, 0.75, 42);
         const int8_t target = 0x37;
-        for (size_t i = 0; i < kGroupWidth; i += 4) ctrl[i] = target;
+        for (size_t i = 0; i < kGroupWidth; i += 4)
+            ctrl[i] = target;
         auto group = CtrlGroup::load(ctrl);
-        return bench::run("match(h2) — multiple matches", [&]{
+        return bench::run("match(h2) — multiple matches", [&] {
             auto m = group.match(target);
             bench::do_not_optimize(m);
         });
     }());
 
     // ── match_empty() ─────────────────────────────────────────────────
-    reports.push_back([&]{
+    reports.push_back([&] {
         alignas(64) int8_t ctrl[kGroupWidth];
         fill_ctrl(ctrl, kGroupWidth, 0.75, 123);
         auto group = CtrlGroup::load(ctrl);
-        return bench::run("match_empty() — 75% load", [&]{
+        return bench::run("match_empty() — 75% load", [&] {
             auto m = group.match_empty();
             bench::do_not_optimize(m);
         });
     }());
-    reports.push_back([&]{
+    reports.push_back([&] {
         alignas(64) int8_t ctrl[kGroupWidth];
         std::memset(ctrl, 0x42, kGroupWidth);  // all occupied
         auto group = CtrlGroup::load(ctrl);
-        return bench::run("match_empty() — 100% full", [&]{
+        return bench::run("match_empty() — 100% full", [&] {
             auto m = group.match_empty();
             bench::do_not_optimize(m);
         });
     }());
-    reports.push_back([&]{
+    reports.push_back([&] {
         alignas(64) int8_t ctrl[kGroupWidth];
         std::memset(ctrl, 0x80, kGroupWidth);  // all empty
         auto group = CtrlGroup::load(ctrl);
-        return bench::run("match_empty() — 0% load (all empty)", [&]{
+        return bench::run("match_empty() — 0% load (all empty)", [&] {
             auto m = group.match_empty();
             bench::do_not_optimize(m);
         });
@@ -226,17 +230,20 @@ int main() {
     // ── BitMask iteration ────────────────────────────────────────────
     auto iterate_mask = [](BitMask m) noexcept -> uint32_t {
         uint32_t sum = 0;
-        while (m) { sum += m.lowest(); m.clear_lowest(); }
+        while (m) {
+            sum += m.lowest();
+            m.clear_lowest();
+        }
         return sum;
     };
-    for (auto [bits, label] : std::initializer_list<std::pair<uint16_t, const char*>>{
-             {0x0010, "BitMask iterate — 1 bit"},
-             {0x1248, "BitMask iterate — 4 bits"},
-             {0x5555, "BitMask iterate — 8 bits"},
-             {0xFFFF, "BitMask iterate — 16 bits"}}) {
-        reports.push_back([&, bits, label]{
+    for (auto [bits, label] :
+         std::initializer_list<std::pair<uint16_t, const char*>>{{0x0010, "BitMask iterate — 1 bit"},
+                                                                 {0x1248, "BitMask iterate — 4 bits"},
+                                                                 {0x5555, "BitMask iterate — 8 bits"},
+                                                                 {0xFFFF, "BitMask iterate — 16 bits"}}) {
+        reports.push_back([&, bits, label] {
             const BitMask m{bits};
-            return bench::run(label, [&]{
+            return bench::run(label, [&] {
                 auto r = iterate_mask(m);
                 bench::do_not_optimize(r);
             });
@@ -244,30 +251,33 @@ int main() {
     }
 
     // ── Combined probe step (match + empty check) ────────────────────
-    reports.push_back([&]{
+    reports.push_back([&] {
         alignas(64) int8_t ctrl[kGroupWidth];
         fill_ctrl(ctrl, kGroupWidth, 0.75, 42);
         const int8_t target = 0x37;
         ctrl[5] = target;
         auto group = CtrlGroup::load(ctrl);
-        return bench::run("probe step (match+empty, hit)", [&]{
+        return bench::run("probe step (match+empty, hit)", [&] {
             auto matches = group.match(target);
             uint32_t found_idx = 0;
-            while (matches) { found_idx = matches.lowest(); matches.clear_lowest(); }
+            while (matches) {
+                found_idx = matches.lowest();
+                matches.clear_lowest();
+            }
             auto empties = group.match_empty();
             bench::do_not_optimize(found_idx);
             bench::do_not_optimize(empties);
         });
     }());
 
-    reports.push_back([&]{
+    reports.push_back([&] {
         alignas(64) int8_t ctrl[kGroupWidth];
         fill_ctrl(ctrl, kGroupWidth, 0.75, 42);
         const int8_t miss = 0x7E;
         for (size_t i = 0; i < kGroupWidth; ++i)
             if (ctrl[i] == miss) ctrl[i] = 0x01;
         auto group = CtrlGroup::load(ctrl);
-        return bench::run("probe step (match+empty, miss→stop)", [&]{
+        return bench::run("probe step (match+empty, miss→stop)", [&] {
             auto matches = group.match(miss);
             bool found = static_cast<bool>(matches);
             auto empties = group.match_empty();
@@ -304,26 +314,26 @@ int main() {
         }
 
         char name_hit[64], name_miss[64];
-        std::snprintf(name_hit,  sizeof(name_hit),  "probe HIT  — %s", label);
+        std::snprintf(name_hit, sizeof(name_hit), "probe HIT  — %s", label);
         std::snprintf(name_miss, sizeof(name_miss), "probe MISS — %s", label);
 
         uint32_t hit_idx = 0;
-        reports.push_back(bench::run(name_hit, [&, t = table.get()]{
+        reports.push_back(bench::run(name_hit, [&, t = table.get()] {
             bool found = t->find(inserted_hashes[hit_idx & 1023]);
             bench::do_not_optimize(found);
             ++hit_idx;
         }));
         uint32_t miss_idx = 0;
-        reports.push_back(bench::run(name_miss, [&, t = table.get()]{
+        reports.push_back(bench::run(name_miss, [&, t = table.get()] {
             bool found = t->find(absent_hashes[miss_idx & 1023]);
             bench::do_not_optimize(found);
             ++miss_idx;
         }));
     };
 
-    bench_probe_at("25% load",       0.25);
-    bench_probe_at("50% load",       0.50);
-    bench_probe_at("75% load",       0.75);
+    bench_probe_at("25% load", 0.25);
+    bench_probe_at("50% load", 0.50);
+    bench_probe_at("75% load", 0.75);
     bench_probe_at("87.5% load max", 0.875);
 
     bench::emit_reports_text(reports);

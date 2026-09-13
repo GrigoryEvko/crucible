@@ -19,16 +19,17 @@
 
 namespace proto = ::crucible::safety::proto;
 
-struct FakeHandle { int internal = 0; };
+struct FakeHandle {
+    int internal = 0;
+};
 
 int main() {
     proto::SessionEventLog log{};
-    FakeHandle             fake{};
-    proto::RoleTagId       self{1};
-    proto::RoleTagId       peer{2};
+    FakeHandle fake{};
+    proto::RoleTagId self{1};
+    proto::RoleTagId peer{2};
 
-    auto bad = proto::mint_recording_session(
-        std::move(fake), log, self, peer);
+    auto bad = proto::mint_recording_session(std::move(fake), log, self, peer);
     (void)bad;
     return 0;
 }

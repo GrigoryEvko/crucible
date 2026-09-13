@@ -56,27 +56,27 @@
 #include <vector>
 
 #if defined(__x86_64__) || defined(__i386__)
-  #include <x86intrin.h>
+#include <x86intrin.h>
 #endif
 
 #ifdef __linux__
-  #include <sched.h>
-  #include <unistd.h>
-  #include <sys/resource.h>
+#include <sched.h>
+#include <unistd.h>
+#include <sys/resource.h>
 #endif
 
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-  // Bench BPF sensing uses the production observability substrate directly.
-  #include <crucible/perf/SenseHub.h>
-  #include <crucible/perf/SchedSwitch.h>
-  // Senses aggregator — single entry point for senses_instance() below.
-  // Lifted to harness scope by GAPS-004y wire-in (2026-05-04) so every
-  // bench shares one Senses singleton instead of separate SenseHub +
-  // SchedSwitch loaders.
-  #include <crucible/perf/Senses.h>
+// Bench BPF sensing uses the production observability substrate directly.
+#include <crucible/perf/SenseHub.h>
+#include <crucible/perf/SchedSwitch.h>
+// Senses aggregator — single entry point for senses_instance() below.
+// Lifted to harness scope by GAPS-004y wire-in (2026-05-04) so every
+// bench shares one Senses singleton instead of separate SenseHub +
+// SchedSwitch loaders.
+#include <crucible/perf/Senses.h>
 #endif
 
-#include <crucible/fixy/Sched.h>          // FIXY-V-197: mint_priority<-10>
+#include <crucible/fixy/Sched.h>  // FIXY-V-197: mint_priority<-10>
 #include <crucible/warden/Hardening.h>
 #include <crucible/warden/Policy.h>
 
@@ -103,11 +103,9 @@ struct CpuId {
 
     [[nodiscard]] static constexpr CpuId none() noexcept { return CpuId{-1}; }
 
-    [[nodiscard]] constexpr int  raw()      const noexcept { return raw_; }
+    [[nodiscard]] constexpr int raw() const noexcept { return raw_; }
     [[nodiscard]] constexpr bool is_valid() const noexcept { return raw_ >= 0; }
-    [[nodiscard]] constexpr explicit operator bool() const noexcept {
-        return is_valid();
-    }
+    [[nodiscard]] constexpr explicit operator bool() const noexcept { return is_valid(); }
 
     constexpr auto operator<=>(const CpuId&) const noexcept = default;
 };
@@ -127,8 +125,7 @@ static_assert(sizeof(CpuId) == sizeof(int));
     _mm_lfence();
     return __rdtsc();
 #else
-    return static_cast<uint64_t>(
-        std::chrono::steady_clock::now().time_since_epoch().count());
+    return static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
 #endif
 }
 
@@ -139,8 +136,7 @@ static_assert(sizeof(CpuId) == sizeof(int));
     _mm_lfence();
     return t;
 #else
-    return static_cast<uint64_t>(
-        std::chrono::steady_clock::now().time_since_epoch().count());
+    return static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
 #endif
 }
 
@@ -182,9 +178,9 @@ class RdtscPinned {
     friend class Run;
 
 public:
-    RdtscPinned(const RdtscPinned&)            = delete;
+    RdtscPinned(const RdtscPinned&) = delete;
     RdtscPinned& operator=(const RdtscPinned&) = delete;
-    constexpr RdtscPinned(RdtscPinned&&) noexcept            = default;
+    constexpr RdtscPinned(RdtscPinned&&) noexcept = default;
     constexpr RdtscPinned& operator=(RdtscPinned&&) noexcept = default;
 
     [[nodiscard]] constexpr CpuId core() const noexcept { return core_; }
@@ -193,15 +189,9 @@ public:
 // Pinned-overload rdtsc_start / rdtsc_end — gate per-iteration TSC
 // reads on the RdtscPinned proof.  Body is identical to the bare form;
 // the witness parameter is the type-level discipline marker.
-[[nodiscard, gnu::always_inline]] inline uint64_t
-rdtsc_start(RdtscPinned const&) noexcept {
-    return rdtsc_start();
-}
+[[nodiscard, gnu::always_inline]] inline uint64_t rdtsc_start(RdtscPinned const&) noexcept { return rdtsc_start(); }
 
-[[nodiscard, gnu::always_inline]] inline uint64_t
-rdtsc_end(RdtscPinned const&) noexcept {
-    return rdtsc_end();
-}
+[[nodiscard, gnu::always_inline]] inline uint64_t rdtsc_end(RdtscPinned const&) noexcept { return rdtsc_end(); }
 
 // Defeat dead-code elimination of values we want the optimizer to treat
 // as consumed.
@@ -245,14 +235,16 @@ rdtsc_end(RdtscPinned const&) noexcept {
 //   https://gcc.gnu.org/bugzilla/show_bug.cgi?id=105519  (+m,r temp)
 
 template <typename T>
-[[gnu::noipa]] void do_not_optimize(T const& v) noexcept { (void)v; }
+[[gnu::noipa]] void do_not_optimize(T const& v) noexcept {
+    (void)v;
+}
 
 template <typename T>
-[[gnu::noipa]] void do_not_optimize(T& v) noexcept { (void)v; }
-
-[[gnu::always_inline]] inline void clobber() noexcept {
-    asm volatile("" : : : "memory");
+[[gnu::noipa]] void do_not_optimize(T& v) noexcept {
+    (void)v;
 }
+
+[[gnu::always_inline]] inline void clobber() noexcept { asm volatile("" : : : "memory"); }
 
 // ── clobber_array<T>(std::span<T>) — array-side DCE kill ──────────
 //
@@ -296,28 +288,34 @@ template <typename T>
 //   });
 
 template <typename T>
-[[gnu::noipa]] void clobber_array(std::span<T> s) noexcept { (void)s; }
+[[gnu::noipa]] void clobber_array(std::span<T> s) noexcept {
+    (void)s;
+}
 
 template <typename T>
-[[gnu::noipa]] void clobber_array(std::span<const T> s) noexcept { (void)s; }
+[[gnu::noipa]] void clobber_array(std::span<const T> s) noexcept {
+    (void)s;
+}
 
 // ── Timer: ns/cycle calibration + rdtsc overhead (Meyer singleton) ──
 
 class Timer {
- public:
-    [[nodiscard, gnu::pure]] static double   ns_per_cycle()    noexcept { return instance().ns_per_cycle_; }
+public:
+    [[nodiscard, gnu::pure]] static double ns_per_cycle() noexcept { return instance().ns_per_cycle_; }
     [[nodiscard, gnu::pure]] static uint64_t overhead_cycles() noexcept { return instance().overhead_cycles_; }
-    [[nodiscard, gnu::pure]] static double   overhead_ns()     noexcept { return static_cast<double>(overhead_cycles()) * ns_per_cycle(); }
-    [[nodiscard, gnu::pure]] static double   tsc_freq_hz()     noexcept { return (ns_per_cycle() > 0) ? 1e9 / ns_per_cycle() : 0.0; }
+    [[nodiscard, gnu::pure]] static double overhead_ns() noexcept {
+        return static_cast<double>(overhead_cycles()) * ns_per_cycle();
+    }
+    [[nodiscard, gnu::pure]] static double tsc_freq_hz() noexcept {
+        return (ns_per_cycle() > 0) ? 1e9 / ns_per_cycle() : 0.0;
+    }
 
     [[nodiscard, gnu::pure]] static double to_ns(uint64_t cycles) noexcept {
         return static_cast<double>(cycles) * ns_per_cycle();
     }
 
- private:
-    Timer() noexcept
-        : ns_per_cycle_{calibrate_()},
-          overhead_cycles_{measure_overhead_()} {}
+private:
+    Timer() noexcept : ns_per_cycle_{calibrate_()}, overhead_cycles_{measure_overhead_()} {}
 
     [[nodiscard]] static Timer& instance() noexcept {
         static Timer t;
@@ -336,19 +334,19 @@ class Timer {
         const auto wall0 = steady_clock::now();
         const uint64_t tsc0 = rdtsc_start();
         const auto deadline = wall0 + window;
-        while (steady_clock::now() < deadline) { /* spin */ }
+        while (steady_clock::now() < deadline) { /* spin */
+        }
         const uint64_t tsc1 = rdtsc_end();
         const auto wall1 = steady_clock::now();
 
-        const double ns = static_cast<double>(
-            duration_cast<nanoseconds>(wall1 - wall0).count());
+        const double ns = static_cast<double>(duration_cast<nanoseconds>(wall1 - wall0).count());
         const double cycles = static_cast<double>(tsc1 - tsc0);
         return (cycles > 0) ? (ns / cycles) : 0.0;
     }
 
     [[nodiscard]] static uint64_t measure_overhead_() noexcept {
         uint64_t best = UINT64_MAX;
-        for (int i = 0; i < 10'000; ++i) {
+        for (int i = 0; i < 10000; ++i) {
             const uint64_t t0 = rdtsc_start();
             const uint64_t t1 = rdtsc_end();
             const uint64_t d = t1 - t0;
@@ -357,7 +355,7 @@ class Timer {
         return best;
     }
 
-    double   ns_per_cycle_;
+    double ns_per_cycle_;
     uint64_t overhead_cycles_;
 };
 
@@ -393,8 +391,7 @@ namespace detail {
 #ifdef __linux__
     if (cpu < 0) return 0;
     char path[128];
-    std::snprintf(path, sizeof(path),
-        "/sys/devices/system/cpu/cpu%d/cpufreq/scaling_cur_freq", cpu);
+    std::snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/cpufreq/scaling_cur_freq", cpu);
     FILE* f = std::fopen(path, "r");
     if (!f) return 0;
     long khz = 0;
@@ -407,7 +404,7 @@ namespace detail {
 #endif
 }
 
-} // namespace detail
+}  // namespace detail
 
 // ── BPF perf::Senses accessor (shared aggregator singleton) ───────
 //
@@ -445,20 +442,16 @@ namespace detail {
     // a hot frame.  Senses is move-only; static direct-init move-
     // constructs from the rvalue return.
     static ::crucible::perf::Senses slot =
-        ::crucible::perf::Senses::load_subset(
-            ::crucible::effects::testing::init(),
-            ::crucible::perf::SensesMask{
-                .sense_hub    = true,
-                .sched_switch = true,
-            });
+        ::crucible::perf::Senses::load_subset(::crucible::effects::testing::init(), ::crucible::perf::SensesMask{
+                                                                                        .sense_hub = true,
+                                                                                        .sched_switch = true,
+                                                                                    });
     return &slot;
 }
 #else
-[[nodiscard]] inline const void* senses_instance() noexcept {
-    return nullptr;
-}
+[[nodiscard]] inline const void* senses_instance() noexcept { return nullptr; }
 #endif
-} // namespace detail
+}  // namespace detail
 
 // ── Percentile with linear interpolation (R type 7) ───────────────
 //
@@ -471,10 +464,10 @@ namespace detail {
     const size_t n = sorted.size();
     if (n == 0) return 0.0;
     if (n == 1) return sorted.front();
-    const double q   = frac * static_cast<double>(n - 1);
-    const size_t lo  = static_cast<size_t>(q);
-    const size_t hi  = (lo + 1 < n) ? (lo + 1) : lo;
-    const double f   = q - static_cast<double>(lo);
+    const double q = frac * static_cast<double>(n - 1);
+    const size_t lo = static_cast<size_t>(q);
+    const size_t hi = (lo + 1 < n) ? (lo + 1) : lo;
+    const double f = q - static_cast<double>(lo);
     return sorted[lo] * (1.0 - f) + sorted[hi] * f;
 }
 
@@ -490,14 +483,14 @@ struct Percentiles {
         if (p.n == 0) return p;
 
         std::sort(ns_samples.begin(), ns_samples.end());
-        p.min    = ns_samples.front();
-        p.max    = ns_samples.back();
-        p.p50    = percentile_interp(ns_samples, 0.50);
-        p.p75    = percentile_interp(ns_samples, 0.75);
-        p.p90    = percentile_interp(ns_samples, 0.90);
-        p.p95    = percentile_interp(ns_samples, 0.95);
-        p.p99    = percentile_interp(ns_samples, 0.99);
-        p.p99_9  = percentile_interp(ns_samples, 0.999);
+        p.min = ns_samples.front();
+        p.max = ns_samples.back();
+        p.p50 = percentile_interp(ns_samples, 0.50);
+        p.p75 = percentile_interp(ns_samples, 0.75);
+        p.p90 = percentile_interp(ns_samples, 0.90);
+        p.p95 = percentile_interp(ns_samples, 0.95);
+        p.p99 = percentile_interp(ns_samples, 0.99);
+        p.p99_9 = percentile_interp(ns_samples, 0.999);
         p.p99_99 = percentile_interp(ns_samples, 0.9999);
 
         // FIXY-V-096: Welford's one-pass online algorithm + IEEE 754
@@ -548,13 +541,8 @@ struct CI {
     double hi = 0;
 };
 
-[[nodiscard]] inline CI bootstrap_ci(
-    const std::vector<double>& ns_samples,
-    double frac,
-    size_t B = 1000,
-    double alpha = 0.05,
-    uint64_t seed = 0xBEEFCAFEDEADF00Dull)
-{
+[[nodiscard]] inline CI bootstrap_ci(const std::vector<double>& ns_samples, double frac, size_t B = 1000,
+                                     double alpha = 0.05, uint64_t seed = 0xBEEFCAFEDEADF00Dull) {
     const size_t n = ns_samples.size();
     if (n < 30 || B == 0) return CI{};
 
@@ -564,7 +552,8 @@ struct CI {
     std::vector<double> buf(n);
     std::vector<double> estimates(B);
     for (size_t b = 0; b < B; ++b) {
-        for (size_t i = 0; i < n; ++i) buf[i] = ns_samples[pick(rng)];
+        for (size_t i = 0; i < n; ++i)
+            buf[i] = ns_samples[pick(rng)];
         std::sort(buf.begin(), buf.end());
         estimates[b] = percentile_interp(buf, frac);
     }
@@ -578,24 +567,24 @@ struct CI {
 // ── Report ────────────────────────────────────────────────────────
 
 struct Report {
-    std::string         name;
-    size_t              batch       = 1;     // > 1 → pct over batch means  // TODO: strong type
-    CpuId               pinned_cpu{};        // CpuId::none() = -1 / no pin
-    double              wall_ns     = 0;     // total measurement wall time
-    double              drift_pct   = 0;     // |first-half - second-half p50| / p50
-    bool                drift_flag  = false; // drift_pct > 10 %
-    Percentiles         pct{};
+    std::string name;
+    size_t batch = 1;  // > 1 → pct over batch means  // TODO: strong type
+    CpuId pinned_cpu{};  // CpuId::none() = -1 / no pin
+    double wall_ns = 0;  // total measurement wall time
+    double drift_pct = 0;  // |first-half - second-half p50| / p50
+    bool drift_flag = false;  // drift_pct > 10 %
+    Percentiles pct{};
 
     // sysfs-derived frequency bracketing (not PMU).
-    uint64_t            freq_start_hz       = 0;   // scaling_cur_freq at run start
-    uint64_t            freq_end_hz         = 0;   // scaling_cur_freq at run end
-    bool                freq_drift_flag     = false;
+    uint64_t freq_start_hz = 0;  // scaling_cur_freq at run start
+    uint64_t freq_end_hz = 0;  // scaling_cur_freq at run end
+    bool freq_drift_flag = false;
 
     // Cycles/op computed from rdtsc-derived ns and the TSC frequency
     // (Timer::tsc_freq_hz). This is wall-time cycles, not PMU retired
     // cycles — but on a pinned, non-throttled core the two are equal
     // to within a few percent and suffice for cross-commit comparison.
-    double              cycles_per_op        = 0;
+    double cycles_per_op = 0;
 
     // Kernel-side context via eBPF sense hub. All zero when BPF is
     // unavailable. Deltas over the measured run (monotonic counters).
@@ -609,7 +598,7 @@ struct Report {
     // values should pull them from the post snapshot directly.
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
     ::crucible::perf::Snapshot bpf_delta{};
-    size_t               bpf_attached = 0;  // # programs the kernel accepted
+    size_t bpf_attached = 0;  // # programs the kernel accepted
 
     // SchedSwitch off-CPU drill-down for the bench window.  Pre/post
     // are timeline_write_index() captures (~1 ns each, no syscall);
@@ -622,12 +611,12 @@ struct Report {
     // discloses the total event count when N > K.  All zero on
     // systems without SchedSwitch loaded.
     static constexpr uint32_t kSchedOffCpuTopK = 5;
-    uint64_t sched_pre_idx                          = 0;
-    uint64_t sched_post_idx                         = 0;
-    uint64_t sched_offcpu_top_ns [kSchedOffCpuTopK] = {};  // sorted desc
+    uint64_t sched_pre_idx = 0;
+    uint64_t sched_post_idx = 0;
+    uint64_t sched_offcpu_top_ns[kSchedOffCpuTopK] = {};  // sorted desc
     uint32_t sched_offcpu_top_cpu[kSchedOffCpuTopK] = {};  // parallel
-    uint32_t sched_offcpu_top_n                     = 0;   // # used
-    uint32_t sched_offcpu_count                     = 0;   // total events
+    uint32_t sched_offcpu_top_n = 0;  // # used
+    uint32_t sched_offcpu_count = 0;  // total events
 #endif
 
     std::vector<double> samples;  // kept for bootstrap_ci, compare
@@ -638,8 +627,10 @@ struct Report {
     // print_*) or move from a return value. Delete copy, keep move.
     Report() = default;
     ~Report() = default;
-    Report(const Report&) = delete("copy of Report is almost always unintentional; use move semantics or pass by const&");
-    Report& operator=(const Report&) = delete("copy-assignment of Report is almost always unintentional; use move or const&");
+    Report(const Report&) =
+        delete("copy of Report is almost always unintentional; use move semantics or pass by const&");
+    Report&
+    operator=(const Report&) = delete("copy-assignment of Report is almost always unintentional; use move or const&");
     Report(Report&&) noexcept = default;
     Report& operator=(Report&&) noexcept = default;
 
@@ -652,9 +643,7 @@ struct Report {
     // this project aborts() per the MemSafe axiom, so throwing here is
     // structurally impossible and std::terminate via the noexcept barrier
     // is the desired outcome if an allocator ever did throw.
-    [[nodiscard]] CI ci(double frac, size_t B = 1000) const noexcept {
-        return bootstrap_ci(samples, frac, B);
-    }
+    [[nodiscard]] CI ci(double frac, size_t B = 1000) const noexcept { return bootstrap_ci(samples, frac, B); }
 
     // Same as ci() but distinguishes "insufficient samples" (nullopt)
     // from a computed interval. Implicitly wraps the CI-returning
@@ -666,9 +655,7 @@ struct Report {
         return bootstrap_ci(samples, frac, B);
     }
 
-    [[nodiscard]] bool noisy(double cv_threshold = 0.05) const noexcept {
-        return pct.cv > cv_threshold;
-    }
+    [[nodiscard]] bool noisy(double cv_threshold = 0.05) const noexcept { return pct.cv > cv_threshold; }
 
     // Auto-scaled ns formatter for the main summary columns: renders a
     // fractional-ns double as "NN.NNns" / "NN.NNµs" / "NN.NNms" /
@@ -690,8 +677,7 @@ struct Report {
         }
 
         char value[32];
-        auto [ptr, ec] = std::to_chars(
-            value, value + sizeof(value), scaled, std::chars_format::fixed, 2);
+        auto [ptr, ec] = std::to_chars(value, value + sizeof(value), scaled, std::chars_format::fixed, 2);
         if (ec != std::errc{}) {
             const char fallback[] = "nan";
             const size_t fallback_len = sizeof(fallback) - 1;
@@ -699,8 +685,7 @@ struct Report {
             const size_t max_out = (len == 0) ? 0 : len - 1;
             const size_t first = std::min(fallback_len, max_out);
             std::memcpy(buf, fallback, first);
-            const size_t second =
-                std::min(suffix_len, max_out > first ? max_out - first : 0);
+            const size_t second = std::min(suffix_len, max_out > first ? max_out - first : 0);
             std::memcpy(buf + first, suffix, second);
             if (len != 0) buf[first + second] = '\0';
             return;
@@ -710,8 +695,7 @@ struct Report {
         const size_t max_out = (len == 0) ? 0 : len - 1;
         const size_t first = std::min(value_len, max_out);
         std::memcpy(buf, value, first);
-        const size_t second =
-            std::min(suffix_len, max_out > first ? max_out - first : 0);
+        const size_t second = std::min(suffix_len, max_out > first ? max_out - first : 0);
         std::memcpy(buf + first, suffix, second);
         if (len != 0) buf[first + second] = '\0';
     }
@@ -721,19 +705,17 @@ struct Report {
     // std::string::c_str() — no throwing paths, so noexcept.
     void print_text(FILE* out = stdout) const noexcept {
         char p50_b[32], p90_b[32], p99_b[32], p999_b[32], max_b[32], mean_b[32], sigma_b[32];
-        fmt_ns_(p50_b,  sizeof(p50_b),  pct.p50);
-        fmt_ns_(p90_b,  sizeof(p90_b),  pct.p90);
-        fmt_ns_(p99_b,  sizeof(p99_b),  pct.p99);
+        fmt_ns_(p50_b, sizeof(p50_b), pct.p50);
+        fmt_ns_(p90_b, sizeof(p90_b), pct.p90);
+        fmt_ns_(p99_b, sizeof(p99_b), pct.p99);
         fmt_ns_(p999_b, sizeof(p999_b), pct.p99_9);
-        fmt_ns_(max_b,  sizeof(max_b),  pct.max);
+        fmt_ns_(max_b, sizeof(max_b), pct.max);
         fmt_ns_(mean_b, sizeof(mean_b), pct.mean);
         fmt_ns_(sigma_b, sizeof(sigma_b), pct.stddev);
         std::fprintf(out,
-            "  %-38s  p50=%9s  p90=%9s  p99=%9s  p99.9=%9s  "
-            "max=%10s  μ=%9s  σ=%9s  cv=%4.1f%%",
-            name.c_str(),
-            p50_b, p90_b, p99_b, p999_b, max_b, mean_b, sigma_b,
-            pct.cv * 100.0);
+                     "  %-38s  p50=%9s  p90=%9s  p99=%9s  p99.9=%9s  "
+                     "max=%10s  μ=%9s  σ=%9s  cv=%4.1f%%",
+                     name.c_str(), p50_b, p90_b, p99_b, p999_b, max_b, mean_b, sigma_b, pct.cv * 100.0);
 
         if (cycles_per_op > 0.0) {
             std::fprintf(out, "  cyc=%7.1f", cycles_per_op);
@@ -743,10 +725,10 @@ struct Report {
         }
         std::fprintf(out, "  n=%zu", pct.n);
         if (pinned_cpu.is_valid()) std::fprintf(out, "  cpu%d", pinned_cpu.raw());
-        if (batch > 1)         std::fprintf(out, "  [batch-avg]");
-        if (noisy())           std::fprintf(out, "  [noisy]");
-        if (drift_flag)        std::fprintf(out, "  [drift]");
-        if (freq_drift_flag)   std::fprintf(out, "  [freq-drift]");
+        if (batch > 1) std::fprintf(out, "  [batch-avg]");
+        if (noisy()) std::fprintf(out, "  [noisy]");
+        if (drift_flag) std::fprintf(out, "  [drift]");
+        if (freq_drift_flag) std::fprintf(out, "  [freq-drift]");
         std::fprintf(out, "\n");
 
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
@@ -769,13 +751,27 @@ struct Report {
         for (char ch : s) {
             const auto c = static_cast<unsigned char>(ch);
             switch (c) {
-                case '"':  std::fputs("\\\"", out); break;
-                case '\\': std::fputs("\\\\", out); break;
-                case '\b': std::fputs("\\b",  out); break;
-                case '\f': std::fputs("\\f",  out); break;
-                case '\n': std::fputs("\\n",  out); break;
-                case '\r': std::fputs("\\r",  out); break;
-                case '\t': std::fputs("\\t",  out); break;
+                case '"':
+                    std::fputs("\\\"", out);
+                    break;
+                case '\\':
+                    std::fputs("\\\\", out);
+                    break;
+                case '\b':
+                    std::fputs("\\b", out);
+                    break;
+                case '\f':
+                    std::fputs("\\f", out);
+                    break;
+                case '\n':
+                    std::fputs("\\n", out);
+                    break;
+                case '\r':
+                    std::fputs("\\r", out);
+                    break;
+                case '\t':
+                    std::fputs("\\t", out);
+                    break;
                 default:
                     if (c < 0x20) {
                         std::fprintf(out, "\\u%04x", static_cast<unsigned>(c));
@@ -794,28 +790,23 @@ struct Report {
         std::fputs("\"name\":", out);
         fprint_json_string(out, name);
         std::fprintf(out,
-            ",\"batch\":%zu,\"n\":%zu,\"cpu\":%d,"
-            "\"p50\":%.3f,\"p75\":%.3f,\"p90\":%.3f,\"p95\":%.3f,"
-            "\"p99\":%.3f,\"p99_9\":%.3f,\"p99_99\":%.3f,"
-            "\"min\":%.3f,\"max\":%.3f,\"mean\":%.3f,\"stddev\":%.3f,"
-            "\"cv\":%.5f,\"wall_ns\":%.0f,\"drift_pct\":%.3f,"
-            "\"cycles_per_op\":%.3f,"
-            "\"freq_start_hz\":%lu,\"freq_end_hz\":%lu",
-            batch, pct.n, pinned_cpu.raw(),
-            pct.p50, pct.p75, pct.p90, pct.p95,
-            pct.p99, pct.p99_9, pct.p99_99,
-            pct.min, pct.max, pct.mean, pct.stddev, pct.cv,
-            wall_ns, drift_pct,
-            cycles_per_op,
-            static_cast<unsigned long>(freq_start_hz),
-            static_cast<unsigned long>(freq_end_hz));
+                     ",\"batch\":%zu,\"n\":%zu,\"cpu\":%d,"
+                     "\"p50\":%.3f,\"p75\":%.3f,\"p90\":%.3f,\"p95\":%.3f,"
+                     "\"p99\":%.3f,\"p99_9\":%.3f,\"p99_99\":%.3f,"
+                     "\"min\":%.3f,\"max\":%.3f,\"mean\":%.3f,\"stddev\":%.3f,"
+                     "\"cv\":%.5f,\"wall_ns\":%.0f,\"drift_pct\":%.3f,"
+                     "\"cycles_per_op\":%.3f,"
+                     "\"freq_start_hz\":%lu,\"freq_end_hz\":%lu",
+                     batch, pct.n, pinned_cpu.raw(), pct.p50, pct.p75, pct.p90, pct.p95, pct.p99, pct.p99_9, pct.p99_99,
+                     pct.min, pct.max, pct.mean, pct.stddev, pct.cv, wall_ns, drift_pct, cycles_per_op,
+                     static_cast<unsigned long>(freq_start_hz), static_cast<unsigned long>(freq_end_hz));
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
         print_bpf_json_(out);
 #endif
         std::fputc('}', out);
     }
 
- private:
+private:
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
     // Print every monotonic counter that actually incremented during the
     // run, in unit-scaled form. The gauge-valued Idx slots listed in
@@ -834,12 +825,16 @@ struct Report {
     // "N label" reads as English. Times auto-scale ns → µs → ms → s,
     // bytes auto-scale to KB/MB/GB, counts to k/M/G above 10k.
 
-    enum class Unit : uint8_t { Count, Ns, Bytes };
+    enum class Unit : uint8_t {
+        Count,
+        Ns,
+        Bytes
+    };
 
     struct Field {
-        const char*       label;
-        ::crucible::perf::Idx   idx;
-        Unit              unit;
+        const char* label;
+        ::crucible::perf::Idx idx;
+        Unit unit;
     };
 
     // Every counter whose (post - pre) is meaningful. Order = the story
@@ -847,97 +842,109 @@ struct Report {
     // touched (memory → sync → I/O → thread mgmt), finally reliability.
     static constexpr Field kAll[] = {
         // Scheduling interference.
-        {"preempt",   ::crucible::perf::SCHED_CTX_INVOL,        Unit::Count},
-        {"yield",     ::crucible::perf::SCHED_CTX_VOL,          Unit::Count},
-        {"migrate",   ::crucible::perf::SCHED_MIGRATIONS,       Unit::Count},
-        {"runtime",   ::crucible::perf::SCHED_RUNTIME_NS,       Unit::Ns},
-        {"wait",      ::crucible::perf::SCHED_WAIT_NS,          Unit::Ns},
-        {"sleep",     ::crucible::perf::SCHED_SLEEP_NS,         Unit::Ns},
-        {"iowait",    ::crucible::perf::SCHED_IOWAIT_NS,        Unit::Ns},
-        {"blocked",   ::crucible::perf::SCHED_BLOCKED_NS,       Unit::Ns},
-        {"softirq",   ::crucible::perf::SOFTIRQ_STOLEN_NS,      Unit::Ns},
-        {"wake_rx",   ::crucible::perf::WAKEUPS_RECEIVED,       Unit::Count},
-        {"wake_tx",   ::crucible::perf::WAKEUPS_SENT,           Unit::Count},
-        {"freq_chg",  ::crucible::perf::CPU_FREQ_CHANGES,       Unit::Count},
-        {"tid_new",   ::crucible::perf::THREADS_CREATED,        Unit::Count},
-        {"tid_end",   ::crucible::perf::THREADS_EXITED,         Unit::Count},
+        {"preempt", ::crucible::perf::SCHED_CTX_INVOL, Unit::Count},
+        {"yield", ::crucible::perf::SCHED_CTX_VOL, Unit::Count},
+        {"migrate", ::crucible::perf::SCHED_MIGRATIONS, Unit::Count},
+        {"runtime", ::crucible::perf::SCHED_RUNTIME_NS, Unit::Ns},
+        {"wait", ::crucible::perf::SCHED_WAIT_NS, Unit::Ns},
+        {"sleep", ::crucible::perf::SCHED_SLEEP_NS, Unit::Ns},
+        {"iowait", ::crucible::perf::SCHED_IOWAIT_NS, Unit::Ns},
+        {"blocked", ::crucible::perf::SCHED_BLOCKED_NS, Unit::Ns},
+        {"softirq", ::crucible::perf::SOFTIRQ_STOLEN_NS, Unit::Ns},
+        {"wake_rx", ::crucible::perf::WAKEUPS_RECEIVED, Unit::Count},
+        {"wake_tx", ::crucible::perf::WAKEUPS_SENT, Unit::Count},
+        {"freq_chg", ::crucible::perf::CPU_FREQ_CHANGES, Unit::Count},
+        {"tid_new", ::crucible::perf::THREADS_CREATED, Unit::Count},
+        {"tid_end", ::crucible::perf::THREADS_EXITED, Unit::Count},
 
         // Memory.
-        {"pgfault",   ::crucible::perf::MEM_PAGE_FAULTS_MIN,    Unit::Count},
-        {"majfault",  ::crucible::perf::MEM_PAGE_FAULTS_MAJ,    Unit::Count},
-        {"mmap",      ::crucible::perf::MEM_MMAP_COUNT,         Unit::Count},
-        {"munmap",    ::crucible::perf::MEM_MUNMAP_COUNT,       Unit::Count},
-        {"brk",       ::crucible::perf::MEM_BRK_CALLS,          Unit::Count},
-        {"reclaim_n", ::crucible::perf::DIRECT_RECLAIM_COUNT,   Unit::Count},
-        {"reclaim_t", ::crucible::perf::DIRECT_RECLAIM_NS,      Unit::Ns},
-        {"swap_out",  ::crucible::perf::SWAP_OUT_PAGES,         Unit::Count},
-        {"thp_ok",    ::crucible::perf::THP_COLLAPSE_OK,        Unit::Count},
-        {"thp_fail",  ::crucible::perf::THP_COLLAPSE_FAIL,      Unit::Count},
-        {"numa",      ::crucible::perf::NUMA_MIGRATE_PAGES,     Unit::Count},
-        {"compact",   ::crucible::perf::COMPACTION_STALLS,      Unit::Count},
-        {"extfrag",   ::crucible::perf::EXTFRAG_EVENTS,         Unit::Count},
+        {"pgfault", ::crucible::perf::MEM_PAGE_FAULTS_MIN, Unit::Count},
+        {"majfault", ::crucible::perf::MEM_PAGE_FAULTS_MAJ, Unit::Count},
+        {"mmap", ::crucible::perf::MEM_MMAP_COUNT, Unit::Count},
+        {"munmap", ::crucible::perf::MEM_MUNMAP_COUNT, Unit::Count},
+        {"brk", ::crucible::perf::MEM_BRK_CALLS, Unit::Count},
+        {"reclaim_n", ::crucible::perf::DIRECT_RECLAIM_COUNT, Unit::Count},
+        {"reclaim_t", ::crucible::perf::DIRECT_RECLAIM_NS, Unit::Ns},
+        {"swap_out", ::crucible::perf::SWAP_OUT_PAGES, Unit::Count},
+        {"thp_ok", ::crucible::perf::THP_COLLAPSE_OK, Unit::Count},
+        {"thp_fail", ::crucible::perf::THP_COLLAPSE_FAIL, Unit::Count},
+        {"numa", ::crucible::perf::NUMA_MIGRATE_PAGES, Unit::Count},
+        {"compact", ::crucible::perf::COMPACTION_STALLS, Unit::Count},
+        {"extfrag", ::crucible::perf::EXTFRAG_EVENTS, Unit::Count},
 
         // Sync contention.
-        {"futex",     ::crucible::perf::FUTEX_WAIT_COUNT,       Unit::Count},
-        {"futex_t",   ::crucible::perf::FUTEX_WAIT_NS,          Unit::Ns},
-        {"klock",     ::crucible::perf::KERNEL_LOCK_COUNT,      Unit::Count},
-        {"klock_t",   ::crucible::perf::KERNEL_LOCK_NS,         Unit::Ns},
+        {"futex", ::crucible::perf::FUTEX_WAIT_COUNT, Unit::Count},
+        {"futex_t", ::crucible::perf::FUTEX_WAIT_NS, Unit::Ns},
+        {"klock", ::crucible::perf::KERNEL_LOCK_COUNT, Unit::Count},
+        {"klock_t", ::crucible::perf::KERNEL_LOCK_NS, Unit::Ns},
 
         // I/O (syscall-level).
-        {"read",      ::crucible::perf::IO_READ_BYTES,          Unit::Bytes},
-        {"write",     ::crucible::perf::IO_WRITE_BYTES,         Unit::Bytes},
-        {"r_ops",     ::crucible::perf::IO_READ_OPS,            Unit::Count},
-        {"w_ops",     ::crucible::perf::IO_WRITE_OPS,           Unit::Count},
-        {"fd_open",   ::crucible::perf::FD_OPEN_OPS,            Unit::Count},
+        {"read", ::crucible::perf::IO_READ_BYTES, Unit::Bytes},
+        {"write", ::crucible::perf::IO_WRITE_BYTES, Unit::Bytes},
+        {"r_ops", ::crucible::perf::IO_READ_OPS, Unit::Count},
+        {"w_ops", ::crucible::perf::IO_WRITE_OPS, Unit::Count},
+        {"fd_open", ::crucible::perf::FD_OPEN_OPS, Unit::Count},
 
         // Block I/O (device-level).
-        {"disk_r",    ::crucible::perf::DISK_READ_BYTES,        Unit::Bytes},
-        {"disk_w",    ::crucible::perf::DISK_WRITE_BYTES,       Unit::Bytes},
-        {"disk_t",    ::crucible::perf::DISK_IO_LATENCY_NS,     Unit::Ns},
-        {"disk_n",    ::crucible::perf::DISK_IO_COUNT,          Unit::Count},
-        {"pg_miss",   ::crucible::perf::PAGE_CACHE_MISSES,      Unit::Count},
-        {"readahead", ::crucible::perf::READAHEAD_PAGES,        Unit::Count},
-        {"unplug",    ::crucible::perf::IO_UNPLUG_COUNT,        Unit::Count},
-        {"throttle",  ::crucible::perf::WRITE_THROTTLE_JIFFIES, Unit::Count},
+        {"disk_r", ::crucible::perf::DISK_READ_BYTES, Unit::Bytes},
+        {"disk_w", ::crucible::perf::DISK_WRITE_BYTES, Unit::Bytes},
+        {"disk_t", ::crucible::perf::DISK_IO_LATENCY_NS, Unit::Ns},
+        {"disk_n", ::crucible::perf::DISK_IO_COUNT, Unit::Count},
+        {"pg_miss", ::crucible::perf::PAGE_CACHE_MISSES, Unit::Count},
+        {"readahead", ::crucible::perf::READAHEAD_PAGES, Unit::Count},
+        {"unplug", ::crucible::perf::IO_UNPLUG_COUNT, Unit::Count},
+        {"throttle", ::crucible::perf::WRITE_THROTTLE_JIFFIES, Unit::Count},
 
         // Network.
-        {"tx",        ::crucible::perf::NET_TX_BYTES,           Unit::Bytes},
-        {"rx",        ::crucible::perf::NET_RX_BYTES,           Unit::Bytes},
-        {"retrans",   ::crucible::perf::TCP_RETRANSMIT_COUNT,   Unit::Count},
-        {"rst",       ::crucible::perf::TCP_RST_SENT,           Unit::Count},
-        {"sk_err",    ::crucible::perf::TCP_ERROR_COUNT,        Unit::Count},
-        {"skb_drop",  ::crucible::perf::SKB_DROP_COUNT,         Unit::Count},
-        {"cng_loss",  ::crucible::perf::TCP_CONG_LOSS,          Unit::Count},
+        {"tx", ::crucible::perf::NET_TX_BYTES, Unit::Bytes},
+        {"rx", ::crucible::perf::NET_RX_BYTES, Unit::Bytes},
+        {"retrans", ::crucible::perf::TCP_RETRANSMIT_COUNT, Unit::Count},
+        {"rst", ::crucible::perf::TCP_RST_SENT, Unit::Count},
+        {"sk_err", ::crucible::perf::TCP_ERROR_COUNT, Unit::Count},
+        {"skb_drop", ::crucible::perf::SKB_DROP_COUNT, Unit::Count},
+        {"cng_loss", ::crucible::perf::TCP_CONG_LOSS, Unit::Count},
 
         // Reliability (delta-meaningful signals only).
-        {"sig_fatal", ::crucible::perf::SIGNAL_FATAL_COUNT,     Unit::Count},
-        {"oom_kills", ::crucible::perf::OOM_KILLS_SYSTEM,       Unit::Count},
-        {"mce",       ::crucible::perf::MCE_COUNT,              Unit::Count},
+        {"sig_fatal", ::crucible::perf::SIGNAL_FATAL_COUNT, Unit::Count},
+        {"oom_kills", ::crucible::perf::OOM_KILLS_SYSTEM, Unit::Count},
+        {"mce", ::crucible::perf::MCE_COUNT, Unit::Count},
     };
 
     static void print_scaled_(FILE* out, uint64_t v, Unit u) noexcept {
         switch (u) {
-        case Unit::Count:
-            if      (v >= 1'000'000'000) std::fprintf(out, "%.1fG", static_cast<double>(v) / 1e9);
-            else if (v >= 1'000'000)     std::fprintf(out, "%.1fM", static_cast<double>(v) / 1e6);
-            else if (v >= 10'000)        std::fprintf(out, "%.1fk", static_cast<double>(v) / 1e3);
-            else                         std::fprintf(out, "%lu",   v);
-            break;
-        case Unit::Ns:
-            if      (v >= 1'000'000'000) std::fprintf(out, "%.1fs",  static_cast<double>(v) / 1e9);
-            else if (v >= 1'000'000)     std::fprintf(out, "%.1fms", static_cast<double>(v) / 1e6);
-            else if (v >= 1'000)         std::fprintf(out, "%.1fµs", static_cast<double>(v) / 1e3);
-            else                         std::fprintf(out, "%luns",  v);
-            break;
-        case Unit::Bytes:
-            if      (v >= (1ULL << 30)) std::fprintf(out, "%.1fGB", static_cast<double>(v) / static_cast<double>(1ULL << 30));
-            else if (v >= (1ULL << 20)) std::fprintf(out, "%.1fMB", static_cast<double>(v) / static_cast<double>(1ULL << 20));
-            else if (v >= (1ULL << 10)) std::fprintf(out, "%.1fKB", static_cast<double>(v) / 1024.0);
-            else                        std::fprintf(out, "%luB",   v);
-            break;
-        default:
-            std::fprintf(out, "%lu", v);
-            break;
+            case Unit::Count:
+                if (v >= 1000000000)
+                    std::fprintf(out, "%.1fG", static_cast<double>(v) / 1e9);
+                else if (v >= 1000000)
+                    std::fprintf(out, "%.1fM", static_cast<double>(v) / 1e6);
+                else if (v >= 10000)
+                    std::fprintf(out, "%.1fk", static_cast<double>(v) / 1e3);
+                else
+                    std::fprintf(out, "%lu", v);
+                break;
+            case Unit::Ns:
+                if (v >= 1000000000)
+                    std::fprintf(out, "%.1fs", static_cast<double>(v) / 1e9);
+                else if (v >= 1000000)
+                    std::fprintf(out, "%.1fms", static_cast<double>(v) / 1e6);
+                else if (v >= 1000)
+                    std::fprintf(out, "%.1fµs", static_cast<double>(v) / 1e3);
+                else
+                    std::fprintf(out, "%luns", v);
+                break;
+            case Unit::Bytes:
+                if (v >= (1ULL << 30))
+                    std::fprintf(out, "%.1fGB", static_cast<double>(v) / static_cast<double>(1ULL << 30));
+                else if (v >= (1ULL << 20))
+                    std::fprintf(out, "%.1fMB", static_cast<double>(v) / static_cast<double>(1ULL << 20));
+                else if (v >= (1ULL << 10))
+                    std::fprintf(out, "%.1fKB", static_cast<double>(v) / 1024.0);
+                else
+                    std::fprintf(out, "%luB", v);
+                break;
+            default:
+                std::fprintf(out, "%lu", v);
+                break;
         }
     }
 
@@ -1003,47 +1010,50 @@ struct Report {
 // ── Mann-Whitney U (Mann & Whitney 1947) for A/B ──────────────────
 
 struct Compare {
-    std::string  a_name, b_name;
-    double       delta_p50_pct   = 0;
-    double       delta_p99_pct   = 0;
-    double       delta_mean_pct  = 0;
-    double       u               = 0;
-    double       z               = 0;
-    bool         distinguishable = false;    // |z| > 2.576 → p < 0.01
+    std::string a_name, b_name;
+    double delta_p50_pct = 0;
+    double delta_p99_pct = 0;
+    double delta_mean_pct = 0;
+    double u = 0;
+    double z = 0;
+    bool distinguishable = false;  // |z| > 2.576 → p < 0.01
 
     // One-line summary — C stdio + std::string::c_str() only, noexcept
     // for the same reasons as Report::print_text.
     void print_text(FILE* out = stdout) const noexcept {
         const char* flag = "  [indistinguishable]";
-        if (distinguishable && delta_p99_pct >  5.0) flag = "  [REGRESS]";
+        if (distinguishable && delta_p99_pct > 5.0) flag = "  [REGRESS]";
         if (distinguishable && delta_p99_pct < -5.0) flag = "  [IMPROVE]";
-        std::fprintf(out,
-            "  Δ %s → %s:  Δp50=%+6.2f%%  Δp99=%+6.2f%%  Δμ=%+6.2f%%  z=%+5.2f%s\n",
-            a_name.c_str(), b_name.c_str(),
-            delta_p50_pct, delta_p99_pct, delta_mean_pct, z, flag);
+        std::fprintf(out, "  Δ %s → %s:  Δp50=%+6.2f%%  Δp99=%+6.2f%%  Δμ=%+6.2f%%  z=%+5.2f%s\n", a_name.c_str(),
+                     b_name.c_str(), delta_p50_pct, delta_p99_pct, delta_mean_pct, z, flag);
     }
 };
 
 [[nodiscard]] inline Compare compare(const Report& a, const Report& b) {
     Compare c{.a_name = a.name, .b_name = b.name};
 
-    const auto pct = [](double x, double y) {
-        return (x > 0) ? 100.0 * (y - x) / x : 0.0;
-    };
-    c.delta_p50_pct  = pct(a.pct.p50,  b.pct.p50);
-    c.delta_p99_pct  = pct(a.pct.p99,  b.pct.p99);
+    const auto pct = [](double x, double y) { return (x > 0) ? 100.0 * (y - x) / x : 0.0; };
+    c.delta_p50_pct = pct(a.pct.p50, b.pct.p50);
+    c.delta_p99_pct = pct(a.pct.p99, b.pct.p99);
     c.delta_mean_pct = pct(a.pct.mean, b.pct.mean);
 
     const size_t n1 = a.samples.size();
     const size_t n2 = b.samples.size();
-    if (n1 < 30 || n2 < 30) { c.distinguishable = false; return c; }
+    if (n1 < 30 || n2 < 30) {
+        c.distinguishable = false;
+        return c;
+    }
 
-    struct Tagged { double v; uint8_t src; };
+    struct Tagged {
+        double v;
+        uint8_t src;
+    };
     std::vector<Tagged> all(n1 + n2);
-    for (size_t i = 0; i < n1; ++i) all[i]      = {a.samples[i], 0};
-    for (size_t i = 0; i < n2; ++i) all[n1 + i] = {b.samples[i], 1};
-    std::sort(all.begin(), all.end(),
-              [](Tagged const& x, Tagged const& y) { return x.v < y.v; });
+    for (size_t i = 0; i < n1; ++i)
+        all[i] = {a.samples[i], 0};
+    for (size_t i = 0; i < n2; ++i)
+        all[n1 + i] = {b.samples[i], 1};
+    std::sort(all.begin(), all.end(), [](Tagged const& x, Tagged const& y) { return x.v < y.v; });
 
     // Rank the union of A and B. In a tie group spanning positions
     // [i..j] (inclusive), every element gets the average of the ranks
@@ -1061,9 +1071,7 @@ struct Compare {
     size_t i = 0;
     while (i < all.size()) {
         size_t j = i;
-        while (j + 1 < all.size() &&
-               !(all[j + 1].v < all[i].v) &&
-               !(all[i].v < all[j + 1].v)) {
+        while (j + 1 < all.size() && !(all[j + 1].v < all[i].v) && !(all[i].v < all[j + 1].v)) {
             ++j;
         }
         const double avg_rank = (static_cast<double>(i + j) + 2.0) / 2.0;
@@ -1075,29 +1083,26 @@ struct Compare {
         i = j + 1;
     }
 
-    const double    dn1   = static_cast<double>(n1);
-    const double    dn2   = static_cast<double>(n2);
-    const double    u1    = r1 - dn1 * (dn1 + 1.0) / 2.0;
-    const double    u2    = dn1 * dn2 - u1;
-    const double    u_min = std::min(u1, u2);
-    const double    mu    = dn1 * dn2 / 2.0;
+    const double dn1 = static_cast<double>(n1);
+    const double dn2 = static_cast<double>(n2);
+    const double u1 = r1 - dn1 * (dn1 + 1.0) / 2.0;
+    const double u2 = dn1 * dn2 - u1;
+    const double u_min = std::min(u1, u2);
+    const double mu = dn1 * dn2 / 2.0;
 
     // Tie-corrected variance (Mann & Whitney 1947 §5; Siegel 1956):
     //   sigma² = (n1·n2 / 12) · (N + 1 − T / (N·(N − 1)))
     // For T = 0 (no ties) this reduces to the classical form.
-    const double N       = static_cast<double>(n1) + static_cast<double>(n2);
+    const double N = static_cast<double>(n1) + static_cast<double>(n2);
     const double n1n2_12 = (static_cast<double>(n1) * dn2) / 12.0;
-    const double Ncorr   = (N > 1.0)
-        ? (N + 1.0 - tie_sum / (N * (N - 1.0)))
-        : (N + 1.0);
+    const double Ncorr = (N > 1.0) ? (N + 1.0 - tie_sum / (N * (N - 1.0))) : (N + 1.0);
     const double sigma = std::sqrt(std::max(0.0, n1n2_12 * Ncorr));
 
     // Continuity correction: subtract 0.5 from |u_min − mu| before
     // dividing by sigma (normal approximation of a discrete statistic).
     // Sign of z preserves direction (is A tending below or above B?).
-    const double diff  = u_min - mu;
-    const double adj   = (diff >= 0.0 ? +1.0 : -1.0)
-                       * std::max(0.0, std::abs(diff) - 0.5);
+    const double diff = u_min - mu;
+    const double adj = (diff >= 0.0 ? +1.0 : -1.0) * std::max(0.0, std::abs(diff) - 0.5);
 
     c.u = u_min;
     c.z = (sigma > 0) ? (adj / sigma) : 0.0;
@@ -1108,7 +1113,7 @@ struct Compare {
 // ── Run: fluent builder + measurement loop ─────────────────────────
 
 class Run {
- public:
+public:
     explicit Run(std::string name) : name_{std::move(name)} {}
 
     // Pinning policy:
@@ -1123,15 +1128,31 @@ class Run {
     // [[nodiscard]] on every setter — the fluent builder is worthless if
     // the returned Run& is thrown away before .measure().
     [[nodiscard("builder chain result is discarded — did you forget .measure(...)?")]]
-    Run& samples(size_t n) noexcept { samples_ = n; return *this; }
+    Run& samples(size_t n) noexcept {
+        samples_ = n;
+        return *this;
+    }
     [[nodiscard("builder chain result is discarded — did you forget .measure(...)?")]]
-    Run& warmup(size_t n)  noexcept { warmup_  = n; return *this; }
+    Run& warmup(size_t n) noexcept {
+        warmup_ = n;
+        return *this;
+    }
     [[nodiscard("builder chain result is discarded — did you forget .measure(...)?")]]
-    Run& batch(size_t n)   noexcept { batch_   = n; return *this; }
+    Run& batch(size_t n) noexcept {
+        batch_ = n;
+        return *this;
+    }
     [[nodiscard("builder chain result is discarded — did you forget .measure(...)?")]]
-    Run& core(int c)       noexcept { core_    = CpuId{c}; pin_mode_ = Pin::Explicit; return *this; }
+    Run& core(int c) noexcept {
+        core_ = CpuId{c};
+        pin_mode_ = Pin::Explicit;
+        return *this;
+    }
     [[nodiscard("builder chain result is discarded — did you forget .measure(...)?")]]
-    Run& no_pin()          noexcept { pin_mode_ = Pin::None; return *this; }
+    Run& no_pin() noexcept {
+        pin_mode_ = Pin::None;
+        return *this;
+    }
 
     // Apply a `crucible::warden::Policy` to the measuring thread for the
     // duration of the Run. When set, the policy's `hot_core` selector
@@ -1183,17 +1204,17 @@ class Run {
         CpuId pinned_cpu;
         if (have_hardening_) {
             hardening_guard = crucible::warden::apply(hardening_);
-            pinned_cpu      = CpuId{hardening_guard.pinned_cpu()};
+            pinned_cpu = CpuId{hardening_guard.pinned_cpu()};
         } else if (auto env = env_hardening_(); env.has_value()) {
             hardening_guard = crucible::warden::apply(*env);
-            pinned_cpu      = CpuId{hardening_guard.pinned_cpu()};
+            pinned_cpu = CpuId{hardening_guard.pinned_cpu()};
         } else {
             pinned_cpu = pin_();
         }
 
-        const double   nspc = Timer::ns_per_cycle();
-        const uint64_t ovh  = Timer::overhead_cycles();
-        const size_t   S    = samples_ ? samples_ : env_samples_();
+        const double nspc = Timer::ns_per_cycle();
+        const uint64_t ovh = Timer::overhead_cycles();
+        const size_t S = samples_ ? samples_ : env_samples_();
 
         // FIXY-V-196: mint the RdtscPinned witness immediately after
         // sched_setaffinity (or warden hardening apply) — the proof
@@ -1211,9 +1232,7 @@ class Run {
         // Wall-time cap: explicit `.max_wall_ms()` wins; else env var
         // CRUCIBLE_BENCH_WALL_MS; else default `kDefaultMaxWallMs`.
         // Zero disables capping entirely.
-        const size_t wall_cap_ms = have_max_wall_
-            ? max_wall_ms_
-            : env_wall_ms_().value_or(kDefaultMaxWallMs);
+        const size_t wall_cap_ms = have_max_wall_ ? max_wall_ms_ : env_wall_ms_().value_or(kDefaultMaxWallMs);
         const auto start_all = std::chrono::steady_clock::now();
         const auto wall_budget = std::chrono::milliseconds(wall_cap_ms);
         const auto warmup_budget = wall_budget / 4;
@@ -1224,8 +1243,7 @@ class Run {
             // ~20 ns, amortizing it keeps overhead under 1% for ≥2 µs
             // bodies and invisible for anything heavier.
             if (wall_cap_ms > 0 && (i & 63) == 63) {
-                const auto elapsed =
-                    std::chrono::steady_clock::now() - start_all;
+                const auto elapsed = std::chrono::steady_clock::now() - start_all;
                 if (elapsed.count() > warmup_budget.count()) {
                     break;
                 }
@@ -1235,27 +1253,27 @@ class Run {
         const uint64_t freq_start = detail::read_cpu_freq_hz(pinned_cpu.raw());
 
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-        const ::crucible::perf::Senses*       senses = detail::senses_instance();
-        const ::crucible::perf::SenseHub*     hub    = senses->sense_hub();
-        ::crucible::perf::Snapshot                  bpf_pre{};
-        ::crucible::perf::Snapshot                  bpf_post{};
+        const ::crucible::perf::Senses* senses = detail::senses_instance();
+        const ::crucible::perf::SenseHub* hub = senses->sense_hub();
+        ::crucible::perf::Snapshot bpf_pre{};
+        ::crucible::perf::Snapshot bpf_post{};
         // SchedSwitch — see detail::senses_instance() docblock for cost
         // analysis.  Pre/post are ~1 ns volatile loads each; the walk
         // happens at print time on bg thread, never per-iteration.
         const ::crucible::perf::SchedSwitch* sw = senses->sched_switch();
-        uint64_t                              sched_pre_idx  = 0;
-        uint64_t                              sched_post_idx = 0;
+        uint64_t sched_pre_idx = 0;
+        uint64_t sched_post_idx = 0;
 #endif
 
         // Pre-sized to S; if the wall-cap cutoff fires early, we trim to
         // `filled` below so downstream stats (sort, percentile) only see
         // real samples — never default-zero trailing slots.
         std::vector<double> ns_samples(S);
-        size_t              filled = 0;
+        size_t filled = 0;
 
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
         if (hub != nullptr) bpf_pre = hub->read();
-        if (sw  != nullptr) sched_pre_idx = sw->timeline_write_index();
+        if (sw != nullptr) sched_pre_idx = sw->timeline_write_index();
 #endif
         const auto wall0 = std::chrono::steady_clock::now();
 
@@ -1264,7 +1282,8 @@ class Run {
             // proves a sched_setaffinity (or hardening apply) ran above
             // and the thread has not migrated since.
             const uint64_t t0 = rdtsc_start(pin_witness);
-            for (size_t j = 0; j < batch; ++j) body();
+            for (size_t j = 0; j < batch; ++j)
+                body();
             const uint64_t t1 = rdtsc_end(pin_witness);
             // RDTSCP+LFENCE guarantees t1 >= t0 (each RDTSC pair is
             // monotone on a single core); modular unsigned subtraction
@@ -1272,17 +1291,15 @@ class Run {
             // wraps to false when t0 + ovh overflows UINT64_MAX, which
             // can happen after a long runtime on a 4+ GHz core.
             const uint64_t raw = t1 - t0;
-            const uint64_t d   = (raw > ovh) ? (raw - ovh) : 0;
-            ns_samples[i] =
-                (static_cast<double>(d) * nspc) / static_cast<double>(batch);
+            const uint64_t d = (raw > ovh) ? (raw - ovh) : 0;
+            ns_samples[i] = (static_cast<double>(d) * nspc) / static_cast<double>(batch);
             ++filled;
             // Wall-budget cut-off. Checked every 64 samples to keep
             // clock overhead negligible on fast bodies; heavy bodies
             // hit the check often enough because each iteration is
             // already long relative to steady_clock::now() (~20 ns).
             if (wall_cap_ms > 0 && (i & 63) == 63) {
-                const auto elapsed =
-                    std::chrono::steady_clock::now() - start_all;
+                const auto elapsed = std::chrono::steady_clock::now() - start_all;
                 if (elapsed.count() > wall_budget.count()) {
                     break;
                 }
@@ -1293,7 +1310,7 @@ class Run {
         const auto wall1 = std::chrono::steady_clock::now();
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
         if (hub != nullptr) bpf_post = hub->read();
-        if (sw  != nullptr) sched_post_idx = sw->timeline_write_index();
+        if (sw != nullptr) sched_post_idx = sw->timeline_write_index();
 #endif
         const uint64_t freq_end = detail::read_cpu_freq_hz(pinned_cpu.raw());
 
@@ -1318,25 +1335,24 @@ class Run {
             std::sort(h2.begin(), h2.end());
             const double m1 = percentile_interp(h1, 0.5);
             const double m2 = percentile_interp(h2, 0.5);
-            const double m  = (m1 + m2) / 2.0;
+            const double m = (m1 + m2) / 2.0;
             drift = (m > 0) ? std::abs(m1 - m2) / m * 100.0 : 0.0;
             drift_flag = drift > 10.0;
         }
 
         Report r;
-        r.name          = name_;
-        r.batch         = batch;
-        r.pinned_cpu    = pinned_cpu;
-        r.drift_pct     = drift;
-        r.drift_flag    = drift_flag;
-        r.wall_ns       = static_cast<double>(
-            std::chrono::duration_cast<std::chrono::nanoseconds>(wall1 - wall0).count());
-        r.pct           = Percentiles::compute(ns_samples);
-        r.samples       = std::move(ns_samples);
+        r.name = name_;
+        r.batch = batch;
+        r.pinned_cpu = pinned_cpu;
+        r.drift_pct = drift;
+        r.drift_flag = drift_flag;
+        r.wall_ns = static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(wall1 - wall0).count());
+        r.pct = Percentiles::compute(ns_samples);
+        r.samples = std::move(ns_samples);
 
         // Sysfs-based freq drift check.
         r.freq_start_hz = freq_start;
-        r.freq_end_hz   = freq_end;
+        r.freq_end_hz = freq_end;
         if (freq_start > 0 && freq_end > 0) {
             const auto hi = std::max(freq_start, freq_end);
             const auto lo = std::min(freq_start, freq_end);
@@ -1353,7 +1369,7 @@ class Run {
 
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
         if (hub != nullptr) {
-            r.bpf_delta    = bpf_post - bpf_pre;
+            r.bpf_delta = bpf_post - bpf_pre;
             // attached_programs() returns Refined<bounded_above<64>, size_t>
             // post-GAPS-004a — the type carries a structural ≤64 bound that
             // matches inplace_vector<bpf_link*, 64>'s capacity.  Unwrap with
@@ -1369,12 +1385,11 @@ class Run {
         // Per-event walk cost is ≤ K comparisons + at most K element
         // shifts — for K=5 that's <50 ns per event, totalled across
         // ≤TIMELINE_CAPACITY events per bench.
-        r.sched_pre_idx  = sched_pre_idx;
+        r.sched_pre_idx = sched_pre_idx;
         r.sched_post_idx = sched_post_idx;
         if (sw != nullptr && sched_post_idx > sched_pre_idx) {
             const uint64_t window_size =
-                std::min(sched_post_idx - sched_pre_idx,
-                         static_cast<uint64_t>(::crucible::perf::TIMELINE_CAPACITY));
+                std::min(sched_post_idx - sched_pre_idx, static_cast<uint64_t>(::crucible::perf::TIMELINE_CAPACITY));
             const auto view = sw->timeline_view();
             const auto* events = view.data();
             if (events != nullptr) {
@@ -1384,14 +1399,12 @@ class Run {
                     // (window_size hit cap), we read the most-recent
                     // events rather than the wrapped-over stale ones.
                     const uint64_t global_idx = sched_post_idx - 1 - i;
-                    const uint32_t slot = static_cast<uint32_t>(
-                        global_idx & ::crucible::perf::TIMELINE_MASK);
+                    const uint32_t slot = static_cast<uint32_t>(global_idx & ::crucible::perf::TIMELINE_MASK);
                     // Acquire load on ts_ns pairs with the BPF program's
                     // compiler barrier before the ts_ns store (post-
                     // GAPS-004b-AUDIT).  ts_ns == 0 → producer hasn't
                     // committed this slot yet; skip.
-                    const uint64_t ts = __atomic_load_n(&events[slot].ts_ns,
-                                                       __ATOMIC_ACQUIRE);
+                    const uint64_t ts = __atomic_load_n(&events[slot].ts_ns, __ATOMIC_ACQUIRE);
                     if (ts == 0) continue;
                     ++r.sched_offcpu_count;
                     const uint64_t off = events[slot].off_cpu_ns;
@@ -1399,24 +1412,20 @@ class Run {
                     // Insertion-sort into top-K (descending by `off`).
                     // Skip cheap if (a) top is full AND (b) new
                     // event is smaller than the smallest kept.
-                    if (r.sched_offcpu_top_n == K &&
-                        off <= r.sched_offcpu_top_ns[K - 1]) {
+                    if (r.sched_offcpu_top_n == K && off <= r.sched_offcpu_top_ns[K - 1]) {
                         continue;
                     }
                     // Slot to start shifting from: either past-end
                     // (when top isn't full) or the last kept slot
                     // (which we'll displace).
-                    uint32_t pos =
-                        (r.sched_offcpu_top_n < K) ? r.sched_offcpu_top_n
-                                                   : K - 1;
+                    uint32_t pos = (r.sched_offcpu_top_n < K) ? r.sched_offcpu_top_n : K - 1;
                     if (r.sched_offcpu_top_n < K) ++r.sched_offcpu_top_n;
-                    while (pos > 0 &&
-                           r.sched_offcpu_top_ns[pos - 1] < off) {
-                        r.sched_offcpu_top_ns[pos]  = r.sched_offcpu_top_ns[pos - 1];
+                    while (pos > 0 && r.sched_offcpu_top_ns[pos - 1] < off) {
+                        r.sched_offcpu_top_ns[pos] = r.sched_offcpu_top_ns[pos - 1];
                         r.sched_offcpu_top_cpu[pos] = r.sched_offcpu_top_cpu[pos - 1];
                         --pos;
                     }
-                    r.sched_offcpu_top_ns[pos]  = off;
+                    r.sched_offcpu_top_ns[pos] = off;
                     r.sched_offcpu_top_cpu[pos] = cpu;
                 }
             }
@@ -1426,15 +1435,19 @@ class Run {
         return r;
     }
 
- private:
-    enum class Pin : uint8_t { Auto, Explicit, None };
+private:
+    enum class Pin : uint8_t {
+        Auto,
+        Explicit,
+        None
+    };
 
     std::string name_;
-    size_t      samples_  = 0;          // TODO: strong type (count, not an id)
-    size_t      warmup_   = 10'000;     // TODO: strong type
-    size_t      batch_    = 0;          // TODO: strong type
-    CpuId       core_{};                // CpuId::none() → falls through to Auto
-    Pin         pin_mode_ = Pin::Auto;
+    size_t samples_ = 0;  // TODO: strong type (count, not an id)
+    size_t warmup_ = 10000;  // TODO: strong type
+    size_t batch_ = 0;  // TODO: strong type
+    CpuId core_{};  // CpuId::none() → falls through to Auto
+    Pin pin_mode_ = Pin::Auto;
 
     // Default wall-time budget per Run. Caps any bench where the body
     // × 100'000 samples × 10'000 warmup would run for hours or hold
@@ -1442,9 +1455,9 @@ class Run {
     // can't promptly return to the OS. Override globally via
     // CRUCIBLE_BENCH_WALL_MS; per-Run via .max_wall_ms(ms); disable
     // entirely via .max_wall_ms(0) or CRUCIBLE_BENCH_WALL_MS=0.
-    static constexpr size_t kDefaultMaxWallMs = 10'000;
-    size_t      max_wall_ms_   = kDefaultMaxWallMs;
-    bool        have_max_wall_ = false;   // true iff .max_wall_ms() was called
+    static constexpr size_t kDefaultMaxWallMs = 10000;
+    size_t max_wall_ms_ = kDefaultMaxWallMs;
+    bool have_max_wall_ = false;  // true iff .max_wall_ms() was called
 
     // CRUCIBLE_BENCH_WALL_MS=<n>. Empty/unset → default applies.
     [[nodiscard]] static std::optional<size_t> env_wall_ms_() noexcept {
@@ -1463,7 +1476,7 @@ class Run {
     // `.no_pin()` are overridden by the policy's own CoreSelector when
     // hardening is set (the policy's Topology-based pick wins).
     crucible::warden::Policy hardening_{crucible::warden::Policy::none()};
-    bool                 have_hardening_ = false;
+    bool have_hardening_ = false;
 
     // CRUCIBLE_BENCH_HARDENING=production|cloud_vm|dev_quiet|none —
     // applies the named profile to every Run that doesn't call
@@ -1473,12 +1486,11 @@ class Run {
         const char* s = std::getenv("CRUCIBLE_BENCH_HARDENING");
         if (s == nullptr || s[0] == '\0') return std::nullopt;
         if (std::strcmp(s, "production") == 0) return crucible::warden::Policy::production();
-        if (std::strcmp(s, "cloud_vm") == 0 ||
-            std::strcmp(s, "vm")       == 0 ||
-            std::strcmp(s, "cloud")    == 0) return crucible::warden::Policy::cloud_vm();
-        if (std::strcmp(s, "dev_quiet") == 0 ||
-            std::strcmp(s, "dev")       == 0) return crucible::warden::Policy::dev_quiet();
-        if (std::strcmp(s, "none") == 0)      return crucible::warden::Policy::none();
+        if (std::strcmp(s, "cloud_vm") == 0 || std::strcmp(s, "vm") == 0 || std::strcmp(s, "cloud") == 0)
+            return crucible::warden::Policy::cloud_vm();
+        if (std::strcmp(s, "dev_quiet") == 0 || std::strcmp(s, "dev") == 0)
+            return crucible::warden::Policy::dev_quiet();
+        if (std::strcmp(s, "none") == 0) return crucible::warden::Policy::none();
         return std::nullopt;
     }
 
@@ -1487,7 +1499,7 @@ class Run {
             const long n = std::strtol(s, nullptr, 10);
             if (n > 0) return static_cast<size_t>(n);
         }
-        return 100'000;
+        return 100000;
     }
 
     // Apply affinity and return the CPU we actually ended up on.
@@ -1515,8 +1527,7 @@ class Run {
         if (pin_mode_ == Pin::None) return CpuId{sched_getcpu()};
 
         int target = -1;
-        const bool explicit_valid =
-            (pin_mode_ == Pin::Explicit) && core_.is_valid();
+        const bool explicit_valid = (pin_mode_ == Pin::Explicit) && core_.is_valid();
         if (explicit_valid) {
             target = core_.raw();
         } else {
@@ -1566,9 +1577,9 @@ class Run {
     // a witness is always available at the call site (measure()).
     template <typename Body>
     [[nodiscard]] size_t auto_batch_(Body&& body, RdtscPinned const& pin) const {
-        constexpr uint64_t MIN_CYCLES     = 1000;
-        constexpr size_t   MAX_BATCH      = 1u << 18;
-        constexpr size_t   PILOT_SAMPLES  = 100;
+        constexpr uint64_t MIN_CYCLES = 1000;
+        constexpr size_t MAX_BATCH = 1u << 18;
+        constexpr size_t PILOT_SAMPLES = 100;
 
         const uint64_t ovh = Timer::overhead_cycles();
 
@@ -1577,10 +1588,11 @@ class Run {
             uint64_t best = UINT64_MAX;
             for (size_t i = 0; i < PILOT_SAMPLES; ++i) {
                 const uint64_t t0 = rdtsc_start(pin);
-                for (size_t j = 0; j < batch; ++j) body();
+                for (size_t j = 0; j < batch; ++j)
+                    body();
                 const uint64_t t1 = rdtsc_end(pin);
                 // Same wrap-safety argument as in the main loop.
-                const uint64_t d  = t1 - t0;
+                const uint64_t d = t1 - t0;
                 if (d < best) best = d;
             }
             if (best >= MIN_CYCLES + ovh) return batch;
@@ -1603,7 +1615,8 @@ inline void print_system_info(FILE* out = stdout) {
                 char* colon = std::strchr(line, ':');
                 if (colon) {
                     char* v = colon + 1;
-                    while (*v == ' ' || *v == '\t') ++v;
+                    while (*v == ' ' || *v == '\t')
+                        ++v;
                     size_t len = std::strlen(v);
                     if (len && v[len - 1] == '\n') v[len - 1] = '\0';
                     std::fprintf(out, "  cpu:       %s\n", v);
@@ -1634,41 +1647,37 @@ inline void print_system_info(FILE* out = stdout) {
 #endif
 
     const double nspc = Timer::ns_per_cycle();
-    const double ghz  = (nspc > 0) ? 1.0 / nspc : 0.0;
+    const double ghz = (nspc > 0) ? 1.0 / nspc : 0.0;
     std::fprintf(out, "  TSC:       %.4f ns/cycle (≈ %.3f GHz)\n", nspc, ghz);
-    std::fprintf(out, "  RDTSC oh:  %lu cycles (≈ %.2f ns)\n",
-                 Timer::overhead_cycles(),
-                 Timer::overhead_ns());
+    std::fprintf(out, "  RDTSC oh:  %lu cycles (≈ %.2f ns)\n", Timer::overhead_cycles(), Timer::overhead_ns());
     if (nspc <= 0.0) {
-        std::fprintf(stderr,
-            "WARN bench: TSC calibration failed (ns_per_cycle == 0); "
-            "cycles/op will read 0.\n");
+        std::fprintf(stderr, "WARN bench: TSC calibration failed (ns_per_cycle == 0); "
+                             "cycles/op will read 0.\n");
     }
 
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-    const ::crucible::perf::Senses*    senses = detail::senses_instance();
-    const ::crucible::perf::SenseHub*  hub    = senses->sense_hub();
-    const auto                         cov    = senses->coverage();
+    const ::crucible::perf::Senses* senses = detail::senses_instance();
+    const ::crucible::perf::SenseHub* hub = senses->sense_hub();
+    const auto cov = senses->coverage();
     if (hub != nullptr) {
         // Show both the SenseHub-internal tracepoint count and the
         // Senses-aggregator coverage, so a 0/2 attached banner is
         // distinguishable from a partial sense_hub-only attach.
         std::fprintf(out,
-            "  BPF senses: harness subset loaded "
-            "(SenseHub=%zu tracepoints, %zu/2 harness facades; "
-            "full suite is reported by bench_perf_loader)\n",
-            hub->attached_programs().value(), cov.attached_count());
+                     "  BPF senses: harness subset loaded "
+                     "(SenseHub=%zu tracepoints, %zu/2 harness facades; "
+                     "full suite is reported by bench_perf_loader)\n",
+                     hub->attached_programs().value(), cov.attached_count());
     } else if (cov.attached_count() > 0) {
         std::fprintf(out,
-            "  BPF senses: harness subset partial — %zu/2 facades attached "
-            "(sense_hub failed; set CRUCIBLE_PERF_VERBOSE=1 "
-            "for libbpf logs)\n",
-            cov.attached_count());
+                     "  BPF senses: harness subset partial — %zu/2 facades attached "
+                     "(sense_hub failed; set CRUCIBLE_PERF_VERBOSE=1 "
+                     "for libbpf logs)\n",
+                     cov.attached_count());
     } else {
-        std::fprintf(out,
-            "  BPF senses: UNAVAILABLE — set CRUCIBLE_PERF_VERBOSE=1 for libbpf logs;\n"
-            "              typical fix: sudo sysctl kernel.unprivileged_bpf_disabled=0\n"
-            "              or `cmake --build --preset bench --target bench-caps`\n");
+        std::fprintf(out, "  BPF senses: UNAVAILABLE — set CRUCIBLE_PERF_VERBOSE=1 for libbpf logs;\n"
+                          "              typical fix: sudo sysctl kernel.unprivileged_bpf_disabled=0\n"
+                          "              or `cmake --build --preset bench --target bench-caps`\n");
     }
 #else
     std::fprintf(out, "  BPF senses: disabled at build time\n");
@@ -1703,8 +1712,7 @@ inline void elevate_priority() noexcept {
     // requires IsExecCtx + in-range Nice).  `effects::testing::init()`
     // returns the bare `Init` cap-struct, NOT an ExecCtx; spawning the
     // alias directly is the canonical mint-call shape.
-    auto p = ::crucible::fixy::sched::mint_priority<-10>(
-        ::crucible::effects::ColdInitCtx{});
+    auto p = ::crucible::fixy::sched::mint_priority<-10>(::crucible::effects::ColdInitCtx{});
     (void)p;
 #endif
 }
@@ -1713,13 +1721,10 @@ inline void elevate_priority() noexcept {
 // `expected<SchedPriority<-10>, int>`; if a future change moves the
 // nice value or alters the return type, this trips at every bench
 // TU that includes bench_harness.h.
-static_assert(
-    std::is_same_v<
-        decltype(::crucible::fixy::sched::mint_priority<-10>(
-            ::crucible::effects::ColdInitCtx{})),
-        std::expected<::crucible::fixy::sched::SchedPriority<-10>, int>>,
-    "FIXY-V-197: elevate_priority must mint a SchedPriority<-10> witness "
-    "via fixy::sched::mint_priority<-10>(ColdInitCtx).");
+static_assert(std::is_same_v<decltype(::crucible::fixy::sched::mint_priority<-10>(::crucible::effects::ColdInitCtx{})),
+                             std::expected<::crucible::fixy::sched::SchedPriority<-10>, int>>,
+              "FIXY-V-197: elevate_priority must mint a SchedPriority<-10> witness "
+              "via fixy::sched::mint_priority<-10>(ColdInitCtx).");
 
 // ── Per-bench boilerplate helpers ──────────────────────────────────
 //
@@ -1746,10 +1751,9 @@ static_assert(
 // Run::pin_() falls back to Auto on).
 [[nodiscard]] inline int env_core() noexcept {
     if (const char* s = env("CRUCIBLE_BENCH_CORE")) {
-        char*      endp = nullptr;
-        const long v    = std::strtol(s, &endp, 10);
-        if (endp != s && v >= static_cast<long>(INT_MIN)
-                      && v <= static_cast<long>(INT_MAX)) {
+        char* endp = nullptr;
+        const long v = std::strtol(s, &endp, 10);
+        if (endp != s && v >= static_cast<long>(INT_MIN) && v <= static_cast<long>(INT_MAX)) {
             return static_cast<int>(v);
         }
     }
@@ -1776,14 +1780,14 @@ template <typename Body>
 // Emit the text block for every Report. Always done — the JSON path is
 // additive. Taken as std::span so aggregate-init C arrays pass directly.
 inline void emit_reports_text(std::span<const Report> reports, FILE* out = stdout) noexcept {
-    for (const auto& r : reports) r.print_text(out);
+    for (const auto& r : reports)
+        r.print_text(out);
 }
 
 // Emit the JSON array tail for every Report, iff `json`. No-op otherwise.
 // Benches that want extra output between text and JSON (e.g., a bench::compare
 // block) call emit_reports_text → extra prints → emit_reports_json.
-inline void emit_reports_json(std::span<const Report> reports, bool json,
-                              FILE* out = stdout) noexcept {
+inline void emit_reports_json(std::span<const Report> reports, bool json, FILE* out = stdout) noexcept {
     if (!json) return;
     std::fputs("\n=== json ===\n[\n", out);
     for (size_t i = 0; i < reports.size(); ++i) {
@@ -1797,10 +1801,9 @@ inline void emit_reports_json(std::span<const Report> reports, bool json,
 // Standard main() epilogue: text block + JSON tail, in that order. For
 // benches that need anything between the two (compare/CI prints), call
 // emit_reports_text + emit_reports_json directly.
-inline void emit_reports(std::span<const Report> reports, bool json,
-                         FILE* out = stdout) noexcept {
+inline void emit_reports(std::span<const Report> reports, bool json, FILE* out = stdout) noexcept {
     emit_reports_text(reports, out);
     emit_reports_json(reports, json, out);
 }
 
-} // namespace bench
+}  // namespace bench

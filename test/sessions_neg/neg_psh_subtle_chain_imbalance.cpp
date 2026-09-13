@@ -48,40 +48,33 @@ using ::crucible::safety::mint_permission_root;
 namespace {
 struct WorkX {};
 struct WorkY {};
-struct FakeChannel { int last_int = 0; };
+struct FakeChannel {
+    int last_int = 0;
+};
 
 Transferable<int, WorkX> wire_recv_x(FakeChannel& ch) noexcept {
-    return Transferable<int, WorkX>{ch.last_int,
-                                     mint_permission_root<WorkX>()};
+    return Transferable<int, WorkX>{ch.last_int, mint_permission_root<WorkX>()};
 }
 
 Transferable<int, WorkY> wire_recv_y(FakeChannel& ch) noexcept {
-    return Transferable<int, WorkY>{ch.last_int,
-                                     mint_permission_root<WorkY>()};
+    return Transferable<int, WorkY>{ch.last_int, mint_permission_root<WorkY>()};
 }
 
-void wire_send_ret_x(FakeChannel& ch, Returned<int, WorkX>&& r) noexcept {
-    ch.last_int = r.value;
-}
+void wire_send_ret_x(FakeChannel& ch, Returned<int, WorkX>&& r) noexcept { ch.last_int = r.value; }
 
-using BodyProto = Recv<Transferable<int, WorkX>,
-                       Send<Returned<int, WorkX>,
-                            Recv<Transferable<int, WorkY>, Continue>>>;
+using BodyProto = Recv<Transferable<int, WorkX>, Send<Returned<int, WorkX>, Recv<Transferable<int, WorkY>, Continue>>>;
 using LoopProto = Loop<BodyProto>;
-}
+}  // namespace
 
 int main() {
-    auto h = detail::permissioned_session_with_loc_<
-        LoopProto, EmptyPermSet, FakeChannel>(
+    auto h = detail::permissioned_session_with_loc_<LoopProto, EmptyPermSet, FakeChannel>(
         FakeChannel{}, std::source_location::current());
 
     // Step 1: recv X — PS becomes {X}.
     auto [val_x, h2] = std::move(h).recv(wire_recv_x);
 
     // Step 2: send Returned<X> — PS becomes {} (paired with recv).
-    auto h3 = std::move(h2).send(
-        Returned<int, WorkX>{val_x.value, std::move(val_x.perm)},
-        wire_send_ret_x);
+    auto h3 = std::move(h2).send(Returned<int, WorkX>{val_x.value, std::move(val_x.perm)}, wire_send_ret_x);
 
     // Step 3: recv Y — PS becomes {Y}.  The next step is Continue,
     // which fires the balance assert because PS ({Y}) ≠ entry ({}).

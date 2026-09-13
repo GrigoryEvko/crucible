@@ -11,8 +11,7 @@
 struct NotAnExecCtx {};
 
 int main() {
-    auto handle = crucible::warden::mint_hot_region_registry_handle(
-        NotAnExecCtx{});
+    auto handle = crucible::warden::mint_hot_region_registry_handle(NotAnExecCtx{});
     (void)handle;
     return 0;
 }

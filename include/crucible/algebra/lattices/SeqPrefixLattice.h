@@ -114,7 +114,7 @@ static_assert(Length<EventA>::at(0) == LatA::bottom());
 constexpr Length<EventA> ε = LatA::bottom();
 constexpr Length<EventA> short_ = Length<EventA>{1};
 constexpr Length<EventA> mid = Length<EventA>{1024};
-constexpr Length<EventA> longish = Length<EventA>{1'000'000};
+constexpr Length<EventA> longish = Length<EventA>{1000000};
 constexpr Length<EventA> ω = LatA::top();
 
 static_assert(LatA::leq(ε, short_));

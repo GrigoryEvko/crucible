@@ -25,12 +25,11 @@ namespace {
     return 0;
 }
 
-static_assert(under_test() == 0,
-    "CRUCIBLE_PRE on Monotonic::advance's lattice_type::leq member-fn "
-    "predicate MUST fire at consteval when advance() steps backward.  "
-    "If this static_assert evaluates successfully, the body-"
-    "CRUCIBLE_PRE migration failed to close the consteval bypass for "
-    "nested-member-function predicate shapes.");
+static_assert(under_test() == 0, "CRUCIBLE_PRE on Monotonic::advance's lattice_type::leq member-fn "
+                                 "predicate MUST fire at consteval when advance() steps backward.  "
+                                 "If this static_assert evaluates successfully, the body-"
+                                 "CRUCIBLE_PRE migration failed to close the consteval bypass for "
+                                 "nested-member-function predicate shapes.");
 
 }  // namespace
 

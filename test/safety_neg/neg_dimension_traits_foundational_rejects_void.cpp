@@ -32,9 +32,10 @@ namespace neg = crucible::safety;
 // Bridge fires: FoundationalGrade<void> evaluates to
 // std::is_object_v<void> which is false.  The concept rejects.
 template <neg::FoundationalGrade G>
-constexpr bool consumes_foundational() noexcept { return true; }
+constexpr bool consumes_foundational() noexcept {
+    return true;
+}
 
-[[maybe_unused]] constexpr bool the_fixture =
-    consumes_foundational<void>();
+[[maybe_unused]] constexpr bool the_fixture = consumes_foundational<void>();
 
 int main() { return 0; }

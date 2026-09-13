@@ -32,10 +32,8 @@ int main() {
     // sizeof...(Args) < N as well — partial-fill would silently
     // value-init the trailing slots, breaking the per-slot type-tag
     // packing in scalar_types / op_flags[6:7]).
-    crucible::safety::FixedArray<int64_t, 5> bad{
-        int64_t{1}, int64_t{2}, int64_t{3},
-        int64_t{4}, int64_t{5}, int64_t{6}
-    };
+    crucible::safety::FixedArray<int64_t, 5> bad{int64_t{1}, int64_t{2}, int64_t{3},
+                                                 int64_t{4}, int64_t{5}, int64_t{6}};
     (void)bad;
     return 0;
 }

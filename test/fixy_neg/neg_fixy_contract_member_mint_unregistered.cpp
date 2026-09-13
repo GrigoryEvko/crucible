@@ -54,10 +54,9 @@ int main() {
     // grew a SFINAE-safe default body (e.g. `static consteval bool
     // admits() { return false; }` instead of being incomplete), this
     // fixture would silently compile.
-    static_assert(::crucible::fixy::contract::MemberMintCtxRequired<
-                      int,
-                      ::crucible::fixy::contract::mint_name::open_view,
-                      ::crucible::effects::BgDrainCtx>,
+    static_assert(
+        ::crucible::fixy::contract::MemberMintCtxRequired<int, ::crucible::fixy::contract::mint_name::open_view,
+                                                          ::crucible::effects::BgDrainCtx>,
         "FIXY-V-220 fixture #2: int is not a registered host class — "
         "MemberMintCtxRequired must reject via incomplete-primary SFINAE.");
     return 0;

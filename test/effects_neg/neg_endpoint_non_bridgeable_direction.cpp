@@ -14,9 +14,9 @@
 
 #include <crucible/concurrent/Endpoint.h>
 
-namespace eff  = crucible::effects;
+namespace eff = crucible::effects;
 namespace conc = crucible::concurrent;
-namespace saf  = crucible::safety;
+namespace saf = crucible::safety;
 
 struct UserTag {};
 
@@ -32,8 +32,7 @@ int main() {
 
     eff::HotFgCtx fg;
     // Snapshot + Producer → IsBridgeableDirection fails.
-    auto bad = conc::mint_endpoint<SnapT, conc::Direction::Producer>(
-        fg, *fake_handle);
+    auto bad = conc::mint_endpoint<SnapT, conc::Direction::Producer>(fg, *fake_handle);
     (void)bad;
     (void)snap;
     return 0;

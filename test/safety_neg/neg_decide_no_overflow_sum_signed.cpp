@@ -36,8 +36,7 @@ namespace {
 // in int64_t.  This is the canonical signed-underflow asymmetric-range
 // trap — it catches a bug class that unsigned overflow checks AND
 // positive-side overflow checks both miss.
-constexpr auto witness =
-    add_i64(std::numeric_limits<int64_t>::min(), int64_t{-1});
+constexpr auto witness = add_i64(std::numeric_limits<int64_t>::min(), int64_t{-1});
 
 }  // namespace
 

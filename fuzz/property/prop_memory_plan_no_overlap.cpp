@@ -76,24 +76,22 @@ inline constexpr uint64_t kMaxSlotBytes = 4096;
 inline constexpr uint64_t kPlanAlignment = 256;
 
 struct SlotSpec {
-    uint32_t birth = 0;       // <= death, both in [0, kMaxOp)
+    uint32_t birth = 0;  // <= death, both in [0, kMaxOp)
     uint32_t death = 0;
-    uint64_t nbytes = 0;      // [1, kMaxSlotBytes]
-    bool is_external = false; // ~25% of slots
+    uint64_t nbytes = 0;  // [1, kMaxSlotBytes]
+    bool is_external = false;  // ~25% of slots
     uint8_t pad[3]{};
 };
 
 struct SlotSet {
     std::array<SlotSpec, kMaxSlots> specs{};
-    uint32_t count = 0;       // [1, kMaxSlots]
+    uint32_t count = 0;  // [1, kMaxSlots]
     uint8_t pad[4]{};
 };
 
 // Materialize a SlotSet into a fresh TensorSlot array and return the
 // maximum death_op (the upper bound of the no-overlap sweep).
-[[nodiscard]] uint32_t materialize(
-    const SlotSet& set, crucible::TensorSlot* out) noexcept
-{
+[[nodiscard]] uint32_t materialize(const SlotSet& set, crucible::TensorSlot* out) noexcept {
     using crucible::TensorSlot;
     using crucible::OpIndex;
     using crucible::SlotId;
@@ -104,13 +102,18 @@ struct SlotSet {
     uint32_t max_death = 0;
     for (uint32_t i = 0; i < set.count; ++i) {
         const SlotSpec& spec = set.specs[i];
-        out[i] = TensorSlot{
-            .offset_bytes = 0, .nbytes = spec.nbytes,
-            .birth_op = OpIndex{spec.birth}, .death_op = OpIndex{spec.death},
-            .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
-            .device_idx = 0, .layout = Layout::Strided,
-            .is_external = spec.is_external, .pad = {},
-            .slot_id = SlotId{i}, .pad2 = {}};
+        out[i] = TensorSlot{.offset_bytes = 0,
+                            .nbytes = spec.nbytes,
+                            .birth_op = OpIndex{spec.birth},
+                            .death_op = OpIndex{spec.death},
+                            .dtype = ScalarType::Float,
+                            .device_type = DeviceType::CPU,
+                            .device_idx = 0,
+                            .layout = Layout::Strided,
+                            .is_external = spec.is_external,
+                            .pad = {},
+                            .slot_id = SlotId{i},
+                            .pad2 = {}};
         if (spec.death > max_death) max_death = spec.death;
     }
     return max_death;
@@ -128,7 +131,8 @@ int main(int argc, char** argv) {
 
     Config cfg = parse_args(argc, argv);
 
-    return run("memory_plan_no_overlap", cfg,
+    return run(
+        "memory_plan_no_overlap", cfg,
         // ── Generator: random slot set with bounded interleaving ──
         [](Rng& rng) noexcept -> SlotSet {
             SlotSet set{};
@@ -138,8 +142,7 @@ int main(int argc, char** argv) {
                 const uint32_t b = rng.next_below(kMaxOp);
                 set.specs[i].birth = a < b ? a : b;
                 set.specs[i].death = a < b ? b : a;
-                set.specs[i].nbytes =
-                    1ull + rng.next_below(static_cast<uint32_t>(kMaxSlotBytes));
+                set.specs[i].nbytes = 1ull + rng.next_below(static_cast<uint32_t>(kMaxSlotBytes));
                 set.specs[i].is_external = (rng.next_below(4) == 0);
             }
             return set;
@@ -171,8 +174,7 @@ int main(int argc, char** argv) {
             //     which can never exceed num_slots <= kMaxSlots).
             const std::span<const TensorSlot> span1{slots1, num_slots};
             for (uint32_t t = 0; t <= max_death; ++t) {
-                if (!live_intervals_disjoint_at<kMaxSlots>(span1, OpIndex{t}))
-                    return false;
+                if (!live_intervals_disjoint_at<kMaxSlots>(span1, OpIndex{t})) return false;
             }
 
             // (C) Containment: internal slots fit the pool; external
@@ -183,11 +185,8 @@ int main(int argc, char** argv) {
                     if (slots1[i].offset_bytes != 0) return false;
                 } else {
                     // offset + nbytes can't wrap: both < 2^20 by gen bounds.
-                    if (slots1[i].offset_bytes + slots1[i].nbytes >
-                        plan1->pool_bytes)
-                        return false;
-                    if (slots1[i].offset_bytes % kPlanAlignment != 0)
-                        return false;
+                    if (slots1[i].offset_bytes + slots1[i].nbytes > plan1->pool_bytes) return false;
+                    if (slots1[i].offset_bytes % kPlanAlignment != 0) return false;
                 }
             }
 
@@ -200,8 +199,7 @@ int main(int argc, char** argv) {
             if (plan2 == nullptr) return false;
             if (plan2->pool_bytes != plan1->pool_bytes) return false;
             for (uint32_t i = 0; i < num_slots; ++i) {
-                if (slots2[i].offset_bytes != slots1[i].offset_bytes)
-                    return false;
+                if (slots2[i].offset_bytes != slots1[i].offset_bytes) return false;
             }
 
             return true;

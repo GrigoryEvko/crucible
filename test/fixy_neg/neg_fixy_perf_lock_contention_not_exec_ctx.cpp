@@ -28,9 +28,8 @@ struct NotAnExecCtx {};  // No row_type, no Effect aggregation API.
 }  // namespace test_fixy_perf_lock_contention_not_exec_ctx
 
 int main() {
-    auto hub = crucible::fixy::perf::mint_lock_contention(
-        test_fixy_perf_lock_contention_not_exec_ctx::NotAnExecCtx{},
-        crucible::effects::testing::init());
+    auto hub = crucible::fixy::perf::mint_lock_contention(test_fixy_perf_lock_contention_not_exec_ctx::NotAnExecCtx{},
+                                                          crucible::effects::testing::init());
     (void)hub;
     return 0;
 }

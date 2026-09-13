@@ -25,7 +25,7 @@
 #include <crucible/sessions/Session.h>
 
 namespace fscheckpoint = ::crucible::fixy::sess::checkpoint;
-namespace proto        = ::crucible::safety::proto;
+namespace proto = ::crucible::safety::proto;
 
 namespace {
 struct Req {};
@@ -36,7 +36,7 @@ struct Resp {};
 using PlainProto = proto::Send<Req, proto::Recv<Resp, proto::End>>;
 
 // The branches we'd assert against, IF PlainProto were a checkpoint.
-using ExpectedBase     = proto::Send<Req, proto::Recv<Resp, proto::End>>;
+using ExpectedBase = proto::Send<Req, proto::Recv<Resp, proto::End>>;
 using ExpectedRollback = proto::Send<Req, proto::End>;
 }  // namespace
 
@@ -44,7 +44,6 @@ int main() {
     // Should FAIL: PlainProto is Send<...>, not CheckpointedSession.
     // The FIRST static_assert inside assert_checkpointed_matches
     // fires with the diagnostic "P is not a CheckpointedSession".
-    fscheckpoint::assert_checkpointed_matches<
-        PlainProto, ExpectedBase, ExpectedRollback>();
+    fscheckpoint::assert_checkpointed_matches<PlainProto, ExpectedBase, ExpectedRollback>();
     return 0;
 }

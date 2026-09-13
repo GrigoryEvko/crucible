@@ -14,14 +14,10 @@ namespace saf = crucible::safety;
 
 namespace {
 
-constexpr std::string_view kPrivateKey =
-    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
-constexpr std::string_view kPeerA =
-    "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=";
-constexpr std::string_view kPeerB =
-    "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC=";
-constexpr std::string_view kPsk =
-    "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD=";
+constexpr std::string_view kPrivateKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+constexpr std::string_view kPeerA = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=";
+constexpr std::string_view kPeerB = "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC=";
+constexpr std::string_view kPsk = "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD=";
 
 [[nodiscard]] cntp::NicInterfaceName iface() {
     auto admitted = cntp::NicInterfaceName::from("wg0");
@@ -35,8 +31,7 @@ constexpr std::string_view kPsk =
     return *admitted;
 }
 
-[[nodiscard]] cntp::WireguardAllowedIp cidr(std::uint32_t ipv4_be,
-                                            std::uint8_t prefix) {
+[[nodiscard]] cntp::WireguardAllowedIp cidr(std::uint32_t ipv4_be, std::uint8_t prefix) {
     auto admitted = cntp::admit_wireguard_cidr_prefix(prefix);
     assert(admitted.has_value());
     return cntp::WireguardAllowedIp{
@@ -62,10 +57,7 @@ constexpr std::string_view kPsk =
         cidr(0x0a010000u, 24),
     };
     return cntp::declare_wireguard_peer(
-        pub(kPeerA),
-        cntp::WireguardEndpoint{.ipv4_be = 0xc0000201u, .port = port(51820)},
-        allowed,
-        true);
+        pub(kPeerA), cntp::WireguardEndpoint{.ipv4_be = 0xc0000201u, .port = port(51820)}, allowed, true);
 }
 
 [[nodiscard]] cntp::DeclaredWireguardPeer peer_b() {
@@ -73,39 +65,30 @@ constexpr std::string_view kPsk =
         cidr(0x0a020000u, 24),
         cidr(0x0a030000u, 24),
     };
-    return cntp::declare_wireguard_peer(
-        pub(kPeerB),
-        cntp::WireguardEndpoint{.ipv4_be = 0xc0000202u, .port = port(51821)},
-        allowed);
+    return cntp::declare_wireguard_peer(pub(kPeerB),
+                                        cntp::WireguardEndpoint{.ipv4_be = 0xc0000202u, .port = port(51821)}, allowed);
 }
 
 [[nodiscard]] cntp::DeclaredWireguardConfig config_one_peer() {
     std::array<cntp::DeclaredWireguardPeer, 1> peers{peer_a()};
-    auto config = cntp::mint_wireguard_config(
-        iface(), port(), secret(kPrivateKey), peers);
+    auto config = cntp::mint_wireguard_config(iface(), port(), secret(kPrivateKey), peers);
     assert(config.has_value());
     return std::move(*config);
 }
 
 void test_admission_and_names() {
-    assert(cntp::wireguard_error_name(
-               cntp::WireguardError::BackendUnavailable)
+    assert(cntp::wireguard_error_name(cntp::WireguardError::BackendUnavailable)
            == std::string_view{"BackendUnavailable"});
-    assert(cntp::wireguard_error_name(cntp::WireguardError::DuplicatePeer)
-           == std::string_view{"DuplicatePeer"});
-    assert(cntp::wireguard_error_name(cntp::WireguardError::InvalidEndpoint)
-           == std::string_view{"InvalidEndpoint"});
+    assert(cntp::wireguard_error_name(cntp::WireguardError::DuplicatePeer) == std::string_view{"DuplicatePeer"});
+    assert(cntp::wireguard_error_name(cntp::WireguardError::InvalidEndpoint) == std::string_view{"InvalidEndpoint"});
 
     assert(cntp::admit_wireguard_public_key_b64(kPeerA).has_value());
     assert(cntp::admit_wireguard_secret_key_b64(kPsk).has_value());
     assert(!cntp::admit_wireguard_public_key_b64("").has_value());
     assert(!cntp::admit_wireguard_public_key_b64("bad").has_value());
-    assert(!cntp::admit_wireguard_public_key_b64(
-        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA@=").has_value());
-    assert(!cntp::admit_wireguard_public_key_b64(
-        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA").has_value());
-    assert(!cntp::admit_wireguard_public_key_b64(
-        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==").has_value());
+    assert(!cntp::admit_wireguard_public_key_b64("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA@=").has_value());
+    assert(!cntp::admit_wireguard_public_key_b64("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA").has_value());
+    assert(!cntp::admit_wireguard_public_key_b64("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==").has_value());
     assert(cntp::admit_wireguard_port(1).has_value());
     assert(!cntp::admit_wireguard_port(0).has_value());
     assert(cntp::admit_wireguard_cidr_prefix(32).has_value());
@@ -142,21 +125,18 @@ void test_config_and_backend_boundary() {
 
 void test_preshared_key_and_endpoint_validation() {
     std::array<cntp::DeclaredWireguardPeer, 1> peers{peer_a()};
-    auto with_psk = cntp::mint_wireguard_config_with_psk(
-        iface(), port(), secret(kPrivateKey), secret(kPsk), peers);
+    auto with_psk = cntp::mint_wireguard_config_with_psk(iface(), port(), secret(kPrivateKey), secret(kPsk), peers);
     assert(with_psk.has_value());
     assert(with_psk->value().has_preshared_key);
     assert(with_psk->value().preshared_key.size() == kPsk.size());
     assert(cntp::validate_wireguard_config(*with_psk).has_value());
 
-    auto empty_psk = cntp::mint_wireguard_config_with_psk(
-        iface(), port(), secret(kPrivateKey),
-        cntp::empty_wireguard_secret_key(), peers);
+    auto empty_psk = cntp::mint_wireguard_config_with_psk(iface(), port(), secret(kPrivateKey),
+                                                          cntp::empty_wireguard_secret_key(), peers);
     assert(!empty_psk.has_value());
     assert(empty_psk.error() == cntp::WireguardError::EmptyKey);
 
-    auto endpoint = cntp::validate_wireguard_endpoint(
-        cntp::WireguardEndpoint{.ipv4_be = 0u, .port = port(51820)});
+    auto endpoint = cntp::validate_wireguard_endpoint(cntp::WireguardEndpoint{.ipv4_be = 0u, .port = port(51820)});
     assert(!endpoint.has_value());
     assert(endpoint.error() == cntp::WireguardError::InvalidEndpoint);
 
@@ -202,15 +182,12 @@ void test_tunnel_plan_mutation() {
 }  // namespace
 
 int main() {
-    static_assert(sizeof(cntp::DeclaredWireguardPublicKey)
-                  == sizeof(cntp::WireguardKeyB64));
+    static_assert(sizeof(cntp::DeclaredWireguardPublicKey) == sizeof(cntp::WireguardKeyB64));
     static_assert(sizeof(cntp::WireguardPort) == sizeof(std::uint16_t));
     static_assert(sizeof(cntp::WireguardCidrPrefix) == sizeof(std::uint8_t));
-    static_assert(sizeof(cntp::OwnedWireguardTunnel)
-                  == sizeof(cntp::WireguardTunnelHandle));
-    static_assert(std::same_as<
-                  cntp::DeclaredWireguardPublicKey::tag_type,
-                  crucible::cntp::_wip::wip_source::Wireguard>);
+    static_assert(sizeof(cntp::OwnedWireguardTunnel) == sizeof(cntp::WireguardTunnelHandle));
+    static_assert(
+        std::same_as<cntp::DeclaredWireguardPublicKey::tag_type, crucible::cntp::_wip::wip_source::Wireguard>);
     static_assert(!std::copy_constructible<cntp::WireguardSecretKeyBytes>);
     static_assert(!std::copy_constructible<cntp::WireguardConfig>);
     static_assert(cntp::CtxFitsWireguardMint<eff::ColdInitCtx>);

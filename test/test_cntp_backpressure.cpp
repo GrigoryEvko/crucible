@@ -17,20 +17,18 @@ namespace saf = crucible::safety;
 namespace {
 
 void test_admission_helpers() {
-    assert(cntp::backpressure_error_name(
-               cntp::BackpressureError::CreditOverflow) ==
-           std::string_view{"CreditOverflow"});
-    assert(cntp::admission_decision_kind_name(
-               cntp::AdmissionDecisionKind::RejectedResource) ==
-           std::string_view{"rejected_resource"});
+    assert(cntp::backpressure_error_name(cntp::BackpressureError::CreditOverflow)
+           == std::string_view{"CreditOverflow"});
+    assert(cntp::admission_decision_kind_name(cntp::AdmissionDecisionKind::RejectedResource)
+           == std::string_view{"rejected_resource"});
 
     auto fd = cntp::admit_socket_fd(11);
     auto credit = cntp::admit_backpressure_credit(4096);
     auto zero_credit = cntp::admit_backpressure_credit(0);
     auto limit = cntp::admit_connection_limit(8);
-    auto pressure = cntp::admit_resource_pressure_ppm(900'000);
-    auto bad_pressure = cntp::admit_resource_pressure_ppm(1'000'001);
-    auto resource_limit = cntp::admit_resource_limit_ppm(950'000);
+    auto pressure = cntp::admit_resource_pressure_ppm(900000);
+    auto bad_pressure = cntp::admit_resource_pressure_ppm(1000001);
+    auto resource_limit = cntp::admit_resource_limit_ppm(950000);
     auto bad_limit = cntp::admit_resource_limit_ppm(0);
 
     assert(fd.has_value());
@@ -40,19 +38,15 @@ void test_admission_helpers() {
     assert(limit.has_value());
     assert(pressure.has_value());
     assert(!bad_pressure.has_value());
-    assert(bad_pressure.error() ==
-           cntp::BackpressureError::InvalidResourcePressure);
+    assert(bad_pressure.error() == cntp::BackpressureError::InvalidResourcePressure);
     assert(resource_limit.has_value());
     assert(!bad_limit.has_value());
-    assert(bad_limit.error() ==
-           cntp::BackpressureError::InvalidResourceLimit);
+    assert(bad_limit.error() == cntp::BackpressureError::InvalidResourceLimit);
 
     auto request = cntp::mint_connection_request(*fd, *credit);
     assert(request.has_value());
-    auto nic_pressure =
-        cntp::mint_resource_pressure<effects::ResourceKind::NicQ>(900'000);
-    auto nic_limit =
-        cntp::mint_resource_limit<effects::ResourceKind::NicQ>(800'000);
+    auto nic_pressure = cntp::mint_resource_pressure<effects::ResourceKind::NicQ>(900000);
+    auto nic_limit = cntp::mint_resource_limit<effects::ResourceKind::NicQ>(800000);
     assert(nic_pressure.has_value());
     assert(nic_limit.has_value());
     assert(cntp::resource_pressure_exceeds(*nic_pressure, *nic_limit));
@@ -114,8 +108,7 @@ void test_credit_flow_control_parallel_grants() {
 
     auto total = controller.current_credit(fd);
     assert(total.has_value());
-    assert(total->value() ==
-           1u + static_cast<std::uint32_t>(kThreads * kGrantsPerThread));
+    assert(total->value() == 1u + static_cast<std::uint32_t>(kThreads * kGrantsPerThread));
 
     auto consume_all = cntp::admit_backpressure_credit(total->value()).value();
     assert(controller.consume_credit(bg, fd, consume_all).has_value());
@@ -160,8 +153,7 @@ void test_admission_controller() {
     effects::BgDrainCtx bg{};
     auto controller = cntp::mint_admission_controller<2, 2>(init);
 
-    auto nic_limit =
-        cntp::mint_resource_limit<effects::ResourceKind::NicQ>(900'000).value();
+    auto nic_limit = cntp::mint_resource_limit<effects::ResourceKind::NicQ>(900000).value();
     assert(controller.register_resource_limit(init, nic_limit).has_value());
 
     auto fd0 = cntp::admit_socket_fd(30).value();
@@ -173,7 +165,7 @@ void test_admission_controller() {
     auto req2 = cntp::mint_connection_request(fd2, credit).value();
 
     std::array<cntp::ResourcePressure, 1> low{{
-        cntp::mint_resource_pressure<effects::ResourceKind::NicQ>(100'000).value(),
+        cntp::mint_resource_pressure<effects::ResourceKind::NicQ>(100000).value(),
     }};
     auto accepted0 = controller.try_accept_connection(bg, req0, low);
     auto accepted1 = controller.try_accept_connection(bg, req1, low);
@@ -186,23 +178,21 @@ void test_admission_controller() {
 
     auto over_capacity = controller.try_accept_connection(bg, req2, low, 25);
     assert(over_capacity.has_value());
-    assert(over_capacity->value().kind ==
-           cntp::AdmissionDecisionKind::RejectedBackoff);
+    assert(over_capacity->value().kind == cntp::AdmissionDecisionKind::RejectedBackoff);
     assert(over_capacity->value().retry_after_ms == 25);
 
     controller.release_connection(bg);
     assert(controller.live_connections() == 1);
 
     std::array<cntp::ResourcePressure, 1> high{{
-        cntp::mint_resource_pressure<effects::ResourceKind::NicQ>(950'000).value(),
+        cntp::mint_resource_pressure<effects::ResourceKind::NicQ>(950000).value(),
     }};
     auto rejected = controller.try_accept_connection(bg, req2, high, 50);
     assert(rejected.has_value());
-    assert(rejected->value().kind ==
-           cntp::AdmissionDecisionKind::RejectedResource);
+    assert(rejected->value().kind == cntp::AdmissionDecisionKind::RejectedResource);
     assert(rejected->value().limiting_resource == effects::ResourceKind::NicQ);
-    assert(rejected->value().observed_ppm.value() == 950'000);
-    assert(rejected->value().threshold_ppm.value() == 900'000);
+    assert(rejected->value().observed_ppm.value() == 950000);
+    assert(rejected->value().threshold_ppm.value() == 900000);
     assert(controller.live_connections() == 1);
 
     std::printf("  test_admission_controller:    PASSED\n");
@@ -211,18 +201,13 @@ void test_admission_controller() {
 }  // namespace
 
 int main() {
-    static_assert(sizeof(cntp::PositiveBackpressureBytes) ==
-                  sizeof(std::uint32_t));
-    static_assert(sizeof(cntp::PositiveConnectionLimit) ==
-                  sizeof(std::uint16_t));
-    static_assert(sizeof(cntp::DeclaredAdmissionDecision) ==
-                  sizeof(cntp::AdmissionDecision));
+    static_assert(sizeof(cntp::PositiveBackpressureBytes) == sizeof(std::uint32_t));
+    static_assert(sizeof(cntp::PositiveConnectionLimit) == sizeof(std::uint16_t));
+    static_assert(sizeof(cntp::DeclaredAdmissionDecision) == sizeof(cntp::AdmissionDecision));
     static_assert(std::is_trivially_copyable_v<cntp::ConnectionRequest>);
     static_assert(std::is_trivially_copyable_v<cntp::ResourcePressure>);
     static_assert(std::is_trivially_copyable_v<cntp::AdmissionDecision>);
-    static_assert(std::same_as<
-                  cntp::DeclaredAdmissionDecision::tag_type,
-                  saf::source::AdmissionDecision>);
+    static_assert(std::same_as<cntp::DeclaredAdmissionDecision::tag_type, saf::source::AdmissionDecision>);
     static_assert(cntp::CtxFitsBackpressureMint<effects::ColdInitCtx>);
     static_assert(!cntp::CtxFitsBackpressureMint<effects::BgDrainCtx>);
     static_assert(cntp::CtxFitsBackpressureRuntime<effects::BgDrainCtx>);

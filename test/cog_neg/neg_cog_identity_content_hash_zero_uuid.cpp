@@ -53,10 +53,10 @@ constexpr cog::CogIdentity ZERO_UUID_FIXTURE{};
 // call not a constant expression, so the static_assert is ill-formed
 // — the build fails here.
 static_assert(cog::content_hash(ZERO_UUID_FIXTURE) == 0,
-    "GAPS-185: cog::content_hash MUST refuse zero-uuid CogIdentity at "
-    "the precondition contract.  If this static_assert ever evaluates "
-    "successfully, the KernelCache key axis is silently aliasing "
-    "every uninitialized Cog into the same slot — invalid compiled "
-    "kernels would replay across distinct hardware.");
+              "GAPS-185: cog::content_hash MUST refuse zero-uuid CogIdentity at "
+              "the precondition contract.  If this static_assert ever evaluates "
+              "successfully, the KernelCache key axis is silently aliasing "
+              "every uninitialized Cog into the same slot — invalid compiled "
+              "kernels would replay across distinct hardware.");
 
 int main() { return 0; }

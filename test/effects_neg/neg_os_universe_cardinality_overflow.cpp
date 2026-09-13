@@ -30,12 +30,11 @@ struct OverCardinalityUniverse {
     using atom_t = std::uint8_t;
     static constexpr std::size_t cardinality = 65;
 
-    static_assert(cardinality <= 64,
-        "[OsUniverse_Overflow] fixy-A3-018: synthetic test Universe "
-        "cardinality exceeds the uint64_t bitmask carrier width — "
-        "the production OsUniverse ships the same assertion to "
-        "foreclose the FOUND-I04 append-only extension landing a "
-        "65th atom silently.");
+    static_assert(cardinality <= 64, "[OsUniverse_Overflow] fixy-A3-018: synthetic test Universe "
+                                     "cardinality exceeds the uint64_t bitmask carrier width — "
+                                     "the production OsUniverse ships the same assertion to "
+                                     "foreclose the FOUND-I04 append-only extension landing a "
+                                     "65th atom silently.");
 };
 
 int main() { return 0; }

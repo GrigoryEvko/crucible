@@ -11,12 +11,10 @@ namespace proto = ::crucible::safety::proto;
 namespace {
 struct WorkItem {};
 struct FakeChannel {};
-}
+}  // namespace
 
 int main() {
-    [[maybe_unused]] proto::PermissionedSessionHandle<
-        proto::End,
-        proto::PermSet<WorkItem>,
-        FakeChannel> h{FakeChannel{}};
+    [[maybe_unused]] proto::PermissionedSessionHandle<proto::End, proto::PermSet<WorkItem>, FakeChannel> h{
+        FakeChannel{}};
     return 0;
 }

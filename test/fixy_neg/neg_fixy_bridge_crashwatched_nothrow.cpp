@@ -17,8 +17,8 @@
 #include <utility>
 
 namespace fbridge = crucible::fixy::bridge;
-namespace proto   = crucible::safety::proto;
-namespace eff     = crucible::effects;
+namespace proto = crucible::safety::proto;
+namespace eff = crucible::effects;
 using crucible::safety::OneShotFlag;
 
 struct DeadPeer {};
@@ -41,11 +41,7 @@ int main() {
     OneShotFlag flag;
     auto psh = proto::mint_permissioned_session<P>(ctx, Channel{});
 
-    fbridge::CrashWatchedHandle<
-        P,
-        Channel,
-        DeadPeer,
-        proto::CrashClass::NoThrow> bad{std::move(psh), flag};
+    fbridge::CrashWatchedHandle<P, Channel, DeadPeer, proto::CrashClass::NoThrow> bad{std::move(psh), flag};
     (void)bad;
     return 0;
 }

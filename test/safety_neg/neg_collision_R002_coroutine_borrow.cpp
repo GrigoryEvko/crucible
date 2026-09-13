@@ -46,29 +46,28 @@ namespace neg_collision_r002 {
 // R001 does not fire (no marks_hot_path).  R003 does not fire (no Bg
 // row).  R002 alone catches the Coroutine × Borrow dangling-on-resume
 // hazard.
-using Bad = fn::Fn<
-    int,                                       // 1  Type
-    fn::pred::True,                            // 2  Refinement
-    fn::UsageMode::Borrow,                     // 3  Usage — BORROW (R002 trigger
-                                                //                paired with Coroutine)
-    fx::Row<>,                                 // 4  EffectRow — empty (L007/R003 silent)
-    fn::SecLevel::Public,                      // 5  Security
-    fn::proto::None,                           // 6  Protocol
-    fn::lifetime::Static,                      // 7  Lifetime
-    fn::source::FromInternal,                  // 8  Source
-    fn::trust::Verified,                       // 9  Trust
-    fn::ReprKind::Opaque,                      // 10 Repr
-    fn::cost::Constant,                        // 11 Cost
-    fn::precision::Exact,                      // 12 Precision
-    fn::space::Bounded<sizeof(int)>,           // 13 Space
-    fn::OverflowMode::Trap,                    // 14 Overflow
-    fn::MutationMode::Immutable,               // 15 Mutation
-    fn::ReentrancyMode::Coroutine,             // 16 Reentrancy — COROUTINE (R002 trigger
-                                                //                paired with Borrow)
-    fn::size_pol::Sized<sizeof(int)>,          // 17 Size
-    /*Version=*/1,                             // 18 Version
-    fn::stale::Fresh                           // 19 Staleness
->;
+using Bad = fn::Fn<int,  // 1  Type
+                   fn::pred::True,  // 2  Refinement
+                   fn::UsageMode::Borrow,  // 3  Usage — BORROW (R002 trigger
+                   //                paired with Coroutine)
+                   fx::Row<>,  // 4  EffectRow — empty (L007/R003 silent)
+                   fn::SecLevel::Public,  // 5  Security
+                   fn::proto::None,  // 6  Protocol
+                   fn::lifetime::Static,  // 7  Lifetime
+                   fn::source::FromInternal,  // 8  Source
+                   fn::trust::Verified,  // 9  Trust
+                   fn::ReprKind::Opaque,  // 10 Repr
+                   fn::cost::Constant,  // 11 Cost
+                   fn::precision::Exact,  // 12 Precision
+                   fn::space::Bounded<sizeof(int)>,  // 13 Space
+                   fn::OverflowMode::Trap,  // 14 Overflow
+                   fn::MutationMode::Immutable,  // 15 Mutation
+                   fn::ReentrancyMode::Coroutine,  // 16 Reentrancy — COROUTINE (R002 trigger
+                   //                paired with Borrow)
+                   fn::size_pol::Sized<sizeof(int)>,  // 17 Size
+                   /*Version=*/1,  // 18 Version
+                   fn::stale::Fresh  // 19 Staleness
+                   >;
 
 }  // namespace neg_collision_r002
 

@@ -24,7 +24,7 @@
 #include <crucible/sessions/Session.h>
 
 namespace fsdelegate = ::crucible::fixy::sess::delegate;
-namespace proto      = ::crucible::safety::proto;
+namespace proto = ::crucible::safety::proto;
 
 namespace {
 struct Req {};

@@ -9,14 +9,13 @@
 namespace fn = crucible::safety::fn;
 
 namespace neg_collision_l002 {
-using Bad = fn::Fn<int, fn::pred::True, fn::UsageMode::Borrow,
-                   crucible::effects::Row<>, fn::SecLevel::Public>;
-}
+using Bad = fn::Fn<int, fn::pred::True, fn::UsageMode::Borrow, crucible::effects::Row<>, fn::SecLevel::Public>;
+}  // namespace neg_collision_l002
 
 namespace crucible::safety::fn::collision {
 template <>
 struct marks_async<::neg_collision_l002::Bad> : std::true_type {};
-}
+}  // namespace crucible::safety::fn::collision
 
 [[maybe_unused]] neg_collision_l002::Bad bad{};
 

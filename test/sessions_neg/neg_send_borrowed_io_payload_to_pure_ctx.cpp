@@ -7,7 +7,7 @@
 #include <crucible/effects/Computation.h>
 #include <crucible/sessions/SessionMint.h>
 
-namespace eff   = crucible::effects;
+namespace eff = crucible::effects;
 namespace proto = crucible::safety::proto;
 
 struct IoBuffer {};
@@ -16,11 +16,9 @@ struct Resource {};
 
 int main() {
     using IoValue = eff::Computation<eff::Row<eff::Effect::IO>, IoBuffer>;
-    using Proto = proto::Send<proto::Borrowed<IoValue, BufferPerm>,
-                              proto::End>;
+    using Proto = proto::Send<proto::Borrowed<IoValue, BufferPerm>, proto::End>;
 
     eff::HotFgCtx fg;
-    [[maybe_unused]] auto handle =
-        proto::mint_permissioned_session<Proto>(fg, Resource{});
+    [[maybe_unused]] auto handle = proto::mint_permissioned_session<Proto>(fg, Resource{});
     return 0;
 }

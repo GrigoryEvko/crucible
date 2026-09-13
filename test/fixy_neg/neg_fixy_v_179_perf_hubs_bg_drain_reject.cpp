@@ -27,13 +27,8 @@ namespace eff = ::crucible::effects;
 // mint_sense_hub from a bg-drain thread is a clear category error —
 // the privileged bpf()/perf_event_open/mmap startup set belongs to
 // Init.
-[[maybe_unused]] constexpr auto bad_dispatch =
-    ::crucible::perf::mint_sense_hub(
-        eff::BgDrainCtx{},
-        eff::Init{});
+[[maybe_unused]] constexpr auto bad_dispatch = ::crucible::perf::mint_sense_hub(eff::BgDrainCtx{}, eff::Init{});
 
 }  // namespace neg_fixy_v_179_perf_hubs_bg_drain
 
-int main() {
-    return 0;
-}
+int main() { return 0; }

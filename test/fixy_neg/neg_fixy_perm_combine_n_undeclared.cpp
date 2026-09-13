@@ -26,15 +26,14 @@ struct C {};
 }  // namespace neg_fixy_perm_combine_n_undeclared
 
 int main() {
-    namespace tags  = neg_fixy_perm_combine_n_undeclared;
+    namespace tags = neg_fixy_perm_combine_n_undeclared;
     namespace fperm = ::crucible::fixy::perm;
-    namespace safe  = ::crucible::safety;
+    namespace safe = ::crucible::safety;
 
     auto a = fperm::mint_permission_root<tags::A>();
     auto b = fperm::mint_permission_root<tags::B>();
     auto c = fperm::mint_permission_root<tags::C>();
-    auto whole = fperm::mint_permission_combine_n<tags::Parent>(
-        std::move(a), std::move(b), std::move(c));
+    auto whole = fperm::mint_permission_combine_n<tags::Parent>(std::move(a), std::move(b), std::move(c));
     safe::permission_drop(std::move(whole));
     return 0;
 }

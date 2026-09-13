@@ -26,7 +26,7 @@
 #include <utility>  // std::declval
 
 namespace fsview = ::crucible::fixy::sess::view;
-namespace proto  = ::crucible::safety::proto;
+namespace proto = ::crucible::safety::proto;
 
 namespace v063_neg_alpha {
 struct FakeResource {};
@@ -43,10 +43,9 @@ using SendHandle = proto::SessionHandle<SendProto, FakeResource, void>;
 // handle_is_at_v.  Unevaluated context avoids needing an actual
 // SessionHandle instance (whose Send-state destructor would fire
 // abandonment-check at scope exit).
-using BadView = decltype(fsview::mint_session_view<fsview::AtRecv>(
-    std::declval<v063_neg_alpha::SendHandle const&>()));
+using BadView = decltype(fsview::mint_session_view<fsview::AtRecv>(std::declval<v063_neg_alpha::SendHandle const&>()));
 
 int main() {
-    (void) sizeof(BadView);  // force resolution
+    (void)sizeof(BadView);  // force resolution
     return 0;
 }

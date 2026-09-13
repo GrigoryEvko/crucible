@@ -118,15 +118,15 @@ static void test_scalar_type_element_sizes() {
 static void test_bit_cast_round_trip() {
     // The representation is exactly the wrapped integer, so a bit_cast to
     // that integer and back is the identity.
-    OpIndex in{0x1234'5678u};
+    OpIndex in{0x12345678u};
     auto raw = std::bit_cast<uint32_t>(in);
-    assert(raw == 0x1234'5678u);
+    assert(raw == 0x12345678u);
     auto back = std::bit_cast<OpIndex>(raw);
     assert(back == in);
 
-    SchemaHash h_in{0xDEAD'BEEF'CAFE'BABEULL};
+    SchemaHash h_in{0xDEADBEEFCAFEBABEULL};
     auto h_raw = std::bit_cast<uint64_t>(h_in);
-    assert(h_raw == 0xDEAD'BEEF'CAFE'BABEULL);
+    assert(h_raw == 0xDEADBEEFCAFEBABEULL);
     std::printf("  test_bit_cast:                  PASSED\n");
 }
 

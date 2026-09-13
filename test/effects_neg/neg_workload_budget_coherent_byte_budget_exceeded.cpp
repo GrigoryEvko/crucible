@@ -62,17 +62,16 @@ struct stage_inline_safe<::BigStage> : std::true_type {};
 int main() {
     using BigPipeline = cc::Pipeline<BigStage>;
     static_assert(BigPipeline::aggregate_per_call_working_set == 256 * KiB,
-        "smoke: aggregate WS must be 256 KiB to make this fixture sound.");
+                  "smoke: aggregate WS must be 256 KiB to make this fixture sound.");
 
     // Ctx declares ByteBudget<8 KiB> — a third of the pipeline's WS.
     // WorkloadBudgetCoherent must reject the pair.
-    using TooTightCtx = decltype(eff::BgDrainCtx{}.with_workload<
-        eff::ctx_workload::ByteBudget<8 * KiB>>());
+    using TooTightCtx = decltype(eff::BgDrainCtx{}.with_workload<eff::ctx_workload::ByteBudget<8 * KiB>>());
 
     // The load-bearing static_assert — MUST FAIL.
     static_assert(cc::WorkloadBudgetCoherent<TooTightCtx, BigPipeline>,
-        "ctx ByteBudget<8 KiB> contradicts pipeline aggregate WS 256 KiB "
-        "— WorkloadBudgetCoherent must reject this pair.");
+                  "ctx ByteBudget<8 KiB> contradicts pipeline aggregate WS 256 KiB "
+                  "— WorkloadBudgetCoherent must reject this pair.");
 
     return 0;
 }

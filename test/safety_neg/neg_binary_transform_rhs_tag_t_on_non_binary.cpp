@@ -17,8 +17,7 @@ inline void neg_witness_unary_int(int) noexcept {}
 
 int main() {
     // arity 1 → fails BinaryTransform's `arity_v == 2` clause.
-    using Tag = crucible::safety::extract::binary_transform_rhs_tag_t<
-        &::neg_witness_unary_int>;
+    using Tag = crucible::safety::extract::binary_transform_rhs_tag_t<&::neg_witness_unary_int>;
     Tag const t{};
     (void)t;
     return 0;

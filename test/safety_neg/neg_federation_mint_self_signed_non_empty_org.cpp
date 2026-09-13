@@ -27,17 +27,15 @@ namespace neg_fed_non_empty_org {
 struct NonEmptyOrg {
     int sentinel_field = 0;
 };
-}
+}  // namespace neg_fed_non_empty_org
 
 int main() {
     // Should FAIL: `NonEmptyOrg` is a class but NOT empty →
     // FederationOrgTag<NonEmptyOrg> is false → mint_self_signed_
     // handshake<NonEmptyOrg> requires-clause rejects the
     // substitution.
-    auto handshake = perm::mint_self_signed_handshake<
-        neg_fed_non_empty_org::NonEmptyOrg>(
-        perm::PeerKeyFingerprint{0xDEADBEEFULL},
-        perm::Nonce{0xC0FFEEULL});
+    auto handshake = perm::mint_self_signed_handshake<neg_fed_non_empty_org::NonEmptyOrg>(
+        perm::PeerKeyFingerprint{0xDEADBEEFULL}, perm::Nonce{0xC0FFEEULL});
     (void)handshake;
     return 0;
 }

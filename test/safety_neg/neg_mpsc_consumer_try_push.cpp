@@ -19,8 +19,7 @@ struct BadChan {};
 
 void exercise_consumer_try_push() {
     crucible::concurrent::PermissionedMpscChannel<int, 64, BadChan> ch;
-    auto cons_perm = crucible::safety::mint_permission_root<
-        crucible::concurrent::mpsc_tag::Consumer<BadChan>>();
+    auto cons_perm = crucible::safety::mint_permission_root<crucible::concurrent::mpsc_tag::Consumer<BadChan>>();
     auto consumer = ch.consumer(std::move(cons_perm));
 
     // CONSUMER attempting PUSH — try_push is structurally absent
@@ -30,4 +29,7 @@ void exercise_consumer_try_push() {
 
 }  // namespace
 
-int main() { exercise_consumer_try_push(); return 0; }
+int main() {
+    exercise_consumer_try_push();
+    return 0;
+}

@@ -29,7 +29,7 @@ using crucible::safety::Monotonic;
 
 int main() {
     Monotonic<uint32_t> counter{0};
-    uint32_t snapshot = counter;   // ← MUST fail: no implicit conversion
+    uint32_t snapshot = counter;  // ← MUST fail: no implicit conversion
     (void)snapshot;
     return 0;
 }

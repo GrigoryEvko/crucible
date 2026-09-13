@@ -39,7 +39,7 @@ using namespace crucible::safety;
 // ErrorReturn-or-stronger.  Models the OneShotFlag::try_
 // acknowledge_error_return ⇄ recovery-pipeline pattern.
 template <typename W>
-    requires (W::template satisfies<CrashClass_v::ErrorReturn>)
+    requires(W::template satisfies<CrashClass_v::ErrorReturn>)
 static bool error_return_recovery_consumer(W wrapped) noexcept {
     return std::move(wrapped).consume();
 }

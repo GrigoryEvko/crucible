@@ -30,20 +30,15 @@ struct RealMessage {};
 struct StrayMessage {};  // unrelated payload type
 
 // Receiver-side: offers a single branch carrying RealMessage payload.
-using ServerProto =
-    proto::Offer<proto::Sender<BobRole>,
-                 proto::Recv<RealMessage, proto::End>>;
+using ServerProto = proto::Offer<proto::Sender<BobRole>, proto::Recv<RealMessage, proto::End>>;
 
 // Sender-side: shape matches (one branch, Select-flavoured) but
 // types the payload as StrayMessage, not RealMessage.
 // `dual_of_t<ServerProto>` = `Select<Send<RealMessage, End>>`,
 // which is NOT equal to `Select<Send<StrayMessage, End>>`.  The
 // reverse orientation also fails for the same payload-type reason.
-using ClientProto =
-    proto::Select<proto::Send<StrayMessage, proto::End>>;
+using ClientProto = proto::Select<proto::Send<StrayMessage, proto::End>>;
 
-void compile_time_reject() {
-    proto::ensure_dual<ClientProto, ServerProto>();
-}
+void compile_time_reject() { proto::ensure_dual<ClientProto, ServerProto>(); }
 
 int main() { return 0; }

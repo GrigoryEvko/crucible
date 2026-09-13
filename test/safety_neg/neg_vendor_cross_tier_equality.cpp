@@ -15,7 +15,7 @@
 using namespace crucible::safety;
 
 int main() {
-    Vendor<VendorBackend_v::NV,  int> nv_value{42};
+    Vendor<VendorBackend_v::NV, int> nv_value{42};
     Vendor<VendorBackend_v::AMD, int> amd_value{42};
 
     // Should FAIL: operator== for Vendor<NV, int> takes two

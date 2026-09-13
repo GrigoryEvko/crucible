@@ -24,11 +24,10 @@ namespace fd = crucible::fixy::diag;
 struct DiagCatalogNegFixture2_Marker {};
 
 int main() {
-    static_assert(fd::is_fixy_diag_v<int>,
-        "fixy::diag::is_fixy_diag_v<int> must reject — int is not a "
-        "FixyCatalog entry.  FixyCatalog is closed to the twenty "
-        "FixyNotEngaged_<Axis> tag classes; inheriting tag_base is "
-        "NOT sufficient for catalog membership.");
+    static_assert(fd::is_fixy_diag_v<int>, "fixy::diag::is_fixy_diag_v<int> must reject — int is not a "
+                                           "FixyCatalog entry.  FixyCatalog is closed to the twenty "
+                                           "FixyNotEngaged_<Axis> tag classes; inheriting tag_base is "
+                                           "NOT sufficient for catalog membership.");
     (void)sizeof(DiagCatalogNegFixture2_Marker);
     return 0;
 }

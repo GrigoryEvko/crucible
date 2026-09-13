@@ -43,18 +43,16 @@
 #include <utility>
 
 namespace {
-    // Production-shape tag — a CSL provenance label.  Any empty
-    // class type works; downstream code uses tag names like
-    // `region::Train`, `region::Validate`, etc.
-    struct RegionTag {};
-}
+// Production-shape tag — a CSL provenance label.  Any empty
+// class type works; downstream code uses tag names like
+// `region::Train`, `region::Validate`, etc.
+struct RegionTag {};
+}  // namespace
 
 // Anchor: move-construct an OwnedRegion.  Move IS allowed —
 // exclusive-ownership transfer.  This call compiles.
 [[maybe_unused]] static ::crucible::safety::OwnedRegion<int, RegionTag>
-anchor_owned_region_move(
-    ::crucible::safety::OwnedRegion<int, RegionTag>&& source)
-{
+anchor_owned_region_move(::crucible::safety::OwnedRegion<int, RegionTag>&& source) {
     return std::move(source);
 }
 
@@ -64,9 +62,7 @@ anchor_owned_region_move(
 // triggers the deletion.  GCC emits "use of deleted function" with
 // the linearity-duplication reason.
 [[maybe_unused]] static ::crucible::safety::OwnedRegion<int, RegionTag>
-offending_owned_region_copy(
-    const ::crucible::safety::OwnedRegion<int, RegionTag>& source)
-{
+offending_owned_region_copy(const ::crucible::safety::OwnedRegion<int, RegionTag>& source) {
     return ::crucible::safety::OwnedRegion<int, RegionTag>{source};
     // ERROR: copy ctor deleted — Permission linearity protected.
 }

@@ -32,7 +32,7 @@ namespace fs = ::crucible::fixy::simd;
 // NOT 512 — so the consistency assert reds.
 inline constexpr std::size_t kGroupBytes = 16;
 static_assert(kGroupBytes * 8u == std::to_underlying(fs::WidthBits::Bits512),
-    "FIXY-V-262: a 16-byte control-byte group is 128 bits and must declare "
-    "simd::width_128 — declaring width_512 is an arm-declaration drift bug.");
+              "FIXY-V-262: a 16-byte control-byte group is 128 bits and must declare "
+              "simd::width_128 — declaring width_512 is an arm-declaration drift bug.");
 
 int main() { return 0; }

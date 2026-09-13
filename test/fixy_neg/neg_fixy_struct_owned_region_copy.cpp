@@ -18,8 +18,8 @@
 #include <utility>
 
 namespace fstr = crucible::fixy::struct_;
-namespace saf  = crucible::safety;
-namespace eff  = crucible::effects;
+namespace saf = crucible::safety;
+namespace eff = crucible::effects;
 
 namespace neg_fixy_struct_owned_region_copy {
 

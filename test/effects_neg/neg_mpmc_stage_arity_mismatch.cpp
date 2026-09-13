@@ -26,15 +26,11 @@ using Out = conc::PermissionedSpscChannel<int, 64, OutTag>;
 using ConsEp = conc::Endpoint<In, conc::Direction::Consumer, eff::HotFgCtx>;
 using ProdEp = conc::Endpoint<Out, conc::Direction::Producer, eff::HotFgCtx>;
 
-inline void fan_in_body(In::ConsumerHandle&&,
-                        In::ConsumerHandle&&,
-                        In::ConsumerHandle&&,
+inline void fan_in_body(In::ConsumerHandle&&, In::ConsumerHandle&&, In::ConsumerHandle&&,
                         Out::ProducerHandle&&) noexcept {}
 
 using Bad = decltype(conc::mint_mpmc_stage_from_endpoints<&fan_in_body>(
-    std::declval<eff::HotFgCtx const&>(),
-    std::declval<ConsEp&&>(),
-    std::declval<ConsEp&&>(),
+    std::declval<eff::HotFgCtx const&>(), std::declval<ConsEp&&>(), std::declval<ConsEp&&>(),
     std::declval<ProdEp&&>()));
 
 int main() { return 0; }

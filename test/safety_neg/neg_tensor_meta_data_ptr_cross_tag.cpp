@@ -15,13 +15,12 @@
 #include <crucible/safety/Tagged.h>
 
 int main() {
-  using SanitizedPtr = crucible::safety::Tagged<
-      void*, crucible::safety::source::Sanitized>;
+    using SanitizedPtr = crucible::safety::Tagged<void*, crucible::safety::source::Sanitized>;
 
-  crucible::TensorMeta meta{};
-  SanitizedPtr sanitized{nullptr};
+    crucible::TensorMeta meta{};
+    SanitizedPtr sanitized{nullptr};
 
-  // MUST fail: Tagged<void*, Sanitized> is not ExternalDataPtr.
-  meta.data_ptr = sanitized;
-  return 0;
+    // MUST fail: Tagged<void*, Sanitized> is not ExternalDataPtr.
+    meta.data_ptr = sanitized;
+    return 0;
 }

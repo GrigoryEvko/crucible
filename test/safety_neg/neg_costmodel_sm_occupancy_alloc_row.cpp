@@ -16,7 +16,7 @@ namespace eff = ::crucible::effects;
 
 int main() {
     auto hw = ::crucible::blackwell_b200();
-    (void)::crucible::sm_occupancy<eff::Row<eff::Effect::Alloc>>(
-        ::crucible::ValidRegsPerThread{std::uint16_t{32}}, 0u, 8u, hw);
+    (void)::crucible::sm_occupancy<eff::Row<eff::Effect::Alloc>>(::crucible::ValidRegsPerThread{std::uint16_t{32}}, 0u,
+                                                                 8u, hw);
     return 0;
 }

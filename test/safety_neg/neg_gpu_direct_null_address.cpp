@@ -9,6 +9,4 @@ namespace gd = crucible::cntp::_wip::gpu_direct;
 
 constexpr gd::GpuVirtualAddress bad_address{std::uintptr_t{0}};
 
-int main() {
-    return static_cast<int>(bad_address.value());
-}
+int main() { return static_cast<int>(bad_address.value()); }

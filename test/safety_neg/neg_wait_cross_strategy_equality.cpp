@@ -16,7 +16,7 @@ using namespace crucible::safety;
 
 int main() {
     Wait<WaitStrategy_v::SpinPause, int> spin_value{42};
-    Wait<WaitStrategy_v::Block,     int> block_value{42};
+    Wait<WaitStrategy_v::Block, int> block_value{42};
 
     // Should FAIL: operator== for Wait<SpinPause, int> takes two
     // Wait<SpinPause, int>&; block_value is Wait<Block, int>.

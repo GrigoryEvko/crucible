@@ -19,10 +19,10 @@
 #include <crucible/SchemaTable.h>
 
 int main() {
-  crucible::SchemaTable table;
+    crucible::SchemaTable table;
 
-  // MUST fail: lookup() returns SchemaTable::LookupName, not raw
-  // const char*.
-  const char* raw = table.lookup(crucible::SchemaHash{0xA11CE});
-  return raw == nullptr ? 0 : 1;
+    // MUST fail: lookup() returns SchemaTable::LookupName, not raw
+    // const char*.
+    const char* raw = table.lookup(crucible::SchemaHash{0xA11CE});
+    return raw == nullptr ? 0 : 1;
 }

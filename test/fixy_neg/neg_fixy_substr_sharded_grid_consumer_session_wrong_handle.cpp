@@ -25,22 +25,20 @@
 #include <crucible/effects/ExecCtx.h>
 #include <crucible/fixy/Substr.h>
 
-namespace fsg  = ::crucible::fixy::substr::sharded_grid;
+namespace fsg = ::crucible::fixy::substr::sharded_grid;
 namespace conc = ::crucible::concurrent;
-namespace eff  = ::crucible::effects;
+namespace eff = ::crucible::effects;
 
 namespace neg_fixy_sg_consumer_session_wrong_handle {
 struct UserTag {};
 using Grid = conc::PermissionedShardedGrid<int, 2, 3, 8, UserTag>;
-}
+}  // namespace neg_fixy_sg_consumer_session_wrong_handle
 
 int main() {
     eff::HotFgCtx ctx{};
     int not_a_handle = 0;
 
-    auto bad = fsg::mint_consumer_session<
-        neg_fixy_sg_consumer_session_wrong_handle::Grid, 0>(
-            ctx, not_a_handle);
+    auto bad = fsg::mint_consumer_session<neg_fixy_sg_consumer_session_wrong_handle::Grid, 0>(ctx, not_a_handle);
     (void)bad;
     return 0;
 }

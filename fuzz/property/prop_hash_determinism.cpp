@@ -27,8 +27,8 @@ int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
     const Config cfg = parse_args(argc, argv);
 
-    return run("compute_recipe_hash determinism", cfg,
-        [](Rng& rng) { return random_recipe(rng); },
+    return run(
+        "compute_recipe_hash determinism", cfg, [](Rng& rng) { return random_recipe(rng); },
         [](const NumericalRecipe& r) {
             const auto h0 = compute_recipe_hash(r);
             for (int k = 0; k < 8; ++k) {

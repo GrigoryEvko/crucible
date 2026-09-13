@@ -56,17 +56,15 @@ struct ThrowingCallable {
 namespace crucible::safety {
 
 template <>
-struct splits_into_pack<
-    neg_permission_fork_callable_carrying_throws_grant_rejected::Whole,
-    neg_permission_fork_callable_carrying_throws_grant_rejected::Left,
-    neg_permission_fork_callable_carrying_throws_grant_rejected::Right>
-    : std::true_type {};
+struct splits_into_pack<neg_permission_fork_callable_carrying_throws_grant_rejected::Whole,
+                        neg_permission_fork_callable_carrying_throws_grant_rejected::Left,
+                        neg_permission_fork_callable_carrying_throws_grant_rejected::Right> : std::true_type {};
 
 }  // namespace crucible::safety
 
 int main() {
     namespace tags = neg_permission_fork_callable_carrying_throws_grant_rejected;
-    namespace eff  = ::crucible::effects;
+    namespace eff = ::crucible::effects;
     namespace safe = ::crucible::safety;
     namespace ctrl = ::crucible::fixy::ctrl;
 
@@ -78,12 +76,9 @@ int main() {
     // static_assert in mint_permission_fork fires, the build reddens.
     //
     // If this file compiles, V-087's type-level reject regressed.
-    auto rebuilt = safe::mint_permission_fork<tags::Left, tags::Right>(
-        safe::PermissionForkSpawnCtx{},
-        std::move(whole),
-        tags::ThrowingCallable<ctrl::throws>{},
-        tags::ThrowingCallable<ctrl::throws>{}
-    );
+    auto rebuilt = safe::mint_permission_fork<tags::Left, tags::Right>(safe::PermissionForkSpawnCtx{}, std::move(whole),
+                                                                       tags::ThrowingCallable<ctrl::throws>{},
+                                                                       tags::ThrowingCallable<ctrl::throws>{});
     safe::permission_drop(std::move(rebuilt));
     return 0;
 }

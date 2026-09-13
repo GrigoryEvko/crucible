@@ -8,6 +8,6 @@
 #include <crucible/ExprPool.h>
 
 int main() {
-  constexpr crucible::ExprPool::IntCacheLiteral bad{-129};
-  (void)bad;
+    constexpr crucible::ExprPool::IntCacheLiteral bad{-129};
+    (void)bad;
 }

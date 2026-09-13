@@ -55,12 +55,10 @@ int main() {
     auto view = c.mint_open_view();
     Arena arena;
     MetaLog log;
-    auto* region = arena.alloc_obj<RegionNode>(
-        crucible::effects::testing::test().alloc);
+    auto* region = arena.alloc_obj<RegionNode>(crucible::effects::testing::test().alloc);
     region->content_hash = ContentHash{0xDEADBEEF};
 
-    OpaqueLifetime<Lifetime_v::PER_REQUEST, const RegionNode*>
-        request_scoped{region};
+    OpaqueLifetime<Lifetime_v::PER_REQUEST, const RegionNode*> request_scoped{region};
 
     // Should FAIL: commit_per_program requires satisfies<PER_PROGRAM>;
     // PER_REQUEST is strictly weaker → leq(PER_PROGRAM, PER_REQUEST)

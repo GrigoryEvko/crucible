@@ -42,8 +42,7 @@ int main() {
     // (`non_zero(v)`) to be exercised at compile time.
     // MerkleHash{uint64_t{0}}.raw() == 0 → non_zero(v) == false →
     // contract violation → not a constant expression → ill-formed.
-    constexpr crucible::ValidMerkleRoot bad{
-        crucible::MerkleHash{uint64_t{0}}};
+    constexpr crucible::ValidMerkleRoot bad{crucible::MerkleHash{uint64_t{0}}};
     (void)bad;
     return 0;
 }

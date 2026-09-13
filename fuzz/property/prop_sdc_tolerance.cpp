@@ -86,21 +86,31 @@ struct FloatSpec {
 template <typename T>
 [[nodiscard]] T gen_int(Rng& rng) noexcept {
     switch (rng.next_below(8u)) {
-        case 0: return T{0};
-        case 1: return T{1};
-        case 2: return std::numeric_limits<T>::max();
-        case 3: return std::numeric_limits<T>::min();
-        case 4: return static_cast<T>(~T{0});  // all-ones: -1 signed / max unsigned
-        default: return static_cast<T>(rng.next64());
+        case 0:
+            return T{0};
+        case 1:
+            return T{1};
+        case 2:
+            return std::numeric_limits<T>::max();
+        case 3:
+            return std::numeric_limits<T>::min();
+        case 4:
+            return static_cast<T>(~T{0});  // all-ones: -1 signed / max unsigned
+        default:
+            return static_cast<T>(rng.next64());
     }
 }
 
 [[nodiscard]] std::uint64_t gen_tolerance(Rng& rng) noexcept {
     switch (rng.next_below(6u)) {
-        case 0: return 0u;
-        case 1: return 1u;
-        case 2: return std::numeric_limits<std::uint64_t>::max();
-        case 3: return rng.next_below(16u);
+        case 0:
+            return 0u;
+        case 1:
+            return 1u;
+        case 2:
+            return std::numeric_limits<std::uint64_t>::max();
+        case 3:
+            return rng.next_below(16u);
         default: {
             const std::uint32_t bits = rng.next_below(64u);
             return bits == 0u ? 0u : (rng.next64() >> (64u - bits));
@@ -127,16 +137,26 @@ template <typename T>
 template <typename T>
 [[nodiscard]] T gen_float(Rng& rng) noexcept {
     switch (rng.next_below(12u)) {
-        case 0: return T{0};
-        case 1: return -T{0};
-        case 2: return T{1};
-        case 3: return T{-1};
-        case 4: return std::numeric_limits<T>::infinity();
-        case 5: return -std::numeric_limits<T>::infinity();
-        case 6: return std::numeric_limits<T>::quiet_NaN();
-        case 7: return std::numeric_limits<T>::max();
-        case 8: return std::numeric_limits<T>::lowest();
-        case 9: return std::numeric_limits<T>::denorm_min();
+        case 0:
+            return T{0};
+        case 1:
+            return -T{0};
+        case 2:
+            return T{1};
+        case 3:
+            return T{-1};
+        case 4:
+            return std::numeric_limits<T>::infinity();
+        case 5:
+            return -std::numeric_limits<T>::infinity();
+        case 6:
+            return std::numeric_limits<T>::quiet_NaN();
+        case 7:
+            return std::numeric_limits<T>::max();
+        case 8:
+            return std::numeric_limits<T>::lowest();
+        case 9:
+            return std::numeric_limits<T>::denorm_min();
         default:
             if constexpr (sizeof(T) == 4) {
                 return std::bit_cast<T>(rng.next32());
@@ -148,24 +168,22 @@ template <typename T>
 
 template <typename T>
 [[nodiscard]] int run_int(const char* name, crucible::fuzz::prop::Config cfg) {
-    return crucible::fuzz::prop::run(name, cfg,
+    return crucible::fuzz::prop::run(
+        name, cfg,
         [](Rng& rng) noexcept -> IntSpec<T> {
             return IntSpec<T>{gen_int<T>(rng), gen_int<T>(rng), gen_tolerance(rng)};
         },
         [](const IntSpec<T>& spec) noexcept -> bool {
             const bool got = det::tolerance_equal<T>(spec.a, spec.b, spec.tolerance);
-            const bool want = wide_abs_diff<T>(spec.a, spec.b) <=
-                              static_cast<wide_u>(spec.tolerance);
+            const bool want = wide_abs_diff<T>(spec.a, spec.b) <= static_cast<wide_u>(spec.tolerance);
             if (got != want) return false;
             if (det::tolerance_equal<T>(spec.b, spec.a, spec.tolerance) != got) return false;
             if (!det::tolerance_equal<T>(spec.a, spec.a, spec.tolerance)) return false;
             if (det::bitwise_equal<T>(spec.a, spec.b) != (spec.a == spec.b)) return false;
-            if (det::equivalent<T>(spec.a, spec.b,
-                    SdcComparisonStrategy::ArithmeticTolerance, spec.tolerance) != got) {
+            if (det::equivalent<T>(spec.a, spec.b, SdcComparisonStrategy::ArithmeticTolerance, spec.tolerance) != got) {
                 return false;
             }
-            if (det::equivalent<T>(spec.a, spec.b,
-                    SdcComparisonStrategy::BitwiseEqual, spec.tolerance)
+            if (det::equivalent<T>(spec.a, spec.b, SdcComparisonStrategy::BitwiseEqual, spec.tolerance)
                 != det::bitwise_equal<T>(spec.a, spec.b)) {
                 return false;
             }
@@ -175,7 +193,8 @@ template <typename T>
 
 template <typename T>
 [[nodiscard]] int run_float(const char* name, crucible::fuzz::prop::Config cfg) {
-    return crucible::fuzz::prop::run(name, cfg,
+    return crucible::fuzz::prop::run(
+        name, cfg,
         [](Rng& rng) noexcept -> FloatSpec<T> {
             return FloatSpec<T>{gen_float<T>(rng), gen_float<T>(rng), gen_tolerance(rng)};
         },
@@ -192,19 +211,16 @@ template <typename T>
             // A NaN operand can never be within tolerance.
             if ((std::isnan(a) || std::isnan(b)) && got) return false;
             // Tolerance-monotonicity: equal at t ⇒ equal at the max tol.
-            if (got && !det::tolerance_equal<T>(a, b,
-                    std::numeric_limits<std::uint64_t>::max())) {
+            if (got && !det::tolerance_equal<T>(a, b, std::numeric_limits<std::uint64_t>::max())) {
                 return false;
             }
             // equal at 0 ⇒ equal at any t (delta==0 ≤ every tolerance).
             if (det::tolerance_equal<T>(a, b, 0u) && !got) return false;
             // equivalent() dispatch.
-            if (det::equivalent<T>(a, b, SdcComparisonStrategy::ArithmeticTolerance, tol)
-                != got) {
+            if (det::equivalent<T>(a, b, SdcComparisonStrategy::ArithmeticTolerance, tol) != got) {
                 return false;
             }
-            if (det::equivalent<T>(a, b, SdcComparisonStrategy::BitwiseEqual, tol)
-                != det::bitwise_equal<T>(a, b)) {
+            if (det::equivalent<T>(a, b, SdcComparisonStrategy::BitwiseEqual, tol) != det::bitwise_equal<T>(a, b)) {
                 return false;
             }
             return true;
@@ -217,7 +233,7 @@ int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
 
     Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 2'000'000) cfg.iterations = 2'000'000;
+    if (cfg.iterations > 2000000) cfg.iterations = 2000000;
 
     int rc = 0;
     rc |= run_int<std::int8_t>("sdc_tol_i8", cfg);

@@ -25,8 +25,8 @@
 
 // Should FAIL at compile time: `void` is not in the allow-list.
 static_assert(::crucible::detail_reflect::IsReflectFieldSupported<void>,
-    "WRAP-Reflect-4 #985 fixture: this static_assert MUST fail "
-    "at compile time because `void` is excluded from the "
-    "IsReflectFieldSupported allow-list.");
+              "WRAP-Reflect-4 #985 fixture: this static_assert MUST fail "
+              "at compile time because `void` is excluded from the "
+              "IsReflectFieldSupported allow-list.");
 
 int main() { return 0; }

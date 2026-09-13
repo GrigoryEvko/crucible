@@ -10,6 +10,6 @@
 #include <crucible/ExprPool.h>
 
 int main() {
-  constexpr crucible::ExprPool::Capacity bad{std::size_t{12}};
-  (void)bad;
+    constexpr crucible::ExprPool::Capacity bad{std::size_t{12}};
+    (void)bad;
 }

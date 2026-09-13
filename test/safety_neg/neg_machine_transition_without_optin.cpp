@@ -27,15 +27,13 @@
 #include <crucible/safety/Machine.h>
 
 namespace {
-    struct Disconnected {};
-    struct Connected    {};
-    // NB: deliberately NO CRUCIBLE_ALLOW_MACHINE_TRANSITION(Disconnected,
-    // Connected) — the absence is the violation we're witnessing.
-}
+struct Disconnected {};
+struct Connected {};
+// NB: deliberately NO CRUCIBLE_ALLOW_MACHINE_TRANSITION(Disconnected,
+// Connected) — the absence is the violation we're witnessing.
+}  // namespace
 
-[[maybe_unused]] static auto anchor_machine_mint() {
-    return ::crucible::safety::mint_machine<Disconnected>();
-}
+[[maybe_unused]] static auto anchor_machine_mint() { return ::crucible::safety::mint_machine<Disconnected>(); }
 
 // VIOLATION: transition_to<Connected> on a Machine<Disconnected>
 // requires `MachineTransition<Disconnected, Connected>`, which is
@@ -44,8 +42,7 @@ namespace {
 // MachineTransition" not satisfied.
 [[maybe_unused]] static auto offending_transition() {
     auto m = ::crucible::safety::mint_machine<Disconnected>();
-    return ::crucible::safety::transition_to<Connected>(
-        std::move(m), Connected{});                   // ERROR: not opted in
+    return ::crucible::safety::transition_to<Connected>(std::move(m), Connected{});  // ERROR: not opted in
 }
 
 int main() { return 0; }

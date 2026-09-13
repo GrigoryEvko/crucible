@@ -35,7 +35,7 @@ int main() {
     saf::Saturated<unsigned long> sat = saf::add_sat_checked<unsigned long>(10, 20);
     // Bridge fires: implicit Saturated<unsigned long> → unsigned long
     // is rejected by the explicit conversion operator.
-    unsigned long bad = sat;   // ← compile error here
+    unsigned long bad = sat;  // ← compile error here
     (void)bad;
     return 0;
 }

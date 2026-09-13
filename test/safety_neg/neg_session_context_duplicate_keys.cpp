@@ -13,9 +13,7 @@ struct SessA {};
 struct RoleA {};
 
 // Two entries with identical (SessA, RoleA) keys — ambiguous.
-using BadGamma = Context<
-    Entry<SessA, RoleA, End>,
-    Entry<SessA, RoleA, Send<int, End>>>;
+using BadGamma = Context<Entry<SessA, RoleA, End>, Entry<SessA, RoleA, Send<int, End>>>;
 
 int main() {
     // BadGamma's static_assert fires at instantiation.

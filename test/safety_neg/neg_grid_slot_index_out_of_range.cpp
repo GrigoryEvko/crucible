@@ -26,12 +26,14 @@ void exercise_oob_slot() {
     // unsafe outside test code but works for the negative witness:
     // even if the user manages to construct the type, the producer<I>
     // factory's static_assert fires.
-    auto fake = crucible::safety::mint_permission_root<
-        crucible::concurrent::grid_tag::Producer<BadGrid, 5>>();
+    auto fake = crucible::safety::mint_permission_root<crucible::concurrent::grid_tag::Producer<BadGrid, 5>>();
 
     [[maybe_unused]] auto p = grid.template producer<5>(std::move(fake));
 }
 
 }  // namespace
 
-int main() { exercise_oob_slot(); return 0; }
+int main() {
+    exercise_oob_slot();
+    return 0;
+}

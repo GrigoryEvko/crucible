@@ -21,10 +21,7 @@ int main() {
     using ::crucible::warden::DeadlineWatchdog;
     using ::crucible::warden::Policy;
 
-    DeadlineWatchdog watchdog{
-        /*senses=*/nullptr,
-        Policy::production(),
-        ::crucible::effects::testing::init()};
+    DeadlineWatchdog watchdog{/*senses=*/nullptr, Policy::production(), ::crucible::effects::testing::init()};
 
     // Should FAIL: 7 (int) is not an effects::IsExecCtx.
     auto v = watchdog.observe(7);

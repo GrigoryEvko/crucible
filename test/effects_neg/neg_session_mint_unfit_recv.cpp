@@ -13,7 +13,7 @@
 #include <crucible/sessions/SessionMint.h>
 #include <crucible/effects/Capability.h>
 
-namespace eff   = crucible::effects;
+namespace eff = crucible::effects;
 namespace proto = crucible::safety::proto;
 
 struct DummyResource {
@@ -22,12 +22,12 @@ struct DummyResource {
 
 int main() {
     // Receiving an Alloc-conveying capability should be rejected on Fg.
-    using AllocCap   = eff::Capability<eff::Effect::Alloc, eff::Bg>;
-    using RecvAlloc  = proto::Recv<AllocCap, proto::End>;
+    using AllocCap = eff::Capability<eff::Effect::Alloc, eff::Bg>;
+    using RecvAlloc = proto::Recv<AllocCap, proto::End>;
 
     eff::HotFgCtx fg;
     DummyResource res;
-    auto bad = proto::mint_permissioned_session<RecvAlloc>(fg, res); // CtxFitsProtocol fails
+    auto bad = proto::mint_permissioned_session<RecvAlloc>(fg, res);  // CtxFitsProtocol fails
     (void)bad;
     return 0;
 }

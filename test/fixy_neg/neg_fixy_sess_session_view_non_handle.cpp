@@ -22,7 +22,7 @@
 #include <crucible/sessions/SessionView.h>
 #include <crucible/fixy/Sess.h>
 
-namespace sp    = crucible::safety::proto;
+namespace sp = crucible::safety::proto;
 namespace fsess = crucible::fixy::sess;
 
 namespace neg_fixy_sess_session_view_non_handle {

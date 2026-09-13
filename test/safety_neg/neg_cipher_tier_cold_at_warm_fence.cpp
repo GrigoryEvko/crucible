@@ -39,7 +39,7 @@ using namespace crucible::safety;
 // Warm-or-better tier.  Models the Cipher::publish_warm ⇄
 // observe::attribute_drift / KernelCache::evict-source pattern.
 template <typename W>
-    requires (W::template satisfies<CipherTierTag_v::Warm>)
+    requires(W::template satisfies<CipherTierTag_v::Warm>)
 static int warm_publish_consumer(W wrapped) noexcept {
     return std::move(wrapped).consume();
 }

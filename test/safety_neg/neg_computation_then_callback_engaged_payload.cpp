@@ -34,9 +34,7 @@ int main() {
     // Callback returns Computation<Row<>, EngagedInner> — the OUTER
     // row claims pure but the VALUE is a Bg-engaged Computation.
     // Should FAIL: extract_admits_payload_v<EngagedInner> is false.
-    auto chained = pure.then([](int) {
-        return Computation<Row<>, EngagedInner>::mk(
-            Computation<Row<>, int>::lift<Effect::Bg>(42));
-    });
+    auto chained = pure.then(
+        [](int) { return Computation<Row<>, EngagedInner>::mk(Computation<Row<>, int>::lift<Effect::Bg>(42)); });
     return chained.extract().extract();
 }

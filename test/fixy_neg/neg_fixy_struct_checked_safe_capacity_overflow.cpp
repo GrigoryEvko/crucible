@@ -32,7 +32,6 @@ int main() {
     namespace tags = neg_fixy_struct_checked_safe_capacity_overflow;
 
     // Should FAIL: 2^40 * 2^40 = 2^80 overflows size_t.
-    [[maybe_unused]] constexpr std::size_t bad =
-        fstr::safe_capacity<tags::kBigA, tags::kBigB>;
+    [[maybe_unused]] constexpr std::size_t bad = fstr::safe_capacity<tags::kBigA, tags::kBigB>;
     return 0;
 }

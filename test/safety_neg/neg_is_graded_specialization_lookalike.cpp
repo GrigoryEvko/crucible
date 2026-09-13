@@ -32,11 +32,11 @@ namespace alg = crucible::algebra;
 // Lookalike: exposes every accessor GradedWrapper inspects, but is
 // not Graded<M, L, T>.  is_graded_specialization_v MUST reject.
 struct GradedLookalike {
-    using value_type   = int;
+    using value_type = int;
     using lattice_type = alg::detail::lattice_self_test::TrivialBoolLattice;
-    using graded_type  = GradedLookalike;  // self-pointing — not a Graded<...>
+    using graded_type = GradedLookalike;  // self-pointing — not a Graded<...>
     static consteval std::string_view value_type_name() { return "int"; }
-    static consteval std::string_view lattice_name()    { return "Trivial"; }
+    static consteval std::string_view lattice_name() { return "Trivial"; }
     static constexpr alg::ModalityKind modality = alg::ModalityKind::Absolute;
 };
 
@@ -47,8 +47,8 @@ int main() {
     // lookalike, this fixture compiles silently and the fixy-A3-014
     // foreclosure regresses.
     static_assert(alg::is_graded_specialization_v<GradedLookalike>,
-        "fixy-A3-014: this MUST be false — GradedLookalike is not a "
-        "Graded<...> specialization; if it admits, strict-identity "
-        "rule has drifted to structural-match");
+                  "fixy-A3-014: this MUST be false — GradedLookalike is not a "
+                  "Graded<...> specialization; if it admits, strict-identity "
+                  "rule has drifted to structural-match");
     return 0;
 }

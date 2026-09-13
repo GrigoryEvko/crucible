@@ -35,6 +35,5 @@ int main() {
     // from a SchedulerPolicy At<> grade — they are unrelated empty class types.
     PinningRequirementLattice::At<PinningRequirement::PerCore>::element_type pin_grade = sched_grade;
 
-    return static_cast<int>(
-        static_cast<PinningRequirement>(pin_grade) == PinningRequirement::PerCore);
+    return static_cast<int>(static_cast<PinningRequirement>(pin_grade) == PinningRequirement::PerCore);
 }

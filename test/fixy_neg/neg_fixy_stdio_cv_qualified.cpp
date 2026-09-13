@@ -13,7 +13,7 @@
 
 #include <crucible/fixy/grant/Stdio.h>
 
-namespace gr  = crucible::fixy::grant;
+namespace gr = crucible::fixy::grant;
 namespace sio = crucible::fixy::grant::stdio;
 
 static_assert(gr::IsGrantTag<const sio::write<sio::streams::Stderr>>,

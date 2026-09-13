@@ -22,8 +22,8 @@
 #include <crucible/safety/HotPath.h>
 #include <crucible/sessions/SessionMint.h>
 
-namespace eff   = crucible::effects;
-namespace saf   = crucible::safety;
+namespace eff = crucible::effects;
+namespace saf = crucible::safety;
 namespace proto = crucible::safety::proto;
 
 struct DummyResource {
@@ -31,13 +31,14 @@ struct DummyResource {
 };
 
 int main() {
-    using BgComp     = eff::Computation<eff::Row<eff::Effect::Bg>, int>;
+    using BgComp = eff::Computation<eff::Row<eff::Effect::Bg>, int>;
     using HotBgPayload = saf::HotPath<saf::HotPathTier_v::Hot, BgComp>;
-    using BadProto   = proto::Send<HotBgPayload, proto::End>;
+    using BadProto = proto::Send<HotBgPayload, proto::End>;
 
     eff::HotFgCtx fg;
     DummyResource res;
-    auto bad = proto::mint_permissioned_session<BadProto>(fg, res); // CtxFitsProtocol fails — HotPath sees through to Bg
+    auto bad =
+        proto::mint_permissioned_session<BadProto>(fg, res);  // CtxFitsProtocol fails — HotPath sees through to Bg
     (void)bad;
     return 0;
 }

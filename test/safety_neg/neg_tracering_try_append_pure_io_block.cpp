@@ -25,7 +25,6 @@ namespace eff = ::crucible::effects;
 int main() {
     crucible::TraceRing ring;
     crucible::TraceRing::Entry e{};
-    (void)ring.try_append_pure<
-        eff::Row<eff::Effect::IO, eff::Effect::Block>>(e);
+    (void)ring.try_append_pure<eff::Row<eff::Effect::IO, eff::Effect::Block>>(e);
     return 0;
 }

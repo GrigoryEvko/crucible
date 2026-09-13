@@ -32,6 +32,5 @@ int main() {
     // element_type arguments; bitexact_elt is At<BITEXACT>::
     // element_type — different template instantiation, different
     // type, no implicit conversion.
-    return static_cast<int>(
-        ToleranceLattice::At<Tolerance::RELAXED>::leq(relaxed_elt, bitexact_elt));
+    return static_cast<int>(ToleranceLattice::At<Tolerance::RELAXED>::leq(relaxed_elt, bitexact_elt));
 }

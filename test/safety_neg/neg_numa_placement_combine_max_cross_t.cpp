@@ -10,7 +10,7 @@
 using namespace crucible::safety;
 
 int main() {
-    NumaPlacement<int>    int_value{42, NumaNodeId{2}, AffinityMask::single(0)};
+    NumaPlacement<int> int_value{42, NumaNodeId{2}, AffinityMask::single(0)};
     NumaPlacement<double> dbl_value{3.14, NumaNodeId{2}, AffinityMask::single(1)};
 
     auto bad = int_value.combine_max(dbl_value);

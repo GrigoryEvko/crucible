@@ -39,9 +39,10 @@ int main(int argc, char** argv) {
     using namespace crucible;
     using namespace crucible::fuzz::prop;
     Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 10'000) cfg.iterations = 10'000;  // setup-heavy
+    if (cfg.iterations > 10000) cfg.iterations = 10000;  // setup-heavy
 
-    return run("RecipeRegistry by_name ↔ by_hash circle", cfg,
+    return run(
+        "RecipeRegistry by_name ↔ by_hash circle", cfg,
         [](Rng& rng) {
             // Generate one extra random recipe to test the
             // pool-but-not-registry branch.
@@ -55,15 +56,17 @@ int main(int argc, char** argv) {
             // (it interns the starter recipes into the pool eagerly).
             const effects::Init init = effects::testing::init();
             RecipePool pool{RecipePool::ArenaBorrow{arena}, init};
-            RecipeRegistry registry{RecipeRegistry::PoolBorrow{pool},
-                                    init.alloc};
+            RecipeRegistry registry{RecipeRegistry::PoolBorrow{pool}, init.alloc};
 
             // Phase 1: every starter name → canonical pointer →
             // by_hash recovers the same pointer.
             const std::string_view kNames[] = {
-                names::kF32Strict, names::kF32Ordered,
-                names::kF16F32AccumTc, names::kF16F32AccumOrdered,
-                names::kBf16F32AccumTc, names::kBf16F32AccumOrdered,
+                names::kF32Strict,
+                names::kF32Ordered,
+                names::kF16F32AccumTc,
+                names::kF16F32AccumOrdered,
+                names::kBf16F32AccumTc,
+                names::kBf16F32AccumOrdered,
                 names::kFp8E4m3F32AccumMxOrd,
                 names::kFp8E5m2F32AccumMxOrd,
             };
@@ -99,8 +102,7 @@ int main(int argc, char** argv) {
                 // Miss — must be classified as HashNotFound, not
                 // NameNotFound (the by_hash error class is reserved
                 // for hash misses; name misses use NameNotFound).
-                if (via_hash_extra.error() != RecipeError::HashNotFound)
-                    return false;
+                if (via_hash_extra.error() != RecipeError::HashNotFound) return false;
             }
             return true;
         });

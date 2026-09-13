@@ -35,33 +35,34 @@ using crucible::TensorMeta;
 // Realistic 2D float tensor (linear / matmul input).
 [[nodiscard]] static TensorMeta make_meta_2d(int64_t dim0, int64_t dim1) noexcept {
     TensorMeta m{};
-    m.sizes[0]    = crucible::tensor_dim(dim0);
-    m.sizes[1]    = crucible::tensor_dim(dim1);
-    m.strides[0]  = crucible::tensor_dim(dim1);
-    m.strides[1]  = crucible::tensor_dim(1);
-    m.ndim        = 2;
-    m.dtype       = ScalarType::Float;
+    m.sizes[0] = crucible::tensor_dim(dim0);
+    m.sizes[1] = crucible::tensor_dim(dim1);
+    m.strides[0] = crucible::tensor_dim(dim1);
+    m.strides[1] = crucible::tensor_dim(1);
+    m.ndim = 2;
+    m.dtype = ScalarType::Float;
     m.device_type = DeviceType::CUDA;
-    m.device_idx  = 0;
-    m.data_ptr    = external_data_ptr(std::bit_cast<void*>(
-                        static_cast<std::uintptr_t>(0xDEAD'BEEF'0000ULL)));
+    m.device_idx = 0;
+    m.data_ptr = external_data_ptr(std::bit_cast<void*>(static_cast<std::uintptr_t>(0xDEADBEEF0000ULL)));
     return m;
 }
 
 // 4D NCHW tensor (conv input/weight).
 [[nodiscard]] static TensorMeta make_meta_4d(int64_t n, int64_t c, int64_t h, int64_t w) noexcept {
     TensorMeta m{};
-    m.sizes[0]    = crucible::tensor_dim(n);   m.sizes[1]   = crucible::tensor_dim(c);   m.sizes[2]   = crucible::tensor_dim(h);   m.sizes[3]   = crucible::tensor_dim(w);
-    m.strides[0]  = crucible::tensor_dim(c * h * w);
-    m.strides[1]  = crucible::tensor_dim(h * w);
-    m.strides[2]  = crucible::tensor_dim(w);
-    m.strides[3]  = crucible::tensor_dim(1);
-    m.ndim        = 4;
-    m.dtype       = ScalarType::Float;
+    m.sizes[0] = crucible::tensor_dim(n);
+    m.sizes[1] = crucible::tensor_dim(c);
+    m.sizes[2] = crucible::tensor_dim(h);
+    m.sizes[3] = crucible::tensor_dim(w);
+    m.strides[0] = crucible::tensor_dim(c * h * w);
+    m.strides[1] = crucible::tensor_dim(h * w);
+    m.strides[2] = crucible::tensor_dim(w);
+    m.strides[3] = crucible::tensor_dim(1);
+    m.ndim = 4;
+    m.dtype = ScalarType::Float;
     m.device_type = DeviceType::CUDA;
-    m.device_idx  = 0;
-    m.data_ptr    = external_data_ptr(std::bit_cast<void*>(
-                        static_cast<std::uintptr_t>(0xCAFE'BABE'0000ULL)));
+    m.device_idx = 0;
+    m.data_ptr = external_data_ptr(std::bit_cast<void*>(static_cast<std::uintptr_t>(0xCAFEBABE0000ULL)));
     return m;
 }
 
@@ -73,24 +74,19 @@ int main() {
 
     std::printf("=== meta_log ===\n");
     std::printf("  TensorMeta size: %zu bytes (expect 168)\n", sizeof(TensorMeta));
-    std::printf("  MetaLog capacity: %u entries (~%zu MB)\n\n",
-                MetaLog::CAPACITY,
+    std::printf("  MetaLog capacity: %u entries (~%zu MB)\n\n", MetaLog::CAPACITY,
                 (static_cast<size_t>(MetaLog::CAPACITY) * sizeof(TensorMeta)) / (1024 * 1024));
 
     // Reusable test data in stack-frame storage. MetaLog::try_append
     // memcpys from (metas, n) into the ring, so the source doesn't need
     // to live longer than the call.
-    const TensorMeta meta1[1] = { make_meta_2d(64, 768) };
-    const TensorMeta meta2[2] = { make_meta_2d(64, 768),
-                                  make_meta_2d(768, 768) };
-    const TensorMeta meta3[3] = { make_meta_2d(64, 768),
-                                  make_meta_2d(768, 768),
-                                  make_meta_2d(64, 768) };
+    const TensorMeta meta1[1] = {make_meta_2d(64, 768)};
+    const TensorMeta meta2[2] = {make_meta_2d(64, 768), make_meta_2d(768, 768)};
+    const TensorMeta meta3[3] = {make_meta_2d(64, 768), make_meta_2d(768, 768), make_meta_2d(64, 768)};
     const TensorMeta meta8[8] = {
-        make_meta_4d(32,  64, 56, 56), make_meta_4d( 64,  64, 3, 3),
-        make_meta_4d( 1,  64,  1,  1), make_meta_4d( 32,  64,56,56),
-        make_meta_4d(32, 128, 28, 28), make_meta_4d(128,  64, 3, 3),
-        make_meta_4d( 1, 128,  1,  1), make_meta_4d( 32, 128,28,28),
+        make_meta_4d(32, 64, 56, 56), make_meta_4d(64, 64, 3, 3),    make_meta_4d(1, 64, 1, 1),
+        make_meta_4d(32, 64, 56, 56), make_meta_4d(32, 128, 28, 28), make_meta_4d(128, 64, 3, 3),
+        make_meta_4d(1, 128, 1, 1),   make_meta_4d(32, 128, 28, 28),
     };
 
     // ── Producer-side latency (+reset-on-full) ────────────────────────
@@ -105,33 +101,33 @@ int main() {
     // All four buffers live heap-side; MetaLog's 168 MB allocation
     // would blow the stack.
     bench::Report reports[] = {
-        [&]{
+        [&] {
             auto log = std::make_unique<MetaLog>();
-            return bench::run("try_append(1 meta  = 168B)", [&]{
+            return bench::run("try_append(1 meta  = 168B)", [&] {
                 auto idx = log->try_append(meta1, 1);
                 bench::do_not_optimize(idx);
                 if (!idx.is_valid()) log->reset();
             });
         }(),
-        [&]{
+        [&] {
             auto log = std::make_unique<MetaLog>();
-            return bench::run("try_append(2 metas = 336B)", [&]{
+            return bench::run("try_append(2 metas = 336B)", [&] {
                 auto idx = log->try_append(meta2, 2);
                 bench::do_not_optimize(idx);
                 if (!idx.is_valid()) log->reset();
             });
         }(),
-        [&]{
+        [&] {
             auto log = std::make_unique<MetaLog>();
-            return bench::run("try_append(3 metas = 504B)", [&]{
+            return bench::run("try_append(3 metas = 504B)", [&] {
                 auto idx = log->try_append(meta3, 3);
                 bench::do_not_optimize(idx);
                 if (!idx.is_valid()) log->reset();
             });
         }(),
-        [&]{
+        [&] {
             auto log = std::make_unique<MetaLog>();
-            return bench::run("try_append(8 metas = 1344B)", [&]{
+            return bench::run("try_append(8 metas = 1344B)", [&] {
                 auto idx = log->try_append(meta8, 8);
                 bench::do_not_optimize(idx);
                 if (!idx.is_valid()) log->reset();
@@ -144,11 +140,11 @@ int main() {
         // drain). Amortizes the tail-store cost across many appends.
         // Inner counter stays a local to avoid atomic-store pollution
         // of the measurement.
-        [&]{
-            auto log              = std::make_unique<MetaLog>();
-            uint32_t since_drain  = 0;
-            constexpr uint32_t kD = 50'000;
-            return bench::run("throughput (3 metas/call, drain/50k)", [&]{
+        [&] {
+            auto log = std::make_unique<MetaLog>();
+            uint32_t since_drain = 0;
+            constexpr uint32_t kD = 50000;
+            return bench::run("throughput (3 metas/call, drain/50k)", [&] {
                 auto idx = log->try_append(meta3, 3);
                 bench::do_not_optimize(idx);
                 if (++since_drain >= kD) [[unlikely]] {
@@ -159,17 +155,17 @@ int main() {
         }(),
 
         // ── Raw atomics (floor for ordering cost) ─────────────────────
-        [&]{
+        [&] {
             auto log = std::make_unique<MetaLog>();
-            return bench::run("head.load (relaxed)", [&]{
+            return bench::run("head.load (relaxed)", [&] {
                 auto h = log->head.load(std::memory_order_relaxed);
                 bench::do_not_optimize(h);
             });
         }(),
-        [&]{
-            auto log    = std::make_unique<MetaLog>();
-            uint32_t v  = 0;
-            return bench::run("head.store (release)", [&]{
+        [&] {
+            auto log = std::make_unique<MetaLog>();
+            uint32_t v = 0;
+            return bench::run("head.store (release)", [&] {
                 log->head.store(++v, std::memory_order_release);
                 bench::do_not_optimize(v);
             });
@@ -180,17 +176,17 @@ int main() {
         // These show the lower bound of try_append — the ring's producer
         // does (at minimum) one memcpy + two atomic ops. Comparing
         // try_append against memcpy isolates the SPSC overhead.
-        [&]{
+        [&] {
             // 64 B-aligned scratch. aligned_alloc gives raw storage; run
             // each NSDMI via placement-new so the bytes are well-defined
             // before we memcpy over them (kills -Wclass-memaccess).
             constexpr uint32_t kBuf = 4096;
-            auto buf = static_cast<TensorMeta*>(
-                std::aligned_alloc(64, kBuf * sizeof(TensorMeta)));
-            for (uint32_t i = 0; i < kBuf; ++i) ::new (&buf[i]) TensorMeta{};
+            auto buf = static_cast<TensorMeta*>(std::aligned_alloc(64, kBuf * sizeof(TensorMeta)));
+            for (uint32_t i = 0; i < kBuf; ++i)
+                ::new(&buf[i]) TensorMeta{};
             const TensorMeta src = make_meta_2d(64, 768);
             uint32_t pos = 0;
-            auto r = bench::run("memcpy(168B)  to advancing dst", [&]{
+            auto r = bench::run("memcpy(168B)  to advancing dst", [&] {
                 std::memcpy(&buf[pos & (kBuf - 1)], &src, sizeof(TensorMeta));
                 bench::do_not_optimize(buf[pos & (kBuf - 1)]);
                 ++pos;
@@ -198,16 +194,14 @@ int main() {
             std::free(buf);
             return r;
         }(),
-        [&]{
+        [&] {
             constexpr uint32_t kBuf = 4096;
-            auto buf = static_cast<TensorMeta*>(
-                std::aligned_alloc(64, kBuf * sizeof(TensorMeta)));
-            for (uint32_t i = 0; i < kBuf; ++i) ::new (&buf[i]) TensorMeta{};
-            const TensorMeta src[3] = { make_meta_2d(64, 768),
-                                         make_meta_2d(768, 768),
-                                         make_meta_2d(64, 768) };
+            auto buf = static_cast<TensorMeta*>(std::aligned_alloc(64, kBuf * sizeof(TensorMeta)));
+            for (uint32_t i = 0; i < kBuf; ++i)
+                ::new(&buf[i]) TensorMeta{};
+            const TensorMeta src[3] = {make_meta_2d(64, 768), make_meta_2d(768, 768), make_meta_2d(64, 768)};
             uint32_t pos = 0;
-            auto r = bench::run("memcpy(504B)  to advancing dst", [&]{
+            auto r = bench::run("memcpy(504B)  to advancing dst", [&] {
                 const uint32_t p = pos & (kBuf - 4);  // leave room for 3 entries
                 std::memcpy(&buf[p], src, 3 * sizeof(TensorMeta));
                 bench::do_not_optimize(buf[p]);
@@ -216,12 +210,12 @@ int main() {
             std::free(buf);
             return r;
         }(),
-        [&]{
+        [&] {
             // Same-destination memcpy — hot in L1, theoretical minimum.
             // Gives the compiler's best case for 168 B store.
             const TensorMeta src = make_meta_2d(64, 768);
             TensorMeta dst{};
-            return bench::run("memcpy(168B)  same dst (L1)", [&]{
+            return bench::run("memcpy(168B)  same dst (L1)", [&] {
                 std::memcpy(&dst, &src, sizeof(TensorMeta));
                 bench::do_not_optimize(dst);
             });
@@ -242,8 +236,7 @@ int main() {
     // 95% bootstrap CI on the n=3 producer-side p99 — the most common
     // workload shape (2 inputs + 1 output → 3 meta slots per op).
     const auto ci99 = reports[2].ci(0.99);
-    std::printf("  %s  p99 95%% CI: [%.2f, %.2f] ns\n",
-                reports[2].name.c_str(), ci99.lo, ci99.hi);
+    std::printf("  %s  p99 95%% CI: [%.2f, %.2f] ns\n", reports[2].name.c_str(), ci99.lo, ci99.hi);
 
     bench::emit_reports_json(reports, json);
     return 0;

@@ -43,15 +43,13 @@ namespace {
 
 // Rollback branch carries a Recv — non-terminal.  Base is End —
 // terminal.  Conjunction of branch-terminality MUST be false post-fix.
-using AsymmetricCkpt = proto::CheckpointedSession<
-    proto::End,
-    proto::Recv<int, proto::End>>;
+using AsymmetricCkpt = proto::CheckpointedSession<proto::End, proto::Recv<int, proto::End>>;
 
 // Asserting trait is TRUE for this shape MUST fail post-fix — the
 // AND-fold over branches yields false because rollback is non-terminal.
 static_assert(proto::is_terminal_state_v<AsymmetricCkpt>,
-    "fixy-A2-029 regression: CheckpointedSession<End, Recv<...>> "
-    "wrongly classified as terminal — rollback branch carries Recv");
+              "fixy-A2-029 regression: CheckpointedSession<End, Recv<...>> "
+              "wrongly classified as terminal — rollback branch carries Recv");
 
 }  // namespace
 

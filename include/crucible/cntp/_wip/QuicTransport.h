@@ -103,7 +103,7 @@ using PositiveQuicDatagramBytes = safety::Positive<std::uint32_t>;
 
 struct QuicConfig {
     PositiveQuicStreamLimit max_streams{100};
-    PositiveQuicDatagramBytes max_datagram_bytes{1'200};
+    PositiveQuicDatagramBytes max_datagram_bytes{1200};
     DeclaredCcChoice congestion_control = mint_cc_choice<CcAlgorithm::Bbr3, LinkClass::CrossDatacenter>();
     QuicFeatureMask features{
         QuicFeature::Datagrams,

@@ -37,8 +37,7 @@ using PermissionedLog = ::crucible::concurrent::PermissionedMetaLog<BenchTag>;
     return meta;
 }
 
-[[nodiscard]] std::optional<::crucible::TensorMeta>
-raw_drain_one(::crucible::MetaLog& log) {
+[[nodiscard]] std::optional<::crucible::TensorMeta> raw_drain_one(::crucible::MetaLog& log) {
     const std::uint32_t t = log.tail.peek_relaxed();
     if (t == log.head.get()) {
         return std::nullopt;
@@ -48,68 +47,53 @@ raw_drain_one(::crucible::MetaLog& log) {
     return meta;
 }
 
-void reset_log(::crucible::MetaLog& log) {
-    log.reset();
-}
+void reset_log(::crucible::MetaLog& log) { log.reset(); }
 
 bench::Report bench_raw_append_raw_drain(::crucible::MetaLog& log) {
     reset_log(log);
     std::uint32_t i = 0;
-    auto report = bench::run("round-trip: raw MetaLog append + raw drain",
-        [&]{
-            const auto meta = make_meta(++i);
-            const auto idx = log.try_append(&meta, 1);
-            bench::do_not_optimize(idx);
-            const auto drained = raw_drain_one(log).value_or(::crucible::TensorMeta{});
-            bench::do_not_optimize(drained.version);
-        });
+    auto report = bench::run("round-trip: raw MetaLog append + raw drain", [&] {
+        const auto meta = make_meta(++i);
+        const auto idx = log.try_append(&meta, 1);
+        bench::do_not_optimize(idx);
+        const auto drained = raw_drain_one(log).value_or(::crucible::TensorMeta{});
+        bench::do_not_optimize(drained.version);
+    });
     reset_log(log);
     return report;
 }
 
-bench::Report bench_permissioned_append_drain(
-    PermissionedLog::ProducerHandle& producer,
-    PermissionedLog::ConsumerHandle& consumer,
-    ::crucible::MetaLog& log)
-{
+bench::Report bench_permissioned_append_drain(PermissionedLog::ProducerHandle& producer,
+                                              PermissionedLog::ConsumerHandle& consumer, ::crucible::MetaLog& log) {
     reset_log(log);
     std::uint32_t i = 0;
-    auto report = bench::run("round-trip: permissioned append + drain",
-        [&]{
-            const auto meta = make_meta(++i);
-            const bool appended = producer.try_append_one(meta);
-            bench::do_not_optimize(appended);
-            const auto drained =
-                consumer.try_drain_one().value_or(::crucible::TensorMeta{});
-            bench::do_not_optimize(drained.version);
-        });
+    auto report = bench::run("round-trip: permissioned append + drain", [&] {
+        const auto meta = make_meta(++i);
+        const bool appended = producer.try_append_one(meta);
+        bench::do_not_optimize(appended);
+        const auto drained = consumer.try_drain_one().value_or(::crucible::TensorMeta{});
+        bench::do_not_optimize(drained.version);
+    });
     reset_log(log);
     return report;
 }
 
-bench::Report bench_typed_send_recv(
-    PermissionedLog::ProducerHandle& producer,
-    PermissionedLog::ConsumerHandle& consumer,
-    ::crucible::MetaLog& log)
-{
+bench::Report bench_typed_send_recv(PermissionedLog::ProducerHandle& producer,
+                                    PermissionedLog::ConsumerHandle& consumer, ::crucible::MetaLog& log) {
     namespace ses = ::crucible::safety::proto::metalog_session;
     using ::crucible::safety::proto::detach_reason::TestInstrumentation;
 
     reset_log(log);
-    auto prod_psh = ses::mint_metalog_producer_session<PermissionedLog>(
-        ::crucible::effects::HotFgCtx{}, producer);
-    auto cons_psh = ses::mint_metalog_consumer_session<PermissionedLog>(
-        ::crucible::effects::HotFgCtx{}, consumer);
+    auto prod_psh = ses::mint_metalog_producer_session<PermissionedLog>(::crucible::effects::HotFgCtx{}, producer);
+    auto cons_psh = ses::mint_metalog_consumer_session<PermissionedLog>(::crucible::effects::HotFgCtx{}, consumer);
     std::uint32_t i = 0;
-    auto report = bench::run("round-trip: typed PSH.send + PSH.recv",
-        [&]{
-            auto p2 = std::move(prod_psh).send(make_meta(++i),
-                                               ses::blocking_append);
-            prod_psh = std::move(p2);
-            auto [meta, c2] = std::move(cons_psh).recv(ses::blocking_drain);
-            bench::do_not_optimize(meta.version);
-            cons_psh = std::move(c2);
-        });
+    auto report = bench::run("round-trip: typed PSH.send + PSH.recv", [&] {
+        auto p2 = std::move(prod_psh).send(make_meta(++i), ses::blocking_append);
+        prod_psh = std::move(p2);
+        auto [meta, c2] = std::move(cons_psh).recv(ses::blocking_drain);
+        bench::do_not_optimize(meta.version);
+        cons_psh = std::move(c2);
+    });
     std::move(prod_psh).detach(TestInstrumentation{});
     std::move(cons_psh).detach(TestInstrumentation{});
     reset_log(log);
@@ -122,30 +106,23 @@ int main(int argc, char** argv) {
     const char* json = (argc > 1) ? argv[1] : nullptr;
 
     namespace proto = ::crucible::safety::proto;
-    static_assert(sizeof(PermissionedLog::ProducerHandle)
-                  == sizeof(::crucible::MetaLog*));
-    static_assert(sizeof(PermissionedLog::ConsumerHandle)
-                  == sizeof(::crucible::MetaLog*));
-    static_assert(sizeof(proto::PermissionedSessionHandle<
-                      proto::End, proto::EmptyPermSet,
-                      PermissionedLog::ProducerHandle*>)
-                  == sizeof(proto::SessionHandle<
-                      proto::End, PermissionedLog::ProducerHandle*>));
-    static_assert(sizeof(proto::PermissionedSessionHandle<
-                      proto::End, proto::EmptyPermSet,
-                      PermissionedLog::ConsumerHandle*>)
-                  == sizeof(proto::SessionHandle<
-                      proto::End, PermissionedLog::ConsumerHandle*>));
+    static_assert(sizeof(PermissionedLog::ProducerHandle) == sizeof(::crucible::MetaLog*));
+    static_assert(sizeof(PermissionedLog::ConsumerHandle) == sizeof(::crucible::MetaLog*));
+    static_assert(
+        sizeof(proto::PermissionedSessionHandle<proto::End, proto::EmptyPermSet, PermissionedLog::ProducerHandle*>)
+        == sizeof(proto::SessionHandle<proto::End, PermissionedLog::ProducerHandle*>));
+    static_assert(
+        sizeof(proto::PermissionedSessionHandle<proto::End, proto::EmptyPermSet, PermissionedLog::ConsumerHandle*>)
+        == sizeof(proto::SessionHandle<proto::End, PermissionedLog::ConsumerHandle*>));
 
     auto raw_owner = std::make_unique<::crucible::MetaLog>();
     ::crucible::MetaLog& raw = *raw_owner;
     PermissionedLog log{raw};
 
-    auto whole =
-        ::crucible::safety::mint_permission_root<PermissionedLog::whole_tag>();
-    auto [pp, cp] = ::crucible::safety::mint_permission_split<
-        PermissionedLog::producer_tag,
-        PermissionedLog::consumer_tag>(std::move(whole));
+    auto whole = ::crucible::safety::mint_permission_root<PermissionedLog::whole_tag>();
+    auto [pp, cp] =
+        ::crucible::safety::mint_permission_split<PermissionedLog::producer_tag, PermissionedLog::consumer_tag>(
+            std::move(whole));
     auto producer = log.producer(std::move(pp));
     auto consumer = log.consumer(std::move(cp));
 
@@ -162,7 +139,8 @@ int main(int argc, char** argv) {
         bench::compare(reports[0], reports[1]),
         bench::compare(reports[0], reports[2]),
     };
-    for (const auto& c : cmps) c.print_text(stdout);
+    for (const auto& c : cmps)
+        c.print_text(stdout);
 
     std::printf("\n=== verdict (TIER A — structural) ===\n");
     std::printf("  PermissionedMetaLog handles are pointer-sized.\n");

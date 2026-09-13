@@ -32,13 +32,8 @@ namespace eff = ::crucible::effects;
 // mint_pmu_sample from the hot recording thread would stall the
 // ~5 ns/op TraceRing push budget by orders of magnitude — blocking
 // privileged syscalls don't belong on the hot path.
-[[maybe_unused]] constexpr auto bad_dispatch =
-    ::crucible::perf::mint_pmu_sample(
-        eff::HotFgCtx{},
-        eff::Init{});
+[[maybe_unused]] constexpr auto bad_dispatch = ::crucible::perf::mint_pmu_sample(eff::HotFgCtx{}, eff::Init{});
 
 }  // namespace neg_fixy_v_179_perf_hubs_hot_fg
 
-int main() {
-    return 0;
-}
+int main() { return 0; }

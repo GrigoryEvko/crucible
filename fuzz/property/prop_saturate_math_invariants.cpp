@@ -74,7 +74,7 @@ namespace {
 // decide which branch of sat_* the saturating function should follow.
 template <typename T>
 struct RefResult {
-    T    value;
+    T value;
     bool overflowed;
 };
 
@@ -108,8 +108,7 @@ template <typename T>
 template <typename T>
 [[nodiscard]] constexpr T expected_add_sat_overflow(T a, T /*b*/) noexcept {
     if constexpr (std::is_signed_v<T>) {
-        return (a < T{0}) ? std::numeric_limits<T>::min()
-                          : std::numeric_limits<T>::max();
+        return (a < T{0}) ? std::numeric_limits<T>::min() : std::numeric_limits<T>::max();
     } else {
         return std::numeric_limits<T>::max();
     }
@@ -118,8 +117,7 @@ template <typename T>
 template <typename T>
 [[nodiscard]] constexpr T expected_sub_sat_overflow(T a, T /*b*/) noexcept {
     if constexpr (std::is_signed_v<T>) {
-        return (a < T{0}) ? std::numeric_limits<T>::min()
-                          : std::numeric_limits<T>::max();
+        return (a < T{0}) ? std::numeric_limits<T>::min() : std::numeric_limits<T>::max();
     } else {
         return std::numeric_limits<T>::min();  // = 0 for unsigned
     }
@@ -129,8 +127,7 @@ template <typename T>
 [[nodiscard]] constexpr T expected_mul_sat_overflow(T a, T b) noexcept {
     if constexpr (std::is_signed_v<T>) {
         const bool neg = (a < T{0}) != (b < T{0});
-        return neg ? std::numeric_limits<T>::min()
-                   : std::numeric_limits<T>::max();
+        return neg ? std::numeric_limits<T>::min() : std::numeric_limits<T>::max();
     } else {
         return std::numeric_limits<T>::max();
     }
@@ -144,15 +141,14 @@ template <typename T>
 template <typename T>
 [[nodiscard]] T random_operand(crucible::fuzz::prop::Rng& rng) noexcept {
     const uint32_t bucket = rng.next_below(100);
-    const uint64_t bits   = rng.next64();
+    const uint64_t bits = rng.next64();
 
     if (bucket < 40) {
         // Small: fits in 16 bits.
         const auto small = static_cast<uint16_t>(bits & 0xFFFFu);
         if constexpr (std::is_signed_v<T>) {
             // Map to signed range including negatives.
-            return static_cast<T>(
-                static_cast<int32_t>(small) - 0x8000);
+            return static_cast<T>(static_cast<int32_t>(small) - 0x8000);
         } else {
             return static_cast<T>(small);
         }
@@ -183,17 +179,17 @@ template <typename T>
 [[nodiscard]] bool check_sat_props(T a, T b) noexcept {
     using namespace crucible::sat;
     constexpr T kZero = T{0};
-    constexpr T kOne  = T{1};
-    constexpr T kMin  = std::numeric_limits<T>::min();
-    constexpr T kMax  = std::numeric_limits<T>::max();
+    constexpr T kOne = T{1};
+    constexpr T kMin = std::numeric_limits<T>::min();
+    constexpr T kMax = std::numeric_limits<T>::max();
 
     // ── Algebraic identities (additive / multiplicative neutral) ──
     if (add_sat<T>(a, kZero) != a) return false;
     if (add_sat<T>(kZero, a) != a) return false;
     if (sub_sat<T>(a, kZero) != a) return false;
-    if (sub_sat<T>(a, a)     != kZero) return false;
-    if (mul_sat<T>(a, kOne)  != a) return false;
-    if (mul_sat<T>(kOne, a)  != a) return false;
+    if (sub_sat<T>(a, a) != kZero) return false;
+    if (mul_sat<T>(a, kOne) != a) return false;
+    if (mul_sat<T>(kOne, a) != a) return false;
     if (mul_sat<T>(a, kZero) != kZero) return false;
     if (mul_sat<T>(kZero, a) != kZero) return false;
 
@@ -256,7 +252,7 @@ template <typename T>
             if (mul_sat<T>(a, kMax) != kMax) return false;
         }
         if (mul_sat<T>(kMax, kZero) != kZero) return false;
-        if (mul_sat<T>(kMax, kOne)  != kMax)  return false;
+        if (mul_sat<T>(kMax, kOne) != kMax) return false;
     } else {
         // Signed add: MAX + positive → MAX; MIN + negative → MIN.
         if (a > kZero) {
@@ -290,9 +286,9 @@ template <typename T>
 
 struct Input {
     uint64_t u64_a, u64_b;
-    int64_t  i64_a, i64_b;
+    int64_t i64_a, i64_b;
     uint32_t u32_a, u32_b;
-    int32_t  i32_a, i32_b;
+    int32_t i32_a, i32_b;
 };
 
 [[nodiscard]] Input generate(crucible::fuzz::prop::Rng& rng) noexcept {
@@ -314,8 +310,8 @@ int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
     const Config cfg = parse_args(argc, argv);
 
-    return run("saturate math invariants (u64/i64/u32/i32)", cfg,
-        [](Rng& rng) { return generate(rng); },
+    return run(
+        "saturate math invariants (u64/i64/u32/i32)", cfg, [](Rng& rng) { return generate(rng); },
         [](const Input& in) {
             // Volatile barrier defeats constexpr folding of the
             // constexpr sat:: primitives.  Each iteration's (a, b)
@@ -325,9 +321,9 @@ int main(int argc, char** argv) {
             const Input* volatile p = &in;
 
             if (!check_sat_props<uint64_t>(p->u64_a, p->u64_b)) return false;
-            if (!check_sat_props<int64_t>(p->i64_a,  p->i64_b))  return false;
-            if (!check_sat_props<uint32_t>(p->u32_a, p->u32_b))  return false;
-            if (!check_sat_props<int32_t>(p->i32_a,  p->i32_b))  return false;
+            if (!check_sat_props<int64_t>(p->i64_a, p->i64_b)) return false;
+            if (!check_sat_props<uint32_t>(p->u32_a, p->u32_b)) return false;
+            if (!check_sat_props<int32_t>(p->i32_a, p->i32_b)) return false;
             return true;
         });
 }

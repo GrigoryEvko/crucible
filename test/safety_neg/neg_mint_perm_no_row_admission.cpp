@@ -17,8 +17,7 @@ int main() {
     namespace perm = ::crucible::permissions;
     namespace saf = ::crucible::safety;
 
-    auto p = saf::mint_permission_root<perm::tag::DiskSpilledRegionTag>(
-        eff::HotFgCtx{});
+    auto p = saf::mint_permission_root<perm::tag::DiskSpilledRegionTag>(eff::HotFgCtx{});
     saf::permission_drop(std::move(p));
     return 0;
 }

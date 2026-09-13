@@ -15,8 +15,8 @@ int main() {
     namespace cs = crucible::concurrent::scheduler;
 
     cc::Pool<cs::Fifo> pool{cc::CoreCount{1}};
-    const auto profile = cc::WorkloadProfile::from_budget(
-        cc::WorkBudget{.read_bytes = 64, .write_bytes = 64, .item_count = 8});
+    const auto profile =
+        cc::WorkloadProfile::from_budget(cc::WorkBudget{.read_bytes = 64, .write_bytes = 64, .item_count = 8});
     (void)cc::dispatch_with_workload(pool, profile, NotAJob{});
     return 0;
 }

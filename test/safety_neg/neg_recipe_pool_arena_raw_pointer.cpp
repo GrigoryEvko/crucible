@@ -10,8 +10,8 @@
 #include <crucible/RecipePool.h>
 
 int main() {
-  crucible::Arena arena{};
-  auto init = crucible::effects::testing::init();
-  crucible::RecipePool pool{&arena, init};
-  return pool.capacity() == 0;
+    crucible::Arena arena{};
+    auto init = crucible::effects::testing::init();
+    crucible::RecipePool pool{&arena, init};
+    return pool.capacity() == 0;
 }

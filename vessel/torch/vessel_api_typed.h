@@ -93,8 +93,7 @@ static_assert(std::is_trivially_copy_constructible_v<TypedMeta>);
 // at which point `reinterpret_cast` becomes UB and the FFI is
 // shovelling garbage to the recording pipeline.  Pinned at the typed
 // helper because this header is the single home for the layout cast.
-static_assert(sizeof(CrucibleMeta) == sizeof(crucible::TensorMeta),
-              "CrucibleMeta size must match TensorMeta");
+static_assert(sizeof(CrucibleMeta) == sizeof(crucible::TensorMeta), "CrucibleMeta size must match TensorMeta");
 static_assert(sizeof(CrucibleMeta) == 168);
 static_assert(offsetof(CrucibleMeta, sizes) == 0);
 static_assert(offsetof(CrucibleMeta, strides) == 64);
@@ -131,8 +130,7 @@ inline void assert_plausible_vigil_handle(CrucibleHandle handle) noexcept {
 // with a null pointer; otherwise both must agree.  Debug-only because
 // the assertions are infallible in production code paths but catch
 // FFI corruption in test builds.
-inline void assert_plausible_meta_array(const CrucibleMeta* metas,
-                                        std::size_t n_metas) noexcept {
+inline void assert_plausible_meta_array(const CrucibleMeta* metas, std::size_t n_metas) noexcept {
 #ifndef NDEBUG
     if (n_metas == 0U) {
         CRUCIBLE_DEBUG_ASSERT(metas == nullptr);
@@ -147,18 +145,14 @@ inline void assert_plausible_meta_array(const CrucibleMeta* metas,
 #endif
 }
 
-} // namespace detail
+}  // namespace detail
 
-[[nodiscard]] CRUCIBLE_HOT TypedHandle as_vigil_typed(
-    CrucibleHandle handle) noexcept
-{
+[[nodiscard]] CRUCIBLE_HOT TypedHandle as_vigil_typed(CrucibleHandle handle) noexcept {
     detail::assert_plausible_vigil_handle(handle);
     return TypedHandle{static_cast<Vigil*>(handle)};
 }
 
-[[nodiscard]] CRUCIBLE_HOT CrucibleHandle from_typed(
-    TypedHandle handle) noexcept
-{
+[[nodiscard]] CRUCIBLE_HOT CrucibleHandle from_typed(TypedHandle handle) noexcept {
     return static_cast<CrucibleHandle>(handle.value());
 }
 
@@ -168,10 +162,7 @@ inline void assert_plausible_meta_array(const CrucibleMeta* metas,
 // returned typed view doesn't carry length, since callers already
 // thread `n_metas` separately through the C ABI.  When n_metas==0,
 // `metas` MUST be nullptr — the invariant the C ABI promises.
-[[nodiscard]] CRUCIBLE_HOT TypedMeta as_meta_typed(
-    const CrucibleMeta* metas,
-    std::size_t n_metas = 0) noexcept
-{
+[[nodiscard]] CRUCIBLE_HOT TypedMeta as_meta_typed(const CrucibleMeta* metas, std::size_t n_metas = 0) noexcept {
     detail::assert_plausible_meta_array(metas, n_metas);
     // Layout-compat reinterpret: every byte of CrucibleMeta lines up
     // with TensorMeta (proven by the offsetof / sizeof asserts above).
@@ -181,9 +172,7 @@ inline void assert_plausible_meta_array(const CrucibleMeta* metas,
     return TypedMeta{reinterpret_cast<const crucible::TensorMeta*>(metas)};
 }
 
-[[nodiscard]] CRUCIBLE_HOT const CrucibleMeta* metas_from_typed(
-    TypedMeta typed) noexcept
-{
+[[nodiscard]] CRUCIBLE_HOT const CrucibleMeta* metas_from_typed(TypedMeta typed) noexcept {
     return reinterpret_cast<const CrucibleMeta*>(typed.value());
 }
 
@@ -202,17 +191,13 @@ inline void assert_plausible_meta_array(const CrucibleMeta* metas,
 // authority on the array length, which travels via `n_metas` through
 // the C ABI).  Debug builds tighten this with a contract.
 
-using TypedDataPtr =
-    fixy::wrap::Tagged<void*, fixy::tags::source::External>;
+using TypedDataPtr = fixy::wrap::Tagged<void*, fixy::tags::source::External>;
 
 static_assert(sizeof(TypedDataPtr) == sizeof(void*));
 static_assert(alignof(TypedDataPtr) == alignof(void*));
 static_assert(std::is_trivially_copy_constructible_v<TypedDataPtr>);
 
-[[nodiscard]] CRUCIBLE_HOT TypedDataPtr data_ptr_typed(
-    TypedMeta typed,
-    std::size_t i) noexcept
-{
+[[nodiscard]] CRUCIBLE_HOT TypedDataPtr data_ptr_typed(TypedMeta typed, std::size_t i) noexcept {
     const TensorMeta* metas = typed.value();
     CRUCIBLE_DEBUG_ASSERT(metas != nullptr);
     return TypedDataPtr{metas[i].data_ptr};
@@ -239,10 +224,8 @@ static_assert(sizeof(TypedSchemaName) == sizeof(crucible::SchemaTable::BorrowedN
 static_assert(alignof(TypedSchemaName) == alignof(crucible::SchemaTable::BorrowedName));
 static_assert(std::is_trivially_copy_constructible_v<TypedSchemaName>);
 
-[[nodiscard]] CRUCIBLE_HOT TypedSchemaName schema_name_typed(
-    crucible::SchemaHash schema_hash) noexcept
-{
+[[nodiscard]] CRUCIBLE_HOT TypedSchemaName schema_name_typed(crucible::SchemaHash schema_hash) noexcept {
     return crucible::schema_name(schema_hash);
 }
 
-} // namespace crucible::vessel
+}  // namespace crucible::vessel

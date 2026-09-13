@@ -64,13 +64,10 @@ static constexpr uint64_t FNV_OFFSET = 0xcbf29ce484222325ULL;
 //
 // A real fleet of PyTorch ops never violates these.  The validator
 // exists to reject corrupt FFI state before it reaches the hot path.
-static bool validate_ffi_entry(uint64_t schema_hash,
-                               uint16_t num_inputs,
-                               uint16_t num_outputs,
-                               uint16_t num_scalars) noexcept
-{
+static bool validate_ffi_entry(uint64_t schema_hash, uint16_t num_inputs, uint16_t num_outputs,
+                               uint16_t num_scalars) noexcept {
     if (schema_hash == 0) return false;
-    if (num_inputs  > 64) return false;
+    if (num_inputs > 64) return false;
     if (num_outputs > 64) return false;
     if (num_scalars > 4096) return false;
     return true;
@@ -85,8 +82,7 @@ static bool validate_ffi_entry(uint64_t schema_hash,
 // op has 2-8 metas → <10 ns overhead; PyTorch dispatch itself is
 // orders of magnitude larger, so the validation is free in the
 // regime the FFI is actually used.
-static bool validate_ffi_metas(const CrucibleMeta* metas, uint32_t n_metas) noexcept
-{
+static bool validate_ffi_metas(const CrucibleMeta* metas, uint32_t n_metas) noexcept {
     // n_metas == 0 requires metas == nullptr is OK (trivial op).
     if (n_metas == 0) return true;
     if (metas == nullptr) return false;
@@ -109,9 +105,7 @@ uint64_t crucible_abi_version(void) noexcept {
     return CRUCIBLE_VESSEL_ABI_VERSION;
 }
 
-CrucibleHandle crucible_create(void) noexcept {
-    return new crucible::Vigil();
-}
+CrucibleHandle crucible_create(void) noexcept { return new crucible::Vigil(); }
 
 void crucible_destroy(CrucibleHandle h) noexcept {
     auto handle = crucible::vessel::as_vigil_typed(h);
@@ -128,9 +122,7 @@ uint64_t crucible_hash_string(const char* s) noexcept {
     return h;
 }
 
-uint64_t crucible_hash_shapes(const int64_t* all_sizes,
-                              const uint8_t* ndims,
-                              uint32_t n_tensors) noexcept {
+uint64_t crucible_hash_shapes(const int64_t* all_sizes, const uint8_t* ndims, uint32_t n_tensors) noexcept {
     if (n_tensors == 0 || !all_sizes || !ndims) return FNV_OFFSET;
     uint64_t h = FNV_OFFSET;
     uint32_t offset = 0;
@@ -144,12 +136,9 @@ uint64_t crucible_hash_shapes(const int64_t* all_sizes,
     return h;
 }
 
-CrucibleDispatchResult crucible_dispatch_op(
-    CrucibleHandle handle,
-    uint64_t schema_hash, uint64_t shape_hash,
-    uint16_t num_inputs, uint16_t num_outputs,
-    const CrucibleMeta* metas, uint32_t n_metas) noexcept
-{
+CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle handle, uint64_t schema_hash, uint64_t shape_hash,
+                                            uint16_t num_inputs, uint16_t num_outputs, const CrucibleMeta* metas,
+                                            uint32_t n_metas) noexcept {
     auto vigil_typed = crucible::vessel::as_vigil_typed(handle);
 
     // Validate FFI inputs before constructing an Entry — see
@@ -183,10 +172,7 @@ CrucibleDispatchResult crucible_dispatch_op(
     // guarantee that the foreground extern "C" boundary cannot drift
     // into a non-Pure context without the row mismatch firing.
     auto metas_typed = crucible::vessel::as_meta_typed(metas, n_metas);
-    auto result = vigil_typed.value()->dispatch_op_pure(
-        crucible::vouch(entry),
-        metas_typed.value(),
-        n_metas);
+    auto result = vigil_typed.value()->dispatch_op_pure(crucible::vouch(entry), metas_typed.value(), n_metas);
 
     CrucibleDispatchResult cr{};
     cr.action = static_cast<uint8_t>(result.action);
@@ -195,14 +181,10 @@ CrucibleDispatchResult crucible_dispatch_op(
     return cr;
 }
 
-CrucibleDispatchResult crucible_dispatch_op_ex(
-    CrucibleHandle handle,
-    uint64_t schema_hash, uint64_t shape_hash,
-    uint16_t num_inputs, uint16_t num_outputs,
-    const CrucibleMeta* metas, uint32_t n_metas,
-    const int64_t* scalar_values, uint16_t num_scalars,
-    uint8_t grad_enabled, uint8_t inference_mode) noexcept
-{
+CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t schema_hash, uint64_t shape_hash,
+                                               uint16_t num_inputs, uint16_t num_outputs, const CrucibleMeta* metas,
+                                               uint32_t n_metas, const int64_t* scalar_values, uint16_t num_scalars,
+                                               uint8_t grad_enabled, uint8_t inference_mode) noexcept {
     auto vigil_typed = crucible::vessel::as_vigil_typed(handle);
 
     // Validate FFI inputs before constructing an Entry.
@@ -222,7 +204,7 @@ CrucibleDispatchResult crucible_dispatch_op_ex(
     entry.num_scalar_args = num_scalars;
     uint8_t flags = 0;
     if (inference_mode != 0) flags |= crucible::op_flag::INFERENCE_MODE;
-    if (grad_enabled != 0)   flags |= crucible::op_flag::GRAD_ENABLED;
+    if (grad_enabled != 0) flags |= crucible::op_flag::GRAD_ENABLED;
     entry.op_flags = flags;
 
     uint16_t n = num_scalars < 5 ? num_scalars : 5;
@@ -238,10 +220,7 @@ CrucibleDispatchResult crucible_dispatch_op_ex(
     // dispatch_op_pure<>() — row-typed facade (FOUND-I19); see the
     // sister site in crucible_dispatch_op for the rationale.
     auto metas_typed = crucible::vessel::as_meta_typed(metas, n_metas);
-    auto result = vigil_typed.value()->dispatch_op_pure(
-        crucible::vouch(entry),
-        metas_typed.value(),
-        n_metas);
+    auto result = vigil_typed.value()->dispatch_op_pure(crucible::vouch(entry), metas_typed.value(), n_metas);
 
     CrucibleDispatchResult cr{};
     cr.action = static_cast<uint8_t>(result.action);
@@ -250,9 +229,7 @@ CrucibleDispatchResult crucible_dispatch_op_ex(
     return cr;
 }
 
-void crucible_flush(CrucibleHandle h) noexcept {
-    crucible::vessel::as_vigil_typed(h).value()->flush();
-}
+void crucible_flush(CrucibleHandle h) noexcept { crucible::vessel::as_vigil_typed(h).value()->flush(); }
 
 int crucible_is_compiled(CrucibleHandle h) noexcept {
     return crucible::vessel::as_vigil_typed(h).value()->is_compiled() ? 1 : 0;
@@ -307,8 +284,7 @@ void crucible_register_schema_name(uint64_t schema_hash, const char* name) noexc
     auto& table = crucible::global_schema_table();
     if (table.is_sealed()) return;
     auto view = table.mint_mutable_view();
-    crucible::register_schema_name(view, crucible::SchemaHash{schema_hash},
-        crucible::SchemaTable::SanitizedName{name});
+    crucible::register_schema_name(view, crucible::SchemaHash{schema_hash}, crucible::SchemaTable::SanitizedName{name});
 }
 
 const char* crucible_schema_name(uint64_t schema_hash) noexcept {
@@ -341,15 +317,13 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
     // we still close the file but report failure.
     bool ok = true;
     auto w = [&](const void* ptr, size_t size, size_t count) {
-        if (ok && std::fwrite(ptr, size, count, f) != count)
-            ok = false;
+        if (ok && std::fwrite(ptr, size, count, f) != count) ok = false;
     };
 
     // Count total tensor metas across all ops.
     uint32_t total_metas = 0;
     for (uint32_t i = 0; i < region->num_ops; i++) {
-        total_metas += static_cast<uint32_t>(
-            region->ops[i].num_inputs + region->ops[i].num_outputs);
+        total_metas += static_cast<uint32_t>(region->ops[i].num_inputs + region->ops[i].num_outputs);
     }
 
     // Header: "CRTR" + version(1) + num_ops + num_metas = 16B.
@@ -363,9 +337,9 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
     for (uint32_t i = 0; i < region->num_ops; i++) {
         const auto& te = region->ops[i];
         crucible::TraceOpRecord rec{};
-        rec.schema_hash   = te.schema_hash;
-        rec.shape_hash    = te.shape_hash;
-        rec.scope_hash    = te.scope_hash;
+        rec.schema_hash = te.schema_hash;
+        rec.shape_hash = te.shape_hash;
+        rec.scope_hash = te.scope_hash;
         rec.callsite_hash = te.callsite_hash;
         rec.num_inputs = te.num_inputs;
         rec.num_outputs = te.num_outputs;
@@ -374,9 +348,8 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
         // Pack all op_flags back into one byte for on-disk format.
         uint8_t flags = 0;
         if (te.inference_mode) flags |= crucible::op_flag::INFERENCE_MODE;
-        if (te.is_mutable)     flags |= crucible::op_flag::IS_MUTABLE;
-        flags |= (static_cast<uint8_t>(te.training_phase) & 0x3)
-                 << crucible::op_flag::PHASE_SHIFT;
+        if (te.is_mutable) flags |= crucible::op_flag::IS_MUTABLE;
+        flags |= (static_cast<uint8_t>(te.training_phase) & 0x3) << crucible::op_flag::PHASE_SHIFT;
         if (te.torch_function) flags |= crucible::op_flag::TORCH_FUNCTION;
         rec.inference_mode = flags;
         const uint16_t ns = te.num_scalar_args < 5 ? te.num_scalar_args : 5;
@@ -417,4 +390,4 @@ uint32_t crucible_active_num_ops(CrucibleHandle h) noexcept {
     return region ? region->num_ops : 0;
 }
 
-} // extern "C"
+}  // extern "C"

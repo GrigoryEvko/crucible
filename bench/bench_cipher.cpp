@@ -25,36 +25,34 @@
 #include "bench_harness.h"
 
 // FIXY-V-031: Cipher::open() now takes Path<source::External>.
-using CipherRoot = crucible::fixy::wrap::Path<
-    crucible::fixy::tags::source::External>;
+using CipherRoot = crucible::fixy::wrap::Path<crucible::fixy::tags::source::External>;
 
 using namespace crucible;
 
 static const auto BG = effects::testing::bg();
 static constexpr auto A = BG.alloc;
 
-static RegionNode* synth_region(Arena& arena, uint32_t num_ops,
-                                uint64_t salt) {
+static RegionNode* synth_region(Arena& arena, uint32_t num_ops, uint64_t salt) {
     auto* ops = arena.alloc_array<TraceEntry>(A, num_ops);
     std::uninitialized_value_construct_n(ops, num_ops);
     for (uint32_t i = 0; i < num_ops; i++) {
         auto& te = ops[i];
         te.schema_hash = SchemaHash{salt ^ (0xAAAAULL + i)};
-        te.shape_hash  = ShapeHash{salt ^ (0xBBBBULL + i)};
-        te.num_inputs  = 1;
+        te.shape_hash = ShapeHash{salt ^ (0xBBBBULL + i)};
+        te.num_inputs = 1;
         te.num_outputs = 1;
         te.input_metas = arena.alloc_array<TensorMeta>(A, 1);
         std::uninitialized_value_construct_n(te.input_metas, 1);
-        te.input_metas[0].ndim       = 1;
-        te.input_metas[0].sizes[0]   = tensor_dim(64);
+        te.input_metas[0].ndim = 1;
+        te.input_metas[0].sizes[0] = tensor_dim(64);
         te.input_metas[0].strides[0] = tensor_dim(1);
-        te.input_metas[0].dtype      = ScalarType::Float;
+        te.input_metas[0].dtype = ScalarType::Float;
         te.output_metas = arena.alloc_array<TensorMeta>(A, 1);
         std::uninitialized_value_construct_n(te.output_metas, 1);
         te.output_metas[0] = te.input_metas[0];
         te.input_trace_indices = arena.alloc_array<OpIndex>(A, 1);
-        te.input_slot_ids      = arena.alloc_array<SlotId>(A, 1);
-        te.output_slot_ids     = arena.alloc_array<SlotId>(A, 1);
+        te.input_slot_ids = arena.alloc_array<SlotId>(A, 1);
+        te.output_slot_ids = arena.alloc_array<SlotId>(A, 1);
     }
     return make_region(A, arena, ops, num_ops);
 }
@@ -92,7 +90,7 @@ int main() {
         Arena warm_arena{1 << 18};
         auto* warm_region = synth_region(warm_arena, num_ops, 0xC0FFEE + num_ops);
         const auto warm_payload = Cipher::content_addressed(warm_region);
-        (void)cipher.store(open_view, warm_payload, nullptr);   // prime the warm path
+        (void)cipher.store(open_view, warm_payload, nullptr);  // prime the warm path
         const ContentHash warm_h = warm_region->content_hash;
 
         // Cold write: distinct content_hash per iteration, so every
@@ -101,20 +99,19 @@ int main() {
         // unboundedly across batches.
         char label_cold[64], label_warm[64], label_ca_warm[64];
         char label_read[64], label_ca_read[64], label_record_event[64];
-        std::snprintf(label_cold, sizeof(label_cold), "store cold  (%u ops, distinct)",     num_ops);
-        std::snprintf(label_warm, sizeof(label_warm), "store warm  (%u ops, dedup hit)",    num_ops);
+        std::snprintf(label_cold, sizeof(label_cold), "store cold  (%u ops, distinct)", num_ops);
+        std::snprintf(label_warm, sizeof(label_warm), "store warm  (%u ops, dedup hit)", num_ops);
         std::snprintf(label_ca_warm, sizeof(label_ca_warm), "store CA    (%u ops, dedup hit)", num_ops);
-        std::snprintf(label_read, sizeof(label_read), "load  cold  (%u ops)",               num_ops);
+        std::snprintf(label_read, sizeof(label_read), "load  cold  (%u ops)", num_ops);
         std::snprintf(label_ca_read, sizeof(label_ca_read), "load  CA    (%u ops, cache hit)", num_ops);
-        std::snprintf(label_record_event, sizeof(label_record_event),
-                      "record event (%u ops, unified log)", num_ops);
+        std::snprintf(label_record_event, sizeof(label_record_event), "record event (%u ops, unified log)", num_ops);
 
         const std::size_t base_idx = reports.size();
         uint64_t record_step = static_cast<uint64_t>(num_ops) << 32;
 
-        reports.push_back([&]{
+        reports.push_back([&] {
             uint64_t salt = static_cast<uint64_t>(num_ops) << 32;
-            return bench::run(label_cold, [&]{
+            return bench::run(label_cold, [&] {
                 Arena region_arena{1 << 18};
                 auto* r = synth_region(region_arena, num_ops, ++salt);
                 auto h = cipher.store(open_view, Cipher::content_addressed(r), nullptr);
@@ -122,35 +119,34 @@ int main() {
             });
         }());
 
-        reports.push_back(bench::run(label_warm, [&]{
+        reports.push_back(bench::run(label_warm, [&] {
             auto h = cipher.store(open_view, warm_payload, nullptr);
             bench::do_not_optimize(h);
         }));
 
-        reports.push_back(bench::run(label_ca_warm, [&]{
+        reports.push_back(bench::run(label_ca_warm, [&] {
             auto h = cipher.store(open_view, warm_payload, nullptr);
             bench::do_not_optimize(h);
         }));
 
-        reports.push_back(bench::run(label_read, [&]{
+        reports.push_back(bench::run(label_read, [&] {
             Arena read_arena{1 << 18};
             auto r = cipher.load_content_addressed(open_view, A, warm_h, read_arena);
             auto* region = r.get();
             bench::do_not_optimize(region);
         }));
 
-        reports.push_back(bench::run(label_ca_read, [&]{
+        reports.push_back(bench::run(label_ca_read, [&] {
             Arena read_arena{1 << 18};
             auto r = cipher.load_content_addressed(open_view, A, warm_h, read_arena);
             bench::do_not_optimize(r.get());
             bench::do_not_optimize(r.cache_hit());
         }));
 
-        reports.push_back(bench::run(label_record_event, [&]{
+        reports.push_back(bench::run(label_record_event, [&] {
             const uint64_t step = ++record_step;
             const ContentHash event_hash{warm_h.raw() ^ step};
-            cipher.record_event<Cipher::record_event_required_row>(
-                open_view, event_hash, step);
+            cipher.record_event<Cipher::record_event_required_row>(open_view, event_hash, step);
             bench::do_not_optimize(event_hash);
         }));
 

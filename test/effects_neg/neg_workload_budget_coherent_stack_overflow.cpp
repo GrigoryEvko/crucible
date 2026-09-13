@@ -68,11 +68,11 @@ struct stage_inline_safe<::HugeStage> : std::true_type {};
 int main() {
     using HugePipeline = cc::Pipeline<HugeStage>;
     static_assert(HugePipeline::aggregate_per_call_working_set == 8 * MiB,
-        "smoke: aggregate WS must be 8 MiB to make this fixture sound.");
+                  "smoke: aggregate WS must be 8 MiB to make this fixture sound.");
 
     // Sanity smoke — 1 MiB safety budget per V-075's Stack ceiling.
     static_assert(cc::stack_alloc_max_working_set_bytes == 1 * MiB,
-        "smoke: Stack alloc class declares a 1 MiB working-set ceiling.");
+                  "smoke: Stack alloc class declares a 1 MiB working-set ceiling.");
 
     // HotFgCtx is the canonical `ctx_alloc::Stack` sentinel context.
     // 8 MiB WS contradicts the 1 MiB stack budget; V-075 must reject.
@@ -81,8 +81,8 @@ int main() {
 
     // The load-bearing static_assert — MUST FAIL.
     static_assert(cc::WorkloadBudgetCoherent<eff::HotFgCtx, HugePipeline>,
-        "Stack ctx (1 MiB ceiling) contradicts pipeline aggregate WS 8 MiB "
-        "— WorkloadBudgetCoherent must reject this pair.");
+                  "Stack ctx (1 MiB ceiling) contradicts pipeline aggregate WS 8 MiB "
+                  "— WorkloadBudgetCoherent must reject this pair.");
 
     return 0;
 }

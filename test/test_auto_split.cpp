@@ -117,7 +117,7 @@ static void test_uneven_shards_cover_once() {
 [[maybe_unused]] static void test_worker_max_and_item_caps() {
     constexpr cc::AutoSplitPlan worker_capped = cc::auto_split_plan(
         cc::AutoSplitRequest{
-            .item_count = 1'000'000,
+            .item_count = 1000000,
             .bytes_per_item = 64,
             .max_shards = 16,
         },
@@ -127,7 +127,7 @@ static void test_uneven_shards_cover_once() {
 
     constexpr cc::AutoSplitPlan max_capped = cc::auto_split_plan(
         cc::AutoSplitRequest{
-            .item_count = 1'000'000,
+            .item_count = 1000000,
             .bytes_per_item = 64,
             .max_shards = 5,
         },
@@ -204,7 +204,7 @@ static void test_dispatch_auto_split_covers_ranges() {
                     .huge_shards = 16,
                 },
             .available_workers = 16,
-            .dispatch_cost_ns = 10'000,  // 10 µs/shard
+            .dispatch_cost_ns = 10000,  // 10 µs/shard
         });
 
     static_assert(plan.shard_count == 1, "break-even must demote light-compute workloads");
@@ -241,7 +241,7 @@ static void test_dispatch_auto_split_covers_ranges() {
                     .huge_shards = 16,
                 },
             .available_workers = 16,
-            .dispatch_cost_ns = 10'000,
+            .dispatch_cost_ns = 10000,
         });
 
     static_assert(plan.shard_count == 8, "efficiency gate must halve until eff >= 70%");
@@ -269,7 +269,7 @@ static void test_dispatch_auto_split_covers_ranges() {
                     .huge_shards = 16,
                 },
             .available_workers = 16,
-            .dispatch_cost_ns = 10'000,
+            .dispatch_cost_ns = 10000,
             .min_efficiency_pct = 70,
         });
     static_assert(plan.shard_count == 16, "LatencyCritical must skip the efficiency gate");
@@ -279,7 +279,7 @@ static void test_dispatch_auto_split_covers_ranges() {
 [[maybe_unused]] static void test_sequential_intent_always_collapses() {
     constexpr cc::AutoSplitPlan plan = cc::auto_split_plan(
         cc::AutoSplitRequest{
-            .item_count = 1'000'000,
+            .item_count = 1000000,
             .bytes_per_item = 64,
             .max_shards = 16,
             .intent = cc::SchedulingIntent::Sequential,
@@ -308,7 +308,7 @@ static void test_dispatch_auto_split_covers_ranges() {
                     .huge_shards = 16,
                 },
             .available_workers = 16,
-            .dispatch_cost_ns = 10'000,
+            .dispatch_cost_ns = 10000,
             .min_efficiency_pct = 90,
         });
     // Total compute is 2048 µs and each dispatch costs 10 µs.
@@ -341,7 +341,7 @@ static void test_dispatch_auto_split_covers_ranges() {
                 .huge_shards = 16,
             },
         .available_workers = 16,
-        .dispatch_cost_ns = 10'000,
+        .dispatch_cost_ns = 10000,
         .min_efficiency_pct = 70,
     };
 
@@ -492,7 +492,7 @@ struct SequentialButColdResidencyBody : cc::AutoSplitWorkloadTagged<cc::AutoSpli
 [[maybe_unused]] static void test_typed_planner_is_empty_forces_sequential() {
     constexpr cc::AutoSplitPlan plan = cc::auto_split_plan_typed<typed_test_detail::StatelessBody>(
         cc::AutoSplitRequest{
-            .item_count = 1'000'000,
+            .item_count = 1000000,
             .bytes_per_item = 64,
             .max_shards = 16,
         },
@@ -509,7 +509,7 @@ struct SequentialButColdResidencyBody : cc::AutoSplitWorkloadTagged<cc::AutoSpli
 [[maybe_unused]] static void test_typed_planner_crtp_supplies_intent_and_per_item() {
     constexpr cc::AutoSplitPlan plan = cc::auto_split_plan_typed<typed_test_detail::TaggedBody>(
         cc::AutoSplitRequest{
-            .item_count = 100'000,
+            .item_count = 100000,
             .bytes_per_item = 64,
             .max_shards = 16,  // the body clamps this to 8
             // The per-item cost is left out here; the body supplies it.
@@ -523,7 +523,7 @@ struct SequentialButColdResidencyBody : cc::AutoSplitWorkloadTagged<cc::AutoSpli
                     .huge_shards = 16,
                 },
             .available_workers = 16,
-            .dispatch_cost_ns = 10'000,
+            .dispatch_cost_ns = 10000,
             .min_efficiency_pct = 70,
         });
     // The bound is a range rather than a value because the efficiency gate is
@@ -563,7 +563,7 @@ struct SequentialButColdResidencyBody : cc::AutoSplitWorkloadTagged<cc::AutoSpli
                 .huge_shards = 16,
             },
         .available_workers = 16,
-        .dispatch_cost_ns = 10'000,
+        .dispatch_cost_ns = 10000,
         .min_efficiency_pct = 70,
     };
 
@@ -616,7 +616,7 @@ struct SequentialButColdResidencyBody : cc::AutoSplitWorkloadTagged<cc::AutoSpli
 
     constexpr cc::AutoSplitPlan plan = cc::auto_split_plan_typed<typed_test_detail::ParallelIoButBitexactBody>(
         cc::AutoSplitRequest{
-            .item_count = 1'000'000,
+            .item_count = 1000000,
             .bytes_per_item = 64,
             .max_shards = 16,
         },
@@ -664,8 +664,8 @@ static void test_dispatch_at_factor_covers_ranges() {
 
 static void test_shape_cache_promotes_after_repeated_hits() {
     cc::AutoSplitShapeCache cache;
-    constexpr std::uint64_t key = 0x1234'5678'9ABC'DEF0ULL;
-    constexpr std::uint64_t other_body_key = 0xCAFE'CAFE'CAFE'CAFEULL;
+    constexpr std::uint64_t key = 0x123456789ABCDEF0ULL;
+    constexpr std::uint64_t other_body_key = 0xCAFECAFECAFECAFEULL;
 
     require(cache.lookup_or(key, cc::SchedulingIntent::Throughput, 99) == 99, "empty shape cache must return fallback");
 
@@ -685,7 +685,7 @@ static void test_shape_cache_promotes_after_repeated_hits() {
 
 static void test_shape_cache_concurrent_slot_overwrite_is_coherent() {
     cc::AutoSplitShapeCache cache;
-    constexpr std::uint64_t key_a = 0x1234'5678'9ABC'DEF0ULL;
+    constexpr std::uint64_t key_a = 0x123456789ABCDEF0ULL;
     const std::uint64_t key_b = colliding_cache_key_for_test(key_a);
     require(key_a != key_b, "test requires two distinct colliding keys");
     require(cache_slot_for_test(key_a) == cache_slot_for_test(key_b), "test keys must collide into one cache slot");
@@ -700,7 +700,7 @@ static void test_shape_cache_concurrent_slot_overwrite_is_coherent() {
         }
     }};
 
-    for (std::size_t i = 0; i < 200'000; ++i) {
+    for (std::size_t i = 0; i < 200000; ++i) {
         const std::size_t a = cache.lookup_or(key_a, cc::SchedulingIntent::Throughput, 99);
         const std::size_t b = cache.lookup_or(key_b, cc::SchedulingIntent::Throughput, 77);
         if (!((a == 3 || a == 99) && (b == 11 || b == 77))) {
@@ -772,24 +772,23 @@ static void test_cached_planner_matches_uncached_and_separates_shapes() {
 
 static void test_online_calibrator_updates_ewma() {
     cc::AutoSplitOnlineCalibrator cal;
-    require(cal.dispatch_cost_ns() == 10'000, "calibrator default dispatch cost changed");
+    require(cal.dispatch_cost_ns() == 10000, "calibrator default dispatch cost changed");
     require(cal.per_item_ns() == 0, "calibrator default per-item estimate must be zero");
     require(cal.sample_count() == 0, "calibrator must start with zero samples");
 
-    cal.record_dispatch(26'000);
-    require(cal.dispatch_cost_ns() == 11'000, "dispatch EWMA must use alpha=1/16");
+    cal.record_dispatch(26000);
+    require(cal.dispatch_cost_ns() == 11000, "dispatch EWMA must use alpha=1/16");
     require(cal.sample_count() == 1, "dispatch sample must increment sample counter");
 
-    cal.record_shard(1'000, 10);
+    cal.record_shard(1000, 10);
     require(cal.per_item_ns() == 100, "per-item EWMA must initialize from first shard sample");
     require(cal.sample_count() == 2, "shard sample must increment sample counter");
 
-    cal.record_shard(2'600, 10);
+    cal.record_shard(2600, 10);
     require(cal.per_item_ns() == 110, "per-item EWMA must mix subsequent shard sample");
 
     cal.record_dispatch(static_cast<std::uint64_t>(-1));
-    require(cal.dispatch_cost_ns() > 1'000'000'000ULL,
-            "dispatch EWMA must saturate instead of wrapping on huge samples");
+    require(cal.dispatch_cost_ns() > 1000000000ULL, "dispatch EWMA must saturate instead of wrapping on huge samples");
 }
 
 // A moving average built from a separate load, a computation and a store
@@ -806,8 +805,8 @@ static void test_online_calibrator_concurrent_no_sample_loss() {
     cc::AutoSplitOnlineCalibrator cal;
 
     constexpr std::size_t thread_count = 8;
-    constexpr std::size_t samples_per_thr = 4'000;
-    constexpr std::uint64_t target_ns = 16'000;
+    constexpr std::size_t samples_per_thr = 4000;
+    constexpr std::uint64_t target_ns = 16000;
 
     std::vector<std::jthread> threads;
     threads.reserve(thread_count);
@@ -866,7 +865,7 @@ static void test_background_intent_demotes_under_pool_pressure() {
 
     const auto result = cc::dispatch_auto_split(pool,
                                                 cc::AutoSplitRequest{
-                                                    .item_count = 1'000'000,
+                                                    .item_count = 1000000,
                                                     .bytes_per_item = 64,
                                                     .max_shards = 16,
                                                     .intent = cc::SchedulingIntent::Background,
@@ -877,8 +876,7 @@ static void test_background_intent_demotes_under_pool_pressure() {
 
     require(result.plan.shard_count == 1, "Background intent must demote to inline when pool is busy");
     require(result.dispatch.ran_inline, "Background demotion should run inline instead of queueing");
-    require(visited.load(std::memory_order_relaxed) == 1'000'000,
-            "Background demotion must still cover the whole range");
+    require(visited.load(std::memory_order_relaxed) == 1000000, "Background demotion must still cover the whole range");
 
     release_blocker.store(true, std::memory_order_release);
     pool.wait_idle();

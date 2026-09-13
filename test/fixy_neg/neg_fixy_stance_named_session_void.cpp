@@ -15,8 +15,7 @@ struct DummyProto {};
 
 using BadNamedSessionVoid = stance::NamedSession<void, DummyProto>;
 
-static_assert(sizeof(BadNamedSessionVoid) > 0,
-    "instantiate stance::NamedSession<void, Proto> to force the Type-"
-    "axis rejection (void is not an object type).");
+static_assert(sizeof(BadNamedSessionVoid) > 0, "instantiate stance::NamedSession<void, Proto> to force the Type-"
+                                               "axis rejection (void is not an object type).");
 
 int main() { return 0; }

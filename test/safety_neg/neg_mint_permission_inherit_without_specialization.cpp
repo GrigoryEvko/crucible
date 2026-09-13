@@ -30,6 +30,5 @@ struct SurvivorTag {};
 // Forces detail::validated_perm_tuple<DeadTag, list<SurvivorTag>> to
 // instantiate.  The inherits_from<DeadTag, SurvivorTag> default is
 // false → triggers the third static_assert.
-using BadType = ::crucible::permissions::mint_permission_inherit_t<
-    DeadTag, SurvivorTag>;
+using BadType = ::crucible::permissions::mint_permission_inherit_t<DeadTag, SurvivorTag>;
 static_cast<void>(sizeof(BadType));

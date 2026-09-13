@@ -18,9 +18,8 @@
 #include <crucible/effects/ExecCtx.h>
 
 int main() {
-    auto hub = crucible::fixy::perf::mint_pmu_sample(
-        crucible::effects::BgDrainCtx{},
-        crucible::effects::testing::init());
+    auto hub =
+        crucible::fixy::perf::mint_pmu_sample(crucible::effects::BgDrainCtx{}, crucible::effects::testing::init());
     (void)hub;
     return 0;
 }

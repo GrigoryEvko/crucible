@@ -6,9 +6,7 @@
 
 int main() {
     auto iface = crucible::cntp::NicInterfaceName::from("eth0").value();
-    auto config =
-        crucible::cntp::mint_bbr_qdisc_config<crucible::cntp::Qdisc::Pfifo>(
-            iface);
+    auto config = crucible::cntp::mint_bbr_qdisc_config<crucible::cntp::Qdisc::Pfifo>(iface);
     (void)config;
     return 0;
 }

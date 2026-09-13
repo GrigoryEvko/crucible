@@ -41,14 +41,14 @@
 #include <string>
 
 namespace {
-    // Non-trivially-copyable type — `std::string` owns a heap buffer
-    // and has a non-trivial copy ctor / destructor.  Production
-    // shape: any caller who reaches for AtomicMonotonic<HighLevelType>
-    // because "I want an atomic-ish counter" without realizing
-    // std::atomic's trivial-copyable restriction.  Our requires
-    // clause catches them at the wrapper layer.
-    using NonTriviallyCopyableT = std::string;
-}
+// Non-trivially-copyable type — `std::string` owns a heap buffer
+// and has a non-trivial copy ctor / destructor.  Production
+// shape: any caller who reaches for AtomicMonotonic<HighLevelType>
+// because "I want an atomic-ish counter" without realizing
+// std::atomic's trivial-copyable restriction.  Our requires
+// clause catches them at the wrapper layer.
+using NonTriviallyCopyableT = std::string;
+}  // namespace
 
 // VIOLATION: AtomicMonotonic<std::string> fails the
 // `requires std::is_trivially_copyable_v<T>` clause at line 884 of
@@ -58,8 +58,7 @@ namespace {
 // is at template-instantiation time, before any member is touched.
 [[maybe_unused]] static void offending_non_trivial_payload() {
     ::crucible::safety::AtomicMonotonic<NonTriviallyCopyableT> bad{
-        NonTriviallyCopyableT{}
-    };   // ERROR: constraints not satisfied
+        NonTriviallyCopyableT{}};  // ERROR: constraints not satisfied
     (void)bad;
 }
 

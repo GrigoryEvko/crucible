@@ -40,8 +40,8 @@ struct RegionB {};
 int main() {
     namespace fwmm = ::crucible::fixy::wrap::mmap;
     namespace advice = fwmm::advice;
-    namespace prot   = fwmm::prot;
-    namespace share  = fwmm::share;
+    namespace prot = fwmm::prot;
+    namespace share = fwmm::share;
 
     ::crucible::effects::TestRunnerCtx ctx{};
 
@@ -56,7 +56,6 @@ int main() {
     // template parameter is RegionA.  The Permission<RegionA> const&
     // parameter can't bind to a Permission<RegionB> rvalue/lvalue —
     // they're unrelated phantom-typed types.
-    [[maybe_unused]] auto r =
-        fwmm::advise_release_aware<advice::DontNeed, RegionA>(ctx, region_a, perm_b);
+    [[maybe_unused]] auto r = fwmm::advise_release_aware<advice::DontNeed, RegionA>(ctx, region_a, perm_b);
     return 0;
 }

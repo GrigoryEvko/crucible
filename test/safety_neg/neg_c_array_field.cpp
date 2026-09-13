@@ -7,12 +7,12 @@
 
 #include <crucible/safety/ScopedView.h>
 
-struct Carrier { int v = 0; };
-struct Tag     {};
+struct Carrier {
+    int v = 0;
+};
+struct Tag {};
 
-constexpr bool view_ok(Carrier const&, std::type_identity<Tag>) noexcept {
-    return true;
-}
+constexpr bool view_ok(Carrier const&, std::type_identity<Tag>) noexcept { return true; }
 
 using View = crucible::safety::ScopedView<Carrier, Tag>;
 

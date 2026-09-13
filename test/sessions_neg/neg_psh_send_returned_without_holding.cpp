@@ -33,24 +33,20 @@ using ::crucible::safety::mint_permission_root;
 
 namespace {
 struct HotPerm {};
-struct FakeChannel { int last_int = 0; };
+struct FakeChannel {
+    int last_int = 0;
+};
 
-void wire_send(FakeChannel& ch, Returned<int, HotPerm>&& r) noexcept {
-    ch.last_int = r.value;
-}
-}
+void wire_send(FakeChannel& ch, Returned<int, HotPerm>&& r) noexcept { ch.last_int = r.value; }
+}  // namespace
 
 int main() {
     // Establish without HotPerm.
-    auto h = detail::permissioned_session_with_loc_<
-        Send<Returned<int, HotPerm>, End>,
-        EmptyPermSet,
-        FakeChannel>(
+    auto h = detail::permissioned_session_with_loc_<Send<Returned<int, HotPerm>, End>, EmptyPermSet, FakeChannel>(
         FakeChannel{}, std::source_location::current());
 
     // Try to "return" a permission the handle never held.
     Returned<int, HotPerm> payload{99, mint_permission_root<HotPerm>()};
-    [[maybe_unused]] auto h2 = std::move(h).send(std::move(payload),
-                                                  wire_send);
+    [[maybe_unused]] auto h2 = std::move(h).send(std::move(payload), wire_send);
     return 0;
 }

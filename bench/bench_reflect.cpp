@@ -18,7 +18,7 @@
 #include <cstdio>
 #include <utility>
 
-#include <crucible/Expr.h>       // detail::fmix64
+#include <crucible/Expr.h>  // detail::fmix64
 #include <crucible/MerkleDag.h>  // FeedbackEdge, LoopTermKind, NumericalRecipe
 #include <crucible/NumericalRecipe.h>
 #include <crucible/Reflect.h>
@@ -31,7 +31,7 @@ struct Small {
     uint32_t id;
     uint16_t kind;
     uint16_t flags;
-    int64_t  payload;
+    int64_t payload;
 };
 
 struct Wide {
@@ -41,9 +41,9 @@ struct Wide {
     uint64_t callsite;
     uint32_t num_inputs;
     uint32_t num_outputs;
-    uint8_t  op_flags;
-    uint8_t  pad[7];
-    int64_t  scalars[5];
+    uint8_t op_flags;
+    uint8_t pad[7];
+    int64_t scalars[5];
 };
 
 uint64_t manual_hash_small(const Small& s) noexcept {
@@ -51,8 +51,7 @@ uint64_t manual_hash_small(const Small& s) noexcept {
     h = h * 0x9E3779B97F4A7C15ULL ^ crucible::detail::fmix64(s.id);
     h = h * 0x9E3779B97F4A7C15ULL ^ crucible::detail::fmix64(s.kind);
     h = h * 0x9E3779B97F4A7C15ULL ^ crucible::detail::fmix64(s.flags);
-    h = h * 0x9E3779B97F4A7C15ULL ^ crucible::detail::fmix64(
-        static_cast<uint64_t>(s.payload));
+    h = h * 0x9E3779B97F4A7C15ULL ^ crucible::detail::fmix64(static_cast<uint64_t>(s.payload));
     return crucible::detail::fmix64(h);
 }
 
@@ -62,9 +61,7 @@ uint64_t manual_hash_small(const Small& s) noexcept {
 // pattern against the reflection-driven version that ships in
 // MerkleDag.h.  Real callers see only the new version; this baseline
 // exists only inside this TU.
-uint64_t feedback_signature_packed(
-    std::span<const crucible::FeedbackEdge> edges) noexcept
-{
+uint64_t feedback_signature_packed(std::span<const crucible::FeedbackEdge> edges) noexcept {
     if (edges.empty()) return 0;
     constexpr uint64_t kSeed = 0x6665656462616B73ULL;
     uint64_t h = kSeed;
@@ -81,18 +78,12 @@ uint64_t feedback_signature_packed(
 // Manual packing pattern: term_kind (1 byte) + repeat_count (4 bytes)
 // folded into one u64 word, epsilon bit_cast to u32 then xored with
 // a separate salt + fmix64.  Two fmix64 calls total.
-uint64_t loopterm_hash_packed(
-    crucible::LoopTermKind term_kind,
-    uint32_t               repeat_count,
-    float                  epsilon) noexcept
-{
+uint64_t loopterm_hash_packed(crucible::LoopTermKind term_kind, uint32_t repeat_count, float epsilon) noexcept {
     constexpr uint64_t kTermSalt = 0x7465726D696E6174ULL;
-    constexpr uint64_t kEpsSalt  = 0x65707369006C6F6EULL;
-    uint64_t packed = static_cast<uint64_t>(std::to_underlying(term_kind)) |
-                      (static_cast<uint64_t>(repeat_count) << 8);
+    constexpr uint64_t kEpsSalt = 0x65707369006C6F6EULL;
+    uint64_t packed = static_cast<uint64_t>(std::to_underlying(term_kind)) | (static_cast<uint64_t>(repeat_count) << 8);
     uint64_t h = crucible::detail::fmix64(packed ^ kTermSalt);
-    h ^= crucible::detail::fmix64(
-        static_cast<uint64_t>(std::bit_cast<uint32_t>(epsilon)) ^ kEpsSalt);
+    h ^= crucible::detail::fmix64(static_cast<uint64_t>(std::bit_cast<uint32_t>(epsilon)) ^ kEpsSalt);
     return h;
 }
 
@@ -105,27 +96,23 @@ uint64_t loopterm_hash_packed(
 // the perf difference is significant enough to justify keeping
 // the manual version.
 struct RecipeSpec {
-    crucible::ScalarType           accum_dtype;
-    crucible::ScalarType           out_dtype;
-    crucible::ReductionAlgo        reduction_algo;
-    crucible::RoundingMode         rounding;
-    crucible::ScalePolicy          scale_policy;
-    crucible::SoftmaxRecurrence    softmax;
+    crucible::ScalarType accum_dtype;
+    crucible::ScalarType out_dtype;
+    crucible::ReductionAlgo reduction_algo;
+    crucible::RoundingMode rounding;
+    crucible::ScalePolicy scale_policy;
+    crucible::SoftmaxRecurrence softmax;
     crucible::ReductionDeterminism determinism;
-    uint8_t                        flags;
+    uint8_t flags;
 };
 
-uint64_t compute_recipe_hash_reflected(
-    const crucible::NumericalRecipe& r) noexcept
-{
+uint64_t compute_recipe_hash_reflected(const crucible::NumericalRecipe& r) noexcept {
     constexpr uint64_t kSeed = 0x9E3779B97F4A7C15ULL;
-    return crucible::reflect_fmix_fold<kSeed>(RecipeSpec{
-        r.accum_dtype, r.out_dtype, r.reduction_algo, r.rounding,
-        r.scale_policy, r.softmax, r.determinism, r.flags.raw()
-    });
+    return crucible::reflect_fmix_fold<kSeed>(RecipeSpec{r.accum_dtype, r.out_dtype, r.reduction_algo, r.rounding,
+                                                         r.scale_policy, r.softmax, r.determinism, r.flags.raw()});
 }
 
-} // namespace
+}  // namespace
 
 int main() {
     bench::print_system_info();
@@ -138,46 +125,49 @@ int main() {
     // All three Runs use volatile-seeded inputs so the compiler can't
     // hoist the hash computation out of the body. The seeds live in the
     // outer scope so the IIFE-lambdas can capture by reference.
-    volatile uint32_t vid       = 42;
-    volatile uint16_t vkind     = 7;
-    volatile uint16_t vflags    = 0x3F;
-    volatile int64_t  vpayload  = 0x1234'5678'9ABC'DEF0LL;
-    volatile uint64_t vschema   = 0xAABB'CCDD'0000'0000ULL;
+    volatile uint32_t vid = 42;
+    volatile uint16_t vkind = 7;
+    volatile uint16_t vflags = 0x3F;
+    volatile int64_t vpayload = 0x123456789ABCDEF0LL;
+    volatile uint64_t vschema = 0xAABBCCDD00000000ULL;
 
     auto make_small = [&]() noexcept {
         Small s{};
-        s.id      = vid;
-        s.kind    = vkind;
-        s.flags   = vflags;
+        s.id = vid;
+        s.kind = vkind;
+        s.flags = vflags;
         s.payload = vpayload;
         return s;
     };
 
     bench::Report reports[] = {
-        bench::run("reflect_hash<Small>  (4 fields)", [&]{
-            Small s = make_small();
-            auto h = crucible::reflect_hash(s);
-            bench::do_not_optimize(h);
-        }),
-        bench::run("manual fmix64 chain  (same 4)", [&]{
-            Small s = make_small();
-            auto h = manual_hash_small(s);
-            bench::do_not_optimize(h);
-        }),
-        bench::run("reflect_hash<Wide>  (19 fields)", [&]{
-            Wide w{};
-            w.schema      = vschema;
-            w.shape       = vschema ^ 1;
-            w.scope       = vschema ^ 2;
-            w.callsite    = vschema ^ 3;
-            w.num_inputs  = 2;
-            w.num_outputs = 1;
-            w.op_flags    = 0x1;
-            w.scalars[0]  = 1;
-            w.scalars[1]  = 2;
-            auto h = crucible::reflect_hash(w);
-            bench::do_not_optimize(h);
-        }),
+        bench::run("reflect_hash<Small>  (4 fields)",
+                   [&] {
+                       Small s = make_small();
+                       auto h = crucible::reflect_hash(s);
+                       bench::do_not_optimize(h);
+                   }),
+        bench::run("manual fmix64 chain  (same 4)",
+                   [&] {
+                       Small s = make_small();
+                       auto h = manual_hash_small(s);
+                       bench::do_not_optimize(h);
+                   }),
+        bench::run("reflect_hash<Wide>  (19 fields)",
+                   [&] {
+                       Wide w{};
+                       w.schema = vschema;
+                       w.shape = vschema ^ 1;
+                       w.scope = vschema ^ 2;
+                       w.callsite = vschema ^ 3;
+                       w.num_inputs = 2;
+                       w.num_outputs = 1;
+                       w.op_flags = 0x1;
+                       w.scalars[0] = 1;
+                       w.scalars[1] = 2;
+                       auto h = crucible::reflect_hash(w);
+                       bench::do_not_optimize(h);
+                   }),
     };
 
     bench::emit_reports_text(reports);
@@ -206,25 +196,22 @@ int main() {
     // Reflection version walks edges and applies reflect_hash(e) +
     // outer fmix64 fold; packed version applies one shift+OR per edge
     // + outer fmix64 fold.
-    crucible::FeedbackEdge edges_buf[8] = {
-        {0, 1}, {1, 2}, {2, 3}, {3, 4},
-        {4, 5}, {5, 6}, {6, 7}, {7, 0}
-    };
+    crucible::FeedbackEdge edges_buf[8] = {{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 5}, {5, 6}, {6, 7}, {7, 0}};
     volatile uint16_t bump = 0;  // prevents constant-fold
 
     bench::Report refactor_reports[] = {
-        bench::run("feedback_signature  (reflection, 8 edges)", [&]{
-            edges_buf[0].output_idx = bump;  // perturb each iter
-            auto h = crucible::feedback_signature(
-                std::span<const crucible::FeedbackEdge>{edges_buf, 8});
-            bench::do_not_optimize(h);
-        }),
-        bench::run("feedback_signature  (packed,     8 edges)", [&]{
-            edges_buf[0].output_idx = bump;
-            auto h = feedback_signature_packed(
-                std::span<const crucible::FeedbackEdge>{edges_buf, 8});
-            bench::do_not_optimize(h);
-        }),
+        bench::run("feedback_signature  (reflection, 8 edges)",
+                   [&] {
+                       edges_buf[0].output_idx = bump;  // perturb each iter
+                       auto h = crucible::feedback_signature(std::span<const crucible::FeedbackEdge>{edges_buf, 8});
+                       bench::do_not_optimize(h);
+                   }),
+        bench::run("feedback_signature  (packed,     8 edges)",
+                   [&] {
+                       edges_buf[0].output_idx = bump;
+                       auto h = feedback_signature_packed(std::span<const crucible::FeedbackEdge>{edges_buf, 8});
+                       bench::do_not_optimize(h);
+                   }),
 
         // ── loopterm_hash: reflection vs packed (REFL-3) ───────────
         //
@@ -233,21 +220,20 @@ int main() {
         // packed does 1 fmix64 on combined word + 1 fmix64 on epsilon
         // = 2 fmix64 calls total.  Expected reflection ~1.5× the
         // packed cost.
-        bench::run("loopterm_hash       (reflection)", [&]{
-            crucible::LoopNode ln{};
-            ln.term_kind    = crucible::LoopTermKind::REPEAT;
-            ln.repeat_count = 100u + bump;
-            ln.epsilon      = 1.0e-6f;
-            auto h = crucible::loopterm_hash(ln);
-            bench::do_not_optimize(h);
-        }),
-        bench::run("loopterm_hash       (packed)", [&]{
-            auto h = loopterm_hash_packed(
-                crucible::LoopTermKind::REPEAT,
-                100u + bump,
-                1.0e-6f);
-            bench::do_not_optimize(h);
-        }),
+        bench::run("loopterm_hash       (reflection)",
+                   [&] {
+                       crucible::LoopNode ln{};
+                       ln.term_kind = crucible::LoopTermKind::REPEAT;
+                       ln.repeat_count = 100u + bump;
+                       ln.epsilon = 1.0e-6f;
+                       auto h = crucible::loopterm_hash(ln);
+                       bench::do_not_optimize(h);
+                   }),
+        bench::run("loopterm_hash       (packed)",
+                   [&] {
+                       auto h = loopterm_hash_packed(crucible::LoopTermKind::REPEAT, 100u + bump, 1.0e-6f);
+                       bench::do_not_optimize(h);
+                   }),
 
         // ── compute_recipe_hash: packed (actual) vs reflection (hyp.)
         //
@@ -255,22 +241,24 @@ int main() {
         // uint64_t — actual implementation does 1 pack + 1 fmix64.
         // Reflection hypothetical does 8 fmix64 calls (~6× slower);
         // bench measures the cost we AVOIDED by keeping it manual.
-        bench::run("compute_recipe_hash (packed actual)", [&]{
-            crucible::NumericalRecipe r{};
-            r.accum_dtype = crucible::ScalarType::Float;
-            r.out_dtype   = crucible::ScalarType::Half;
-            r.flags       = crucible::safety::Bits<crucible::RecipeFlags>::from_raw(static_cast<uint8_t>(bump));
-            auto h = crucible::compute_recipe_hash(r);
-            bench::do_not_optimize(h);
-        }),
-        bench::run("compute_recipe_hash (reflection hypothetical)", [&]{
-            crucible::NumericalRecipe r{};
-            r.accum_dtype = crucible::ScalarType::Float;
-            r.out_dtype   = crucible::ScalarType::Half;
-            r.flags       = crucible::safety::Bits<crucible::RecipeFlags>::from_raw(static_cast<uint8_t>(bump));
-            auto h = compute_recipe_hash_reflected(r);
-            bench::do_not_optimize(h);
-        }),
+        bench::run("compute_recipe_hash (packed actual)",
+                   [&] {
+                       crucible::NumericalRecipe r{};
+                       r.accum_dtype = crucible::ScalarType::Float;
+                       r.out_dtype = crucible::ScalarType::Half;
+                       r.flags = crucible::safety::Bits<crucible::RecipeFlags>::from_raw(static_cast<uint8_t>(bump));
+                       auto h = crucible::compute_recipe_hash(r);
+                       bench::do_not_optimize(h);
+                   }),
+        bench::run("compute_recipe_hash (reflection hypothetical)",
+                   [&] {
+                       crucible::NumericalRecipe r{};
+                       r.accum_dtype = crucible::ScalarType::Float;
+                       r.out_dtype = crucible::ScalarType::Half;
+                       r.flags = crucible::safety::Bits<crucible::RecipeFlags>::from_raw(static_cast<uint8_t>(bump));
+                       auto h = compute_recipe_hash_reflected(r);
+                       bench::do_not_optimize(h);
+                   }),
     };
 
     bench::emit_reports_text(refactor_reports);

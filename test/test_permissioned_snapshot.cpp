@@ -192,7 +192,7 @@ static_assert(std::is_trivially_copyable_v<CounterPair>);
 
 void test_swmr_under_load() {
     constexpr int NUM_READERS = 8;
-    constexpr int NUM_PUBLISHES = 10'000;
+    constexpr int NUM_PUBLISHES = 10000;
 
     PermissionedSnapshot<CounterPair, LatencyTrack> snap{CounterPair{0, 0}};
 

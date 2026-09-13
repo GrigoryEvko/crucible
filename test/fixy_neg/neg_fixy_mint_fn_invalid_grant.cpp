@@ -12,8 +12,8 @@
 #include <crucible/fixy/Fn.h>
 
 namespace fixy = crucible::fixy;
-namespace gr   = crucible::fixy::grant;
-using D        = crucible::fixy::dim::DimensionAxis;
+namespace gr = crucible::fixy::grant;
+using D = crucible::fixy::dim::DimensionAxis;
 
 template <D Axis>
 using strict = gr::accept_default_strict_for<Axis>;
@@ -22,14 +22,12 @@ int main() {
     // 19-grant pack with `int` substituted for Usage — IsAccepted
     // must reject via AllGrantsWellFormed: int does not satisfy
     // grant::IsGrantTag.
-    auto bad = fixy::mint_fn<int,
-        strict<D::Refinement>, int /* non-grant in Usage slot */,
-        strict<D::Effect>, strict<D::Security>, strict<D::Protocol>,
-        strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
-        strict<D::Representation>, strict<D::Observability>,
-        strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
-        strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
-        strict<D::Size>, strict<D::Version>, strict<D::Staleness>, strict<D::Synchronization>, strict<D::Regime>>(42);
+    auto bad = fixy::mint_fn<int, strict<D::Refinement>, int /* non-grant in Usage slot */, strict<D::Effect>,
+                             strict<D::Security>, strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>,
+                             strict<D::Trust>, strict<D::Representation>, strict<D::Observability>,
+                             strict<D::Complexity>, strict<D::Precision>, strict<D::Space>, strict<D::Overflow>,
+                             strict<D::Mutation>, strict<D::Reentrancy>, strict<D::Size>, strict<D::Version>,
+                             strict<D::Staleness>, strict<D::Synchronization>, strict<D::Regime>>(42);
     (void)bad;
     return 0;
 }

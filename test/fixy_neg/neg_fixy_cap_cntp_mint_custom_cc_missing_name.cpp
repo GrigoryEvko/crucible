@@ -14,9 +14,7 @@ struct NotAModule {
 
 int main() {
     auto choice =
-        crucible::fixy::cap::cntp::mint_custom_cc_choice<
-            NotAModule,
-            crucible::cntp::LinkClass::CrossDatacenter>();
+        crucible::fixy::cap::cntp::mint_custom_cc_choice<NotAModule, crucible::cntp::LinkClass::CrossDatacenter>();
     (void)choice;
     return 0;
 }

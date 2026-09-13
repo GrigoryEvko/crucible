@@ -16,8 +16,4 @@ template <>
 struct is_subsort<::Provided, ::Required> : std::true_type {};
 }  // namespace crucible::safety::proto
 
-int main() {
-    proto::assert_subtype_sync<
-        proto::Send<Provided, proto::End>,
-        proto::Send<Required, proto::End>>();
-}
+int main() { proto::assert_subtype_sync<proto::Send<Provided, proto::End>, proto::Send<Required, proto::End>>(); }

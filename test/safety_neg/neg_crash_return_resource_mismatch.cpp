@@ -31,10 +31,8 @@ int main() {
     eff::HotFgCtx ctx{};
     auto psh = proto::mint_permissioned_session<P>(ctx, Channel{});
 
-    auto bad = proto::wrap_crash_return<DeadPeer>(
-        std::move(psh),
-        proto::detach_reason::TransportClosedOutOfBand{},
-        WrongResource{});
+    auto bad = proto::wrap_crash_return<DeadPeer>(std::move(psh), proto::detach_reason::TransportClosedOutOfBand{},
+                                                  WrongResource{});
     (void)bad;
     return 0;
 }

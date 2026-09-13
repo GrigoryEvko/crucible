@@ -33,10 +33,8 @@ int main() {
     // to manufacture a well-formed Tagged decision via a fresh
     // profiler so the dispatch failure is unambiguously on the CTX
     // gate, not on a malformed decision.
-    crucible::perf::WorkloadProfiler profiler{
-        /*senses=*/nullptr, crucible::effects::testing::init()};
-    const crucible::concurrent::WorkBudget budget{
-        .read_bytes = 1024, .write_bytes = 1024, .item_count = 256};
+    crucible::perf::WorkloadProfiler profiler{/*senses=*/nullptr, crucible::effects::testing::init()};
+    const crucible::concurrent::WorkBudget budget{.read_bytes = 1024, .write_bytes = 1024, .item_count = 256};
     auto tagged = profiler.recommend(budget);
 
     // HotFgCtx fails `fixy::perf::CtxFitsWorkloadDecisionDispatch`
@@ -44,8 +42,7 @@ int main() {
     // using-decl `crucible::fixy::perf::dispatch_workload_decision`
     // must inherit the substrate's requires-clause unchanged.
     crucible::fixy::perf::dispatch_workload_decision(
-        hot_ctx, tagged,
-        [](const crucible::concurrent::ParallelismDecision&) noexcept { },
-        [](const crucible::concurrent::ParallelismDecision&) noexcept { });
+        hot_ctx, tagged, [](const crucible::concurrent::ParallelismDecision&) noexcept {},
+        [](const crucible::concurrent::ParallelismDecision&) noexcept {});
     return 0;
 }

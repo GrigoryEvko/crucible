@@ -21,16 +21,10 @@
 namespace eff = crucible::effects;
 
 int main() {
-    using BadCtx = eff::ExecCtx<
-        eff::ctx_cap::Fg,
-        eff::ctx_numa::Any,
-        eff::ctx_alloc::Unbound,
-        eff::ctx_heat::Cold,
-        eff::ctx_resid::DRAM,
-        eff::Row<>,
-        eff::ctx_workload::Unspecified,
-        int                                  // NOT a progress class — fixy-A3-027
-    >;
+    using BadCtx = eff::ExecCtx<eff::ctx_cap::Fg, eff::ctx_numa::Any, eff::ctx_alloc::Unbound, eff::ctx_heat::Cold,
+                                eff::ctx_resid::DRAM, eff::Row<>, eff::ctx_workload::Unspecified,
+                                int  // NOT a progress class — fixy-A3-027
+                                >;
     BadCtx bad{};
     (void)bad;
     return 0;

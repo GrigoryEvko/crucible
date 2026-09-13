@@ -22,8 +22,8 @@
 #include <crucible/fixy/Fn.h>
 
 namespace fixy = crucible::fixy;
-namespace gr   = crucible::fixy::grant;
-using D        = crucible::fixy::dim::DimensionAxis;
+namespace gr = crucible::fixy::grant;
+using D = crucible::fixy::dim::DimensionAxis;
 
 template <D Axis>
 using strict = gr::accept_default_strict_for<Axis>;
@@ -37,19 +37,15 @@ using strict = gr::accept_default_strict_for<Axis>;
 // We use an otherwise-complete 19-axis strict pack so the failure
 // CANNOT be attributed to a missing axis — only the malformed `int`
 // entry breaks well-formedness.
-using BadFn = fixy::fn<int,
-    strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>,
-    strict<D::Security>, strict<D::Protocol>, strict<D::Lifetime>,
-    strict<D::Provenance>, strict<D::Trust>, strict<D::Representation>,
-    strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>,
-    strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>,
-    strict<D::Reentrancy>, strict<D::Size>, strict<D::Version>,
-    strict<D::Staleness>, strict<D::Synchronization>,
-    int                              // ← malformed grant: raw int
->;
+using BadFn = fixy::fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
+                       strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
+                       strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>,
+                       strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
+                       strict<D::Size>, strict<D::Version>, strict<D::Staleness>, strict<D::Synchronization>,
+                       int  // ← malformed grant: raw int
+                       >;
 
 // Force class-body completion via sizeof.
-static_assert(sizeof(BadFn) > 0,
-    "instantiate fixy::fn class body to force its static_assert chain");
+static_assert(sizeof(BadFn) > 0, "instantiate fixy::fn class body to force its static_assert chain");
 
 int main() { return 0; }

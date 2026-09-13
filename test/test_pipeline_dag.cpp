@@ -66,26 +66,19 @@ static void require(bool condition, const char* message) {
 template <typename Channel>
 [[nodiscard]] auto split_spsc() noexcept {
     auto whole = saf::mint_permission_root<typename Channel::whole_tag>();
-    return saf::mint_permission_split<
-        typename Channel::producer_tag,
-        typename Channel::consumer_tag>(std::move(whole));
+    return saf::mint_permission_split<typename Channel::producer_tag, typename Channel::consumer_tag>(std::move(whole));
 }
 
-static void fan_in_body(InA::ConsumerHandle&&,
-                        InB::ConsumerHandle&&,
-                        InC::ConsumerHandle&&,
+static void fan_in_body(InA::ConsumerHandle&&, InB::ConsumerHandle&&, InC::ConsumerHandle&&,
                         Out::ProducerHandle&&) noexcept {
     fan_in_calls.fetch_add(1, std::memory_order_relaxed);
 }
 
-static void fan_out_body(InA::ConsumerHandle&&,
-                         Out::ProducerHandle&&,
-                         Out2::ProducerHandle&&) noexcept {
+static void fan_out_body(InA::ConsumerHandle&&, Out::ProducerHandle&&, Out2::ProducerHandle&&) noexcept {
     fan_out_calls.fetch_add(1, std::memory_order_relaxed);
 }
 
-static void swmr_publish_body(SwmrIn::ConsumerHandle&&,
-                              Snapshot::WriterHandle&& writer) noexcept {
+static void swmr_publish_body(SwmrIn::ConsumerHandle&&, Snapshot::WriterHandle&& writer) noexcept {
     writer.publish(7);
     swmr_calls.fetch_add(1, std::memory_order_relaxed);
 }
@@ -127,12 +120,8 @@ static void test_mpmc_stage_from_endpoints_fan_in() {
     auto c_ep = cc::mint_endpoint<InC, cc::Direction::Consumer>(ctx, c_cons);
     auto out_ep = cc::mint_endpoint<Out, cc::Direction::Producer>(ctx, out_prod);
 
-    auto stage = cc::mint_mpmc_stage_from_endpoints<&fan_in_body>(
-        ctx,
-        std::move(a_ep),
-        std::move(b_ep),
-        std::move(c_ep),
-        std::move(out_ep));
+    auto stage = cc::mint_mpmc_stage_from_endpoints<&fan_in_body>(ctx, std::move(a_ep), std::move(b_ep),
+                                                                  std::move(c_ep), std::move(out_ep));
 
     using Stage = decltype(stage);
     static_assert(cc::IsStage<Stage>);
@@ -140,8 +129,7 @@ static void test_mpmc_stage_from_endpoints_fan_in() {
     static_assert(cc::stage_output_count_v<Stage> == 1);
 
     std::move(stage).run();
-    require(fan_in_calls.load(std::memory_order_relaxed) == 1,
-            "fan-in MPMC stage did not run exactly once");
+    require(fan_in_calls.load(std::memory_order_relaxed) == 1, "fan-in MPMC stage did not run exactly once");
 }
 
 static void test_mpmc_stage_from_endpoints_fan_out() {
@@ -167,11 +155,8 @@ static void test_mpmc_stage_from_endpoints_fan_out() {
     auto out_ep = cc::mint_endpoint<Out, cc::Direction::Producer>(ctx, out_prod);
     auto out2_ep = cc::mint_endpoint<Out2, cc::Direction::Producer>(ctx, out2_prod);
 
-    auto stage = cc::mint_mpmc_stage_from_endpoints<&fan_out_body>(
-        ctx,
-        std::move(in_ep),
-        std::move(out_ep),
-        std::move(out2_ep));
+    auto stage =
+        cc::mint_mpmc_stage_from_endpoints<&fan_out_body>(ctx, std::move(in_ep), std::move(out_ep), std::move(out2_ep));
 
     using Stage = decltype(stage);
     static_assert(cc::IsStage<Stage>);
@@ -179,8 +164,7 @@ static void test_mpmc_stage_from_endpoints_fan_out() {
     static_assert(cc::stage_output_count_v<Stage> == 2);
 
     std::move(stage).run();
-    require(fan_out_calls.load(std::memory_order_relaxed) == 1,
-            "fan-out MPMC stage did not run exactly once");
+    require(fan_out_calls.load(std::memory_order_relaxed) == 1, "fan-out MPMC stage did not run exactly once");
 }
 
 static void test_swmr_fan_out_graph() {
@@ -193,109 +177,58 @@ static void test_swmr_fan_out_graph() {
     auto [in_prod_perm, in_cons_perm] = split_spsc<SwmrIn>();
     (void)in_prod_perm;
     auto in_cons = in.consumer(std::move(in_cons_perm));
-    auto in_ep = cc::mint_endpoint<SwmrIn, cc::Direction::Consumer>(
-        ctx,
-        in_cons);
+    auto in_ep = cc::mint_endpoint<SwmrIn, cc::Direction::Consumer>(ctx, in_cons);
 
     auto writer_perm = saf::mint_permission_root<Snapshot::writer_tag>();
     auto writer = snapshot.writer(std::move(writer_perm));
 
-    auto source = cc::mint_swmr_stage<&swmr_publish_body>(
-        ctx,
-        std::move(in_ep),
-        std::move(writer));
+    auto source = cc::mint_swmr_stage<&swmr_publish_body>(ctx, std::move(in_ep), std::move(writer));
 
-    auto reader_a = cc::mint_stage<&one_to_one_body>(
-        ctx,
-        FakeConsumer<int>{},
-        FakeProducer<int>{});
-    auto reader_b = cc::mint_stage<&one_to_one_body>(
-        ctx,
-        FakeConsumer<int>{},
-        FakeProducer<int>{});
-    auto reader_c = cc::mint_stage<&one_to_one_body>(
-        ctx,
-        FakeConsumer<int>{},
-        FakeProducer<int>{});
+    auto reader_a = cc::mint_stage<&one_to_one_body>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
+    auto reader_b = cc::mint_stage<&one_to_one_body>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
+    auto reader_c = cc::mint_stage<&one_to_one_body>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
 
     using Source = decltype(source);
-    using Graph = cc::StageGraph<
-        cc::StagePack<Source, PlainStage, PlainStage, PlainStage>,
-        cc::EdgePack<cc::StageEdge<0, 1>,
-                     cc::StageEdge<0, 2>,
-                     cc::StageEdge<0, 3>>>;
+    using Graph = cc::StageGraph<cc::StagePack<Source, PlainStage, PlainStage, PlainStage>,
+                                 cc::EdgePack<cc::StageEdge<0, 1>, cc::StageEdge<0, 2>, cc::StageEdge<0, 3>>>;
     static_assert(cc::StageGraphWellFormed<Graph>);
     static_assert(cc::CtxFitsPipelineDag<eff::HotFgCtx, Graph>);
 
-    auto pipeline = cc::mint_pipeline_dag(
-        ctx,
-        Graph{},
-        std::move(source),
-        std::move(reader_a),
-        std::move(reader_b),
-        std::move(reader_c));
+    auto pipeline = cc::mint_pipeline_dag(ctx, Graph{}, std::move(source), std::move(reader_a), std::move(reader_b),
+                                          std::move(reader_c));
     std::move(pipeline).run();
 
-    require(swmr_calls.load(std::memory_order_relaxed) == 1,
-            "SWMR source stage did not run");
+    require(swmr_calls.load(std::memory_order_relaxed) == 1, "SWMR source stage did not run");
     auto reader = snapshot.reader();
-    require(reader.has_value(),
-            "SWMR snapshot reader could not be minted after pipeline run");
-    require(reader->load() == 7,
-            "SWMR source stage did not publish into the snapshot");
-    require(dag_calls.load(std::memory_order_relaxed) == 3,
-            "SWMR fan-out readers did not all run");
+    require(reader.has_value(), "SWMR snapshot reader could not be minted after pipeline run");
+    require(reader->load() == 7, "SWMR source stage did not publish into the snapshot");
+    require(dag_calls.load(std::memory_order_relaxed) == 3, "SWMR fan-out readers did not all run");
 }
 
 static void test_diamond_dag_runtime() {
     reset();
     eff::HotFgCtx ctx{};
 
-    auto s0 = cc::mint_stage<&one_to_one_body>(
-        ctx,
-        FakeConsumer<int>{},
-        FakeProducer<int>{});
-    auto s1 = cc::mint_stage<&one_to_one_body>(
-        ctx,
-        FakeConsumer<int>{},
-        FakeProducer<int>{});
-    auto s2 = cc::mint_stage<&one_to_one_body>(
-        ctx,
-        FakeConsumer<int>{},
-        FakeProducer<int>{});
-    auto s3 = cc::mint_stage<&one_to_one_body>(
-        ctx,
-        FakeConsumer<int>{},
-        FakeProducer<int>{});
+    auto s0 = cc::mint_stage<&one_to_one_body>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
+    auto s1 = cc::mint_stage<&one_to_one_body>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
+    auto s2 = cc::mint_stage<&one_to_one_body>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
+    auto s3 = cc::mint_stage<&one_to_one_body>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
 
     using Graph = cc::StageGraph<
         cc::StagePack<PlainStage, PlainStage, PlainStage, PlainStage>,
-        cc::EdgePack<cc::StageEdge<0, 1>,
-                     cc::StageEdge<0, 2>,
-                     cc::StageEdge<1, 3>,
-                     cc::StageEdge<2, 3>>>;
-    using Cycle = cc::StageGraph<
-        cc::StagePack<PlainStage, PlainStage>,
-        cc::EdgePack<cc::StageEdge<1, 0>>>;
-    using Unreachable = cc::StageGraph<
-        cc::StagePack<PlainStage, PlainStage, PlainStage>,
-        cc::EdgePack<cc::StageEdge<0, 1>>>;
+        cc::EdgePack<cc::StageEdge<0, 1>, cc::StageEdge<0, 2>, cc::StageEdge<1, 3>, cc::StageEdge<2, 3>>>;
+    using Cycle = cc::StageGraph<cc::StagePack<PlainStage, PlainStage>, cc::EdgePack<cc::StageEdge<1, 0>>>;
+    using Unreachable =
+        cc::StageGraph<cc::StagePack<PlainStage, PlainStage, PlainStage>, cc::EdgePack<cc::StageEdge<0, 1>>>;
 
     static_assert(cc::StageGraphWellFormed<Graph>);
     static_assert(!cc::StageGraphWellFormed<Cycle>);
     static_assert(!cc::StageGraphWellFormed<Unreachable>);
 
-    auto pipeline = cc::mint_pipeline_dag(
-        ctx,
-        Graph{},
-        std::move(s0),
-        std::move(s1),
-        std::move(s2),
-        std::move(s3));
+    auto pipeline = cc::mint_pipeline_dag(ctx, Graph{}, std::move(s0), std::move(s1), std::move(s2), std::move(s3));
     std::move(pipeline).run();
 
-    require(dag_calls.load(std::memory_order_relaxed) == 4,
-            "diamond DAG did not run all four stages");
+    require(dag_calls.load(std::memory_order_relaxed) == 4, "diamond DAG did not run all four stages");
 }
 
 }  // namespace pipeline_dag_test

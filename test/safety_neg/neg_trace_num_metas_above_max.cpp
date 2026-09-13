@@ -35,8 +35,7 @@ int main() {
     // (`bounded_above<MAX_METAS>(v)`) to be exercised at compile time.
     // v == MAX_METAS + 1 → predicate(v) == false → contract violation
     // → not a constant expression → ill-formed.
-    constexpr crucible::ValidTraceNumMetas bad{
-        uint32_t{crucible::MAX_METAS} + 1u};
+    constexpr crucible::ValidTraceNumMetas bad{uint32_t{crucible::MAX_METAS} + 1u};
     (void)bad;
     return 0;
 }

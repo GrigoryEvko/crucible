@@ -20,7 +20,7 @@
 
 namespace crucible::cntp::tcam {
 
-inline constexpr std::uint32_t kMaxStaticTcamRules = 65'536;
+inline constexpr std::uint32_t kMaxStaticTcamRules = 65536;
 
 // False: nothing here reaches the device.  No rdma-core, no DPDK rte_flow, no
 // tc-flower, no switchd, no netlink, no vendor SDK, and the rule table below
@@ -66,7 +66,7 @@ enum class FlowAction : std::uint8_t {
 
 using TcamRuleId = safety::Refined<safety::non_zero, std::uint64_t>;
 using TcamEntryCount = safety::Positive<std::uint32_t>;
-using TcamPriority = safety::Bounded<std::uint16_t{0}, std::uint16_t{65'535}, std::uint16_t>;
+using TcamPriority = safety::Bounded<std::uint16_t{0}, std::uint16_t{65535}, std::uint16_t>;
 using TcamDscp = safety::Bounded<std::uint8_t{0}, std::uint8_t{63}, std::uint8_t>;
 
 template <std::uint32_t MaxRules>

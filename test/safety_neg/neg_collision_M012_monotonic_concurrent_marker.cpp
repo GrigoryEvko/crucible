@@ -62,27 +62,26 @@ namespace neg_collision_m012_marker {
 // effect row (Bg-row arm of concurrent_context_v FALSE), no async marker
 // (async arm FALSE).  The M012 trigger fires ONLY via the marker arm,
 // engaged by the specialization at file scope below.
-using Bad = fn::Fn<
-    int,                                       // 1  Type
-    fn::pred::True,                            // 2  Refinement (trivial)
-    fn::UsageMode::Linear,                     // 3  Usage — Linear (no L-series)
-    fx::Row<>,                                 // 4  EffectRow — EMPTY (Bg arm FALSE)
-    fn::SecLevel::Public,                      // 5  Security
-    fn::proto::None,                           // 6  Protocol
-    fn::lifetime::Static,                      // 7  Lifetime
-    fn::source::FromInternal,                  // 8  Source
-    fn::trust::Verified,                       // 9  Trust
-    fn::ReprKind::Opaque,                      // 10 Repr — NON-Atomic (M012 repr term TRUE)
-    fn::cost::Constant,                        // 11 Cost (bounded — B/H-series silent)
-    fn::precision::Exact,                      // 12 Precision
-    fn::space::Bounded<sizeof(int)>,           // 13 Space
-    fn::OverflowMode::Trap,                    // 14 Overflow
-    fn::MutationMode::Monotonic,               // 15 Mutation — MONOTONIC (M012 trigger)
-    fn::ReentrancyMode::NonReentrant,          // 16 Reentrancy — non-Coroutine (R-series silent)
-    fn::size_pol::Sized<sizeof(int)>,          // 17 Size
-    /*Version=*/1,                             // 18 Version
-    fn::stale::Fresh                           // 19 Staleness
->;
+using Bad = fn::Fn<int,  // 1  Type
+                   fn::pred::True,  // 2  Refinement (trivial)
+                   fn::UsageMode::Linear,  // 3  Usage — Linear (no L-series)
+                   fx::Row<>,  // 4  EffectRow — EMPTY (Bg arm FALSE)
+                   fn::SecLevel::Public,  // 5  Security
+                   fn::proto::None,  // 6  Protocol
+                   fn::lifetime::Static,  // 7  Lifetime
+                   fn::source::FromInternal,  // 8  Source
+                   fn::trust::Verified,  // 9  Trust
+                   fn::ReprKind::Opaque,  // 10 Repr — NON-Atomic (M012 repr term TRUE)
+                   fn::cost::Constant,  // 11 Cost (bounded — B/H-series silent)
+                   fn::precision::Exact,  // 12 Precision
+                   fn::space::Bounded<sizeof(int)>,  // 13 Space
+                   fn::OverflowMode::Trap,  // 14 Overflow
+                   fn::MutationMode::Monotonic,  // 15 Mutation — MONOTONIC (M012 trigger)
+                   fn::ReentrancyMode::NonReentrant,  // 16 Reentrancy — non-Coroutine (R-series silent)
+                   fn::size_pol::Sized<sizeof(int)>,  // 17 Size
+                   /*Version=*/1,  // 18 Version
+                   fn::stale::Fresh  // 19 Staleness
+                   >;
 
 }  // namespace neg_collision_m012_marker
 
@@ -91,8 +90,8 @@ using Bad = fn::Fn<
 // alone supplies the concurrency signal.  Combined with Monotonic
 // mutation and non-Atomic repr, M012 fires.
 namespace crucible::safety::fn::collision {
-    template <> struct marks_concurrent_context<::neg_collision_m012_marker::Bad>
-        : std::true_type {};
+template <>
+struct marks_concurrent_context<::neg_collision_m012_marker::Bad> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 [[maybe_unused]] neg_collision_m012_marker::Bad the_fixture{};

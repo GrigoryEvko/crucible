@@ -26,11 +26,11 @@ using crucible::safety::Tagged;
 using crucible::safety::source::External;
 
 int main() {
-// schema_name_typed returns Tagged<Borrowed<const char, SchemaTable>,
-// source::Sanitized>. Should FAIL: the conversion target with
-// source::External is a DIFFERENT class instantiation; no implicit
-// retag from Sanitized → External exists (and the converse direction
-// is also rejected — see GAPS-094 fixture).
+    // schema_name_typed returns Tagged<Borrowed<const char, SchemaTable>,
+    // source::Sanitized>. Should FAIL: the conversion target with
+    // source::External is a DIFFERENT class instantiation; no implicit
+    // retag from Sanitized → External exists (and the converse direction
+    // is also rejected — see GAPS-094 fixture).
     Tagged<crucible::SchemaTable::BorrowedName, External> wrong =
         crucible::vessel::schema_name_typed(crucible::SchemaHash{0});
     return wrong.value().data() == nullptr ? 0 : 1;

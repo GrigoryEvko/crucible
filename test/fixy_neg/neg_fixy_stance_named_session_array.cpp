@@ -16,8 +16,7 @@ struct DummyProto {};
 
 using BadNamedSessionArray = stance::NamedSession<int[7], DummyProto>;
 
-static_assert(sizeof(BadNamedSessionArray) > 0,
-    "instantiate stance::NamedSession<int[7], Proto> to force the "
-    "Type-axis rejection (array decay).");
+static_assert(sizeof(BadNamedSessionArray) > 0, "instantiate stance::NamedSession<int[7], Proto> to force the "
+                                                "Type-axis rejection (array decay).");
 
 int main() { return 0; }

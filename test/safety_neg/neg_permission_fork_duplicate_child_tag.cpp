@@ -28,22 +28,19 @@ struct A {};
 namespace crucible::safety {
 
 template <>
-struct splits_into_pack<neg_permission_fork_duplicate_child_tag::Whole,
-                        neg_permission_fork_duplicate_child_tag::A,
-                        neg_permission_fork_duplicate_child_tag::A>
-    : std::true_type {};
+struct splits_into_pack<neg_permission_fork_duplicate_child_tag::Whole, neg_permission_fork_duplicate_child_tag::A,
+                        neg_permission_fork_duplicate_child_tag::A> : std::true_type {};
 
 template <>
-struct splits_into_pack_authoring_witness<
-    neg_permission_fork_duplicate_child_tag::Whole,
-    neg_permission_fork_duplicate_child_tag::A,
-    neg_permission_fork_duplicate_child_tag::A> : std::true_type {};
+struct splits_into_pack_authoring_witness<neg_permission_fork_duplicate_child_tag::Whole,
+                                          neg_permission_fork_duplicate_child_tag::A,
+                                          neg_permission_fork_duplicate_child_tag::A> : std::true_type {};
 
 }  // namespace crucible::safety
 
 int main() {
     namespace tags = neg_permission_fork_duplicate_child_tag;
-    namespace eff  = ::crucible::effects;
+    namespace eff = ::crucible::effects;
     namespace safe = ::crucible::safety;
 
     auto whole = safe::mint_permission_root<tags::Whole>();
@@ -52,8 +49,7 @@ int main() {
     // all_distinct_tags_v<A, A> is false; the fix-07 fork static_assert
     // (and the split_n it delegates to) fires.
     auto rebuilt = safe::mint_permission_fork<tags::A, tags::A>(
-        safe::PermissionForkSpawnCtx{},
-        std::move(whole),
+        safe::PermissionForkSpawnCtx{}, std::move(whole),
         [](safe::Permission<tags::A>, safe::PermissionForkSpawnCtx const&) noexcept {},
         [](safe::Permission<tags::A>, safe::PermissionForkSpawnCtx const&) noexcept {});
     safe::permission_drop(std::move(rebuilt));

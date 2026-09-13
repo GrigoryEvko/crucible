@@ -51,11 +51,10 @@ namespace cog = crucible::cog;
 // static_assert is ill-formed — the build fails here.
 constexpr cog::PowerOfTwoLane BAD_LANE_FIXTURE{std::uint16_t{33}};
 
-static_assert(BAD_LANE_FIXTURE.value() == 33,
-    "GAPS-186: cog::PowerOfTwoLane MUST refuse non-power-of-two values "
-    "at the Refined precondition contract.  If this static_assert ever "
-    "evaluates successfully, GpuTargetCaps::warp_size = 33 would slip "
-    "through field construction and corrupt every downstream occupancy "
-    "/ wave-efficiency calculation that divides by warp_size.");
+static_assert(BAD_LANE_FIXTURE.value() == 33, "GAPS-186: cog::PowerOfTwoLane MUST refuse non-power-of-two values "
+                                              "at the Refined precondition contract.  If this static_assert ever "
+                                              "evaluates successfully, GpuTargetCaps::warp_size = 33 would slip "
+                                              "through field construction and corrupt every downstream occupancy "
+                                              "/ wave-efficiency calculation that divides by warp_size.");
 
 int main() { return 0; }

@@ -27,8 +27,8 @@
 #include <crucible/fixy/Fn.h>
 
 namespace fixy = crucible::fixy;
-namespace gr   = crucible::fixy::grant;
-using D        = crucible::fixy::dim::DimensionAxis;
+namespace gr = crucible::fixy::grant;
+using D = crucible::fixy::dim::DimensionAxis;
 
 template <D Axis>
 using strict = gr::accept_default_strict_for<Axis>;
@@ -41,16 +41,18 @@ int main() {
     //   NO declassify<Policy> grant in the pack
     // Semantically identical to the explicit-as_secret form; the
     // strict-default-Security specialization closes the bypass.
-    auto bad = fixy::mint_fn<int,
-        strict<D::Refinement>, strict<D::Usage>,
-        gr::with_io,            // Effect = IO
-        strict<D::Security>,    // Security = strict default = Classified
-        strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>,
-        strict<D::Trust>, strict<D::Representation>, strict<D::Observability>,
-        strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
-        strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
-        strict<D::Size>, strict<D::Version>, strict<D::Staleness>, strict<D::Synchronization>, strict<D::Regime>,
-        strict<D::FpMode>, strict<D::SyscallSurface>, strict<D::ControlFlow>, strict<D::CallShape>, strict<D::StackUse>, strict<D::GlobalState>, strict<D::Stdio>, strict<D::HwInstruction>, strict<D::BarrierStrength>, strict<D::SimdIsa>, strict<D::MemoryScope>>(42);
+    auto bad =
+        fixy::mint_fn<int, strict<D::Refinement>, strict<D::Usage>,
+                      gr::with_io,  // Effect = IO
+                      strict<D::Security>,  // Security = strict default = Classified
+                      strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
+                      strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>,
+                      strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
+                      strict<D::Size>, strict<D::Version>, strict<D::Staleness>, strict<D::Synchronization>,
+                      strict<D::Regime>, strict<D::FpMode>, strict<D::SyscallSurface>, strict<D::ControlFlow>,
+                      strict<D::CallShape>, strict<D::StackUse>, strict<D::GlobalState>, strict<D::Stdio>,
+                      strict<D::HwInstruction>, strict<D::BarrierStrength>, strict<D::SimdIsa>, strict<D::MemoryScope>>(
+            42);
     (void)bad;
     return 0;
 }

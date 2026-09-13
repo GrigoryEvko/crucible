@@ -20,9 +20,8 @@ struct NotAnExecCtx {};  // No row_type, no Effect aggregation API.
 }  // namespace test_fixy_perf_sense_hub_not_exec_ctx
 
 int main() {
-    auto hub = crucible::fixy::perf::mint_sense_hub(
-        test_fixy_perf_sense_hub_not_exec_ctx::NotAnExecCtx{},
-        crucible::effects::testing::init());
+    auto hub = crucible::fixy::perf::mint_sense_hub(test_fixy_perf_sense_hub_not_exec_ctx::NotAnExecCtx{},
+                                                    crucible::effects::testing::init());
     (void)hub;
     return 0;
 }

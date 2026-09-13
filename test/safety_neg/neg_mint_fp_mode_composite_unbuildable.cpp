@@ -25,18 +25,12 @@ struct OnlyIntCtor {
 };
 
 int main() {
-    auto bad = cs::mint_fp_mode_composite<
-        cs::FpRounding::RoundToNearestEven,
-        cs::FpFtz::FlushToZero,
-        cs::FpContract::Off,
-        cs::FpTrapMask::AllMasked,
-        cs::FpDenormalInput::HonorDenormals,
-        cs::FpNanPolicy::PropagateQuiet,
-        cs::FpInfPolicy::PropagateInfinity,
-        cs::FpComplexLayout::Interleaved,
-        cs::FpLibmPolicy::ScalarLibm,
-        cs::FpReassociate::Forbidden,
-        cs::FpConstantRounding::SameAsRuntime,
-        OnlyIntCtor>("not_an_integer");
+    auto bad =
+        cs::mint_fp_mode_composite<cs::FpRounding::RoundToNearestEven, cs::FpFtz::FlushToZero, cs::FpContract::Off,
+                                   cs::FpTrapMask::AllMasked, cs::FpDenormalInput::HonorDenormals,
+                                   cs::FpNanPolicy::PropagateQuiet, cs::FpInfPolicy::PropagateInfinity,
+                                   cs::FpComplexLayout::Interleaved, cs::FpLibmPolicy::ScalarLibm,
+                                   cs::FpReassociate::Forbidden, cs::FpConstantRounding::SameAsRuntime, OnlyIntCtor>(
+            "not_an_integer");
     return bad.peek().value;
 }

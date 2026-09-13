@@ -50,7 +50,7 @@ struct S {
 // The function under test — exact shape of the broken Pattern-C
 // production sites (cog::content_hash, CogMimic::*, MerkleDag::*).
 [[nodiscard]] constexpr std::uint64_t under_test(S const& s) noexcept {
-    CRUCIBLE_PRE(s.nz());   // the contract that MUST fire at consteval
+    CRUCIBLE_PRE(s.nz());  // the contract that MUST fire at consteval
     return s.lo;
 }
 
@@ -67,14 +67,13 @@ constexpr S ZERO{};
 // NOT a constant expression, so the consteval evaluator fails with
 // "non-constant condition for static assertion" — exactly what we
 // want a neg-compile fixture to surface.
-static_assert(under_test(ZERO) == 0,
-    "CRUCIBLE_PRE on T const& MUST fire at consteval when the "
-    "predicate is violated.  If this static_assert ever evaluates "
-    "successfully, the Pre.h consteval-enforcement is broken and "
-    "every neg-compile fixture that depends on contract-firing-at-"
-    "consteval is silently green when it should be red — exactly "
-    "the soundness gap that motivated shipping CRUCIBLE_PRE in the "
-    "first place.");
+static_assert(under_test(ZERO) == 0, "CRUCIBLE_PRE on T const& MUST fire at consteval when the "
+                                     "predicate is violated.  If this static_assert ever evaluates "
+                                     "successfully, the Pre.h consteval-enforcement is broken and "
+                                     "every neg-compile fixture that depends on contract-firing-at-"
+                                     "consteval is silently green when it should be red — exactly "
+                                     "the soundness gap that motivated shipping CRUCIBLE_PRE in the "
+                                     "first place.");
 
 }  // namespace
 

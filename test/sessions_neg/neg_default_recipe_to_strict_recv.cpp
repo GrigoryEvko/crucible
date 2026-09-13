@@ -9,19 +9,20 @@
 #include <crucible/sessions/SessionPayloadSubsort.h>
 
 namespace proto = crucible::safety::proto;
-namespace safe  = crucible::safety;
+namespace safe = crucible::safety;
 
 namespace {
-struct Tile { float value[4]; };
+struct Tile {
+    float value[4];
+};
 
 using DefaultRecipeTile = safe::RecipeSpec<Tile>;
-using StrictTile        = safe::NumericalTier<safe::Tolerance::BITEXACT, Tile>;
+using StrictTile = safe::NumericalTier<safe::Tolerance::BITEXACT, Tile>;
 
 using Producer = proto::Send<DefaultRecipeTile, proto::End>;
 using Consumer = proto::Recv<StrictTile, proto::End>;
 }  // namespace
 
-static_assert(proto::CompatibleClient<Producer, Consumer>,
-    "NumericalTier_DefaultRecipe_CannotSatisfyStrictRecv");
+static_assert(proto::CompatibleClient<Producer, Consumer>, "NumericalTier_DefaultRecipe_CannotSatisfyStrictRecv");
 
 int main() { return 0; }

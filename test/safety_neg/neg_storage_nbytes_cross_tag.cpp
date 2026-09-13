@@ -17,19 +17,19 @@
 #include <crucible/safety/Tagged.h>
 
 int main() {
-  crucible::TensorMeta meta{};
-  meta.ndim = 1;
-  meta.sizes[0] = ::crucible::tensor_dim(8);
-  meta.strides[0] = ::crucible::tensor_dim(1);
-  meta.dtype = crucible::ScalarType::Float;
+    crucible::TensorMeta meta{};
+    meta.ndim = 1;
+    meta.sizes[0] = ::crucible::tensor_dim(8);
+    meta.strides[0] = ::crucible::tensor_dim(1);
+    meta.dtype = crucible::ScalarType::Float;
 
-  using SanitizedTensorMeta = crucible::safety::Tagged<
-      const crucible::TensorMeta&, crucible::safety::source::Sanitized>;
-  SanitizedTensorMeta sanitized{meta};
+    using SanitizedTensorMeta =
+        crucible::safety::Tagged<const crucible::TensorMeta&, crucible::safety::source::Sanitized>;
+    SanitizedTensorMeta sanitized{meta};
 
-  // MUST fail: Tagged<const TensorMeta&, Sanitized> is not
-  // ExternalTensorMeta.
-  auto bytes = crucible::compute_storage_nbytes(sanitized);
-  (void)bytes;
-  return 0;
+    // MUST fail: Tagged<const TensorMeta&, Sanitized> is not
+    // ExternalTensorMeta.
+    auto bytes = crucible::compute_storage_nbytes(sanitized);
+    (void)bytes;
+    return 0;
 }

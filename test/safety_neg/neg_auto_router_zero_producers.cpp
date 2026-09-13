@@ -8,16 +8,10 @@
 
 namespace {
 struct RouteTag {};
-}
+}  // namespace
 
-using BadRoute = crucible::concurrent::AutoRoute_t<
-    crucible::concurrent::RouteIntent::Stream,
-    int,
-    16,
-    RouteTag,
-    0,
-    1,
-    1024>;
+using BadRoute =
+    crucible::concurrent::AutoRoute_t<crucible::concurrent::RouteIntent::Stream, int, 16, RouteTag, 0, 1, 1024>;
 
 [[maybe_unused]] BadRoute* force_instantiation = nullptr;
 

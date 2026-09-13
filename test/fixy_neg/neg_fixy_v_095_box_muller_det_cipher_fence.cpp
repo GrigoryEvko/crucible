@@ -41,8 +41,7 @@ namespace neg_fixy_v_095_box_muller_det_cipher_fence {
 // Simulate the Cipher write-fence: a generic function template that
 // accepts any DetSafe-typed value whose tier subsumes PhiloxRng.
 template <typename W>
-concept admissible_at_cipher_fence =
-    W::template satisfies<cwrap::DetSafeTier_v::PhiloxRng>;
+concept admissible_at_cipher_fence = W::template satisfies<cwrap::DetSafeTier_v::PhiloxRng>;
 
 template <typename W>
     requires admissible_at_cipher_fence<W>

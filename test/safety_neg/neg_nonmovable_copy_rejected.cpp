@@ -46,20 +46,18 @@
 #include <crucible/safety/Pinned.h>
 
 namespace {
-    // Production-shape NonMovable consumer: a type whose IDENTITY
-    // is an owned resource (synthetic handle_id_).  Copying would
-    // hand two owners the same handle — when both destructors
-    // fire, they double-release.
-    struct OwnedHandle : ::crucible::safety::NonMovable<OwnedHandle> {
-        unsigned long handle_id_ = 0;
-    };
+// Production-shape NonMovable consumer: a type whose IDENTITY
+// is an owned resource (synthetic handle_id_).  Copying would
+// hand two owners the same handle — when both destructors
+// fire, they double-release.
+struct OwnedHandle : ::crucible::safety::NonMovable<OwnedHandle> {
+    unsigned long handle_id_ = 0;
+};
 }  // namespace
 
 // Anchor: default-construction is allowed — the only path to
 // OBTAIN a NonMovable handle is in-place construction.
-[[maybe_unused]] static OwnedHandle anchor_make_nonmovable() {
-    return OwnedHandle{};
-}
+[[maybe_unused]] static OwnedHandle anchor_make_nonmovable() { return OwnedHandle{}; }
 
 // VIOLATION: OwnedHandle inherits a deleted copy ctor from
 // NonMovable<OwnedHandle>.  Attempting copy-construction triggers
@@ -68,7 +66,7 @@ namespace {
 // resource".  GCC emits "use of deleted function" + this reason
 // verbatim.
 [[maybe_unused]] static OwnedHandle offending_nonmovable_copy(const OwnedHandle& source) {
-    return OwnedHandle{source};   // ERROR: copy ctor deleted
+    return OwnedHandle{source};  // ERROR: copy ctor deleted
 }
 
 int main() { return 0; }

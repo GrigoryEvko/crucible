@@ -48,7 +48,7 @@
 
 namespace neg_fixy_pipe_hot_path_inline_oversized {
 
-namespace cc  = ::crucible::concurrent;
+namespace cc = ::crucible::concurrent;
 namespace eff = ::crucible::effects;
 
 constexpr std::size_t MiB = 1024 * 1024;
@@ -69,8 +69,7 @@ struct HeavyProducer {
     [[nodiscard]] bool try_push(int const&) noexcept { return true; }
 };
 
-static void heavy(HeavyConsumer<10 * MiB>&&,
-                  HeavyProducer<10 * MiB>&&) noexcept {}
+static void heavy(HeavyConsumer<10 * MiB>&&, HeavyProducer<10 * MiB>&&) noexcept {}
 
 using HeavyStage = cc::Stage<&heavy, eff::HotFgCtx>;
 
@@ -83,19 +82,15 @@ namespace crucible::concurrent {
 // wrong axis (fixture #2's axis), defeating HS14's distinct-axis
 // discipline.
 template <>
-struct stage_inline_safe<
-    ::neg_fixy_pipe_hot_path_inline_oversized::HeavyStage>
-    : std::true_type {};
+struct stage_inline_safe<::neg_fixy_pipe_hot_path_inline_oversized::HeavyStage> : std::true_type {};
 }  // namespace crucible::concurrent
 
 namespace neg_fixy_pipe_hot_path_inline_oversized {
 
-using HugePipeline = cc::Pipeline<
-    HeavyStage, HeavyStage, HeavyStage, HeavyStage, HeavyStage>;
+using HugePipeline = cc::Pipeline<HeavyStage, HeavyStage, HeavyStage, HeavyStage, HeavyStage>;
 
 // Sanity — the substrate facts the rejection depends on.
-static_assert(HugePipeline::aggregate_per_call_working_set
-              == 100 * MiB);
+static_assert(HugePipeline::aggregate_per_call_working_set == 100 * MiB);
 static_assert(HugePipeline::inline_safe);
 static_assert(HugePipeline::aggregate_working_set_known);
 
@@ -109,12 +104,10 @@ int main() {
     // L2 cap or upper-bounded by DRAM instead), a 100 MiB pipeline
     // could falsely claim inline dispatch and a band-3 site would
     // mis-budget.  The stance's job is to catch this at compile time.
-    static_assert(
-        ::crucible::fixy::pipe::stance::HotPathInline<
-            ns::HugePipeline>,
-        "FIXY-V-218 fixture #1: 100 MiB inline-safe pipeline MUST "
-        "FAIL stance::HotPathInline at the 32 KiB / 1 MiB default "
-        "cache budget — aggregate working set exceeds both L1d and "
-        "L2 caps in the substrate witness.");
+    static_assert(::crucible::fixy::pipe::stance::HotPathInline<ns::HugePipeline>,
+                  "FIXY-V-218 fixture #1: 100 MiB inline-safe pipeline MUST "
+                  "FAIL stance::HotPathInline at the 32 KiB / 1 MiB default "
+                  "cache budget — aggregate working set exceeds both L1d and "
+                  "L2 caps in the substrate witness.");
     return 0;
 }

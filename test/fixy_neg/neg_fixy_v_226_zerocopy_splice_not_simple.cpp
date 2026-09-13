@@ -26,18 +26,17 @@
 #include <crucible/fixy/Wrap.h>
 
 int main() {
-    namespace fwio    = ::crucible::fixy::wrap::io;
+    namespace fwio = ::crucible::fixy::wrap::io;
     namespace zerocopy = fwio::zerocopy;
-    namespace grant    = fwio::grant;
+    namespace grant = fwio::grant;
 
     ::crucible::effects::TestRunnerCtx ctx{};
 
     // Should FAIL: zerocopy<Splice> engages the axis with a non-simple-
     // transfer enumerator; pack_zerocopy_is_simple_transfer_v<> is false.
-    [[maybe_unused]] auto r = fwio::mint_zerocopy_transfer<
-        grant::zerocopy<zerocopy::Splice>
-    >(ctx,
-      /*src_fd=*/-1, /*dst_fd=*/-1, /*length=*/4096,
-      /*off_in=*/nullptr, /*off_out=*/nullptr);
+    [[maybe_unused]] auto r =
+        fwio::mint_zerocopy_transfer<grant::zerocopy<zerocopy::Splice>>(ctx,
+                                                                        /*src_fd=*/-1, /*dst_fd=*/-1, /*length=*/4096,
+                                                                        /*off_in=*/nullptr, /*off_out=*/nullptr);
     return 0;
 }

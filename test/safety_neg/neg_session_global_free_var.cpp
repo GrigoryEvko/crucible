@@ -10,13 +10,12 @@
 using namespace crucible::safety::proto;
 
 struct Alice {};
-struct Bob   {};
+struct Bob {};
 
 // Var_G at the end — no enclosing Rec_G.  Ill-formed.
 using IllFormedG = Transmission<Alice, Bob, int, Var_G>;
 
 int main() {
-    static_assert(is_global_well_formed_v<IllFormedG>,
-        "should be ill-formed");
+    static_assert(is_global_well_formed_v<IllFormedG>, "should be ill-formed");
     return 0;
 }

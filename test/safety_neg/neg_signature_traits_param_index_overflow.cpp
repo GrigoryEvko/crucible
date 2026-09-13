@@ -25,8 +25,7 @@ inline void neg_witness_unary(int) noexcept {}
 int main() {
     // arity_v<&neg_witness_unary> == 1, so index 0 is valid; index 1
     // is out of range and must be rejected by the requires clause.
-    using OutOfRange =
-        crucible::safety::extract::param_type_t<&::neg_witness_unary, 1>;
+    using OutOfRange = crucible::safety::extract::param_type_t<&::neg_witness_unary, 1>;
 
     OutOfRange const value{};
     (void)value;

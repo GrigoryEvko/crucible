@@ -23,11 +23,10 @@ using namespace crucible::algebra::lattices;
 
 int main() {
     Consistency consistency_val = Consistency::STRONG;
-    Tolerance   tolerance_val   = Tolerance::BITEXACT;
+    Tolerance tolerance_val = Tolerance::BITEXACT;
 
     // Should FAIL: ConsistencyLattice::leq expects two Consistency
     // values; Tolerance is a structurally different `enum class :
     // uint8_t` and not implicitly convertible.
-    return static_cast<int>(
-        ConsistencyLattice::leq(consistency_val, tolerance_val));
+    return static_cast<int>(ConsistencyLattice::leq(consistency_val, tolerance_val));
 }

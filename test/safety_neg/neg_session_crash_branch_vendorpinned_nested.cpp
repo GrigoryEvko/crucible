@@ -35,7 +35,7 @@ using namespace crucible::safety::proto;
 namespace neg_a2_012_vp_nested {
 struct UnreliablePeer {};
 struct Setup {};
-struct Ack   {};
+struct Ack {};
 struct Payload {};
 }  // namespace neg_a2_012_vp_nested
 
@@ -47,12 +47,9 @@ int main() {
 
     // Outer prefix is well-formed: Send<Setup, Recv<Ack, BadOffer>>.
     // Wrapped under VendorPinned<NV, ...> at root.
-    using NestedBadProto =
-        Send<ns::Setup,
-             Recv<ns::Ack, BadOffer>>;
+    using NestedBadProto = Send<ns::Setup, Recv<ns::Ack, BadOffer>>;
     using IllFormedProto = VendorPinned<VendorBackend::AMD, NestedBadProto>;
 
-    assert_every_offer_has_crash_branch_for<IllFormedProto,
-                                            ns::UnreliablePeer>();
+    assert_every_offer_has_crash_branch_for<IllFormedProto, ns::UnreliablePeer>();
     return 0;
 }

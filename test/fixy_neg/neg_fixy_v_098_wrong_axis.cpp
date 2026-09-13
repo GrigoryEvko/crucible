@@ -35,14 +35,13 @@
 #include <crucible/fixy/syscall/Per.h>
 
 namespace fxgs = crucible::fixy::grant::syscall;
-namespace cal  = crucible::algebra::lattices;
+namespace cal = crucible::algebra::lattices;
 
 // Substituting a SyscallFamily value for the SyscallId NTTP on
 // `per<...>` — the parametric grant's template-parameter type is
 // `safety::syscall::SyscallId`, NOT `algebra::lattices::SyscallFamily`.
 // Template-id formation rejects.
-using Bad =
-    fxgs::per<cal::SyscallFamily::FileMutation /* wrong enum type */>;
+using Bad = fxgs::per<cal::SyscallFamily::FileMutation /* wrong enum type */>;
 
 int main() {
     [[maybe_unused]] Bad b{};

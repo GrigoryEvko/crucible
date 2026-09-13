@@ -35,8 +35,7 @@ int main() {
     // type.  Default-constructing init_key fails outside friend
     // scope, but the template substitution itself is what we're
     // testing — concept rejects before instantiation succeeds.
-    auto bg = eff::mint_bg_context<eff::detail::ctx_mint::init_key>(
-        eff::detail::ctx_mint::init_key{});
+    auto bg = eff::mint_bg_context<eff::detail::ctx_mint::init_key>(eff::detail::ctx_mint::init_key{});
     (void)bg;
     return 0;
 }

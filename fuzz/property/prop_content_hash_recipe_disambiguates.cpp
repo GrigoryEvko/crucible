@@ -39,14 +39,15 @@ int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
     const Config cfg = parse_args(argc, argv);
 
-    return run("compute_content_hash recipe disambiguation", cfg,
+    return run(
+        "compute_content_hash recipe disambiguation", cfg,
         [](Rng& rng) {
             constexpr unsigned MAX = 8;
             struct Triple {
                 std::array<TraceEntry, MAX> ops;
-                uint8_t                     count;
-                NumericalRecipe             recipe_a;
-                NumericalRecipe             recipe_b;
+                uint8_t count;
+                NumericalRecipe recipe_a;
+                NumericalRecipe recipe_b;
             };
             Triple t{};
             t.count = static_cast<uint8_t>(rng.next_below(MAX) + 1);
@@ -64,16 +65,15 @@ int main(int argc, char** argv) {
             return t;
         },
         [](const auto& t) {
-            const std::span<const TraceEntry> ops_span{
-                t.ops.data(), t.count};
+            const std::span<const TraceEntry> ops_span{t.ops.data(), t.count};
 
             const auto h_none = compute_content_hash(ops_span);
-            const auto h_a    = compute_content_hash(ops_span, &t.recipe_a);
-            const auto h_b    = compute_content_hash(ops_span, &t.recipe_b);
+            const auto h_a = compute_content_hash(ops_span, &t.recipe_a);
+            const auto h_b = compute_content_hash(ops_span, &t.recipe_b);
 
             // Three pairwise inequalities — the cross-recipe-cache-
             // collision-prevention contract.
-            if (h_a == h_b)    return false;
+            if (h_a == h_b) return false;
             if (h_a == h_none) return false;
             if (h_b == h_none) return false;
             return true;

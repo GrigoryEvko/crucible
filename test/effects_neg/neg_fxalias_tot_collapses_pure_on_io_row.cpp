@@ -34,15 +34,13 @@ namespace eff = ::crucible::effects;
 // {IO}).  Same Progress class, same DetSafe tier, same payload —
 // but the Computation row discriminates them.  Asserting same_v
 // here fires the negative compile.
-static_assert(
-    std::is_same_v<eff::Pure<int>,
-                   eff::Tot<eff::Row<eff::Effect::IO>, int>>,
-    "fixy-A3-019: value-carrying F* aliases must remain structurally "
-    "distinct under Computation row discrimination — Pure<T> carries "
-    "the empty row and MUST NOT silently collapse with Tot<Row<IO>, "
-    "T>.  Pure is the BOTTOM of the F* lattice (Pure ⊑ Tot ⊑ Div ⊑ "
-    "ST ⊑ All); admitting IO at the Pure site would collapse the "
-    "substitution chain, breaking the row-effect guarantee the "
-    "wrapper-nesting canonical order is designed to enforce.");
+static_assert(std::is_same_v<eff::Pure<int>, eff::Tot<eff::Row<eff::Effect::IO>, int>>,
+              "fixy-A3-019: value-carrying F* aliases must remain structurally "
+              "distinct under Computation row discrimination — Pure<T> carries "
+              "the empty row and MUST NOT silently collapse with Tot<Row<IO>, "
+              "T>.  Pure is the BOTTOM of the F* lattice (Pure ⊑ Tot ⊑ Div ⊑ "
+              "ST ⊑ All); admitting IO at the Pure site would collapse the "
+              "substitution chain, breaking the row-effect guarantee the "
+              "wrapper-nesting canonical order is designed to enforce.");
 
 int main() { return 0; }

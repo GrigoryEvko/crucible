@@ -39,8 +39,7 @@ int main() {
 
     // Should FAIL: Linear<Permission<MyTag>> trips the
     // is_already_linear_v<Permission<MyTag>> static_assert.
-    Linear<Permission<MyTag>> wrapped{
-        crucible::permissions::mint_permission_root<MyTag>()};
+    Linear<Permission<MyTag>> wrapped{crucible::permissions::mint_permission_root<MyTag>()};
     (void)wrapped;
     return 0;
 }

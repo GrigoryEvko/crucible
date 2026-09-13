@@ -33,8 +33,7 @@ namespace {
 // INT64_MIN × -1: mathematically INT64_MAX + 1, NOT representable in
 // int64_t.  This is the canonical signed-overflow asymmetric-range
 // trap — it catches a bug class that unsigned overflow checks miss.
-constexpr auto witness =
-    mul_i64(std::numeric_limits<int64_t>::min(), int64_t{-1});
+constexpr auto witness = mul_i64(std::numeric_limits<int64_t>::min(), int64_t{-1});
 
 }  // namespace
 

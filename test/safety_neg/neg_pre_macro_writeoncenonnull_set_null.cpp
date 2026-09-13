@@ -55,7 +55,7 @@ namespace {
 
 [[nodiscard]] constexpr int under_test() noexcept {
     ::crucible::safety::WriteOnceNonNull<std::uint32_t*> slot;
-    slot.set(nullptr);   // CRUCIBLE_PRE fires — p IS nullptr.
+    slot.set(nullptr);  // CRUCIBLE_PRE fires — p IS nullptr.
     return 0;
 }
 
@@ -66,11 +66,10 @@ namespace {
 // WriteOnceNonNull::set at Mutation.h:737.  If this static_assert
 // evaluates successfully, the CRUCIBLE_PRE inside set() is bypassed
 // or the non-null clause was weakened — investigate.
-static_assert(under_test() == 0,
-    "CRUCIBLE_PRE on WriteOnceNonNull::set's p != nullptr check MUST "
-    "fire at consteval when set(nullptr) is invoked.  If this static_"
-    "assert evaluates successfully, the non-null discipline that "
-    "differentiates WriteOnceNonNull from WriteOnce<T*> has been "
-    "weakened — investigate.");
+static_assert(under_test() == 0, "CRUCIBLE_PRE on WriteOnceNonNull::set's p != nullptr check MUST "
+                                 "fire at consteval when set(nullptr) is invoked.  If this static_"
+                                 "assert evaluates successfully, the non-null discipline that "
+                                 "differentiates WriteOnceNonNull from WriteOnce<T*> has been "
+                                 "weakened — investigate.");
 
 int main() { return 0; }

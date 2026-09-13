@@ -230,7 +230,7 @@ public:
         if (fact.uuid.is_zero()) {
             const std::uint64_t lo =
                 stable_discovery_hash(fact.bus_info.value(), fact.vendor.value(), fact.model.value());
-            fact.uuid = cog::Uuid{0xD15C0'111ull, lo};
+            fact.uuid = cog::Uuid{0xD15C0111ull, lo};
         }
         fact.level = fact.level == cog::CogLevel::L0_Atomic ? default_level_for(fact.kind) : fact.level;
         node_facts_[node_count_] = fact;

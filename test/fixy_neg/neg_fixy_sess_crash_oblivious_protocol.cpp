@@ -27,39 +27,35 @@
 #include <crucible/fixy/SessCrash.h>
 
 namespace fscrash = ::crucible::fixy::sess::crash;
-namespace proto   = ::crucible::safety::proto;
+namespace proto = ::crucible::safety::proto;
 
 namespace v064_neg_alpha {
 struct Alice {};
-struct Msg   {};
-struct Ack   {};
+struct Msg {};
+struct Ack {};
 
 // Well-formed but CRASH-OBLIVIOUS: the Offer<> has Msg / Ack
 // branches but NO Recv<Crash<Alice>, _> branch.  A CrashWatched
 // transport receiving a peer-crash signal here would have nowhere
 // to dispatch it.
-using NormalOffer = proto::Offer<
-    proto::Recv<Msg, proto::End>,
-    proto::Recv<Ack, proto::End>>;
+using NormalOffer = proto::Offer<proto::Recv<Msg, proto::End>, proto::Recv<Ack, proto::End>>;
 using CrashOblivClient = proto::Send<Msg, NormalOffer>;
 }  // namespace v064_neg_alpha
 
 // Sanity: the protocol IS well-formed (the well-formedness gate
 // passes on its own — only the crash-coverage gate should fire).
 static_assert(proto::is_well_formed_v<v064_neg_alpha::CrashOblivClient>,
-    "Sanity: NormalOffer-wrapping client is well-formed; only the "
-    "crash-coverage gate must fire below.");
+              "Sanity: NormalOffer-wrapping client is well-formed; only the "
+              "crash-coverage gate must fire below.");
 
 // Should FAIL: CrashAwareForTransport's per-tree walker rejects.
 // GCC fires "static_assert ... CrashOblivClient ... does not
 // satisfy concept CrashAwareForTransport" or similar concept-
 // diagnostic naming the synthesis concept and the rejecting tree
 // walker.
-static_assert(fscrash::CrashAwareForTransport<
-    v064_neg_alpha::CrashOblivClient,
-    v064_neg_alpha::Alice>,
-    "FIXY-V-064 fixture 1: CrashAwareForTransport must reject a "
-    "well-formed but crash-oblivious client — well-formedness alone "
-    "is strictly weaker than crash-aware transport discipline.");
+static_assert(fscrash::CrashAwareForTransport<v064_neg_alpha::CrashOblivClient, v064_neg_alpha::Alice>,
+              "FIXY-V-064 fixture 1: CrashAwareForTransport must reject a "
+              "well-formed but crash-oblivious client — well-formedness alone "
+              "is strictly weaker than crash-aware transport discipline.");
 
 int main() { return 0; }

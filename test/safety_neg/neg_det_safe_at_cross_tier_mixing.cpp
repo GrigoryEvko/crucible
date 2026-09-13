@@ -39,12 +39,11 @@
 using namespace crucible::algebra::lattices;
 
 int main() {
-    DetSafeLattice::At<DetSafeTier::Pure>::element_type      pure_elt{};
+    DetSafeLattice::At<DetSafeTier::Pure>::element_type pure_elt{};
     DetSafeLattice::At<DetSafeTier::PhiloxRng>::element_type philox_elt{};
 
     // Should FAIL: At<Pure>::leq expects two At<Pure>::element_type
     // arguments; philox_elt is At<PhiloxRng>::element_type — different
     // template instantiation, different type, no implicit conversion.
-    return static_cast<int>(
-        DetSafeLattice::At<DetSafeTier::Pure>::leq(pure_elt, philox_elt));
+    return static_cast<int>(DetSafeLattice::At<DetSafeTier::Pure>::leq(pure_elt, philox_elt));
 }

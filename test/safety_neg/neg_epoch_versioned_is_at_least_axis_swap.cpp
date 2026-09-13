@@ -27,12 +27,11 @@ using namespace crucible::safety;
 int main() {
     EpochVersioned<int> checkpoint{42, Epoch{5}, Generation{2}};
 
-    Epoch      committed_epoch{4};
+    Epoch committed_epoch{4};
     Generation my_generation{1};
 
     // Should FAIL: is_at_least(Epoch, Generation) requires axes
     // in declared order; passing (Generation, Epoch) is a type
     // mismatch on both arguments.
-    return static_cast<int>(
-        checkpoint.is_at_least(my_generation, committed_epoch));
+    return static_cast<int>(checkpoint.is_at_least(my_generation, committed_epoch));
 }

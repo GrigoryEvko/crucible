@@ -11,7 +11,6 @@
 #include <limits>
 
 int main() {
-  constexpr crucible::detail::BitMask bad{
-      std::numeric_limits<uint64_t>::max()};
-  (void)bad;
+    constexpr crucible::detail::BitMask bad{std::numeric_limits<uint64_t>::max()};
+    (void)bad;
 }

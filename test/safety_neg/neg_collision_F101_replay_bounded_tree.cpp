@@ -58,29 +58,28 @@ namespace neg_collision_f101_bounded {
 // float> — the FOUND-074 rejected combination.  Marker specialization
 // (below) flips marks_replay_required to true.  Every other dimension
 // avoids tripping any OTHER rule so F101 is the FIRST and only failure.
-using Bad = fn::Fn<
-    sf::FpReassociatePinned<sf::FpReassociate::BoundedTreeDepth, float>,
-                                               // 1  Type — triggers F101
-                                               //          (BoundedTreeDepth leg)
-    fn::pred::True,                            // 2  Refinement
-    fn::UsageMode::Linear,                     // 3  Usage
-    fx::Row<>,                                 // 4  EffectRow
-    fn::SecLevel::Public,                      // 5  Security
-    fn::proto::None,                           // 6  Protocol
-    fn::lifetime::Static,                      // 7  Lifetime
-    fn::source::FromInternal,                  // 8  Source
-    fn::trust::Verified,                       // 9  Trust
-    fn::ReprKind::Opaque,                      // 10 Repr
-    fn::cost::Constant,                        // 11 Cost
-    fn::precision::Exact,                      // 12 Precision
-    fn::space::Bounded<sizeof(float)>,         // 13 Space
-    fn::OverflowMode::Trap,                    // 14 Overflow
-    fn::MutationMode::Immutable,               // 15 Mutation
-    fn::ReentrancyMode::NonReentrant,          // 16 Reentrancy
-    fn::size_pol::Sized<sizeof(float)>,        // 17 Size
-    /*Version=*/1,                             // 18 Version
-    fn::stale::Fresh                           // 19 Staleness
->;
+using Bad = fn::Fn<sf::FpReassociatePinned<sf::FpReassociate::BoundedTreeDepth, float>,
+                   // 1  Type — triggers F101
+                   //          (BoundedTreeDepth leg)
+                   fn::pred::True,  // 2  Refinement
+                   fn::UsageMode::Linear,  // 3  Usage
+                   fx::Row<>,  // 4  EffectRow
+                   fn::SecLevel::Public,  // 5  Security
+                   fn::proto::None,  // 6  Protocol
+                   fn::lifetime::Static,  // 7  Lifetime
+                   fn::source::FromInternal,  // 8  Source
+                   fn::trust::Verified,  // 9  Trust
+                   fn::ReprKind::Opaque,  // 10 Repr
+                   fn::cost::Constant,  // 11 Cost
+                   fn::precision::Exact,  // 12 Precision
+                   fn::space::Bounded<sizeof(float)>,  // 13 Space
+                   fn::OverflowMode::Trap,  // 14 Overflow
+                   fn::MutationMode::Immutable,  // 15 Mutation
+                   fn::ReentrancyMode::NonReentrant,  // 16 Reentrancy
+                   fn::size_pol::Sized<sizeof(float)>,  // 17 Size
+                   /*Version=*/1,  // 18 Version
+                   fn::stale::Fresh  // 19 Staleness
+                   >;
 
 }  // namespace neg_collision_f101_bounded
 
@@ -88,8 +87,8 @@ using Bad = fn::Fn<
 // marks_replay_required AND FpReassociate non-strict).  Specialization
 // at file scope, mirrors the existing F101 UnrestrictedRewrite fixture.
 namespace crucible::safety::fn::collision {
-    template <> struct marks_replay_required<
-        ::neg_collision_f101_bounded::Bad> : std::true_type {};
+template <>
+struct marks_replay_required<::neg_collision_f101_bounded::Bad> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 // Instantiating Bad forces CollisionRules::validate() to fire F101.

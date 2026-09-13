@@ -61,7 +61,7 @@ using namespace crucible::safety;
 // ⇄ Vigil::dispatch_op consumer pattern — every per-op recording
 // site of the foreground path runs under this gate.
 template <typename W>
-    requires (W::template satisfies<HotPathTier_v::Hot>)
+    requires(W::template satisfies<HotPathTier_v::Hot>)
 static int hot_dispatch_consumer(W wrapped) noexcept {
     return std::move(wrapped).consume();
 }

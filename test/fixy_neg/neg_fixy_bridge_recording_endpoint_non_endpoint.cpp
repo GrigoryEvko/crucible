@@ -40,20 +40,18 @@
 #include <utility>
 
 namespace fbridge = ::crucible::fixy::bridge;
-namespace proto   = ::crucible::safety::proto;
+namespace proto = ::crucible::safety::proto;
 
 int main() {
     proto::SessionEventLog log{};
-    int                    not_an_endpoint = 42;
-    proto::RoleTagId       self{1};
-    proto::RoleTagId       peer{2};
+    int not_an_endpoint = 42;
+    proto::RoleTagId self{1};
+    proto::RoleTagId peer{2};
 
     // First argument is `int` — fails Endpoint<Substr, Dir, Ctx>
     // template deduction.  fixy::bridge:: re-export must reject
     // identically — the using-decl preserves the template signature.
-    [[maybe_unused]] auto bad =
-        fbridge::mint_recording_endpoint(
-            std::move(not_an_endpoint), log, self, peer);
+    [[maybe_unused]] auto bad = fbridge::mint_recording_endpoint(std::move(not_an_endpoint), log, self, peer);
 
     return 0;
 }

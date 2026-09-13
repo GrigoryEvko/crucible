@@ -32,8 +32,7 @@ namespace {
 // uint64_t.  __builtin_add_overflow returns true; no_overflow_sum
 // returns false; CRUCIBLE_PRE's __builtin_trap() fires at consteval;
 // the surrounding static_assert reports "non-constant condition".
-constexpr auto witness =
-    add_u64(std::numeric_limits<uint64_t>::max(), uint64_t{1});
+constexpr auto witness = add_u64(std::numeric_limits<uint64_t>::max(), uint64_t{1});
 
 }  // namespace
 

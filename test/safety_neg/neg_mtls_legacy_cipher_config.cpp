@@ -5,13 +5,10 @@
 
 int main() {
     using namespace crucible::cntp;
-    auto config = mint_mtls_config<
-        TlsVersion::V13,
-        MtlsCipherSuite::LegacyRsa3desSha,
-        MtlsCipherSuite::TlsAes256GcmSha384>(
-        MtlsCertificate{MtlsCertificateBytes{}},
-        MtlsCertificate{MtlsCertificateBytes{}},
-        MtlsPrivateKey{MtlsPrivateKeyBytes{}});
+    auto config =
+        mint_mtls_config<TlsVersion::V13, MtlsCipherSuite::LegacyRsa3desSha, MtlsCipherSuite::TlsAes256GcmSha384>(
+            MtlsCertificate{MtlsCertificateBytes{}}, MtlsCertificate{MtlsCertificateBytes{}},
+            MtlsPrivateKey{MtlsPrivateKeyBytes{}});
     (void)config;
     return 0;
 }

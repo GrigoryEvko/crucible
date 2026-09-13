@@ -20,7 +20,7 @@
 using namespace crucible::safety;
 
 int main() {
-    DetSafe<DetSafeTier_v::Pure,               int> pure_value{42};
+    DetSafe<DetSafeTier_v::Pure, int> pure_value{42};
     DetSafe<DetSafeTier_v::MonotonicClockRead, int> mono_value{42};
 
     // Should FAIL: operator== for DetSafe<Pure, int> takes two

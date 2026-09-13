@@ -39,7 +39,7 @@ using namespace crucible::safety;
 // Warm-or-better tier.  Models the KernelCache::publish_l2 ⇄
 // federation-broadcast pattern.
 template <typename W>
-    requires (W::template satisfies<ResidencyHeatTag_v::Warm>)
+    requires(W::template satisfies<ResidencyHeatTag_v::Warm>)
 static int warm_freshness_consumer(W wrapped) noexcept {
     return std::move(wrapped).consume();
 }

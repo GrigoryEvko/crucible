@@ -41,8 +41,7 @@ int main() {
     // clause `!(T(CAP) < initial)` to be exercised at compile time.
     // initial == CAP + 1 → CAP < CAP + 1 → predicate(initial) false
     // → contract violation → not a constant expression → ill-formed.
-    constexpr crucible::CKernelTable::SizeCounter bad{
-        static_cast<uint32_t>(crucible::CKERNEL_TABLE_CAP) + uint32_t{1}};
+    constexpr crucible::CKernelTable::SizeCounter bad{static_cast<uint32_t>(crucible::CKERNEL_TABLE_CAP) + uint32_t{1}};
     (void)bad;
     return 0;
 }

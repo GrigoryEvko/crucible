@@ -38,23 +38,23 @@ inline constexpr std::uint64_t kFoldSeed = 0xC0FFEEBADF00DBA5ULL;
 // structural property (fold-collapse pinning) is orthogonal to entry
 // count; 3 is sufficient to demonstrate.
 inline constexpr std::array<std::uint64_t, 3> kHashes = {
-    0xAAAA'AAAA'AAAA'AAAAULL,
-    0xBBBB'BBBB'BBBB'BBBBULL,
-    0xCCCC'CCCC'CCCC'CCCCULL,
+    0xAAAAAAAAAAAAAAAAULL,
+    0xBBBBBBBBBBBBBBBBULL,
+    0xCCCCCCCCCCCCCCCCULL,
 };
 
 [[nodiscard]] consteval std::uint64_t fold_anchor() noexcept {
     std::uint64_t acc = kFoldSeed;
-    for (auto h : kHashes) acc = cd::detail::combine_ids(acc, h);
+    for (auto h : kHashes)
+        acc = cd::detail::combine_ids(acc, h);
     return acc;
 }
 
 // Deliberately-wrong literal.  The true fold of {AAAA…, BBBB…, CCCC…}
 // under kFoldSeed lands on an entirely different 64-bit value; pinning
 // to 0xDEADBEEFDEADBEEF guarantees the static_assert below fails.
-inline constexpr std::uint64_t kFoldAnchor = 0xDEAD'BEEF'DEAD'BEEFULL;
+inline constexpr std::uint64_t kFoldAnchor = 0xDEADBEEFDEADBEEFULL;
 
-static_assert(fold_anchor() == kFoldAnchor,
-    "ceremony anchor drift — wire-format break for federation cache");
+static_assert(fold_anchor() == kFoldAnchor, "ceremony anchor drift — wire-format break for federation cache");
 
 int main() { return 0; }

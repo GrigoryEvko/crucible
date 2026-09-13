@@ -78,11 +78,9 @@ int main() {
         // bench below to recover the actual ring-op cost (the noipa
         // attribute on do_not_optimize forces a real CALL+RET that
         // contributes ~3-4 cycles ≈ 0.7-1ns at 4.6GHz).
-        [&]{
+        [&] {
             std::uint64_t i = 0;
-            return bench::run("HARNESS BASELINE: do_not_optimize(++i)", [&]{
-                bench::do_not_optimize(++i);
-            });
+            return bench::run("HARNESS BASELINE: do_not_optimize(++i)", [&] { bench::do_not_optimize(++i); });
         }(),
 
         // ── HARNESS BASELINE: clobber-only (no call, asm barrier) ─────
@@ -90,19 +88,19 @@ int main() {
         // memory")" — zero runtime cost, just a compiler memory fence.
         // Difference between this and the do_not_optimize baseline is
         // the pure CALL+RET cost.
-        [&]{
+        [&] {
             std::uint64_t i = 0;
-            return bench::run("HARNESS BASELINE: clobber + ++i", [&]{
+            return bench::run("HARNESS BASELINE: clobber + ++i", [&] {
                 ++i;
                 bench::clobber();
             });
         }(),
 
         // ── SpscRing: pure push (huge cap, never fills) ───────────────
-        [&]{
+        [&] {
             auto ring = std::make_unique<HugeSpsc>();
             std::uint64_t i = 0;
-            return bench::run("spsc_ring.try_push (huge cap, no drain)", [&]{
+            return bench::run("spsc_ring.try_push (huge cap, no drain)", [&] {
                 const bool ok = ring->try_push(++i);
                 bench::do_not_optimize(ok);
             });
@@ -123,12 +121,13 @@ int main() {
         // total ≈ 7ns memcpy + 6 atomics (~1.3ns) + harness overhead
         // (~5ns) ≈ 13-15ns measured.  Per-item ≈ 0.117ns.
         // (Zen 4+ would emit AVX-512 ZMM stores; this CPU does not.)
-        [&]{
+        [&] {
             auto ring = std::make_unique<HugeSpsc>();
             alignas(64) static std::array<std::uint64_t, 64> tx{};
             alignas(64) static std::array<std::uint64_t, 64> rx{};
-            for (std::size_t k = 0; k < tx.size(); ++k) tx[k] = k;
-            return bench::run("spsc_ring.{try_push_batch,try_pop_batch}<64> round-trip", [&]{
+            for (std::size_t k = 0; k < tx.size(); ++k)
+                tx[k] = k;
+            return bench::run("spsc_ring.{try_push_batch,try_pop_batch}<64> round-trip", [&] {
                 const std::size_t np = ring->try_push_batch(std::span{tx});
                 const std::size_t nc = ring->try_pop_batch(std::span{rx});
                 bench::do_not_optimize(np);
@@ -137,23 +136,23 @@ int main() {
         }(),
 
         // ── SpscRing: pure pop (pre-filled, never empties) ────────────
-        [&]{
+        [&] {
             auto ring = std::make_unique<HugeSpsc>();
             // Pre-fill enough so 100k pops don't drain — push 200k.
-            for (std::uint64_t i = 0; i < 200'000; ++i) {
+            for (std::uint64_t i = 0; i < 200000; ++i) {
                 (void)ring->try_push(i);
             }
-            return bench::run("spsc_ring.try_pop (pre-filled)", [&]{
+            return bench::run("spsc_ring.try_pop (pre-filled)", [&] {
                 auto v = ring->try_pop();
                 bench::do_not_optimize(v);
             });
         }(),
 
         // ── SpscRing: round-trip push+pop (depth stays 0/1) ───────────
-        [&]{
+        [&] {
             auto ring = std::make_unique<SmallSpsc>();
             std::uint64_t i = 0;
-            return bench::run("spsc_ring round-trip (push+pop)", [&]{
+            return bench::run("spsc_ring round-trip (push+pop)", [&] {
                 (void)ring->try_push(++i);
                 auto v = ring->try_pop();
                 bench::do_not_optimize(v);
@@ -161,49 +160,47 @@ int main() {
         }(),
 
         // ── MpmcRing: pure push, single-thread (no contention) ────────
-        [&]{
+        [&] {
             auto ring = std::make_unique<HugeMpmc>();
             std::uint64_t i = 0;
-            return bench::run("mpmc_ring.try_push (1T, huge cap)", [&]{
+            return bench::run("mpmc_ring.try_push (1T, huge cap)", [&] {
                 const bool ok = ring->try_push(++i);
                 bench::do_not_optimize(ok);
             });
         }(),
 
         // ── MpmcRing: pure pop, single-thread ─────────────────────────
-        [&]{
+        [&] {
             auto ring = std::make_unique<HugeMpmc>();
-            for (std::uint64_t i = 0; i < 200'000; ++i) {
+            for (std::uint64_t i = 0; i < 200000; ++i) {
                 (void)ring->try_push(i);
             }
-            return bench::run("mpmc_ring.try_pop (1T, pre-filled)", [&]{
+            return bench::run("mpmc_ring.try_pop (1T, pre-filled)", [&] {
                 auto v = ring->try_pop();
                 bench::do_not_optimize(v);
             });
         }(),
 
         // ── AtomicSnapshot: publish (writer-only) ─────────────────────
-        [&]{
+        [&] {
             auto snap = std::make_unique<Snap>();
             std::uint64_t i = 0;
-            return bench::run("atomic_snapshot.publish", [&]{
-                snap->publish(++i);
-            });
+            return bench::run("atomic_snapshot.publish", [&] { snap->publish(++i); });
         }(),
 
         // ── AtomicSnapshot: load (reader-only, no writer) ─────────────
-        [&]{
+        [&] {
             auto snap = std::make_unique<Snap>(42ULL);
-            return bench::run("atomic_snapshot.load (uncontended)", [&]{
+            return bench::run("atomic_snapshot.load (uncontended)", [&] {
                 const auto v = snap->load();
                 bench::do_not_optimize(v);
             });
         }(),
 
         // ── AtomicSnapshot: try_load fast path ────────────────────────
-        [&]{
+        [&] {
             auto snap = std::make_unique<Snap>(42ULL);
-            return bench::run("atomic_snapshot.try_load (uncontended)", [&]{
+            return bench::run("atomic_snapshot.try_load (uncontended)", [&] {
                 auto v = snap->try_load();
                 bench::do_not_optimize(v);
             });
@@ -213,11 +210,11 @@ int main() {
         // Same body shape as bench_trace_ring.cpp's "ring.try_append
         // (+reset-on-full, const entry)" — periodic reset on full keeps
         // the bench from saturating; tail samples include reset cost.
-        [&]{
+        [&] {
             auto ring = std::make_unique<crucible::TraceRing>();
             crucible::TraceRing::Entry e{};
             e.schema_hash = crucible::SchemaHash{0xABCDEF};
-            return bench::run("trace_ring.try_append (reference, +reset-on-full)", [&]{
+            return bench::run("trace_ring.try_append (reference, +reset-on-full)", [&] {
                 const bool ok = ring->try_append(e);
                 bench::do_not_optimize(ok);
                 if (!ok) ring->reset();

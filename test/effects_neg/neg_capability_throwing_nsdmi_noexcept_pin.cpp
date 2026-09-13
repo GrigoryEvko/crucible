@@ -29,7 +29,7 @@
 
 struct ThrowingCap {
     ThrowingCap() noexcept(false) {}  // structurally cap::*-shaped, but
-                                      // explicitly throwing
+    // explicitly throwing
 };
 
 int main() {
@@ -38,9 +38,8 @@ int main() {
     // succeeds, the underlying `noexcept(T{})` operator no longer
     // reflects T's noexcept-spec — load-bearing language guarantee
     // broken, production cap::* pins lose their meaning.
-    static_assert(noexcept(ThrowingCap{}),
-        "fixy-A3-015: noexcept(T{}) MUST be false when T's default "
-        "ctor is noexcept(false); if this admits, the production "
-        "cap::* noexcept pins are no longer load-bearing.");
+    static_assert(noexcept(ThrowingCap{}), "fixy-A3-015: noexcept(T{}) MUST be false when T's default "
+                                           "ctor is noexcept(false); if this admits, the production "
+                                           "cap::* noexcept pins are no longer load-bearing.");
     return 0;
 }

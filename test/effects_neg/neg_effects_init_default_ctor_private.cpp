@@ -20,7 +20,7 @@
 namespace eff = crucible::effects;
 
 int main() {
-    eff::Init init{};            // <-- this MUST fail (private ctor)
+    eff::Init init{};  // <-- this MUST fail (private ctor)
     (void)init;
     return 0;
 }

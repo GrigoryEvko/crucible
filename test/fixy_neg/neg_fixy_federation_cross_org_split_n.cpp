@@ -39,21 +39,18 @@
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 namespace perm = crucible::permissions;
-namespace saf  = crucible::safety;
+namespace saf = crucible::safety;
 
 struct NegCrossOrgSplitN_OrgA {};
 struct NegCrossOrgSplitN_OrgB {};
 
 int main() {
-    auto local_cipher =
-        saf::mint_permission_root<perm::tag::LocalCipherTag>();
-    auto handshake =
-        perm::make_self_signed_handshake<NegCrossOrgSplitN_OrgA>(
-            /*peer_key_fp=*/perm::PeerKeyFingerprint{0xC0FFEE'C0FFEEULL},
-            /*nonce=*/      perm::Nonce{0xC1C1'C1C1'C1C1'C1C1ULL});
-    auto admitted = perm::mint_federation_admittance<
-        NegCrossOrgSplitN_OrgA,
-        perm::policy::admit_orgs<NegCrossOrgSplitN_OrgA>>(
+    auto local_cipher = saf::mint_permission_root<perm::tag::LocalCipherTag>();
+    auto handshake = perm::make_self_signed_handshake<NegCrossOrgSplitN_OrgA>(
+        /*peer_key_fp=*/perm::PeerKeyFingerprint{0xC0FFEEC0FFEEULL},
+        /*nonce=*/perm::Nonce{0xC1C1C1C1C1C1C1C1ULL});
+    auto admitted =
+        perm::mint_federation_admittance<NegCrossOrgSplitN_OrgA, perm::policy::admit_orgs<NegCrossOrgSplitN_OrgA>>(
             local_cipher, handshake);
     auto perm_a = std::move(*admitted);
 
@@ -61,11 +58,9 @@ int main() {
     // mismatched child (the OrgB in the middle) makes the fold
     // false, mint_permission_split_n's static_assert fires.  Must
     // NOT compile.
-    auto children = saf::mint_permission_split_n<
-        perm::tag::FederatedPeer<NegCrossOrgSplitN_OrgA>,
-        perm::tag::FederatedPeer<NegCrossOrgSplitN_OrgB>,
-        perm::tag::FederatedPeer<NegCrossOrgSplitN_OrgA>>(
-            std::move(perm_a));
+    auto children = saf::mint_permission_split_n<perm::tag::FederatedPeer<NegCrossOrgSplitN_OrgA>,
+                                                 perm::tag::FederatedPeer<NegCrossOrgSplitN_OrgB>,
+                                                 perm::tag::FederatedPeer<NegCrossOrgSplitN_OrgA>>(std::move(perm_a));
 
     (void)children;
     return 0;

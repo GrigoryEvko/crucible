@@ -25,9 +25,7 @@ struct FakeProducer {
 inline void body(FakeConsumer<int>&&, FakeProducer<int>&&) noexcept {}
 
 using Stage = conc::Stage<&body, eff::HotFgCtx>;
-using CyclicGraph = conc::StageGraph<
-    conc::StagePack<Stage, Stage>,
-    conc::EdgePack<conc::StageEdge<1, 0>>>;
+using CyclicGraph = conc::StageGraph<conc::StagePack<Stage, Stage>, conc::EdgePack<conc::StageEdge<1, 0>>>;
 
 using Bad = conc::PipelineDag<CyclicGraph>;
 

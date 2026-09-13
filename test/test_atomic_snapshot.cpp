@@ -177,7 +177,7 @@ static void test_stress_multithread() {
         });
     }
 
-    constexpr uint64_t kMinStressLoads = 200'000;
+    constexpr uint64_t kMinStressLoads = 200000;
     const auto stress_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
     while (total_loads.load(std::memory_order_acquire) < kMinStressLoads
            && std::chrono::steady_clock::now() < stress_deadline) {
@@ -283,7 +283,7 @@ static void test_try_load_rejects_in_progress() {
         }
     });
 
-    constexpr uint64_t kMinLargeLoads = 100'000;
+    constexpr uint64_t kMinLargeLoads = 100000;
     const auto large_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
     while (total.load(std::memory_order_acquire) < kMinLargeLoads
            && std::chrono::steady_clock::now() < large_deadline) {

@@ -29,7 +29,6 @@ int main() {
     // pointer-to-function, so IsCacheableFunction<42> is false.
     // The federation primitive's requires clause rejects at
     // substitution time.
-    (void)::crucible::cipher::federation::federation_key<
-        42, eff::Row<>, int>();
+    (void)::crucible::cipher::federation::federation_key<42, eff::Row<>, int>();
     return 0;
 }

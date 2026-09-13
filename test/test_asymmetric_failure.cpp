@@ -29,34 +29,27 @@ static topology::AsymmetricFailurePolicy test_policy() {
 static observe::ProbeOutcome outcome(bool ok, std::uint64_t seq) {
     observe::ProbeOutcome out{};
     out.kind = observe::TransportProbeKind::TcpCubic;
-    out.failure = ok
-        ? observe::SyntheticProbeFailureClass::None
-        : observe::SyntheticProbeFailureClass::Timeout;
+    out.failure = ok ? observe::SyntheticProbeFailureClass::None : observe::SyntheticProbeFailureClass::Timeout;
     out.sequence = seq;
     return out;
 }
 
 template <class Detector>
-static void record_pair(Detector& detector,
-                        cog::CogIdentity const& p,
-                        bool outbound,
-                        bool inbound,
-                        std::uint64_t seq) {
+static void record_pair(Detector& detector, cog::CogIdentity const& p, bool outbound, bool inbound, std::uint64_t seq) {
     assert(detector.record_outbound(effects::BgDrainCtx{}, p, outbound, seq));
     assert(detector.record_inbound(effects::BgDrainCtx{}, p, inbound, seq + 1));
 }
 
 static void test_name_accessors() {
-    assert(topology::failure_class_name(topology::FailureClass::TxBroken)
-           == std::string_view{"TxBroken"});
+    assert(topology::failure_class_name(topology::FailureClass::TxBroken) == std::string_view{"TxBroken"});
     assert(topology::failure_signal_name(topology::FailureSignal::WitnessReachable)
            == std::string_view{"WitnessReachable"});
     std::printf("  test_name_accessors:                     PASSED\n");
 }
 
 static void test_local_bidirectional_classification() {
-    auto detector = topology::mint_asymmetric_failure_detector<
-        effects::ColdInitCtx, 8, 4, 4>(effects::ColdInitCtx{}, test_policy());
+    auto detector = topology::mint_asymmetric_failure_detector<effects::ColdInitCtx, 8, 4, 4>(effects::ColdInitCtx{},
+                                                                                              test_policy());
 
     auto ok = peer(1);
     record_pair(detector, ok, true, true, 1);
@@ -82,8 +75,8 @@ static void test_local_bidirectional_classification() {
 }
 
 static void test_multi_vantage_overrides_naive_dead_peer() {
-    auto detector = topology::mint_asymmetric_failure_detector<
-        effects::ColdInitCtx, 4, 4, 4>(effects::ColdInitCtx{}, test_policy());
+    auto detector = topology::mint_asymmetric_failure_detector<effects::ColdInitCtx, 4, 4, 4>(effects::ColdInitCtx{},
+                                                                                              test_policy());
 
     auto target = peer(10);
     record_pair(detector, target, false, false, 1);
@@ -103,8 +96,8 @@ static void test_multi_vantage_overrides_naive_dead_peer() {
 }
 
 static void test_witness_majority_unreachable_keeps_dead_class() {
-    auto detector = topology::mint_asymmetric_failure_detector<
-        effects::ColdInitCtx, 4, 4, 4>(effects::ColdInitCtx{}, test_policy());
+    auto detector = topology::mint_asymmetric_failure_detector<effects::ColdInitCtx, 4, 4, 4>(effects::ColdInitCtx{},
+                                                                                              test_policy());
 
     auto target = peer(11);
     record_pair(detector, target, false, false, 1);
@@ -115,31 +108,27 @@ static void test_witness_majority_unreachable_keeps_dead_class() {
     auto summary = detector.summary(target);
     assert(summary.with_witnesses == topology::FailureClass::BidiFailed);
     assert(summary.signals.test(topology::FailureSignal::WitnessMajorityUnreachable));
-    assert(topology::health_state_for_failure(
-        summary.with_witnesses, topology::HealthState::Healthy)
-        == topology::HealthState::Quarantined);
+    assert(topology::health_state_for_failure(summary.with_witnesses, topology::HealthState::Healthy)
+           == topology::HealthState::Quarantined);
 
     std::printf("  test_witness_majority_unreachable_keeps_dead_class: PASSED\n");
 }
 
 static void test_synthetic_round_and_transition_events() {
-    auto detector = topology::mint_asymmetric_failure_detector<
-        effects::ColdInitCtx, 2, 4, 2>(effects::ColdInitCtx{}, test_policy());
+    auto detector = topology::mint_asymmetric_failure_detector<effects::ColdInitCtx, 2, 4, 2>(effects::ColdInitCtx{},
+                                                                                              test_policy());
     auto target = peer(12);
 
-    assert(detector.record_synthetic_round(
-        effects::BgDrainCtx{}, target, outcome(false, 1), outcome(true, 2)));
-    assert(detector.record_synthetic_round(
-        effects::BgDrainCtx{}, target, outcome(false, 3), outcome(true, 4)));
+    assert(detector.record_synthetic_round(effects::BgDrainCtx{}, target, outcome(false, 1), outcome(true, 2)));
+    assert(detector.record_synthetic_round(effects::BgDrainCtx{}, target, outcome(false, 3), outcome(true, 4)));
 
     assert(detector.classify(target) == topology::FailureClass::TxBroken);
     assert(detector.event_count() >= 1);
     auto const events = detector.events();
     std::size_t const last_event = detector.event_count() - 1u;
     assert(events[last_event].to == topology::FailureClass::TxBroken);
-    assert(topology::health_state_for_failure(
-        topology::FailureClass::TxBroken, topology::HealthState::Healthy)
-        == topology::HealthState::Suspect);
+    assert(topology::health_state_for_failure(topology::FailureClass::TxBroken, topology::HealthState::Healthy)
+           == topology::HealthState::Suspect);
 
     std::printf("  test_synthetic_round_and_transition_events: PASSED\n");
 }

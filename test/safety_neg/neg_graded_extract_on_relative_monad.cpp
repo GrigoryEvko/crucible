@@ -37,9 +37,7 @@ struct FromUserSource {};
 
 int main() {
     // RelativeMonad modality (NOT Comonad).
-    using G = Graded<ModalityKind::RelativeMonad,
-                     TrustLattice<FromUserSource>,
-                     int>;
+    using G = Graded<ModalityKind::RelativeMonad, TrustLattice<FromUserSource>, int>;
     G g{};
 
     // Should FAIL: extract() requires ComonadModality<M>, M is RelativeMonad.

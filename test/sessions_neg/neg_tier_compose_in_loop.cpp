@@ -8,24 +8,21 @@
 #include <crucible/sessions/SessionPayloadSubsort.h>
 
 namespace proto = crucible::safety::proto;
-namespace safe  = crucible::safety;
+namespace safe = crucible::safety;
 
 namespace {
-struct Tile { float value[4]; };
+struct Tile {
+    float value[4];
+};
 
 using RelaxedTile = safe::NumericalTier<safe::Tolerance::RELAXED, Tile>;
-using StrictTile  = safe::NumericalTier<safe::Tolerance::BITEXACT, Tile>;
+using StrictTile = safe::NumericalTier<safe::Tolerance::BITEXACT, Tile>;
 
-using DowngradingLoop = proto::Loop<
-    proto::Send<StrictTile,
-    proto::Send<RelaxedTile, proto::Continue>>>;
+using DowngradingLoop = proto::Loop<proto::Send<StrictTile, proto::Send<RelaxedTile, proto::Continue>>>;
 
-using StrictLoop = proto::Loop<
-    proto::Send<StrictTile,
-    proto::Send<StrictTile, proto::Continue>>>;
+using StrictLoop = proto::Loop<proto::Send<StrictTile, proto::Send<StrictTile, proto::Continue>>>;
 }  // namespace
 
-static_assert(proto::is_subtype_sync_v<DowngradingLoop, StrictLoop>,
-    "NumericalTier_LoopBody_TierDowngrade");
+static_assert(proto::is_subtype_sync_v<DowngradingLoop, StrictLoop>, "NumericalTier_LoopBody_TierDowngrade");
 
 int main() { return 0; }

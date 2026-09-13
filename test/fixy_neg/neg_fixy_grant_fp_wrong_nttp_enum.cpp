@@ -34,14 +34,13 @@
 #include <crucible/fixy/Fp.h>
 
 namespace fxg = crucible::fixy::grant;
-namespace sf  = crucible::safety;
+namespace sf = crucible::safety;
 
 // Substituting an FpFtz value for the FpRounding NTTP on
 // with_fp_rounding<...> — the parametric grant's template-parameter
 // type is `safety::FpRounding`, NOT `safety::FpFtz`.  Template-id
 // formation rejects.
-using Bad =
-    fxg::with_fp_rounding<sf::FpFtz::FlushToZero /* wrong enum type */>;
+using Bad = fxg::with_fp_rounding<sf::FpFtz::FlushToZero /* wrong enum type */>;
 
 int main() {
     [[maybe_unused]] Bad b{};

@@ -65,15 +65,12 @@ struct Ack {};
 // bottom-preservation specialization fires and the type collapses
 // to `Stop_g<Throw>`.
 static_assert(std::is_same_v<
-    proto::compose_t<
-        proto::Accept<proto::Stop_g<proto::CrashClass::Throw>,
-                      proto::Send<int, proto::End>>,
-        proto::Recv<Ack, proto::End>>,
-    proto::Accept<proto::Stop_g<proto::CrashClass::Throw>,
-                  proto::compose_t<proto::Send<int, proto::End>,
-                                   proto::Recv<Ack, proto::End>>>>,
-    "fixy-A2-002 regression: Accept<Stop_g<C>, K> compose did not "
-    "collapse to Stop_g<C>");
+                  proto::compose_t<proto::Accept<proto::Stop_g<proto::CrashClass::Throw>, proto::Send<int, proto::End>>,
+                                   proto::Recv<Ack, proto::End>>,
+                  proto::Accept<proto::Stop_g<proto::CrashClass::Throw>,
+                                proto::compose_t<proto::Send<int, proto::End>, proto::Recv<Ack, proto::End>>>>,
+              "fixy-A2-002 regression: Accept<Stop_g<C>, K> compose did not "
+              "collapse to Stop_g<C>");
 
 }  // namespace
 

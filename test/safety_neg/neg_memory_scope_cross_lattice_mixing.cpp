@@ -23,12 +23,11 @@
 using namespace crucible::algebra::lattices;
 
 int main() {
-    MemoryScope     scope_val   = MemoryScope::Gpu;
+    MemoryScope scope_val = MemoryScope::Gpu;
     BarrierStrength barrier_val = BarrierStrength::SeqCst;
 
     // Should FAIL: MemoryScopeLattice::leq requires two MemoryScope values;
     // passing a BarrierStrength as the second argument is a type mismatch
     // (no cross-enum implicit conversion).
-    return static_cast<int>(
-        MemoryScopeLattice::leq(scope_val, barrier_val));
+    return static_cast<int>(MemoryScopeLattice::leq(scope_val, barrier_val));
 }

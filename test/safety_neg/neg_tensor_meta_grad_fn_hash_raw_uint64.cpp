@@ -14,9 +14,9 @@
 #include <crucible/TensorMeta.h>
 
 int main() {
-  crucible::TensorMeta meta{};
+    crucible::TensorMeta meta{};
 
-  // MUST fail: grad_fn_hash is GradFnHash, not a raw uint64_t.
-  meta.grad_fn_hash = 0x1234ULL;
-  return 0;
+    // MUST fail: grad_fn_hash is GradFnHash, not a raw uint64_t.
+    meta.grad_fn_hash = 0x1234ULL;
+    return 0;
 }

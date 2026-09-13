@@ -29,7 +29,7 @@
 #include <crucible/permissions/Permission.h>
 
 namespace fsubstr = ::crucible::fixy::substr;
-namespace saf     = ::crucible::safety;
+namespace saf = ::crucible::safety;
 
 namespace neg_fixy_substr_spsc_producer_endpoint_near_miss {
 struct UTag {};
@@ -49,30 +49,24 @@ struct FakeConsumerHandle {
 // bare-handle form (the optional-form is for MPMC where producer() may
 // fail when no slot is free).
 struct NearMissChannel {
-    using value_type     = int;
-    using user_tag       = UTag;
-    using whole_tag      = void;  // placeholder — surface concept doesn't probe whole_tag
-    using producer_tag   = PTag;
-    using consumer_tag   = CTag;
+    using value_type = int;
+    using user_tag = UTag;
+    using whole_tag = void;  // placeholder — surface concept doesn't probe whole_tag
+    using producer_tag = PTag;
+    using consumer_tag = CTag;
     using ProducerHandle = FakeProducerHandle;
     using ConsumerHandle = FakeConsumerHandle;
 
     // BUG: must return FakeProducerHandle (bare), not optional<FakeProducerHandle>.
-    std::optional<FakeProducerHandle> producer(saf::Permission<PTag>&&) {
-        return std::nullopt;
-    }
-    FakeConsumerHandle consumer(saf::Permission<CTag>&&) {
-        return FakeConsumerHandle{};
-    }
+    std::optional<FakeProducerHandle> producer(saf::Permission<PTag>&&) { return std::nullopt; }
+    FakeConsumerHandle consumer(saf::Permission<CTag>&&) { return FakeConsumerHandle{}; }
 };
 }  // namespace neg_fixy_substr_spsc_producer_endpoint_near_miss
 
 int main() {
     neg_fixy_substr_spsc_producer_endpoint_near_miss::NearMissChannel ch{};
-    auto perm = saf::mint_permission_root<
-        neg_fixy_substr_spsc_producer_endpoint_near_miss::PTag>();
+    auto perm = saf::mint_permission_root<neg_fixy_substr_spsc_producer_endpoint_near_miss::PTag>();
 
-    [[maybe_unused]] auto bad =
-        fsubstr::spsc::mint_spsc_producer_endpoint(ch, std::move(perm));
+    [[maybe_unused]] auto bad = fsubstr::spsc::mint_spsc_producer_endpoint(ch, std::move(perm));
     return 0;
 }

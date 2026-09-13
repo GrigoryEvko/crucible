@@ -51,7 +51,7 @@ struct HyParViewConfig {
     HyParViewPositiveCount active_random_walk_length{6};
     HyParViewPositiveCount passive_random_walk_length{6};
     HyParViewPositiveCount active_random_walk_acceptance{3};
-    HyParViewDurationNs shuffle_period_ns{30'000'000'000ULL};
+    HyParViewDurationNs shuffle_period_ns{30000000000ULL};
 };
 
 template <std::size_t MaxPassive>

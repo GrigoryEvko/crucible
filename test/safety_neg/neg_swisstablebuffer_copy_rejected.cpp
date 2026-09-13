@@ -53,11 +53,9 @@ namespace {
 
 // Anchor: move-construction compiles cleanly — the canonical
 // rebuild-then-assign transfer path.
-[[maybe_unused]] static
-::crucible::safety::SwissTableBuffer<const std::uint64_t*>
-anchor_move_construct() {
+[[maybe_unused]] static ::crucible::safety::SwissTableBuffer<const std::uint64_t*> anchor_move_construct() {
     auto buf = ::crucible::safety::SwissTableBuffer<const std::uint64_t*>::allocate(16);
-    return buf;   // NRVO or move — both legal.
+    return buf;  // NRVO or move — both legal.
 }
 
 // VIOLATION: SwissTableBuffer<SlotPtr>(const SwissTableBuffer&)
@@ -65,11 +63,8 @@ anchor_move_construct() {
 // construction from a const lvalue source triggers the deleted-
 // function diagnostic with the move-only-discipline message
 // verbatim.
-[[maybe_unused]] static
-::crucible::safety::SwissTableBuffer<const std::uint64_t*>
-offending_copy_construct(
-    const ::crucible::safety::SwissTableBuffer<const std::uint64_t*>& source)
-{
+[[maybe_unused]] static ::crucible::safety::SwissTableBuffer<const std::uint64_t*>
+offending_copy_construct(const ::crucible::safety::SwissTableBuffer<const std::uint64_t*>& source) {
     return ::crucible::safety::SwissTableBuffer<const std::uint64_t*>{source};
     // ERROR: use of deleted function 'SwissTableBuffer(const SwissTableBuffer&)'
     // diagnostic message: "SwissTableBuffer is move-only"

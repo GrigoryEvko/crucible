@@ -23,11 +23,10 @@ int main() {
 
     Secret<std::uint64_t> s{0xDEADBEEFCAFEBABEULL};
 
-    auto rebound = std::move(s).transform(
-        [&leak](std::uint64_t v) -> std::uint64_t& {
-            leak = v;
-            return leak;  // REFERENCE RETURN — captured-reference leak.
-        });
+    auto rebound = std::move(s).transform([&leak](std::uint64_t v) -> std::uint64_t& {
+        leak = v;
+        return leak;  // REFERENCE RETURN — captured-reference leak.
+    });
 
     (void)rebound;
     return 0;

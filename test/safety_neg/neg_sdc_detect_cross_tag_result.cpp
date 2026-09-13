@@ -8,9 +8,7 @@
 namespace safety = crucible::safety;
 namespace observe = crucible::observe;
 
-int consume_verified(observe::SdcVerified<std::uint64_t>) noexcept {
-    return 0;
-}
+int consume_verified(observe::SdcVerified<std::uint64_t>) noexcept { return 0; }
 
 int main() {
     safety::Tagged<std::uint64_t, safety::source::External> raw{42};

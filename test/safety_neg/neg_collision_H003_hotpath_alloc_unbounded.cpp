@@ -35,35 +35,34 @@ namespace neg_collision_h003 {
 // Alloc-path specific shape.  Validate() static_assert chain runs
 // all asserts so "H003:" appears in the diagnostic regardless of
 // first_failure ordering.
-using Bad = fn::Fn<
-    int,                                       // 1  Type
-    fn::pred::True,                            // 2  Refinement
-    fn::UsageMode::Linear,                     // 3  Usage
-    fx::Row<fx::Effect::Alloc>,                // 4  EffectRow — Alloc engaged (H003 trigger
-                                                //                paired with HotPath + Unbounded)
-    fn::SecLevel::Public,                      // 5  Security
-    fn::proto::None,                           // 6  Protocol
-    fn::lifetime::Static,                      // 7  Lifetime
-    fn::source::FromInternal,                  // 8  Source
-    fn::trust::Verified,                       // 9  Trust
-    fn::ReprKind::Opaque,                      // 10 Repr
-    fn::cost::Unbounded,                       // 11 Cost — UNBOUNDED (H003 trigger paired
-                                                //                with marks_hot_path + Alloc)
-    fn::precision::Exact,                      // 12 Precision
-    fn::space::Bounded<sizeof(int)>,           // 13 Space
-    fn::OverflowMode::Trap,                    // 14 Overflow
-    fn::MutationMode::Immutable,               // 15 Mutation
-    fn::ReentrancyMode::NonReentrant,          // 16 Reentrancy
-    fn::size_pol::Sized<sizeof(int)>,          // 17 Size
-    /*Version=*/1,                             // 18 Version
-    fn::stale::Fresh                           // 19 Staleness
->;
+using Bad = fn::Fn<int,  // 1  Type
+                   fn::pred::True,  // 2  Refinement
+                   fn::UsageMode::Linear,  // 3  Usage
+                   fx::Row<fx::Effect::Alloc>,  // 4  EffectRow — Alloc engaged (H003 trigger
+                   //                paired with HotPath + Unbounded)
+                   fn::SecLevel::Public,  // 5  Security
+                   fn::proto::None,  // 6  Protocol
+                   fn::lifetime::Static,  // 7  Lifetime
+                   fn::source::FromInternal,  // 8  Source
+                   fn::trust::Verified,  // 9  Trust
+                   fn::ReprKind::Opaque,  // 10 Repr
+                   fn::cost::Unbounded,  // 11 Cost — UNBOUNDED (H003 trigger paired
+                   //                with marks_hot_path + Alloc)
+                   fn::precision::Exact,  // 12 Precision
+                   fn::space::Bounded<sizeof(int)>,  // 13 Space
+                   fn::OverflowMode::Trap,  // 14 Overflow
+                   fn::MutationMode::Immutable,  // 15 Mutation
+                   fn::ReentrancyMode::NonReentrant,  // 16 Reentrancy
+                   fn::size_pol::Sized<sizeof(int)>,  // 17 Size
+                   /*Version=*/1,  // 18 Version
+                   fn::stale::Fresh  // 19 Staleness
+                   >;
 
 }  // namespace neg_collision_h003
 
 namespace crucible::safety::fn::collision {
-    template <> struct marks_hot_path<::neg_collision_h003::Bad>
-        : std::true_type {};
+template <>
+struct marks_hot_path<::neg_collision_h003::Bad> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 [[maybe_unused]] neg_collision_h003::Bad the_fixture{};

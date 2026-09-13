@@ -41,7 +41,6 @@ int main() {
     // Should FAIL: mint_join_policy<JOIN_ALL, OnlyIntCtor> forwarded
     // with a `const char*` arg cannot construct OnlyIntCtor — the
     // requires-clause `std::is_constructible_v<T, Args...>` is FALSE.
-    auto bad = mint_join_policy<JoinPolicy_v::JOIN_ALL, OnlyIntCtor>(
-        "not_an_integer");
+    auto bad = mint_join_policy<JoinPolicy_v::JOIN_ALL, OnlyIntCtor>("not_an_integer");
     return bad.peek().value;
 }

@@ -16,8 +16,7 @@ inline void neg_witness_nullary() noexcept {}
 int main() {
     // arity_v<&neg_witness_nullary> == 0, so index 0 is out of range
     // (any index is, since the parameter list is empty).
-    using OutOfRange =
-        crucible::safety::extract::param_type_t<&::neg_witness_nullary, 0>;
+    using OutOfRange = crucible::safety::extract::param_type_t<&::neg_witness_nullary, 0>;
 
     OutOfRange const value{};
     (void)value;

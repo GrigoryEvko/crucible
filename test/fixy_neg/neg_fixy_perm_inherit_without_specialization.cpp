@@ -30,11 +30,8 @@ namespace fperm = ::crucible::fixy::perm;
 // instantiate through the fixy:: re-export of
 // mint_permission_inherit_t.  inherits_from<DeadTag, SurvivorTag>
 // defaults to false → triggers the third static_assert.
-using BadType = fperm::mint_permission_inherit_t<
-    neg_fixy_perm_inherit_without_specialization::DeadTag,
-    neg_fixy_perm_inherit_without_specialization::SurvivorTag>;
+using BadType = fperm::mint_permission_inherit_t<neg_fixy_perm_inherit_without_specialization::DeadTag,
+                                                 neg_fixy_perm_inherit_without_specialization::SurvivorTag>;
 static_cast<void>(sizeof(BadType));
 
-int main() {
-    return 0;
-}
+int main() { return 0; }

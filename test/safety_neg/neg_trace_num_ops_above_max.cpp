@@ -43,8 +43,7 @@ int main() {
     // (`bounded_above<MAX_OPS>(v)`) to be exercised at compile time.
     // v == MAX_OPS + 1 → predicate(v) == false → contract violation
     // → not a constant expression → ill-formed.
-    constexpr crucible::ValidTraceNumOps bad{
-        uint32_t{crucible::MAX_OPS} + 1u};
+    constexpr crucible::ValidTraceNumOps bad{uint32_t{crucible::MAX_OPS} + 1u};
     (void)bad;
     return 0;
 }

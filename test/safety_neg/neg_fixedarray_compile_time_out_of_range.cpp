@@ -48,7 +48,7 @@ using A4 = ::crucible::safety::FixedArray<std::uint64_t, 4>;
 // Anchor: in-range compile-time index compiles cleanly.
 [[maybe_unused]] constexpr auto anchor_in_range_at() {
     A4 arr{};
-    return arr.at<3>();   // I=3 < N=4 — passes the requires-clause.
+    return arr.at<3>();  // I=3 < N=4 — passes the requires-clause.
 }
 
 // VIOLATION: at<5>() on FixedArray<uint64_t, 4> fails the

@@ -105,8 +105,8 @@ concept GossipMulticastShape = MaxTopics > 0 && GossipNeighborShape<MaxNeighbors
                             && sizeof(GossipNeighborList<MaxNeighbors>) <= std::numeric_limits<std::uint16_t>::max();
 
 struct GossipMulticastConfig {
-    GossipDedupWindowNs dedup_window_ns{30'000'000'000ULL};
-    GossipPayloadBytes max_payload_bytes{65'507U};
+    GossipDedupWindowNs dedup_window_ns{30000000000ULL};
+    GossipPayloadBytes max_payload_bytes{65507U};
     bool use_hardware_replication = true;
 };
 

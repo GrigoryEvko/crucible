@@ -20,10 +20,9 @@ using namespace crucible::algebra::lattices;
 
 int main() {
     AllocClassLattice::At<AllocClassTag::Stack>::element_type stack_elt{};
-    AllocClassLattice::At<AllocClassTag::Heap>::element_type  heap_elt{};
+    AllocClassLattice::At<AllocClassTag::Heap>::element_type heap_elt{};
 
     // Should FAIL: At<Stack>::leq expects two At<Stack>::element_type
     // arguments; heap_elt is At<Heap>::element_type.
-    return static_cast<int>(
-        AllocClassLattice::At<AllocClassTag::Stack>::leq(stack_elt, heap_elt));
+    return static_cast<int>(AllocClassLattice::At<AllocClassTag::Stack>::leq(stack_elt, heap_elt));
 }

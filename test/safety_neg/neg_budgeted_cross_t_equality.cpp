@@ -15,7 +15,7 @@
 using namespace crucible::safety;
 
 int main() {
-    Budgeted<int>    int_value{42, BitsBudget{1024}, PeakBytes{4096}};
+    Budgeted<int> int_value{42, BitsBudget{1024}, PeakBytes{4096}};
     Budgeted<double> dbl_value{3.14, BitsBudget{1024}, PeakBytes{4096}};
 
     // Should FAIL: operator== for Budgeted<int> takes two

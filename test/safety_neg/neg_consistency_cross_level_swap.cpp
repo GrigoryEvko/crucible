@@ -22,7 +22,7 @@
 using namespace crucible::safety;
 
 int main() {
-    Consistency<Consistency_v::STRONG,        int> strong_value{42};
+    Consistency<Consistency_v::STRONG, int> strong_value{42};
     Consistency<Consistency_v::CAUSAL_PREFIX, int> causal_value{7};
 
     // Should FAIL: Consistency<STRONG, int>::swap takes

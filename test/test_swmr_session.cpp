@@ -178,7 +178,7 @@ void test_writer_publishes_1000_values_four_readers_observe_sequence() {
 }
 
 void test_async_interleaving_never_observes_torn_or_reversed_state() {
-    constexpr std::uint64_t kPublishes = 25'000;
+    constexpr std::uint64_t kPublishes = 25000;
     constexpr std::size_t kReaders = 4;
 
     PayloadSwmr swmr{payload_at(0)};
@@ -285,7 +285,7 @@ void test_reader_exit_and_rejoin_updates_pool_and_observes_current() {
 }
 
 void test_sixteen_readers_stress_latest_snapshot() {
-    constexpr std::uint64_t kPublishes = 100'000;
+    constexpr std::uint64_t kPublishes = 100000;
     constexpr std::size_t kReaders = 16;
 
     PayloadSwmr swmr{payload_at(0)};

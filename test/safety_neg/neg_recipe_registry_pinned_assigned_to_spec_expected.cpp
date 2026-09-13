@@ -52,8 +52,8 @@ int main() {
     Arena arena{};
     auto test_ctx = effects::testing::test();
     auto init_ctx = effects::testing::init();
-    RecipePool     pool{RecipePool::ArenaBorrow{arena}, init_ctx};
-    RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool},  test_ctx.alloc};
+    RecipePool pool{RecipePool::ArenaBorrow{arena}, init_ctx};
+    RecipeRegistry reg{RecipeRegistry::PoolBorrow{pool}, test_ctx.alloc};
 
     // Should FAIL: by_name_pinned<BITEXACT> returns
     //   std::expected<safety::NumericalTier<BITEXACT, const NumericalRecipe*>, RecipeError>
@@ -63,9 +63,8 @@ int main() {
     // (zero-byte EBO-collapsed static grade), RecipeSpec is regime-4
     // (per-instance 2-byte runtime grade).  No implicit conversion
     // between them; the std::expected<T, E> deduction rejects.
-    std::expected<safety::RecipeSpec<const NumericalRecipe*>, RecipeError>
-        wrong_slot = reg.by_name_pinned<safety::Tolerance::BITEXACT>(
-            recipe_names::kF32Strict);
-    (void) wrong_slot;
+    std::expected<safety::RecipeSpec<const NumericalRecipe*>, RecipeError> wrong_slot =
+        reg.by_name_pinned<safety::Tolerance::BITEXACT>(recipe_names::kF32Strict);
+    (void)wrong_slot;
     return 0;
 }

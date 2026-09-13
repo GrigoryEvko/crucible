@@ -23,7 +23,7 @@ using namespace crucible::safety;
 
 int main() {
     Crash<CrashClass_v::NoThrow, int> nothrow_value{42};
-    Crash<CrashClass_v::Abort,   int> abort_value{42};
+    Crash<CrashClass_v::Abort, int> abort_value{42};
 
     // Should FAIL: operator== for Crash<NoThrow, int> takes two
     // Crash<NoThrow, int>&; abort_value is Crash<Abort, int>.

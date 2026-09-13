@@ -24,12 +24,11 @@
 using namespace crucible::algebra::lattices;
 
 int main() {
-    MemOrderTag  mem_order_val = MemOrderTag::Relaxed;
-    WaitStrategy wait_val      = WaitStrategy::SpinPause;
+    MemOrderTag mem_order_val = MemOrderTag::Relaxed;
+    WaitStrategy wait_val = WaitStrategy::SpinPause;
 
     // Should FAIL: WaitLattice::leq's signature requires two
     // WaitStrategy values; passing a MemOrderTag as the second
     // argument is a type-mismatch.
-    return static_cast<int>(
-        WaitLattice::leq(wait_val, mem_order_val));
+    return static_cast<int>(WaitLattice::leq(wait_val, mem_order_val));
 }

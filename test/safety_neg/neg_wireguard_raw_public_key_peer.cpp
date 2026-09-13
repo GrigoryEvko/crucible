@@ -13,8 +13,5 @@ int main() {
         },
     };
     (void)crucible::cntp::_wip::declare_wireguard_peer(
-        raw_key,
-        crucible::cntp::_wip::WireguardEndpoint{.ipv4_be = 0xc0000201u,
-                                          .port = port},
-        allowed);
+        raw_key, crucible::cntp::_wip::WireguardEndpoint{.ipv4_be = 0xc0000201u, .port = port}, allowed);
 }

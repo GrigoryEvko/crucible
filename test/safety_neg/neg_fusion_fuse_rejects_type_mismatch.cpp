@@ -13,8 +13,8 @@
 
 #include <crucible/safety/Fusion.h>
 
-inline int    producer(int x)    noexcept { return x * 2; }
-inline int    consumer(double x) noexcept { return static_cast<int>(x); }
+inline int producer(int x) noexcept { return x * 2; }
+inline int consumer(double x) noexcept { return static_cast<int>(x); }
 
 int main() {
     // fuse<>() is constrained on `requires IsFusable<Fn1, Fn2>`.

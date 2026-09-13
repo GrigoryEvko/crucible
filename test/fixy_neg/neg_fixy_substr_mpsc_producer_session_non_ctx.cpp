@@ -26,15 +26,13 @@ namespace fmpsc = ::crucible::fixy::substr::mpsc;
 namespace neg_fixy_mpsc_producer_session_non_ctx {
 struct UserTag {};
 using Channel = fmpsc::PermissionedMpscChannel<int, 64, UserTag>;
-}
+}  // namespace neg_fixy_mpsc_producer_session_non_ctx
 
 int main() {
     int not_a_ctx = 0;
-    neg_fixy_mpsc_producer_session_non_ctx::Channel::ProducerHandle* handle =
-        nullptr;
+    neg_fixy_mpsc_producer_session_non_ctx::Channel::ProducerHandle* handle = nullptr;
 
-    auto bad = fmpsc::mint_mpsc_producer_session<
-        neg_fixy_mpsc_producer_session_non_ctx::Channel>(not_a_ctx, *handle);
+    auto bad = fmpsc::mint_mpsc_producer_session<neg_fixy_mpsc_producer_session_non_ctx::Channel>(not_a_ctx, *handle);
     (void)bad;
     return 0;
 }

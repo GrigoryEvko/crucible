@@ -23,7 +23,6 @@ struct OnlyIntCtor {
 };
 
 int main() {
-    auto bad = mint_simd_width_pinned<SimdIsa_v::Scalar, OnlyIntCtor>(
-        "not_an_integer");
+    auto bad = mint_simd_width_pinned<SimdIsa_v::Scalar, OnlyIntCtor>("not_an_integer");
     return bad.peek().value;
 }

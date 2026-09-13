@@ -31,7 +31,7 @@ namespace fs = ::crucible::fixy::simd;
 // so the stride↔width consistency assert reds.
 inline constexpr std::size_t kAvx2BlockBytes = 32;
 static_assert(kAvx2BlockBytes * 8u == std::to_underlying(fs::WidthBits::Bits128),
-    "FIXY-V-263: a 32-byte AVX2 FEC block is 256 bits and must declare "
-    "simd::width_256 — declaring width_128 is an arm-declaration drift bug.");
+              "FIXY-V-263: a 32-byte AVX2 FEC block is 256 bits and must declare "
+              "simd::width_256 — declaring width_128 is an arm-declaration drift bug.");
 
 int main() { return 0; }

@@ -10,11 +10,10 @@
 #include <crucible/RecipeRegistry.h>
 
 int main() {
-  auto test = crucible::effects::testing::test();
-  auto init = crucible::effects::testing::init();
-  crucible::Arena arena{};
-  crucible::RecipePool pool{
-      crucible::RecipePool::ArenaBorrow{arena}, init};
-  crucible::RecipeRegistry registry{&pool, test.alloc};
-  return registry.entries().value().empty();
+    auto test = crucible::effects::testing::test();
+    auto init = crucible::effects::testing::init();
+    crucible::Arena arena{};
+    crucible::RecipePool pool{crucible::RecipePool::ArenaBorrow{arena}, init};
+    crucible::RecipeRegistry registry{&pool, test.alloc};
+    return registry.entries().value().empty();
 }

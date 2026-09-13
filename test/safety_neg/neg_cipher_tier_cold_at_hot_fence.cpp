@@ -44,7 +44,7 @@ using namespace crucible::safety;
 // Hot tier.  Models the Cipher::publish_hot ⇄ Keeper::reincarnate
 // pattern.
 template <typename W>
-    requires (W::template satisfies<CipherTierTag_v::Hot>)
+    requires(W::template satisfies<CipherTierTag_v::Hot>)
 static int hot_reshard_consumer(W wrapped) noexcept {
     return std::move(wrapped).consume();
 }

@@ -15,7 +15,7 @@
 #include <crucible/sessions/SessionCheckpoint.h>
 #include <crucible/effects/Computation.h>
 
-namespace eff   = crucible::effects;
+namespace eff = crucible::effects;
 namespace proto = crucible::safety::proto;
 
 struct DummyResource {
@@ -25,13 +25,13 @@ struct DummyResource {
 int main() {
     using BgPayload = eff::Computation<eff::Row<eff::Effect::Bg>, int>;
 
-    using Base     = proto::Send<int, proto::End>;          // Row<>
-    using Rollback = proto::Recv<BgPayload, proto::End>;    // Row<Bg>
-    using Ckpt     = proto::CheckpointedSession<Base, Rollback>;
+    using Base = proto::Send<int, proto::End>;  // Row<>
+    using Rollback = proto::Recv<BgPayload, proto::End>;  // Row<Bg>
+    using Ckpt = proto::CheckpointedSession<Base, Rollback>;
 
     eff::HotFgCtx fg;
     DummyResource res;
-    auto bad = proto::mint_permissioned_session<Ckpt>(fg, res); // Rollback unfit on Fg
+    auto bad = proto::mint_permissioned_session<Ckpt>(fg, res);  // Rollback unfit on Fg
     (void)bad;
     return 0;
 }

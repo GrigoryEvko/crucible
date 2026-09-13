@@ -38,27 +38,26 @@ namespace neg_collision_l006 {
 // Linear-usage Fn whose return type is ControlFlowPinned<MayLongjmp, int>
 // — the L006 rejected combination.  No marker needed: the wrapper tier
 // (MayLongjmp) is the toxic value, and Usage::Linear is the second axis.
-using Bad = fn::Fn<
-    sf::ControlFlowPinned<CF::MayLongjmp, int>,  // 1  Type — CF tier >= MayLongjmp
-    fn::pred::True,                              // 2  Refinement
-    fn::UsageMode::Linear,                       // 3  Usage — the Linear axis
-    fx::Row<>,                                   // 4  EffectRow
-    fn::SecLevel::Public,                        // 5  Security
-    fn::proto::None,                             // 6  Protocol
-    fn::lifetime::Static,                        // 7  Lifetime
-    fn::source::FromInternal,                    // 8  Source
-    fn::trust::Verified,                         // 9  Trust
-    fn::ReprKind::Opaque,                        // 10 Repr
-    fn::cost::Constant,                          // 11 Cost
-    fn::precision::Exact,                        // 12 Precision
-    fn::space::Bounded<sizeof(int)>,             // 13 Space
-    fn::OverflowMode::Trap,                      // 14 Overflow
-    fn::MutationMode::Immutable,                 // 15 Mutation
-    fn::ReentrancyMode::NonReentrant,            // 16 Reentrancy
-    fn::size_pol::Sized<sizeof(int)>,            // 17 Size
-    /*Version=*/1,                               // 18 Version
-    fn::stale::Fresh                             // 19 Staleness
->;
+using Bad = fn::Fn<sf::ControlFlowPinned<CF::MayLongjmp, int>,  // 1  Type — CF tier >= MayLongjmp
+                   fn::pred::True,  // 2  Refinement
+                   fn::UsageMode::Linear,  // 3  Usage — the Linear axis
+                   fx::Row<>,  // 4  EffectRow
+                   fn::SecLevel::Public,  // 5  Security
+                   fn::proto::None,  // 6  Protocol
+                   fn::lifetime::Static,  // 7  Lifetime
+                   fn::source::FromInternal,  // 8  Source
+                   fn::trust::Verified,  // 9  Trust
+                   fn::ReprKind::Opaque,  // 10 Repr
+                   fn::cost::Constant,  // 11 Cost
+                   fn::precision::Exact,  // 12 Precision
+                   fn::space::Bounded<sizeof(int)>,  // 13 Space
+                   fn::OverflowMode::Trap,  // 14 Overflow
+                   fn::MutationMode::Immutable,  // 15 Mutation
+                   fn::ReentrancyMode::NonReentrant,  // 16 Reentrancy
+                   fn::size_pol::Sized<sizeof(int)>,  // 17 Size
+                   /*Version=*/1,  // 18 Version
+                   fn::stale::Fresh  // 19 Staleness
+                   >;
 
 }  // namespace neg_collision_l006
 

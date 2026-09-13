@@ -109,15 +109,15 @@ struct HealthPolicy {
     HealthScore suspect_below{750};
     HealthScore quarantine_below{400};
     HealthScore recovered_at_or_above{900};
-    PositiveNanoseconds expected_heartbeat_ns{std::uint64_t{1'000'000'000}};
-    std::int32_t thermal_warn_millicelsius = 80'000;
-    std::int32_t thermal_critical_millicelsius = 90'000;
+    PositiveNanoseconds expected_heartbeat_ns{std::uint64_t{1000000000}};
+    std::int32_t thermal_warn_millicelsius = 80000;
+    std::int32_t thermal_critical_millicelsius = 90000;
     std::uint8_t clock_degraded_pct = 10;
     std::uint32_t corrected_ecc_warn_delta = 10;
-    std::uint32_t drop_warn_ppm = 1'000;
-    std::uint32_t drop_critical_ppm = 10'000;
-    std::uint32_t wear_warn_ppm = 800'000;
-    std::uint32_t wear_critical_ppm = 950'000;
+    std::uint32_t drop_warn_ppm = 1000;
+    std::uint32_t drop_critical_ppm = 10000;
+    std::uint32_t wear_warn_ppm = 800000;
+    std::uint32_t wear_critical_ppm = 950000;
 };
 
 struct ThermalSample {
@@ -188,7 +188,7 @@ namespace detail {
     }
     std::uint64_t const quotient = numerator / denominator;
     std::uint64_t const remainder = numerator % denominator;
-    constexpr std::uint64_t kScale = 1'000'000;
+    constexpr std::uint64_t kScale = 1000000;
     if (quotient > std::numeric_limits<std::uint32_t>::max() / kScale) {
         return std::numeric_limits<std::uint32_t>::max();
     }
@@ -321,7 +321,7 @@ public:
         if (!(phi > 0.0)) {
             return PhiMilli{0};
         }
-        double const milli = std::min(phi * 1000.0, 1'000'000.0);
+        double const milli = std::min(phi * 1000.0, 1000000.0);
         return PhiMilli{static_cast<std::uint32_t>(milli)};
     }
 };
@@ -578,7 +578,7 @@ public:
     template <effects::IsExecCtx Ctx>
         requires CtxFitsHealthUpdate<Ctx>
     [[nodiscard]] constexpr bool update_wear(Ctx const&, cog::CogIdentity const& peer, WearSample sample) noexcept {
-        if (sample.used_ppm > 1'000'000u) {
+        if (sample.used_ppm > 1000000u) {
             return false;
         }
         Slot* slot = find_or_insert(peer);

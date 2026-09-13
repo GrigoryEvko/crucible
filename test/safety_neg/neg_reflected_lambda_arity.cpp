@@ -32,7 +32,7 @@ namespace ref = crucible::safety::reflected;
 
 enum class TestFlags : unsigned char {
     Alpha = 0x01,
-    Beta  = 0x02,
+    Beta = 0x02,
 };
 
 int main() {
@@ -40,6 +40,6 @@ int main() {
     // cannot bind to a zero-arg lambda.  The old NTTP-info shape
     // (which was the original sketch) is the same failure mode —
     // both reject for the same reason.
-    ref::for_each_enumerator<TestFlags>([]{ /* zero-arg, wrong shape */ });
+    ref::for_each_enumerator<TestFlags>([] { /* zero-arg, wrong shape */ });
     return 0;
 }

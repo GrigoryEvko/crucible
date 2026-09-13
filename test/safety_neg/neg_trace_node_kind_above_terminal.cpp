@@ -48,9 +48,7 @@ int main() {
     // → the expression is not a constant expression → ill-formed
     // initialization of constexpr local.
     constexpr crucible::ValidTraceNodeKindRaw bad{
-        static_cast<uint8_t>(
-            static_cast<uint8_t>(crucible::TraceNodeKind::TERMINAL)
-            + uint8_t{1})};
+        static_cast<uint8_t>(static_cast<uint8_t>(crucible::TraceNodeKind::TERMINAL) + uint8_t{1})};
     (void)bad;
     return 0;
 }

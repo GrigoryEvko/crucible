@@ -33,18 +33,17 @@ int main() {
     // V-074 prohibits.  No profiler in sight, no source tag.  The
     // umbrella's dispatch using-decl must reject the call.
     const crucible::concurrent::ParallelismDecision raw_decision{
-        .kind   = crucible::concurrent::ParallelismDecision::Kind::Sequential,
+        .kind = crucible::concurrent::ParallelismDecision::Kind::Sequential,
         .factor = 1,
-        .numa   = crucible::concurrent::NumaPolicy::NumaIgnore,
-        .tier   = crucible::concurrent::Tier::L1Resident,
+        .numa = crucible::concurrent::NumaPolicy::NumaIgnore,
+        .tier = crucible::concurrent::Tier::L1Resident,
     };
 
     // Type mismatch via the umbrella — `fixy::perf::dispatch_workload_decision`
     // expects TaggedParallelismDecision (which is also re-exported as
     // `fixy::perf::TaggedParallelismDecision`).
     crucible::fixy::perf::dispatch_workload_decision(
-        bg_ctx, raw_decision,
-        [](const crucible::concurrent::ParallelismDecision&) noexcept { },
-        [](const crucible::concurrent::ParallelismDecision&) noexcept { });
+        bg_ctx, raw_decision, [](const crucible::concurrent::ParallelismDecision&) noexcept {},
+        [](const crucible::concurrent::ParallelismDecision&) noexcept {});
     return 0;
 }

@@ -40,8 +40,8 @@
 #include <crucible/safety/Fn.h>
 #include <crucible/safety/ScopedFence.h>
 
-namespace fn  = crucible::safety::fn;
-namespace sf  = crucible::safety;
+namespace fn = crucible::safety::fn;
+namespace sf = crucible::safety;
 using MS = crucible::algebra::lattices::MemoryScope;
 using BS = crucible::algebra::lattices::BarrierStrength;
 
@@ -56,10 +56,9 @@ namespace neg_collision_v402_nested {
 // FromInternal (arch_pin = Portable), so the OLD host-vs-outer leg
 // is SILENT here.  V402 fires ONLY because of the new
 // nested_scope_cross_trunk_v leg added in FOUND-073.
-using Bad = fn::Fn<
-    sf::BarrierGuarded<BS::AcqRel,
-        sf::ScopedFence<MS::Gpu,                       // ← outer accel
-            sf::ScopedFence<MS::Inner, int>>>>;        // ← inner ARM
+using Bad = fn::Fn<sf::BarrierGuarded<BS::AcqRel,
+                                      sf::ScopedFence<MS::Gpu,  // ← outer accel
+                                                      sf::ScopedFence<MS::Inner, int>>>>;  // ← inner ARM
 }  // namespace neg_collision_v402_nested
 
 [[maybe_unused]] neg_collision_v402_nested::Bad the_fixture{};

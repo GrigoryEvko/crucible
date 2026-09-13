@@ -26,13 +26,11 @@ namespace proto = ::crucible::safety::proto;
 struct CarolRole {};
 struct Payload {};
 
-using SenderOfferProto =
-    proto::Offer<proto::Sender<CarolRole>,
-                 proto::Recv<Payload, proto::End>>;
+using SenderOfferProto = proto::Offer<proto::Sender<CarolRole>, proto::Recv<Payload, proto::End>>;
 
 static_assert(proto::refines_self_and_double_dual_v<SenderOfferProto>,
-    "fixy-A2-023: SenderOfferProto is NOT dual-involutive — the trait "
-    "must reject it.  Reaching this static_assert means the gate at "
-    "SessionPatterns.h:944+ was bypassed.");
+              "fixy-A2-023: SenderOfferProto is NOT dual-involutive — the trait "
+              "must reject it.  Reaching this static_assert means the gate at "
+              "SessionPatterns.h:944+ was bypassed.");
 
 int main() { return 0; }

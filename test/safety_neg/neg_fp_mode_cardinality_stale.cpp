@@ -33,9 +33,9 @@ namespace neg_fp_mode_cardinality_stale {
 // (or its commit was reverted), and downstream consumers that hard-
 // code the count silently lose their FpMode slot.
 static_assert(::crucible::safety::DIMENSION_AXIS_COUNT == 22,
-    "FIXY-V-088 CARDINALITY-STALE neg-compile: this assertion MUST "
-    "fail post-V-088.  If it passes, DimensionAxis::FpMode was "
-    "removed (regression).");
+              "FIXY-V-088 CARDINALITY-STALE neg-compile: this assertion MUST "
+              "fail post-V-088.  If it passes, DimensionAxis::FpMode was "
+              "removed (regression).");
 
 }  // namespace neg_fp_mode_cardinality_stale
 

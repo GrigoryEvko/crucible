@@ -17,7 +17,6 @@
 
 int main() {
     // Should FAIL: 42 (int) is not an effects::IsExecCtx.
-    auto pin = ::crucible::fixy::sched::mint_affinity<
-        ::crucible::algebra::lattices::AffinityMask::single(0)>(42);
+    auto pin = ::crucible::fixy::sched::mint_affinity<::crucible::algebra::lattices::AffinityMask::single(0)>(42);
     return pin.has_value() ? 0 : 1;
 }

@@ -94,7 +94,7 @@
 #include <cstdio>
 
 namespace perm = crucible::permissions;
-namespace saf  = crucible::safety;
+namespace saf = crucible::safety;
 
 // Anonymous namespace wrapper gives internal linkage to all
 // helpers below, satisfying -Wmissing-declarations.  The "Module A"
@@ -113,8 +113,7 @@ namespace {
 namespace module_a {
 
 const perm::LocalCipherPermission& exposed_local_cipher() {
-    static const auto permission =
-        saf::mint_permission_root<perm::tag::LocalCipherTag>();
+    static const auto permission = saf::mint_permission_root<perm::tag::LocalCipherTag>();
     return permission;
 }
 
@@ -136,15 +135,14 @@ int attack_mint_via_borrowed_authority() {
     // Step 1: borrow the local cipher permission ref from Module
     // A.  No call to mint_permission_root here — Eve is NOT
     // authorized to mint root permissions; she only borrows.
-    const perm::LocalCipherPermission& stolen_proof =
-        module_a::exposed_local_cipher();
+    const perm::LocalCipherPermission& stolen_proof = module_a::exposed_local_cipher();
 
     // Step 2: forge a handshake from public inputs (fixy-CR-02
     // composition).  org_id is reachable via consteval
     // federation_org_id<Org> from any TU.
     auto forged_hs = perm::make_self_signed_handshake<EveOrgTarget>(
         /*peer_key_fp=*/perm::PeerKeyFingerprint{0xEAEAEAEAEAEAEAEAULL},
-        /*nonce=*/      perm::Nonce{0xEBEBEBEBEBEBEBEBULL});
+        /*nonce=*/perm::Nonce{0xEBEBEBEBEBEBEBEBULL});
 
     // Step 3: mint federation admittance using the BORROWED ref.
     // The substrate (void)-discards local_permission so it never
@@ -152,8 +150,7 @@ int attack_mint_via_borrowed_authority() {
     // verifier has no signal distinguishing "legitimate caller
     // with the real proof" from "Eve with a borrowed ref to the
     // real proof".
-    auto admitted = perm::mint_federation_admittance<
-        EveOrgTarget, EvesPolicy>(stolen_proof, forged_hs);
+    auto admitted = perm::mint_federation_admittance<EveOrgTarget, EvesPolicy>(stolen_proof, forged_hs);
     assert(admitted.has_value());
     return 0;
 }
@@ -167,31 +164,22 @@ int attack_multiple_aliased_borrows() {
     // Here, N callers each "hold" a const& to the SAME backing
     // object and each succeeds — the Linear discipline of the
     // wrapped type does NOT propagate through `const&` aliasing.
-    const perm::LocalCipherPermission& shared_ref_1 =
-        module_a::exposed_local_cipher();
-    const perm::LocalCipherPermission& shared_ref_2 =
-        module_a::exposed_local_cipher();  // same backing object
-    const perm::LocalCipherPermission& shared_ref_3 =
-        module_a::exposed_local_cipher();  // same backing object
+    const perm::LocalCipherPermission& shared_ref_1 = module_a::exposed_local_cipher();
+    const perm::LocalCipherPermission& shared_ref_2 = module_a::exposed_local_cipher();  // same backing object
+    const perm::LocalCipherPermission& shared_ref_3 = module_a::exposed_local_cipher();  // same backing object
 
     // All three refs point to the same `static const auto` inside
     // Module A.  The substrate cannot tell them apart.
-    auto hs1 = perm::make_self_signed_handshake<EveOrgTarget>(
-        perm::PeerKeyFingerprint{0xA1A1A1A1A1A1A1A1ULL},
-        perm::Nonce{0x1111111111111111ULL});
-    auto hs2 = perm::make_self_signed_handshake<EveOrgTarget>(
-        perm::PeerKeyFingerprint{0xB2B2B2B2B2B2B2B2ULL},
-        perm::Nonce{0x2222222222222222ULL});
-    auto hs3 = perm::make_self_signed_handshake<EveOrgTarget>(
-        perm::PeerKeyFingerprint{0xC3C3C3C3C3C3C3C3ULL},
-        perm::Nonce{0x3333333333333333ULL});
+    auto hs1 = perm::make_self_signed_handshake<EveOrgTarget>(perm::PeerKeyFingerprint{0xA1A1A1A1A1A1A1A1ULL},
+                                                              perm::Nonce{0x1111111111111111ULL});
+    auto hs2 = perm::make_self_signed_handshake<EveOrgTarget>(perm::PeerKeyFingerprint{0xB2B2B2B2B2B2B2B2ULL},
+                                                              perm::Nonce{0x2222222222222222ULL});
+    auto hs3 = perm::make_self_signed_handshake<EveOrgTarget>(perm::PeerKeyFingerprint{0xC3C3C3C3C3C3C3C3ULL},
+                                                              perm::Nonce{0x3333333333333333ULL});
 
-    auto admit_1 = perm::mint_federation_admittance<
-        EveOrgTarget, EvesPolicy>(shared_ref_1, hs1);
-    auto admit_2 = perm::mint_federation_admittance<
-        EveOrgTarget, EvesPolicy>(shared_ref_2, hs2);
-    auto admit_3 = perm::mint_federation_admittance<
-        EveOrgTarget, EvesPolicy>(shared_ref_3, hs3);
+    auto admit_1 = perm::mint_federation_admittance<EveOrgTarget, EvesPolicy>(shared_ref_1, hs1);
+    auto admit_2 = perm::mint_federation_admittance<EveOrgTarget, EvesPolicy>(shared_ref_2, hs2);
+    auto admit_3 = perm::mint_federation_admittance<EveOrgTarget, EvesPolicy>(shared_ref_3, hs3);
 
     assert(admit_1.has_value());
     assert(admit_2.has_value());
@@ -206,18 +194,15 @@ int attack_multiple_aliased_borrows() {
 // once it receives the const-ref, the substrate gives it the same
 // federation-admittance authority as the original caller.
 // Privilege escalation through structural ref-passing.
-int deep_callee_abuses_received_ref(
-    const perm::LocalCipherPermission& trusted_ref) {
+int deep_callee_abuses_received_ref(const perm::LocalCipherPermission& trusted_ref) {
     // The deep callee got the ref ostensibly to encrypt a payload.
     // Instead it mints federation admittance, exploiting the fact
     // that the substrate's mint doesn't distinguish "ref passed
     // for cipher encryption" from "ref passed for federation
     // admittance".
-    auto repurposed_hs = perm::make_self_signed_handshake<EveOrgTarget>(
-        perm::PeerKeyFingerprint{0xABBAABBAABBAABBAULL},
-        perm::Nonce{0xACDCACDCACDCACDCULL});
-    auto admitted = perm::mint_federation_admittance<
-        EveOrgTarget, EvesPolicy>(trusted_ref, repurposed_hs);
+    auto repurposed_hs = perm::make_self_signed_handshake<EveOrgTarget>(perm::PeerKeyFingerprint{0xABBAABBAABBAABBAULL},
+                                                                        perm::Nonce{0xACDCACDCACDCACDCULL});
+    auto admitted = perm::mint_federation_admittance<EveOrgTarget, EvesPolicy>(trusted_ref, repurposed_hs);
     assert(admitted.has_value());
     return 0;
 }
@@ -231,8 +216,7 @@ int attack_trust_transitivity_through_ref_passing() {
     // mint_federation_admittance accepts the inherited ref
     // without distinguishing the original-caller's intent from
     // the callee's actual use.
-    return deep_callee_abuses_received_ref(
-        module_a::exposed_local_cipher());
+    return deep_callee_abuses_received_ref(module_a::exposed_local_cipher());
 }
 
 }  // namespace module_b_attacker
@@ -240,34 +224,25 @@ int attack_trust_transitivity_through_ref_passing() {
 }  // anonymous namespace
 
 int main() {
-    if (int rc = module_b_attacker::attack_mint_via_borrowed_authority();
-        rc != 0) {
-        std::fprintf(stderr,
-            "attack_mint_via_borrowed_authority failed (rc=%d)\n", rc);
+    if (int rc = module_b_attacker::attack_mint_via_borrowed_authority(); rc != 0) {
+        std::fprintf(stderr, "attack_mint_via_borrowed_authority failed (rc=%d)\n", rc);
         return 1;
     }
-    if (int rc = module_b_attacker::attack_multiple_aliased_borrows();
-        rc != 0) {
-        std::fprintf(stderr,
-            "attack_multiple_aliased_borrows failed (rc=%d)\n", rc);
+    if (int rc = module_b_attacker::attack_multiple_aliased_borrows(); rc != 0) {
+        std::fprintf(stderr, "attack_multiple_aliased_borrows failed (rc=%d)\n", rc);
         return 2;
     }
-    if (int rc =
-            module_b_attacker::attack_trust_transitivity_through_ref_passing();
-        rc != 0) {
-        std::fprintf(stderr,
-            "attack_trust_transitivity_through_ref_passing failed (rc=%d)\n",
-            rc);
+    if (int rc = module_b_attacker::attack_trust_transitivity_through_ref_passing(); rc != 0) {
+        std::fprintf(stderr, "attack_trust_transitivity_through_ref_passing failed (rc=%d)\n", rc);
         return 3;
     }
 
-    std::puts(
-        "attack_federation_authority_bypass: V1 mint trusts ANY "
-        "const-ref to a LocalCipherPermission, including borrowed, "
-        "aliased, and trust-transitively-received refs "
-        "(fixy-CR-04).  When this test REDDENS, value-based local "
-        "authority has landed — see the doc-block at the top of "
-        "this file for the remediation checklist.");
+    std::puts("attack_federation_authority_bypass: V1 mint trusts ANY "
+              "const-ref to a LocalCipherPermission, including borrowed, "
+              "aliased, and trust-transitively-received refs "
+              "(fixy-CR-04).  When this test REDDENS, value-based local "
+              "authority has landed — see the doc-block at the top of "
+              "this file for the remediation checklist.");
     return 0;
 }
 

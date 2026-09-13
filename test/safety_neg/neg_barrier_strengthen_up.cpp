@@ -22,7 +22,7 @@
 #include <crucible/safety/BarrierGuarded.h>
 
 namespace sf = ::crucible::safety;
-using Bs_t   = sf::BarrierStrength_v;
+using Bs_t = sf::BarrierStrength_v;
 
 int main() {
     sf::BarrierGuarded<Bs_t::AcquireLoad, int> acquire_only{42};

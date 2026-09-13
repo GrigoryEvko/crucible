@@ -19,9 +19,8 @@ struct ImmovablePayload {
     ImmovablePayload& operator=(ImmovablePayload&&) = delete;
 };
 
-using BadMint = decltype(cipher::mint_promote<
-    ::crucible::safety::CipherTierTag_v::Cold,
-    ::crucible::safety::CipherTierTag_v::Warm>(
+using BadMint =
+    decltype(cipher::mint_promote<::crucible::safety::CipherTierTag_v::Cold, ::crucible::safety::CipherTierTag_v::Warm>(
         std::declval<tier::Cold<ImmovablePayload>>()));
 
 int main() { return sizeof(BadMint); }

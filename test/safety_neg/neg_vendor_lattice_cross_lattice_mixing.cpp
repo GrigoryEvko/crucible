@@ -26,12 +26,11 @@
 using namespace crucible::algebra::lattices;
 
 int main() {
-    VendorBackend vendor_val   = VendorBackend::NV;
-    HotPathTier   hot_path_val = HotPathTier::Hot;
+    VendorBackend vendor_val = VendorBackend::NV;
+    HotPathTier hot_path_val = HotPathTier::Hot;
 
     // Should FAIL: HotPathLattice::leq's signature requires two
     // HotPathTier values; passing a VendorBackend as the second
     // argument is a type-mismatch.
-    return static_cast<int>(
-        HotPathLattice::leq(hot_path_val, vendor_val));
+    return static_cast<int>(HotPathLattice::leq(hot_path_val, vendor_val));
 }

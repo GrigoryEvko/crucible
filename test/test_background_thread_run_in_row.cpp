@@ -476,8 +476,8 @@ static void test_audit_i_large_batch_drain() {
     constexpr uint32_t TOTAL = 32;
     for (uint32_t i = 0; i < TOTAL; ++i) {
         crucible::TraceRing::Entry e{};
-        e.schema_hash = crucible::SchemaHash{0xABCD'0001ULL + i};
-        e.shape_hash = crucible::ShapeHash{0xDEAD'0001ULL + i};
+        e.schema_hash = crucible::SchemaHash{0xABCD0001ULL + i};
+        e.shape_hash = crucible::ShapeHash{0xDEAD0001ULL + i};
         while (
             !ring->try_append_pinned(e, crucible::MetaIndex::none(), crucible::ScopeHash{0}, crucible::CallsiteHash{0})
                  .peek()) {

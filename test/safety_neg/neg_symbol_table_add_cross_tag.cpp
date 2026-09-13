@@ -18,12 +18,10 @@
 #include <crucible/safety/Tagged.h>
 
 int main() {
-  crucible::SymbolTable table;
-  using ExternalSymbolId = crucible::safety::Tagged<
-      crucible::SymbolId, crucible::safety::source::External>;
+    crucible::SymbolTable table;
+    using ExternalSymbolId = crucible::safety::Tagged<crucible::SymbolId, crucible::safety::source::External>;
 
-  ExternalSymbolId id =
-      table.add(crucible::SymKind::SIZE, crucible::ExprFlags::IS_INTEGER);
-  (void)id;
-  return 0;
+    ExternalSymbolId id = table.add(crucible::SymKind::SIZE, crucible::ExprFlags::IS_INTEGER);
+    (void)id;
+    return 0;
 }

@@ -26,13 +26,12 @@ struct Right {};
 }  // namespace neg_fixy_perm_split_undeclared
 
 int main() {
-    namespace tags  = neg_fixy_perm_split_undeclared;
+    namespace tags = neg_fixy_perm_split_undeclared;
     namespace fperm = ::crucible::fixy::perm;
-    namespace safe  = ::crucible::safety;
+    namespace safe = ::crucible::safety;
 
     auto whole = fperm::mint_permission_root<tags::Whole>();
-    auto [l, r] = fperm::mint_permission_split<tags::Left, tags::Right>(
-        std::move(whole));
+    auto [l, r] = fperm::mint_permission_split<tags::Left, tags::Right>(std::move(whole));
     safe::permission_drop(std::move(l));
     safe::permission_drop(std::move(r));
     return 0;

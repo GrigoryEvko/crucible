@@ -35,9 +35,7 @@ struct LeakedTag {};
 namespace crucible::safety {
 
 template <>
-struct splits_into_pack<
-    neg_fork_rebuild_free_function::LeakedTag,
-    neg_fork_rebuild_free_function::LeakedTag>
+struct splits_into_pack<neg_fork_rebuild_free_function::LeakedTag, neg_fork_rebuild_free_function::LeakedTag>
     : std::true_type {};
 
 }  // namespace crucible::safety

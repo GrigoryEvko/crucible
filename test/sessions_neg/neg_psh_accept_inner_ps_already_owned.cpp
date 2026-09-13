@@ -18,20 +18,17 @@ struct CarrierResource {};
 struct WorkerResource {};
 
 using InnerProto = Send<int, End>;
-using Payload    = DelegatedSession<InnerProto, PermSet<WorkItem>>;
-using Carrier    = Accept<Payload, End>;
+using Payload = DelegatedSession<InnerProto, PermSet<WorkItem>>;
+using Carrier = Accept<Payload, End>;
 
-WorkerResource wire_accept(CarrierResource&) noexcept {
-    return WorkerResource{};
-}
+WorkerResource wire_accept(CarrierResource&) noexcept { return WorkerResource{}; }
 
 }  // namespace
 
 int main() {
     auto work = mint_permission_root<WorkItem>();
     static_cast<void>(work);
-    auto carrier = detail::permissioned_session_with_loc_<
-        Carrier, PermSet<WorkItem>, CarrierResource>(
+    auto carrier = detail::permissioned_session_with_loc_<Carrier, PermSet<WorkItem>, CarrierResource>(
         CarrierResource{}, std::source_location::current());
 
     // Carrier PS already contains WorkItem.  Accepting Payload would

@@ -17,7 +17,6 @@
 
 namespace eff = crucible::effects;
 
-static_assert(eff::IsEffectRow<int&&>,
-    "fixy-A3-004: cv-ref-stripped non-Row must still reject IsEffectRow");
+static_assert(eff::IsEffectRow<int&&>, "fixy-A3-004: cv-ref-stripped non-Row must still reject IsEffectRow");
 
 int main() { return 0; }

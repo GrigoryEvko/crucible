@@ -32,7 +32,9 @@ namespace neg = crucible::safety;
 // LatticeGrade constraint check; int has no element_type / bottom /
 // top / leq / join / meet, so algebra::Lattice<int> is false.
 template <neg::LatticeGrade G>
-constexpr bool consumes_lattice() noexcept { return true; }
+constexpr bool consumes_lattice() noexcept {
+    return true;
+}
 
 [[maybe_unused]] constexpr bool the_fixture = consumes_lattice<int>();
 

@@ -20,8 +20,7 @@ namespace eff = crucible::effects;
 
 int main() {
     // Construct a Computation that USES the Bg effect.
-    auto bg_computation =
-        eff::Computation<eff::Row<eff::Effect::Bg>, int>{42};
+    auto bg_computation = eff::Computation<eff::Row<eff::Effect::Bg>, int>{42};
 
     // Try to extract() — fires `requires (row_size_v<R> == 0)`.
     // The compiler rejects: row_size_v<Row<Bg>> == 1, not 0.

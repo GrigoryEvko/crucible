@@ -22,11 +22,11 @@
 #include <crucible/safety/SimdWidthPinned.h>
 
 namespace sf = ::crucible::safety;
-using Si_t   = sf::SimdIsa_v;
+using Si_t = sf::SimdIsa_v;
 
 // A consumer requiring at least an AVX512BW-capable provider.
 template <typename W>
-    requires (W::template satisfies<Si_t::Avx512Bw>)
+    requires(W::template satisfies<Si_t::Avx512Bw>)
 [[nodiscard]] constexpr int require_avx512_provider(W const& w) noexcept {
     return w.peek();
 }

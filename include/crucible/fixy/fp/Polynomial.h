@@ -31,7 +31,7 @@ namespace crucible::fixy::fp {
     const std::int32_t e_raw = static_cast<std::int32_t>((bits >> 23) & 0xFFu);
     std::int32_t e_unbiased = e_raw - 127;
 
-    const std::uint32_t m_bits = (bits & 0x007F'FFFFu) | (127u << 23);
+    const std::uint32_t m_bits = (bits & 0x007FFFFFu) | (127u << 23);
     float m = std::bit_cast<float>(m_bits);
 
     // Every step of this reduction is exact in IEEE 754, so the branch

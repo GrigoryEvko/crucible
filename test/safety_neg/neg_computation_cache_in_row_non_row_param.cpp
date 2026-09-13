@@ -25,7 +25,6 @@ int main() {
     // `int` is the second template arg — bound to Row.  Concept
     // IsEffectRow<int> is false (int is not effects::Row<Es...>).
     // The lookup template's requires clause rejects.
-    (void)crucible::cipher::lookup_computation_cache_in_row<
-        &f11_test_fn, int, double>();
+    (void)crucible::cipher::lookup_computation_cache_in_row<&f11_test_fn, int, double>();
     return 0;
 }

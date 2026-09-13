@@ -19,8 +19,7 @@ namespace stance = crucible::fixy::stance;
 // completion, forced by sizeof.
 using BadPureLinearArray = stance::PureLinear<int[5]>;
 
-static_assert(sizeof(BadPureLinearArray) > 0,
-    "instantiate stance::PureLinear<int[5]> to force its class-body "
-    "static_assert (Type-axis gate must reject arrays).");
+static_assert(sizeof(BadPureLinearArray) > 0, "instantiate stance::PureLinear<int[5]> to force its class-body "
+                                              "static_assert (Type-axis gate must reject arrays).");
 
 int main() { return 0; }

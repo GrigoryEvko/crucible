@@ -30,14 +30,11 @@
 #include <span>
 
 constexpr bool empty_vs_nonempty_eq() {
-    constexpr std::array<std::byte, 2> b{
-        std::byte{0x42}, std::byte{0x43} };
+    constexpr std::array<std::byte, 2> b{std::byte{0x42}, std::byte{0x43}};
 
     // VIOLATION: empty vs 2-byte.  CRUCIBLE_PRE(a.size() == b.size())
     // fires: 0 ≠ 2.
-    return crucible::safety::ct::eq(
-        std::span<const std::byte>{},
-        std::span<const std::byte>{b.data(), b.size()});
+    return crucible::safety::ct::eq(std::span<const std::byte>{}, std::span<const std::byte>{b.data(), b.size()});
 }
 
 int main() {

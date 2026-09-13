@@ -6,19 +6,17 @@
 
 #include <utility>
 
-namespace eff   = ::crucible::effects;
+namespace eff = ::crucible::effects;
 namespace proto = ::crucible::safety::proto;
-namespace safe  = ::crucible::safety;
+namespace safe = ::crucible::safety;
 
 struct Wire {};
 struct Tile {};
 
 using NvTile = safe::Vendor<proto::VendorBackend::NV, Tile>;
-using CollectiveProto = proto::Loop<
-    proto::Send<NvTile, proto::Continue>>;
+using CollectiveProto = proto::Loop<proto::Send<NvTile, proto::Continue>>;
 
-using BadMint = decltype(proto::mint_permissioned_session<CollectiveProto>(
-    std::declval<eff::HotFgCtx const&>(),
-    std::declval<Wire>()));
+using BadMint = decltype(proto::mint_permissioned_session<CollectiveProto>(std::declval<eff::HotFgCtx const&>(),
+                                                                           std::declval<Wire>()));
 
 int main() { return sizeof(BadMint); }

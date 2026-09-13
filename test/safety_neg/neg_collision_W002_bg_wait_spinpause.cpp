@@ -38,9 +38,9 @@
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>
 
-namespace fn  = crucible::safety::fn;
-namespace fx  = crucible::effects;
-namespace sf  = crucible::safety;
+namespace fn = crucible::safety::fn;
+namespace fx = crucible::effects;
+namespace sf = crucible::safety;
 using WS = crucible::algebra::lattices::WaitStrategy;
 
 namespace neg_collision_w002_spinpause {
@@ -49,27 +49,26 @@ namespace neg_collision_w002_spinpause {
 // rejected combination.  The Bg effect in the row is what trips the
 // rule; W002 fires the moment Fn instantiation reaches the static_assert
 // inside CollisionRules::validate().
-using Bad = fn::Fn<
-    sf::Wait<WS::SpinPause, int>,              // 1  Type — triggers W002
-    fn::pred::True,                            // 2  Refinement
-    fn::UsageMode::Linear,                     // 3  Usage
-    fx::Row<fx::Effect::Bg>,                   // 4  EffectRow — Bg ⇒ W002
-    fn::SecLevel::Public,                      // 5  Security
-    fn::proto::None,                           // 6  Protocol
-    fn::lifetime::Static,                      // 7  Lifetime
-    fn::source::FromInternal,                  // 8  Source
-    fn::trust::Verified,                       // 9  Trust
-    fn::ReprKind::Opaque,                      // 10 Repr
-    fn::cost::Constant,                        // 11 Cost
-    fn::precision::Exact,                      // 12 Precision
-    fn::space::Bounded<sizeof(int)>,           // 13 Space
-    fn::OverflowMode::Trap,                    // 14 Overflow
-    fn::MutationMode::Immutable,               // 15 Mutation
-    fn::ReentrancyMode::NonReentrant,          // 16 Reentrancy
-    fn::size_pol::Sized<sizeof(int)>,          // 17 Size
-    /*Version=*/1,                             // 18 Version
-    fn::stale::Fresh                           // 19 Staleness
->;
+using Bad = fn::Fn<sf::Wait<WS::SpinPause, int>,  // 1  Type — triggers W002
+                   fn::pred::True,  // 2  Refinement
+                   fn::UsageMode::Linear,  // 3  Usage
+                   fx::Row<fx::Effect::Bg>,  // 4  EffectRow — Bg ⇒ W002
+                   fn::SecLevel::Public,  // 5  Security
+                   fn::proto::None,  // 6  Protocol
+                   fn::lifetime::Static,  // 7  Lifetime
+                   fn::source::FromInternal,  // 8  Source
+                   fn::trust::Verified,  // 9  Trust
+                   fn::ReprKind::Opaque,  // 10 Repr
+                   fn::cost::Constant,  // 11 Cost
+                   fn::precision::Exact,  // 12 Precision
+                   fn::space::Bounded<sizeof(int)>,  // 13 Space
+                   fn::OverflowMode::Trap,  // 14 Overflow
+                   fn::MutationMode::Immutable,  // 15 Mutation
+                   fn::ReentrancyMode::NonReentrant,  // 16 Reentrancy
+                   fn::size_pol::Sized<sizeof(int)>,  // 17 Size
+                   /*Version=*/1,  // 18 Version
+                   fn::stale::Fresh  // 19 Staleness
+                   >;
 
 }  // namespace neg_collision_w002_spinpause
 

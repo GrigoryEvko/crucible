@@ -15,8 +15,6 @@ int main() {
 
     // No register_name(SealedView, ...) overload exists.  The typed
     // overload takes MutableView, and Sealed cannot convert to Mutable.
-    t.register_name(sv,
-                    crucible::SchemaHash{0x42},
-                    crucible::SchemaTable::SanitizedName{"aten::mm"});
+    t.register_name(sv, crucible::SchemaHash{0x42}, crucible::SchemaTable::SanitizedName{"aten::mm"});
     return 0;
 }

@@ -22,7 +22,7 @@ using namespace crucible::safety;
 
 int main() {
     Wait<WaitStrategy_v::SpinPause, int> spin_value{42};
-    Wait<WaitStrategy_v::Block,     int> block_value{7};
+    Wait<WaitStrategy_v::Block, int> block_value{7};
 
     // Should FAIL: spin_value and block_value are DIFFERENT types.
     spin_value = block_value;

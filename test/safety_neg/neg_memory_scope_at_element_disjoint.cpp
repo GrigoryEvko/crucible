@@ -32,6 +32,5 @@ int main() {
     // MemoryScope At<> grade — they are unrelated empty class types.
     BarrierStrengthLattice::At<BarrierStrength::SeqCst>::element_type barrier_grade = scope_grade;
 
-    return static_cast<int>(
-        static_cast<BarrierStrength>(barrier_grade) == BarrierStrength::SeqCst);
+    return static_cast<int>(static_cast<BarrierStrength>(barrier_grade) == BarrierStrength::SeqCst);
 }

@@ -21,8 +21,8 @@
 #include <crucible/effects/ExecCtx.h>
 
 int main() {
-    auto policy = crucible::fixy::warden::mint_quarantine_policy<
-        crucible::effects::BgDrainCtx, 2>(crucible::effects::BgDrainCtx{});
+    auto policy = crucible::fixy::warden::mint_quarantine_policy<crucible::effects::BgDrainCtx, 2>(
+        crucible::effects::BgDrainCtx{});
     (void)policy;
     return 0;
 }

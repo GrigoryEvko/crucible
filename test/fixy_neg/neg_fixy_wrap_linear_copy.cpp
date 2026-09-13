@@ -18,8 +18,7 @@ struct TypeFixyWrapLinearCopy {
 };
 
 int main() {
-    fw::Linear<TypeFixyWrapLinearCopy> a =
-        fw::mint_linear<TypeFixyWrapLinearCopy>(TypeFixyWrapLinearCopy{1});
+    fw::Linear<TypeFixyWrapLinearCopy> a = fw::mint_linear<TypeFixyWrapLinearCopy>(TypeFixyWrapLinearCopy{1});
 
     // Should FAIL: Linear<T> deletes copy with reason
     //   "Linear<T> is move-only; use std::move or drop()".

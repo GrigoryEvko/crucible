@@ -51,17 +51,17 @@ inline constexpr uint32_t kMaxOps = 64;
 inline constexpr uint32_t kMaxEdges = 256;
 
 struct EdgeSpec {
-    uint32_t src = 0;       // in [0, num_ops)
-    uint32_t dst = 0;       // in [0, num_ops)
-    uint8_t src_port = 0;   // in [0, 63]
-    uint8_t dst_port = 0;   // in [0, 63]
+    uint32_t src = 0;  // in [0, num_ops)
+    uint32_t dst = 0;  // in [0, num_ops)
+    uint8_t src_port = 0;  // in [0, 63]
+    uint8_t dst_port = 0;  // in [0, 63]
     uint8_t pad[2]{};
 };
 
 struct GraphSpec {
     std::array<EdgeSpec, kMaxEdges> edges{};
     uint32_t num_edges = 0;
-    uint32_t num_ops = 0;   // >= 1
+    uint32_t num_ops = 0;  // >= 1
 };
 
 // Materialize the spec into a fresh Edge[] (kind defaults to DATA_FLOW;
@@ -80,9 +80,8 @@ void materialize(const GraphSpec& spec, crucible::Edge* out) noexcept {
 }
 
 [[nodiscard]] bool edge_eq(const crucible::Edge& a, const crucible::Edge& b) noexcept {
-    return a.src.raw() == b.src.raw() && a.dst.raw() == b.dst.raw() &&
-           a.src_port == b.src_port && a.dst_port == b.dst_port &&
-           a.kind == b.kind;
+    return a.src.raw() == b.src.raw() && a.dst.raw() == b.dst.raw() && a.src_port == b.src_port
+        && a.dst_port == b.dst_port && a.kind == b.kind;
 }
 
 }  // namespace
@@ -96,14 +95,15 @@ int main(int argc, char** argv) {
     using crucible::build_csr;
 
     Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 20'000) cfg.iterations = 20'000;  // O(E log E) per iter
+    if (cfg.iterations > 20000) cfg.iterations = 20000;  // O(E log E) per iter
 
-    return run("trace_graph_csr", cfg,
+    return run(
+        "trace_graph_csr", cfg,
         // ── Generator: random edge set over [0, num_ops) ──
         [](Rng& rng) noexcept -> GraphSpec {
             GraphSpec spec{};
-            spec.num_ops = 1u + rng.next_below(kMaxOps);          // [1, kMaxOps]
-            spec.num_edges = rng.next_below(kMaxEdges + 1u);      // [0, kMaxEdges]
+            spec.num_ops = 1u + rng.next_below(kMaxOps);  // [1, kMaxOps]
+            spec.num_edges = rng.next_below(kMaxEdges + 1u);  // [0, kMaxEdges]
             for (uint32_t e = 0; e < spec.num_edges; ++e) {
                 spec.edges[e].src = rng.next_below(spec.num_ops);
                 spec.edges[e].dst = rng.next_below(spec.num_ops);
@@ -152,23 +152,21 @@ int main(int argc, char** argv) {
             //     sort).  Forward = stable-by-src, reverse = stable-by-dst.
             if (num_edges > 0) {
                 std::array<uint32_t, kMaxEdges> order{};
-                for (uint32_t e = 0; e < num_edges; ++e) order[e] = e;
+                for (uint32_t e = 0; e < num_edges; ++e)
+                    order[e] = e;
 
                 // Forward: stable sort indices by src.
                 std::stable_sort(order.begin(), order.begin() + num_edges,
-                    [&](uint32_t x, uint32_t y) {
-                        return spec.edges[x].src < spec.edges[y].src;
-                    });
+                                 [&](uint32_t x, uint32_t y) { return spec.edges[x].src < spec.edges[y].src; });
                 for (uint32_t k = 0; k < num_edges; ++k) {
                     if (!edge_eq(graph.fwd_edges[k], in_edges[order[k]])) return false;
                 }
 
                 // Reverse: stable sort indices by dst.
-                for (uint32_t e = 0; e < num_edges; ++e) order[e] = e;
+                for (uint32_t e = 0; e < num_edges; ++e)
+                    order[e] = e;
                 std::stable_sort(order.begin(), order.begin() + num_edges,
-                    [&](uint32_t x, uint32_t y) {
-                        return spec.edges[x].dst < spec.edges[y].dst;
-                    });
+                                 [&](uint32_t x, uint32_t y) { return spec.edges[x].dst < spec.edges[y].dst; });
                 for (uint32_t k = 0; k < num_edges; ++k) {
                     if (!edge_eq(graph.rev_edges[k], in_edges[order[k]])) return false;
                 }

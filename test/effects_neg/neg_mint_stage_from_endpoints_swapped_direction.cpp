@@ -23,8 +23,8 @@
 #include <utility>
 
 namespace conc = crucible::concurrent;
-namespace eff  = crucible::effects;
-namespace saf  = crucible::safety;
+namespace eff = crucible::effects;
+namespace saf = crucible::safety;
 
 struct UTag1 {};
 struct UTag2 {};
@@ -33,8 +33,7 @@ using Ch1 = conc::PermissionedSpscChannel<int, 64, UTag1>;
 using Ch2 = conc::PermissionedSpscChannel<int, 64, UTag2>;
 
 // Standard-shape PipelineStage body.
-inline void body(typename Ch1::ConsumerHandle&&,
-                 typename Ch2::ProducerHandle&&) noexcept {}
+inline void body(typename Ch1::ConsumerHandle&&, typename Ch2::ProducerHandle&&) noexcept {}
 
 int main() {
     eff::HotFgCtx ctx;
@@ -43,14 +42,12 @@ int main() {
     Ch2 ch2;
 
     auto w1 = saf::mint_permission_root<conc::spsc_tag::Whole<UTag1>>();
-    auto [pp1, cp1] = saf::mint_permission_split<
-        conc::spsc_tag::Producer<UTag1>,
-        conc::spsc_tag::Consumer<UTag1>>(std::move(w1));
+    auto [pp1, cp1] =
+        saf::mint_permission_split<conc::spsc_tag::Producer<UTag1>, conc::spsc_tag::Consumer<UTag1>>(std::move(w1));
 
     auto w2 = saf::mint_permission_root<conc::spsc_tag::Whole<UTag2>>();
-    auto [pp2, cp2] = saf::mint_permission_split<
-        conc::spsc_tag::Producer<UTag2>,
-        conc::spsc_tag::Consumer<UTag2>>(std::move(w2));
+    auto [pp2, cp2] =
+        saf::mint_permission_split<conc::spsc_tag::Producer<UTag2>, conc::spsc_tag::Consumer<UTag2>>(std::move(w2));
 
     auto cons1 = ch1.consumer(std::move(cp1));
     auto prod2 = ch2.producer(std::move(pp2));
@@ -60,8 +57,7 @@ int main() {
 
     // Bridge fires: passes prod_ep where IsConsumerEndpoint expected,
     // cons_ep where IsProducerEndpoint expected.
-    auto bad = conc::mint_stage_from_endpoints<&body>(
-        ctx, std::move(prod_ep), std::move(cons_ep));
+    auto bad = conc::mint_stage_from_endpoints<&body>(ctx, std::move(prod_ep), std::move(cons_ep));
     (void)bad;
     (void)pp1;
     (void)cp2;

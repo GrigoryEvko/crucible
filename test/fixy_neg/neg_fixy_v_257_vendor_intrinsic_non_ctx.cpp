@@ -18,7 +18,6 @@ int main() {
     char not_a_ctx = 'x';
     namespace hw = ::crucible::fixy::hw;
     // Should FAIL: char does not satisfy effects::IsExecCtx.
-    [[maybe_unused]] auto g =
-        hw::mint_vendor_intrinsic<"vfmadd231ps", hw::VendorBackend::NV>(not_a_ctx);
+    [[maybe_unused]] auto g = hw::mint_vendor_intrinsic<"vfmadd231ps", hw::VendorBackend::NV>(not_a_ctx);
     return 0;
 }

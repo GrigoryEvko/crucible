@@ -77,8 +77,7 @@ namespace {
 // keeps the failure inside a typed expression rather than the
 // `main` body's eager fold-evaluation.
 [[maybe_unused]] auto chained_access_must_fail() {
-    using GoodExpected =
-        std::expected<int, proto::CrashEvent<DeadPeer, Channel, SurvivorA>>;
+    using GoodExpected = std::expected<int, proto::CrashEvent<DeadPeer, Channel, SurvivorA>>;
 
     GoodExpected* good = nullptr;
 

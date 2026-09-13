@@ -41,19 +41,19 @@ using ::crucible::safety::mint_permission_root;
 
 namespace {
 struct WorkItem {};
-struct FakeChannel { int last_int = 0; };
-}
+struct FakeChannel {
+    int last_int = 0;
+};
+}  // namespace
 
 int main() {
     auto perm = mint_permission_root<WorkItem>();
     static_cast<void>(perm);
     // Two branches: one closes immediately (leaks X), one drains
     // X via send.  Establish with X.
-    auto h = detail::permissioned_session_with_loc_<
-        Select<End, Send<Transferable<int, WorkItem>, End>>,
-        PermSet<WorkItem>,
-        FakeChannel>(
-        FakeChannel{}, std::source_location::current());
+    auto h =
+        detail::permissioned_session_with_loc_<Select<End, Send<Transferable<int, WorkItem>, End>>, PermSet<WorkItem>,
+                                               FakeChannel>(FakeChannel{}, std::source_location::current());
 
     // Pick branch 0 — close at End with PS = {WorkItem} fires.
     auto h0 = std::move(h).template select_local<0>();

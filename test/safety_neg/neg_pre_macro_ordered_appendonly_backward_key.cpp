@@ -38,18 +38,18 @@ template <typename T>
 struct ArrayStorage {
     T data[8]{};
     std::size_t n = 0;
-    using value_type     = T;
+    using value_type = T;
     using const_iterator = const T*;
 
     constexpr ArrayStorage() = default;
     constexpr void append(T item) noexcept { data[n++] = item; }
     [[nodiscard]] constexpr const T& operator[](std::size_t i) const noexcept { return data[i]; }
     [[nodiscard]] constexpr const T& front() const noexcept { return data[0]; }
-    [[nodiscard]] constexpr const T& back()  const noexcept { return data[n - 1]; }
-    [[nodiscard]] constexpr std::size_t size()  const noexcept { return n; }
-    [[nodiscard]] constexpr bool        empty() const noexcept { return n == 0; }
+    [[nodiscard]] constexpr const T& back() const noexcept { return data[n - 1]; }
+    [[nodiscard]] constexpr std::size_t size() const noexcept { return n; }
+    [[nodiscard]] constexpr bool empty() const noexcept { return n == 0; }
     [[nodiscard]] constexpr const_iterator begin() const noexcept { return data; }
-    [[nodiscard]] constexpr const_iterator end()   const noexcept { return data + n; }
+    [[nodiscard]] constexpr const_iterator end() const noexcept { return data + n; }
     [[nodiscard]] constexpr ArrayStorage<T> drain() && noexcept { return std::move(*this); }
 };
 
@@ -64,12 +64,11 @@ struct IdentityKey {
     return 0;
 }
 
-static_assert(under_test() == 0,
-    "CRUCIBLE_PRE on OrderedAppendOnly::append's disjunction-with-"
-    "member-function-on-member predicate MUST fire at consteval when "
-    "a backward key is appended.  If this static_assert evaluates "
-    "successfully, the body-CRUCIBLE_PRE migration failed for the "
-    "most-complex predicate shape in Mutation.h.");
+static_assert(under_test() == 0, "CRUCIBLE_PRE on OrderedAppendOnly::append's disjunction-with-"
+                                 "member-function-on-member predicate MUST fire at consteval when "
+                                 "a backward key is appended.  If this static_assert evaluates "
+                                 "successfully, the body-CRUCIBLE_PRE migration failed for the "
+                                 "most-complex predicate shape in Mutation.h.");
 
 }  // namespace
 

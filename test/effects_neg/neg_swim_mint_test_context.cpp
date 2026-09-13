@@ -6,8 +6,7 @@
 #include <crucible/canopy/Swim.h>
 
 int main() {
-    auto membership =
-        crucible::canopy::mint_swim_membership(crucible::effects::testing::test());
+    auto membership = crucible::canopy::mint_swim_membership(crucible::effects::testing::test());
     (void)membership;
     return 0;
 }

@@ -51,7 +51,7 @@ enum class LifeguardError : std::uint8_t {
 [[nodiscard]] std::string_view lifeguard_error_name(LifeguardError error) noexcept;
 
 struct LifeguardConfig {
-    LifeguardDurationNs base_probe_timeout_ns{500'000'000ULL};
+    LifeguardDurationNs base_probe_timeout_ns{500000000ULL};
     LifeguardPositiveCount min_indirect_checks{1};
     LifeguardPositiveCount max_indirect_checks{5};
     LifeguardMultiplier min_lhm{1};

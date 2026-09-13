@@ -26,12 +26,9 @@ struct Ack {};
 // false (sender == PeerTag and no Crash<Alice> branch present), so
 // every_offer_has_crash_branch_for_peer_v<_, Alice> is false, and the
 // consteval assert fires.
-using NoAliceCrashProto = Offer<Sender<Alice>,
-    Recv<Msg, End>,
-    Recv<Ack, End>>;
+using NoAliceCrashProto = Offer<Sender<Alice>, Recv<Msg, End>, Recv<Ack, End>>;
 
 int main() {
-    crucible::safety::proto::assert_every_offer_has_crash_branch_for<
-        NoAliceCrashProto, Alice>();
+    crucible::safety::proto::assert_every_offer_has_crash_branch_for<NoAliceCrashProto, Alice>();
     return 0;
 }

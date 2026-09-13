@@ -17,7 +17,7 @@
 using namespace crucible::safety;
 
 int main() {
-    Progress<ProgressClass_v::Bounded,    int> bounded_value{42};
+    Progress<ProgressClass_v::Bounded, int> bounded_value{42};
     Progress<ProgressClass_v::MayDiverge, int> diverge_value{7};
 
     // Should FAIL: bounded_value and diverge_value are DIFFERENT types.

@@ -27,8 +27,7 @@ int main() {
     // Without the SessionResource constraint, the handle below would
     // store a NonPinnedChannel*; if `ch` were subsequently moved or
     // destroyed, the handle would dangle.
-    [[maybe_unused]] auto h =
-        mint_session_handle<End, NonPinnedChannel&>(ch);
+    [[maybe_unused]] auto h = mint_session_handle<End, NonPinnedChannel&>(ch);
 
     return 0;
 }

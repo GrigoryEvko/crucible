@@ -10,7 +10,7 @@
 #include <crucible/TraceGraph.h>
 
 int main() {
-  crucible::TraceGraph g{};
-  g.num_ops = 1u;
-  return 0;
+    crucible::TraceGraph g{};
+    g.num_ops = 1u;
+    return 0;
 }

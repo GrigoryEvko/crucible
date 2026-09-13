@@ -21,7 +21,6 @@ int main() {
     ::crucible::effects::TestRunnerCtx ctx{};
     namespace hw = ::crucible::fixy::hw;
     // Should FAIL: NotAllowed is the strict default; no grant to mint.
-    [[maybe_unused]] auto g =
-        hw::mint_tsc_grant<hw::TscMode::NotAllowed>(ctx, hw::CpuPinProof{});
+    [[maybe_unused]] auto g = hw::mint_tsc_grant<hw::TscMode::NotAllowed>(ctx, hw::CpuPinProof{});
     return 0;
 }

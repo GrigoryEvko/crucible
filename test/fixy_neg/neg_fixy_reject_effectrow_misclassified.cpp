@@ -49,14 +49,13 @@ int main() {
     // disjointness fold in Reject.h proves this for the catalog at
     // large; here we witness the discriminator on the effect-row
     // axis specifically.
-    static_assert(::crucible::fixy::is_fixy_diag_v<
-                      ::crucible::safety::diag::EffectRowMismatch>,
-        "fixy-A4-030 HS14 fixture #2: EffectRowMismatch is a "
-        "substrate Catalog entry (the Met(X) effect-row diagnostic), "
-        "not a FixyCatalog entry; the discriminator MUST reject it. "
-        "If you see this message during a compile audit, the "
-        "FixyCatalog vs safety::diag::Catalog disjointness invariant "
-        "has been broken on the effect-row axis.");
+    static_assert(::crucible::fixy::is_fixy_diag_v<::crucible::safety::diag::EffectRowMismatch>,
+                  "fixy-A4-030 HS14 fixture #2: EffectRowMismatch is a "
+                  "substrate Catalog entry (the Met(X) effect-row diagnostic), "
+                  "not a FixyCatalog entry; the discriminator MUST reject it. "
+                  "If you see this message during a compile audit, the "
+                  "FixyCatalog vs safety::diag::Catalog disjointness invariant "
+                  "has been broken on the effect-row axis.");
 
     return 0;
 }

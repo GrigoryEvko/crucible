@@ -22,16 +22,15 @@
 #include <crucible/fixy/Substr.h>
 
 namespace fsubstr = crucible::fixy::substr;
-namespace conc    = crucible::concurrent;
-namespace fsafe   = crucible::safety;
+namespace conc = crucible::concurrent;
+namespace fsafe = crucible::safety;
 
 namespace neg_fixy_substr_swmr_reader_exclusive_perm {
 struct UserTag {};
 }  // namespace neg_fixy_substr_swmr_reader_exclusive_perm
 
 int main() {
-    using Snap = conc::PermissionedSnapshot<int,
-        neg_fixy_substr_swmr_reader_exclusive_perm::UserTag>;
+    using Snap = conc::PermissionedSnapshot<int, neg_fixy_substr_swmr_reader_exclusive_perm::UserTag>;
 
     Snap snap{};
 
@@ -39,8 +38,6 @@ int main() {
     // SharedPermission<typename Snap::reader_tag>; an exclusive root
     // Permission for the same tag is a distinct, non-convertible type.
     [[maybe_unused]] auto bad =
-        fsubstr::swmr::mint_swmr_reader(
-            snap,
-            fsafe::mint_permission_root<typename Snap::reader_tag>());
+        fsubstr::swmr::mint_swmr_reader(snap, fsafe::mint_permission_root<typename Snap::reader_tag>());
     return 0;
 }

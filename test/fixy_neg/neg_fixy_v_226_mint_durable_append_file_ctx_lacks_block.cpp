@@ -18,7 +18,7 @@
 //   "CtxFitsFileMint" / "CtxAdmitsIoBlock" / "row_contains" / "Block".
 
 #include <crucible/effects/ExecCtx.h>
-#include <crucible/fixy/Source.h>           // fixy::tags::source::*
+#include <crucible/fixy/Source.h>  // fixy::tags::source::*
 #include <crucible/fixy/Wrap.h>
 
 int main() {
@@ -26,10 +26,8 @@ int main() {
 
     ::crucible::effects::ColdInitCtx ctx{};
 
-    fwfs::Path<::crucible::fixy::tags::source::Sanitized> path{
-        "/tmp/crucible_neg_v226_durable_append_no_block"};
+    fwfs::Path<::crucible::fixy::tags::source::Sanitized> path{"/tmp/crucible_neg_v226_durable_append_no_block"};
 
-    [[maybe_unused]] auto r =
-        fwfs::mint_durable_append_file(ctx, std::move(path));
+    [[maybe_unused]] auto r = fwfs::mint_durable_append_file(ctx, std::move(path));
     return 0;
 }

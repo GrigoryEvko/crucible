@@ -24,12 +24,11 @@
 using namespace crucible::algebra::lattices;
 
 int main() {
-    SchedulerPolicy    sched_val = SchedulerPolicy::Fifo;
-    PinningRequirement pin_val   = PinningRequirement::PerCore;
+    SchedulerPolicy sched_val = SchedulerPolicy::Fifo;
+    PinningRequirement pin_val = PinningRequirement::PerCore;
 
     // Should FAIL: SchedulerPolicyLattice::leq requires two
     // SchedulerPolicy values; passing a PinningRequirement as the second
     // argument is a type mismatch (no cross-enum implicit conversion).
-    return static_cast<int>(
-        SchedulerPolicyLattice::leq(sched_val, pin_val));
+    return static_cast<int>(SchedulerPolicyLattice::leq(sched_val, pin_val));
 }

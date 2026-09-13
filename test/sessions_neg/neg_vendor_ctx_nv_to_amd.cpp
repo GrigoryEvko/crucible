@@ -10,17 +10,11 @@ struct Channel {
     int value = 0;
 };
 
-using NvHandle = proto::PermissionedSessionHandle<
-    proto::End,
-    proto::EmptyPermSet,
-    Channel,
-    proto::VendorCtx<proto::VendorBackend::NV>>;
+using NvHandle = proto::PermissionedSessionHandle<proto::End, proto::EmptyPermSet, Channel,
+                                                  proto::VendorCtx<proto::VendorBackend::NV>>;
 
-using AmdHandle = proto::PermissionedSessionHandle<
-    proto::End,
-    proto::EmptyPermSet,
-    Channel,
-    proto::VendorCtx<proto::VendorBackend::AMD>>;
+using AmdHandle = proto::PermissionedSessionHandle<proto::End, proto::EmptyPermSet, Channel,
+                                                   proto::VendorCtx<proto::VendorBackend::AMD>>;
 
 int main() {
     proto::assert_permissioned_session_vendor_compatible<NvHandle, AmdHandle>();

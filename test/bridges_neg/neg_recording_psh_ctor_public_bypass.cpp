@@ -39,11 +39,13 @@
 #include <utility>
 
 namespace proto = ::crucible::safety::proto;
-namespace eff   = ::crucible::effects;
+namespace eff = ::crucible::effects;
 
 namespace neg_recording_psh_ctor_public_bypass {
 
-struct Channel { int unused = 0; };
+struct Channel {
+    int unused = 0;
+};
 
 // A linear Send head — the simplest non-terminal protocol shape.
 using CarrierProto = proto::Send<int, proto::End>;
@@ -53,21 +55,20 @@ using CarrierProto = proto::Send<int, proto::End>;
 int main() {
     using namespace neg_recording_psh_ctor_public_bypass;
 
-    eff::HotFgCtx          ctx{};
+    eff::HotFgCtx ctx{};
     proto::SessionEventLog log{};
-    proto::RoleTagId       self{1};
-    proto::RoleTagId       peer{2};
+    proto::RoleTagId self{1};
+    proto::RoleTagId peer{2};
 
     // Build a REAL inner PSH at the Send<int, End> state via the
     // legitimate carrier mint.  This handle is well-formed; the only
     // thing wrong below is the OUTER recording-wrapper construction.
-    auto inner = proto::mint_permissioned_session<CarrierProto>(
-        ctx, Channel{});
+    auto inner = proto::mint_permissioned_session<CarrierProto>(ctx, Channel{});
 
     using InnerType = decltype(inner);
-    using PS        = typename InnerType::perm_set;
-    using Resource  = typename InnerType::resource_type;
-    using LoopCtx   = typename InnerType::loop_ctx;
+    using PS = typename InnerType::perm_set;
+    using Resource = typename InnerType::resource_type;
+    using LoopCtx = typename InnerType::loop_ctx;
 
     // ── The §XXI bypass attempt ────────────────────────────────────
     //
@@ -78,9 +79,8 @@ int main() {
     // private — this caller cannot name it, so the construction is
     // ill-formed.  Before fix-15 this compiled silently and bypassed
     // the mint's audit-context attachment.
-    proto::RecordingPermissionedSessionHandle<
-        CarrierProto, PS, Resource, LoopCtx> bad{
-            std::move(inner), log, self, peer};
+    proto::RecordingPermissionedSessionHandle<CarrierProto, PS, Resource, LoopCtx> bad{std::move(inner), log, self,
+                                                                                       peer};
     (void)bad;
 
     return 0;

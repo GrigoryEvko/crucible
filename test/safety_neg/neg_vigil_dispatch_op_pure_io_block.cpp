@@ -23,8 +23,6 @@ int main() {
     crucible::Vigil vigil;
     crucible::TraceRing::Entry e{};
     crucible::TensorMeta m{};
-    (void)vigil.dispatch_op_pure<
-        eff::Row<eff::Effect::IO, eff::Effect::Block>>(
-            crucible::vouch(e), &m, 1);
+    (void)vigil.dispatch_op_pure<eff::Row<eff::Effect::IO, eff::Effect::Block>>(crucible::vouch(e), &m, 1);
     return 0;
 }

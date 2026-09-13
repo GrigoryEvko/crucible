@@ -51,7 +51,9 @@ namespace cog = crucible::cog;
 // concept gate at substitution time.
 template <cog::CogKind K>
     requires cog::IsComputeKind<K>
-constexpr int kernel_count_for() noexcept { return 1; }
+constexpr int kernel_count_for() noexcept {
+    return 1;
+}
 
 // CogKind::NicPort is a Network-family atom — IsComputeKind<NicPort>
 // is false because cog_family_v<NicPort> == CogFamily::Network.  The
@@ -60,10 +62,10 @@ constexpr int kernel_count_for() noexcept { return 1; }
 // CogMimic<NicPort> via the broader IsMimicSubstrate gate — but is
 // excluded from compute-only kernel-search dispatch.)
 static_assert(kernel_count_for<cog::CogKind::NicPort>() == 1,
-    "GAPS-185: cog::IsComputeKind concept MUST refuse non-Compute-"
-    "family CogKind values.  If this static_assert ever evaluates, a "
-    "compute-only consumer (MAP-Elites kernel search, partition-"
-    "optimiser compute-tile placement) would accept NicPort and "
-    "trigger a confusing 'no kernel for this kind' abort at runtime.");
+              "GAPS-185: cog::IsComputeKind concept MUST refuse non-Compute-"
+              "family CogKind values.  If this static_assert ever evaluates, a "
+              "compute-only consumer (MAP-Elites kernel search, partition-"
+              "optimiser compute-tile placement) would accept NicPort and "
+              "trigger a confusing 'no kernel for this kind' abort at runtime.");
 
 int main() { return 0; }

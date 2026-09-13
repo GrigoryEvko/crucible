@@ -7,7 +7,7 @@
 #include <crucible/Saturate.h>
 
 int main() {
-  const unsigned counter = 1u;
-  auto wrong = crucible::sat::add_sat_into(counter, 2u);
-  return static_cast<int>(wrong.value());
+    const unsigned counter = 1u;
+    auto wrong = crucible::sat::add_sat_into(counter, 2u);
+    return static_cast<int>(wrong.value());
 }

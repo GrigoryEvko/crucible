@@ -240,7 +240,7 @@ namespace detail {
 
 [[nodiscard]] constexpr SignatureFingerprint
 federation_signature_fingerprint(OrgId org_id, PeerKeyFingerprint peer_key_fingerprint, Nonce nonce) noexcept {
-    constexpr std::uint64_t kDomain = 0xCFED'AD11'0000'0001ULL;
+    constexpr std::uint64_t kDomain = 0xCFEDAD1100000001ULL;
     return SignatureFingerprint{
         detail::combine_runtime_ids(detail::combine_runtime_ids(kDomain, org_id.raw()),
                                     detail::combine_runtime_ids(peer_key_fingerprint.raw(), nonce.raw()))};
@@ -248,7 +248,7 @@ federation_signature_fingerprint(OrgId org_id, PeerKeyFingerprint peer_key_finge
 
 template <typename Org>
 [[nodiscard]] constexpr PeerKeyFingerprint default_peer_key_fingerprint() noexcept {
-    return PeerKeyFingerprint{detail::combine_runtime_ids(federation_org_id<Org>.raw(), 0xCFED'9EED'0000'0001ULL)};
+    return PeerKeyFingerprint{detail::combine_runtime_ids(federation_org_id<Org>.raw(), 0xCFED9EED00000001ULL)};
 }
 
 template <typename Org>

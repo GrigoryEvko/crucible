@@ -29,7 +29,7 @@
 using namespace crucible::safety;
 
 template <typename W>
-    requires (W::template satisfies<MemOrderTag_v::Relaxed>)
+    requires(W::template satisfies<MemOrderTag_v::Relaxed>)
 static int relaxed_fence_consumer(W wrapped) noexcept {
     return std::move(wrapped).consume();
 }

@@ -51,15 +51,12 @@ namespace {
 
 // Base branch carries a Send — non-terminal.  Rollback is End —
 // terminal.  Conjunction of branch-terminality MUST be false post-fix.
-using AsymmetricCkpt = proto::CheckpointedSession<
-    proto::Send<int, proto::End>,
-    proto::End>;
+using AsymmetricCkpt = proto::CheckpointedSession<proto::Send<int, proto::End>, proto::End>;
 
 // Asserting trait is TRUE for this shape MUST fail post-fix — the
 // AND-fold over branches yields false because base is non-terminal.
-static_assert(proto::is_terminal_state_v<AsymmetricCkpt>,
-    "fixy-A2-029 regression: CheckpointedSession<Send<...>, End> "
-    "wrongly classified as terminal — base branch carries Send");
+static_assert(proto::is_terminal_state_v<AsymmetricCkpt>, "fixy-A2-029 regression: CheckpointedSession<Send<...>, End> "
+                                                          "wrongly classified as terminal — base branch carries Send");
 
 }  // namespace
 

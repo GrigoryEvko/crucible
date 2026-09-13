@@ -25,8 +25,7 @@
 // API currently has this exact shape; the helper exists so the type
 // system can be asked to convert MutableView → SealedView, which it
 // must refuse.
-static void requires_sealed_view(
-    crucible::CKernelTable::SealedView const&) noexcept {}
+static void requires_sealed_view(crucible::CKernelTable::SealedView const&) noexcept {}
 
 int main() {
     crucible::CKernelTable t;

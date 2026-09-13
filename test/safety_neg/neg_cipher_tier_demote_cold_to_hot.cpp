@@ -15,8 +15,6 @@ int main() {
     using crucible::safety::cipher_tier::Cold;
 
     Cold<ContentHash> cold{ContentHash{0x1234ULL}};
-    auto hot_claim = mint_demote<
-        CipherTierTag_v::Cold,
-        CipherTierTag_v::Hot>(std::move(cold));
+    auto hot_claim = mint_demote<CipherTierTag_v::Cold, CipherTierTag_v::Hot>(std::move(cold));
     return static_cast<bool>(std::move(hot_claim).consume()) ? 0 : 1;
 }

@@ -21,7 +21,9 @@ struct TypeIsSessionHandleRejectsPlain {
 
 template <typename T>
     requires fis::IsSessionHandle<T>
-[[nodiscard]] constexpr int gate(T const&) noexcept { return 1; }
+[[nodiscard]] constexpr int gate(T const&) noexcept {
+    return 1;
+}
 
 }  // namespace neg_fixy_is_session_handle_rejects_plain
 

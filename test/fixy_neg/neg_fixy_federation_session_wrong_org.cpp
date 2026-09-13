@@ -31,8 +31,8 @@
 #include <crucible/fixy/Source.h>
 
 namespace fsess = crucible::fixy::sess;
-namespace cs    = crucible::safety;
-namespace ff    = crucible::fixy::source::federation;
+namespace cs = crucible::safety;
+namespace ff = crucible::fixy::source::federation;
 
 struct NegFedWrongOrg_OrgA {};
 struct NegFedWrongOrg_OrgB {};
@@ -46,19 +46,15 @@ struct NegFedWrongOrg_OrgB {};
 int main() {
     // Mint a legitimate admittance for OrgA.
     auto local = cs::mint_permission_root<ff::LocalCipherTag>();
-    auto handshake_a =
-        ff::make_self_signed_handshake<NegFedWrongOrg_OrgA>();
-    auto admitted_a =
-        ff::mint_federation_admittance<NegFedWrongOrg_OrgA>(
-            local, handshake_a);
+    auto handshake_a = ff::make_self_signed_handshake<NegFedWrongOrg_OrgA>();
+    auto admitted_a = ff::mint_federation_admittance<NegFedWrongOrg_OrgA>(local, handshake_a);
 
     crucible::effects::BgCompileCtx ctx{};
     int endpoint = 0;
 
     // Try to mint a session to OrgB using an OrgA admittance — the
     // Permission tags are distinct phantom types and must not bind.
-    auto bad = fsess::mint_sender<NegFedWrongOrg_OrgB>(
-        ctx, endpoint, *admitted_a);
+    auto bad = fsess::mint_sender<NegFedWrongOrg_OrgB>(ctx, endpoint, *admitted_a);
     (void)bad;
     return 0;
 }

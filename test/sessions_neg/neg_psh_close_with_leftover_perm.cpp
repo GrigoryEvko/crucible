@@ -33,14 +33,15 @@ using ::crucible::safety::mint_permission_root;
 
 namespace {
 struct WorkItem {};
-struct FakeChannel { int last_int = 0; };
-}
+struct FakeChannel {
+    int last_int = 0;
+};
+}  // namespace
 
 int main() {
     auto perm = mint_permission_root<WorkItem>();
     static_cast<void>(perm);
-    auto h = detail::permissioned_session_with_loc_<
-        End, PermSet<WorkItem>, FakeChannel>(
+    auto h = detail::permissioned_session_with_loc_<End, PermSet<WorkItem>, FakeChannel>(
         FakeChannel{}, std::source_location::current());
     // PS at this point: PermSet<WorkItem>.
     // close() requires PS == EmptyPermSet → fires.

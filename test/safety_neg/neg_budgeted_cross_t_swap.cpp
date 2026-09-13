@@ -15,7 +15,7 @@
 using namespace crucible::safety;
 
 int main() {
-    Budgeted<int>    int_value{42, BitsBudget{1024}, PeakBytes{4096}};
+    Budgeted<int> int_value{42, BitsBudget{1024}, PeakBytes{4096}};
     Budgeted<double> dbl_value{3.14, BitsBudget{2048}, PeakBytes{8192}};
 
     // Should FAIL: Budgeted<int>::swap takes Budgeted<int>&;

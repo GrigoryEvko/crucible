@@ -102,7 +102,7 @@ int main() {
     // relaxed publish store would pass by accident, so the ordering claim
     // made here only bites on a weakly ordered target.
     {
-        constexpr uint32_t N = 200'000;
+        constexpr uint32_t N = 200000;
         auto* r = new crucible::TraceRing();
 
         std::atomic<bool> producer_done{false};
@@ -113,7 +113,7 @@ int main() {
                 crucible::TraceRing::Entry entry{};
                 entry.schema_hash = SchemaHash{i + 1};  // non-zero, unique
                 entry.shape_hash = ShapeHash{~uint64_t{i} + 1};
-                if (r->try_append(entry, MetaIndex{i}, ScopeHash{0xA000'0000ull | i}, CallsiteHash{0xB000'0000ull | i}))
+                if (r->try_append(entry, MetaIndex{i}, ScopeHash{0xA0000000ull | i}, CallsiteHash{0xB0000000ull | i}))
                     [[likely]] {
                     ++i;
                 } else {
@@ -147,8 +147,8 @@ int main() {
                     assert(batch_out[k].schema_hash == SchemaHash{seq + 1});
                     assert(batch_out[k].shape_hash == ShapeHash{~uint64_t{seq} + 1});
                     assert(batch_meta[k] == MetaIndex{seq});
-                    assert(batch_scope[k] == ScopeHash{0xA000'0000ull | seq});
-                    assert(batch_csite[k] == CallsiteHash{0xB000'0000ull | seq});
+                    assert(batch_scope[k] == ScopeHash{0xA0000000ull | seq});
+                    assert(batch_csite[k] == CallsiteHash{0xB0000000ull | seq});
                 }
                 next += got;
             }
@@ -245,7 +245,7 @@ int main() {
     // The same exchange driven through the row-typed facades, to show the
     // wrapper does not change the ordering the raw API provides.
     {
-        constexpr uint32_t N = 100'000;
+        constexpr uint32_t N = 100000;
         auto* r = new crucible::TraceRing();
 
         std::atomic<bool> producer_done{false};
@@ -256,8 +256,8 @@ int main() {
                 crucible::TraceRing::Entry entry{};
                 entry.schema_hash = SchemaHash{i + 7};
                 entry.shape_hash = ShapeHash{~uint64_t{i} + 7};
-                if (r->try_append_pure(entry, MetaIndex{i + 1}, ScopeHash{0xE000'0000ull | i},
-                                       CallsiteHash{0xF000'0000ull | i})) [[likely]] {
+                if (r->try_append_pure(entry, MetaIndex{i + 1}, ScopeHash{0xE0000000ull | i},
+                                       CallsiteHash{0xF0000000ull | i})) [[likely]] {
                     ++i;
                 } else {
                     CRUCIBLE_SPIN_PAUSE;
@@ -291,8 +291,8 @@ int main() {
                     assert(pure_out[k].schema_hash == SchemaHash{seq + 7});
                     assert(pure_out[k].shape_hash == ShapeHash{~uint64_t{seq} + 7});
                     assert(pure_meta[k] == MetaIndex{seq + 1});
-                    assert(pure_scope[k] == ScopeHash{0xE000'0000ull | seq});
-                    assert(pure_csite[k] == CallsiteHash{0xF000'0000ull | seq});
+                    assert(pure_scope[k] == ScopeHash{0xE0000000ull | seq});
+                    assert(pure_csite[k] == CallsiteHash{0xF0000000ull | seq});
                 }
                 next += got;
             }
@@ -331,14 +331,14 @@ int main() {
         {
             for (uint32_t i = 0; i < CAP; ++i) {
                 crucible::TraceRing::Entry full_e{};
-                full_e.schema_hash = SchemaHash{0xB000'0000u | i};
+                full_e.schema_hash = SchemaHash{0xB0000000u | i};
                 bool ok = r->try_append_pure(full_e);
                 assert(ok && "ring should accept CAPACITY entries");
             }
             assert(r->size().peek() == CAP);
 
             crucible::TraceRing::Entry overflow_e{};
-            overflow_e.schema_hash = SchemaHash{0xDEAD'BEEF};
+            overflow_e.schema_hash = SchemaHash{0xDEADBEEF};
             bool ok_overflow = r->try_append_pure(overflow_e);
             assert(!ok_overflow);
             assert(r->size().peek() == CAP);
@@ -347,7 +347,7 @@ int main() {
             uint32_t got_b = r->drain_pure(full_drain.data(), CAP);
             assert(got_b == CAP);
             for (uint32_t i = 0; i < CAP; ++i) {
-                assert(full_drain[i].schema_hash == SchemaHash{0xB000'0000u | i});
+                assert(full_drain[i].schema_hash == SchemaHash{0xB0000000u | i});
             }
             assert(r->size().peek() == 0);
         }
@@ -357,7 +357,7 @@ int main() {
             // the slot wrap and drain must copy two segments.
             for (uint32_t i = 0; i < CAP - 100; ++i) {
                 crucible::TraceRing::Entry pad_e{};
-                pad_e.schema_hash = SchemaHash{0xC000'0000u | i};
+                pad_e.schema_hash = SchemaHash{0xC0000000u | i};
                 assert(r->try_append_pure(pad_e));
             }
             std::vector<crucible::TraceRing::Entry> pad_drain(CAP);
@@ -366,7 +366,7 @@ int main() {
 
             for (uint32_t i = 0; i < 200; ++i) {
                 crucible::TraceRing::Entry wrap_e{};
-                wrap_e.schema_hash = SchemaHash{0xCAFE'0000u | i};
+                wrap_e.schema_hash = SchemaHash{0xCAFE0000u | i};
                 assert(r->try_append_pure(wrap_e));
             }
 
@@ -378,7 +378,7 @@ int main() {
                 r->drain_pure(wrap_drain.data(), CAP, wrap_meta.data(), wrap_scope.data(), wrap_csite.data());
             assert(got_wrap == 200);
             for (uint32_t i = 0; i < 200; ++i) {
-                assert(wrap_drain[i].schema_hash == SchemaHash{0xCAFE'0000u | i});
+                assert(wrap_drain[i].schema_hash == SchemaHash{0xCAFE0000u | i});
                 assert(wrap_meta[i] == MetaIndex::none());
                 assert(wrap_scope[i] == ScopeHash{});
                 assert(wrap_csite[i] == CallsiteHash{});

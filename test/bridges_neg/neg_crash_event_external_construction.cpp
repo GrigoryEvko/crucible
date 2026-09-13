@@ -40,8 +40,7 @@ struct ExternalPeerTag {};
 struct ExternalResource {};
 
 [[maybe_unused]] void probe() {
-    using Event = ::crucible::safety::proto::CrashEvent<
-        ExternalPeerTag, ExternalResource>;
+    using Event = ::crucible::safety::proto::CrashEvent<ExternalPeerTag, ExternalResource>;
     auto bad = Event{{}, ExternalResource{}, std::tuple<>{}};
     (void)bad;
 }

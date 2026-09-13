@@ -31,34 +31,33 @@ namespace neg_collision_h002 {
 // A Fn with marks_hot_path + pred::True refinement + cost::Constant.
 // H001 does not fire (cost is bounded).  H002 catches the trivial-
 // refinement-on-hot-path shape.
-using Bad = fn::Fn<
-    int,                                       // 1  Type
-    fn::pred::True,                            // 2  Refinement — TRIVIAL (H002 trigger
-                                                //                paired with marks_hot_path)
-    fn::UsageMode::Linear,                     // 3  Usage
-    fx::Row<>,                                 // 4  EffectRow — empty (no Bg/Alloc/IO)
-    fn::SecLevel::Public,                      // 5  Security
-    fn::proto::None,                           // 6  Protocol
-    fn::lifetime::Static,                      // 7  Lifetime
-    fn::source::FromInternal,                  // 8  Source
-    fn::trust::Verified,                       // 9  Trust
-    fn::ReprKind::Opaque,                      // 10 Repr
-    fn::cost::Constant,                        // 11 Cost (bounded — H001 silent)
-    fn::precision::Exact,                      // 12 Precision
-    fn::space::Bounded<sizeof(int)>,           // 13 Space
-    fn::OverflowMode::Trap,                    // 14 Overflow
-    fn::MutationMode::Immutable,               // 15 Mutation
-    fn::ReentrancyMode::NonReentrant,          // 16 Reentrancy
-    fn::size_pol::Sized<sizeof(int)>,          // 17 Size
-    /*Version=*/1,                             // 18 Version
-    fn::stale::Fresh                           // 19 Staleness
->;
+using Bad = fn::Fn<int,  // 1  Type
+                   fn::pred::True,  // 2  Refinement — TRIVIAL (H002 trigger
+                   //                paired with marks_hot_path)
+                   fn::UsageMode::Linear,  // 3  Usage
+                   fx::Row<>,  // 4  EffectRow — empty (no Bg/Alloc/IO)
+                   fn::SecLevel::Public,  // 5  Security
+                   fn::proto::None,  // 6  Protocol
+                   fn::lifetime::Static,  // 7  Lifetime
+                   fn::source::FromInternal,  // 8  Source
+                   fn::trust::Verified,  // 9  Trust
+                   fn::ReprKind::Opaque,  // 10 Repr
+                   fn::cost::Constant,  // 11 Cost (bounded — H001 silent)
+                   fn::precision::Exact,  // 12 Precision
+                   fn::space::Bounded<sizeof(int)>,  // 13 Space
+                   fn::OverflowMode::Trap,  // 14 Overflow
+                   fn::MutationMode::Immutable,  // 15 Mutation
+                   fn::ReentrancyMode::NonReentrant,  // 16 Reentrancy
+                   fn::size_pol::Sized<sizeof(int)>,  // 17 Size
+                   /*Version=*/1,  // 18 Version
+                   fn::stale::Fresh  // 19 Staleness
+                   >;
 
 }  // namespace neg_collision_h002
 
 namespace crucible::safety::fn::collision {
-    template <> struct marks_hot_path<::neg_collision_h002::Bad>
-        : std::true_type {};
+template <>
+struct marks_hot_path<::neg_collision_h002::Bad> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 [[maybe_unused]] neg_collision_h002::Bad the_fixture{};

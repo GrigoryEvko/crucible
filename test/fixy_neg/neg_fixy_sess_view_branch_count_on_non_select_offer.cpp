@@ -26,15 +26,15 @@
 #include <crucible/fixy/SessView.h>
 
 namespace fsview = ::crucible::fixy::sess::view;
-namespace proto  = ::crucible::safety::proto;
-namespace saf    = ::crucible::safety;
+namespace proto = ::crucible::safety::proto;
+namespace saf = ::crucible::safety;
 
 namespace v063_neg_gamma {
 struct FakeResource {};
 struct Msg {};
-using SendProto  = proto::Send<Msg, proto::End>;
+using SendProto = proto::Send<Msg, proto::End>;
 using SendHandle = proto::SessionHandle<SendProto, FakeResource, void>;
-using SendView   = saf::ScopedView<SendHandle, fsview::AtSend>;
+using SendView = saf::ScopedView<SendHandle, fsview::AtSend>;
 }  // namespace v063_neg_gamma
 
 int main() {
@@ -43,8 +43,7 @@ int main() {
     // GCC fires "no member named 'value' in struct ...
     // session_view_branch_count<...>" or "incomplete type" /
     // "use of undefined".
-    constexpr auto bad = fsview::session_view_branch_count_v<
-        v063_neg_gamma::SendView>;
-    (void) bad;
+    constexpr auto bad = fsview::session_view_branch_count_v<v063_neg_gamma::SendView>;
+    (void)bad;
     return 0;
 }

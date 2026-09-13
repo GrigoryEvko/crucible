@@ -22,9 +22,9 @@ int main() {
     // is empty.  fixy alias passes the substrate's concept rejection
     // through identically.
     static_assert(fe::CanMintCap<fe::Effect::Block, fe::ctx_cap::Fg>,
-        "fixy::eff::CanMintCap<Block, Fg> must reject — foreground "
-        "context holds no capabilities.  Alias preserves the CanMintCap "
-        "concept gate identically to the substrate.");
+                  "fixy::eff::CanMintCap<Block, Fg> must reject — foreground "
+                  "context holds no capabilities.  Alias preserves the CanMintCap "
+                  "concept gate identically to the substrate.");
     (void)sizeof(EffNegFixture2_Marker);
     return 0;
 }

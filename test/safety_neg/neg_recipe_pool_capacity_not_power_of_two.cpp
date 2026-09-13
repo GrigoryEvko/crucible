@@ -10,6 +10,6 @@
 #include <crucible/RecipePool.h>
 
 int main() {
-  constexpr crucible::RecipePool::Capacity bad{12u};
-  (void)bad;
+    constexpr crucible::RecipePool::Capacity bad{12u};
+    (void)bad;
 }

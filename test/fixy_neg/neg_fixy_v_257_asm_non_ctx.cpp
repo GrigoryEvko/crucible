@@ -17,7 +17,6 @@
 int main() {
     int not_a_ctx = 0;
     // Should FAIL: int does not satisfy effects::IsExecCtx.
-    [[maybe_unused]] auto g =
-        ::crucible::fixy::hw::mint_asm_grant<"valid rationale">(not_a_ctx);
+    [[maybe_unused]] auto g = ::crucible::fixy::hw::mint_asm_grant<"valid rationale">(not_a_ctx);
     return 0;
 }

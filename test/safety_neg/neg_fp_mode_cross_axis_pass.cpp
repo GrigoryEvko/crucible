@@ -33,9 +33,9 @@
 namespace {
 
 // Function expecting a SPECIFIC sub-axis (FpRounding).
-[[maybe_unused]] void requires_fp_rounding(
-    crucible::safety::FpRoundingPinned<
-        crucible::safety::FpRounding::RoundToNearestEven, int> const&) {}
+[[maybe_unused]] void
+requires_fp_rounding(crucible::safety::FpRoundingPinned<crucible::safety::FpRounding::RoundToNearestEven, int> const&) {
+}
 
 }  // namespace
 

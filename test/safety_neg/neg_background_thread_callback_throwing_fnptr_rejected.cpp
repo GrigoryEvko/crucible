@@ -48,7 +48,7 @@ int main() {
     // If this file compiles, the noexcept tightening regressed.
     c::BackgroundThread::RegionReadyCallback cb{
         .ctx = nullptr,
-        .fn  = &throwing_callback,
+        .fn = &throwing_callback,
     };
     (void)cb;
     return 0;

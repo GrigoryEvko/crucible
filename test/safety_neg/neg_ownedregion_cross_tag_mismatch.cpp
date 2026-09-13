@@ -45,27 +45,23 @@
 #include <utility>
 
 namespace {
-    // Two distinct provenance tags — production-shape names like
-    // region::Train vs region::Validate would carry the same
-    // semantic distinction.  Both are empty class types.
-    struct RegionTagA {};
-    struct RegionTagB {};
+// Two distinct provenance tags — production-shape names like
+// region::Train vs region::Validate would carry the same
+// semantic distinction.  Both are empty class types.
+struct RegionTagA {};
+struct RegionTagB {};
 
-    // API entry point demanding a specific tag.  In production this
-    // would be a Forge / Mimic / Cipher function whose signature
-    // names exactly the arena/cohort it operates over.
-    [[maybe_unused]] void process_region_a(
-        ::crucible::safety::OwnedRegion<int, RegionTagA>&& /*region*/)
-    {
-        // body irrelevant — call-site type-check is the test.
-    }
+// API entry point demanding a specific tag.  In production this
+// would be a Forge / Mimic / Cipher function whose signature
+// names exactly the arena/cohort it operates over.
+[[maybe_unused]] void process_region_a(::crucible::safety::OwnedRegion<int, RegionTagA>&& /*region*/) {
+    // body irrelevant — call-site type-check is the test.
 }
+}  // namespace
 
 // Anchor: same-tag call compiles cleanly — RegionTagA accepted by
 // the RegionTagA-typed parameter.
-[[maybe_unused]] static void anchor_same_tag_call(
-    ::crucible::safety::OwnedRegion<int, RegionTagA>&& region)
-{
+[[maybe_unused]] static void anchor_same_tag_call(::crucible::safety::OwnedRegion<int, RegionTagA>&& region) {
     process_region_a(std::move(region));
 }
 
@@ -74,10 +70,8 @@ namespace {
 // payload type (int) matches.  C++ overload resolution finds no
 // implicit conversion across distinct Tag types; GCC rejects with
 // "cannot convert ... RegionTagB ... to ... RegionTagA".
-[[maybe_unused]] static void offending_cross_tag_call(
-    ::crucible::safety::OwnedRegion<int, RegionTagB>&& region)
-{
-    process_region_a(std::move(region));   // ERROR: TagB ≠ TagA
+[[maybe_unused]] static void offending_cross_tag_call(::crucible::safety::OwnedRegion<int, RegionTagB>&& region) {
+    process_region_a(std::move(region));  // ERROR: TagB ≠ TagA
 }
 
 int main() { return 0; }

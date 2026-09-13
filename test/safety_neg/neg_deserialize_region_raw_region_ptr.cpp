@@ -15,11 +15,10 @@
 #include <crucible/Serialize.h>
 
 int main() {
-  crucible::Arena arena{1024};
-  std::span<const std::uint8_t> bytes{};
+    crucible::Arena arena{1024};
+    std::span<const std::uint8_t> bytes{};
 
-  // MUST fail: deserialize_region returns LoadedRegionNode.
-  crucible::RegionNode* raw =
-      crucible::deserialize_region(crucible::effects::Alloc{}, bytes, arena);
-  return raw == nullptr ? 0 : 1;
+    // MUST fail: deserialize_region returns LoadedRegionNode.
+    crucible::RegionNode* raw = crucible::deserialize_region(crucible::effects::Alloc{}, bytes, arena);
+    return raw == nullptr ? 0 : 1;
 }

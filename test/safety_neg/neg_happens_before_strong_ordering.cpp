@@ -38,16 +38,15 @@ int main() {
     // std::partial_ordering (concurrent events are unordered), not
     // std::strong_ordering (which forbids unordered).  The concept
     // gate rejects the (T, strong_ordering) pair.
-    static_assert(std::three_way_comparable<HB4::element_type,
-                                            std::strong_ordering>,
-        "[VectorClockMustBePartialOrder] HappensBeforeLattice's "
-        "element_type<=> returns partial_ordering and MUST NOT be "
-        "convertible to strong_ordering — concurrent events are "
-        "unordered, which strong_ordering forbids by definition.  "
-        "If this static_assert fires GREEN (as a positive-compile), "
-        "the lattice's <=> has been silently widened to "
-        "strong_ordering and Cipher::ReplayLog's concurrency "
-        "semantics are broken.");
+    static_assert(std::three_way_comparable<HB4::element_type, std::strong_ordering>,
+                  "[VectorClockMustBePartialOrder] HappensBeforeLattice's "
+                  "element_type<=> returns partial_ordering and MUST NOT be "
+                  "convertible to strong_ordering — concurrent events are "
+                  "unordered, which strong_ordering forbids by definition.  "
+                  "If this static_assert fires GREEN (as a positive-compile), "
+                  "the lattice's <=> has been silently widened to "
+                  "strong_ordering and Cipher::ReplayLog's concurrency "
+                  "semantics are broken.");
 
     return 0;
 }

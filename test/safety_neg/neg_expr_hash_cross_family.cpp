@@ -28,10 +28,8 @@
 #include <cstdint>
 
 int main() {
-    using FamilyAHash = ::crucible::safety::Tagged<
-        std::uint64_t, ::crucible::hash_family::FamilyA>;
-    using FamilyBHash = ::crucible::safety::Tagged<
-        std::uint64_t, ::crucible::hash_family::FamilyB>;
+    using FamilyAHash = ::crucible::safety::Tagged<std::uint64_t, ::crucible::hash_family::FamilyA>;
+    using FamilyBHash = ::crucible::safety::Tagged<std::uint64_t, ::crucible::hash_family::FamilyB>;
 
     FamilyAHash family_a_value{std::uint64_t{0xdeadbeefULL}};
     FamilyBHash family_b_slot{std::uint64_t{0x12345678ULL}};

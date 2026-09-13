@@ -48,7 +48,8 @@ int main(int argc, char** argv) {
 
     const Config cfg = parse_args(argc, argv);
 
-    return run("Philox SIMD bit-equivalence", cfg,
+    return run(
+        "Philox SIMD bit-equivalence", cfg,
         [](Rng& rng) {
             // 8 octuples of (counter, key) = 8 × (4 + 2) = 48 u32 values.
             struct Inputs {
@@ -57,9 +58,7 @@ int main(int argc, char** argv) {
             };
             Inputs inputs{};
             for (std::size_t i = 0; i < 8; ++i) {
-                inputs.counters[i] = {
-                    rng.next32(), rng.next32(),
-                    rng.next32(), rng.next32()};
+                inputs.counters[i] = {rng.next32(), rng.next32(), rng.next32(), rng.next32()};
                 inputs.keys[i] = {rng.next32(), rng.next32()};
             }
             return inputs;
@@ -71,14 +70,11 @@ int main(int argc, char** argv) {
             // constructor is the only way to materialize a vec
             // lane-by-lane (operator[] is value-returning const).
             auto build_ctr_word = [&](std::size_t word) {
-                return u32x8([&](auto lane) noexcept -> uint32_t {
-                    return inputs.counters[decltype(lane)::value][word];
-                });
+                return u32x8(
+                    [&](auto lane) noexcept -> uint32_t { return inputs.counters[decltype(lane)::value][word]; });
             };
             auto build_key_word = [&](std::size_t word) {
-                return u32x8([&](auto lane) noexcept -> uint32_t {
-                    return inputs.keys[decltype(lane)::value][word];
-                });
+                return u32x8([&](auto lane) noexcept -> uint32_t { return inputs.keys[decltype(lane)::value][word]; });
             };
 
             const u32x8 ctr0 = build_ctr_word(0);
@@ -88,34 +84,26 @@ int main(int argc, char** argv) {
             const u32x8 key0 = build_key_word(0);
             const u32x8 key1 = build_key_word(1);
 
-            const auto batch =
-                philox_batch8(ctr0, ctr1, ctr2, ctr3, key0, key1);
+            const auto batch = philox_batch8(ctr0, ctr1, ctr2, ctr3, key0, key1);
 
             // For each lane, compute the scalar oracle and assert
             // bit-identical match across all 4 output words.
             for (std::size_t lane = 0; lane < 8; ++lane) {
-                const auto scalar = Philox::generate(
-                    inputs.counters[lane], inputs.keys[lane]);
+                const auto scalar = Philox::generate(inputs.counters[lane], inputs.keys[lane]);
                 const int li = static_cast<int>(lane);
 
-                if (batch.r0[li] != scalar[0] ||
-                    batch.r1[li] != scalar[1] ||
-                    batch.r2[li] != scalar[2] ||
-                    batch.r3[li] != scalar[3])
-                {
+                if (batch.r0[li] != scalar[0] || batch.r1[li] != scalar[1] || batch.r2[li] != scalar[2]
+                    || batch.r3[li] != scalar[3]) {
                     std::fprintf(stderr,
-                        "\n[lane %zu] SIMD/scalar divergence:\n"
-                        "  ctr  = {%08x, %08x, %08x, %08x}\n"
-                        "  key  = {%08x, %08x}\n"
-                        "  scalar: %08x %08x %08x %08x\n"
-                        "  simd:   %08x %08x %08x %08x\n",
-                        lane,
-                        inputs.counters[lane][0], inputs.counters[lane][1],
-                        inputs.counters[lane][2], inputs.counters[lane][3],
-                        inputs.keys[lane][0], inputs.keys[lane][1],
-                        scalar[0], scalar[1], scalar[2], scalar[3],
-                        batch.r0[li], batch.r1[li],
-                        batch.r2[li], batch.r3[li]);
+                                 "\n[lane %zu] SIMD/scalar divergence:\n"
+                                 "  ctr  = {%08x, %08x, %08x, %08x}\n"
+                                 "  key  = {%08x, %08x}\n"
+                                 "  scalar: %08x %08x %08x %08x\n"
+                                 "  simd:   %08x %08x %08x %08x\n",
+                                 lane, inputs.counters[lane][0], inputs.counters[lane][1], inputs.counters[lane][2],
+                                 inputs.counters[lane][3], inputs.keys[lane][0], inputs.keys[lane][1], scalar[0],
+                                 scalar[1], scalar[2], scalar[3], batch.r0[li], batch.r1[li], batch.r2[li],
+                                 batch.r3[li]);
                     return false;
                 }
             }

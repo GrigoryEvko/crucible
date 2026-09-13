@@ -39,7 +39,7 @@ using namespace crucible::safety;
 // that demands NoThrow class.  Models OneShotFlag::peek_nothrow ⇄
 // consumer pattern.
 template <typename W>
-    requires (W::template satisfies<CrashClass_v::NoThrow>)
+    requires(W::template satisfies<CrashClass_v::NoThrow>)
 static bool nothrow_steady_state_consumer(W wrapped) noexcept {
     return std::move(wrapped).consume();
 }

@@ -52,7 +52,7 @@
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 namespace perm = crucible::permissions;
-namespace saf  = crucible::safety;
+namespace saf = crucible::safety;
 
 // Disjoint orgs declared in TU scope so explicit splits_into
 // specializations naming them remain possible — but NONE is shipped
@@ -61,25 +61,20 @@ struct NegCrossOrgSplit_OrgA {};
 struct NegCrossOrgSplit_OrgB {};
 
 int main() {
-    auto local_cipher =
-        saf::mint_permission_root<perm::tag::LocalCipherTag>();
-    auto handshake =
-        perm::make_self_signed_handshake<NegCrossOrgSplit_OrgA>(
-            /*peer_key_fp=*/perm::PeerKeyFingerprint{0xC0FFEE'C0FFEEULL},
-            /*nonce=*/      perm::Nonce{0xC1C1'C1C1'C1C1'C1C1ULL});
-    auto admitted = perm::mint_federation_admittance<
-        NegCrossOrgSplit_OrgA,
-        perm::policy::admit_orgs<NegCrossOrgSplit_OrgA>>(
+    auto local_cipher = saf::mint_permission_root<perm::tag::LocalCipherTag>();
+    auto handshake = perm::make_self_signed_handshake<NegCrossOrgSplit_OrgA>(
+        /*peer_key_fp=*/perm::PeerKeyFingerprint{0xC0FFEEC0FFEEULL},
+        /*nonce=*/perm::Nonce{0xC1C1C1C1C1C1C1C1ULL});
+    auto admitted =
+        perm::mint_federation_admittance<NegCrossOrgSplit_OrgA, perm::policy::admit_orgs<NegCrossOrgSplit_OrgA>>(
             local_cipher, handshake);
     auto perm_a = std::move(*admitted);
 
     // Cross-org split: OrgA → OrgB × OrgB.  Must NOT compile —
     // FederationPermission.h's defensive partial sets splits_into_v
     // to false for any (Org, A, B) with A != Org or B != Org.
-    auto [b1, b2] = saf::mint_permission_split<
-        perm::tag::FederatedPeer<NegCrossOrgSplit_OrgB>,
-        perm::tag::FederatedPeer<NegCrossOrgSplit_OrgB>>(
-            std::move(perm_a));
+    auto [b1, b2] = saf::mint_permission_split<perm::tag::FederatedPeer<NegCrossOrgSplit_OrgB>,
+                                               perm::tag::FederatedPeer<NegCrossOrgSplit_OrgB>>(std::move(perm_a));
 
     (void)b1;
     (void)b2;

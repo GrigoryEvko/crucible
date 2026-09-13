@@ -47,7 +47,7 @@
 #include <crucible/sessions/Session.h>
 
 namespace fbridge = ::crucible::fixy::bridge;
-namespace proto   = ::crucible::safety::proto;
+namespace proto = ::crucible::safety::proto;
 
 namespace test_fixy_bridge_atomic_non_cell {
 
@@ -69,9 +69,7 @@ int main() {
     // fails → requires-clause false → overload removed.  fixy::bridge::
     // re-export must reject identically — the using-decl preserves
     // the substrate concept gate.
-    [[maybe_unused]] auto bad =
-        fbridge::mint_atomic_session<
-            test_fixy_bridge_atomic_non_cell::ProbeProto>(cell);
+    [[maybe_unused]] auto bad = fbridge::mint_atomic_session<test_fixy_bridge_atomic_non_cell::ProbeProto>(cell);
 
     return 0;
 }

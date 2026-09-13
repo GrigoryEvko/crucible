@@ -42,8 +42,7 @@ namespace {
 namespace ct = crucible::topology;
 using crucible::fuzz::prop::Rng;
 
-inline constexpr std::uint64_t kU64Max =
-    std::numeric_limits<std::uint64_t>::max();
+inline constexpr std::uint64_t kU64Max = std::numeric_limits<std::uint64_t>::max();
 
 // 128-bit accumulators for the independent absolute-offset oracle.
 // __extension__ silences -Wpedantic (matches fuzz/property/prop_checked_arith.cpp).
@@ -54,33 +53,45 @@ struct Spec {
     std::uint8_t ptp4l = 0;
     std::uint8_t phc2sys = 0;
     std::uint8_t grandmaster = 0;
-    std::uint8_t servo = 0;          // 0..6 → PtpServoState
+    std::uint8_t servo = 0;  // 0..6 → PtpServoState
     std::int64_t offset = 0;
-    std::uint64_t skew_bound = 1;    // ≥ 1 (Positive contract)
+    std::uint64_t skew_bound = 1;  // ≥ 1 (Positive contract)
     std::uint64_t max_skew = 1;
     std::uint64_t max_offset = 1;
 };
 
 [[nodiscard]] std::int64_t gen_offset(Rng& rng) noexcept {
     switch (rng.next_below(7u)) {
-        case 0: return std::numeric_limits<std::int64_t>::min();   // INT64_MIN abs edge
-        case 1: return std::numeric_limits<std::int64_t>::max();
-        case 2: return 0;
-        case 3: return -1;
-        case 4: return 1;
-        case 5: return static_cast<std::int64_t>(rng.next_below(4000u)) - 2000;  // [-2000,1999]
-        default: return static_cast<std::int64_t>(rng.next64());
+        case 0:
+            return std::numeric_limits<std::int64_t>::min();  // INT64_MIN abs edge
+        case 1:
+            return std::numeric_limits<std::int64_t>::max();
+        case 2:
+            return 0;
+        case 3:
+            return -1;
+        case 4:
+            return 1;
+        case 5:
+            return static_cast<std::int64_t>(rng.next_below(4000u)) - 2000;  // [-2000,1999]
+        default:
+            return static_cast<std::int64_t>(rng.next64());
     }
 }
 
 // Positive bound (≥ 1); biased small so the offset/skew boundaries fire.
 [[nodiscard]] std::uint64_t gen_bound(Rng& rng) noexcept {
     switch (rng.next_below(5u)) {
-        case 0: return 1u;
-        case 1: return 1u + rng.next_below(2000u);
-        case 2: return kU64Max;
-        case 3: return kU64Max - rng.next_below(4u);
-        default: return rng.next64() | 1u;   // nonzero
+        case 0:
+            return 1u;
+        case 1:
+            return 1u + rng.next_below(2000u);
+        case 2:
+            return kU64Max;
+        case 3:
+            return kU64Max - rng.next_below(4u);
+        default:
+            return rng.next64() | 1u;  // nonzero
     }
 }
 
@@ -112,9 +123,10 @@ int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
 
     Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 2'000'000) cfg.iterations = 2'000'000;
+    if (cfg.iterations > 2000000) cfg.iterations = 2000000;
 
-    return run("ptp_degradation", cfg,
+    return run(
+        "ptp_degradation", cfg,
         [](Rng& rng) noexcept -> Spec {
             return Spec{
                 .ptp4l = static_cast<std::uint8_t>(rng.next_below(4u) == 0u ? 0u : 1u),

@@ -33,8 +33,8 @@ using Bad = fn::Fn<SingletonMarker>;
 }  // namespace neg_collision_s004
 
 namespace crucible::safety::fn::collision {
-    template <> struct marks_singleton_init_cycle<::neg_collision_s004::Bad>
-        : std::true_type {};
+template <>
+struct marks_singleton_init_cycle<::neg_collision_s004::Bad> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 [[maybe_unused]] neg_collision_s004::Bad the_fixture{};

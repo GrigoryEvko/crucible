@@ -15,11 +15,11 @@
 #include <string_view>
 
 struct BogusGradedType {
-    using value_type   = int;
-    using lattice_type = int;       // (any type — concept doesn't care)
-    using graded_type  = void;      // ← NOT a Graded<...> specialization
+    using value_type = int;
+    using lattice_type = int;  // (any type — concept doesn't care)
+    using graded_type = void;  // ← NOT a Graded<...> specialization
     static consteval std::string_view value_type_name() noexcept { return "x"; }
-    static consteval std::string_view lattice_name()    noexcept { return "y"; }
+    static consteval std::string_view lattice_name() noexcept { return "y"; }
 };
 
 int main() {

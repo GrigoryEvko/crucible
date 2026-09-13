@@ -43,7 +43,7 @@ using namespace crucible::safety;
 // Models the SPSC ring's shape-budget critical path — admits only
 // values guaranteed not to fail.
 template <typename W>
-    requires (W::template satisfies<CrashClass_v::NoThrow>)
+    requires(W::template satisfies<CrashClass_v::NoThrow>)
 static bool nothrow_hot_path_observer(W wrapped) noexcept {
     return std::move(wrapped).consume();
 }

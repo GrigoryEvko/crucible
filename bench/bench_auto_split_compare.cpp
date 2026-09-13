@@ -73,7 +73,7 @@ struct NullBody {
 
 struct MemBody {
     std::atomic<std::uint64_t>* visited;
-    const std::byte*            arena;
+    const std::byte* arena;
 
     void operator()(cc::AutoSplitShard shard) const noexcept {
         const std::byte* p = arena + shard.byte_offset;
@@ -89,11 +89,10 @@ struct MemBody {
 
 struct ComputeBody {
     std::atomic<std::uint64_t>* visited;
-    std::size_t                 iterations;  // LCG passes per item
+    std::size_t iterations;  // LCG passes per item
 
     void operator()(cc::AutoSplitShard shard) const noexcept {
-        std::uint64_t acc = 0xDEADBEEFULL ^
-                            static_cast<std::uint64_t>(shard.index);
+        std::uint64_t acc = 0xDEADBEEFULL ^ static_cast<std::uint64_t>(shard.index);
         for (std::size_t i = shard.begin; i < shard.end; ++i) {
             std::uint64_t x = static_cast<std::uint64_t>(i) ^ acc;
             for (std::size_t k = 0; k < iterations; ++k) {
@@ -109,17 +108,17 @@ struct ComputeBody {
 // ── Scenarios ────────────────────────────────────────────────────────
 
 struct Scenario {
-    const char*   name;
-    std::size_t   items;
-    std::size_t   bytes_per_item;
-    std::size_t   max_shards;
+    const char* name;
+    std::size_t items;
+    std::size_t bytes_per_item;
+    std::size_t max_shards;
     // ComputeBody knob.  0 → compute body skipped for this scenario.
-    std::size_t   compute_iterations;
+    std::size_t compute_iterations;
     // Per-body hints fed to AutoSplitRequest::per_item_compute_ns.
     // Setting a non-zero hint triggers the break-even gate, which can
     // demote shard_count → 1 when fanout overhead dominates the work.
-    std::uint64_t null_per_item_ns;     // ~1 — atomic fetch_add cost
-    std::uint64_t mem_per_item_ns;      // ~bytes_per_item/64 (L1-DRAM avg)
+    std::uint64_t null_per_item_ns;  // ~1 — atomic fetch_add cost
+    std::uint64_t mem_per_item_ns;  // ~bytes_per_item/64 (L1-DRAM avg)
     std::uint64_t compute_per_item_ns;  // ~iterations × 0.3 ns @ 4.5 GHz
 };
 
@@ -207,21 +206,32 @@ enum class Strategy : std::uint8_t {
 
 [[nodiscard]] constexpr const char* strategy_name(Strategy s) noexcept {
     switch (s) {
-    case Strategy::Sequential: return "seq";
-    case Strategy::Fixed2:     return "fixed_2";
-    case Strategy::FixedMax:   return "fixed_max";
-    case Strategy::Router:     return "router";
+        case Strategy::Sequential:
+            return "seq";
+        case Strategy::Fixed2:
+            return "fixed_2";
+        case Strategy::FixedMax:
+            return "fixed_max";
+        case Strategy::Router:
+            return "router";
     }
     return "?";
 }
 
-enum class BodyKind : std::uint8_t { Null, Mem, Compute };
+enum class BodyKind : std::uint8_t {
+    Null,
+    Mem,
+    Compute
+};
 
 [[nodiscard]] constexpr const char* body_name(BodyKind b) noexcept {
     switch (b) {
-    case BodyKind::Null:    return "null";
-    case BodyKind::Mem:     return "mem";
-    case BodyKind::Compute: return "compute";
+        case BodyKind::Null:
+            return "null";
+        case BodyKind::Mem:
+            return "mem";
+        case BodyKind::Compute:
+            return "compute";
     }
     return "?";
 }
@@ -229,89 +239,72 @@ enum class BodyKind : std::uint8_t { Null, Mem, Compute };
 // ── Strategy runner ──────────────────────────────────────────────────
 
 [[nodiscard]] cc::AutoSplitRequest
-make_request(const Scenario& sc,
-             BodyKind body,
+make_request(const Scenario& sc, BodyKind body,
              cc::SchedulingIntent intent = cc::SchedulingIntent::Throughput) noexcept {
-    const std::uint64_t per_item_ns =
-        body == BodyKind::Null    ? sc.null_per_item_ns
-      : body == BodyKind::Mem     ? sc.mem_per_item_ns
-                                  : sc.compute_per_item_ns;
+    const std::uint64_t per_item_ns = body == BodyKind::Null ? sc.null_per_item_ns
+                                    : body == BodyKind::Mem  ? sc.mem_per_item_ns
+                                                             : sc.compute_per_item_ns;
     return cc::AutoSplitRequest{
-        .item_count          = sc.items,
-        .bytes_per_item      = sc.bytes_per_item,
-        .max_shards          = sc.max_shards,
-        .producers           = 1,
-        .consumers           = 1,
+        .item_count = sc.items,
+        .bytes_per_item = sc.bytes_per_item,
+        .max_shards = sc.max_shards,
+        .producers = 1,
+        .consumers = 1,
         .per_item_compute_ns = per_item_ns,
-        .intent              = intent,
-        .touches_memory      = body == BodyKind::Mem,
+        .intent = intent,
+        .touches_memory = body == BodyKind::Mem,
     };
 }
 
 template <typename Body>
-void run_strategy(cc::Pool<cs::Fifo>&                pool,
-                  Strategy                            strategy,
-                  const Scenario&                     sc,
-                  BodyKind                            body_kind,
-                  const cc::AutoSplitRuntimeProfile&  profile,
-                  Body                                body) {
+void run_strategy(cc::Pool<cs::Fifo>& pool, Strategy strategy, const Scenario& sc, BodyKind body_kind,
+                  const cc::AutoSplitRuntimeProfile& profile, Body body) {
     const cc::AutoSplitRequest req = make_request(sc, body_kind);
 
     switch (strategy) {
-    case Strategy::Sequential:
-        // factor=1 runs inline on the calling thread; no pool involvement.
-        (void)cc::dispatch_at_factor(pool, req, 1, std::move(body));
-        break;
-    case Strategy::Fixed2:
-        (void)cc::dispatch_at_factor(pool, req, 2, std::move(body));
-        pool.wait_idle();
-        break;
-    case Strategy::FixedMax:
-        (void)cc::dispatch_at_factor(pool, req, sc.max_shards, std::move(body));
-        pool.wait_idle();
-        break;
-    case Strategy::Router:
-        (void)cc::dispatch_auto_split(pool, req, profile, std::move(body));
-        pool.wait_idle();
-        break;
+        case Strategy::Sequential:
+            // factor=1 runs inline on the calling thread; no pool involvement.
+            (void)cc::dispatch_at_factor(pool, req, 1, std::move(body));
+            break;
+        case Strategy::Fixed2:
+            (void)cc::dispatch_at_factor(pool, req, 2, std::move(body));
+            pool.wait_idle();
+            break;
+        case Strategy::FixedMax:
+            (void)cc::dispatch_at_factor(pool, req, sc.max_shards, std::move(body));
+            pool.wait_idle();
+            break;
+        case Strategy::Router:
+            (void)cc::dispatch_auto_split(pool, req, profile, std::move(body));
+            pool.wait_idle();
+            break;
     }
 }
 
 template <typename Body>
-[[nodiscard]] bench::Report
-run_one(std::string                        name,
-        cc::Pool<cs::Fifo>&                pool,
-        Strategy                            strategy,
-        const Scenario&                     sc,
-        BodyKind                            body_kind,
-        const cc::AutoSplitRuntimeProfile&  profile,
-        Body                                body,
-        std::size_t                         samples) {
+[[nodiscard]] bench::Report run_one(std::string name, cc::Pool<cs::Fifo>& pool, Strategy strategy, const Scenario& sc,
+                                    BodyKind body_kind, const cc::AutoSplitRuntimeProfile& profile, Body body,
+                                    std::size_t samples) {
     bench::Run run{std::move(name)};
     if (const int core = bench::env_core(); core >= 0) {
         (void)run.core(core);
     }
-    return run.samples(samples)
-        .warmup(std::max<std::size_t>(10, samples / 10))
-        .max_wall_ms(3'000)
-        .measure([&] {
-            run_strategy(pool, strategy, sc, body_kind, profile, body);
-        });
+    return run.samples(samples).warmup(std::max<std::size_t>(10, samples / 10)).max_wall_ms(3000).measure([&] {
+        run_strategy(pool, strategy, sc, body_kind, profile, body);
+    });
 }
 
 // ── Skill table ──────────────────────────────────────────────────────
 
-void print_skill_table(const std::vector<bench::Report>& reports,
-                       const std::array<Scenario, 6>&    sc_arr,
+void print_skill_table(const std::vector<bench::Report>& reports, const std::array<Scenario, 6>& sc_arr,
                        const cc::AutoSplitRuntimeProfile& profile) {
     std::printf("\n=== auto_split_compare: strategy skill table ===\n");
     std::printf("  body / strategy times below are p50 wall time per iteration.\n");
     std::printf("  best_fix = min(seq, fixed_2, fixed_max).\n");
     std::printf("  skill    = (best_fix - router) / best_fix × 100   (positive = router wins)\n\n");
-    std::printf("  %-18s %-7s %10s %10s %10s %10s   %5s %10s %10s %8s %14s\n",
-                "scenario", "body",
-                "seq[µs]", "fixed_2[µs]", "fixed_max[µs]", "router[µs]",
-                "rfact", "best_fix[µs]", "rCPU[µs]", "reff", "skill_vs_best");
+    std::printf("  %-18s %-7s %10s %10s %10s %10s   %5s %10s %10s %8s %14s\n", "scenario", "body", "seq[µs]",
+                "fixed_2[µs]", "fixed_max[µs]", "router[µs]", "rfact", "best_fix[µs]", "rCPU[µs]", "reff",
+                "skill_vs_best");
 
     auto fmt_us = [](double ns) {
         char buf[512];
@@ -320,9 +313,9 @@ void print_skill_table(const std::vector<bench::Report>& reports,
     };
 
     std::size_t idx = 0;
-    int   wins   = 0;
-    int   ties   = 0;
-    int   losses = 0;
+    int wins = 0;
+    int ties = 0;
+    int losses = 0;
     for (const auto& sc : sc_arr) {
         for (BodyKind body : {BodyKind::Null, BodyKind::Mem, BodyKind::Compute}) {
             if (body == BodyKind::Compute && sc.compute_iterations == 0) continue;
@@ -334,67 +327,52 @@ void print_skill_table(const std::vector<bench::Report>& reports,
             idx += 4;
 
             const double best_fixed = std::min({seq, fx2, fxm});
-            const double skill_pct = best_fixed > 0
-                ? (best_fixed - rtr) / best_fixed * 100.0
-                : 0.0;
+            const double skill_pct = best_fixed > 0 ? (best_fixed - rtr) / best_fixed * 100.0 : 0.0;
 
             const auto plan = cc::auto_split_plan(make_request(sc, body), profile);
-            const double router_cpu = rtr * static_cast<double>(
-                std::max<std::size_t>(1, plan.shard_count));
-            const double router_eff = router_cpu > 0.0
-                ? std::min(999.9, seq / router_cpu * 100.0)
-                : 0.0;
+            const double router_cpu = rtr * static_cast<double>(std::max<std::size_t>(1, plan.shard_count));
+            const double router_eff = router_cpu > 0.0 ? std::min(999.9, seq / router_cpu * 100.0) : 0.0;
 
             const char* outcome = "tie";
-            if (skill_pct >  3.0) { outcome = "WIN"; ++wins; }
-            else if (skill_pct < -3.0) { outcome = "LOSS"; ++losses; }
-            else { ++ties; }
+            if (skill_pct > 3.0) {
+                outcome = "WIN";
+                ++wins;
+            } else if (skill_pct < -3.0) {
+                outcome = "LOSS";
+                ++losses;
+            } else {
+                ++ties;
+            }
 
-            std::printf("  %-18s %-7s %10s %10s %10s %10s   %5zu %10s %10s %7.1f%%   %+6.1f%%  %s\n",
-                        sc.name, body_name(body),
-                        fmt_us(seq).c_str(),
-                        fmt_us(fx2).c_str(),
-                        fmt_us(fxm).c_str(),
-                        fmt_us(rtr).c_str(),
-                        plan.shard_count,
-                        fmt_us(best_fixed).c_str(),
-                        fmt_us(router_cpu).c_str(),
-                        router_eff,
-                        skill_pct, outcome);
+            std::printf("  %-18s %-7s %10s %10s %10s %10s   %5zu %10s %10s %7.1f%%   %+6.1f%%  %s\n", sc.name,
+                        body_name(body), fmt_us(seq).c_str(), fmt_us(fx2).c_str(), fmt_us(fxm).c_str(),
+                        fmt_us(rtr).c_str(), plan.shard_count, fmt_us(best_fixed).c_str(), fmt_us(router_cpu).c_str(),
+                        router_eff, skill_pct, outcome);
         }
     }
 
-    std::printf("\n  router decisions: %d wins, %d ties, %d losses\n",
-                wins, ties, losses);
+    std::printf("\n  router decisions: %d wins, %d ties, %d losses\n", wins, ties, losses);
 }
 
-void print_intent_matrix(const std::array<Scenario, 6>&    sc_arr,
-                         const cc::AutoSplitRuntimeProfile& profile) {
+void print_intent_matrix(const std::array<Scenario, 6>& sc_arr, const cc::AutoSplitRuntimeProfile& profile) {
     std::printf("\n=== auto_split_compare: intent factor matrix ===\n");
-    std::printf("  %-18s %-7s %7s %7s %7s %7s %7s\n",
-                "scenario", "body", "thr", "lat", "bg", "seq", "adapt");
+    std::printf("  %-18s %-7s %7s %7s %7s %7s %7s\n", "scenario", "body", "thr", "lat", "bg", "seq", "adapt");
 
     for (const auto& sc : sc_arr) {
         for (BodyKind body : {BodyKind::Null, BodyKind::Mem, BodyKind::Compute}) {
             if (body == BodyKind::Compute && sc.compute_iterations == 0) continue;
-            const auto throughput = cc::auto_split_plan(
-                make_request(sc, body, cc::SchedulingIntent::Throughput), profile);
-            const auto latency = cc::auto_split_plan(
-                make_request(sc, body, cc::SchedulingIntent::LatencyCritical), profile);
-            const auto background = cc::auto_split_plan(
-                make_request(sc, body, cc::SchedulingIntent::Background), profile);
-            const auto sequential = cc::auto_split_plan(
-                make_request(sc, body, cc::SchedulingIntent::Sequential), profile);
-            const auto adaptive = cc::auto_split_plan(
-                make_request(sc, body, cc::SchedulingIntent::Adaptive), profile);
+            const auto throughput =
+                cc::auto_split_plan(make_request(sc, body, cc::SchedulingIntent::Throughput), profile);
+            const auto latency =
+                cc::auto_split_plan(make_request(sc, body, cc::SchedulingIntent::LatencyCritical), profile);
+            const auto background =
+                cc::auto_split_plan(make_request(sc, body, cc::SchedulingIntent::Background), profile);
+            const auto sequential =
+                cc::auto_split_plan(make_request(sc, body, cc::SchedulingIntent::Sequential), profile);
+            const auto adaptive = cc::auto_split_plan(make_request(sc, body, cc::SchedulingIntent::Adaptive), profile);
 
-            std::printf("  %-18s %-7s %7zu %7zu %7zu %7zu %7zu\n",
-                        sc.name, body_name(body),
-                        throughput.shard_count,
-                        latency.shard_count,
-                        background.shard_count,
-                        sequential.shard_count,
-                        adaptive.shard_count);
+            std::printf("  %-18s %-7s %7zu %7zu %7zu %7zu %7zu\n", sc.name, body_name(body), throughput.shard_count,
+                        latency.shard_count, background.shard_count, sequential.shard_count, adaptive.shard_count);
         }
     }
 }
@@ -405,12 +383,9 @@ int main() {
     bench::print_system_info();
     bench::elevate_priority();
 
-    const cc::AutoSplitRuntimeProfile& profile =
-        cc::auto_split_runtime_profile_once();
-    const cc::AutoSplitRuntimeProfile refreshed_profile =
-        cc::auto_split_runtime_profile_refresh();
-    const cc::AutoSplitRuntimeProfile reprobed_profile =
-        cc::auto_split_runtime_profile_reprobe();
+    const cc::AutoSplitRuntimeProfile& profile = cc::auto_split_runtime_profile_once();
+    const cc::AutoSplitRuntimeProfile refreshed_profile = cc::auto_split_runtime_profile_refresh();
+    const cc::AutoSplitRuntimeProfile reprobed_profile = cc::auto_split_runtime_profile_reprobe();
     cc::Pool<cs::Fifo> pool{cc::CoreCount{8}};
 
     // 64 MiB arena covers the largest scenario (DRAM.compute = 16 MiB).
@@ -425,28 +400,22 @@ int main() {
     std::atomic<std::uint64_t> visited{0};
 
     std::printf("=== auto_split_compare ===\n");
-    std::printf("  l2_per_core=%zu  huge=%zu  workers=%zu  dispatch_cost_ns=%llu\n",
-                profile.route.l2_per_core_bytes,
-                profile.route.huge_bytes,
-                profile.available_workers,
+    std::printf("  l2_per_core=%zu  huge=%zu  workers=%zu  dispatch_cost_ns=%llu\n", profile.route.l2_per_core_bytes,
+                profile.route.huge_bytes, profile.available_workers,
                 static_cast<unsigned long long>(profile.dispatch_cost_ns));
     std::printf("  refreshed_workers=%zu reprobed_workers=%zu refreshed_l2=%zu reprobed_l2=%zu\n",
-                refreshed_profile.available_workers,
-                reprobed_profile.available_workers,
-                refreshed_profile.route.l2_per_core_bytes,
-                reprobed_profile.route.l2_per_core_bytes);
-    std::printf("  arena=%zu MiB  pool_workers=%zu\n\n",
-                arena_bytes / MiB, pool.worker_count());
+                refreshed_profile.available_workers, reprobed_profile.available_workers,
+                refreshed_profile.route.l2_per_core_bytes, reprobed_profile.route.l2_per_core_bytes);
+    std::printf("  arena=%zu MiB  pool_workers=%zu\n\n", arena_bytes / MiB, pool.worker_count());
 
     std::printf("  scenarios:\n");
     for (const auto& sc : scenarios) {
         const std::size_t total = sc.items * sc.bytes_per_item;
-        std::printf("    %-18s items=%-7zu itemB=%-4zu workB=%-9zu max=%-3zu compIter=%-4zu hints(null/mem/compute)=%llu/%llu/%lluns\n",
-                    sc.name, sc.items, sc.bytes_per_item, total,
-                    sc.max_shards, sc.compute_iterations,
-                    static_cast<unsigned long long>(sc.null_per_item_ns),
-                    static_cast<unsigned long long>(sc.mem_per_item_ns),
-                    static_cast<unsigned long long>(sc.compute_per_item_ns));
+        std::printf(
+            "    %-18s items=%-7zu itemB=%-4zu workB=%-9zu max=%-3zu compIter=%-4zu hints(null/mem/compute)=%llu/%llu/%lluns\n",
+            sc.name, sc.items, sc.bytes_per_item, total, sc.max_shards, sc.compute_iterations,
+            static_cast<unsigned long long>(sc.null_per_item_ns), static_cast<unsigned long long>(sc.mem_per_item_ns),
+            static_cast<unsigned long long>(sc.compute_per_item_ns));
     }
     std::putchar('\n');
 
@@ -459,8 +428,7 @@ int main() {
         for (BodyKind body_kind : {BodyKind::Null, BodyKind::Mem, BodyKind::Compute}) {
             if (body_kind == BodyKind::Compute && sc.compute_iterations == 0) continue;
 
-            for (Strategy s : {Strategy::Sequential, Strategy::Fixed2,
-                               Strategy::FixedMax, Strategy::Router}) {
+            for (Strategy s : {Strategy::Sequential, Strategy::Fixed2, Strategy::FixedMax, Strategy::Router}) {
                 std::string name = "compare.";
                 name += sc.name;
                 name += '.';
@@ -469,24 +437,21 @@ int main() {
                 name += strategy_name(s);
 
                 switch (body_kind) {
-                case BodyKind::Null: {
-                    NullBody body{&visited};
-                    reports.push_back(run_one(std::move(name), pool, s, sc,
-                                              body_kind, profile, body, kSamples));
-                    break;
-                }
-                case BodyKind::Mem: {
-                    MemBody body{&visited, arena};
-                    reports.push_back(run_one(std::move(name), pool, s, sc,
-                                              body_kind, profile, body, kSamples));
-                    break;
-                }
-                case BodyKind::Compute: {
-                    ComputeBody body{&visited, sc.compute_iterations};
-                    reports.push_back(run_one(std::move(name), pool, s, sc,
-                                              body_kind, profile, body, kSamples));
-                    break;
-                }
+                    case BodyKind::Null: {
+                        NullBody body{&visited};
+                        reports.push_back(run_one(std::move(name), pool, s, sc, body_kind, profile, body, kSamples));
+                        break;
+                    }
+                    case BodyKind::Mem: {
+                        MemBody body{&visited, arena};
+                        reports.push_back(run_one(std::move(name), pool, s, sc, body_kind, profile, body, kSamples));
+                        break;
+                    }
+                    case BodyKind::Compute: {
+                        ComputeBody body{&visited, sc.compute_iterations};
+                        reports.push_back(run_one(std::move(name), pool, s, sc, body_kind, profile, body, kSamples));
+                        break;
+                    }
                 }
             }
         }

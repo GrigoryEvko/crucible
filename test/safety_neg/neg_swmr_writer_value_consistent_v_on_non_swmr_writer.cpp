@@ -11,8 +11,7 @@
 inline void neg_witness_two_ints(int, int) noexcept {}
 
 int main() {
-    bool b = crucible::safety::extract::swmr_writer_value_consistent_v<
-        &::neg_witness_two_ints>;
+    bool b = crucible::safety::extract::swmr_writer_value_consistent_v<&::neg_witness_two_ints>;
     (void)b;
     return 0;
 }

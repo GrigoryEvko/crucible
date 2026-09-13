@@ -38,8 +38,8 @@ namespace {
 // compiled_op_index()'s migrated precondition (action == COMPILED) is
 // violated.  CRUCIBLE_PRE's __builtin_trap fires at consteval.
 constexpr crucible::OpIndex witness = [] {
-    crucible::DispatchResult result{};   // action == RECORD
-    return result.compiled_op_index();   // pre(action == COMPILED) VIOLATED
+    crucible::DispatchResult result{};  // action == RECORD
+    return result.compiled_op_index();  // pre(action == COMPILED) VIOLATED
 }();
 
 }  // namespace

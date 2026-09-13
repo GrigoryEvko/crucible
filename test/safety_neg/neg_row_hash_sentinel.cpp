@@ -24,9 +24,9 @@
 #include <cstdint>
 
 inline constexpr std::array<std::uint64_t, 3> kHashes = {
-    0x1111'1111'1111'1111ULL,
-    0ULL,                       // ← deliberately the EMPTY-slot sentinel
-    0x3333'3333'3333'3333ULL,
+    0x1111111111111111ULL,
+    0ULL,  // ← deliberately the EMPTY-slot sentinel
+    0x3333333333333333ULL,
 };
 
 [[nodiscard]] consteval bool no_sentinel_collisions() noexcept {
@@ -37,7 +37,6 @@ inline constexpr std::array<std::uint64_t, 3> kHashes = {
     return true;
 }
 
-static_assert(no_sentinel_collisions(),
-    "EMPTY-slot sentinel — federation cache slot indistinguishable");
+static_assert(no_sentinel_collisions(), "EMPTY-slot sentinel — federation cache slot indistinguishable");
 
 int main() { return 0; }

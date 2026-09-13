@@ -17,14 +17,10 @@
 namespace eff = crucible::effects;
 
 int main() {
-    using BadCtx = eff::ExecCtx<
-        eff::ctx_cap::Fg,
-        eff::ctx_numa::Any,
-        eff::ctx_alloc::Stack,
-        eff::ctx_heat::Hot,                             // Hot tier
-        eff::ctx_resid::DRAM,                           // but DRAM-resident — incoherent
-        eff::Row<>
-    >;
+    using BadCtx = eff::ExecCtx<eff::ctx_cap::Fg, eff::ctx_numa::Any, eff::ctx_alloc::Stack,
+                                eff::ctx_heat::Hot,  // Hot tier
+                                eff::ctx_resid::DRAM,  // but DRAM-resident — incoherent
+                                eff::Row<>>;
     BadCtx bad{};
     (void)bad;
     return 0;

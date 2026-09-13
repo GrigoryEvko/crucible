@@ -41,14 +41,13 @@ namespace neg_syscall_family_tier_misclassify {
 // Foundational (regression) and the hot-path admission gate's par=join
 // composition law no longer applies to SyscallSurface-tagged binding
 // selection.
-static_assert(::crucible::safety::tier_of_axis(
-                  ::crucible::safety::DimensionAxis::SyscallSurface)
-              == ::crucible::safety::TierKind::Foundational,
-    "FIXY-V-097 TIER-MISCLASSIFY neg-compile: this assertion MUST "
-    "fail post-V-097.  SyscallSurface is Tier-S (Semiring), NOT "
-    "Tier-F (Foundational).  If it passes, SyscallSurface was "
-    "silently demoted off Semiring and Mimic per-vendor backend's "
-    "par/seq composition no longer applies.");
+static_assert(::crucible::safety::tier_of_axis(::crucible::safety::DimensionAxis::SyscallSurface)
+                  == ::crucible::safety::TierKind::Foundational,
+              "FIXY-V-097 TIER-MISCLASSIFY neg-compile: this assertion MUST "
+              "fail post-V-097.  SyscallSurface is Tier-S (Semiring), NOT "
+              "Tier-F (Foundational).  If it passes, SyscallSurface was "
+              "silently demoted off Semiring and Mimic per-vendor backend's "
+              "par/seq composition no longer applies.");
 
 }  // namespace neg_syscall_family_tier_misclassify
 

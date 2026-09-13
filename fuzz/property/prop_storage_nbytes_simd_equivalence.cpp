@@ -50,7 +50,8 @@ int main(int argc, char** argv) {
 
     const Config cfg = parse_args(argc, argv);
 
-    return run("StorageNbytes SIMD bit-equivalence", cfg,
+    return run(
+        "StorageNbytes SIMD bit-equivalence", cfg,
         [](Rng& rng) {
             TensorMeta meta{};
             // ndim in [0, 8] — covers scalar (ndim=0), single-dim,
@@ -61,14 +62,29 @@ int main(int argc, char** argv) {
             // Match the ordinals that exist in Types.h.
             const uint32_t dtype_idx = rng.next_below(8);
             switch (dtype_idx) {
-                case 0: meta.dtype = ScalarType::Byte;   break;
-                case 1: meta.dtype = ScalarType::Char;   break;
-                case 2: meta.dtype = ScalarType::Short;  break;
-                case 3: meta.dtype = ScalarType::Int;    break;
-                case 4: meta.dtype = ScalarType::Long;   break;
-                case 5: meta.dtype = ScalarType::Half;   break;
-                case 6: meta.dtype = ScalarType::Float;  break;
-                default: meta.dtype = ScalarType::Double;
+                case 0:
+                    meta.dtype = ScalarType::Byte;
+                    break;
+                case 1:
+                    meta.dtype = ScalarType::Char;
+                    break;
+                case 2:
+                    meta.dtype = ScalarType::Short;
+                    break;
+                case 3:
+                    meta.dtype = ScalarType::Int;
+                    break;
+                case 4:
+                    meta.dtype = ScalarType::Long;
+                    break;
+                case 5:
+                    meta.dtype = ScalarType::Half;
+                    break;
+                case 6:
+                    meta.dtype = ScalarType::Float;
+                    break;
+                default:
+                    meta.dtype = ScalarType::Double;
             }
 
             // For each valid dim, pick a size in [0, 2^40] and a
@@ -82,8 +98,7 @@ int main(int argc, char** argv) {
                 meta.sizes[d] = tensor_dim(static_cast<int64_t>(s));
 
                 const uint64_t st = rng.next64() & ((uint64_t{1} << 41) - 1);
-                meta.strides[d] = tensor_dim(static_cast<int64_t>(st) -
-                                             (int64_t{1} << 40));
+                meta.strides[d] = tensor_dim(static_cast<int64_t>(st) - (int64_t{1} << 40));
             }
             return meta;
         },
@@ -100,26 +115,21 @@ int main(int argc, char** argv) {
 
             if (scalar != simd_v) {
                 std::fprintf(stderr,
-                    "\nSIMD/scalar divergence:\n"
-                    "  scalar=%llu(clamped=%d) simd=%llu(clamped=%d)\n"
-                    "  ndim=%u dtype=%d\n"
-                    "  sizes=[",
-                    static_cast<unsigned long long>(scalar.value()),
-                    int(scalar.was_clamped()),
-                    static_cast<unsigned long long>(simd_v.value()),
-                    int(simd_v.was_clamped()),
-                    unsigned(meta.ndim),
-                    int(meta.dtype));
+                             "\nSIMD/scalar divergence:\n"
+                             "  scalar=%llu(clamped=%d) simd=%llu(clamped=%d)\n"
+                             "  ndim=%u dtype=%d\n"
+                             "  sizes=[",
+                             static_cast<unsigned long long>(scalar.value()), int(scalar.was_clamped()),
+                             static_cast<unsigned long long>(simd_v.value()), int(simd_v.was_clamped()),
+                             unsigned(meta.ndim), int(meta.dtype));
                 for (uint8_t d = 0; d < meta.ndim; ++d) {
-                    std::fprintf(stderr, "%lld%s",
-                        static_cast<long long>(meta.sizes[d].value()),
-                        d + 1 < meta.ndim ? "," : "");
+                    std::fprintf(stderr, "%lld%s", static_cast<long long>(meta.sizes[d].value()),
+                                 d + 1 < meta.ndim ? "," : "");
                 }
                 std::fprintf(stderr, "] strides=[");
                 for (uint8_t d = 0; d < meta.ndim; ++d) {
-                    std::fprintf(stderr, "%lld%s",
-                        static_cast<long long>(meta.strides[d].value()),
-                        d + 1 < meta.ndim ? "," : "");
+                    std::fprintf(stderr, "%lld%s", static_cast<long long>(meta.strides[d].value()),
+                                 d + 1 < meta.ndim ? "," : "");
                 }
                 std::fprintf(stderr, "]\n");
                 return false;

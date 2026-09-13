@@ -25,8 +25,7 @@ inline void neg_witness_two_ints(int, int) noexcept {}
 int main() {
     // arity 2 BUT parameters are int (not OwnedRegion).
     // BinaryTransform<&neg_witness_two_ints> is false.
-    using Tag = crucible::safety::extract::binary_transform_lhs_tag_t<
-        &::neg_witness_two_ints>;
+    using Tag = crucible::safety::extract::binary_transform_lhs_tag_t<&::neg_witness_two_ints>;
     Tag const t{};
     (void)t;
     return 0;

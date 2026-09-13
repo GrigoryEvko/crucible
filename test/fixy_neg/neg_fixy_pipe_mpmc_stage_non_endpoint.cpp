@@ -20,9 +20,9 @@
 #include <optional>
 #include <utility>
 
-namespace eff   = crucible::effects;
+namespace eff = crucible::effects;
 namespace fpipe = crucible::fixy::pipe;
-namespace conc  = crucible::concurrent;
+namespace conc = crucible::concurrent;
 
 template <typename T>
 struct FakeConsumer {
@@ -36,9 +36,7 @@ struct FakeProducer {
     [[nodiscard]] bool try_push(T const&) noexcept { return false; }
 };
 
-inline void fan_in_body(FakeConsumer<int>&&,
-                        FakeConsumer<int>&&,
-                        FakeProducer<int>&&) noexcept {}
+inline void fan_in_body(FakeConsumer<int>&&, FakeConsumer<int>&&, FakeProducer<int>&&) noexcept {}
 
 int main() {
     eff::HotFgCtx ctx;
@@ -47,11 +45,8 @@ int main() {
     // endpoint) is a bare int — the variadic gate fails.
     int not_an_endpoint = 0;
 
-    auto bad = fpipe::mint_mpmc_stage_from_endpoints<&fan_in_body>(
-        ctx,
-        FakeConsumer<int>{},
-        FakeConsumer<int>{},
-        not_an_endpoint);
+    auto bad = fpipe::mint_mpmc_stage_from_endpoints<&fan_in_body>(ctx, FakeConsumer<int>{}, FakeConsumer<int>{},
+                                                                   not_an_endpoint);
     (void)bad;
     return 0;
 }

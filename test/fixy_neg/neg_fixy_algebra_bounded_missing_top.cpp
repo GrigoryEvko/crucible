@@ -37,22 +37,20 @@ namespace fa = crucible::fixy::algebra;
 struct AlgebraNegFixture4_HalfBounded {
     using element_type = int;
     static constexpr bool leq(int a, int b) noexcept { return a <= b; }
-    static constexpr int  join(int a, int b) noexcept { return a > b ? a : b; }
-    static constexpr int  meet(int a, int b) noexcept { return a < b ? a : b; }
-    static constexpr int  bottom() noexcept { return 0; }
+    static constexpr int join(int a, int b) noexcept { return a > b ? a : b; }
+    static constexpr int meet(int a, int b) noexcept { return a < b ? a : b; }
+    static constexpr int bottom() noexcept { return 0; }
     // INTENTIONALLY MISSING: static constexpr int top() noexcept;
-    static constexpr std::string_view name() noexcept {
-        return "AlgebraNegFixture4_HalfBounded";
-    }
+    static constexpr std::string_view name() noexcept { return "AlgebraNegFixture4_HalfBounded"; }
 };
 
 int main() {
     // BoundedLattice gate must reject — missing top() identity.
     static_assert(fa::BoundedLattice<AlgebraNegFixture4_HalfBounded>,
-        "fa::BoundedLattice<HalfBounded> must reject — no top() "
-        "identity.  fixy::algebra alias preserves the substrate's "
-        "concept gate; a half-bounded lattice silently breaks the "
-        "EBO-collapse promise of HotPath / DetSafe / CipherTier "
-        "Graded wrappers.");
+                  "fa::BoundedLattice<HalfBounded> must reject — no top() "
+                  "identity.  fixy::algebra alias preserves the substrate's "
+                  "concept gate; a half-bounded lattice silently breaks the "
+                  "EBO-collapse promise of HotPath / DetSafe / CipherTier "
+                  "Graded wrappers.");
     return 0;
 }

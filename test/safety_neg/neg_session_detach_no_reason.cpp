@@ -11,7 +11,9 @@
 
 using namespace crucible::safety::proto;
 
-struct R { int sentinel = 1; };
+struct R {
+    int sentinel = 1;
+};
 
 int main() {
     auto h = mint_session_handle<End>(R{});

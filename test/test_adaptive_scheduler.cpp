@@ -14,9 +14,7 @@ namespace cc = crucible::concurrent;
 namespace cs = crucible::concurrent::scheduler;
 
 struct PriorityJobKey {
-    static std::uint64_t key(cc::adaptive_detail::ticket_type ticket) noexcept {
-        return ticket;
-    }
+    static std::uint64_t key(cc::adaptive_detail::ticket_type ticket) noexcept { return ticket; }
 };
 
 using DeadlinePolicy = cs::Deadline<PriorityJobKey, 4, 64, 16, 1>;
@@ -40,15 +38,12 @@ static void run_completion_smoke(const char* name) {
     std::atomic<int> count{0};
 
     for (int i = 0; i < kJobs; ++i) {
-        cc::dispatch(pool, [&count] {
-            count.fetch_add(1, std::memory_order_relaxed);
-        });
+        cc::dispatch(pool, [&count] { count.fetch_add(1, std::memory_order_relaxed); });
     }
 
     pool.wait_idle();
     if (count.load(std::memory_order_relaxed) != kJobs) {
-        std::fprintf(stderr, "%s completed %d/%d jobs\n",
-                     name, count.load(std::memory_order_relaxed), kJobs);
+        std::fprintf(stderr, "%s completed %d/%d jobs\n", name, count.load(std::memory_order_relaxed), kJobs);
         std::abort();
     }
     if (pool.failed() != 0) {
@@ -63,16 +58,13 @@ static void test_fifo_order_single_worker() {
     seen.reserve(128);
 
     for (int i = 0; i < 128; ++i) {
-        cc::dispatch(pool, [i, &seen] {
-            seen.push_back(i);
-        });
+        cc::dispatch(pool, [i, &seen] { seen.push_back(i); });
     }
     pool.wait_idle();
 
     for (int i = 0; i < 128; ++i) {
         if (seen[static_cast<std::size_t>(i)] != i) {
-            std::fprintf(stderr, "FIFO order broke at %d: got %d\n",
-                         i, seen[static_cast<std::size_t>(i)]);
+            std::fprintf(stderr, "FIFO order broke at %d: got %d\n", i, seen[static_cast<std::size_t>(i)]);
             std::abort();
         }
     }
@@ -98,9 +90,7 @@ static void test_lifo_order_single_worker() {
     }
 
     for (int i = 1; i <= 16; ++i) {
-        cc::dispatch(pool, [i, &seen] {
-            seen.push_back(i);
-        });
+        cc::dispatch(pool, [i, &seen] { seen.push_back(i); });
     }
     release_first.store(true, std::memory_order_release);
     pool.wait_idle();
@@ -109,8 +99,8 @@ static void test_lifo_order_single_worker() {
     for (int i = 1; i <= 16; ++i) {
         const int want = 17 - i;
         if (seen[static_cast<std::size_t>(i)] != want) {
-            std::fprintf(stderr, "LIFO order broke at %d: got %d want %d\n",
-                         i, seen[static_cast<std::size_t>(i)], want);
+            std::fprintf(stderr, "LIFO order broke at %d: got %d want %d\n", i, seen[static_cast<std::size_t>(i)],
+                         want);
             std::abort();
         }
     }
@@ -124,9 +114,7 @@ static void test_priority_key_order_single_worker() {
         std::vector<int>* seen = nullptr;
         int value = 0;
 
-        [[nodiscard]] std::uint64_t scheduler_key() const noexcept {
-            return key_value;
-        }
+        [[nodiscard]] std::uint64_t scheduler_key() const noexcept { return key_value; }
 
         void operator()() const noexcept {
             if (first_started != nullptr) {
@@ -145,15 +133,13 @@ static void test_priority_key_order_single_worker() {
     std::vector<int> seen;
     seen.reserve(33);
 
-    cc::dispatch(pool, KeyedJob{0, &first_started, &release_first,
-                                &seen, 0});
+    cc::dispatch(pool, KeyedJob{0, &first_started, &release_first, &seen, 0});
     while (!first_started.load(std::memory_order_acquire)) {
         CRUCIBLE_SPIN_PAUSE;
     }
 
     for (int i = 32; i >= 1; --i) {
-        cc::dispatch(pool, KeyedJob{static_cast<std::uint64_t>(i),
-                                    nullptr, nullptr, &seen, i});
+        cc::dispatch(pool, KeyedJob{static_cast<std::uint64_t>(i), nullptr, nullptr, &seen, i});
     }
     release_first.store(true, std::memory_order_release);
     pool.wait_idle();
@@ -161,8 +147,7 @@ static void test_priority_key_order_single_worker() {
     if (seen.size() != 33 || seen[0] != 0) std::abort();
     for (int i = 1; i <= 32; ++i) {
         if (seen[static_cast<std::size_t>(i)] != i) {
-            std::fprintf(stderr, "priority order broke at %d: got %d\n",
-                         i, seen[static_cast<std::size_t>(i)]);
+            std::fprintf(stderr, "priority order broke at %d: got %d\n", i, seen[static_cast<std::size_t>(i)]);
             std::abort();
         }
     }
@@ -174,8 +159,7 @@ static void test_ticket_metadata_preserves_full_u64() {
         .slot_index = 17,
     };
     const auto ticket = cc::adaptive_detail::ticket_type::pack(metadata);
-    if (ticket.key() != std::numeric_limits<std::uint64_t>::max() ||
-        ticket.slot() != 17) {
+    if (ticket.key() != std::numeric_limits<std::uint64_t>::max() || ticket.slot() != 17) {
         std::abort();
     }
 }
@@ -186,22 +170,18 @@ static void run_full_u64_priority_key_smoke(const char* name) {
         std::uint64_t key_value = 0;
         std::atomic<int>* count = nullptr;
 
-        [[nodiscard]] std::uint64_t scheduler_key() const noexcept {
-            return key_value;
-        }
+        [[nodiscard]] std::uint64_t scheduler_key() const noexcept { return key_value; }
 
-        void operator()() const noexcept {
-            count->fetch_add(1, std::memory_order_relaxed);
-        }
+        void operator()() const noexcept { count->fetch_add(1, std::memory_order_relaxed); }
     };
 
     cc::Pool<Policy> pool{cc::CoreCount{1}};
     std::atomic<int> count{0};
 
     cc::dispatch(pool, KeyedJob{
-        .key_value = std::numeric_limits<std::uint64_t>::max(),
-        .count = &count,
-    });
+                           .key_value = std::numeric_limits<std::uint64_t>::max(),
+                           .count = &count,
+                       });
     pool.wait_idle();
 
     if (count.load(std::memory_order_relaxed) != 1) {
@@ -235,12 +215,9 @@ static void test_recommended_topology_bridge() {
     static_assert(cc::Pool<cs::Fifo>::policy_queue_capacity() > 0);
     static_assert(cc::Pool<cs::Lifo>::policy_queue_capacity() > 0);
     static_assert(cc::Pool<DeadlinePolicy>::policy_queue_capacity() == 4 * 64 * 16);
-    static_assert(cc::Pool<cs::Fifo>::recommended_topology<1, 1, 1024>()
-                  == cc::ChannelTopology::OneToOne);
-    static_assert(cc::Pool<cs::Fifo>::recommended_topology<4, 1, 1024>()
-                  == cc::ChannelTopology::ManyToOne);
-    static_assert(cc::Pool<cs::Fifo>::recommended_topology<8, 8, 4 * 1024 * 1024>()
-                  == cc::ChannelTopology::ManyToMany);
+    static_assert(cc::Pool<cs::Fifo>::recommended_topology<1, 1, 1024>() == cc::ChannelTopology::OneToOne);
+    static_assert(cc::Pool<cs::Fifo>::recommended_topology<4, 1, 1024>() == cc::ChannelTopology::ManyToOne);
+    static_assert(cc::Pool<cs::Fifo>::recommended_topology<8, 8, 4 * 1024 * 1024>() == cc::ChannelTopology::ManyToMany);
 }
 
 static void test_workload_profile_payload_inference() {
@@ -256,10 +233,7 @@ static void test_workload_profile_payload_inference() {
     static_assert(profile.recommended_parallelism == 0);
 
     constexpr auto explicit_profile = cc::WorkloadProfile::from_budget(
-        cc::WorkBudget{.read_bytes = 64, .write_bytes = 32, .item_count = 3},
-        2,
-        cc::NumaPolicy::NumaLocal,
-        17);
+        cc::WorkBudget{.read_bytes = 64, .write_bytes = 32, .item_count = 3}, 2, cc::NumaPolicy::NumaLocal, 17);
     static_assert(explicit_profile.budget.read_bytes == 64);
     static_assert(explicit_profile.budget.write_bytes == 32);
     static_assert(explicit_profile.budget.item_count == 3);
@@ -269,8 +243,8 @@ static void test_workload_profile_payload_inference() {
 }
 
 static void test_idle_workers_approx_tracks_running_work() {
-    const std::size_t workers = std::min<std::size_t>(
-        2, std::max<std::size_t>(1, cc::Topology::instance().process_cpu_count()));
+    const std::size_t workers =
+        std::min<std::size_t>(2, std::max<std::size_t>(1, cc::Topology::instance().process_cpu_count()));
     cc::Pool<cs::Fifo> pool{cc::CoreCount{workers}};
     std::atomic<std::size_t> started{0};
     std::atomic<bool> release{false};
@@ -319,8 +293,8 @@ static void test_dispatch_with_workload_l2_runs_inline() {
     std::thread::id executed{};
     std::atomic<int> count{0};
 
-    const cc::WorkloadProfile profile = cc::WorkloadProfile::from_budget(
-        cc::WorkBudget{.read_bytes = 512, .write_bytes = 512, .item_count = 64});
+    const cc::WorkloadProfile profile =
+        cc::WorkloadProfile::from_budget(cc::WorkBudget{.read_bytes = 512, .write_bytes = 512, .item_count = 64});
     const auto result = cc::dispatch_with_workload(pool, profile, [&] {
         executed = std::this_thread::get_id();
         count.fetch_add(1, std::memory_order_relaxed);
@@ -341,11 +315,10 @@ static void test_dispatch_with_workload_l2_runs_inline() {
 
     std::thread::id shard_executed{};
     cc::WorkShard observed_shard{};
-    const auto shard_result = cc::dispatch_with_workload(pool, profile,
-        [&](cc::WorkShard shard) {
-            shard_executed = std::this_thread::get_id();
-            observed_shard = shard;
-        });
+    const auto shard_result = cc::dispatch_with_workload(pool, profile, [&](cc::WorkShard shard) {
+        shard_executed = std::this_thread::get_id();
+        observed_shard = shard;
+    });
     if (!shard_result.ran_inline || shard_result.queued) std::abort();
     if (shard_executed != caller) std::abort();
     if (observed_shard.index != 0 || observed_shard.count != 1) std::abort();
@@ -360,12 +333,10 @@ static void test_dispatch_with_workload_l3_shards_numa_local() {
     if (topo.process_cpu_count() < 2) return;
     if (topo.l3_total_bytes() <= topo.l2_per_core_bytes() * 2) return;
 
-    const std::size_t wanted_workers =
-        std::min<std::size_t>(4, std::max<std::size_t>(2, topo.process_cpu_count()));
+    const std::size_t wanted_workers = std::min<std::size_t>(4, std::max<std::size_t>(2, topo.process_cpu_count()));
     cc::Pool<cs::LocalityAware> pool{cc::CoreCount{wanted_workers}};
 
-    const std::size_t ws =
-        (topo.l2_per_core_bytes() + topo.l3_total_bytes()) / 2;
+    const std::size_t ws = (topo.l2_per_core_bytes() + topo.l3_total_bytes()) / 2;
     const cc::WorkloadProfile profile = cc::WorkloadProfile::from_budget(
         cc::WorkBudget{
             .read_bytes = ws / 2,
@@ -374,9 +345,8 @@ static void test_dispatch_with_workload_l3_shards_numa_local() {
         },
         wanted_workers);
     const auto expected_decision = cc::ParallelismRule::recommend(profile.budget);
-    if (expected_decision.kind != cc::ParallelismDecision::Kind::Parallel ||
-        expected_decision.factor <= 1 ||
-        expected_decision.tier != cc::Tier::L3Resident) {
+    if (expected_decision.kind != cc::ParallelismDecision::Kind::Parallel || expected_decision.factor <= 1
+        || expected_decision.tier != cc::Tier::L3Resident) {
         return;
     }
     const std::size_t expected_worker_limit = std::min({
@@ -388,17 +358,14 @@ static void test_dispatch_with_workload_l3_shards_numa_local() {
     std::array<std::atomic<int>, 4> seen{};
     std::atomic<int> total{0};
 
-    const auto result = cc::dispatch_with_workload(
-        pool,
-        profile,
-        [&](cc::WorkShard shard) {
-            if (shard.index >= seen.size()) std::abort();
-            if (shard.count != expected_worker_limit) std::abort();
-            if (shard.numa != cc::NumaPolicy::NumaLocal) std::abort();
-            if (shard.tier != cc::Tier::L3Resident) std::abort();
-            seen[shard.index].fetch_add(1, std::memory_order_relaxed);
-            total.fetch_add(1, std::memory_order_acq_rel);
-        });
+    const auto result = cc::dispatch_with_workload(pool, profile, [&](cc::WorkShard shard) {
+        if (shard.index >= seen.size()) std::abort();
+        if (shard.count != expected_worker_limit) std::abort();
+        if (shard.numa != cc::NumaPolicy::NumaLocal) std::abort();
+        if (shard.tier != cc::Tier::L3Resident) std::abort();
+        seen[shard.index].fetch_add(1, std::memory_order_relaxed);
+        total.fetch_add(1, std::memory_order_acq_rel);
+    });
 
     if (result.ran_inline || !result.queued) std::abort();
     if (!result.decision.is_parallel()) std::abort();
@@ -407,8 +374,7 @@ static void test_dispatch_with_workload_l3_shards_numa_local() {
     if (result.worker_limit != expected_worker_limit) std::abort();
     if (result.tasks_submitted != result.worker_limit) std::abort();
 
-    while (total.load(std::memory_order_acquire) !=
-           static_cast<int>(result.tasks_submitted)) {
+    while (total.load(std::memory_order_acquire) != static_cast<int>(result.tasks_submitted)) {
         CRUCIBLE_SPIN_PAUSE;
     }
     pool.wait_idle();
@@ -423,41 +389,33 @@ static void test_dispatch_with_workload_l3_shards_numa_local() {
 
 static void test_dispatch_with_workload_dram_shards_queue() {
     const auto& topo = cc::Topology::instance();
-    const std::size_t wanted_workers =
-        std::min<std::size_t>(4, std::max<std::size_t>(1, topo.process_cpu_count()));
+    const std::size_t wanted_workers = std::min<std::size_t>(4, std::max<std::size_t>(1, topo.process_cpu_count()));
     cc::Pool<cs::LocalityAware> pool{cc::CoreCount{wanted_workers}};
 
-    const std::size_t ws = std::max<std::size_t>(
-        topo.l3_total_bytes() * 2,
-        topo.l2_per_core_bytes() * wanted_workers * 4);
+    const std::size_t ws =
+        std::max<std::size_t>(topo.l3_total_bytes() * 2, topo.l2_per_core_bytes() * wanted_workers * 4);
     const cc::WorkloadProfile profile = cc::WorkloadProfile::from_budget(
         cc::WorkBudget{
             .read_bytes = ws / 2,
             .write_bytes = ws / 2,
             .item_count = ws / sizeof(std::uint64_t),
         },
-        wanted_workers,
-        topo.numa_nodes() > 1 ? cc::NumaPolicy::NumaSpread
-                              : cc::NumaPolicy::NumaIgnore);
+        wanted_workers, topo.numa_nodes() > 1 ? cc::NumaPolicy::NumaSpread : cc::NumaPolicy::NumaIgnore);
     const auto expected_decision = cc::ParallelismRule::recommend(profile.budget);
-    const std::size_t expected_worker_limit = std::min(
-        wanted_workers,
-        std::min(expected_decision.factor, profile.recommended_parallelism));
+    const std::size_t expected_worker_limit =
+        std::min(wanted_workers, std::min(expected_decision.factor, profile.recommended_parallelism));
 
     std::array<std::atomic<int>, 4> seen{};
     std::atomic<int> total{0};
 
-    const auto result = cc::dispatch_with_workload(
-        pool,
-        profile,
-        [&](cc::WorkShard shard) {
-            if (shard.index >= seen.size()) std::abort();
-            if (shard.count != expected_worker_limit) std::abort();
-            if (shard.numa != profile.numa_preference) std::abort();
-            if (shard.tier != cc::Tier::DRAMBound) std::abort();
-            seen[shard.index].fetch_add(1, std::memory_order_relaxed);
-            total.fetch_add(1, std::memory_order_acq_rel);
-        });
+    const auto result = cc::dispatch_with_workload(pool, profile, [&](cc::WorkShard shard) {
+        if (shard.index >= seen.size()) std::abort();
+        if (shard.count != expected_worker_limit) std::abort();
+        if (shard.numa != profile.numa_preference) std::abort();
+        if (shard.tier != cc::Tier::DRAMBound) std::abort();
+        seen[shard.index].fetch_add(1, std::memory_order_relaxed);
+        total.fetch_add(1, std::memory_order_acq_rel);
+    });
 
     if (result.decision.factor <= 1) {
         if (!result.ran_inline || result.queued) std::abort();
@@ -471,8 +429,7 @@ static void test_dispatch_with_workload_dram_shards_queue() {
     if (result.worker_limit != expected_worker_limit) std::abort();
     if (result.tasks_submitted != result.worker_limit) std::abort();
 
-    while (total.load(std::memory_order_acquire) !=
-           static_cast<int>(result.tasks_submitted)) {
+    while (total.load(std::memory_order_acquire) != static_cast<int>(result.tasks_submitted)) {
         CRUCIBLE_SPIN_PAUSE;
     }
     pool.wait_idle();

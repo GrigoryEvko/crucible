@@ -10,19 +10,18 @@
 #include <crucible/fixy/Reject.h>
 
 namespace gr = crucible::fixy::grant;
-using D      = crucible::fixy::dim::DimensionAxis;
+using D = crucible::fixy::dim::DimensionAxis;
 
 struct TypeFixyLatSecretOnly {};
 
 static_assert(!crucible::fixy::IsAccepted<TypeFixyLatSecretOnly, gr::as_secret>,
-    "A single Security lattice tag must reject — 19 axes unengaged.");
+              "A single Security lattice tag must reject — 19 axes unengaged.");
 
 static_assert(crucible::fixy::first_missing_axis_v<gr::as_secret> == D::Type,
-    "first_missing_axis_v on a single Security tag must point at Type.");
+              "first_missing_axis_v on a single Security tag must point at Type.");
 
 using TypeAxisTag = crucible::fixy::diag::tag_for_axis_t<D::Type>;
-static_assert(sizeof(TypeAxisTag) > 0 && false,
-    "FixyNotEngaged_Type: a single gr::as_secret engages only "
-    "the Security axis; Type (and 18 others) remain unengaged.");
+static_assert(sizeof(TypeAxisTag) > 0 && false, "FixyNotEngaged_Type: a single gr::as_secret engages only "
+                                                "the Security axis; Type (and 18 others) remain unengaged.");
 
 int main() { return 0; }

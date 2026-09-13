@@ -76,18 +76,17 @@ namespace {
 // format invariant that there is NO padding.
 
 struct [[gnu::packed]] CntpHeader {
-    std::uint32_t magic;       // 'CNTP' = 0x434E5450
-    std::uint8_t  flags;       // bit0=ack, bit1=fragment, ...
-    std::uint16_t version;     // wire format version
-    std::uint16_t length;      // total frame length including header
-    std::uint64_t checksum;    // FNV-1a over magic..length (excludes self)
+    std::uint32_t magic;  // 'CNTP' = 0x434E5450
+    std::uint8_t flags;  // bit0=ack, bit1=fragment, ...
+    std::uint16_t version;  // wire format version
+    std::uint16_t length;  // total frame length including header
+    std::uint64_t checksum;  // FNV-1a over magic..length (excludes self)
 };
 
-static_assert(sizeof(CntpHeader) == 17,
-    "CntpHeader must be exactly 17 bytes; packed-struct layout "
-    "guarantee is load-bearing for Repr::Packed correctness — "
-    "without packing, natural alignment would insert 7 bytes of "
-    "padding (3 after flags, 4 after length) and bloat to 24 bytes.");
+static_assert(sizeof(CntpHeader) == 17, "CntpHeader must be exactly 17 bytes; packed-struct layout "
+                                        "guarantee is load-bearing for Repr::Packed correctness — "
+                                        "without packing, natural alignment would insert 7 bytes of "
+                                        "padding (3 after flags, 4 after length) and bloat to 24 bytes.");
 
 // ── A region tag for the Lifetime axis ─────────────────────────────
 //
@@ -125,27 +124,26 @@ struct NetworkBufferTag {};
 //   Version     : 1                                   — wire-protocol version
 //   Staleness   : stale::Fresh                        — no aging on receive
 
-using UnvalidatedCntpFrame = fn::Fn<
-    CntpHeader,                                       // 1 Type
-    fn::pred::True,                                   // 2 Refinement (none yet)
-    fn::UsageMode::Borrow,                            // 3 Usage
-    fx::Row<>,                                        // 4 EffectRow (pure data)
-    fn::SecLevel::Public,                             // 5 Security
-    fn::proto::None,                                  // 6 Protocol
-    fn::lifetime::In<NetworkBufferTag{}>,             // 7 Lifetime
-    fn::source::External,                             // 8 Source — untrusted
-    fn::trust::Unverified,                            // 9 Trust — pending validation
-    fn::ReprKind::Packed,                             // 10 Repr
-    fn::cost::Constant,                               // 11 Cost
-    fn::precision::Exact,                             // 12 Precision
-    fn::space::Bounded<sizeof(CntpHeader)>,           // 13 Space
-    fn::OverflowMode::Trap,                           // 14 Overflow
-    fn::MutationMode::Immutable,                      // 15 Mutation
-    fn::ReentrancyMode::NonReentrant,                 // 16 Reentrancy
-    fn::size_pol::Sized<sizeof(CntpHeader)>,          // 17 Size
-    /*Version=*/1,                                    // 18 Version
-    fn::stale::Fresh                                  // 19 Staleness
->;
+using UnvalidatedCntpFrame = fn::Fn<CntpHeader,  // 1 Type
+                                    fn::pred::True,  // 2 Refinement (none yet)
+                                    fn::UsageMode::Borrow,  // 3 Usage
+                                    fx::Row<>,  // 4 EffectRow (pure data)
+                                    fn::SecLevel::Public,  // 5 Security
+                                    fn::proto::None,  // 6 Protocol
+                                    fn::lifetime::In<NetworkBufferTag{}>,  // 7 Lifetime
+                                    fn::source::External,  // 8 Source — untrusted
+                                    fn::trust::Unverified,  // 9 Trust — pending validation
+                                    fn::ReprKind::Packed,  // 10 Repr
+                                    fn::cost::Constant,  // 11 Cost
+                                    fn::precision::Exact,  // 12 Precision
+                                    fn::space::Bounded<sizeof(CntpHeader)>,  // 13 Space
+                                    fn::OverflowMode::Trap,  // 14 Overflow
+                                    fn::MutationMode::Immutable,  // 15 Mutation
+                                    fn::ReentrancyMode::NonReentrant,  // 16 Reentrancy
+                                    fn::size_pol::Sized<sizeof(CntpHeader)>,  // 17 Size
+                                    /*Version=*/1,  // 18 Version
+                                    fn::stale::Fresh  // 19 Staleness
+                                    >;
 
 // ── AFTER-validation Fn binding (sanitized) ───────────────────────
 //
@@ -169,27 +167,16 @@ using UnvalidatedCntpFrame = fn::Fn<
 // on the per-axis-grade contrast; a real refinement predicate would
 // run a checksum and structural check at construction time.
 
-using ValidatedCntpFrame = fn::Fn<
-    CntpHeader,
-    fn::pred::True,                                   // would be ValidCntpFrame in prod
-    fn::UsageMode::Borrow,                            // 3 same Borrow rationale as above
-    fx::Row<>,
-    fn::SecLevel::Public,
-    fn::proto::None,
-    fn::lifetime::In<NetworkBufferTag{}>,
-    fn::source::Sanitized,                            // 8  RETAG: External → Sanitized
-    fn::trust::Tested,                                // 9  RETAG: Unverified → Tested
-    fn::ReprKind::Packed,
-    fn::cost::Constant,
-    fn::precision::Exact,
-    fn::space::Bounded<sizeof(CntpHeader)>,
-    fn::OverflowMode::Trap,
-    fn::MutationMode::Immutable,
-    fn::ReentrancyMode::NonReentrant,
-    fn::size_pol::Sized<sizeof(CntpHeader)>,
-    1,
-    fn::stale::Fresh
->;
+using ValidatedCntpFrame =
+    fn::Fn<CntpHeader,
+           fn::pred::True,  // would be ValidCntpFrame in prod
+           fn::UsageMode::Borrow,  // 3 same Borrow rationale as above
+           fx::Row<>, fn::SecLevel::Public, fn::proto::None, fn::lifetime::In<NetworkBufferTag{}>,
+           fn::source::Sanitized,  // 8  RETAG: External → Sanitized
+           fn::trust::Tested,  // 9  RETAG: Unverified → Tested
+           fn::ReprKind::Packed, fn::cost::Constant, fn::precision::Exact, fn::space::Bounded<sizeof(CntpHeader)>,
+           fn::OverflowMode::Trap, fn::MutationMode::Immutable, fn::ReentrancyMode::NonReentrant,
+           fn::size_pol::Sized<sizeof(CntpHeader)>, 1, fn::stale::Fresh>;
 
 // ── Compile-time invariants ────────────────────────────────────────
 //
@@ -198,25 +185,21 @@ using ValidatedCntpFrame = fn::Fn<
 // and the type system enforces this at the call site.
 
 static_assert(!std::is_same_v<UnvalidatedCntpFrame, ValidatedCntpFrame>,
-    "Validated and unvalidated frames MUST be distinct types — "
-    "otherwise the trust-state retag is unenforceable.");
+              "Validated and unvalidated frames MUST be distinct types — "
+              "otherwise the trust-state retag is unenforceable.");
 
 // EBO collapse: the 16-byte CntpHeader plus 18 type-level grades
 // equals 16 bytes (no per-axis runtime member added).
 static_assert(sizeof(UnvalidatedCntpFrame) == sizeof(CntpHeader));
-static_assert(sizeof(ValidatedCntpFrame)   == sizeof(CntpHeader));
+static_assert(sizeof(ValidatedCntpFrame) == sizeof(CntpHeader));
 
 // Source axis discriminates: only the validated form carries source::Sanitized.
-static_assert(std::is_same_v<UnvalidatedCntpFrame::source_t,
-                             fn::source::External>);
-static_assert(std::is_same_v<ValidatedCntpFrame::source_t,
-                             fn::source::Sanitized>);
+static_assert(std::is_same_v<UnvalidatedCntpFrame::source_t, fn::source::External>);
+static_assert(std::is_same_v<ValidatedCntpFrame::source_t, fn::source::Sanitized>);
 
 // Trust axis discriminates: only the validated form carries trust::Tested.
-static_assert(std::is_same_v<UnvalidatedCntpFrame::trust_t,
-                             fn::trust::Unverified>);
-static_assert(std::is_same_v<ValidatedCntpFrame::trust_t,
-                             fn::trust::Tested>);
+static_assert(std::is_same_v<UnvalidatedCntpFrame::trust_t, fn::trust::Unverified>);
+static_assert(std::is_same_v<ValidatedCntpFrame::trust_t, fn::trust::Tested>);
 
 // Repr axis matches [[gnu::packed]] discipline.
 static_assert(UnvalidatedCntpFrame::repr_v == fn::ReprKind::Packed);
@@ -227,11 +210,11 @@ int main() {
     // Simulate a frame just received from the wire.  In production,
     // the bytes would come from a recv() / mmap()'d ring buffer.
     CntpHeader on_wire{};
-    on_wire.magic    = 0x434E5450;  // 'CNTP'
-    on_wire.flags    = 0;
-    on_wire.version  = 1;
-    on_wire.length   = sizeof(CntpHeader);
-    on_wire.checksum = 0;           // a real frame computes FNV-1a here
+    on_wire.magic = 0x434E5450;  // 'CNTP'
+    on_wire.flags = 0;
+    on_wire.version = 1;
+    on_wire.length = sizeof(CntpHeader);
+    on_wire.checksum = 0;  // a real frame computes FNV-1a here
 
     UnvalidatedCntpFrame untrusted{on_wire};
 
@@ -239,25 +222,23 @@ int main() {
     // address of a misaligned member would trigger -Werror=address-
     // of-packed-member.
     {
-        const auto magic   = untrusted.value().magic;
+        const auto magic = untrusted.value().magic;
         const auto version = untrusted.value().version;
-        const auto length  = untrusted.value().length;
+        const auto length = untrusted.value().length;
         std::printf("untrusted frame: magic=0x%08X version=%u length=%u "
                     "(sizeof=%zu)\n",
-                    magic, version, length,
-                    sizeof(CntpHeader));
+                    magic, version, length, sizeof(CntpHeader));
     }
 
     // A real validator would check magic + version + checksum and
     // return std::expected<ValidatedCntpFrame, CntpError>.  Here we
     // demonstrate the type-level retag by direct construction.
-    if (untrusted.value().magic == 0x434E5450 &&
-        untrusted.value().version == 1) {
+    if (untrusted.value().magic == 0x434E5450 && untrusted.value().version == 1) {
         ValidatedCntpFrame trusted{untrusted.value()};
         std::printf("validated frame: source retagged External→Sanitized, "
                     "trust retagged Unverified→Tested\n");
-        std::printf("ValidatedCntpFrame sizeof = %zu (== sizeof(CntpHeader) %zu)\n",
-                    sizeof(ValidatedCntpFrame), sizeof(CntpHeader));
+        std::printf("ValidatedCntpFrame sizeof = %zu (== sizeof(CntpHeader) %zu)\n", sizeof(ValidatedCntpFrame),
+                    sizeof(CntpHeader));
     }
 
     return 0;

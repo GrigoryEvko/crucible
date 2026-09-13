@@ -27,16 +27,14 @@ struct SlotTag {};
 struct Handle {
     using slot_tag = SlotTag;
     static constexpr std::size_t slot_bytes = 256;
-    static constexpr std::size_t stages     = 2;
-    static constexpr crucible::algebra::lattices::MemoryScope scope =
-        crucible::algebra::lattices::MemoryScope::Cta;
+    static constexpr std::size_t stages = 2;
+    static constexpr crucible::algebra::lattices::MemoryScope scope = crucible::algebra::lattices::MemoryScope::Cta;
     void arrive_expect_tx(std::size_t) noexcept {}
     [[nodiscard]] bool try_wait(std::uint32_t) noexcept { return true; }
 };
 
 // Recv inserts SlotTag, then End with PS = {SlotTag} != EmptyPermSet.
-using LeakyProto =
-    prot::Recv<aps::Returned<aps::SmemDrain<256>, SlotTag>, prot::End>;
+using LeakyProto = prot::Recv<aps::Returned<aps::SmemDrain<256>, SlotTag>, prot::End>;
 }  // namespace
 
 int main() {

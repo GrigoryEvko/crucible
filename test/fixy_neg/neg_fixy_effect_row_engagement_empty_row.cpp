@@ -64,10 +64,9 @@ int main() {
     // band-3 site declaring `requires RowEngagementWitnessed<C>`
     // could accept stray pure-row Computations that hide the
     // weaken-from-empty pattern of Agent 8 Bug 7.
-    using PureComputation = ::crucible::effects::Computation<
-        ::crucible::effects::Row<>, int>;
+    using PureComputation = ::crucible::effects::Computation<::crucible::effects::Row<>, int>;
     static_assert(::crucible::fixy::effect::RowEngagementWitnessed<PureComputation>,
-        "FIXY-V-219 fixture #2: Computation<Row<>, int> has empty row — "
-        "RowEngagementWitnessed must reject via effect_count_in_row > 0.");
+                  "FIXY-V-219 fixture #2: Computation<Row<>, int> has empty row — "
+                  "RowEngagementWitnessed must reject via effect_count_in_row > 0.");
     return 0;
 }

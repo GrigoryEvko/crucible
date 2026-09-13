@@ -41,7 +41,7 @@ namespace ref = crucible::safety::reflected;
 
 enum class TestFlags : unsigned char {
     Alpha = 0x01,
-    Beta  = 0x02,
+    Beta = 0x02,
 };
 
 // Wrap the contract-violating call in a consteval helper so the
@@ -49,10 +49,9 @@ enum class TestFlags : unsigned char {
 // violations during constant evaluation are diagnosed as compile
 // errors regardless of -fcontract-evaluation-semantic.
 consteval bool probe_violates_contract() {
-    auto n = ref::bits_to_string<TestFlags>(
-        crucible::safety::Bits<TestFlags>{TestFlags::Alpha},
-        nullptr,    // out=nullptr
-        100);       // cap=100 > 0 — boundary lie!
+    auto n = ref::bits_to_string<TestFlags>(crucible::safety::Bits<TestFlags>{TestFlags::Alpha},
+                                            nullptr,  // out=nullptr
+                                            100);  // cap=100 > 0 — boundary lie!
     return n > 0;
 }
 

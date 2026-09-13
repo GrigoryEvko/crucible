@@ -23,12 +23,11 @@
 using namespace crucible::algebra::lattices;
 
 int main() {
-    HwInstruction hw_val   = HwInstruction::Vectorizable;
-    ControlFlow   cf_val   = ControlFlow::Pure;
+    HwInstruction hw_val = HwInstruction::Vectorizable;
+    ControlFlow cf_val = ControlFlow::Pure;
 
     // Should FAIL: HwInstructionLattice::leq requires two HwInstruction
     // values; passing a ControlFlow as the second argument is a type
     // mismatch (no cross-enum implicit conversion).
-    return static_cast<int>(
-        HwInstructionLattice::leq(hw_val, cf_val));
+    return static_cast<int>(HwInstructionLattice::leq(hw_val, cf_val));
 }

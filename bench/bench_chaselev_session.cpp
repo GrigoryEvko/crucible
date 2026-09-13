@@ -38,11 +38,7 @@ using Deque = concur::PermissionedChaseLevDeque<Item, kCap, BenchTag>;
 
 template <typename Body>
 [[nodiscard]] bench::Report measure(char const* name, Body&& body) {
-    return bench::Run{name}
-        .samples(50'000)
-        .warmup(5'000)
-        .max_wall_ms(3'000)
-        .measure(std::forward<Body>(body));
+    return bench::Run{name}.samples(50000).warmup(5000).max_wall_ms(3000).measure(std::forward<Body>(body));
 }
 
 [[nodiscard]] Deque::OwnerHandle mint_owner(Deque& deque) noexcept {
@@ -69,8 +65,7 @@ template <typename Body>
     auto deque = std::make_unique<Deque>();
     auto owner = mint_owner(*deque);
     auto* ownerp = &owner;
-    auto psh = ses::mint_owner_session<Deque>(
-        ::crucible::effects::HotFgCtx{}, owner);
+    auto psh = ses::mint_owner_session<Deque>(::crucible::effects::HotFgCtx{}, owner);
     Item seq = 0;
 
     auto report = measure("owner round-trip: typed hot push + raw pop", [&] {
@@ -89,14 +84,12 @@ template <typename Body>
     auto deque = std::make_unique<Deque>();
     auto owner = mint_owner(*deque);
     auto* ownerp = &owner;
-    auto psh = ses::mint_owner_session<Deque>(
-        ::crucible::effects::HotFgCtx{}, owner);
+    auto psh = ses::mint_owner_session<Deque>(::crucible::effects::HotFgCtx{}, owner);
     Item seq = 0;
 
     auto report = measure("owner round-trip: raw push + typed hot pop", [&] {
         (void)ownerp->try_push(++seq);
-        const Item value =
-            ses::owner_session_try_pop<Deque>(psh).value_or(Item{0});
+        const Item value = ses::owner_session_try_pop<Deque>(psh).value_or(Item{0});
         bench::do_not_optimize(value);
     });
 
@@ -109,15 +102,12 @@ template <typename Body>
 
     auto deque = std::make_unique<Deque>();
     auto owner = mint_owner(*deque);
-    auto psh = ses::mint_owner_session<Deque>(
-        ::crucible::effects::HotFgCtx{}, owner);
+    auto psh = ses::mint_owner_session<Deque>(::crucible::effects::HotFgCtx{}, owner);
     Item seq = 0;
 
-    auto report = measure("owner round-trip: typed hot push + typed hot pop",
-        [&] {
+    auto report = measure("owner round-trip: typed hot push + typed hot pop", [&] {
         (void)ses::owner_session_try_push<Deque>(psh, ++seq);
-        const Item value =
-            ses::owner_session_try_pop<Deque>(psh).value_or(Item{0});
+        const Item value = ses::owner_session_try_pop<Deque>(psh).value_or(Item{0});
         bench::do_not_optimize(value);
     });
 
@@ -149,8 +139,7 @@ template <typename Body>
     auto thief = ses::mint_chaselev_thief<Deque>(*deque);
     if (!thief) std::abort();
     auto* thiefp = &*thief;
-    auto owner_psh = ses::mint_owner_session<Deque>(
-        ::crucible::effects::HotFgCtx{}, owner);
+    auto owner_psh = ses::mint_owner_session<Deque>(::crucible::effects::HotFgCtx{}, owner);
     Item seq = 0;
 
     auto report = measure("steal round-trip: typed hot push + raw steal", [&] {
@@ -171,14 +160,12 @@ template <typename Body>
     auto* ownerp = &owner;
     auto thief = ses::mint_chaselev_thief<Deque>(*deque);
     if (!thief) std::abort();
-    auto thief_psh = ses::mint_thief_session<Deque>(
-        ::crucible::effects::HotFgCtx{}, *thief);
+    auto thief_psh = ses::mint_thief_session<Deque>(::crucible::effects::HotFgCtx{}, *thief);
     Item seq = 0;
 
     auto report = measure("steal round-trip: raw push + typed hot recv", [&] {
         (void)ownerp->try_push(++seq);
-        const auto borrowed = ses::thief_session_steal_borrowed<Deque>(
-            thief_psh);
+        const auto borrowed = ses::thief_session_steal_borrowed<Deque>(thief_psh);
         bench::do_not_optimize(borrowed.value);
     });
 
@@ -193,17 +180,13 @@ template <typename Body>
     auto owner = mint_owner(*deque);
     auto thief = ses::mint_chaselev_thief<Deque>(*deque);
     if (!thief) std::abort();
-    auto owner_psh = ses::mint_owner_session<Deque>(
-        ::crucible::effects::HotFgCtx{}, owner);
-    auto thief_psh = ses::mint_thief_session<Deque>(
-        ::crucible::effects::HotFgCtx{}, *thief);
+    auto owner_psh = ses::mint_owner_session<Deque>(::crucible::effects::HotFgCtx{}, owner);
+    auto thief_psh = ses::mint_thief_session<Deque>(::crucible::effects::HotFgCtx{}, *thief);
     Item seq = 0;
 
-    auto report = measure("steal round-trip: typed hot push + typed hot recv",
-        [&] {
+    auto report = measure("steal round-trip: typed hot push + typed hot recv", [&] {
         (void)ses::owner_session_try_push<Deque>(owner_psh, ++seq);
-        const auto borrowed = ses::thief_session_steal_borrowed<Deque>(
-            thief_psh);
+        const auto borrowed = ses::thief_session_steal_borrowed<Deque>(thief_psh);
         bench::do_not_optimize(borrowed.value);
     });
 
@@ -215,24 +198,15 @@ template <typename Body>
 }  // namespace
 
 int main() {
-    static_assert(sizeof(proto::PermissionedSessionHandle<
-                      proto::End, proto::EmptyPermSet, Deque::OwnerHandle*>)
-                  == sizeof(proto::SessionHandle<proto::End,
-                                                 Deque::OwnerHandle*>));
-    static_assert(sizeof(proto::PermissionedSessionHandle<
-                      proto::End, proto::EmptyPermSet, Deque::ThiefHandle*>)
-                  == sizeof(proto::SessionHandle<proto::End,
-                                                 Deque::ThiefHandle*>));
+    static_assert(sizeof(proto::PermissionedSessionHandle<proto::End, proto::EmptyPermSet, Deque::OwnerHandle*>)
+                  == sizeof(proto::SessionHandle<proto::End, Deque::OwnerHandle*>));
+    static_assert(sizeof(proto::PermissionedSessionHandle<proto::End, proto::EmptyPermSet, Deque::ThiefHandle*>)
+                  == sizeof(proto::SessionHandle<proto::End, Deque::ThiefHandle*>));
 
     std::array reports{
-        owner_raw_push_raw_pop(),
-        owner_typed_send_raw_pop(),
-        owner_raw_push_typed_recv(),
-        owner_typed_send_typed_recv(),
-        steal_raw_push_raw_steal(),
-        steal_typed_send_raw_steal(),
-        steal_raw_push_typed_recv(),
-        steal_typed_send_typed_recv(),
+        owner_raw_push_raw_pop(),      owner_typed_send_raw_pop(),    owner_raw_push_typed_recv(),
+        owner_typed_send_typed_recv(), steal_raw_push_raw_steal(),    steal_typed_send_raw_steal(),
+        steal_raw_push_typed_recv(),   steal_typed_send_typed_recv(),
     };
 
     bench::emit_reports_text(reports);

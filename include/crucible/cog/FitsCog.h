@@ -44,7 +44,7 @@ struct cog_max_capacity<CogKind::Gpu> {
             case ResourceKind::WarpScheduler:
                 return 320ULL * 4;  // four schedulers per SM
             case ResourceKind::RegistersPerWarp:
-                return 65'536ULL;  // 256 KB of registers at 4 bytes each
+                return 65536ULL;  // 256 KB of registers at 4 bytes each
             case ResourceKind::Smem:
                 return 320ULL * 256ULL * 1024;  // 256 KB per SM
             case ResourceKind::L2:
@@ -54,7 +54,7 @@ struct cog_max_capacity<CogKind::Gpu> {
             case ResourceKind::HbmBw:
                 return 9ULL * 1024 * 1024 * 1024 * 1024;
             case ResourceKind::NvlinkBw:
-                return 1'800ULL * 1024 * 1024 * 1024;
+                return 1800ULL * 1024 * 1024 * 1024;
             // PCIe bandwidth follows from the generation and lane count,
             // and no schema field carries the product yet. A ceiling of
             // 0 rejects every demand on the axis, which matches what the
@@ -63,7 +63,7 @@ struct cog_max_capacity<CogKind::Gpu> {
             case ResourceKind::PcieBw:
                 return 0ULL;
             case ResourceKind::PowerWatts:
-                return 1'500ULL;
+                return 1500ULL;
             case ResourceKind::ThermalCelsius:
                 return 95ULL;
             default:
@@ -111,7 +111,7 @@ struct cog_max_capacity<CogKind::NvSwitch> {
             case ResourceKind::Tcam:
                 return 64ULL * 1024;  // entries
             case ResourceKind::PowerWatts:
-                return 1'500ULL;
+                return 1500ULL;
             case ResourceKind::ThermalCelsius:
                 return 90ULL;
             default:
@@ -431,14 +431,14 @@ static_assert(cog_max_capacity<CogKind::NvSwitch>::for_kind(effects::ResourceKin
 static_assert(cog_max_capacity<CogKind::CpuCore>::for_kind(effects::ResourceKind::Sm) == 0);
 static_assert(cog_max_capacity<CogKind::CpuCore>::for_kind(effects::ResourceKind::NicQp) == 0);
 
-using H100ComputeRow = effects::ConcurrentRow<effects::SmBudget<132>, effects::HbmBytes<80'000'000'000ULL>>;
+using H100ComputeRow = effects::ConcurrentRow<effects::SmBudget<132>, effects::HbmBytes<80000000000ULL>>;
 static_assert(FitsCog<H100ComputeRow, CogKind::Gpu>);
 
 using NicAllReduceRow = effects::ConcurrentRow<effects::NicQp<4>, effects::NicCq<4>, effects::NicMr<8>>;
 static_assert(FitsCog<NicAllReduceRow, CogKind::NicPort>);
 
 using SwitchRow =
-    effects::ConcurrentRow<effects::SwitchEgressBw<400'000'000'000ULL>, effects::SwitchBufferCells<32 * 1024>>;
+    effects::ConcurrentRow<effects::SwitchEgressBw<400000000000ULL>, effects::SwitchBufferCells<32 * 1024>>;
 static_assert(FitsCog<SwitchRow, CogKind::NvSwitch>);
 
 using SocketRow = effects::ConcurrentRow<effects::CpuCoreBudget<64>, effects::LlcBytes<128 * 1024 * 1024>>;
@@ -468,7 +468,7 @@ static_assert(!FitsCog<NicDemandOnGpu, CogKind::Gpu>);
 using GpuDemandOnNic = effects::ConcurrentRow<effects::SmBudget<4>>;
 static_assert(!FitsCog<GpuDemandOnNic, CogKind::NicPort>);
 
-using SwitchDemandOnCpu = effects::ConcurrentRow<effects::SwitchEgressBw<100'000'000'000ULL>>;
+using SwitchDemandOnCpu = effects::ConcurrentRow<effects::SwitchEgressBw<100000000000ULL>>;
 static_assert(!FitsCog<SwitchDemandOnCpu, CogKind::CpuSocket>);
 
 static_assert(!FitsCog<H100ComputeRow, CogKind::PsuRail>);

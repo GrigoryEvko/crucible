@@ -56,7 +56,9 @@ namespace effects = crucible::effects;
 // per-axis ceiling fails the concept gate at substitution time.
 template <typename Row, cog::CogKind K>
     requires cog::FitsCog<Row, K>
-constexpr int schedule_kernel() noexcept { return 1; }
+constexpr int schedule_kernel() noexcept {
+    return 1;
+}
 
 // A row demanding 999 SMs.  GPU's compile-time ceiling is 320 (the
 // largest shipped GPU + headroom).  999 > 320 → FitsCog gate refuses
@@ -64,17 +66,16 @@ constexpr int schedule_kernel() noexcept { return 1; }
 // SMs requires bumping the cog_max_capacity<CogKind::Gpu> Sm-axis
 // ceiling FIRST (see GAPS-191 doc-block "Append-only Universe
 // extension" — bumping the ceiling is non-breaking, lowering it is).
-using OversubscribedSmRow =
-    effects::ConcurrentRow<effects::SmBudget<999>>;
+using OversubscribedSmRow = effects::ConcurrentRow<effects::SmBudget<999>>;
 
 static_assert(schedule_kernel<OversubscribedSmRow, cog::CogKind::Gpu>() == 1,
-    "GAPS-191: cog::FitsCog concept MUST refuse Rows whose declared "
-    "per-axis demand exceeds the Cog's compile-time ceiling.  If this "
-    "static_assert ever evaluates, an oversubscribed schedule (999 SMs "
-    "demanded vs 320 max on any shipped GPU) would slip past the "
-    "compile-time admission gate and reach the runtime scheduler, "
-    "where it would silently degrade throughput or fail late inside a "
-    "vendor backend.  The gate stops the bug at the kernel author's "
-    "source location.");
+              "GAPS-191: cog::FitsCog concept MUST refuse Rows whose declared "
+              "per-axis demand exceeds the Cog's compile-time ceiling.  If this "
+              "static_assert ever evaluates, an oversubscribed schedule (999 SMs "
+              "demanded vs 320 max on any shipped GPU) would slip past the "
+              "compile-time admission gate and reach the runtime scheduler, "
+              "where it would silently degrade throughput or fail late inside a "
+              "vendor backend.  The gate stops the bug at the kernel author's "
+              "source location.");
 
 int main() { return 0; }

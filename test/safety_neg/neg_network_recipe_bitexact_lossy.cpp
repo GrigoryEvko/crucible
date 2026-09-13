@@ -5,8 +5,7 @@
 namespace net = crucible::forge::recipes;
 
 struct TensorCoreRecipe {
-    static constexpr crucible::ReductionDeterminism determinism =
-        crucible::ReductionDeterminism::BITEXACT_TC;
+    static constexpr crucible::ReductionDeterminism determinism = crucible::ReductionDeterminism::BITEXACT_TC;
     static constexpr bool associative = true;
     static constexpr bool commutative = true;
     static constexpr bool participant_count_power_of_two = true;
@@ -18,5 +17,4 @@ constexpr bool accepts_network_recipe() {
     return true;
 }
 
-static_assert(accepts_network_recipe<
-              TensorCoreRecipe, net::TopKCompressedAlgorithm>());
+static_assert(accepts_network_recipe<TensorCoreRecipe, net::TopKCompressedAlgorithm>());

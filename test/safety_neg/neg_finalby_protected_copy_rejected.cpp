@@ -42,27 +42,23 @@
 #include <crucible/safety/NotInherited.h>
 
 namespace {
-    // Production-shape consumer: a class whose extensibility is
-    // protected by FinalBy<Derived>.  The header documents this as
-    // "untrusted user shouldn't add `final`" — typical use is
-    // protocol message envelopes, session-resource handles, etc.
-    struct ProtectedMessage
-        : public virtual ::crucible::safety::FinalBy<ProtectedMessage>
-    {
-        int payload_ = 0;
-        ProtectedMessage() = default;
-    };
-}
+// Production-shape consumer: a class whose extensibility is
+// protected by FinalBy<Derived>.  The header documents this as
+// "untrusted user shouldn't add `final`" — typical use is
+// protocol message envelopes, session-resource handles, etc.
+struct ProtectedMessage : public virtual ::crucible::safety::FinalBy<ProtectedMessage> {
+    int payload_ = 0;
+    ProtectedMessage() = default;
+};
+}  // namespace
 
 // VIOLATION: ProtectedMessage's defaulted copy ctor invokes
 // FinalBy<ProtectedMessage>::FinalBy(const FinalBy&) which is
 // `delete("[FinalBy_Subclass_Forbidden] FinalBy<Derived>: copy of
 // the CRTP base is forbidden; ...")`.  GCC emits "use of deleted
 // function" with the named tag in the reason string.
-[[maybe_unused]] static ProtectedMessage offending_protected_copy(
-    const ProtectedMessage& source)
-{
-    return ProtectedMessage{source};   // ERROR: copy ctor deleted
+[[maybe_unused]] static ProtectedMessage offending_protected_copy(const ProtectedMessage& source) {
+    return ProtectedMessage{source};  // ERROR: copy ctor deleted
 }
 
 int main() { return 0; }

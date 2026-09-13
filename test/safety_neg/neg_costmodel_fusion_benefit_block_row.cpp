@@ -15,7 +15,6 @@
 namespace eff = ::crucible::effects;
 
 int main() {
-    (void)::crucible::compute_fusion_benefit<
-        eff::Row<eff::Effect::Block>>(10.0, 5.0, 64u, 1u);
+    (void)::crucible::compute_fusion_benefit<eff::Row<eff::Effect::Block>>(10.0, 5.0, 64u, 1u);
     return 0;
 }

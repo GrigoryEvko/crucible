@@ -53,16 +53,12 @@ struct Ping {};
 // `Send<Ping, Stop_g<Throw>>`.  Asserting equivalence to the bare
 // `Stop` continuation (which equals `Stop_g<Abort>`) MUST fail
 // post-fix.
-using G_throw =
-    proto::Transmission<Bob, Alice, Ping,
-                        proto::StopG<Bob, proto::CrashClass::Throw>>;
+using G_throw = proto::Transmission<Bob, Alice, Ping, proto::StopG<Bob, proto::CrashClass::Throw>>;
 
 // fixy-A2-001 regression witness — fires when Peer's projection drops
 // the CrashClass NTTP and collapses to Stop_g<Abort>.
-static_assert(std::is_same_v<
-    proto::project_t<G_throw, Bob>,
-    proto::Send<Ping, proto::Stop>>,
-    "fixy-A2-001 regression: CrashClass dropped in Peer projection");
+static_assert(std::is_same_v<proto::project_t<G_throw, Bob>, proto::Send<Ping, proto::Stop>>,
+              "fixy-A2-001 regression: CrashClass dropped in Peer projection");
 
 }  // namespace
 

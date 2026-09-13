@@ -7,8 +7,7 @@
 
 namespace {
 
-[[nodiscard]] crucible::cog::CogIdentity
-peer(std::uint64_t id) noexcept {
+[[nodiscard]] crucible::cog::CogIdentity peer(std::uint64_t id) noexcept {
     crucible::cog::CogIdentity out{};
     out.uuid = crucible::cog::Uuid{id, id + 100};
     out.kind = crucible::cog::CogKind::NicPort;
@@ -37,12 +36,9 @@ int main() {
         admit_swim_peer(peer(3)),
     };
 
-    auto membership = mint_swim_membership<8>(
-        crucible::effects::testing::init(),
-        std::span<const SwimPeer>{initial});
+    auto membership = mint_swim_membership<8>(crucible::effects::testing::init(), std::span<const SwimPeer>{initial});
     assert(membership.size().value() == 3);
-    assert(membership.config().period_ns.value() ==
-           SwimConfig{}.period_ns.value());
+    assert(membership.config().period_ns.value() == SwimConfig{}.period_ns.value());
 
     auto live = membership.live_peers();
     assert(live.size() == 3);
@@ -58,10 +54,10 @@ int main() {
     assert(!zero.has_value());
     assert(zero.error() == SwimError::ZeroUuid);
 
-    auto probe = membership.next_probe(1'000);
+    auto probe = membership.next_probe(1000);
     assert(probe.has_value());
     assert(probe->target == peer(1).uuid);
-    assert(probe->deadline_ns == 500'001'000ULL);
+    assert(probe->deadline_ns == 500001000ULL);
 
     assert(membership.on_ping_timeout(peer(1).uuid).has_value());
     auto h = membership.health(peer(1).uuid);
@@ -73,10 +69,10 @@ int main() {
     assert(witnesses.peers[0] == peer(2).uuid);
     assert(witnesses.peers[1] == peer(3).uuid);
 
-    assert(membership.on_indirect_ack(peer(1).uuid, 2'000).has_value());
+    assert(membership.on_indirect_ack(peer(1).uuid, 2000).has_value());
     h = membership.health(peer(1).uuid);
     assert(h.peek().state == SwimState::Alive);
-    assert(h.peek().last_heartbeat_ns == 2'000);
+    assert(h.peek().last_heartbeat_ns == 2000);
     assert(h.peek().consecutive_misses == 0);
 
     assert(membership.on_ping_timeout(peer(2).uuid).has_value());
@@ -93,13 +89,11 @@ int main() {
     assert(batch.size().value() > 0);
     const std::uint16_t before_ack = batch.count;
     membership.acknowledge_piggybacks(1);
-    assert(membership.piggyback_batch().count ==
-           static_cast<std::uint16_t>(before_ack - 1u));
+    assert(membership.piggyback_batch().count == static_cast<std::uint16_t>(before_ack - 1u));
 
     std::array<SwimPeer, 1> remote_initial{admit_swim_peer(peer(1))};
-    auto remote = mint_swim_membership<4>(
-        crucible::effects::testing::init(),
-        std::span<const SwimPeer>{remote_initial});
+    auto remote =
+        mint_swim_membership<4>(crucible::effects::testing::init(), std::span<const SwimPeer>{remote_initial});
     assert(remote.size().value() == 1);
 
     crucible::canopy::SwimEvent gossiped_dead{};
@@ -108,23 +102,20 @@ int main() {
     gossiped_dead.consecutive_misses = 2;
     gossiped_dead.incarnation = 9;
     gossiped_dead.sequence = 99;
-    assert(remote.apply_gossip(GossipedSwimEvent{gossiped_dead}, 3'000)
-               .has_value());
+    assert(remote.apply_gossip(GossipedSwimEvent{gossiped_dead}, 3000).has_value());
     assert(remote.size().value() == 2);
     assert(remote.health(peer(4).uuid).peek().state == SwimState::Dead);
 
     gossiped_dead.state = SwimState::Alive;
     gossiped_dead.incarnation = 8;
-    assert(remote.apply_gossip(GossipedSwimEvent{gossiped_dead}, 4'000)
-               .has_value());
+    assert(remote.apply_gossip(GossipedSwimEvent{gossiped_dead}, 4000).has_value());
     assert(remote.health(peer(4).uuid).peek().state == SwimState::Dead);
 
     gossiped_dead.state = SwimState::Alive;
     gossiped_dead.incarnation = 10;
-    assert(remote.apply_gossip(GossipedSwimEvent{gossiped_dead}, 5'000)
-               .has_value());
+    assert(remote.apply_gossip(GossipedSwimEvent{gossiped_dead}, 5000).has_value());
     assert(remote.health(peer(4).uuid).peek().state == SwimState::Alive);
-    assert(remote.health(peer(4).uuid).peek().last_heartbeat_ns == 5'000);
+    assert(remote.health(peer(4).uuid).peek().last_heartbeat_ns == 5000);
 
     auto missing = remote.on_ack(peer(7).uuid, 1);
     assert(!missing.has_value());

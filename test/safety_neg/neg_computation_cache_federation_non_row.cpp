@@ -24,7 +24,6 @@ int main() {
     // Second template arg is `int` — bound to Row.  IsEffectRow<int>
     // is false (int is not effects::Row<Es...>).  The federation
     // primitive's requires clause rejects.
-    (void)::crucible::cipher::federation::federation_key<
-        &f12_test_fn, int, double>();
+    (void)::crucible::cipher::federation::federation_key<&f12_test_fn, int, double>();
     return 0;
 }

@@ -35,13 +35,12 @@ using namespace crucible::algebra::lattices;
 
 int main() {
     Consistency consistency_val = Consistency::EVENTUAL;
-    Lifetime    lifetime_val    = Lifetime::PER_FLEET;
+    Lifetime lifetime_val = Lifetime::PER_FLEET;
 
     // Should FAIL: ConsistencyLattice::leq's signature requires two
     // Consistency values; passing a Lifetime as the second argument
     // is a type-mismatch (Lifetime is NOT convertible to Consistency
     // — both are `enum class : uint8_t` so no implicit narrowing
     // applies).
-    return static_cast<int>(
-        ConsistencyLattice::leq(consistency_val, lifetime_val));
+    return static_cast<int>(ConsistencyLattice::leq(consistency_val, lifetime_val));
 }

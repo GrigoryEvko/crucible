@@ -19,8 +19,7 @@ inline void neg_witness_two_ints(int, int) noexcept {}
 int main() {
     // arity 2 but neither parameter is OwnedRegion or reduce_into —
     // not a Reduction.
-    using V = crucible::safety::extract::reduction_input_value_t<
-        &::neg_witness_two_ints>;
+    using V = crucible::safety::extract::reduction_input_value_t<&::neg_witness_two_ints>;
     V const v{};
     (void)v;
     return 0;

@@ -35,11 +35,10 @@ struct S {
 
 constexpr S ZERO{};
 
-static_assert(pre_cval(ZERO) == 0,
-    "CRUCIBLE_PRE on a struct const-by-value parameter MUST fire at "
-    "consteval when the predicate is violated.  If this static_assert "
-    "ever evaluates successfully, Pre.h's consteval enforcement is "
-    "broken for value-with-const-binding shapes (Probe Shape #3).");
+static_assert(pre_cval(ZERO) == 0, "CRUCIBLE_PRE on a struct const-by-value parameter MUST fire at "
+                                   "consteval when the predicate is violated.  If this static_assert "
+                                   "ever evaluates successfully, Pre.h's consteval enforcement is "
+                                   "broken for value-with-const-binding shapes (Probe Shape #3).");
 
 }  // namespace
 

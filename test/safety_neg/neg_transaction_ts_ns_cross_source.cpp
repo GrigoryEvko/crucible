@@ -28,9 +28,7 @@ int main() {
     crucible::Transaction tx{};
 
     // Mint a BootClockBytes<u64> witness (CLOCK_BOOTTIME provenance).
-    auto boot_bytes = ::crucible::safety::mint_clock_source<
-        ::crucible::safety::ClockSource_v::Boot,
-        std::uint64_t>(42);
+    auto boot_bytes = ::crucible::safety::mint_clock_source<::crucible::safety::ClockSource_v::Boot, std::uint64_t>(42);
 
     // Should FAIL: BootClockBytes<u64> and MonotonicClockBytes<u64>
     // are unrelated wrapper types (distinct ClockSource_v NTTPs); no

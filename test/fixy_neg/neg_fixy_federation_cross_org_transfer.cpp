@@ -59,9 +59,7 @@ struct NegFederationCrossOrg_OrgB {};
 // signature shape of cipher::deserialize_federation_entry<Org> —
 // takes a `const FederatedPeerPermission<Org>&` as the proof token.
 template <typename Org>
-inline void typed_federation_consumer(
-    const ff::FederatedPeerPermission<Org>& peer_permission) noexcept
-{
+inline void typed_federation_consumer(const ff::FederatedPeerPermission<Org>& peer_permission) noexcept {
     (void)peer_permission;
 }
 
@@ -69,8 +67,7 @@ int main() {
     // Mint a legitimate OrgA permission via root-mint.  The same type
     // would result from a successful mint_federation_admittance for
     // OrgA.
-    auto perm_a = cs::mint_permission_root<
-        ff::FederatedPeer<NegFederationCrossOrg_OrgA>>();
+    auto perm_a = cs::mint_permission_root<ff::FederatedPeer<NegFederationCrossOrg_OrgA>>();
 
     // Cross-org transfer: pass the OrgA-tagged permission to the
     // OrgB-typed consumer.  Must NOT compile — Permission<...> tags

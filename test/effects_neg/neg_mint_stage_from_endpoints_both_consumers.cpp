@@ -29,8 +29,8 @@
 #include <utility>
 
 namespace conc = crucible::concurrent;
-namespace eff  = crucible::effects;
-namespace saf  = crucible::safety;
+namespace eff = crucible::effects;
+namespace saf = crucible::safety;
 
 struct UTag1 {};
 struct UTag2 {};
@@ -42,8 +42,7 @@ using Ch2 = conc::PermissionedSpscChannel<int, 64, UTag2>;
 // (Consumer, Consumer) endpoint pair we're about to construct, but
 // the bridge rejects on direction shape BEFORE handle-type matching
 // because IsProducerEndpoint is a separate conjunct.
-inline void body(typename Ch1::ConsumerHandle&&,
-                 typename Ch2::ProducerHandle&&) noexcept {}
+inline void body(typename Ch1::ConsumerHandle&&, typename Ch2::ProducerHandle&&) noexcept {}
 
 int main() {
     eff::HotFgCtx ctx;
@@ -52,14 +51,12 @@ int main() {
     Ch2 ch2;
 
     auto w1 = saf::mint_permission_root<conc::spsc_tag::Whole<UTag1>>();
-    auto [pp1, cp1] = saf::mint_permission_split<
-        conc::spsc_tag::Producer<UTag1>,
-        conc::spsc_tag::Consumer<UTag1>>(std::move(w1));
+    auto [pp1, cp1] =
+        saf::mint_permission_split<conc::spsc_tag::Producer<UTag1>, conc::spsc_tag::Consumer<UTag1>>(std::move(w1));
 
     auto w2 = saf::mint_permission_root<conc::spsc_tag::Whole<UTag2>>();
-    auto [pp2, cp2] = saf::mint_permission_split<
-        conc::spsc_tag::Producer<UTag2>,
-        conc::spsc_tag::Consumer<UTag2>>(std::move(w2));
+    auto [pp2, cp2] =
+        saf::mint_permission_split<conc::spsc_tag::Producer<UTag2>, conc::spsc_tag::Consumer<UTag2>>(std::move(w2));
 
     auto cons1 = ch1.consumer(std::move(cp1));
     auto cons2 = ch2.consumer(std::move(cp2));
@@ -69,8 +66,7 @@ int main() {
     auto cons_ep2 = conc::mint_endpoint<Ch2, conc::Direction::Consumer>(ctx, cons2);
 
     // Bridge fires: cons_ep2 passed where IsProducerEndpoint expected.
-    auto bad = conc::mint_stage_from_endpoints<&body>(
-        ctx, std::move(cons_ep1), std::move(cons_ep2));
+    auto bad = conc::mint_stage_from_endpoints<&body>(ctx, std::move(cons_ep1), std::move(cons_ep2));
     (void)bad;
     (void)pp1;
     (void)pp2;

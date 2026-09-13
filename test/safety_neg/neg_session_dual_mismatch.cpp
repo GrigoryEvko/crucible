@@ -19,8 +19,6 @@ using ClientProto = Send<Request, Recv<Response, End>>;
 // the user wrote Recv<Request, Recv<Response, End>> by mistake.
 using ServerProto = Recv<Request, Recv<Response, End>>;
 
-void compile_time_reject() {
-    ensure_dual<ClientProto, ServerProto>();
-}
+void compile_time_reject() { ensure_dual<ClientProto, ServerProto>(); }
 
 int main() { return 0; }

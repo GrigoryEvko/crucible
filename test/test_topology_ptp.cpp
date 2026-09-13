@@ -56,10 +56,8 @@ static cog::CogIdentity nic(std::uint64_t lo) {
 }
 
 static void test_name_accessors() {
-    assert(topology::ptp_error_name(topology::PtpError::InvalidClockFd)
-           == std::string_view{"InvalidClockFd"});
-    assert(topology::ptp_servo_state_name(topology::PtpServoState::Slave)
-           == std::string_view{"Slave"});
+    assert(topology::ptp_error_name(topology::PtpError::InvalidClockFd) == std::string_view{"InvalidClockFd"});
+    assert(topology::ptp_servo_state_name(topology::PtpServoState::Slave) == std::string_view{"Slave"});
     std::printf("  test_name_accessors:        PASSED\n");
 }
 
@@ -95,27 +93,24 @@ static void test_handle_status_and_timestamp() {
         .skew_bound_ns = topology::PositivePtpSkewBoundNs{90},
         .sequence = 4,
     };
-    auto handle = topology::mint_ptp_handle(
-        effects::ColdInitCtx{}, nic(3), *fd, status);
+    auto handle = topology::mint_ptp_handle(effects::ColdInitCtx{}, nic(3), *fd, status);
     assert(handle.status().synchronized());
     assert(handle.latest_timestamp().error() == topology::PtpError::NoTimestamp);
 
-    handle.record_timestamp(effects::BgDrainCtx{},
-        topology::PtpTimestampNs{123'456}, 5);
+    handle.record_timestamp(effects::BgDrainCtx{}, topology::PtpTimestampNs{123456}, 5);
     auto latest = handle.latest_timestamp();
     assert(latest.has_value());
-    assert(latest->value() == 123'456);
+    assert(latest->value() == 123456);
     assert(handle.latest_timestamp_sequence() == 5);
 
-    topology::DeclaredPtpStatus degraded{
-        topology::PtpStatus{
-            .servo = topology::PtpServoState::Degraded,
-            .offset_from_master_ns = 1'200,
-            .mean_path_delay_ns = topology::PositivePtpPathDelayNs{900},
-            .frequency_adjustment_ppb = 7,
-            .skew_bound_ns = topology::PositivePtpSkewBoundNs{1'500},
-            .sequence = 6,
-        }};
+    topology::DeclaredPtpStatus degraded{topology::PtpStatus{
+        .servo = topology::PtpServoState::Degraded,
+        .offset_from_master_ns = 1200,
+        .mean_path_delay_ns = topology::PositivePtpPathDelayNs{900},
+        .frequency_adjustment_ppb = 7,
+        .skew_bound_ns = topology::PositivePtpSkewBoundNs{1500},
+        .sequence = 6,
+    }};
     handle.record_status(effects::BgDrainCtx{}, degraded);
     assert(handle.status().servo == topology::PtpServoState::Degraded);
     assert(handle.status().sequence == 6);
@@ -136,8 +131,7 @@ static void test_daemon_report_boundary() {
         .max_accepted_offset_ns = topology::PositivePtpOffsetBoundNs{100},
         .sequence = 7,
     };
-    auto declared =
-        topology::admit_ptp_daemon_report(effects::BgDrainCtx{}, report);
+    auto declared = topology::admit_ptp_daemon_report(effects::BgDrainCtx{}, report);
     auto status = topology::ptp_status_from_daemon_report(declared);
     assert(status.value().synchronized());
     assert(status.value().offset_from_master_ns == -80);
@@ -146,57 +140,46 @@ static void test_daemon_report_boundary() {
     auto diagnostic = topology::ptp_diagnostic_from_daemon_report(declared);
     assert(!diagnostic.value().degraded());
     assert(diagnostic.value().reason == topology::PtpDegradationReason::None);
-    assert(topology::ptp_degradation_reason_name(
-               diagnostic.value().reason) == std::string_view{"None"});
+    assert(topology::ptp_degradation_reason_name(diagnostic.value().reason) == std::string_view{"None"});
 
     report.grandmaster_present = false;
     auto no_grandmaster =
-        topology::ptp_diagnostic_from_daemon_report(
-            topology::admit_ptp_daemon_report(effects::BgDrainCtx{}, report));
+        topology::ptp_diagnostic_from_daemon_report(topology::admit_ptp_daemon_report(effects::BgDrainCtx{}, report));
     assert(no_grandmaster.value().degraded());
-    assert(no_grandmaster.value().reason
-           == topology::PtpDegradationReason::GrandmasterMissing);
-    assert(no_grandmaster.value().status.servo
-           == topology::PtpServoState::Degraded);
+    assert(no_grandmaster.value().reason == topology::PtpDegradationReason::GrandmasterMissing);
+    assert(no_grandmaster.value().status.servo == topology::PtpServoState::Degraded);
 
     report.grandmaster_present = true;
     report.offset_from_master_ns = -101;
     auto excessive_offset =
-        topology::ptp_diagnostic_from_daemon_report(
-            topology::admit_ptp_daemon_report(effects::BgDrainCtx{}, report));
-    assert(excessive_offset.value().reason
-           == topology::PtpDegradationReason::ExcessiveOffset);
+        topology::ptp_diagnostic_from_daemon_report(topology::admit_ptp_daemon_report(effects::BgDrainCtx{}, report));
+    assert(excessive_offset.value().reason == topology::PtpDegradationReason::ExcessiveOffset);
 
     report.offset_from_master_ns = 0;
     report.skew_bound_ns = topology::PositivePtpSkewBoundNs{101};
     auto excessive_skew =
-        topology::ptp_diagnostic_from_daemon_report(
-            topology::admit_ptp_daemon_report(effects::BgDrainCtx{}, report));
-    assert(excessive_skew.value().reason
-           == topology::PtpDegradationReason::ExcessiveSkew);
+        topology::ptp_diagnostic_from_daemon_report(topology::admit_ptp_daemon_report(effects::BgDrainCtx{}, report));
+    assert(excessive_skew.value().reason == topology::PtpDegradationReason::ExcessiveSkew);
 
     std::printf("  test_daemon_report_boundary: PASSED\n");
 }
 
 static void test_timestamped_packet_view() {
-    std::array<std::byte, 4> payload{
-        std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}};
-    auto packet = topology::timestamp_packet_view(
-        std::span<const std::byte>{payload}, topology::PtpTimestampNs{55}, 8);
+    std::array<std::byte, 4> payload{std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}};
+    auto packet = topology::timestamp_packet_view(std::span<const std::byte>{payload}, topology::PtpTimestampNs{55}, 8);
     assert(packet.has_value());
     assert(packet->payload.size() == payload.size());
     assert(packet->timestamp_ns.value() == 55);
     assert(packet->sequence == 8);
 
-    auto empty = topology::timestamp_packet_view(
-        std::span<const std::byte>{}, topology::PtpTimestampNs{55}, 9);
+    auto empty = topology::timestamp_packet_view(std::span<const std::byte>{}, topology::PtpTimestampNs{55}, 9);
     assert(!empty.has_value());
     assert(empty.error() == topology::PtpError::Degraded);
     std::printf("  test_timestamped_packet_view: PASSED\n");
 }
 
 static void test_linux_boundaries_if_available() {
-    auto fd = topology::admit_ptp_clock_fd(999'999);
+    auto fd = topology::admit_ptp_clock_fd(999999);
     assert(fd.has_value());
     auto now = topology::ptp_now(*fd);
     assert(!now.has_value());
@@ -212,8 +195,7 @@ static void test_linux_boundaries_if_available() {
     if (clock.has_value()) {
         assert(clock->peek().valid());
         auto stamp = topology::ptp_now(clock->peek().fd());
-        assert(stamp.has_value() ||
-               stamp.error() == topology::PtpError::ClockReadFailed);
+        assert(stamp.has_value() || stamp.error() == topology::PtpError::ClockReadFailed);
     }
 
     TestSocket socket{::socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0)};
@@ -221,26 +203,21 @@ static void test_linux_boundaries_if_available() {
     auto sock_fd = crucible::cntp::admit_socket_fd(socket.raw());
     assert(sock_fd.has_value());
     auto enabled = topology::enable_socket_timestamping(*sock_fd);
-    assert(enabled.has_value() ||
-           enabled.error() == topology::PtpError::SocketTimestampingFailed);
+    assert(enabled.has_value() || enabled.error() == topology::PtpError::SocketTimestampingFailed);
 
     auto lo = crucible::cntp::NicInterfaceName::from("lo");
     assert(lo.has_value());
-    auto configured =
-        topology::configure_hardware_timestamping(*sock_fd, *lo);
-    assert(configured.has_value() ||
-           configured.error() == topology::PtpError::HardwareTimestampingFailed);
+    auto configured = topology::configure_hardware_timestamping(*sock_fd, *lo);
+    assert(configured.has_value() || configured.error() == topology::PtpError::HardwareTimestampingFailed);
 
     std::array<std::byte, 8> payload{};
-    auto empty = topology::recv_with_hw_timestamp(
-        *sock_fd, std::span<std::byte>{});
+    auto empty = topology::recv_with_hw_timestamp(*sock_fd, std::span<std::byte>{});
     assert(!empty.has_value());
     assert(empty.error() == topology::PtpError::InvalidReceiveBuffer);
 
-    auto recv = topology::recv_with_hw_timestamp(
-        *sock_fd, std::span<std::byte>{payload});
-    assert(recv.has_value() || recv.error() == topology::PtpError::RecvFailed ||
-           recv.error() == topology::PtpError::NoTimestamp);
+    auto recv = topology::recv_with_hw_timestamp(*sock_fd, std::span<std::byte>{payload});
+    assert(recv.has_value() || recv.error() == topology::PtpError::RecvFailed
+           || recv.error() == topology::PtpError::NoTimestamp);
     std::printf("  test_linux_boundaries_if_available: PASSED\n");
 }
 

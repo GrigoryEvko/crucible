@@ -25,11 +25,10 @@ using namespace crucible::algebra::lattices;
 
 int main() {
     AllocClassTag alloc_class_val = AllocClassTag::Stack;
-    ProgressClass progress_val    = ProgressClass::Bounded;
+    ProgressClass progress_val = ProgressClass::Bounded;
 
     // Should FAIL: ProgressLattice::leq's signature requires two
     // ProgressClass values; passing an AllocClassTag as the second
     // argument is a type-mismatch.
-    return static_cast<int>(
-        ProgressLattice::leq(progress_val, alloc_class_val));
+    return static_cast<int>(ProgressLattice::leq(progress_val, alloc_class_val));
 }

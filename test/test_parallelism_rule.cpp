@@ -102,7 +102,7 @@ void test_parallel_when_dram_bound() {
     WorkBudget b{
         .read_bytes = ws / 2,
         .write_bytes = ws / 2,
-        .item_count = 1'000'000,
+        .item_count = 1000000,
     };
     const auto dec = ParallelismRule::recommend(b);
     if (topo.process_cpu_count() >= 2) {
@@ -121,7 +121,7 @@ void test_factor_ladder() {
         WorkBudget b{
             .read_bytes = ws / 2,
             .write_bytes = ws / 2,
-            .item_count = 10'000,
+            .item_count = 10000,
         };
         const auto dec = ParallelismRule::recommend(b);
         if (!on_factor_ladder_(dec.factor)) {
@@ -138,8 +138,8 @@ void test_kind_matches_factor() {
     const WorkBudget budgets[] = {
         {.read_bytes = 128, .write_bytes = 128, .item_count = 32},
         {.read_bytes = 4096, .write_bytes = 4096, .item_count = 1024},
-        {.read_bytes = l3 * 2, .write_bytes = 0, .item_count = 1'000'000},
-        {.read_bytes = 1024, .write_bytes = 1024, .item_count = 10'000},
+        {.read_bytes = l3 * 2, .write_bytes = 0, .item_count = 1000000},
+        {.read_bytes = 1024, .write_bytes = 1024, .item_count = 10000},
     };
     for (const auto& b : budgets) {
         const auto dec = ParallelismRule::recommend(b);
@@ -165,7 +165,7 @@ void test_numa_policy_l3_resident() {
     WorkBudget b{
         .read_bytes = ws / 2,
         .write_bytes = ws / 2,
-        .item_count = 1'000'000,
+        .item_count = 1000000,
     };
     const auto dec = ParallelismRule::recommend(b);
     if (dec.kind == ParallelismDecision::Kind::Parallel && dec.tier == Tier::L3Resident) {
@@ -180,7 +180,7 @@ void test_numa_policy_dram_bound() {
     WorkBudget b{
         .read_bytes = ws,
         .write_bytes = 0,
-        .item_count = 1'000'000,
+        .item_count = 1000000,
     };
     const auto dec = ParallelismRule::recommend(b);
     if (dec.kind == ParallelismDecision::Kind::Parallel) {
@@ -194,9 +194,9 @@ void test_numa_policy_dram_bound() {
 
 void test_determinism() {
     WorkBudget b{
-        .read_bytes = 1'000'000,
-        .write_bytes = 1'000'000,
-        .item_count = 100'000,
+        .read_bytes = 1000000,
+        .write_bytes = 1000000,
+        .item_count = 100000,
     };
     const auto d1 = ParallelismRule::recommend(b);
     for (int i = 0; i < 100; ++i) {
@@ -217,7 +217,7 @@ void test_container_cap() {
     WorkBudget b{
         .read_bytes = topo.l3_total_bytes() * 100,
         .write_bytes = 0,
-        .item_count = 100'000'000,
+        .item_count = 100000000,
     };
     const auto dec = ParallelismRule::recommend(b);
     CRUCIBLE_TEST_REQUIRE(dec.factor <= allowed);
@@ -228,7 +228,7 @@ void test_free_function_equivalence() {
     WorkBudget b{
         .read_bytes = 64 * 1024 * 1024,
         .write_bytes = 64 * 1024 * 1024,
-        .item_count = 1'000'000,
+        .item_count = 1000000,
     };
     const auto a = ParallelismRule::recommend(b);
     const auto c = recommend_parallelism(b);
@@ -254,7 +254,7 @@ void test_no_regression_invariant() {
     const std::size_t l2 = topo.l2_per_core_bytes();
 
     for (std::size_t ws : {std::size_t{0}, std::size_t{256}, std::size_t{4096}, l2 / 2, l2 - 1}) {
-        for (std::size_t items : {std::size_t{1}, std::size_t{100}, std::size_t{10'000}}) {
+        for (std::size_t items : {std::size_t{1}, std::size_t{100}, std::size_t{10000}}) {
             WorkBudget b{
                 .read_bytes = ws / 2,
                 .write_bytes = ws / 2,

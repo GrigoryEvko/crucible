@@ -17,16 +17,14 @@
 #include <atomic>
 
 namespace safety = ::crucible::safety;
-namespace proto  = ::crucible::safety::proto;
+namespace proto = ::crucible::safety::proto;
 
 // Minimal AtomicMachineCell that satisfies the FIRST conjunct so the
 // requires-failure isolates the Proto well-formedness check.
 struct DummyCell {
     using state_type = int;
     std::atomic<int> value{0};
-    state_type load(std::memory_order order = std::memory_order_acquire) const noexcept {
-        return value.load(order);
-    }
+    state_type load(std::memory_order order = std::memory_order_acquire) const noexcept { return value.load(order); }
 };
 
 using MalformedProto = proto::Continue;  // free Continue, no enclosing Loop

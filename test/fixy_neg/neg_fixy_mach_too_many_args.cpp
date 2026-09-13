@@ -21,8 +21,8 @@ namespace fmach = crucible::fixy::mach;
 
 struct StateSingle {
     int x;
-    constexpr StateSingle() noexcept             : x{0} {}
-    constexpr StateSingle(int v) noexcept        : x{v} {}
+    constexpr StateSingle() noexcept : x{0} {}
+    constexpr StateSingle(int v) noexcept : x{v} {}
     // NO two-arg constructor.
 };
 

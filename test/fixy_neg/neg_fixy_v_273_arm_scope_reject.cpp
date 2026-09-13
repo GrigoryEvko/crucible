@@ -28,10 +28,9 @@ struct SlotTag {};
 struct ArmHandle {
     using slot_tag = SlotTag;
     static constexpr std::size_t slot_bytes = 256;
-    static constexpr std::size_t stages     = 2;
+    static constexpr std::size_t stages = 2;
     // ARM-trunk scope: an mbarrier pipeline cannot publish here.
-    static constexpr crucible::algebra::lattices::MemoryScope scope =
-        crucible::algebra::lattices::MemoryScope::Inner;
+    static constexpr crucible::algebra::lattices::MemoryScope scope = crucible::algebra::lattices::MemoryScope::Inner;
     void arrive_expect_tx(std::size_t) noexcept {}
     [[nodiscard]] bool try_wait(std::uint32_t) noexcept { return true; }
 };

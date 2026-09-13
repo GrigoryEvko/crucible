@@ -24,7 +24,6 @@ struct TypeStructCheckedSignedShift {};
 
 int main() {
     // Should FAIL: double does not satisfy std::integral.
-    [[maybe_unused]] auto bad =
-        fstr::checked_shl<double>(2.5, 1);
+    [[maybe_unused]] auto bad = fstr::checked_shl<double>(2.5, 1);
     return 0;
 }

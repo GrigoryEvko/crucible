@@ -100,10 +100,7 @@ namespace {
 
 namespace cl = crucible::algebra::lattices;
 
-[[nodiscard]] constexpr bool gate(
-    cl::DetSafeTier candidate,
-    cl::DetSafeTier required
-) noexcept {
+[[nodiscard]] constexpr bool gate(cl::DetSafeTier candidate, cl::DetSafeTier required) noexcept {
     CRUCIBLE_PRE(crucible::decide::tier_replaces(candidate, required));
     return true;
 }
@@ -112,8 +109,7 @@ namespace cl = crucible::algebra::lattices;
 // provider for a strictly-stronger requirement.  Per chain order
 // EntropyRead (2) is below Pure (6); tier_replaces rejects;
 // CRUCIBLE_PRE's __builtin_trap fires at consteval.
-constexpr auto witness = gate(cl::DetSafeTier::EntropyRead,
-                              cl::DetSafeTier::Pure);
+constexpr auto witness = gate(cl::DetSafeTier::EntropyRead, cl::DetSafeTier::Pure);
 
 }  // namespace
 

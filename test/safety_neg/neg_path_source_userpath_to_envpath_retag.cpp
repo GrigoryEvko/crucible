@@ -36,8 +36,7 @@ int main() {
     // came from getenv() instead of from CLI.  V-232 does NOT admit
     // this transition (provenance lanes are orthogonal); the
     // requires-clause on Tagged::retag fires.
-    auto env_sourced =
-        std::move(user_sourced).retag<ns::source::FromEnvPath>();
+    auto env_sourced = std::move(user_sourced).retag<ns::source::FromEnvPath>();
     (void)env_sourced;
     return 0;
 }

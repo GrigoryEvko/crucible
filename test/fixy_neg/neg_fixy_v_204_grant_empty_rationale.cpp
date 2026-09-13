@@ -34,6 +34,4 @@ using BadDetach = gr::detach_with<rationale{""}>;
 
 }  // namespace neg_fixy_v_204_grant_empty_rationale
 
-int main() {
-    return 0;
-}
+int main() { return 0; }

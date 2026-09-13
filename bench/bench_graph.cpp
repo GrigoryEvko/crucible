@@ -36,13 +36,11 @@ static void build_chain(ExprPool& pool, Graph& graph, uint32_t n) {
     const Expr* size = pool.integer(A, 128);
     const Expr* ranges[1] = {size};
 
-    GraphNode* prev = graph.add_input(
-        A, ScalarType::Float, /*device_idx=*/0, ranges);
+    GraphNode* prev = graph.add_input(A, ScalarType::Float, /*device_idx=*/0, ranges);
 
     for (uint32_t i = 0; i < n; i++) {
         GraphNode* deps[] = {prev};
-        prev = graph.add_pointwise(
-            A, ranges, ScalarType::Float, 0, nullptr, deps);
+        prev = graph.add_pointwise(A, ranges, ScalarType::Float, 0, nullptr, deps);
     }
 
     NodeId out[] = {prev->id};
@@ -68,35 +66,35 @@ int main() {
         char label[64];
 
         std::snprintf(label, sizeof(label), "build_chain                (%u nodes)", n);
-        reports.push_back(bench::run(label, [n]{
+        reports.push_back(bench::run(label, [n] {
             ExprPool pool(A);
-            Graph    graph(A, &pool);
+            Graph graph(A, &pool);
             build_chain(pool, graph, n);
             bench::do_not_optimize(graph);
         }));
 
         std::snprintf(label, sizeof(label), "build + topological_sort   (%u nodes)", n);
-        reports.push_back(bench::run(label, [n]{
+        reports.push_back(bench::run(label, [n] {
             ExprPool pool(A);
-            Graph    graph(A, &pool);
+            Graph graph(A, &pool);
             build_chain(pool, graph, n);
             graph.topological_sort(A);
             bench::do_not_optimize(graph);
         }));
 
         std::snprintf(label, sizeof(label), "build + compute_fusion     (%u nodes)", n);
-        reports.push_back(bench::run(label, [n]{
+        reports.push_back(bench::run(label, [n] {
             ExprPool pool(A);
-            Graph    graph(A, &pool);
+            Graph graph(A, &pool);
             build_chain(pool, graph, n);
             uint32_t g = graph.compute_fusion_groups(A);
             bench::do_not_optimize(g);
         }));
 
         std::snprintf(label, sizeof(label), "build + cse                (%u nodes)", n);
-        reports.push_back(bench::run(label, [n]{
+        reports.push_back(bench::run(label, [n] {
             ExprPool pool(A);
-            Graph    graph(A, &pool);
+            Graph graph(A, &pool);
             build_chain(pool, graph, n);
             uint32_t e = graph.eliminate_common_subexpressions(A);
             bench::do_not_optimize(e);

@@ -30,13 +30,11 @@ namespace ffed = crucible::fixy::source::federation;
 
 struct TestOrg {};
 
-constexpr auto handshake = ffed::make_self_signed_handshake<TestOrg>(
-    ffed::PeerKeyFingerprint{0xC0FFEEu},
-    ffed::Nonce{0xBEEFu});
+constexpr auto handshake =
+    ffed::make_self_signed_handshake<TestOrg>(ffed::PeerKeyFingerprint{0xC0FFEEu}, ffed::Nonce{0xBEEFu});
 
 int main() {
-    auto local =
-        crucible::safety::mint_permission_root<ffed::LocalCipherTag>();
+    auto local = crucible::safety::mint_permission_root<ffed::LocalCipherTag>();
 
     // ── Load-bearing discard — MUST trigger -Werror=unused-result ──
     ffed::mint_federation_admittance<TestOrg>(local, handshake);

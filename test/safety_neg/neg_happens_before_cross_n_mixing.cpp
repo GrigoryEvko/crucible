@@ -33,6 +33,5 @@ int main() {
     // Should FAIL: HappensBeforeLattice<4>::leq expects two
     // HappensBeforeLattice<4>::element_type arguments; clock_3p is
     // a different type (HappensBeforeLattice<3>::element_type).
-    return static_cast<int>(
-        HappensBeforeLattice<4>::leq(clock_4p, clock_3p));
+    return static_cast<int>(HappensBeforeLattice<4>::leq(clock_4p, clock_3p));
 }

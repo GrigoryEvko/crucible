@@ -11,12 +11,12 @@ namespace {
 
 // ── Tunables ───────────────────────────────────────────────────────────
 // Magic numbers get named constants so they're documented + greppable.
-constexpr int      kDefaultCore         = -1;           // -1 = let harness auto-pick
-constexpr int      kEnvBase10           = 10;           // base for strtol(CRUCIBLE_BENCH_CORE)
-constexpr uint64_t kXorMixConstant      = 0x9E3779B97F4A7C15ULL;  // golden ratio (Knuth)
-constexpr uint64_t kAddInitialSink      = 0;            // seed for integer-increment body
-constexpr uint64_t kXorInitialSink      = 1;            // seed for xor body
-constexpr uint64_t kAtomicInitialValue  = 0;            // seed for relaxed-load body
+constexpr int kDefaultCore = -1;  // -1 = let harness auto-pick
+constexpr int kEnvBase10 = 10;  // base for strtol(CRUCIBLE_BENCH_CORE)
+constexpr uint64_t kXorMixConstant = 0x9E3779B97F4A7C15ULL;  // golden ratio (Knuth)
+constexpr uint64_t kAddInitialSink = 0;  // seed for integer-increment body
+constexpr uint64_t kXorInitialSink = 1;  // seed for xor body
+constexpr uint64_t kAtomicInitialValue = 0;  // seed for relaxed-load body
 
 // ── Environment probes (called outside timed regions) ──────────────────
 // Deterministic w.r.t. the process environment at launch — no syscalls or
@@ -36,27 +36,25 @@ constexpr uint64_t kAtomicInitialValue  = 0;            // seed for relaxed-load
     return !(s[0] == '0' && s[1] == '\0');
 }
 
-} // namespace
+}  // namespace
 
 int main() {
     bench::print_system_info();
     bench::elevate_priority();
 
-    const int  core = env_core();
+    const int core = env_core();
     const bool json = env_json();
 
-    auto run = [&](const char* name, auto&& body) {
-        return bench::Run(name).core(core).measure(body);
-    };
+    auto run = [&](const char* name, auto&& body) { return bench::Run(name).core(core).measure(body); };
 
     std::printf("=== smoke ===\n");
 
     bench::Report reports[] = {
         // (1) Integer increment + do_not_optimize. One ALU add + register
         //     clobber per iteration; auto-batch lands near ~0.3-0.5 ns/op.
-        [&]{
+        [&] {
             uint64_t sink = kAddInitialSink;
-            return run("add.u64 + do_not_optimize", [&]{
+            return run("add.u64 + do_not_optimize", [&] {
                 sink = sink + 1;
                 bench::do_not_optimize(sink);
             });
@@ -64,9 +62,9 @@ int main() {
         // (2) XOR variant — same latency class as ADD on any x86 ALU port
         //     since Haswell. Used below as the B-side of the A/B compare
         //     so Mann-Whitney U should return "[indistinguishable]".
-        [&]{
+        [&] {
             uint64_t sink = kXorInitialSink;
-            return run("xor.u64 + do_not_optimize", [&]{
+            return run("xor.u64 + do_not_optimize", [&] {
                 sink = sink ^ kXorMixConstant;
                 bench::do_not_optimize(sink);
             });
@@ -77,16 +75,17 @@ int main() {
         //     thread_local: an atomic op on a per-thread object has no
         //     synchronization meaning (one instance per thread → no peer to
         //     order against), so the storage is process-wide `static`.
-        [&]{
+        [&] {
             static std::atomic<uint64_t> counter{kAtomicInitialValue};
-            return run("atomic<u64>.load(relaxed)", [&]{
+            return run("atomic<u64>.load(relaxed)", [&] {
                 const uint64_t v = counter.load(std::memory_order_relaxed);
                 bench::do_not_optimize(v);
             });
         }(),
     };
 
-    for (const auto& r : reports) r.print_text(stdout);
+    for (const auto& r : reports)
+        r.print_text(stdout);
 
     // A/B compare: ADD vs XOR. Both are one-cycle ALU ops on every x86
     // microarchitecture since Haswell; Mann-Whitney U should return

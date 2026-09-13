@@ -34,6 +34,6 @@ int main() {
     // forward-declared only).  GCC fires an "incomplete type" or
     // "use of undefined template" diagnostic.
     using NoSuchRow = fsrow::protocol_effect_row_t<int>;
-    (void) sizeof(NoSuchRow);  // force instantiation
+    (void)sizeof(NoSuchRow);  // force instantiation
     return 0;
 }

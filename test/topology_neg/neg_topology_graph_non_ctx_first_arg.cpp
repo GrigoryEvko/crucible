@@ -38,7 +38,7 @@
 #include <span>
 
 namespace topology = crucible::topology;
-namespace cog      = crucible::cog;
+namespace cog = crucible::cog;
 
 // Construct empty spans so the call shape compiles up to the point
 // where the requires-clause substitutes `int` for Ctx.

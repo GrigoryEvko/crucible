@@ -28,9 +28,8 @@ namespace fchase = ::crucible::fixy::substr::chaselev;
 
 namespace neg_fixy_thief_wrong_proof {
 struct UserTag {};
-using Deque = ::crucible::concurrent::PermissionedChaseLevDeque<
-    int, 16, UserTag>;
-}
+using Deque = ::crucible::concurrent::PermissionedChaseLevDeque<int, 16, UserTag>;
+}  // namespace neg_fixy_thief_wrong_proof
 
 int main() {
     neg_fixy_thief_wrong_proof::Deque deque{};

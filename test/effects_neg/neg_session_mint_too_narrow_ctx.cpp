@@ -14,7 +14,7 @@
 #include <crucible/sessions/SessionMint.h>
 #include <crucible/effects/Computation.h>
 
-namespace eff   = crucible::effects;
+namespace eff = crucible::effects;
 namespace proto = crucible::safety::proto;
 
 struct DummyResource {
@@ -22,12 +22,12 @@ struct DummyResource {
 };
 
 int main() {
-    using BgPayload  = eff::Computation<eff::Row<eff::Effect::Bg>, int>;
-    using BgProto    = proto::Send<BgPayload, proto::End>;
+    using BgPayload = eff::Computation<eff::Row<eff::Effect::Bg>, int>;
+    using BgProto = proto::Send<BgPayload, proto::End>;
 
     eff::HotFgCtx fg;
     DummyResource res;
-    auto bad = proto::mint_permissioned_session<BgProto>(fg, res); // CtxFitsProtocol fails
+    auto bad = proto::mint_permissioned_session<BgProto>(fg, res);  // CtxFitsProtocol fails
     (void)bad;
     return 0;
 }

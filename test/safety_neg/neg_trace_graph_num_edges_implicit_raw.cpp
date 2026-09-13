@@ -10,9 +10,9 @@
 #include <crucible/TraceGraph.h>
 
 int main() {
-  crucible::TraceGraph g{};
-  g.num_edges.set(0u);
-  uint32_t raw = g.num_edges;
-  (void)raw;
-  return 0;
+    crucible::TraceGraph g{};
+    g.num_edges.set(0u);
+    uint32_t raw = g.num_edges;
+    (void)raw;
+    return 0;
 }

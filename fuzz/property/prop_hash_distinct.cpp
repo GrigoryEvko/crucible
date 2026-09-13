@@ -31,7 +31,8 @@ int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
     const Config cfg = parse_args(argc, argv);
 
-    return run("compute_recipe_hash field-disambiguation", cfg,
+    return run(
+        "compute_recipe_hash field-disambiguation", cfg,
         [](Rng& rng) {
             // Generate (base, perturbed) pair where perturbed differs
             // from base in exactly one of 8 fields.  Field choice is
@@ -39,41 +40,40 @@ int main(int argc, char** argv) {
             struct Pair {
                 NumericalRecipe a;
                 NumericalRecipe b;
-                uint8_t         field_idx;
+                uint8_t field_idx;
             };
             Pair p{};
             p.a = random_recipe(rng);
             p.b = p.a;
             p.field_idx = static_cast<uint8_t>(rng.next_below(8));
             switch (p.field_idx) {
-                case 0: p.b.accum_dtype    =
-                    static_cast<ScalarType>(static_cast<int8_t>(p.a.accum_dtype) ^ 1); break;
-                case 1: p.b.out_dtype      =
-                    static_cast<ScalarType>(static_cast<int8_t>(p.a.out_dtype) ^ 1); break;
-                case 2: p.b.reduction_algo =
-                    static_cast<ReductionAlgo>(
-                        (static_cast<uint8_t>(p.a.reduction_algo) + 1) & 3);
+                case 0:
+                    p.b.accum_dtype = static_cast<ScalarType>(static_cast<int8_t>(p.a.accum_dtype) ^ 1);
                     break;
-                case 3: p.b.rounding       =
-                    static_cast<RoundingMode>(
-                        (static_cast<uint8_t>(p.a.rounding) + 1) & 3);
+                case 1:
+                    p.b.out_dtype = static_cast<ScalarType>(static_cast<int8_t>(p.a.out_dtype) ^ 1);
                     break;
-                case 4: p.b.scale_policy   =
-                    static_cast<ScalePolicy>(
-                        (static_cast<uint8_t>(p.a.scale_policy) + 1) % 6);
+                case 2:
+                    p.b.reduction_algo = static_cast<ReductionAlgo>((static_cast<uint8_t>(p.a.reduction_algo) + 1) & 3);
                     break;
-                case 5: p.b.softmax        =
-                    static_cast<SoftmaxRecurrence>(
-                        (static_cast<uint8_t>(p.a.softmax) + 1) & 3);
+                case 3:
+                    p.b.rounding = static_cast<RoundingMode>((static_cast<uint8_t>(p.a.rounding) + 1) & 3);
                     break;
-                case 6: p.b.determinism    =
-                    static_cast<ReductionDeterminism>(
-                        (static_cast<uint8_t>(p.a.determinism) + 1) & 3);
+                case 4:
+                    p.b.scale_policy = static_cast<ScalePolicy>((static_cast<uint8_t>(p.a.scale_policy) + 1) % 6);
                     break;
-                case 7: p.b.flags          =
-                    p.a.flags ^ fixy::wrap::Bits<RecipeFlags>{RecipeFlags::FLUSH_TO_ZERO};
+                case 5:
+                    p.b.softmax = static_cast<SoftmaxRecurrence>((static_cast<uint8_t>(p.a.softmax) + 1) & 3);
                     break;
-                default: std::unreachable();
+                case 6:
+                    p.b.determinism =
+                        static_cast<ReductionDeterminism>((static_cast<uint8_t>(p.a.determinism) + 1) & 3);
+                    break;
+                case 7:
+                    p.b.flags = p.a.flags ^ fixy::wrap::Bits<RecipeFlags>{RecipeFlags::FLUSH_TO_ZERO};
+                    break;
+                default:
+                    std::unreachable();
             }
             return p;
         },

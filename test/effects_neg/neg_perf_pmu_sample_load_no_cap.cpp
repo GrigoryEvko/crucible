@@ -7,8 +7,7 @@
 #include <optional>
 
 int main() {
-    std::optional<crucible::perf::PmuSample> hub =
-        crucible::perf::PmuSample::load();  // <-- must NOT compile
+    std::optional<crucible::perf::PmuSample> hub = crucible::perf::PmuSample::load();  // <-- must NOT compile
     (void)hub;
     return 0;
 }

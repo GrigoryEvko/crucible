@@ -22,9 +22,7 @@ using namespace crucible::algebra::lattices;
 
 int main() {
     // Comonad modality (NOT RelativeMonad).
-    using G = Graded<ModalityKind::Comonad,
-                     ConfLattice::At<Conf::Secret>,
-                     int>;
+    using G = Graded<ModalityKind::Comonad, ConfLattice::At<Conf::Secret>, int>;
 
     // Should FAIL: inject() requires RelativeMonadModality<M>, M is Comonad.
     auto g = G::inject(42, {});

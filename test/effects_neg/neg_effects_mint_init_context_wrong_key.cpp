@@ -15,8 +15,7 @@
 namespace eff = crucible::effects;
 
 int main() {
-    auto init = eff::mint_init_context<eff::detail::ctx_mint::bg_key>(
-        eff::detail::ctx_mint::bg_key{});
+    auto init = eff::mint_init_context<eff::detail::ctx_mint::bg_key>(eff::detail::ctx_mint::bg_key{});
     (void)init;
     return 0;
 }

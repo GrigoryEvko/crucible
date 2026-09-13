@@ -53,31 +53,29 @@ namespace neg_collision_h002_structural {
 // tier.  Refinement is pred::True (trivial — H002 trigger).  Cost is
 // Constant — H001 silent.  NO marks_hot_path specialization: the
 // structural detector alone drives the rejection.
-using HotInt = ::crucible::safety::HotPath<
-    ::crucible::safety::HotPathTier_v::Hot, int>;
+using HotInt = ::crucible::safety::HotPath<::crucible::safety::HotPathTier_v::Hot, int>;
 
-using Bad = fn::Fn<
-    HotInt,                                    // 1  Type — HotPath<Hot, int>
-    fn::pred::True,                            // 2  Refinement — TRIVIAL (H002 trigger
-                                                //                paired with structural HotPath)
-    fn::UsageMode::Linear,                     // 3  Usage
-    fx::Row<>,                                 // 4  EffectRow — empty (no Bg/Alloc/IO)
-    fn::SecLevel::Public,                      // 5  Security
-    fn::proto::None,                           // 6  Protocol
-    fn::lifetime::Static,                      // 7  Lifetime
-    fn::source::FromInternal,                  // 8  Source
-    fn::trust::Verified,                       // 9  Trust
-    fn::ReprKind::Opaque,                      // 10 Repr
-    fn::cost::Constant,                        // 11 Cost (bounded — H001 silent)
-    fn::precision::Exact,                      // 12 Precision
-    fn::space::Bounded<sizeof(int)>,           // 13 Space
-    fn::OverflowMode::Trap,                    // 14 Overflow
-    fn::MutationMode::Immutable,               // 15 Mutation
-    fn::ReentrancyMode::NonReentrant,          // 16 Reentrancy
-    fn::size_pol::Sized<sizeof(int)>,          // 17 Size
-    /*Version=*/1,                             // 18 Version
-    fn::stale::Fresh                           // 19 Staleness
->;
+using Bad = fn::Fn<HotInt,  // 1  Type — HotPath<Hot, int>
+                   fn::pred::True,  // 2  Refinement — TRIVIAL (H002 trigger
+                   //                paired with structural HotPath)
+                   fn::UsageMode::Linear,  // 3  Usage
+                   fx::Row<>,  // 4  EffectRow — empty (no Bg/Alloc/IO)
+                   fn::SecLevel::Public,  // 5  Security
+                   fn::proto::None,  // 6  Protocol
+                   fn::lifetime::Static,  // 7  Lifetime
+                   fn::source::FromInternal,  // 8  Source
+                   fn::trust::Verified,  // 9  Trust
+                   fn::ReprKind::Opaque,  // 10 Repr
+                   fn::cost::Constant,  // 11 Cost (bounded — H001 silent)
+                   fn::precision::Exact,  // 12 Precision
+                   fn::space::Bounded<sizeof(int)>,  // 13 Space
+                   fn::OverflowMode::Trap,  // 14 Overflow
+                   fn::MutationMode::Immutable,  // 15 Mutation
+                   fn::ReentrancyMode::NonReentrant,  // 16 Reentrancy
+                   fn::size_pol::Sized<sizeof(int)>,  // 17 Size
+                   /*Version=*/1,  // 18 Version
+                   fn::stale::Fresh  // 19 Staleness
+                   >;
 
 }  // namespace neg_collision_h002_structural
 

@@ -36,8 +36,7 @@ namespace join = ::crucible::fixy::spawn::join;
 // — but the type identity is `BadImposterTag`, not any of
 // {AutoJoin, ManualJoin, Detached, Cloned, Forked, PosixSpawn}.
 struct BadImposterTag {
-    static constexpr join::JoinMechanism mechanism =
-        join::JoinMechanism::AutoJoin;
+    static constexpr join::JoinMechanism mechanism = join::JoinMechanism::AutoJoin;
 };
 
 // Consumer template constrained on IsJoinMechanismTag.  Instantiating
@@ -55,6 +54,4 @@ constexpr auto bad_dispatch = extract_mechanism<BadImposterTag>();
 
 }  // namespace neg_fixy_v_203_join_imposter_struct
 
-int main() {
-    return 0;
-}
+int main() { return 0; }

@@ -24,7 +24,7 @@
 #include <crucible/safety/SimdWidthPinned.h>
 
 namespace sf = ::crucible::safety;
-using Si_t   = sf::SimdIsa_v;
+using Si_t = sf::SimdIsa_v;
 
 int main() {
     sf::SimdWidthPinned<Si_t::Avx2, int> avx2_kernel{42};

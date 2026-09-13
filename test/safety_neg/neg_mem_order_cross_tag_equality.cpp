@@ -16,7 +16,7 @@ using namespace crucible::safety;
 
 int main() {
     MemOrder<MemOrderTag_v::Relaxed, int> relax_value{42};
-    MemOrder<MemOrderTag_v::SeqCst,  int> seqcst_value{42};
+    MemOrder<MemOrderTag_v::SeqCst, int> seqcst_value{42};
 
     // Should FAIL: operator== for MemOrder<Relaxed, int> takes two
     // MemOrder<Relaxed, int>&; seqcst_value is MemOrder<SeqCst, int>.

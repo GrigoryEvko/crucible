@@ -27,10 +27,9 @@ using namespace crucible::algebra::lattices;
 
 int main() {
     CrashLattice::At<CrashClass::NoThrow>::element_type nothrow_elt{};
-    CrashLattice::At<CrashClass::Abort>::element_type   abort_elt{};
+    CrashLattice::At<CrashClass::Abort>::element_type abort_elt{};
 
     // Should FAIL: At<NoThrow>::leq expects two At<NoThrow>::element_type
     // arguments; abort_elt is At<Abort>::element_type.
-    return static_cast<int>(
-        CrashLattice::At<CrashClass::NoThrow>::leq(nothrow_elt, abort_elt));
+    return static_cast<int>(CrashLattice::At<CrashClass::NoThrow>::leq(nothrow_elt, abort_elt));
 }

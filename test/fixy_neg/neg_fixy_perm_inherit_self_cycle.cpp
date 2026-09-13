@@ -27,11 +27,8 @@ namespace fperm = ::crucible::fixy::perm;
 
 // Forces validated_perm_tuple<DeadTag, list<DeadTag>> to instantiate
 // through the fixy:: re-export of mint_permission_inherit_t.
-using BadType = fperm::mint_permission_inherit_t<
-    neg_fixy_perm_inherit_self_cycle::DeadTag,
-    neg_fixy_perm_inherit_self_cycle::DeadTag>;
+using BadType = fperm::mint_permission_inherit_t<neg_fixy_perm_inherit_self_cycle::DeadTag,
+                                                 neg_fixy_perm_inherit_self_cycle::DeadTag>;
 static_cast<void>(sizeof(BadType));
 
-int main() {
-    return 0;
-}
+int main() { return 0; }

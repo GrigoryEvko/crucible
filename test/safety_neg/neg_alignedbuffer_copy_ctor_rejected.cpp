@@ -45,22 +45,17 @@ namespace {
 
 // Anchor: move-construction compiles cleanly — the canonical
 // transfer-of-ownership pattern.
-[[maybe_unused]] static
-::crucible::safety::AlignedBuffer<std::uint64_t>
-anchor_move_construct() {
+[[maybe_unused]] static ::crucible::safety::AlignedBuffer<std::uint64_t> anchor_move_construct() {
     auto buf = ::crucible::safety::AlignedBuffer<std::uint64_t>::allocate(8);
-    return buf;   // NRVO or move — both legal.
+    return buf;  // NRVO or move — both legal.
 }
 
 // VIOLATION: AlignedBuffer<T, A>(const AlignedBuffer<T, A>&) is
 // `= delete("AlignedBuffer is move-only")`.  Direct copy construction
 // from a const lvalue source triggers the deleted-function diagnostic
 // with the move-only-discipline message verbatim.
-[[maybe_unused]] static
-::crucible::safety::AlignedBuffer<std::uint64_t>
-offending_copy_construct(
-    const ::crucible::safety::AlignedBuffer<std::uint64_t>& source)
-{
+[[maybe_unused]] static ::crucible::safety::AlignedBuffer<std::uint64_t>
+offending_copy_construct(const ::crucible::safety::AlignedBuffer<std::uint64_t>& source) {
     return ::crucible::safety::AlignedBuffer<std::uint64_t>{source};
     // ERROR: use of deleted function 'AlignedBuffer<T, A>(const AlignedBuffer<T, A>&)'
     // diagnostic message: "AlignedBuffer is move-only"

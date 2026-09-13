@@ -21,7 +21,9 @@ struct TypeIsSecretRejectsPlain {
 
 template <typename T>
     requires fis::IsSecret<T>
-[[nodiscard]] constexpr int gate(T const&) noexcept { return 1; }
+[[nodiscard]] constexpr int gate(T const&) noexcept {
+    return 1;
+}
 
 }  // namespace neg_fixy_is_secret_rejects_plain
 

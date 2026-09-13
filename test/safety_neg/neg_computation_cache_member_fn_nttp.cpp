@@ -25,7 +25,6 @@ int main() {
     // &Receiver::member_fn has type `void (Receiver::*)(int) noexcept`
     // — neither a function pointer nor a function reference.
     // IsCacheableFunction must reject.
-    (void)crucible::cipher::lookup_computation_cache<
-        &Receiver::member_fn, int>();
+    (void)crucible::cipher::lookup_computation_cache<&Receiver::member_fn, int>();
     return 0;
 }

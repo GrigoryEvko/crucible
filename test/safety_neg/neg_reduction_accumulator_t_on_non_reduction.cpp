@@ -17,8 +17,7 @@ inline void neg_witness_int(int) noexcept {}
 int main() {
     // arity 1, not a Reduction → reduction_accumulator_t<&fn>
     // ill-formed at the alias declaration.
-    using R = crucible::safety::extract::reduction_accumulator_t<
-        &::neg_witness_int>;
+    using R = crucible::safety::extract::reduction_accumulator_t<&::neg_witness_int>;
     R const r{};
     (void)r;
     return 0;

@@ -22,16 +22,12 @@
 namespace eff = crucible::effects;
 
 int main() {
-    using BadCtx = eff::ExecCtx<
-        eff::ctx_cap::Fg,
-        eff::ctx_numa::Any,
-        eff::ctx_alloc::Stack,
-        eff::ctx_heat::Hot,                  // Hot tier
-        eff::ctx_resid::L1,                  // L1 satisfies Heat × Resid
-        eff::Row<>,
-        eff::ctx_workload::Unspecified,
-        eff::ctx_progress::MayDiverge        // but MayDiverge — incoherent
-    >;
+    using BadCtx = eff::ExecCtx<eff::ctx_cap::Fg, eff::ctx_numa::Any, eff::ctx_alloc::Stack,
+                                eff::ctx_heat::Hot,  // Hot tier
+                                eff::ctx_resid::L1,  // L1 satisfies Heat × Resid
+                                eff::Row<>, eff::ctx_workload::Unspecified,
+                                eff::ctx_progress::MayDiverge  // but MayDiverge — incoherent
+                                >;
     BadCtx bad{};
     (void)bad;
     return 0;

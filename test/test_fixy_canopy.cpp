@@ -64,7 +64,7 @@ int main() {
     // on_recv merges the peer timestamp into the local clock, so the next
     // reading is at least the peer's physical time.
     fcanopy::HlcTimestamp peer{
-        .physical_ns = tagged.value().physical_ns + 1'000'000ULL,
+        .physical_ns = tagged.value().physical_ns + 1000000ULL,
         .counter = 0,
     };
     clock.on_recv(peer);

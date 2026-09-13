@@ -64,14 +64,10 @@ void test_collective_node_admission() {
     op.attrs.input.slot = crucible::SlotId{7};
     op.attrs.output.meta = tensor(crucible::ScalarType::Float);
     op.attrs.output.slot = crucible::SlotId{8};
-    op.attrs.participants.peers =
-        ir::DeclaredPeerSet{std::span<const crucible::cog::CogIdentity>{p}};
-    op.attrs.participants.count =
-        ir::Ir001ParticipantCount{2,
-                                  typename ir::Ir001ParticipantCount::Trusted{}};
+    op.attrs.participants.peers = ir::DeclaredPeerSet{std::span<const crucible::cog::CogIdentity>{p}};
+    op.attrs.participants.count = ir::Ir001ParticipantCount{2, typename ir::Ir001ParticipantCount::Trusted{}};
     op.attrs.recipe = recipe();
-    op.attrs.algorithm =
-        crucible::forge::recipes::NetworkCollectiveAlgorithm::Ring;
+    op.attrs.algorithm = crucible::forge::recipes::NetworkCollectiveAlgorithm::Ring;
 
     auto declared = ir::admit_ir001_node(op);
     auto const header = ir::serialize_ir001_header(declared);
@@ -94,27 +90,20 @@ void test_collective_node_admission() {
 
     auto changed_shape = op;
     changed_shape.attrs.input.meta.sizes[0] = crucible::tensor_dim(2048);
-    auto const shape_hash =
-        ir::serialize_ir001_header(ir::admit_ir001_node(changed_shape))
-            .content_hash;
+    auto const shape_hash = ir::serialize_ir001_header(ir::admit_ir001_node(changed_shape)).content_hash;
     assert(shape_hash != header.content_hash);
 
     auto changed_recipe = op;
     changed_recipe.attrs.recipe.rounding = crucible::RoundingMode::RZ;
-    auto const recipe_hash =
-        ir::serialize_ir001_header(ir::admit_ir001_node(changed_recipe))
-            .content_hash;
+    auto const recipe_hash = ir::serialize_ir001_header(ir::admit_ir001_node(changed_recipe)).content_hash;
     assert(recipe_hash != header.content_hash);
 
     auto changed_peer = p;
     changed_peer[1].uuid = crucible::cog::Uuid{1, 12};
     auto changed_participants = op;
     changed_participants.attrs.participants.peers =
-        ir::DeclaredPeerSet{
-            std::span<const crucible::cog::CogIdentity>{changed_peer}};
-    auto const peer_hash =
-        ir::serialize_ir001_header(ir::admit_ir001_node(changed_participants))
-            .content_hash;
+        ir::DeclaredPeerSet{std::span<const crucible::cog::CogIdentity>{changed_peer}};
+    auto const peer_hash = ir::serialize_ir001_header(ir::admit_ir001_node(changed_participants)).content_hash;
     assert(peer_hash != header.content_hash);
 
     std::printf("  test_collective_node_admission: PASSED\n");
@@ -135,8 +124,7 @@ void test_other_attr_shapes() {
         .level = crucible::cog::CogLevel::L0_Atomic,
         .kind = crucible::cog::CogKind::NicPort,
     };
-    send.attrs.timeout_ms =
-        ir::Ir001TimeoutMs{25, typename ir::Ir001TimeoutMs::Trusted{}};
+    send.attrs.timeout_ms = ir::Ir001TimeoutMs{25, typename ir::Ir001TimeoutMs::Trusted{}};
     auto declared_send = ir::admit_ir001_node(send);
     auto send_header = ir::serialize_ir001_header(declared_send);
     assert(send_header.kind == std::to_underlying(ir::Ir001OpKind::SendAsync));
@@ -144,8 +132,7 @@ void test_other_attr_shapes() {
 
     auto changed_send = send;
     changed_send.attrs.peer.uuid = crucible::cog::Uuid{2, 2};
-    auto changed_send_header =
-        ir::serialize_ir001_header(ir::admit_ir001_node(changed_send));
+    auto changed_send_header = ir::serialize_ir001_header(ir::admit_ir001_node(changed_send));
     assert(changed_send_header.content_hash != send_header.content_hash);
 
     ir::TelemetryEmitOp telemetry{};
@@ -153,8 +140,7 @@ void test_other_attr_shapes() {
     telemetry.attrs.value = 42;
     auto declared_telemetry = ir::admit_ir001_node(telemetry);
     auto telemetry_header = ir::serialize_ir001_header(declared_telemetry);
-    assert(telemetry_header.kind
-           == std::to_underlying(ir::Ir001OpKind::IntTelemetryEmit));
+    assert(telemetry_header.kind == std::to_underlying(ir::Ir001OpKind::IntTelemetryEmit));
     assert(telemetry_header.content_hash != send_header.content_hash);
 
     std::printf("  test_other_attr_shapes: PASSED\n");

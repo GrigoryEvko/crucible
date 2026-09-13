@@ -54,26 +54,27 @@ using W = Rational::wide_signed;  // __int128
 
 inline constexpr std::int64_t kMax = Rational::MAX_SAFE_MAGNITUDE;  // 2^31
 
-enum class Mode : uint8_t { Random = 0, Boundary = 1, Small = 2 };
+enum class Mode : uint8_t {
+    Random = 0,
+    Boundary = 1,
+    Small = 2
+};
 
 struct PairSpec {
     Rational a{};
     Rational b{};
-    Mode     mode = Mode::Random;
-    uint8_t  pad[7]{};
+    Mode mode = Mode::Random;
+    uint8_t pad[7]{};
 };
 
 // One well-formed component: num in [0, 2^31], den in [1, 2^31].
 [[nodiscard]] Rational gen_random(Rng& rng) noexcept {
-    const std::int64_t num = static_cast<std::int64_t>(
-        rng.next_below(static_cast<uint32_t>(kMax) + 1u));        // [0, 2^31]
-    const std::int64_t den = 1 + static_cast<std::int64_t>(
-        rng.next_below(static_cast<uint32_t>(kMax)));             // [1, 2^31]
+    const std::int64_t num = static_cast<std::int64_t>(rng.next_below(static_cast<uint32_t>(kMax) + 1u));  // [0, 2^31]
+    const std::int64_t den = 1 + static_cast<std::int64_t>(rng.next_below(static_cast<uint32_t>(kMax)));  // [1, 2^31]
     return Rational{num, den};
 }
 [[nodiscard]] std::int64_t boundary_value(Rng& rng) noexcept {
-    constexpr std::array<std::int64_t, 5> corners{
-        0, 1, std::int64_t{1} << 30, kMax - 1, kMax};
+    constexpr std::array<std::int64_t, 5> corners{0, 1, std::int64_t{1} << 30, kMax - 1, kMax};
     return corners[rng.next_below(5u)];
 }
 [[nodiscard]] Rational gen_boundary(Rng& rng) noexcept {
@@ -83,8 +84,7 @@ struct PairSpec {
     return Rational{num, den};
 }
 [[nodiscard]] Rational gen_small(Rng& rng) noexcept {
-    return Rational{static_cast<std::int64_t>(rng.next_below(64u)),
-                    1 + static_cast<std::int64_t>(rng.next_below(64u))};
+    return Rational{static_cast<std::int64_t>(rng.next_below(64u)), 1 + static_cast<std::int64_t>(rng.next_below(64u))};
 }
 
 // Independent oracle: r equals true_num/true_den (UN-reduced) iff the
@@ -100,18 +100,29 @@ int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
 
     Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 2'000'000) cfg.iterations = 2'000'000;
+    if (cfg.iterations > 2000000) cfg.iterations = 2000000;
 
-    return run("fractional_lattice", cfg,
+    return run(
+        "fractional_lattice", cfg,
         // ── Generator ──
         [](Rng& rng) noexcept -> PairSpec {
             PairSpec spec{};
             spec.mode = static_cast<Mode>(rng.next_below(3));
             switch (spec.mode) {
-                case Mode::Random:   spec.a = gen_random(rng);  spec.b = gen_random(rng);  break;
-                case Mode::Boundary: spec.a = gen_boundary(rng); spec.b = gen_boundary(rng); break;
-                case Mode::Small:    spec.a = gen_small(rng);    spec.b = gen_small(rng);    break;
-                default: std::unreachable();
+                case Mode::Random:
+                    spec.a = gen_random(rng);
+                    spec.b = gen_random(rng);
+                    break;
+                case Mode::Boundary:
+                    spec.a = gen_boundary(rng);
+                    spec.b = gen_boundary(rng);
+                    break;
+                case Mode::Small:
+                    spec.a = gen_small(rng);
+                    spec.b = gen_small(rng);
+                    break;
+                default:
+                    std::unreachable();
             }
             return spec;
         },
@@ -148,8 +159,7 @@ int main(int argc, char** argv) {
             // ── identities ──
             if (!(FractionalLattice::add(a, FractionalLattice::zero()) == a)) return false;
             if (!(FractionalLattice::mul(a, FractionalLattice::one()) == a)) return false;
-            if (!(FractionalLattice::mul(a, FractionalLattice::zero())
-                  == FractionalLattice::zero())) return false;
+            if (!(FractionalLattice::mul(a, FractionalLattice::zero()) == FractionalLattice::zero())) return false;
 
             return true;
         });

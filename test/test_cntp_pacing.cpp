@@ -98,8 +98,7 @@ void test_qdisc_parse() {
     assert(!empty.has_value());
     assert(empty.error() == cntp::PacingError::QdiscKindMissing);
 
-    auto tc_fq = cntp::parse_tc_qdisc_show(
-        "qdisc fq 8001: root refcnt 2 limit 10000p flow_limit 100p\n");
+    auto tc_fq = cntp::parse_tc_qdisc_show("qdisc fq 8001: root refcnt 2 limit 10000p flow_limit 100p\n");
     assert(tc_fq.has_value());
     assert(*tc_fq == cntp::Qdisc::Fq);
 
@@ -124,9 +123,9 @@ void test_mint_and_rate_surfaces() {
     assert(config.value().required == cntp::Qdisc::FqCodel);
     assert(!config.value().allow_auto_config);
 
-    auto rate = cntp::admit_pacing_rate(1'000'000);
+    auto rate = cntp::admit_pacing_rate(1000000);
     assert(rate.has_value());
-    assert(rate->value() == 1'000'000);
+    assert(rate->value() == 1000000);
 
     auto zero = cntp::admit_pacing_rate(0);
     assert(!zero.has_value());
@@ -142,7 +141,7 @@ void test_live_socket_pacing_if_available() {
     auto fd = cntp::admit_socket_fd(socket.raw());
     assert(fd.has_value());
 
-    auto rate = cntp::admit_pacing_rate(1'000'000);
+    auto rate = cntp::admit_pacing_rate(1000000);
     assert(rate.has_value());
 
     auto set = cntp::set_socket_pacing_rate(*fd, *rate);
@@ -161,20 +160,16 @@ void test_live_loopback_qdisc_query_if_available() {
     assert(lo.has_value());
     auto queried = cntp::query_active_qdisc(*lo);
     if (!queried.has_value()) {
-        assert(queried.error() == cntp::PacingError::QdiscKindMissing ||
-               queried.error() == cntp::PacingError::NetlinkOpenFailed ||
-               queried.error() == cntp::PacingError::NetlinkSendFailed ||
-               queried.error() == cntp::PacingError::NetlinkReceiveFailed);
+        assert(queried.error() == cntp::PacingError::QdiscKindMissing
+               || queried.error() == cntp::PacingError::NetlinkOpenFailed
+               || queried.error() == cntp::PacingError::NetlinkSendFailed
+               || queried.error() == cntp::PacingError::NetlinkReceiveFailed);
         std::printf("  test_live_loopback_qdisc_query_if_available: SKIPPED\n");
         return;
     }
 
-    assert(*queried == cntp::Qdisc::Fq ||
-           *queried == cntp::Qdisc::FqCodel ||
-           *queried == cntp::Qdisc::Pfifo ||
-           *queried == cntp::Qdisc::Mq ||
-           *queried == cntp::Qdisc::Noqueue ||
-           *queried == cntp::Qdisc::Other);
+    assert(*queried == cntp::Qdisc::Fq || *queried == cntp::Qdisc::FqCodel || *queried == cntp::Qdisc::Pfifo
+           || *queried == cntp::Qdisc::Mq || *queried == cntp::Qdisc::Noqueue || *queried == cntp::Qdisc::Other);
     std::printf("  test_live_loopback_qdisc_query_if_available: PASSED\n");
 }
 
@@ -188,9 +183,7 @@ int main() {
     static_assert(!cntp::BbrCompatibleQdisc<cntp::Qdisc::Pfifo>);
     static_assert(std::is_trivially_copyable_v<cntp::NicInterfaceName>);
     static_assert(std::is_trivially_copyable_v<cntp::QdiscConfig>);
-    static_assert(std::same_as<
-                  cntp::DeclaredQdiscConfig::tag_type,
-                  saf::source::QdiscConfig>);
+    static_assert(std::same_as<cntp::DeclaredQdiscConfig::tag_type, saf::source::QdiscConfig>);
 
     std::printf("test_cntp_pacing:\n");
     test_interface_name_admission();

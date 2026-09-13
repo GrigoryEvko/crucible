@@ -47,7 +47,6 @@ int main() {
     // is false — the concept's first conjunct rejects).  The
     // lookup_in_row template's requires clause must reject this
     // BEFORE the IsEffectRow<Row> check on Row<>.
-    (void)crucible::cipher::lookup_computation_cache_in_row<
-        42, ::crucible::effects::Row<>, int>();
+    (void)crucible::cipher::lookup_computation_cache_in_row<42, ::crucible::effects::Row<>, int>();
     return 0;
 }

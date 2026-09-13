@@ -33,8 +33,7 @@ int main() {
     int not_a_grid = 0;
     auto perm = saf::mint_permission_root<producer_tag_placeholder>();
 
-    auto bad = fsg::mint_sharded_grid_producer<int, 0>(
-        not_a_grid, std::move(perm));
+    auto bad = fsg::mint_sharded_grid_producer<int, 0>(not_a_grid, std::move(perm));
     (void)bad;
     return 0;
 }

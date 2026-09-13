@@ -29,8 +29,8 @@ using Bad = fn::Fn<RecurseMarker>;
 }  // namespace neg_collision_d002
 
 namespace crucible::safety::fn::collision {
-    template <> struct marks_recurses_unbounded<::neg_collision_d002::Bad>
-        : std::true_type {};
+template <>
+struct marks_recurses_unbounded<::neg_collision_d002::Bad> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 [[maybe_unused]] neg_collision_d002::Bad the_fixture{};

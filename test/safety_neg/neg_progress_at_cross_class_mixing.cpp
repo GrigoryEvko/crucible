@@ -18,12 +18,11 @@
 using namespace crucible::algebra::lattices;
 
 int main() {
-    ProgressLattice::At<ProgressClass::Bounded>::element_type    bounded_elt{};
+    ProgressLattice::At<ProgressClass::Bounded>::element_type bounded_elt{};
     ProgressLattice::At<ProgressClass::MayDiverge>::element_type diverge_elt{};
 
     // Should FAIL: At<Bounded>::leq expects two At<Bounded>::
     // element_type arguments; diverge_elt is At<MayDiverge>::
     // element_type.
-    return static_cast<int>(
-        ProgressLattice::At<ProgressClass::Bounded>::leq(bounded_elt, diverge_elt));
+    return static_cast<int>(ProgressLattice::At<ProgressClass::Bounded>::leq(bounded_elt, diverge_elt));
 }

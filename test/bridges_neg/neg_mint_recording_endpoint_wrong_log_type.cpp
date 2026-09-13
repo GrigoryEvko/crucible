@@ -14,7 +14,7 @@
 #include <crucible/bridges/EndpointMint.h>
 
 namespace bridges = ::crucible::bridges;
-namespace proto   = ::crucible::safety::proto;
+namespace proto = ::crucible::safety::proto;
 
 struct FakeEndpoint {
     int internal = 0;
@@ -22,12 +22,11 @@ struct FakeEndpoint {
 
 int main() {
     proto::SessionEventLog log{};
-    FakeEndpoint           fake{};
-    proto::RoleTagId       self{1};
-    proto::RoleTagId       peer{2};
+    FakeEndpoint fake{};
+    proto::RoleTagId self{1};
+    proto::RoleTagId peer{2};
 
-    auto bad = bridges::mint_recording_endpoint(
-        std::move(fake), log, self, peer);
+    auto bad = bridges::mint_recording_endpoint(std::move(fake), log, self, peer);
     (void)bad;
     return 0;
 }

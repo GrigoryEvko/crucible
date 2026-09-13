@@ -54,18 +54,16 @@ namespace eff = crucible::effects;
 // but the IsResourceKind concept gate then rejects, since 0xFF doesn't
 // satisfy any of the 23 disjuncts in IsResourceKind's body.
 struct BogusResourceTag {
-    static constexpr eff::ResourceKind kind  =
-        static_cast<eff::ResourceKind>(static_cast<std::uint8_t>(0xFF));
-    static constexpr std::uint64_t     value = 42;
-    static constexpr std::string_view  name  = "BogusResourceTag";
+    static constexpr eff::ResourceKind kind = static_cast<eff::ResourceKind>(static_cast<std::uint8_t>(0xFF));
+    static constexpr std::uint64_t value = 42;
+    static constexpr std::string_view name = "BogusResourceTag";
 };
 
 // ResourceTag<BogusResourceTag> must NOT be satisfied — even though
 // the canonical triple is present, the kind value escapes the atom
 // catalog and IsResourceKind rejects.  The static_assert fires.
-static_assert(eff::ResourceTag<BogusResourceTag>,
-    "ResourceTag concept must reject types whose `kind` falls outside "
-    "the IsResourceKind atom range — GAPS-189 forgery defense "
-    "compromised.");
+static_assert(eff::ResourceTag<BogusResourceTag>, "ResourceTag concept must reject types whose `kind` falls outside "
+                                                  "the IsResourceKind atom range — GAPS-189 forgery defense "
+                                                  "compromised.");
 
 int main() { return 0; }

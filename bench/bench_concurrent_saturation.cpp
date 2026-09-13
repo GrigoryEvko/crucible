@@ -47,13 +47,13 @@ struct SaturationCase {
         auto ring = std::make_unique<Ring>();
         alignas(64) static std::array<Item, N> tx{};
         alignas(64) static std::array<Item, N> rx{};
-        for (std::size_t k = 0; k < N; ++k) tx[k] = k;
+        for (std::size_t k = 0; k < N; ++k)
+            tx[k] = k;
 
         char name[128];
-        std::snprintf(name, sizeof(name),
-                      "spsc_ring batch<%zu> round-trip (push+pop)", N);
+        std::snprintf(name, sizeof(name), "spsc_ring batch<%zu> round-trip (push+pop)", N);
 
-        return bench::run(name, [&]{
+        return bench::run(name, [&] {
             const std::size_t np = ring->try_push_batch(std::span{tx});
             const std::size_t nc = ring->try_pop_batch(std::span{rx});
             bench::do_not_optimize(np);
@@ -78,13 +78,13 @@ bench::Report raw_memcpy_roundtrip() {
     alignas(64) static std::array<Item, N> tx{};
     alignas(64) static std::array<Item, N> mid{};
     alignas(64) static std::array<Item, N> rx{};
-    for (std::size_t k = 0; k < N; ++k) tx[k] = k;
+    for (std::size_t k = 0; k < N; ++k)
+        tx[k] = k;
 
     char name[128];
-    std::snprintf(name, sizeof(name),
-                  "raw_memcpy<%zu> round-trip (tx→mid→rx)", N);
+    std::snprintf(name, sizeof(name), "raw_memcpy<%zu> round-trip (tx→mid→rx)", N);
 
-    return bench::run(name, [&]{
+    return bench::run(name, [&] {
         std::memcpy(mid.data(), tx.data(), N * sizeof(Item));
         std::memcpy(rx.data(), mid.data(), N * sizeof(Item));
         // Same anti-DCE pattern as the SPSC bench above — clobber an
@@ -128,10 +128,10 @@ int main() {
 
     bench::Report reports[] = {
         // Single-call SPSC — N=1 baseline.
-        [&]{
-            auto ring = std::make_unique<SpscRing<Item, (1U<<20)>>();
+        [&] {
+            auto ring = std::make_unique<SpscRing<Item, (1U << 20)>>();
             std::uint64_t i = 0;
-            return bench::run("spsc_ring.try_push (N=1, single-call)", [&]{
+            return bench::run("spsc_ring.try_push (N=1, single-call)", [&] {
                 const bool ok = ring->try_push(++i);
                 bench::do_not_optimize(ok);
             });
@@ -161,18 +161,14 @@ int main() {
 
     // ── Per-item cost table (the headline) ────────────────────────────
     std::printf("\n=== saturation table (per-item cost) ===\n");
-    std::printf("\n  %-50s  %12s  %12s\n",
-                "Bench", "ns/item", "GB/s");
-    std::printf("  %-50s  %12s  %12s\n",
-                std::string(50, '-').c_str(),
-                std::string(12, '-').c_str(),
+    std::printf("\n  %-50s  %12s  %12s\n", "Bench", "ns/item", "GB/s");
+    std::printf("  %-50s  %12s  %12s\n", std::string(50, '-').c_str(), std::string(12, '-').c_str(),
                 std::string(12, '-').c_str());
 
     auto print_row = [](const bench::Report& r, std::size_t batch_items) {
         const double per_item = per_item_ns(r.pct.p50, batch_items);
         const double gbps = bytes_per_sec(r.pct.p50, batch_items) / 1e9;
-        std::printf("  %-50s  %10.4f ns  %8.2f GB/s\n",
-                    r.name.c_str(), per_item, gbps);
+        std::printf("  %-50s  %10.4f ns  %8.2f GB/s\n", r.name.c_str(), per_item, gbps);
     };
 
     // Single-call: N=1
@@ -209,12 +205,10 @@ int main() {
         //   1 item / 4.6e9 s = 0.217 ns/item.
         const double ns_floor_per_item = 0.217;
         std::printf("  Theoretical L1d-port floor (Zen 3 @ 4.6 GHz):\n");
-        std::printf("    1 item per cycle × 0.217 ns/cycle = %.3f ns/item\n",
-                    ns_floor_per_item);
+        std::printf("    1 item per cycle × 0.217 ns/cycle = %.3f ns/item\n", ns_floor_per_item);
         std::printf("  Largest observed (N=1024 batch round-trip):\n");
         const double obs = per_item_ns(reports[11].pct.p50, 1024);
-        std::printf("    %.3f ns/item — gap to ceiling = %.2f×\n",
-                    obs, obs / ns_floor_per_item);
+        std::printf("    %.3f ns/item — gap to ceiling = %.2f×\n", obs, obs / ns_floor_per_item);
         std::printf("  Raw memcpy reference (N=1024, no atomics):\n");
         const double mref = per_item_ns(reports[14].pct.p50, 1024);
         std::printf("    %.3f ns/item — pure-bandwidth floor\n", mref);

@@ -17,7 +17,7 @@ namespace saf = crucible::safety;
 namespace {
 struct PipelineTag {};
 struct PublishStage {};
-} // namespace
+}  // namespace
 
 int main() {
     saf::PublishCommitCell<PipelineTag, PublishStage> a;

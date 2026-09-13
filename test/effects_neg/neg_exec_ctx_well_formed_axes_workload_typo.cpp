@@ -31,15 +31,11 @@ namespace eff = ::crucible::effects;
 // requires-clause refusal — without the WellFormedExecCtxAxes hoist
 // this fired a body static_assert chain; after the hoist it must
 // fail at the class-template head.
-using BadCtx = eff::ExecCtx<
-    ::crucible::effects::ctx_cap::Fg,
-    ::crucible::effects::ctx_numa::Any,
-    ::crucible::effects::ctx_alloc::Unbound,
-    ::crucible::effects::ctx_heat::Cold,
-    ::crucible::effects::ctx_resid::DRAM,
-    eff::Row<>,
-    int                          // ← Workload typo, must reject
->;
+using BadCtx = eff::ExecCtx<::crucible::effects::ctx_cap::Fg, ::crucible::effects::ctx_numa::Any,
+                            ::crucible::effects::ctx_alloc::Unbound, ::crucible::effects::ctx_heat::Cold,
+                            ::crucible::effects::ctx_resid::DRAM, eff::Row<>,
+                            int  // ← Workload typo, must reject
+                            >;
 
 [[maybe_unused]] static constexpr BadCtx witness{};
 

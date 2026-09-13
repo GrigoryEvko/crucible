@@ -29,7 +29,7 @@
 #include <utility>
 
 namespace conc = crucible::concurrent;
-namespace eff  = crucible::effects;
+namespace eff = crucible::effects;
 
 template <typename T>
 struct FakeConsumer {
@@ -55,8 +55,7 @@ int main() {
     // admission checks.  With the V-010 fix, the ctor is private
     // and this line is ill-formed.  Before V-010 this would have
     // compiled silently.
-    conc::Stage<&pass_through, eff::HotFgCtx> stage{
-        ctx, std::move(in), std::move(out)};
+    conc::Stage<&pass_through, eff::HotFgCtx> stage{ctx, std::move(in), std::move(out)};
 
     return 0;
 }

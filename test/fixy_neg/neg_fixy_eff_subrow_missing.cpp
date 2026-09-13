@@ -23,9 +23,9 @@ int main() {
     // Subrow direction Row<Bg> ⊆ Row<> is false.  fixy alias passes
     // the substrate's concept rejection through unchanged.
     static_assert(fe::Subrow<fe::Row<fe::Effect::Bg>, fe::Row<>>,
-        "fixy::eff::Subrow<Row<Bg>, Row<>> must reject — foreground "
-        "row Row<> cannot satisfy a Bg-required call.  Alias preserves "
-        "the substitution-principle gate.");
+                  "fixy::eff::Subrow<Row<Bg>, Row<>> must reject — foreground "
+                  "row Row<> cannot satisfy a Bg-required call.  Alias preserves "
+                  "the substitution-principle gate.");
     (void)sizeof(EffNegFixture1_Marker);
     return 0;
 }

@@ -37,13 +37,13 @@ struct Payload {
     std::byte bytes[N]{};
 };
 
-using Payload8   = Payload<8>;
-using Payload32  = Payload<32>;
-using Payload64  = Payload<64>;
+using Payload8 = Payload<8>;
+using Payload32 = Payload<32>;
+using Payload64 = Payload<64>;
 using Payload128 = Payload<128>;
 using Payload256 = Payload<256>;
 using Payload512 = Payload<512>;
-using Payload4K  = Payload<4096>;
+using Payload4K = Payload<4096>;
 
 constexpr std::size_t KiB = 1024;
 constexpr std::size_t MiB = 1024 * KiB;
@@ -105,9 +105,12 @@ struct RuntimeCase {
 
 [[nodiscard]] const char* source_name(cc::Topology::Source source) noexcept {
     switch (source) {
-    case cc::Topology::Source::Sysfs: return "sysfs";
-    case cc::Topology::Source::Fallback: return "fallback";
-    default: return "unknown";
+        case cc::Topology::Source::Sysfs:
+            return "sysfs";
+        case cc::Topology::Source::Fallback:
+            return "fallback";
+        default:
+            return "unknown";
     }
 }
 
@@ -117,65 +120,37 @@ template <typename Body>
     if (const int core = bench::env_core(); core >= 0) {
         (void)run.core(core);
     }
-    return run.samples(20'000)
-        .warmup(2'000)
-        .max_wall_ms(1'000)
-        .measure(std::forward<Body>(body));
+    return run.samples(20000).warmup(2000).max_wall_ms(1000).measure(std::forward<Body>(body));
 }
 
-[[nodiscard]] constexpr std::uint64_t
-route_digest_from_decision(cc::AutoRouteDecision decision) noexcept {
-    return (static_cast<std::uint64_t>(decision.kind) << 56)
-         ^ (static_cast<std::uint64_t>(decision.intent) << 48)
+[[nodiscard]] constexpr std::uint64_t route_digest_from_decision(cc::AutoRouteDecision decision) noexcept {
+    return (static_cast<std::uint64_t>(decision.kind) << 56) ^ (static_cast<std::uint64_t>(decision.intent) << 48)
          ^ (static_cast<std::uint64_t>(decision.channel_topology) << 40)
          ^ (static_cast<std::uint64_t>(decision.channel_producers) << 32)
          ^ (static_cast<std::uint64_t>(decision.channel_consumers) << 24)
-         ^ (static_cast<std::uint64_t>(decision.worker_fanout) << 16)
-         ^ (decision.uses_worker_fanout ? 0xA55AULL : 0ULL)
-         ^ (decision.latest_only ? 0x5AA5ULL : 0ULL)
-         ^ static_cast<std::uint64_t>(decision.workload_bytes & 0xFFFFULL);
+         ^ (static_cast<std::uint64_t>(decision.worker_fanout) << 16) ^ (decision.uses_worker_fanout ? 0xA55AULL : 0ULL)
+         ^ (decision.latest_only ? 0x5AA5ULL : 0ULL) ^ static_cast<std::uint64_t>(decision.workload_bytes & 0xFFFFULL);
 }
 
-template <cc::RouteIntent Intent,
-          std::size_t Producers,
-          std::size_t Consumers,
-          std::size_t WorkloadBytes,
+template <cc::RouteIntent Intent, std::size_t Producers, std::size_t Consumers, std::size_t WorkloadBytes,
           std::size_t MaxShards = 16>
 [[nodiscard]] consteval std::uint64_t route_digest() noexcept {
-    constexpr cc::AutoRouteDecision decision =
-        cc::auto_route_v<Intent, Producers, Consumers, WorkloadBytes, MaxShards>;
+    constexpr cc::AutoRouteDecision decision = cc::auto_route_v<Intent, Producers, Consumers, WorkloadBytes, MaxShards>;
     return route_digest_from_decision(decision);
 }
 
-template <cc::RouteIntent Intent,
-          typename T,
-          std::size_t Capacity,
-          typename UserTag,
-          std::size_t Producers,
-          std::size_t Consumers,
-          std::size_t WorkloadBytes,
-          std::size_t MaxShards = 16>
+template <cc::RouteIntent Intent, typename T, std::size_t Capacity, typename UserTag, std::size_t Producers,
+          std::size_t Consumers, std::size_t WorkloadBytes, std::size_t MaxShards = 16>
 [[nodiscard]] consteval std::uint64_t static_route_digest() noexcept {
     constexpr cc::AutoRouteDecision decision =
-        cc::static_auto_route_v<Intent,
-                                T,
-                                Capacity,
-                                UserTag,
-                                Producers,
-                                Consumers,
-                                WorkloadBytes,
-                                MaxShards>;
+        cc::static_auto_route_v<Intent, T, Capacity, UserTag, Producers, Consumers, WorkloadBytes, MaxShards>;
     return route_digest_from_decision(decision);
 }
 
-template <cc::RouteIntent Intent,
-          std::size_t Producers,
-          std::size_t Consumers,
-          std::size_t WorkloadBytes,
+template <cc::RouteIntent Intent, std::size_t Producers, std::size_t Consumers, std::size_t WorkloadBytes,
           std::size_t MaxShards = 16>
 void consume_decision_fields() noexcept {
-    constexpr cc::AutoRouteDecision decision =
-        cc::auto_route_v<Intent, Producers, Consumers, WorkloadBytes, MaxShards>;
+    constexpr cc::AutoRouteDecision decision = cc::auto_route_v<Intent, Producers, Consumers, WorkloadBytes, MaxShards>;
 
     auto kind = static_cast<std::uint8_t>(decision.kind);
     auto intent = static_cast<std::uint8_t>(decision.intent);
@@ -184,9 +159,8 @@ void consume_decision_fields() noexcept {
     auto consumers = decision.channel_consumers;
     auto bytes = decision.workload_bytes;
     auto shards = decision.worker_fanout;
-    auto flags = static_cast<std::uint8_t>(
-        (decision.uses_worker_fanout ? 0x1 : 0x0) |
-        (decision.latest_only ? 0x2 : 0x0));
+    auto flags =
+        static_cast<std::uint8_t>((decision.uses_worker_fanout ? 0x1 : 0x0) | (decision.latest_only ? 0x2 : 0x0));
 
     bench::do_not_optimize(kind);
     bench::do_not_optimize(intent);
@@ -198,35 +172,18 @@ void consume_decision_fields() noexcept {
     bench::do_not_optimize(flags);
 }
 
-template <cc::RouteIntent Intent,
-          std::size_t Producers,
-          std::size_t Consumers,
-          std::size_t WorkloadBytes,
+template <cc::RouteIntent Intent, std::size_t Producers, std::size_t Consumers, std::size_t WorkloadBytes,
           std::size_t MaxShards = 16>
 void consume_route_digest() noexcept {
-    constexpr std::uint64_t digest =
-        route_digest<Intent, Producers, Consumers, WorkloadBytes, MaxShards>();
+    constexpr std::uint64_t digest = route_digest<Intent, Producers, Consumers, WorkloadBytes, MaxShards>();
     bench::do_not_optimize(digest);
 }
 
-template <cc::RouteIntent Intent,
-          typename T,
-          std::size_t Capacity,
-          typename UserTag,
-          std::size_t Producers,
-          std::size_t Consumers,
-          std::size_t WorkloadBytes,
-          std::size_t MaxShards = 16>
+template <cc::RouteIntent Intent, typename T, std::size_t Capacity, typename UserTag, std::size_t Producers,
+          std::size_t Consumers, std::size_t WorkloadBytes, std::size_t MaxShards = 16>
 void consume_static_route_digest() noexcept {
     constexpr std::uint64_t digest =
-        static_route_digest<Intent,
-                            T,
-                            Capacity,
-                            UserTag,
-                            Producers,
-                            Consumers,
-                            WorkloadBytes,
-                            MaxShards>();
+        static_route_digest<Intent, T, Capacity, UserTag, Producers, Consumers, WorkloadBytes, MaxShards>();
     bench::do_not_optimize(digest);
 }
 
@@ -248,97 +205,57 @@ void consume_route_type() noexcept {
 
 void consume_hardware_cache_snapshot(const HardwareSnapshot& hw) noexcept {
     const std::size_t cache_fold = hw.l1d ^ hw.l2 ^ hw.l3 ^ hw.line;
-    const std::size_t core_fold =
-        hw.physical_cores ^ hw.smt_threads ^ hw.process_cpus ^ hw.numa_nodes;
+    const std::size_t core_fold = hw.physical_cores ^ hw.smt_threads ^ hw.process_cpus ^ hw.numa_nodes;
     bench::do_not_optimize(cache_fold);
     bench::do_not_optimize(core_fold);
 }
 
 void consume_hardware_feature_snapshot(const HardwareSnapshot& hw) noexcept {
-    const std::uint8_t flags =
-        static_cast<std::uint8_t>((hw.hugepage_2mb ? 0x01 : 0x00)
-                                | (hw.avx512 ? 0x02 : 0x00)
-                                | (hw.avx2 ? 0x04 : 0x00)
-                                | (hw.sse42 ? 0x08 : 0x00));
+    const std::uint8_t flags = static_cast<std::uint8_t>((hw.hugepage_2mb ? 0x01 : 0x00) | (hw.avx512 ? 0x02 : 0x00)
+                                                         | (hw.avx2 ? 0x04 : 0x00) | (hw.sse42 ? 0x08 : 0x00));
     bench::do_not_optimize(flags);
     bench::do_not_optimize(hw.page_size);
 }
 
-template <cc::RouteIntent Intent,
-          std::size_t Producers,
-          std::size_t Consumers,
-          std::size_t WorkloadBytes,
+template <cc::RouteIntent Intent, std::size_t Producers, std::size_t Consumers, std::size_t WorkloadBytes,
           std::size_t MaxShards = 16>
 void add_decision(std::vector<bench::Report>& reports, std::string_view name) {
-    reports.push_back(run_router(std::string{name}, [] {
-        consume_decision_fields<Intent, Producers, Consumers, WorkloadBytes, MaxShards>();
-    }));
+    reports.push_back(run_router(
+        std::string{name}, [] { consume_decision_fields<Intent, Producers, Consumers, WorkloadBytes, MaxShards>(); }));
 }
 
-template <cc::RouteIntent Intent,
-          std::size_t Producers,
-          std::size_t Consumers,
-          std::size_t WorkloadBytes,
+template <cc::RouteIntent Intent, std::size_t Producers, std::size_t Consumers, std::size_t WorkloadBytes,
           std::size_t MaxShards = 16>
 void add_digest(std::vector<bench::Report>& reports, std::string_view name) {
-    reports.push_back(run_router(std::string{name}, [] {
-        consume_route_digest<Intent, Producers, Consumers, WorkloadBytes, MaxShards>();
-    }));
+    reports.push_back(run_router(
+        std::string{name}, [] { consume_route_digest<Intent, Producers, Consumers, WorkloadBytes, MaxShards>(); }));
 }
 
 template <typename Route>
 void add_type(std::vector<bench::Report>& reports, std::string_view name) {
+    reports.push_back(run_router(std::string{name}, [] { consume_route_type<Route>(); }));
+}
+
+template <cc::RouteIntent Intent, typename T, std::size_t Capacity, typename UserTag, std::size_t Producers,
+          std::size_t Consumers, std::size_t WorkloadBytes, std::size_t MaxShards = 16>
+void add_static_digest(std::vector<bench::Report>& reports, std::string_view name) {
     reports.push_back(run_router(std::string{name}, [] {
-        consume_route_type<Route>();
+        consume_static_route_digest<Intent, T, Capacity, UserTag, Producers, Consumers, WorkloadBytes, MaxShards>();
     }));
 }
 
-template <cc::RouteIntent Intent,
-          typename T,
-          std::size_t Capacity,
-          typename UserTag,
-          std::size_t Producers,
-          std::size_t Consumers,
-          std::size_t WorkloadBytes,
-          std::size_t MaxShards = 16>
-void add_static_digest(std::vector<bench::Report>& reports,
-                       std::string_view name) {
-    reports.push_back(run_router(std::string{name}, [] {
-        consume_static_route_digest<Intent,
-                                    T,
-                                    Capacity,
-                                    UserTag,
-                                    Producers,
-                                    Consumers,
-                                    WorkloadBytes,
-                                    MaxShards>();
-    }));
-}
-
-void add_runtime_digest(std::vector<bench::Report>& reports,
-                        std::string_view name,
-                        RuntimeCase route,
+void add_runtime_digest(std::vector<bench::Report>& reports, std::string_view name, RuntimeCase route,
                         cc::AutoRouteRuntimeProfile profile) {
     reports.push_back(run_router(std::string{name}, [route, profile] {
-        const cc::AutoRouteDecision decision =
-            cc::auto_route_decision_runtime(route.intent,
-                                            route.producers,
-                                            route.consumers,
-                                            route.bytes,
-                                            route.max_shards,
-                                            profile);
+        const cc::AutoRouteDecision decision = cc::auto_route_decision_runtime(
+            route.intent, route.producers, route.consumers, route.bytes, route.max_shards, profile);
         consume_decision_value(decision);
     }));
 }
 
-void add_hardware_reports(std::vector<bench::Report>& reports,
-                          const HardwareSnapshot& hw) {
-    reports.push_back(run_router("hardware.once.cache_snapshot", [&hw] {
-        consume_hardware_cache_snapshot(hw);
-    }));
-    reports.push_back(run_router("hardware.once.feature_snapshot", [&hw] {
-        consume_hardware_feature_snapshot(hw);
-    }));
+void add_hardware_reports(std::vector<bench::Report>& reports, const HardwareSnapshot& hw) {
+    reports.push_back(run_router("hardware.once.cache_snapshot", [&hw] { consume_hardware_cache_snapshot(hw); }));
+    reports.push_back(run_router("hardware.once.feature_snapshot", [&hw] { consume_hardware_feature_snapshot(hw); }));
     reports.push_back(run_router("hardware.once.combined", [&hw] {
         consume_hardware_cache_snapshot(hw);
         consume_hardware_feature_snapshot(hw);
@@ -460,50 +377,26 @@ void add_digest_cases(std::vector<bench::Report>& reports) {
     add_digest<cc::RouteIntent::VariableCost, 32, 32, Huge>(reports, "digest.work.32p32c.huge");
 }
 
-void add_implementation_comparison(std::vector<bench::Report>& reports,
-                                   const HardwareSnapshot& hw) {
+void add_implementation_comparison(std::vector<bench::Report>& reports, const HardwareSnapshot& hw) {
     const cc::AutoRouteRuntimeProfile fixed_profile{};
     (void)hw;
-    const cc::AutoRouteRuntimeProfile hardware_profile =
-        cc::auto_route_runtime_profile_refresh();
+    const cc::AutoRouteRuntimeProfile hardware_profile = cc::auto_route_runtime_profile_refresh();
 
-    add_digest<cc::RouteIntent::Shardable, 4, 4, Large>(
-        reports, "impl.consteval.digest.shardable.4p4c.large");
-    add_static_digest<cc::RouteIntent::Shardable,
-                      int,
-                      1024,
-                      ShardTag,
-                      4,
-                      4,
-                      Large>(
+    add_digest<cc::RouteIntent::Shardable, 4, 4, Large>(reports, "impl.consteval.digest.shardable.4p4c.large");
+    add_static_digest<cc::RouteIntent::Shardable, int, 1024, ShardTag, 4, 4, Large>(
         reports, "impl.static_trait.digest.shardable.4p4c.large");
-    add_runtime_digest(reports,
-                       "impl.runtime_fixed.digest.shardable.4p4c.large",
-                       RuntimeCase{cc::RouteIntent::Shardable, 4, 4, Large, 16},
-                       fixed_profile);
-    add_runtime_digest(reports,
-                       "impl.runtime_hw.digest.shardable.4p4c.large",
-                       RuntimeCase{cc::RouteIntent::Shardable, 4, 4, Large, 16},
-                       hardware_profile);
+    add_runtime_digest(reports, "impl.runtime_fixed.digest.shardable.4p4c.large",
+                       RuntimeCase{cc::RouteIntent::Shardable, 4, 4, Large, 16}, fixed_profile);
+    add_runtime_digest(reports, "impl.runtime_hw.digest.shardable.4p4c.large",
+                       RuntimeCase{cc::RouteIntent::Shardable, 4, 4, Large, 16}, hardware_profile);
 
-    add_digest<cc::RouteIntent::Stream, 1, 1, Huge>(
-        reports, "impl.consteval.digest.stream.1p1c.huge");
-    add_static_digest<cc::RouteIntent::Stream,
-                      int,
-                      1024,
-                      StreamTag,
-                      1,
-                      1,
-                      Huge>(
+    add_digest<cc::RouteIntent::Stream, 1, 1, Huge>(reports, "impl.consteval.digest.stream.1p1c.huge");
+    add_static_digest<cc::RouteIntent::Stream, int, 1024, StreamTag, 1, 1, Huge>(
         reports, "impl.static_trait.digest.stream.1p1c.huge");
-    add_runtime_digest(reports,
-                       "impl.runtime_fixed.digest.stream.1p1c.huge",
-                       RuntimeCase{cc::RouteIntent::Stream, 1, 1, Huge, 16},
-                       fixed_profile);
-    add_runtime_digest(reports,
-                       "impl.runtime_hw.digest.stream.1p1c.huge",
-                       RuntimeCase{cc::RouteIntent::Stream, 1, 1, Huge, 16},
-                       hardware_profile);
+    add_runtime_digest(reports, "impl.runtime_fixed.digest.stream.1p1c.huge",
+                       RuntimeCase{cc::RouteIntent::Stream, 1, 1, Huge, 16}, fixed_profile);
+    add_runtime_digest(reports, "impl.runtime_hw.digest.stream.1p1c.huge",
+                       RuntimeCase{cc::RouteIntent::Stream, 1, 1, Huge, 16}, hardware_profile);
 
     reports.push_back(run_router("impl.runtime_fixed.dynamic_mix", [] {
         static constexpr std::array<RuntimeCase, 8> cases{{
@@ -518,12 +411,8 @@ void add_implementation_comparison(std::vector<bench::Report>& reports,
         }};
         static std::size_t cursor = 0;
         const RuntimeCase route = cases[cursor++ & (cases.size() - 1)];
-        consume_decision_value(
-            cc::auto_route_decision_runtime(route.intent,
-                                            route.producers,
-                                            route.consumers,
-                                            route.bytes,
-                                            route.max_shards));
+        consume_decision_value(cc::auto_route_decision_runtime(route.intent, route.producers, route.consumers,
+                                                               route.bytes, route.max_shards));
     }));
 
     reports.push_back(run_router("impl.runtime_hw.dynamic_mix", [hardware_profile] {
@@ -539,42 +428,57 @@ void add_implementation_comparison(std::vector<bench::Report>& reports,
         }};
         static std::size_t cursor = 0;
         const RuntimeCase route = cases[cursor++ & (cases.size() - 1)];
-        consume_decision_value(
-            cc::auto_route_decision_runtime(route.intent,
-                                            route.producers,
-                                            route.consumers,
-                                            route.bytes,
-                                            route.max_shards,
-                                            hardware_profile));
+        consume_decision_value(cc::auto_route_decision_runtime(route.intent, route.producers, route.consumers,
+                                                               route.bytes, route.max_shards, hardware_profile));
     }));
 }
 
 void add_type_cases(std::vector<bench::Report>& reports) {
-    add_type<cc::AutoRoute_t<cc::RouteIntent::Stream, int, 64, StreamTag, 1, 1, Tiny>>(reports, "type.stream.int.cap64.1p1c.tiny");
-    add_type<cc::AutoRoute_t<cc::RouteIntent::Stream, int, 1024, StreamTag, 4, 1, Tiny>>(reports, "type.stream.int.cap1024.4p1c.tiny");
-    add_type<cc::AutoRoute_t<cc::RouteIntent::Stream, int, 1024, StreamTag, 1, 4, Tiny>>(reports, "type.stream.int.cap1024.1p4c.tiny");
-    add_type<cc::AutoRoute_t<cc::RouteIntent::Stream, int, 1024, StreamTag, 4, 4, Huge>>(reports, "type.stream.int.cap1024.4p4c.huge");
+    add_type<cc::AutoRoute_t<cc::RouteIntent::Stream, int, 64, StreamTag, 1, 1, Tiny>>(
+        reports, "type.stream.int.cap64.1p1c.tiny");
+    add_type<cc::AutoRoute_t<cc::RouteIntent::Stream, int, 1024, StreamTag, 4, 1, Tiny>>(
+        reports, "type.stream.int.cap1024.4p1c.tiny");
+    add_type<cc::AutoRoute_t<cc::RouteIntent::Stream, int, 1024, StreamTag, 1, 4, Tiny>>(
+        reports, "type.stream.int.cap1024.1p4c.tiny");
+    add_type<cc::AutoRoute_t<cc::RouteIntent::Stream, int, 1024, StreamTag, 4, 4, Huge>>(
+        reports, "type.stream.int.cap1024.4p4c.huge");
 
-    add_type<cc::AutoRoute_t<cc::RouteIntent::Stream, Payload8, 64, StreamTagB, 1, 1, Tiny>>(reports, "type.stream.payload8.spsc");
-    add_type<cc::AutoRoute_t<cc::RouteIntent::Stream, Payload64, 64, StreamTagB, 4, 1, Tiny>>(reports, "type.stream.payload64.mpsc");
-    add_type<cc::AutoRoute_t<cc::RouteIntent::Stream, Payload256, 64, StreamTagB, 4, 4, Tiny>>(reports, "type.stream.payload256.mpmc");
-    add_type<cc::AutoRoute_t<cc::RouteIntent::Stream, Payload4K, 64, StreamTagB, 1, 1, Huge>>(reports, "type.stream.payload4k.spsc_huge");
+    add_type<cc::AutoRoute_t<cc::RouteIntent::Stream, Payload8, 64, StreamTagB, 1, 1, Tiny>>(
+        reports, "type.stream.payload8.spsc");
+    add_type<cc::AutoRoute_t<cc::RouteIntent::Stream, Payload64, 64, StreamTagB, 4, 1, Tiny>>(
+        reports, "type.stream.payload64.mpsc");
+    add_type<cc::AutoRoute_t<cc::RouteIntent::Stream, Payload256, 64, StreamTagB, 4, 4, Tiny>>(
+        reports, "type.stream.payload256.mpmc");
+    add_type<cc::AutoRoute_t<cc::RouteIntent::Stream, Payload4K, 64, StreamTagB, 1, 1, Huge>>(
+        reports, "type.stream.payload4k.spsc_huge");
 
     add_type<cc::AutoRoute_t<cc::RouteIntent::Latest, int, 1, LatestTag, 1, 8, Tiny>>(reports, "type.latest.int");
-    add_type<cc::AutoRoute_t<cc::RouteIntent::Latest, Payload8, 1, LatestTag, 1, 8, Tiny>>(reports, "type.latest.payload8");
-    add_type<cc::AutoRoute_t<cc::RouteIntent::Latest, Payload128, 1, LatestTag, 1, 8, Large>>(reports, "type.latest.payload128.large");
-    add_type<cc::AutoRoute_t<cc::RouteIntent::Latest, Payload256, 1, LatestTag, 1, 32, Huge>>(reports, "type.latest.payload256.huge");
+    add_type<cc::AutoRoute_t<cc::RouteIntent::Latest, Payload8, 1, LatestTag, 1, 8, Tiny>>(reports,
+                                                                                           "type.latest.payload8");
+    add_type<cc::AutoRoute_t<cc::RouteIntent::Latest, Payload128, 1, LatestTag, 1, 8, Large>>(
+        reports, "type.latest.payload128.large");
+    add_type<cc::AutoRoute_t<cc::RouteIntent::Latest, Payload256, 1, LatestTag, 1, 32, Huge>>(
+        reports, "type.latest.payload256.huge");
 
-    add_type<cc::AutoRoute_t<cc::RouteIntent::VariableCost, int, 64, WorkTag, 1, 8, Tiny>>(reports, "type.work.int.cap64");
-    add_type<cc::AutoRoute_t<cc::RouteIntent::VariableCost, int, 1024, WorkTag, 4, 8, Large>>(reports, "type.work.int.cap1024");
-    add_type<cc::AutoRoute_t<cc::RouteIntent::VariableCost, std::uint64_t, 2048, WorkTagB, 32, 32, Huge>>(reports, "type.work.u64.cap2048");
+    add_type<cc::AutoRoute_t<cc::RouteIntent::VariableCost, int, 64, WorkTag, 1, 8, Tiny>>(reports,
+                                                                                           "type.work.int.cap64");
+    add_type<cc::AutoRoute_t<cc::RouteIntent::VariableCost, int, 1024, WorkTag, 4, 8, Large>>(reports,
+                                                                                              "type.work.int.cap1024");
+    add_type<cc::AutoRoute_t<cc::RouteIntent::VariableCost, std::uint64_t, 2048, WorkTagB, 32, 32, Huge>>(
+        reports, "type.work.u64.cap2048");
 
-    add_type<cc::AutoRoute_t<cc::RouteIntent::Shardable, int, 64, ShardTag, 1, 1, Small>>(reports, "type.shardable.small.spsc");
-    add_type<cc::AutoRoute_t<cc::RouteIntent::Shardable, int, 64, ShardTag, 1, 1, Large>>(reports, "type.shardable.large.chan1x1.fanout4");
-    add_type<cc::AutoRoute_t<cc::RouteIntent::Shardable, int, 64, ShardTag, 1, 1, Huge>>(reports, "type.shardable.huge.chan1x1.fanout16");
-    add_type<cc::AutoRoute_t<cc::RouteIntent::Shardable, Payload64, 64, ShardTagB, 4, 4, Large>>(reports, "type.shardable.payload64.chan4x4.fanout4");
-    add_type<cc::AutoRoute_t<cc::RouteIntent::Shardable, Payload256, 64, ShardTagB, 4, 4, Huge, 8>>(reports, "type.shardable.payload256.chan4x4.fanout8");
-    add_type<cc::AutoRoute_t<cc::RouteIntent::Shardable, Payload512, 64, ShardTagB, 4, 4, Huge, 16>>(reports, "type.shardable.payload512.chan4x4.fanout16");
+    add_type<cc::AutoRoute_t<cc::RouteIntent::Shardable, int, 64, ShardTag, 1, 1, Small>>(reports,
+                                                                                          "type.shardable.small.spsc");
+    add_type<cc::AutoRoute_t<cc::RouteIntent::Shardable, int, 64, ShardTag, 1, 1, Large>>(
+        reports, "type.shardable.large.chan1x1.fanout4");
+    add_type<cc::AutoRoute_t<cc::RouteIntent::Shardable, int, 64, ShardTag, 1, 1, Huge>>(
+        reports, "type.shardable.huge.chan1x1.fanout16");
+    add_type<cc::AutoRoute_t<cc::RouteIntent::Shardable, Payload64, 64, ShardTagB, 4, 4, Large>>(
+        reports, "type.shardable.payload64.chan4x4.fanout4");
+    add_type<cc::AutoRoute_t<cc::RouteIntent::Shardable, Payload256, 64, ShardTagB, 4, 4, Huge, 8>>(
+        reports, "type.shardable.payload256.chan4x4.fanout8");
+    add_type<cc::AutoRoute_t<cc::RouteIntent::Shardable, Payload512, 64, ShardTagB, 4, 4, Huge, 16>>(
+        reports, "type.shardable.payload512.chan4x4.fanout16");
 }
 
 }  // namespace
@@ -589,22 +493,10 @@ int main() {
     std::printf("  topology_source=%s l1d=%zu l2=%zu l3=%zu line=%zu "
                 "cores=%zu smt=%zu process_cpus=%zu numa=%zu page=%zu "
                 "huge2m=%s avx512=%s avx2=%s sse4.2=%s\n",
-                source_name(hw.source),
-                hw.l1d,
-                hw.l2,
-                hw.l3,
-                hw.line,
-                hw.physical_cores,
-                hw.smt_threads,
-                hw.process_cpus,
-                hw.numa_nodes,
-                hw.page_size,
-                hw.hugepage_2mb ? "yes" : "no",
-                hw.avx512 ? "yes" : "no",
-                hw.avx2 ? "yes" : "no",
-                hw.sse42 ? "yes" : "no");
-    std::printf("  router_cliff=%zu bytes reports=startup-built\n\n",
-                cc::conservative_cliff_l2_per_core);
+                source_name(hw.source), hw.l1d, hw.l2, hw.l3, hw.line, hw.physical_cores, hw.smt_threads,
+                hw.process_cpus, hw.numa_nodes, hw.page_size, hw.hugepage_2mb ? "yes" : "no", hw.avx512 ? "yes" : "no",
+                hw.avx2 ? "yes" : "no", hw.sse42 ? "yes" : "no");
+    std::printf("  router_cliff=%zu bytes reports=startup-built\n\n", cc::conservative_cliff_l2_per_core);
 
     std::vector<bench::Report> reports;
     reports.reserve(136);

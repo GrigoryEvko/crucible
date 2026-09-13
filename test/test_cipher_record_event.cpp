@@ -92,7 +92,7 @@ static void test_t04_record_event_matches_advance_head(const char* base_dir) {
     auto view_a = cipher_a.mint_open_view();
     auto view_b = cipher_b.mint_open_view();
 
-    constexpr ContentHash kHash{0xC0FFEE'BA'12345678ULL};
+    constexpr ContentHash kHash{0xC0FFEEBA12345678ULL};
     constexpr std::uint64_t kStep = 42u;
 
     cipher_a.advance_head(view_a, kHash, kStep);
@@ -118,7 +118,7 @@ static void test_t05_round_trip(const char* base_dir) {
     auto cipher = Cipher::open(CipherRoot{dir});
     auto view = cipher.mint_open_view();
 
-    constexpr ContentHash kHash{0xDEAD'BEEF'CAFE'BABEULL};
+    constexpr ContentHash kHash{0xDEADBEEFCAFEBABEULL};
     constexpr std::uint64_t kStep = 7u;
 
     cipher.record_event<eff::Row<eff::Effect::IO, eff::Effect::Block>>(view, kHash, kStep);
@@ -143,7 +143,7 @@ static void test_t06_bg_superset_row(const char* base_dir) {
 
     using BgRow = eff::Row<eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block, eff::Effect::Bg>;
 
-    constexpr ContentHash kHash{0x1234'5678'9ABC'DEF0ULL};
+    constexpr ContentHash kHash{0x123456789ABCDEF0ULL};
     cipher.record_event<BgRow>(view, kHash, 1u);
 
     assert(cipher.head() == kHash);
@@ -159,7 +159,7 @@ static void test_t07_full_universe_row(const char* base_dir) {
     using UniverseRow = eff::Row<eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block, eff::Effect::Bg,
                                  eff::Effect::Init, eff::Effect::Test>;
 
-    constexpr ContentHash kHash{0xFEDC'BA98'7654'3210ULL};
+    constexpr ContentHash kHash{0xFEDCBA9876543210ULL};
     cipher.record_event<UniverseRow>(view, kHash, 1u);
 
     assert(cipher.head() == kHash);
@@ -284,10 +284,10 @@ static void test_audit_b_multi_event_byte_equivalence(const char* base_dir) {
 
     constexpr int N = 16;
     constexpr std::uint64_t kHashes[N] = {
-        0x0001'0001'0001'0001ULL, 0xFFFE'0002'0003'0004ULL, 0xC0FFEE'0000'0000ULL,    0xDEAD'BEEF'CAFE'BABEULL,
-        0x1234'5678'9ABC'DEF0ULL, 0xFEDC'BA98'7654'3210ULL, 0x5555'5555'5555'5555ULL, 0xAAAA'AAAA'AAAA'AAAAULL,
-        0x0F0F'0F0F'0F0F'0F0FULL, 0xF0F0'F0F0'F0F0'F0F0ULL, 0x1111'2222'3333'4444ULL, 0x4444'3333'2222'1111ULL,
-        0x8000'0000'0000'0001ULL, 0x7FFF'FFFF'FFFF'FFFEULL, 0x0123'4567'89AB'CDEFULL, 0xFEDC'BA98'7654'3211ULL,
+        0x0001000100010001ULL, 0xFFFE000200030004ULL, 0xC0FFEE00000000ULL,   0xDEADBEEFCAFEBABEULL,
+        0x123456789ABCDEF0ULL, 0xFEDCBA9876543210ULL, 0x5555555555555555ULL, 0xAAAAAAAAAAAAAAAAULL,
+        0x0F0F0F0F0F0F0F0FULL, 0xF0F0F0F0F0F0F0F0ULL, 0x1111222233334444ULL, 0x4444333322221111ULL,
+        0x8000000000000001ULL, 0x7FFFFFFFFFFFFFFEULL, 0x0123456789ABCDEFULL, 0xFEDCBA9876543211ULL,
     };
 
     for (int i = 0; i < N; ++i) {

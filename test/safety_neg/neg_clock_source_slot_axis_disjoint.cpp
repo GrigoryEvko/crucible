@@ -32,6 +32,5 @@ int main() {
     // enums with no implicit conversion.
     ClockSourceLattice::get<0>(point) = SuspendBehavior::KeepsTicking;
 
-    return static_cast<int>(
-        ClockSourceLattice::get<0>(point) == DetSafeTier::Pure);
+    return static_cast<int>(ClockSourceLattice::get<0>(point) == DetSafeTier::Pure);
 }

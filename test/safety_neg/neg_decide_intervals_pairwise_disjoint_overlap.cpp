@@ -67,9 +67,7 @@
 
 namespace {
 
-[[nodiscard]] constexpr bool gate(
-    std::span<const crucible::decide::Interval<uint64_t>> ivs
-) noexcept {
+[[nodiscard]] constexpr bool gate(std::span<const crucible::decide::Interval<uint64_t>> ivs) noexcept {
     CRUCIBLE_PRE(crucible::decide::intervals_pairwise_disjoint(ivs));
     return true;
 }

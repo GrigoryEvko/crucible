@@ -21,8 +21,7 @@ int main() {
     ::crucible::effects::ColdInitCtx init{};
 
     // Should FAIL: 7 is not a CpuPinned proof.
-    auto reader = ::crucible::fixy::time::mint_tsc_reader<
-        ::crucible::fixy::time::TscMode::Raw>(init, 7);
+    auto reader = ::crucible::fixy::time::mint_tsc_reader<::crucible::fixy::time::TscMode::Raw>(init, 7);
 
     return static_cast<int>(reader.read().peek());
 }

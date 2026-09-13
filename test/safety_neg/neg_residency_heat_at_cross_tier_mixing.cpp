@@ -19,11 +19,10 @@
 using namespace crucible::algebra::lattices;
 
 int main() {
-    ResidencyHeatLattice::At<ResidencyHeatTag::Hot>::element_type  hot_elt{};
+    ResidencyHeatLattice::At<ResidencyHeatTag::Hot>::element_type hot_elt{};
     ResidencyHeatLattice::At<ResidencyHeatTag::Cold>::element_type cold_elt{};
 
     // Should FAIL: At<Hot>::leq expects two At<Hot>::element_type
     // arguments; cold_elt is At<Cold>::element_type.
-    return static_cast<int>(
-        ResidencyHeatLattice::At<ResidencyHeatTag::Hot>::leq(hot_elt, cold_elt));
+    return static_cast<int>(ResidencyHeatLattice::At<ResidencyHeatTag::Hot>::leq(hot_elt, cold_elt));
 }

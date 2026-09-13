@@ -25,8 +25,8 @@
 using namespace crucible::safety;
 
 int main() {
-    NumericalTier<Tolerance::BITEXACT, int>  bx{42};
-    NumericalTier<Tolerance::ULP_FP16, int>  fp16{42};
+    NumericalTier<Tolerance::BITEXACT, int> bx{42};
+    NumericalTier<Tolerance::ULP_FP16, int> fp16{42};
 
     // Should FAIL: operator== for NumericalTier<BITEXACT, int>
     // takes two NumericalTier<BITEXACT, int>&; fp16 is

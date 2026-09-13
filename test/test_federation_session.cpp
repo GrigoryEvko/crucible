@@ -40,7 +40,7 @@ struct Endpoint {
 inline auto mint_test_admittance_permission() noexcept {
     auto local_cipher = saf::mint_permission_root<perm::tag::LocalCipherTag>();
     auto handshake = perm::make_self_signed_handshake<PeerOrg>(
-        /*peer_key_fp=*/perm::PeerKeyFingerprint{0xFED'C0DEULL},
+        /*peer_key_fp=*/perm::PeerKeyFingerprint{0xFEDC0DEULL},
         /*nonce=*/perm::Nonce{0xC0FFEEULL});
     auto admitted =
         perm::mint_federation_admittance<PeerOrg, perm::policy::admit_orgs<PeerOrg>>(local_cipher, handshake);
@@ -48,8 +48,8 @@ inline auto mint_test_admittance_permission() noexcept {
 }
 
 constexpr crucible::KernelCacheKey kKey{
-    crucible::ContentHash{0x1111'2222'3333'4444ULL},
-    crucible::RowHash{0xAAAA'BBBB'CCCC'DDDDULL},
+    crucible::ContentHash{0x1111222233334444ULL},
+    crucible::RowHash{0xAAAABBBBCCCCDDDDULL},
 };
 
 static_assert(proto::is_global_well_formed_v<fp::FederationGlobal<TraceKey>>);

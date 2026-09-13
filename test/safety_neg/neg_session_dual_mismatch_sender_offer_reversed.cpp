@@ -32,18 +32,14 @@ struct WrongBranchA {};
 struct WrongBranchB {};
 struct StrayBranch {};
 
-using ServerProto =
-    proto::Offer<proto::Sender<AliceRole>,
-                 proto::Recv<WrongBranchA, proto::End>,
-                 proto::Recv<WrongBranchB, proto::End>>;
+using ServerProto = proto::Offer<proto::Sender<AliceRole>, proto::Recv<WrongBranchA, proto::End>,
+                                 proto::Recv<WrongBranchB, proto::End>>;
 
 // Client claims a THREE-branch Select where the server only offers
 // TWO — neither `dual_of_t<ServerProto> == ClientProto` nor
 // `ServerProto == dual_of_t<ClientProto>` can hold.
-using ClientProto =
-    proto::Select<proto::Send<WrongBranchA, proto::End>,
-                  proto::Send<WrongBranchB, proto::End>,
-                  proto::Send<StrayBranch,  proto::End>>;
+using ClientProto = proto::Select<proto::Send<WrongBranchA, proto::End>, proto::Send<WrongBranchB, proto::End>,
+                                  proto::Send<StrayBranch, proto::End>>;
 
 void compile_time_reject() {
     // Reverse orientation: Server side first, Client side second.

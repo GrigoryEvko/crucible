@@ -18,8 +18,7 @@
 
 namespace fcipher = ::crucible::fixy::contract::cipher;
 
-using BadMint = decltype(fcipher::mint_restore<::crucible::ContentHash>(
-    std::declval<fcipher::ColdTierHandle<int>>(),
-    std::declval<::crucible::ContentHash>()));
+using BadMint = decltype(fcipher::mint_restore<::crucible::ContentHash>(std::declval<fcipher::ColdTierHandle<int>>(),
+                                                                        std::declval<::crucible::ContentHash>()));
 
 int main() { return sizeof(BadMint); }

@@ -8,12 +8,10 @@
 
 #include <span>
 
-static void consume(crucible::RecipeRegistry::Entries entries) {
-  (void)entries;
-}
+static void consume(crucible::RecipeRegistry::Entries entries) { (void)entries; }
 
 int main() {
-  std::span<const crucible::RecipeRegistry::Entry> raw{};
-  consume(raw);
-  return 0;
+    std::span<const crucible::RecipeRegistry::Entry> raw{};
+    consume(raw);
+    return 0;
 }

@@ -32,9 +32,7 @@ using namespace crucible::algebra::lattices;
 
 int main() {
     // Absolute modality (NOT RelativeMonad).
-    using G = Graded<ModalityKind::Absolute,
-                     QttSemiring::At<QttGrade::One>,
-                     int>;
+    using G = Graded<ModalityKind::Absolute, QttSemiring::At<QttGrade::One>, int>;
 
     // Should FAIL: inject() requires RelativeMonadModality<M>, M is Absolute.
     auto g = G::inject(42, {});

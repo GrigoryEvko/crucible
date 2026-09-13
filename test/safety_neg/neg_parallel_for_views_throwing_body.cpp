@@ -30,19 +30,17 @@ int main() {
     Arena arena;
     auto perm = safety::mint_permission_root<DataNeg>();
     constexpr std::size_t N = 8;
-    auto region = safety::OwnedRegion<std::uint64_t, DataNeg>::adopt(
-        effects::testing::test().alloc, arena, N, std::move(perm));
+    auto region =
+        safety::OwnedRegion<std::uint64_t, DataNeg>::adopt(effects::testing::test().alloc, arena, N, std::move(perm));
 
     // Should FAIL: body is NOT noexcept (no `noexcept` qualifier on
     // the lambda).  parallel_for_views requires a noexcept-invocable
     // body because workers run inside jthread bodies that cannot
     // propagate exceptions across the thread boundary.
-    auto recombined = safety::parallel_for_views<2>(
-        std::move(region),
-        [](auto sub) /* NOT noexcept */ {
-            for (auto& x : sub.span()) x = 1;
-        }
-    );
+    auto recombined = safety::parallel_for_views<2>(std::move(region), [](auto sub) /* NOT noexcept */ {
+        for (auto& x : sub.span())
+            x = 1;
+    });
     (void)recombined;
 
     return 0;

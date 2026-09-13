@@ -21,7 +21,7 @@ using namespace crucible::safety;
 
 int main() {
     Wait<WaitStrategy_v::SpinPause, int> spin_value{42};
-    Wait<WaitStrategy_v::Block,     int> block_value{7};
+    Wait<WaitStrategy_v::Block, int> block_value{7};
 
     // Should FAIL: Wait<SpinPause, int>::swap takes
     // Wait<SpinPause, int>&; block_value is a different type.

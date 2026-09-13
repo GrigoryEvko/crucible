@@ -16,7 +16,7 @@ namespace {
     auto iface = cntp::NicInterfaceName::from("eth0");
     auto ifindex = cntp::admit_af_xdp_ifindex(7);
     auto queue = cntp::admit_af_xdp_queue_id(3);
-    auto frame = cntp::admit_af_xdp_frame_size(2'048);
+    auto frame = cntp::admit_af_xdp_frame_size(2048);
     auto frames = cntp::admit_af_xdp_frame_count(64);
     auto ring = cntp::admit_af_xdp_ring_entries(64);
 
@@ -37,8 +37,8 @@ void test_admission() {
     assert(cntp::af_xdp_error_name(cntp::AfXdpError::TxRingFull) == std::string_view{"TxRingFull"});
 
     assert(!cntp::admit_af_xdp_ifindex(0).has_value());
-    assert(!cntp::admit_af_xdp_queue_id(70'000).has_value());
-    assert(!cntp::admit_af_xdp_frame_size(1'500).has_value());
+    assert(!cntp::admit_af_xdp_queue_id(70000).has_value());
+    assert(!cntp::admit_af_xdp_frame_size(1500).has_value());
     assert(!cntp::admit_af_xdp_frame_count(63).has_value());
     assert(!cntp::admit_af_xdp_ring_entries(0).has_value());
 
@@ -47,9 +47,9 @@ void test_admission() {
 
 void test_socket_substrate_rings() {
     effects::ColdInitCtx init{};
-    auto socket = cntp::mint_af_xdp_socket<131'072, 2'048, 64, 64, 64, 64>(init, config());
+    auto socket = cntp::mint_af_xdp_socket<131072, 2048, 64, 64, 64, 64>(init, config());
 
-    static_assert(decltype(socket)::umem_bytes == 131'072);
+    static_assert(decltype(socket)::umem_bytes == 131072);
     static_assert(decltype(socket)::frame_count == 64);
     static_assert(!std::copy_constructible<decltype(socket)>);
     static_assert(!std::move_constructible<decltype(socket)>);
@@ -63,7 +63,7 @@ void test_socket_substrate_rings() {
                                  saf::Tagged<decltype(socket)::packet_view, saf::source::Sanitized>>);
     static_assert(sizeof(decltype(socket)::rx_frame) == sizeof(decltype(socket)::packet_view));
 
-    auto oversized = socket.alloc_tx_buffer(4'096);
+    auto oversized = socket.alloc_tx_buffer(4096);
     assert(!oversized.has_value());
 
     auto packet = socket.alloc_tx_buffer(128);
@@ -103,7 +103,7 @@ void test_rings_are_in_process_only() {
     assert(cntp::kernel_rings_shared == false);
 
     effects::ColdInitCtx init{};
-    auto socket = cntp::mint_af_xdp_socket<131'072, 2'048, 64, 64, 64, 64>(init, config());
+    auto socket = cntp::mint_af_xdp_socket<131072, 2048, 64, 64, 64, 64>(init, config());
 
     // A freshly minted socket carries nothing, because nothing in kernel
     // space feeds it.
@@ -152,8 +152,8 @@ void test_rings_are_in_process_only() {
 int main() {
     static_assert(std::same_as<cntp::DeclaredAfXdpConfig::tag_type, saf::source::AfXdp>);
     static_assert(sizeof(cntp::DeclaredAfXdpConfig) == sizeof(cntp::AfXdpConfig));
-    static_assert(cntp::AfXdpStaticShape<131'072, 2'048, 64, 64, 64, 64>);
-    static_assert(!cntp::AfXdpStaticShape<131'072, 1'500, 64, 64, 64, 64>);
+    static_assert(cntp::AfXdpStaticShape<131072, 2048, 64, 64, 64, 64>);
+    static_assert(!cntp::AfXdpStaticShape<131072, 1500, 64, 64, 64, 64>);
     static_assert(cntp::CtxFitsAfXdpMint<effects::ColdInitCtx>);
     static_assert(!cntp::CtxFitsAfXdpMint<effects::BgDrainCtx>);
 

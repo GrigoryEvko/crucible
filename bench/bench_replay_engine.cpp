@@ -29,55 +29,60 @@ namespace {
 // op[i] writes to slot i, reads from slot (i-1) mod N. Plan gives each
 // slot 256 B of a dummy pool.
 struct BenchRegion {
-    TraceEntry* ops        = nullptr;
-    SlotId*     out_slots  = nullptr;
-    SlotId*     in_slots   = nullptr;
-    TensorSlot* slots      = nullptr;
-    MemoryPlan  plan{};
-    RegionNode  region{};
-    uint32_t    num_ops    = 0;
+    TraceEntry* ops = nullptr;
+    SlotId* out_slots = nullptr;
+    SlotId* in_slots = nullptr;
+    TensorSlot* slots = nullptr;
+    MemoryPlan plan{};
+    RegionNode region{};
+    uint32_t num_ops = 0;
 
     explicit BenchRegion(uint32_t n) : num_ops{n} {
-        ops       = static_cast<TraceEntry*>(std::calloc(n, sizeof(TraceEntry)));
-        out_slots = static_cast<SlotId*>    (std::calloc(n, sizeof(SlotId)));
-        in_slots  = static_cast<SlotId*>    (std::calloc(n, sizeof(SlotId)));
-        slots     = static_cast<TensorSlot*>(std::calloc(n, sizeof(TensorSlot)));
+        ops = static_cast<TraceEntry*>(std::calloc(n, sizeof(TraceEntry)));
+        out_slots = static_cast<SlotId*>(std::calloc(n, sizeof(SlotId)));
+        in_slots = static_cast<SlotId*>(std::calloc(n, sizeof(SlotId)));
+        slots = static_cast<TensorSlot*>(std::calloc(n, sizeof(TensorSlot)));
         if (!ops || !out_slots || !in_slots || !slots) std::abort();
 
         for (uint32_t i = 0; i < n; i++) {
             out_slots[i] = SlotId{i};
-            in_slots[i]  = SlotId{(i > 0) ? (i - 1) : (n - 1)};
+            in_slots[i] = SlotId{(i > 0) ? (i - 1) : (n - 1)};
 
-            ops[i].schema_hash     = SchemaHash{1000 + i};
-            ops[i].shape_hash      = ShapeHash{2000 + i};
-            ops[i].num_outputs     = 1;
+            ops[i].schema_hash = SchemaHash{1000 + i};
+            ops[i].shape_hash = ShapeHash{2000 + i};
+            ops[i].num_outputs = 1;
             ops[i].output_slot_ids = &out_slots[i];
-            ops[i].num_inputs      = 1;
-            ops[i].input_slot_ids  = &in_slots[i];
+            ops[i].num_inputs = 1;
+            ops[i].input_slot_ids = &in_slots[i];
         }
 
         for (uint32_t i = 0; i < n; i++) {
-            slots[i] = TensorSlot{
-                .offset_bytes = i * 256ULL, .nbytes = 256,
-                .birth_op = OpIndex{0}, .death_op = OpIndex{n},
-                .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
-                .device_idx = 0, .layout = Layout::Strided, .is_external = false,
-                .pad = {}, .slot_id = SlotId{i}, .pad2 = {}
-            };
+            slots[i] = TensorSlot{.offset_bytes = i * 256ULL,
+                                  .nbytes = 256,
+                                  .birth_op = OpIndex{0},
+                                  .death_op = OpIndex{n},
+                                  .dtype = ScalarType::Float,
+                                  .device_type = DeviceType::CPU,
+                                  .device_idx = 0,
+                                  .layout = Layout::Strided,
+                                  .is_external = false,
+                                  .pad = {},
+                                  .slot_id = SlotId{i},
+                                  .pad2 = {}};
         }
 
-        plan.slots        = slots;
-        plan.num_slots    = n;
+        plan.slots = slots;
+        plan.num_slots = n;
         plan.num_external = 0;
-        plan.pool_bytes   = static_cast<uint64_t>(n) * 256;
-        plan.device_type  = DeviceType::CPU;
-        plan.device_idx   = 0;
+        plan.pool_bytes = static_cast<uint64_t>(n) * 256;
+        plan.device_type = DeviceType::CPU;
+        plan.device_idx = 0;
 
         std::memset(&region, 0, sizeof(region));
-        region.kind    = TraceNodeKind::REGION;
-        region.ops     = ops;
+        region.kind = TraceNodeKind::REGION;
+        region.ops = ops;
         region.num_ops = n;
-        region.plan    = &plan;
+        region.plan = &plan;
     }
 
     ~BenchRegion() {
@@ -87,15 +92,14 @@ struct BenchRegion {
         std::free(slots);
     }
 
-    BenchRegion(const BenchRegion&)            = delete;
+    BenchRegion(const BenchRegion&) = delete;
     BenchRegion& operator=(const BenchRegion&) = delete;
 };
 
 // Walks — each calls engine.reset() at top so repeated invocation
 // through auto-batch is stateless.  Each helper mints its own
 // ActiveView; engine is already initialized before being passed in.
-ReplayStatus walk_advance_only(ReplayEngine& engine,
-                               const TraceEntry* ops, uint32_t n) {
+ReplayStatus walk_advance_only(ReplayEngine& engine, const TraceEntry* ops, uint32_t n) {
     auto av = engine.mint_active_view();
     engine.reset(av);
     ReplayStatus last = ReplayStatus::MATCH;
@@ -105,8 +109,7 @@ ReplayStatus walk_advance_only(ReplayEngine& engine,
     return last;
 }
 
-void* walk_advance_output(ReplayEngine& engine,
-                          const TraceEntry* ops, uint32_t n) {
+void* walk_advance_output(ReplayEngine& engine, const TraceEntry* ops, uint32_t n) {
     auto av = engine.mint_active_view();
     engine.reset(av);
     void* last_ptr = nullptr;
@@ -117,8 +120,7 @@ void* walk_advance_output(ReplayEngine& engine,
     return last_ptr;
 }
 
-void* walk_advance_both(ReplayEngine& engine,
-                        const TraceEntry* ops, uint32_t n) {
+void* walk_advance_both(ReplayEngine& engine, const TraceEntry* ops, uint32_t n) {
     auto av = engine.mint_active_view();
     engine.reset(av);
     void* last_ptr = nullptr;
@@ -131,8 +133,7 @@ void* walk_advance_both(ReplayEngine& engine,
 }
 
 // CrucibleContext drives its internal ReplayEngine; no external reset.
-void* walk_context(CrucibleContext& ctx,
-                   const TraceEntry* ops, uint32_t n) {
+void* walk_context(CrucibleContext& ctx, const TraceEntry* ops, uint32_t n) {
     auto cv = ctx.mint_compiled_view();
     void* last_ptr = nullptr;
     for (uint32_t i = 0; i < n; i++) {
@@ -143,7 +144,7 @@ void* walk_context(CrucibleContext& ctx,
     return last_ptr;
 }
 
-} // namespace
+}  // namespace
 
 int main() {
     bench::print_system_info();
@@ -178,19 +179,19 @@ int main() {
         std::snprintf(label3, sizeof(label3), "advance + out + in     [%4u ops]", n);
         std::snprintf(label4, sizeof(label4), "CrucibleContext        [%4u ops]", n);
 
-        reports.push_back(bench::run(label1, [&]{
+        reports.push_back(bench::run(label1, [&] {
             auto s = walk_advance_only(engine, br.ops, n);
             bench::do_not_optimize(s);
         }));
-        reports.push_back(bench::run(label2, [&]{
+        reports.push_back(bench::run(label2, [&] {
             auto p = walk_advance_output(engine, br.ops, n);
             bench::do_not_optimize(p);
         }));
-        reports.push_back(bench::run(label3, [&]{
+        reports.push_back(bench::run(label3, [&] {
             auto p = walk_advance_both(engine, br.ops, n);
             bench::do_not_optimize(p);
         }));
-        reports.push_back(bench::run(label4, [&]{
+        reports.push_back(bench::run(label4, [&] {
             auto p = walk_context(ctx, br.ops, n);
             bench::do_not_optimize(p);
         }));

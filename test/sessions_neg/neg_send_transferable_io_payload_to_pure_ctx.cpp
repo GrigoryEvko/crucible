@@ -10,7 +10,7 @@
 
 #include <utility>
 
-namespace eff   = crucible::effects;
+namespace eff = crucible::effects;
 namespace proto = crucible::safety::proto;
 
 struct IoBuffer {};
@@ -19,13 +19,10 @@ struct Resource {};
 
 int main() {
     using IoValue = eff::Computation<eff::Row<eff::Effect::IO>, IoBuffer>;
-    using Proto = proto::Send<proto::Transferable<IoValue, BufferPerm>,
-                              proto::End>;
+    using Proto = proto::Send<proto::Transferable<IoValue, BufferPerm>, proto::End>;
 
     eff::HotFgCtx fg;
     auto perm = crucible::safety::mint_permission_root<BufferPerm>();
-    [[maybe_unused]] auto handle =
-        proto::mint_permissioned_session<Proto>(
-            fg, Resource{}, std::move(perm));
+    [[maybe_unused]] auto handle = proto::mint_permissioned_session<Proto>(fg, Resource{}, std::move(perm));
     return 0;
 }

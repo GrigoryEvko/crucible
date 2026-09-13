@@ -39,22 +39,19 @@
 #include <utility>
 
 namespace {
-    // Sanitized-only consumer — refuses any other Tag at the type
-    // system level.  In production this would be a Forge / Mimic /
-    // KernelCache entry point that requires validated input.
-    [[maybe_unused]] void hash_for_kernel(
-        ::crucible::safety::Tagged<std::uint64_t,
-                                   ::crucible::safety::source::Sanitized> /*seed*/)
-    {
-        // body irrelevant — the call-site type-check is the test.
-    }
+// Sanitized-only consumer — refuses any other Tag at the type
+// system level.  In production this would be a Forge / Mimic /
+// KernelCache entry point that requires validated input.
+[[maybe_unused]] void
+hash_for_kernel(::crucible::safety::Tagged<std::uint64_t, ::crucible::safety::source::Sanitized> /*seed*/) {
+    // body irrelevant — the call-site type-check is the test.
 }
+}  // namespace
 
 // Anchor a legitimate call so the file is self-contained — Sanitized
 // input is what the API admits.  This call compiles.
 [[maybe_unused]] static void anchor_sanitized_call() {
-    auto seed = ::crucible::safety::mint_tagged<
-        ::crucible::safety::source::Sanitized, std::uint64_t>(0xDEADBEEFULL);
+    auto seed = ::crucible::safety::mint_tagged<::crucible::safety::source::Sanitized, std::uint64_t>(0xDEADBEEFULL);
     hash_for_kernel(std::move(seed));
 }
 
@@ -64,8 +61,7 @@ namespace {
 // conversion; GCC rejects with "cannot convert ... source::External
 // ... to ... source::Sanitized" or similar typed-argument mismatch.
 [[maybe_unused]] static void offending_external_into_sanitized_slot() {
-    auto raw = ::crucible::safety::mint_tagged<
-        ::crucible::safety::source::External, std::uint64_t>(0xDEADBEEFULL);
+    auto raw = ::crucible::safety::mint_tagged<::crucible::safety::source::External, std::uint64_t>(0xDEADBEEFULL);
     hash_for_kernel(std::move(raw));  // ERROR: External ≠ Sanitized
 }
 

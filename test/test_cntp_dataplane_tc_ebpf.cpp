@@ -42,12 +42,9 @@ namespace {
 
 void test_names_and_admission() {
     assert(dataplane::tc_action_name(dataplane::TcAction::Shot) == std::string_view{"Shot"});
-    assert(dataplane::tc_attach_point_name(dataplane::TcAttachPoint::Egress) ==
-           std::string_view{"Egress"});
-    assert(dataplane::tc_program_kind_name(dataplane::TcProgramKind::PacingGate) ==
-           std::string_view{"PacingGate"});
-    assert(dataplane::tc_error_name(dataplane::TcError::MissingTcEbpf) ==
-           std::string_view{"MissingTcEbpf"});
+    assert(dataplane::tc_attach_point_name(dataplane::TcAttachPoint::Egress) == std::string_view{"Egress"});
+    assert(dataplane::tc_program_kind_name(dataplane::TcProgramKind::PacingGate) == std::string_view{"PacingGate"});
+    assert(dataplane::tc_error_name(dataplane::TcError::MissingTcEbpf) == std::string_view{"MissingTcEbpf"});
 
     assert(dataplane::admit_tc_dscp(63).has_value());
     assert(!dataplane::admit_tc_dscp(64).has_value());
@@ -64,11 +61,9 @@ void test_program_caps() {
     auto ifindex = dataplane::admit_xdp_ifindex(11);
     assert(ifindex.has_value());
 
-    auto program = dataplane::mint_tc_program(init, iface(), *ifindex,
-                                       dataplane::TcAttachPoint::Egress,
-                                       dataplane::TcProgramKind::EgressMark);
-    static_assert(std::same_as<decltype(program)::tag_type,
-                               saf::source::TcEbpf>);
+    auto program = dataplane::mint_tc_program(init, iface(), *ifindex, dataplane::TcAttachPoint::Egress,
+                                              dataplane::TcProgramKind::EgressMark);
+    static_assert(std::same_as<decltype(program)::tag_type, saf::source::TcEbpf>);
     assert(program.value().required_features.test(cog::NicFeature::TcEbpf));
     assert(dataplane::tc_admit_nic(nic_identity(), tc_caps(), program).has_value());
 
@@ -96,8 +91,7 @@ void test_flow_class_map() {
     assert(classid.has_value());
     assert(priority.has_value());
 
-    auto cls = dataplane::mint_tc_flow_class(*dscp, *classid, *priority,
-                                      dataplane::TcAction::Ok);
+    auto cls = dataplane::mint_tc_flow_class(*dscp, *classid, *priority, dataplane::TcAction::Ok);
     static_assert(std::same_as<decltype(cls)::tag_type, saf::source::TcEbpf>);
 
     dataplane::TcFlowClassMap<2> map{};

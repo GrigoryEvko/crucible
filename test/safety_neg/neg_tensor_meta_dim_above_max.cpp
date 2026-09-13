@@ -12,9 +12,7 @@
 #include <cstdint>
 
 int main() {
-  constexpr auto bad =
-      crucible::tensor_dim(
-          crucible::kMaxTensorDimExtent + std::int64_t{1});
-  (void)bad;
-  return 0;
+    constexpr auto bad = crucible::tensor_dim(crucible::kMaxTensorDimExtent + std::int64_t{1});
+    (void)bad;
+    return 0;
 }

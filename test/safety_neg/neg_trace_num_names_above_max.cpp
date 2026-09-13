@@ -32,8 +32,7 @@ int main() {
     // (`bounded_above<SCHEMA_TABLE_CAP>(v)`) to be exercised at
     // compile time.  v == SCHEMA_TABLE_CAP + 1 → predicate(v) == false
     // → contract violation → not a constant expression → ill-formed.
-    constexpr crucible::ValidTraceNumNames bad{
-        uint32_t{crucible::SCHEMA_TABLE_CAP} + 1u};
+    constexpr crucible::ValidTraceNumNames bad{uint32_t{crucible::SCHEMA_TABLE_CAP} + 1u};
     (void)bad;
     return 0;
 }

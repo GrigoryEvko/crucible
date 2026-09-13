@@ -48,7 +48,6 @@ int main() {
     // for CheckpointedSession produced false-by-default.  Post-fix:
     // the conjunctive walk recurses into BadBase and fires the
     // routed [CrashBranch_Missing_In_Tree] diagnostic.
-    assert_every_offer_has_crash_branch_for<IllFormedProto,
-                                            ns::UnreliablePeer>();
+    assert_every_offer_has_crash_branch_for<IllFormedProto, ns::UnreliablePeer>();
     return 0;
 }

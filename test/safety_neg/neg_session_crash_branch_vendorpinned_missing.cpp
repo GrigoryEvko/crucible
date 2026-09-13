@@ -45,7 +45,6 @@ int main() {
     using BadInner = Offer<Recv<ns::Msg, End>>;
     using IllFormedProto = VendorPinned<VendorBackend::NV, BadInner>;
 
-    assert_every_offer_has_crash_branch_for<IllFormedProto,
-                                            ns::UnreliablePeer>();
+    assert_every_offer_has_crash_branch_for<IllFormedProto, ns::UnreliablePeer>();
     return 0;
 }

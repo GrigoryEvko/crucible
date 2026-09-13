@@ -28,7 +28,6 @@ int main() {
 
     // Should FAIL: Path<Sanitized> ≠ Path<External>; the type system
     // refuses the cross-tag substitution.
-    [[maybe_unused]] auto cipher =
-        ::crucible::Cipher::open(std::move(already_sanitized));
+    [[maybe_unused]] auto cipher = ::crucible::Cipher::open(std::move(already_sanitized));
     return 0;
 }

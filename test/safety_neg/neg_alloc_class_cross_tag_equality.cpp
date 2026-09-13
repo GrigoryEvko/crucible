@@ -16,7 +16,7 @@ using namespace crucible::safety;
 
 int main() {
     AllocClass<AllocClassTag_v::Stack, int> stack_value{42};
-    AllocClass<AllocClassTag_v::Heap,  int> heap_value{42};
+    AllocClass<AllocClassTag_v::Heap, int> heap_value{42};
 
     // Should FAIL: operator== for AllocClass<Stack, int> takes two
     // AllocClass<Stack, int>&; heap_value is AllocClass<Heap, int>.

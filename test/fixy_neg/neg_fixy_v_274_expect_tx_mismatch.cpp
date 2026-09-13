@@ -23,7 +23,7 @@
 #include <array>
 #include <utility>
 
-namespace ap  = crucible::fixy::async_pipeline;
+namespace ap = crucible::fixy::async_pipeline;
 namespace saf = crucible::safety;
 namespace eff = crucible::effects;
 using MS = crucible::algebra::lattices::MemoryScope;
@@ -33,8 +33,8 @@ struct SlotTag {};
 struct Handle {
     using slot_tag = SlotTag;
     static constexpr std::size_t slot_bytes = 256;
-    static constexpr std::size_t stages     = 2;
-    static constexpr MS          scope      = MS::Cta;
+    static constexpr std::size_t stages = 2;
+    static constexpr MS scope = MS::Cta;
     void arrive_expect_tx(std::size_t) noexcept {}
     [[nodiscard]] bool try_wait(std::uint32_t) noexcept { return true; }
 };
@@ -50,9 +50,8 @@ int main() {
     plan.num_slots = 1u;
 
     // Bytes=128 disagrees with the handle's slot_bytes=256 → gate rejects.
-    auto pair = ap::mint_async_pipeline<128>(
-        ctx, &plan, crucible::SlotId{0u}, handle,
-        saf::mint_permission_root<SlotTag>());
+    auto pair =
+        ap::mint_async_pipeline<128>(ctx, &plan, crucible::SlotId{0u}, handle, saf::mint_permission_root<SlotTag>());
     (void)pair;
     return 0;
 }

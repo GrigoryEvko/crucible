@@ -28,12 +28,14 @@
 #include <crucible/safety/Tagged.h>
 
 namespace crucible {
-struct FakeRegionNode { int dummy; };
-}
+struct FakeRegionNode {
+    int dummy;
+};
+}  // namespace crucible
 
 int main() {
-    using ActiveRegionPtr = ::crucible::safety::Tagged<
-        const crucible::FakeRegionNode*, ::crucible::safety::source::Vigil>;
+    using ActiveRegionPtr =
+        ::crucible::safety::Tagged<const crucible::FakeRegionNode*, ::crucible::safety::source::Vigil>;
 
     crucible::FakeRegionNode region{};
     const crucible::FakeRegionNode* raw_ptr = &region;

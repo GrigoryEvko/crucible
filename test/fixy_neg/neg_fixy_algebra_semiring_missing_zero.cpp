@@ -28,23 +28,21 @@ namespace fa = crucible::fixy::algebra;
 struct AlgebraNegFixture3_MissingZero {
     using element_type = int;
     static constexpr bool leq(int a, int b) noexcept { return a <= b; }
-    static constexpr int  join(int a, int b) noexcept { return a > b ? a : b; }
-    static constexpr int  meet(int a, int b) noexcept { return a < b ? a : b; }
-    static constexpr int  add(int a, int b) noexcept { return a + b; }
-    static constexpr int  mul(int a, int b) noexcept { return a * b; }
+    static constexpr int join(int a, int b) noexcept { return a > b ? a : b; }
+    static constexpr int meet(int a, int b) noexcept { return a < b ? a : b; }
+    static constexpr int add(int a, int b) noexcept { return a + b; }
+    static constexpr int mul(int a, int b) noexcept { return a * b; }
     // INTENTIONALLY MISSING: static constexpr int zero() noexcept;
-    static constexpr int  one()  noexcept { return 1; }
-    static constexpr std::string_view name() noexcept {
-        return "AlgebraNegFixture3_MissingZero";
-    }
+    static constexpr int one() noexcept { return 1; }
+    static constexpr std::string_view name() noexcept { return "AlgebraNegFixture3_MissingZero"; }
 };
 
 int main() {
     // The Semiring concept gate must reject — no zero() identity.
     static_assert(fa::Semiring<AlgebraNegFixture3_MissingZero>,
-        "fa::Semiring<MissingZero> must reject — no zero() identity.  "
-        "fixy::algebra alias preserves the substrate's concept gate; a "
-        "Semiring without an additive identity is structurally broken "
-        "and cannot serve as a Graded<> lattice parameter.");
+                  "fa::Semiring<MissingZero> must reject — no zero() identity.  "
+                  "fixy::algebra alias preserves the substrate's concept gate; a "
+                  "Semiring without an additive identity is structurally broken "
+                  "and cannot serve as a Graded<> lattice parameter.");
     return 0;
 }

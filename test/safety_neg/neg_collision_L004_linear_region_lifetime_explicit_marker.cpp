@@ -58,27 +58,26 @@ struct ExplicitlyUnprovenRegionTag {};
 // Linear × lifetime::In<Tag> — same shape as the shipped fixture,
 // but the anti-marker is engaged via explicit specialization below
 // rather than via default-TRUE behavior.
-using Bad = fn::Fn<
-    int,                                                  // 1  Type
-    fn::pred::True,                                       // 2  Refinement
-    fn::UsageMode::Linear,                                // 3  Usage — triggers L004
-    fx::Row<>,                                            // 4  EffectRow
-    fn::SecLevel::Public,                                 // 5  Security
-    fn::proto::None,                                      // 6  Protocol
-    fn::lifetime::In<ExplicitlyUnprovenRegionTag{}>,      // 7  Lifetime — triggers L004
-    fn::source::Sanitized,                                // 8  Source
-    fn::trust::Tested,                                    // 9  Trust
-    fn::ReprKind::Opaque,                                 // 10 Repr
-    fn::cost::Constant,                                   // 11 Cost (bounded — B001 silent)
-    fn::precision::Exact,                                 // 12 Precision
-    fn::space::Bounded<sizeof(int)>,                      // 13 Space
-    fn::OverflowMode::Trap,                               // 14 Overflow
-    fn::MutationMode::Immutable,                          // 15 Mutation
-    fn::ReentrancyMode::NonReentrant,                     // 16 Reentrancy — non-Coroutine (R-family silent)
-    fn::size_pol::Sized<sizeof(int)>,                     // 17 Size
-    /*Version=*/1,                                        // 18 Version
-    fn::stale::Fresh                                      // 19 Staleness
->;
+using Bad = fn::Fn<int,  // 1  Type
+                   fn::pred::True,  // 2  Refinement
+                   fn::UsageMode::Linear,  // 3  Usage — triggers L004
+                   fx::Row<>,  // 4  EffectRow
+                   fn::SecLevel::Public,  // 5  Security
+                   fn::proto::None,  // 6  Protocol
+                   fn::lifetime::In<ExplicitlyUnprovenRegionTag{}>,  // 7  Lifetime — triggers L004
+                   fn::source::Sanitized,  // 8  Source
+                   fn::trust::Tested,  // 9  Trust
+                   fn::ReprKind::Opaque,  // 10 Repr
+                   fn::cost::Constant,  // 11 Cost (bounded — B001 silent)
+                   fn::precision::Exact,  // 12 Precision
+                   fn::space::Bounded<sizeof(int)>,  // 13 Space
+                   fn::OverflowMode::Trap,  // 14 Overflow
+                   fn::MutationMode::Immutable,  // 15 Mutation
+                   fn::ReentrancyMode::NonReentrant,  // 16 Reentrancy — non-Coroutine (R-family silent)
+                   fn::size_pol::Sized<sizeof(int)>,  // 17 Size
+                   /*Version=*/1,  // 18 Version
+                   fn::stale::Fresh  // 19 Staleness
+                   >;
 
 }  // namespace neg_collision_l004_explicit_marker
 
@@ -87,10 +86,8 @@ using Bad = fn::Fn<
 // provably explicit rather than provably default — defending against
 // a future default-flip OR derivation-based refactor of the marker.
 namespace crucible::safety::fn::collision {
-    template <>
-    struct marks_lifetime_region_unprotected<
-        ::neg_collision_l004_explicit_marker::Bad
-    > : std::true_type {};
+template <>
+struct marks_lifetime_region_unprotected<::neg_collision_l004_explicit_marker::Bad> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 [[maybe_unused]] neg_collision_l004_explicit_marker::Bad the_fixture{};

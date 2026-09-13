@@ -25,8 +25,7 @@
 #include <string>
 
 int main() {
-    using CipherPathString = ::crucible::safety::Tagged<
-        std::string, ::crucible::safety::source::CipherPath>;
+    using CipherPathString = ::crucible::safety::Tagged<std::string, ::crucible::safety::source::CipherPath>;
 
     CipherPathString slot{std::string{"/cipher/objects/00/...zero-witness"}};
 

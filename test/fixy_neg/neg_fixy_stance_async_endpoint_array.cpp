@@ -14,8 +14,7 @@ namespace stance = crucible::fixy::stance;
 
 using BadAsyncArray = stance::AsyncEndpoint<int[7]>;
 
-static_assert(sizeof(BadAsyncArray) > 0,
-    "instantiate stance::AsyncEndpoint<int[7]> to force the Type-"
-    "axis rejection (array decay).");
+static_assert(sizeof(BadAsyncArray) > 0, "instantiate stance::AsyncEndpoint<int[7]> to force the Type-"
+                                         "axis rejection (array decay).");
 
 int main() { return 0; }

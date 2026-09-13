@@ -32,10 +32,8 @@
 #include <cstdint>
 
 int main() {
-    using MeridianCap   = ::crucible::safety::Tagged<
-        std::uint64_t, ::crucible::safety::source::Meridian>;
-    using CalibratedCap = ::crucible::safety::Tagged<
-        std::uint64_t, ::crucible::safety::source::Calibrated>;
+    using MeridianCap = ::crucible::safety::Tagged<std::uint64_t, ::crucible::safety::source::Meridian>;
+    using CalibratedCap = ::crucible::safety::Tagged<std::uint64_t, ::crucible::safety::source::Calibrated>;
 
     CalibratedCap calibrated_tagged{90};
 

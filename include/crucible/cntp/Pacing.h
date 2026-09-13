@@ -78,7 +78,7 @@ struct NicInterfaceName {
 };
 
 struct FqConfig {
-    PositiveFqParam max_quantum{8'192};
+    PositiveFqParam max_quantum{8192};
     PositiveFqParam flow_limit{100};
     PositiveFqParam low_rate_threshold_kbps{50};
 };

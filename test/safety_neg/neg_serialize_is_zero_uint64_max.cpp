@@ -34,9 +34,7 @@ int main() {
     // (`is_zero(v)`) to be exercised at compile time.  v == UINT64_MAX
     // → predicate(v) == false → contract violation → not a constant
     // expression → ill-formed.
-    constexpr crucible::safety::Refined<crucible::safety::is_zero,
-                                        std::uint64_t> bad{
-        UINT64_MAX};
+    constexpr crucible::safety::Refined<crucible::safety::is_zero, std::uint64_t> bad{UINT64_MAX};
     (void)bad;
     return 0;
 }

@@ -13,7 +13,6 @@ struct Resource {};
 int main() {
     using Proto = proto::Send<int, proto::End>;
 
-    [[maybe_unused]] auto channel =
-        proto::mint_channel<Proto>(Resource{}, Resource{});
+    [[maybe_unused]] auto channel = proto::mint_channel<Proto>(Resource{}, Resource{});
     return 0;
 }

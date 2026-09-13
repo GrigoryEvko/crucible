@@ -27,8 +27,7 @@ struct NotAnExecCtx {};  // No row_type, no Effect aggregation API.
 int main() {
     // Should FAIL: NotAnExecCtx is not an ExecCtx; CtxFitsPriorityMint's
     // `eff::IsExecCtx<Ctx>` conjunct rejects.
-    auto p = ::crucible::fixy::sched::mint_priority<-10>(
-        test_fixy_sched_mint_priority_not_exec_ctx::NotAnExecCtx{});
+    auto p = ::crucible::fixy::sched::mint_priority<-10>(test_fixy_sched_mint_priority_not_exec_ctx::NotAnExecCtx{});
     (void)p;
     return 0;
 }

@@ -67,16 +67,16 @@ using crucible::fuzz::prop::Rng;
 inline constexpr std::uint32_t kMaxLen = 256;  // ≥ 8 full stripes + tail
 
 enum class LenMode : std::uint8_t {
-    Small = 0,       // [0, 31]      — sub-stripe; seed+prime5 + tail-only
-    Boundary = 1,    // {0,32,...,256} — exact stripe multiples, empty tail
-    TailHeavy = 2,   // 32·k + r, r∈[1,31] — carried-tail corner
-    Random = 3,      // [0, kMaxLen]
+    Small = 0,  // [0, 31]      — sub-stripe; seed+prime5 + tail-only
+    Boundary = 1,  // {0,32,...,256} — exact stripe multiples, empty tail
+    TailHeavy = 2,  // 32·k + r, r∈[1,31] — carried-tail corner
+    Random = 3,  // [0, kMaxLen]
 };
 
 struct Spec {
     std::array<std::byte, kMaxLen> bytes{};
     std::uint32_t len = 0;
-    std::uint64_t hash_seed = 0;   // 0 half the time, else random
+    std::uint64_t hash_seed = 0;  // 0 half the time, else random
     std::uint64_t chunk_seed = 0;  // drives the Random-chunking split
     LenMode mode = LenMode::Random;
     std::uint8_t pad[7]{};
@@ -85,16 +85,16 @@ struct Spec {
 [[nodiscard]] std::uint32_t gen_len(Rng& rng, LenMode mode) noexcept {
     switch (mode) {
         case LenMode::Small:
-            return rng.next_below(32u);                       // [0, 31]
+            return rng.next_below(32u);  // [0, 31]
         case LenMode::Boundary:
             return 32u * rng.next_below((kMaxLen / 32u) + 1u);  // {0,32,...,256}
         case LenMode::TailHeavy: {
-            const std::uint32_t full = rng.next_below(8u);    // [0, 7] stripes
+            const std::uint32_t full = rng.next_below(8u);  // [0, 7] stripes
             const std::uint32_t tail = 1u + rng.next_below(31u);  // [1, 31]
             return 32u * full + tail;
         }
         case LenMode::Random:
-            return rng.next_below(kMaxLen + 1u);              // [0, 256]
+            return rng.next_below(kMaxLen + 1u);  // [0, 256]
         default:
             std::unreachable();
     }
@@ -102,26 +102,21 @@ struct Spec {
 
 // One-shot raw hash over the populated prefix.
 [[nodiscard]] std::uint64_t one_shot_raw(const Spec& spec) noexcept {
-    return ci::xxhash64_raw(
-        std::span<const std::byte>{spec.bytes.data(), spec.len},
-        spec.hash_seed);
+    return ci::xxhash64_raw(std::span<const std::byte>{spec.bytes.data(), spec.len}, spec.hash_seed);
 }
 
 // Stream `spec` through a fresh state with the given chunk plan, then
 // digest.  Returns true iff the digest is consistent with `expected_raw`
 // (value-equal when nonzero, ZeroHash error when zero).
 template <typename ChunkFn>
-[[nodiscard]] bool streamed_matches(const Spec& spec,
-                                    std::uint64_t expected_raw,
-                                    ChunkFn&& feed) noexcept {
+[[nodiscard]] bool streamed_matches(const Spec& spec, std::uint64_t expected_raw, ChunkFn&& feed) noexcept {
     auto state = ci::xxhash64_streaming(spec.hash_seed);
     if (!feed(state)) return false;  // an update() reported an error
 
     const auto digested = state.digest();
     if (expected_raw == 0) {
         // Both paths feed admit_integrity_hash → both must reject 0.
-        return !digested.has_value() &&
-               digested.error() == ci::IntegrityError::ZeroHash;
+        return !digested.has_value() && digested.error() == ci::IntegrityError::ZeroHash;
     }
     return digested.has_value() && digested->value() == expected_raw;
 }
@@ -132,9 +127,10 @@ int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
 
     Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 2'000'000) cfg.iterations = 2'000'000;
+    if (cfg.iterations > 2000000) cfg.iterations = 2000000;
 
-    return run("integrity_xxhash", cfg,
+    return run(
+        "integrity_xxhash", cfg,
         // ── Generator ──
         [](Rng& rng) noexcept -> Spec {
             Spec spec{};
@@ -153,59 +149,52 @@ int main(int argc, char** argv) {
             const std::uint64_t expected_raw = one_shot_raw(spec);
 
             // Strategy 1 — Whole: a single update of the entire payload.
-            const bool whole_ok = streamed_matches(spec, expected_raw,
-                [&](ci::XxHash64State& st) noexcept -> bool {
-                    return st.update(
-                        std::span<const std::byte>{base, spec.len}).has_value();
-                });
+            const bool whole_ok = streamed_matches(spec, expected_raw, [&](ci::XxHash64State& st) noexcept -> bool {
+                return st.update(std::span<const std::byte>{base, spec.len}).has_value();
+            });
             if (!whole_ok) return false;
 
             // Strategy 2 — ByteWise: one byte per update.  Maximal carry
             // stress; the trailing len mod 32 bytes land in memory_ for
             // digest()'s finalize_tail — the path the single fixed test
             // never reaches.
-            const bool bytewise_ok = streamed_matches(spec, expected_raw,
-                [&](ci::XxHash64State& st) noexcept -> bool {
-                    for (std::uint32_t i = 0; i < spec.len; ++i) {
-                        if (!st.update(
-                                std::span<const std::byte>{base + i, 1}).has_value()) {
-                            return false;
-                        }
+            const bool bytewise_ok = streamed_matches(spec, expected_raw, [&](ci::XxHash64State& st) noexcept -> bool {
+                for (std::uint32_t i = 0; i < spec.len; ++i) {
+                    if (!st.update(std::span<const std::byte>{base + i, 1}).has_value()) {
+                        return false;
                     }
-                    return true;
-                });
+                }
+                return true;
+            });
             if (!bytewise_ok) return false;
 
             // Strategy 3 — Random: uniform-random chunk sizes from a
             // spec-seeded local Rng (deterministic + reproducible).
-            const bool random_ok = streamed_matches(spec, expected_raw,
-                [&](ci::XxHash64State& st) noexcept -> bool {
-                    Rng chunk_rng{spec.chunk_seed, 0};
-                    std::uint32_t offset = 0;
-                    // Bounded draws guarantee termination even under an
-                    // (astronomically unlikely) run of zero-size chunks;
-                    // a zero take is legal and exercises update()'s
-                    // empty-span early return, so we permit it but flush
-                    // the remainder once the draw budget is spent.
-                    std::uint32_t draws = 0;
-                    constexpr std::uint32_t kMaxDraws = 4u * kMaxLen;
-                    while (offset < spec.len && draws < kMaxDraws) {
-                        const std::uint32_t remaining = spec.len - offset;
-                        const std::uint32_t take = chunk_rng.next_below(remaining + 1u);
-                        if (!st.update(std::span<const std::byte>{
-                                base + offset, take}).has_value()) {
-                            return false;
-                        }
-                        offset += take;
-                        ++draws;
-                    }
-                    if (offset < spec.len &&
-                        !st.update(std::span<const std::byte>{
-                            base + offset, spec.len - offset}).has_value()) {
+            const bool random_ok = streamed_matches(spec, expected_raw, [&](ci::XxHash64State& st) noexcept -> bool {
+                Rng chunk_rng{spec.chunk_seed, 0};
+                std::uint32_t offset = 0;
+                // Bounded draws guarantee termination even under an
+                // (astronomically unlikely) run of zero-size chunks;
+                // a zero take is legal and exercises update()'s
+                // empty-span early return, so we permit it but flush
+                // the remainder once the draw budget is spent.
+                std::uint32_t draws = 0;
+                constexpr std::uint32_t kMaxDraws = 4u * kMaxLen;
+                while (offset < spec.len && draws < kMaxDraws) {
+                    const std::uint32_t remaining = spec.len - offset;
+                    const std::uint32_t take = chunk_rng.next_below(remaining + 1u);
+                    if (!st.update(std::span<const std::byte>{base + offset, take}).has_value()) {
                         return false;
                     }
-                    return true;
-                });
+                    offset += take;
+                    ++draws;
+                }
+                if (offset < spec.len
+                    && !st.update(std::span<const std::byte>{base + offset, spec.len - offset}).has_value()) {
+                    return false;
+                }
+                return true;
+            });
             return random_ok;
         });
 }

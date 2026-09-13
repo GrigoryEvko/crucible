@@ -26,12 +26,13 @@
 #include <crucible/safety/Tagged.h>
 
 namespace crucible {
-struct FakeTransaction { int dummy; };
-}
+struct FakeTransaction {
+    int dummy;
+};
+}  // namespace crucible
 
 int main() {
-    using ActiveTxPtr = ::crucible::safety::Tagged<
-        crucible::FakeTransaction*, ::crucible::safety::source::Ring>;
+    using ActiveTxPtr = ::crucible::safety::Tagged<crucible::FakeTransaction*, ::crucible::safety::source::Ring>;
 
     crucible::FakeTransaction tx{};
     crucible::FakeTransaction* raw_ptr = &tx;

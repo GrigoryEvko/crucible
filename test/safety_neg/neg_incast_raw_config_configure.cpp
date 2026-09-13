@@ -7,8 +7,7 @@ int main() {
     crucible::effects::ColdInitCtx init{};
     auto controller = crucible::cntp::mint_incast_controller<1>(init);
     auto fd = crucible::cntp::admit_socket_fd(3);
-    auto result = controller.configure_socket(
-        init, *fd, crucible::cntp::IncastConfig{});
+    auto result = controller.configure_socket(init, *fd, crucible::cntp::IncastConfig{});
     (void)result;
     return 0;
 }

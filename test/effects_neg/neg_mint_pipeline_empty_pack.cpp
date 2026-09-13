@@ -20,7 +20,7 @@
 #include <crucible/effects/ExecCtx.h>
 
 namespace conc = crucible::concurrent;
-namespace eff  = crucible::effects;
+namespace eff = crucible::effects;
 
 int main() {
     eff::HotFgCtx ctx;

@@ -20,17 +20,16 @@
 #include <crucible/handles/OneShotFlag.h>
 
 namespace bridges = ::crucible::bridges;
-namespace safety  = ::crucible::safety;
+namespace safety = ::crucible::safety;
 
 int main() {
     safety::OneShotFlag flag;
-    int                 not_an_endpoint = 42;
+    int not_an_endpoint = 42;
 
     // No <PeerTag> — PeerTag is non-deducible, the call fails to
     // resolve.  Even if it WERE somehow deducible, the int input would
     // also fail.
-    auto bad = bridges::mint_crash_watched_endpoint(
-        std::move(not_an_endpoint), flag);
+    auto bad = bridges::mint_crash_watched_endpoint(std::move(not_an_endpoint), flag);
     (void)bad;
     return 0;
 }

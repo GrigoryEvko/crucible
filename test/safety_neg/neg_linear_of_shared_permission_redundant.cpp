@@ -43,8 +43,7 @@ int main() {
     // Should FAIL: Linear<SharedPermission<MyShareTag>> trips the
     // is_already_linear_v<SharedPermission<MyShareTag>> static_assert.
     auto excl = mint_permission_root<MyShareTag>();
-    Linear<SharedPermission<MyShareTag>> wrapped{
-        mint_permission_share(std::move(excl))};
+    Linear<SharedPermission<MyShareTag>> wrapped{mint_permission_share(std::move(excl))};
     (void)wrapped;
     return 0;
 }

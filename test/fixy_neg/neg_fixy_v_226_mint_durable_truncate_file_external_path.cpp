@@ -18,7 +18,7 @@
 //   "conversion from".
 
 #include <crucible/effects/ExecCtx.h>
-#include <crucible/fixy/Source.h>           // fixy::tags::source::*
+#include <crucible/fixy/Source.h>  // fixy::tags::source::*
 #include <crucible/fixy/Wrap.h>
 
 int main() {
@@ -33,7 +33,6 @@ int main() {
     // Should FAIL: mint_durable_truncate_file's signature takes
     // `Path<Sanitized>` — passing Path<External> is a tag-mismatch
     // refusal at the type system, before any delegation to mint_file.
-    [[maybe_unused]] auto r =
-        fwfs::mint_durable_truncate_file(ctx, std::move(external_path));
+    [[maybe_unused]] auto r = fwfs::mint_durable_truncate_file(ctx, std::move(external_path));
     return 0;
 }

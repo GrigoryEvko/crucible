@@ -27,8 +27,7 @@ using namespace crucible::safety;
 // A hot-path consumer admits only at-least-Other-strength scheduler classes
 // (the V-183 CtxFitsTscReader threshold: leq(Other, policy)).
 template <typename Task>
-    requires (::crucible::algebra::lattices::SchedulerPolicyLattice::leq(
-                  SchedulerPolicy_v::Other, Task::policy))
+    requires(::crucible::algebra::lattices::SchedulerPolicyLattice::leq(SchedulerPolicy_v::Other, Task::policy))
 [[nodiscard]] int on_hot_path(Task task) {
     return task.peek();
 }

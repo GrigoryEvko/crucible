@@ -50,12 +50,11 @@ constexpr int x_b = 2;
 // under_test() would return 0 and this static_assert would pass —
 // silent false-green for the EXACT bug class fixy-A1-007 set out
 // to close.
-static_assert(under_test() == 0,
-    "CRUCIBLE_PRE on this->-member double-set check MUST fire at "
-    "consteval when SetOnce::set is called twice.  If this static_"
-    "assert evaluates successfully, the body-CRUCIBLE_PRE migration "
-    "of fixy-A1-007 failed to close the GCC 16.1.1 consteval bypass "
-    "for class-member predicates — the entire bug class is back.");
+static_assert(under_test() == 0, "CRUCIBLE_PRE on this->-member double-set check MUST fire at "
+                                 "consteval when SetOnce::set is called twice.  If this static_"
+                                 "assert evaluates successfully, the body-CRUCIBLE_PRE migration "
+                                 "of fixy-A1-007 failed to close the GCC 16.1.1 consteval bypass "
+                                 "for class-member predicates — the entire bug class is back.");
 
 }  // namespace
 

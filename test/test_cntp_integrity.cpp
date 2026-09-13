@@ -12,28 +12,21 @@ int main() {
     namespace ci = crucible::cntp;
 
     static_assert(sizeof(ci::IntegrityHash) == sizeof(std::uint64_t));
-    static_assert(sizeof(ci::IntegrityOwnedPayload<std::array<std::byte, 5>>) ==
-                  sizeof(std::array<std::byte, 5>));
-    static_assert(!std::copy_constructible<
-                  ci::IntegrityOwnedPayload<std::array<std::byte, 5>>>);
+    static_assert(sizeof(ci::IntegrityOwnedPayload<std::array<std::byte, 5>>) == sizeof(std::array<std::byte, 5>));
+    static_assert(!std::copy_constructible<ci::IntegrityOwnedPayload<std::array<std::byte, 5>>>);
     static_assert(ci::ByteContiguousPayload<std::array<std::byte, 5>>);
     static_assert(ci::ByteContiguousPayload<std::span<const std::byte>>);
     static_assert(!ci::ByteContiguousPayload<std::uint64_t>);
 
     std::array<std::byte, 0> empty{};
-    assert(ci::xxhash64_raw(std::span<const std::byte>{empty}) ==
-           0xEF46'DB37'51D8'E999ULL);
+    assert(ci::xxhash64_raw(std::span<const std::byte>{empty}) == 0xEF46DB3751D8E999ULL);
 
     std::array<std::byte, 5> hello{
-        std::byte{0x68},
-        std::byte{0x65},
-        std::byte{0x6C},
-        std::byte{0x6C},
-        std::byte{0x6F},
+        std::byte{0x68}, std::byte{0x65}, std::byte{0x6C}, std::byte{0x6C}, std::byte{0x6F},
     };
     auto hello_hash = ci::xxhash64(std::span<const std::byte>{hello});
     assert(hello_hash.has_value());
-    assert(hello_hash->value() == 0x26C7'827D'889F'6DA3ULL);
+    assert(hello_hash->value() == 0x26C7827D889F6DA3ULL);
 
     std::array<std::byte, 96> payload{};
     for (std::size_t i = 0; i < payload.size(); ++i) {
@@ -44,12 +37,9 @@ int main() {
     assert(one_shot.has_value());
 
     auto stream = ci::xxhash64_streaming();
-    assert(stream.update(std::span<const std::byte>{payload.data(), 7})
-               .has_value());
-    assert(stream.update(std::span<const std::byte>{payload.data() + 7, 25})
-               .has_value());
-    assert(stream.update(std::span<const std::byte>{payload.data() + 32, 64})
-               .has_value());
+    assert(stream.update(std::span<const std::byte>{payload.data(), 7}).has_value());
+    assert(stream.update(std::span<const std::byte>{payload.data() + 7, 25}).has_value());
+    assert(stream.update(std::span<const std::byte>{payload.data() + 32, 64}).has_value());
     auto streamed = stream.digest();
     assert(streamed.has_value());
     assert(streamed->value() == one_shot->value());
@@ -60,9 +50,8 @@ int main() {
 
     auto verified = ci::unwrap(std::move(wrapped).value());
     assert(verified.has_value());
-    static_assert(std::same_as<
-                  std::remove_cvref_t<decltype(verified.value())>,
-                  ci::IntegrityVerifiedPayload<std::array<std::byte, 96>>>);
+    static_assert(std::same_as<std::remove_cvref_t<decltype(verified.value())>,
+                               ci::IntegrityVerifiedPayload<std::array<std::byte, 96>>>);
     assert(verified->value().peek()[0] == std::byte{3});
 
     auto owned_payload = std::move(*verified).into();

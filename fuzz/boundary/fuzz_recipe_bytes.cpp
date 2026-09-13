@@ -31,14 +31,15 @@ int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     // truncate if long.  Both paths must be crash-free.
     std::array<uint8_t, sizeof(crucible::NumericalRecipe)> buf{};
     const size_t copy = (size < buf.size()) ? size : buf.size();
-    for (size_t i = 0; i < copy; ++i) buf[i] = data[i];
+    for (size_t i = 0; i < copy; ++i)
+        buf[i] = data[i];
 
     const auto recipe = std::bit_cast<crucible::NumericalRecipe>(buf);
     const auto h = crucible::compute_recipe_hash(recipe);
 
     // Doesn't matter what we do with the hash — the property is
     // just "no crash".  Force the optimizer to keep the call.
-    asm volatile("" :: "r"(h.raw()));
+    asm volatile("" ::"r"(h.raw()));
     return 0;
 }
 

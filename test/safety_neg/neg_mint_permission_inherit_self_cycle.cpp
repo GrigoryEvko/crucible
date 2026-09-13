@@ -33,6 +33,5 @@ struct inherits_from<PeerTag, PeerTag> : std::true_type {};
 // Forces detail::validated_perm_tuple<PeerTag, list<PeerTag>> to
 // instantiate.  DeadTag == SurvivorTag → triggers the second
 // static_assert ("forbids circular inheritance").
-using BadType = ::crucible::permissions::mint_permission_inherit_t<
-    PeerTag, PeerTag>;
+using BadType = ::crucible::permissions::mint_permission_inherit_t<PeerTag, PeerTag>;
 static_cast<void>(sizeof(BadType));

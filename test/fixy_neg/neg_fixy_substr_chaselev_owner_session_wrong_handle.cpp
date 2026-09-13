@@ -26,20 +26,18 @@
 #include <crucible/fixy/Substr.h>
 
 namespace fchase = ::crucible::fixy::substr::chaselev;
-namespace eff    = ::crucible::effects;
+namespace eff = ::crucible::effects;
 
 namespace neg_fixy_owner_session_wrong_handle {
 struct UserTag {};
-using Deque = ::crucible::concurrent::PermissionedChaseLevDeque<
-    int, 16, UserTag>;
-}
+using Deque = ::crucible::concurrent::PermissionedChaseLevDeque<int, 16, UserTag>;
+}  // namespace neg_fixy_owner_session_wrong_handle
 
 int main() {
     eff::HotFgCtx ctx{};
     int not_a_handle = 0;
 
-    auto bad = fchase::mint_owner_session<
-        neg_fixy_owner_session_wrong_handle::Deque>(ctx, not_a_handle);
+    auto bad = fchase::mint_owner_session<neg_fixy_owner_session_wrong_handle::Deque>(ctx, not_a_handle);
     (void)bad;
     return 0;
 }

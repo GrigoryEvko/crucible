@@ -33,12 +33,11 @@
 using namespace crucible::algebra::lattices;
 
 int main() {
-    HotPathLattice::At<HotPathTier::Hot>::element_type  hot_elt{};
+    HotPathLattice::At<HotPathTier::Hot>::element_type hot_elt{};
     HotPathLattice::At<HotPathTier::Cold>::element_type cold_elt{};
 
     // Should FAIL: At<Hot>::leq expects two At<Hot>::element_type
     // arguments; cold_elt is At<Cold>::element_type — different
     // template instantiation, different type, no implicit conversion.
-    return static_cast<int>(
-        HotPathLattice::At<HotPathTier::Hot>::leq(hot_elt, cold_elt));
+    return static_cast<int>(HotPathLattice::At<HotPathTier::Hot>::leq(hot_elt, cold_elt));
 }

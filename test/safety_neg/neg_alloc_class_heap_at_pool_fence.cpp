@@ -38,7 +38,7 @@ using namespace crucible::safety;
 // Pool tier or stronger.  Models PoolAllocator::slot_ptr_pinned()
 // → consumer pattern.
 template <typename Slot>
-    requires (Slot::template satisfies<AllocClassTag_v::Pool>)
+    requires(Slot::template satisfies<AllocClassTag_v::Pool>)
 static void* hot_path_slot_consumer(Slot slot) noexcept {
     return std::move(slot).consume();
 }

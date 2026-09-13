@@ -11,6 +11,6 @@
 static void consume_dim_hash(crucible::DimHashDet) {}
 
 int main() {
-  const uint64_t raw = 0x1234ULL;
-  consume_dim_hash(raw);
+    const uint64_t raw = 0x1234ULL;
+    consume_dim_hash(raw);
 }

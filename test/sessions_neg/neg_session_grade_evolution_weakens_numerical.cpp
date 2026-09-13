@@ -24,6 +24,4 @@ template <>
 struct is_subsort<::NewPayload, ::OldPayload> : std::true_type {};
 }  // namespace crucible::safety::proto
 
-int main() {
-    proto::check_protocol_evolution<OldProto, NewProto>();
-}
+int main() { proto::check_protocol_evolution<OldProto, NewProto>(); }

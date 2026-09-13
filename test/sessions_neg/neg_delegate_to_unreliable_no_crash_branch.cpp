@@ -15,7 +15,7 @@ struct Msg {};
 struct Ack {};
 
 using Delegated = Send<Msg, End>;
-using CarrierK  = Recv<Ack, End>;
+using CarrierK = Recv<Ack, End>;
 
 consteval bool probe() {
     assert_delegated_crash_propagates<Delegated, Recipient, CarrierK>();

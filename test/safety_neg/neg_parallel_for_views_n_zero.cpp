@@ -27,17 +27,16 @@ int main() {
     Arena arena;
     auto perm = safety::mint_permission_root<DataNeg>();
     constexpr std::size_t N = 8;
-    auto region = safety::OwnedRegion<std::uint64_t, DataNeg>::adopt(
-        effects::testing::test().alloc, arena, N, std::move(perm));
-    for (std::size_t i = 0; i < N; ++i) region.span()[i] = 0;
+    auto region =
+        safety::OwnedRegion<std::uint64_t, DataNeg>::adopt(effects::testing::test().alloc, arena, N, std::move(perm));
+    for (std::size_t i = 0; i < N; ++i)
+        region.span()[i] = 0;
 
     // Should FAIL: N=0 violates the `static_assert(N > 0)` precondition.
-    auto recombined = safety::parallel_for_views<0>(
-        std::move(region),
-        [](auto sub) noexcept {
-            for (auto& x : sub.span()) x = 1;
-        }
-    );
+    auto recombined = safety::parallel_for_views<0>(std::move(region), [](auto sub) noexcept {
+        for (auto& x : sub.span())
+            x = 1;
+    });
     (void)recombined;
 
     return 0;

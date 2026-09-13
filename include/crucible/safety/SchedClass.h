@@ -145,7 +145,7 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(FifoSc, double);
 static_assert(sizeof(SchedClass<SchedulerPolicy_v::Other, int>) == sizeof(int));
 static_assert(sizeof(SchedClass<SchedulerPolicy_v::Fifo, double>) == sizeof(double));
 static_assert(sizeof(SchedClass<SchedulerPolicy_v::Idle, char>) == sizeof(char));
-static_assert(sizeof(SchedClass<SchedulerPolicy_v::Deadline, int, 5'000, 10'000, 20'000>) == sizeof(int));
+static_assert(sizeof(SchedClass<SchedulerPolicy_v::Deadline, int, 5000, 10000, 20000>) == sizeof(int));
 
 namespace detail::sched_class_self_test {
 
@@ -154,7 +154,7 @@ using FifoInt = SchedClass<SchedulerPolicy_v::Fifo, int>;
 using BatchInt = SchedClass<SchedulerPolicy_v::Batch, int>;
 using RrInt = SchedClass<SchedulerPolicy_v::RoundRobin, int>;
 using IdleInt = SchedClass<SchedulerPolicy_v::Idle, int>;
-using DeadlineInt = SchedClass<SchedulerPolicy_v::Deadline, int, 5'000, 10'000, 20'000>;
+using DeadlineInt = SchedClass<SchedulerPolicy_v::Deadline, int, 5000, 10000, 20000>;
 
 inline constexpr FifoInt f_default{};
 static_assert(f_default.peek() == 0);
@@ -168,9 +168,9 @@ static_assert(o_in_place.peek() == 7);
 
 static_assert(FifoInt::modality == ::crucible::algebra::ModalityKind::Absolute);
 
-static_assert(DeadlineInt::runtime_ns == 5'000);
-static_assert(DeadlineInt::deadline_ns == 10'000);
-static_assert(DeadlineInt::period_ns == 20'000);
+static_assert(DeadlineInt::runtime_ns == 5000);
+static_assert(DeadlineInt::deadline_ns == 10000);
+static_assert(DeadlineInt::period_ns == 20000);
 static_assert(FifoInt::runtime_ns == 0 && FifoInt::deadline_ns == 0 && FifoInt::period_ns == 0,
               "Non-DEADLINE policies carry a zero CBS budget.");
 
@@ -198,7 +198,7 @@ static_assert(!hot_path_eligible<BatchInt>, "SCHED_BATCH is non-interactive back
 static_assert(!hot_path_eligible<IdleInt>);
 
 static_assert(!std::is_same_v<FifoInt, OtherInt>);
-static_assert(!std::is_same_v<DeadlineInt, SchedClass<SchedulerPolicy_v::Deadline, int, 5'000, 10'000, 30'000>>,
+static_assert(!std::is_same_v<DeadlineInt, SchedClass<SchedulerPolicy_v::Deadline, int, 5000, 10000, 30000>>,
               "Two SCHED_DEADLINE tasks with different periods are DISTINCT types.");
 
 static_assert(FifoInt::lattice_name() == "SchedulerPolicyLattice::At<Fifo>");
@@ -223,8 +223,8 @@ static_assert(equality_compares_value_bytes());
 
 inline constexpr auto minted_fifo = mint_sched_class<SchedulerPolicy_v::Fifo, int>(99);
 static_assert(minted_fifo.peek() == 99 && minted_fifo.policy == SchedulerPolicy_v::Fifo);
-inline constexpr auto minted_dl = mint_sched_class<SchedulerPolicy_v::Deadline, int, 5'000, 10'000, 20'000>(7);
-static_assert(minted_dl.peek() == 7 && minted_dl.deadline_ns == 10'000);
+inline constexpr auto minted_dl = mint_sched_class<SchedulerPolicy_v::Deadline, int, 5000, 10000, 20000>(7);
+static_assert(minted_dl.peek() == 7 && minted_dl.deadline_ns == 10000);
 
 template <typename Task, SchedulerPolicy_v PoolPolicy>
 concept hostable_on = Task::template runnable_on<PoolPolicy>;
@@ -251,7 +251,7 @@ inline void runtime_smoke_test() {
     if (!g1 || g2) std::abort();
 
     DeadlineInt dl{seed};
-    if (dl.peek() != 21 || dl.runtime_ns != 5'000) std::abort();
+    if (dl.peek() != 21 || dl.runtime_ns != 5000) std::abort();
 
     sched_class::Idle<int> idle_task{0};
     sched_class::RoundRobin<int> rr_task{456};

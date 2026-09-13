@@ -6,8 +6,7 @@
 #include <crucible/topology/Telemetry.h>
 
 int main() {
-    auto history = crucible::topology::mint_nic_telemetry_history<4>(
-        crucible::effects::BgDrainCtx{});
+    auto history = crucible::topology::mint_nic_telemetry_history<4>(crucible::effects::BgDrainCtx{});
     (void)history;
     return 0;
 }

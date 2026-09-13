@@ -53,21 +53,16 @@ namespace {
 
 // Anchor: move-construction compiles cleanly — the canonical
 // transfer-of-ownership pattern.
-[[maybe_unused]] static
-::crucible::safety::HugePageBuffer<std::uint64_t>
-anchor_move_construct() {
+[[maybe_unused]] static ::crucible::safety::HugePageBuffer<std::uint64_t> anchor_move_construct() {
     auto buf = ::crucible::safety::HugePageBuffer<std::uint64_t>::allocate(8);
-    return buf;   // NRVO or move — both legal.
+    return buf;  // NRVO or move — both legal.
 }
 
 // VIOLATION: HugePageBuffer<T>(const HugePageBuffer<T>&) is
 // `= delete("HugePageBuffer is move-only")`.  Direct copy
 // construction triggers the deleted-function diagnostic.
-[[maybe_unused]] static
-::crucible::safety::HugePageBuffer<std::uint64_t>
-offending_copy_construct(
-    const ::crucible::safety::HugePageBuffer<std::uint64_t>& source)
-{
+[[maybe_unused]] static ::crucible::safety::HugePageBuffer<std::uint64_t>
+offending_copy_construct(const ::crucible::safety::HugePageBuffer<std::uint64_t>& source) {
     return ::crucible::safety::HugePageBuffer<std::uint64_t>{source};
     // ERROR: use of deleted function 'HugePageBuffer<T>::HugePageBuffer(const HugePageBuffer<T>&)'
     // diagnostic message: "HugePageBuffer is move-only"

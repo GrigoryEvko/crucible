@@ -43,9 +43,7 @@ int main() {
     // (`is_zero(v)`) to be exercised at compile time.  v == 1 →
     // predicate(v) == false → contract violation → not a constant
     // expression → ill-formed.
-    constexpr crucible::safety::Refined<crucible::safety::is_zero,
-                                        std::uint64_t> bad{
-        std::uint64_t{1}};
+    constexpr crucible::safety::Refined<crucible::safety::is_zero, std::uint64_t> bad{std::uint64_t{1}};
     (void)bad;
     return 0;
 }

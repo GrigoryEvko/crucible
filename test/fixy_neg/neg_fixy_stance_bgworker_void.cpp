@@ -12,8 +12,7 @@ namespace stance = crucible::fixy::stance;
 
 using BadBgVoid = stance::BgWorker<void>;
 
-static_assert(sizeof(BadBgVoid) > 0,
-    "instantiate stance::BgWorker<void> to force the Type-axis "
-    "rejection (void is not an object type).");
+static_assert(sizeof(BadBgVoid) > 0, "instantiate stance::BgWorker<void> to force the Type-axis "
+                                     "rejection (void is not an object type).");
 
 int main() { return 0; }

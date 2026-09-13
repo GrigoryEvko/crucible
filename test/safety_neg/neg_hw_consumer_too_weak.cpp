@@ -23,11 +23,11 @@
 #include <crucible/safety/Hw.h>
 
 namespace sf = ::crucible::safety;
-using Hw_t   = sf::HwInstruction_v;
+using Hw_t = sf::HwInstruction_v;
 
 // A consumer admitting at most a NonDeterministicTsc ceiling.
 template <typename W>
-    requires (W::template satisfies<Hw_t::NonDeterministicTsc>)
+    requires(W::template satisfies<Hw_t::NonDeterministicTsc>)
 [[nodiscard]] constexpr int admit_at_tsc_ceiling(W const& w) noexcept {
     return w.peek();
 }

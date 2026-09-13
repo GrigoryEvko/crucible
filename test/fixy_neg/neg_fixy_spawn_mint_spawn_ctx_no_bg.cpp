@@ -37,34 +37,28 @@ namespace crucible::safety {
 // splits_into_pack IS declared — the rejection MUST fire on the
 // Bg-row admission axis instead of the structural-disjointness axis.
 template <>
-struct splits_into_pack<
-    neg_fixy_spawn_mint_spawn_ctx_no_bg::Whole,
-    neg_fixy_spawn_mint_spawn_ctx_no_bg::Left,
-    neg_fixy_spawn_mint_spawn_ctx_no_bg::Right> : std::true_type {};
+struct splits_into_pack<neg_fixy_spawn_mint_spawn_ctx_no_bg::Whole, neg_fixy_spawn_mint_spawn_ctx_no_bg::Left,
+                        neg_fixy_spawn_mint_spawn_ctx_no_bg::Right> : std::true_type {};
 
 template <>
-struct splits_into_pack_authoring_witness<
-    neg_fixy_spawn_mint_spawn_ctx_no_bg::Whole,
-    neg_fixy_spawn_mint_spawn_ctx_no_bg::Left,
-    neg_fixy_spawn_mint_spawn_ctx_no_bg::Right> : std::true_type {};
+struct splits_into_pack_authoring_witness<neg_fixy_spawn_mint_spawn_ctx_no_bg::Whole,
+                                          neg_fixy_spawn_mint_spawn_ctx_no_bg::Left,
+                                          neg_fixy_spawn_mint_spawn_ctx_no_bg::Right> : std::true_type {};
 
 }  // namespace crucible::safety
 
 int main() {
-    namespace tags   = neg_fixy_spawn_mint_spawn_ctx_no_bg;
-    namespace eff    = ::crucible::effects;
+    namespace tags = neg_fixy_spawn_mint_spawn_ctx_no_bg;
+    namespace eff = ::crucible::effects;
     namespace fspawn = ::crucible::fixy::spawn;
-    namespace safe   = ::crucible::safety;
+    namespace safe = ::crucible::safety;
 
     auto whole = safe::mint_permission_root<tags::Whole>();
     // HotFgCtx::row = Row<> — no Bg.  CtxFitsSpawn folds
     // CtxFitsPermissionFork → CtxOwnsCapability<Ctx, Bg> → fail.
     auto rebuilt = fspawn::mint_spawn<tags::Left, tags::Right>(
-        eff::HotFgCtx{},
-        std::move(whole),
-        [](safe::Permission<tags::Left>, eff::HotFgCtx const&) noexcept {},
-        [](safe::Permission<tags::Right>, eff::HotFgCtx const&) noexcept {}
-    );
+        eff::HotFgCtx{}, std::move(whole), [](safe::Permission<tags::Left>, eff::HotFgCtx const&) noexcept {},
+        [](safe::Permission<tags::Right>, eff::HotFgCtx const&) noexcept {});
     safe::permission_drop(std::move(rebuilt));
     return 0;
 }

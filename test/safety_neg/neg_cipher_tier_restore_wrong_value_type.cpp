@@ -11,8 +11,7 @@
 namespace cipher = ::crucible::cipher;
 namespace tier = ::crucible::safety::cipher_tier;
 
-using BadMint = decltype(cipher::mint_restore<::crucible::ContentHash>(
-    std::declval<tier::Cold<int>>(),
-    std::declval<::crucible::ContentHash>()));
+using BadMint = decltype(cipher::mint_restore<::crucible::ContentHash>(std::declval<tier::Cold<int>>(),
+                                                                       std::declval<::crucible::ContentHash>()));
 
 int main() { return sizeof(BadMint); }

@@ -36,8 +36,7 @@ int main() {
     // (`bounded_above<TraceRing::CAPACITY>(v)`) to be exercised at
     // compile time.  v == CAPACITY + 1 → predicate(v) == false →
     // contract violation → not a constant expression → ill-formed.
-    constexpr crucible::ValidDrainCount bad{
-        uint32_t{crucible::TraceRing::CAPACITY} + 1u};
+    constexpr crucible::ValidDrainCount bad{uint32_t{crucible::TraceRing::CAPACITY} + 1u};
     (void)bad;
     return 0;
 }

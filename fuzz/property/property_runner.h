@@ -74,16 +74,13 @@ namespace crucible::fuzz::prop {
 //
 // Pure: same (seed, iteration) → same sequence.  No global state.
 class Rng {
- public:
-    constexpr Rng(uint64_t seed, uint64_t iteration) noexcept
-        : seed_{seed}, iteration_{iteration}
-    {
-        refill_();
-    }
+public:
+    constexpr Rng(uint64_t seed, uint64_t iteration) noexcept : seed_{seed}, iteration_{iteration} { refill_(); }
 
     // Uniform [0, 2^32).
     [[nodiscard]] uint32_t next32() noexcept {
-        if (cursor_ >= 4) [[unlikely]] refill_();
+        if (cursor_ >= 4) [[unlikely]]
+            refill_();
         return pool_[cursor_++];
     }
 
@@ -103,9 +100,7 @@ class Rng {
     }
 
     // Uniform float [0, 1).
-    [[nodiscard]] float next_unit() noexcept {
-        return Philox::to_uniform(next32());
-    }
+    [[nodiscard]] float next_unit() noexcept { return Philox::to_uniform(next32()); }
 
     // Pick one of N enumerated values.  Caller supplies the count.
     template <typename E>
@@ -113,33 +108,32 @@ class Rng {
         return static_cast<E>(next_below(count));
     }
 
- private:
+private:
     void refill_() noexcept {
         // Each iteration gets a fresh 4×u32 pool.  block_idx_
         // increments to walk further into the iteration's stream
         // when one pool is exhausted; the (iteration, block_idx)
         // tuple ensures statistical independence across pools
         // within the same iteration.
-        const uint64_t pool_ctr =
-            (iteration_ << 32) ^ static_cast<uint64_t>(block_idx_);
-        pool_     = Philox::generate(pool_ctr, seed_);
-        cursor_   = 0;
+        const uint64_t pool_ctr = (iteration_ << 32) ^ static_cast<uint64_t>(block_idx_);
+        pool_ = Philox::generate(pool_ctr, seed_);
+        cursor_ = 0;
         ++block_idx_;
     }
 
-    uint64_t                 seed_;
-    uint64_t                 iteration_;
-    uint32_t                 block_idx_ = 0;
-    Philox::Ctr              pool_      {};
-    uint32_t                 cursor_    = 4;  // forces initial refill
+    uint64_t seed_;
+    uint64_t iteration_;
+    uint32_t block_idx_ = 0;
+    Philox::Ctr pool_{};
+    uint32_t cursor_ = 4;  // forces initial refill
 };
 
 // ─── Configuration ─────────────────────────────────────────────────
 
 struct Config {
-    uint64_t seed       = 0xC0FFEEULL;
-    uint64_t iterations = 100'000;
-    bool     verbose    = false;
+    uint64_t seed = 0xC0FFEEULL;
+    uint64_t iterations = 100000;
+    bool verbose = false;
 };
 
 // Parse --seed=N --iters=N --verbose from argv.  Defaults preserved
@@ -165,23 +159,17 @@ struct Config {
 // the failing input afterward.  Then aborts so the sanitizer state
 // + stack frame are preserved for debugging.
 
-[[noreturn]] inline void report_failure(
-    std::string_view name,
-    uint64_t iteration,
-    uint64_t seed) noexcept
-{
+[[noreturn]] inline void report_failure(std::string_view name, uint64_t iteration, uint64_t seed) noexcept {
     std::fprintf(stderr,
-        "\n═══════════════════════════════════════════════════════════\n"
-        "PROPERTY FAILED: %.*s\n"
-        "  iteration: %llu\n"
-        "  seed:      0x%llX\n"
-        "  reproduce: re-run the binary with --seed=0x%llX --iters=%llu\n"
-        "═══════════════════════════════════════════════════════════\n",
-        static_cast<int>(name.size()), name.data(),
-        static_cast<unsigned long long>(iteration),
-        static_cast<unsigned long long>(seed),
-        static_cast<unsigned long long>(seed),
-        static_cast<unsigned long long>(iteration + 1));
+                 "\n═══════════════════════════════════════════════════════════\n"
+                 "PROPERTY FAILED: %.*s\n"
+                 "  iteration: %llu\n"
+                 "  seed:      0x%llX\n"
+                 "  reproduce: re-run the binary with --seed=0x%llX --iters=%llu\n"
+                 "═══════════════════════════════════════════════════════════\n",
+                 static_cast<int>(name.size()), name.data(), static_cast<unsigned long long>(iteration),
+                 static_cast<unsigned long long>(seed), static_cast<unsigned long long>(seed),
+                 static_cast<unsigned long long>(iteration + 1));
     std::abort();
 }
 
@@ -193,25 +181,16 @@ struct Config {
 // reflect_print (if Input is class-typed) or skips the input dump.
 
 template <typename Generator, typename Property>
-[[nodiscard]] inline int run(
-    const char* name,
-    const Config& cfg,
-    Generator&& gen,
-    Property&& check) noexcept
-{
-    std::fprintf(stderr,
-        "[prop] %s: %llu iterations, seed=0x%llX\n",
-        name,
-        static_cast<unsigned long long>(cfg.iterations),
-        static_cast<unsigned long long>(cfg.seed));
+[[nodiscard]] inline int run(const char* name, const Config& cfg, Generator&& gen, Property&& check) noexcept {
+    std::fprintf(stderr, "[prop] %s: %llu iterations, seed=0x%llX\n", name,
+                 static_cast<unsigned long long>(cfg.iterations), static_cast<unsigned long long>(cfg.seed));
 
     for (uint64_t i = 0; i < cfg.iterations; ++i) {
         Rng rng{cfg.seed, i};
         auto input = gen(rng);
 
         if (cfg.verbose && (i % 10000 == 0)) {
-            std::fprintf(stderr, "[prop]   iter %llu\n",
-                static_cast<unsigned long long>(i));
+            std::fprintf(stderr, "[prop]   iter %llu\n", static_cast<unsigned long long>(i));
         }
 
         if (!check(input)) {
@@ -224,9 +203,7 @@ template <typename Generator, typename Property>
         }
     }
 
-    std::fprintf(stderr, "[prop] %s: PASSED %llu iterations\n",
-        name,
-        static_cast<unsigned long long>(cfg.iterations));
+    std::fprintf(stderr, "[prop] %s: PASSED %llu iterations\n", name, static_cast<unsigned long long>(cfg.iterations));
     return 0;
 }
 

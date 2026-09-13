@@ -168,7 +168,7 @@ void test_split_smaller_than_n() {
 void test_parallel_for_views_squares() {
     Arena arena;
     auto perm = mint_permission_root<DataA>();
-    constexpr std::size_t N = 100'000;
+    constexpr std::size_t N = 100000;
     auto region = OwnedRegion<std::uint64_t, DataA>::adopt(test_alloc_token(), arena, N, std::move(perm));
 
     for (std::size_t i = 0; i < N; ++i)
@@ -326,7 +326,7 @@ void test_parallel_for_views_deterministic_across_runs() {
 void test_parallel_reduce_views_sum() {
     Arena arena;
     auto perm = mint_permission_root<DataA>();
-    constexpr std::size_t N = 50'000;
+    constexpr std::size_t N = 50000;
     auto region = OwnedRegion<std::uint64_t, DataA>::adopt(test_alloc_token(), arena, N, std::move(perm));
 
     for (std::size_t i = 0; i < N; ++i)
@@ -354,7 +354,7 @@ void test_parallel_reduce_views_sum() {
 void test_parallel_reduce_views_max_abs() {
     Arena arena;
     auto perm = mint_permission_root<DataA>();
-    constexpr std::size_t N = 10'000;
+    constexpr std::size_t N = 10000;
     auto region = OwnedRegion<std::int64_t, DataA>::adopt(test_alloc_token(), arena, N, std::move(perm));
 
     // The largest magnitude is negative and sits in the middle, so a
@@ -363,8 +363,8 @@ void test_parallel_reduce_views_max_abs() {
     for (std::size_t i = 0; i < N; ++i) {
         region.span()[i] = static_cast<std::int64_t>(i);
     }
-    region.span()[5000] = -999'999;
-    region.span()[7000] = 888'888;
+    region.span()[5000] = -999999;
+    region.span()[7000] = 888888;
 
     auto [max_abs, _] = parallel_reduce_views<4, std::int64_t>(
         std::move(region), std::int64_t{0},
@@ -378,7 +378,7 @@ void test_parallel_reduce_views_max_abs() {
         },
         [](std::int64_t a, std::int64_t b) noexcept { return (a > b) ? a : b; });
 
-    CRUCIBLE_TEST_REQUIRE(max_abs == 999'999);
+    CRUCIBLE_TEST_REQUIRE(max_abs == 999999);
 }
 
 // One shard takes a separate branch that runs inline instead of
@@ -417,7 +417,7 @@ void test_parallel_reduce_views_struct_accumulator() {
 
     Arena arena;
     auto perm = mint_permission_root<DataA>();
-    constexpr std::size_t N = 10'000;
+    constexpr std::size_t N = 10000;
     auto region = OwnedRegion<std::uint64_t, DataA>::adopt(test_alloc_token(), arena, N, std::move(perm));
     for (std::size_t i = 0; i < N; ++i)
         region.span()[i] = i + 1;
@@ -932,7 +932,7 @@ void test_adaptive_picks_sequential_for_small_workload() {
 void test_adaptive_picks_parallel_for_large_workload() {
     Arena arena{1ULL << 24};
     auto perm = mint_permission_root<DataB>();
-    constexpr std::size_t N = 200'000;  // larger than one core's L2
+    constexpr std::size_t N = 200000;  // larger than one core's L2
     auto region = OwnedRegion<std::uint64_t, DataB>::adopt(test_alloc_token(), arena, N, std::move(perm));
 
     for (std::size_t i = 0; i < N; ++i)
@@ -999,7 +999,7 @@ void test_parallel_for_smart_small_workload() {
 void test_parallel_for_smart_large_workload() {
     Arena arena{1ULL << 24};
     auto perm = mint_permission_root<DataB>();
-    constexpr std::size_t N = 200'000;  // larger than one core's L2
+    constexpr std::size_t N = 200000;  // larger than one core's L2
     auto region = OwnedRegion<std::uint64_t, DataB>::adopt(test_alloc_token(), arena, N, std::move(perm));
 
     for (std::size_t i = 0; i < N; ++i)
@@ -1026,7 +1026,7 @@ void test_log_topology_at_startup() {
 void test_stress_parallel_for_repeated() {
     Arena arena;
     auto perm = mint_permission_root<DataA>();
-    constexpr std::size_t N = 16'384;
+    constexpr std::size_t N = 16384;
     auto region = OwnedRegion<std::uint64_t, DataA>::adopt(test_alloc_token(), arena, N, std::move(perm));
 
     for (std::size_t i = 0; i < N; ++i)

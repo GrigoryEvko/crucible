@@ -28,7 +28,7 @@ using namespace crucible::algebra::lattices;
 
 int main() {
     BitsBudget bits{1024};
-    PeakBytes  peak{4096};
+    PeakBytes peak{4096};
 
     // Should FAIL: BitsBudgetLattice::leq's signature requires two
     // BitsBudget arguments; passing a PeakBytes as the second

@@ -75,8 +75,8 @@ using DeclaredSysctlSnapshot = safety::Tagged<SysctlSnapshot, safety::source::Ke
 using DeclaredNicThermalSample = safety::Tagged<NicThermalSample, safety::source::KernelTelemetry>;
 
 struct NicTelemetryPolicy {
-    std::uint32_t fairness_penalty_ppm = 100'000;
-    std::uint32_t drift_drop_ppm = 150'000;
+    std::uint32_t fairness_penalty_ppm = 100000;
+    std::uint32_t drift_drop_ppm = 150000;
     std::uint16_t min_drift_samples = 2;
 };
 
@@ -149,8 +149,8 @@ parse_sysctl_snapshot(ExternalTelemetryText text) noexcept;
     if (packets == 0 || dropped == 0) {
         return 0;
     }
-    const long double ppm = static_cast<long double>(dropped) * 1'000'000.0L / static_cast<long double>(packets);
-    return static_cast<std::uint64_t>(std::min<long double>(1'000'000.0L, ppm));
+    const long double ppm = static_cast<long double>(dropped) * 1000000.0L / static_cast<long double>(packets);
+    return static_cast<std::uint64_t>(std::min<long double>(1000000.0L, ppm));
 }
 
 [[nodiscard]] constexpr std::uint64_t sysctl_throughput_ceiling_bps(SysctlSnapshot sysctl,
@@ -164,7 +164,7 @@ parse_sysctl_snapshot(ExternalTelemetryText text) noexcept;
     if (window == 0) {
         return UINT64_MAX;
     }
-    long double bps = static_cast<long double>(window) * 8'000'000.0L / static_cast<long double>(rtt_us);
+    long double bps = static_cast<long double>(window) * 8000000.0L / static_cast<long double>(rtt_us);
     if (bps >= static_cast<long double>(UINT64_MAX)) {
         return UINT64_MAX;
     }
@@ -181,8 +181,8 @@ compute_effective_bandwidth(NicTelemetrySnapshot const& snapshot, NicTelemetryPo
 
     long double base = static_cast<long double>(std::min({line_rate, sysctl_ceiling, tcp_btl}));
     const long double in_flight_bps =
-        static_cast<long double>(tcp.in_flight_bytes) * 8'000'000.0L / static_cast<long double>(rtt_us);
-    const long double penalty = in_flight_bps * static_cast<long double>(policy.fairness_penalty_ppm) / 1'000'000.0L;
+        static_cast<long double>(tcp.in_flight_bytes) * 8000000.0L / static_cast<long double>(rtt_us);
+    const long double penalty = in_flight_bps * static_cast<long double>(policy.fairness_penalty_ppm) / 1000000.0L;
     base = std::max<long double>(1.0L, base - penalty);
     return PositiveEffectiveBandwidthBps{static_cast<double>(base), typename PositiveEffectiveBandwidthBps::Trusted{}};
 }
@@ -279,8 +279,8 @@ public:
         if (baseline <= 0.0 || observed >= baseline) {
             return drift;
         }
-        const double drop = (baseline - observed) * 1'000'000.0 / baseline;
-        drift.bandwidth_drop_ppm = static_cast<std::uint32_t>(std::min<double>(1'000'000.0, drop));
+        const double drop = (baseline - observed) * 1000000.0 / baseline;
+        drift.bandwidth_drop_ppm = static_cast<std::uint32_t>(std::min<double>(1000000.0, drop));
         drift.degraded = drift.bandwidth_drop_ppm >= policy.drift_drop_ppm;
         return drift;
     }

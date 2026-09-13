@@ -25,12 +25,11 @@ using namespace crucible::algebra::lattices;
 
 int main() {
     ConsistencyLattice::At<Consistency::EVENTUAL>::element_type eventual_elt{};
-    ConsistencyLattice::At<Consistency::STRONG>::element_type   strong_elt{};
+    ConsistencyLattice::At<Consistency::STRONG>::element_type strong_elt{};
 
     // Should FAIL: At<EVENTUAL>::leq expects two At<EVENTUAL>::
     // element_type arguments; strong_elt is At<STRONG>::element_type
     // — different template instantiation, different type, no implicit
     // conversion.
-    return static_cast<int>(
-        ConsistencyLattice::At<Consistency::EVENTUAL>::leq(eventual_elt, strong_elt));
+    return static_cast<int>(ConsistencyLattice::At<Consistency::EVENTUAL>::leq(eventual_elt, strong_elt));
 }

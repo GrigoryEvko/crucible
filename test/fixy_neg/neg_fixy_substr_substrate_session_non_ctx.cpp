@@ -22,7 +22,7 @@
 #include <crucible/fixy/Substr.h>
 
 namespace fsubstr = crucible::fixy::substr;
-namespace conc    = crucible::concurrent;
+namespace conc = crucible::concurrent;
 
 namespace neg_fixy_substr_substrate_session_non_ctx {
 struct UserTag {};
@@ -33,17 +33,14 @@ struct NotAnExecCtx {};
 }  // namespace neg_fixy_substr_substrate_session_non_ctx
 
 int main() {
-    using Snap = conc::PermissionedSnapshot<int,
-        neg_fixy_substr_substrate_session_non_ctx::UserTag>;
+    using Snap = conc::PermissionedSnapshot<int, neg_fixy_substr_substrate_session_non_ctx::UserTag>;
 
     // SwmrWriter IS a bridgeable Snapshot direction, so handle_for_t<Snap,
     // SwmrWriter> = WriterHandle is well-formed; the rejection is solely
     // on the non-ExecCtx first argument.
     typename Snap::WriterHandle* fake_handle = nullptr;
 
-    [[maybe_unused]] auto bad =
-        fsubstr::mint_substrate_session<Snap, conc::Direction::SwmrWriter>(
-            neg_fixy_substr_substrate_session_non_ctx::NotAnExecCtx{},
-            *fake_handle);
+    [[maybe_unused]] auto bad = fsubstr::mint_substrate_session<Snap, conc::Direction::SwmrWriter>(
+        neg_fixy_substr_substrate_session_non_ctx::NotAnExecCtx{}, *fake_handle);
     return 0;
 }

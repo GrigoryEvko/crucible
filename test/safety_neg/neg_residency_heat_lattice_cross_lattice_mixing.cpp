@@ -34,12 +34,11 @@
 using namespace crucible::algebra::lattices;
 
 int main() {
-    ResidencyHeatTag heat_val   = ResidencyHeatTag::Hot;
-    CipherTierTag    cipher_val = CipherTierTag::Warm;
+    ResidencyHeatTag heat_val = ResidencyHeatTag::Hot;
+    CipherTierTag cipher_val = CipherTierTag::Warm;
 
     // Should FAIL: CipherTierLattice::leq's signature requires two
     // CipherTierTag values; passing a ResidencyHeatTag as the
     // second argument is a type-mismatch.
-    return static_cast<int>(
-        CipherTierLattice::leq(cipher_val, heat_val));
+    return static_cast<int>(CipherTierLattice::leq(cipher_val, heat_val));
 }

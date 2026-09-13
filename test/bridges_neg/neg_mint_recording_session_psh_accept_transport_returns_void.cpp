@@ -35,17 +35,17 @@
 #include <crucible/effects/ExecCtx.h>
 
 namespace proto = ::crucible::safety::proto;
-namespace eff   = ::crucible::effects;
+namespace eff = ::crucible::effects;
 
 namespace neg_mint_recording_session_psh_accept_transport_returns_void {
 
-struct CarrierChannel { int unused = 0; };
+struct CarrierChannel {
+    int unused = 0;
+};
 
 using InnerProto = proto::Send<int, proto::End>;
 
-using CarrierProto = proto::Accept<
-    proto::DelegatedSession<InnerProto, proto::EmptyPermSet>,
-    proto::End>;
+using CarrierProto = proto::Accept<proto::DelegatedSession<InnerProto, proto::EmptyPermSet>, proto::End>;
 
 // Transport callable with the carrier resource but returning void:
 // requires clause `is_invocable_v<Transport, CarrierChannel&>` is true;
@@ -56,19 +56,16 @@ static void void_returning_transport(CarrierChannel&) noexcept {}
 }  // namespace neg_mint_recording_session_psh_accept_transport_returns_void
 
 int main() {
-    using namespace
-        neg_mint_recording_session_psh_accept_transport_returns_void;
+    using namespace neg_mint_recording_session_psh_accept_transport_returns_void;
 
     eff::HotFgCtx ctx{};
     proto::SessionEventLog log{};
-    proto::RoleTagId       self{1};
-    proto::RoleTagId       peer{2};
+    proto::RoleTagId self{1};
+    proto::RoleTagId peer{2};
 
-    auto carrier = proto::mint_permissioned_session<CarrierProto>(
-        ctx, CarrierChannel{});
+    auto carrier = proto::mint_permissioned_session<CarrierProto>(ctx, CarrierChannel{});
 
-    auto recording =
-        proto::mint_recording_session(std::move(carrier), log, self, peer);
+    auto recording = proto::mint_recording_session(std::move(carrier), log, self, peer);
 
     // The forbidden call: Transport returns void; DelegatedResource
     // deduces to void; body instantiation of inner_.accept(...) fails.

@@ -54,7 +54,7 @@ int main() {
     // compile and a band-3 site could pass a stray int through
     // a row-engagement gate.
     static_assert(::crucible::fixy::effect::RowEngagementWitnessed<int>,
-        "FIXY-V-219 fixture #1: int is not a Computation — "
-        "RowEngagementWitnessed must reject via IsComputation structural check.");
+                  "FIXY-V-219 fixture #1: int is not a Computation — "
+                  "RowEngagementWitnessed must reject via IsComputation structural check.");
     return 0;
 }

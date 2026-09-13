@@ -105,8 +105,10 @@ struct VerSet {
         uni.v[uni.n] = x;
         ++uni.n;
     };
-    for (std::uint16_t i = 0; i < a.count; ++i) add_unique(a.versions[i]);
-    for (std::uint16_t i = 0; i < b.count; ++i) add_unique(b.versions[i]);
+    for (std::uint16_t i = 0; i < a.count; ++i)
+        add_unique(a.versions[i]);
+    for (std::uint16_t i = 0; i < b.count; ++i)
+        add_unique(b.versions[i]);
 
     VerSet kept{};
     for (std::size_t i = 0; i < uni.n; ++i) {
@@ -133,7 +135,10 @@ struct VerSet {
     for (std::uint16_t i = 0; i < s.count; ++i) {
         bool found = false;
         for (std::size_t j = 0; j < k.n; ++j) {
-            if (version_eq(s.versions[i], k.v[j])) { found = true; break; }
+            if (version_eq(s.versions[i], k.v[j])) {
+                found = true;
+                break;
+            }
         }
         if (!found) return false;
     }
@@ -145,7 +150,10 @@ struct VerSet {
     for (std::uint16_t i = 0; i < x.count; ++i) {
         bool found = false;
         for (std::uint16_t j = 0; j < y.count; ++j) {
-            if (version_eq(x.versions[i], y.versions[j])) { found = true; break; }
+            if (version_eq(x.versions[i], y.versions[j])) {
+                found = true;
+                break;
+            }
         }
         if (!found) return false;
     }
@@ -201,12 +209,11 @@ int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
 
     Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 2'000'000) cfg.iterations = 2'000'000;
+    if (cfg.iterations > 2000000) cfg.iterations = 2000000;
 
-    return run("crdt_mvregister", cfg,
-        [](Rng& rng) noexcept -> Spec {
-            return Spec{build_state(rng), build_state(rng), build_state(rng)};
-        },
+    return run(
+        "crdt_mvregister", cfg,
+        [](Rng& rng) noexcept -> Spec { return Spec{build_state(rng), build_state(rng), build_state(rng)}; },
         [](const Spec& spec) noexcept -> bool {
             const State& a = spec.a;
             const State& b = spec.b;
@@ -226,11 +233,11 @@ int main(int argc, char** argv) {
             }
 
             // ── semilattice laws (order-independent set equality) ──
-            if (!state_eq(ab, MV::merge(b, a))) return false;          // commutativity
-            if (!state_eq(MV::merge(a, a), a)) return false;           // idempotence
+            if (!state_eq(ab, MV::merge(b, a))) return false;  // commutativity
+            if (!state_eq(MV::merge(a, a), a)) return false;  // idempotence
             const State left = MV::merge(MV::merge(a, b), c);
             const State right = MV::merge(a, MV::merge(b, c));
-            if (!state_eq(left, right)) return false;                  // associativity
+            if (!state_eq(left, right)) return false;  // associativity
 
             return true;
         });

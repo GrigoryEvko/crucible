@@ -25,19 +25,18 @@
 #include <optional>
 #include <utility>
 
-namespace eff   = crucible::effects;
+namespace eff = crucible::effects;
 namespace fpipe = crucible::fixy::pipe;
-namespace conc  = crucible::concurrent;
-namespace saf   = crucible::safety;
+namespace conc = crucible::concurrent;
+namespace saf = crucible::safety;
 
 struct InTag {};
 struct SnapTag {};
 
 using InChannel = conc::PermissionedSpscChannel<int, 64, InTag>;
-using Snapshot  = conc::PermissionedSnapshot<int, SnapTag>;
+using Snapshot = conc::PermissionedSnapshot<int, SnapTag>;
 
-inline void swmr_publish_body(InChannel::ConsumerHandle&&,
-                              Snapshot::WriterHandle&&) noexcept {}
+inline void swmr_publish_body(InChannel::ConsumerHandle&&, Snapshot::WriterHandle&&) noexcept {}
 
 int main() {
     eff::HotFgCtx ctx;
@@ -45,19 +44,17 @@ int main() {
     InChannel in;
 
     auto whole = saf::mint_permission_root<typename InChannel::whole_tag>();
-    auto [prod_perm, cons_perm] = saf::mint_permission_split<
-        typename InChannel::producer_tag,
-        typename InChannel::consumer_tag>(std::move(whole));
+    auto [prod_perm, cons_perm] =
+        saf::mint_permission_split<typename InChannel::producer_tag, typename InChannel::consumer_tag>(
+            std::move(whole));
     (void)prod_perm;
 
     auto cons = in.consumer(std::move(cons_perm));
-    auto in_ep = fpipe::mint_endpoint<InChannel, fpipe::Direction::Consumer>(
-        ctx, cons);
+    auto in_ep = fpipe::mint_endpoint<InChannel, fpipe::Direction::Consumer>(ctx, cons);
 
     int not_a_writer = 0;
 
-    auto bad = fpipe::mint_swmr_stage<&swmr_publish_body>(
-        ctx, std::move(in_ep), not_a_writer);
+    auto bad = fpipe::mint_swmr_stage<&swmr_publish_body>(ctx, std::move(in_ep), not_a_writer);
     (void)bad;
     return 0;
 }

@@ -36,8 +36,7 @@ int main() {
 
     // Should FAIL: PredicateInvocableOn<positive, UncomparableThing>
     // is false; concept gate rejects the sealed mint at the call site.
-    auto s = mint_sealed_refined<positive, UncomparableThing>(
-        UncomparableThing{});
+    auto s = mint_sealed_refined<positive, UncomparableThing>(UncomparableThing{});
     (void)s;
     return 0;
 }

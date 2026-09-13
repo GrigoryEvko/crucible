@@ -18,11 +18,10 @@
 
 #include <crucible/fixy/grant/Dispatch.h>
 
-namespace gr   = crucible::fixy::grant;
+namespace gr = crucible::fixy::grant;
 namespace disp = crucible::fixy::grant::dispatch;
 
 // A cv-qualified dispatch grant tag must be rejected by IsGrantTag.
-static_assert(gr::IsGrantTag<const disp::tail_call>,
-              "cv-qualified dispatch grant tag must be rejected by IsGrantTag");
+static_assert(gr::IsGrantTag<const disp::tail_call>, "cv-qualified dispatch grant tag must be rejected by IsGrantTag");
 
 int main() { return 0; }

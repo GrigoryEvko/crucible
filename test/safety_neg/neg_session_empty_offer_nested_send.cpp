@@ -15,7 +15,9 @@
 
 using namespace crucible::safety::proto;
 
-struct R { int sentinel = 2; };
+struct R {
+    int sentinel = 2;
+};
 
 void compile_time_reject() {
     using NestedEmptyProto = Send<int, Offer<>>;

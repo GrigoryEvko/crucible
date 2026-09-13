@@ -26,7 +26,7 @@
 #include <crucible/permissions/Permission.h>
 
 namespace fscal = ::crucible::fixy::substr::sharded_calendar_grid;
-namespace saf   = ::crucible::safety;
+namespace saf = ::crucible::safety;
 
 struct shard_producer_tag_placeholder {};
 
@@ -34,8 +34,7 @@ int main() {
     int not_a_grid = 0;
     auto perm = saf::mint_permission_root<shard_producer_tag_placeholder>();
 
-    auto bad = fscal::mint_sharded_calendar_grid_producer<int, 0>(
-        not_a_grid, std::move(perm));
+    auto bad = fscal::mint_sharded_calendar_grid_producer<int, 0>(not_a_grid, std::move(perm));
     (void)bad;
     return 0;
 }

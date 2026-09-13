@@ -18,8 +18,7 @@ namespace policy = crucible::safety::secret_policy;
 
 using BadPublicEmitRef = stance::PublicEmit<int&, policy::UserDisplay>;
 
-static_assert(sizeof(BadPublicEmitRef) > 0,
-    "instantiate stance::PublicEmit<int&, UserDisplay> to force the "
-    "Type-axis rejection (references are not objects).");
+static_assert(sizeof(BadPublicEmitRef) > 0, "instantiate stance::PublicEmit<int&, UserDisplay> to force the "
+                                            "Type-axis rejection (references are not objects).");
 
 int main() { return 0; }

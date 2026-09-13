@@ -214,10 +214,10 @@ static void test_gpu_opcode_table_construction() {
             .dtype_bucket = cog::DtypeBucket::Bf16,
             .transpose_mode = cog::TransposeMode::Nn,
             .message_size_bucket = cog::MessageSizeBucket::None,
-            .latency_cycles = 8'500'000u,
-            .latency = cog::OrderedLatencyQuantiles{cog::LatencyQuantiles{2'500'000u,  // p50
-                                                                          4'500'000u,  // p99
-                                                                          7'200'000u}},  // p999
+            .latency_cycles = 8500000u,
+            .latency = cog::OrderedLatencyQuantiles{cog::LatencyQuantiles{2500000u,  // p50
+                                                                          4500000u,  // p99
+                                                                          7200000u}},  // p999
             .throughput_per_sec = 989.0e12,
             .sample_count = safety::Tagged<std::uint16_t, safety::source::Calibrated>{1024},
         },
@@ -227,8 +227,8 @@ static void test_gpu_opcode_table_construction() {
             .dtype_bucket = cog::DtypeBucket::Fp16,
             .transpose_mode = cog::TransposeMode::Nn,
             .message_size_bucket = cog::MessageSizeBucket::None,
-            .latency_cycles = 8'500'000u,
-            .latency = cog::OrderedLatencyQuantiles{cog::LatencyQuantiles{2'600'000u, 4'700'000u, 7'500'000u}},
+            .latency_cycles = 8500000u,
+            .latency = cog::OrderedLatencyQuantiles{cog::LatencyQuantiles{2600000u, 4700000u, 7500000u}},
             .throughput_per_sec = 989.0e12,
             .sample_count = safety::Tagged<std::uint16_t, safety::source::Calibrated>{1024},
         },
@@ -238,8 +238,8 @@ static void test_gpu_opcode_table_construction() {
             .dtype_bucket = cog::DtypeBucket::Fp32,
             .transpose_mode = cog::TransposeMode::Nn,
             .message_size_bucket = cog::MessageSizeBucket::M4M,
-            .latency_cycles = 1'200'000u,
-            .latency = cog::OrderedLatencyQuantiles{cog::LatencyQuantiles{350'000u, 600'000u, 1'400'000u}},
+            .latency_cycles = 1200000u,
+            .latency = cog::OrderedLatencyQuantiles{cog::LatencyQuantiles{350000u, 600000u, 1400000u}},
             .throughput_per_sec = 4.5e10,
             .sample_count = safety::Tagged<std::uint16_t, safety::source::Calibrated>{256},
         },
@@ -304,8 +304,8 @@ static void test_nic_opcode_table_construction() {
             .dtype_bucket = cog::DtypeBucket::None,
             .transpose_mode = cog::TransposeMode::Nn,
             .message_size_bucket = cog::MessageSizeBucket::M64B,
-            .latency_cycles = 4'500u,
-            .latency = cog::OrderedLatencyQuantiles{cog::LatencyQuantiles{1'500u, 2'500u, 5'500u}},
+            .latency_cycles = 4500u,
+            .latency = cog::OrderedLatencyQuantiles{cog::LatencyQuantiles{1500u, 2500u, 5500u}},
             .throughput_per_sec = 1.5e7,
             .sample_count = safety::Tagged<std::uint16_t, safety::source::Calibrated>{4096},
         },
@@ -315,8 +315,8 @@ static void test_nic_opcode_table_construction() {
             .dtype_bucket = cog::DtypeBucket::None,
             .transpose_mode = cog::TransposeMode::Nn,
             .message_size_bucket = cog::MessageSizeBucket::M4M,
-            .latency_cycles = 850'000u,
-            .latency = cog::OrderedLatencyQuantiles{cog::LatencyQuantiles{250'000u, 450'000u, 920'000u}},
+            .latency_cycles = 850000u,
+            .latency = cog::OrderedLatencyQuantiles{cog::LatencyQuantiles{250000u, 450000u, 920000u}},
             .throughput_per_sec = 6.25e9,
             .sample_count = safety::Tagged<std::uint16_t, safety::source::Calibrated>{2048},
         },
@@ -331,13 +331,13 @@ static void test_nic_opcode_table_construction() {
                                                cog::TransposeMode::Nn, cog::MessageSizeBucket::M64B);
     assert(small.has_value());
     volatile auto small_p99 = small->latency.value().p99_ns;
-    assert(small_p99 == 2'500u);
+    assert(small_p99 == 2500u);
 
     auto big = table.latency_for_size_bucket(cog::NicOpcode::RdmaWrite, cog::SizeBucket::None, cog::DtypeBucket::None,
                                              cog::TransposeMode::Nn, cog::MessageSizeBucket::M4M);
     assert(big.has_value());
     volatile auto big_p99 = big->latency.value().p99_ns;
-    assert(big_p99 == 450'000u);
+    assert(big_p99 == 450000u);
 
     assert(table.calibration_age_seconds.is_fresh());
 

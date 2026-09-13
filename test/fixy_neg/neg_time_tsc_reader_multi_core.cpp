@@ -21,13 +21,11 @@ int main() {
     ::crucible::effects::ColdInitCtx init{};
 
     // A proof pinned to cores {0,1} — popcount 2, not a singleton.
-    auto multi = ::crucible::safety::mint_cpu_pinned<
-        ::crucible::algebra::lattices::AffinityMask::range(0, 1),
-        ::crucible::safety::PinningPosture::PinnedExplicit, int>(0);
+    auto multi = ::crucible::safety::mint_cpu_pinned<::crucible::algebra::lattices::AffinityMask::range(0, 1),
+                                                     ::crucible::safety::PinningPosture::PinnedExplicit, int>(0);
 
     // Should FAIL: a multi-core pin does not satisfy IsSingletonCpuPin.
-    auto reader = ::crucible::fixy::time::mint_tsc_reader<
-        ::crucible::fixy::time::TscMode::Raw>(init, std::move(multi));
+    auto reader = ::crucible::fixy::time::mint_tsc_reader<::crucible::fixy::time::TscMode::Raw>(init, std::move(multi));
 
     return static_cast<int>(reader.read().peek());
 }

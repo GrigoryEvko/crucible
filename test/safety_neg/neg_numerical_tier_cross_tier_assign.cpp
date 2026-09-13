@@ -26,8 +26,8 @@
 using namespace crucible::safety;
 
 int main() {
-    NumericalTier<Tolerance::BITEXACT, int>  bx{42};
-    NumericalTier<Tolerance::ULP_FP16, int>  fp16{7};
+    NumericalTier<Tolerance::BITEXACT, int> bx{42};
+    NumericalTier<Tolerance::ULP_FP16, int> fp16{7};
 
     // Should FAIL: bx and fp16 are DIFFERENT types — different
     // template instantiations of NumericalTier.  No converting

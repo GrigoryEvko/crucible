@@ -39,9 +39,8 @@ int main() {
     // expected.  Each strong-typed newtype rejects construction from
     // the other; the compiler reports "no matching constructor".
     fh::EpochVersioned<int> bad{
-        42,
-        fh::Generation{1},  // expected fh::Epoch{...}
-        fh::Epoch{2}        // expected fh::Generation{...}
+        42, fh::Generation{1},  // expected fh::Epoch{...}
+        fh::Epoch{2}  // expected fh::Generation{...}
     };
     (void)bad;
     return 0;

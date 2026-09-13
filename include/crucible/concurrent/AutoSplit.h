@@ -247,7 +247,7 @@ private:
 };
 
 struct AutoSplitOnlineCalibrator {
-    std::atomic<std::uint64_t> dispatch_cost_ewma_ns{10'000};
+    std::atomic<std::uint64_t> dispatch_cost_ewma_ns{10000};
     std::atomic<std::uint64_t> per_item_ewma_ns_x1000{0};
     std::atomic<std::uint64_t> samples{0};
 
@@ -312,7 +312,7 @@ struct AutoSplitRouterState {
 struct AutoSplitRuntimeProfile {
     AutoRouteRuntimeProfile route{};
     std::size_t available_workers = 1;
-    std::uint64_t dispatch_cost_ns = 10'000;
+    std::uint64_t dispatch_cost_ns = 10000;
     std::uint32_t min_efficiency_pct = 70;
 };
 
@@ -781,7 +781,7 @@ concept AutoSplitShardBody =
                     .huge_shards = 16,
                 },
             .available_workers = std::max<std::size_t>(1, topology.process_cpu_count()),
-            .dispatch_cost_ns = 10'000,
+            .dispatch_cost_ns = 10000,
         };
     }();
     return profile;
@@ -792,7 +792,7 @@ auto_split_runtime_profile_from_topology(const Topology& topology = Topology::in
     return AutoSplitRuntimeProfile{
         .route = auto_route_runtime_profile_from_topology(topology),
         .available_workers = std::max<std::size_t>(1, topology.process_cpu_count()),
-        .dispatch_cost_ns = 10'000,
+        .dispatch_cost_ns = 10000,
     };
 }
 
@@ -801,7 +801,7 @@ auto_split_runtime_profile_from_topology_snapshot(Topology::Snapshot snapshot) n
     return AutoSplitRuntimeProfile{
         .route = auto_route_runtime_profile_from_topology_snapshot(snapshot),
         .available_workers = std::max<std::size_t>(1, snapshot.process_cpu_count),
-        .dispatch_cost_ns = 10'000,
+        .dispatch_cost_ns = 10000,
     };
 }
 

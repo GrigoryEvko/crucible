@@ -17,9 +17,9 @@
 #include <crucible/effects/ExecCtx.h>
 #include <crucible/permissions/FederationPermission.h>
 
-namespace eff  = crucible::effects;
+namespace eff = crucible::effects;
 namespace perm = crucible::permissions;
-namespace saf  = crucible::safety;
+namespace saf = crucible::safety;
 
 struct NegRootMintCtx_OrgA {};
 
@@ -31,8 +31,7 @@ int main() {
     // `is_federated_peer_tag_v<tag::FederatedPeer<OrgA>>` is true.  Must
     // NOT compile.
     constexpr auto ctx = eff::ExecCtx<>{};
-    auto bad = saf::mint_permission_root<
-        perm::tag::FederatedPeer<NegRootMintCtx_OrgA>>(ctx);
+    auto bad = saf::mint_permission_root<perm::tag::FederatedPeer<NegRootMintCtx_OrgA>>(ctx);
     (void)bad;
     return 0;
 }

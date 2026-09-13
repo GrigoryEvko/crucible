@@ -100,7 +100,7 @@ void test_spinlock_mutual_exclusion_under_contention() {
     // race on them, so the final count is right only if the lock admits one
     // thread to the critical section at a time.
     constexpr std::size_t kThreads = 8;
-    constexpr std::size_t kIterationsPerThread = 1'000;
+    constexpr std::size_t kIterationsPerThread = 1000;
 
     conc::SpinLock lock;
     std::int64_t guarded_counter = 0;

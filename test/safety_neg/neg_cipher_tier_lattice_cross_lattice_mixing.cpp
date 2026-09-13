@@ -25,12 +25,11 @@
 using namespace crucible::algebra::lattices;
 
 int main() {
-    CipherTierTag tier_val     = CipherTierTag::Hot;
+    CipherTierTag tier_val = CipherTierTag::Hot;
     ProgressClass progress_val = ProgressClass::Bounded;
 
     // Should FAIL: ProgressLattice::leq's signature requires two
     // ProgressClass values; passing a CipherTierTag as the second
     // argument is a type-mismatch.
-    return static_cast<int>(
-        ProgressLattice::leq(progress_val, tier_val));
+    return static_cast<int>(ProgressLattice::leq(progress_val, tier_val));
 }

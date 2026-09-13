@@ -9,14 +9,13 @@
 using namespace crucible::safety::proto;
 
 struct Req {};
-struct Ok  {};
+struct Ok {};
 struct Followup {};
 
-using Server = Recv<Req, Select<Send<Ok, End>>>;   // 1 branch only
+using Server = Recv<Req, Select<Send<Ok, End>>>;  // 1 branch only
 
 void compile_time_reject() {
-    using Bad = compose_at_branch_t<Server, /*branch=*/5,
-                                    Recv<Followup, End>>;
+    using Bad = compose_at_branch_t<Server, /*branch=*/5, Recv<Followup, End>>;
     (void)sizeof(Bad);
 }
 

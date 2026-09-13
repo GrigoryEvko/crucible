@@ -11,13 +11,11 @@
 namespace eff = ::crucible::effects;
 
 int main() {
-  crucible::Arena arena{};
-  auto init = eff::testing::init();
-  auto test = eff::testing::test();
-  crucible::RecipePool pool{crucible::RecipePool::ArenaBorrow{arena}, init};
-  crucible::RecipeRegistry reg{
-      crucible::RecipeRegistry::PoolBorrow{pool}, test.alloc};
-  auto wrong = reg.by_hash<eff::Row<eff::Effect::Init>>(
-      crucible::RecipeHash{0x1234});
-  return wrong.has_value() ? 0 : 1;
+    crucible::Arena arena{};
+    auto init = eff::testing::init();
+    auto test = eff::testing::test();
+    crucible::RecipePool pool{crucible::RecipePool::ArenaBorrow{arena}, init};
+    crucible::RecipeRegistry reg{crucible::RecipeRegistry::PoolBorrow{pool}, test.alloc};
+    auto wrong = reg.by_hash<eff::Row<eff::Effect::Init>>(crucible::RecipeHash{0x1234});
+    return wrong.has_value() ? 0 : 1;
 }

@@ -21,15 +21,16 @@
 using namespace crucible::safety::proto;
 
 struct ServerPeer {};
-struct Channel { int session_id = 0; };
+struct Channel {
+    int session_id = 0;
+};
 
 int main() {
     // Pre-#430 pattern that #400's debugging caught — wrapper code
     // attempting to fabricate a CrashEvent without detaching its
     // inner.  Now a compile error: WrapCrashReturnKey's default ctor
     // is private and only friends wrap_crash_return.
-    auto bad = std::unexpected(
-        CrashEvent<ServerPeer, Channel>{Channel{42}});
+    auto bad = std::unexpected(CrashEvent<ServerPeer, Channel>{Channel{42}});
     (void)bad;
     return 0;
 }

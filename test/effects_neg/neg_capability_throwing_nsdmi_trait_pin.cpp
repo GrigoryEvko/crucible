@@ -26,7 +26,7 @@
 
 struct ThrowingCap {
     ThrowingCap() noexcept(false) {}  // structurally cap::*-shaped, but
-                                      // explicitly throwing
+    // explicitly throwing
 };
 
 int main() {
@@ -36,9 +36,9 @@ int main() {
     // reflects T's noexcept-spec — production cap::* trait pins lose
     // their meaning.
     static_assert(std::is_nothrow_default_constructible_v<ThrowingCap>,
-        "fixy-A3-015: is_nothrow_default_constructible_v<T> MUST be "
-        "false when T's default ctor is noexcept(false); if this "
-        "admits, the production cap::* trait pins are no longer "
-        "load-bearing.");
+                  "fixy-A3-015: is_nothrow_default_constructible_v<T> MUST be "
+                  "false when T's default ctor is noexcept(false); if this "
+                  "admits, the production cap::* trait pins are no longer "
+                  "load-bearing.");
     return 0;
 }

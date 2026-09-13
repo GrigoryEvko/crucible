@@ -40,21 +40,19 @@
 #include <utility>
 
 namespace {
-    // Production-shape NonMovable consumer: a type whose IDENTITY is
-    // an owned resource (here: a synthetic "handle id").  Cipher.h /
-    // TraceLoader.h use this shape for ScopedFd / ScopedFile-style
-    // owners.  A move would leave the source side with the same
-    // handle_id_, allowing a later destructor to double-release.
-    struct OwnedHandle : ::crucible::safety::NonMovable<OwnedHandle> {
-        unsigned long handle_id_ = 0;
-    };
-}
+// Production-shape NonMovable consumer: a type whose IDENTITY is
+// an owned resource (here: a synthetic "handle id").  Cipher.h /
+// TraceLoader.h use this shape for ScopedFd / ScopedFile-style
+// owners.  A move would leave the source side with the same
+// handle_id_, allowing a later destructor to double-release.
+struct OwnedHandle : ::crucible::safety::NonMovable<OwnedHandle> {
+    unsigned long handle_id_ = 0;
+};
+}  // namespace
 
 // Anchor: default-construction is allowed — the only path to OBTAIN
 // a NonMovable handle is in-place construction.  This compiles.
-[[maybe_unused]] static OwnedHandle anchor_make_nonmovable() {
-    return OwnedHandle{};
-}
+[[maybe_unused]] static OwnedHandle anchor_make_nonmovable() { return OwnedHandle{}; }
 
 // VIOLATION: OwnedHandle inherits a deleted move ctor from
 // NonMovable<OwnedHandle>.  Attempting move-construction (typical
@@ -62,7 +60,7 @@ namespace {
 // load-bearing reason string.  GCC emits "use of deleted function"
 // + the "exclusive ownership" reason.
 [[maybe_unused]] static OwnedHandle offending_nonmovable_move(OwnedHandle&& source) {
-    return OwnedHandle{std::move(source)};   // ERROR: move ctor deleted
+    return OwnedHandle{std::move(source)};  // ERROR: move ctor deleted
 }
 
 int main() { return 0; }

@@ -52,16 +52,14 @@
 
 #include <type_traits>
 
-namespace eff   = crucible::effects;
+namespace eff = crucible::effects;
 namespace proto = crucible::safety::proto;
 
 namespace {
 
-using InnerIoRecv =
-    proto::Recv<eff::Computation<eff::Row<eff::Effect::IO>, int>, proto::End>;
+using InnerIoRecv = proto::Recv<eff::Computation<eff::Row<eff::Effect::IO>, int>, proto::End>;
 
-using AcceptStopWithIo =
-    proto::Accept<proto::Stop_g<proto::CrashClass::Throw>, InnerIoRecv>;
+using AcceptStopWithIo = proto::Accept<proto::Stop_g<proto::CrashClass::Throw>, InnerIoRecv>;
 
 // Pre-fix witness: the general `protocol_effect_row<Accept<T, K>>`
 // rule fires for T = Stop_g<Throw> and the trait inherits K's row.
@@ -70,11 +68,9 @@ using AcceptStopWithIo =
 // reports `Row<>`.  This fixture's failure-to-compile post-fix IS
 // the witness that the symmetric duality-side soundness hole is
 // closed.
-static_assert(std::is_same_v<
-    proto::protocol_effect_row_t<AcceptStopWithIo>,
-    eff::Row<eff::Effect::IO>>,
-    "fixy-A2-028 regression: Accept<Stop_g<C>, K> protocol_effect_row "
-    "did not collapse to Row<> under bottom-preservation");
+static_assert(std::is_same_v<proto::protocol_effect_row_t<AcceptStopWithIo>, eff::Row<eff::Effect::IO>>,
+              "fixy-A2-028 regression: Accept<Stop_g<C>, K> protocol_effect_row "
+              "did not collapse to Row<> under bottom-preservation");
 
 }  // namespace
 

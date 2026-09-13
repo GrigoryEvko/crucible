@@ -25,7 +25,7 @@
 #include <crucible/safety/ScopedFence.h>
 
 namespace sf = ::crucible::safety;
-using Ms_t   = sf::MemoryScope_v;
+using Ms_t = sf::MemoryScope_v;
 
 int main() {
     sf::ScopedFence<Ms_t::Cta, int> cta_fence{42};

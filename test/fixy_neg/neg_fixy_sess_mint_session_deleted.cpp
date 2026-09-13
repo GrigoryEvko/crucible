@@ -15,7 +15,7 @@
 
 namespace neg_fixy_sess_mint_session_deleted {
 struct DummyResource {};
-}
+}  // namespace neg_fixy_sess_mint_session_deleted
 
 namespace fsess = ::crucible::fixy::sess;
 

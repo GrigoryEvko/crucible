@@ -58,7 +58,7 @@ using TestGrid = PermissionedCalendarGrid<Job,
                                           /*NumProducers=*/4,
                                           /*NumBuckets=*/16,
                                           /*BucketCap=*/8, DeadlineKey,
-                                          /*QuantumNs=*/1'000'000ULL,  // 1ms
+                                          /*QuantumNs=*/1000000ULL,  // 1ms
                                           CalTag>;
 
 void test_handle_sizeof_claims() {
@@ -94,9 +94,9 @@ void test_single_thread_priority_order() {
 
     // The deadlines arrive in reverse priority order, and the quantum
     // routes them to buckets five, three and one.
-    CRUCIBLE_TEST_REQUIRE(p0.try_push(Job{.deadline_ns = 5'000'000, .payload = 50}));
-    CRUCIBLE_TEST_REQUIRE(p0.try_push(Job{.deadline_ns = 3'000'000, .payload = 30}));
-    CRUCIBLE_TEST_REQUIRE(p0.try_push(Job{.deadline_ns = 1'000'000, .payload = 10}));
+    CRUCIBLE_TEST_REQUIRE(p0.try_push(Job{.deadline_ns = 5000000, .payload = 50}));
+    CRUCIBLE_TEST_REQUIRE(p0.try_push(Job{.deadline_ns = 3000000, .payload = 30}));
+    CRUCIBLE_TEST_REQUIRE(p0.try_push(Job{.deadline_ns = 1000000, .payload = 10}));
 
     // The consumer starts at bucket zero and walks forward over the
     // empty buckets, so the items come back in priority order.
@@ -125,7 +125,7 @@ void test_late_item_clamps_to_current_bucket() {
     auto cons = grid.consumer(std::move(std::get<0>(perms.consumers)));
 
     // Draining this item walks the current bucket past five.
-    CRUCIBLE_TEST_REQUIRE(p0.try_push(Job{.deadline_ns = 5'000'000, .payload = 5}));
+    CRUCIBLE_TEST_REQUIRE(p0.try_push(Job{.deadline_ns = 5000000, .payload = 5}));
     auto first = cons.try_pop();
     CRUCIBLE_TEST_REQUIRE(first.has_value() && first->payload == 5);
     // current_bucket is now 6.
@@ -133,7 +133,7 @@ void test_late_item_clamps_to_current_bucket() {
     // This deadline targets bucket two, which is now behind the current
     // bucket.  A late item clamps to the current bucket and is
     // drainable at once.
-    CRUCIBLE_TEST_REQUIRE(p0.try_push(Job{.deadline_ns = 2'000'000, .payload = 99}));
+    CRUCIBLE_TEST_REQUIRE(p0.try_push(Job{.deadline_ns = 2000000, .payload = 99}));
     auto late = cons.try_pop();
     CRUCIBLE_TEST_REQUIRE(late.has_value());
     CRUCIBLE_TEST_REQUIRE(late->payload == 99);
@@ -150,10 +150,10 @@ void test_cross_producer_same_bucket_per_row_fifo() {
     auto cons = grid.consumer(std::move(std::get<0>(perms.consumers)));
 
     // All four items land in bucket three.
-    CRUCIBLE_TEST_REQUIRE(p0.try_push(Job{.deadline_ns = 3'000'000, .payload = 100}));
-    CRUCIBLE_TEST_REQUIRE(p1.try_push(Job{.deadline_ns = 3'000'000, .payload = 200}));
-    CRUCIBLE_TEST_REQUIRE(p0.try_push(Job{.deadline_ns = 3'000'000, .payload = 101}));
-    CRUCIBLE_TEST_REQUIRE(p1.try_push(Job{.deadline_ns = 3'000'000, .payload = 201}));
+    CRUCIBLE_TEST_REQUIRE(p0.try_push(Job{.deadline_ns = 3000000, .payload = 100}));
+    CRUCIBLE_TEST_REQUIRE(p1.try_push(Job{.deadline_ns = 3000000, .payload = 200}));
+    CRUCIBLE_TEST_REQUIRE(p0.try_push(Job{.deadline_ns = 3000000, .payload = 101}));
+    CRUCIBLE_TEST_REQUIRE(p1.try_push(Job{.deadline_ns = 3000000, .payload = 201}));
 
     // Within one producer's row the order is first in first out.  The
     // interleave between rows follows the consumer's scan order, so only
@@ -186,10 +186,10 @@ void test_batched_push_pop_priority() {
     // One deadline for the whole batch puts every item in bucket two,
     // which is what lets the push go through as a single batch.
     std::array<Job, 4> batch = {{
-        {.deadline_ns = 2'000'000, .payload = 1},
-        {.deadline_ns = 2'000'000, .payload = 2},
-        {.deadline_ns = 2'000'000, .payload = 3},
-        {.deadline_ns = 2'000'000, .payload = 4},
+        {.deadline_ns = 2000000, .payload = 1},
+        {.deadline_ns = 2000000, .payload = 2},
+        {.deadline_ns = 2000000, .payload = 3},
+        {.deadline_ns = 2000000, .payload = 4},
     }};
     const std::size_t pushed = p0.try_push_batch(std::span<const Job>(batch));
     CRUCIBLE_TEST_REQUIRE(pushed == 4);
@@ -223,7 +223,7 @@ void test_multi_producer_concurrent_stress() {
             for (std::size_t i = 0; i < per_producer; ++i) {
                 Job j{};
                 // The modulus spreads the deadlines over every bucket.
-                j.deadline_ns = (i % 16) * 1'000'000;
+                j.deadline_ns = (i % 16) * 1000000;
                 j.payload = producer_id * per_producer + i;
                 while (!p.try_push(j))
                     CRUCIBLE_SPIN_PAUSE;
@@ -297,7 +297,7 @@ void test_diagnostic_surface() {
     auto perms = mint_grid_permissions<TestGrid::whole_tag, 4, 1>(std::move(whole));
     auto p0 = grid.template producer<0>(std::move(std::get<0>(perms.producers)));
 
-    CRUCIBLE_TEST_REQUIRE(p0.try_push(Job{.deadline_ns = 7'000'000, .payload = 7}));
+    CRUCIBLE_TEST_REQUIRE(p0.try_push(Job{.deadline_ns = 7000000, .payload = 7}));
     CRUCIBLE_TEST_REQUIRE(!grid.empty_approx());
     CRUCIBLE_TEST_REQUIRE(grid.size_approx() == 1);
 

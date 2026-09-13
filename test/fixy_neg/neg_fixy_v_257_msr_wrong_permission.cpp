@@ -19,7 +19,9 @@
 #include <crucible/effects/ExecCtx.h>
 #include <crucible/permissions/Permission.h>
 
-namespace { struct other_region {}; }
+namespace {
+struct other_region {};
+}  // namespace
 
 int main() {
     ::crucible::effects::TestRunnerCtx ctx{};

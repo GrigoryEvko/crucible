@@ -36,6 +36,5 @@ int main() {
     // argument is a type-mismatch (HotPathTier is NOT convertible
     // to DetSafeTier — both are `enum class : uint8_t` so no
     // implicit narrowing applies).
-    return static_cast<int>(
-        DetSafeLattice::leq(det_safe_val, hot_path_val));
+    return static_cast<int>(DetSafeLattice::leq(det_safe_val, hot_path_val));
 }

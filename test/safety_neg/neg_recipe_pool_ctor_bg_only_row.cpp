@@ -16,12 +16,9 @@
 namespace eff = ::crucible::effects;
 
 int main() {
-  crucible::Arena arena{};
-  auto init = eff::testing::init();
-  crucible::RecipePool pool{
-      crucible::RecipePool::ArenaBorrow{arena},
-      init,
-      32u,
-      std::type_identity<eff::Row<eff::Effect::Bg>>{}};
-  return pool.capacity() == 0;
+    crucible::Arena arena{};
+    auto init = eff::testing::init();
+    crucible::RecipePool pool{crucible::RecipePool::ArenaBorrow{arena}, init, 32u,
+                              std::type_identity<eff::Row<eff::Effect::Bg>>{}};
+    return pool.capacity() == 0;
 }

@@ -31,16 +31,13 @@
 #include <span>
 
 constexpr bool length_mismatch_eq() {
-    constexpr std::array<std::byte, 3> a{
-        std::byte{1}, std::byte{2}, std::byte{3} };
-    constexpr std::array<std::byte, 2> b{
-        std::byte{1}, std::byte{2} };
+    constexpr std::array<std::byte, 3> a{std::byte{1}, std::byte{2}, std::byte{3}};
+    constexpr std::array<std::byte, 2> b{std::byte{1}, std::byte{2}};
 
     // VIOLATION: sizes differ.  Span-only signature can't paper over it
     // the way the legacy (ptr, ptr, n) triple did — CRUCIBLE_PRE fires.
-    return crucible::safety::ct::eq(
-        std::span<const std::byte>{a.data(), a.size()},
-        std::span<const std::byte>{b.data(), b.size()});
+    return crucible::safety::ct::eq(std::span<const std::byte>{a.data(), a.size()},
+                                    std::span<const std::byte>{b.data(), b.size()});
 }
 
 int main() {

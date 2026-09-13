@@ -7,24 +7,21 @@
 
 #include <crucible/sessions/SessionMint.h>
 
-namespace eff   = ::crucible::effects;
+namespace eff = ::crucible::effects;
 namespace proto = ::crucible::safety::proto;
 
 namespace {
 struct FakeChannel {};
-}
+}  // namespace
 
 int main() {
     using CurrentCtx = proto::EpochExecCtx<6, 3, eff::HotFgCtx>;
-    using Payload =
-        proto::DelegatedSession<proto::End, proto::EmptyPermSet>;
+    using Payload = proto::DelegatedSession<proto::End, proto::EmptyPermSet>;
     using Fresh = proto::EpochedDelegate<Payload, proto::End, 6, 3>;
-    using StaleContinuation =
-        proto::EpochedDelegate<Payload, proto::End, 5, 3>;
+    using StaleContinuation = proto::EpochedDelegate<Payload, proto::End, 5, 3>;
     using Composed = proto::compose_t<Fresh, StaleContinuation>;
 
     CurrentCtx ctx{};
-    [[maybe_unused]] auto h =
-        proto::mint_permissioned_session<Composed>(ctx, FakeChannel{});
+    [[maybe_unused]] auto h = proto::mint_permissioned_session<Composed>(ctx, FakeChannel{});
     return 0;
 }

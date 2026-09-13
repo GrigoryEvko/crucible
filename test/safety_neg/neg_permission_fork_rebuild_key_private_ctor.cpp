@@ -47,8 +47,7 @@ int main() {
     // VIOLATION: ForkRebuildKey's default ctor is private — only
     // `detail::rebuild_parent_after_fork_` is friended.  A user TU
     // cannot construct the key, so cannot reach the rebuild surface.
-    auto smuggled = safe::detail::ForkRebuildAccess::rebuild<LeakedTag>(
-        safe::detail::ForkRebuildKey{});
+    auto smuggled = safe::detail::ForkRebuildAccess::rebuild<LeakedTag>(safe::detail::ForkRebuildKey{});
     safe::permission_drop(std::move(smuggled));
     return 0;
 }

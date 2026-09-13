@@ -44,23 +44,20 @@
 #include <utility>
 
 namespace {
-    // Phase-I (SCHEDULE) consumer — accepts only post-COMPILE output
-    // that has progressed through the catalog to Phase I.  In Forge
-    // production this is forge/Phases/Schedule.h's entry boundary.
-    [[maybe_unused]] void schedule_kernel(
-        ::crucible::safety::Tagged<std::uint64_t,
-                                   ::crucible::safety::source::ForgePhase<'I'>>
-            /*kernel_graph_hash*/)
-    {
-        // body irrelevant — the call-site type-check IS the test.
-    }
+// Phase-I (SCHEDULE) consumer — accepts only post-COMPILE output
+// that has progressed through the catalog to Phase I.  In Forge
+// production this is forge/Phases/Schedule.h's entry boundary.
+[[maybe_unused]] void
+schedule_kernel(::crucible::safety::Tagged<std::uint64_t, ::crucible::safety::source::ForgePhase<'I'>>
+                /*kernel_graph_hash*/) {
+    // body irrelevant — the call-site type-check IS the test.
 }
+}  // namespace
 
 // Anchor: legitimate Phase-I call so the file is self-contained.
 [[maybe_unused]] static void anchor_phase_i_call() {
-    auto scheduled = ::crucible::safety::mint_tagged<
-        ::crucible::safety::source::ForgePhase<'I'>, std::uint64_t>(
-            0xCAFEBABEULL);
+    auto scheduled =
+        ::crucible::safety::mint_tagged<::crucible::safety::source::ForgePhase<'I'>, std::uint64_t>(0xCAFEBABEULL);
     schedule_kernel(std::move(scheduled));
 }
 
@@ -70,9 +67,8 @@ namespace {
 // GCC rejects with "cannot convert ... ForgePhase<(char)65> ...
 // ForgePhase<(char)73>" or similar typed-argument mismatch.
 [[maybe_unused]] static void offending_phase_a_into_phase_i_slot() {
-    auto ingested = ::crucible::safety::mint_tagged<
-        ::crucible::safety::source::ForgePhase<'A'>, std::uint64_t>(
-            0xCAFEBABEULL);
+    auto ingested =
+        ::crucible::safety::mint_tagged<::crucible::safety::source::ForgePhase<'A'>, std::uint64_t>(0xCAFEBABEULL);
     schedule_kernel(std::move(ingested));  // ERROR: 'A' ≠ 'I'
 }
 

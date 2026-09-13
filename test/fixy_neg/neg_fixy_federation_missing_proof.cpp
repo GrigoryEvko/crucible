@@ -33,8 +33,7 @@ namespace ff = crucible::fixy::source::federation;
 struct NegFederationMissingProof_Org {};
 
 int main() {
-    auto handshake = ff::make_self_signed_handshake<
-        NegFederationMissingProof_Org>();
+    auto handshake = ff::make_self_signed_handshake<NegFederationMissingProof_Org>();
 
     // Wrong proof: a plain int.  Cannot bind to
     // `const LocalCipherPermission&` reference; overload resolution
@@ -44,8 +43,7 @@ int main() {
     // mint_permission_root, which is auditable per the §XXI
     // Universal Mint Pattern grep rule).
     int not_a_permission = 0;
-    (void)ff::mint_federation_admittance<NegFederationMissingProof_Org>(
-        not_a_permission, handshake);
+    (void)ff::mint_federation_admittance<NegFederationMissingProof_Org>(not_a_permission, handshake);
     return 0;
 }
 

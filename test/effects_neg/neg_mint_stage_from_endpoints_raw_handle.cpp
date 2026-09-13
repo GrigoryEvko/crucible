@@ -32,33 +32,30 @@
 #include <utility>
 
 namespace conc = crucible::concurrent;
-namespace eff  = crucible::effects;
-namespace saf  = crucible::safety;
+namespace eff = crucible::effects;
+namespace saf = crucible::safety;
 
-struct UTagIn  {};
+struct UTagIn {};
 struct UTagOut {};
 
-using ChIn  = conc::PermissionedSpscChannel<int, 64, UTagIn>;
+using ChIn = conc::PermissionedSpscChannel<int, 64, UTagIn>;
 using ChOut = conc::PermissionedSpscChannel<int, 64, UTagOut>;
 
-inline void body(typename ChIn::ConsumerHandle&&,
-                 typename ChOut::ProducerHandle&&) noexcept {}
+inline void body(typename ChIn::ConsumerHandle&&, typename ChOut::ProducerHandle&&) noexcept {}
 
 int main() {
     eff::HotFgCtx ctx;
 
-    ChIn  ch_in;
+    ChIn ch_in;
     ChOut ch_out;
 
     auto wi = saf::mint_permission_root<conc::spsc_tag::Whole<UTagIn>>();
-    auto [ppi, cpi] = saf::mint_permission_split<
-        conc::spsc_tag::Producer<UTagIn>,
-        conc::spsc_tag::Consumer<UTagIn>>(std::move(wi));
+    auto [ppi, cpi] =
+        saf::mint_permission_split<conc::spsc_tag::Producer<UTagIn>, conc::spsc_tag::Consumer<UTagIn>>(std::move(wi));
 
     auto wo = saf::mint_permission_root<conc::spsc_tag::Whole<UTagOut>>();
-    auto [ppo, cpo] = saf::mint_permission_split<
-        conc::spsc_tag::Producer<UTagOut>,
-        conc::spsc_tag::Consumer<UTagOut>>(std::move(wo));
+    auto [ppo, cpo] =
+        saf::mint_permission_split<conc::spsc_tag::Producer<UTagOut>, conc::spsc_tag::Consumer<UTagOut>>(std::move(wo));
 
     // RAW handles, NOT wrapped via mint_endpoint.  Both satisfy
     // IsConsumerHandle / IsProducerHandle (FOUND-D05/D06), but
@@ -72,8 +69,7 @@ int main() {
     // the bridge enforces Endpoint shape and prevents users from
     // accidentally bypassing mint_endpoint's substrate-fit validation
     // by routing raw handles through the bridge.
-    auto bad = conc::mint_stage_from_endpoints<&body>(
-        ctx, std::move(raw_cons), std::move(raw_prod));
+    auto bad = conc::mint_stage_from_endpoints<&body>(ctx, std::move(raw_cons), std::move(raw_prod));
     (void)bad;
     (void)ppi;
     (void)cpo;

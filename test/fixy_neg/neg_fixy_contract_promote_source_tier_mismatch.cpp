@@ -41,14 +41,13 @@
 
 int main() {
     namespace fcc = ::crucible::fixy::contract::cipher;
-    using Tier    = ::crucible::safety::CipherTierTag_v;
+    using Tier = ::crucible::safety::CipherTierTag_v;
 
     // Construct a Hot-tier handle.  The user then asks for a
     // Cold→Warm promotion — From=Cold is explicit, but the supplied
     // source is `CipherTier<Hot, int>`, not `CipherTier<Cold, int>`.
     // Overload resolution finds no matching `mint_promote` overload.
     fcc::CipherTier<Tier::Hot, int> hot{42};
-    [[maybe_unused]] auto bad =
-        fcc::mint_promote<Tier::Cold, Tier::Warm>(std::move(hot));
+    [[maybe_unused]] auto bad = fcc::mint_promote<Tier::Cold, Tier::Warm>(std::move(hot));
     return 0;
 }

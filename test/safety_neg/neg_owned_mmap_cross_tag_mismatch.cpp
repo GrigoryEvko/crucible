@@ -45,33 +45,30 @@
 #include <utility>
 
 namespace {
-    // Two distinct provenance tags — production-shape names like
-    // mmap_region::TraceRing vs mmap_region::MetaLog would carry the
-    // same semantic distinction.  Both are empty class types.
-    struct RegionTagA {};
-    struct RegionTagB {};
+// Two distinct provenance tags — production-shape names like
+// mmap_region::TraceRing vs mmap_region::MetaLog would carry the
+// same semantic distinction.  Both are empty class types.
+struct RegionTagA {};
+struct RegionTagB {};
 
-    // Shared Prot / Share — the only thing distinguishing the two
-    // OwnedMmap instantiations is the Tag.  This isolates the
-    // cross-Tag rejection from any Prot/Share mismatch noise.
-    struct ProbeProt   {};
-    struct ProbeShare  {};
+// Shared Prot / Share — the only thing distinguishing the two
+// OwnedMmap instantiations is the Tag.  This isolates the
+// cross-Tag rejection from any Prot/Share mismatch noise.
+struct ProbeProt {};
+struct ProbeShare {};
 
-    // API entry point demanding a specific tag.  In production this
-    // would be a perf-hub install function whose signature names
-    // exactly the ring it operates over.
-    [[maybe_unused]] void install_region_a(
-        ::crucible::safety::OwnedMmap<RegionTagA, ProbeProt, ProbeShare>&&)
-    {
-        // body irrelevant — call-site type-check is the test.
-    }
+// API entry point demanding a specific tag.  In production this
+// would be a perf-hub install function whose signature names
+// exactly the ring it operates over.
+[[maybe_unused]] void install_region_a(::crucible::safety::OwnedMmap<RegionTagA, ProbeProt, ProbeShare>&&) {
+    // body irrelevant — call-site type-check is the test.
+}
 }  // namespace
 
 // Anchor: same-tag call compiles cleanly — RegionTagA accepted by
 // the RegionTagA-typed parameter.
-[[maybe_unused]] static void anchor_same_tag_call(
-    ::crucible::safety::OwnedMmap<RegionTagA, ProbeProt, ProbeShare>&& region)
-{
+[[maybe_unused]] static void
+anchor_same_tag_call(::crucible::safety::OwnedMmap<RegionTagA, ProbeProt, ProbeShare>&& region) {
     install_region_a(std::move(region));
 }
 
@@ -79,10 +76,9 @@ namespace {
 // are unrelated template instantiations — even though Prot and Share
 // match.  C++ overload resolution finds no implicit conversion across
 // distinct Tag types; GCC rejects with "cannot convert".
-[[maybe_unused]] static void offending_cross_tag_call(
-    ::crucible::safety::OwnedMmap<RegionTagB, ProbeProt, ProbeShare>&& region)
-{
-    install_region_a(std::move(region));   // ERROR: TagB ≠ TagA
+[[maybe_unused]] static void
+offending_cross_tag_call(::crucible::safety::OwnedMmap<RegionTagB, ProbeProt, ProbeShare>&& region) {
+    install_region_a(std::move(region));  // ERROR: TagB ≠ TagA
 }
 
 int main() { return 0; }

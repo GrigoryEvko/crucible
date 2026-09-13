@@ -20,7 +20,7 @@
 #include <crucible/fixy/Substr.h>
 
 namespace fsubstr = crucible::fixy::substr;
-namespace fsafe   = crucible::safety;
+namespace fsafe = crucible::safety;
 
 namespace neg_fixy_substr_swmr_writer_non_surface {
 struct FakeWriterTag {};
@@ -37,9 +37,6 @@ int main() {
 
     // Permission tag matches FakeSurface::writer_tag, so the parameter
     // binds; SwmrSessionSurface<FakeSurface> is the failing gate.
-    [[maybe_unused]] auto bad =
-        fsubstr::swmr::mint_swmr_writer(
-            fake,
-            fsafe::mint_permission_root<ns::FakeWriterTag>());
+    [[maybe_unused]] auto bad = fsubstr::swmr::mint_swmr_writer(fake, fsafe::mint_permission_root<ns::FakeWriterTag>());
     return 0;
 }

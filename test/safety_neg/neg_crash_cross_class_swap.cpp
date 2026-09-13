@@ -19,7 +19,7 @@ using namespace crucible::safety;
 
 int main() {
     Crash<CrashClass_v::NoThrow, int> nothrow_value{42};
-    Crash<CrashClass_v::Abort,   int> abort_value{7};
+    Crash<CrashClass_v::Abort, int> abort_value{7};
 
     // Should FAIL: Crash<NoThrow, int>::swap takes
     // Crash<NoThrow, int>&; abort_value is a different type.

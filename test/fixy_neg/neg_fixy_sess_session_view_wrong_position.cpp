@@ -25,11 +25,11 @@
 #include <crucible/sessions/SessionView.h>
 #include <crucible/fixy/Sess.h>
 
-namespace sp    = crucible::safety::proto;
+namespace sp = crucible::safety::proto;
 namespace fsess = crucible::fixy::sess;
 
 namespace neg_fixy_sess_session_view_wrong_position {
-struct Msg     {};
+struct Msg {};
 struct FakeRes {};
 
 using SendHandle = fsess::SessionHandle<fsess::Send<Msg, fsess::End>, FakeRes>;

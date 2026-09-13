@@ -10,14 +10,13 @@
 namespace fn = crucible::safety::fn;
 
 namespace neg_collision_s011 {
-using Bad = fn::Fn<int, fn::pred::True, fn::UsageMode::Capability,
-                   crucible::effects::Row<>, fn::SecLevel::Public>;
-}
+using Bad = fn::Fn<int, fn::pred::True, fn::UsageMode::Capability, crucible::effects::Row<>, fn::SecLevel::Public>;
+}  // namespace neg_collision_s011
 
 namespace crucible::safety::fn::collision {
 template <>
 struct marks_replay_required<::neg_collision_s011::Bad> : std::true_type {};
-}
+}  // namespace crucible::safety::fn::collision
 
 [[maybe_unused]] neg_collision_s011::Bad bad{};
 

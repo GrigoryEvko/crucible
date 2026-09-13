@@ -14,7 +14,7 @@ struct Resp {};
 struct Err {};
 struct DifferentBase {};
 
-using CommitPath   = Send<Req, Recv<Resp, End>>;
+using CommitPath = Send<Req, Recv<Resp, End>>;
 using RollbackPath = Send<Req, Recv<Err, End>>;
 
 using CkptProto = CheckpointedSession<CommitPath, RollbackPath>;

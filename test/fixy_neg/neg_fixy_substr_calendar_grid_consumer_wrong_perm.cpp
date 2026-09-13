@@ -32,13 +32,10 @@ struct Job {
     std::uint64_t deadline_ns = 0;
 };
 struct Key {
-    static std::uint64_t key(Job const& job) noexcept {
-        return job.deadline_ns;
-    }
+    static std::uint64_t key(Job const& job) noexcept { return job.deadline_ns; }
 };
-using Grid = conc::PermissionedCalendarGrid<
-    Job, 2, 8, 16, Key, 1'000'000ULL, UserTag>;
-}
+using Grid = conc::PermissionedCalendarGrid<Job, 2, 8, 16, Key, 1000000ULL, UserTag>;
+}  // namespace neg_fixy_cal_consumer_wrong_perm
 
 int main() {
     neg_fixy_cal_consumer_wrong_perm::Grid grid{};

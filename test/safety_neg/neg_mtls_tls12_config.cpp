@@ -5,10 +5,9 @@
 
 int main() {
     using namespace crucible::cntp;
-    auto config = mint_mtls_config<TlsVersion::V12>(
-        MtlsCertificate{MtlsCertificateBytes{}},
-        MtlsCertificate{MtlsCertificateBytes{}},
-        MtlsPrivateKey{MtlsPrivateKeyBytes{}});
+    auto config = mint_mtls_config<TlsVersion::V12>(MtlsCertificate{MtlsCertificateBytes{}},
+                                                    MtlsCertificate{MtlsCertificateBytes{}},
+                                                    MtlsPrivateKey{MtlsPrivateKeyBytes{}});
     (void)config;
     return 0;
 }

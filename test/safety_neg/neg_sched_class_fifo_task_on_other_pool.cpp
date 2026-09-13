@@ -24,7 +24,7 @@ using namespace crucible::safety;
 
 // A SCHED_OTHER thread pool admits only tasks runnable on an Other pool.
 template <typename Task>
-    requires (Task::template runnable_on<SchedulerPolicy_v::Other>)
+    requires(Task::template runnable_on<SchedulerPolicy_v::Other>)
 [[nodiscard]] int host_on_other_pool(Task task) {
     return task.peek();
 }

@@ -129,7 +129,7 @@ static void test_interleaved_single_thread() {
 // is the one at the boundary where its end meets the thieves' end.
 
 static void test_stress_one_owner_n_thieves() {
-    constexpr std::size_t N_ITEMS = 200'000;
+    constexpr std::size_t N_ITEMS = 200000;
     constexpr int N_THIEVES = 4;
     constexpr std::size_t CAPACITY = 1024;
 
@@ -239,7 +239,7 @@ static void test_stress_one_owner_n_thieves() {
 // over as it mostly is in the test above.
 
 static void test_stress_high_contention() {
-    constexpr std::size_t N_ITEMS = 50'000;
+    constexpr std::size_t N_ITEMS = 50000;
     constexpr int N_THIEVES = 8;
     constexpr std::size_t CAPACITY = 32;
 

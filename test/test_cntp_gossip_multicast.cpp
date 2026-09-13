@@ -35,22 +35,17 @@ namespace {
     return *admitted;
 }
 
-[[nodiscard]] cntp::GossipNeighborTarget target(std::uint64_t uuid_lo,
-                                                std::uint32_t ifidx) {
-    return cntp::gossip_neighbor_target(
-        peer(uuid_lo),
-        ifindex(ifidx),
-        std::array<std::byte, 6>{
-            std::byte{0x02}, std::byte{0x00}, std::byte{0x00},
-            std::byte{0x00}, std::byte{0x00},
-            static_cast<std::byte>(uuid_lo & 0xFFU)},
-        0x0A00'0000U | static_cast<std::uint32_t>(uuid_lo));
+[[nodiscard]] cntp::GossipNeighborTarget target(std::uint64_t uuid_lo, std::uint32_t ifidx) {
+    return cntp::gossip_neighbor_target(peer(uuid_lo), ifindex(ifidx),
+                                        std::array<std::byte, 6>{std::byte{0x02}, std::byte{0x00}, std::byte{0x00},
+                                                                 std::byte{0x00}, std::byte{0x00},
+                                                                 static_cast<std::byte>(uuid_lo & 0xFFU)},
+                                        0x0A000000U | static_cast<std::uint32_t>(uuid_lo));
 }
 
 void test_admission() {
-    assert(cntp::gossip_multicast_error_name(
-               cntp::GossipMulticastError::DuplicateNeighbor) ==
-           std::string_view{"DuplicateNeighbor"});
+    assert(cntp::gossip_multicast_error_name(cntp::GossipMulticastError::DuplicateNeighbor)
+           == std::string_view{"DuplicateNeighbor"});
     assert(!cntp::admit_gossip_topic("").has_value());
     assert(!cntp::admit_gossip_topic_hash(0).has_value());
     assert(!cntp::admit_gossip_dedup_window_ns(0).has_value());
@@ -66,30 +61,24 @@ void test_admission() {
 void test_plan_registration_and_publish() {
     effects::ColdInitCtx init{};
     auto bytes = cntp::admit_gossip_payload_bytes(128);
-    auto window = cntp::admit_gossip_dedup_window_ns(30'000'000'000ULL);
+    auto window = cntp::admit_gossip_dedup_window_ns(30000000000ULL);
     assert(bytes.has_value());
     assert(window.has_value());
 
-    auto plan = cntp::mint_gossip_multicast_plan<2, 2>(
-        init,
-        iface(),
-        ifindex(7),
-        cntp::GossipMulticastConfig{
-            .dedup_window_ns = *window,
-            .max_payload_bytes = *bytes,
-            .use_hardware_replication = true,
-        });
+    auto plan = cntp::mint_gossip_multicast_plan<2, 2>(init, iface(), ifindex(7),
+                                                       cntp::GossipMulticastConfig{
+                                                           .dedup_window_ns = *window,
+                                                           .max_payload_bytes = *bytes,
+                                                           .use_hardware_replication = true,
+                                                       });
     static_assert(!std::copy_constructible<decltype(plan)>);
     static_assert(!std::move_constructible<decltype(plan)>);
-    static_assert(std::same_as<
-                  decltype(plan.spec())::tag_type,
-                  saf::source::GossipMulticast>);
+    static_assert(std::same_as<decltype(plan.spec())::tag_type, saf::source::GossipMulticast>);
 
     auto xdp = cntp::gossip_multicast_xdp_program(plan.spec());
     assert(xdp.value().kind == dataplane::XdpProgramKind::GossipMulticast);
     assert(xdp.value().required_features.test(cog::NicFeature::XdpNative));
-    assert(plan.spec().value().neighbor_map.value().kind ==
-           dataplane::BpfMapKind::LruHash);
+    assert(plan.spec().value().neighbor_map.value().kind == dataplane::BpfMapKind::LruHash);
 
     auto topic = cntp::admit_gossip_topic("canopy.delta");
     auto other = cntp::admit_gossip_topic("federation.ack");
@@ -108,9 +97,7 @@ void test_plan_registration_and_publish() {
     assert(plan.register_neighbor(*other, target(4, 14)).has_value());
     assert(plan.topic_count() == 2);
 
-    std::array<std::byte, 4> packet{
-        std::byte{0xC1}, std::byte{0x7A},
-        std::byte{0x01}, std::byte{0x72}};
+    std::array<std::byte, 4> packet{std::byte{0xC1}, std::byte{0x7A}, std::byte{0x01}, std::byte{0x72}};
     auto replication = plan.plan_packet(*topic, std::span<const std::byte>{packet});
     assert(replication.has_value());
     assert(replication->neighbors.count == 2);
@@ -135,8 +122,7 @@ void test_plan_registration_and_publish() {
 
 int main() {
     static_assert(sizeof(cntp::GossipTopicHash) == sizeof(std::uint64_t));
-    static_assert(sizeof(cntp::DeclaredGossipTopic) ==
-                  sizeof(cntp::GossipTopicKey));
+    static_assert(sizeof(cntp::DeclaredGossipTopic) == sizeof(cntp::GossipTopicKey));
     static_assert(dataplane::BpfKey<cntp::GossipTopicKey>);
     static_assert(dataplane::BpfScalar<cntp::GossipNeighborTarget>);
     static_assert(cntp::GossipMulticastShape<2, 2>);

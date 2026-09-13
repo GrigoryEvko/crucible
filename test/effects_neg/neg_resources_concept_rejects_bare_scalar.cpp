@@ -47,8 +47,7 @@ namespace eff = crucible::effects;
 
 // ResourceTag<int> must NOT be satisfied — int has no `kind`, no
 // `value`, no `name`.  The static_assert fires.
-static_assert(eff::ResourceTag<int>,
-    "ResourceTag concept must NOT accept bare scalar types — "
-    "GAPS-189 soundness gate compromised.");
+static_assert(eff::ResourceTag<int>, "ResourceTag concept must NOT accept bare scalar types — "
+                                     "GAPS-189 soundness gate compromised.");
 
 int main() { return 0; }

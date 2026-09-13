@@ -36,26 +36,22 @@ using ::crucible::safety::mint_permission_root;
 
 namespace {
 struct WorkItem {};
-struct FakeChannel { int last_int = 0; };
+struct FakeChannel {
+    int last_int = 0;
+};
 
-void wire_send(FakeChannel& ch, Transferable<int, WorkItem>&& t) noexcept {
-    ch.last_int = t.value;
-}
-}
+void wire_send(FakeChannel& ch, Transferable<int, WorkItem>&& t) noexcept { ch.last_int = t.value; }
+}  // namespace
 
 int main() {
     // Establish without holding WorkItem — PS == EmptyPermSet.
-    auto h = detail::permissioned_session_with_loc_<
-        Send<Transferable<int, WorkItem>, End>,
-        EmptyPermSet,
-        FakeChannel>(
+    auto h = detail::permissioned_session_with_loc_<Send<Transferable<int, WorkItem>, End>, EmptyPermSet, FakeChannel>(
         FakeChannel{}, std::source_location::current());
 
     // User constructs payload inline using mint_permission_root —
     // looks like a valid Transferable, but the handle has no PS to
     // back it.  The send's body static_assert fires.
     Transferable<int, WorkItem> payload{42, mint_permission_root<WorkItem>()};
-    [[maybe_unused]] auto h2 = std::move(h).send(std::move(payload),
-                                                  wire_send);
+    [[maybe_unused]] auto h2 = std::move(h).send(std::move(payload), wire_send);
     return 0;
 }

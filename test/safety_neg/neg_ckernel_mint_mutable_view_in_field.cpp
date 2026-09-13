@@ -51,9 +51,9 @@ struct OffendingContainer {
 // OffendingContainer as the violator and ScopedView as the offending
 // wrapper.
 static_assert(::crucible::fixy::wrap::no_scoped_view_field_check<OffendingContainer>(),
-    "the audit must reject containers that store a CKernelTable::"
-    "MutableView as a field; this fixture exists so a future "
-    "regression in contains_scoped_view's recursive walk is caught "
-    "at compile time.");
+              "the audit must reject containers that store a CKernelTable::"
+              "MutableView as a field; this fixture exists so a future "
+              "regression in contains_scoped_view's recursive walk is caught "
+              "at compile time.");
 
 int main() { return 0; }

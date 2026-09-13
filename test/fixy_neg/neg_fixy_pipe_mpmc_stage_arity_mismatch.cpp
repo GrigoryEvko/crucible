@@ -23,7 +23,7 @@
 #include <optional>
 #include <utility>
 
-namespace eff   = crucible::effects;
+namespace eff = crucible::effects;
 namespace fpipe = crucible::fixy::pipe;
 
 template <typename T>
@@ -39,20 +39,14 @@ struct FakeProducer {
 };
 
 // Body expects 4 endpoints: 3 consumers + 1 producer.
-inline void fan_in_body(FakeConsumer<int>&&,
-                        FakeConsumer<int>&&,
-                        FakeConsumer<int>&&,
-                        FakeProducer<int>&&) noexcept {}
+inline void fan_in_body(FakeConsumer<int>&&, FakeConsumer<int>&&, FakeConsumer<int>&&, FakeProducer<int>&&) noexcept {}
 
 int main() {
     eff::HotFgCtx ctx;
 
     // Caller supplies only 3 endpoints, not 4 — arity mismatch.
-    auto bad = fpipe::mint_mpmc_stage_from_endpoints<&fan_in_body>(
-        ctx,
-        FakeConsumer<int>{},
-        FakeConsumer<int>{},
-        FakeConsumer<int>{});
+    auto bad = fpipe::mint_mpmc_stage_from_endpoints<&fan_in_body>(ctx, FakeConsumer<int>{}, FakeConsumer<int>{},
+                                                                   FakeConsumer<int>{});
     (void)bad;
     return 0;
 }

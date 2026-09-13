@@ -20,8 +20,7 @@ struct GridTag {};
 void exercise_zero_M_call() {
     auto p = crucible::safety::mint_permission_root<GridTag>();
     // (M=0, N=1) — fails the requires-clause can_split_grid_v.
-    [[maybe_unused]] auto bad = crucible::safety::mint_grid_permissions<GridTag, 0, 1>(
-        std::move(p));
+    [[maybe_unused]] auto bad = crucible::safety::mint_grid_permissions<GridTag, 0, 1>(std::move(p));
 }
 
 int main() { return 0; }

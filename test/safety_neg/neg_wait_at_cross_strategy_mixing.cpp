@@ -21,11 +21,10 @@ using namespace crucible::algebra::lattices;
 
 int main() {
     WaitLattice::At<WaitStrategy::SpinPause>::element_type spin_elt{};
-    WaitLattice::At<WaitStrategy::Block>::element_type     block_elt{};
+    WaitLattice::At<WaitStrategy::Block>::element_type block_elt{};
 
     // Should FAIL: At<SpinPause>::leq expects two At<SpinPause>::
     // element_type arguments; block_elt is At<Block>::element_type
     // — different template instantiation, different type.
-    return static_cast<int>(
-        WaitLattice::At<WaitStrategy::SpinPause>::leq(spin_elt, block_elt));
+    return static_cast<int>(WaitLattice::At<WaitStrategy::SpinPause>::leq(spin_elt, block_elt));
 }

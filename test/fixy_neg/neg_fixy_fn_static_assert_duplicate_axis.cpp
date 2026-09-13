@@ -24,8 +24,8 @@
 #include <crucible/fixy/Fn.h>
 
 namespace fixy = crucible::fixy;
-namespace gr   = crucible::fixy::grant;
-using D        = crucible::fixy::dim::DimensionAxis;
+namespace gr = crucible::fixy::grant;
+using D = crucible::fixy::dim::DimensionAxis;
 
 template <D Axis>
 using strict = gr::accept_default_strict_for<Axis>;
@@ -36,20 +36,19 @@ using strict = gr::accept_default_strict_for<Axis>;
 // entry is accept_default_strict_for), tier 3 (AllDimsEngaged)
 // PASSES (Usage is engaged), tier 4 (UniqueEngagementPerAxis) FAILS
 // at the Usage axis.
-using BadFn = fixy::fn<int,
-    strict<D::Refinement>,
-    strict<D::Usage>,                 // first engagement of Usage
-    strict<D::Usage>,                 // DUPLICATE engagement of Usage
-    strict<D::Effect>, strict<D::Security>, strict<D::Protocol>,
-    strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
-    strict<D::Representation>, strict<D::Observability>,
-    strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
-    strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
-    strict<D::Size>, strict<D::Version>, strict<D::Staleness>, strict<D::Synchronization>, strict<D::Regime>,
-    strict<D::FpMode>, strict<D::SyscallSurface>, strict<D::ControlFlow>, strict<D::CallShape>, strict<D::StackUse>, strict<D::GlobalState>, strict<D::Stdio>, strict<D::HwInstruction>, strict<D::BarrierStrength>, strict<D::SimdIsa>, strict<D::MemoryScope>>;
+using BadFn =
+    fixy::fn<int, strict<D::Refinement>,
+             strict<D::Usage>,  // first engagement of Usage
+             strict<D::Usage>,  // DUPLICATE engagement of Usage
+             strict<D::Effect>, strict<D::Security>, strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>,
+             strict<D::Trust>, strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>,
+             strict<D::Precision>, strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
+             strict<D::Size>, strict<D::Version>, strict<D::Staleness>, strict<D::Synchronization>, strict<D::Regime>,
+             strict<D::FpMode>, strict<D::SyscallSurface>, strict<D::ControlFlow>, strict<D::CallShape>,
+             strict<D::StackUse>, strict<D::GlobalState>, strict<D::Stdio>, strict<D::HwInstruction>,
+             strict<D::BarrierStrength>, strict<D::SimdIsa>, strict<D::MemoryScope>>;
 
 // Force class-body completion via sizeof.
-static_assert(sizeof(BadFn) > 0,
-    "instantiate fixy::fn class body to force its static_assert chain");
+static_assert(sizeof(BadFn) > 0, "instantiate fixy::fn class body to force its static_assert chain");
 
 int main() { return 0; }

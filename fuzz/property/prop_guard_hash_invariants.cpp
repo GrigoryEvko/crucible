@@ -133,8 +133,7 @@ inline constexpr uint8_t kGuardPerturbSites = 7;
     // the modulo brings the result back into [0, kGuardKindCount),
     // safely representable in uint8_t.
     const auto cur = std::to_underlying(base.kind);
-    out.kind = static_cast<Guard::Kind>(
-        static_cast<uint8_t>((cur + 1u) % kGuardKindCount));
+    out.kind = static_cast<Guard::Kind>(static_cast<uint8_t>((cur + 1u) % kGuardKindCount));
     return out;
 }
 
@@ -170,10 +169,10 @@ inline constexpr uint8_t kGuardPerturbSites = 7;
 // ─── Per-iteration payload ─────────────────────────────────────────
 
 struct Payload {
-    Guard   base;
-    Guard   perturbed;
+    Guard base;
+    Guard perturbed;
     uint8_t site;  // [0, kGuardPerturbSites) — which field was
-                   //                          perturbed (for repro).
+    //                          perturbed (for repro).
 };
 
 }  // namespace
@@ -183,21 +182,36 @@ int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
     const Config cfg = parse_args(argc, argv);
 
-    return run("Guard::hash() invariants", cfg,
+    return run(
+        "Guard::hash() invariants", cfg,
         [](Rng& rng) {
             Payload p{};
             p.base = random_guard(rng);
-            p.site = static_cast<uint8_t>(
-                rng.next_below(kGuardPerturbSites));
+            p.site = static_cast<uint8_t>(rng.next_below(kGuardPerturbSites));
             switch (p.site) {
-                case 0:  p.perturbed = perturb_kind(p.base);        break;
-                case 1:  p.perturbed = perturb_pad(p.base, 0);      break;
-                case 2:  p.perturbed = perturb_pad(p.base, 1);      break;
-                case 3:  p.perturbed = perturb_pad(p.base, 2);      break;
-                case 4:  p.perturbed = perturb_op_index(p.base);    break;
-                case 5:  p.perturbed = perturb_arg_index(p.base);   break;
-                case 6:  p.perturbed = perturb_dim_index(p.base);   break;
-                default: std::unreachable();
+                case 0:
+                    p.perturbed = perturb_kind(p.base);
+                    break;
+                case 1:
+                    p.perturbed = perturb_pad(p.base, 0);
+                    break;
+                case 2:
+                    p.perturbed = perturb_pad(p.base, 1);
+                    break;
+                case 3:
+                    p.perturbed = perturb_pad(p.base, 2);
+                    break;
+                case 4:
+                    p.perturbed = perturb_op_index(p.base);
+                    break;
+                case 5:
+                    p.perturbed = perturb_arg_index(p.base);
+                    break;
+                case 6:
+                    p.perturbed = perturb_dim_index(p.base);
+                    break;
+                default:
+                    std::unreachable();
             }
             return p;
         },

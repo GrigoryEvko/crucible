@@ -38,15 +38,13 @@ struct DomainEffectTag final : ::crucible::fixy::grant::grant_base {};
 namespace crucible::fixy::grant {
 template <>
 struct which_dim<::DomainEffectTag> {
-    static constexpr ::crucible::fixy::dim::DimensionAxis value =
-        ::crucible::fixy::dim::DimensionAxis::Effect;
+    static constexpr ::crucible::fixy::dim::DimensionAxis value = ::crucible::fixy::dim::DimensionAxis::Effect;
 };
 }  // namespace crucible::fixy::grant
 
 // Probe the FOUND-026 diagnostic surface directly — bypass the
 // IsAccepted full-engagement gate and reach project<> on the domain
 // tag.  This MUST red at the new structured static_assert.
-using ProbeFailure =
-    typename ::crucible::fixy::detail::resolve::project<DomainEffectTag>::type;
+using ProbeFailure = typename ::crucible::fixy::detail::resolve::project<DomainEffectTag>::type;
 
 int main() { return sizeof(ProbeFailure); }

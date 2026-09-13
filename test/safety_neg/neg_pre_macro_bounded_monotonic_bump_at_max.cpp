@@ -24,12 +24,11 @@ namespace {
     return 0;
 }
 
-static_assert(under_test() == 0,
-    "CRUCIBLE_PRE on BoundedMonotonic::bump's bound check MUST fire "
-    "at consteval when bump() is called at Max.  If this static_"
-    "assert evaluates successfully, the body-CRUCIBLE_PRE migration "
-    "failed to close the consteval bypass for nested-wrapper-member-"
-    "function predicate chains.");
+static_assert(under_test() == 0, "CRUCIBLE_PRE on BoundedMonotonic::bump's bound check MUST fire "
+                                 "at consteval when bump() is called at Max.  If this static_"
+                                 "assert evaluates successfully, the body-CRUCIBLE_PRE migration "
+                                 "failed to close the consteval bypass for nested-wrapper-member-"
+                                 "function predicate chains.");
 
 }  // namespace
 

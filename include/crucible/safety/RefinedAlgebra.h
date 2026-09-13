@@ -372,7 +372,7 @@ static_assert(!bounded_below<10>(9));
 static_assert(divisible_by<4>(0));
 static_assert(divisible_by<4>(16));
 static_assert(!divisible_by<4>(13));
-static_assert(divisible_by<8>(2'097'152));
+static_assert(divisible_by<8>(2097152));
 
 static_assert(sizeof(AlignedTo<64, void*>) == sizeof(void*));
 static_assert(sizeof(Sized<8, std::array<int, 8>>) == sizeof(std::array<int, 8>));

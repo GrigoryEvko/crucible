@@ -23,8 +23,8 @@ int main() {
     ::crucible::effects::BgDrainCtx bg{};
 
     // Should FAIL: runtime 100 >= deadline 50 violates CBS admission.
-    auto policy = ::crucible::fixy::sched::mint_scheduler_policy<
-        ::crucible::fixy::sched::SchedulerPolicy_v::Deadline,
-        /*RuntimeNs=*/100, /*DeadlineNs=*/50, /*PeriodNs=*/200>(bg);
+    auto policy =
+        ::crucible::fixy::sched::mint_scheduler_policy<::crucible::fixy::sched::SchedulerPolicy_v::Deadline,
+                                                       /*RuntimeNs=*/100, /*DeadlineNs=*/50, /*PeriodNs=*/200>(bg);
     return policy.has_value() ? 0 : 1;
 }

@@ -19,8 +19,7 @@ int main() {
     auto bg_cap = crucible::effects::testing::bg();
 
     // <-- this line must NOT compile (Bg cap, Init required)
-    std::optional<crucible::perf::SchedTpBtf> hub =
-        crucible::perf::SchedTpBtf::load(bg_cap);
+    std::optional<crucible::perf::SchedTpBtf> hub = crucible::perf::SchedTpBtf::load(bg_cap);
 
     (void)hub;
     return 0;

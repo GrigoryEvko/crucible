@@ -21,21 +21,19 @@
 #include <crucible/concurrent/PermissionedShardedGrid.h>
 #include <crucible/fixy/Substr.h>
 
-namespace fsg  = ::crucible::fixy::substr::sharded_grid;
+namespace fsg = ::crucible::fixy::substr::sharded_grid;
 namespace conc = ::crucible::concurrent;
 
 namespace neg_fixy_sg_producer_session_non_ctx {
 struct UserTag {};
 using Grid = conc::PermissionedShardedGrid<int, 2, 3, 8, UserTag>;
-}
+}  // namespace neg_fixy_sg_producer_session_non_ctx
 
 int main() {
     int not_a_ctx = 0;
-    neg_fixy_sg_producer_session_non_ctx::Grid::template ProducerHandle<0>*
-        handle = nullptr;
+    neg_fixy_sg_producer_session_non_ctx::Grid::template ProducerHandle<0>* handle = nullptr;
 
-    auto bad = fsg::mint_producer_session<
-        neg_fixy_sg_producer_session_non_ctx::Grid, 0>(not_a_ctx, *handle);
+    auto bad = fsg::mint_producer_session<neg_fixy_sg_producer_session_non_ctx::Grid, 0>(not_a_ctx, *handle);
     (void)bad;
     return 0;
 }

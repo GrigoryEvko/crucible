@@ -8,19 +8,20 @@
 #include <crucible/sessions/SessionPayloadSubsort.h>
 
 namespace proto = crucible::safety::proto;
-namespace safe  = crucible::safety;
+namespace safe = crucible::safety;
 
 namespace {
-struct Tile { float value[4]; };
+struct Tile {
+    float value[4];
+};
 
 using RelaxedTile = safe::NumericalTier<safe::Tolerance::RELAXED, Tile>;
-using StrictTile  = safe::NumericalTier<safe::Tolerance::BITEXACT, Tile>;
+using StrictTile = safe::NumericalTier<safe::Tolerance::BITEXACT, Tile>;
 
 using Producer = proto::Send<RelaxedTile, proto::End>;
 using Consumer = proto::Recv<StrictTile, proto::End>;
 }  // namespace
 
-static_assert(proto::CompatibleClient<Producer, Consumer>,
-    "NumericalTier_ChannelBoundary_ProducerTierTooWeak");
+static_assert(proto::CompatibleClient<Producer, Consumer>, "NumericalTier_ChannelBoundary_ProducerTierTooWeak");
 
 int main() { return 0; }

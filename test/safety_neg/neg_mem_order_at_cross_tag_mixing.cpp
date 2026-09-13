@@ -20,10 +20,9 @@ using namespace crucible::algebra::lattices;
 
 int main() {
     MemOrderLattice::At<MemOrderTag::Relaxed>::element_type relax_elt{};
-    MemOrderLattice::At<MemOrderTag::SeqCst>::element_type  seqcst_elt{};
+    MemOrderLattice::At<MemOrderTag::SeqCst>::element_type seqcst_elt{};
 
     // Should FAIL: At<Relaxed>::leq expects two At<Relaxed>::
     // element_type arguments; seqcst_elt is At<SeqCst>::element_type.
-    return static_cast<int>(
-        MemOrderLattice::At<MemOrderTag::Relaxed>::leq(relax_elt, seqcst_elt));
+    return static_cast<int>(MemOrderLattice::At<MemOrderTag::Relaxed>::leq(relax_elt, seqcst_elt));
 }

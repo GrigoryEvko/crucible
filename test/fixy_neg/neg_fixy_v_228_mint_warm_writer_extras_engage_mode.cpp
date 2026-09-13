@@ -30,19 +30,16 @@
 int main() {
     namespace fwcd = ::crucible::fixy::wrap::cipher::durable;
     namespace fwfs = ::crucible::fixy::wrap::fs;
-    namespace om   = fwfs::open_mode;
+    namespace om = fwfs::open_mode;
 
     // TestRunnerCtx — Row<Test, Alloc, IO, Block> — admits IO+Block.
     ::crucible::effects::TestRunnerCtx ctx{};
 
-    fwfs::Path<::crucible::fixy::tags::source::Sanitized> path{
-        "/tmp/crucible_neg_v228_warm_extras_engage_mode"};
+    fwfs::Path<::crucible::fixy::tags::source::Sanitized> path{"/tmp/crucible_neg_v228_warm_extras_engage_mode"};
 
     // Should FAIL: extras engages grant_fs::mode<WriteCreate>, but
     // warm_writer_stance PINS mode to WriteTruncate; the §XXI mint's
     // `!detail::extras_engage_mode_v<Extras...>` clause is false.
-    [[maybe_unused]] auto r = fwcd::mint_warm_writer<
-        fwfs::grant::mode<om::WriteCreate>
-    >(ctx, std::move(path));
+    [[maybe_unused]] auto r = fwcd::mint_warm_writer<fwfs::grant::mode<om::WriteCreate>>(ctx, std::move(path));
     return 0;
 }

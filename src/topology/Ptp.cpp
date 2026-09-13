@@ -36,16 +36,16 @@ using LocalFd = ::crucible::safety::FileHandle;
 [[nodiscard]] constexpr bool timespec_nonzero(timespec const& ts) noexcept { return ts.tv_sec != 0 || ts.tv_nsec != 0; }
 
 [[nodiscard]] std::expected<PtpTimestampNs, PtpError> timestamp_from_timespec(timespec const& ts) noexcept {
-    if (ts.tv_sec < 0 || ts.tv_nsec < 0 || ts.tv_nsec >= 1'000'000'000L) {
+    if (ts.tv_sec < 0 || ts.tv_nsec < 0 || ts.tv_nsec >= 1000000000L) {
         return std::unexpected(PtpError::ClockReadFailed);
     }
 
     const auto seconds = static_cast<std::uint64_t>(ts.tv_sec);
     constexpr auto limit = std::numeric_limits<std::uint64_t>::max();
-    if (seconds > (limit - static_cast<std::uint64_t>(ts.tv_nsec)) / 1'000'000'000ull) {
+    if (seconds > (limit - static_cast<std::uint64_t>(ts.tv_nsec)) / 1000000000ull) {
         return std::unexpected(PtpError::TimestampOverflow);
     }
-    return PtpTimestampNs{seconds * 1'000'000'000ull + static_cast<std::uint64_t>(ts.tv_nsec)};
+    return PtpTimestampNs{seconds * 1000000000ull + static_cast<std::uint64_t>(ts.tv_nsec)};
 }
 
 }  // namespace
@@ -222,7 +222,7 @@ std::expected<PtpTimestampNs, PtpError> ptp_now(PtpClockFd fd) noexcept {
     // source.  Its value is discarded because the conversion and the overflow
     // gate both run on the timespec.
     auto bytes = ::crucible::safety::mint_clock_source<::crucible::safety::ClockSource_v::PtpHwClock, std::uint64_t>(
-        static_cast<std::uint64_t>(ts.tv_sec >= 0 ? ts.tv_sec : 0) * 1'000'000'000ull
+        static_cast<std::uint64_t>(ts.tv_sec >= 0 ? ts.tv_sec : 0) * 1000000000ull
         + static_cast<std::uint64_t>(ts.tv_nsec >= 0 ? ts.tv_nsec : 0));
     static_cast<void>(std::move(bytes).consume());
     return timestamp_from_timespec(ts);

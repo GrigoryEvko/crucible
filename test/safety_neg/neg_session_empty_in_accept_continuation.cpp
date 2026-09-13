@@ -18,7 +18,9 @@
 
 using namespace crucible::safety::proto;
 
-struct R { int sentinel = 4; };
+struct R {
+    int sentinel = 4;
+};
 
 void compile_time_reject() {
     using EmptyContinuation = Accept<End, Select<>>;

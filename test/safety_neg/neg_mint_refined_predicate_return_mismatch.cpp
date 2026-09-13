@@ -19,8 +19,7 @@ namespace {
 // but returns void — fails `convertible_to<bool>` half of
 // PredicateInvocableOn.  Captureless so it qualifies as a
 // structural type for use as an auto NTTP (C++20).
-inline constexpr auto returns_void_pred =
-    [](auto) constexpr noexcept -> void {};
+inline constexpr auto returns_void_pred = [](auto) constexpr noexcept -> void {};
 }  // namespace
 
 int main() {

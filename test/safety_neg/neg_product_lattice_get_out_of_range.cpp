@@ -30,7 +30,7 @@ using namespace crucible::algebra::lattices;
 
 int main() {
     using L = QttSemiring::At<QttGrade::One>;
-    using P = ProductLattice<L, L, L>;   // arity = 3, valid indices: 0, 1, 2
+    using P = ProductLattice<L, L, L>;  // arity = 3, valid indices: 0, 1, 2
     P::element_type e{};
 
     // Should FAIL: get<3> exceeds arity (max valid I is 2).

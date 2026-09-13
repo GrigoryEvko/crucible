@@ -27,17 +27,17 @@
 #include <crucible/fixy/SessView.h>
 
 namespace fsview = ::crucible::fixy::sess::view;
-namespace proto  = ::crucible::safety::proto;
-namespace saf    = ::crucible::safety;
+namespace proto = ::crucible::safety::proto;
+namespace saf = ::crucible::safety;
 
 namespace v063_neg_beta {
 struct FakeResource {};
 struct Msg {};
-using SendProto   = proto::Send<Msg, proto::End>;
-using RecvProto   = proto::Recv<Msg, proto::End>;
+using SendProto = proto::Send<Msg, proto::End>;
+using RecvProto = proto::Recv<Msg, proto::End>;
 using SelectProto = proto::Select<SendProto, RecvProto>;
 using SelectHandle = proto::SessionHandle<SelectProto, FakeResource, void>;
-using SelectView   = saf::ScopedView<SelectHandle, fsview::AtSelect>;
+using SelectView = saf::ScopedView<SelectHandle, fsview::AtSelect>;
 }  // namespace v063_neg_beta
 
 int main() {
@@ -45,8 +45,7 @@ int main() {
     // for AtSelect views — primary template has no `type` member.
     // GCC fires "no type named 'type' in struct ...
     // session_view_message_type<...>" or "use of undefined".
-    using BadMsg = fsview::session_view_message_type_t<
-        v063_neg_beta::SelectView>;
-    (void) sizeof(BadMsg);  // force instantiation
+    using BadMsg = fsview::session_view_message_type_t<v063_neg_beta::SelectView>;
+    (void)sizeof(BadMsg);  // force instantiation
     return 0;
 }

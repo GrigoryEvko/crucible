@@ -30,8 +30,8 @@ using Bad = fn::Fn<TlsMarker>;
 }  // namespace neg_collision_g001
 
 namespace crucible::safety::fn::collision {
-    template <> struct marks_thread_local_untagged<::neg_collision_g001::Bad>
-        : std::true_type {};
+template <>
+struct marks_thread_local_untagged<::neg_collision_g001::Bad> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 [[maybe_unused]] neg_collision_g001::Bad the_fixture{};

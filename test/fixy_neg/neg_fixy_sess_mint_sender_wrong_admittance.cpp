@@ -36,13 +36,13 @@
 #include <crucible/sessions/FederationProtocol.h>
 
 namespace fsess = ::crucible::fixy::sess;
-namespace eff   = ::crucible::effects;
+namespace eff = ::crucible::effects;
 
 namespace neg_fixy_sender_wrong_admit {
 struct PeerOrg {};
 struct TraceKey {};
 struct Endpoint {};
-}
+}  // namespace neg_fixy_sender_wrong_admit
 
 int main() {
     // TestRunnerCtx ships row Row<Test, Alloc, IO, Block> —
@@ -53,12 +53,8 @@ int main() {
     eff::TestRunnerCtx ctx{};
     int not_an_admittance = 0;
 
-    auto bad = fsess::mint_sender<
-        neg_fixy_sender_wrong_admit::PeerOrg,
-        neg_fixy_sender_wrong_admit::TraceKey>(
-        ctx,
-        neg_fixy_sender_wrong_admit::Endpoint{},
-        not_an_admittance);
+    auto bad = fsess::mint_sender<neg_fixy_sender_wrong_admit::PeerOrg, neg_fixy_sender_wrong_admit::TraceKey>(
+        ctx, neg_fixy_sender_wrong_admit::Endpoint{}, not_an_admittance);
     (void)bad;
     return 0;
 }

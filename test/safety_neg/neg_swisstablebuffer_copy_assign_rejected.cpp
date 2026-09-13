@@ -61,10 +61,9 @@ namespace {
 // SwissTableBuffer&) is `= delete("SwissTableBuffer is move-only")`.
 // Copy-assignment from a const lvalue triggers the deleted-function
 // diagnostic.
-[[maybe_unused]] static void offending_copy_assign(
-    ::crucible::safety::SwissTableBuffer<const std::uint64_t*>& dest,
-    const ::crucible::safety::SwissTableBuffer<const std::uint64_t*>& source)
-{
+[[maybe_unused]] static void
+offending_copy_assign(::crucible::safety::SwissTableBuffer<const std::uint64_t*>& dest,
+                      const ::crucible::safety::SwissTableBuffer<const std::uint64_t*>& source) {
     dest = source;
     // ERROR: use of deleted function 'SwissTableBuffer& operator=(const SwissTableBuffer&)'
     // diagnostic message: "SwissTableBuffer is move-only"

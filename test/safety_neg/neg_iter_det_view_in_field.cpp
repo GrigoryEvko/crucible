@@ -39,18 +39,16 @@
 // ScopedView's default ctor is deleted, but that's irrelevant
 // here — we only trigger the file-scope static_assert below.
 struct OffendingContainer {
-    crucible::safety::ScopedView<
-        crucible::IterationDetector,
-        crucible::iter_det_state::Steady> view_;
+    crucible::safety::ScopedView<crucible::IterationDetector, crucible::iter_det_state::Steady> view_;
 };
 
 // Trigger the audit at compile time.  The diagnostic identifies
 // the wrapper type held in `view_` and the carrier
 // `OffendingContainer` that violated the discipline.
 static_assert(::crucible::safety::no_scoped_view_field_check<OffendingContainer>(),
-    "WRAP-IterDet-4 Tier-2 audit must reject containers that "
-    "store a ScopedView<IterationDetector, ...> as a field; this "
-    "fixture exists so a future regression in contains_scoped_view's "
-    "recursive walk is caught at compile time.");
+              "WRAP-IterDet-4 Tier-2 audit must reject containers that "
+              "store a ScopedView<IterationDetector, ...> as a field; this "
+              "fixture exists so a future regression in contains_scoped_view's "
+              "recursive walk is caught at compile time.");
 
 int main() { return 0; }

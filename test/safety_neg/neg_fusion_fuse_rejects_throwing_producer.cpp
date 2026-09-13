@@ -12,7 +12,7 @@
 
 #include <crucible/safety/Fusion.h>
 
-inline int producer(int x)          { return x * 2; }   // not noexcept
+inline int producer(int x) { return x * 2; }  // not noexcept
 inline int consumer(int x) noexcept { return x + 1; }
 
 int main() {

@@ -24,7 +24,6 @@ namespace wrap = crucible::fixy::wrap;
 
 // Forcing arity_v<42> materializes signature_traits<42>::params, which
 // reflects ^^int and asks parameters_of(^^int) — ill-formed.
-static_assert(wrap::arity_v<42> == 0,
-              "unreachable — signature_traits<42> cannot reflect a non-function");
+static_assert(wrap::arity_v<42> == 0, "unreachable — signature_traits<42> cannot reflect a non-function");
 
 int main() { return 0; }

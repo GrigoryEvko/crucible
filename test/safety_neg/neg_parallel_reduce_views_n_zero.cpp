@@ -37,22 +37,22 @@ int main() {
     Arena arena;
     auto perm = safety::mint_permission_root<DataNeg>();
     constexpr std::size_t N = 8;
-    auto region = safety::OwnedRegion<std::uint64_t, DataNeg>::adopt(
-        effects::testing::test().alloc, arena, N, std::move(perm));
-    for (std::size_t i = 0; i < N; ++i) region.span()[i] = 1;
+    auto region =
+        safety::OwnedRegion<std::uint64_t, DataNeg>::adopt(effects::testing::test().alloc, arena, N, std::move(perm));
+    for (std::size_t i = 0; i < N; ++i)
+        region.span()[i] = 1;
 
     // Should FAIL: N=0 violates the `static_assert(N > 0)` precondition
     // in safety/Workload.h's parallel_reduce_views definition.
     auto [total, _] = safety::parallel_reduce_views<0, std::uint64_t>(
-        std::move(region),
-        std::uint64_t{0},
+        std::move(region), std::uint64_t{0},
         [](auto sub) noexcept {
             std::uint64_t s = 0;
-            for (auto x : sub.cspan()) s += x;
+            for (auto x : sub.cspan())
+                s += x;
             return s;
         },
-        [](std::uint64_t a, std::uint64_t b) noexcept { return a + b; }
-    );
+        [](std::uint64_t a, std::uint64_t b) noexcept { return a + b; });
     (void)total;
 
     return 0;

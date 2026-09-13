@@ -42,7 +42,7 @@ using namespace crucible::safety;
 // Hot tier.  Models the KernelCache::lookup_l1 ⇄ Vigil::dispatch_op
 // pattern.
 template <typename W>
-    requires (W::template satisfies<ResidencyHeatTag_v::Hot>)
+    requires(W::template satisfies<ResidencyHeatTag_v::Hot>)
 static int hot_dispatch_consumer(W wrapped) noexcept {
     return std::move(wrapped).consume();
 }

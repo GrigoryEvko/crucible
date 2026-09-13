@@ -32,7 +32,7 @@
 #include <utility>
 
 namespace fsubstr = crucible::fixy::substr;
-namespace eff     = crucible::effects;
+namespace eff = crucible::effects;
 
 namespace neg_fixy_substr_snapshot_unfit_snap {
 
@@ -57,7 +57,6 @@ int main() {
     Handle handle{};
     eff::BgCompileCtx ctx{};
     // Snap does not satisfy SnapshotSessionSurface → concept-rejection.
-    [[maybe_unused]] auto bad =
-        fsubstr::snapshot::mint_snapshot_writer_session<Snap>(ctx, handle);
+    [[maybe_unused]] auto bad = fsubstr::snapshot::mint_snapshot_writer_session<Snap>(ctx, handle);
     return 0;
 }

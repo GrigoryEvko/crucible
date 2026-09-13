@@ -23,10 +23,7 @@ int main() {
     using ::crucible::warden::DeadlineWatchdog;
     using ::crucible::warden::Policy;
 
-    DeadlineWatchdog watchdog{
-        /*senses=*/nullptr,
-        Policy::production(),
-        ::crucible::effects::testing::init()};
+    DeadlineWatchdog watchdog{/*senses=*/nullptr, Policy::production(), ::crucible::effects::testing::init()};
 
     ::crucible::effects::HotFgCtx fg{};
     // Should FAIL: HotFgCtx owns neither Bg, Init, nor Test.

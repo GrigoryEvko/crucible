@@ -58,10 +58,8 @@ namespace {
 // is `= delete("AlignedBuffer is move-only")`.  Copy-assignment from
 // a const lvalue triggers the deleted-function diagnostic with the
 // move-only-discipline message verbatim.
-[[maybe_unused]] static void offending_copy_assign(
-    ::crucible::safety::AlignedBuffer<std::uint64_t>& dest,
-    const ::crucible::safety::AlignedBuffer<std::uint64_t>& source)
-{
+[[maybe_unused]] static void offending_copy_assign(::crucible::safety::AlignedBuffer<std::uint64_t>& dest,
+                                                   const ::crucible::safety::AlignedBuffer<std::uint64_t>& source) {
     dest = source;
     // ERROR: use of deleted function 'AlignedBuffer& operator=(const AlignedBuffer&)'
     // diagnostic message: "AlignedBuffer is move-only"

@@ -22,7 +22,7 @@ struct DummyResource {
 int main() {
     using OkProto = proto::Send<int, proto::End>;
     DummyResource res;
-    auto bad = proto::mint_permissioned_session<OkProto>(int{42}, res); // IsExecCtx fails
+    auto bad = proto::mint_permissioned_session<OkProto>(int{42}, res);  // IsExecCtx fails
     (void)bad;
     return 0;
 }

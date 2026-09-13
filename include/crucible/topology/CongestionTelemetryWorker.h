@@ -29,7 +29,7 @@ enum class CongestionMetricSlot : std::uint32_t {
     WorstMode = 9,
 };
 
-inline constexpr std::uint32_t kCongestionMetricBase = 0x4343'0000u;
+inline constexpr std::uint32_t kCongestionMetricBase = 0x43430000u;
 inline constexpr std::size_t kCongestionObservationCount = 10;
 
 using CongestionObservationSet = std::array<::crucible::observe::ObservationSnapshot, kCongestionObservationCount>;

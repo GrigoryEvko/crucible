@@ -9,10 +9,8 @@
 static void needs_singleton(crucible::CKernelTableSingleton) {}
 
 int main() {
-  crucible::CKernelTable table{};
-  crucible::safety::Tagged<
-      crucible::CKernelTable*,
-      crucible::safety::source::External> external{&table};
-  needs_singleton(external);
-  return 0;
+    crucible::CKernelTable table{};
+    crucible::safety::Tagged<crucible::CKernelTable*, crucible::safety::source::External> external{&table};
+    needs_singleton(external);
+    return 0;
 }

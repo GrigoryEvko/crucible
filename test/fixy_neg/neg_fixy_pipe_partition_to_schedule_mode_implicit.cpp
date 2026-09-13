@@ -46,8 +46,7 @@ int main() {
     // Both Partition::Inline and Schedule::Inline name an `Inline`
     // enumerator.  The enum-class scoping plus the type-distinctness
     // of the using-decls must reject the cross-axis assignment.
-    fpipe::AutoSplitScheduleMode confused =
-        fpipe::AutoSplitPartitionStrategy::Inline;
+    fpipe::AutoSplitScheduleMode confused = fpipe::AutoSplitPartitionStrategy::Inline;
     (void)confused;
     return 0;
 }

@@ -79,8 +79,8 @@ struct ToctouBarrier {
 
 struct Channel {
     ToctouBarrier* barrier = nullptr;
-    int            id      = 0;
-    int            payload = 0;
+    int id = 0;
+    int payload = 0;
 };
 
 }  // namespace
@@ -149,15 +149,13 @@ void run_killer(ToctouBarrier& barrier, OneShotFlag& crash_flag) noexcept {
 // Scenario 1 — Recv head: peek=false at entry, flag signalled mid-
 // transport, recv() returns success, NEXT op observes the crash.
 void scenario_recv_mid_transport_signal(int iteration) {
-    using P  = Recv<int, Recv<int, End>>;
+    using P = Recv<int, Recv<int, End>>;
 
     ToctouBarrier barrier;
-    OneShotFlag   worker_dead;
+    OneShotFlag worker_dead;
 
-    auto coord = mint_permissioned_session<P>(
-        kSessionCtx, Channel{&barrier, 80'000 + iteration, 42});
-    auto watched = mint_crash_watched_session<WorkerTag>(
-        std::move(coord), worker_dead);
+    auto coord = mint_permissioned_session<P>(kSessionCtx, Channel{&barrier, 80000 + iteration, 42});
+    auto watched = mint_crash_watched_session<WorkerTag>(std::move(coord), worker_dead);
 
     std::jthread killer(run_killer, std::ref(barrier), std::ref(worker_dead));
 
@@ -190,9 +188,8 @@ void scenario_recv_mid_transport_signal(int iteration) {
     // The crash event carries the inherited survivor permission and
     // the original Channel resource.
     auto perms = std::move(next_result.error().permissions);
-    static_assert(std::is_same_v<decltype(perms),
-                                 std::tuple<Permission<CoordTag>>>);
-    assert(next_result.error().resource.id == 80'000 + iteration);
+    static_assert(std::is_same_v<decltype(perms), std::tuple<Permission<CoordTag>>>);
+    assert(next_result.error().resource.id == 80000 + iteration);
     (void)perms;
 }
 
@@ -204,12 +201,10 @@ void scenario_send_mid_transport_signal(int iteration) {
     using P = Send<int, Send<int, End>>;
 
     ToctouBarrier barrier;
-    OneShotFlag   worker_dead;
+    OneShotFlag worker_dead;
 
-    auto coord = mint_permissioned_session<P>(
-        kSessionCtx, Channel{&barrier, 90'000 + iteration, 0});
-    auto watched = mint_crash_watched_session<WorkerTag>(
-        std::move(coord), worker_dead);
+    auto coord = mint_permissioned_session<P>(kSessionCtx, Channel{&barrier, 90000 + iteration, 0});
+    auto watched = mint_crash_watched_session<WorkerTag>(std::move(coord), worker_dead);
 
     std::jthread killer(run_killer, std::ref(barrier), std::ref(worker_dead));
 
@@ -229,7 +224,7 @@ void scenario_send_mid_transport_signal(int iteration) {
     // re-spawned — peek catches it first).
     auto next_result = std::move(next).send(8, blocking_send_transport);
     assert(!next_result.has_value());
-    assert(next_result.error().resource.id == 90'000 + iteration);
+    assert(next_result.error().resource.id == 90000 + iteration);
 }
 
 // Scenario 3 — Stop_g terminal head: validates the witness extends to
@@ -241,12 +236,10 @@ void scenario_close_after_mid_signal(int iteration) {
     using P = Recv<int, End>;
 
     ToctouBarrier barrier;
-    OneShotFlag   worker_dead;
+    OneShotFlag worker_dead;
 
-    auto coord = mint_permissioned_session<P>(
-        kSessionCtx, Channel{&barrier, 100'000 + iteration, 99});
-    auto watched = mint_crash_watched_session<WorkerTag>(
-        std::move(coord), worker_dead);
+    auto coord = mint_permissioned_session<P>(kSessionCtx, Channel{&barrier, 100000 + iteration, 99});
+    auto watched = mint_crash_watched_session<WorkerTag>(std::move(coord), worker_dead);
 
     std::jthread killer(run_killer, std::ref(barrier), std::ref(worker_dead));
 
@@ -268,7 +261,7 @@ void scenario_close_after_mid_signal(int iteration) {
     // before the channel is released, but the current design does
     // not perform that check.
     auto channel = std::move(end_handle).close();
-    assert(channel.id == 100'000 + iteration);
+    assert(channel.id == 100000 + iteration);
 }
 
 void run_stress_iterations() {

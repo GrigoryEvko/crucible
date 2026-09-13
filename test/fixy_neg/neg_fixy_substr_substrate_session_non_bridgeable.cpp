@@ -26,24 +26,21 @@
 #include <crucible/fixy/Substr.h>
 
 namespace fsubstr = crucible::fixy::substr;
-namespace conc    = crucible::concurrent;
-namespace eff     = crucible::effects;
+namespace conc = crucible::concurrent;
+namespace eff = crucible::effects;
 
 namespace neg_fixy_substr_substrate_session_non_bridgeable {
 struct UserTag {};
 }  // namespace neg_fixy_substr_substrate_session_non_bridgeable
 
 int main() {
-    using Snap = conc::PermissionedSnapshot<int,
-        neg_fixy_substr_substrate_session_non_bridgeable::UserTag>;
+    using Snap = conc::PermissionedSnapshot<int, neg_fixy_substr_substrate_session_non_bridgeable::UserTag>;
 
     // Compile-time rejection precedes any deref of the null handle.
     typename Snap::WriterHandle* fake_handle = nullptr;
     eff::HotFgCtx fg;
 
     // Snapshot + Producer → IsBridgeableDirection<Snap, Producer> false.
-    [[maybe_unused]] auto bad =
-        fsubstr::mint_substrate_session<Snap, conc::Direction::Producer>(
-            fg, *fake_handle);
+    [[maybe_unused]] auto bad = fsubstr::mint_substrate_session<Snap, conc::Direction::Producer>(fg, *fake_handle);
     return 0;
 }

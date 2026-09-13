@@ -16,15 +16,12 @@
 #include <crucible/safety/Tagged.h>
 
 int main() {
-  crucible::Arena arena{1024};
-  std::span<const std::uint8_t> bytes{};
+    crucible::Arena arena{1024};
+    std::span<const std::uint8_t> bytes{};
 
-  using ExternalRegion = crucible::safety::Tagged<
-      crucible::RegionNode*,
-      crucible::safety::source::External>;
+    using ExternalRegion = crucible::safety::Tagged<crucible::RegionNode*, crucible::safety::source::External>;
 
-  // MUST fail: source::Loaded is not source::External.
-  ExternalRegion wrong =
-      crucible::deserialize_region(crucible::effects::Alloc{}, bytes, arena);
-  return wrong.value() == nullptr ? 0 : 1;
+    // MUST fail: source::Loaded is not source::External.
+    ExternalRegion wrong = crucible::deserialize_region(crucible::effects::Alloc{}, bytes, arena);
+    return wrong.value() == nullptr ? 0 : 1;
 }

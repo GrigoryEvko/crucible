@@ -26,8 +26,8 @@
 #include <crucible/fixy/Fn.h>
 
 namespace fixy = crucible::fixy;
-namespace gr   = crucible::fixy::grant;
-using D        = crucible::fixy::dim::DimensionAxis;
+namespace gr = crucible::fixy::grant;
+using D = crucible::fixy::dim::DimensionAxis;
 
 template <D Axis>
 using strict = gr::accept_default_strict_for<Axis>;
@@ -37,15 +37,12 @@ int main() {
     // The Grants pack is well-formed (all strict) so tier-2 and
     // tier-3 of fn's class-body static_assert chain pass; the
     // failure is purely the private-ctor inaccessibility.
-    auto bad = fixy::fn<int,
-        strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>,
-        strict<D::Security>, strict<D::Protocol>, strict<D::Lifetime>,
-        strict<D::Provenance>, strict<D::Trust>,
-        strict<D::Representation>, strict<D::Observability>,
-        strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
-        strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
-        strict<D::Size>, strict<D::Version>, strict<D::Staleness>,
-        strict<D::Synchronization>, strict<D::Regime>>{42};
+    auto bad =
+        fixy::fn<int, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
+                 strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
+                 strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>,
+                 strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>, strict<D::Size>,
+                 strict<D::Version>, strict<D::Staleness>, strict<D::Synchronization>, strict<D::Regime>>{42};
     (void)bad;
     return 0;
 }

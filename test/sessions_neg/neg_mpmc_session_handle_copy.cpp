@@ -25,7 +25,7 @@ namespace conc = ::crucible::concurrent;
 namespace {
 struct Tag {};
 using Channel = conc::PermissionedMpmcChannel<int, 64, Tag>;
-}
+}  // namespace
 
 int main() {
     Channel ch;

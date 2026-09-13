@@ -79,51 +79,48 @@
 #include <type_traits>
 
 namespace fixy = crucible::fixy;
-namespace gr   = crucible::fixy::grant;
-using D        = crucible::fixy::dim::DimensionAxis;
+namespace gr = crucible::fixy::grant;
+using D = crucible::fixy::dim::DimensionAxis;
 
 // ─── Pattern A — foreign-type which_dim injection ──────────────────
 
 namespace attack_fixy_grant_namespace_reopen::pattern_a {
-    // Non-grant — does NOT inherit grant_base, NOT final.
-    struct foreign {};
-}
+// Non-grant — does NOT inherit grant_base, NOT final.
+struct foreign {};
+}  // namespace attack_fixy_grant_namespace_reopen::pattern_a
 
 // fixy-CR-09: known residual gap — reopen the closed-world namespace
 // from a foreign translation unit and register a which_dim
 // specialization for a type that is not a grant.  This compiles
 // today; the IsGrantTag gate is what defends.
 namespace crucible::fixy::grant {
-    template <>
-    struct which_dim<::attack_fixy_grant_namespace_reopen::pattern_a::foreign>
-        : std::integral_constant<dim::DimensionAxis,
-                                 dim::DimensionAxis::Usage> {};
-}
+template <>
+struct which_dim<::attack_fixy_grant_namespace_reopen::pattern_a::foreign>
+    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Usage> {};
+}  // namespace crucible::fixy::grant
 
 namespace attack_fixy_grant_namespace_reopen::pattern_a {
-    // The injected specialization compiled — the namespace is open.
-    static_assert(gr::which_dim_v<foreign> == D::Usage,
-                  "Pattern A setup: which_dim specialization was "
-                  "successfully injected from a foreign TU.  This "
-                  "compiles today because C++ has no namespace-scoped "
-                  "specialization access control.");
+// The injected specialization compiled — the namespace is open.
+static_assert(gr::which_dim_v<foreign> == D::Usage, "Pattern A setup: which_dim specialization was "
+                                                    "successfully injected from a foreign TU.  This "
+                                                    "compiles today because C++ has no namespace-scoped "
+                                                    "specialization access control.");
 
-    // BUT the structural gate rejects foreign types regardless of
-    // which_dim's contents — that is the load-bearing defense.
-    static_assert(!gr::IsGrantTag<foreign>,
-                  "Pattern A defense: `foreign` does NOT inherit "
-                  "grant_base and is NOT final.  IsGrantTag rejects "
-                  "it BEFORE which_dim is consulted in any pack "
-                  "evaluation, so the injected specialization can "
-                  "never reach IsAcceptedGrants.");
-}
+// BUT the structural gate rejects foreign types regardless of
+// which_dim's contents — that is the load-bearing defense.
+static_assert(!gr::IsGrantTag<foreign>, "Pattern A defense: `foreign` does NOT inherit "
+                                        "grant_base and is NOT final.  IsGrantTag rejects "
+                                        "it BEFORE which_dim is consulted in any pack "
+                                        "evaluation, so the injected specialization can "
+                                        "never reach IsAcceptedGrants.");
+}  // namespace attack_fixy_grant_namespace_reopen::pattern_a
 
 // ─── Pattern B — wrapper-type which_dim injection ──────────────────
 
 namespace attack_fixy_grant_namespace_reopen::pattern_b {
-    // `final` + inherits grant_base — IS a structural grant tag.
-    struct wrapper final : gr::grant_base {};
-}
+// `final` + inherits grant_base — IS a structural grant tag.
+struct wrapper final : gr::grant_base {};
+}  // namespace attack_fixy_grant_namespace_reopen::pattern_b
 
 // fixy-CR-09: known residual gap — register an attacker-chosen
 // engagement axis for a user-defined wrapper that DOES satisfy
@@ -134,23 +131,20 @@ namespace attack_fixy_grant_namespace_reopen::pattern_b {
 // but the reopen mechanism is identical and reviewer- / CI-grep-
 // dependent.
 namespace crucible::fixy::grant {
-    template <>
-    struct which_dim<::attack_fixy_grant_namespace_reopen::pattern_b::wrapper>
-        : std::integral_constant<dim::DimensionAxis,
-                                 dim::DimensionAxis::Security> {};
-}
+template <>
+struct which_dim<::attack_fixy_grant_namespace_reopen::pattern_b::wrapper>
+    : std::integral_constant<dim::DimensionAxis, dim::DimensionAxis::Security> {};
+}  // namespace crucible::fixy::grant
 
 namespace attack_fixy_grant_namespace_reopen::pattern_b {
-    static_assert(gr::IsGrantTag<wrapper>,
-                  "Pattern B setup: the wrapper IS a structural grant "
-                  "tag (final + inherits grant_base).");
-    static_assert(gr::which_dim_v<wrapper> == D::Security,
-                  "Pattern B setup: the attacker-supplied "
-                  "engagement axis routes via the injected "
-                  "which_dim specialization.  The namespace reopen "
-                  "is the same mechanism as Pattern A; only the "
-                  "structural gate distinguishes them.");
-}
+static_assert(gr::IsGrantTag<wrapper>, "Pattern B setup: the wrapper IS a structural grant "
+                                       "tag (final + inherits grant_base).");
+static_assert(gr::which_dim_v<wrapper> == D::Security, "Pattern B setup: the attacker-supplied "
+                                                       "engagement axis routes via the injected "
+                                                       "which_dim specialization.  The namespace reopen "
+                                                       "is the same mechanism as Pattern A; only the "
+                                                       "structural gate distinguishes them.");
+}  // namespace attack_fixy_grant_namespace_reopen::pattern_b
 
 // ─── The fixture must COMPILE today.  When it red's, see header. ──
 int main() { return 0; }

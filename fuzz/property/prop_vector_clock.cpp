@@ -60,12 +60,18 @@ struct Spec {
 
 [[nodiscard]] std::uint64_t gen_count(Rng& rng) noexcept {
     switch (rng.next_below(6u)) {
-        case 0: return 0u;
-        case 1: return 1u;
-        case 2: return kVMax;
-        case 3: return rng.next_below(8u);   // small cluster → frequent ties
-        case 4: return kVMax - 1u;
-        default: return rng.next64();
+        case 0:
+            return 0u;
+        case 1:
+            return 1u;
+        case 2:
+            return kVMax;
+        case 3:
+            return rng.next_below(8u);  // small cluster → frequent ties
+        case 4:
+            return kVMax - 1u;
+        default:
+            return rng.next64();
     }
 }
 
@@ -78,8 +84,7 @@ struct Spec {
     return true;
 }
 
-[[nodiscard]] Snapshot make_snapshot(
-    const std::array<std::uint64_t, kNodes>& counts) noexcept {
+[[nodiscard]] Snapshot make_snapshot(const std::array<std::uint64_t, kNodes>& counts) noexcept {
     Snapshot snap{};
     for (std::size_t i = 0; i < kNodes; ++i) {
         snap.entries[i] = counts[i];
@@ -93,9 +98,10 @@ int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
 
     Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 2'000'000) cfg.iterations = 2'000'000;
+    if (cfg.iterations > 2000000) cfg.iterations = 2000000;
 
-    return run("vector_clock", cfg,
+    return run(
+        "vector_clock", cfg,
         [](Rng& rng) noexcept -> Spec {
             Spec spec{};
             if (rng.next_below(2u) == 0u) {
@@ -127,11 +133,10 @@ int main(int argc, char** argv) {
 
             // ── operator<=> vs dense oracle ──
             const std::partial_ordering got = (a <=> b);
-            const std::partial_ordering want =
-                eq      ? std::partial_ordering::equivalent
-                : le_ab ? std::partial_ordering::less
-                : le_ba ? std::partial_ordering::greater
-                        : std::partial_ordering::unordered;
+            const std::partial_ordering want = eq    ? std::partial_ordering::equivalent
+                                             : le_ab ? std::partial_ordering::less
+                                             : le_ba ? std::partial_ordering::greater
+                                                     : std::partial_ordering::unordered;
             if (got != want) return false;
             if ((a == b) != eq) return false;
 

@@ -37,13 +37,11 @@ namespace fa = crucible::fixy::algebra;
 // is_graded_specialization_v clause does NOT short-circuit the
 // rejection — the rejection must occur on the missing-forwarder clause.
 struct AlgebraNegFixture5_NoForwarders {
-    using graded_t  = fa::Graded<
-        fa::ModalityKind::Absolute,
-        fa::lattices::QttSemiring::At<fa::lattices::QttGrade::One>,
-        int>;
-    using value_type   = int;
+    using graded_t =
+        fa::Graded<fa::ModalityKind::Absolute, fa::lattices::QttSemiring::At<fa::lattices::QttGrade::One>, int>;
+    using value_type = int;
     using lattice_type = fa::lattices::QttSemiring;
-    using graded_type  = graded_t;
+    using graded_type = graded_t;
 
     static constexpr fa::ModalityKind modality = fa::ModalityKind::Absolute;
 
@@ -55,10 +53,10 @@ struct AlgebraNegFixture5_NoForwarders {
 int main() {
     // GradedWrapper concept must reject — missing diagnostic forwarders.
     static_assert(fa::GradedWrapper<AlgebraNegFixture5_NoForwarders>,
-        "fa::GradedWrapper<NoForwarders> must reject — missing the "
-        "value_type_name() / lattice_name() consteval forwarders.  The "
-        "fixy::algebra alias preserves the substrate's concept gate; a "
-        "wrapper without the diagnostic-forwarder pair cannot serve the "
-        "safety-wrapper error-emission contract.");
+                  "fa::GradedWrapper<NoForwarders> must reject — missing the "
+                  "value_type_name() / lattice_name() consteval forwarders.  The "
+                  "fixy::algebra alias preserves the substrate's concept gate; a "
+                  "wrapper without the diagnostic-forwarder pair cannot serve the "
+                  "safety-wrapper error-emission contract.");
     return 0;
 }

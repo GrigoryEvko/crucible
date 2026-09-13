@@ -24,21 +24,20 @@
 #include <crucible/fixy/Substr.h>
 
 namespace fchain = ::crucible::fixy::substr::chainedge;
-namespace conc   = ::crucible::concurrent;
-namespace eff    = ::crucible::effects;
+namespace conc = ::crucible::concurrent;
+namespace eff = ::crucible::effects;
 
 namespace neg_fixy_chainedge_signaler_session_wrong_handle {
 struct UserTag {};
 using Edge = conc::PermissionedChainEdge<conc::VendorBackend::CPU, UserTag>;
-}
+}  // namespace neg_fixy_chainedge_signaler_session_wrong_handle
 
 int main() {
     eff::HotFgCtx ctx{};
     int not_a_handle = 0;
 
-    auto bad = fchain::mint_chainedge_signaler_session<
-        neg_fixy_chainedge_signaler_session_wrong_handle::Edge>(
-            ctx, not_a_handle);
+    auto bad = fchain::mint_chainedge_signaler_session<neg_fixy_chainedge_signaler_session_wrong_handle::Edge>(
+        ctx, not_a_handle);
     (void)bad;
     return 0;
 }

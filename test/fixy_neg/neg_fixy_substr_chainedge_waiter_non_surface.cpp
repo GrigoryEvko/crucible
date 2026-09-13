@@ -22,7 +22,7 @@
 #include <crucible/permissions/Permission.h>
 
 namespace fchain = ::crucible::fixy::substr::chainedge;
-namespace saf    = ::crucible::safety;
+namespace saf = ::crucible::safety;
 
 struct waiter_tag_placeholder {};
 

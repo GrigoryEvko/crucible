@@ -20,9 +20,9 @@
 #include <optional>
 #include <utility>
 
-namespace eff   = crucible::effects;
+namespace eff = crucible::effects;
 namespace fpipe = crucible::fixy::pipe;
-namespace conc  = crucible::concurrent;
+namespace conc = crucible::concurrent;
 
 template <typename T>
 struct FakeConsumer {
@@ -42,17 +42,14 @@ int main() {
     eff::HotFgCtx ctx;
 
     // Graph declares a TWO-stage chain (stage 0 → stage 1).
-    using TwoStageGraph = conc::StageGraph<
-        conc::StagePack<PlainStage, PlainStage>,
-        conc::EdgePack<conc::StageEdge<0, 1>>>;
+    using TwoStageGraph =
+        conc::StageGraph<conc::StagePack<PlainStage, PlainStage>, conc::EdgePack<conc::StageEdge<0, 1>>>;
 
     // But the caller supplies only ONE stage — pack-mismatch gate
     // fires.
-    auto one_stage = fpipe::mint_stage<&pass_through>(
-        ctx, FakeConsumer<int>{}, FakeProducer<int>{});
+    auto one_stage = fpipe::mint_stage<&pass_through>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
 
-    auto bad = fpipe::mint_pipeline_dag(
-        ctx, TwoStageGraph{}, std::move(one_stage));
+    auto bad = fpipe::mint_pipeline_dag(ctx, TwoStageGraph{}, std::move(one_stage));
     (void)bad;
     return 0;
 }

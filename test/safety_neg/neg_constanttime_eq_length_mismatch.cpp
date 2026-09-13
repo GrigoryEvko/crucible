@@ -33,26 +33,21 @@
 #include <span>
 
 namespace {
-    // Two compile-time byte buffers with INTENTIONALLY different sizes.
-    // The span-only API of ct::eq accepts these as
-    // std::span<const std::byte> implicitly via array-to-span CTAD.
-    constexpr std::byte buf3[3] = {std::byte{1}, std::byte{2}, std::byte{3}};
-    constexpr std::byte buf5[5] = {
-        std::byte{1}, std::byte{2}, std::byte{3},
-        std::byte{4}, std::byte{5}
-    };
-}
+// Two compile-time byte buffers with INTENTIONALLY different sizes.
+// The span-only API of ct::eq accepts these as
+// std::span<const std::byte> implicitly via array-to-span CTAD.
+constexpr std::byte buf3[3] = {std::byte{1}, std::byte{2}, std::byte{3}};
+constexpr std::byte buf5[5] = {std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}, std::byte{5}};
+}  // namespace
 
 // VIOLATION: ct::eq is constexpr; static_assert forces consteval
 // evaluation; CRUCIBLE_PRE inside ct::eq sees `a.size() (3) !=
 // b.size() (5)` and invokes __builtin_trap() — non-constexpr, so the
 // consteval call is invalid and the static_assert reports a compile
 // error.
-static_assert(::crucible::safety::ct::eq(
-                  std::span<const std::byte>{buf3},
-                  std::span<const std::byte>{buf5}),
-    "ct::eq with mismatched-length spans must NOT compile; this "
-    "fixture exists so a future regression that softens the length "
-    "pre into a silent `return false;` is caught at compile time.");
+static_assert(::crucible::safety::ct::eq(std::span<const std::byte>{buf3}, std::span<const std::byte>{buf5}),
+              "ct::eq with mismatched-length spans must NOT compile; this "
+              "fixture exists so a future regression that softens the length "
+              "pre into a silent `return false;` is caught at compile time.");
 
 int main() { return 0; }

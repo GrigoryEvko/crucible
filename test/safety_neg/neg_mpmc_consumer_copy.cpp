@@ -25,4 +25,7 @@ void exercise_consumer_copy() {
 
 }  // namespace
 
-int main() { exercise_consumer_copy(); return 0; }
+int main() {
+    exercise_consumer_copy();
+    return 0;
+}

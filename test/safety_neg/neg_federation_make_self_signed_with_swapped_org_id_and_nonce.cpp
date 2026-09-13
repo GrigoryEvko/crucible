@@ -40,11 +40,11 @@ int main() {
     // about the field assignments, not the construction.
     auto hs = perm::make_self_signed_handshake<NegSwappedFields_Org>(
         /*peer_key_fp=*/perm::PeerKeyFingerprint{0xAAAA},
-        /*nonce=*/      perm::Nonce{0x1111});
+        /*nonce=*/perm::Nonce{0x1111});
 
     // VIOLATION 1: raw integer literal cannot implicitly convert to
     // OrgId — the explicit constructor on the newtype rejects this.
-    hs.org_id = 0xBEEF'BEEFULL;
+    hs.org_id = 0xBEEFBEEFULL;
 
     // VIOLATION 2: cross-domain field write — assigning a Nonce to
     // the org_id slot was a silent footgun under the bare-uint64_t

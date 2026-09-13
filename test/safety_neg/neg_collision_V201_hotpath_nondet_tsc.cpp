@@ -33,8 +33,8 @@ using Bad = fn::Fn<sf::Hw<HW::NonDeterministicTsc, int>>;  // Hw tier >= NonDetT
 
 // Mark Bad as hot-path — required to fire V201.
 namespace crucible::safety::fn::collision {
-    template <> struct marks_hot_path<::neg_collision_v201::Bad>
-        : std::true_type {};
+template <>
+struct marks_hot_path<::neg_collision_v201::Bad> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 [[maybe_unused]] neg_collision_v201::Bad the_fixture{};

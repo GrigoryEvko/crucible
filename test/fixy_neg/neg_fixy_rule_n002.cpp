@@ -11,18 +11,16 @@ using namespace fixy_neg_rule_detail;
 struct TypeN002 {};
 
 namespace crucible::safety::fn::collision {
-template <> struct is_exact_decimal<TypeN002> : std::true_type {};
+template <>
+struct is_exact_decimal<TypeN002> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
-using Witness = fixy::fn<TypeN002,
-    strict<D::Refinement>, strict<D::Usage>,    strict<D::Effect>,
-    strict<D::Security>,   strict<D::Protocol>, strict<D::Lifetime>,
-    strict<D::Provenance>, strict<D::Trust>,    strict<D::Representation>,
-    strict<D::Observability>, strict<D::Complexity>, strict<D::Precision>,
-    strict<D::Space>,
-    gr::overflow_wrap,                          // Overflow = Wrap
-    strict<D::Mutation>,
-    strict<D::Reentrancy>, strict<D::Size>,     strict<D::Version>,
-    strict<D::Staleness>, strict<D::Synchronization>, strict<D::Regime>>;
+using Witness = fixy::fn<TypeN002, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, strict<D::Security>,
+                         strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>, strict<D::Trust>,
+                         strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>,
+                         strict<D::Precision>, strict<D::Space>,
+                         gr::overflow_wrap,  // Overflow = Wrap
+                         strict<D::Mutation>, strict<D::Reentrancy>, strict<D::Size>, strict<D::Version>,
+                         strict<D::Staleness>, strict<D::Synchronization>, strict<D::Regime>>;
 
 int main() { return static_cast<int>(sizeof(Witness)); }

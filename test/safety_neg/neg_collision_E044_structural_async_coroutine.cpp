@@ -35,28 +35,27 @@ namespace fx = crucible::effects;
 
 namespace neg_collision_e044_structural {
 
-using Bad = fn::Fn<
-    int,                                       // 1  Type — bare int (no HotPath wrapper)
-    fn::pred::True,                            // 2  Refinement
-    fn::UsageMode::Linear,                     // 3  Usage — Linear (NOT Borrow — avoids R002/L007)
-    fx::Row<>,                                 // 4  EffectRow — empty (NOT Bg — avoids R003/L007)
-    fn::SecLevel::Public,                      // 5  Security (NOT Classified — avoids I004 path)
-    fn::proto::None,                           // 6  Protocol — None (avoids I004 session_protocol arm)
-    fn::lifetime::Static,                      // 7  Lifetime
-    fn::source::FromInternal,                  // 8  Source
-    fn::trust::Verified,                       // 9  Trust
-    fn::ReprKind::Opaque,                      // 10 Repr
-    fn::cost::Constant,                        // 11 Cost — bounded (avoids H001/H003)
-    fn::precision::Exact,                      // 12 Precision
-    fn::space::Bounded<sizeof(int)>,           // 13 Space
-    fn::OverflowMode::Trap,                    // 14 Overflow
-    fn::MutationMode::Immutable,               // 15 Mutation
-    fn::ReentrancyMode::Coroutine,             // 16 Reentrancy — COROUTINE (E044 trigger
-                                                //                 via structural has_async_v)
-    fn::size_pol::Sized<sizeof(int)>,          // 17 Size
-    /*Version=*/1,                             // 18 Version
-    fn::stale::Fresh                           // 19 Staleness
->;
+using Bad = fn::Fn<int,  // 1  Type — bare int (no HotPath wrapper)
+                   fn::pred::True,  // 2  Refinement
+                   fn::UsageMode::Linear,  // 3  Usage — Linear (NOT Borrow — avoids R002/L007)
+                   fx::Row<>,  // 4  EffectRow — empty (NOT Bg — avoids R003/L007)
+                   fn::SecLevel::Public,  // 5  Security (NOT Classified — avoids I004 path)
+                   fn::proto::None,  // 6  Protocol — None (avoids I004 session_protocol arm)
+                   fn::lifetime::Static,  // 7  Lifetime
+                   fn::source::FromInternal,  // 8  Source
+                   fn::trust::Verified,  // 9  Trust
+                   fn::ReprKind::Opaque,  // 10 Repr
+                   fn::cost::Constant,  // 11 Cost — bounded (avoids H001/H003)
+                   fn::precision::Exact,  // 12 Precision
+                   fn::space::Bounded<sizeof(int)>,  // 13 Space
+                   fn::OverflowMode::Trap,  // 14 Overflow
+                   fn::MutationMode::Immutable,  // 15 Mutation
+                   fn::ReentrancyMode::Coroutine,  // 16 Reentrancy — COROUTINE (E044 trigger
+                   //                 via structural has_async_v)
+                   fn::size_pol::Sized<sizeof(int)>,  // 17 Size
+                   /*Version=*/1,  // 18 Version
+                   fn::stale::Fresh  // 19 Staleness
+                   >;
 
 }  // namespace neg_collision_e044_structural
 
@@ -64,8 +63,8 @@ using Bad = fn::Fn<
 // is E044.  Note: marks_async is NOT specialized; the structural
 // detection (Reentrancy::Coroutine) supplies the async half.
 namespace crucible::safety::fn::collision {
-    template <> struct marks_ct<::neg_collision_e044_structural::Bad>
-        : std::true_type {};
+template <>
+struct marks_ct<::neg_collision_e044_structural::Bad> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 [[maybe_unused]] neg_collision_e044_structural::Bad the_fixture{};

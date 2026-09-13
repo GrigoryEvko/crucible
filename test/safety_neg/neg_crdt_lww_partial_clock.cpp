@@ -7,9 +7,7 @@
 #include <crucible/canopy/Crdt.h>
 
 int main() {
-    crucible::canopy::LwwRegister<
-        int,
-        crucible::canopy::VectorClockSnapshot<4>> reg;
+    crucible::canopy::LwwRegister<int, crucible::canopy::VectorClockSnapshot<4>> reg;
     (void)reg;
     return 0;
 }

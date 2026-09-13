@@ -38,7 +38,6 @@ int main() {
     // Sentinel pair via the fixy::tags re-export — V-022 guarantees
     // it stays unspecialized forever, so the fail-closed primary
     // template reaches through the alias and rejects the call.
-    demand_retag_allowed_fixy<ft::retag_policy_test::NeverFrom,
-                               ft::retag_policy_test::NeverTo>();
+    demand_retag_allowed_fixy<ft::retag_policy_test::NeverFrom, ft::retag_policy_test::NeverTo>();
     return 0;
 }

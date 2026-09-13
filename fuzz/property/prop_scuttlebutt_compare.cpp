@@ -69,8 +69,7 @@ using LKey = cc::LocalScuttlebuttKey;
 using Peer = cc::SwimPeer;
 
 [[nodiscard]] Uuid peer_uuid(std::uint32_t p) noexcept {
-    return Uuid{static_cast<std::uint64_t>(p) + 1u,
-                static_cast<std::uint64_t>(p) + 101u};
+    return Uuid{static_cast<std::uint64_t>(p) + 1u, static_cast<std::uint64_t>(p) + 101u};
 }
 [[nodiscard]] Peer make_peer(std::uint32_t p) noexcept {
     CogId id{};
@@ -83,7 +82,7 @@ using Peer = cc::SwimPeer;
 
 struct CellSpec {
     std::uint8_t mat_present = 0;
-    std::uint8_t mat_version = 1;   // [1,4]
+    std::uint8_t mat_version = 1;  // [1,4]
     std::uint8_t remote_present = 0;
     std::uint8_t remote_version = 1;
 };
@@ -97,9 +96,10 @@ int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
 
     Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 2'000'000) cfg.iterations = 2'000'000;
+    if (cfg.iterations > 2000000) cfg.iterations = 2000000;
 
-    return run("scuttlebutt_compare", cfg,
+    return run(
+        "scuttlebutt_compare", cfg,
         [](Rng& rng) noexcept -> Spec {
             Spec spec{};
             for (std::uint32_t i = 0; i < kCells; ++i) {
@@ -159,18 +159,17 @@ int main(int argc, char** argv) {
             }
 
             const auto diff = sync.compare_digest(GDigest{remote});
-            if (!diff.has_value()) return false;   // no error path is reachable here
+            if (!diff.has_value()) return false;  // no error path is reachable here
 
             // Reconstruct (p,k) from a result entry and verify it is an
             // expected cell at the expected version.
-            const auto reconstruct_ok =
-                [&](const Entry& e, std::uint32_t& p, std::uint32_t& k) noexcept -> bool {
-                    if (e.origin.hi < 1u || e.origin.hi > kPeers) return false;
-                    if (e.key.hash < 1u || e.key.hash > kKeys) return false;
-                    p = static_cast<std::uint32_t>(e.origin.hi - 1u);
-                    k = static_cast<std::uint32_t>(e.key.hash - 1u);
-                    return e.origin == peer_uuid(p) && e.key == make_key(k);
-                };
+            const auto reconstruct_ok = [&](const Entry& e, std::uint32_t& p, std::uint32_t& k) noexcept -> bool {
+                if (e.origin.hi < 1u || e.origin.hi > kPeers) return false;
+                if (e.key.hash < 1u || e.key.hash > kKeys) return false;
+                p = static_cast<std::uint32_t>(e.origin.hi - 1u);
+                k = static_cast<std::uint32_t>(e.key.hash - 1u);
+                return e.origin == peer_uuid(p) && e.key == make_key(k);
+            };
 
             // ── requests: rmat>0 ∧ rmat>mat, carried at version rmat ──
             std::size_t want_req = 0;

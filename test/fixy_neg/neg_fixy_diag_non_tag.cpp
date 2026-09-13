@@ -19,10 +19,9 @@ namespace fd = crucible::fixy::diag;
 struct DiagNegFixture1_Marker {};
 
 int main() {
-    static_assert(fd::is_diagnostic_class_v<int>,
-        "fixy::diag::is_diagnostic_class_v<int> must reject — int "
-        "is not derived from tag_base.  Alias preserves the substrate's "
-        "structural diagnostic-class detection.");
+    static_assert(fd::is_diagnostic_class_v<int>, "fixy::diag::is_diagnostic_class_v<int> must reject — int "
+                                                  "is not derived from tag_base.  Alias preserves the substrate's "
+                                                  "structural diagnostic-class detection.");
     (void)sizeof(DiagNegFixture1_Marker);
     return 0;
 }

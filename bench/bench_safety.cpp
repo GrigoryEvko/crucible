@@ -61,7 +61,7 @@ int id_tagged(UserInt x) { return x.value() + 1; }
 // ── Machine<State> ────────────────────────────────────────────────
 
 struct ConnState {
-    int      sock_fd{-1};
+    int sock_fd{-1};
     uint32_t attempts{0};
 };
 
@@ -76,7 +76,7 @@ Machine<ConnState> transition_machine(Machine<ConnState>&& m) {
     return Machine<ConnState>{std::move(s)};
 }
 
-} // namespace
+}  // namespace
 
 int main() {
     bench::print_system_info();
@@ -86,14 +86,14 @@ int main() {
 
     // All volatile seeds live in outer scope so lambdas capture the same
     // memory locations the compiler can't constant-fold through.
-    const Resource  r0{.fd = 3, .payload = 0};
-    volatile int    n0 = 7;
+    const Resource r0{.fd = 3, .payload = 0};
+    volatile int n0 = 7;
     volatile uint64_t v0 = 0xCAFEBABEULL;
-    volatile int    t0 = 41;
+    volatile int t0 = 41;
     const ConnState c0{.sock_fd = 5, .attempts = 0};
     volatile uint32_t bit_ = 1;
-    volatile uint32_t a    = 0xFFFFFFFFu;
-    volatile uint32_t b    = 0x00000000u;
+    volatile uint32_t a = 0xFFFFFFFFu;
+    volatile uint32_t b = 0x00000000u;
 
     std::printf("=== safety ===\n\n");
 
@@ -101,75 +101,88 @@ int main() {
     // trivial compare() at the end.
     bench::Report reports[] = {
         // Pair 0: Linear<Resource>
-        bench::run("raw Resource round-trip", [&]{
-            Resource r = consume_bare(r0);
-            bench::do_not_optimize(r);
-        }),
-        bench::run("Linear<Resource> round-trip", [&]{
-            Linear<Resource> l = consume_linear(Linear<Resource>{r0});
-            Resource r = std::move(l).consume();
-            bench::do_not_optimize(r);
-        }),
+        bench::run("raw Resource round-trip",
+                   [&] {
+                       Resource r = consume_bare(r0);
+                       bench::do_not_optimize(r);
+                   }),
+        bench::run("Linear<Resource> round-trip",
+                   [&] {
+                       Linear<Resource> l = consume_linear(Linear<Resource>{r0});
+                       Resource r = std::move(l).consume();
+                       bench::do_not_optimize(r);
+                   }),
         // Pair 1: Refined<positive, int>
-        bench::run("raw int square", [&]{
-            int r = square_bare(n0);
-            bench::do_not_optimize(r);
-        }),
-        bench::run("Refined<positive,int> square", [&]{
-            int r = square_refined(PosInt{n0});
-            bench::do_not_optimize(r);
-        }),
+        bench::run("raw int square",
+                   [&] {
+                       int r = square_bare(n0);
+                       bench::do_not_optimize(r);
+                   }),
+        bench::run("Refined<positive,int> square",
+                   [&] {
+                       int r = square_refined(PosInt{n0});
+                       bench::do_not_optimize(r);
+                   }),
         // Pair 2: Secret<uint64_t>
-        bench::run("raw uint64 xor", [&]{
-            uint64_t r = leak_bare(v0);
-            bench::do_not_optimize(r);
-        }),
-        bench::run("Secret<uint64> declassify+xor", [&]{
-            uint64_t r = leak_secret(Secret<uint64_t>{v0});
-            bench::do_not_optimize(r);
-        }),
+        bench::run("raw uint64 xor",
+                   [&] {
+                       uint64_t r = leak_bare(v0);
+                       bench::do_not_optimize(r);
+                   }),
+        bench::run("Secret<uint64> declassify+xor",
+                   [&] {
+                       uint64_t r = leak_secret(Secret<uint64_t>{v0});
+                       bench::do_not_optimize(r);
+                   }),
         // Pair 3: Tagged<int, source::FromUser>
-        bench::run("raw int +1", [&]{
-            int r = id_bare(t0);
-            bench::do_not_optimize(r);
-        }),
-        bench::run("Tagged<int,source> +1", [&]{
-            int r = id_tagged(UserInt{t0});
-            bench::do_not_optimize(r);
-        }),
+        bench::run("raw int +1",
+                   [&] {
+                       int r = id_bare(t0);
+                       bench::do_not_optimize(r);
+                   }),
+        bench::run("Tagged<int,source> +1",
+                   [&] {
+                       int r = id_tagged(UserInt{t0});
+                       bench::do_not_optimize(r);
+                   }),
         // Pair 4: Machine<ConnState>
-        bench::run("raw ConnState transition", [&]{
-            ConnState s = transition_bare(c0);
-            bench::do_not_optimize(s);
-        }),
-        bench::run("Machine<ConnState> transition", [&]{
-            Machine<ConnState> m = transition_machine(Machine<ConnState>{c0});
-            ConnState s = std::move(m).extract();
-            bench::do_not_optimize(s);
-        }),
+        bench::run("raw ConnState transition",
+                   [&] {
+                       ConnState s = transition_bare(c0);
+                       bench::do_not_optimize(s);
+                   }),
+        bench::run("Machine<ConnState> transition",
+                   [&] {
+                       Machine<ConnState> m = transition_machine(Machine<ConnState>{c0});
+                       ConnState s = std::move(m).extract();
+                       bench::do_not_optimize(s);
+                   }),
 
         // Standalone ct::* primitives — no bare comparator, they ARE
         // the primitive. Just confirm they stay ~1-2 ns.
-        bench::run("ct::select<u32>", [&]{
-            auto r = ct::select<uint32_t>(bit_, a, b);
-            bench::do_not_optimize(r);
-        }),
-        bench::run("ct::less<u32>", [&]{
-            auto r = ct::less<uint32_t>(a, b);
-            bench::do_not_optimize(r);
-        }),
-        bench::run("ct::is_zero<u64>", [&]{
-            auto r = ct::is_zero<uint64_t>(a);
-            bench::do_not_optimize(r);
-        }),
+        bench::run("ct::select<u32>",
+                   [&] {
+                       auto r = ct::select<uint32_t>(bit_, a, b);
+                       bench::do_not_optimize(r);
+                   }),
+        bench::run("ct::less<u32>",
+                   [&] {
+                       auto r = ct::less<uint32_t>(a, b);
+                       bench::do_not_optimize(r);
+                   }),
+        bench::run("ct::is_zero<u64>",
+                   [&] {
+                       auto r = ct::is_zero<uint64_t>(a);
+                       bench::do_not_optimize(r);
+                   }),
 
         // Monotonic fast path — try_advance with a strictly increasing
         // step counter. The state is inside the lambda so each auto-batch
         // invocation works from a fresh high-water mark (modular advance).
-        [&]{
+        [&] {
             Monotonic<uint32_t> mon{0};
             uint32_t step = 1;
-            return bench::run("Monotonic::try_advance", [&]{
+            return bench::run("Monotonic::try_advance", [&] {
                 bool ok = mon.try_advance(step++);
                 bench::do_not_optimize(ok);
             });
@@ -180,10 +193,10 @@ int main() {
         // lock cmpxchg retry; on ARMv8.1+ LSE this is a one-cycle LDUMAX.
         // Compares against scalar Monotonic above so the lock-prefix tax
         // is visible in the diff.
-        [&]{
+        [&] {
             AtomicMonotonic<uint64_t> amon{0};
             uint64_t step = 1;
-            return bench::run("AtomicMonotonic::try_advance (fetch_max)", [&]{
+            return bench::run("AtomicMonotonic::try_advance (fetch_max)", [&] {
                 bool ok = amon.try_advance(step++);
                 bench::do_not_optimize(ok);
             });
@@ -192,10 +205,10 @@ int main() {
         // MaxObserved — alias of AtomicMonotonic<T, std::less<T>>.  Same
         // implementation, but bench separately to confirm the alias does
         // not regress and to make any future divergence visible.
-        [&]{
+        [&] {
             MaxObserved<uint32_t> high_water{0};
             uint32_t v = 1;
-            return bench::run("MaxObserved::try_advance", [&]{
+            return bench::run("MaxObserved::try_advance", [&] {
                 bool ok = high_water.try_advance(v++);
                 bench::do_not_optimize(ok);
             });
@@ -208,11 +221,7 @@ int main() {
     // [indistinguishable]; any [REGRESS] flag is a real finding.
     std::printf("\n=== compare — zero-cost proof ===\n");
     const char* pair_labels[] = {
-        "Linear<Resource>",
-        "Refined<positive,int>",
-        "Secret<uint64>",
-        "Tagged<int,source>",
-        "Machine<ConnState>",
+        "Linear<Resource>", "Refined<positive,int>", "Secret<uint64>", "Tagged<int,source>", "Machine<ConnState>",
     };
     for (size_t p = 0; p < std::size(pair_labels); ++p) {
         std::printf("  [%s]\n  ", pair_labels[p]);

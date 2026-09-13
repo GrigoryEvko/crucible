@@ -52,8 +52,7 @@ int main() {
     // Before fix-04 this would have compiled silently (the friend grant
     // was decorative AND signature-mismatched; the public ctor let any
     // call site through).
-    proto::SessionHandle<proto::Send<int, proto::End>, FakeChannel, void>
-        handle{FakeChannel{.sentinel = 42}};
+    proto::SessionHandle<proto::Send<int, proto::End>, FakeChannel, void> handle{FakeChannel{.sentinel = 42}};
     (void)handle;
 
     return 0;

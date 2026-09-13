@@ -21,8 +21,7 @@ namespace eff = crucible::effects;
 
 int main() {
     auto bg = eff::testing::bg();
-    eff::Capability<eff::Effect::Alloc, eff::Bg> const cap =
-        eff::mint_cap<eff::Effect::Alloc>(bg);
+    eff::Capability<eff::Effect::Alloc, eff::Bg> const cap = eff::mint_cap<eff::Effect::Alloc>(bg);
     std::move(cap).consume();  // const-rvalue: non-const `&&` rejects
     return 0;
 }

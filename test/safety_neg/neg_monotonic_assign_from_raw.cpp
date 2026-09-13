@@ -26,6 +26,6 @@ using crucible::safety::Monotonic;
 
 int main() {
     Monotonic<uint32_t> counter{0};
-    counter = 42u;   // ← MUST fail: Monotonic has no assignment from T
+    counter = 42u;  // ← MUST fail: Monotonic has no assignment from T
     return 0;
 }

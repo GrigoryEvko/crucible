@@ -31,18 +31,17 @@
 #include <utility>
 
 namespace fsess = crucible::fixy::sess;
-namespace cs    = crucible::safety;
-namespace ff    = crucible::fixy::source::federation;
-namespace eff   = crucible::effects;
+namespace cs = crucible::safety;
+namespace ff = crucible::fixy::source::federation;
+namespace eff = crucible::effects;
 
 // fixy-CR-13: federation mints now also require Row<IO, Block> in
 // ctx::row_type.  This fixture targets the *downstream*
 // SessionResource_NotPinned check, so the surface row gate must pass
 // — widen BgCompileCtx to admit Block via `.in_row<>()`.
-using FederationFitCtx = decltype(
-    eff::BgCompileCtx{}.in_row<eff::Row<
-        eff::Effect::Bg, eff::Effect::Alloc,
-        eff::Effect::IO, eff::Effect::Block>>());
+using FederationFitCtx =
+    decltype(eff::BgCompileCtx{}
+                 .in_row<eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>());
 
 struct NegFedChannelWrongEp_PeerOrg {};
 
@@ -54,12 +53,9 @@ struct NegFedChannelWrongEp_PeerOrg {};
 
 int main() {
     auto local = cs::mint_permission_root<ff::LocalCipherTag>();
-    auto handshake = ff::make_self_signed_handshake<
-        NegFedChannelWrongEp_PeerOrg>();
-    auto admitted = ff::mint_federation_admittance<
-        NegFedChannelWrongEp_PeerOrg>(local, handshake);
-    auto pool = fsess::federation::mint_federation_pool<
-        NegFedChannelWrongEp_PeerOrg>(std::move(*admitted));
+    auto handshake = ff::make_self_signed_handshake<NegFedChannelWrongEp_PeerOrg>();
+    auto admitted = ff::mint_federation_admittance<NegFedChannelWrongEp_PeerOrg>(local, handshake);
+    auto pool = fsess::federation::mint_federation_pool<NegFedChannelWrongEp_PeerOrg>(std::move(*admitted));
     auto guard = pool.lend();
 
     // fixy-CR-13: use the widened FederationFitCtx so the surface row
@@ -69,9 +65,8 @@ int main() {
     FederationFitCtx ctx{};
     void* bad_sender = nullptr;
     void* bad_receiver = nullptr;
-    auto bad = fsess::mint_federation_channel<
-        NegFedChannelWrongEp_PeerOrg>(
-        ctx, bad_sender, bad_receiver, guard->token());
+    auto bad =
+        fsess::mint_federation_channel<NegFedChannelWrongEp_PeerOrg>(ctx, bad_sender, bad_receiver, guard->token());
     (void)bad;
     return 0;
 }

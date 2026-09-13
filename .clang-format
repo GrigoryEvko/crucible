@@ -170,10 +170,18 @@ LineEnding: LF
 RemoveSemicolon: false
 RemoveParentheses: Leave     # parentheses inside contract predicates are load-bearing
 SortUsingDeclarations: Never
+
+# ── Digit separators: stripped ───────────────────────────────────────────────
+# A negative count removes the separator, 0 leaves literals alone, a positive
+# count inserts one every N digits.  `4'096` is removed rather than tolerated
+# because the apostrophe reads as an opening quote to anything scanning source
+# without a full C++ lexer.  One separator then pairs with the next real
+# apostrophe and puts quote parity out of phase for the rest of the file, so a
+# char literal further down silently loses its closing quote.
 IntegerLiteralSeparator:
-  Binary: 0
-  Decimal: 0
-  Hex: 0
+  Binary: -1
+  Decimal: -1
+  Hex: -1
 
 # ── Includes ─────────────────────────────────────────────────────────────────
 # INERT in this pass.  Header order can be load-bearing even when every header

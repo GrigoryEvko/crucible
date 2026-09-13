@@ -53,8 +53,7 @@
 // Anchor a legitimate use — value() observation is the ONLY
 // supported read path on SealedRefined; this compiles cleanly.
 [[maybe_unused]] static int anchor_sealed_value_read() {
-    auto sp = ::crucible::safety::mint_sealed_refined<
-        ::crucible::safety::positive, int>(7);
+    auto sp = ::crucible::safety::mint_sealed_refined<::crucible::safety::positive, int>(7);
     return sp.value();
 }
 
@@ -63,8 +62,7 @@
 // crucible::safety::SealedRefined<...>' has no member named 'into'".
 // Reviewer-pattern from the Refined idiom must NOT compile here.
 [[maybe_unused]] static int offending_sealed_into_extract() {
-    auto sp = ::crucible::safety::mint_sealed_refined<
-        ::crucible::safety::positive, int>(7);
+    auto sp = ::crucible::safety::mint_sealed_refined<::crucible::safety::positive, int>(7);
     return std::move(sp).into();  // ERROR: no into() on SealedRefined
 }
 

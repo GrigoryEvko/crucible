@@ -16,24 +16,19 @@ template <std::size_t N>
 [[nodiscard]] constexpr std::array<std::byte, N> payload_seed() noexcept {
     std::array<std::byte, N> bytes{};
     for (std::size_t i = 0; i < bytes.size(); ++i) {
-        bytes[i] =
-            static_cast<std::byte>((i * 37U + (i >> 1U) + 0x5AU) & 0xFFU);
+        bytes[i] = static_cast<std::byte>((i * 37U + (i >> 1U) + 0x5AU) & 0xFFU);
     }
     return bytes;
 }
 
 template <std::size_t ShardBytes, std::size_t... Shards>
-constexpr void poison_shards(std::span<std::byte> encoded,
-                             std::index_sequence<Shards...>) noexcept {
-    ((std::fill_n(encoded.data() + Shards * ShardBytes,
-                  ShardBytes,
-                  static_cast<std::byte>(0xEE))), ...);
+constexpr void poison_shards(std::span<std::byte> encoded, std::index_sequence<Shards...>) noexcept {
+    ((std::fill_n(encoded.data() + Shards * ShardBytes, ShardBytes, static_cast<std::byte>(0xEE))), ...);
 }
 
 template <std::size_t N>
-[[nodiscard]] constexpr bool
-same_prefix(std::array<std::byte, N> const& lhs,
-            std::array<std::byte, N> const& rhs) noexcept {
+[[nodiscard]] constexpr bool same_prefix(std::array<std::byte, N> const& lhs,
+                                         std::array<std::byte, N> const& rhs) noexcept {
     for (std::size_t i = 0; i < N; ++i) {
         if (lhs[i] != rhs[i]) {
             return false;
@@ -43,10 +38,8 @@ same_prefix(std::array<std::byte, N> const& lhs,
 }
 
 template <typename Codec, std::size_t InputBytes, std::size_t EncodedBytes>
-void verify_all_recoverable_erasures(
-    Codec const& codec,
-    std::array<std::byte, InputBytes> const& payload,
-    std::array<std::byte, EncodedBytes> const& encoded) {
+void verify_all_recoverable_erasures(Codec const& codec, std::array<std::byte, InputBytes> const& payload,
+                                     std::array<std::byte, EncodedBytes> const& encoded) {
     constexpr auto total = Codec::total_shards;
     static_assert(total < 64);
     const auto shard_bytes = Codec::shard_bytes_for(InputBytes);
@@ -64,9 +57,7 @@ void verify_all_recoverable_erasures(
             }
             erasures[shard] = true;
             ++erased;
-            std::fill_n(damaged.data() + shard * shard_bytes,
-                        shard_bytes,
-                        static_cast<std::byte>(0xA5));
+            std::fill_n(damaged.data() + shard * shard_bytes, shard_bytes, static_cast<std::byte>(0xA5));
         }
         if (erased > Codec::parity_shards) {
             continue;
@@ -99,12 +90,9 @@ int main() {
     static_assert(Rs42::shard_bytes_for(1) == 1);
     static_assert(Rs42::shard_bytes_for(17) == 5);
     static_assert(Rs42::encoded_size_for(17) == 30);
-    static_assert(sizeof(ci::LinearShardBuffer<std::array<std::byte, 8>>) ==
-                  sizeof(std::array<std::byte, 8>));
-    static_assert(std::same_as<
-                  Rs42::concurrent_budget,
-                  crucible::effects::ConcurrentRow<
-                      crucible::effects::SmBudget<1>>>);
+    static_assert(sizeof(ci::LinearShardBuffer<std::array<std::byte, 8>>) == sizeof(std::array<std::byte, 8>));
+    static_assert(
+        std::same_as<Rs42::concurrent_budget, crucible::effects::ConcurrentRow<crucible::effects::SmBudget<1>>>);
 
     auto rs42 = ci::mint_reed_solomon<4, 2>(crucible::effects::testing::init());
 
@@ -174,16 +162,14 @@ int main() {
 
     {
         constexpr auto payload = payload_seed<13>();
-        ci::LinearShardBuffer<std::array<std::byte, payload.size()>>
-            owned_payload{payload};
+        ci::LinearShardBuffer<std::array<std::byte, payload.size()>> owned_payload{payload};
         std::array<std::byte, Rs42::encoded_size_for(payload.size())> encoded{};
         assert(rs42.encode_owned(std::move(owned_payload), encoded).has_value());
 
         ci::LinearShardBuffer<decltype(encoded)> owned_encoded{encoded};
         std::array<bool, Rs42::total_shards> erasures{};
         std::array<std::byte, payload.size()> decoded{};
-        assert(rs42.decode_owned(std::move(owned_encoded), erasures, decoded)
-                   .has_value());
+        assert(rs42.decode_owned(std::move(owned_encoded), erasures, decoded).has_value());
         assert(same_prefix(payload, decoded));
     }
 

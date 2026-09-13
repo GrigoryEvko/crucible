@@ -21,4 +21,7 @@ void exercise_consumer_try_push() {
 
 }  // namespace
 
-int main() { exercise_consumer_try_push(); return 0; }
+int main() {
+    exercise_consumer_try_push();
+    return 0;
+}

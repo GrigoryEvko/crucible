@@ -16,14 +16,13 @@ namespace safety = ::crucible::safety;
 int total_passed = 0;
 int total_failed = 0;
 
-#define CRUCIBLE_REQUIRE(cond)                                            \
-    do {                                                                  \
-        if (!(cond)) {                                                    \
-            std::fprintf(stderr, "  REQUIRE FAILED: %s @ %s:%d\n",        \
-                         #cond, __FILE__, __LINE__);                      \
-            ++total_failed;                                               \
-            return;                                                       \
-        }                                                                 \
+#define CRUCIBLE_REQUIRE(cond)                                                                 \
+    do {                                                                                       \
+        if (!(cond)) {                                                                         \
+            std::fprintf(stderr, "  REQUIRE FAILED: %s @ %s:%d\n", #cond, __FILE__, __LINE__); \
+            ++total_failed;                                                                    \
+            return;                                                                            \
+        }                                                                                      \
     } while (0)
 
 template <typename Body>
@@ -63,8 +62,7 @@ bool near(double a, double b) noexcept {
 void test_metric_payload_is_snapshot_safe() {
     static_assert(std::is_trivially_copyable_v<observe::RuntimeMetrics>);
     static_assert(std::is_trivially_destructible_v<observe::RuntimeMetrics>);
-    static_assert(::crucible::concurrent::SnapshotValue<
-                  observe::RuntimeMetricsSample>);
+    static_assert(::crucible::concurrent::SnapshotValue<observe::RuntimeMetricsSample>);
     static_assert(sizeof(observe::RuntimeMetricsSample) <= 256);
     CRUCIBLE_REQUIRE(true);
 }
@@ -74,8 +72,7 @@ void test_writer_publish_keeper_and_canopy_readers() {
     observe::RuntimeMetricsChannel channel{initial};
 
     auto writer_perm = safety::mint_permission_root<observe::RuntimeMetricsWriterTag>();
-    auto writer = observe::mint_metrics_writer(
-        channel, std::move(writer_perm));
+    auto writer = observe::mint_metrics_writer(channel, std::move(writer_perm));
 
     auto keeper = observe::mint_keeper_metrics_reader(channel);
     auto canopy = observe::mint_canopy_metrics_reader(channel);
@@ -97,8 +94,7 @@ void test_writer_publish_keeper_and_canopy_readers() {
 }
 
 void test_exclusive_drain_waits_for_readers() {
-    observe::RuntimeMetricsChannel channel{
-        observe::fresh_metrics_sample(make_metrics(0.0))};
+    observe::RuntimeMetricsChannel channel{observe::fresh_metrics_sample(make_metrics(0.0))};
 
     auto reader = observe::mint_keeper_metrics_reader(channel);
     CRUCIBLE_REQUIRE(reader.has_value());
@@ -113,12 +109,9 @@ void test_exclusive_drain_waits_for_readers() {
 }
 
 void test_runtime_observation_snapshot() {
-    observe::ObservationSnapshot sink{
-        observe::latency_ns(11, 250, 1, observe::ObservationSource::Bpf)};
+    observe::ObservationSnapshot sink{observe::latency_ns(11, 250, 1, observe::ObservationSource::Bpf)};
 
-    observe::record_observation(
-        sink,
-        observe::bits_transferred(12, 4096, 2, observe::ObservationSource::Runtime));
+    observe::record_observation(sink, observe::bits_transferred(12, 4096, 2, observe::ObservationSource::Runtime));
 
     const observe::Observation latest = observe::latest_observation(sink);
     CRUCIBLE_REQUIRE(latest.kind == observe::ObservationKind::BitsTransferred);
@@ -132,16 +125,11 @@ void test_runtime_observation_snapshot() {
 
 int main() {
     std::fprintf(stderr, "[test_metrics_swmr]\n");
-    run_test("metric_payload_is_snapshot_safe",
-             test_metric_payload_is_snapshot_safe);
-    run_test("writer_publish_keeper_and_canopy_readers",
-             test_writer_publish_keeper_and_canopy_readers);
-    run_test("exclusive_drain_waits_for_readers",
-             test_exclusive_drain_waits_for_readers);
-    run_test("runtime_observation_snapshot",
-             test_runtime_observation_snapshot);
+    run_test("metric_payload_is_snapshot_safe", test_metric_payload_is_snapshot_safe);
+    run_test("writer_publish_keeper_and_canopy_readers", test_writer_publish_keeper_and_canopy_readers);
+    run_test("exclusive_drain_waits_for_readers", test_exclusive_drain_waits_for_readers);
+    run_test("runtime_observation_snapshot", test_runtime_observation_snapshot);
 
-    std::fprintf(stderr, "\n%d passed, %d failed\n",
-                 total_passed, total_failed);
+    std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     return total_failed == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

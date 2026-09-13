@@ -1162,10 +1162,10 @@ int run_mixed_session_cipher_events_ordered() {
     for (std::size_t i = 0; i < kEventCount; ++i) {
         if ((i % 4) == 0) {
             log.append_event(SessionEvent::cipher_store_pending(
-                StepId{}, crucible::ContentHash::from_raw(kCipherHashBase.raw() + i), 10'000 + i));
+                StepId{}, crucible::ContentHash::from_raw(kCipherHashBase.raw() + i), 10000 + i));
         } else if ((i % 4) == 1) {
             log.append_event(SessionEvent::cipher_store_committed(
-                StepId{}, crucible::ContentHash::from_raw(kCipherHashBase.raw() + i), 10'000 + i));
+                StepId{}, crucible::ContentHash::from_raw(kCipherHashBase.raw() + i), 10000 + i));
         } else if ((i % 4) == 2) {
             log.append_event(SessionEvent{
                 .from_role = kClient,
@@ -1199,7 +1199,7 @@ int run_mixed_session_cipher_events_ordered() {
 
         if (event.is_cipher_event()) {
             ++cipher_events;
-            if (event.cipher_timestamp_ns() != 10'000 + i) return 30;
+            if (event.cipher_timestamp_ns() != 10000 + i) return 30;
             if (event.cipher_content_hash() != crucible::ContentHash::from_raw(kCipherHashBase.raw() + i)) {
                 return 40;
             }

@@ -64,10 +64,8 @@ namespace {
 // is `= delete("HugePageBuffer is move-only")`.  Copy-assignment
 // from a const lvalue source triggers the deleted-function
 // diagnostic with the move-only-discipline message verbatim.
-[[maybe_unused]] static void offending_copy_assign(
-    ::crucible::safety::HugePageBuffer<std::uint64_t>& dest,
-    const ::crucible::safety::HugePageBuffer<std::uint64_t>& source)
-{
+[[maybe_unused]] static void offending_copy_assign(::crucible::safety::HugePageBuffer<std::uint64_t>& dest,
+                                                   const ::crucible::safety::HugePageBuffer<std::uint64_t>& source) {
     dest = source;
     // ERROR: use of deleted function 'HugePageBuffer& operator=(const HugePageBuffer&)'
     // diagnostic message: "HugePageBuffer is move-only"

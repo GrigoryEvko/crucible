@@ -19,8 +19,7 @@ namespace policy = crucible::safety::secret_policy;
 
 using BadSecretArray = stance::SecretConsumer<int[3], policy::AuditedLogging>;
 
-static_assert(sizeof(BadSecretArray) > 0,
-    "instantiate stance::SecretConsumer<int[3], AuditedLogging> to "
-    "force the Type-axis rejection (arrays decay).");
+static_assert(sizeof(BadSecretArray) > 0, "instantiate stance::SecretConsumer<int[3], AuditedLogging> to "
+                                          "force the Type-axis rejection (arrays decay).");
 
 int main() { return 0; }

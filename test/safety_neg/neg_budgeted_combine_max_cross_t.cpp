@@ -26,7 +26,7 @@
 using namespace crucible::safety;
 
 int main() {
-    Budgeted<int>    int_value{42, BitsBudget{100}, PeakBytes{1024}};
+    Budgeted<int> int_value{42, BitsBudget{100}, PeakBytes{1024}};
     Budgeted<double> dbl_value{3.14, BitsBudget{200}, PeakBytes{2048}};
 
     // Should FAIL: Budgeted<int>::combine_max takes

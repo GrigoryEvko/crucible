@@ -22,10 +22,8 @@
 #include <crucible/effects/ExecCtx.h>
 
 int main() {
-    auto wp = crucible::fixy::perf::mint_workload_profiler(
-        crucible::effects::BgDrainCtx{},
-        /*senses=*/nullptr,
-        crucible::effects::testing::init());
+    auto wp = crucible::fixy::perf::mint_workload_profiler(crucible::effects::BgDrainCtx{},
+                                                           /*senses=*/nullptr, crucible::effects::testing::init());
     (void)wp;
     return 0;
 }

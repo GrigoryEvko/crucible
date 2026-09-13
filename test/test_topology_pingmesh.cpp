@@ -46,11 +46,11 @@ static void test_register_and_record_pairs() {
     assert(mesh.start_probing(effects::ColdInitCtx{}, std::span{peers}) == topology::PingmeshError::None);
     assert(mesh.start_probing(effects::ColdInitCtx{}, std::span{peers}) == topology::PingmeshError::DuplicatePeer);
 
-    assert(mesh.record_measurement(effects::BgDrainCtx{}, measurement(peers[0], peers[1], 1'000, 1))
+    assert(mesh.record_measurement(effects::BgDrainCtx{}, measurement(peers[0], peers[1], 1000, 1))
            == topology::PingmeshError::None);
-    assert(mesh.record_measurement(effects::BgDrainCtx{}, measurement(peers[0], peers[1], 2'000, 2))
+    assert(mesh.record_measurement(effects::BgDrainCtx{}, measurement(peers[0], peers[1], 2000, 2))
            == topology::PingmeshError::None);
-    assert(mesh.record_measurement(effects::BgDrainCtx{}, measurement(peers[0], peers[1], 3'000, 3))
+    assert(mesh.record_measurement(effects::BgDrainCtx{}, measurement(peers[0], peers[1], 3000, 3))
            == topology::PingmeshError::None);
 
     auto const stats = mesh.pair_stats(peers[0].uuid, peers[1].uuid);
@@ -91,13 +91,13 @@ static void test_loss_and_rejection_accounting() {
 }
 
 static void test_unknown_and_out_of_range_rejected() {
-    auto mesh = topology::mint_pingmesh<effects::ColdInitCtx, 2, 2, 1'000>(effects::ColdInitCtx{});
+    auto mesh = topology::mint_pingmesh<effects::ColdInitCtx, 2, 2, 1000>(effects::ColdInitCtx{});
     std::array peers{peer(6), peer(7)};
     auto missing = peer(8);
     assert(mesh.start_probing(effects::ColdInitCtx{}, std::span{peers}) == topology::PingmeshError::None);
     assert(mesh.record_measurement(effects::BgDrainCtx{}, measurement(peers[0], missing, 1, 1))
            == topology::PingmeshError::UnknownPeer);
-    assert(mesh.record_measurement(effects::BgDrainCtx{}, measurement(peers[0], peers[1], 2'000, 2))
+    assert(mesh.record_measurement(effects::BgDrainCtx{}, measurement(peers[0], peers[1], 2000, 2))
            == topology::PingmeshError::LatencyOutOfRange);
     auto const stats = mesh.pair_stats(peers[0].uuid, peers[1].uuid);
     assert(stats.sent == 1);

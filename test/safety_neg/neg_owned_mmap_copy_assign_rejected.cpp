@@ -28,9 +28,9 @@
 #include <crucible/safety/OwnedMmap.h>
 
 namespace {
-    struct ProbeRegion {};
-    struct ProbeProt   {};
-    struct ProbeShare  {};
+struct ProbeRegion {};
+struct ProbeProt {};
+struct ProbeShare {};
 }  // namespace
 
 int main() {

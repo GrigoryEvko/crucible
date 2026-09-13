@@ -27,37 +27,29 @@ using ::crucible::concurrent::VendorBackend;
 struct BenchTag {};
 using Edge = PermissionedChainEdge<VendorBackend::CPU, BenchTag>;
 
-bench::Report bench_permissioned_signal_wait(Edge::SignalerHandle& signaler,
-                                             Edge::WaiterHandle& waiter)
-{
+bench::Report bench_permissioned_signal_wait(Edge::SignalerHandle& signaler, Edge::WaiterHandle& waiter) {
     const SemaphoreSignal signal = signaler.expected_signal();
-    auto report = bench::run("round-trip: permissioned signal + wait",
-        [&]{
-            signaler.signal(signal);
-            const bool ok = waiter.try_wait(signal);
-            bench::do_not_optimize(ok);
-        });
+    auto report = bench::run("round-trip: permissioned signal + wait", [&] {
+        signaler.signal(signal);
+        const bool ok = waiter.try_wait(signal);
+        bench::do_not_optimize(ok);
+    });
     return report;
 }
 
-bench::Report bench_typed_one_shot(Edge::SignalerHandle& signaler,
-                                   Edge::WaiterHandle& waiter)
-{
+bench::Report bench_typed_one_shot(Edge::SignalerHandle& signaler, Edge::WaiterHandle& waiter) {
     namespace ses = ::crucible::safety::proto::chainedge_session;
 
     const SemaphoreSignal signal = signaler.expected_signal();
-    auto report = bench::run("round-trip: typed one-shot send + recv",
-        [&]{
-            auto sig_psh = ses::mint_chainedge_signaler_session<Edge>(
-                ::crucible::effects::HotFgCtx{}, signaler);
-            auto wait_psh = ses::mint_chainedge_waiter_session<Edge>(
-                ::crucible::effects::HotFgCtx{}, waiter);
-            auto sig_end = std::move(sig_psh).send(signal, ses::signal_transport);
-            auto [observed, wait_end] = std::move(wait_psh).recv(ses::wait_transport);
-            bench::do_not_optimize(observed.value);
-            (void)std::move(sig_end).close();
-            (void)std::move(wait_end).close();
-        });
+    auto report = bench::run("round-trip: typed one-shot send + recv", [&] {
+        auto sig_psh = ses::mint_chainedge_signaler_session<Edge>(::crucible::effects::HotFgCtx{}, signaler);
+        auto wait_psh = ses::mint_chainedge_waiter_session<Edge>(::crucible::effects::HotFgCtx{}, waiter);
+        auto sig_end = std::move(sig_psh).send(signal, ses::signal_transport);
+        auto [observed, wait_end] = std::move(wait_psh).recv(ses::wait_transport);
+        bench::do_not_optimize(observed.value);
+        (void)std::move(sig_end).close();
+        (void)std::move(wait_end).close();
+    });
     return report;
 }
 
@@ -69,23 +61,16 @@ int main(int argc, char** argv) {
     namespace proto = ::crucible::safety::proto;
     static_assert(sizeof(Edge::SignalerHandle) == sizeof(Edge*));
     static_assert(sizeof(Edge::WaiterHandle) == sizeof(Edge*));
-    static_assert(sizeof(proto::PermissionedSessionHandle<
-                      proto::End, proto::EmptyPermSet,
-                      Edge::SignalerHandle*>)
-                  == sizeof(proto::SessionHandle<
-                      proto::End, Edge::SignalerHandle*>));
-    static_assert(sizeof(proto::PermissionedSessionHandle<
-                      proto::End, proto::EmptyPermSet,
-                      Edge::WaiterHandle*>)
-                  == sizeof(proto::SessionHandle<
-                      proto::End, Edge::WaiterHandle*>));
+    static_assert(sizeof(proto::PermissionedSessionHandle<proto::End, proto::EmptyPermSet, Edge::SignalerHandle*>)
+                  == sizeof(proto::SessionHandle<proto::End, Edge::SignalerHandle*>));
+    static_assert(sizeof(proto::PermissionedSessionHandle<proto::End, proto::EmptyPermSet, Edge::WaiterHandle*>)
+                  == sizeof(proto::SessionHandle<proto::End, Edge::WaiterHandle*>));
 
     auto edge = std::make_unique<Edge>(PlanId{1}, PlanId{2}, ChainEdgeId{3}, 1);
 
     auto whole = ::crucible::safety::mint_permission_root<Edge::whole_tag>();
     whole = edge->reset_under_quiescence(std::move(whole));
-    auto [sp, wp] = ::crucible::safety::mint_permission_split<
-        Edge::signaler_tag, Edge::waiter_tag>(std::move(whole));
+    auto [sp, wp] = ::crucible::safety::mint_permission_split<Edge::signaler_tag, Edge::waiter_tag>(std::move(whole));
     auto signaler = edge->signaler(std::move(sp));
     auto waiter = edge->waiter(std::move(wp));
 
@@ -100,7 +85,8 @@ int main(int argc, char** argv) {
     bench::Compare cmps[] = {
         bench::compare(reports[0], reports[1]),
     };
-    for (const auto& c : cmps) c.print_text(stdout);
+    for (const auto& c : cmps)
+        c.print_text(stdout);
 
     std::printf("\n=== verdict (TIER A — structural) ===\n");
     std::printf("  PermissionedChainEdge handles are pointer-sized.\n");

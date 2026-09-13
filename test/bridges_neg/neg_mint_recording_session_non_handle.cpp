@@ -17,9 +17,9 @@ namespace proto = ::crucible::safety::proto;
 
 int main() {
     proto::SessionEventLog log{};
-    int                    not_a_handle = 42;
-    proto::RoleTagId       self{1};
-    proto::RoleTagId       peer{2};
+    int not_a_handle = 42;
+    proto::RoleTagId self{1};
+    proto::RoleTagId peer{2};
 
     auto bad = proto::mint_recording_session(not_a_handle, log, self, peer);
     (void)bad;

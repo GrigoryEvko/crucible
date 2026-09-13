@@ -22,7 +22,7 @@ using Cs_t = sf::ClockSource_v;
 static_assert(sizeof(sf::SchedClass<Sp_t::Other, int>) == sizeof(int));
 static_assert(sizeof(sf::SchedClass<Sp_t::Fifo, double>) == sizeof(double));
 static_assert(sizeof(sf::SchedClass<Sp_t::Idle, char>) == sizeof(char));
-static_assert(sizeof(sf::SchedClass<Sp_t::Deadline, int, 5'000, 10'000, 20'000>) == sizeof(int));
+static_assert(sizeof(sf::SchedClass<Sp_t::Deadline, int, 5000, 10000, 20000>) == sizeof(int));
 
 static_assert(sf::SchedClass<Sp_t::Fifo, int>::runnable_on<Sp_t::Fifo>);
 static_assert(sf::SchedClass<Sp_t::Fifo, int>::runnable_on<Sp_t::Deadline>);
@@ -31,13 +31,13 @@ static_assert(!sf::SchedClass<Sp_t::Fifo, int>::runnable_on<Sp_t::Other>,
 static_assert(sf::SchedClass<Sp_t::Other, int>::runnable_on<Sp_t::Fifo>);
 static_assert(!sf::SchedClass<Sp_t::Other, int>::runnable_on<Sp_t::Batch>);
 
-static_assert(sf::SchedClass<Sp_t::Deadline, int, 5'000, 10'000, 20'000>::deadline_ns == 10'000);
+static_assert(sf::SchedClass<Sp_t::Deadline, int, 5000, 10000, 20000>::deadline_ns == 10000);
 static_assert(sf::SchedClass<Sp_t::Fifo, int>::runtime_ns == 0);
 
 static_assert(ex::IsSchedClass<sf::SchedClass<Sp_t::Fifo, int>>);
 static_assert(!ex::IsSchedClass<int>);
 static_assert(std::is_same_v<ex::sched_class_value_t<sf::SchedClass<Sp_t::Other, double>>, double>);
-static_assert(ex::sched_class_policy_v<sf::SchedClass<Sp_t::Deadline, int, 5'000, 10'000, 20'000>> == Sp_t::Deadline);
+static_assert(ex::sched_class_policy_v<sf::SchedClass<Sp_t::Deadline, int, 5000, 10000, 20000>> == Sp_t::Deadline);
 
 static_assert(dg::row_hash_contribution_v<sf::SchedClass<Sp_t::Fifo, int>>
                   != dg::row_hash_contribution_v<sf::SchedClass<Sp_t::Other, int>>,
@@ -47,8 +47,8 @@ static_assert(dg::row_hash_contribution_v<sf::SchedClass<Sp_t::Fifo, int>> != dg
               "SchedClass<Fifo,int> MUST hash differently from bare int — the wrapper "
               "tag (0x31) discriminates the wrapped value.");
 
-static_assert(dg::row_hash_contribution_v<sf::SchedClass<Sp_t::Deadline, int, 5'000, 10'000, 20'000>>
-                  != dg::row_hash_contribution_v<sf::SchedClass<Sp_t::Deadline, int, 5'000, 10'000, 30'000>>,
+static_assert(dg::row_hash_contribution_v<sf::SchedClass<Sp_t::Deadline, int, 5000, 10000, 20000>>
+                  != dg::row_hash_contribution_v<sf::SchedClass<Sp_t::Deadline, int, 5000, 10000, 30000>>,
               "Two SCHED_DEADLINE tasks with different periods MUST hash to distinct "
               "slots — the budget NTTPs are folded into the row_hash.");
 

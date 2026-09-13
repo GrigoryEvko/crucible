@@ -22,24 +22,21 @@
 //   "CtxFitsFileMint" / "CtxAdmitsIoBlock" / "row_contains" / "Block".
 
 #include <crucible/effects/ExecCtx.h>
-#include <crucible/fixy/Source.h>           // fixy::tags::source::*
+#include <crucible/fixy/Source.h>  // fixy::tags::source::*
 #include <crucible/fixy/Wrap.h>
 
 int main() {
     namespace fwfs = ::crucible::fixy::wrap::fs;
-    namespace om   = fwfs::open_mode;
+    namespace om = fwfs::open_mode;
 
     // ColdInitCtx — Row<Init, Alloc, IO> — admits IO but NOT Block.
     ::crucible::effects::ColdInitCtx ctx{};
 
-    fwfs::Path<::crucible::fixy::tags::source::Sanitized> path{
-        "/tmp/crucible_neg_v224_ctx_no_block"};
+    fwfs::Path<::crucible::fixy::tags::source::Sanitized> path{"/tmp/crucible_neg_v224_ctx_no_block"};
 
     // Should FAIL: mint_file's CtxFitsFileMint folds in
     // CtxAdmitsIoBlock<Ctx>; ColdInitCtx's row lacks Effect::Block,
     // so the requires-clause refuses the instantiation.
-    [[maybe_unused]] auto r = fwfs::mint_file<
-        fwfs::grant::mode<om::ReadOnly>
-    >(ctx, std::move(path));
+    [[maybe_unused]] auto r = fwfs::mint_file<fwfs::grant::mode<om::ReadOnly>>(ctx, std::move(path));
     return 0;
 }

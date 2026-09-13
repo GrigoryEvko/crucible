@@ -18,7 +18,7 @@
 using namespace crucible::safety;
 
 int main() {
-    Vendor<VendorBackend_v::NV,  int> nv_value{42};
+    Vendor<VendorBackend_v::NV, int> nv_value{42};
     Vendor<VendorBackend_v::AMD, int> amd_value{7};
 
     // Should FAIL: nv_value and amd_value are DIFFERENT types.

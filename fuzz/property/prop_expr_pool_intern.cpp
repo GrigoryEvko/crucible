@@ -91,23 +91,30 @@ constexpr unsigned kNumExprs = 24;
 // Restrict composite ops to commutative binary ones with the simplest
 // canonicalization: ADD/MUL fast-path with two non-const symbol args.
 // (The fast path just sorts by pointer and interns.)
-enum class CompositeOp : uint8_t { Add, Mul };
+enum class CompositeOp : uint8_t {
+    Add,
+    Mul
+};
 
 // Atom kinds the generator can emit.
-enum class Kind : uint8_t { Int, Sym, Composite };
+enum class Kind : uint8_t {
+    Int,
+    Sym,
+    Composite
+};
 
 struct ExprSpec {
-    Kind        kind    = Kind::Int;
-    int64_t     int_val = 0;                 // Kind::Int
-    uint32_t    sym_id  = 0;                 // Kind::Sym — SymbolId raw value
-    CompositeOp cop     = CompositeOp::Add;  // Kind::Composite
-    uint8_t     lhs_ix  = 0;                 // index into the expr plan, < self
-    uint8_t     rhs_ix  = 0;                 // index into the expr plan, < self
+    Kind kind = Kind::Int;
+    int64_t int_val = 0;  // Kind::Int
+    uint32_t sym_id = 0;  // Kind::Sym — SymbolId raw value
+    CompositeOp cop = CompositeOp::Add;  // Kind::Composite
+    uint8_t lhs_ix = 0;  // index into the expr plan, < self
+    uint8_t rhs_ix = 0;  // index into the expr plan, < self
 };
 
 struct Plan {
     std::array<ExprSpec, kNumExprs> specs{};
-    uint8_t                         nsyms = 0;  // symbols to register
+    uint8_t nsyms = 0;  // symbols to register
 };
 
 // Canonical semantic key: what an interned Expr "is" after interning.
@@ -116,12 +123,12 @@ struct Plan {
 // recursive structural equality collapses to pointer equality.
 struct Resolved {
     // Discriminator: 0=int, 1=sym, 2=composite
-    uint8_t                       tag  = 0;
-    int64_t                       ival = 0;                 // tag==0
-    uint32_t                      sid  = 0;                 // tag==1
-    CompositeOp                   cop  = CompositeOp::Add;  // tag==2
-    const crucible::Expr*         lhs  = nullptr;           // tag==2 (post-intern)
-    const crucible::Expr*         rhs  = nullptr;           // tag==2 (post-intern)
+    uint8_t tag = 0;
+    int64_t ival = 0;  // tag==0
+    uint32_t sid = 0;  // tag==1
+    CompositeOp cop = CompositeOp::Add;  // tag==2
+    const crucible::Expr* lhs = nullptr;  // tag==2 (post-intern)
+    const crucible::Expr* rhs = nullptr;  // tag==2 (post-intern)
 };
 
 // Generate one plan.  Integer values span both the int-cache range
@@ -143,13 +150,11 @@ struct Resolved {
             case Kind::Int: {
                 // 50% small (−128..127, cache-hit), 50% large.
                 if (rng.next_below(2) == 0) {
-                    s.int_val = static_cast<int64_t>(
-                        static_cast<int32_t>(rng.next_below(256)) - 128);
+                    s.int_val = static_cast<int64_t>(static_cast<int32_t>(rng.next_below(256)) - 128);
                 } else {
                     // Bit-cast random 32 bits to widen the signed range
                     // across both positive and negative halves.
-                    s.int_val = static_cast<int64_t>(
-                        static_cast<int32_t>(rng.next32()));
+                    s.int_val = static_cast<int64_t>(static_cast<int32_t>(rng.next32()));
                 }
                 break;
             }
@@ -176,20 +181,22 @@ struct Resolved {
                 int8_t lhs = -1, rhs = -1;
                 for (uint8_t k = 0; k < i; ++k) {
                     if (p.specs[k].kind == Kind::Sym) {
-                        if (lhs < 0) lhs = static_cast<int8_t>(k);
-                        else         rhs = static_cast<int8_t>(k);
+                        if (lhs < 0)
+                            lhs = static_cast<int8_t>(k);
+                        else
+                            rhs = static_cast<int8_t>(k);
                     }
                 }
                 if (lhs < 0) {
                     // No prior symbol exists — demote to Sym (always safe).
-                    s.kind   = Kind::Sym;
+                    s.kind = Kind::Sym;
                     s.sym_id = rng.next_below(p.nsyms);
                 } else {
                     if (rhs < 0) rhs = lhs;  // single-sym: lhs == rhs is OK,
                     // but pool.add(x, x) -> 2*x changes the op, so demote
                     // composites with identical children to a plain Sym.
                     if (rhs == lhs) {
-                        s.kind   = Kind::Sym;
+                        s.kind = Kind::Sym;
                         s.sym_id = rng.next_below(p.nsyms);
                     } else {
                         s.lhs_ix = static_cast<uint8_t>(lhs);
@@ -208,8 +215,10 @@ struct Resolved {
 [[nodiscard]] bool sem_eq(const Resolved& a, const Resolved& b) noexcept {
     if (a.tag != b.tag) return false;
     switch (a.tag) {
-        case 0: return a.ival == b.ival;
-        case 1: return a.sid == b.sid;
+        case 0:
+            return a.ival == b.ival;
+        case 1:
+            return a.sid == b.sid;
         case 2: {
             if (a.cop != b.cop) return false;
             // Commutative canonicalization: compare as unordered pair
@@ -248,12 +257,11 @@ struct Resolved {
     std::array<SymbolId, 8> sym_ids{};
     char name_buf[2] = {'a', 0};
     for (uint8_t i = 0; i < p.nsyms; ++i) {
-        sym_ids[i] = syms.add(
-            SymKind::SIZE, ExprFlags::IS_INTEGER, /*is_backed=*/true).value();
+        sym_ids[i] = syms.add(SymKind::SIZE, ExprFlags::IS_INTEGER, /*is_backed=*/true).value();
     }
 
     std::array<const Expr*, kNumExprs> ptrs{};
-    std::array<Resolved,    kNumExprs> keys{};
+    std::array<Resolved, kNumExprs> keys{};
 
     // P5 (arena monotonicity) is dropped from this harness:
     // pool.arena_bytes() routes through Arena::total_allocated which
@@ -271,18 +279,17 @@ struct Resolved {
     for (uint8_t i = 0; i < kNumExprs; ++i) {
         const ExprSpec& s = p.specs[i];
         const Expr* e = nullptr;
-        Resolved    k{};
+        Resolved k{};
         switch (s.kind) {
             case Kind::Int:
                 e = pool.integer(test.alloc, s.int_val);
-                k.tag  = 0;
+                k.tag = 0;
                 k.ival = s.int_val;
                 break;
             case Kind::Sym: {
                 name_buf[0] = static_cast<char>('a' + s.sym_id);
                 const SymbolId sid = sym_ids[s.sym_id];
-                e = pool.symbol(
-                    test.alloc, name_buf, sid, syms.expr_flags(sid));
+                e = pool.symbol(test.alloc, name_buf, sid, syms.expr_flags(sid));
                 k.tag = 1;
                 k.sid = s.sym_id;
                 break;
@@ -295,9 +302,7 @@ struct Resolved {
                 // slow path (add_n/mul_n); the iff invariant holds
                 // there too because both paths produce the unique
                 // canonical form for the given inputs.
-                e = (s.cop == CompositeOp::Add)
-                    ? pool.add(test.alloc, lhs, rhs)
-                    : pool.mul(test.alloc, lhs, rhs);
+                e = (s.cop == CompositeOp::Add) ? pool.add(test.alloc, lhs, rhs) : pool.mul(test.alloc, lhs, rhs);
                 k.tag = 2;
                 k.cop = s.cop;
                 k.lhs = lhs;
@@ -330,9 +335,7 @@ struct Resolved {
         // pass through constant-folding / zero-annihilation /
         // identity-elimination that the harness's structural key
         // cannot pre-predict without duplicating all canonicalizers.
-        auto child_kind_safe = [&](const Expr* c) noexcept {
-            return c->op != Op::INTEGER && c->op != Op::FLOAT;
-        };
+        auto child_kind_safe = [&](const Expr* c) noexcept { return c->op != Op::INTEGER && c->op != Op::FLOAT; };
         return child_kind_safe(k.lhs) && child_kind_safe(k.rhs);
     };
 
@@ -344,7 +347,7 @@ struct Resolved {
         for (uint8_t j = 0; j < kNumExprs; ++j) {
             if (!safe_for_iff(j)) continue;
             const bool eq_ptrs = (ptrs[i] == ptrs[j]);
-            const bool eq_sem  = sem_eq(keys[i], keys[j]);
+            const bool eq_sem = sem_eq(keys[i], keys[j]);
             if (eq_ptrs != eq_sem) return false;
         }
     }
@@ -365,8 +368,7 @@ struct Resolved {
             case Kind::Sym: {
                 name_buf[0] = static_cast<char>('a' + s.sym_id);
                 const SymbolId sid = sym_ids[s.sym_id];
-                e = pool.symbol(
-                    test.alloc, name_buf, sid, syms.expr_flags(sid));
+                e = pool.symbol(test.alloc, name_buf, sid, syms.expr_flags(sid));
                 break;
             }
             case Kind::Composite:
@@ -386,9 +388,9 @@ int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
     Config cfg = parse_args(argc, argv);
     // Inner check is O(N²) over kNumExprs; cap iterations accordingly.
-    if (cfg.iterations > 5'000) cfg.iterations = 5'000;
+    if (cfg.iterations > 5000) cfg.iterations = 5000;
 
-    return run("ExprPool intern iff structural equal", cfg,
-        [](Rng& rng) { return gen_plan(rng); },
+    return run(
+        "ExprPool intern iff structural equal", cfg, [](Rng& rng) { return gen_plan(rng); },
         [](const Plan& p) { return check_plan(p); });
 }

@@ -44,9 +44,11 @@
 #include <utility>
 
 namespace fbridge = ::crucible::fixy::bridge;
-namespace proto   = ::crucible::safety::proto;
+namespace proto = ::crucible::safety::proto;
 
-struct ProbeResource { int value = 0; };
+struct ProbeResource {
+    int value = 0;
+};
 
 int main() {
     using P = proto::Send<int, proto::End>;
@@ -56,17 +58,15 @@ int main() {
     // the failure is on the second parameter.
     auto bare = proto::mint_session_handle<P>(std::move(res));
 
-    int                not_a_log = 0;     // wrong type — not SessionEventLog&
-    proto::RoleTagId   self{1};
-    proto::RoleTagId   peer{2};
+    int not_a_log = 0;  // wrong type — not SessionEventLog&
+    proto::RoleTagId self{1};
+    proto::RoleTagId peer{2};
 
     // Second argument must be `SessionEventLog&`; passing `int` fails
     // reference binding.  fixy::bridge:: re-export must reject
     // identically — the using-decl preserves the exact parameter
     // shape, not just the requires-clause.
-    [[maybe_unused]] auto bad =
-        fbridge::mint_recording_session(
-            std::move(bare), not_a_log, self, peer);
+    [[maybe_unused]] auto bad = fbridge::mint_recording_session(std::move(bare), not_a_log, self, peer);
 
     return 0;
 }

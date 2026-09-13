@@ -10,8 +10,8 @@
 #include <crucible/ReplayEngine.h>
 
 int main() {
-  crucible::ReplayEngine engine{};
-  crucible::RegionNode region{};
-  engine.init(&region, crucible::safety::BorrowedRef<crucible::RegionNode>{region});
-  return 0;
+    crucible::ReplayEngine engine{};
+    crucible::RegionNode region{};
+    engine.init(&region, crucible::safety::BorrowedRef<crucible::RegionNode>{region});
+    return 0;
 }

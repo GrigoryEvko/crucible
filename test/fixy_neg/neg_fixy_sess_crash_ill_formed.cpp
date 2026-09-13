@@ -29,7 +29,7 @@
 #include <crucible/fixy/SessCrash.h>
 
 namespace fscrash = ::crucible::fixy::sess::crash;
-namespace proto   = ::crucible::safety::proto;
+namespace proto = ::crucible::safety::proto;
 
 namespace v064_neg_beta {
 struct Alice {};
@@ -43,29 +43,26 @@ using IllFormedClient = proto::Loop<proto::End>;
 }  // namespace v064_neg_beta
 
 // Sanity: the crash-coverage walker passes vacuously (no Offer<>).
-static_assert(fscrash::every_offer_has_crash_branch_for_peer_v<
-    v064_neg_beta::IllFormedClient, v064_neg_beta::Alice>,
-    "Sanity: Loop<End> has no Offer<> in its tree; the per-tree "
-    "walker passes by vacuous truth.  Only the well-formedness "
-    "gate must fire below.");
+static_assert(fscrash::every_offer_has_crash_branch_for_peer_v<v064_neg_beta::IllFormedClient, v064_neg_beta::Alice>,
+              "Sanity: Loop<End> has no Offer<> in its tree; the per-tree "
+              "walker passes by vacuous truth.  Only the well-formedness "
+              "gate must fire below.");
 
 // Sanity: the protocol IS ill-formed (sanity check on the
 // well-formedness gate's behaviour, distinct from the synthesis
 // concept's rejection).
 static_assert(!proto::is_well_formed_v<v064_neg_beta::IllFormedClient>,
-    "Sanity: Loop<End> is ill-formed per Session.h's Loop<B> "
-    "well-formedness rule (terminal body can never reach Continue).");
+              "Sanity: Loop<End> is ill-formed per Session.h's Loop<B> "
+              "well-formedness rule (terminal body can never reach Continue).");
 
 // Should FAIL: CrashAwareForTransport's well-formedness gate
 // rejects.  GCC fires "static_assert ... IllFormedClient ... does
 // not satisfy concept CrashAwareForTransport" or similar concept
 // -diagnostic naming the synthesis concept and the rejecting
 // well-formedness predicate.
-static_assert(fscrash::CrashAwareForTransport<
-    v064_neg_beta::IllFormedClient,
-    v064_neg_beta::Alice>,
-    "FIXY-V-064 fixture 2: CrashAwareForTransport must reject an "
-    "ill-formed protocol even when crash-coverage is vacuously "
-    "true — well-formedness is a non-vacuous, independent gate.");
+static_assert(fscrash::CrashAwareForTransport<v064_neg_beta::IllFormedClient, v064_neg_beta::Alice>,
+              "FIXY-V-064 fixture 2: CrashAwareForTransport must reject an "
+              "ill-formed protocol even when crash-coverage is vacuously "
+              "true — well-formedness is a non-vacuous, independent gate.");
 
 int main() { return 0; }

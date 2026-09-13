@@ -75,8 +75,7 @@ struct survivor_registry<DeadPeer> {
 }  // namespace crucible::permissions
 
 int main() {
-    using GoodExpected =
-        std::expected<int, proto::CrashEvent<DeadPeer, Channel, SurvivorA>>;
+    using GoodExpected = std::expected<int, proto::CrashEvent<DeadPeer, Channel, SurvivorA>>;
 
     GoodExpected* good = nullptr;
 

@@ -18,8 +18,7 @@
 
 int main() {
     // <-- this line must NOT compile (missing Init argument)
-    std::optional<crucible::perf::LockContention> hub =
-        crucible::perf::LockContention::load();
+    std::optional<crucible::perf::LockContention> hub = crucible::perf::LockContention::load();
 
     (void)hub;
     return 0;

@@ -29,10 +29,8 @@ struct NotASession {
     };
 };
 
-void misuse(NotASession& s,
-            crucible::safety::Permission<WriterTag>&& permission) {
-    (void)crucible::safety::proto::swmr_session::mint_swmr_writer<NotASession>(
-        s, std::move(permission));
+void misuse(NotASession& s, crucible::safety::Permission<WriterTag>&& permission) {
+    (void)crucible::safety::proto::swmr_session::mint_swmr_writer<NotASession>(s, std::move(permission));
 }
 
 }  // namespace

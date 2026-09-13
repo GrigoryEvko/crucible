@@ -23,10 +23,10 @@ struct DiagCatalogNegFixture1_Marker {};
 
 int main() {
     static_assert(fd::is_fixy_diag_v<cd::HotPathViolation>,
-        "fixy::diag::is_fixy_diag_v<HotPathViolation> must reject — "
-        "substrate Catalog tags MUST NOT appear in FixyCatalog.  The "
-        "two diagnostic enumerations are disjoint by design "
-        "(FOUND-E01 + FIXY-AUDIT-C8).");
+                  "fixy::diag::is_fixy_diag_v<HotPathViolation> must reject — "
+                  "substrate Catalog tags MUST NOT appear in FixyCatalog.  The "
+                  "two diagnostic enumerations are disjoint by design "
+                  "(FOUND-E01 + FIXY-AUDIT-C8).");
     (void)sizeof(DiagCatalogNegFixture1_Marker);
     return 0;
 }

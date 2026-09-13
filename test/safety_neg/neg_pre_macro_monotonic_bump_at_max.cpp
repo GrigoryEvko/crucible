@@ -24,12 +24,11 @@ namespace {
     return 0;
 }
 
-static_assert(under_test() == 0,
-    "CRUCIBLE_PRE on Monotonic::bump's wraparound check MUST fire at "
-    "consteval when bump() is called at numeric_limits::max().  If "
-    "this static_assert evaluates successfully, the body-CRUCIBLE_PRE "
-    "migration failed to close the consteval bypass for member-fn-vs-"
-    "static-sentinel predicate shapes.");
+static_assert(under_test() == 0, "CRUCIBLE_PRE on Monotonic::bump's wraparound check MUST fire at "
+                                 "consteval when bump() is called at numeric_limits::max().  If "
+                                 "this static_assert evaluates successfully, the body-CRUCIBLE_PRE "
+                                 "migration failed to close the consteval bypass for member-fn-vs-"
+                                 "static-sentinel predicate shapes.");
 
 }  // namespace
 

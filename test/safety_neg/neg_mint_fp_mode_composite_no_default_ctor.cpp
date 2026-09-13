@@ -26,17 +26,9 @@ struct NoDefaultCtor {
 
 int main() {
     auto bad = cs::mint_fp_mode_composite<
-        cs::FpRounding::RoundToNearestEven,
-        cs::FpFtz::FlushToZero,
-        cs::FpContract::Off,
-        cs::FpTrapMask::AllMasked,
-        cs::FpDenormalInput::HonorDenormals,
-        cs::FpNanPolicy::PropagateQuiet,
-        cs::FpInfPolicy::PropagateInfinity,
-        cs::FpComplexLayout::Interleaved,
-        cs::FpLibmPolicy::ScalarLibm,
-        cs::FpReassociate::Forbidden,
-        cs::FpConstantRounding::SameAsRuntime,
-        NoDefaultCtor>();
+        cs::FpRounding::RoundToNearestEven, cs::FpFtz::FlushToZero, cs::FpContract::Off, cs::FpTrapMask::AllMasked,
+        cs::FpDenormalInput::HonorDenormals, cs::FpNanPolicy::PropagateQuiet, cs::FpInfPolicy::PropagateInfinity,
+        cs::FpComplexLayout::Interleaved, cs::FpLibmPolicy::ScalarLibm, cs::FpReassociate::Forbidden,
+        cs::FpConstantRounding::SameAsRuntime, NoDefaultCtor>();
     return bad.peek().value;
 }

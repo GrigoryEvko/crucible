@@ -43,66 +43,43 @@ namespace sfn = crucible::safety::fn;
 namespace fx = crucible::effects;
 
 // LinearA — Linear-usage, region tag 7, Classified.
-using LinearA = sfn::Fn<int,
-    sfn::pred::True,
-    sfn::UsageMode::Linear,
-    fx::Row<>,
-    sfn::SecLevel::Classified,
-    sfn::proto::None,
-    sfn::lifetime::In<7>,                              // ← region tag 7
-    crucible::safety::source::FromInternal,
-    crucible::safety::trust::Verified,
-    sfn::ReprKind::Opaque,
-    sfn::cost::Unstated,
-    sfn::precision::Exact,
-    sfn::space::Zero,
-    sfn::OverflowMode::Trap,
-    sfn::MutationMode::Immutable,
-    sfn::ReentrancyMode::NonReentrant,
-    sfn::size_pol::Unstated,
-    1u,
-    sfn::stale::Fresh>;
+using LinearA =
+    sfn::Fn<int, sfn::pred::True, sfn::UsageMode::Linear, fx::Row<>, sfn::SecLevel::Classified, sfn::proto::None,
+            sfn::lifetime::In<7>,  // ← region tag 7
+            crucible::safety::source::FromInternal, crucible::safety::trust::Verified, sfn::ReprKind::Opaque,
+            sfn::cost::Unstated, sfn::precision::Exact, sfn::space::Zero, sfn::OverflowMode::Trap,
+            sfn::MutationMode::Immutable, sfn::ReentrancyMode::NonReentrant, sfn::size_pol::Unstated, 1u,
+            sfn::stale::Fresh>;
 
 // LinearAClone — IDENTICAL grade tuple as LinearA, same region tag 7.
 // L005 fires on this pair: two Linears in region<7> alias.
-using LinearAClone = sfn::Fn<int,
-    sfn::pred::True,
-    sfn::UsageMode::Linear,
-    fx::Row<>,
-    sfn::SecLevel::Classified,
-    sfn::proto::None,
-    sfn::lifetime::In<7>,                              // ← SAME region tag 7
-    crucible::safety::source::FromInternal,
-    crucible::safety::trust::Verified,
-    sfn::ReprKind::Opaque,
-    sfn::cost::Unstated,
-    sfn::precision::Exact,
-    sfn::space::Zero,
-    sfn::OverflowMode::Trap,
-    sfn::MutationMode::Immutable,
-    sfn::ReentrancyMode::NonReentrant,
-    sfn::size_pol::Unstated,
-    1u,
-    sfn::stale::Fresh>;
+using LinearAClone =
+    sfn::Fn<int, sfn::pred::True, sfn::UsageMode::Linear, fx::Row<>, sfn::SecLevel::Classified, sfn::proto::None,
+            sfn::lifetime::In<7>,  // ← SAME region tag 7
+            crucible::safety::source::FromInternal, crucible::safety::trust::Verified, sfn::ReprKind::Opaque,
+            sfn::cost::Unstated, sfn::precision::Exact, sfn::space::Zero, sfn::OverflowMode::Trap,
+            sfn::MutationMode::Immutable, sfn::ReentrancyMode::NonReentrant, sfn::size_pol::Unstated, 1u,
+            sfn::stale::Fresh>;
 
 // Opt the Linear bindings out of L004 (Linear × region without
 // Permission proof) — the L004 marker is a separate enforcement that
 // would otherwise red Linear+In<Tag> at single-Fn instantiation.
 // We're isolating L005 here.
 namespace crucible::safety::fn::collision {
-template <> struct marks_lifetime_region_unprotected<::LinearA>      : std::false_type {};
-template <> struct marks_lifetime_region_unprotected<::LinearAClone> : std::false_type {};
+template <>
+struct marks_lifetime_region_unprotected<::LinearA> : std::false_type {};
+template <>
+struct marks_lifetime_region_unprotected<::LinearAClone> : std::false_type {};
 }  // namespace crucible::safety::fn::collision
 
 // THIS is the L005 violation: assert that no_linear_region_alias_v
 // holds for a pack containing two Linears in the same region.  It does
 // NOT hold — the predicate returns false — so the static_assert fires
 // L005's compile error.
-static_assert(
-    crucible::fixy::rule::pack::no_linear_region_alias_v<LinearA, LinearAClone>,
-    "L005: two Linear-usage Fns sharing lifetime::In<7> alias the "
-    "region — Linear values are exclusive owners; aliasing breaks the "
-    "linearity invariant. Move ownership into a single binding, or pin "
-    "the second Linear to a different region tag.");
+static_assert(crucible::fixy::rule::pack::no_linear_region_alias_v<LinearA, LinearAClone>,
+              "L005: two Linear-usage Fns sharing lifetime::In<7> alias the "
+              "region — Linear values are exclusive owners; aliasing breaks the "
+              "linearity invariant. Move ownership into a single binding, or pin "
+              "the second Linear to a different region tag.");
 
 int main() { return 0; }

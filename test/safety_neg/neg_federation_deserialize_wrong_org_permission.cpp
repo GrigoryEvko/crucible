@@ -19,21 +19,17 @@ struct OrgB {};
 
 int main() {
     namespace perm = ::crucible::permissions;
-    namespace saf  = ::crucible::safety;
+    namespace saf = ::crucible::safety;
 
-    auto local_cipher =
-        saf::mint_permission_root<perm::tag::LocalCipherTag>();
+    auto local_cipher = saf::mint_permission_root<perm::tag::LocalCipherTag>();
     auto handshake = perm::make_self_signed_handshake<OrgA>(
-        /*peer_key_fp=*/perm::PeerKeyFingerprint{0xDEAD'BEEFULL},
-        /*nonce=*/      perm::Nonce{0xFEED'C0DEULL});
-    auto admitted = perm::mint_federation_admittance<
-        OrgA, perm::policy::admit_orgs<OrgA>>(local_cipher, handshake);
+        /*peer_key_fp=*/perm::PeerKeyFingerprint{0xDEADBEEFULL},
+        /*nonce=*/perm::Nonce{0xFEEDC0DEULL});
+    auto admitted = perm::mint_federation_admittance<OrgA, perm::policy::admit_orgs<OrgA>>(local_cipher, handshake);
     auto permission = std::move(*admitted);
 
     std::array<std::uint8_t, 32> buf{};
-    auto view =
-        ::crucible::cipher::federation::deserialize_federation_entry<OrgB>(
-            permission, buf, std::uint16_t{0});
+    auto view = ::crucible::cipher::federation::deserialize_federation_entry<OrgB>(permission, buf, std::uint16_t{0});
     (void)view;
     return 0;
 }

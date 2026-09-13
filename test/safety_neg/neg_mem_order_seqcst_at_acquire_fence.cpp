@@ -56,7 +56,7 @@ using namespace crucible::safety;
 // Models the seqlock-reader / runtime observation-snapshot-consumer pattern that
 // FOUND-G32 production sites flow into.
 template <typename W>
-    requires (W::template satisfies<MemOrderTag_v::Acquire>)
+    requires(W::template satisfies<MemOrderTag_v::Acquire>)
 static int acquire_fence_consumer(W wrapped) noexcept {
     return std::move(wrapped).consume();
 }

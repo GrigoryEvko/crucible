@@ -21,7 +21,7 @@ int main() {
     ::crucible::effects::ColdInitCtx init{};  // Init row carries no Block
 
     // Should FAIL: Init context cannot mint a Block-effect sleeper.
-    auto sleeper = ::crucible::fixy::time::mint_bounded_sleep<1'000>(init);
+    auto sleeper = ::crucible::fixy::time::mint_bounded_sleep<1000>(init);
     sleeper.sleep_for(0);
     return 0;
 }

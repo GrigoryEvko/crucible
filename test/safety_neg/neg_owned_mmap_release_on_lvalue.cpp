@@ -40,14 +40,14 @@
 #include <crucible/fixy/Mmap.h>  // pulls grant::leak::resource specialization
 
 namespace {
-    struct ProbeRegion {};
-    struct ProbeProt   {};
-    struct ProbeShare  {};
-    struct ReleaseRationale {};
+struct ProbeRegion {};
+struct ProbeProt {};
+struct ProbeShare {};
+struct ReleaseRationale {};
 }  // namespace
 
 int main() {
-    using Owned     = ::crucible::safety::OwnedMmap<ProbeRegion, ProbeProt, ProbeShare>;
+    using Owned = ::crucible::safety::OwnedMmap<ProbeRegion, ProbeProt, ProbeShare>;
     using LeakGrant = ::crucible::fixy::grant::leak::resource<ReleaseRationale>;
 
     Owned region{};

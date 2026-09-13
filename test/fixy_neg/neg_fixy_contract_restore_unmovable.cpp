@@ -27,7 +27,6 @@ struct ImmovablePayload {
 };
 
 using BadMint = decltype(fcipher::mint_restore<ImmovablePayload>(
-    std::declval<fcipher::ColdTierHandle<ImmovablePayload>>(),
-    std::declval<::crucible::ContentHash>()));
+    std::declval<fcipher::ColdTierHandle<ImmovablePayload>>(), std::declval<::crucible::ContentHash>()));
 
 int main() { return sizeof(BadMint); }

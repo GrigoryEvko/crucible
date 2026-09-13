@@ -59,7 +59,7 @@ static void test_resource_kind_name_coverage() {
 
 static void test_resource_tag_instances() {
     eff::SmBudget<32> sm{};
-    eff::HbmBytes<80'000'000'000ULL> hbm{};
+    eff::HbmBytes<80000000000ULL> hbm{};
     eff::NicQp<4> qp{};
     eff::PowerWatts<700> watts{};
     eff::CarbonGramsPerKwh<400> carbon{};
@@ -81,7 +81,7 @@ static void test_resource_tag_instances() {
     };
 
     assert(fingerprint(sm) == ((static_cast<std::uint64_t>(eff::ResourceKind::Sm) << 56) ^ 32ULL));
-    assert(fingerprint(hbm) == ((static_cast<std::uint64_t>(eff::ResourceKind::HbmBytes) << 56) ^ 80'000'000'000ULL));
+    assert(fingerprint(hbm) == ((static_cast<std::uint64_t>(eff::ResourceKind::HbmBytes) << 56) ^ 80000000000ULL));
     assert(fingerprint(qp) == ((static_cast<std::uint64_t>(eff::ResourceKind::NicQp) << 56) ^ 4ULL));
 
     // The header already pins these at compile time. The repetition is

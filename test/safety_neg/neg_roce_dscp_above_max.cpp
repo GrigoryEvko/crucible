@@ -5,7 +5,7 @@
 
 int main() {
     auto iface = crucible::cntp::NicInterfaceName::from("eth0");
-    auto config = crucible::cntp::mint_roce_config<0b0000'1000, 64>(*iface);
+    auto config = crucible::cntp::mint_roce_config<0b00001000, 64>(*iface);
     (void)config;
     return 0;
 }

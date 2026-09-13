@@ -84,8 +84,7 @@ using steady = std::chrono::steady_clock;
 // Wall-clock millisecond delta — used to time one-shot libbpf loads
 // without a bench loop.  load() takes 50-200 ms; bench loops would
 // never finish.  We measure once with steady_clock + format as a banner.
-[[nodiscard]] long long elapsed_ms(steady::time_point t0,
-                                   steady::time_point t1) noexcept {
+[[nodiscard]] long long elapsed_ms(steady::time_point t0, steady::time_point t1) noexcept {
     return std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
 }
 
@@ -106,13 +105,12 @@ void print_coverage(const crucible::perf::CoverageReport& cov) {
     std::printf("\n  sense_hub=%d sched_switch=%d pmu_sample=%d "
                 "lock_contention=%d syscall_latency=%d "
                 "sched_tp_btf=%d syscall_tp_btf=%d\n",
-                cov.sense_hub_attached, cov.sched_switch_attached,
-                cov.pmu_sample_attached, cov.lock_contention_attached,
-                cov.syscall_latency_attached,
-                cov.sched_tp_btf_attached, cov.syscall_tp_btf_attached);
+                cov.sense_hub_attached, cov.sched_switch_attached, cov.pmu_sample_attached,
+                cov.lock_contention_attached, cov.syscall_latency_attached, cov.sched_tp_btf_attached,
+                cov.syscall_tp_btf_attached);
 }
 
-} // namespace
+}  // namespace
 
 int main() {
     bench::print_system_info();
@@ -142,17 +140,14 @@ int main() {
     // a second handle on top of `s` above.
     const auto t2 = steady::now();
     {
-        auto sub = crucible::perf::Senses::load_subset(
-            crucible::effects::testing::init(),
-            crucible::perf::SensesMask{
-                .sense_hub  = true,
-                .pmu_sample = true,
-            });
+        auto sub = crucible::perf::Senses::load_subset(crucible::effects::testing::init(), crucible::perf::SensesMask{
+                                                                                               .sense_hub = true,
+                                                                                               .pmu_sample = true,
+                                                                                           });
         bench::do_not_optimize(sub);
     }
     const auto t3 = steady::now();
-    std::printf("load_subset(sense_hub|pmu_sample): %lld ms\n",
-                elapsed_ms(t2, t3));
+    std::printf("load_subset(sense_hub|pmu_sample): %lld ms\n", elapsed_ms(t2, t3));
 
     // ── (B), (C), (D), (E) — per-call benches ──────────────────────────
     //
@@ -174,32 +169,32 @@ int main() {
 
     bench::Report reports[] = {
         // (B) Per-facade accessor — sub-ns single optional-bit load.
-        [&]{
-            return bench::run("senses.sense_hub()", [&]{
+        [&] {
+            return bench::run("senses.sense_hub()", [&] {
                 const auto* p = s.sense_hub();
                 bench::do_not_optimize(p);
             });
         }(),
-        [&]{
-            return bench::run("senses.sched_switch()", [&]{
+        [&] {
+            return bench::run("senses.sched_switch()", [&] {
                 const auto* p = s.sched_switch();
                 bench::do_not_optimize(p);
             });
         }(),
-        [&]{
-            return bench::run("senses.pmu_sample()", [&]{
+        [&] {
+            return bench::run("senses.pmu_sample()", [&] {
                 const auto* p = s.pmu_sample();
                 bench::do_not_optimize(p);
             });
         }(),
-        [&]{
-            return bench::run("senses.lock_contention()", [&]{
+        [&] {
+            return bench::run("senses.lock_contention()", [&] {
                 const auto* p = s.lock_contention();
                 bench::do_not_optimize(p);
             });
         }(),
-        [&]{
-            return bench::run("senses.syscall_latency()", [&]{
+        [&] {
+            return bench::run("senses.syscall_latency()", [&] {
                 const auto* p = s.syscall_latency();
                 bench::do_not_optimize(p);
             });
@@ -208,28 +203,28 @@ int main() {
         // accessor bench.  Same shape as the legacy facades — single
         // optional-bit load — so cost is sub-ns identical, but the
         // omission left the API-surface coverage incomplete.
-        [&]{
-            return bench::run("senses.sched_tp_btf()", [&]{
+        [&] {
+            return bench::run("senses.sched_tp_btf()", [&] {
                 const auto* p = s.sched_tp_btf();
                 bench::do_not_optimize(p);
             });
         }(),
-        [&]{
-            return bench::run("senses.syscall_tp_btf()", [&]{
+        [&] {
+            return bench::run("senses.syscall_tp_btf()", [&] {
                 const auto* p = s.syscall_tp_btf();
                 bench::do_not_optimize(p);
             });
         }(),
         // (C) Coverage diagnostic — 7 bools by value (≤ 4 B).  runtime observation reads
         // this once per drift-detection sample.
-        [&]{
-            return bench::run("senses.coverage()", [&]{
+        [&] {
+            return bench::run("senses.coverage()", [&] {
                 const auto c = s.coverage();
                 bench::do_not_optimize(c);
             });
         }(),
-        [&]{
-            return bench::run("coverage.attached_count() [7 cond. adds]", [&]{
+        [&] {
+            return bench::run("coverage.attached_count() [7 cond. adds]", [&] {
                 const std::size_t n = s.coverage().attached_count();
                 bench::do_not_optimize(n);
             });
@@ -237,8 +232,8 @@ int main() {
         // (D) The actual hot read — 12 cache lines mmap'd from BPF.  Body
         // guards on s.sense_hub() so a null-attached sense_hub measures
         // the bare safety branch (~1-2 ns) instead of segfaulting.
-        [&]{
-            return bench::run("sense_hub->read() [12 cache lines]", [&]{
+        [&] {
+            return bench::run("sense_hub->read() [12 cache lines]", [&] {
                 if (const auto* h = s.sense_hub()) {
                     const auto snap = h->read();
                     bench::do_not_optimize(snap);
@@ -250,11 +245,11 @@ int main() {
         // (E) Snapshot diff — 96 × sub_sat over a 768 B baseline.  Two
         // snapshots are diffed at every runtime observation sample to get windowed
         // counters; this report is the steady-state cost of that diff.
-        [&]{
-            return bench::run("snapshot - snapshot [96 sub_sat]", [&]{
+        [&] {
+            return bench::run("snapshot - snapshot [96 sub_sat]", [&] {
                 if (const auto* h = s.sense_hub()) {
                     const auto current = h->read();
-                    const auto delta   = current - baseline;
+                    const auto delta = current - baseline;
                     bench::do_not_optimize(delta);
                 } else {
                     bench::do_not_optimize(h);
@@ -269,8 +264,8 @@ int main() {
         // `snapshot()` is dominated by the scalar accessor's
         // `bpf_map_lookup_elem` (~1 µs); when un-attached it costs
         // ~1 ns (single null check).
-        [&]{
-            return bench::run("sched_switch->snapshot() [1 syscall + 1 mmap-load]", [&]{
+        [&] {
+            return bench::run("sched_switch->snapshot() [1 syscall + 1 mmap-load]", [&] {
                 if (const auto* h = s.sched_switch()) {
                     const auto snap = h->snapshot();
                     bench::do_not_optimize(snap);
@@ -279,8 +274,8 @@ int main() {
                 }
             });
         }(),
-        [&]{
-            return bench::run("pmu_sample->snapshot() [1 mmap-load]", [&]{
+        [&] {
+            return bench::run("pmu_sample->snapshot() [1 mmap-load]", [&] {
                 if (const auto* h = s.pmu_sample()) {
                     const auto snap = h->snapshot();
                     bench::do_not_optimize(snap);
@@ -289,8 +284,8 @@ int main() {
                 }
             });
         }(),
-        [&]{
-            return bench::run("lock_contention->snapshot() [1 syscall + 1 mmap-load]", [&]{
+        [&] {
+            return bench::run("lock_contention->snapshot() [1 syscall + 1 mmap-load]", [&] {
                 if (const auto* h = s.lock_contention()) {
                     const auto snap = h->snapshot();
                     bench::do_not_optimize(snap);
@@ -299,8 +294,8 @@ int main() {
                 }
             });
         }(),
-        [&]{
-            return bench::run("syscall_latency->snapshot() [1 syscall + 1 mmap-load]", [&]{
+        [&] {
+            return bench::run("syscall_latency->snapshot() [1 syscall + 1 mmap-load]", [&] {
                 if (const auto* h = s.syscall_latency()) {
                     const auto snap = h->snapshot();
                     bench::do_not_optimize(snap);
@@ -309,8 +304,8 @@ int main() {
                 }
             });
         }(),
-        [&]{
-            return bench::run("sched_tp_btf->snapshot() [1 syscall + 1 mmap-load]", [&]{
+        [&] {
+            return bench::run("sched_tp_btf->snapshot() [1 syscall + 1 mmap-load]", [&] {
                 if (const auto* h = s.sched_tp_btf()) {
                     const auto snap = h->snapshot();
                     bench::do_not_optimize(snap);
@@ -319,8 +314,8 @@ int main() {
                 }
             });
         }(),
-        [&]{
-            return bench::run("syscall_tp_btf->snapshot() [1 syscall + 1 mmap-load]", [&]{
+        [&] {
+            return bench::run("syscall_tp_btf->snapshot() [1 syscall + 1 mmap-load]", [&] {
                 if (const auto* h = s.syscall_tp_btf()) {
                     const auto snap = h->snapshot();
                     bench::do_not_optimize(snap);
@@ -336,12 +331,12 @@ int main() {
         // delta itself is essentially free relative to the surrounding
         // syscall.  Per-facade coverage proves no facade's operator-
         // got accidentally elided by templated dead-code-elimination.
-        [&]{
+        [&] {
             crucible::perf::SchedSwitch::Snapshot ss_pre{};
             if (const auto* h = s.sched_switch()) ss_pre = h->snapshot();
-            return bench::run("sched_switch::Snapshot::operator- [2 sub_sat]", [&]{
+            return bench::run("sched_switch::Snapshot::operator- [2 sub_sat]", [&] {
                 if (const auto* h = s.sched_switch()) {
-                    const auto post  = h->snapshot();
+                    const auto post = h->snapshot();
                     const auto delta = post - ss_pre;
                     bench::do_not_optimize(delta);
                 } else {
@@ -349,12 +344,12 @@ int main() {
                 }
             });
         }(),
-        [&]{
+        [&] {
             crucible::perf::PmuSample::Snapshot pm_pre{};
             if (const auto* h = s.pmu_sample()) pm_pre = h->snapshot();
-            return bench::run("pmu_sample::Snapshot::operator- [1 sub_sat]", [&]{
+            return bench::run("pmu_sample::Snapshot::operator- [1 sub_sat]", [&] {
                 if (const auto* h = s.pmu_sample()) {
-                    const auto post  = h->snapshot();
+                    const auto post = h->snapshot();
                     const auto delta = post - pm_pre;
                     bench::do_not_optimize(delta);
                 } else {
@@ -362,12 +357,12 @@ int main() {
                 }
             });
         }(),
-        [&]{
+        [&] {
             crucible::perf::LockContention::Snapshot lc_pre{};
             if (const auto* h = s.lock_contention()) lc_pre = h->snapshot();
-            return bench::run("lock_contention::Snapshot::operator- [2 sub_sat]", [&]{
+            return bench::run("lock_contention::Snapshot::operator- [2 sub_sat]", [&] {
                 if (const auto* h = s.lock_contention()) {
-                    const auto post  = h->snapshot();
+                    const auto post = h->snapshot();
                     const auto delta = post - lc_pre;
                     bench::do_not_optimize(delta);
                 } else {
@@ -375,12 +370,12 @@ int main() {
                 }
             });
         }(),
-        [&]{
+        [&] {
             crucible::perf::SyscallLatency::Snapshot sl_pre{};
             if (const auto* h = s.syscall_latency()) sl_pre = h->snapshot();
-            return bench::run("syscall_latency::Snapshot::operator- [2 sub_sat]", [&]{
+            return bench::run("syscall_latency::Snapshot::operator- [2 sub_sat]", [&] {
                 if (const auto* h = s.syscall_latency()) {
-                    const auto post  = h->snapshot();
+                    const auto post = h->snapshot();
                     const auto delta = post - sl_pre;
                     bench::do_not_optimize(delta);
                 } else {
@@ -388,12 +383,12 @@ int main() {
                 }
             });
         }(),
-        [&]{
+        [&] {
             crucible::perf::SchedTpBtf::Snapshot stp_pre{};
             if (const auto* h = s.sched_tp_btf()) stp_pre = h->snapshot();
-            return bench::run("sched_tp_btf::Snapshot::operator- [2 sub_sat]", [&]{
+            return bench::run("sched_tp_btf::Snapshot::operator- [2 sub_sat]", [&] {
                 if (const auto* h = s.sched_tp_btf()) {
-                    const auto post  = h->snapshot();
+                    const auto post = h->snapshot();
                     const auto delta = post - stp_pre;
                     bench::do_not_optimize(delta);
                 } else {
@@ -401,12 +396,12 @@ int main() {
                 }
             });
         }(),
-        [&]{
+        [&] {
             crucible::perf::SyscallTpBtf::Snapshot syt_pre{};
             if (const auto* h = s.syscall_tp_btf()) syt_pre = h->snapshot();
-            return bench::run("syscall_tp_btf::Snapshot::operator- [2 sub_sat]", [&]{
+            return bench::run("syscall_tp_btf::Snapshot::operator- [2 sub_sat]", [&] {
                 if (const auto* h = s.syscall_tp_btf()) {
-                    const auto post  = h->snapshot();
+                    const auto post = h->snapshot();
                     const auto delta = post - syt_pre;
                     bench::do_not_optimize(delta);
                 } else {
@@ -424,8 +419,8 @@ int main() {
         // the per-call entry-point cost, which is the consumer's
         // baseline overhead even when the workload produced zero new
         // events in the window.
-        [&]{
-            return bench::run("sched_switch->timeline_view() [Borrowed span ctor]", [&]{
+        [&] {
+            return bench::run("sched_switch->timeline_view() [Borrowed span ctor]", [&] {
                 if (const auto* h = s.sched_switch()) {
                     const auto v = h->timeline_view();
                     bench::do_not_optimize(v);
@@ -434,8 +429,8 @@ int main() {
                 }
             });
         }(),
-        [&]{
-            return bench::run("pmu_sample->timeline_view() [Borrowed span ctor]", [&]{
+        [&] {
+            return bench::run("pmu_sample->timeline_view() [Borrowed span ctor]", [&] {
                 if (const auto* h = s.pmu_sample()) {
                     const auto v = h->timeline_view();
                     bench::do_not_optimize(v);
@@ -444,8 +439,8 @@ int main() {
                 }
             });
         }(),
-        [&]{
-            return bench::run("lock_contention->timeline_view() [Borrowed span ctor]", [&]{
+        [&] {
+            return bench::run("lock_contention->timeline_view() [Borrowed span ctor]", [&] {
                 if (const auto* h = s.lock_contention()) {
                     const auto v = h->timeline_view();
                     bench::do_not_optimize(v);
@@ -454,8 +449,8 @@ int main() {
                 }
             });
         }(),
-        [&]{
-            return bench::run("syscall_latency->timeline_view() [Borrowed span ctor]", [&]{
+        [&] {
+            return bench::run("syscall_latency->timeline_view() [Borrowed span ctor]", [&] {
                 if (const auto* h = s.syscall_latency()) {
                     const auto v = h->timeline_view();
                     bench::do_not_optimize(v);
@@ -464,8 +459,8 @@ int main() {
                 }
             });
         }(),
-        [&]{
-            return bench::run("sched_tp_btf->timeline_view() [Borrowed span ctor]", [&]{
+        [&] {
+            return bench::run("sched_tp_btf->timeline_view() [Borrowed span ctor]", [&] {
                 if (const auto* h = s.sched_tp_btf()) {
                     const auto v = h->timeline_view();
                     bench::do_not_optimize(v);
@@ -474,8 +469,8 @@ int main() {
                 }
             });
         }(),
-        [&]{
-            return bench::run("syscall_tp_btf->timeline_view() [Borrowed span ctor]", [&]{
+        [&] {
+            return bench::run("syscall_tp_btf->timeline_view() [Borrowed span ctor]", [&] {
                 if (const auto* h = s.syscall_tp_btf()) {
                     const auto v = h->timeline_view();
                     bench::do_not_optimize(v);
@@ -494,18 +489,20 @@ int main() {
         // column on x86-64 = 8 ts_ns reads × 8 events per line).
         // Tight enough to cleanly separate the drain cost from the
         // surrounding bench overhead.
-        [&]{
-            return bench::run("sched_switch drain 64 events [64x acquire-load]", [&]{
+        [&] {
+            return bench::run("sched_switch drain 64 events [64x acquire-load]", [&] {
                 if (const auto* h = s.sched_switch()) {
                     const auto view = h->timeline_view();
-                    if (view.empty()) { bench::do_not_optimize(view); return; }
+                    if (view.empty()) {
+                        bench::do_not_optimize(view);
+                        return;
+                    }
                     const uint64_t end = h->timeline_write_index();
                     const uint64_t mask = crucible::perf::TIMELINE_CAPACITY - 1;
                     uint64_t live = 0;
                     for (uint64_t i = 0; i < 64; ++i) {
                         const uint64_t slot = (end - 1 - i) & mask;
-                        const uint64_t ts =
-                            __atomic_load_n(&view[slot].ts_ns, __ATOMIC_ACQUIRE);
+                        const uint64_t ts = __atomic_load_n(&view[slot].ts_ns, __ATOMIC_ACQUIRE);
                         if (ts != 0) ++live;
                     }
                     bench::do_not_optimize(live);
@@ -514,18 +511,20 @@ int main() {
                 }
             });
         }(),
-        [&]{
-            return bench::run("pmu_sample drain 64 events [64x acquire-load]", [&]{
+        [&] {
+            return bench::run("pmu_sample drain 64 events [64x acquire-load]", [&] {
                 if (const auto* h = s.pmu_sample()) {
                     const auto view = h->timeline_view();
-                    if (view.empty()) { bench::do_not_optimize(view); return; }
+                    if (view.empty()) {
+                        bench::do_not_optimize(view);
+                        return;
+                    }
                     const uint64_t end = h->timeline_write_index();
                     const uint64_t mask = crucible::perf::PMU_SAMPLE_CAPACITY - 1;
                     uint64_t live = 0;
                     for (uint64_t i = 0; i < 64; ++i) {
                         const uint64_t slot = (end - 1 - i) & mask;
-                        const uint64_t ts =
-                            __atomic_load_n(&view[slot].ts_ns, __ATOMIC_ACQUIRE);
+                        const uint64_t ts = __atomic_load_n(&view[slot].ts_ns, __ATOMIC_ACQUIRE);
                         if (ts != 0) ++live;
                     }
                     bench::do_not_optimize(live);
@@ -534,18 +533,20 @@ int main() {
                 }
             });
         }(),
-        [&]{
-            return bench::run("lock_contention drain 64 events [64x acquire-load]", [&]{
+        [&] {
+            return bench::run("lock_contention drain 64 events [64x acquire-load]", [&] {
                 if (const auto* h = s.lock_contention()) {
                     const auto view = h->timeline_view();
-                    if (view.empty()) { bench::do_not_optimize(view); return; }
+                    if (view.empty()) {
+                        bench::do_not_optimize(view);
+                        return;
+                    }
                     const uint64_t end = h->timeline_write_index();
                     const uint64_t mask = crucible::perf::TIMELINE_CAPACITY - 1;
                     uint64_t live = 0;
                     for (uint64_t i = 0; i < 64; ++i) {
                         const uint64_t slot = (end - 1 - i) & mask;
-                        const uint64_t ts =
-                            __atomic_load_n(&view[slot].ts_ns, __ATOMIC_ACQUIRE);
+                        const uint64_t ts = __atomic_load_n(&view[slot].ts_ns, __ATOMIC_ACQUIRE);
                         if (ts != 0) ++live;
                     }
                     bench::do_not_optimize(live);
@@ -554,18 +555,20 @@ int main() {
                 }
             });
         }(),
-        [&]{
-            return bench::run("syscall_latency drain 64 events [64x acquire-load]", [&]{
+        [&] {
+            return bench::run("syscall_latency drain 64 events [64x acquire-load]", [&] {
                 if (const auto* h = s.syscall_latency()) {
                     const auto view = h->timeline_view();
-                    if (view.empty()) { bench::do_not_optimize(view); return; }
+                    if (view.empty()) {
+                        bench::do_not_optimize(view);
+                        return;
+                    }
                     const uint64_t end = h->timeline_write_index();
                     const uint64_t mask = crucible::perf::TIMELINE_CAPACITY - 1;
                     uint64_t live = 0;
                     for (uint64_t i = 0; i < 64; ++i) {
                         const uint64_t slot = (end - 1 - i) & mask;
-                        const uint64_t ts =
-                            __atomic_load_n(&view[slot].ts_ns, __ATOMIC_ACQUIRE);
+                        const uint64_t ts = __atomic_load_n(&view[slot].ts_ns, __ATOMIC_ACQUIRE);
                         if (ts != 0) ++live;
                     }
                     bench::do_not_optimize(live);
@@ -574,18 +577,20 @@ int main() {
                 }
             });
         }(),
-        [&]{
-            return bench::run("sched_tp_btf drain 64 events [64x acquire-load]", [&]{
+        [&] {
+            return bench::run("sched_tp_btf drain 64 events [64x acquire-load]", [&] {
                 if (const auto* h = s.sched_tp_btf()) {
                     const auto view = h->timeline_view();
-                    if (view.empty()) { bench::do_not_optimize(view); return; }
+                    if (view.empty()) {
+                        bench::do_not_optimize(view);
+                        return;
+                    }
                     const uint64_t end = h->timeline_write_index();
                     const uint64_t mask = crucible::perf::TIMELINE_CAPACITY - 1;
                     uint64_t live = 0;
                     for (uint64_t i = 0; i < 64; ++i) {
                         const uint64_t slot = (end - 1 - i) & mask;
-                        const uint64_t ts =
-                            __atomic_load_n(&view[slot].ts_ns, __ATOMIC_ACQUIRE);
+                        const uint64_t ts = __atomic_load_n(&view[slot].ts_ns, __ATOMIC_ACQUIRE);
                         if (ts != 0) ++live;
                     }
                     bench::do_not_optimize(live);
@@ -594,18 +599,20 @@ int main() {
                 }
             });
         }(),
-        [&]{
-            return bench::run("syscall_tp_btf drain 64 events [64x acquire-load]", [&]{
+        [&] {
+            return bench::run("syscall_tp_btf drain 64 events [64x acquire-load]", [&] {
                 if (const auto* h = s.syscall_tp_btf()) {
                     const auto view = h->timeline_view();
-                    if (view.empty()) { bench::do_not_optimize(view); return; }
+                    if (view.empty()) {
+                        bench::do_not_optimize(view);
+                        return;
+                    }
                     const uint64_t end = h->timeline_write_index();
                     const uint64_t mask = crucible::perf::TIMELINE_CAPACITY - 1;
                     uint64_t live = 0;
                     for (uint64_t i = 0; i < 64; ++i) {
                         const uint64_t slot = (end - 1 - i) & mask;
-                        const uint64_t ts =
-                            __atomic_load_n(&view[slot].ts_ns, __ATOMIC_ACQUIRE);
+                        const uint64_t ts = __atomic_load_n(&view[slot].ts_ns, __ATOMIC_ACQUIRE);
                         if (ts != 0) ++live;
                     }
                     bench::do_not_optimize(live);
@@ -646,20 +653,20 @@ int main() {
     std::printf("Pattern: snapshot pre → run nudge workload → snapshot post → print delta\n");
 
     // Pre snapshots
-    crucible::perf::Snapshot                       sh_pre {};
-    crucible::perf::SchedSwitch::Snapshot          ss_pre {};
-    crucible::perf::PmuSample::Snapshot            pm_pre {};
-    crucible::perf::LockContention::Snapshot       lc_pre {};
-    crucible::perf::SyscallLatency::Snapshot       sl_pre {};
-    crucible::perf::SchedTpBtf::Snapshot           stp_pre{};
-    crucible::perf::SyscallTpBtf::Snapshot         syt_pre{};
-    if (const auto* h = s.sense_hub())       sh_pre  = h->read();
-    if (const auto* h = s.sched_switch())    ss_pre  = h->snapshot();
-    if (const auto* h = s.pmu_sample())      pm_pre  = h->snapshot();
-    if (const auto* h = s.lock_contention()) lc_pre  = h->snapshot();
-    if (const auto* h = s.syscall_latency()) sl_pre  = h->snapshot();
-    if (const auto* h = s.sched_tp_btf())    stp_pre = h->snapshot();
-    if (const auto* h = s.syscall_tp_btf())  syt_pre = h->snapshot();
+    crucible::perf::Snapshot sh_pre{};
+    crucible::perf::SchedSwitch::Snapshot ss_pre{};
+    crucible::perf::PmuSample::Snapshot pm_pre{};
+    crucible::perf::LockContention::Snapshot lc_pre{};
+    crucible::perf::SyscallLatency::Snapshot sl_pre{};
+    crucible::perf::SchedTpBtf::Snapshot stp_pre{};
+    crucible::perf::SyscallTpBtf::Snapshot syt_pre{};
+    if (const auto* h = s.sense_hub()) sh_pre = h->read();
+    if (const auto* h = s.sched_switch()) ss_pre = h->snapshot();
+    if (const auto* h = s.pmu_sample()) pm_pre = h->snapshot();
+    if (const auto* h = s.lock_contention()) lc_pre = h->snapshot();
+    if (const auto* h = s.syscall_latency()) sl_pre = h->snapshot();
+    if (const auto* h = s.sched_tp_btf()) stp_pre = h->snapshot();
+    if (const auto* h = s.syscall_tp_btf()) syt_pre = h->snapshot();
 
     // Workload: short CPU spin (timer-interrupt-driven ctx switches),
     // syscall driver (raw_syscalls/sys_exit events), and an atomic-flag
@@ -676,7 +683,8 @@ int main() {
             }
             bench::do_not_optimize(spin_acc);
         }
-        for (int i = 0; i < 200; ++i) (void)::getpid();
+        for (int i = 0; i < 200; ++i)
+            (void)::getpid();
         std::atomic_flag gate = ATOMIC_FLAG_INIT;
         gate.test_and_set(std::memory_order_release);
         std::jthread releaser{[&gate] {
@@ -692,20 +700,20 @@ int main() {
     }
 
     // Post snapshots
-    crucible::perf::Snapshot                       sh_post {};
-    crucible::perf::SchedSwitch::Snapshot          ss_post {};
-    crucible::perf::PmuSample::Snapshot            pm_post {};
-    crucible::perf::LockContention::Snapshot       lc_post {};
-    crucible::perf::SyscallLatency::Snapshot       sl_post {};
-    crucible::perf::SchedTpBtf::Snapshot           stp_post{};
-    crucible::perf::SyscallTpBtf::Snapshot         syt_post{};
-    if (const auto* h = s.sense_hub())       sh_post  = h->read();
-    if (const auto* h = s.sched_switch())    ss_post  = h->snapshot();
-    if (const auto* h = s.pmu_sample())      pm_post  = h->snapshot();
-    if (const auto* h = s.lock_contention()) lc_post  = h->snapshot();
-    if (const auto* h = s.syscall_latency()) sl_post  = h->snapshot();
-    if (const auto* h = s.sched_tp_btf())    stp_post = h->snapshot();
-    if (const auto* h = s.syscall_tp_btf())  syt_post = h->snapshot();
+    crucible::perf::Snapshot sh_post{};
+    crucible::perf::SchedSwitch::Snapshot ss_post{};
+    crucible::perf::PmuSample::Snapshot pm_post{};
+    crucible::perf::LockContention::Snapshot lc_post{};
+    crucible::perf::SyscallLatency::Snapshot sl_post{};
+    crucible::perf::SchedTpBtf::Snapshot stp_post{};
+    crucible::perf::SyscallTpBtf::Snapshot syt_post{};
+    if (const auto* h = s.sense_hub()) sh_post = h->read();
+    if (const auto* h = s.sched_switch()) ss_post = h->snapshot();
+    if (const auto* h = s.pmu_sample()) pm_post = h->snapshot();
+    if (const auto* h = s.lock_contention()) lc_post = h->snapshot();
+    if (const auto* h = s.syscall_latency()) sl_post = h->snapshot();
+    if (const auto* h = s.sched_tp_btf()) stp_post = h->snapshot();
+    if (const auto* h = s.syscall_tp_btf()) syt_post = h->snapshot();
 
     // Print deltas — what a consumer sees per-window.
     if (cov.sense_hub_attached) {
@@ -725,8 +733,7 @@ int main() {
     }
     if (cov.pmu_sample_attached) {
         const auto d = pm_post - pm_pre;
-        std::printf("  PmuSample.delta:       samples=%llu\n",
-                    (unsigned long long)d.samples);
+        std::printf("  PmuSample.delta:       samples=%llu\n", (unsigned long long)d.samples);
     }
     if (cov.lock_contention_attached) {
         const auto d = lc_post - lc_pre;
@@ -760,8 +767,8 @@ int main() {
     // TIMELINE_CAPACITY new events the older ones got overwritten and
     // the count saturates at capacity — that's the structural cost
     // of the consumer falling behind.
-    auto drain_count = []<class Span, class Event>(Span events, std::size_t capacity,
-                                                   uint64_t pre_idx, uint64_t post_idx) -> std::size_t {
+    auto drain_count = []<class Span, class Event>(Span events, std::size_t capacity, uint64_t pre_idx,
+                                                   uint64_t post_idx) -> std::size_t {
         if (events.empty()) return 0;
         const uint64_t delta = (post_idx >= pre_idx) ? (post_idx - pre_idx) : 0;
         const std::size_t to_walk = (delta > capacity) ? capacity : static_cast<std::size_t>(delta);
@@ -770,8 +777,7 @@ int main() {
         for (std::size_t i = 0; i < to_walk; ++i) {
             const uint64_t slot = (pre_idx + i) & mask;
             // Volatile load of ts_ns — completion marker per wire contract.
-            const uint64_t ts =
-                __atomic_load_n(&events[slot].ts_ns, __ATOMIC_ACQUIRE);
+            const uint64_t ts = __atomic_load_n(&events[slot].ts_ns, __ATOMIC_ACQUIRE);
             if (ts != 0) ++live;
         }
         return live;
@@ -779,60 +785,48 @@ int main() {
     if (cov.sched_switch_attached) {
         if (const auto* h = s.sched_switch()) {
             const auto view = h->timeline_view();
-            const std::size_t n = drain_count.template operator()<decltype(view),
-                                                                  crucible::perf::TimelineSchedEvent>(
-                view, crucible::perf::TIMELINE_CAPACITY,
-                ss_pre.timeline_index, ss_post.timeline_index);
+            const std::size_t n = drain_count.template operator()<decltype(view), crucible::perf::TimelineSchedEvent>(
+                view, crucible::perf::TIMELINE_CAPACITY, ss_pre.timeline_index, ss_post.timeline_index);
             std::printf("  SchedSwitch.drain:     %zu live event(s) in window\n", n);
         }
     }
     if (cov.pmu_sample_attached) {
         if (const auto* h = s.pmu_sample()) {
             const auto view = h->timeline_view();
-            const std::size_t n = drain_count.template operator()<decltype(view),
-                                                                  crucible::perf::PmuSampleEvent>(
-                view, crucible::perf::PMU_SAMPLE_CAPACITY,
-                pm_pre.samples, pm_post.samples);
+            const std::size_t n = drain_count.template operator()<decltype(view), crucible::perf::PmuSampleEvent>(
+                view, crucible::perf::PMU_SAMPLE_CAPACITY, pm_pre.samples, pm_post.samples);
             std::printf("  PmuSample.drain:       %zu live sample(s) in window\n", n);
         }
     }
     if (cov.lock_contention_attached) {
         if (const auto* h = s.lock_contention()) {
             const auto view = h->timeline_view();
-            const std::size_t n = drain_count.template operator()<decltype(view),
-                                                                  crucible::perf::TimelineLockEvent>(
-                view, crucible::perf::TIMELINE_CAPACITY,
-                lc_pre.timeline_index, lc_post.timeline_index);
+            const std::size_t n = drain_count.template operator()<decltype(view), crucible::perf::TimelineLockEvent>(
+                view, crucible::perf::TIMELINE_CAPACITY, lc_pre.timeline_index, lc_post.timeline_index);
             std::printf("  LockContention.drain:  %zu live event(s) in window\n", n);
         }
     }
     if (cov.syscall_latency_attached) {
         if (const auto* h = s.syscall_latency()) {
             const auto view = h->timeline_view();
-            const std::size_t n = drain_count.template operator()<decltype(view),
-                                                                  crucible::perf::TimelineSyscallEvent>(
-                view, crucible::perf::TIMELINE_CAPACITY,
-                sl_pre.timeline_index, sl_post.timeline_index);
+            const std::size_t n = drain_count.template operator()<decltype(view), crucible::perf::TimelineSyscallEvent>(
+                view, crucible::perf::TIMELINE_CAPACITY, sl_pre.timeline_index, sl_post.timeline_index);
             std::printf("  SyscallLatency.drain:  %zu live event(s) in window\n", n);
         }
     }
     if (cov.sched_tp_btf_attached) {
         if (const auto* h = s.sched_tp_btf()) {
             const auto view = h->timeline_view();
-            const std::size_t n = drain_count.template operator()<decltype(view),
-                                                                  crucible::perf::TimelineSchedEvent>(
-                view, crucible::perf::TIMELINE_CAPACITY,
-                stp_pre.timeline_index, stp_post.timeline_index);
+            const std::size_t n = drain_count.template operator()<decltype(view), crucible::perf::TimelineSchedEvent>(
+                view, crucible::perf::TIMELINE_CAPACITY, stp_pre.timeline_index, stp_post.timeline_index);
             std::printf("  SchedTpBtf.drain:      %zu live event(s) in window\n", n);
         }
     }
     if (cov.syscall_tp_btf_attached) {
         if (const auto* h = s.syscall_tp_btf()) {
             const auto view = h->timeline_view();
-            const std::size_t n = drain_count.template operator()<decltype(view),
-                                                                  crucible::perf::TimelineSyscallEvent>(
-                view, crucible::perf::TIMELINE_CAPACITY,
-                syt_pre.timeline_index, syt_post.timeline_index);
+            const std::size_t n = drain_count.template operator()<decltype(view), crucible::perf::TimelineSyscallEvent>(
+                view, crucible::perf::TIMELINE_CAPACITY, syt_pre.timeline_index, syt_post.timeline_index);
             std::printf("  SyscallTpBtf.drain:    %zu live event(s) in window\n", n);
         }
     }

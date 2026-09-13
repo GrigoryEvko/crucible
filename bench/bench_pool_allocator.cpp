@@ -40,51 +40,50 @@ namespace {
 MemoryPlan make_uniform_plan(TensorSlot* slots, uint32_t n, uint64_t slot_size) {
     for (uint32_t i = 0; i < n; i++) {
         slots[i].offset_bytes = static_cast<uint64_t>(i) * slot_size;
-        slots[i].nbytes       = slot_size;
-        slots[i].slot_id      = SlotId{i};
-        slots[i].birth_op     = OpIndex{0};
-        slots[i].death_op     = OpIndex{n};
-        slots[i].dtype        = ScalarType::Float;
-        slots[i].device_type  = DeviceType::CPU;
-        slots[i].device_idx   = 0;
-        slots[i].layout       = Layout::Strided;
-        slots[i].is_external  = false;
+        slots[i].nbytes = slot_size;
+        slots[i].slot_id = SlotId{i};
+        slots[i].birth_op = OpIndex{0};
+        slots[i].death_op = OpIndex{n};
+        slots[i].dtype = ScalarType::Float;
+        slots[i].device_type = DeviceType::CPU;
+        slots[i].device_idx = 0;
+        slots[i].layout = Layout::Strided;
+        slots[i].is_external = false;
         std::memset(slots[i].pad, 0, sizeof(slots[i].pad));
     }
     MemoryPlan plan{};
-    plan.slots        = slots;
-    plan.num_slots    = n;
+    plan.slots = slots;
+    plan.num_slots = n;
     plan.num_external = 0;
-    plan.pool_bytes   = static_cast<uint64_t>(n) * slot_size;
-    plan.device_type  = DeviceType::CPU;
-    plan.device_idx   = 0;
+    plan.pool_bytes = static_cast<uint64_t>(n) * slot_size;
+    plan.device_type = DeviceType::CPU;
+    plan.device_idx = 0;
     return plan;
 }
 
-MemoryPlan make_mixed_plan(TensorSlot* slots, uint32_t n_internal,
-                           uint32_t n_external, uint64_t slot_size) {
+MemoryPlan make_mixed_plan(TensorSlot* slots, uint32_t n_internal, uint32_t n_external, uint64_t slot_size) {
     const uint32_t total = n_internal + n_external;
     for (uint32_t i = 0; i < total; i++) {
         const bool ext = (i >= n_internal);
         slots[i].offset_bytes = ext ? 0 : (static_cast<uint64_t>(i) * slot_size);
-        slots[i].nbytes       = slot_size;
-        slots[i].slot_id      = SlotId{i};
-        slots[i].birth_op     = OpIndex{0};
-        slots[i].death_op     = OpIndex{total};
-        slots[i].dtype        = ScalarType::Float;
-        slots[i].device_type  = DeviceType::CPU;
-        slots[i].device_idx   = 0;
-        slots[i].layout       = Layout::Strided;
-        slots[i].is_external  = ext;
+        slots[i].nbytes = slot_size;
+        slots[i].slot_id = SlotId{i};
+        slots[i].birth_op = OpIndex{0};
+        slots[i].death_op = OpIndex{total};
+        slots[i].dtype = ScalarType::Float;
+        slots[i].device_type = DeviceType::CPU;
+        slots[i].device_idx = 0;
+        slots[i].layout = Layout::Strided;
+        slots[i].is_external = ext;
         std::memset(slots[i].pad, 0, sizeof(slots[i].pad));
     }
     MemoryPlan plan{};
-    plan.slots        = slots;
-    plan.num_slots    = total;
+    plan.slots = slots;
+    plan.num_slots = total;
     plan.num_external = n_external;
-    plan.pool_bytes   = static_cast<uint64_t>(n_internal) * slot_size;
-    plan.device_type  = DeviceType::CPU;
-    plan.device_idx   = 0;
+    plan.pool_bytes = static_cast<uint64_t>(n_internal) * slot_size;
+    plan.device_type = DeviceType::CPU;
+    plan.device_idx = 0;
     return plan;
 }
 
@@ -95,7 +94,7 @@ void fill_random_indices(uint32_t* indices, uint32_t count, uint32_t num_slots) 
     }
 }
 
-} // namespace
+}  // namespace
 
 int main() {
     bench::print_system_info();
@@ -113,22 +112,20 @@ int main() {
     std::vector<bench::Report> reports;
 
     // ── slot_ptr sequential access ────────────────────────────────────
-    reports.push_back([&]{
+    reports.push_back([&] {
         TensorSlot slots[1]{};
         MemoryPlan plan = make_uniform_plan(slots, 1, 256);
         PoolAllocator pool;
         pool.init(&plan);
         auto pv = pool.mint_initialized_view();
         const SlotId s0{0};
-        auto r = bench::run("slot_ptr(1 slot, same)", [&]{
-            bench::do_not_optimize(pool.slot_ptr(s0, pv));
-        });
+        auto r = bench::run("slot_ptr(1 slot, same)", [&] { bench::do_not_optimize(pool.slot_ptr(s0, pv)); });
         pool.destroy();
         return r;
     }());
 
     for (uint32_t N : {10u, 100u, 1000u}) {
-        reports.push_back([&, N]{
+        reports.push_back([&, N] {
             std::vector<TensorSlot> slots(N);
             MemoryPlan plan = make_uniform_plan(slots.data(), N, 256);
             PoolAllocator pool;
@@ -136,7 +133,7 @@ int main() {
             auto pv = pool.mint_initialized_view();
             char label[64];
             std::snprintf(label, sizeof(label), "slot_ptr(%u slots, sweep)", N);
-            auto r = bench::run(label, [&, N]{
+            auto r = bench::run(label, [&, N] {
                 for (uint32_t i = 0; i < N; i++) {
                     bench::do_not_optimize(pool.slot_ptr(SlotId{i}, pv));
                 }
@@ -147,10 +144,10 @@ int main() {
     }
 
     // ── slot_ptr random access ────────────────────────────────────────
-    constexpr uint32_t ACCESS_COUNT = 10'000;
+    constexpr uint32_t ACCESS_COUNT = 10000;
 
     for (uint32_t N : {10u, 100u, 1000u}) {
-        reports.push_back([&, N]{
+        reports.push_back([&, N] {
             std::vector<TensorSlot> slots(N);
             MemoryPlan plan = make_uniform_plan(slots.data(), N, 256);
             PoolAllocator pool;
@@ -163,9 +160,8 @@ int main() {
 
             char label[64];
             std::snprintf(label, sizeof(label), "slot_ptr(%u slots, random)", N);
-            auto r = bench::run(label, [&]{
-                bench::do_not_optimize(
-                    pool.slot_ptr(SlotId{indices[idx % ACCESS_COUNT]}, pv));
+            auto r = bench::run(label, [&] {
+                bench::do_not_optimize(pool.slot_ptr(SlotId{indices[idx % ACCESS_COUNT]}, pv));
                 idx++;
             });
             pool.destroy();
@@ -178,14 +174,14 @@ int main() {
     // Three siblings that look alike on paper but exercise different
     // indirection forms. Each gets its own fresh PoolAllocator in its
     // own IIFE scope so the measurements don't interact.
-    reports.push_back([&]{
+    reports.push_back([&] {
         constexpr uint32_t N = 100;
         std::vector<TensorSlot> slots(N);
         MemoryPlan plan = make_uniform_plan(slots.data(), N, 256);
         PoolAllocator pool;
         pool.init(&plan);
         auto pv = pool.mint_initialized_view();
-        auto r = bench::run("slot_ptr(100, direct ref)", [&]{
+        auto r = bench::run("slot_ptr(100, direct ref)", [&] {
             for (uint32_t i = 0; i < N; i++)
                 bench::do_not_optimize(pool.slot_ptr(SlotId{i}, pv));
         });
@@ -193,7 +189,7 @@ int main() {
         return r;
     }());
 
-    reports.push_back([&]{
+    reports.push_back([&] {
         constexpr uint32_t N = 100;
         std::vector<TensorSlot> slots(N);
         MemoryPlan plan = make_uniform_plan(slots.data(), N, 256);
@@ -202,7 +198,7 @@ int main() {
         auto pv = pool.mint_initialized_view();
         const PoolAllocator* pool_ptr = &pool;
         bench::do_not_optimize(pool_ptr);
-        auto r = bench::run("slot_ptr(100, via pointer)", [&]{
+        auto r = bench::run("slot_ptr(100, via pointer)", [&] {
             for (uint32_t i = 0; i < N; i++)
                 bench::do_not_optimize(pool_ptr->slot_ptr(SlotId{i}, pv));
         });
@@ -210,7 +206,7 @@ int main() {
         return r;
     }());
 
-    reports.push_back([&]{
+    reports.push_back([&] {
         constexpr uint32_t N = 100;
         std::vector<TensorSlot> slots(N);
         MemoryPlan plan = make_uniform_plan(slots.data(), N, 256);
@@ -219,7 +215,7 @@ int main() {
         auto pv = pool.mint_initialized_view();
         void* const* tbl = pool.table(pv);
         bench::do_not_optimize(tbl);
-        auto r = bench::run("table[sid] (100, captured raw)", [&]{
+        auto r = bench::run("table[sid] (100, captured raw)", [&] {
             for (uint32_t i = 0; i < N; i++)
                 bench::do_not_optimize(tbl[i]);
         });
@@ -229,12 +225,12 @@ int main() {
 
     // ── init cold path ────────────────────────────────────────────────
     for (uint32_t N : {10u, 100u, 1000u}) {
-        reports.push_back([&, N]{
+        reports.push_back([&, N] {
             std::vector<TensorSlot> slots(N);
             MemoryPlan plan = make_uniform_plan(slots.data(), N, 256);
             char label[64];
             std::snprintf(label, sizeof(label), "init(%u slots)", N);
-            return bench::run(label, [&]{
+            return bench::run(label, [&] {
                 PoolAllocator pool;
                 pool.init(&plan);
                 bench::do_not_optimize(pool.pool_base());
@@ -244,17 +240,17 @@ int main() {
     }
 
     // ── destroy/no-op and init+destroy pair ───────────────────────────
-    reports.push_back(bench::run("destroy() (no-op, never init'd)", [&]{
+    reports.push_back(bench::run("destroy() (no-op, never init'd)", [&] {
         PoolAllocator pool;
         pool.destroy();
         bench::do_not_optimize(&pool);
     }));
 
-    reports.push_back([&]{
+    reports.push_back([&] {
         constexpr uint32_t N = 100;
         std::vector<TensorSlot> slots(N);
         MemoryPlan plan = make_uniform_plan(slots.data(), N, 256);
-        return bench::run("init+destroy (100 slots, pair)", [&]{
+        return bench::run("init+destroy (100 slots, pair)", [&] {
             PoolAllocator pool;
             pool.init(&plan);
             bench::do_not_optimize(pool.pool_base());
@@ -263,13 +259,13 @@ int main() {
     }());
 
     // ── detach+reinit (region switch) ─────────────────────────────────
-    reports.push_back([&]{
+    reports.push_back([&] {
         constexpr uint32_t N = 100;
         std::vector<TensorSlot> slots_a(N);
         std::vector<TensorSlot> slots_b(N);
         MemoryPlan plan_a = make_uniform_plan(slots_a.data(), N, 256);
         MemoryPlan plan_b = make_uniform_plan(slots_b.data(), N, 512);
-        return bench::run("detach+init(100 slots)", [&]{
+        return bench::run("detach+init(100 slots)", [&] {
             PoolAllocator pool;
             pool.init(&plan_a);
             {
@@ -285,7 +281,7 @@ int main() {
     }());
 
     // ── register_external ─────────────────────────────────────────────
-    reports.push_back([&]{
+    reports.push_back([&] {
         constexpr uint32_t N_INT = 80;
         constexpr uint32_t N_EXT = 20;
         constexpr uint32_t TOTAL = N_INT + N_EXT;
@@ -298,10 +294,9 @@ int main() {
 
         alignas(256) static char ext_bufs[N_EXT][256];
 
-        auto r = bench::run("register_external(20 slots)", [&]{
+        auto r = bench::run("register_external(20 slots)", [&] {
             for (uint32_t i = 0; i < N_EXT; i++) {
-                pool.register_external(SlotId{N_INT + i},
-                    crucible::safety::NonNull<void*>{ext_bufs[i]}, pv);
+                pool.register_external(SlotId{N_INT + i}, crucible::safety::NonNull<void*>{ext_bufs[i]}, pv);
             }
         });
         pool.destroy();
@@ -309,8 +304,8 @@ int main() {
     }());
 
     // ── Realistic replay pattern ──────────────────────────────────────
-    reports.push_back([&]{
-        constexpr uint32_t NUM_OPS   = 200;
+    reports.push_back([&] {
+        constexpr uint32_t NUM_OPS = 200;
         constexpr uint32_t NUM_SLOTS = 100;
         std::vector<TensorSlot> slots(NUM_SLOTS);
         MemoryPlan plan = make_uniform_plan(slots.data(), NUM_SLOTS, 256);
@@ -319,7 +314,9 @@ int main() {
         pool.init(&plan);
         auto pv = pool.mint_initialized_view();
 
-        struct OpSlots { SlotId in0, in1, out; };
+        struct OpSlots {
+            SlotId in0, in1, out;
+        };
         std::vector<OpSlots> op_slots(NUM_OPS);
         std::mt19937 rng(123);
         for (uint32_t i = 0; i < NUM_OPS; i++) {
@@ -328,7 +325,7 @@ int main() {
             op_slots[i].out = SlotId{static_cast<uint32_t>(rng() % NUM_SLOTS)};
         }
 
-        auto r = bench::run("replay(200 ops, 3 slots each)", [&]{
+        auto r = bench::run("replay(200 ops, 3 slots each)", [&] {
             for (uint32_t i = 0; i < NUM_OPS; i++) {
                 bench::do_not_optimize(pool.slot_ptr(op_slots[i].in0, pv));
                 bench::do_not_optimize(pool.slot_ptr(op_slots[i].in1, pv));

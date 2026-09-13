@@ -43,22 +43,18 @@
 #include <utility>
 
 namespace {
-    // API entry point demanding a specific Max.  In production this
-    // would be a slot-index sink, a refcount cell, or any consumer
-    // whose upper bound is a structural property of the slot it
-    // owns.
-    [[maybe_unused]] void consume_capacity_8(
-        ::crucible::safety::BoundedMonotonic<std::uint32_t, 8U>&& /*counter*/)
-    {
-        // body irrelevant — call-site type-check is the test.
-    }
+// API entry point demanding a specific Max.  In production this
+// would be a slot-index sink, a refcount cell, or any consumer
+// whose upper bound is a structural property of the slot it
+// owns.
+[[maybe_unused]] void consume_capacity_8(::crucible::safety::BoundedMonotonic<std::uint32_t, 8U>&& /*counter*/) {
+    // body irrelevant — call-site type-check is the test.
 }
+}  // namespace
 
 // Anchor: same-Max call compiles cleanly — Max=8 matches the
 // declared parameter type.
-[[maybe_unused]] static void anchor_same_max_call(
-    ::crucible::safety::BoundedMonotonic<std::uint32_t, 8U>&& counter)
-{
+[[maybe_unused]] static void anchor_same_max_call(::crucible::safety::BoundedMonotonic<std::uint32_t, 8U>&& counter) {
     consume_capacity_8(std::move(counter));
 }
 
@@ -68,10 +64,9 @@ namespace {
 // with possible value 15 to flow into a slot accepting only 0..8.
 // GCC rejects with "cannot convert" / "invalid initialization of
 // reference" naming both Max values in the diagnostic chain.
-[[maybe_unused]] static void offending_cross_max_call(
-    ::crucible::safety::BoundedMonotonic<std::uint32_t, 16U>&& counter)
-{
-    consume_capacity_8(std::move(counter));   // ERROR: Max=16 ≠ Max=8
+[[maybe_unused]] static void
+offending_cross_max_call(::crucible::safety::BoundedMonotonic<std::uint32_t, 16U>&& counter) {
+    consume_capacity_8(std::move(counter));  // ERROR: Max=16 ≠ Max=8
 }
 
 int main() { return 0; }

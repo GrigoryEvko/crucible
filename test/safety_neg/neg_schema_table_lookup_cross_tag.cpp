@@ -19,15 +19,13 @@
 #include <crucible/safety/Tagged.h>
 
 int main() {
-  crucible::SchemaTable table;
+    crucible::SchemaTable table;
 
-  using ExternalLookupName = crucible::safety::Tagged<
-      crucible::SchemaTable::BorrowedName,
-      crucible::safety::source::External>;
+    using ExternalLookupName =
+        crucible::safety::Tagged<crucible::SchemaTable::BorrowedName, crucible::safety::source::External>;
 
-  // MUST fail: lookup() returns source::Sanitized, and no implicit
-  // Sanitized -> External retag exists.
-  ExternalLookupName wrong =
-      table.lookup(crucible::SchemaHash{0xA11CE});
-  return wrong.value().data() == nullptr ? 0 : 1;
+    // MUST fail: lookup() returns source::Sanitized, and no implicit
+    // Sanitized -> External retag exists.
+    ExternalLookupName wrong = table.lookup(crucible::SchemaHash{0xA11CE});
+    return wrong.value().data() == nullptr ? 0 : 1;
 }

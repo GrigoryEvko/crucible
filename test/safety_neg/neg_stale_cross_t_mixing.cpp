@@ -30,7 +30,7 @@
 using namespace crucible::safety;
 
 int main() {
-    Stale<int>    s_int    = Stale<int>::fresh(10);
+    Stale<int> s_int = Stale<int>::fresh(10);
     Stale<double> s_double = Stale<double>::fresh(3.14);
 
     // Should FAIL: Stale<int>::compose_add takes Stale<int> const&;

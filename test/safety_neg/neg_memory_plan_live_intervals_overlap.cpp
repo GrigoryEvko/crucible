@@ -56,20 +56,30 @@ using crucible::Layout;
 // — the planner's invariant is broken at op 3.
 constexpr auto build_planted_overlap() {
     std::array<TensorSlot, 2> s{};
-    s[0] = TensorSlot{
-        .offset_bytes = 0, .nbytes = 128,
-        .birth_op = OpIndex{0}, .death_op = OpIndex{5},
-        .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
-        .device_idx = 0, .layout = Layout::Strided,
-        .is_external = false, .pad = {},
-        .slot_id = SlotId{0}, .pad2 = {}};
-    s[1] = TensorSlot{
-        .offset_bytes = 64, .nbytes = 128,
-        .birth_op = OpIndex{2}, .death_op = OpIndex{7},
-        .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
-        .device_idx = 0, .layout = Layout::Strided,
-        .is_external = false, .pad = {},
-        .slot_id = SlotId{1}, .pad2 = {}};
+    s[0] = TensorSlot{.offset_bytes = 0,
+                      .nbytes = 128,
+                      .birth_op = OpIndex{0},
+                      .death_op = OpIndex{5},
+                      .dtype = ScalarType::Float,
+                      .device_type = DeviceType::CPU,
+                      .device_idx = 0,
+                      .layout = Layout::Strided,
+                      .is_external = false,
+                      .pad = {},
+                      .slot_id = SlotId{0},
+                      .pad2 = {}};
+    s[1] = TensorSlot{.offset_bytes = 64,
+                      .nbytes = 128,
+                      .birth_op = OpIndex{2},
+                      .death_op = OpIndex{7},
+                      .dtype = ScalarType::Float,
+                      .device_type = DeviceType::CPU,
+                      .device_idx = 0,
+                      .layout = Layout::Strided,
+                      .is_external = false,
+                      .pad = {},
+                      .slot_id = SlotId{1},
+                      .pad2 = {}};
     return s;
 }
 
@@ -78,8 +88,7 @@ constexpr auto bad_slots = build_planted_overlap();
 // Predicate returns false at op 3 → constexpr local is not a
 // constant expression → static_assert below is ill-formed.
 constexpr bool witness = crucible::live_intervals_disjoint_at<2>(
-    std::span<const TensorSlot>(bad_slots.data(), bad_slots.size()),
-    OpIndex{3});
+    std::span<const TensorSlot>(bad_slots.data(), bad_slots.size()), OpIndex{3});
 
 static_assert(witness, "MemoryPlan invariant must hold at op 3");
 

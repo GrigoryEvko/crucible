@@ -39,8 +39,7 @@ int main() {
     // (`bounded_above<kMaxTensorNDim>(v)`) to be exercised at compile
     // time.  v == kMaxTensorNDim + 1 → predicate(v) == false →
     // contract violation → not a constant expression → ill-formed.
-    constexpr crucible::ValidNDim bad{
-        static_cast<uint8_t>(crucible::kMaxTensorNDim + 1u)};
+    constexpr crucible::ValidNDim bad{static_cast<uint8_t>(crucible::kMaxTensorNDim + 1u)};
     (void)bad;
     return 0;
 }

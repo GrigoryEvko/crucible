@@ -38,12 +38,9 @@ int main() {
     // Tagged(T)` and no implicit conversion from std::string.  The
     // aggregate-init below tries to bind `std::string{"file.py"}`
     // to the SanitizedName field — must fail at the brace.
-    crucible::CallSiteTable::Entry e{
-        crucible::CallsiteHash{uint64_t{0xC0FFEE}},
-        std::string{"file.py"},   // ← MUST fail: no viable ctor
-        std::string{"f"},
-        crucible::CallSiteTable::Lineno{int32_t{42}}
-    };
+    crucible::CallSiteTable::Entry e{crucible::CallsiteHash{uint64_t{0xC0FFEE}},
+                                     std::string{"file.py"},  // ← MUST fail: no viable ctor
+                                     std::string{"f"}, crucible::CallSiteTable::Lineno{int32_t{42}}};
     (void)e;
     return 0;
 }

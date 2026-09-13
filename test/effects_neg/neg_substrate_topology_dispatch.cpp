@@ -19,10 +19,9 @@ template <conc::IsOneToOneSubstrate S>
 constexpr void requires_spsc(S const&) noexcept {}
 
 int main() {
-    using MpmcT = conc::Substrate_t<conc::ChannelTopology::ManyToMany,
-                                     int, 64, ProducerStream>;
+    using MpmcT = conc::Substrate_t<conc::ChannelTopology::ManyToMany, int, 64, ProducerStream>;
     MpmcT* mpmc_ptr = nullptr;  // type-only test; no instantiation needed
     (void)mpmc_ptr;
-    requires_spsc(*mpmc_ptr);   // overload resolution fails before any deref
+    requires_spsc(*mpmc_ptr);  // overload resolution fails before any deref
     return 0;
 }

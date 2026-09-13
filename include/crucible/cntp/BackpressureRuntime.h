@@ -246,7 +246,7 @@ public:
                                                           std::memory_order_acq_rel, std::memory_order_acquire));
 
         auto zero = cntp::admit_resource_pressure_ppm(0).value();
-        auto limit = cntp::admit_resource_limit_ppm(1'000'000).value();
+        auto limit = cntp::admit_resource_limit_ppm(1000000).value();
         return decision(cntp::AdmissionDecisionKind::Accepted, request.socket, effects::ResourceKind::NicQ, zero, limit,
                         0);
     }

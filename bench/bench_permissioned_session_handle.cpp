@@ -118,7 +118,9 @@ struct FakeChannel {
 };
 
 [[gnu::cold]]
-void send_item(FakeChannel& ch, Item v) noexcept { ch.last = v; }
+void send_item(FakeChannel& ch, Item v) noexcept {
+    ch.last = v;
+}
 
 // ── Hot-path send loop body ───────────────────────────────────────
 //
@@ -126,9 +128,8 @@ void send_item(FakeChannel& ch, Item v) noexcept { ch.last = v; }
 // type is identical to the loop-body entry — so the bench can
 // `h = std::move(h2)` to keep iterating without retyping.
 
-using SendLoopProto = crucible::safety::proto::Loop<
-    crucible::safety::proto::Send<Item,
-                                    crucible::safety::proto::Continue>>;
+using SendLoopProto =
+    crucible::safety::proto::Loop<crucible::safety::proto::Send<Item, crucible::safety::proto::Continue>>;
 
 constexpr ::crucible::effects::HotFgCtx kSessionCtx{};
 
@@ -140,11 +141,10 @@ bench::Report bare_send() {
     using namespace crucible::safety::proto;
     auto h = mint_session_handle<SendLoopProto>(FakeChannel{});
     Item i = 0;
-    auto report = bench::run("bare SessionHandle.send (Loop<Send<int, Continue>>)",
-        [&]{
-            auto h2 = std::move(h).send(++i, send_item);
-            h = std::move(h2);
-        });
+    auto report = bench::run("bare SessionHandle.send (Loop<Send<int, Continue>>)", [&] {
+        auto h2 = std::move(h).send(++i, send_item);
+        h = std::move(h2);
+    });
     // Loop has no exit branch — explicit detach.  Without this the
     // debug-mode SessionHandleBase destructor would abort.
     std::move(h).detach(detach_reason::TestInstrumentation{});
@@ -153,14 +153,12 @@ bench::Report bare_send() {
 
 bench::Report psh_send() {
     using namespace crucible::safety::proto;
-    auto h = mint_permissioned_session<SendLoopProto>(
-        kSessionCtx, FakeChannel{});
+    auto h = mint_permissioned_session<SendLoopProto>(kSessionCtx, FakeChannel{});
     Item i = 0;
-    auto report = bench::run("PermissionedSessionHandle.send (Loop<Send<int, Continue>>)",
-        [&]{
-            auto h2 = std::move(h).send(++i, send_item);
-            h = std::move(h2);
-        });
+    auto report = bench::run("PermissionedSessionHandle.send (Loop<Send<int, Continue>>)", [&] {
+        auto h2 = std::move(h).send(++i, send_item);
+        h = std::move(h2);
+    });
     std::move(h).detach(detach_reason::TestInstrumentation{});
     return report;
 }
@@ -176,7 +174,7 @@ bench::Report psh_send() {
 
 bench::Report bare_close() {
     using namespace crucible::safety::proto;
-    auto report = bench::run("bare SessionHandle.close (End)", [&]{
+    auto report = bench::run("bare SessionHandle.close (End)", [&] {
         auto h = mint_session_handle<End>(FakeChannel{});
         auto out = std::move(h).close();
         bench::do_not_optimize(out);
@@ -186,13 +184,11 @@ bench::Report bare_close() {
 
 bench::Report psh_close() {
     using namespace crucible::safety::proto;
-    auto report = bench::run("PermissionedSessionHandle.close (End, EmptyPermSet)",
-        [&]{
-            auto h = mint_permissioned_session<End>(
-                kSessionCtx, FakeChannel{});
-            auto out = std::move(h).close();
-            bench::do_not_optimize(out);
-        });
+    auto report = bench::run("PermissionedSessionHandle.close (End, EmptyPermSet)", [&] {
+        auto h = mint_permissioned_session<End>(kSessionCtx, FakeChannel{});
+        auto out = std::move(h).close();
+        bench::do_not_optimize(out);
+    });
     return report;
 }
 
@@ -205,17 +201,17 @@ int main(int argc, char** argv) {
     //     if PSH ever grows a non-zero member) ───────────────────────
     using namespace crucible::safety::proto;
     static_assert(sizeof(PermissionedSessionHandle<End, EmptyPermSet, FakeChannel>)
-                  == sizeof(SessionHandle<End, FakeChannel>),
+                      == sizeof(SessionHandle<End, FakeChannel>),
                   "PSH<End> sizeof must equal bare SessionHandle<End>");
-    static_assert(sizeof(PermissionedSessionHandle<Send<Item, End>,
-                                                    EmptyPermSet,
-                                                    FakeChannel>)
-                  == sizeof(SessionHandle<Send<Item, End>, FakeChannel>),
+    static_assert(sizeof(PermissionedSessionHandle<Send<Item, End>, EmptyPermSet, FakeChannel>)
+                      == sizeof(SessionHandle<Send<Item, End>, FakeChannel>),
                   "PSH<Send<>> sizeof must equal bare SessionHandle<Send<>>");
 
     bench::Report reports[] = {
-        bare_send(),  psh_send(),
-        bare_close(), psh_close(),
+        bare_send(),
+        psh_send(),
+        bare_close(),
+        psh_close(),
     };
 
     bench::emit_reports_text(reports);
@@ -225,7 +221,8 @@ int main(int argc, char** argv) {
         bench::compare(reports[0], reports[1]),
         bench::compare(reports[2], reports[3]),
     };
-    for (const auto& c : cmps) c.print_text(stdout);
+    for (const auto& c : cmps)
+        c.print_text(stdout);
 
     std::printf("\n=== verdict (TIER B — informational) ===\n");
     std::printf("  PSH zero-cost claim is gated by TIER A (asm-identical\n");

@@ -14,8 +14,7 @@ struct BadCtxBody {
     void operator()(crucible::concurrent::AutoSplitShard) const noexcept {}
 };
 
-constexpr auto bad_hint =
-    crucible::concurrent::infer_workload_hint<BadCtxBody>();
+constexpr auto bad_hint = crucible::concurrent::infer_workload_hint<BadCtxBody>();
 
 }  // namespace
 

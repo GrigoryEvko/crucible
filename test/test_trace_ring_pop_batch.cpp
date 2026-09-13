@@ -240,7 +240,7 @@ static void test_equivalence_with_single_pop() {
 
 static void test_spsc_stress() {
     auto ring = std::make_unique<TraceRing>();
-    constexpr uint64_t N = 100'000;
+    constexpr uint64_t N = 100000;
 
     std::printf("  test_spsc_stress: 1 producer + 1 consumer, N=%llu...\n", static_cast<unsigned long long>(N));
 

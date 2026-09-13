@@ -30,7 +30,7 @@
 #include <utility>
 
 namespace conc = crucible::concurrent;
-namespace eff  = crucible::effects;
+namespace eff = crucible::effects;
 
 template <typename T>
 struct FakeConsumer {
@@ -47,10 +47,8 @@ inline void pass_through(FakeConsumer<int>&&, FakeProducer<int>&&) noexcept {}
 int main() {
     eff::HotFgCtx ctx;
 
-    auto stage_a = conc::mint_stage<&pass_through>(
-        ctx, FakeConsumer<int>{}, FakeProducer<int>{});
-    auto stage_b = conc::mint_stage<&pass_through>(
-        ctx, FakeConsumer<int>{}, FakeProducer<int>{});
+    auto stage_a = conc::mint_stage<&pass_through>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
+    auto stage_b = conc::mint_stage<&pass_through>(ctx, FakeConsumer<int>{}, FakeProducer<int>{});
 
     using S = conc::Stage<&pass_through, eff::HotFgCtx>;
 

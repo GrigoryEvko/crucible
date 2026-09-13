@@ -16,8 +16,8 @@
 
 namespace {
 struct ParentA {};
-struct ParentB {};   // distinct parent — children of ParentB cannot
-                     // be derived from a Permission<ParentA>
+struct ParentB {};  // distinct parent — children of ParentB cannot
+// be derived from a Permission<ParentA>
 }  // namespace
 
 void exercise_cross_parent() {
@@ -28,8 +28,7 @@ void exercise_cross_parent() {
     // to match), so the framework static_assert fires.
     using SliceB0 = crucible::safety::Slice<ParentB, 0>;
     using SliceB1 = crucible::safety::Slice<ParentB, 1>;
-    [[maybe_unused]] auto bad =
-        crucible::safety::mint_permission_split_n<SliceB0, SliceB1>(std::move(p));
+    [[maybe_unused]] auto bad = crucible::safety::mint_permission_split_n<SliceB0, SliceB1>(std::move(p));
 }
 
 int main() { return 0; }

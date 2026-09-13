@@ -27,15 +27,14 @@ using AffinityMask = ::crucible::algebra::lattices::AffinityMask;
 
 // A HotPath consumer admits only an EXPLICIT pin (auto can migrate).
 template <typename Proof>
-    requires (Proof::template meets_posture<PinningPosture::PinnedExplicit>)
+    requires(Proof::template meets_posture<PinningPosture::PinnedExplicit>)
 [[nodiscard]] int on_hot_path(Proof const& proof) {
     return proof.peek();
 }
 
 int main() {
     // A valid single-core pin, but only auto-pinned (can still migrate).
-    auto auto_pin = mint_cpu_pinned<AffinityMask::single(0),
-                                    PinningPosture::PinnedAuto, int>(42);
+    auto auto_pin = mint_cpu_pinned<AffinityMask::single(0), PinningPosture::PinnedAuto, int>(42);
 
     // Should FAIL: PinnedAuto does not meet the PinnedExplicit HotPath floor.
     return on_hot_path(auto_pin);

@@ -10,7 +10,7 @@
 #include <crucible/RecipePool.h>
 
 int main() {
-  crucible::RecipePool::Size count{0u};
-  count = 1u;
-  return 0;
+    crucible::RecipePool::Size count{0u};
+    count = 1u;
+    return 0;
 }

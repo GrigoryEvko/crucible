@@ -24,12 +24,11 @@
 using namespace crucible::algebra::lattices;
 
 int main() {
-    PinningRequirement pin_val     = PinningRequirement::PerCore;
-    SuspendBehavior    suspend_val = SuspendBehavior::KeepsTicking;
+    PinningRequirement pin_val = PinningRequirement::PerCore;
+    SuspendBehavior suspend_val = SuspendBehavior::KeepsTicking;
 
     // Should FAIL: PinningRequirementLattice::leq requires two
     // PinningRequirement values; passing a SuspendBehavior as the second
     // argument is a type mismatch (no cross-enum implicit conversion).
-    return static_cast<int>(
-        PinningRequirementLattice::leq(pin_val, suspend_val));
+    return static_cast<int>(PinningRequirementLattice::leq(pin_val, suspend_val));
 }

@@ -41,14 +41,11 @@ namespace {
 // `WrapCrashReturnKey`.  Taking the key by reference compiles
 // (only the parameter type, not its visibility, matters); the
 // body's `auto bad = k;` is the copy that fires the deleted ctor.
-[[maybe_unused]] void copy_construction_must_fail(
-    const ::crucible::safety::proto::WrapCrashReturnKey& k) {
+[[maybe_unused]] void copy_construction_must_fail(const ::crucible::safety::proto::WrapCrashReturnKey& k) {
     auto bad = k;
     (void)bad;
 }
 
 }  // namespace
 
-int main() {
-    return 0;
-}
+int main() { return 0; }

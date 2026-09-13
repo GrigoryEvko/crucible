@@ -20,21 +20,19 @@
 #include <crucible/effects/ExecCtx.h>
 #include <crucible/fixy/Wrap.h>
 
-struct JitRegion {};   // dummy Tag
+struct JitRegion {};  // dummy Tag
 
 int main() {
     namespace fwmm = ::crucible::fixy::wrap::mmap;
-    namespace prot  = fwmm::prot;
+    namespace prot = fwmm::prot;
     namespace share = fwmm::share;
     namespace grant = fwmm::grant;
 
     ::crucible::effects::TestRunnerCtx ctx{};
 
     // Should FAIL: pack engages Exec prot but lacks trusted_jit.
-    [[maybe_unused]] auto r = fwmm::mint_mmap<
-        JitRegion,
-        grant::with_prot<prot::Exec>,
-        grant::with_share<share::Private>
-    >(ctx, /*fd=*/-1, /*length=*/4096);
+    [[maybe_unused]] auto r =
+        fwmm::mint_mmap<JitRegion, grant::with_prot<prot::Exec>, grant::with_share<share::Private>>(ctx, /*fd=*/-1,
+                                                                                                    /*length=*/4096);
     return 0;
 }

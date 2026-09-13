@@ -26,7 +26,7 @@
 
 namespace neg_fixy_v_204_grant_forked_missing {
 
-namespace gr   = ::crucible::fixy::spawn::grant;
+namespace gr = ::crucible::fixy::spawn::grant;
 namespace join = ::crucible::fixy::spawn::join;
 using ::crucible::fixy::grant::ctrl::rationale;
 
@@ -35,21 +35,18 @@ using ::crucible::fixy::grant::ctrl::rationale;
 // subprocess<> MUST red the requires-clause.
 template <typename Mechanism, typename... Grants>
     requires ::crucible::fixy::spawn::JoinPolicyGrantsCoherent<Mechanism, Grants...>
-constexpr int gate_check() noexcept { return 1; }
+constexpr int gate_check() noexcept {
+    return 1;
+}
 
 // Wrong-family bystanders only — no subprocess<> anywhere.
 struct dummy_parent_tag {};
 struct dummy_ctx {};
 
-constexpr int bad_dispatch = gate_check<
-    join::Forked,
-    gr::fork_parent<dummy_parent_tag>,
-    gr::detach_with<rationale{"wrong family — this is for Detached"}>,
-    gr::exec_ctx<dummy_ctx>
->();
+constexpr int bad_dispatch =
+    gate_check<join::Forked, gr::fork_parent<dummy_parent_tag>,
+               gr::detach_with<rationale{"wrong family — this is for Detached"}>, gr::exec_ctx<dummy_ctx>>();
 
 }  // namespace neg_fixy_v_204_grant_forked_missing
 
-int main() {
-    return 0;
-}
+int main() { return 0; }

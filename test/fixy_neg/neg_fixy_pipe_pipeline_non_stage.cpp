@@ -16,7 +16,7 @@
 #include <optional>
 #include <utility>
 
-namespace eff   = crucible::effects;
+namespace eff = crucible::effects;
 namespace fpipe = crucible::fixy::pipe;
 
 template <typename T>
@@ -36,8 +36,7 @@ int main() {
 
     FakeConsumer<int> in;
     FakeProducer<int> out;
-    auto stage = fpipe::mint_stage<&pass_through>(
-        ctx, std::move(in), std::move(out));
+    auto stage = fpipe::mint_stage<&pass_through>(ctx, std::move(in), std::move(out));
 
     int not_a_stage = 42;
 

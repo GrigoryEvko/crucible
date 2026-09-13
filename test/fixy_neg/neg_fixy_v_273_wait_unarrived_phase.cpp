@@ -28,9 +28,8 @@ struct SlotTag {};
 struct Handle {
     using slot_tag = SlotTag;
     static constexpr std::size_t slot_bytes = 256;
-    static constexpr std::size_t stages     = 2;
-    static constexpr crucible::algebra::lattices::MemoryScope scope =
-        crucible::algebra::lattices::MemoryScope::Cta;
+    static constexpr std::size_t stages = 2;
+    static constexpr crucible::algebra::lattices::MemoryScope scope = crucible::algebra::lattices::MemoryScope::Cta;
     void arrive_expect_tx(std::size_t) noexcept {}
     [[nodiscard]] bool try_wait(std::uint32_t) noexcept { return true; }
 };
@@ -44,8 +43,8 @@ int main() {
     // Consumer head is Recv<Transferable<…>> — sending the drain-ack now,
     // before the fill arrives, is a typestate error (no .send() member).
     auto bad = std::move(consumer).send(
-        aps::Returned<aps::SmemDrain<256>, SlotTag>{
-            aps::SmemDrain<256>{}, crucible::safety::mint_permission_root<SlotTag>()},
+        aps::Returned<aps::SmemDrain<256>, SlotTag>{aps::SmemDrain<256>{},
+                                                    crucible::safety::mint_permission_root<SlotTag>()},
         aps::drain_send_transport);
     (void)bad;
     return 0;

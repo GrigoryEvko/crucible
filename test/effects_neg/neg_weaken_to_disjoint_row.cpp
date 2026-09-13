@@ -18,12 +18,10 @@
 namespace eff = crucible::effects;
 
 int main() {
-    auto bg_computation =
-        eff::Computation<eff::Row<eff::Effect::Bg>, int>{42};
+    auto bg_computation = eff::Computation<eff::Row<eff::Effect::Bg>, int>{42};
 
     // Try to weaken into Row<IO> — Bg ⊄ {IO}, so Subrow fails.
-    auto io_computation =
-        std::move(bg_computation).template weaken<eff::Row<eff::Effect::IO>>();
+    auto io_computation = std::move(bg_computation).template weaken<eff::Row<eff::Effect::IO>>();
     (void)io_computation;
 
     return 0;

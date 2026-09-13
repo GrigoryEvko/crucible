@@ -29,16 +29,15 @@ struct NegSwap_Org {};
 
 int main() {
     // Build well-formed inputs for the three parameter positions.
-    constexpr auto org_id   = perm::federation_org_id<NegSwap_Org>;
-    constexpr perm::PeerKeyFingerprint key{0xC0FFEE'C0FFEEULL};
-    constexpr perm::Nonce              nonce{0xC1C1'C1C1ULL};
+    constexpr auto org_id = perm::federation_org_id<NegSwap_Org>;
+    constexpr perm::PeerKeyFingerprint key{0xC0FFEEC0FFEEULL};
+    constexpr perm::Nonce nonce{0xC1C1C1C1ULL};
 
     // VIOLATION: swap positions 0 and 1.  The first arg expects
     // OrgId, but we pass a PeerKeyFingerprint.  The second arg
     // expects PeerKeyFingerprint, but we pass an OrgId.  Both
     // mismatches are required for the rejection to be unambiguous.
-    auto sig =
-        perm::federation_signature_fingerprint(key, org_id, nonce);
+    auto sig = perm::federation_signature_fingerprint(key, org_id, nonce);
     (void)sig;
     return 0;
 }

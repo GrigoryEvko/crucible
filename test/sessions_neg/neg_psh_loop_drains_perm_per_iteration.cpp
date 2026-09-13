@@ -36,28 +36,26 @@ using ::crucible::safety::mint_permission_root;
 
 namespace {
 struct WorkItem {};
-struct FakeChannel { int last_int = 0; };
+struct FakeChannel {
+    int last_int = 0;
+};
 
-void wire_send(FakeChannel& ch, Transferable<int, WorkItem>&& t) noexcept {
-    ch.last_int = t.value;
-}
+void wire_send(FakeChannel& ch, Transferable<int, WorkItem>&& t) noexcept { ch.last_int = t.value; }
 
 using BodyProto = Send<Transferable<int, WorkItem>, Continue>;
 using LoopProto = Loop<BodyProto>;
-}
+}  // namespace
 
 int main() {
     auto perm = mint_permission_root<WorkItem>();
     static_cast<void>(perm);
-    auto h = detail::permissioned_session_with_loc_<
-        LoopProto, PermSet<WorkItem>, FakeChannel>(
+    auto h = detail::permissioned_session_with_loc_<LoopProto, PermSet<WorkItem>, FakeChannel>(
         FakeChannel{}, std::source_location::current());
 
     Transferable<int, WorkItem> payload{1, mint_permission_root<WorkItem>()};
     // The send compiles (PS contains WorkItem at body entry); but the
     // returned handle's step-to-Continue resolution fires the loop-
     // balance assert because PS at Continue is Empty, not {WorkItem}.
-    [[maybe_unused]] auto h2 = std::move(h).send(std::move(payload),
-                                                  wire_send);
+    [[maybe_unused]] auto h2 = std::move(h).send(std::move(payload), wire_send);
     return 0;
 }

@@ -122,7 +122,7 @@ struct SyntheticProbeFailure : safety::diag::tag_base {
 };
 
 struct ProbeConfig {
-    PositiveProbePeriodNs period_per_kind_ns{std::uint64_t{60'000'000'000ull}};
+    PositiveProbePeriodNs period_per_kind_ns{std::uint64_t{60000000000ull}};
     PositiveProbeCount max_peer_count{std::uint16_t{1}};
     std::uint32_t metric_id_base = 0;
 };

@@ -79,7 +79,7 @@ struct PtpStatus {
     std::int64_t offset_from_master_ns = 0;
     PositivePtpPathDelayNs mean_path_delay_ns{std::uint64_t{1}};
     std::int64_t frequency_adjustment_ppb = 0;
-    PositivePtpSkewBoundNs skew_bound_ns{std::uint64_t{1'000}};
+    PositivePtpSkewBoundNs skew_bound_ns{std::uint64_t{1000}};
     std::uint64_t sequence = 0;
 
     [[nodiscard]] constexpr bool synchronized() const noexcept {
@@ -97,9 +97,9 @@ struct PtpDaemonReport {
     std::int64_t offset_from_master_ns = 0;
     PositivePtpPathDelayNs mean_path_delay_ns{std::uint64_t{1}};
     std::int64_t frequency_adjustment_ppb = 0;
-    PositivePtpSkewBoundNs skew_bound_ns{std::uint64_t{1'000}};
-    PositivePtpSkewBoundNs max_accepted_skew_ns{std::uint64_t{1'000}};
-    PositivePtpOffsetBoundNs max_accepted_offset_ns{std::uint64_t{1'000}};
+    PositivePtpSkewBoundNs skew_bound_ns{std::uint64_t{1000}};
+    PositivePtpSkewBoundNs max_accepted_skew_ns{std::uint64_t{1000}};
+    PositivePtpOffsetBoundNs max_accepted_offset_ns{std::uint64_t{1000}};
     std::uint64_t sequence = 0;
 };
 
@@ -352,7 +352,7 @@ private:
     std::atomic<std::int64_t> offset_from_master_ns_{0};
     std::atomic<std::uint64_t> mean_path_delay_ns_{1};
     std::atomic<std::int64_t> frequency_adjustment_ppb_{0};
-    std::atomic<std::uint64_t> skew_bound_ns_{1'000};
+    std::atomic<std::uint64_t> skew_bound_ns_{1000};
     std::atomic<std::uint64_t> sequence_{0};
     std::atomic<std::uint64_t> latest_timestamp_ns_{0};
     std::atomic<std::uint64_t> timestamp_sequence_{0};

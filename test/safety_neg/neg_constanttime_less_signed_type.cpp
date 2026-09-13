@@ -41,8 +41,7 @@
 // template instantiation with "constraints not satisfied" naming the
 // `unsigned_integral` concept.
 [[maybe_unused]] static constexpr auto offending_less_signed() {
-    return ::crucible::safety::ct::less<std::int32_t>(
-        std::int32_t{1}, std::int32_t{2});   // ERROR: signed type
+    return ::crucible::safety::ct::less<std::int32_t>(std::int32_t{1}, std::int32_t{2});  // ERROR: signed type
 }
 
 int main() { return 0; }

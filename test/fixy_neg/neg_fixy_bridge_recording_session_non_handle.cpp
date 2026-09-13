@@ -45,20 +45,19 @@
 #include <crucible/sessions/SessionEventLog.h>
 
 namespace fbridge = ::crucible::fixy::bridge;
-namespace proto   = ::crucible::safety::proto;
+namespace proto = ::crucible::safety::proto;
 
 int main() {
     proto::SessionEventLog log{};
-    int                    not_a_handle = 42;
-    proto::RoleTagId       self{1};
-    proto::RoleTagId       peer{2};
+    int not_a_handle = 42;
+    proto::RoleTagId self{1};
+    proto::RoleTagId peer{2};
 
     // First argument is `int` — fails IsSessionHandle<int> AND fails
     // every overload's parameter-type pattern-match.  fixy::bridge::
     // re-export must reject identically — the using-decl preserves
     // the substrate gate.
-    [[maybe_unused]] auto bad =
-        fbridge::mint_recording_session(not_a_handle, log, self, peer);
+    [[maybe_unused]] auto bad = fbridge::mint_recording_session(not_a_handle, log, self, peer);
 
     return 0;
 }

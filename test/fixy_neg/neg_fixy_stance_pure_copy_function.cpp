@@ -17,8 +17,7 @@ namespace stance = crucible::fixy::stance;
 
 using BadPureCopyFn = stance::PureCopy<void(int)>;
 
-static_assert(sizeof(BadPureCopyFn) > 0,
-    "instantiate stance::PureCopy<void(int)> to force the Type-axis "
-    "rejection (function types are not value-semantic).");
+static_assert(sizeof(BadPureCopyFn) > 0, "instantiate stance::PureCopy<void(int)> to force the Type-axis "
+                                         "rejection (function types are not value-semantic).");
 
 int main() { return 0; }

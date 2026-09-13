@@ -8,8 +8,7 @@
 
 int main() {
     crucible::canopy::GSet<int, 8> set;
-    crucible::canopy::LocalWrite<typename decltype(set)::state_type> local{
-        set.state()};
+    crucible::canopy::LocalWrite<typename decltype(set)::state_type> local{set.state()};
     (void)set.merge(local);
     return 0;
 }

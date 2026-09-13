@@ -16,7 +16,6 @@ int main() {
     cog::NicPortTargetCaps caps{};
     caps.features.set(cog::NicFeature::SrIov);
     auto iface = crucible::cntp::NicInterfaceName::from("eth0").value();
-    auto result = sriov::mint_sriov_plan(
-        eff::BgDrainCtx{}, id, caps, iface, *sriov::admit_vf_count(1));
+    auto result = sriov::mint_sriov_plan(eff::BgDrainCtx{}, id, caps, iface, *sriov::admit_vf_count(1));
     return result.has_value() ? 0 : 1;
 }

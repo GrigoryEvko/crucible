@@ -9,6 +9,4 @@ namespace gd = crucible::cntp::_wip::gpu_direct;
 
 constexpr gd::GpuDirectByteCount bad_bytes{std::uint64_t{0}};
 
-int main() {
-    return static_cast<int>(bad_bytes.value());
-}
+int main() { return static_cast<int>(bad_bytes.value()); }

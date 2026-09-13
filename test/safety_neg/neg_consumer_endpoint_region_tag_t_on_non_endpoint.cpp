@@ -11,8 +11,7 @@
 inline void neg_witness_two_ints(int, int) noexcept {}
 
 int main() {
-    using Tag = crucible::safety::extract::consumer_endpoint_region_tag_t<
-        &::neg_witness_two_ints>;
+    using Tag = crucible::safety::extract::consumer_endpoint_region_tag_t<&::neg_witness_two_ints>;
     Tag const t{};
     (void)t;
     return 0;

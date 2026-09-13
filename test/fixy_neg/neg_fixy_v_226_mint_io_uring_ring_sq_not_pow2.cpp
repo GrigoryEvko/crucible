@@ -20,17 +20,14 @@
 #include <crucible/fixy/Wrap.h>
 
 int main() {
-    namespace fwio  = ::crucible::fixy::wrap::io;
+    namespace fwio = ::crucible::fixy::wrap::io;
     namespace engine = fwio::engine;
-    namespace grant  = fwio::grant;
+    namespace grant = fwio::grant;
 
     ::crucible::effects::TestRunnerCtx ctx{};
 
     // Should FAIL: sq_entries<3> engages the axis but fails the
     // pow2-ness check (is_pow2_(3) is false).
-    [[maybe_unused]] auto r = fwio::mint_io_uring_ring<
-        grant::engine<engine::IoUring>,
-        grant::sq_entries<3>
-    >(ctx);
+    [[maybe_unused]] auto r = fwio::mint_io_uring_ring<grant::engine<engine::IoUring>, grant::sq_entries<3>>(ctx);
     return 0;
 }

@@ -60,12 +60,11 @@ using Req = cc::ScuttlebuttRequestSet<2, 2>;
 using Entry = cc::ScuttlebuttVersionEntry;
 using Key = cc::ScuttlebuttKey;
 
-inline constexpr std::size_t kCap = Dig::capacity;   // MaxPeers*MaxKeys = 4
-inline constexpr std::uint32_t kOrigins = 3;         // 3×3 universe > cap → overflow
+inline constexpr std::size_t kCap = Dig::capacity;  // MaxPeers*MaxKeys = 4
+inline constexpr std::uint32_t kOrigins = 3;  // 3×3 universe > cap → overflow
 inline constexpr std::uint32_t kKeys = 3;
 inline constexpr std::uint32_t kMaxPushes = 16;
-inline constexpr std::uint64_t kU64Max =
-    std::numeric_limits<std::uint64_t>::max();
+inline constexpr std::uint64_t kU64Max = std::numeric_limits<std::uint64_t>::max();
 
 // kind: 0 = valid; 1 = zero origin; 2 = zero key hash; 3 = zero key length.
 struct EntrySpec {
@@ -81,33 +80,31 @@ struct Spec {
 
 [[nodiscard]] std::uint64_t gen_version(Rng& rng) noexcept {
     switch (rng.next_below(5u)) {
-        case 0: return 0u;                  // exercises the digest/request asymmetry
-        case 1: return 1u;
-        case 2: return 1u + rng.next_below(100u);
-        case 3: return kU64Max;
-        default: return rng.next64();
+        case 0:
+            return 0u;  // exercises the digest/request asymmetry
+        case 1:
+            return 1u;
+        case 2:
+            return 1u + rng.next_below(100u);
+        case 3:
+            return kU64Max;
+        default:
+            return rng.next64();
     }
 }
 
 [[nodiscard]] std::uint8_t gen_kind(Rng& rng) noexcept {
     // ~1/6 malformed, split across the three malformation classes.
-    return rng.next_below(6u) == 0u
-        ? static_cast<std::uint8_t>(1u + rng.next_below(3u))
-        : std::uint8_t{0};
+    return rng.next_below(6u) == 0u ? static_cast<std::uint8_t>(1u + rng.next_below(3u)) : std::uint8_t{0};
 }
 
 [[nodiscard]] Entry make_entry(const EntrySpec& s) noexcept {
     const Uuid origin = s.kind == 1u
-        ? Uuid{}
-        : Uuid{static_cast<std::uint64_t>(s.oidx) + 1u,
-               static_cast<std::uint64_t>(s.oidx) + 101u};
-    const std::uint64_t hash =
-        s.kind == 2u ? 0u : static_cast<std::uint64_t>(s.kidx) + 1u;
-    const std::uint16_t length =
-        s.kind == 3u ? std::uint16_t{0} : std::uint16_t{1};
-    return Entry{.origin = origin,
-                 .key = Key{.hash = hash, .length = length},
-                 .version = s.version};
+                          ? Uuid{}
+                          : Uuid{static_cast<std::uint64_t>(s.oidx) + 1u, static_cast<std::uint64_t>(s.oidx) + 101u};
+    const std::uint64_t hash = s.kind == 2u ? 0u : static_cast<std::uint64_t>(s.kidx) + 1u;
+    const std::uint16_t length = s.kind == 3u ? std::uint16_t{0} : std::uint16_t{1};
+    return Entry{.origin = origin, .key = Key{.hash = hash, .length = length}, .version = s.version};
 }
 
 // ─── independent reference map (flat cells, max version per key) ────
@@ -128,7 +125,7 @@ struct Ref {
 [[nodiscard]] bool step(Ref& ref, const EntrySpec& s, bool is_digest) noexcept {
     const bool malformed = s.kind != 0u;
     if (is_digest) {
-        if (s.version == 0u) return true;       // silent skip, no state change
+        if (s.version == 0u) return true;  // silent skip, no state change
         if (malformed) return false;
     } else {
         if (s.version == 0u || malformed) return false;
@@ -136,10 +133,10 @@ struct Ref {
     for (std::size_t i = 0; i < ref.n; ++i) {
         if (ref.c[i].oidx == s.oidx && ref.c[i].kidx == s.kidx) {
             if (ref.c[i].version < s.version) ref.c[i].version = s.version;
-            return true;                        // update existing (even when full)
+            return true;  // update existing (even when full)
         }
     }
-    if (ref.n == kCap) return false;            // distinct-cell overflow
+    if (ref.n == kCap) return false;  // distinct-cell overflow
     ref.c[ref.n] = Cell{s.oidx, s.kidx, s.version};
     ++ref.n;
     return true;
@@ -149,11 +146,9 @@ struct Ref {
     for (std::size_t i = 0; i < ref.n; ++i) {
         const Uuid expect{static_cast<std::uint64_t>(ref.c[i].oidx) + 1u,
                           static_cast<std::uint64_t>(ref.c[i].oidx) + 101u};
-        const std::uint64_t expect_hash =
-            static_cast<std::uint64_t>(ref.c[i].kidx) + 1u;
-        if (got.origin == expect && got.key.hash == expect_hash &&
-            got.key.length == std::uint16_t{1} &&
-            got.version == ref.c[i].version) {
+        const std::uint64_t expect_hash = static_cast<std::uint64_t>(ref.c[i].kidx) + 1u;
+        if (got.origin == expect && got.key.hash == expect_hash && got.key.length == std::uint16_t{1}
+            && got.version == ref.c[i].version) {
             return true;
         }
     }
@@ -177,9 +172,10 @@ int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
 
     Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 2'000'000) cfg.iterations = 2'000'000;
+    if (cfg.iterations > 2000000) cfg.iterations = 2000000;
 
-    return run("scuttlebutt_push", cfg,
+    return run(
+        "scuttlebutt_push", cfg,
         [](Rng& rng) noexcept -> Spec {
             Spec spec{};
             spec.count = 1u + rng.next_below(kMaxPushes - 1u);

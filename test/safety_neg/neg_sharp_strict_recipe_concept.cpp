@@ -11,8 +11,7 @@ namespace shp = crucible::cntp::_wip::sharp;
 struct StrictRecipe {
     static constexpr bool associative = true;
     static constexpr bool commutative = true;
-    static constexpr crucible::ReductionDeterminism determinism =
-        crucible::ReductionDeterminism::BITEXACT_STRICT;
+    static constexpr crucible::ReductionDeterminism determinism = crucible::ReductionDeterminism::BITEXACT_STRICT;
 };
 
 template <class R>

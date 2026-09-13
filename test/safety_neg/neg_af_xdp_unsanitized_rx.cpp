@@ -20,7 +20,7 @@
 
 namespace cntp = crucible::cntp;
 
-using Socket = cntp::AfXdpSocket<131'072, 2'048, 64, 64, 64, 64>;
+using Socket = cntp::AfXdpSocket<131072, 2048, 64, 64, 64, 64>;
 
 // A consumer that only accepts validated (Sanitized) frames.
 void consume_sanitized(Socket::sanitized_frame) {}
@@ -28,7 +28,7 @@ void consume_sanitized(Socket::sanitized_frame) {}
 int main() {
     std::byte raw[64]{};
     Socket::packet_view view{raw};
-    Socket::rx_frame untrusted{view};   // External-tagged (untrusted wire data)
+    Socket::rx_frame untrusted{view};  // External-tagged (untrusted wire data)
 
     // ERROR: External is not Sanitized — must launder via sanitize_rx_frame.
     consume_sanitized(untrusted);

@@ -23,7 +23,7 @@
 //   "CtxFitsFileMint" / "CtxAdmitsIoBlock" / "row_contains" / "Block".
 
 #include <crucible/effects/ExecCtx.h>
-#include <crucible/fixy/Source.h>           // fixy::tags::source::*
+#include <crucible/fixy/Source.h>  // fixy::tags::source::*
 #include <crucible/fixy/Wrap.h>
 
 int main() {
@@ -32,13 +32,11 @@ int main() {
     // ColdInitCtx — Row<Init, Alloc, IO> — admits IO but NOT Block.
     ::crucible::effects::ColdInitCtx ctx{};
 
-    fwfs::Path<::crucible::fixy::tags::source::Sanitized> path{
-        "/tmp/crucible_neg_v226_durable_truncate_no_block"};
+    fwfs::Path<::crucible::fixy::tags::source::Sanitized> path{"/tmp/crucible_neg_v226_durable_truncate_no_block"};
 
     // Should FAIL: mint_durable_truncate_file delegates to mint_file,
     // whose CtxFitsFileMint folds in CtxAdmitsIoBlock<Ctx>.  ColdInitCtx's
     // row lacks Effect::Block; the requires-clause refuses instantiation.
-    [[maybe_unused]] auto r =
-        fwfs::mint_durable_truncate_file(ctx, std::move(path));
+    [[maybe_unused]] auto r = fwfs::mint_durable_truncate_file(ctx, std::move(path));
     return 0;
 }

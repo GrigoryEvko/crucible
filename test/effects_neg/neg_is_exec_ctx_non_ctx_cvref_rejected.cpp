@@ -17,7 +17,6 @@
 
 namespace eff = crucible::effects;
 
-static_assert(eff::IsExecCtx<int const&>,
-    "fixy-A3-004: cv-ref-stripped non-Ctx must still reject IsExecCtx");
+static_assert(eff::IsExecCtx<int const&>, "fixy-A3-004: cv-ref-stripped non-Ctx must still reject IsExecCtx");
 
 int main() { return 0; }

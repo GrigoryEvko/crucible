@@ -131,7 +131,7 @@ static void test_adversarial_num_ops_rejected() {
         uint32_t version;
         uint32_t n_ops;
         uint32_t n_metas;
-    } hdr{.magic = {'C', 'R', 'T', 'R'}, .version = 1, .n_ops = 0xFFFF'FFFFu, .n_metas = 0};
+    } hdr{.magic = {'C', 'R', 'T', 'R'}, .version = 1, .n_ops = 0xFFFFFFFFu, .n_metas = 0};
     std::string path = write_tmp(&hdr, sizeof(hdr));
     auto t = load_trace(path.c_str());
     assert(!t);
@@ -149,10 +149,10 @@ static void test_round_trip_single_op() {
     std::memcpy(buf + 8, &n_ops, 4);
     std::memcpy(buf + 12, &n_metas, 4);
 
-    const uint64_t schema = 0xAABB'CCDD'EEFF'0011ULL;
-    const uint64_t shape = 0x1122'3344'5566'7788ULL;
-    const uint64_t scope = 0xDEAD'BEEF'CAFE'BABEULL;
-    const uint64_t callsite = 0xFEED'FACE'0000'00ADULL;
+    const uint64_t schema = 0xAABBCCDDEEFF0011ULL;
+    const uint64_t shape = 0x1122334455667788ULL;
+    const uint64_t scope = 0xDEADBEEFCAFEBABEULL;
+    const uint64_t callsite = 0xFEEDFACE000000ADULL;
     std::memcpy(buf + 16 + 0, &schema, 8);
     std::memcpy(buf + 16 + 8, &shape, 8);
     std::memcpy(buf + 16 + 16, &scope, 8);
@@ -217,9 +217,9 @@ static void test_schema_name_table_round_trip() {
         buf.insert(buf.end(), reinterpret_cast<const unsigned char*>(name),
                    reinterpret_cast<const unsigned char*>(name) + len);
     };
-    append_entry(0xAAAA'1111'2222'3333ULL, "aten::add");
-    append_entry(0xBBBB'4444'5555'6666ULL, "aten::mul");
-    append_entry(0xCCCC'7777'8888'9999ULL, "aten::matmul");
+    append_entry(0xAAAA111122223333ULL, "aten::add");
+    append_entry(0xBBBB444455556666ULL, "aten::mul");
+    append_entry(0xCCCC777788889999ULL, "aten::matmul");
 
     std::string path = write_tmp(buf.data(), buf.size());
     auto t = load_trace(path.c_str());
@@ -229,14 +229,14 @@ static void test_schema_name_table_round_trip() {
     assert(t->num_ops == 0);
     assert(t->num_metas == 0);
 
-    const char* n1 = C(global_schema_table().lookup(SchemaHash{0xAAAA'1111'2222'3333ULL}));
-    const char* n2 = C(global_schema_table().lookup(SchemaHash{0xBBBB'4444'5555'6666ULL}));
-    const char* n3 = C(global_schema_table().lookup(SchemaHash{0xCCCC'7777'8888'9999ULL}));
+    const char* n1 = C(global_schema_table().lookup(SchemaHash{0xAAAA111122223333ULL}));
+    const char* n2 = C(global_schema_table().lookup(SchemaHash{0xBBBB444455556666ULL}));
+    const char* n3 = C(global_schema_table().lookup(SchemaHash{0xCCCC777788889999ULL}));
     assert(n1 && std::strcmp(n1, "aten::add") == 0);
     assert(n2 && std::strcmp(n2, "aten::mul") == 0);
     assert(n3 && std::strcmp(n3, "aten::matmul") == 0);
 
-    assert(missing(global_schema_table().lookup(SchemaHash{0xDEAD'BEEFULL})));
+    assert(missing(global_schema_table().lookup(SchemaHash{0xDEADBEEFULL})));
 
     global_schema_table().clear();
     std::printf("  test_schema_name_table_round_trip: PASSED\n");
@@ -251,7 +251,7 @@ static void test_schema_name_table_corrupt_zero_len() {
 
     auto buf = make_zero_op_header();
     append_le<uint32_t>(buf, 1);  // num_names
-    append_le<uint64_t>(buf, 0xDEAD'BEEF'CAFE'BABEULL);  // schema_hash
+    append_le<uint64_t>(buf, 0xDEADBEEFCAFEBABEULL);  // schema_hash
     append_le<uint16_t>(buf, 0);  // CORRUPT name_len
 
     std::string path = write_tmp(buf.data(), buf.size());
@@ -265,7 +265,7 @@ static void test_schema_name_table_corrupt_zero_len() {
 
     // The guard fired before the registration, so the hash never
     // reached the table.
-    assert(missing(global_schema_table().lookup(SchemaHash{0xDEAD'BEEF'CAFE'BABEULL})));
+    assert(missing(global_schema_table().lookup(SchemaHash{0xDEADBEEFCAFEBABEULL})));
     assert(global_schema_table().count() == 0);
 
     global_schema_table().clear();
@@ -286,7 +286,7 @@ static void test_schema_name_table_corrupt_oversize_len() {
 
     auto buf = make_zero_op_header();
     append_le<uint32_t>(buf, 1);  // num_names
-    append_le<uint64_t>(buf, 0xFEED'FACE'BAAD'F00DULL);  // schema_hash
+    append_le<uint64_t>(buf, 0xFEEDFACEBAADF00DULL);  // schema_hash
     append_le<uint16_t>(buf, 300);  // CORRUPT name_len
     // A recognizable byte, so it stands out in a buffer that should
     // never hold it.
@@ -301,7 +301,7 @@ static void test_schema_name_table_corrupt_oversize_len() {
 
     // The guard fired before the length was refined, which under
     // enforced contracts would otherwise abort.
-    assert(missing(global_schema_table().lookup(SchemaHash{0xFEED'FACE'BAAD'F00DULL})));
+    assert(missing(global_schema_table().lookup(SchemaHash{0xFEEDFACEBAADF00DULL})));
     assert(global_schema_table().count() == 0);
 
     global_schema_table().clear();

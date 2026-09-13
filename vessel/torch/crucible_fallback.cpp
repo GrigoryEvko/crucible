@@ -48,10 +48,9 @@ namespace {
 // =====================================================================
 
 static constexpr uint64_t FNV_OFFSET = 0xcbf29ce484222325ULL;
-static constexpr uint64_t FNV_PRIME  = 0x100000001b3ULL;
+static constexpr uint64_t FNV_PRIME = 0x100000001b3ULL;
 
-[[nodiscard]] static uint64_t fnv1a_bytes(const void* data, size_t len,
-                                           uint64_t h = FNV_OFFSET) {
+[[nodiscard]] static uint64_t fnv1a_bytes(const void* data, size_t len, uint64_t h = FNV_OFFSET) {
     const auto* p = static_cast<const uint8_t*>(data);
     for (size_t i = 0; i < len; i++) {
         h ^= p[i];
@@ -60,9 +59,7 @@ static constexpr uint64_t FNV_PRIME  = 0x100000001b3ULL;
     return h;
 }
 
-[[nodiscard]] static uint64_t fnv1a_str(const char* s, size_t len) {
-    return fnv1a_bytes(s, len);
-}
+[[nodiscard]] static uint64_t fnv1a_str(const char* s, size_t len) { return fnv1a_bytes(s, len); }
 
 // =====================================================================
 // Extraction result: strong-typed intermediate from IValue stack
@@ -73,17 +70,15 @@ static constexpr uint64_t FNV_PRIME  = 0x100000001b3ULL;
 
 // Number of tensor metas extracted from one op's args/returns.
 struct MetaCount {
-    uint16_t inputs  = 0;
+    uint16_t inputs = 0;
     uint16_t outputs = 0;
 
-    [[nodiscard]] uint32_t total() const {
-        return static_cast<uint32_t>(inputs) + outputs;
-    }
+    [[nodiscard]] uint32_t total() const { return static_cast<uint32_t>(inputs) + outputs; }
 };
 
 // Up to 5 scalar arguments, bitcast to int64_t.
 struct ScalarArgs {
-    int64_t  values[5]{};
+    int64_t values[5]{};
     uint16_t count = 0;
 
     void push(int64_t v) {
@@ -118,15 +113,14 @@ struct ScalarArgs {
 // stays L1-resident.
 struct SchemaHashSlot {
     safety::Tagged<const void*, safety::source::External> key{nullptr};
-    crucible::SchemaHash                                  hash;
+    crucible::SchemaHash hash;
 };
 
-static_assert(sizeof(SchemaHashSlot) == 16,
-              "SchemaHashSlot must remain 16B for the L1d cache budget — "
-              "Tagged<const void*, source::External> is regime-1 EBO collapse "
-              "so its sizeof equals sizeof(const void*).");
+static_assert(sizeof(SchemaHashSlot) == 16, "SchemaHashSlot must remain 16B for the L1d cache budget — "
+                                            "Tagged<const void*, source::External> is regime-1 EBO collapse "
+                                            "so its sizeof equals sizeof(const void*).");
 
-static constexpr uint32_t SCHEMA_CACHE_CAP  = 2048;
+static constexpr uint32_t SCHEMA_CACHE_CAP = 2048;
 static constexpr uint32_t SCHEMA_CACHE_MASK = SCHEMA_CACHE_CAP - 1;
 static thread_local SchemaHashSlot schema_cache[SCHEMA_CACHE_CAP]{};
 static thread_local bool schema_is_mutable[SCHEMA_CACHE_CAP]{};
@@ -136,12 +130,8 @@ struct SchemaInfo {
     bool is_mutable = false;
 };
 
-[[nodiscard]] static SchemaInfo get_schema_info(
-    const c10::OperatorHandle& op,
-    const c10::FunctionSchema& schema)
-{
-    const auto idx = (reinterpret_cast<uintptr_t>(&op) >> 4)
-                     & SCHEMA_CACHE_MASK;
+[[nodiscard]] static SchemaInfo get_schema_info(const c10::OperatorHandle& op, const c10::FunctionSchema& schema) {
+    const auto idx = (reinterpret_cast<uintptr_t>(&op) >> 4) & SCHEMA_CACHE_MASK;
     auto& slot = schema_cache[idx];
     if (slot.key.value() == &op) [[likely]]
         return {slot.hash, schema_is_mutable[idx]};
@@ -176,10 +166,8 @@ struct SchemaInfo {
     auto& schema_table = crucible::global_schema_table();
     if (!schema_table.is_sealed()) {
         auto schema_table_view = schema_table.mint_mutable_view();
-        crucible::register_schema_name(
-            schema_table_view,
-            schema_hash,
-            crucible::SchemaTable::SanitizedName{full_name.c_str()});
+        crucible::register_schema_name(schema_table_view, schema_hash,
+                                       crucible::SchemaTable::SanitizedName{full_name.c_str()});
     }
 
     // Authoritative mutability from schema alias annotations.
@@ -193,7 +181,7 @@ struct SchemaInfo {
     // until something downstream proves otherwise.  Construction is
     // explicit per safety::Tagged's API; the wrapper is move-assigned
     // into the slot at zero runtime cost.
-    slot.key  = safety::Tagged<const void*, safety::source::External>{&op};
+    slot.key = safety::Tagged<const void*, safety::source::External>{&op};
     slot.hash = schema_hash;
     schema_is_mutable[idx] = mutable_op;
     return {schema_hash, mutable_op};
@@ -219,9 +207,7 @@ static thread_local uint8_t s_training_phase = 0;
 // Must produce identical hashes to vessel_api.cpp::crucible_hash_shapes().
 // Chain: for each tensor, fold ndim (1 byte) then sizes (ndim * 8 bytes)
 // into a single continuous FNV-1a accumulator.
-[[nodiscard]] static crucible::ShapeHash compute_shape_hash(
-    const crucible::TensorMeta* metas, uint16_t n_inputs)
-{
+[[nodiscard]] static crucible::ShapeHash compute_shape_hash(const crucible::TensorMeta* metas, uint16_t n_inputs) {
     uint64_t h = FNV_OFFSET;
     for (uint16_t i = 0; i < n_inputs; i++) {
         // Hash ndim as separator (1 byte), continuing the chain.
@@ -252,8 +238,7 @@ static void fill_meta(crucible::TensorMeta& meta, const at::Tensor& t) {
 
     // -- Core fields --------------------------------------------------
 
-    const auto ndim = static_cast<uint8_t>(
-        std::min(t.dim(), static_cast<int64_t>(8)));
+    const auto ndim = static_cast<uint8_t>(std::min(t.dim(), static_cast<int64_t>(8)));
     meta.ndim = ndim;
 
     const auto sizes = t.sizes();
@@ -282,39 +267,36 @@ static void fill_meta(crucible::TensorMeta& meta, const at::Tensor& t) {
     // — fails the build instead of silently corrupting tensor metadata.
     static_assert(sizeof(c10::ScalarType) == sizeof(crucible::ScalarType));
     static_assert(sizeof(c10::DeviceType) == sizeof(crucible::DeviceType));
-    static_assert(sizeof(c10::Layout)     == sizeof(crucible::Layout));
-    static_assert(static_cast<int8_t>(c10::ScalarType::Float)
-                      == static_cast<int8_t>(crucible::ScalarType::Float),
+    static_assert(sizeof(c10::Layout) == sizeof(crucible::Layout));
+    static_assert(static_cast<int8_t>(c10::ScalarType::Float) == static_cast<int8_t>(crucible::ScalarType::Float),
                   "c10::ScalarType::Float ordinal drifted from crucible mirror");
     static_assert(static_cast<int8_t>(c10::ScalarType::Undefined)
                       == static_cast<int8_t>(crucible::ScalarType::Undefined),
                   "c10::ScalarType::Undefined ordinal drifted from crucible mirror");
-    static_assert(static_cast<int8_t>(c10::DeviceType::CUDA)
-                      == static_cast<int8_t>(crucible::DeviceType::CUDA),
+    static_assert(static_cast<int8_t>(c10::DeviceType::CUDA) == static_cast<int8_t>(crucible::DeviceType::CUDA),
                   "c10::DeviceType::CUDA ordinal drifted from crucible mirror");
-    static_assert(static_cast<int8_t>(c10::Layout::Strided)
-                      == static_cast<int8_t>(crucible::Layout::Strided),
+    static_assert(static_cast<int8_t>(c10::Layout::Strided) == static_cast<int8_t>(crucible::Layout::Strided),
                   "c10::Layout::Strided ordinal drifted from crucible mirror");
 
-    meta.dtype       = std::bit_cast<crucible::ScalarType>(t.scalar_type());
+    meta.dtype = std::bit_cast<crucible::ScalarType>(t.scalar_type());
     meta.device_type = std::bit_cast<crucible::DeviceType>(t.device().type());
     // c10::DeviceIndex is already int8_t (c10/core/Device.h).  Direct
     // copy on the present-branch; literal -1 on the absent-branch.
-    meta.device_idx  = t.device().has_index() ? t.device().index() : int8_t{-1};
-    meta.layout      = std::bit_cast<crucible::Layout>(t.layout());
+    meta.device_idx = t.device().has_index() ? t.device().index() : int8_t{-1};
+    meta.layout = std::bit_cast<crucible::Layout>(t.layout());
 
     // -- Extended fields (autograd + storage) --------------------------
 
     meta.requires_grad = t.requires_grad();
 
     uint8_t flags = 0;
-    if (t.is_leaf())                        flags |= crucible::meta_flags::IS_LEAF;
-    if (strided && t.is_contiguous())       flags |= crucible::meta_flags::IS_CONTIGUOUS;
-    if (t.is_neg())                         flags |= crucible::meta_flags::IS_NEG;
-    if (t.is_conj())                        flags |= crucible::meta_flags::IS_CONJ;
+    if (t.is_leaf()) flags |= crucible::meta_flags::IS_LEAF;
+    if (strided && t.is_contiguous()) flags |= crucible::meta_flags::IS_CONTIGUOUS;
+    if (t.is_neg()) flags |= crucible::meta_flags::IS_NEG;
+    if (t.is_conj()) flags |= crucible::meta_flags::IS_CONJ;
 
     auto* impl = t.unsafeGetTensorImpl();
-    auto* am   = impl->autograd_meta();
+    auto* am = impl->autograd_meta();
     if (am) {
         auto* node = torch::autograd::impl::grad_fn_unsafe(t);
         if (node) {
@@ -322,25 +304,21 @@ static void fill_meta(crucible::TensorMeta& meta, const at::Tensor& t) {
             const auto& gfn_name = node->name();
             meta.grad_fn_hash = fnv1a_str(gfn_name.data(), gfn_name.size());
         }
-        meta.output_nr = static_cast<uint8_t>(
-            torch::autograd::impl::get_autograd_meta(t)->output_nr_ & 0xFF);
+        meta.output_nr = static_cast<uint8_t>(torch::autograd::impl::get_autograd_meta(t)->output_nr_ & 0xFF);
     }
 
     // View detection: check autograd is_view_ flag first (catches expand,
     // as_strided, narrow etc. that share storage base and zero offset).
     // Fall back to data_ptr != storage_base and storage_offset != 0 checks
     // for non-autograd views.
-    if (am && static_cast<torch::autograd::AutogradMeta*>(am)->is_view_)
-        flags |= crucible::meta_flags::IS_VIEW;
+    if (am && static_cast<torch::autograd::AutogradMeta*>(am)->is_view_) flags |= crucible::meta_flags::IS_VIEW;
 
     if (strided && impl->has_storage()) {
         auto* storage_base = impl->storage().data_ptr().get();
-        if (storage_base != nullptr &&
-            t.data_ptr() != static_cast<char*>(storage_base)) {
+        if (storage_base != nullptr && t.data_ptr() != static_cast<char*>(storage_base)) {
             flags |= crucible::meta_flags::IS_VIEW;
         }
-        meta.storage_nbytes = static_cast<uint32_t>(
-            impl->storage().nbytes() & 0xFFFFFFFF);
+        meta.storage_nbytes = static_cast<uint32_t>(impl->storage().nbytes() & 0xFFFFFFFF);
     }
     if (strided && t.storage_offset() != 0) {
         flags |= crucible::meta_flags::IS_VIEW;
@@ -349,8 +327,7 @@ static void fill_meta(crucible::TensorMeta& meta, const at::Tensor& t) {
 
     meta.flags = flags;
 
-    meta.version = static_cast<uint32_t>(
-        impl->version_counter().current_version() & 0xFFFFFFFF);
+    meta.version = static_cast<uint32_t>(impl->version_counter().current_version() & 0xFFFFFFFF);
 }
 
 // =====================================================================
@@ -360,8 +337,8 @@ static void fill_meta(crucible::TensorMeta& meta, const at::Tensor& t) {
 // =====================================================================
 
 [[nodiscard]] static int64_t scalar_to_int64(const c10::IValue& iv) {
-    if (iv.isInt())    return iv.toInt();
-    if (iv.isBool())   return iv.toBool() ? 1 : 0;
+    if (iv.isInt()) return iv.toInt();
+    if (iv.isBool()) return iv.toBool() ? 1 : 0;
     if (iv.isDouble()) return std::bit_cast<int64_t>(iv.toDouble());
     return 0;
 }
@@ -376,16 +353,12 @@ static void fill_meta(crucible::TensorMeta& meta, const at::Tensor& t) {
 static constexpr uint32_t MAX_INLINE_METAS = 32;
 
 struct ExtractionResult {
-    MetaCount  counts;
+    MetaCount counts;
     ScalarArgs scalars;
 };
 
-[[nodiscard]] static ExtractionResult extract_inputs(
-    const torch::jit::Stack& stack,
-    size_t args_begin,
-    size_t num_args,
-    crucible::TensorMeta* metas)
-{
+[[nodiscard]] static ExtractionResult extract_inputs(const torch::jit::Stack& stack, size_t args_begin, size_t num_args,
+                                                     crucible::TensorMeta* metas) {
     ExtractionResult r{};
 
     for (size_t i = 0; i < num_args; i++) {
@@ -410,8 +383,7 @@ struct ExtractionResult {
             // -Wrange-loop-bind-reference. Use value to avoid the warning.
             for (const auto ref : iv.toOptionalTensorList()) {
                 const auto opt = static_cast<std::optional<at::Tensor>>(ref);
-                if (opt.has_value() && opt->defined()
-                    && r.counts.inputs < MAX_INLINE_METAS) {
+                if (opt.has_value() && opt->defined() && r.counts.inputs < MAX_INLINE_METAS) {
                     fill_meta(metas[r.counts.inputs], *opt);
                     r.counts.inputs++;
                 }
@@ -434,12 +406,8 @@ struct ExtractionResult {
     return r;
 }
 
-static void extract_outputs(
-    const torch::jit::Stack& stack,
-    size_t num_returns,
-    crucible::TensorMeta* metas,
-    MetaCount& counts)
-{
+static void extract_outputs(const torch::jit::Stack& stack, size_t num_returns, crucible::TensorMeta* metas,
+                            MetaCount& counts) {
     if (num_returns == 0 || stack.size() < num_returns) return;
     const auto rets_begin = stack.size() - num_returns;
 
@@ -467,14 +435,10 @@ static void extract_outputs(
 // The fallback
 // =====================================================================
 
-static const auto AFTER_CRUCIBLE_KEYSET = c10::DispatchKeySet(
-    c10::DispatchKeySet::FULL_AFTER, c10::DispatchKey::Crucible);
+static const auto AFTER_CRUCIBLE_KEYSET =
+    c10::DispatchKeySet(c10::DispatchKeySet::FULL_AFTER, c10::DispatchKey::Crucible);
 
-void crucibleFallback(
-    const c10::OperatorHandle& op,
-    c10::DispatchKeySet dispatch_keys,
-    torch::jit::Stack* stack)
-{
+void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatch_keys, torch::jit::Stack* stack) {
     auto& state = c10::CrucibleState::get_tls_state();
 
     // -- Fast path: INACTIVE -- pure passthrough, zero work -----------
@@ -497,14 +461,13 @@ void crucibleFallback(
         op.redispatchBoxed(dispatch_keys & AFTER_CRUCIBLE_KEYSET, stack);
         return;
     }
-    auto vigil_typed = crucible::vessel::as_vigil_typed(
-        static_cast<CrucibleHandle>(tls_ctx));
+    auto vigil_typed = crucible::vessel::as_vigil_typed(static_cast<CrucibleHandle>(tls_ctx));
     auto* vigil = vigil_typed.value();
 
     const auto& schema = op.schema();
 
     // -- Extract input tensor metadata + scalars ----------------------
-    const auto num_args   = schema.arguments().size();
+    const auto num_args = schema.arguments().size();
     // Guard: schema.arguments().size() > stack->size() should never happen
     // with a well-formed dispatcher, but protect against underflow (UB).
     if (num_args > stack->size()) [[unlikely]] {
@@ -514,8 +477,7 @@ void crucibleFallback(
     const auto args_begin = stack->size() - num_args;
 
     crucible::TensorMeta inline_metas[MAX_INLINE_METAS]{};
-    auto [counts, scalars] = extract_inputs(
-        *stack, args_begin, num_args, inline_metas);
+    auto [counts, scalars] = extract_inputs(*stack, args_begin, num_args, inline_metas);
 
     // -- Compute hashes + mutability -----------------------------------
     const auto [schema_hash, is_mutable] = get_schema_info(op, schema);
@@ -529,23 +491,19 @@ void crucibleFallback(
 
     // -- Build TraceRing::Entry ---------------------------------------
     crucible::TraceRing::Entry entry{};
-    entry.schema_hash     = schema_hash;
-    entry.shape_hash      = shape_hash;
-    entry.num_inputs      = counts.inputs;
-    entry.num_outputs     = counts.outputs;
+    entry.schema_hash = schema_hash;
+    entry.shape_hash = shape_hash;
+    entry.num_inputs = counts.inputs;
+    entry.num_outputs = counts.outputs;
     entry.num_scalar_args = scalars.count;
 
     // Pack op_flags: 5 bits of per-op context.
     uint8_t flags = 0;
-    if (c10::InferenceMode::is_enabled())
-        flags |= crucible::op_flag::INFERENCE_MODE;
-    if (c10::GradMode::is_enabled())
-        flags |= crucible::op_flag::GRAD_ENABLED;
-    if (is_mutable)
-        flags |= crucible::op_flag::IS_MUTABLE;
+    if (c10::InferenceMode::is_enabled()) flags |= crucible::op_flag::INFERENCE_MODE;
+    if (c10::GradMode::is_enabled()) flags |= crucible::op_flag::GRAD_ENABLED;
+    if (is_mutable) flags |= crucible::op_flag::IS_MUTABLE;
     flags |= (s_training_phase & 0x3) << crucible::op_flag::PHASE_SHIFT;
-    if (dispatch_keys.has(c10::DispatchKey::Python))
-        flags |= crucible::op_flag::TORCH_FUNCTION;
+    if (dispatch_keys.has(c10::DispatchKey::Python)) flags |= crucible::op_flag::TORCH_FUNCTION;
     entry.op_flags = flags;
 
     for (uint16_t s = 0; s < scalars.count; s++)
@@ -571,8 +529,7 @@ void crucibleFallback(
     // (thin forwarder, default CallerRow = Row<>) and gives the
     // compile-time guarantee that this foreground hot path cannot
     // silently drift into a non-Pure context.
-    (void)vigil->dispatch_op_pure(crucible::vouch(entry), inline_metas, counts.total(),
-                                  scope_hash);
+    (void)vigil->dispatch_op_pure(crucible::vouch(entry), inline_metas, counts.total(), scope_hash);
 }
 
 // =====================================================================
@@ -581,18 +538,14 @@ void crucibleFallback(
 // One line: catches every op in every namespace.  Fires on dlopen.
 // =====================================================================
 
-TORCH_LIBRARY_IMPL(_, Crucible, m) {
-    m.fallback(torch::CppFunction::makeFromBoxedFunction<&crucibleFallback>());
-}
+TORCH_LIBRARY_IMPL(_, Crucible, m) { m.fallback(torch::CppFunction::makeFromBoxedFunction<&crucibleFallback>()); }
 
 // Profiler ops: passthrough (do not record).
 // These are injected by PyTorch's profiling infrastructure and would
 // pollute the trace with zero-tensor ops that break iteration detection.
 TORCH_LIBRARY_IMPL(profiler, Crucible, m) {
-    m.impl("_record_function_enter_new",
-           torch::CppFunction::makeFallthrough());
-    m.impl("_record_function_exit",
-           torch::CppFunction::makeFallthrough());
+    m.impl("_record_function_enter_new", torch::CppFunction::makeFallthrough());
+    m.impl("_record_function_exit", torch::CppFunction::makeFallthrough());
 }
 
 // =====================================================================
@@ -649,7 +602,7 @@ TORCH_LIBRARY_IMPL(profiler, Crucible, m) {
 //       are mutually exclusive execution strategies.
 // =====================================================================
 
-} // anonymous namespace
+}  // anonymous namespace
 
 // =====================================================================
 // Exported TLS accessors (called from Python via ctypes or pybind11)
@@ -662,30 +615,22 @@ TORCH_LIBRARY_IMPL(profiler, Crucible, m) {
 extern "C" {
 
 CRUCIBLE_API void crucible_dispatch_set_tls_mode(uint8_t mode) {
-    c10::CrucibleState::get_tls_state().set_mode(
-        static_cast<c10::CrucibleMode>(mode));
+    c10::CrucibleState::get_tls_state().set_mode(static_cast<c10::CrucibleMode>(mode));
 }
 
-CRUCIBLE_API void crucible_dispatch_set_tls_context(void* ctx) {
-    c10::CrucibleState::get_tls_state().set_context(ctx);
-}
+CRUCIBLE_API void crucible_dispatch_set_tls_context(void* ctx) { c10::CrucibleState::get_tls_state().set_context(ctx); }
 
 CRUCIBLE_API uint8_t crucible_dispatch_get_tls_mode() {
-    return static_cast<uint8_t>(
-        c10::CrucibleState::get_tls_state().mode());
+    return static_cast<uint8_t>(c10::CrucibleState::get_tls_state().mode());
 }
 
-CRUCIBLE_API void* crucible_dispatch_get_tls_context() {
-    return c10::CrucibleState::get_tls_state().context();
-}
+CRUCIBLE_API void* crucible_dispatch_get_tls_context() { return c10::CrucibleState::get_tls_state().context(); }
 
 CRUCIBLE_API void crucible_dispatch_set_tls_scope(uint64_t scope_hash) {
     c10::CrucibleState::get_tls_state().set_scope_hash(scope_hash);
 }
 
-CRUCIBLE_API uint64_t crucible_dispatch_get_tls_scope() {
-    return c10::CrucibleState::get_tls_state().scope_hash();
-}
+CRUCIBLE_API uint64_t crucible_dispatch_get_tls_scope() { return c10::CrucibleState::get_tls_state().scope_hash(); }
 
 // ── Training phase TLS ─────────────────────────────────────────────
 //
@@ -693,13 +638,9 @@ CRUCIBLE_API uint64_t crucible_dispatch_get_tls_scope() {
 // forward/backward/optimizer passes. Packed into op_flags bits 2-3.
 // Lives in the dispatch lib — no PyTorch patch needed.
 
-CRUCIBLE_API void crucible_dispatch_set_training_phase(uint8_t phase) {
-    s_training_phase = phase & 0x3;
-}
+CRUCIBLE_API void crucible_dispatch_set_training_phase(uint8_t phase) { s_training_phase = phase & 0x3; }
 
-CRUCIBLE_API uint8_t crucible_dispatch_get_training_phase() {
-    return s_training_phase;
-}
+CRUCIBLE_API uint8_t crucible_dispatch_get_training_phase() { return s_training_phase; }
 
 // ── Schema table accessors ──────────────────────────────────────────
 //
@@ -711,15 +652,11 @@ CRUCIBLE_API uint8_t crucible_dispatch_get_training_phase() {
 //
 // These accessors expose the dispatch lib's schema table for that copy.
 
-CRUCIBLE_API uint32_t crucible_dispatch_schema_count() {
-    return crucible::global_schema_table().count();
-}
+CRUCIBLE_API uint32_t crucible_dispatch_schema_count() { return crucible::global_schema_table().count(); }
 
 // Get the schema hash and name for the i-th entry.
 // Returns 0 if i >= count.  Writes hash and name pointer.
-CRUCIBLE_API int crucible_dispatch_schema_entry(
-    uint32_t i, uint64_t* out_hash, const char** out_name)
-{
+CRUCIBLE_API int crucible_dispatch_schema_entry(uint32_t i, uint64_t* out_hash, const char** out_name) {
     const auto& table = crucible::global_schema_table();
     if (i >= table.count()) return 0;
     if (out_hash) *out_hash = table.entries[i].hash.raw();
@@ -727,4 +664,4 @@ CRUCIBLE_API int crucible_dispatch_schema_entry(
     return 1;
 }
 
-} // extern "C"
+}  // extern "C"

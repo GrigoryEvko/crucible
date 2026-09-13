@@ -43,24 +43,20 @@ struct C {};
 // static_assert(splits_into_pack_authoring_witness_v<...>) reddens.
 namespace crucible::safety {
 template <>
-struct splits_into_pack<
-    neg_fixy_perm_combine_n_witness_missing::Parent,
-    neg_fixy_perm_combine_n_witness_missing::A,
-    neg_fixy_perm_combine_n_witness_missing::B,
-    neg_fixy_perm_combine_n_witness_missing::C>
+struct splits_into_pack<neg_fixy_perm_combine_n_witness_missing::Parent, neg_fixy_perm_combine_n_witness_missing::A,
+                        neg_fixy_perm_combine_n_witness_missing::B, neg_fixy_perm_combine_n_witness_missing::C>
     : std::true_type {};
 }  // namespace crucible::safety
 
 int main() {
-    namespace tags  = neg_fixy_perm_combine_n_witness_missing;
+    namespace tags = neg_fixy_perm_combine_n_witness_missing;
     namespace fperm = ::crucible::fixy::perm;
-    namespace safe  = ::crucible::safety;
+    namespace safe = ::crucible::safety;
 
     auto a = fperm::mint_permission_root<tags::A>();
     auto b = fperm::mint_permission_root<tags::B>();
     auto c = fperm::mint_permission_root<tags::C>();
-    auto whole = fperm::mint_permission_combine_n<tags::Parent>(
-        std::move(a), std::move(b), std::move(c));
+    auto whole = fperm::mint_permission_combine_n<tags::Parent>(std::move(a), std::move(b), std::move(c));
     safe::permission_drop(std::move(whole));
     return 0;
 }

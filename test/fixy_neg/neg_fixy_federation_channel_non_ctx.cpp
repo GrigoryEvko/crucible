@@ -30,8 +30,8 @@
 #include <utility>
 
 namespace fsess = crucible::fixy::sess;
-namespace cs    = crucible::safety;
-namespace ff    = crucible::fixy::source::federation;
+namespace cs = crucible::safety;
+namespace ff = crucible::fixy::source::federation;
 
 struct NegFedChannelNonCtx_PeerOrg {};
 
@@ -43,21 +43,16 @@ struct NegFedChannelNonCtx_PeerOrg {};
 
 int main() {
     auto local = cs::mint_permission_root<ff::LocalCipherTag>();
-    auto handshake = ff::make_self_signed_handshake<
-        NegFedChannelNonCtx_PeerOrg>();
-    auto admitted = ff::mint_federation_admittance<
-        NegFedChannelNonCtx_PeerOrg>(local, handshake);
-    auto pool = fsess::federation::mint_federation_pool<
-        NegFedChannelNonCtx_PeerOrg>(std::move(*admitted));
+    auto handshake = ff::make_self_signed_handshake<NegFedChannelNonCtx_PeerOrg>();
+    auto admitted = ff::mint_federation_admittance<NegFedChannelNonCtx_PeerOrg>(local, handshake);
+    auto pool = fsess::federation::mint_federation_pool<NegFedChannelNonCtx_PeerOrg>(std::move(*admitted));
     auto guard = pool.lend();
 
     int not_a_ctx = 0;
     // Plain int as ctx — fails IsExecCtx constraint at template
     // parameter substitution time; the 4-arg shape is satisfied so
     // arity-check passes and the constraint check is what surfaces.
-    auto bad = fsess::mint_federation_channel<
-        NegFedChannelNonCtx_PeerOrg>(
-        not_a_ctx, 0, 0, guard->token());
+    auto bad = fsess::mint_federation_channel<NegFedChannelNonCtx_PeerOrg>(not_a_ctx, 0, 0, guard->token());
     (void)bad;
     return 0;
 }

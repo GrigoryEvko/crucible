@@ -29,17 +29,11 @@ struct Payload {
 using RawSnapshot = concur::PermissionedSnapshot<Payload, RawTag>;
 using Swmr = ses::SwmrSession<Payload, WriterTag, ReaderTag>;
 
-[[nodiscard]] constexpr Payload payload_at(std::uint64_t seq) noexcept {
-    return Payload{.seq = seq, .checksum = ~seq};
-}
+[[nodiscard]] constexpr Payload payload_at(std::uint64_t seq) noexcept { return Payload{.seq = seq, .checksum = ~seq}; }
 
 template <typename Body>
 [[nodiscard]] bench::Report measure(char const* name, Body&& body) {
-    return bench::Run{name}
-        .samples(50'000)
-        .warmup(5'000)
-        .max_wall_ms(3'000)
-        .measure(std::forward<Body>(body));
+    return bench::Run{name}.samples(50000).warmup(5000).max_wall_ms(3000).measure(std::forward<Body>(body));
 }
 
 [[nodiscard]] bench::Report raw_publish() {
@@ -70,8 +64,7 @@ template <typename Body>
     Swmr swmr{payload_at(0)};
     auto perm = safety::mint_permission_root<Swmr::writer_tag>();
     auto writer = ses::mint_swmr_writer<Swmr>(swmr, std::move(perm));
-    auto psh = ses::mint_writer_session<Swmr>(
-        ::crucible::effects::HotFgCtx{}, writer);
+    auto psh = ses::mint_writer_session<Swmr>(::crucible::effects::HotFgCtx{}, writer);
     std::uint64_t seq = 0;
 
     auto report = measure("SwmrSession PSH.send(ContentAddressed<T>)", [&] {
@@ -110,8 +103,7 @@ template <typename Body>
     Swmr swmr{payload_at(123)};
     auto reader = ses::mint_swmr_reader<Swmr>(swmr);
     if (!reader) std::abort();
-    auto psh = ses::mint_reader_session<Swmr>(
-        ::crucible::effects::HotFgCtx{}, *reader);
+    auto psh = ses::mint_reader_session<Swmr>(::crucible::effects::HotFgCtx{}, *reader);
 
     auto report = measure("SwmrSession PSH.recv(Borrowed<T>)", [&] {
         auto [borrowed, next] = std::move(psh).recv(ses::load_borrowed_value);
@@ -127,12 +119,7 @@ template <typename Body>
 
 int main() {
     std::array reports{
-        raw_publish(),
-        swmr_publish(),
-        swmr_session_send(),
-        raw_load(),
-        swmr_load(),
-        swmr_session_recv(),
+        raw_publish(), swmr_publish(), swmr_session_send(), raw_load(), swmr_load(), swmr_session_recv(),
     };
 
     bench::emit_reports_text(reports);

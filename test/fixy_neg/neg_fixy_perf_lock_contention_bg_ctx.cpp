@@ -27,9 +27,8 @@
 #include <crucible/effects/ExecCtx.h>
 
 int main() {
-    auto hub = crucible::fixy::perf::mint_lock_contention(
-        crucible::effects::BgDrainCtx{},
-        crucible::effects::testing::init());
+    auto hub =
+        crucible::fixy::perf::mint_lock_contention(crucible::effects::BgDrainCtx{}, crucible::effects::testing::init());
     (void)hub;
     return 0;
 }

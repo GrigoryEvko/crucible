@@ -16,7 +16,7 @@
 #include <cstdint>
 
 int main() {
-  // MUST fail: CDAG_VERSION carries source::FormatVersion provenance.
-  std::uint32_t raw = crucible::CDAG_VERSION;
-  return static_cast<int>(raw);
+    // MUST fail: CDAG_VERSION carries source::FormatVersion provenance.
+    std::uint32_t raw = crucible::CDAG_VERSION;
+    return static_cast<int>(raw);
 }

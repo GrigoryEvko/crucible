@@ -31,13 +31,17 @@
 
 namespace saf = crucible::safety;
 
-struct ExprPool   { int dummy = 0; };
-struct SchemaTable { int dummy = 0; };
+struct ExprPool {
+    int dummy = 0;
+};
+struct SchemaTable {
+    int dummy = 0;
+};
 
 int main() {
     char buf[8] = "hello";
 
-    saf::Borrowed<const char, ExprPool>    name_from_pool{buf, 5};
+    saf::Borrowed<const char, ExprPool> name_from_pool{buf, 5};
     saf::Borrowed<const char, SchemaTable> name_from_schema{};
 
     // Bridge fires: cross-source assignment has no overload that

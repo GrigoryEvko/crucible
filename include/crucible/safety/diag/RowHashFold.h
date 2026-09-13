@@ -193,35 +193,35 @@ namespace detail {
 // own header carries that, next to the type, and refers back to the
 // constant so the allocation stays checkable in one place.
 
-inline constexpr std::uint64_t WRAPPER_HOTPATH_TAG = 0x0100'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_DETSAFE_TAG = 0x0200'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_NUMERICAL_TIER_TAG = 0x0300'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_VENDOR_TAG = 0x0400'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_RESIDENCY_HEAT_TAG = 0x0500'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_CIPHER_TIER_TAG = 0x0600'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_ALLOC_CLASS_TAG = 0x0700'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_WAIT_TAG = 0x0800'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_MEM_ORDER_TAG = 0x0900'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_PROGRESS_TAG = 0x0A00'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_STALE_TAG = 0x0B00'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_TAGGED_TAG = 0x0C00'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_REFINED_TAG = 0x0D00'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_SECRET_TAG = 0x0E00'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_LINEAR_TAG = 0x0F00'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_RESOURCE_TAG_TAG = 0x1000'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_CONCURRENT_ROW_TAG = 0x1100'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_HOTPATH_TAG = 0x0100000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_DETSAFE_TAG = 0x0200000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_NUMERICAL_TIER_TAG = 0x0300000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_VENDOR_TAG = 0x0400000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_RESIDENCY_HEAT_TAG = 0x0500000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_CIPHER_TIER_TAG = 0x0600000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_ALLOC_CLASS_TAG = 0x0700000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_WAIT_TAG = 0x0800000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_MEM_ORDER_TAG = 0x0900000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_PROGRESS_TAG = 0x0A00000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_STALE_TAG = 0x0B00000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_TAGGED_TAG = 0x0C00000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_REFINED_TAG = 0x0D00000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_SECRET_TAG = 0x0E00000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_LINEAR_TAG = 0x0F00000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_RESOURCE_TAG_TAG = 0x1000000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_CONCURRENT_ROW_TAG = 0x1100000000000000ULL;
 
-inline constexpr std::uint64_t WRAPPER_SEALED_REFINED_TAG = 0x1200'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_TIME_ORDERED_TAG = 0x1300'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_MONOTONIC_TAG = 0x1400'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_APPEND_ONLY_TAG = 0x1500'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_CONSISTENCY_TAG = 0x1600'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_OPAQUE_LIFETIME_TAG = 0x1700'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_CRASH_TAG = 0x1800'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_BUDGETED_TAG = 0x1900'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_EPOCH_VERSIONED_TAG = 0x1A00'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_NUMA_PLACEMENT_TAG = 0x1B00'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_RECIPE_SPEC_TAG = 0x1C00'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_SEALED_REFINED_TAG = 0x1200000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_TIME_ORDERED_TAG = 0x1300000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_MONOTONIC_TAG = 0x1400000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_APPEND_ONLY_TAG = 0x1500000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_CONSISTENCY_TAG = 0x1600000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_OPAQUE_LIFETIME_TAG = 0x1700000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_CRASH_TAG = 0x1800000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_BUDGETED_TAG = 0x1900000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_EPOCH_VERSIONED_TAG = 0x1A00000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_NUMA_PLACEMENT_TAG = 0x1B00000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_RECIPE_SPEC_TAG = 0x1C00000000000000ULL;
 
 // A concrete type is needed to derive an id, and a storage policy
 // arrives as a template template parameter. Instantiating that policy
@@ -231,40 +231,40 @@ inline constexpr std::uint64_t WRAPPER_RECIPE_SPEC_TAG = 0x1C00'0000'0000'0000UL
 // rather than a payload wherever it shows up.
 struct StorageProbe {};
 
-inline constexpr std::uint64_t WRAPPER_SAFETY_FN_TAG = 0x1D00'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_FIXY_FN_TAG = 0x1E00'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_SAFETY_FN_TAG = 0x1D00000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_FIXY_FN_TAG = 0x1E00000000000000ULL;
 
-inline constexpr std::uint64_t WRAPPER_WITNESS_TAG = 0x1F00'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_WITNESS_TAG = 0x1F00000000000000ULL;
 
-inline constexpr std::uint64_t WRAPPER_JOIN_POLICY_TAG = 0x2000'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_JOIN_POLICY_TAG = 0x2000000000000000ULL;
 
 // Each floating-point axis takes its own salt, because a value computed
 // under one rounding mode is not byte-equivalent to the same value under
 // another. The composite over all eleven axes needs no salt: it nests
 // one pinned layer per axis, and the fold walks through them.
-inline constexpr std::uint64_t WRAPPER_FP_ROUNDING_TAG = 0x2100'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_FP_FTZ_TAG = 0x2200'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_FP_CONTRACT_TAG = 0x2300'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_FP_TRAP_MASK_TAG = 0x2400'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_FP_DENORMAL_INPUT_TAG = 0x2500'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_FP_NAN_POLICY_TAG = 0x2600'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_FP_INF_POLICY_TAG = 0x2700'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_FP_COMPLEX_LAYOUT_TAG = 0x2800'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_FP_LIBM_POLICY_TAG = 0x2900'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_FP_REASSOCIATE_TAG = 0x2A00'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_FP_CONSTANT_ROUNDING_TAG = 0x2B00'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_HW_INSTRUCTION_TAG = 0x2C00'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_BARRIER_STRENGTH_TAG = 0x2D00'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_SIMD_ISA_TAG = 0x2E00'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_MEMORY_SCOPE_TAG = 0x2F00'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_CLOCK_SOURCE_TAG = 0x3000'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_SCHED_CLASS_TAG = 0x3100'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_FP_ROUNDING_TAG = 0x2100000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_FP_FTZ_TAG = 0x2200000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_FP_CONTRACT_TAG = 0x2300000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_FP_TRAP_MASK_TAG = 0x2400000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_FP_DENORMAL_INPUT_TAG = 0x2500000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_FP_NAN_POLICY_TAG = 0x2600000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_FP_INF_POLICY_TAG = 0x2700000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_FP_COMPLEX_LAYOUT_TAG = 0x2800000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_FP_LIBM_POLICY_TAG = 0x2900000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_FP_REASSOCIATE_TAG = 0x2A00000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_FP_CONSTANT_ROUNDING_TAG = 0x2B00000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_HW_INSTRUCTION_TAG = 0x2C00000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_BARRIER_STRENGTH_TAG = 0x2D00000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_SIMD_ISA_TAG = 0x2E00000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_MEMORY_SCOPE_TAG = 0x2F00000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_CLOCK_SOURCE_TAG = 0x3000000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_SCHED_CLASS_TAG = 0x3100000000000000ULL;
 // The pinning mask is a class non-type template argument, not an enum,
 // so a specialization needs that class complete. Keeping it out of this
 // widely included header means the salt lives here and the
 // specialization lives beside the mask.
-inline constexpr std::uint64_t WRAPPER_CPU_PINNED_TAG = 0x3200'0000'0000'0000ULL;
-inline constexpr std::uint64_t WRAPPER_SUSPEND_BEHAVIOR_TAG = 0x3300'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_CPU_PINNED_TAG = 0x3200000000000000ULL;
+inline constexpr std::uint64_t WRAPPER_SUSPEND_BEHAVIOR_TAG = 0x3300000000000000ULL;
 
 // The sort is quadratic. The array holds one entry per effect atom and
 // the universe is capped well below the point where that matters, which

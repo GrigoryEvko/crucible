@@ -7,20 +7,13 @@ namespace proto = ::crucible::safety::proto;
 
 struct Wire {};
 
-using NvHandle = proto::PermissionedSessionHandle<
-    proto::End,
-    proto::EmptyPermSet,
-    Wire,
-    proto::VendorCtx<proto::VendorBackend::NV>>;
+using NvHandle =
+    proto::PermissionedSessionHandle<proto::End, proto::EmptyPermSet, Wire, proto::VendorCtx<proto::VendorBackend::NV>>;
 
-using PortableRequired = proto::PermissionedSessionHandle<
-    proto::End,
-    proto::EmptyPermSet,
-    Wire,
-    proto::VendorCtx<proto::VendorBackend::Portable>>;
+using PortableRequired = proto::PermissionedSessionHandle<proto::End, proto::EmptyPermSet, Wire,
+                                                          proto::VendorCtx<proto::VendorBackend::Portable>>;
 
 int main() {
-    proto::assert_permissioned_session_vendor_compatible<NvHandle,
-                                                         PortableRequired>();
+    proto::assert_permissioned_session_vendor_compatible<NvHandle, PortableRequired>();
     return 0;
 }

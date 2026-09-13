@@ -13,8 +13,7 @@ namespace stance = crucible::fixy::stance;
 
 using BadAsyncRef = stance::AsyncEndpoint<int&>;
 
-static_assert(sizeof(BadAsyncRef) > 0,
-    "instantiate stance::AsyncEndpoint<int&> to force the Type-axis "
-    "rejection (references are not objects).");
+static_assert(sizeof(BadAsyncRef) > 0, "instantiate stance::AsyncEndpoint<int&> to force the Type-axis "
+                                       "rejection (references are not objects).");
 
 int main() { return 0; }

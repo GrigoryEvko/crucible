@@ -14,8 +14,7 @@ int main() {
     caps.features.set(cog::NicFeature::Tcam);
     caps.tcam_entries = saf::Tagged<std::uint32_t, saf::source::Vendor>{4};
 
-    auto table = tcam::mint_tcam_table(
-        eff::BgDrainCtx{}, nic, caps, *tcam::admit_tcam_entries(1));
+    auto table = tcam::mint_tcam_table(eff::BgDrainCtx{}, nic, caps, *tcam::admit_tcam_entries(1));
     (void)table;
     return 0;
 }

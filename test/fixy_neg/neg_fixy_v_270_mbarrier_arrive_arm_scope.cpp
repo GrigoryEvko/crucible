@@ -15,7 +15,7 @@
 #include <crucible/fixy/Async.h>
 #include <crucible/effects/ExecCtx.h>
 
-namespace as  = crucible::fixy::async;
+namespace as = crucible::fixy::async;
 namespace eff = crucible::effects;
 
 int main() {

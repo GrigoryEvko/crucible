@@ -72,7 +72,7 @@ struct PathSwapPlan {
     PositivePathId flow_id{1};
     PositivePathId old_path{1};
     PositivePathId new_path{2};
-    PositiveNanoseconds timeout_ns{10'000'000'000ull};
+    PositiveNanoseconds timeout_ns{10000000000ull};
 };
 
 using DeclaredPathSwapPlan = safety::Tagged<PathSwapPlan, safety::source::PathSwap>;

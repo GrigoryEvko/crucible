@@ -48,7 +48,7 @@ static_assert(!dc::no_overflow_mul<int32_t>(-1, std::numeric_limits<int32_t>::mi
 static_assert(dc::no_overflow_mul<int32_t>(-46340, -46340));
 static_assert(!dc::no_overflow_mul<int32_t>(-46341, -46341));
 
-static_assert(dc::no_overflow_mul<uint64_t>(0xFFFF'FFFFu, 0xFFFF'FFFFu));
+static_assert(dc::no_overflow_mul<uint64_t>(0xFFFFFFFFu, 0xFFFFFFFFu));
 static_assert(!dc::no_overflow_mul<uint64_t>(std::numeric_limits<uint64_t>::max(), 2));
 static_assert(!dc::no_overflow_mul<int64_t>(std::numeric_limits<int64_t>::min(), -1));
 
@@ -64,7 +64,7 @@ static_assert(!dc::no_overflow_mul<int64_t>(std::numeric_limits<int64_t>::min(),
 
 static_assert(safe_mul_u64(7, 6) == 42);
 static_assert(safe_mul_i32(-5, 3) == -15);
-static_assert(safe_mul_i32(46340, 46340) == 2'147'395'600);
+static_assert(safe_mul_i32(46340, 46340) == 2147395600);
 
 static_assert(dc::no_overflow_sum<uint32_t>(0, 0));
 static_assert(dc::no_overflow_sum<int32_t>(0, 0));
@@ -72,7 +72,7 @@ static_assert(dc::no_overflow_sum<int32_t>(0, 0));
 // Each pair straddles a representable limit by one.
 static_assert(dc::no_overflow_sum<uint8_t>(1, 254));
 static_assert(!dc::no_overflow_sum<uint8_t>(1, 255));
-static_assert(dc::no_overflow_sum<uint32_t>(0xFFFF'FFFEu, 1u));
+static_assert(dc::no_overflow_sum<uint32_t>(0xFFFFFFFEu, 1u));
 static_assert(!dc::no_overflow_sum<uint32_t>(std::numeric_limits<uint32_t>::max(), 1u));
 
 static_assert(dc::no_overflow_sum<int32_t>(std::numeric_limits<int32_t>::max() - 1, 1));
@@ -84,7 +84,7 @@ static_assert(dc::no_overflow_sum<int32_t>(-100, 50));
 static_assert(dc::no_overflow_sum<int32_t>(std::numeric_limits<int32_t>::min(),
                                            std::numeric_limits<int32_t>::max()));  // -1, fits
 
-static_assert(dc::no_overflow_sum<uint64_t>(0xFFFF'FFFF'FFFF'FFFEull, 1ull));
+static_assert(dc::no_overflow_sum<uint64_t>(0xFFFFFFFFFFFFFFFEull, 1ull));
 static_assert(!dc::no_overflow_sum<uint64_t>(std::numeric_limits<uint64_t>::max(), 1ull));
 static_assert(!dc::no_overflow_sum<int64_t>(std::numeric_limits<int64_t>::min(), -1));
 
@@ -147,8 +147,8 @@ static_assert(!dc::no_overflow_pow2_shift<int64_t>(std::numeric_limits<int64_t>:
 }
 
 static_assert(safe_shl_u32(7, 3) == 56);
-static_assert(safe_shl_u32(1, 31) == 0x8000'0000u);
-static_assert(safe_shl_i32(1, 30) == 0x4000'0000);
+static_assert(safe_shl_u32(1, 31) == 0x80000000u);
+static_assert(safe_shl_i32(1, 30) == 0x40000000);
 static_assert(safe_shl_i32(0, 31) == 0);
 
 // A zero-length array is ill formed. The spans below take size 0.
@@ -221,7 +221,7 @@ static_assert(!dc::strictly_increasing<int32_t>(three_first_eq));
 static_assert(!dc::strictly_increasing<int32_t>(three_last_eq));
 static_assert(!dc::strictly_increasing<int32_t>(three_regress));
 
-constexpr uint64_t step_ids[] = {1ull, 100ull, 10'000ull, 999'999'999ull};
+constexpr uint64_t step_ids[] = {1ull, 100ull, 10000ull, 999999999ull};
 static_assert(dc::strictly_increasing<uint64_t>(step_ids));
 
 constexpr int64_t signed_strict[] = {-100, -50, 0, 50, 100};
@@ -233,7 +233,7 @@ static_assert(dc::strictly_increasing<int64_t>(signed_strict));
     return ids.back();
 }
 
-static_assert(safe_last_step(step_ids) == 999'999'999ull);
+static_assert(safe_last_step(step_ids) == 999999999ull);
 
 static_assert(dc::weakly_increasing<int32_t>(std::span<const int32_t>{}));
 constexpr int32_t weakly_single[] = {42};
@@ -779,7 +779,7 @@ static_assert(admit_payload<R_full, R_full>());
 // The mixer is the Murmur3 finalizer, a bijection on uint64_t with
 // f(0) equal to 0. Every witness below rests on that.
 static_assert(dc::fmix_preserves_non_zero(1, crucible::detail::fmix64(1)));
-static_assert(dc::fmix_preserves_non_zero(0xDEADBEEF'CAFEBABEULL, crucible::detail::fmix64(0xDEADBEEF'CAFEBABEULL)));
+static_assert(dc::fmix_preserves_non_zero(0xDEADBEEFCAFEBABEULL, crucible::detail::fmix64(0xDEADBEEFCAFEBABEULL)));
 static_assert(dc::fmix_preserves_non_zero(0x9E3779B97F4A7C15ULL, crucible::detail::fmix64(0x9E3779B97F4A7C15ULL)));
 static_assert(dc::fmix_preserves_non_zero(0xFFFFFFFFFFFFFFFFULL, crucible::detail::fmix64(0xFFFFFFFFFFFFFFFFULL)));
 static_assert(dc::fmix_preserves_non_zero(42, crucible::detail::fmix64(42)));
@@ -1206,7 +1206,7 @@ int main() {
 
     int32_t volatile e = 46340;
     int32_t volatile f = 46340;
-    sink += safe_mul_i32(e, f) / 100'000;
+    sink += safe_mul_i32(e, f) / 100000;
 
     if (!dc::no_overflow_mul<uint32_t>(100u, 200u)) {
         std::fprintf(stderr, "test_decide: 100u*200u flagged as overflow\n");
@@ -1246,7 +1246,7 @@ int main() {
 
     int32_t volatile si_shl = 1;
     int32_t volatile sj_shl = 30;
-    sink += safe_shl_i32(si_shl, sj_shl) / 100'000'000;
+    sink += safe_shl_i32(si_shl, sj_shl) / 100000000;
 
     // The four classes of undefined shift.
     if (!dc::no_overflow_pow2_shift<uint32_t>(1u, 31u)) {
@@ -1558,7 +1558,7 @@ int main() {
 
     // fmix_preserves_non_zero
     {
-        volatile std::uint64_t seed_nz = 0xDEADBEEF'CAFEBABEULL;
+        volatile std::uint64_t seed_nz = 0xDEADBEEFCAFEBABEULL;
         const std::uint64_t mix_nz = crucible::detail::fmix64(static_cast<std::uint64_t>(seed_nz));
         volatile std::uint64_t mix_nz_v = mix_nz;
         if (!dc::fmix_preserves_non_zero(static_cast<std::uint64_t>(seed_nz), static_cast<std::uint64_t>(mix_nz_v))) {

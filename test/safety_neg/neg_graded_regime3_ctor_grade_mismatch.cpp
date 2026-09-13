@@ -53,8 +53,7 @@ struct SizeGradeLattice {
     [[nodiscard]] static constexpr std::string_view name() noexcept { return "SizeGradeLattice"; }
 };
 
-using GDerived =
-    Graded<ModalityKind::Absolute, SizeGradeLattice, SizedThing>;
+using GDerived = Graded<ModalityKind::Absolute, SizeGradeLattice, SizedThing>;
 
 consteval std::size_t forge_mismatched_derived_grade() {
     // value derives grade 3; witness grade 99 is NOT equivalent.
@@ -62,8 +61,7 @@ consteval std::size_t forge_mismatched_derived_grade() {
     return forged.peek().size();
 }
 
-static_assert(forge_mismatched_derived_grade() == 3,
-              "fixture must fail to compile: regime-3 two-arg ctor "
-              "grade-mismatch guard did not fire at consteval");
+static_assert(forge_mismatched_derived_grade() == 3, "fixture must fail to compile: regime-3 two-arg ctor "
+                                                     "grade-mismatch guard did not fire at consteval");
 
 }  // namespace

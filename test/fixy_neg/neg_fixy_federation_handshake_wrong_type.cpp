@@ -52,7 +52,7 @@ struct NegFederationHandshakeType_Org {};
 // A POD that is NOT FederationHandshake — it has different field
 // layout / different type identity.  No implicit conversion exists.
 struct NegFederationHandshakeType_FakeHandshake {
-    int  org_id = 0;
+    int org_id = 0;
     long peer_key_fingerprint = 0;
 };
 
@@ -66,8 +66,7 @@ int main() {
     // Wrong handshake type — must NOT compile.  The substrate signature
     // takes FederationHandshake by value; a distinct POD class cannot
     // bind even if it has structurally similar fields.
-    (void)ff::mint_federation_admittance<NegFederationHandshakeType_Org>(
-        local_perm, fake_hs);
+    (void)ff::mint_federation_admittance<NegFederationHandshakeType_Org>(local_perm, fake_hs);
     return 0;
 }
 

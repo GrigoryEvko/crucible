@@ -25,7 +25,7 @@ cntp::DeclaredPathSwapPlan make_plan() {
     auto flow = cntp::admit_path_id(10).value();
     auto old_path = cntp::admit_path_id(20).value();
     auto new_path = cntp::admit_path_id(30).value();
-    auto timeout = cntp::admit_swap_timeout_ns(1'000).value();
+    auto timeout = cntp::admit_swap_timeout_ns(1000).value();
     auto plan = cntp::mint_path_swap_plan(flow, old_path, new_path, timeout);
     assert(plan.has_value());
     return *plan;
@@ -64,7 +64,7 @@ void test_state_machine_and_session_resource_transition() {
     auto begin = swapper.begin_swap(bg, plan, 100);
     assert(begin.has_value());
     assert(swapper.state() == cntp::SwapState::Draining);
-    assert(swapper.deadline_ns() == 1'100);
+    assert(swapper.deadline_ns() == 1100);
 
     auto bidir = swapper.receiver_accepts_bidir(bg, 200);
     assert(bidir.has_value());
@@ -267,7 +267,7 @@ void test_invalid_transition_and_timeout() {
     assert(!again.has_value());
     assert(again.error() == cntp::SwapError::InvalidTransition);
 
-    auto timeout = swapper.receiver_accepts_bidir(bg, 2'000);
+    auto timeout = swapper.receiver_accepts_bidir(bg, 2000);
     assert(!timeout.has_value());
     assert(timeout.error() == cntp::SwapError::Timeout);
     assert(swapper.state() == cntp::SwapState::Failed);

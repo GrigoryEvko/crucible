@@ -39,10 +39,10 @@ struct Right {};
 }  // namespace neg_fixy_perm_fork_no_splits_into_pack
 
 int main() {
-    namespace tags  = neg_fixy_perm_fork_no_splits_into_pack;
-    namespace eff   = ::crucible::effects;
+    namespace tags = neg_fixy_perm_fork_no_splits_into_pack;
+    namespace eff = ::crucible::effects;
     namespace fperm = ::crucible::fixy::perm;
-    namespace safe  = ::crucible::safety;
+    namespace safe = ::crucible::safety;
 
     // BgDrainCtx::row contains Effect::Bg, so the row predicate
     // inside CtxFitsPermissionFork passes.  The remaining gate —
@@ -50,11 +50,8 @@ int main() {
     // fails because no specialization exists.
     auto whole = fperm::mint_permission_root<tags::Whole>();
     auto rebuilt = fperm::mint_permission_fork<tags::Left, tags::Right>(
-        eff::BgDrainCtx{},
-        std::move(whole),
-        [](safe::Permission<tags::Left>, eff::BgDrainCtx const&) noexcept {},
-        [](safe::Permission<tags::Right>, eff::BgDrainCtx const&) noexcept {}
-    );
+        eff::BgDrainCtx{}, std::move(whole), [](safe::Permission<tags::Left>, eff::BgDrainCtx const&) noexcept {},
+        [](safe::Permission<tags::Right>, eff::BgDrainCtx const&) noexcept {});
     safe::permission_drop(std::move(rebuilt));
     return 0;
 }

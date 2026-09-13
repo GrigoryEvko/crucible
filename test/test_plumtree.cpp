@@ -47,15 +47,15 @@ int main() {
         .active_random_walk_length = cc::HyParViewPositiveCount{3},
         .passive_random_walk_length = cc::HyParViewPositiveCount{2},
         .active_random_walk_acceptance = cc::HyParViewPositiveCount{2},
-        .shuffle_period_ns = cc::HyParViewDurationNs{30'000'000'000ULL},
+        .shuffle_period_ns = cc::HyParViewDurationNs{30000000000ULL},
     };
     auto membership = cc::mint_hyparview<3, 4>(crucible::effects::testing::init(),
                                                std::span<const cc::HyParViewPeer>{active}, {}, hy_config);
 
     cc::PlumtreeConfig config{
-        .ihave_timeout_ns = cc::PlumtreeDurationNs{100'000'000ULL},
-        .repair_timeout_ns = cc::PlumtreeDurationNs{200'000'000ULL},
-        .lazy_push_period_ns = cc::PlumtreeDurationNs{100'000'000ULL},
+        .ihave_timeout_ns = cc::PlumtreeDurationNs{100000000ULL},
+        .repair_timeout_ns = cc::PlumtreeDurationNs{200000000ULL},
+        .lazy_push_period_ns = cc::PlumtreeDurationNs{100000000ULL},
         .max_eager_fanout = cc::PlumtreePositiveCount{2},
     };
     auto broadcast = cc::mint_plumtree<4, 8>(crucible::effects::testing::init(), membership, config);
@@ -169,9 +169,9 @@ int main() {
     // The eager fanout must not exceed the number of link slots.
     {
         cc::PlumtreeConfig too_big{
-            .ihave_timeout_ns = cc::PlumtreeDurationNs{100'000'000ULL},
-            .repair_timeout_ns = cc::PlumtreeDurationNs{200'000'000ULL},
-            .lazy_push_period_ns = cc::PlumtreeDurationNs{100'000'000ULL},
+            .ihave_timeout_ns = cc::PlumtreeDurationNs{100000000ULL},
+            .repair_timeout_ns = cc::PlumtreeDurationNs{200000000ULL},
+            .lazy_push_period_ns = cc::PlumtreeDurationNs{100000000ULL},
             .max_eager_fanout = cc::PlumtreePositiveCount{99},
         };
         auto admitted = cc::admit_plumtree_config<4>(too_big);
@@ -181,9 +181,9 @@ int main() {
 
     {
         cc::PlumtreeConfig ok{
-            .ihave_timeout_ns = cc::PlumtreeDurationNs{100'000'000ULL},
-            .repair_timeout_ns = cc::PlumtreeDurationNs{200'000'000ULL},
-            .lazy_push_period_ns = cc::PlumtreeDurationNs{100'000'000ULL},
+            .ihave_timeout_ns = cc::PlumtreeDurationNs{100000000ULL},
+            .repair_timeout_ns = cc::PlumtreeDurationNs{200000000ULL},
+            .lazy_push_period_ns = cc::PlumtreeDurationNs{100000000ULL},
             .max_eager_fanout = cc::PlumtreePositiveCount{2},
         };
         auto admitted = cc::admit_plumtree_config<4>(ok);
@@ -201,15 +201,15 @@ int main() {
             .active_random_walk_length = cc::HyParViewPositiveCount{3},
             .passive_random_walk_length = cc::HyParViewPositiveCount{2},
             .active_random_walk_acceptance = cc::HyParViewPositiveCount{2},
-            .shuffle_period_ns = cc::HyParViewDurationNs{30'000'000'000ULL},
+            .shuffle_period_ns = cc::HyParViewDurationNs{30000000000ULL},
         };
         auto big_membership = cc::mint_hyparview<5, 6>(crucible::effects::testing::init(),
                                                        std::span<const cc::HyParViewPeer>{big_active}, {}, big_hy);
 
         cc::PlumtreeConfig small_pt{
-            .ihave_timeout_ns = cc::PlumtreeDurationNs{100'000'000ULL},
-            .repair_timeout_ns = cc::PlumtreeDurationNs{200'000'000ULL},
-            .lazy_push_period_ns = cc::PlumtreeDurationNs{100'000'000ULL},
+            .ihave_timeout_ns = cc::PlumtreeDurationNs{100000000ULL},
+            .repair_timeout_ns = cc::PlumtreeDurationNs{200000000ULL},
+            .lazy_push_period_ns = cc::PlumtreeDurationNs{100000000ULL},
             .max_eager_fanout = cc::PlumtreePositiveCount{2},
         };
         auto admitted = cc::admit_plumtree_config<3>(small_pt);
@@ -237,15 +237,15 @@ int main() {
             .active_random_walk_length = cc::HyParViewPositiveCount{3},
             .passive_random_walk_length = cc::HyParViewPositiveCount{2},
             .active_random_walk_acceptance = cc::HyParViewPositiveCount{2},
-            .shuffle_period_ns = cc::HyParViewDurationNs{30'000'000'000ULL},
+            .shuffle_period_ns = cc::HyParViewDurationNs{30000000000ULL},
         };
         auto overshoot_membership = cc::mint_hyparview<5, 6>(
             crucible::effects::testing::init(), std::span<const cc::HyParViewPeer>{overshoot_active}, {}, overshoot_hy);
 
         cc::PlumtreeConfig small_cfg{
-            .ihave_timeout_ns = cc::PlumtreeDurationNs{100'000'000ULL},
-            .repair_timeout_ns = cc::PlumtreeDurationNs{200'000'000ULL},
-            .lazy_push_period_ns = cc::PlumtreeDurationNs{100'000'000ULL},
+            .ihave_timeout_ns = cc::PlumtreeDurationNs{100000000ULL},
+            .repair_timeout_ns = cc::PlumtreeDurationNs{200000000ULL},
+            .lazy_push_period_ns = cc::PlumtreeDurationNs{100000000ULL},
             .max_eager_fanout = cc::PlumtreePositiveCount{2},
         };
         cc::PlumtreeBroadcast<3, 8> b{overshoot_membership, small_cfg};
@@ -261,15 +261,15 @@ int main() {
             .active_random_walk_length = cc::HyParViewPositiveCount{3},
             .passive_random_walk_length = cc::HyParViewPositiveCount{2},
             .active_random_walk_acceptance = cc::HyParViewPositiveCount{2},
-            .shuffle_period_ns = cc::HyParViewDurationNs{30'000'000'000ULL},
+            .shuffle_period_ns = cc::HyParViewDurationNs{30000000000ULL},
         };
         auto good_membership = cc::mint_hyparview<2, 4>(crucible::effects::testing::init(),
                                                         std::span<const cc::HyParViewPeer>{good_active}, {}, good_hy);
 
         cc::PlumtreeConfig good_pt{
-            .ihave_timeout_ns = cc::PlumtreeDurationNs{100'000'000ULL},
-            .repair_timeout_ns = cc::PlumtreeDurationNs{200'000'000ULL},
-            .lazy_push_period_ns = cc::PlumtreeDurationNs{100'000'000ULL},
+            .ihave_timeout_ns = cc::PlumtreeDurationNs{100000000ULL},
+            .repair_timeout_ns = cc::PlumtreeDurationNs{200000000ULL},
+            .lazy_push_period_ns = cc::PlumtreeDurationNs{100000000ULL},
             .max_eager_fanout = cc::PlumtreePositiveCount{2},
         };
         auto admitted = cc::admit_plumtree_config<4>(good_pt);

@@ -25,7 +25,7 @@ namespace fcipher = ::crucible::fixy::contract::cipher;
 // fixy:: alias must red at the same RestorableHashed gate as the
 // substrate path.
 struct ProductionPayload {
-    int  data    = 0;
+    int data = 0;
     long version = 0;
 
     constexpr ProductionPayload() noexcept = default;
@@ -36,7 +36,6 @@ struct ProductionPayload {
 };
 
 using BadMint = decltype(fcipher::mint_restore<ProductionPayload>(
-    std::declval<fcipher::ColdTierHandle<ProductionPayload>>(),
-    std::declval<::crucible::ContentHash>()));
+    std::declval<fcipher::ColdTierHandle<ProductionPayload>>(), std::declval<::crucible::ContentHash>()));
 
 int main() { return sizeof(BadMint); }

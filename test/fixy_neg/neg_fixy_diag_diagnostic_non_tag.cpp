@@ -19,8 +19,7 @@ struct DiagNegFixture2_CtxPayload {};
 
 // Wrapper instantiation with non-tag fires the substrate's requires
 // clause at substitution time.
-using DiagNegFixture2_BadDiagnostic =
-    fd::Diagnostic<int, DiagNegFixture2_CtxPayload>;
+using DiagNegFixture2_BadDiagnostic = fd::Diagnostic<int, DiagNegFixture2_CtxPayload>;
 
 int main() {
     (void)sizeof(DiagNegFixture2_BadDiagnostic);  // forces instantiation

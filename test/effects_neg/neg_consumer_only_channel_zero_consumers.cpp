@@ -34,4 +34,7 @@ ZeroConsumerChannel witness{};
 
 }  // namespace
 
-int main() { (void)witness; return 0; }
+int main() {
+    (void)witness;
+    return 0;
+}

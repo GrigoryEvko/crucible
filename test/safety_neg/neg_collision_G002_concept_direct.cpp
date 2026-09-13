@@ -26,8 +26,8 @@ struct Probe {};
 }  // namespace neg_collision_g002_direct
 
 namespace crucible::safety::fn::collision {
-    template <> struct marks_thread_local_atomic<::neg_collision_g002_direct::Probe>
-        : std::true_type {};
+template <>
+struct marks_thread_local_atomic<::neg_collision_g002_direct::Probe> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 static_assert(csc::G002_OK<::neg_collision_g002_direct::Probe>,

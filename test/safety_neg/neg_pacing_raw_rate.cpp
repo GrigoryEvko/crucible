@@ -6,7 +6,7 @@
 
 int main() {
     auto fd = crucible::cntp::admit_socket_fd(0).value();
-    auto result = crucible::cntp::set_socket_pacing_rate(fd, 1'000'000ULL);
+    auto result = crucible::cntp::set_socket_pacing_rate(fd, 1000000ULL);
     (void)result;
     return 0;
 }

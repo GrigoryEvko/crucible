@@ -19,8 +19,8 @@
 #include <crucible/fixy/Substr.h>
 
 namespace fsubstr = crucible::fixy::substr;
-namespace conc    = crucible::concurrent;
-namespace fsafe   = crucible::safety;
+namespace conc = crucible::concurrent;
+namespace fsafe = crucible::safety;
 
 namespace neg_fixy_substr_swmr_writer_session_non_ctx {
 struct UserTag {};
@@ -28,18 +28,14 @@ struct NotAnExecCtx {};
 }  // namespace neg_fixy_substr_swmr_writer_session_non_ctx
 
 int main() {
-    using Snap = conc::PermissionedSnapshot<int,
-        neg_fixy_substr_swmr_writer_session_non_ctx::UserTag>;
+    using Snap = conc::PermissionedSnapshot<int, neg_fixy_substr_swmr_writer_session_non_ctx::UserTag>;
 
     Snap snap{};
-    auto writer = snap.writer(
-        fsafe::mint_permission_root<typename Snap::writer_tag>());
+    auto writer = snap.writer(fsafe::mint_permission_root<typename Snap::writer_tag>());
 
     // Valid WriterHandle, but NotAnExecCtx fails the IsExecCtx Ctx
     // template-parameter constraint of mint_writer_session.
     [[maybe_unused]] auto bad =
-        fsubstr::swmr::mint_writer_session<Snap>(
-            neg_fixy_substr_swmr_writer_session_non_ctx::NotAnExecCtx{},
-            writer);
+        fsubstr::swmr::mint_writer_session<Snap>(neg_fixy_substr_swmr_writer_session_non_ctx::NotAnExecCtx{}, writer);
     return 0;
 }

@@ -10,13 +10,12 @@
 #include <cstdint>
 
 int main() {
-  crucible::TensorMeta meta{};
-  meta.ndim = 0;
-  meta.dtype = crucible::ScalarType::Float;
+    crucible::TensorMeta meta{};
+    meta.ndim = 0;
+    meta.dtype = crucible::ScalarType::Float;
 
-  crucible::safety::Saturated<std::uint64_t> raw =
-      crucible::compute_storage_nbytes_det(
-          crucible::external_tensor_meta(meta));
-  (void)raw;
-  return 0;
+    crucible::safety::Saturated<std::uint64_t> raw =
+        crucible::compute_storage_nbytes_det(crucible::external_tensor_meta(meta));
+    (void)raw;
+    return 0;
 }

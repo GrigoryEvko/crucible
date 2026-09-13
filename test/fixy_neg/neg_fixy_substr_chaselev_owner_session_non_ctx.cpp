@@ -26,17 +26,14 @@ namespace fchase = ::crucible::fixy::substr::chaselev;
 
 namespace neg_fixy_owner_session_non_ctx {
 struct UserTag {};
-using Deque = ::crucible::concurrent::PermissionedChaseLevDeque<
-    int, 16, UserTag>;
-}
+using Deque = ::crucible::concurrent::PermissionedChaseLevDeque<int, 16, UserTag>;
+}  // namespace neg_fixy_owner_session_non_ctx
 
 int main() {
     int not_a_ctx = 0;
-    neg_fixy_owner_session_non_ctx::Deque::OwnerHandle* handle =
-        nullptr;
+    neg_fixy_owner_session_non_ctx::Deque::OwnerHandle* handle = nullptr;
 
-    auto bad = fchase::mint_owner_session<
-        neg_fixy_owner_session_non_ctx::Deque>(not_a_ctx, *handle);
+    auto bad = fchase::mint_owner_session<neg_fixy_owner_session_non_ctx::Deque>(not_a_ctx, *handle);
     (void)bad;
     return 0;
 }

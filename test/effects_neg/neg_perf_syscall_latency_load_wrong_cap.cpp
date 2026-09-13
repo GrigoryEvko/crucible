@@ -20,8 +20,7 @@ int main() {
     auto bg_cap = crucible::effects::testing::bg();
 
     // <-- this line must NOT compile
-    std::optional<crucible::perf::SyscallLatency> hub =
-        crucible::perf::SyscallLatency::load(bg_cap);
+    std::optional<crucible::perf::SyscallLatency> hub = crucible::perf::SyscallLatency::load(bg_cap);
 
     (void)hub;
     return 0;

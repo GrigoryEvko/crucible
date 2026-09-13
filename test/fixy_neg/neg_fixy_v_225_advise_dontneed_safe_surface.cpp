@@ -30,8 +30,8 @@ struct AdviseRegion {};
 int main() {
     namespace fwmm = ::crucible::fixy::wrap::mmap;
     namespace advice = fwmm::advice;
-    namespace prot   = fwmm::prot;
-    namespace share  = fwmm::share;
+    namespace prot = fwmm::prot;
+    namespace share = fwmm::share;
 
     ::crucible::effects::TestRunnerCtx ctx{};
 

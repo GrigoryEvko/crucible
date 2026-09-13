@@ -28,7 +28,7 @@
 #include <crucible/sessions/Session.h>
 
 namespace fscheckpoint = ::crucible::fixy::sess::checkpoint;
-namespace proto        = ::crucible::safety::proto;
+namespace proto = ::crucible::safety::proto;
 
 namespace {
 struct Req {};
@@ -38,8 +38,8 @@ struct Err {};
 using CommitPath = proto::Send<Req, proto::Recv<Resp, proto::End>>;
 
 // Two distinct rollback branches — declared and actual differ.
-using ActualRollback   = proto::Send<Req, proto::Recv<Err, proto::End>>;
-using ExpectedRollback = proto::Send<Req, proto::End>;   // ≠ ActualRollback
+using ActualRollback = proto::Send<Req, proto::Recv<Err, proto::End>>;
+using ExpectedRollback = proto::Send<Req, proto::End>;  // ≠ ActualRollback
 
 // P IS a CheckpointedSession with correct base branch, but its
 // rollback branch is ActualRollback, not ExpectedRollback.
@@ -52,7 +52,6 @@ int main() {
     // assert_checkpointed_matches fires with the diagnostic
     // "rollback branch does not match".  Base branch and shape
     // check both pass.
-    fscheckpoint::assert_checkpointed_matches<
-        CkptSession, CommitPath, ExpectedRollback>();
+    fscheckpoint::assert_checkpointed_matches<CkptSession, CommitPath, ExpectedRollback>();
     return 0;
 }

@@ -34,6 +34,5 @@ int main() {
     // a PinningRequirement At<> grade — they are unrelated empty class types.
     SuspendBehaviorLattice::At<SuspendBehavior::KeepsTicking>::element_type suspend_grade = pin_grade;
 
-    return static_cast<int>(
-        static_cast<SuspendBehavior>(suspend_grade) == SuspendBehavior::KeepsTicking);
+    return static_cast<int>(static_cast<SuspendBehavior>(suspend_grade) == SuspendBehavior::KeepsTicking);
 }

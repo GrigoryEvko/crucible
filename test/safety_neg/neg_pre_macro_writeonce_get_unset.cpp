@@ -23,11 +23,10 @@ namespace {
     return w.get();
 }
 
-static_assert(under_test() == 0,
-    "CRUCIBLE_PRE on WriteOnce::get's value_.has_value() check MUST "
-    "fire at consteval when get() is called on an unset slot.  If "
-    "this static_assert evaluates successfully, the body-CRUCIBLE_PRE "
-    "migration failed for const-member-function predicates.");
+static_assert(under_test() == 0, "CRUCIBLE_PRE on WriteOnce::get's value_.has_value() check MUST "
+                                 "fire at consteval when get() is called on an unset slot.  If "
+                                 "this static_assert evaluates successfully, the body-CRUCIBLE_PRE "
+                                 "migration failed for const-member-function predicates.");
 
 }  // namespace
 

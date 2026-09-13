@@ -17,23 +17,21 @@
 //   "conversion from".
 
 #include <crucible/effects/ExecCtx.h>
-#include <crucible/fixy/Source.h>           // fixy::tags::source::*
+#include <crucible/fixy/Source.h>  // fixy::tags::source::*
 #include <crucible/fixy/Wrap.h>
 
 int main() {
     namespace fwfs = ::crucible::fixy::wrap::fs;
-    namespace om   = fwfs::open_mode;
+    namespace om = fwfs::open_mode;
 
     ::crucible::effects::TestRunnerCtx ctx{};
 
     // Trust-boundary path — NOT sanitized.
-    fwfs::Path<::crucible::fixy::tags::source::External> external_path{
-        "/tmp/crucible_neg_v224_external"};
+    fwfs::Path<::crucible::fixy::tags::source::External> external_path{"/tmp/crucible_neg_v224_external"};
 
     // Should FAIL: mint_file's signature is
     // `mint_file(Ctx const&, Path<Sanitized>, mode_t)` — passing
     // Path<External> is a tag-mismatch refusal at the type system.
-    [[maybe_unused]] auto r =
-        fwfs::mint_file<fwfs::grant::mode<om::ReadOnly>>(ctx, std::move(external_path));
+    [[maybe_unused]] auto r = fwfs::mint_file<fwfs::grant::mode<om::ReadOnly>>(ctx, std::move(external_path));
     return 0;
 }

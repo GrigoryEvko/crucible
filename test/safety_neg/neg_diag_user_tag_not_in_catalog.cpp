@@ -16,7 +16,7 @@
 namespace {
 
 struct user_local_tag : ::crucible::safety::diag::tag_base {
-    static constexpr std::string_view name        = "UserLocalTag";
+    static constexpr std::string_view name = "UserLocalTag";
     static constexpr std::string_view description = "user-defined";
     static constexpr std::string_view remediation = "see project docs";
 };

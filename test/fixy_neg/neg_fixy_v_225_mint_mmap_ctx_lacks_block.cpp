@@ -27,7 +27,7 @@ struct InitRegion {};
 
 int main() {
     namespace fwmm = ::crucible::fixy::wrap::mmap;
-    namespace prot  = fwmm::prot;
+    namespace prot = fwmm::prot;
     namespace share = fwmm::share;
     namespace grant = fwmm::grant;
 
@@ -36,10 +36,8 @@ int main() {
 
     // Should FAIL: mint_mmap's CtxFitsMmapMint folds in
     // CtxAdmitsIoBlock<Ctx>; ColdInitCtx's row lacks Effect::Block.
-    [[maybe_unused]] auto r = fwmm::mint_mmap_anon<
-        InitRegion,
-        grant::with_prot<prot::ReadOnly>,
-        grant::with_share<share::Anonymous>
-    >(ctx, /*length=*/4096);
+    [[maybe_unused]] auto r =
+        fwmm::mint_mmap_anon<InitRegion, grant::with_prot<prot::ReadOnly>, grant::with_share<share::Anonymous>>(
+            ctx, /*length=*/4096);
     return 0;
 }

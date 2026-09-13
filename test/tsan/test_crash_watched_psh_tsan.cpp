@@ -35,7 +35,7 @@ struct SharedWire {
 
 struct Channel {
     SharedWire* wire = nullptr;
-    int         id = 0;
+    int id = 0;
 };
 
 void send_int(Channel& channel, int value) noexcept {
@@ -49,14 +49,12 @@ int recv_int(Channel& channel) noexcept {
 }
 
 template <typename Tag>
-void send_transfer(Channel& channel,
-                   Transferable<int, Tag>&& value) noexcept {
+void send_transfer(Channel& channel, Transferable<int, Tag>&& value) noexcept {
     channel.wire->last_value.store(value.value, std::memory_order_relaxed);
     channel.wire->delivered.fetch_add(1, std::memory_order_relaxed);
 }
 
-void send_coord_transfer(Channel& channel,
-                         Transferable<int, CoordTag>&& value) noexcept {
+void send_coord_transfer(Channel& channel, Transferable<int, CoordTag>&& value) noexcept {
     send_transfer<CoordTag>(channel, std::move(value));
 }
 
@@ -91,15 +89,12 @@ struct survivor_registry<WorkerFallbackTag> {
 
 namespace {
 
-static_assert(std::is_same_v<
-    proto::detail::crash_event_for_t<WorkerTag, Channel>,
-    CrashEvent<WorkerTag, Channel, CoordTag>>);
-static_assert(std::is_same_v<
-    proto::detail::crash_event_for_t<CoordTag, Channel>,
-    CrashEvent<CoordTag, Channel, MasterTag>>);
-static_assert(std::is_same_v<
-    proto::detail::crash_event_for_t<WorkerFallbackTag, Channel>,
-    CrashEvent<WorkerFallbackTag, Channel, MasterTag>>);
+static_assert(
+    std::is_same_v<proto::detail::crash_event_for_t<WorkerTag, Channel>, CrashEvent<WorkerTag, Channel, CoordTag>>);
+static_assert(
+    std::is_same_v<proto::detail::crash_event_for_t<CoordTag, Channel>, CrashEvent<CoordTag, Channel, MasterTag>>);
+static_assert(std::is_same_v<proto::detail::crash_event_for_t<WorkerFallbackTag, Channel>,
+                             CrashEvent<WorkerFallbackTag, Channel, MasterTag>>);
 
 void verify_three_permissioned_peers(int iteration) {
     using WorkerProto = Send<Transferable<int, WorkerTag>, End>;
@@ -114,39 +109,27 @@ void verify_three_permissioned_peers(int iteration) {
     auto coord_perm = mint_permission_root<CoordTag>();
     auto master_perm = mint_permission_root<MasterTag>();
 
-    auto worker = mint_permissioned_session<WorkerProto>(
-        kSessionCtx, Channel{&worker_wire, 1000 + iteration},
-        std::move(worker_perm));
-    auto coord = mint_permissioned_session<CoordProto>(
-        kSessionCtx, Channel{&coord_wire, 2000 + iteration},
-        std::move(coord_perm));
-    auto master = mint_permissioned_session<MasterProto>(
-        kSessionCtx, Channel{&master_wire, 3000 + iteration},
-        std::move(master_perm));
+    auto worker = mint_permissioned_session<WorkerProto>(kSessionCtx, Channel{&worker_wire, 1000 + iteration},
+                                                         std::move(worker_perm));
+    auto coord = mint_permissioned_session<CoordProto>(kSessionCtx, Channel{&coord_wire, 2000 + iteration},
+                                                       std::move(coord_perm));
+    auto master = mint_permissioned_session<MasterProto>(kSessionCtx, Channel{&master_wire, 3000 + iteration},
+                                                         std::move(master_perm));
 
-    static_assert(std::is_same_v<typename decltype(worker)::perm_set,
-                                 PermSet<WorkerTag>>);
-    static_assert(std::is_same_v<typename decltype(coord)::perm_set,
-                                 PermSet<CoordTag>>);
-    static_assert(std::is_same_v<typename decltype(master)::perm_set,
-                                 PermSet<MasterTag>>);
+    static_assert(std::is_same_v<typename decltype(worker)::perm_set, PermSet<WorkerTag>>);
+    static_assert(std::is_same_v<typename decltype(coord)::perm_set, PermSet<CoordTag>>);
+    static_assert(std::is_same_v<typename decltype(master)::perm_set, PermSet<MasterTag>>);
 
-    auto worker_end = std::move(worker).send(
-        Transferable<int, WorkerTag>{11, mint_permission_root<WorkerTag>()},
-        send_transfer<WorkerTag>);
-    auto coord_end = std::move(coord).send(
-        Transferable<int, CoordTag>{22, mint_permission_root<CoordTag>()},
-        send_transfer<CoordTag>);
-    auto master_end = std::move(master).send(
-        Transferable<int, MasterTag>{33, mint_permission_root<MasterTag>()},
-        send_transfer<MasterTag>);
+    auto worker_end = std::move(worker).send(Transferable<int, WorkerTag>{11, mint_permission_root<WorkerTag>()},
+                                             send_transfer<WorkerTag>);
+    auto coord_end = std::move(coord).send(Transferable<int, CoordTag>{22, mint_permission_root<CoordTag>()},
+                                           send_transfer<CoordTag>);
+    auto master_end = std::move(master).send(Transferable<int, MasterTag>{33, mint_permission_root<MasterTag>()},
+                                             send_transfer<MasterTag>);
 
-    static_assert(std::is_same_v<typename decltype(worker_end)::perm_set,
-                                 EmptyPermSet>);
-    static_assert(std::is_same_v<typename decltype(coord_end)::perm_set,
-                                 EmptyPermSet>);
-    static_assert(std::is_same_v<typename decltype(master_end)::perm_set,
-                                 EmptyPermSet>);
+    static_assert(std::is_same_v<typename decltype(worker_end)::perm_set, EmptyPermSet>);
+    static_assert(std::is_same_v<typename decltype(coord_end)::perm_set, EmptyPermSet>);
+    static_assert(std::is_same_v<typename decltype(master_end)::perm_set, EmptyPermSet>);
 
     auto worker_channel = std::move(worker_end).close();
     auto coord_channel = std::move(coord_end).close();
@@ -165,10 +148,8 @@ void scenario_clean_peer_death(int iteration) {
 
     SharedWire wire;
     OneShotFlag worker_dead;
-    auto coord = mint_permissioned_session<P>(
-        kSessionCtx, Channel{&wire, iteration});
-    auto watched = mint_crash_watched_session<WorkerTag>(
-        std::move(coord), worker_dead);
+    auto coord = mint_permissioned_session<P>(kSessionCtx, Channel{&wire, iteration});
+    auto watched = mint_crash_watched_session<WorkerTag>(std::move(coord), worker_dead);
 
     std::jthread worker([&] { worker_dead.signal(); });
     worker.join();
@@ -181,18 +162,15 @@ void scenario_clean_peer_death(int iteration) {
     static_assert(std::is_same_v<Error, CrashEvent<WorkerTag, Channel, CoordTag>>);
 
     auto permissions = std::move(result.error().permissions);
-    static_assert(std::is_same_v<decltype(permissions),
-                                 std::tuple<Permission<CoordTag>>>);
+    static_assert(std::is_same_v<decltype(permissions), std::tuple<Permission<CoordTag>>>);
     assert(result.error().resource.id == iteration);
 
-    auto followup = mint_permissioned_session<Followup>(
-        kSessionCtx, Channel{&wire, 60'000 + iteration},
-        std::move(std::get<0>(permissions)));
-    auto after = std::move(followup).send(
-        Transferable<int, CoordTag>{99, mint_permission_root<CoordTag>()},
-        send_coord_transfer);
+    auto followup = mint_permissioned_session<Followup>(kSessionCtx, Channel{&wire, 60000 + iteration},
+                                                        std::move(std::get<0>(permissions)));
+    auto after = std::move(followup).send(Transferable<int, CoordTag>{99, mint_permission_root<CoordTag>()},
+                                          send_coord_transfer);
     auto recovered = std::move(after).close();
-    assert(recovered.id == 60'000 + iteration);
+    assert(recovered.id == 60000 + iteration);
     assert(wire.delivered.load(std::memory_order_relaxed) == 1);
 }
 
@@ -204,35 +182,26 @@ void scenario_death_races_send(int iteration) {
     std::atomic<bool> start{false};
 
     auto initial_perm = mint_permission_root<CoordTag>();
-    auto coord = mint_permissioned_session<P>(
-        kSessionCtx, Channel{&wire, 10'000 + iteration},
-        std::move(initial_perm));
-    auto watched = mint_crash_watched_session<WorkerTag>(
-        std::move(coord), worker_dead);
+    auto coord = mint_permissioned_session<P>(kSessionCtx, Channel{&wire, 10000 + iteration}, std::move(initial_perm));
+    auto watched = mint_crash_watched_session<WorkerTag>(std::move(coord), worker_dead);
 
-    std::jthread killer(signal_after_start<OneShotFlag>,
-                        std::ref(worker_dead),
-                        std::ref(start));
+    std::jthread killer(signal_after_start<OneShotFlag>, std::ref(worker_dead), std::ref(start));
 
-    Transferable<int, CoordTag> payload{
-        77,
-        mint_permission_root<CoordTag>()};
+    Transferable<int, CoordTag> payload{77, mint_permission_root<CoordTag>()};
 
     start.store(true, std::memory_order_release);
-    auto result = std::move(watched).send(
-        std::move(payload), send_coord_transfer);
+    auto result = std::move(watched).send(std::move(payload), send_coord_transfer);
     killer.join();
 
     if (result) {
         assert(wire.delivered.load(std::memory_order_relaxed) == 1);
         auto recovered = std::move(*result).close();
-        assert(recovered.id == 10'000 + iteration);
+        assert(recovered.id == 10000 + iteration);
     } else {
         assert(wire.delivered.load(std::memory_order_relaxed) == 0);
         auto permissions = std::move(result.error().permissions);
-        static_assert(std::is_same_v<decltype(permissions),
-                                     std::tuple<Permission<CoordTag>>>);
-        assert(result.error().resource.id == 10'000 + iteration);
+        static_assert(std::is_same_v<decltype(permissions), std::tuple<Permission<CoordTag>>>);
+        assert(result.error().resource.id == 10000 + iteration);
         (void)permissions;
     }
 }
@@ -247,20 +216,12 @@ void scenario_concurrent_peer_deaths(int iteration) {
     std::atomic<bool> start{false};
 
     auto master_worker_watch = mint_crash_watched_session<WorkerTag>(
-        mint_permissioned_session<P>(
-            kSessionCtx, Channel{&worker_wire, 20'000 + iteration}),
-        worker_dead);
+        mint_permissioned_session<P>(kSessionCtx, Channel{&worker_wire, 20000 + iteration}), worker_dead);
     auto master_coord_watch = mint_crash_watched_session<CoordTag>(
-        mint_permissioned_session<P>(
-            kSessionCtx, Channel{&coord_wire, 30'000 + iteration}),
-        coord_dead);
+        mint_permissioned_session<P>(kSessionCtx, Channel{&coord_wire, 30000 + iteration}), coord_dead);
 
-    std::jthread worker_killer(signal_after_start<OneShotFlag>,
-                               std::ref(worker_dead),
-                               std::ref(start));
-    std::jthread coord_killer(signal_after_start<OneShotFlag>,
-                              std::ref(coord_dead),
-                              std::ref(start));
+    std::jthread worker_killer(signal_after_start<OneShotFlag>, std::ref(worker_dead), std::ref(start));
+    std::jthread coord_killer(signal_after_start<OneShotFlag>, std::ref(coord_dead), std::ref(start));
 
     start.store(true, std::memory_order_release);
     worker_killer.join();
@@ -276,14 +237,12 @@ void scenario_concurrent_peer_deaths(int iteration) {
 
     auto worker_permissions = std::move(worker_result.error().permissions);
     auto coord_permissions = std::move(coord_result.error().permissions);
-    static_assert(std::is_same_v<decltype(worker_permissions),
-                                 std::tuple<Permission<CoordTag>>>);
-    static_assert(std::is_same_v<decltype(coord_permissions),
-                                 std::tuple<Permission<MasterTag>>>);
+    static_assert(std::is_same_v<decltype(worker_permissions), std::tuple<Permission<CoordTag>>>);
+    static_assert(std::is_same_v<decltype(coord_permissions), std::tuple<Permission<MasterTag>>>);
     static_assert(std::tuple_size_v<decltype(worker_permissions)> == 1);
     static_assert(std::tuple_size_v<decltype(coord_permissions)> == 1);
-    assert(worker_result.error().resource.id == 20'000 + iteration);
-    assert(coord_result.error().resource.id == 30'000 + iteration);
+    assert(worker_result.error().resource.id == 20000 + iteration);
+    assert(coord_result.error().resource.id == 30000 + iteration);
     (void)worker_permissions;
     (void)coord_permissions;
 }
@@ -297,40 +256,32 @@ void scenario_fallback_survivor_observes(int iteration) {
     OneShotFlag worker_dead;
 
     auto coord = mint_crash_watched_session<WorkerFallbackTag>(
-        mint_permissioned_session<End>(
-            kSessionCtx, Channel{&coord_wire, 40'000 + iteration}),
-        worker_dead);
+        mint_permissioned_session<End>(kSessionCtx, Channel{&coord_wire, 40000 + iteration}), worker_dead);
     auto coord_channel = std::move(coord).close();
-    assert(coord_channel.id == 40'000 + iteration);
+    assert(coord_channel.id == 40000 + iteration);
 
     worker_dead.signal();
 
     auto master = mint_crash_watched_session<WorkerFallbackTag>(
-        mint_permissioned_session<P>(
-            kSessionCtx, Channel{&master_wire, 50'000 + iteration}),
-        worker_dead);
+        mint_permissioned_session<P>(kSessionCtx, Channel{&master_wire, 50000 + iteration}), worker_dead);
     auto result = std::move(master).recv(recv_int);
 
     assert(!result);
     assert(master_wire.delivered.load(std::memory_order_relaxed) == 0);
 
     auto permissions = std::move(result.error().permissions);
-    static_assert(std::is_same_v<decltype(permissions),
-                                 std::tuple<Permission<MasterTag>>>);
-    assert(result.error().resource.id == 50'000 + iteration);
+    static_assert(std::is_same_v<decltype(permissions), std::tuple<Permission<MasterTag>>>);
+    assert(result.error().resource.id == 50000 + iteration);
 
-    auto followup = mint_permissioned_session<Followup>(
-        kSessionCtx,
-        Channel{&master_wire, 70'000 + iteration},
-        std::move(std::get<0>(permissions)));
-    auto after = std::move(followup).send(
-        Transferable<int, MasterTag>{101, mint_permission_root<MasterTag>()},
-        [](Channel& channel, Transferable<int, MasterTag>&& value) noexcept {
-            channel.wire->last_value.store(value.value, std::memory_order_relaxed);
-            channel.wire->delivered.fetch_add(1, std::memory_order_relaxed);
-        });
+    auto followup = mint_permissioned_session<Followup>(kSessionCtx, Channel{&master_wire, 70000 + iteration},
+                                                        std::move(std::get<0>(permissions)));
+    auto after = std::move(followup).send(Transferable<int, MasterTag>{101, mint_permission_root<MasterTag>()},
+                                          [](Channel& channel, Transferable<int, MasterTag>&& value) noexcept {
+                                              channel.wire->last_value.store(value.value, std::memory_order_relaxed);
+                                              channel.wire->delivered.fetch_add(1, std::memory_order_relaxed);
+                                          });
     auto recovered = std::move(after).close();
-    assert(recovered.id == 70'000 + iteration);
+    assert(recovered.id == 70000 + iteration);
     assert(master_wire.delivered.load(std::memory_order_relaxed) == 1);
 }
 

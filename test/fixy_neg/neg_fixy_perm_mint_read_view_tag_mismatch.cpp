@@ -26,9 +26,9 @@ struct TagB {};
 }  // namespace neg_fixy_perm_read_view_tag_mismatch
 
 int main() {
-    namespace tags  = neg_fixy_perm_read_view_tag_mismatch;
+    namespace tags = neg_fixy_perm_read_view_tag_mismatch;
     namespace fperm = ::crucible::fixy::perm;
-    namespace safe  = ::crucible::safety;
+    namespace safe = ::crucible::safety;
 
     auto perm_a = fperm::mint_permission_root<tags::TagA>();
     // Explicit ReadView<TagB> requires Permission<TagB>; perm_a's

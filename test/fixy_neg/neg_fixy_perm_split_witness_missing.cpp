@@ -39,21 +39,17 @@ struct Right {};
 // static_assert(splits_into_authoring_witness_v<...>) reddens.
 namespace crucible::safety {
 template <>
-struct splits_into<
-    neg_fixy_perm_split_witness_missing::Whole,
-    neg_fixy_perm_split_witness_missing::Left,
-    neg_fixy_perm_split_witness_missing::Right>
-    : std::true_type {};
+struct splits_into<neg_fixy_perm_split_witness_missing::Whole, neg_fixy_perm_split_witness_missing::Left,
+                   neg_fixy_perm_split_witness_missing::Right> : std::true_type {};
 }  // namespace crucible::safety
 
 int main() {
-    namespace tags  = neg_fixy_perm_split_witness_missing;
+    namespace tags = neg_fixy_perm_split_witness_missing;
     namespace fperm = ::crucible::fixy::perm;
-    namespace safe  = ::crucible::safety;
+    namespace safe = ::crucible::safety;
 
     auto whole = fperm::mint_permission_root<tags::Whole>();
-    auto [l, r] = fperm::mint_permission_split<tags::Left, tags::Right>(
-        std::move(whole));
+    auto [l, r] = fperm::mint_permission_split<tags::Left, tags::Right>(std::move(whole));
     safe::permission_drop(std::move(l));
     safe::permission_drop(std::move(r));
     return 0;

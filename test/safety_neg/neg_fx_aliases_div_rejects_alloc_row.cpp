@@ -11,12 +11,13 @@
 
 template <typename R>
     requires ::crucible::effects::IsDiv<R>
-constexpr bool only_div() noexcept { return true; }
+constexpr bool only_div() noexcept {
+    return true;
+}
 
 int main() {
     // Alloc atom is in STRow but NOT in DivRow.
-    using BadRow = ::crucible::effects::Row<
-        ::crucible::effects::Effect::Alloc>;
+    using BadRow = ::crucible::effects::Row<::crucible::effects::Effect::Alloc>;
     (void)only_div<BadRow>();
     return 0;
 }

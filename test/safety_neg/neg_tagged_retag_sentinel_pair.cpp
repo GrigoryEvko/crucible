@@ -33,8 +33,7 @@ int main() {
     // The wired-in requires-clause on Tagged::retag() consults
     // retag_policy<NeverFrom, NeverTo>::allowed == false (primary
     // template) and rejects the call.
-    auto retagged = std::move(witness)
-        .retag<ns::detail::retag_policy_test::NeverTo>();
+    auto retagged = std::move(witness).retag<ns::detail::retag_policy_test::NeverTo>();
     (void)retagged;
     return 0;
 }

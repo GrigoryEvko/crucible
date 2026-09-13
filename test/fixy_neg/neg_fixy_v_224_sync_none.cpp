@@ -19,12 +19,12 @@
 //   "CtxFitsSync" / "sync_op::None".
 
 #include <crucible/effects/ExecCtx.h>
-#include <crucible/fixy/Source.h>           // fixy::tags::source::*
+#include <crucible/fixy/Source.h>  // fixy::tags::source::*
 #include <crucible/fixy/Wrap.h>
 
 int main() {
     namespace fwfs = ::crucible::fixy::wrap::fs;
-    namespace so   = fwfs::sync_op;
+    namespace so = fwfs::sync_op;
 
     ::crucible::effects::TestRunnerCtx ctx{};
 

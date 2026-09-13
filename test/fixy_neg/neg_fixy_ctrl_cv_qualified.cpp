@@ -18,7 +18,7 @@
 
 #include <crucible/fixy/grant/Ctrl.h>
 
-namespace gr   = crucible::fixy::grant;
+namespace gr = crucible::fixy::grant;
 namespace ctrl = crucible::fixy::grant::ctrl;
 
 // A cv-qualified ctrl grant tag must be rejected by IsGrantTag.

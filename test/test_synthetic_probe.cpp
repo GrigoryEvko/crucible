@@ -53,7 +53,7 @@ static void test_register_and_record_success() {
                                  observe::ProbeOutcome{
                                      .kind = observe::TransportProbeKind::Quic,
                                      .failure = observe::SyntheticProbeFailureClass::None,
-                                     .latency_ns = 11'000,
+                                     .latency_ns = 11000,
                                      .bytes_transferred = 256,
                                      .sequence = 9,
                                  },
@@ -64,7 +64,7 @@ static void test_register_and_record_success() {
     assert(stats.succeeded == 1);
     assert(stats.failed == 0);
     assert(stats.bytes_transferred == 256);
-    assert(stats.last_latency_ns == 11'000);
+    assert(stats.last_latency_ns == 11000);
     assert(stats.last_sequence == 9);
     assert(observe::latest_observation(observations).kind == observe::ObservationKind::BitsTransferred);
     std::printf("  test_register_and_record_success: PASSED\n");
@@ -84,7 +84,7 @@ static void test_failure_accounting() {
                                  observe::ProbeOutcome{
                                      .kind = observe::TransportProbeKind::RdmaRead,
                                      .failure = observe::SyntheticProbeFailureClass::Timeout,
-                                     .latency_ns = 1'000'000,
+                                     .latency_ns = 1000000,
                                      .bytes_transferred = 0,
                                      .sequence = 3,
                                  }));
@@ -130,7 +130,7 @@ static void test_schedule_record_separation() {
                                  observe::ProbeOutcome{
                                      .kind = observe::TransportProbeKind::Quic,
                                      .failure = observe::SyntheticProbeFailureClass::None,
-                                     .latency_ns = 1'000,
+                                     .latency_ns = 1000,
                                      .bytes_transferred = 64,
                                      .sequence = 1,
                                  }));

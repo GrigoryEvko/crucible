@@ -14,7 +14,7 @@
 
 #include <utility>
 
-namespace fw  = crucible::fixy::wrap;
+namespace fw = crucible::fixy::wrap;
 namespace saf = crucible::safety;
 
 struct TypeFixyWrapSealedRefinedInto {};

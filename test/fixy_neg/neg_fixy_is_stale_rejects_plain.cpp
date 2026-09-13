@@ -21,7 +21,9 @@ struct TypeIsStaleRejectsPlain {
 
 template <typename T>
     requires fis::IsStale<T>
-[[nodiscard]] constexpr int gate(T const&) noexcept { return 1; }
+[[nodiscard]] constexpr int gate(T const&) noexcept {
+    return 1;
+}
 
 }  // namespace neg_fixy_is_stale_rejects_plain
 

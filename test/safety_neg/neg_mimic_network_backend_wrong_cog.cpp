@@ -4,6 +4,4 @@
 
 namespace mb = crucible::mimic::_wip::network;
 
-static_assert(mb::BackendAcceptsCog<
-              mb::NetworkBackendVendor::Mellanox,
-              crucible::cog::CogKind::Gpu>);
+static_assert(mb::BackendAcceptsCog<mb::NetworkBackendVendor::Mellanox, crucible::cog::CogKind::Gpu>);

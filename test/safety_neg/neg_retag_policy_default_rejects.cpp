@@ -30,7 +30,6 @@ constexpr void demand_retag_allowed() noexcept {}
 
 int main() {
     // Sentinel pair — guaranteed unspecialized forever per V-022.
-    demand_retag_allowed<ns::detail::retag_policy_test::NeverFrom,
-                          ns::detail::retag_policy_test::NeverTo>();
+    demand_retag_allowed<ns::detail::retag_policy_test::NeverFrom, ns::detail::retag_policy_test::NeverTo>();
     return 0;
 }

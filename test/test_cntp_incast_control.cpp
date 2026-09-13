@@ -57,9 +57,9 @@ void test_admission_and_names() {
     assert(!zero_credit.has_value());
     assert(zero_credit.error() == cntp::IncastError::InvalidCreditBytes);
 
-    auto rto = cntp::admit_rto_min_usec(10'000);
+    auto rto = cntp::admit_rto_min_usec(10000);
     assert(rto.has_value());
-    assert(rto->value() == 10'000);
+    assert(rto->value() == 10000);
 
     auto zero_rto = cntp::admit_rto_min_usec(0);
     assert(!zero_rto.has_value());
@@ -78,7 +78,7 @@ void test_admission_and_names() {
 
 void test_config_minting() {
     auto credit = cntp::admit_credit_bytes(32 * 1024);
-    auto rto = cntp::admit_rto_min_usec(10'000);
+    auto rto = cntp::admit_rto_min_usec(10000);
     auto senders = cntp::admit_sender_count(32);
     assert(credit.has_value());
     assert(rto.has_value());
@@ -164,7 +164,7 @@ void test_live_rto_if_available() {
     assert(socket.valid());
 
     auto fd = cntp::admit_socket_fd(socket.raw());
-    auto rto = cntp::admit_rto_min_usec(10'000);
+    auto rto = cntp::admit_rto_min_usec(10000);
     assert(fd.has_value());
     assert(rto.has_value());
 

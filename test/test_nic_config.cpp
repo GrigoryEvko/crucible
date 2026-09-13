@@ -53,7 +53,7 @@ void test_admission() {
     assert(busy.has_value());
     assert(busy->value() == 50);
 
-    auto too_busy = nic::admit_busy_poll_us(1'000'001);
+    auto too_busy = nic::admit_busy_poll_us(1000001);
     assert(!too_busy.has_value());
     assert(too_busy.error() == nic::NicConfigError::InvalidBusyPollUs);
 
@@ -77,11 +77,11 @@ void test_mint_and_apply_boundaries() {
 
     nic::QdiscConfig qdisc{};
     qdisc.kind = nic::QdiscKind::FqCodel;
-    qdisc.max_quantum = nic::PositiveQdiscParam{std::uint32_t{16'384}};
+    qdisc.max_quantum = nic::PositiveQdiscParam{std::uint32_t{16384}};
 
     nic::SysctlConfig sysctl{};
     sysctl.busy_poll_us = *nic::admit_busy_poll_us(50);
-    sysctl.tcp_rto_min_us = *nic::admit_tcp_rto_min_us(10'000);
+    sysctl.tcp_rto_min_us = *nic::admit_tcp_rto_min_us(10000);
     auto valid_sysctl = nic::validate_sysctl_config(sysctl);
     assert(valid_sysctl.has_value());
 

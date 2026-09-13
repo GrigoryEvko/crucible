@@ -28,8 +28,7 @@ cog::NvSwitchTargetCaps doca_caps() {
     return caps;
 }
 
-doca::DocaOffloadSpec offload_spec(bool runtime_loaded = false,
-                                   bool allow_backend_deploy = false) {
+doca::DocaOffloadSpec offload_spec(bool runtime_loaded = false, bool allow_backend_deploy = false) {
     return doca::DocaOffloadSpec{
         .program_id = *doca::admit_doca_program_id(0xd0ca),
         .kind = doca::DocaOffloadKind::SwimGossip,
@@ -41,10 +40,8 @@ doca::DocaOffloadSpec offload_spec(bool runtime_loaded = false,
 }
 
 void test_admission_and_names() {
-    assert(doca::doca_error_name(doca::DocaError::DeployDeferred)
-           == std::string_view{"DeployDeferred"});
-    assert(doca::doca_offload_kind_name(doca::DocaOffloadKind::FlowSteering)
-           == std::string_view{"FlowSteering"});
+    assert(doca::doca_error_name(doca::DocaError::DeployDeferred) == std::string_view{"DeployDeferred"});
+    assert(doca::doca_offload_kind_name(doca::DocaOffloadKind::FlowSteering) == std::string_view{"FlowSteering"});
 
     auto program = doca::admit_doca_program_id(7);
     assert(program.has_value());
@@ -60,28 +57,24 @@ void test_admission_and_names() {
 }
 
 void test_plan_minting() {
-    auto plan = doca::mint_doca_deploy_plan(
-        eff::ColdInitCtx{}, dpu_identity(), doca_caps(), offload_spec());
+    auto plan = doca::mint_doca_deploy_plan(eff::ColdInitCtx{}, dpu_identity(), doca_caps(), offload_spec());
     assert(plan.has_value());
     assert(plan->value().spec.program_id.value() == 0xd0ca);
 
     auto no_cap = doca_caps();
     no_cap.features.unset(cog::SwitchFeature::Doca);
-    auto missing_cap = doca::mint_doca_deploy_plan(
-        eff::ColdInitCtx{}, dpu_identity(), no_cap, offload_spec());
+    auto missing_cap = doca::mint_doca_deploy_plan(eff::ColdInitCtx{}, dpu_identity(), no_cap, offload_spec());
     assert(!missing_cap.has_value());
     assert(missing_cap.error() == doca::DocaError::MissingDocaCapability);
 
-    auto non_dpu = doca::mint_doca_deploy_plan(
-        eff::ColdInitCtx{}, dpu_identity(cog::CogKind::Gpu), doca_caps(),
-        offload_spec());
+    auto non_dpu =
+        doca::mint_doca_deploy_plan(eff::ColdInitCtx{}, dpu_identity(cog::CogKind::Gpu), doca_caps(), offload_spec());
     assert(!non_dpu.has_value());
     assert(non_dpu.error() == doca::DocaError::NonDpuCog);
 
     auto zero = dpu_identity();
     zero.uuid = cog::Uuid{};
-    auto zero_dpu = doca::mint_doca_deploy_plan(
-        eff::ColdInitCtx{}, zero, doca_caps(), offload_spec());
+    auto zero_dpu = doca::mint_doca_deploy_plan(eff::ColdInitCtx{}, zero, doca_caps(), offload_spec());
     assert(!zero_dpu.has_value());
     assert(zero_dpu.error() == doca::DocaError::ZeroDpuCog);
 
@@ -89,23 +82,22 @@ void test_plan_minting() {
 }
 
 void test_deploy_boundary() {
-    auto unavailable_plan = doca::mint_doca_deploy_plan(
-        eff::ColdInitCtx{}, dpu_identity(), doca_caps(), offload_spec());
+    auto unavailable_plan =
+        doca::mint_doca_deploy_plan(eff::ColdInitCtx{}, dpu_identity(), doca_caps(), offload_spec());
     assert(unavailable_plan.has_value());
     auto unavailable = doca::deploy_doca_offload(*unavailable_plan);
     assert(!unavailable.has_value());
     assert(unavailable.error() == doca::DocaError::RuntimeUnavailable);
 
-    auto deferred_plan = doca::mint_doca_deploy_plan(
-        eff::ColdInitCtx{}, dpu_identity(), doca_caps(), offload_spec(true));
+    auto deferred_plan =
+        doca::mint_doca_deploy_plan(eff::ColdInitCtx{}, dpu_identity(), doca_caps(), offload_spec(true));
     assert(deferred_plan.has_value());
     auto deferred = doca::deploy_doca_offload(*deferred_plan);
     assert(!deferred.has_value());
     assert(deferred.error() == doca::DocaError::DeployDeferred);
 
-    auto backend_plan = doca::mint_doca_deploy_plan(
-        eff::ColdInitCtx{}, dpu_identity(), doca_caps(),
-        offload_spec(true, true));
+    auto backend_plan =
+        doca::mint_doca_deploy_plan(eff::ColdInitCtx{}, dpu_identity(), doca_caps(), offload_spec(true, true));
     assert(backend_plan.has_value());
     auto backend = doca::force_doca_backend_boundary(*backend_plan);
     assert(!backend.has_value());
@@ -134,8 +126,7 @@ void test_comm_boundary() {
     assert(!too_large.has_value());
     assert(too_large.error() == doca::DocaError::PayloadTooLarge);
 
-    auto unavailable = channel.send_to_dpu(
-        eff::BgDrainCtx{}, std::span<const std::byte>{bytes.data(), 4});
+    auto unavailable = channel.send_to_dpu(eff::BgDrainCtx{}, std::span<const std::byte>{bytes.data(), 4});
     assert(!unavailable.has_value());
     assert(unavailable.error() == doca::DocaError::CommChannelUnavailable);
 
@@ -148,13 +139,9 @@ int main() {
     static_assert(sizeof(doca::DocaProgramId) == sizeof(std::uint64_t));
     static_assert(sizeof(doca::DocaImageBytes) == sizeof(std::uint64_t));
     static_assert(sizeof(doca::DocaQueueDepth) == sizeof(std::uint16_t));
-    static_assert(sizeof(doca::DeclaredDocaDeployPlan)
-                  == sizeof(doca::DocaDeployPlan));
-    static_assert(sizeof(doca::OwnedDocaOffload)
-                  == sizeof(doca::DocaOffloadHandle));
-    static_assert(std::same_as<
-                  doca::DeclaredDocaDeployPlan::tag_type,
-                  doca::wip_source::DocaOffload>);
+    static_assert(sizeof(doca::DeclaredDocaDeployPlan) == sizeof(doca::DocaDeployPlan));
+    static_assert(sizeof(doca::OwnedDocaOffload) == sizeof(doca::DocaOffloadHandle));
+    static_assert(std::same_as<doca::DeclaredDocaDeployPlan::tag_type, doca::wip_source::DocaOffload>);
     static_assert(doca::CtxFitsDocaMint<eff::ColdInitCtx>);
     static_assert(!doca::CtxFitsDocaMint<eff::BgDrainCtx>);
     static_assert(doca::CtxFitsDocaComm<eff::BgDrainCtx>);

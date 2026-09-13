@@ -17,7 +17,7 @@
 using namespace crucible::safety;
 
 int main() {
-    Tolerance    tier{Tolerance::ULP_FP16};
+    Tolerance tier{Tolerance::ULP_FP16};
     RecipeFamily fam{RecipeFamily::Kahan};
 
     // Should FAIL: RecipeSpec<int>(int, Tolerance, RecipeFamily)

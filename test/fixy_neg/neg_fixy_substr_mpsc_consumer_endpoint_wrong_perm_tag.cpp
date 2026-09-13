@@ -37,10 +37,8 @@ using Channel = fmpsc::PermissionedMpscChannel<int, 64, UserTag>;
 int main() {
     using namespace neg_fixy_mpsc_consumer_wrong_perm;
     Channel* ch_ptr = nullptr;
-    auto wrong_perm =
-        ::crucible::safety::mint_permission_root<StrangerTag>();
-    auto bad = fmpsc::mint_mpsc_consumer_endpoint(
-        *ch_ptr, std::move(wrong_perm));
+    auto wrong_perm = ::crucible::safety::mint_permission_root<StrangerTag>();
+    auto bad = fmpsc::mint_mpsc_consumer_endpoint(*ch_ptr, std::move(wrong_perm));
     (void)bad;
     return 0;
 }

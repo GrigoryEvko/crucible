@@ -31,21 +31,16 @@ struct Job {
     std::uint64_t deadline_ns = 0;
 };
 struct Key {
-    static std::uint64_t key(Job const& job) noexcept {
-        return job.deadline_ns;
-    }
+    static std::uint64_t key(Job const& job) noexcept { return job.deadline_ns; }
 };
-using Grid = conc::PermissionedCalendarGrid<
-    Job, 2, 8, 16, Key, 1'000'000ULL, UserTag>;
-}
+using Grid = conc::PermissionedCalendarGrid<Job, 2, 8, 16, Key, 1000000ULL, UserTag>;
+}  // namespace neg_fixy_cal_consumer_session_non_ctx
 
 int main() {
     int not_a_ctx = 0;
-    neg_fixy_cal_consumer_session_non_ctx::Grid::ConsumerHandle* handle =
-        nullptr;
+    neg_fixy_cal_consumer_session_non_ctx::Grid::ConsumerHandle* handle = nullptr;
 
-    auto bad = fcal::mint_consumer_session<
-        neg_fixy_cal_consumer_session_non_ctx::Grid>(not_a_ctx, *handle);
+    auto bad = fcal::mint_consumer_session<neg_fixy_cal_consumer_session_non_ctx::Grid>(not_a_ctx, *handle);
     (void)bad;
     return 0;
 }

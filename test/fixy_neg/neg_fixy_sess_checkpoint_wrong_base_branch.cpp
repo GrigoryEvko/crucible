@@ -25,7 +25,7 @@
 #include <crucible/sessions/Session.h>
 
 namespace fscheckpoint = ::crucible::fixy::sess::checkpoint;
-namespace proto        = ::crucible::safety::proto;
+namespace proto = ::crucible::safety::proto;
 
 namespace {
 struct Req {};
@@ -33,8 +33,8 @@ struct Resp {};
 struct Err {};
 
 // Two distinct base branches — declared and actual differ.
-using ActualBase   = proto::Send<Req, proto::Recv<Resp, proto::End>>;
-using ExpectedBase = proto::Send<Req, proto::End>;   // ≠ ActualBase
+using ActualBase = proto::Send<Req, proto::Recv<Resp, proto::End>>;
+using ExpectedBase = proto::Send<Req, proto::End>;  // ≠ ActualBase
 using RollbackPath = proto::Send<Req, proto::Recv<Err, proto::End>>;
 
 // P IS a CheckpointedSession — shape check passes — but its base
@@ -47,7 +47,6 @@ int main() {
     // ExpectedBase.  The SECOND static_assert inside
     // assert_checkpointed_matches fires with the diagnostic
     // "base branch does not match".
-    fscheckpoint::assert_checkpointed_matches<
-        CkptSession, ExpectedBase, RollbackPath>();
+    fscheckpoint::assert_checkpointed_matches<CkptSession, ExpectedBase, RollbackPath>();
     return 0;
 }

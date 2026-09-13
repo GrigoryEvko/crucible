@@ -16,8 +16,7 @@ namespace stance = crucible::fixy::stance;
 // directly (NOT on a pointer to it — that wouldn't complete the class).
 using BadPureLinearVoid = stance::PureLinear<void>;
 
-static_assert(sizeof(BadPureLinearVoid) > 0,
-    "instantiate stance::PureLinear<void> to force its class-body "
-    "static_assert (void is not an object type).");
+static_assert(sizeof(BadPureLinearVoid) > 0, "instantiate stance::PureLinear<void> to force its class-body "
+                                             "static_assert (void is not an object type).");
 
 int main() { return 0; }

@@ -29,6 +29,5 @@ int main() {
     // Should FAIL: leq requires two ClockSourceLattice::element_type
     // (projected tuples); a bare ClockSource enum does not convert.  The
     // caller must clock_source_project(...) each operand first.
-    return static_cast<int>(
-        ClockSourceLattice::leq(ClockSource::Boot, ClockSource::TscRaw));
+    return static_cast<int>(ClockSourceLattice::leq(ClockSource::Boot, ClockSource::TscRaw));
 }

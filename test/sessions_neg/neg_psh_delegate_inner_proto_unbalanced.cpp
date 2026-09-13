@@ -18,27 +18,24 @@ struct CarrierResource {};
 struct WorkerResource {};
 
 using InnerProto = End;
-using Payload    = DelegatedSession<InnerProto, PermSet<WorkItem>>;
-using Carrier    = Delegate<Payload, End>;
+using Payload = DelegatedSession<InnerProto, PermSet<WorkItem>>;
+using Carrier = Delegate<Payload, End>;
 
 void wire_delegate(CarrierResource&, WorkerResource&&) noexcept {}
 
 }  // namespace
 
 int main() {
-    auto carrier = detail::permissioned_session_with_loc_<
-        Carrier, EmptyPermSet, CarrierResource>(
+    auto carrier = detail::permissioned_session_with_loc_<Carrier, EmptyPermSet, CarrierResource>(
         CarrierResource{}, std::source_location::current());
 
     auto work = mint_permission_root<WorkItem>();
     static_cast<void>(work);
-    auto delegated = detail::permissioned_session_with_loc_<
-        InnerProto, PermSet<WorkItem>, WorkerResource>(
+    auto delegated = detail::permissioned_session_with_loc_<InnerProto, PermSet<WorkItem>, WorkerResource>(
         WorkerResource{}, std::source_location::current());
 
     // The declared inner endpoint is already terminal but still owns
     // WorkItem, so the handoff would preserve a close-time leak.
-    [[maybe_unused]] auto next = std::move(carrier).delegate(
-        std::move(delegated), wire_delegate);
+    [[maybe_unused]] auto next = std::move(carrier).delegate(std::move(delegated), wire_delegate);
     return 0;
 }

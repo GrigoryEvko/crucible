@@ -15,9 +15,9 @@
 
 #include <crucible/fixy/Pipe.h>
 
-namespace eff   = crucible::effects;
+namespace eff = crucible::effects;
 namespace fpipe = crucible::fixy::pipe;
-namespace conc  = crucible::concurrent;
+namespace conc = crucible::concurrent;
 
 struct UserTag {};
 
@@ -29,8 +29,7 @@ int main() {
 
     eff::HotFgCtx fg;
     // Snapshot + Producer → IsBridgeableDirection fails via fixy::pipe.
-    auto bad = fpipe::mint_endpoint<SnapT, fpipe::Direction::Producer>(
-        fg, *fake_handle);
+    auto bad = fpipe::mint_endpoint<SnapT, fpipe::Direction::Producer>(fg, *fake_handle);
     (void)bad;
     (void)snap;
     return 0;

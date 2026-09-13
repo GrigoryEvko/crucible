@@ -34,7 +34,6 @@ int main() {
 
     // Should FAIL: the resolver tries which_dim_v<evil_grant> and
     // hits the undefined primary.
-    static_assert(fixy::IsAcceptedGrants<tags::evil_grant>,
-        "evil_grant must reject — no which_dim specialization.");
+    static_assert(fixy::IsAcceptedGrants<tags::evil_grant>, "evil_grant must reject — no which_dim specialization.");
     return 0;
 }

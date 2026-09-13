@@ -8,8 +8,7 @@
 void wants_hlc(crucible::canopy::HlcClockTimestamp);
 
 int main() {
-    crucible::canopy::ExternalHlcTimestamp external{
-        crucible::canopy::HlcTimestamp{.physical_ns = 1, .counter = 0}};
+    crucible::canopy::ExternalHlcTimestamp external{crucible::canopy::HlcTimestamp{.physical_ns = 1, .counter = 0}};
     wants_hlc(external);
     return 0;
 }

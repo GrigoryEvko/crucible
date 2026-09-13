@@ -8,9 +8,8 @@
 #include <crucible/Saturate.h>
 
 int main() {
-  using Sat = crucible::safety::Saturated<unsigned>;
-  crucible::safety::DetSafe<
-      crucible::safety::DetSafeTier_v::PhiloxRng, Sat> wrong =
-          crucible::sat::mul_sat_det<unsigned>(2u, 3u);
-  return static_cast<int>(wrong.peek().value());
+    using Sat = crucible::safety::Saturated<unsigned>;
+    crucible::safety::DetSafe<crucible::safety::DetSafeTier_v::PhiloxRng, Sat> wrong =
+        crucible::sat::mul_sat_det<unsigned>(2u, 3u);
+    return static_cast<int>(wrong.peek().value());
 }

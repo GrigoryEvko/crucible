@@ -120,7 +120,7 @@ struct ClockReader final {
     [[nodiscard]] result_type read() const noexcept {
         std::timespec now{};
         (void)::clock_gettime(clockid_for(Source), &now);
-        return result_type{static_cast<std::uint64_t>(now.tv_sec) * 1'000'000'000ULL
+        return result_type{static_cast<std::uint64_t>(now.tv_sec) * 1000000000ULL
                            + static_cast<std::uint64_t>(now.tv_nsec)};
     }
 };
@@ -163,8 +163,8 @@ struct BoundedSleeper final {
 
     void sleep_for(std::uint64_t nanos) const noexcept {
         CRUCIBLE_PRE(nanos <= MaxNanos);
-        std::timespec request{static_cast<std::time_t>(nanos / 1'000'000'000ULL),
-                              static_cast<long>(nanos % 1'000'000'000ULL)};
+        std::timespec request{static_cast<std::time_t>(nanos / 1000000000ULL),
+                              static_cast<long>(nanos % 1000000000ULL)};
         (void)::clock_nanosleep(CLOCK_MONOTONIC, 0, &request, nullptr);
     }
 };
@@ -272,7 +272,7 @@ static_assert(std::is_same_v<TscReader<TscMode::Raw, SinglePin>::result_type, sf
 static_assert(std::is_same_v<TscReader<TscMode::SerializedPinned, SinglePin>::result_type,
                              sf::TscSerializedBytes<std::uint64_t>>);
 
-static_assert(BoundedSleeper<1'000'000>::max_nanos == 1'000'000ULL);
+static_assert(BoundedSleeper<1000000>::max_nanos == 1000000ULL);
 
 inline bool runtime_smoke_test() {
     namespace eff_t = ::crucible::effects;
@@ -287,7 +287,7 @@ inline bool runtime_smoke_test() {
     auto tsc_reader = mint_tsc_reader<TscMode::Raw>(init, std::move(pin));
     (void)tsc_reader.read();
 
-    auto sleeper = mint_bounded_sleep<1'000>(bg);
+    auto sleeper = mint_bounded_sleep<1000>(bg);
     sleeper.sleep_for(0);
     return true;
 }

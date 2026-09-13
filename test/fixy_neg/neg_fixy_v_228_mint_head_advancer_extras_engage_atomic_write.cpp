@@ -31,7 +31,7 @@
 int main() {
     namespace fwcd = ::crucible::fixy::wrap::cipher::durable;
     namespace fwfs = ::crucible::fixy::wrap::fs;
-    namespace at   = fwfs::atomicity;
+    namespace at = fwfs::atomicity;
 
     // TestRunnerCtx — Row<Test, Alloc, IO, Block> — admits IO+Block.
     ::crucible::effects::TestRunnerCtx ctx{};
@@ -43,8 +43,6 @@ int main() {
     // but head_advance_stance PINS atomicity to RenameAt2NoReplace;
     // the §XXI mint's `!detail::extras_engage_atomic_write_v<Extras...>`
     // clause is false.
-    [[maybe_unused]] auto r = fwcd::mint_head_advancer<
-        fwfs::grant::atomic_write<at::LinkAtomic>
-    >(ctx, std::move(path));
+    [[maybe_unused]] auto r = fwcd::mint_head_advancer<fwfs::grant::atomic_write<at::LinkAtomic>>(ctx, std::move(path));
     return 0;
 }

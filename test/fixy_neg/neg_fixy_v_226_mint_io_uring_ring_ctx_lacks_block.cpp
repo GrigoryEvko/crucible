@@ -26,18 +26,15 @@
 #include <crucible/fixy/Wrap.h>
 
 int main() {
-    namespace fwio  = ::crucible::fixy::wrap::io;
+    namespace fwio = ::crucible::fixy::wrap::io;
     namespace engine = fwio::engine;
-    namespace grant  = fwio::grant;
+    namespace grant = fwio::grant;
 
     // ColdInitCtx — Row<Init, Alloc, IO> — admits IO but NOT Block.
     ::crucible::effects::ColdInitCtx ctx{};
 
     // Should FAIL: mint_io_uring_ring's CtxFitsIoUringMint folds in
     // CtxAdmitsIoBlock<Ctx>; ColdInitCtx's row lacks Effect::Block.
-    [[maybe_unused]] auto r = fwio::mint_io_uring_ring<
-        grant::engine<engine::IoUring>,
-        grant::sq_entries<128>
-    >(ctx);
+    [[maybe_unused]] auto r = fwio::mint_io_uring_ring<grant::engine<engine::IoUring>, grant::sq_entries<128>>(ctx);
     return 0;
 }

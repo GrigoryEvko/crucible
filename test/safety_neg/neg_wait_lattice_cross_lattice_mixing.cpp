@@ -24,12 +24,11 @@
 using namespace crucible::algebra::lattices;
 
 int main() {
-    HotPathTier  hot_path_val = HotPathTier::Hot;
-    WaitStrategy wait_val     = WaitStrategy::SpinPause;
+    HotPathTier hot_path_val = HotPathTier::Hot;
+    WaitStrategy wait_val = WaitStrategy::SpinPause;
 
     // Should FAIL: HotPathLattice::leq's signature requires two
     // HotPathTier values; passing a WaitStrategy as the second
     // argument is a type-mismatch.
-    return static_cast<int>(
-        HotPathLattice::leq(hot_path_val, wait_val));
+    return static_cast<int>(HotPathLattice::leq(hot_path_val, wait_val));
 }

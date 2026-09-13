@@ -1,7 +1,7 @@
 // AdaptiveScheduler Pool<Policy> bench — per-policy dispatch tail and throughput.
 
 #include <crucible/concurrent/AdaptiveScheduler.h>
-#include <crucible/fixy/Time.h>                            // FIXY-V-202
+#include <crucible/fixy/Time.h>  // FIXY-V-202
 
 #include "bench_harness.h"
 
@@ -19,28 +19,23 @@ namespace {
 // FIXY-V-202: bench-local monotonic-ns reader through the V-185 typed
 // provenance (mirrors bench_scheduler_policies bench_now_mono_ns).
 [[nodiscard]] inline std::uint64_t bench_now_mono_ns() noexcept {
-    constexpr ::crucible::fixy::time::ClockReader<
-        ::crucible::fixy::time::ClockSource_v::Monotonic> reader{};
+    constexpr ::crucible::fixy::time::ClockReader<::crucible::fixy::time::ClockSource_v::Monotonic> reader{};
     return reader.read().consume();
 }
 
 constexpr std::size_t kJobsPerPolicy = 4096;
-constexpr std::size_t kWorkers       = 2;
+constexpr std::size_t kWorkers = 2;
 
 struct PriorityTicketKey {
-    static std::uint64_t key(cc::adaptive_detail::ticket_type ticket) noexcept {
-        return ticket;
-    }
+    static std::uint64_t key(cc::adaptive_detail::ticket_type ticket) noexcept { return ticket; }
 };
 
 using DeadlinePolicy = cs::Deadline<PriorityTicketKey, 4, 64, 16, 1>;
 using CfsPolicy = cs::Cfs<PriorityTicketKey, 4, 64, 16, 1>;
 using EevdfPolicy = cs::Eevdf<PriorityTicketKey, 4, 64, 16, 1>;
-using DeadlinePerShardPolicy =
-    cs::DeadlinePerShard<PriorityTicketKey, 4, 64, 16, 1>;
+using DeadlinePerShardPolicy = cs::DeadlinePerShard<PriorityTicketKey, 4, 64, 16, 1>;
 using CfsPerShardPolicy = cs::CfsPerShard<PriorityTicketKey, 4, 64, 16, 1>;
-using EevdfPerShardPolicy =
-    cs::EevdfPerShard<PriorityTicketKey, 4, 64, 16, 1>;
+using EevdfPerShardPolicy = cs::EevdfPerShard<PriorityTicketKey, 4, 64, 16, 1>;
 
 struct BenchResult {
     const char* policy_name = "";
@@ -64,15 +59,10 @@ template <typename Policy>
 
     for (std::size_t i = 0; i < kJobsPerPolicy; ++i) {
         const std::uint64_t t0 = bench::rdtsc_start();
-        cc::dispatch(pool, [&completed_body] {
-            completed_body.fetch_add(1, std::memory_order_relaxed);
-        });
+        cc::dispatch(pool, [&completed_body] { completed_body.fetch_add(1, std::memory_order_relaxed); });
         const std::uint64_t t1 = bench::rdtsc_end();
         const std::uint64_t raw = t1 - t0;
-        const std::uint64_t d =
-            raw > bench::Timer::overhead_cycles()
-                ? raw - bench::Timer::overhead_cycles()
-                : 0;
+        const std::uint64_t d = raw > bench::Timer::overhead_cycles() ? raw - bench::Timer::overhead_cycles() : 0;
         dispatch_samples.push_back(static_cast<double>(d) * nspc);
     }
 
@@ -80,18 +70,13 @@ template <typename Policy>
     const std::uint64_t wall_end_ns = bench_now_mono_ns();
     const std::uint64_t wall_ns = wall_end_ns - wall_start_ns;
 
-    const double wall_ms = static_cast<double>(wall_ns) / 1'000'000.0;
-    const double jobs_per_sec = wall_ns > 0
-        ? static_cast<double>(kJobsPerPolicy) * 1'000'000'000.0 /
-              static_cast<double>(wall_ns)
-        : 0.0;
+    const double wall_ms = static_cast<double>(wall_ns) / 1000000.0;
+    const double jobs_per_sec =
+        wall_ns > 0 ? static_cast<double>(kJobsPerPolicy) * 1000000000.0 / static_cast<double>(wall_ns) : 0.0;
 
     if (completed_body.load(std::memory_order_relaxed) != kJobsPerPolicy) {
-        std::fprintf(stderr, "%s body completion mismatch: %llu/%zu\n",
-                     policy_name,
-                     static_cast<unsigned long long>(
-                         completed_body.load(std::memory_order_relaxed)),
-                     kJobsPerPolicy);
+        std::fprintf(stderr, "%s body completion mismatch: %llu/%zu\n", policy_name,
+                     static_cast<unsigned long long>(completed_body.load(std::memory_order_relaxed)), kJobsPerPolicy);
         std::abort();
     }
 
@@ -107,40 +92,25 @@ template <typename Policy>
 }
 
 void print_result(const BenchResult& r) noexcept {
-    std::printf(
-        "  %-18s jobs/sec=%12.2f wall=%8.3fms "
-        "dispatch[p50=%8.2fns p99=%8.2fns p99.9=%8.2fns] "
-        "submitted=%llu completed=%llu failed=%llu\n",
-        r.policy_name,
-        r.jobs_per_sec,
-        r.wall_ms,
-        r.dispatch_ns.p50,
-        r.dispatch_ns.p99,
-        r.dispatch_ns.p99_9,
-        static_cast<unsigned long long>(r.submitted),
-        static_cast<unsigned long long>(r.completed),
-        static_cast<unsigned long long>(r.failed));
+    std::printf("  %-18s jobs/sec=%12.2f wall=%8.3fms "
+                "dispatch[p50=%8.2fns p99=%8.2fns p99.9=%8.2fns] "
+                "submitted=%llu completed=%llu failed=%llu\n",
+                r.policy_name, r.jobs_per_sec, r.wall_ms, r.dispatch_ns.p50, r.dispatch_ns.p99, r.dispatch_ns.p99_9,
+                static_cast<unsigned long long>(r.submitted), static_cast<unsigned long long>(r.completed),
+                static_cast<unsigned long long>(r.failed));
 }
 
 void print_json(const std::vector<BenchResult>& results) noexcept {
     std::printf("\n=== json ===\n[\n");
     for (std::size_t i = 0; i < results.size(); ++i) {
         const auto& r = results[i];
-        std::printf(
-            "  {\"policy\":\"%s\",\"jobs_per_sec\":%.6f,"
-            "\"wall_ms\":%.6f,\"dispatch_p50_ns\":%.6f,"
-            "\"dispatch_p99_ns\":%.6f,\"dispatch_p999_ns\":%.6f,"
-            "\"submitted\":%llu,\"completed\":%llu,\"failed\":%llu}%s\n",
-            r.policy_name,
-            r.jobs_per_sec,
-            r.wall_ms,
-            r.dispatch_ns.p50,
-            r.dispatch_ns.p99,
-            r.dispatch_ns.p99_9,
-            static_cast<unsigned long long>(r.submitted),
-            static_cast<unsigned long long>(r.completed),
-            static_cast<unsigned long long>(r.failed),
-            (i + 1 < results.size()) ? "," : "");
+        std::printf("  {\"policy\":\"%s\",\"jobs_per_sec\":%.6f,"
+                    "\"wall_ms\":%.6f,\"dispatch_p50_ns\":%.6f,"
+                    "\"dispatch_p99_ns\":%.6f,\"dispatch_p999_ns\":%.6f,"
+                    "\"submitted\":%llu,\"completed\":%llu,\"failed\":%llu}%s\n",
+                    r.policy_name, r.jobs_per_sec, r.wall_ms, r.dispatch_ns.p50, r.dispatch_ns.p99, r.dispatch_ns.p99_9,
+                    static_cast<unsigned long long>(r.submitted), static_cast<unsigned long long>(r.completed),
+                    static_cast<unsigned long long>(r.failed), (i + 1 < results.size()) ? "," : "");
     }
     std::printf("]\n");
 }
@@ -152,8 +122,7 @@ int main() {
     bench::elevate_priority();
 
     std::printf("=== adaptive_scheduler ===\n");
-    std::printf("  jobs_per_policy=%zu workers=%zu\n\n",
-                kJobsPerPolicy, kWorkers);
+    std::printf("  jobs_per_policy=%zu workers=%zu\n\n", kJobsPerPolicy, kWorkers);
 
     std::vector<BenchResult> results;
     results.reserve(10);

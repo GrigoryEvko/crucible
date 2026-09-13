@@ -7,9 +7,6 @@
 
 namespace sriov = crucible::cog::sriov;
 
-constexpr sriov::VfMacAddress bad_mac{
-    sriov::MacAddress{{0x01u, 0x00u, 0x00u, 0x00u, 0x00u, 0x01u}}};
+constexpr sriov::VfMacAddress bad_mac{sriov::MacAddress{{0x01u, 0x00u, 0x00u, 0x00u, 0x00u, 0x01u}}};
 
-int main() {
-    return static_cast<int>(bad_mac.value().bytes[0]);
-}
+int main() { return static_cast<int>(bad_mac.value().bytes[0]); }

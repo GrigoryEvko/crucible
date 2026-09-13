@@ -25,9 +25,7 @@ namespace crucible::safety {
 
 template <>
 struct permission_row<neg_perm_split_row_unifies_strict::Whole> {
-    using type = ::crucible::effects::Row<
-        ::crucible::effects::Effect::IO,
-        ::crucible::effects::Effect::Block>;
+    using type = ::crucible::effects::Row<::crucible::effects::Effect::IO, ::crucible::effects::Effect::Block>;
 };
 
 template <>
@@ -41,10 +39,8 @@ struct permission_row<neg_perm_split_row_unifies_strict::BlockChild> {
 };
 
 template <>
-struct splits_into<
-    neg_perm_split_row_unifies_strict::Whole,
-    neg_perm_split_row_unifies_strict::IoChild,
-    neg_perm_split_row_unifies_strict::BlockChild> : std::true_type {};
+struct splits_into<neg_perm_split_row_unifies_strict::Whole, neg_perm_split_row_unifies_strict::IoChild,
+                   neg_perm_split_row_unifies_strict::BlockChild> : std::true_type {};
 
 }  // namespace crucible::safety
 
@@ -54,11 +50,8 @@ int main() {
     namespace saf = ::crucible::safety;
 
     auto whole = saf::mint_permission_root<tags::Whole>(eff::TestRunnerCtx{});
-    auto split = saf::mint_permission_split<tags::IoChild, tags::BlockChild>(
-        eff::BgCompileCtx{},
-        std::move(whole));
+    auto split = saf::mint_permission_split<tags::IoChild, tags::BlockChild>(eff::BgCompileCtx{}, std::move(whole));
     saf::permission_drop(std::move(split.first));
     saf::permission_drop(std::move(split.second));
     return 0;
 }
-

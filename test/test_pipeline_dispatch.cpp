@@ -49,21 +49,13 @@ static void record_call() noexcept {
     }
 }
 
-static void small_a(Consumer<1 * KiB>&&, Producer<1 * KiB>&&) noexcept {
-    record_call();
-}
+static void small_a(Consumer<1 * KiB>&&, Producer<1 * KiB>&&) noexcept { record_call(); }
 
-static void small_b(Consumer<1536>&&, Producer<1536>&&) noexcept {
-    record_call();
-}
+static void small_b(Consumer<1536>&&, Producer<1536>&&) noexcept { record_call(); }
 
-static void small_c(Consumer<1536>&&, Producer<1536>&&) noexcept {
-    record_call();
-}
+static void small_c(Consumer<1536>&&, Producer<1536>&&) noexcept { record_call(); }
 
-static void large(Consumer<10 * MiB>&&, Producer<10 * MiB>&&) noexcept {
-    record_call();
-}
+static void large(Consumer<10 * MiB>&&, Producer<10 * MiB>&&) noexcept { record_call(); }
 
 using SmallA = cc::Stage<&small_a, eff::HotFgCtx>;
 using SmallB = cc::Stage<&small_b, eff::HotFgCtx>;
@@ -73,10 +65,8 @@ using Large = cc::Stage<&large, eff::HotFgCtx>;
 static_assert(cc::stage_per_call_ws_v<SmallA> == 2 * KiB);
 static_assert(cc::stage_per_call_ws_v<SmallB> == 3 * KiB);
 static_assert(cc::stage_per_call_ws_v<SmallC> == 3 * KiB);
-static_assert(cc::aggregate_per_call_ws_v<SmallA, SmallB, SmallC>
-              == 8 * KiB);
-static_assert(cc::aggregate_per_call_ws_v<Large, Large, Large, Large, Large>
-              == 100 * MiB);
+static_assert(cc::aggregate_per_call_ws_v<SmallA, SmallB, SmallC> == 8 * KiB);
+static_assert(cc::aggregate_per_call_ws_v<Large, Large, Large, Large, Large> == 100 * MiB);
 
 }  // namespace pipeline_dispatch_test
 
@@ -117,8 +107,7 @@ static void test_small_pipeline_runs_inline() {
     main_thread = std::this_thread::get_id();
     reset_counters();
 
-    require(SmallPipeline::will_run_inline(),
-            "8KB inline-safe pipeline should select inline dispatch");
+    require(SmallPipeline::will_run_inline(), "8KB inline-safe pipeline should select inline dispatch");
 
     eff::HotFgCtx ctx{};
     auto s0 = cc::mint_stage<&small_a>(ctx, Consumer<1 * KiB>{}, Producer<1 * KiB>{});
@@ -127,8 +116,7 @@ static void test_small_pipeline_runs_inline() {
     auto p = cc::mint_pipeline(ctx, std::move(s0), std::move(s1), std::move(s2));
     std::move(p).run();
 
-    require(calls.load(std::memory_order_relaxed) == 3,
-            "small pipeline should run all three stages");
+    require(calls.load(std::memory_order_relaxed) == 3, "small pipeline should run all three stages");
     require(main_thread_calls.load(std::memory_order_relaxed) == 3,
             "small inline pipeline should run only on caller thread");
     require(non_main_thread_calls.load(std::memory_order_relaxed) == 0,
@@ -139,8 +127,7 @@ static void test_large_pipeline_spawns_threads() {
     main_thread = std::this_thread::get_id();
     reset_counters();
 
-    require(!LargePipeline::will_run_inline(),
-            "100MB inline-safe pipeline should exceed private-L2 inline gate");
+    require(!LargePipeline::will_run_inline(), "100MB inline-safe pipeline should exceed private-L2 inline gate");
 
     eff::HotFgCtx ctx{};
     auto s0 = cc::mint_stage<&large>(ctx, Consumer<10 * MiB>{}, Producer<10 * MiB>{});
@@ -148,17 +135,10 @@ static void test_large_pipeline_spawns_threads() {
     auto s2 = cc::mint_stage<&large>(ctx, Consumer<10 * MiB>{}, Producer<10 * MiB>{});
     auto s3 = cc::mint_stage<&large>(ctx, Consumer<10 * MiB>{}, Producer<10 * MiB>{});
     auto s4 = cc::mint_stage<&large>(ctx, Consumer<10 * MiB>{}, Producer<10 * MiB>{});
-    auto p = cc::mint_pipeline(
-        ctx,
-        std::move(s0),
-        std::move(s1),
-        std::move(s2),
-        std::move(s3),
-        std::move(s4));
+    auto p = cc::mint_pipeline(ctx, std::move(s0), std::move(s1), std::move(s2), std::move(s3), std::move(s4));
     std::move(p).run();
 
-    require(calls.load(std::memory_order_relaxed) == 5,
-            "large pipeline should run all five stages");
+    require(calls.load(std::memory_order_relaxed) == 5, "large pipeline should run all five stages");
     require(main_thread_calls.load(std::memory_order_relaxed) == 0,
             "large pipeline should not execute stage bodies on caller thread");
     require(non_main_thread_calls.load(std::memory_order_relaxed) == 5,

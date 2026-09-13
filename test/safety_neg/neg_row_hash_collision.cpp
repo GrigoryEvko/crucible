@@ -26,18 +26,16 @@
 #include <cstdint>
 
 inline constexpr std::array<std::uint64_t, 3> kHashes = {
-    0x1111'1111'1111'1111ULL,
-    0x2222'2222'2222'2222ULL,
-    0x1111'1111'1111'1111ULL,  // ← deliberate duplicate of entry [0]
+    0x1111111111111111ULL,
+    0x2222222222222222ULL,
+    0x1111111111111111ULL,  // ← deliberate duplicate of entry [0]
 };
 
 // Mirrors V-008's CollisionIndices + find_collision algebra exactly.
 struct CollisionIndices {
     std::size_t i = static_cast<std::size_t>(-1);
     std::size_t j = static_cast<std::size_t>(-1);
-    [[nodiscard]] constexpr bool ok() const noexcept {
-        return i == static_cast<std::size_t>(-1);
-    }
+    [[nodiscard]] constexpr bool ok() const noexcept { return i == static_cast<std::size_t>(-1); }
 };
 
 [[nodiscard]] consteval CollisionIndices find_collision() noexcept {
@@ -49,7 +47,6 @@ struct CollisionIndices {
     return {};
 }
 
-static_assert(find_collision().ok(),
-    "row_hash collision in the canonical wrapper × stance matrix");
+static_assert(find_collision().ok(), "row_hash collision in the canonical wrapper × stance matrix");
 
 int main() { return 0; }

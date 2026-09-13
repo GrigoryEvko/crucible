@@ -28,9 +28,7 @@ using namespace crucible::algebra::lattices;
 
 int main() {
     // Quotient modality (NOT Comonad).
-    using G = Graded<ModalityKind::Quotient,
-                     QttSemiring::At<QttGrade::One>,
-                     int>;
+    using G = Graded<ModalityKind::Quotient, QttSemiring::At<QttGrade::One>, int>;
     G g{};
 
     // Should FAIL: extract() requires ComonadModality<M>, M is Quotient.

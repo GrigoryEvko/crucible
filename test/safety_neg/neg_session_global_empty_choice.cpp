@@ -31,7 +31,7 @@
 
 namespace neg_a2_011_empty_choice {
 struct Alice {};
-struct Bob   {};
+struct Bob {};
 }  // namespace neg_a2_011_empty_choice
 
 namespace proto = ::crucible::safety::proto;
@@ -39,8 +39,7 @@ namespace proto = ::crucible::safety::proto;
 int main() {
     // Zero-branch Choice — structurally meaningless in MPST (no
     // selectable label can drive the protocol forward).
-    using IllFormedG = proto::Choice<neg_a2_011_empty_choice::Alice,
-                                     neg_a2_011_empty_choice::Bob>;
+    using IllFormedG = proto::Choice<neg_a2_011_empty_choice::Alice, neg_a2_011_empty_choice::Bob>;
 
     // The static_assert fires:
     //
@@ -48,7 +47,6 @@ int main() {
     //    well-formed — but the fixy-A2-011 fix correctly rejects."
     //
     // Build failure here is the load-bearing outcome.
-    static_assert(proto::is_global_well_formed_v<IllFormedG>,
-                  "should be well-formed");
+    static_assert(proto::is_global_well_formed_v<IllFormedG>, "should be well-formed");
     return 0;
 }

@@ -12,17 +12,11 @@ struct Channel {
     int value = 0;
 };
 
-using NoneHandle = proto::PermissionedSessionHandle<
-    proto::End,
-    proto::EmptyPermSet,
-    Channel,
-    proto::VendorCtx<proto::VendorBackend::None>>;
+using NoneHandle = proto::PermissionedSessionHandle<proto::End, proto::EmptyPermSet, Channel,
+                                                    proto::VendorCtx<proto::VendorBackend::None>>;
 
-using NvHandle = proto::PermissionedSessionHandle<
-    proto::End,
-    proto::EmptyPermSet,
-    Channel,
-    proto::VendorCtx<proto::VendorBackend::NV>>;
+using NvHandle = proto::PermissionedSessionHandle<proto::End, proto::EmptyPermSet, Channel,
+                                                  proto::VendorCtx<proto::VendorBackend::NV>>;
 
 int main() {
     proto::assert_permissioned_session_vendor_compatible<NoneHandle, NvHandle>();

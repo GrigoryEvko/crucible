@@ -84,9 +84,9 @@ enum class PingmeshError : std::uint8_t {
 
 struct PingmeshConfig {
     PositivePingmeshPeerCount max_peer_count{std::uint16_t{256}};
-    PositivePingmeshPeriodNs period_ns{std::uint64_t{5'000'000'000ull}};
+    PositivePingmeshPeriodNs period_ns{std::uint64_t{5000000000ull}};
     PositivePingmeshProbeBytes probe_size_bytes{std::uint16_t{64}};
-    PositivePingmeshZScoreMilli anomaly_zscore_milli{std::uint32_t{3'000}};
+    PositivePingmeshZScoreMilli anomaly_zscore_milli{std::uint32_t{3000}};
     bool prefer_hardware_timestamp = true;
 };
 
@@ -181,7 +181,7 @@ static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
 
 }  // namespace detail
 
-template <std::size_t MaxPeers, std::uint8_t Significant = 2, std::uint64_t MaxLatencyNs = 60'000'000'000ull>
+template <std::size_t MaxPeers, std::uint8_t Significant = 2, std::uint64_t MaxLatencyNs = 60000000000ull>
 class Pingmesh : public safety::Pinned<Pingmesh<MaxPeers, Significant, MaxLatencyNs>> {
     static_assert(MaxPeers > 1, "Pingmesh<MaxPeers> requires at least two peers.");
     static_assert(MaxPeers <= 256, "Pingmesh keeps a fixed all-pairs matrix; shard fleets above 256 peers.");
@@ -407,7 +407,7 @@ public:
 };
 
 template <effects::IsExecCtx Ctx, std::size_t MaxPeers, std::uint8_t Significant = 2,
-          std::uint64_t MaxLatencyNs = 60'000'000'000ull>
+          std::uint64_t MaxLatencyNs = 60000000000ull>
     requires CtxFitsPingmeshMint<Ctx>
 [[nodiscard]] Pingmesh<MaxPeers, Significant, MaxLatencyNs> mint_pingmesh(Ctx const&,
                                                                           PingmeshConfig config = {}) noexcept {

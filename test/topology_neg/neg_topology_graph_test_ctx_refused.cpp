@@ -34,17 +34,12 @@
 #include <span>
 
 namespace topology = crucible::topology;
-namespace cog      = crucible::cog;
-namespace effects  = crucible::effects;
+namespace cog = crucible::cog;
+namespace effects = crucible::effects;
 
-using TestCtx = effects::ExecCtx<
-    effects::Test,
-    effects::ctx_numa::Any,
-    effects::ctx_alloc::Unbound,
-    effects::ctx_heat::Cold,
-    effects::ctx_resid::DRAM,
-    effects::Row<effects::Effect::Test>,
-    effects::ctx_workload::Unspecified>;
+using TestCtx =
+    effects::ExecCtx<effects::Test, effects::ctx_numa::Any, effects::ctx_alloc::Unbound, effects::ctx_heat::Cold,
+                     effects::ctx_resid::DRAM, effects::Row<effects::Effect::Test>, effects::ctx_workload::Unspecified>;
 
 inline constexpr std::span<const cog::CogIdentity> kNoNodes{};
 inline constexpr std::span<const topology::TopologyEdge> kNoEdges{};

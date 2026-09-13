@@ -10,7 +10,7 @@
 #include <crucible/fixy/Reject.h>
 
 namespace gr = crucible::fixy::grant;
-using D      = crucible::fixy::dim::DimensionAxis;
+using D = crucible::fixy::dim::DimensionAxis;
 
 template <D Axis>
 using strict = gr::accept_default_strict_for<Axis>;
@@ -22,20 +22,17 @@ struct TypeFixyLatSecretWrongAxis {};
 
 // Engage Security with as_secret (correct axis), Trust with... also
 // as_secret (wrong axis).  Trust ends up unengaged.
-using BadPack = std::tuple<
-    strict<D::Type>, strict<D::Refinement>, strict<D::Usage>,
-    strict<D::Effect>,
-    gr::as_secret,
-    strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>,
-    /* Trust axis intentionally omitted — caller mistakenly thought
+using BadPack = std::tuple<strict<D::Type>, strict<D::Refinement>, strict<D::Usage>, strict<D::Effect>, gr::as_secret,
+                           strict<D::Protocol>, strict<D::Lifetime>, strict<D::Provenance>,
+                           /* Trust axis intentionally omitted — caller mistakenly thought
      * the Security tag also engaged Trust. */
-    gr::as_secret,
-    strict<D::Representation>, strict<D::Observability>,
-    strict<D::Complexity>, strict<D::Precision>, strict<D::Space>,
-    strict<D::Overflow>, strict<D::Mutation>, strict<D::Reentrancy>,
-    strict<D::Size>, strict<D::Version>, strict<D::Staleness>, strict<D::Synchronization>, strict<D::Regime>>;
+                           gr::as_secret, strict<D::Representation>, strict<D::Observability>, strict<D::Complexity>,
+                           strict<D::Precision>, strict<D::Space>, strict<D::Overflow>, strict<D::Mutation>,
+                           strict<D::Reentrancy>, strict<D::Size>, strict<D::Version>, strict<D::Staleness>,
+                           strict<D::Synchronization>, strict<D::Regime>>;
 
-template <typename Tuple> struct rejects_via;
+template <typename Tuple>
+struct rejects_via;
 template <typename... Ts>
 struct rejects_via<std::tuple<Ts...>> {
     static constexpr bool value = !crucible::fixy::IsAcceptedGrants<Ts...>;
@@ -45,16 +42,13 @@ struct rejects_via<std::tuple<Ts...>> {
 
 using Probe = rejects_via<BadPack>;
 
-static_assert(Probe::value,
-    "Pack must reject — Trust axis unengaged by Security-axis tag.");
-static_assert(Probe::first_missing == D::Trust,
-    "first_missing_axis_v must point at Trust.");
+static_assert(Probe::value, "Pack must reject — Trust axis unengaged by Security-axis tag.");
+static_assert(Probe::first_missing == D::Trust, "first_missing_axis_v must point at Trust.");
 
 using TrustTag = crucible::fixy::diag::tag_for_axis_t<D::Trust>;
-static_assert(sizeof(TrustTag) > 0 && false,
-    "FixyNotEngaged_Trust: gr::as_secret engages Security, NOT Trust.  "
-    "Add a Trust-axis tag (gr::trust_verified / trust_tested / "
-    "trust_unverified / trust_external / trust_assumed) OR "
-    "gr::accept_default_strict_for<dim::DimensionAxis::Trust>.");
+static_assert(sizeof(TrustTag) > 0 && false, "FixyNotEngaged_Trust: gr::as_secret engages Security, NOT Trust.  "
+                                             "Add a Trust-axis tag (gr::trust_verified / trust_tested / "
+                                             "trust_unverified / trust_external / trust_assumed) OR "
+                                             "gr::accept_default_strict_for<dim::DimensionAxis::Trust>.");
 
 int main() { return 0; }

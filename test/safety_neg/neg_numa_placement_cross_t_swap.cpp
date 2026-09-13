@@ -12,7 +12,7 @@
 using namespace crucible::safety;
 
 int main() {
-    NumaPlacement<int>    int_value{42, NumaNodeId{2}, AffinityMask{0b11}};
+    NumaPlacement<int> int_value{42, NumaNodeId{2}, AffinityMask{0b11}};
     NumaPlacement<double> dbl_value{3.14, NumaNodeId{2}, AffinityMask{0b11}};
 
     int_value.swap(dbl_value);

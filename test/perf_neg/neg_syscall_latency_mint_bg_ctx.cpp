@@ -9,9 +9,8 @@
 #include <crucible/perf/SyscallLatency.h>
 
 int main() {
-    auto hub = crucible::perf::mint_syscall_latency(
-        crucible::effects::BgDrainCtx{},
-        crucible::effects::testing::init());
+    auto hub =
+        crucible::perf::mint_syscall_latency(crucible::effects::BgDrainCtx{}, crucible::effects::testing::init());
     (void)hub;
     return 0;
 }

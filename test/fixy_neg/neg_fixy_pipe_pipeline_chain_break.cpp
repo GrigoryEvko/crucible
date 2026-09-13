@@ -29,7 +29,7 @@
 #include <optional>
 #include <utility>
 
-namespace eff   = crucible::effects;
+namespace eff = crucible::effects;
 namespace fpipe = crucible::fixy::pipe;
 
 template <typename T>
@@ -50,13 +50,11 @@ int main() {
 
     FakeConsumer<int> in0;
     FakeProducer<int> out0;
-    auto stage0 = fpipe::mint_stage<&int_stage>(
-        ctx, std::move(in0), std::move(out0));
+    auto stage0 = fpipe::mint_stage<&int_stage>(ctx, std::move(in0), std::move(out0));
 
     FakeConsumer<double> in1;
     FakeProducer<double> out1;
-    auto stage1 = fpipe::mint_stage<&double_stage>(
-        ctx, std::move(in1), std::move(out1));
+    auto stage1 = fpipe::mint_stage<&double_stage>(ctx, std::move(in1), std::move(out1));
 
     // stage0 outputs int, stage1 consumes double — stages_chain<S0, S1>
     // is false, so pipeline_chain<S0, S1> reddens.

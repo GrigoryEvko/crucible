@@ -24,6 +24,4 @@ using NotAllowed = fw::WriteOnceNonNull<int>;
 [[maybe_unused]] NotAllowed obj{};
 }  // namespace
 
-int main() {
-    return 0;
-}
+int main() { return 0; }

@@ -35,15 +35,16 @@ int main(int argc, char** argv) {
     using namespace crucible;
     using namespace crucible::fuzz::prop;
     Config cfg = parse_args(argc, argv);
-    if (cfg.iterations > 10'000) cfg.iterations = 10'000;  // O(N) per iter
+    if (cfg.iterations > 10000) cfg.iterations = 10000;  // O(N) per iter
 
-    return run("Arena alloc alignment + non-aliasing", cfg,
+    return run(
+        "Arena alloc alignment + non-aliasing", cfg,
         [](Rng& rng) {
             constexpr unsigned N = 32;
             struct AllocPlan {
                 std::array<size_t, N> sizes;
                 std::array<size_t, N> aligns;
-                uint8_t               count;
+                uint8_t count;
             };
             AllocPlan plan{};
             plan.count = static_cast<uint8_t>(rng.next_below(N) + 1);
@@ -69,18 +70,16 @@ int main(int argc, char** argv) {
             Arena arena{4 * 1024};
             auto test = crucible::effects::testing::test();
 
-            std::array<void*, 32>  ptrs{};
+            std::array<void*, 32> ptrs{};
             std::array<size_t, 32> sizes{};
 
             for (uint8_t i = 0; i < plan.count; ++i) {
-                void* p = arena.alloc(test.alloc,
-                    safety::Positive<size_t>{plan.sizes[i]},
-                    safety::PowerOfTwo<size_t>{plan.aligns[i]});
+                void* p = arena.alloc(test.alloc, safety::Positive<size_t>{plan.sizes[i]},
+                                      safety::PowerOfTwo<size_t>{plan.aligns[i]});
                 if (p == nullptr) return false;
 
                 // Property 1: alignment.
-                if ((reinterpret_cast<uintptr_t>(p) & (plan.aligns[i] - 1)) != 0)
-                    return false;
+                if ((reinterpret_cast<uintptr_t>(p) & (plan.aligns[i] - 1)) != 0) return false;
 
                 ptrs[i] = p;
                 sizes[i] = plan.sizes[i];
@@ -93,10 +92,7 @@ int main(int argc, char** argv) {
             for (uint8_t i = 0; i < plan.count; ++i) {
                 const auto a_lo = reinterpret_cast<uintptr_t>(ptrs[i]);
                 const auto a_hi = a_lo + sizes[i];
-                for (uint8_t j = static_cast<uint8_t>(i + 1);
-                     j < plan.count;
-                     ++j)
-                {
+                for (uint8_t j = static_cast<uint8_t>(i + 1); j < plan.count; ++j) {
                     const auto b_lo = reinterpret_cast<uintptr_t>(ptrs[j]);
                     const auto b_hi = b_lo + sizes[j];
                     // Overlap test: !(a_hi <= b_lo || b_hi <= a_lo).

@@ -39,9 +39,9 @@ struct Policy {
     SchedClass hot_sched = SchedClass::Other;
     // Nanoseconds. The kernel admits a deadline thread only while the
     // runtime-to-period ratios of all such threads sum to at most one.
-    uint64_t hot_runtime_ns = 500'000;
-    uint64_t hot_deadline_ns = 1'000'000;
-    uint64_t hot_period_ns = 1'000'000;
+    uint64_t hot_runtime_ns = 500000;
+    uint64_t hot_deadline_ns = 1000000;
+    uint64_t hot_period_ns = 1000000;
     // 1 through 99, where higher is more urgent.
     int hot_rt_priority = 50;
     CoreSelector hot_core = {};

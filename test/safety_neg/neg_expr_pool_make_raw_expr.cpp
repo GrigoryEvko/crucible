@@ -11,7 +11,7 @@
 static void consume(crucible::ExprPool::PureInternedExpr) {}
 
 int main() {
-  const crucible::Expr* raw = nullptr;
-  consume(raw);
-  return 0;
+    const crucible::Expr* raw = nullptr;
+    consume(raw);
+    return 0;
 }

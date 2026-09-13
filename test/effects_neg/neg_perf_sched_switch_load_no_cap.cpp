@@ -18,8 +18,7 @@
 
 int main() {
     // <-- this line must NOT compile (missing Init argument)
-    std::optional<crucible::perf::SchedSwitch> hub =
-        crucible::perf::SchedSwitch::load();
+    std::optional<crucible::perf::SchedSwitch> hub = crucible::perf::SchedSwitch::load();
 
     (void)hub;
     return 0;

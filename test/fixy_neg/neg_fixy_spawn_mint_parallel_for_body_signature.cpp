@@ -39,23 +39,19 @@ static int storage_[8];
 }  // namespace neg_fixy_spawn_mint_parallel_for_body_signature
 
 int main() {
-    namespace tags   = neg_fixy_spawn_mint_parallel_for_body_signature;
-    namespace eff    = ::crucible::effects;
+    namespace tags = neg_fixy_spawn_mint_parallel_for_body_signature;
+    namespace eff = ::crucible::effects;
     namespace fspawn = ::crucible::fixy::spawn;
-    namespace safe   = ::crucible::safety;
+    namespace safe = ::crucible::safety;
 
     auto whole = safe::mint_permission_root<tags::Whole>();
-    auto region = safe::OwnedRegion<int, tags::Whole>::wrap(
-        tags::storage_, 8, std::move(whole));
+    auto region = safe::OwnedRegion<int, tags::Whole>::wrap(tags::storage_, 8, std::move(whole));
 
     // BgDrainCtx::row admits Bg, so CtxOwnsCapability passes.  Body
     // takes the WHOLE tag, not Slice<Whole, 0> — the noexcept-invocable
     // gate inside CtxFitsParallelFor rejects on parameter-type mismatch.
-    auto rebuilt = fspawn::mint_parallel_for<2>(
-        eff::BgDrainCtx{},
-        std::move(region),
-        [](safe::OwnedRegion<int, tags::Whole>&&) noexcept {}
-    );
+    auto rebuilt = fspawn::mint_parallel_for<2>(eff::BgDrainCtx{}, std::move(region),
+                                                [](safe::OwnedRegion<int, tags::Whole>&&) noexcept {});
     (void)rebuilt;
     return 0;
 }

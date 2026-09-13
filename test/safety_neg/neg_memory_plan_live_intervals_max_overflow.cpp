@@ -54,27 +54,42 @@ using crucible::Layout;
 // must return false because k=3 exceeds the stack scratch.
 constexpr auto build_planted_max_overflow() {
     std::array<TensorSlot, 3> s{};
-    s[0] = TensorSlot{
-        .offset_bytes = 0, .nbytes = 64,
-        .birth_op = OpIndex{0}, .death_op = OpIndex{5},
-        .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
-        .device_idx = 0, .layout = Layout::Strided,
-        .is_external = false, .pad = {},
-        .slot_id = SlotId{0}, .pad2 = {}};
-    s[1] = TensorSlot{
-        .offset_bytes = 64, .nbytes = 64,
-        .birth_op = OpIndex{0}, .death_op = OpIndex{5},
-        .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
-        .device_idx = 0, .layout = Layout::Strided,
-        .is_external = false, .pad = {},
-        .slot_id = SlotId{1}, .pad2 = {}};
-    s[2] = TensorSlot{
-        .offset_bytes = 128, .nbytes = 64,
-        .birth_op = OpIndex{0}, .death_op = OpIndex{5},
-        .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
-        .device_idx = 0, .layout = Layout::Strided,
-        .is_external = false, .pad = {},
-        .slot_id = SlotId{2}, .pad2 = {}};
+    s[0] = TensorSlot{.offset_bytes = 0,
+                      .nbytes = 64,
+                      .birth_op = OpIndex{0},
+                      .death_op = OpIndex{5},
+                      .dtype = ScalarType::Float,
+                      .device_type = DeviceType::CPU,
+                      .device_idx = 0,
+                      .layout = Layout::Strided,
+                      .is_external = false,
+                      .pad = {},
+                      .slot_id = SlotId{0},
+                      .pad2 = {}};
+    s[1] = TensorSlot{.offset_bytes = 64,
+                      .nbytes = 64,
+                      .birth_op = OpIndex{0},
+                      .death_op = OpIndex{5},
+                      .dtype = ScalarType::Float,
+                      .device_type = DeviceType::CPU,
+                      .device_idx = 0,
+                      .layout = Layout::Strided,
+                      .is_external = false,
+                      .pad = {},
+                      .slot_id = SlotId{1},
+                      .pad2 = {}};
+    s[2] = TensorSlot{.offset_bytes = 128,
+                      .nbytes = 64,
+                      .birth_op = OpIndex{0},
+                      .death_op = OpIndex{5},
+                      .dtype = ScalarType::Float,
+                      .device_type = DeviceType::CPU,
+                      .device_idx = 0,
+                      .layout = Layout::Strided,
+                      .is_external = false,
+                      .pad = {},
+                      .slot_id = SlotId{2},
+                      .pad2 = {}};
     return s;
 }
 
@@ -83,8 +98,7 @@ constexpr auto bad_slots = build_planted_max_overflow();
 // MaxLive=2, three live slots → function returns false → constexpr
 // local is non-constant → static_assert is ill-formed.
 constexpr bool witness = crucible::live_intervals_disjoint_at<2>(
-    std::span<const TensorSlot>(bad_slots.data(), bad_slots.size()),
-    OpIndex{1});
+    std::span<const TensorSlot>(bad_slots.data(), bad_slots.size()), OpIndex{1});
 
 static_assert(witness, "MaxLive=2 must accommodate live count");
 

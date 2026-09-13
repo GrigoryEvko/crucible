@@ -23,7 +23,7 @@
 
 #include <utility>
 
-namespace ss  = crucible::safety;
+namespace ss = crucible::safety;
 namespace src = crucible::safety::source;
 
 int main() {

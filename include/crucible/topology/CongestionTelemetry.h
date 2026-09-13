@@ -100,7 +100,7 @@ struct CongestionAggregate {
 };
 
 struct CongestionDriftPolicy {
-    std::uint32_t bandwidth_drop_ppm = 150'000;
+    std::uint32_t bandwidth_drop_ppm = 150000;
     std::uint32_t min_samples = 100;
 };
 
@@ -111,8 +111,8 @@ struct CongestionDrift {
 };
 
 struct TelemetrySchedule {
-    PositiveSamplePeriodNs active_period_ns{std::uint64_t{1'000'000'000}};
-    PositiveSamplePeriodNs idle_period_ns{std::uint64_t{10'000'000'000}};
+    PositiveSamplePeriodNs active_period_ns{std::uint64_t{1000000000}};
+    PositiveSamplePeriodNs idle_period_ns{std::uint64_t{10000000000}};
 };
 
 [[nodiscard]] constexpr std::expected<PositiveSamplePeriodNs, TelemetryError>
@@ -151,7 +151,7 @@ harvest_per_link(cog::CogIdentity const& nic, std::span<const cntp::SocketFd> ac
     }
     const std::uint64_t missing = baseline_bps.value() - observed.p95_btl_bw_bps;
     drift.bandwidth_drop_ppm = static_cast<std::uint32_t>(
-        std::min<std::uint64_t>(1'000'000, (missing * std::uint64_t{1'000'000}) / baseline_bps.value()));
+        std::min<std::uint64_t>(1000000, (missing * std::uint64_t{1000000}) / baseline_bps.value()));
     drift.degraded = drift.bandwidth_drop_ppm >= policy.bandwidth_drop_ppm;
     return drift;
 }

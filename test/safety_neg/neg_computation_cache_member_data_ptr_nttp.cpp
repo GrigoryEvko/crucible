@@ -30,7 +30,6 @@ int main() {
     // &Receiver::data_field has type `int Receiver::*` —
     // member-object pointer, NOT a function pointer.
     // IsCacheableFunction must reject.
-    (void)crucible::cipher::lookup_computation_cache<
-        &Receiver::data_field>();
+    (void)crucible::cipher::lookup_computation_cache<&Receiver::data_field>();
     return 0;
 }

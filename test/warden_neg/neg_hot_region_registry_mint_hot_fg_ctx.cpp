@@ -9,8 +9,7 @@
 #include <crucible/warden/Registry.h>
 
 int main() {
-    auto handle = crucible::warden::mint_hot_region_registry_handle(
-        crucible::effects::HotFgCtx{});
+    auto handle = crucible::warden::mint_hot_region_registry_handle(crucible::effects::HotFgCtx{});
     (void)handle;
     return 0;
 }

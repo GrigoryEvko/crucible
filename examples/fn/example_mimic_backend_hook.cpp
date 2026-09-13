@@ -50,15 +50,15 @@ namespace {
 // crucible/forge/KernelNode.h and crucible/mimic/TargetCaps.h.
 
 struct KernelNode {
-    int    kernel_kind;     // GEMM / CONV / SDPA / etc.
-    int    tile_m, tile_n, tile_k;
-    int    recipe_id;       // index into the recipe registry
+    int kernel_kind;  // GEMM / CONV / SDPA / etc.
+    int tile_m, tile_n, tile_k;
+    int recipe_id;  // index into the recipe registry
 };
 
 struct TargetCaps {
-    int      sm_count;
-    int      regs_per_thread_max;
-    int      smem_per_block_kb;
+    int sm_count;
+    int regs_per_thread_max;
+    int smem_per_block_kb;
     std::uint32_t arch_id;  // sm_90 / gfx1100 / etc.
 };
 
@@ -67,19 +67,15 @@ struct Arena {
 };
 
 struct CompiledBytes {
-    void*       ptr;
+    void* ptr;
     std::size_t size;
 };
 
 // ── Mimic emit_kernel signature ────────────────────────────────────
 
-using EmitKernelPtr = CompiledBytes(*)(const KernelNode& kernel,
-                                       const TargetCaps& caps,
-                                       Arena&            arena);
+using EmitKernelPtr = CompiledBytes (*)(const KernelNode& kernel, const TargetCaps& caps, Arena& arena);
 
-CompiledBytes emit_nv_gemm_ref(const KernelNode& kernel,
-                               const TargetCaps& caps,
-                               Arena&            arena) noexcept {
+CompiledBytes emit_nv_gemm_ref(const KernelNode& kernel, const TargetCaps& caps, Arena& arena) noexcept {
     // A real NV emitter would generate SASS via the Mimic NV
     // backend's instruction selector, register allocator, and
     // peephole optimizer.  Stand-in: report a plausible byte
@@ -87,11 +83,8 @@ CompiledBytes emit_nv_gemm_ref(const KernelNode& kernel,
     const std::size_t n_bytes = 4096;  // ~1 page of SASS for a small GEMM
     arena.bump += n_bytes;
     (void)kernel;  // would drive instruction selection in production
-    (void)caps;    // would drive register/smem budgeting
-    return CompiledBytes{
-        .ptr  = reinterpret_cast<void*>(static_cast<std::uintptr_t>(0x1000)),
-        .size = n_bytes
-    };
+    (void)caps;  // would drive register/smem budgeting
+    return CompiledBytes{.ptr = reinterpret_cast<void*>(static_cast<std::uintptr_t>(0x1000)), .size = n_bytes};
 }
 
 // ── The Fn<...> binding ────────────────────────────────────────────
@@ -146,40 +139,35 @@ CompiledBytes emit_nv_gemm_ref(const KernelNode& kernel,
 //                  generation moves at the vendor backend's pace,
 //                  decoupled from Forge's IR002 version.
 
-using BoundMimicNvEmit = fn::Fn<
-    EmitKernelPtr,                                          // 1 Type
-    fn::pred::True,                                         // 2 Refinement
-    fn::UsageMode::Copy,                                    // 3 Usage
-    fx::Row<fx::Effect::Bg,                                 // 4 EffectRow
-            fx::Effect::Alloc,
-            fx::Effect::IO>,
-    fn::SecLevel::Internal,                                 // 5 Security
-    fn::proto::None,                                        // 6 Protocol
-    fn::lifetime::Static,                                   // 7 Lifetime
-    fn::source::FromInternal,                               // 8 Source
-    fn::trust::Verified,                                    // 9 Trust
-    fn::ReprKind::Opaque,                                   // 10 Repr
-    fn::cost::Linear<0>,                                    // 11 Cost
-    fn::precision::Exact,                                   // 12 Precision
-    fn::space::Bounded<0>,                                  // 13 Space
-    fn::OverflowMode::Trap,                                 // 14 Overflow
-    fn::MutationMode::Mutable,                              // 15 Mutation
-    fn::ReentrancyMode::Reentrant,                          // 16 Reentrancy
-    fn::size_pol::Unstated,                                 // 17 Size
-    /*Version=*/3,                                          // 18 Version
-    fn::stale::Fresh                                        // 19 Staleness
->;
+using BoundMimicNvEmit = fn::Fn<EmitKernelPtr,  // 1 Type
+                                fn::pred::True,  // 2 Refinement
+                                fn::UsageMode::Copy,  // 3 Usage
+                                fx::Row<fx::Effect::Bg,  // 4 EffectRow
+                                        fx::Effect::Alloc, fx::Effect::IO>,
+                                fn::SecLevel::Internal,  // 5 Security
+                                fn::proto::None,  // 6 Protocol
+                                fn::lifetime::Static,  // 7 Lifetime
+                                fn::source::FromInternal,  // 8 Source
+                                fn::trust::Verified,  // 9 Trust
+                                fn::ReprKind::Opaque,  // 10 Repr
+                                fn::cost::Linear<0>,  // 11 Cost
+                                fn::precision::Exact,  // 12 Precision
+                                fn::space::Bounded<0>,  // 13 Space
+                                fn::OverflowMode::Trap,  // 14 Overflow
+                                fn::MutationMode::Mutable,  // 15 Mutation
+                                fn::ReentrancyMode::Reentrant,  // 16 Reentrancy
+                                fn::size_pol::Unstated,  // 17 Size
+                                /*Version=*/3,  // 18 Version
+                                fn::stale::Fresh  // 19 Staleness
+                                >;
 
 // ── Compile-time invariants ────────────────────────────────────────
 
-static_assert(sizeof(BoundMimicNvEmit) == sizeof(EmitKernelPtr),
-    "EBO collapse failed for Mimic NV emit binding.");
+static_assert(sizeof(BoundMimicNvEmit) == sizeof(EmitKernelPtr), "EBO collapse failed for Mimic NV emit binding.");
 
 // The 3-atom effect row — the largest in the example set.
-static_assert(std::is_same_v<BoundMimicNvEmit::effect_row_t,
-                             fx::Row<fx::Effect::Bg,
-                                     fx::Effect::Alloc,
-                                     fx::Effect::IO>>,
+static_assert(
+    std::is_same_v<BoundMimicNvEmit::effect_row_t, fx::Row<fx::Effect::Bg, fx::Effect::Alloc, fx::Effect::IO>>,
     "Mimic emit must declare {Bg, Alloc, IO} — IO is required for "
     "driver ioctl probing per HS9 (no vendor libraries; kernel-driver "
     "ioctls only).");
@@ -187,8 +175,8 @@ static_assert(std::is_same_v<BoundMimicNvEmit::effect_row_t,
 // Reentrancy distinguishes Mimic emission (parallel-friendly) from
 // Forge phases (single-threaded pipeline).
 static_assert(BoundMimicNvEmit::reentrancy_v == fn::ReentrancyMode::Reentrant,
-    "Mimic emission is parallelizable across the compile pool; "
-    "Forge phases share the pipeline arena and are NonReentrant.");
+              "Mimic emission is parallelizable across the compile pool; "
+              "Forge phases share the pipeline arena and are NonReentrant.");
 
 // Trust: Verified — same as Forge phases.  Both subsystems are
 // CI-validated against the cross-vendor numerics matrix.
@@ -205,17 +193,17 @@ int main() {
 
     // Simulate compiling one GEMM kernel for sm_90.
     const KernelNode kernel{
-        .kernel_kind = 1,        // GEMM
-        .tile_m      = 128,
-        .tile_n      = 128,
-        .tile_k      = 32,
-        .recipe_id   = 7         // BITEXACT_TC for sm_90 wmma-fp16
+        .kernel_kind = 1,  // GEMM
+        .tile_m = 128,
+        .tile_n = 128,
+        .tile_k = 32,
+        .recipe_id = 7  // BITEXACT_TC for sm_90 wmma-fp16
     };
     const TargetCaps caps{
-        .sm_count             = 132,
-        .regs_per_thread_max  = 255,
-        .smem_per_block_kb    = 228,
-        .arch_id              = 900       // sm_90
+        .sm_count = 132,
+        .regs_per_thread_max = 255,
+        .smem_per_block_kb = 228,
+        .arch_id = 900  // sm_90
     };
     Arena arena{};
 
@@ -223,10 +211,10 @@ int main() {
 
     std::printf("mimic_nv_emit: kernel kind=%d tile=%dx%dx%d recipe=%d "
                 "→ %zu bytes (arena bumped %zu)\n",
-                kernel.kernel_kind, kernel.tile_m, kernel.tile_n,
-                kernel.tile_k, kernel.recipe_id, out.size, arena.bump);
+                kernel.kernel_kind, kernel.tile_m, kernel.tile_n, kernel.tile_k, kernel.recipe_id, out.size,
+                arena.bump);
 
-    std::printf("BoundMimicNvEmit sizeof = %zu (== sizeof(EmitKernelPtr) %zu)\n",
-                sizeof(BoundMimicNvEmit), sizeof(EmitKernelPtr));
+    std::printf("BoundMimicNvEmit sizeof = %zu (== sizeof(EmitKernelPtr) %zu)\n", sizeof(BoundMimicNvEmit),
+                sizeof(EmitKernelPtr));
     return 0;
 }

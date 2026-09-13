@@ -43,7 +43,7 @@ int main() {
         .active_random_walk_length = cc::HyParViewPositiveCount{3},
         .passive_random_walk_length = cc::HyParViewPositiveCount{3},
         .active_random_walk_acceptance = cc::HyParViewPositiveCount{2},
-        .shuffle_period_ns = cc::HyParViewDurationNs{30'000'000'000ULL},
+        .shuffle_period_ns = cc::HyParViewDurationNs{30000000000ULL},
     };
     auto membership =
         cc::mint_hyparview<3, 6>(crucible::effects::testing::init(), std::span<const cc::HyParViewPeer>{active},

@@ -31,16 +31,15 @@ int main(int argc, char** argv) {
     using namespace crucible::fuzz::prop;
     const Config cfg = parse_args(argc, argv);
 
-    return run("compute_recipe_hash idempotence under hashed()", cfg,
-        [](Rng& rng) { return random_recipe(rng); },
+    return run(
+        "compute_recipe_hash idempotence under hashed()", cfg, [](Rng& rng) { return random_recipe(rng); },
         [](const NumericalRecipe& r) {
             // Property 1: hash(fresh) == hash(after hashed()).
             //   The fresh recipe has hash=0; after hashed(), hash is
             //   populated.  compute_recipe_hash on either should yield
             //   the same value.
             const NumericalRecipe filled = hashed(r);
-            if (compute_recipe_hash(r) != compute_recipe_hash(filled))
-                return false;
+            if (compute_recipe_hash(r) != compute_recipe_hash(filled)) return false;
 
             // Property 2: hashed(hashed(x)) == hashed(x).
             //   Triple-application stability — neither the hash field

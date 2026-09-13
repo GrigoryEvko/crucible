@@ -20,18 +20,16 @@
 #include <crucible/effects/ExecCtx.h>
 #include <crucible/sessions/SessionMint.h>
 
-namespace eff   = ::crucible::effects;
+namespace eff = ::crucible::effects;
 namespace proto = ::crucible::safety::proto;
 
-struct ProbeResource { int value = 0; };
+struct ProbeResource {
+    int value = 0;
+};
 
 using HotResult = decltype(proto::mint_persisted_session<proto::End>(
-    std::declval<eff::HotFgCtx const&>(),
-    std::declval<::crucible::Cipher&>(),
-    std::declval<::crucible::CipherOpenView const&>(),
-    std::declval<ProbeResource>(),
-    std::declval<proto::SessionTagId>(),
-    std::declval<proto::RoleTagId>(),
-    std::declval<proto::RoleTagId>()));
+    std::declval<eff::HotFgCtx const&>(), std::declval<::crucible::Cipher&>(),
+    std::declval<::crucible::CipherOpenView const&>(), std::declval<ProbeResource>(),
+    std::declval<proto::SessionTagId>(), std::declval<proto::RoleTagId>(), std::declval<proto::RoleTagId>()));
 
 int main() { return 0; }

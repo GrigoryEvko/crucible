@@ -44,8 +44,7 @@ int main() {
     // Direct construction of a crash-stop SessionHandle bypasses
     // mint_session_handle / step_to_next.  With the fix-04 fix the value
     // ctor is private and this line is ill-formed.
-    proto::SessionHandle<proto::Stop, FakeChannel, void>
-        crash_handle{FakeChannel{.sentinel = 7}};
+    proto::SessionHandle<proto::Stop, FakeChannel, void> crash_handle{FakeChannel{.sentinel = 7}};
     (void)crash_handle;
 
     return 0;

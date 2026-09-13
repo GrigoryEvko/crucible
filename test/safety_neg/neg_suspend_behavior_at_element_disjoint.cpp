@@ -34,6 +34,5 @@ int main() {
     // SuspendBehavior At<> grade — they are unrelated empty class types.
     DetSafeLattice::At<DetSafeTier::Pure>::element_type det_grade = suspend_grade;
 
-    return static_cast<int>(
-        static_cast<DetSafeTier>(det_grade) == DetSafeTier::Pure);
+    return static_cast<int>(static_cast<DetSafeTier>(det_grade) == DetSafeTier::Pure);
 }

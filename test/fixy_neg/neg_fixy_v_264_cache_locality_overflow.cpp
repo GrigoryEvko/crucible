@@ -22,7 +22,7 @@
 #include <crucible/fixy/Hw.h>
 
 int main() {
-    namespace fh  = ::crucible::fixy::hw;
+    namespace fh = ::crucible::fixy::hw;
     namespace fgh = ::crucible::fixy::grant::hw;
     // Should FAIL: locality 4 is outside the prefetch domain [0, 3], so the
     // cache<Prefetch, 4> template-id is ill-formed at instantiation.

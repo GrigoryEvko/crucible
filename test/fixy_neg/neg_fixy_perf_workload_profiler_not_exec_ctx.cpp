@@ -22,10 +22,9 @@ struct NotAnExecCtx {};  // No row_type, no Effect aggregation API.
 }  // namespace test_fixy_perf_workload_profiler_not_exec_ctx
 
 int main() {
-    auto wp = crucible::fixy::perf::mint_workload_profiler(
-        test_fixy_perf_workload_profiler_not_exec_ctx::NotAnExecCtx{},
-        /*senses=*/nullptr,
-        crucible::effects::testing::init());
+    auto wp =
+        crucible::fixy::perf::mint_workload_profiler(test_fixy_perf_workload_profiler_not_exec_ctx::NotAnExecCtx{},
+                                                     /*senses=*/nullptr, crucible::effects::testing::init());
     (void)wp;
     return 0;
 }

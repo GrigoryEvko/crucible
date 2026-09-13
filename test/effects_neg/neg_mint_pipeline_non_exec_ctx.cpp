@@ -18,7 +18,7 @@
 #include <utility>
 
 namespace conc = crucible::concurrent;
-namespace eff  = crucible::effects;
+namespace eff = crucible::effects;
 
 template <typename T>
 struct FakeConsumer {
@@ -36,8 +36,7 @@ int main() {
     eff::HotFgCtx good_ctx;  // for stage construction
     FakeConsumer<int> in;
     FakeProducer<int> out;
-    auto stage = conc::mint_stage<&pass_through>(
-        good_ctx, std::move(in), std::move(out));
+    auto stage = conc::mint_stage<&pass_through>(good_ctx, std::move(in), std::move(out));
 
     int not_a_ctx = 0;
 

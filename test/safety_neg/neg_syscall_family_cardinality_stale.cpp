@@ -37,9 +37,9 @@ namespace neg_syscall_family_cardinality_stale {
 // consumers that hard-code the count silently lose their
 // SyscallSurface slot.
 static_assert(::crucible::safety::DIMENSION_AXIS_COUNT == 23,
-    "FIXY-V-097 CARDINALITY-STALE neg-compile: this assertion MUST "
-    "fail post-V-097.  If it passes, DimensionAxis::SyscallSurface "
-    "was removed (regression).");
+              "FIXY-V-097 CARDINALITY-STALE neg-compile: this assertion MUST "
+              "fail post-V-097.  If it passes, DimensionAxis::SyscallSurface "
+              "was removed (regression).");
 
 }  // namespace neg_syscall_family_cardinality_stale
 

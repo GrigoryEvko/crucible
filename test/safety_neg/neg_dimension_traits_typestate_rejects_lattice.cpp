@@ -39,8 +39,8 @@ namespace neg = crucible::safety;
 struct TestLattice {
     using element_type = bool;
     [[nodiscard]] static constexpr bool bottom() noexcept { return false; }
-    [[nodiscard]] static constexpr bool top()    noexcept { return true;  }
-    [[nodiscard]] static constexpr bool leq (bool a, bool b) noexcept { return !a || b; }
+    [[nodiscard]] static constexpr bool top() noexcept { return true; }
+    [[nodiscard]] static constexpr bool leq(bool a, bool b) noexcept { return !a || b; }
     [[nodiscard]] static constexpr bool join(bool a, bool b) noexcept { return a || b; }
     [[nodiscard]] static constexpr bool meet(bool a, bool b) noexcept { return a && b; }
 };
@@ -49,9 +49,10 @@ struct TestLattice {
 // and `transition_type` member typedefs.  TestLattice has neither
 // (it carries lattice-shape primitives, not typestate-shape).
 template <neg::TypestateGrade G>
-constexpr bool consumes_typestate() noexcept { return true; }
+constexpr bool consumes_typestate() noexcept {
+    return true;
+}
 
-[[maybe_unused]] constexpr bool the_fixture =
-    consumes_typestate<TestLattice>();
+[[maybe_unused]] constexpr bool the_fixture = consumes_typestate<TestLattice>();
 
 int main() { return 0; }

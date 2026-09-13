@@ -40,7 +40,7 @@ using ScuttlebuttDurationNs = safety::Refined<safety::positive, std::uint64_t>;
 using ScuttlebuttPositiveCount = safety::Refined<safety::positive, std::uint16_t>;
 
 struct ScuttlebuttConfig {
-    ScuttlebuttDurationNs period_ns{5'000'000'000ULL};
+    ScuttlebuttDurationNs period_ns{5000000000ULL};
     ScuttlebuttPositiveCount max_stale_rounds{64};
 };
 
@@ -72,11 +72,11 @@ enum class ScuttlebuttError : std::uint8_t {
 namespace detail {
 
 [[nodiscard]] constexpr std::uint64_t fnv1a64(std::string_view text) noexcept {
-    std::uint64_t hash = 14'695'981'039'346'656'037ULL;
+    std::uint64_t hash = 14695981039346656037ULL;
     for (char raw : text) {
         auto const ch = static_cast<unsigned char>(raw);
         hash ^= static_cast<std::uint64_t>(ch);
-        hash *= 1'099'511'628'211ULL;
+        hash *= 1099511628211ULL;
     }
     return hash == 0 ? std::uint64_t{1} : hash;
 }

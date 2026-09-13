@@ -33,9 +33,9 @@
 #include <crucible/safety/Fn.h>
 #include <crucible/safety/Wait.h>
 
-namespace fn  = crucible::safety::fn;
-namespace fx  = crucible::effects;
-namespace sf  = crucible::safety;
+namespace fn = crucible::safety::fn;
+namespace fx = crucible::effects;
+namespace sf = crucible::safety;
 using WS = crucible::algebra::lattices::WaitStrategy;
 
 namespace neg_collision_w001_park {
@@ -45,27 +45,26 @@ namespace neg_collision_w001_park {
 // needed at file scope yet; the Fn instance triggers the rule via
 // its type_t in CollisionRules::validate's static_assert when we
 // turn the marks_hot_path opt-in on (see specialization below).
-using Bad = fn::Fn<
-    sf::Wait<WS::Park, int>,                   // 1  Type — triggers W001
-    fn::pred::True,                            // 2  Refinement
-    fn::UsageMode::Linear,                     // 3  Usage
-    fx::Row<>,                                 // 4  EffectRow
-    fn::SecLevel::Public,                      // 5  Security
-    fn::proto::None,                           // 6  Protocol
-    fn::lifetime::Static,                      // 7  Lifetime
-    fn::source::FromInternal,                  // 8  Source
-    fn::trust::Verified,                       // 9  Trust
-    fn::ReprKind::Opaque,                      // 10 Repr
-    fn::cost::Constant,                        // 11 Cost
-    fn::precision::Exact,                      // 12 Precision
-    fn::space::Bounded<sizeof(int)>,           // 13 Space
-    fn::OverflowMode::Trap,                    // 14 Overflow
-    fn::MutationMode::Immutable,               // 15 Mutation
-    fn::ReentrancyMode::NonReentrant,          // 16 Reentrancy
-    fn::size_pol::Sized<sizeof(int)>,          // 17 Size
-    /*Version=*/1,                             // 18 Version
-    fn::stale::Fresh                           // 19 Staleness
->;
+using Bad = fn::Fn<sf::Wait<WS::Park, int>,  // 1  Type — triggers W001
+                   fn::pred::True,  // 2  Refinement
+                   fn::UsageMode::Linear,  // 3  Usage
+                   fx::Row<>,  // 4  EffectRow
+                   fn::SecLevel::Public,  // 5  Security
+                   fn::proto::None,  // 6  Protocol
+                   fn::lifetime::Static,  // 7  Lifetime
+                   fn::source::FromInternal,  // 8  Source
+                   fn::trust::Verified,  // 9  Trust
+                   fn::ReprKind::Opaque,  // 10 Repr
+                   fn::cost::Constant,  // 11 Cost
+                   fn::precision::Exact,  // 12 Precision
+                   fn::space::Bounded<sizeof(int)>,  // 13 Space
+                   fn::OverflowMode::Trap,  // 14 Overflow
+                   fn::MutationMode::Immutable,  // 15 Mutation
+                   fn::ReentrancyMode::NonReentrant,  // 16 Reentrancy
+                   fn::size_pol::Sized<sizeof(int)>,  // 17 Size
+                   /*Version=*/1,  // 18 Version
+                   fn::stale::Fresh  // 19 Staleness
+                   >;
 
 }  // namespace neg_collision_w001_park
 
@@ -73,8 +72,8 @@ using Bad = fn::Fn<
 // marks_hot_path AND Wait<Park|Block>).  Specialization at file
 // scope, like H001/H002/H003 fixtures.
 namespace crucible::safety::fn::collision {
-    template <> struct marks_hot_path<::neg_collision_w001_park::Bad>
-        : std::true_type {};
+template <>
+struct marks_hot_path<::neg_collision_w001_park::Bad> : std::true_type {};
 }  // namespace crucible::safety::fn::collision
 
 // Instantiating Bad forces CollisionRules::validate() to fire W001.

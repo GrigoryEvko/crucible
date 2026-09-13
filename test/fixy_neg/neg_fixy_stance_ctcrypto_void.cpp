@@ -16,8 +16,7 @@ namespace stance = crucible::fixy::stance;
 
 using BadCtCryptoVoid = stance::CtCrypto<void>;
 
-static_assert(sizeof(BadCtCryptoVoid) > 0,
-    "instantiate stance::CtCrypto<void> to force the Type-axis "
-    "rejection (void is not an object).");
+static_assert(sizeof(BadCtCryptoVoid) > 0, "instantiate stance::CtCrypto<void> to force the Type-axis "
+                                           "rejection (void is not an object).");
 
 int main() { return 0; }

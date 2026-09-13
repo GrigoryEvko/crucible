@@ -36,12 +36,11 @@ struct S {
 
 constexpr S ZERO{};
 
-static_assert(pre_byval(ZERO) == 0,
-    "CRUCIBLE_PRE on a mutable struct by-value parameter MUST fire at "
-    "consteval when the predicate is violated.  If this static_assert "
-    "ever evaluates successfully, Pre.h's consteval enforcement is "
-    "broken for mutable-by-value shapes (Probe Shape #4) — the most "
-    "common shape for IR-level transformation entry points.");
+static_assert(pre_byval(ZERO) == 0, "CRUCIBLE_PRE on a mutable struct by-value parameter MUST fire at "
+                                    "consteval when the predicate is violated.  If this static_assert "
+                                    "ever evaluates successfully, Pre.h's consteval enforcement is "
+                                    "broken for mutable-by-value shapes (Probe Shape #4) — the most "
+                                    "common shape for IR-level transformation entry points.");
 
 }  // namespace
 
