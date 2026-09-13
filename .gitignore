@@ -21,11 +21,8 @@ __pycache__/
 *.pdf
 !papers/**/*.pdf
 
-# Obsidian vault + Syncthing state. misc/ is a live Syncthing folder paired
-# with the laptop, so Obsidian and Syncthing both drop metadata beside the
-# tracked markdown. .stignore IS tracked: it is shared sync configuration.
-misc/.obsidian/
-misc/.stfolder/
-misc/.stversions/
-misc/.trash/
+# misc/ is bind-mounted into ~/Obsidian/crucible-docs and synced to the laptop.
+# The vault root holds all the Obsidian and Syncthing metadata, so none of it
+# lands here. A simultaneous edit on both machines does land here, as a
+# conflict copy beside the original.
 *.sync-conflict-*
