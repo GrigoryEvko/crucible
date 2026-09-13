@@ -1,0 +1,208 @@
+---
+# Crucible — C++26 (GCC 16 dialect: P2900 contracts, P2996 reflection,
+# P1306 expansion statements).
+#
+# Verified against clang-format 22.1.8: `template for`, `^^T`, `[:splice:]`,
+# `pre(...)`, `post(r: ...)` and `contract_assert(...)` all round-trip, and the
+# formatted output compiles clean under the patched GCC 16.2.1.  The single
+# transformation applied to contract syntax is `post (r: x)` -> `post(r : x)`.
+#
+# Settings are explicit rather than inherited so a clang-format upgrade cannot
+# silently move the style.  Two knobs are deliberately inert in this first pass
+# and marked INERT below: include sorting and brace insertion both change more
+# than whitespace, and belong in their own commit.
+Language: Cpp
+Standard: Latest
+BasedOnStyle: LLVM
+
+# ── Width and indentation ────────────────────────────────────────────────────
+# 120: only 622 lines in the tree exceed it today, so it constrains what is
+# pathological without rewrapping what is merely long.  A larger limit would
+# also join existing wrapped calls into single long lines.
+ColumnLimit: 120
+IndentWidth: 4
+ContinuationIndentWidth: 4
+TabWidth: 4
+UseTab: Never
+AccessModifierOffset: -4
+NamespaceIndentation: None
+IndentCaseLabels: true
+IndentCaseBlocks: false
+IndentGotoLabels: false
+IndentExternBlock: NoIndent
+IndentPPDirectives: None
+IndentWrappedFunctionNames: false
+LambdaBodyIndentation: Signature
+
+# ── Braces ───────────────────────────────────────────────────────────────────
+BreakBeforeBraces: Attach
+Cpp11BracedListStyle: true
+InsertBraces: false          # INERT: adding braces is a code change, not a format change
+
+# ── Templates, concepts, requires ────────────────────────────────────────────
+BreakTemplateDeclarations: Yes
+SpaceAfterTemplateKeyword: true
+BreakBeforeConceptDeclarations: Always
+RequiresClausePosition: OwnLine
+RequiresExpressionIndentation: OuterScope
+IndentRequiresClause: true
+
+# ── Wrapping ─────────────────────────────────────────────────────────────────
+# Break after `(` on a call that does not fit, rather than aligning arguments
+# to the paren column: alignment columns shift whenever a name changes, which
+# turns an unrelated rename into a multi-line diff.  Written in the v22 native
+# per-context form; the legacy `AlignAfterOpenBracket: AlwaysBreak` spelling is
+# equivalent today but is a deprecated shim that dumps as a bare bool.
+# Control-statement parens are left alone — breaking after `if (` is unreadable.
+BreakAfterOpenBracketFunction: true
+BreakAfterOpenBracketBracedList: false
+BreakAfterOpenBracketIf: false
+BreakAfterOpenBracketLoop: false
+BreakAfterOpenBracketSwitch: false
+BreakBeforeCloseBracketFunction: false
+BreakBeforeCloseBracketBracedList: false
+BreakBeforeCloseBracketIf: false
+BreakBeforeCloseBracketLoop: false
+BreakBeforeCloseBracketSwitch: false
+BinPackArguments: true
+BinPackParameters: BinPack
+BinPackLongBracedList: true
+AllowAllArgumentsOnNextLine: true
+AllowAllParametersOfDeclarationOnNextLine: true
+BreakBeforeBinaryOperators: NonAssignment
+BreakBeforeTernaryOperators: true
+AlignOperands: AlignAfterOperator
+BreakConstructorInitializers: BeforeColon
+PackConstructorInitializers: NextLine
+BreakInheritanceList: BeforeColon
+BreakStringLiterals: false   # static_assert messages are hand-wrapped; leave them
+AlwaysBreakBeforeMultilineStrings: false
+
+# ── Short constructs ─────────────────────────────────────────────────────────
+# Accessor-heavy code: one-line bodies stay one line.  Loops and case labels do
+# not, and an `if` collapses only when there is no `else` to hide.
+AllowShortFunctionsOnASingleLine: All
+AllowShortLambdasOnASingleLine: All
+AllowShortBlocksOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortEnumsOnASingleLine: false
+AllowShortCompoundRequirementOnASingleLine: true
+
+# ── Alignment: off ───────────────────────────────────────────────────────────
+# Aligned columns re-flow every neighbouring line when one entry grows, so a
+# one-token edit lands as a block diff.  Escaped newlines are the exception.
+AlignConsecutiveAssignments: false
+AlignConsecutiveBitFields: false
+AlignConsecutiveDeclarations: false
+AlignConsecutiveMacros: false
+AlignArrayOfStructures: None
+AlignTrailingComments:
+  Kind: Never
+  OverEmptyLines: 0
+AlignEscapedNewlines: Left
+
+# ── Pointers, references, qualifiers ─────────────────────────────────────────
+DerivePointerAlignment: false
+PointerAlignment: Left
+ReferenceAlignment: Left
+QualifierAlignment: Leave    # the tree mixes `const T` and `T const`; normalising
+                             # that reads as a semantic edit and needs its own pass
+
+# ── Spaces ───────────────────────────────────────────────────────────────────
+SpaceBeforeParens: ControlStatements
+SpaceBeforeRangeBasedForLoopColon: true
+SpaceBeforeCpp11BracedList: false
+SpaceBeforeCtorInitializerColon: true
+SpaceBeforeInheritanceColon: true
+SpaceInEmptyBlock: false
+SpacesInAngles: Never
+SpacesInParens: Never
+SpacesInSquareBrackets: false
+SpaceAfterCStyleCast: false
+SpaceAfterLogicalNot: false
+SpacesBeforeTrailingComments: 2
+BitFieldColonSpacing: Both
+
+# ── Comments ─────────────────────────────────────────────────────────────────
+# Never reflow prose.  The comment sweep decides what survives; a formatter
+# rewrapping doomed paragraphs is pure noise in the diff.
+ReflowComments: false
+
+# ── Blank lines and file shape ───────────────────────────────────────────────
+MaxEmptyLinesToKeep: 1
+KeepEmptyLinesAtTheStartOfBlocks: false
+KeepEmptyLinesAtEOF: false
+SeparateDefinitionBlocks: Leave
+EmptyLineBeforeAccessModifier: LogicalBlock
+EmptyLineAfterAccessModifier: Never
+FixNamespaceComments: true
+ShortNamespaceLines: 0
+InsertNewlineAtEOF: true
+LineEnding: LF
+
+# ── Deliberately not enabled ─────────────────────────────────────────────────
+RemoveSemicolon: false
+RemoveParentheses: Leave     # parentheses inside contract predicates are load-bearing
+SortUsingDeclarations: Never
+IntegerLiteralSeparator:
+  Binary: 0
+  Decimal: 0
+  Hex: 0
+
+# ── Includes ─────────────────────────────────────────────────────────────────
+# INERT in this pass.  Header order can be load-bearing even when every header
+# claims to be self-contained, and a reorder that breaks the build must not be
+# buried inside a 100k-line whitespace diff.  Flip to CaseSensitive in a
+# follow-up commit; the categories below already encode the documented order
+# (own header, project, third-party, C stdlib, C++ stdlib).
+SortIncludes: Never
+IncludeBlocks: Preserve
+IncludeCategories:
+  - Regex: '^<crucible/'
+    Priority: 2
+  - Regex: '^<(linux|sys|net|netinet|arpa|bpf|asm)/'
+    Priority: 3
+  - Regex: '^<c[a-z]+>$'
+    Priority: 4
+  - Regex: '^<[^/.]+>$'
+    Priority: 5
+  - Regex: '.*'
+    Priority: 1
+
+# ── Project macro vocabulary ─────────────────────────────────────────────────
+# Without these clang-format reads a leading macro as the return type and
+# breaks the line in the wrong place.
+AttributeMacros:
+  - CRUCIBLE_ACQUIRE
+  - CRUCIBLE_ALLOC_SIZE
+  - CRUCIBLE_API
+  - CRUCIBLE_ASSUME_ALIGNED
+  - CRUCIBLE_CAPABILITY
+  - CRUCIBLE_COLD
+  - CRUCIBLE_CONST
+  - CRUCIBLE_EXCLUDES
+  - CRUCIBLE_FLATTEN
+  - CRUCIBLE_GUARDED_BY
+  - CRUCIBLE_HOT
+  - CRUCIBLE_INLINE
+  - CRUCIBLE_LIFETIMEBOUND
+  - CRUCIBLE_MALLOC
+  - CRUCIBLE_MUSTTAIL
+  - CRUCIBLE_NOINLINE
+  - CRUCIBLE_NONNULL
+  - CRUCIBLE_NO_THREAD_SAFETY
+  - CRUCIBLE_OWNER
+  - CRUCIBLE_POINTER
+  - CRUCIBLE_PT_GUARDED_BY
+  - CRUCIBLE_PURE
+  - CRUCIBLE_RELEASE
+  - CRUCIBLE_REQUIRES
+  - CRUCIBLE_REQUIRES_SHARED
+  - CRUCIBLE_RETURNS_NONNULL
+  - CRUCIBLE_TRY_ACQUIRE
+  - CRUCIBLE_UNSAFE_BUFFER_USAGE
+StatementMacros:
+  - CRUCIBLE_SPIN_PAUSE
+...
