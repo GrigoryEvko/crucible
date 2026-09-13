@@ -1,9 +1,12 @@
-# Toolchain-gcc16.cmake — portable resolution of the patched GCC 16.1.1 toolchain.
+# Toolchain-gcc16.cmake — portable resolution of the patched GCC 16.2.1 toolchain.
 #
-# Crucible builds REQUIRE the patched GCC 16.1.1 (PR c++/124241 contracts-cache
-# bypass cherry-picked) plus its matching libstdc++ 16. The location of that
-# toolchain is machine-specific, so this file resolves it in priority order
-# instead of hardcoding a single path in the preset.
+# Crucible builds REQUIRE the patched GCC 16.2.1 plus its matching libstdc++ 16.
+# The patch is upstream commit ac1cdcdad9d ("c++, contracts: fix testsuite
+# basic.contract.eval.p8 failed"), which is on trunk only. It adds one guard in
+# cxx_eval_call_expression so that a constexpr call with a contract violation is
+# not cached. Without it, every pre()/post() clause is bypassed at consteval.
+# The location of the toolchain is machine-specific, so this file resolves it in
+# priority order instead of hardcoding a single path in the preset.
 #
 # Resolution order (highest priority first):
 #   1. CRUCIBLE_CXX           — full path to the g++ binary. The sibling tools

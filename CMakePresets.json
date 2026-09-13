@@ -4,11 +4,11 @@
   "configurePresets": [
     {
       "name": "default",
-      "displayName": "GCC 16.1.1 patched (PR c++/124241 cherry-picked) + libstdc++ 16 (C++26)",
+      "displayName": "GCC 16.2.1 patched (contracts consteval-cache fix) + libstdc++ 16 (C++26)",
       "binaryDir": "${sourceDir}/build",
       "generator": "Ninja",
       "cacheVariables": {
-        "_comment_toolchain": "Patched GCC 16.1.1 + libstdc++ 16 are resolved by cmake/Toolchain-gcc16.cmake. Override the location WITHOUT editing this file: set CRUCIBLE_GCC16_PREFIX=<install-prefix> (binaries at <prefix>/usr/bin/g++-16p, libs at <prefix>/usr/lib64), or CRUCIBLE_CXX=<full-g++-path>. Unset -> falls back to $HOME/.local/gcc16-patched (the canonical dev-box default, so this preset configures verbatim here). The libstdc++ rpath is derived from the same prefix.",
+        "_comment_toolchain": "Patched GCC 16.2.1 + libstdc++ 16 are resolved by cmake/Toolchain-gcc16.cmake. Override the location WITHOUT editing this file: set CRUCIBLE_GCC16_PREFIX=<install-prefix> (binaries at <prefix>/usr/bin/g++-16p, libs at <prefix>/usr/lib64), or CRUCIBLE_CXX=<full-g++-path>. Unset -> falls back to $HOME/.local/gcc16-patched (the canonical dev-box default, so this preset configures verbatim here). The libstdc++ rpath is derived from the same prefix.",
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/Toolchain-gcc16.cmake",
         "CMAKE_BUILD_TYPE": "Debug",
         "CRUCIBLE_BENCH": "OFF",
